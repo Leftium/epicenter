@@ -1,0 +1,17 @@
+[target.aarch64-apple-darwin]
+# Force the use of the correct architecture flags for Apple Silicon
+rustflags = [
+  "-C", "target-cpu=native",
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup"
+]
+
+[build]
+# Ensure we're building for the correct target
+target = "aarch64-apple-darwin"
+
+[env]
+# Set architecture flags for C/C++ compilation
+CFLAGS = "-arch arm64"
+CXXFLAGS = "-arch arm64"
+CMAKE_OSX_ARCHITECTURES = "arm64"

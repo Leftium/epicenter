@@ -7,7 +7,7 @@
 	},
 	"scripts": {
 		"dev:web": "vite dev",
-		"dev": "bun tauri dev",
+		"dev": "node src-tauri/check-gpu.cjs && bun tauri dev",
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

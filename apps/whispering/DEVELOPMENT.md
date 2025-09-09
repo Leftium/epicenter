@@ -16,9 +16,8 @@ This guide covers development setup, building from source, and enabling GPU acce
 
 ### All Platforms
 
-- [Node.js](https://nodejs.org/) (v18 or later)
+- [Bun](https://bun.sh/) (latest version)
 - [Rust](https://rustup.rs/) (latest stable)
-- [pnpm](https://pnpm.io/) package manager
 
 ### Platform-Specific
 
@@ -32,10 +31,10 @@ By default, Whispering builds without GPU acceleration for maximum compatibility
 
 ```bash
 # Install dependencies
-pnpm install
+bun install
 
 # Build the application
-pnpm tauri build
+bun tauri build
 ```
 
 ## GPU Acceleration
@@ -89,13 +88,29 @@ whisper-rs = { version = "0.15.0", features = ["metal"] }
 #### Build with Metal
 
 ```bash
-# Clean previous builds
+# IMPORTANT: Always clean when changing deployment targets to avoid cache issues
 cd src-tauri
 cargo clean
 
 # Build with Metal support (release mode)
-cargo build --release
+# Set deployment target to your macOS version (or at least 13.0)
+MACOSX_DEPLOYMENT_TARGET=13.0 cargo build --release
 ```
+
+**⚠️ Critical: Deployment Target Consistency**
+
+Always use the same `MACOSX_DEPLOYMENT_TARGET` value throughout your development:
+
+- Changing the target requires `cargo clean` to avoid linking errors
+- Cached dependencies built with different targets will cause failures
+- The whisper-rs-sys crate builds native code that must match your target
+
+**Best Practices:**
+
+1. Set `MACOSX_DEPLOYMENT_TARGET` in your shell profile for consistency
+2. Always run `cargo clean` after changing deployment targets
+3. Use the same target for all builds in a project
+4. Consider using `.env.local` to maintain consistent settings
 
 #### Development with Metal
 
@@ -103,6 +118,12 @@ For development with Metal enabled, use release mode to avoid linking issues:
 
 ```bash
 # Run in development with Metal (uses release build internally)
+# Set deployment target to your macOS version (or at least 13.0)
+MACOSX_DEPLOYMENT_TARGET=13.0 bun dev --release
+
+# Or set it permanently in your shell profile:
+echo 'export MACOSX_DEPLOYMENT_TARGET=13.0' >> ~/.zshrc
+# Then just use:
 bun dev --release
 ```
 
@@ -114,6 +135,23 @@ bun dev --release
 - However, **Whispering does NOT require the metal compiler** to build with Metal support
 - Whispering only needs the Metal framework (included in Command Line Tools)
 - The whisper-rs crate uses pre-compiled Metal shaders, so compilation tools aren't needed
+
+#### Known Metal Limitations
+
+**Deployment Target Issues**: Metal builds require the `___isPlatformVersionAtLeast` symbol which is only available in macOS 13.0+. The default deployment target of macOS 11.0 causes linking errors.
+
+**Solution**: Set `MACOSX_DEPLOYMENT_TARGET` to your macOS version (or at least 13.0) when building with Metal:
+
+```bash
+# For one-time use:
+MACOSX_DEPLOYMENT_TARGET=13.0 bun dev --release
+
+# Or add to your shell profile for permanent use:
+echo 'export MACOSX_DEPLOYMENT_TARGET=13.0' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Current Status**: Metal acceleration is disabled by default for compatibility. Enable it by uncommenting the Metal feature in `Cargo.toml` and using the deployment target workaround above.
 
 ### Windows GPU Support
 
@@ -311,11 +349,11 @@ Undefined symbols for architecture arm64:
 
 **Solutions**:
 
-1. **Use release mode for development**:
+1. **Set deployment target and use release mode**:
 
    ```bash
-   # Instead of regular dev mode
-   bun dev --release
+   # Set deployment target to your macOS version (or at least 13.0)
+   MACOSX_DEPLOYMENT_TARGET=13.0 bun dev --release
    ```
 
 2. **Ensure Command Line Tools are installed**:

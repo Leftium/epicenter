@@ -93,12 +93,23 @@ whisper-rs = { version = "0.15.0", features = ["metal"] }
 cd src-tauri
 cargo clean
 
-# Build with Metal support
+# Build with Metal support (release mode)
 cargo build --release
+```
+
+#### Development with Metal
+
+For development with Metal enabled, use release mode to avoid linking issues:
+
+```bash
+# Run in development with Metal (uses release build internally)
+bun dev --release
 ```
 
 **Important Notes**:
 
+- **Debug builds with Metal may fail** due to linking issues with `___isPlatformVersionAtLeast` symbol
+- **Use release mode for development** when Metal is enabled
 - The `metal` compiler tool (accessed via `xcrun metal`) requires full Xcode installation
 - However, **Whispering does NOT require the metal compiler** to build with Metal support
 - Whispering only needs the Metal framework (included in Command Line Tools)
@@ -291,6 +302,43 @@ error: linking with `cc` failed
 ld: symbol(s) not found for architecture arm64
 ```
 
+or
+
+```
+Undefined symbols for architecture arm64:
+  "___isPlatformVersionAtLeast", referenced from:
+```
+
+**Solutions**:
+
+1. **Use release mode for development**:
+
+   ```bash
+   # Instead of regular dev mode
+   bun dev --release
+   ```
+
+2. **Ensure Command Line Tools are installed**:
+
+   ```bash
+   # Install Command Line Tools if not present
+   xcode-select --install
+
+   # If you have full Xcode installed, switch to it:
+   sudo xcode-select -s /Applications/Xcode.app
+
+   # Or use Command Line Tools (usually sufficient):
+   sudo xcode-select -s /Library/Developer/CommandLineTools
+
+   # Verify the active developer directory
+   xcode-select -p
+   ```
+
+   error: linking with `cc` failed
+   ld: symbol(s) not found for architecture arm64
+
+````
+
 **Solution**: Ensure Xcode Command Line Tools are installed and up to date:
 
 ```bash
@@ -305,7 +353,7 @@ sudo xcode-select -s /Library/Developer/CommandLineTools
 
 # Verify the active developer directory
 xcode-select -p
-```
+````
 
 error: linking with `cc` failed
 ld: symbol(s) not found for architecture arm64

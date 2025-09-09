@@ -28,27 +28,40 @@ try {
     // Check deployment target for Metal on macOS
     if (hasMetal && process.platform === 'darwin') {
         const deploymentTarget = process.env.MACOSX_DEPLOYMENT_TARGET;
-        const minRequired = 13.0;
         
-        if (!deploymentTarget) {
-            console.error('⚠️  Metal GPU acceleration requires MACOSX_DEPLOYMENT_TARGET >= ' + minRequired);
+        // Get current macOS version
+        const { execSync } = require('child_process');
+        const macOSVersion = execSync('sw_vers -productVersion', { encoding: 'utf8' }).trim();
+        const majorVersion = parseInt(macOSVersion.split('.')[0]);
+        
+        // Different macOS versions have different minimum requirements
+        // due to ___isPlatformVersionAtLeast symbol compatibility
+        let minRequired;
+        if (majorVersion >= 15) {
+            minRequired = 15.5;  // macOS 15+ needs 15.5
+        } else if (majorVersion >= 14) {
+            minRequired = 14.0;  // macOS 14 might work with 14.0
+        } else {
+            minRequired = 13.0;  // macOS 13 might work with 13.0
+        }
+        
+        // Check if debug build first - Metal doesn't work in debug mode
+        if (!isRelease) {
+            console.error('⚠️  Metal GPU acceleration detected but debug builds will fail!');
             console.error('');
-            console.error('   Current: NOT SET (will default to 11.0 and fail)');
-            console.error('');
-            console.error('💡 Fix: Set deployment target to your macOS version:');
-            console.error('   MACOSX_DEPLOYMENT_TARGET=13.0 bun dev' + (isRelease ? ' --release' : ''));
-            console.error('');
-            console.error('   Or add to your shell profile for permanent fix:');
-            console.error('   echo \'export MACOSX_DEPLOYMENT_TARGET=13.0\' >> ~/.zshrc');
+            console.error('💡 Use: bun dev --release');
             console.error('');
             process.exit(1);
+        }
+        
+        if (!deploymentTarget) {
+            console.log('⚠️  MACOSX_DEPLOYMENT_TARGET not set (will use dev-metal.sh)');
+            // Don't exit - the dev script will handle this with dev-metal.sh
+            return; // Skip the rest of the deployment target checks
         } else if (parseFloat(deploymentTarget) < minRequired) {
-            console.error('⚠️  Metal GPU acceleration requires MACOSX_DEPLOYMENT_TARGET >= ' + minRequired);
-            console.error('');
-            console.error('   Current: ' + deploymentTarget + ' (too old for Metal)');
-            console.error('');
-            console.error('💡 Fix: Use a higher deployment target:');
-            console.error('   MACOSX_DEPLOYMENT_TARGET=13.0 bun dev' + (isRelease ? ' --release' : ''));
+            console.error('⚠️  MACOSX_DEPLOYMENT_TARGET=' + deploymentTarget + ' is too old for Metal (needs >= ' + minRequired + ')');
+            console.error('💡 Fix: Set a higher version or let auto-detection handle it:');
+            console.error('   bun dev --release');
             console.error('');
             process.exit(1);
         }

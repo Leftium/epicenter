@@ -7,7 +7,11 @@
 	},
 	"scripts": {
 		"dev:web": "vite dev",
-		"dev": "sh -c 'bun src-tauri/check-gpu.cjs \"$@\" && bun tauri dev \"$@\"' --",
+		"dev": "./scripts/dev.sh",
+		"kill:builds": "./scripts/check-build-processes.sh",
+		"clean": "cd src-tauri && cargo clean && rm -rf target && echo '🧹 Build cache cleared!'",
+		"clean:deep": "bun clean && rm -rf ~/.cargo/registry/cache && rm -rf ~/.cargo/.package-cache && echo '🧹 Deep clean: Global cargo cache cleared!'",
+		"clean:full": "bun clean:deep && rm -rf ~/.cargo/registry/src && echo '🧹 Full clean: All cargo sources cleared! Next build will re-download everything.'",
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",

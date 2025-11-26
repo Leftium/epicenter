@@ -94,13 +94,12 @@ type ApplyDefaultableColumns<
 >;
 
 // Allow server generated columns (defaults, runtime defaults, autoincrement IDs) to be omitted in validator payloads.
-type TableRowShape<TTable extends SQLiteTable> = NullToUndefined<
-	InferSelectModel<TTable>
-> extends infer Row
-	? Row extends Record<string, unknown>
-		? ApplyDefaultableColumns<TTable, Row>
-		: Row
-	: never;
+type TableRowShape<TTable extends SQLiteTable> =
+	NullToUndefined<InferSelectModel<TTable>> extends infer Row
+		? Row extends Record<string, unknown>
+			? ApplyDefaultableColumns<TTable, Row>
+			: Row
+		: never;
 
 /**
  * Map a prefixed schema record to an object whose keys are the table names with the
@@ -289,9 +288,10 @@ type MissingPrimaryKeyTables<S extends Record<string, SQLiteTable>> = {
 type EnsureAllTablesArePrefixedWith<
 	TID extends string,
 	TSchema extends Record<string, SQLiteTable>,
-> = Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
-	? TSchema
-	: never;
+> =
+	Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
+		? TSchema
+		: never;
 type SchemaTableNames<TSchema extends Record<string, SQLiteTable>> = Extract<
 	keyof TSchema,
 	string

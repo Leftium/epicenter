@@ -3,9 +3,8 @@ import type { LibSQLDatabase } from 'drizzle-orm/libsql';
 import type { BaseSQLiteDatabase } from 'drizzle-orm/sqlite-core';
 
 // Shared types
-type ExtractedResult<T> = T extends BaseSQLiteDatabase<'async', infer R>
-	? R
-	: never;
+type ExtractedResult<T> =
+	T extends BaseSQLiteDatabase<'async', infer R> ? R : never;
 
 type ResultSet = ExtractedResult<LibSQLDatabase>;
 

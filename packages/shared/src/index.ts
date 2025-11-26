@@ -1,1 +1,1 @@
-export { safeLookup } from './object';
+export { safeLookup } from './object.js';

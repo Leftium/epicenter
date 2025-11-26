@@ -25,7 +25,7 @@ type SetTrayIconService = {
 
 export function createTrayIconWebService(): SetTrayIconService {
 	return {
-		setTrayIcon: async (icon: WhisperingRecordingState) => {
+		setTrayIcon: async (_icon: WhisperingRecordingState) => {
 			// const { error: setRecorderStateError } = await extension.setRecorderState(
 			// 	{ recorderState: icon },
 			// );

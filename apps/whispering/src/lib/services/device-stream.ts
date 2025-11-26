@@ -1,5 +1,5 @@
 import { createTaggedError } from 'wellcrafted/error';
-import { Err, isOk, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS } from '$lib/constants/audio';
 import type {
 	Device,

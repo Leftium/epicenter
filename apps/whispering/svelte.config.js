@@ -1,5 +1,6 @@
 // Tauri doesn't have a Node.js server to do proper SSR
 // so we will use adapter-static to prerender the app (SSG)
+// This works for both Tauri and Cloudflare Workers + Assets
 // See: https://v2.tauri.app/start/frontend/sveltekit/ for more info
 import staticAdapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
@@ -10,6 +11,9 @@ const config = {
 		adapter: staticAdapter({
 			fallback: 'index.html', // SPA fallback for dynamic routes
 		}),
+		alias: {
+			$routes: './src/routes',
+		},
 	},
 
 	// Consult https://svelte.dev/docs/kit/integrations

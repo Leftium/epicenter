@@ -264,12 +264,11 @@ type PrefixedAdapter<
 	TParsed,
 > = Adapter<TID, KeysOf<Schema>, Schema, TVersions, TPreparsed, TParsed> & {
 	transforms: TransformAlignment<TVersions>;
-} & (MissingPrefixedTables<TID, Schema> extends never // so TS surfaces a clear, actionable error including the offending keys. // If any table names are NOT prefixed with `${TID}_`, attach an impossible property
+} & (MissingPrefixedTables<TID, Schema> extends never
 		? unknown
 		: {
 				__error__schema_table_prefix_mismatch__: `Expected all tables to start with "${TID}_"`;
 			}) &
-	// If any tables are missing primary keys, surface them similarly
 	(MissingPrimaryKeyTables<Schema> extends never
 		? unknown
 		: {

@@ -3,7 +3,6 @@ import { bootstrap } from '@epicenter/opencode/cli/bootstrap.ts';
 import { Provider } from '@epicenter/opencode/provider/provider.ts';
 import { Server } from '@epicenter/opencode/server/server.ts';
 import { Share } from '@epicenter/opencode/share/share.ts';
-import { Log } from '@epicenter/opencode/util/log.ts';
 import getPort from 'get-port';
 import { BrowserServiceLive } from '../services/browser';
 import type { TunnelProvider } from '../services/tunnel';

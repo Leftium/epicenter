@@ -2,7 +2,7 @@
 	"name": "epicenter",
 	"type": "module",
 	"private": true,
-	"version": "7.5.5",
+	"version": "7.7.2",
 	"description": "",
 	"keywords": [],
 	"license": "ISC",
@@ -56,17 +56,19 @@
 		"bump-version": "bun run scripts/bump-version.ts"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.2.6",
+		"@biomejs/biome": "^2.3.1",
+		"@eslint/compat": "^1.4.0",
+		"@types/bun": "latest",
 		"@types/node": "catalog:",
+		"@typescript-eslint/parser": "^8.46.0",
 		"concurrently": "catalog:",
 		"eslint": "^9.37.0",
-		"@eslint/compat": "^1.4.0",
 		"eslint-plugin-svelte": "^3.12.4",
-		"@typescript-eslint/parser": "^8.46.0",
 		"prettier": "^3.6.2",
+		"prettier-plugin-astro": "^0.14.1",
 		"prettier-plugin-svelte": "^3.4.0",
 		"prettier-plugin-tailwindcss": "^0.6.11",
-		"prettier-plugin-astro": "^0.14.1",
+		"svelte-eslint-parser": "^1.4.0",
 		"turbo": "catalog:"
 	}
 }

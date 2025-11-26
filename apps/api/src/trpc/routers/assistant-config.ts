@@ -3,7 +3,6 @@ import {
 	type EncryptedData,
 } from '@repo/db/lib/encryption';
 import {
-	AssistantConfigInsert,
 	type AssistantConfigSelect,
 	assistantConfig,
 	assistantConfigInsertSchema,

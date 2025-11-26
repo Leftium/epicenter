@@ -7,7 +7,6 @@ import type { RecordingMode } from '$lib/constants/audio';
 import { rpc } from '$lib/query';
 import { recorderService } from '$lib/query/recorder';
 import * as services from '$lib/services';
-import { enumerateDevices } from '$lib/services/device-stream';
 import type { RecorderServiceError } from '$lib/services/recorder';
 import type { VadRecorderServiceError } from '$lib/services/vad-recorder';
 import {
@@ -19,7 +18,7 @@ import {
 import {
 	syncGlobalShortcutsWithSettings,
 	syncLocalShortcutsWithSettings,
-} from '../../routes/+layout/register-commands';
+} from '$routes/(app)/_layout-utils/register-commands';
 
 /**
  * Encapsulated settings object with controlled access.

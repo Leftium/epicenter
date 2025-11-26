@@ -1,16 +1,12 @@
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
-import {
-	WhisperingErr,
-	type WhisperingError,
-	WhisperingWarningErr,
-} from '$lib/result';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
 import * as services from '$lib/services';
 import type { Recording } from '$lib/services/db';
 import { settings } from '$lib/stores/settings.svelte';
 import { rpc } from './';
 import { defineMutation, queryClient } from './_client';
+import { db } from './db';
 import { notify } from './notify';
-import { recordings } from './recordings';
 
 const transcriptionKeys = {
 	isTranscribing: ['transcription', 'isTranscribing'] as const,
@@ -29,14 +25,19 @@ export const transcription = {
 		resultMutationFn: async (
 			recording: Recording,
 		): Promise<Result<string, WhisperingError>> => {
-			if (!recording.blob) {
+			// Fetch audio blob by ID
+			const { data: audioBlob, error: getAudioBlobError } =
+				await services.db.recordings.getAudioBlob(recording.id);
+
+			if (getAudioBlobError) {
 				return WhisperingErr({
-					title: '⚠️ Recording blob not found',
-					description: "Your recording doesn't have a blob to transcribe.",
+					title: '⚠️ Failed to fetch audio',
+					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
 				});
 			}
+
 			const { error: setRecordingTranscribingError } =
-				await recordings.updateRecording.execute({
+				await db.recordings.update.execute({
 					...recording,
 					transcriptionStatus: 'TRANSCRIBING',
 				});
@@ -52,10 +53,10 @@ export const transcription = {
 				});
 			}
 			const { data: transcribedText, error: transcribeError } =
-				await transcribeBlob(recording.blob);
+				await transcribeBlob(audioBlob);
 			if (transcribeError) {
 				const { error: setRecordingTranscribingError } =
-					await recordings.updateRecording.execute({
+					await db.recordings.update.execute({
 						...recording,
 						transcriptionStatus: 'FAILED',
 					});
@@ -74,7 +75,7 @@ export const transcription = {
 			}
 
 			const { error: setRecordingTranscribedTextError } =
-				await recordings.updateRecording.execute({
+				await db.recordings.update.execute({
 					...recording,
 					transcribedText,
 					transcriptionStatus: 'DONE',
@@ -99,13 +100,18 @@ export const transcription = {
 		resultMutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
 				recordings.map(async (recording) => {
-					if (!recording.blob) {
+					// Fetch audio blob by ID
+					const { data: audioBlob, error: getAudioBlobError } =
+						await services.db.recordings.getAudioBlob(recording.id);
+
+					if (getAudioBlobError) {
 						return WhisperingErr({
-							title: '⚠️ Recording blob not found',
-							description: "Your recording doesn't have a blob to transcribe.",
+							title: '⚠️ Failed to fetch audio',
+							description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
 						});
 					}
-					return await transcribeBlob(recording.blob);
+
+					return await transcribeBlob(audioBlob);
 				}),
 			);
 			const partitionedResults = partitionResults(results);

@@ -1,8 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
-import { type ChildProcess } from '@tauri-apps/plugin-shell';
+import type { ChildProcess } from '@tauri-apps/plugin-shell';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import type { CommandService, ShellCommand } from './types';
+import type { CommandService } from './types';
 import { CommandServiceErr } from './types';
 
 export function createCommandServiceDesktop(): CommandService {

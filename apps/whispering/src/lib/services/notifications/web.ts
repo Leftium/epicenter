@@ -1,11 +1,7 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
-import {
-	NotificationServiceErr,
-	toBrowserNotification,
-	toExtensionNotification,
-} from './types';
+import { NotificationServiceErr, toBrowserNotification } from './types';
 
 /**
  * Creates a web-based notification service that handles browser notifications
@@ -118,7 +114,7 @@ export function createNotificationServiceWeb(): NotificationService {
 		 * @param {string} id - The notification ID to clear
 		 * @returns {Promise<Result<undefined, NotificationServiceError>>} Success or error result
 		 */
-		async clear(id: string) {
+		async clear(_id: string) {
 			// Browser notifications don't have a direct clear API
 			// They auto-dismiss or require service worker control
 			// For future extension support:

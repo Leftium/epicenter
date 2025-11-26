@@ -9,11 +9,7 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '../device-stream';
-import type {
-	DeviceAcquisitionOutcome,
-	DeviceIdentifier,
-	UpdateStatusMessageFn,
-} from '../types';
+import type { DeviceAcquisitionOutcome, DeviceIdentifier } from '../types';
 import type {
 	NavigatorRecordingParams,
 	RecorderService,

@@ -89,7 +89,7 @@ export function createOpenaiTranscriptionService() {
 						`recording.${getExtensionFromAudioBlob(audioBlob)}`,
 						{ type: audioBlob.type },
 					),
-				catch: (error) =>
+				catch: (_error) =>
 					WhisperingErr({
 						title: '📁 File Creation Failed',
 						description:

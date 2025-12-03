@@ -1,11 +1,12 @@
 /**
  * Understanding Result Type Discriminants: Building to Symmetry
+ * Part 2 of 2 - See ./discriminated-union-demo.ts for Part 1
  *
  * The Result type can be written multiple ways. Each reveals something
  * important about discriminants. Let's build up from simple to symmetrical.
  *
- * If you're new to discriminated unions, start with "discriminated-union-demo.ts" first.
- * This article assumes you understand Variation 2 (nullable property as discriminant).
+ * PREREQUISITE: Start with "./discriminated-union-demo.ts" first.
+ * This guide assumes you understand Pattern 2 (nullable property as discriminant).
  */
 
 // ============================================================================

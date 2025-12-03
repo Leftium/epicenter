@@ -10,17 +10,91 @@
  */
 
 // ============================================================================
-// The Problem: Omitting Properties Breaks Type Safety
+// The Core Requirement: A Discriminant Must Be Present in ALL Variants
 // ============================================================================
 
 /*
- * You might try to write a Result type where only one property exists
- * per variant. This seems simpler, but it doesn't work:
+ * Before we look at Result types, let's revisit the fundamental rule:
+ *
+ * A property can only be a discriminant if it's PRESENT in ALL variants.
+ *
+ * This is easy to forget because Pattern 1 (dedicated 'type' field) makes
+ * it obvious. But with Pattern 2 (data property as discriminant), you might
+ * accidentally omit the property from a variant.
+ *
+ * If a property is missing from a variant, you can't check its value.
+ * And if you can't check its value, it can't narrow the type.
  */
 
-// ❌ Attempt 1: Only error variant has 'error'
+// ============================================================================
+// Problem 1: No Shared Property (Complete Omission)
+// ============================================================================
+
+/*
+ * The most intuitive way to write a Result type seems like this:
+ * - Success has data
+ * - Failure has error
+ * - Each variant only has what it needs
+ *
+ * This doesn't work:
+ */
+
+// ❌ No shared property between variants
+type ResultOmitted<T, E> =
+  | { data: T }     // Success: only data
+  | { error: E };   // Failure: only error
+
+function handleOmitted<T, E>(result: ResultOmitted<T, E>) {
+  // ❌ Can't check result.data !== undefined
+  // TypeScript error: Property 'data' does not exist on type 'ResultOmitted<T, E>'
+  // (because 'data' doesn't exist in the { error: E } variant)
+
+  // ❌ Can't check result.error !== undefined either
+  // Same problem: 'error' doesn't exist in the { data: T } variant
+
+  // The only option is the 'in' operator:
+  if ("data" in result) {
+    const value: T = result.data;   // ✅ This works
+    console.log("Success:", value);
+  } else {
+    const err: E = result.error;    // ✅ This works
+    console.error("Error:", err);
+  }
+}
+
+/*
+ * Why is this a problem?
+ *
+ * 1. You can't use !== null or !== undefined checks
+ *    The property doesn't exist, so you can't check its value.
+ *
+ * 2. The 'in' operator works but has a subtle issue:
+ *    Nothing prevents { data: "hello", error: new Error() } at runtime.
+ *    Both properties can coexist! There's no mutual exclusivity.
+ *
+ * 3. No discriminant exists:
+ *    - 'data' isn't present in all variants (missing from error variant)
+ *    - 'error' isn't present in all variants (missing from data variant)
+ *    - Neither property qualifies as a discriminant!
+ *
+ * The core issue: A discriminant must be present in ALL variants.
+ * When you omit properties, you have no discriminant.
+ */
+
+// ============================================================================
+// Problem 2: Partial Omission (One Property Missing)
+// ============================================================================
+
+/*
+ * OK, so we need a shared property. What if we make ONE property
+ * present in both variants, but omit the other?
+ *
+ * This is closer, but still doesn't work:
+ */
+
+// ❌ Attempt 1: 'data' is shared, but 'error' is missing from success variant
 type ResultDataOnly<T, E> =
-  | { data: T }                 // Success: I have data
+  | { data: T }                 // Success: I have data (no error property)
   | { data: null; error: E };   // Failure: no data, but I have error
 
 function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
@@ -29,15 +103,15 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
     console.log("Success:", value);
   } else {
     // ❌ Type error! 'error' doesn't exist on the union
-    // TypeScript doesn't know 'error' exists after narrowing on 'data'
+    // TypeScript narrowed 'data' to null, but can't guarantee 'error' exists
     // const err: E = result.error;
   }
 }
 
-// ❌ Attempt 2: Only success variant has 'data'
+// ❌ Attempt 2: 'error' is shared, but 'data' is missing from failure variant
 type ResultErrorOnly<T, E> =
   | { data: T; error: null }  // Success: no error, I have data
-  | { error: E };             // Failure: I have error
+  | { error: E };             // Failure: I have error (no data property)
 
 function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
   if (result.error !== null) {
@@ -45,15 +119,15 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
     console.error("Error:", err);
   } else {
     // ❌ Type error! 'data' doesn't exist on the union
-    // TypeScript doesn't know 'data' exists after narrowing on 'error'
+    // TypeScript narrowed 'error' to null, but can't guarantee 'data' exists
     // const value: T = result.data;
   }
 }
 
 /*
  * Why these fail:
- * - The discriminant ('data' or 'error') IS present in both variants
- * - But the OTHER property is omitted from one variant
+ * - The discriminant ('data' or 'error') IS present in both variants ✅
+ * - But the OTHER property is omitted from one variant ❌
  * - TypeScript can narrow the discriminant, but can't guarantee
  *   the other property exists
  *
@@ -72,10 +146,10 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
 type Result<T, E> =
   | { data: T; error: null }      // 'data' is complete: T vs null
   | { data: null; error: E };     // 'error' is complete: null vs E
-                                  // ↑ BOTH are complete!
+                                  // ↑ BOTH properties in BOTH variants!
 
 /*
- * Wait... now BOTH properties are discriminants!
+ * Now BOTH properties are discriminants:
  * - 'data' can discriminate (T vs null)
  * - 'error' can discriminate (null vs E)
  *
@@ -121,20 +195,22 @@ function handleResult2<T, E>(result: Result<T, E>) {
  */
 
 // ============================================================================
-// The Journey Complete
+// Summary: The Discriminant Checklist
 // ============================================================================
 
 /*
- * The symmetric Result type is just Pattern 2 applied twice:
- * - 'data' is a discriminant (T vs null)
- * - 'error' is a discriminant (null vs E)
+ * For a property to be a discriminant, it must:
+ * 1. Be PRESENT in ALL variants (not omitted from any)
+ * 2. Have DISTINGUISHABLE VALUES across variants (T vs null, 'a' vs 'b', etc.)
  *
- * Both properties present + distinguishable values = BOTH can discriminate.
+ * { data: T } | { error: E }
+ * ❌ No discriminant: neither property is present in all variants
  *
- * This is the power of symmetrical nullability:
- * - Maximum flexibility
- * - Clear intent (mutually exclusive properties)
- * - Either property can discriminate independently
+ * { data: T } | { data: null; error: E }
+ * ⚠️ Partial: 'data' discriminates, but 'error' is missing from success
  *
- * Now you understand why Pattern 3 (symmetrical nullability) works!
+ * { data: T; error: null } | { data: null; error: E }
+ * ✅ Symmetric: BOTH properties are discriminants, check either one!
+ *
+ * The symmetric pattern gives you maximum flexibility and type safety.
  */

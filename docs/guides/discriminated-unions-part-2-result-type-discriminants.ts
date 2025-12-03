@@ -22,12 +22,12 @@
  */
 
 type ResultDataOnly<T, E> =
-  | { data: T }                    // Success: I have data
-  | { data: undefined; error: E }; // Failure: no data, but I have error
+  | { data: T }                 // Success: I have data
+  | { data: null; error: E };   // Failure: no data, but I have error
 
 function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
   // Check data (it's present in BOTH variants)
-  if (result.data !== undefined) {
+  if (result.data !== null) {
     // ✅ We have data!
     const value: T = result.data;
     console.log("Success:", value);
@@ -41,7 +41,7 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
 
 /*
  * Why this works:
- * - 'data' is present in BOTH variants (T or undefined)
+ * - 'data' is present in BOTH variants (T or null)
  * - 'error' only exists in the second variant
  * - Only 'data' can discriminate
  *
@@ -64,12 +64,12 @@ function handleDataOnly<T, E>(result: ResultDataOnly<T, E>) {
  */
 
 type ResultErrorOnly<T, E> =
-  | { data: T; error: undefined }  // Success: no error, I have data
-  | { error: E };                   // Failure: I have error
+  | { data: T; error: null }   // Success: no error, I have data
+  | { error: E };              // Failure: I have error
 
 function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
   // Check error (it's present in BOTH variants)
-  if (result.error !== undefined) {
+  if (result.error !== null) {
     // ✅ We have an error!
     const err: E = result.error;
     console.error("Error:", err);
@@ -83,7 +83,7 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
 
 /*
  * Why this works:
- * - 'error' is present in BOTH variants (E or undefined)
+ * - 'error' is present in BOTH variants (E or null)
  * - 'data' only exists in the first variant
  * - Only 'error' can discriminate
  *
@@ -103,8 +103,8 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
  * ONE property is complete (present in all variants with different types).
  * That property becomes the discriminant.
  *
- * DataOnly:  'data' is complete (T vs undefined)
- * ErrorOnly: 'error' is complete (undefined vs E)
+ * DataOnly:  'data' is complete (T vs null)
+ * ErrorOnly: 'error' is complete (null vs E)
  *
  * This is Variation 2 from discriminated-union-demo.ts applied to Result types.
  */
@@ -121,42 +121,42 @@ function handleErrorOnly<T, E>(result: ResultErrorOnly<T, E>) {
  */
 
 type Result<T, E> =
-  | { data: T; error: undefined }      // 'data' is complete: T vs undefined
-  | { data: undefined; error: E };     // 'error' is complete: undefined vs E
-                                       // ↑ BOTH are complete!
+  | { data: T; error: null }      // 'data' is complete: T vs null
+  | { data: null; error: E };     // 'error' is complete: null vs E
+                                  // ↑ BOTH are complete!
 
 /*
  * Wait... now BOTH properties are discriminants!
- * - 'data' can discriminate (T vs undefined)
- * - 'error' can discriminate (undefined vs E)
+ * - 'data' can discriminate (T vs null)
+ * - 'error' can discriminate (null vs E)
  *
  * This means we can check EITHER property to narrow the type!
  */
 
 function handleResult<T, E>(result: Result<T, E>) {
   // Option 1: Check error first
-  if (result.error !== undefined) {
+  if (result.error !== null) {
     const err: E = result.error;     // ✅ error is E
     console.error("Error:", err);
-    // result.data is undefined here
+    // result.data is null here
     return;
   }
 
   const value: T = result.data;       // ✅ data is T
   console.log("Success:", value);
-  // result.error is undefined here
+  // result.error is null here
 }
 
 function handleResult2<T, E>(result: Result<T, E>) {
   // Option 2: Check data first (equally valid!)
-  if (result.data !== undefined) {
+  if (result.data !== null) {
     const value: T = result.data;     // ✅ data is T
     console.log("Success:", value);
-    // result.error is undefined here
+    // result.error is null here
   } else {
     const err: E = result.error;       // ✅ error is E
     console.error("Error:", err);
-    // result.data is undefined here
+    // result.data is null here
   }
 }
 
@@ -185,24 +185,24 @@ declare const result2: ResultErrorOnly<string, Error>;
 declare const result3: Result<string, Error>;
 
 // DataOnly: Must check data
-if (result1.data !== undefined) {
+if (result1.data !== null) {
   result1.data; // string
 } else {
   result1.error; // Error
 }
 
 // ErrorOnly: Must check error
-if (result2.error !== undefined) {
+if (result2.error !== null) {
   result2.error; // Error
 } else {
   result2.data; // string
 }
 
 // Symmetrical: Can check EITHER!
-if (result3.data !== undefined) {
+if (result3.data !== null) {
   result3.data; // string
 }
-if (result3.error !== undefined) {
+if (result3.error !== null) {
   result3.error; // Error
 }
 
@@ -235,116 +235,20 @@ if (result3.error !== undefined) {
  */
 
 // ============================================================================
-// Why Explicit Undefined Is Required (For Symmetry)
+// Why Explicit Null/Undefined Is Required (For Symmetry)
 // ============================================================================
 
 /*
- * You might wonder: Can I just omit the undefined property?
+ * Important: For symmetrical discriminants to work, you MUST use explicit
+ * null/undefined. Property omission breaks symmetry.
  *
- * For single discriminants (DataOnly, ErrorOnly), you technically can:
- */
-
-type ResultDataOnlyOmitted<T, E> =
-  | { data: T }
-  | { error: E };
-
-// For single discriminants, you can omit and use 'in' operator:
-function handleOmitted<T, E>(result: ResultDataOnlyOmitted<T, E>) {
-  if ("data" in result) {
-    // ✅ With only ONE discriminant, 'in' works!
-    // result.data is T here
-    const value: T = result.data;
-  } else {
-    // result.error is E here
-    const err: E = result.error;
-  }
-}
-
-/*
- * Why does 'in' work for single discriminants?
- * - 'data' exists in variant 1, doesn't exist in variant 2
- * - TypeScript can use presence/absence to narrow
- * - This is Pattern 2 from discriminated-union-demo.ts
- */
-
-/*
- * But for SYMMETRICAL discriminants, omission completely breaks:
- */
-
-type ResultSymmetricalOmitted<T, E> =
-  | { data: T }
-  | { error: E };
-
-function handleSymmetricalOmitted<T, E>(result: ResultSymmetricalOmitted<T, E>) {
-  // 🚨 The 'in' operator doesn't narrow properly!
-  if ("data" in result) {
-    // result.data is T | undefined (not T!)
-    // const value: T = result.data; // ❌ Type error
-  }
-
-  if ("error" in result) {
-    // result.error is E | undefined (not E!)
-    // const err: E = result.error; // ❌ Type error
-  }
-
-  // 🚨 Even checking values doesn't help with omission!
-  if (result.data !== undefined) {
-    // result.data is STILL T | undefined (not T!)
-    // const value: T = result.data; // ❌ Type error
-  }
-}
-
-/*
- * Why doesn't 'in' work for symmetrical discriminants?
- * - With omission, nothing prevents: { data: T, error: E } at runtime
- * - TypeScript must assume BOTH properties might exist
- * - So it types them conservatively: T | undefined and E | undefined
- * - The 'in' check can't narrow because mutual exclusivity isn't enforced
+ * See "./discriminated-union-demo.ts" Pattern 3 for the full explanation
+ * of why omission fails and explicit null/undefined is required.
  *
- * This is why checking "data" in result vs result.data !== undefined
- * are NOT interchangeable for symmetrical patterns!
- */
-
-/*
- * Why? Because nothing prevents this at runtime:
- */
-
-const ambiguous: ResultSymmetricalOmitted<string, Error> = {
-  data: "success",
-  // @ts-expect-error - but nothing stops this at runtime!
-  error: new Error("also an error?"),
-};
-
-/*
- * TypeScript must assume BOTH properties might exist,
- * so it types them as T | undefined and E | undefined.
- *
- * With explicit undefined:
- */
-
-const enforced: Result<string, Error> = {
-  data: "success",
-  error: undefined, // Required!
-};
-
-// This is a compile error:
-// const invalid: Result<string, Error> = {
-//   data: "success",
-//   error: new Error("can't have both!"), // ❌ Type error!
-// };
-
-/*
- * Explicit undefined enforces mutual exclusivity at compile time,
- * which allows TypeScript to narrow correctly.
- *
- * The key insight: A discriminant must be present in ALL variants!
- * - With explicit undefined: Both properties are present everywhere → both discriminate
- * - With omission: Properties are absent in some variants → can't discriminate symmetrically
- *
- * The takeaway:
+ * Quick summary:
  * - Single discriminants (Pattern 2): Omission can work with 'in' operator
- * - Symmetrical discriminants (Pattern 3): MUST use explicit undefined
- * - "prop" in obj vs obj.prop !== undefined: NOT the same for symmetrical patterns!
+ * - Symmetrical discriminants (Pattern 3): MUST use explicit null/undefined
+ * - "prop" in obj vs obj.prop !== null: NOT the same for symmetrical patterns!
  */
 
 // ============================================================================

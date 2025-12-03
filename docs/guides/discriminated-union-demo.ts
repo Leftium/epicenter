@@ -18,7 +18,7 @@
  * That's it. Whether it's:
  * - String literals: "url" vs "file" vs "text"
  * - Numbers: 200 vs 404 vs 500
- * - Types: Blob vs undefined vs null
+ * - Types: Blob vs null
  * - Booleans: true vs false
  *
  * If TypeScript can tell the values apart, it can narrow the type.
@@ -37,16 +37,16 @@
  *    When: 3+ variants, or when clarity is paramount
  *
  * PATTERN 2: Nullable Property
- *    type T = { blob: Blob } | { blob: undefined }
- *    Approach: A single property that's either present (Blob) or absent (undefined/null)
- *    When: 2 variants, property being null/undefined is meaningful
+ *    type T = { blob: Blob } | { blob: null }
+ *    Approach: A single property that's either present (Blob) or absent (null)
+ *    When: 2 variants, property being null is meaningful
  *
  * PATTERN 3: Symmetrical Nullability (builds on Pattern 2)
- *    type T = { data: T; error: undefined } | { data: undefined; error: E }
- *    Approach: Two properties, each can be null/undefined in opposite variants
+ *    type T = { data: T; error: null } | { data: null; error: E }
+ *    Approach: Two properties, each can be null in opposite variants
  *    When: 2 variants, two mutually exclusive concepts (data/error, success/failure)
  *    Key insight: BOTH properties can discriminate independently!
- *    ⚠️  Requires explicit undefined - omission fails for this pattern!
+ *    ⚠️  Requires explicit null - omission fails for this pattern!
  */
 
 // ============================================================================
@@ -152,9 +152,9 @@ function useLoadState(state: LoadState) {
  *
  * Just like Pattern 1, the key is distinguishable values. But here,
  * instead of string literals ("url" vs "file"), we use the actual type
- * of the property (Blob vs undefined/null) as the discriminant.
+ * of the property (Blob vs null) as the discriminant.
  *
- * The property is either defined (one variant) or null/undefined (other variant).
+ * The property is either defined (one variant) or null (other variant).
  * It's not metadata about your data; it's the actual data doing double-duty.
  */
 
@@ -165,13 +165,13 @@ type RecordingSource =
       blobType: string;
     }
   | {
-      blob: undefined;      // blob is undefined (discriminant value #2)
+      blob: null;           // blob is null (discriminant value #2)
       filePath: string;     // Different properties for this variant
       fileFormat: string;
     };
 
 function useRecording(source: RecordingSource) {
-  if (source.blob !== undefined) {
+  if (source.blob !== null) {
     // We have a blob variant
     console.log("Blob size:", source.blob.size);
     console.log("Stored size:", source.blobSize);
@@ -182,16 +182,16 @@ function useRecording(source: RecordingSource) {
     // We have a file path variant
     console.log("File path:", source.filePath);
     console.log("Format:", source.fileFormat);
-    // source.blob is undefined here
+    // source.blob is null here
     // source.blobSize doesn't exist here
     // source.blobType doesn't exist here
   }
 }
 
 /*
- * Why not just omit the undefined?
+ * Why not just omit the null?
  *
- * You might wonder: "Why write { blob: undefined; ... } instead of just
+ * You might wonder: "Why write { blob: null; ... } instead of just
  * { filePath: string; fileFormat: string }?"
  *
  * You technically can omit it and use the 'in' operator to check for presence:
@@ -231,16 +231,16 @@ function useRecordingOmitted(source: RecordingSourceOmitted) {
  * - Pattern 2: Only ONE property needs to be complete (present in all variants)
  * - With omission: 'blob' exists in variant 1, doesn't exist in variant 2
  * - The 'in' check effectively discriminates: "blob" in source → variant 1
- * - result.blob !== undefined would also work with explicit undefined
+ * - result.blob !== null would also work with explicit null
  *
- * So why prefer explicit undefined?
+ * So why prefer explicit null?
  *
- * 1. Consistency: 'blob' is always accessible (just undefined in one variant)
+ * 1. Consistency: 'blob' is always accessible (just null in one variant)
  * 2. Intent: Makes it clear that 'blob' IS the discriminant property
- * 3. Uniformity: Use the same check pattern (blob !== undefined) everywhere
+ * 3. Uniformity: Use the same check pattern (blob !== null) everywhere
  * 4. Type safety: Checking value vs existence are semantically different
  *
- * Both approaches work for Pattern 2. Explicit undefined is clearer about
+ * Both approaches work for Pattern 2. Explicit null is clearer about
  * what's serving as the discriminant, but omission with 'in' is valid if you
  * prefer checking property existence.
  *
@@ -266,13 +266,13 @@ function useRecordingOmitted(source: RecordingSourceOmitted) {
  */
 
 type Result<T, E> =
-  | { data: T; error: undefined }      // 'data' is the discriminant: T vs undefined
-  | { data: undefined; error: E };     // 'error' is the discriminant: undefined vs E
-                                       // BOTH are discriminants!
+  | { data: T; error: null }      // 'data' is the discriminant: T vs null
+  | { data: null; error: E };     // 'error' is the discriminant: null vs E
+                                  // BOTH are discriminants!
 
 function handleResult<T, E>(result: Result<T, E>) {
   // Discriminate on error:
-  if (result.error !== undefined) {
+  if (result.error !== null) {
     console.error("Error:", result.error);
     return;
   }
@@ -283,7 +283,7 @@ function handleResult<T, E>(result: Result<T, E>) {
 
 function handleResult2<T, E>(result: Result<T, E>) {
   // Or discriminate on data (symmetrical!):
-  if (result.data !== undefined) {
+  if (result.data !== null) {
     console.log("Success:", result.data);
   } else {
     console.error("Error:", result.error);
@@ -291,7 +291,7 @@ function handleResult2<T, E>(result: Result<T, E>) {
 }
 
 /*
- * Why must both properties be present (one as undefined)?
+ * Why must both properties be present (one as null)?
  *
  * You might wonder: "Why not just { data: T } | { error: E }?"
  *
@@ -315,7 +315,7 @@ type ResultOmitted<T, E> =
 function demonstrateProblem<T, E>(result: ResultOmitted<T, E>) {
   // 🚨 Type narrowing with 'in' fails!
   if ("data" in result) {
-    // You'd expect result.data to be T, but it's T | undefined
+    // You'd expect result.data to be T, but it's T | null
     // const d: T = result.data; // ❌ Error!
 
     // Why? Because nothing prevents this at runtime:
@@ -324,8 +324,8 @@ function demonstrateProblem<T, E>(result: ResultOmitted<T, E>) {
   }
 
   // 🚨 Even checking the value doesn't help with omission!
-  if (result.data !== undefined) {
-    // result.data is STILL T | undefined (not T)
+  if (result.data !== null) {
+    // result.data is STILL T | null (not T)
     // const d: T = result.data; // ❌ Error!
   }
 }
@@ -336,17 +336,17 @@ const ambiguous: ResultOmitted<string, string> = {
   // @ts-expect-error - TypeScript can't prevent this at compile time!
   error: "error",
 };
-// Result: result.data becomes T | undefined, not T
+// Result: result.data becomes T | null, not T
 // TypeScript can't enforce mutual exclusivity with omitted keys
 
-// ✅ Explicit undefined fixes this:
+// ✅ Explicit null fixes this:
 type ResultFixed<T, E> =
-  | { data: T; error: undefined }
-  | { data: undefined; error: E };
+  | { data: T; error: null }
+  | { data: null; error: E };
 
 function demonstrateSolution<T, E>(result: ResultFixed<T, E>) {
   // ✅ Type narrowing works!
-  if (result.error !== undefined) {
+  if (result.error !== null) {
     const e: E = result.error; // Works!
   } else {
     const d: T = result.data; // Works!
@@ -354,13 +354,13 @@ function demonstrateSolution<T, E>(result: ResultFixed<T, E>) {
 }
 
 /*
- * Why does explicit undefined work?
- * Because both properties MUST exist (one as undefined).
+ * Why does explicit null work?
+ * Because both properties MUST exist (one as null).
  * TypeScript enforces mutual exclusivity at compile time:
  *
  * const valid: ResultFixed<string, string> = {
  *   data: "value",
- *   error: undefined, // Required!
+ *   error: null, // Required!
  * };
  *
  * const invalid: ResultFixed<string, string> = {
@@ -368,15 +368,15 @@ function demonstrateSolution<T, E>(result: ResultFixed<T, E>) {
  *   error: "error", // ❌ Error: both can't be defined!
  * };
  *
- * This is why Pattern 3 REQUIRES explicit undefined. The discriminant must
+ * This is why Pattern 3 REQUIRES explicit null. The discriminant must
  * be present in all variants. For symmetry, BOTH properties must be discriminants,
  * so BOTH must be present in all variants.
  *
- * Key insight: "error" in result vs result.error !== undefined are NOT the same!
+ * Key insight: "error" in result vs result.error !== null are NOT the same!
  * - "error" in result: Checks if property exists (presence)
- * - result.error !== undefined: Checks the property's value
+ * - result.error !== null: Checks the property's value
  *
- * For Pattern 3, you MUST check the value (result.error !== undefined).
+ * For Pattern 3, you MUST check the value (result.error !== null).
  * The 'in' operator won't narrow correctly with omission because TypeScript
  * can't guarantee mutual exclusivity at runtime.
  */
@@ -409,7 +409,7 @@ type Recording =
       content: string;
       // Variant-specific properties (mutually exclusive)
       audioFileSource: string;
-      blob: undefined;
+      blob: null;
     }
   | {
       // Base properties (always present)
@@ -417,7 +417,7 @@ type Recording =
       title: string;
       content: string;
       // Variant-specific properties (mutually exclusive)
-      audioFileSource: undefined;
+      audioFileSource: null;
       blob: Blob;
     };
 
@@ -428,7 +428,7 @@ function processRecording(recording: Recording) {
   console.log("Content:", recording.content);
 
   // Discriminate on either variant property:
-  if (recording.audioFileSource !== undefined) {
+  if (recording.audioFileSource !== null) {
     console.log("Loading from file:", recording.audioFileSource);
   } else {
     console.log("Processing blob:", recording.blob.size, "bytes");
@@ -437,7 +437,7 @@ function processRecording(recording: Recording) {
 
 function processRecording2(recording: Recording) {
   // Or discriminate on the other property:
-  if (recording.blob !== undefined) {
+  if (recording.blob !== null) {
     console.log("Blob size:", recording.blob.size);
   } else {
     console.log("File path:", recording.audioFileSource);
@@ -447,7 +447,7 @@ function processRecording2(recording: Recording) {
 /*
  * Why not add a 'type' field here?
  * Because we have exactly 2 variants, and the properties themselves can act
- * as discriminants. The explicit undefined makes this work.
+ * as discriminants. The explicit null makes this work.
  *
  * You could add a type field if you wanted to (Pattern 1). That's a
  * valid choice. This pattern just shows you don't have to.
@@ -504,15 +504,15 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  *   (strings are conventional, but numbers, booleans, etc. all work)
  *
  * - Pattern 2: Data property itself has distinguishable values
- *   (Blob vs undefined, string vs null, etc.)
+ *   (Blob vs null, string vs null, etc.)
  *
  * - Pattern 3: TWO data properties, each with distinguishable values
- *   (data: T vs undefined, error: undefined vs E)
+ *   (data: T vs null, error: null vs E)
  *
  * All three patterns use the same TypeScript mechanism: distinguishable values.
  * They just differ in WHERE those distinguishable values come from.
  *
- * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * ===================================================================
  *
  * PATTERN 1: Classical Dedicated Field
  * type FileUpload =
@@ -526,12 +526,12 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  * - Building a public API
  * - Future maintainers might not know advanced patterns
  *
- * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * ===================================================================
  *
  * PATTERN 2: Nullable Property
  * type RecordingSource =
  *   | { blob: Blob }
- *   | { blob: undefined }
+ *   | { blob: null }
  *
  * When:
  * - Exactly 2 variants
@@ -539,12 +539,12 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  * - Nullability IS the distinction
  * - Examples: loaded/not loaded, cached/not cached
  *
- * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * ===================================================================
  *
  * PATTERN 3: Symmetrical Nullability (builds on Pattern 2)
  * type Result<T, E> =
- *   | { data: T; error: undefined }
- *   | { data: undefined; error: E }
+ *   | { data: T; error: null }
+ *   | { data: null; error: E }
  *
  * When:
  * - Exactly 2 variants
@@ -555,9 +555,9 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  * Key insight: This is Pattern 2 applied to BOTH properties!
  * Each property can discriminate independently.
  *
- * ⚠️  Must use explicit undefined (omission fails for this pattern!)
+ * ⚠️  Must use explicit null (omission fails for this pattern!)
  *
- * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * ===================================================================
  *
  * All patterns are valid. None is universally "best."
  * Choose based on your use case.

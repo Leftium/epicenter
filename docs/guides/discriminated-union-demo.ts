@@ -31,26 +31,25 @@
 // ============================================================================
 
 /*
- * PATTERN 1: Classical Dedicated Field
- *    type T = { type: 'a'; data: string } | { type: 'b'; data: number } | { type: 'c'; data: boolean }
- *    Approach: A dedicated field (usually 'type') with distinguishable values
+ * PATTERN 1: Dedicated Discriminant Field
+ *    type T = { type: 'a'; data: string } | { type: 'b'; data: number }
+ *    The discriminant is a separate field from your data (e.g., 'type', 'kind')
  *    When: 3+ variants, or when clarity is paramount
  *
- * PATTERN 2: Nullable Property
- *    type T = { blob: Blob } | { blob: null }
- *    Approach: A single property that's either present (Blob) or absent (null)
- *    When: 2 variants, property being null is meaningful
+ * PATTERN 2: Data Property as Discriminant
+ *    type T = { blob: Blob; ... } | { blob: null; ... }
+ *    Your data property IS the discriminant (Blob vs null are distinguishable)
+ *    When: 2 variants, value vs null is the meaningful distinction
  *
- * PATTERN 3: Symmetrical Nullability (builds on Pattern 2)
+ * PATTERN 3: Pattern 2 Applied to BOTH Properties
  *    type T = { data: T; error: null } | { data: null; error: E }
- *    Approach: Two properties, each can be null in opposite variants
- *    When: 2 variants, two mutually exclusive concepts (data/error, success/failure)
- *    Key insight: BOTH properties can discriminate independently!
- *    ⚠️  Requires explicit null - omission fails for this pattern!
+ *    Both properties are discriminants (T vs null AND null vs E)
+ *    When: 2 variants, two mutually exclusive concepts (data/error)
+ *    Key insight: You can check EITHER property to narrow!
  */
 
 // ============================================================================
-// Pattern 1: Classical Dedicated Field
+// Pattern 1: Dedicated Discriminant Field
 // ============================================================================
 
 /*
@@ -142,20 +141,18 @@ function useLoadState(state: LoadState) {
  */
 
 // ============================================================================
-// Pattern 2: Nullable Property
+// Pattern 2: Data Property as Discriminant
 // ============================================================================
 
 /*
- * When you have exactly 2 variants and a single property, you don't need
- * a reserved discriminant field. The property's nullability itself becomes
- * the discriminant.
+ * In Pattern 1, the discriminant field is separate from your data (a "type" field).
+ * In Pattern 2, your data property IS the discriminant field.
  *
- * Just like Pattern 1, the key is distinguishable values. But here,
- * instead of string literals ("url" vs "file"), we use the actual type
- * of the property (Blob vs null) as the discriminant.
+ * The discriminant is still there. It's just doing double-duty: holding your
+ * actual data AND serving as the discriminant. The property has distinguishable
+ * values across variants (Blob vs null), so TypeScript can narrow on it.
  *
- * The property is either defined (one variant) or null (other variant).
- * It's not metadata about your data; it's the actual data doing double-duty.
+ * null (or undefined) is just another possible value in the discriminant.
  */
 
 type RecordingSource =
@@ -189,80 +186,26 @@ function useRecording(source: RecordingSource) {
 }
 
 /*
- * Why not just omit the null?
- *
- * You might wonder: "Why write { blob: null; ... } instead of just
- * { filePath: string; fileFormat: string }?"
- *
- * You technically can omit it and use the 'in' operator to check for presence:
- */
-
-type RecordingSourceOmitted =
-  | {
-      blob: Blob;
-      blobSize: number;
-      blobType: string;
-    }
-  | {
-      filePath: string;
-      fileFormat: string;
-    };
-
-function useRecordingOmitted(source: RecordingSourceOmitted) {
-  if ("blob" in source) {
-    // ✅ The 'in' operator DOES narrow correctly here
-    console.log("Blob size:", source.blob.size);
-    console.log("Stored size:", source.blobSize);
-    // TypeScript knows this is the blob variant
-  } else {
-    // ✅ TypeScript knows this is the file path variant
-    console.log("File path:", source.filePath);
-    console.log("Format:", source.fileFormat);
-  }
-}
-
-/*
- * The 'in' operator works for Pattern 2!
- *
- * With omission, the 'in' operator narrows correctly because 'blob' only
- * exists in one variant. TypeScript can use presence/absence to discriminate.
- *
- * Why does 'in' work here but not for Pattern 3?
- * - Pattern 2: Only ONE property needs to be complete (present in all variants)
- * - With omission: 'blob' exists in variant 1, doesn't exist in variant 2
- * - The 'in' check effectively discriminates: "blob" in source → variant 1
- * - result.blob !== null would also work with explicit null
- *
- * So why prefer explicit null?
- *
- * 1. Consistency: 'blob' is always accessible (just null in one variant)
- * 2. Intent: Makes it clear that 'blob' IS the discriminant property
- * 3. Uniformity: Use the same check pattern (blob !== null) everywhere
- * 4. Type safety: Checking value vs existence are semantically different
- *
- * Both approaches work for Pattern 2. Explicit null is clearer about
- * what's serving as the discriminant, but omission with 'in' is valid if you
- * prefer checking property existence.
- *
  * When this pattern makes sense:
  * - You have exactly 2 variants
- * - One property that's naturally optional
- * - The presence/absence of that property IS the meaningful distinction
+ * - A property that can be "present" or "absent" (value vs null)
+ * - The presence/absence of that value IS the meaningful distinction
  * - Example: loaded/not loaded, cached/not cached, authenticated/not authenticated
  */
 
 // ============================================================================
-// Pattern 3: Symmetrical Nullability
+// Pattern 3: Symmetrical Nullability (Pattern 2 applied to BOTH properties)
 // ============================================================================
 
 /*
- * This is the data/error pattern. Here's the key insight:
+ * Pattern 3 isn't really a new pattern. It's just Pattern 2 applied to
+ * BOTH properties instead of one.
  *
- * Pattern 2 is about making ONE property nullable as the discriminant.
- * Pattern 3 is about making BOTH properties nullable (in opposite variants).
+ * In Pattern 2, ONE property is the discriminant (Blob vs null).
+ * In Pattern 3, BOTH properties are discriminants (T vs null AND null vs E).
  *
- * When you apply the "nullable property" pattern to BOTH properties
- * symmetrically, you get a type where you can check EITHER property to narrow.
+ * Because both properties have distinguishable values across variants,
+ * you can check EITHER property to narrow the type.
  */
 
 type Result<T, E> =
@@ -299,86 +242,20 @@ function handleResult2<T, E>(result: Result<T, E>) {
  * That's what makes them BOTH discriminants. Each property can narrow the type
  * independently because each has distinguishable values across variants.
  *
- * This is different from Pattern 2!
- * - Pattern 2: ONE property is complete → 'in' operator works with omission
- * - Pattern 3: BOTH properties must be complete → 'in' operator fails with omission
- *
  * With omission, TypeScript can't enforce mutual exclusivity at compile time.
- * Nothing prevents creating an object with BOTH properties at runtime:
- */
-
-// ❌ Omission fails:
-type ResultOmitted<T, E> =
-  | { data: T }
-  | { error: E };
-
-function demonstrateProblem<T, E>(result: ResultOmitted<T, E>) {
-  // 🚨 Type narrowing with 'in' fails!
-  if ("data" in result) {
-    // You'd expect result.data to be T, but it's T | null
-    // const d: T = result.data; // ❌ Error!
-
-    // Why? Because nothing prevents this at runtime:
-    // const both = { data: "value", error: "error" };
-    // TypeScript must assume both might exist!
-  }
-
-  // 🚨 Even checking the value doesn't help with omission!
-  if (result.data !== null) {
-    // result.data is STILL T | null (not T)
-    // const d: T = result.data; // ❌ Error!
-  }
-}
-
-// TypeScript can't prevent an object with BOTH properties:
-const ambiguous: ResultOmitted<string, string> = {
-  data: "value",
-  // @ts-expect-error - TypeScript can't prevent this at compile time!
-  error: "error",
-};
-// Result: result.data becomes T | null, not T
-// TypeScript can't enforce mutual exclusivity with omitted keys
-
-// ✅ Explicit null fixes this:
-type ResultFixed<T, E> =
-  | { data: T; error: null }
-  | { data: null; error: E };
-
-function demonstrateSolution<T, E>(result: ResultFixed<T, E>) {
-  // ✅ Type narrowing works!
-  if (result.error !== null) {
-    const e: E = result.error; // Works!
-  } else {
-    const d: T = result.data; // Works!
-  }
-}
-
-/*
- * Why does explicit null work?
- * Because both properties MUST exist (one as null).
- * TypeScript enforces mutual exclusivity at compile time:
+ * Nothing prevents creating an object with BOTH properties at runtime.
  *
- * const valid: ResultFixed<string, string> = {
+ * Explicit null enforces mutual exclusivity:
+ *
+ * const valid: Result<string, string> = {
  *   data: "value",
  *   error: null, // Required!
  * };
  *
- * const invalid: ResultFixed<string, string> = {
+ * const invalid: Result<string, string> = {
  *   data: "value",
  *   error: "error", // ❌ Error: both can't be defined!
  * };
- *
- * This is why Pattern 3 REQUIRES explicit null. The discriminant must
- * be present in all variants. For symmetry, BOTH properties must be discriminants,
- * so BOTH must be present in all variants.
- *
- * Key insight: "error" in result vs result.error !== null are NOT the same!
- * - "error" in result: Checks if property exists (presence)
- * - result.error !== null: Checks the property's value
- *
- * For Pattern 3, you MUST check the value (result.error !== null).
- * The 'in' operator won't narrow correctly with omission because TypeScript
- * can't guarantee mutual exclusivity at runtime.
  */
 
 /*
@@ -500,21 +377,21 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  *
  * A discriminant is any property with distinguishable values across variants.
  *
- * - Pattern 1: Dedicated field, any distinguishable type
+ * - Pattern 1: Dedicated discriminant field separate from your data
  *   (strings are conventional, but numbers, booleans, etc. all work)
  *
- * - Pattern 2: Data property itself has distinguishable values
+ * - Pattern 2: Data property IS the discriminant
  *   (Blob vs null, string vs null, etc.)
  *
- * - Pattern 3: TWO data properties, each with distinguishable values
- *   (data: T vs null, error: null vs E)
+ * - Pattern 3: Pattern 2 applied to BOTH properties
+ *   (data: T vs null AND error: null vs E)
  *
  * All three patterns use the same TypeScript mechanism: distinguishable values.
  * They just differ in WHERE those distinguishable values come from.
  *
  * ===================================================================
  *
- * PATTERN 1: Classical Dedicated Field
+ * PATTERN 1: Dedicated Discriminant Field
  * type FileUpload =
  *   | { type: 'url'; url: string }
  *   | { type: 'file'; file: File }
@@ -528,20 +405,19 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  *
  * ===================================================================
  *
- * PATTERN 2: Nullable Property
+ * PATTERN 2: Data Property as Discriminant
  * type RecordingSource =
- *   | { blob: Blob }
- *   | { blob: null }
+ *   | { blob: Blob; ... }
+ *   | { blob: null; ... }
  *
  * When:
  * - Exactly 2 variants
- * - Single property that's naturally nullable
- * - Nullability IS the distinction
+ * - Value vs null is the meaningful distinction
  * - Examples: loaded/not loaded, cached/not cached
  *
  * ===================================================================
  *
- * PATTERN 3: Symmetrical Nullability (builds on Pattern 2)
+ * PATTERN 3: Pattern 2 Applied to BOTH Properties
  * type Result<T, E> =
  *   | { data: T; error: null }
  *   | { data: null; error: E }
@@ -549,13 +425,10 @@ function handleAsymmetric<T, E>(result: AsymmetricResult<T, E>) {
  * When:
  * - Exactly 2 variants
  * - Two mutually exclusive concepts (data/error, success/failure)
- * - Either property could be "the thing you check first" (symmetrical)
- * - Want both properties always present
+ * - Either property could be "the thing you check first"
  *
- * Key insight: This is Pattern 2 applied to BOTH properties!
- * Each property can discriminate independently.
- *
- * ⚠️  Must use explicit null (omission fails for this pattern!)
+ * Key insight: Both properties are discriminants!
+ * You can check EITHER property to narrow.
  *
  * ===================================================================
  *

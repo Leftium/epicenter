@@ -1,0 +1,6 @@
+@media (prefers-color-scheme: dark) {
+	:root {
+		/* Must match --background in @epicenter/ui dark theme */
+		background-color: oklch(0.129 0.042 264.695);
+	}
+}

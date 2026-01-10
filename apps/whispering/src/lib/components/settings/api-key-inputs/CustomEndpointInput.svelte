@@ -8,6 +8,10 @@
 	};
 
 	let { showBaseUrl = true }: Props = $props();
+
+	// Local state for text inputs to avoid saving on every keystroke
+	let baseUrl = $state(settings.value['completion.custom.baseUrl']);
+	let apiKey = $state(settings.value['apiKeys.custom']);
 </script>
 
 <div class="space-y-4">
@@ -20,10 +24,9 @@
 				id="custom-endpoint-base-url"
 				placeholder="e.g. http://localhost:11434/v1"
 				autocomplete="off"
-				bind:value={
-					() => settings.value['completion.custom.baseUrl'],
-					(value) => settings.updateKey('completion.custom.baseUrl', value)
-				}
+				bind:value={baseUrl}
+				onchange={() =>
+					settings.updateKey('completion.custom.baseUrl', baseUrl)}
 			/>
 			<Field.Description>
 				Global default URL for OpenAI-compatible endpoints (Ollama, LM Studio,
@@ -39,10 +42,8 @@
 			type="password"
 			placeholder="Leave empty if not required"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiKeys.custom'],
-				(value) => settings.updateKey('apiKeys.custom', value)
-			}
+			bind:value={apiKey}
+			onchange={() => settings.updateKey('apiKeys.custom', apiKey)}
 		/>
 		<Field.Description>
 			Most local endpoints don't require authentication. Only enter a key if

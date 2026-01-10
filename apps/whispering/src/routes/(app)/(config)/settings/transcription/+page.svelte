@@ -37,6 +37,16 @@
 
 	const { data } = $props();
 
+	// Local state for text inputs to avoid saving on every keystroke
+	let speachesBaseUrl = $state(
+		settings.value['transcription.speaches.baseUrl'],
+	);
+	let speachesModelId = $state(
+		settings.value['transcription.speaches.modelId'],
+	);
+	let temperature = $state(settings.value['transcription.temperature']);
+	let transcriptionPrompt = $state(settings.value['transcription.prompt']);
+
 	/**
 	 * Feature capabilities for the currently selected transcription service.
 	 * Used to conditionally disable UI fields that aren't supported by the service.
@@ -403,11 +413,12 @@
 					id="speaches-base-url"
 					placeholder="http://localhost:8000"
 					autocomplete="off"
-					bind:value={
-						() => settings.value['transcription.speaches.baseUrl'],
-						(value) =>
-							settings.updateKey('transcription.speaches.baseUrl', value)
-					}
+					bind:value={speachesBaseUrl}
+					onchange={() =>
+						settings.updateKey(
+							'transcription.speaches.baseUrl',
+							speachesBaseUrl,
+						)}
 				/>
 				<Field.Description>
 					The URL where your Speaches server is running (<code>
@@ -431,11 +442,12 @@
 					id="speaches-model-id"
 					placeholder="Systran/faster-distil-whisper-small.en"
 					autocomplete="off"
-					bind:value={
-						() => settings.value['transcription.speaches.modelId'],
-						(value) =>
-							settings.updateKey('transcription.speaches.modelId', value)
-					}
+					bind:value={speachesModelId}
+					onchange={() =>
+						settings.updateKey(
+							'transcription.speaches.modelId',
+							speachesModelId,
+						)}
 				/>
 				<Field.Description>
 					The model you downloaded in step 3 (<code>MODEL_ID</code>), e.g.
@@ -829,11 +841,9 @@
 				placeholder="0"
 				autocomplete="off"
 				disabled={!currentServiceCapabilities.supportsTemperature}
-				bind:value={
-					() => settings.value['transcription.temperature'],
-					(value) =>
-						settings.updateKey('transcription.temperature', String(value))
-				}
+				bind:value={temperature}
+				onchange={() =>
+					settings.updateKey('transcription.temperature', String(temperature))}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsTemperature
@@ -848,10 +858,9 @@
 				id="transcription-prompt"
 				placeholder="e.g., This is an academic lecture about quantum physics with technical terms like 'eigenvalue' and 'Schrödinger'"
 				disabled={!currentServiceCapabilities.supportsPrompt}
-				bind:value={
-					() => settings.value['transcription.prompt'],
-					(value) => settings.updateKey('transcription.prompt', value)
-				}
+				bind:value={transcriptionPrompt}
+				onchange={() =>
+					settings.updateKey('transcription.prompt', transcriptionPrompt)}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsPrompt

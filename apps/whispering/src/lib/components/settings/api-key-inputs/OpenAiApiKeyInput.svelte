@@ -3,6 +3,10 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Link } from '@epicenter/ui/link';
 	import { settings } from '$lib/stores/settings.svelte';
+
+	// Local state for text inputs to avoid saving on every keystroke
+	let apiKey = $state(settings.value['apiKeys.openai']);
+	let baseUrl = $state(settings.value['apiEndpoints.openai']);
 </script>
 
 <Field.Group>
@@ -13,10 +17,8 @@
 			type="password"
 			placeholder="Your OpenAI API Key"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiKeys.openai'],
-				(value) => settings.updateKey('apiKeys.openai', value)
-			}
+			bind:value={apiKey}
+			onchange={() => settings.updateKey('apiKeys.openai', apiKey)}
 		/>
 		<Field.Description>
 			You can find your API key in your <Link
@@ -43,10 +45,8 @@
 			type="url"
 			placeholder="https://api.openai.com/v1 (default)"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiEndpoints.openai'],
-				(value) => settings.updateKey('apiEndpoints.openai', value)
-			}
+			bind:value={baseUrl}
+			onchange={() => settings.updateKey('apiEndpoints.openai', baseUrl)}
 		/>
 		<Field.Description>
 			Override the default OpenAI API endpoint. Useful for reverse proxies or

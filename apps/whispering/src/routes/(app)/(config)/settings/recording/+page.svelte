@@ -25,6 +25,17 @@
 
 	const { data } = $props();
 
+	// Local state for FFmpeg options to avoid saving on every keystroke
+	let ffmpegGlobalOptions = $state(
+		settings.value['recording.ffmpeg.globalOptions'],
+	);
+	let ffmpegInputOptions = $state(
+		settings.value['recording.ffmpeg.inputOptions'],
+	);
+	let ffmpegOutputOptions = $state(
+		settings.value['recording.ffmpeg.outputOptions'],
+	);
+
 	// Derived labels for select triggers
 	const recordingModeLabel = $derived(
 		RECORDING_MODE_OPTIONS.find(
@@ -358,18 +369,16 @@
 				</div>
 
 				<FfmpegCommandBuilder
-					bind:globalOptions={
-						() => settings.value['recording.ffmpeg.globalOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.globalOptions', v)
-					}
-					bind:inputOptions={
-						() => settings.value['recording.ffmpeg.inputOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.inputOptions', v)
-					}
-					bind:outputOptions={
-						() => settings.value['recording.ffmpeg.outputOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.outputOptions', v)
-					}
+					bind:globalOptions={ffmpegGlobalOptions}
+					bind:inputOptions={ffmpegInputOptions}
+					bind:outputOptions={ffmpegOutputOptions}
+					commitChanges={() => {
+						settings.update({
+							'recording.ffmpeg.globalOptions': ffmpegGlobalOptions,
+							'recording.ffmpeg.inputOptions': ffmpegInputOptions,
+							'recording.ffmpeg.outputOptions': ffmpegOutputOptions,
+						});
+					}}
 				/>
 			{:else}
 				<!-- CPAL method settings -->

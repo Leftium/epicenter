@@ -3,6 +3,9 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Link } from '@epicenter/ui/link';
 	import { settings } from '$lib/stores/settings.svelte';
+
+	// Local state for text inputs to avoid saving on every keystroke
+	let apiKey = $state(settings.value['apiKeys.elevenlabs']);
 </script>
 
 <Field.Field>
@@ -12,10 +15,8 @@
 		type="password"
 		placeholder="Your ElevenLabs API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.elevenlabs'],
-			(value) => settings.updateKey('apiKeys.elevenlabs', value)
-		}
+		bind:value={apiKey}
+		onchange={() => settings.updateKey('apiKeys.elevenlabs', apiKey)}
 	/>
 	<Field.Description>
 		You can find your ElevenLabs API key in your <Link

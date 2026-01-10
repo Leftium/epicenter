@@ -3,6 +3,9 @@
 	import { Input } from '@epicenter/ui/input';
 	import { Link } from '@epicenter/ui/link';
 	import { settings } from '$lib/stores/settings.svelte';
+
+	// Local state for text inputs to avoid saving on every keystroke
+	let apiKey = $state(settings.value['apiKeys.openrouter']);
 </script>
 
 <Field.Field>
@@ -12,10 +15,8 @@
 		type="password"
 		placeholder="Your OpenRouter API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.openrouter'],
-			(value) => settings.updateKey('apiKeys.openrouter', value)
-		}
+		bind:value={apiKey}
+		onchange={() => settings.updateKey('apiKeys.openrouter', apiKey)}
 	/>
 	<Field.Description>
 		You can find your OpenRouter API key in your <Link

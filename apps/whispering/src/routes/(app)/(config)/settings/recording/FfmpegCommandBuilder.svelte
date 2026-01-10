@@ -30,10 +30,12 @@
 		globalOptions = $bindable(),
 		inputOptions = $bindable(),
 		outputOptions = $bindable(),
+		commitChanges,
 	}: {
 		globalOptions: string;
 		inputOptions: string;
 		outputOptions: string;
+		commitChanges?: () => void;
 	} = $props();
 
 	const getDevicesQuery = createQuery(
@@ -226,6 +228,7 @@
 		] as const;
 
 		outputOptions = options.join(' ');
+		commitChanges?.();
 	}
 </script>
 
@@ -240,6 +243,7 @@
 					globalOptions = FFMPEG_DEFAULT_GLOBAL_OPTIONS;
 					inputOptions = FFMPEG_DEFAULT_INPUT_OPTIONS;
 					outputOptions = FFMPEG_DEFAULT_OUTPUT_OPTIONS;
+					commitChanges?.();
 				}}
 				class="text-xs text-muted-foreground hover:text-foreground transition-colors"
 			>
@@ -264,6 +268,7 @@
 						class="h-6 w-6"
 						onclick={() => {
 							outputOptions = FFMPEG_DEFAULT_OUTPUT_OPTIONS;
+							commitChanges?.();
 						}}
 					>
 						<RotateCcw class="h-3 w-3" />
@@ -410,6 +415,7 @@
 						<Input
 							id="ffmpeg-global"
 							bind:value={globalOptions}
+							onchange={() => commitChanges?.()}
 							placeholder="-hide_banner -loglevel warning"
 							class="font-mono text-xs h-8 flex-1"
 						/>
@@ -419,7 +425,10 @@
 								variant="ghost"
 								size="icon"
 								class="h-8 w-8"
-								onclick={() => (globalOptions = FFMPEG_DEFAULT_GLOBAL_OPTIONS)}
+								onclick={() => {
+									globalOptions = FFMPEG_DEFAULT_GLOBAL_OPTIONS;
+									commitChanges?.();
+								}}
 							>
 								<RotateCcw class="h-3 w-3" />
 							</Button>
@@ -437,6 +446,7 @@
 						<Input
 							id="ffmpeg-input"
 							bind:value={inputOptions}
+							onchange={() => commitChanges?.()}
 							placeholder={FFMPEG_DEFAULT_INPUT_OPTIONS || 'Auto-detect'}
 							class="font-mono text-xs h-8 flex-1"
 						/>
@@ -446,7 +456,10 @@
 								variant="ghost"
 								size="icon"
 								class="h-8 w-8"
-								onclick={() => (inputOptions = FFMPEG_DEFAULT_INPUT_OPTIONS)}
+								onclick={() => {
+									inputOptions = FFMPEG_DEFAULT_INPUT_OPTIONS;
+									commitChanges?.();
+								}}
 							>
 								<RotateCcw class="h-3 w-3" />
 							</Button>
@@ -479,6 +492,7 @@
 						<Input
 							id="ffmpeg-output"
 							bind:value={outputOptions}
+							onchange={() => commitChanges?.()}
 							placeholder="Raw output options"
 							class="font-mono text-xs h-8 flex-1"
 						/>
@@ -490,6 +504,7 @@
 								class="h-8 w-8"
 								onclick={() => {
 									outputOptions = FFMPEG_DEFAULT_OUTPUT_OPTIONS;
+									commitChanges?.();
 								}}
 							>
 								<RotateCcw class="h-3 w-3" />

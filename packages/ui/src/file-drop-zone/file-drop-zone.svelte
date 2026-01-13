@@ -6,6 +6,7 @@
 	import { cn } from '#/utils/utils';
 	import UploadIcon from '@lucide/svelte/icons/upload';
 	import { useId } from 'bits-ui';
+	import { untrack } from 'svelte';
 
 	import type { FileDropZoneProps, FileRejectedReason } from './types';
 
@@ -25,11 +26,14 @@
 		...rest
 	}: FileDropZoneProps = $props();
 
-	if (maxFiles !== undefined && fileCount === undefined) {
-		console.warn(
-			'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
-		);
-	}
+	// One-time dev warning on mount - intentionally non-reactive
+	untrack(() => {
+		if (maxFiles !== undefined && fileCount === undefined) {
+			console.warn(
+				'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
+			);
+		}
+	});
 
 	let uploading = $state(false);
 

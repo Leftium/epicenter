@@ -13,6 +13,7 @@
 <script lang="ts">
 	import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
 	import { cn } from '#/utils/utils.js';
+	import { untrack } from 'svelte';
 
 	let {
 		ref = $bindable(null),
@@ -23,9 +24,12 @@
 		...restProps
 	}: ToggleGroupPrimitive.RootProps & ToggleVariants = $props();
 
-	setToggleGroupCtx({
-		variant,
-		size,
+	// setContext must run synchronously during init - intentionally non-reactive
+	untrack(() => {
+		setToggleGroupCtx({
+			variant,
+			size,
+		});
 	});
 </script>
 

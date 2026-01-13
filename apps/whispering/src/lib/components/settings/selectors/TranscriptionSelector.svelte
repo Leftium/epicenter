@@ -20,6 +20,7 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { untrack } from 'svelte';
 
 	let { class: className }: { class?: string } = $props();
 
@@ -41,7 +42,9 @@
 	);
 
 	const selfHostedServices = $derived(
-		TRANSCRIPTION_SERVICES.filter((service) => service.location === 'self-hosted'),
+		TRANSCRIPTION_SERVICES.filter(
+			(service) => service.location === 'self-hosted',
+		),
 	);
 
 	const localServices = $derived(
@@ -50,9 +53,9 @@
 
 	const combobox = useCombobox();
 
-	// Track which services are expanded
+	// Track which services are expanded (initial value only, user controls after)
 	let expandedServices = new SvelteSet(
-		selectedService ? [selectedService.id] : [],
+		untrack(() => (selectedService ? [selectedService.id] : [])),
 	);
 
 	function toggleServiceExpanded(serviceId: TranscriptionService['id']) {

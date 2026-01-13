@@ -6,6 +6,7 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { scale } from 'svelte/transition';
+	import { untrack } from 'svelte';
 	import type { CopyButtonProps } from './types';
 
 	let {
@@ -23,12 +24,14 @@
 		...rest
 	}: CopyButtonProps = $props();
 
-	// this way if the user passes text then the button will be the default size
-	if (size === 'icon' && children) {
-		size = 'default';
-	}
+	untrack(() => {
+		if (size === 'icon' && children) {
+			size = 'default';
+		}
+	});
 
-	const clipboard = new UseClipboard({ copyFn });
+	// Clipboard instance created once - copyFn is static, intentionally non-reactive
+	const clipboard = untrack(() => new UseClipboard({ copyFn }));
 </script>
 
 <Button

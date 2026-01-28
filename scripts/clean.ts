@@ -37,6 +37,11 @@ const subDirs = [
 	...(isNuke ? ['src-tauri/target'] : []),
 ] as const;
 
+/**
+ * Returns platform-specific directories where Tauri WebView stores app data
+ * and caches. Clearing these removes localStorage, cookies, and cached assets
+ * that can cause stale state during development.
+ */
 function getTauriCacheDirs(): string[] {
 	const platform = process.platform;
 	const home = homedir();

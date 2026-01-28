@@ -403,6 +403,50 @@ Both share the same dual-writer architecture and should use the single-writer pa
 | `get()` | 1 map lookup | 2 map lookups | Negligible |
 | Observer processing | Same | +1 pending.delete | Negligible |
 
+## Known Limitations
+
+### `delete()` + `has()` During Batch
+
+When `delete()` is called on a **pre-existing key** during a batch, `has()` will
+incorrectly return `true` until the batch ends.
+
+```typescript
+kv.set('foo', 'bar');  // foo exists in map
+
+ydoc.transact(() => {
+    kv.delete('foo');
+    kv.has('foo');     // Returns TRUE (incorrect!)
+});
+
+kv.has('foo');         // Returns FALSE (correct)
+```
+
+**Why this happens:**
+
+```
+delete('foo') during batch:
+  │
+  ├─► pending.delete('foo')     ← No-op (wasn't in pending)
+  │
+  └─► yarray.delete(index)      ← Queued, observer deferred until batch ends
+
+has('foo') during batch:
+  │
+  ├─► pending.has('foo')?       ← FALSE
+  │
+  └─► map.has('foo')?           ← TRUE (stale! observer hasn't updated map)
+```
+
+**Impact**: Low. This only affects code that:
+1. Deletes a pre-existing key during a batch, AND
+2. Checks `has()` for that same key within the same batch
+
+**Workaround**: If you need accurate `has()` after `delete()` in a batch, track
+deletions manually or restructure to avoid this pattern.
+
+**Why not fix it?**: Adding a `pendingDeletes` set would add complexity for a
+rare edge case. The current behavior is documented and tested.
+
 ## Risks
 
 1. **Internal API usage**: `_transaction` could change

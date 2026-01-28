@@ -447,6 +447,22 @@ export class YKeyValue<T> {
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
+	 *
+	 * ## Known Limitation
+	 *
+	 * When deleting a **pre-existing key** during a batch, `has()` will still
+	 * return `true` until the batch ends (because `map` hasn't been updated yet).
+	 *
+	 * ```typescript
+	 * kv.set('foo', 'bar');  // foo in map
+	 *
+	 * ydoc.transact(() => {
+	 *     kv.delete('foo');
+	 *     kv.has('foo');     // TRUE (stale map)
+	 * });
+	 *
+	 * kv.has('foo');         // FALSE (observer updated map)
+	 * ```
 	 */
 	delete(key: string): void {
 		// Remove from pending if present

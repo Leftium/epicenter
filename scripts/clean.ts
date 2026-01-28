@@ -19,9 +19,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-const isWindows = platform() === 'win32';
-const isMacOS = platform() === 'darwin';
-const isLinux = platform() === 'linux';
+const currentPlatform = platform();
 
 /** Check for --nuke flag */
 const isNuke = process.argv.includes('--nuke');
@@ -56,31 +54,26 @@ async function getWorkspaceDirs(): Promise<string[]> {
 }
 
 /** Tauri webview cache directories by platform */
-function getTauriCacheDirs(): string[] {
-	const home = homedir();
-
-	if (isMacOS) {
-		return [
-			join(home, 'Library/WebKit/whispering'),
-			join(home, 'Library/Caches/whispering'),
-		];
-	}
-
-	if (isLinux) {
-		return [
-			join(home, '.local/share/whispering'),
-			join(home, '.cache/whispering'),
-		];
-	}
-
-	if (isWindows) {
+const tauriCacheDirs = {
+	darwin: (home: string) => [
+		join(home, 'Library/WebKit/whispering'),
+		join(home, 'Library/Caches/whispering'),
+	],
+	linux: (home: string) => [
+		join(home, '.local/share/whispering'),
+		join(home, '.cache/whispering'),
+	],
+	win32: (home: string) => {
 		const appData = process.env.APPDATA || join(home, 'AppData/Roaming');
 		const localAppData =
 			process.env.LOCALAPPDATA || join(home, 'AppData/Local');
 		return [join(appData, 'whispering'), join(localAppData, 'whispering')];
-	}
+	},
+} as const satisfies Record<string, (home: string) => string[]>;
 
-	return [];
+function getTauriCacheDirs(): string[] {
+	const home = homedir();
+	return tauriCacheDirs[currentPlatform]?.(home) ?? [];
 }
 
 async function removeDir(path: string): Promise<boolean> {
@@ -154,7 +147,7 @@ async function main() {
 	}
 
 	// Print manual instructions for other platforms
-	if (!isMacOS && !isLinux && !isWindows) {
+	if (!(currentPlatform in tauriCacheDirs)) {
 		console.log('  ⚠ Unknown platform - webview cache not cleared\n');
 	}
 
@@ -171,7 +164,7 @@ async function main() {
    Or: DevTools → Application → Storage → Clear site data
 `);
 
-	if (!isMacOS) {
+	if (currentPlatform !== 'darwin') {
 		console.log(`🖥️  Tauri webview cache (manual removal if needed):`);
 		console.log(`   macOS:   ~/Library/WebKit/whispering
             ~/Library/Caches/whispering`);

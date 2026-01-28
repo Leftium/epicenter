@@ -31,6 +31,30 @@ export type FieldId = string & Brand<'FieldId'>;
 export type CellKey = `${RowId}${typeof KEY_SEPARATOR}${FieldId}`;
 
 // ════════════════════════════════════════════════════════════════════════════
+// Brand Constructors
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Brand a string as a RowId.
+ *
+ * @param id - The string to brand
+ * @returns The branded RowId
+ */
+export function rowId(id: string): RowId {
+	return id as RowId;
+}
+
+/**
+ * Brand a string as a FieldId.
+ *
+ * @param id - The string to brand
+ * @returns The branded FieldId
+ */
+export function fieldId(id: string): FieldId {
+	return id as FieldId;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // ID Generation
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -43,11 +67,11 @@ const nanoid = customAlphabet(ALPHABET, 12);
  *
  * @example
  * ```ts
- * const rowId = generateRowId(); // e.g., 'v1stgxr8z5jd' as RowId
+ * const id = generateRowId(); // e.g., 'v1stgxr8z5jd'
  * ```
  */
 export function generateRowId(): RowId {
-	return nanoid() as RowId;
+	return rowId(nanoid());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -80,7 +104,7 @@ export function validateId(id: string, type: string): void {
  *
  * @example
  * ```ts
- * cellKey(rowId, 'title' as FieldId); // 'abc123:title' as CellKey
+ * cellKey(rowId('abc123'), fieldId('title')); // 'abc123:title'
  * ```
  */
 export function cellKey(rowId: RowId, fieldId: FieldId): CellKey {
@@ -112,8 +136,8 @@ export function parseCellKey(key: CellKey | string): ParsedCellKey {
 		);
 	}
 	return {
-		rowId: key.slice(0, separatorIndex) as RowId,
-		fieldId: key.slice(separatorIndex + 1) as FieldId,
+		rowId: rowId(key.slice(0, separatorIndex)),
+		fieldId: fieldId(key.slice(separatorIndex + 1)),
 	};
 }
 

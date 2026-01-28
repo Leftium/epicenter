@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	cellKey,
-	type FieldId,
+	fieldId,
 	generateRowId,
 	hasPrefix,
 	parseCellKey,
-	type RowId,
+	rowId,
 	rowPrefix,
 	validateId,
 } from './keys';
@@ -49,8 +49,8 @@ describe('validateId', () => {
 
 describe('key construction', () => {
 	test('cellKey creates correct format (rowId:fieldId)', () => {
-		const key1 = cellKey('abc123' as RowId, 'title' as FieldId);
-		const key2 = cellKey('row1' as RowId, 'views' as FieldId);
+		const key1 = cellKey(rowId('abc123'), fieldId('title'));
+		const key2 = cellKey(rowId('row1'), fieldId('views'));
 		expect<string>(key1).toBe('abc123:title');
 		expect<string>(key2).toBe('row1:views');
 	});
@@ -79,8 +79,8 @@ describe('key parsing', () => {
 
 describe('prefix utilities', () => {
 	test('rowPrefix creates correct format (rowId:)', () => {
-		expect<string>(rowPrefix('row1' as RowId)).toBe('row1:');
-		expect<string>(rowPrefix('abc123' as RowId)).toBe('abc123:');
+		expect<string>(rowPrefix(rowId('row1'))).toBe('row1:');
+		expect<string>(rowPrefix(rowId('abc123'))).toBe('abc123:');
 	});
 
 	test('hasPrefix checks correctly', () => {

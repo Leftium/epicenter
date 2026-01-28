@@ -46,8 +46,8 @@ async function main() {
 			: '🧹 Cleaning Epicenter monorepo...\n',
 	);
 
-	// Get all workspace directories
-	const workspaceDirs = (
+	// Discover all monorepo package roots (apps/*, packages/*, examples/*)
+	const packageRoots = (
 		await Promise.all(
 			['apps', 'packages', 'examples'].map(async (parent) => {
 				try {
@@ -65,8 +65,8 @@ async function main() {
 	const dirsToRemove = [
 		'.turbo',
 		'node_modules',
-		...workspaceDirs.flatMap((workspace) =>
-			subDirs.map((subDir) => join(workspace, subDir)),
+		...packageRoots.flatMap((root) =>
+			subDirs.map((subDir) => join(root, subDir)),
 		),
 	];
 

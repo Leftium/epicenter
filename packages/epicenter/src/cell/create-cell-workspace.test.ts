@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createCellWorkspace } from './create-cell-workspace';
-import type { CellWorkspaceClient, TableStore, WorkspaceSchema } from './types';
+import type { CellWorkspaceClient, TableStore, WorkspaceDefinition } from './types';
 
 // Default test definition with posts table
-const testDefinition: WorkspaceSchema = {
+const testDefinition: WorkspaceDefinition = {
 	name: 'Test Workspace',
 	description: 'A workspace for testing',
 	tables: {
@@ -579,7 +579,7 @@ describe('type validation', () => {
 	const makeDefinition = (
 		fieldName: string,
 		fieldType: string,
-	): WorkspaceSchema => ({
+	): WorkspaceDefinition => ({
 		name: 'Test',
 		tables: {
 			test: {

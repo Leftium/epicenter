@@ -10,7 +10,7 @@ import {
 	removeTable,
 	stringifySchema,
 } from './schema-file';
-import type { SchemaTableDefinition, WorkspaceSchema } from './types';
+import type { SchemaTableDefinition, WorkspaceDefinition } from './types';
 
 describe('parseSchema', () => {
 	test('parses valid schema', () => {
@@ -137,7 +137,7 @@ describe('parseSchema', () => {
 
 describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
-		const schema: WorkspaceSchema = {
+		const schema: WorkspaceDefinition = {
 			name: 'Test',
 			tables: {
 				posts: {

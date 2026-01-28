@@ -21,7 +21,7 @@ A layered API design that exposes low-level control while providing high-level c
 ## Data Types (Shared Across All Layers)
 
 ```rust
-pub struct TranscriptionResult {
+pub struct Transcript {
     pub text: String,
 
     // Result-level finality
@@ -62,6 +62,15 @@ pub struct Word {
 - `raw` preserves full backend response for debugging or accessing niche fields
 - Batch API should also return this type (with `is_final: true`, `is_endpoint: true` always)
 
+### Type Naming Strategy
+
+The new type is named `Transcript` (not `TranscriptionResult`) to avoid collision with the existing API:
+
+- **`Transcript`** - new rich type with streaming fields
+- **`TranscriptionResult`** - old type, deprecated but preserved for backward compatibility
+
+In a future major version, `Transcript` may be renamed to `TranscriptionResult` once the old type is removed.
+
 ### API Survey Reference
 
 | API            | Result Finality          | Endpoint Detection             | Word Confidence/Stability       |
@@ -76,18 +85,41 @@ pub struct Word {
 ### Breaking Change: Batch API
 
 ```rust
-// Current - takes ownership, segments nested inside result
+// OLD (deprecated) - takes ownership, segments nested inside result
+#[deprecated(since = "0.2.0", note = "Use transcribe() instead")]
 fn transcribe_samples(&mut self, samples: Vec<f32>, ...) -> Result<TranscriptionResult, Error>;
 // where TranscriptionResult has: segments: Option<Vec<TranscriptionSegment>>
 
-// Proposed - borrows, flat list of results
-fn transcribe_samples(&mut self, samples: &[f32], ...) -> Result<Vec<TranscriptionResult>, Error>;
+// NEW - borrows, flat list of results
+fn transcribe(&mut self, samples: &[f32], ...) -> Result<Vec<Transcript>, Error>;
+fn transcribe_file(&mut self, path: &Path, ...) -> Result<Vec<Transcript>, Error>;
 ```
 
-Two changes:
+Changes:
 
-1. `Vec<f32>` → `&[f32]` - borrow instead of taking ownership
-2. Returns `Vec<TranscriptionResult>` - each result is one segment, removes nested `segments` field
+1. **Function rename:** `transcribe_samples` → `transcribe`
+2. **Borrow:** `Vec<f32>` → `&[f32]`
+3. **New return type:** `Vec<Transcript>` - each item is one segment, removes nested `segments` field
+4. **Type rename:** `TranscriptionResult` → `Transcript` (old type preserved for deprecated API)
+
+The deprecated `transcribe_samples` is a thin wrapper:
+
+```rust
+#[deprecated(since = "0.2.0", note = "Use transcribe() instead")]
+fn transcribe_samples(&mut self, samples: Vec<f32>, params: Option<Self::InferenceParams>)
+    -> Result<TranscriptionResult, Box<dyn std::error::Error>>
+{
+    let transcripts = self.transcribe(&samples, params)?;
+    Ok(TranscriptionResult {
+        text: transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" "),
+        segments: Some(transcripts.into_iter().map(|t| TranscriptionSegment {
+            start: t.start.unwrap_or(0.0),
+            end: t.end.unwrap_or(0.0),
+            text: t.text,
+        }).collect()),
+    })
+}
+```
 
 ---
 
@@ -101,7 +133,7 @@ pub trait StreamingDecoder {
     fn input_finished(&mut self);  // signal end of stream, flush remaining frames
     fn is_ready(&self) -> bool;
     fn decode(&mut self);
-    fn get_result(&self) -> TranscriptionResult;
+    fn get_result(&self) -> Transcript;
     fn is_endpoint(&self) -> bool;
     fn reset(&mut self);
 }
@@ -127,7 +159,7 @@ If we hide this loop and only return one result, **intermediate partials are los
 
 ```rust
 /// Drain all pending results from decoder (runs decode loop internally)
-pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<TranscriptionResult> {
+pub fn drain_results(decoder: &mut impl StreamingDecoder) -> Vec<Transcript> {
     let mut results = vec![];
     while decoder.is_ready() {
         decoder.decode();
@@ -179,7 +211,7 @@ impl Engine {
 
     pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
     where
-        F: Fn(Result<TranscriptionResult, Error>) -> Result<(), Error> + Send + 'static;
+        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static;
 
     pub fn push_audio(&self, samples: &[f32]);
 
@@ -216,7 +248,7 @@ High level is built on low level:
 impl Engine {
     pub fn start_listening<F>(&self, callback: F) -> Result<(), Error>
     where
-        F: Fn(Result<TranscriptionResult, Error>) -> Result<(), Error> + Send + 'static
+        F: Fn(Result<Transcript, Error>) -> Result<(), Error> + Send + 'static
     {
         let (audio_tx, audio_rx) = channel();
         let (result_tx, result_rx) = channel();
@@ -311,9 +343,10 @@ CONSUMER THREAD                 transcribe-rs INTERNAL THREADS
 
 ## Comparison with Original Proposal
 
-| Aspect               | Original B++                    | Revised                           |
-| -------------------- | ------------------------------- | --------------------------------- |
-| Result type          | `Partial(text)` / `Final(text)` | Rich `TranscriptionResult` struct |
-| Layers               | High only                       | Low + High                        |
-| Intermediate results | Lost in decode loop             | All captured via `drain_results`  |
-| `samples` param      | Unclear                         | `&[f32]` (borrow, not owned)      |
+| Aspect               | Original B++                    | Revised                          |
+| -------------------- | ------------------------------- | -------------------------------- |
+| Result type          | `Partial(text)` / `Final(text)` | Rich `Transcript` struct         |
+| Layers               | High only                       | Low + High                       |
+| Intermediate results | Lost in decode loop             | All captured via `drain_results` |
+| `samples` param      | Unclear                         | `&[f32]` (borrow, not owned)     |
+| Batch function       | `transcribe_samples(Vec<f32>)`  | `transcribe(&[f32])`             |

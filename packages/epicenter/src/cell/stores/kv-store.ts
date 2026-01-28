@@ -18,7 +18,7 @@ import { validateId } from '../keys';
 /**
  * Y.Array name for KV store.
  */
-export const KV_ARRAY_NAME = 'cell:kv';
+export const KV_ARRAY_NAME = 'kv';
 
 /**
  * Create a KV store backed by YKeyValueLww.

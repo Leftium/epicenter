@@ -1,13 +1,15 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import * as Y from 'yjs';
 import { createCellWorkspace } from './create-cell-workspace';
-import type { CellWorkspaceClient, SchemaTableDefinition } from './types';
+import type { CellWorkspaceClient, SchemaTableDefinition, TableStore } from './types';
 
 describe('createCellWorkspace', () => {
 	let workspace: CellWorkspaceClient;
+	let posts: TableStore;
 
 	beforeEach(() => {
 		workspace = createCellWorkspace({ id: 'test-workspace' });
+		posts = workspace.table('posts');
 	});
 
 	describe('basic functionality', () => {
@@ -22,158 +24,176 @@ describe('createCellWorkspace', () => {
 			const ws = createCellWorkspace({ id: 'test', ydoc: existingYdoc });
 			expect(ws.ydoc).toBe(existingYdoc);
 		});
+
+		test('table() returns cached instance', () => {
+			const posts1 = workspace.table('posts');
+			const posts2 = workspace.table('posts');
+			expect(posts1).toBe(posts2);
+		});
+
+		test('different tables return different stores', () => {
+			const users = workspace.table('users');
+			expect(posts).not.toBe(users);
+			expect(posts.tableId).toBe('posts');
+			expect(users.tableId).toBe('users');
+		});
 	});
 
-	describe('rows store', () => {
+	describe('row operations', () => {
 		test('creates row with auto-generated id', () => {
-			const rowId = workspace.rows.create('posts');
+			const rowId = posts.createRow();
 			expect(rowId).toHaveLength(12);
-			expect(workspace.rows.has('posts', rowId)).toBe(true);
+			expect(posts.getRow(rowId)).toBeDefined();
 		});
 
 		test('creates row with custom id', () => {
-			const rowId = workspace.rows.create('posts', 'custom-id');
+			const rowId = posts.createRow('custom-id');
 			expect(rowId).toBe('custom-id');
-			expect(workspace.rows.has('posts', 'custom-id')).toBe(true);
+			expect(posts.getRow('custom-id')).toBeDefined();
 		});
 
 		test('auto-assigns order', () => {
-			const row1 = workspace.rows.create('posts');
-			const row2 = workspace.rows.create('posts');
-			const row3 = workspace.rows.create('posts');
+			const row1 = posts.createRow('row1');
+			const row2 = posts.createRow('row2');
+			const row3 = posts.createRow('row3');
 
-			expect(workspace.rows.get('posts', row1)?.order).toBe(1);
-			expect(workspace.rows.get('posts', row2)?.order).toBe(2);
-			expect(workspace.rows.get('posts', row3)?.order).toBe(3);
+			expect(posts.get(row1, '_order')).toBe(1);
+			expect(posts.get(row2, '_order')).toBe(2);
+			expect(posts.get(row3, '_order')).toBe(3);
 		});
 
 		test('creates row with custom order', () => {
-			const rowId = workspace.rows.create('posts', 'row1', 100);
-			expect(workspace.rows.get('posts', rowId)?.order).toBe(100);
+			const rowId = posts.createRow('row1', 100);
+			expect(posts.get(rowId, '_order')).toBe(100);
 		});
 
 		test('soft-deletes row', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.rows.delete('posts', rowId);
+			const rowId = posts.createRow();
+			posts.deleteRow(rowId);
 
-			const meta = workspace.rows.get('posts', rowId);
-			expect(meta?.deletedAt).not.toBeNull();
+			const deletedAt = posts.get(rowId, '_deletedAt');
+			expect(deletedAt).not.toBeNull();
+			expect(typeof deletedAt).toBe('number');
 		});
 
 		test('restores soft-deleted row', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.rows.delete('posts', rowId);
-			workspace.rows.restore('posts', rowId);
+			const rowId = posts.createRow();
+			posts.deleteRow(rowId);
+			posts.restoreRow(rowId);
 
-			const meta = workspace.rows.get('posts', rowId);
-			expect(meta?.deletedAt).toBeNull();
+			expect(posts.get(rowId, '_deletedAt')).toBeNull();
 		});
 
-		test('getByTable returns all rows sorted by order', () => {
-			workspace.rows.create('posts', 'row3', 3);
-			workspace.rows.create('posts', 'row1', 1);
-			workspace.rows.create('posts', 'row2', 2);
+		test('getRows returns active rows sorted by order', () => {
+			posts.createRow('row3', 3);
+			posts.createRow('row1', 1);
+			posts.createRow('row2', 2);
 
-			const rows = workspace.rows.getByTable('posts');
+			const rows = posts.getRows();
 			expect(rows.map((r) => r.id)).toEqual(['row1', 'row2', 'row3']);
 		});
 
-		test('getActiveByTable excludes soft-deleted rows', () => {
-			const row1 = workspace.rows.create('posts', 'row1');
-			workspace.rows.create('posts', 'row2');
-			workspace.rows.delete('posts', row1);
+		test('getRows excludes soft-deleted rows', () => {
+			posts.createRow('row1');
+			posts.createRow('row2');
+			posts.deleteRow('row1');
 
-			const active = workspace.rows.getActiveByTable('posts');
-			expect(active.map((r) => r.id)).toEqual(['row2']);
+			const rows = posts.getRows();
+			expect(rows.map((r) => r.id)).toEqual(['row2']);
+		});
+
+		test('getAllRows includes soft-deleted rows', () => {
+			posts.createRow('row1');
+			posts.createRow('row2');
+			posts.deleteRow('row1');
+
+			const rows = posts.getAllRows();
+			expect(rows.map((r) => r.id)).toContain('row1');
+			expect(rows.map((r) => r.id)).toContain('row2');
 		});
 
 		test('reorders row', () => {
-			const rowId = workspace.rows.create('posts', 'row1', 1);
-			workspace.rows.reorder('posts', rowId, 100);
-			expect(workspace.rows.get('posts', rowId)?.order).toBe(100);
+			const rowId = posts.createRow('row1', 1);
+			posts.reorderRow(rowId, 100);
+			expect(posts.get(rowId, '_order')).toBe(100);
 		});
 
 		test('validates tableId does not contain colon', () => {
-			expect(() => workspace.rows.create('invalid:table')).toThrow(
+			expect(() => workspace.table('invalid:table')).toThrow(
 				"tableId cannot contain ':' character",
 			);
 		});
 
 		test('validates rowId does not contain colon', () => {
-			expect(() =>
-				workspace.rows.create('posts', 'invalid:id'),
-			).toThrow("rowId cannot contain ':' character");
+			expect(() => posts.createRow('invalid:id')).toThrow(
+				"rowId cannot contain ':' character",
+			);
 		});
 	});
 
-	describe('cells store', () => {
+	describe('cell operations', () => {
 		test('sets and gets cell value', () => {
-			workspace.cells.set('posts', 'row1', 'title', 'Hello World');
-			expect(workspace.cells.get('posts', 'row1', 'title')).toBe(
-				'Hello World',
-			);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello World');
+			expect(posts.get(rowId, 'title')).toBe('Hello World');
 		});
 
 		test('deletes cell value', () => {
-			workspace.cells.set('posts', 'row1', 'title', 'Hello');
-			workspace.cells.delete('posts', 'row1', 'title');
-			expect(workspace.cells.has('posts', 'row1', 'title')).toBe(false);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
+			posts.delete(rowId, 'title');
+			expect(posts.has(rowId, 'title')).toBe(false);
 		});
 
-		test('getByRow returns all cells for a row', () => {
-			workspace.cells.set('posts', 'row1', 'title', 'Hello');
-			workspace.cells.set('posts', 'row1', 'views', 100);
-			workspace.cells.set('posts', 'row1', 'published', true);
+		test('getRow returns all cells for a row', () => {
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
+			posts.set(rowId, 'views', 100);
+			posts.set(rowId, 'published', true);
 
-			const cells = workspace.cells.getByRow('posts', 'row1');
-			expect(cells.size).toBe(3);
-			expect(cells.get('title')).toBe('Hello');
-			expect(cells.get('views')).toBe(100);
-			expect(cells.get('published')).toBe(true);
-		});
-
-		test('getByRowFields returns specific fields', () => {
-			workspace.cells.set('posts', 'row1', 'title', 'Hello');
-			workspace.cells.set('posts', 'row1', 'views', 100);
-			workspace.cells.set('posts', 'row1', 'published', true);
-
-			const cells = workspace.cells.getByRowFields('posts', 'row1', [
-				'title',
-				'views',
-			]);
-			expect(cells.size).toBe(2);
-			expect(cells.get('title')).toBe('Hello');
-			expect(cells.get('views')).toBe(100);
-			expect(cells.has('published')).toBe(false);
+			const row = posts.getRow(rowId)!;
+			expect(row.title).toBe('Hello');
+			expect(row.views).toBe(100);
+			expect(row.published).toBe(true);
+			// Also includes metadata
+			expect(row._order).toBe(1);
+			expect(row._deletedAt).toBeNull();
 		});
 
 		test('stores various data types', () => {
-			workspace.cells.set('posts', 'row1', 'text', 'hello');
-			workspace.cells.set('posts', 'row1', 'number', 42);
-			workspace.cells.set('posts', 'row1', 'float', 3.14);
-			workspace.cells.set('posts', 'row1', 'bool', true);
-			workspace.cells.set('posts', 'row1', 'array', ['a', 'b']);
-			workspace.cells.set('posts', 'row1', 'object', { nested: 'value' });
-			workspace.cells.set('posts', 'row1', 'null', null);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'text', 'hello');
+			posts.set(rowId, 'number', 42);
+			posts.set(rowId, 'float', 3.14);
+			posts.set(rowId, 'bool', true);
+			posts.set(rowId, 'array', ['a', 'b']);
+			posts.set(rowId, 'object', { nested: 'value' });
+			posts.set(rowId, 'null', null);
 
-			expect(workspace.cells.get('posts', 'row1', 'text')).toBe('hello');
-			expect(workspace.cells.get('posts', 'row1', 'number')).toBe(42);
-			expect(workspace.cells.get('posts', 'row1', 'float')).toBe(3.14);
-			expect(workspace.cells.get('posts', 'row1', 'bool')).toBe(true);
-			expect(workspace.cells.get('posts', 'row1', 'array')).toEqual([
-				'a',
-				'b',
-			]);
-			expect(workspace.cells.get('posts', 'row1', 'object')).toEqual({
-				nested: 'value',
-			});
-			expect(workspace.cells.get('posts', 'row1', 'null')).toBeNull();
+			expect(posts.get(rowId, 'text')).toBe('hello');
+			expect(posts.get(rowId, 'number')).toBe(42);
+			expect(posts.get(rowId, 'float')).toBe(3.14);
+			expect(posts.get(rowId, 'bool')).toBe(true);
+			expect(posts.get(rowId, 'array')).toEqual(['a', 'b']);
+			expect(posts.get(rowId, 'object')).toEqual({ nested: 'value' });
+			expect(posts.get(rowId, 'null')).toBeNull();
 		});
 
 		test('validates fieldId does not contain colon', () => {
-			expect(() =>
-				workspace.cells.set('posts', 'row1', 'invalid:field', 'value'),
-			).toThrow("fieldId cannot contain ':' character");
+			const rowId = posts.createRow();
+			expect(() => posts.set(rowId, 'invalid:field', 'value')).toThrow(
+				"fieldId cannot contain ':' character",
+			);
+		});
+
+		test('validates fieldId is not reserved', () => {
+			const rowId = posts.createRow();
+			expect(() => posts.set(rowId, '_order', 999)).toThrow(
+				'fieldId "_order" is reserved',
+			);
+			expect(() => posts.set(rowId, '_deletedAt', null)).toThrow(
+				'fieldId "_deletedAt" is reserved',
+			);
 		});
 	});
 
@@ -200,39 +220,41 @@ describe('createCellWorkspace', () => {
 		});
 	});
 
-	describe('getRowsWithCells', () => {
-		test('returns rows with their cell values', () => {
-			const row1 = workspace.rows.create('posts');
-			const row2 = workspace.rows.create('posts');
+	describe('getRowsWithoutMeta', () => {
+		test('returns rows with cells separated from metadata', () => {
+			const row1 = posts.createRow();
+			const row2 = posts.createRow();
 
-			workspace.cells.set('posts', row1, 'title', 'First Post');
-			workspace.cells.set('posts', row1, 'views', 100);
-			workspace.cells.set('posts', row2, 'title', 'Second Post');
+			posts.set(row1, 'title', 'First Post');
+			posts.set(row1, 'views', 100);
+			posts.set(row2, 'title', 'Second Post');
 
-			const rows = workspace.getRowsWithCells('posts');
+			const rows = posts.getRowsWithoutMeta();
 
 			expect(rows).toHaveLength(2);
 			expect(rows[0]!.id).toBe(row1);
+			expect(rows[0]!.order).toBe(1);
+			expect(rows[0]!.deletedAt).toBeNull();
 			expect(rows[0]!.cells).toEqual({ title: 'First Post', views: 100 });
 			expect(rows[1]!.id).toBe(row2);
 			expect(rows[1]!.cells).toEqual({ title: 'Second Post' });
 		});
 
 		test('excludes soft-deleted rows', () => {
-			const row1 = workspace.rows.create('posts');
-			const row2 = workspace.rows.create('posts');
-			workspace.cells.set('posts', row1, 'title', 'First');
-			workspace.cells.set('posts', row2, 'title', 'Second');
+			const row1 = posts.createRow();
+			const row2 = posts.createRow();
+			posts.set(row1, 'title', 'First');
+			posts.set(row2, 'title', 'Second');
 
-			workspace.rows.delete('posts', row1);
+			posts.deleteRow(row1);
 
-			const rows = workspace.getRowsWithCells('posts');
+			const rows = posts.getRowsWithoutMeta();
 			expect(rows).toHaveLength(1);
 			expect(rows[0]!.cells.title).toBe('Second');
 		});
 	});
 
-	describe('getTypedRowsWithCells', () => {
+	describe('getTypedRows', () => {
 		const postsSchema: SchemaTableDefinition = {
 			name: 'Blog Posts',
 			fields: {
@@ -243,12 +265,12 @@ describe('createCellWorkspace', () => {
 		};
 
 		test('validates cell types against schema', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.cells.set('posts', rowId, 'title', 'Hello');
-			workspace.cells.set('posts', rowId, 'views', 100);
-			workspace.cells.set('posts', rowId, 'published', true);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
+			posts.set(rowId, 'views', 100);
+			posts.set(rowId, 'published', true);
 
-			const rows = workspace.getTypedRowsWithCells('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts', postsSchema);
 			expect(rows).toHaveLength(1);
 
 			const row = rows[0]!;
@@ -270,12 +292,12 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('marks type mismatches as invalid', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.cells.set('posts', rowId, 'title', 123); // Should be text
-			workspace.cells.set('posts', rowId, 'views', 'not a number'); // Should be integer
-			workspace.cells.set('posts', rowId, 'published', 'yes'); // Should be boolean
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 123); // Should be text
+			posts.set(rowId, 'views', 'not a number'); // Should be integer
+			posts.set(rowId, 'published', 'yes'); // Should be boolean
 
-			const rows = workspace.getTypedRowsWithCells('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts', postsSchema);
 			const row = rows[0]!;
 
 			expect(row.cells.title!.valid).toBe(false);
@@ -284,11 +306,11 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('identifies missing fields', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.cells.set('posts', rowId, 'title', 'Hello');
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
 			// views and published are missing
 
-			const rows = workspace.getTypedRowsWithCells('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts', postsSchema);
 			const row = rows[0]!;
 
 			expect(row.missingFields).toContain('views');
@@ -297,12 +319,12 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('identifies extra fields not in schema', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.cells.set('posts', rowId, 'title', 'Hello');
-			workspace.cells.set('posts', rowId, 'unknownField', 'value');
-			workspace.cells.set('posts', rowId, 'anotherExtra', 42);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
+			posts.set(rowId, 'unknownField', 'value');
+			posts.set(rowId, 'anotherExtra', 42);
 
-			const rows = workspace.getTypedRowsWithCells('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts', postsSchema);
 			const row = rows[0]!;
 
 			expect(row.extraFields).toContain('unknownField');
@@ -311,10 +333,10 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('handles null/undefined values as valid', () => {
-			const rowId = workspace.rows.create('posts');
-			workspace.cells.set('posts', rowId, 'title', null);
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', null);
 
-			const rows = workspace.getTypedRowsWithCells('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts', postsSchema);
 			const row = rows[0]!;
 
 			expect(row.cells.title!.valid).toBe(true);
@@ -328,45 +350,76 @@ describe('createCellWorkspace', () => {
 			const ws2 = createCellWorkspace({ id: 'sync-test' });
 
 			// Create row in ws1
-			const rowId = ws1.rows.create('posts', 'row1');
-			ws1.cells.set('posts', rowId, 'title', 'Hello from WS1');
+			const posts1 = ws1.table('posts');
+			const rowId = posts1.createRow('row1');
+			posts1.set(rowId, 'title', 'Hello from WS1');
 
 			// Sync ws1 -> ws2
 			const update1 = Y.encodeStateAsUpdate(ws1.ydoc);
 			Y.applyUpdate(ws2.ydoc, update1);
 
 			// Verify ws2 has the data
-			expect(ws2.rows.has('posts', 'row1')).toBe(true);
-			expect(ws2.cells.get('posts', 'row1', 'title')).toBe(
-				'Hello from WS1',
-			);
+			const posts2 = ws2.table('posts');
+			expect(posts2.getRow('row1')).toBeDefined();
+			expect(posts2.get('row1', 'title')).toBe('Hello from WS1');
 
 			// Make change in ws2
-			ws2.cells.set('posts', rowId, 'title', 'Updated in WS2');
+			posts2.set(rowId, 'title', 'Updated in WS2');
 
 			// Sync ws2 -> ws1
 			const update2 = Y.encodeStateAsUpdate(ws2.ydoc);
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Verify ws1 has the update
-			expect(ws1.cells.get('posts', 'row1', 'title')).toBe(
-				'Updated in WS2',
-			);
+			expect(posts1.get('row1', 'title')).toBe('Updated in WS2');
 		});
 
-		test('last-write-wins for concurrent edits', async () => {
+		test('last-write-wins for concurrent cell edits', async () => {
 			const ws1 = createCellWorkspace({ id: 'lww-test' });
 			const ws2 = createCellWorkspace({ id: 'lww-test' });
 
-			// Both create the same row
-			ws1.rows.create('posts', 'row1');
-			ws1.cells.set('posts', 'row1', 'title', 'From WS1');
+			// WS1 creates the row first
+			const posts1 = ws1.table('posts');
+			posts1.createRow('row1');
+			posts1.set('row1', 'title', 'Initial');
 
-			// Small delay to ensure different timestamps
+			// Sync ws1 -> ws2 so both share the same underlying Y.Array
+			Y.applyUpdate(ws2.ydoc, Y.encodeStateAsUpdate(ws1.ydoc));
+
+			// Now both can make concurrent edits to different cells
+			const posts2 = ws2.table('posts');
+			posts1.set('row1', 'title', 'From WS1');
+			posts2.set('row1', 'views', 999);
+
+			// Sync both ways
+			const update1 = Y.encodeStateAsUpdate(ws1.ydoc);
+			const update2 = Y.encodeStateAsUpdate(ws2.ydoc);
+			Y.applyUpdate(ws2.ydoc, update1);
+			Y.applyUpdate(ws1.ydoc, update2);
+
+			// Both should have BOTH edits (different cells, both win)
+			expect(posts1.get('row1', 'title')).toBe('From WS1');
+			expect(posts1.get('row1', 'views')).toBe(999);
+			expect(posts2.get('row1', 'title')).toBe('From WS1');
+			expect(posts2.get('row1', 'views')).toBe(999);
+		});
+
+		test('same cell concurrent edit - later timestamp wins', async () => {
+			const ws1 = createCellWorkspace({ id: 'lww-same-cell' });
+			const ws2 = createCellWorkspace({ id: 'lww-same-cell' });
+
+			// WS1 creates the row first
+			const posts1 = ws1.table('posts');
+			posts1.createRow('row1');
+
+			// Sync so both share the Y.Array
+			Y.applyUpdate(ws2.ydoc, Y.encodeStateAsUpdate(ws1.ydoc));
+
+			// Both edit the same cell
+			posts1.set('row1', 'title', 'From WS1');
 			await new Promise((resolve) => setTimeout(resolve, 2));
-
-			ws2.rows.create('posts', 'row1');
-			ws2.cells.set('posts', 'row1', 'title', 'From WS2 (later)');
+			const posts2 = ws2.table('posts');
+			posts2.set('row1', 'title', 'From WS2 (later)');
 
 			// Sync both ways
 			const update1 = Y.encodeStateAsUpdate(ws1.ydoc);
@@ -375,46 +428,46 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have the later value (WS2)
-			expect(ws1.cells.get('posts', 'row1', 'title')).toBe(
-				'From WS2 (later)',
-			);
-			expect(ws2.cells.get('posts', 'row1', 'title')).toBe(
-				'From WS2 (later)',
-			);
+			expect(posts1.get('row1', 'title')).toBe('From WS2 (later)');
+			expect(posts2.get('row1', 'title')).toBe('From WS2 (later)');
 		});
 	});
 
 	describe('observers', () => {
-		test('rows observer fires on add', () => {
+		test('observe fires on cell add', () => {
 			const events: any[] = [];
-			workspace.rows.observe((changes) => events.push(...changes));
+			posts.observe((changes) => events.push(...changes));
 
-			workspace.rows.create('posts', 'row1');
+			posts.createRow('row1');
 
-			expect(events).toHaveLength(1);
-			expect(events[0].type).toBe('add');
-			expect(events[0].key).toBe('posts:row1');
+			// Should have events for _order and _deletedAt
+			expect(events.length).toBeGreaterThanOrEqual(2);
+			const keys = events.map((e) => e.key);
+			expect(keys).toContain('row1:_order');
+			expect(keys).toContain('row1:_deletedAt');
 		});
 
-		test('cells observer fires on add', () => {
+		test('observe fires on user cell changes', () => {
+			const rowId = posts.createRow();
 			const events: any[] = [];
-			workspace.cells.observe((changes) => events.push(...changes));
+			posts.observe((changes) => events.push(...changes));
 
-			workspace.cells.set('posts', 'row1', 'title', 'Hello');
+			posts.set(rowId, 'title', 'Hello');
 
 			expect(events).toHaveLength(1);
 			expect(events[0].type).toBe('add');
-			expect(events[0].key).toBe('posts:row1:title');
+			expect(events[0].key).toBe(`${rowId}:title`);
 			expect(events[0].value).toBe('Hello');
 		});
 
-		test('cells observer fires on update', () => {
-			workspace.cells.set('posts', 'row1', 'title', 'Original');
+		test('observe fires on cell update', () => {
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Original');
 
 			const events: any[] = [];
-			workspace.cells.observe((changes) => events.push(...changes));
+			posts.observe((changes) => events.push(...changes));
 
-			workspace.cells.set('posts', 'row1', 'title', 'Updated');
+			posts.set(rowId, 'title', 'Updated');
 
 			expect(events).toHaveLength(1);
 			expect(events[0].type).toBe('update');
@@ -436,21 +489,18 @@ describe('createCellWorkspace', () => {
 	});
 
 	describe('batch', () => {
-		test('executes multiple operations in sequence', () => {
-			// Note: batch wraps operations in a Y.Doc transaction, but each store
-			// internally uses transactions that may emit separate updates.
-			// The primary benefit is atomicity - if any operation fails, all are rolled back.
-
+		test('executes multiple operations', () => {
 			workspace.batch((ws) => {
-				ws.rows.create('posts', 'row1');
-				ws.cells.set('posts', 'row1', 'title', 'Hello');
-				ws.cells.set('posts', 'row1', 'views', 100);
+				const p = ws.table('posts');
+				p.createRow('row1');
+				p.set('row1', 'title', 'Hello');
+				p.set('row1', 'views', 100);
 			});
 
 			// Verify all writes completed
-			expect(workspace.rows.has('posts', 'row1')).toBe(true);
-			expect(workspace.cells.get('posts', 'row1', 'title')).toBe('Hello');
-			expect(workspace.cells.get('posts', 'row1', 'views')).toBe(100);
+			expect(posts.getRow('row1')).toBeDefined();
+			expect(posts.get('row1', 'title')).toBe('Hello');
+			expect(posts.get('row1', 'views')).toBe(100);
 		});
 	});
 });
@@ -463,14 +513,15 @@ describe('type validation', () => {
 			fields: { text: { name: 'Text', type: 'text', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
-		ws.cells.set('test', rowId, 'text', 'valid string');
+		const t = ws.table('test');
+		const rowId = t.createRow();
+		t.set(rowId, 'text', 'valid string');
 
-		const rows = ws.getTypedRowsWithCells('test', schema);
+		const rows = ws.getTypedRows('test', schema);
 		expect(rows[0]!.cells.text!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'text', 123);
-		const rows2 = ws.getTypedRowsWithCells('test', schema);
+		t.set(rowId, 'text', 123);
+		const rows2 = ws.getTypedRows('test', schema);
 		expect(rows2[0]!.cells.text!.valid).toBe(false);
 	});
 
@@ -481,22 +532,17 @@ describe('type validation', () => {
 			fields: { num: { name: 'Num', type: 'integer', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
+		const t = ws.table('test');
+		const rowId = t.createRow();
 
-		ws.cells.set('test', rowId, 'num', 42);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(true);
+		t.set(rowId, 'num', 42);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'num', 3.14);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(false);
+		t.set(rowId, 'num', 3.14);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
 
-		ws.cells.set('test', rowId, 'num', '42');
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(false);
+		t.set(rowId, 'num', '42');
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
 	});
 
 	test('real type validation', () => {
@@ -506,22 +552,17 @@ describe('type validation', () => {
 			fields: { num: { name: 'Num', type: 'real', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
+		const t = ws.table('test');
+		const rowId = t.createRow();
 
-		ws.cells.set('test', rowId, 'num', 3.14);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(true);
+		t.set(rowId, 'num', 3.14);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'num', 42);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(true);
+		t.set(rowId, 'num', 42);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'num', '3.14');
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.num!.valid,
-		).toBe(false);
+		t.set(rowId, 'num', '3.14');
+		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
 	});
 
 	test('boolean type validation', () => {
@@ -531,27 +572,20 @@ describe('type validation', () => {
 			fields: { flag: { name: 'Flag', type: 'boolean', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
+		const t = ws.table('test');
+		const rowId = t.createRow();
 
-		ws.cells.set('test', rowId, 'flag', true);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.flag!.valid,
-		).toBe(true);
+		t.set(rowId, 'flag', true);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'flag', false);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.flag!.valid,
-		).toBe(true);
+		t.set(rowId, 'flag', false);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'flag', 1);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.flag!.valid,
-		).toBe(false);
+		t.set(rowId, 'flag', 1);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(false);
 
-		ws.cells.set('test', rowId, 'flag', 'true');
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.flag!.valid,
-		).toBe(false);
+		t.set(rowId, 'flag', 'true');
+		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(false);
 	});
 
 	test('tags type validation', () => {
@@ -561,27 +595,20 @@ describe('type validation', () => {
 			fields: { tags: { name: 'Tags', type: 'tags', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
+		const t = ws.table('test');
+		const rowId = t.createRow();
 
-		ws.cells.set('test', rowId, 'tags', ['a', 'b', 'c']);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.tags!.valid,
-		).toBe(true);
+		t.set(rowId, 'tags', ['a', 'b', 'c']);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'tags', []);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.tags!.valid,
-		).toBe(true);
+		t.set(rowId, 'tags', []);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'tags', [1, 2, 3]);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.tags!.valid,
-		).toBe(false);
+		t.set(rowId, 'tags', [1, 2, 3]);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(false);
 
-		ws.cells.set('test', rowId, 'tags', 'not-array');
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.tags!.valid,
-		).toBe(false);
+		t.set(rowId, 'tags', 'not-array');
+		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(false);
 	});
 
 	test('date/datetime type validation', () => {
@@ -591,21 +618,16 @@ describe('type validation', () => {
 			fields: { date: { name: 'Date', type: 'date', order: 1 } },
 		};
 
-		const rowId = ws.rows.create('test');
+		const t = ws.table('test');
+		const rowId = t.createRow();
 
-		ws.cells.set('test', rowId, 'date', '2024-01-15');
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.date!.valid,
-		).toBe(true);
+		t.set(rowId, 'date', '2024-01-15');
+		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'date', 1705276800000);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.date!.valid,
-		).toBe(true);
+		t.set(rowId, 'date', 1705276800000);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(true);
 
-		ws.cells.set('test', rowId, 'date', true);
-		expect(
-			ws.getTypedRowsWithCells('test', schema)[0]!.cells.date!.valid,
-		).toBe(false);
+		t.set(rowId, 'date', true);
+		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(false);
 	});
 });

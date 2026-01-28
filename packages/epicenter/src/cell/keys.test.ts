@@ -2,14 +2,15 @@ import { describe, test, expect } from 'bun:test';
 import {
 	generateRowId,
 	validateId,
-	rowKey,
+	validateFieldId,
 	cellKey,
-	parseRowKey,
 	parseCellKey,
-	tablePrefix,
-	rowCellPrefix,
+	rowPrefix,
 	hasPrefix,
-	extractAfterPrefix,
+	isReservedField,
+	ROW_ORDER_FIELD,
+	ROW_DELETED_AT_FIELD,
+	RESERVED_FIELDS,
 } from './keys';
 
 describe('generateRowId', () => {
@@ -49,40 +50,74 @@ describe('validateId', () => {
 	});
 });
 
-describe('key construction', () => {
-	test('rowKey creates correct format', () => {
-		expect(rowKey('posts', 'abc123')).toBe('posts:abc123');
-		expect(rowKey('users', 'user_1')).toBe('users:user_1');
+describe('validateFieldId', () => {
+	test('accepts valid field ids', () => {
+		expect(() => validateFieldId('title')).not.toThrow();
+		expect(() => validateFieldId('my_field')).not.toThrow();
+		expect(() => validateFieldId('field123')).not.toThrow();
 	});
 
-	test('cellKey creates correct format', () => {
-		expect(cellKey('posts', 'abc123', 'title')).toBe('posts:abc123:title');
-		expect(cellKey('users', 'u1', 'name')).toBe('users:u1:name');
+	test('rejects reserved field names', () => {
+		expect(() => validateFieldId('_order')).toThrow(
+			'fieldId "_order" is reserved',
+		);
+		expect(() => validateFieldId('_deletedAt')).toThrow(
+			'fieldId "_deletedAt" is reserved',
+		);
+	});
+
+	test('rejects field ids with colon', () => {
+		expect(() => validateFieldId('invalid:field')).toThrow(
+			"fieldId cannot contain ':' character",
+		);
+	});
+});
+
+describe('reserved fields', () => {
+	test('ROW_ORDER_FIELD is _order', () => {
+		expect(ROW_ORDER_FIELD).toBe('_order');
+	});
+
+	test('ROW_DELETED_AT_FIELD is _deletedAt', () => {
+		expect(ROW_DELETED_AT_FIELD).toBe('_deletedAt');
+	});
+
+	test('RESERVED_FIELDS contains both', () => {
+		expect(RESERVED_FIELDS).toContain('_order');
+		expect(RESERVED_FIELDS).toContain('_deletedAt');
+	});
+
+	test('isReservedField identifies reserved fields', () => {
+		expect(isReservedField('_order')).toBe(true);
+		expect(isReservedField('_deletedAt')).toBe(true);
+		expect(isReservedField('title')).toBe(false);
+		expect(isReservedField('_other')).toBe(false);
+	});
+});
+
+describe('key construction', () => {
+	test('cellKey creates correct format (rowId:fieldId)', () => {
+		expect(cellKey('abc123', 'title')).toBe('abc123:title');
+		expect(cellKey('row1', 'views')).toBe('row1:views');
+		expect(cellKey('row1', '_order')).toBe('row1:_order');
 	});
 });
 
 describe('key parsing', () => {
-	test('parseRowKey extracts components', () => {
-		const result = parseRowKey('posts:abc123');
-		expect(result).toEqual({ tableId: 'posts', rowId: 'abc123' });
-	});
-
-	test('parseRowKey throws on invalid format', () => {
-		expect(() => parseRowKey('invalid')).toThrow(
-			'Invalid row key format: "invalid"',
-		);
-		expect(() => parseRowKey('too:many:parts')).toThrow(
-			'Invalid row key format',
-		);
-		expect(() => parseRowKey('')).toThrow('Invalid row key format');
-	});
-
 	test('parseCellKey extracts components', () => {
-		const result = parseCellKey('posts:abc123:title');
+		const result = parseCellKey('abc123:title');
 		expect(result).toEqual({
-			tableId: 'posts',
 			rowId: 'abc123',
 			fieldId: 'title',
+		});
+	});
+
+	test('parseCellKey handles fieldId with special characters', () => {
+		// Field ID could contain underscore
+		const result = parseCellKey('row1:my_field');
+		expect(result).toEqual({
+			rowId: 'row1',
+			fieldId: 'my_field',
 		});
 	});
 
@@ -90,43 +125,19 @@ describe('key parsing', () => {
 		expect(() => parseCellKey('invalid')).toThrow(
 			'Invalid cell key format: "invalid"',
 		);
-		expect(() => parseCellKey('only:two')).toThrow(
-			'Invalid cell key format',
-		);
-		expect(() => parseCellKey('too:many:parts:here')).toThrow(
-			'Invalid cell key format',
-		);
 	});
 });
 
 describe('prefix utilities', () => {
-	test('tablePrefix creates correct format', () => {
-		expect(tablePrefix('posts')).toBe('posts:');
-		expect(tablePrefix('users')).toBe('users:');
-	});
-
-	test('rowCellPrefix creates correct format', () => {
-		expect(rowCellPrefix('posts', 'row1')).toBe('posts:row1:');
-		expect(rowCellPrefix('users', 'u123')).toBe('users:u123:');
+	test('rowPrefix creates correct format (rowId:)', () => {
+		expect(rowPrefix('row1')).toBe('row1:');
+		expect(rowPrefix('abc123')).toBe('abc123:');
 	});
 
 	test('hasPrefix checks correctly', () => {
-		expect(hasPrefix('posts:row1', 'posts:')).toBe(true);
-		expect(hasPrefix('posts:row1:title', 'posts:row1:')).toBe(true);
-		expect(hasPrefix('users:row1', 'posts:')).toBe(false);
-		expect(hasPrefix('posts', 'posts:')).toBe(false);
-	});
-
-	test('extractAfterPrefix removes prefix', () => {
-		expect(extractAfterPrefix('posts:row1', 'posts:')).toBe('row1');
-		expect(extractAfterPrefix('posts:row1:title', 'posts:row1:')).toBe(
-			'title',
-		);
-	});
-
-	test('extractAfterPrefix throws if prefix not present', () => {
-		expect(() => extractAfterPrefix('users:row1', 'posts:')).toThrow(
-			'Key "users:row1" does not start with prefix "posts:"',
-		);
+		expect(hasPrefix('row1:title', 'row1:')).toBe(true);
+		expect(hasPrefix('row1:views', 'row1:')).toBe(true);
+		expect(hasPrefix('row2:title', 'row1:')).toBe(false);
+		expect(hasPrefix('row1', 'row1:')).toBe(false);
 	});
 });

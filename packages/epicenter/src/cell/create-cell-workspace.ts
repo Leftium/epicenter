@@ -3,17 +3,18 @@
  *
  * Creates a simplified workspace client with external schema support.
  *
- * Key differences from DynamicWorkspace:
- * - No schema stored in Y.Doc (schema is external JSON)
- * - Only three stores: rows, cells, kv
- * - Schema is advisory - validated on read, not enforced
+ * Architecture (Option B):
+ * - One Y.Array per table, accessed via `ydoc.getArray(tableId)`
+ * - Every entry is a cell value (including row metadata as reserved fields)
+ * - Schema is external (JSON file), not in Y.Doc
+ * - KV store uses a separate Y.Array
  *
  * Y.Doc structure:
  * ```
  * Y.Doc
- * ├── Y.Array('cell:rows')   ← Row metadata (order, deletedAt)
- * ├── Y.Array('cell:cells')  ← Cell values
- * └── Y.Array('cell:kv')     ← Workspace-level key-values
+ * ├── Y.Array('posts')    ← Table data (cells + row metadata)
+ * ├── Y.Array('users')    ← Another table
+ * └── Y.Array('kv')       ← Workspace-level key-values
  * ```
  *
  * @packageDocumentation
@@ -24,17 +25,16 @@ import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import type {
 	CellWorkspaceClient,
 	CreateCellWorkspaceOptions,
-	RowMeta,
 	CellValue,
-	RowWithCells,
 	TypedRowWithCells,
 	TypedCell,
 	SchemaTableDefinition,
 	FieldType,
+	TableStore,
 } from './types';
-import { createRowsStore, ROWS_ARRAY_NAME } from './stores/rows-store';
-import { createCellsStore, CELLS_ARRAY_NAME } from './stores/cells-store';
+import { createTableStore } from './table-store';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+import { validateId } from './keys';
 
 /**
  * Validate that a value matches the expected field type.
@@ -88,15 +88,18 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  * ```ts
  * const workspace = createCellWorkspace({ id: 'my-workspace' });
  *
- * // Create a row
- * const rowId = workspace.rows.create('posts');
+ * // Get a table store
+ * const posts = workspace.table('posts');
  *
- * // Set cells (no schema enforcement)
- * workspace.cells.set('posts', rowId, 'title', 'Hello World');
- * workspace.cells.set('posts', rowId, 'views', 100);
+ * // Create a row
+ * const rowId = posts.createRow();
+ *
+ * // Set cells
+ * posts.set(rowId, 'title', 'Hello World');
+ * posts.set(rowId, 'views', 100);
  *
  * // Read back
- * const rows = workspace.getRowsWithCells('posts');
+ * const rows = posts.getRowsWithoutMeta();
  * // [{ id: 'abc123', order: 1, deletedAt: null, cells: { title: 'Hello World', views: 100 } }]
  * ```
  */
@@ -108,51 +111,46 @@ export function createCellWorkspace(
 	// Create or use existing Y.Doc
 	const ydoc = existingYdoc ?? new Y.Doc({ guid: id });
 
-	// Initialize Y.Arrays
-	const rowsArray = ydoc.getArray<YKeyValueLwwEntry<RowMeta>>(ROWS_ARRAY_NAME);
-	const cellsArray =
-		ydoc.getArray<YKeyValueLwwEntry<CellValue>>(CELLS_ARRAY_NAME);
-	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
+	// Cache table stores to avoid recreation
+	const tableStoreCache = new Map<string, TableStore>();
 
-	// Create stores
-	const rows = createRowsStore(rowsArray);
-	const cells = createCellsStore(cellsArray);
+	// Initialize KV store
+	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
 	const kv = createKvStore(kvArray);
 
-	// Helper methods
-	function getRowsWithCells(tableId: string): RowWithCells[] {
-		const activeRows = rows.getActiveByTable(tableId);
+	/**
+	 * Get or create a table store.
+	 */
+	function table(tableId: string): TableStore {
+		validateId(tableId, 'tableId');
 
-		return activeRows.map((r) => {
-			const rowCells = cells.getByRow(tableId, r.id);
-			const cellsRecord: Record<string, CellValue> = {};
-			for (const [fieldId, value] of rowCells) {
-				cellsRecord[fieldId] = value;
-			}
-
-			return {
-				id: r.id,
-				order: r.meta.order,
-				deletedAt: r.meta.deletedAt,
-				cells: cellsRecord,
-			};
-		});
+		let store = tableStoreCache.get(tableId);
+		if (!store) {
+			// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
+			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
+			store = createTableStore(tableId, yarray);
+			tableStoreCache.set(tableId, store);
+		}
+		return store;
 	}
 
-	function getTypedRowsWithCells(
+	/**
+	 * Get rows with typed cells validated against schema.
+	 */
+	function getTypedRows(
 		tableId: string,
 		tableSchema: SchemaTableDefinition,
 	): TypedRowWithCells[] {
-		const activeRows = rows.getActiveByTable(tableId);
+		const tableStore = table(tableId);
+		const rows = tableStore.getRowsWithoutMeta();
 		const schemaFieldIds = Object.keys(tableSchema.fields);
 
-		return activeRows.map((r) => {
-			const rowCells = cells.getByRow(tableId, r.id);
+		return rows.map((r) => {
 			const typedCells: Record<string, TypedCell> = {};
-			const dataFieldIds = Array.from(rowCells.keys());
+			const dataFieldIds = Object.keys(r.cells);
 
 			// Process cells that exist in data
-			for (const [fieldId, value] of rowCells) {
+			for (const [fieldId, value] of Object.entries(r.cells)) {
 				const fieldSchema = tableSchema.fields[fieldId];
 				if (fieldSchema) {
 					typedCells[fieldId] = {
@@ -172,7 +170,7 @@ export function createCellWorkspace(
 
 			// Find missing fields (in schema but not in data)
 			const missingFields = schemaFieldIds.filter(
-				(id) => !rowCells.has(id),
+				(id) => !(id in r.cells),
 			);
 
 			// Find extra fields (in data but not in schema)
@@ -182,8 +180,8 @@ export function createCellWorkspace(
 
 			return {
 				id: r.id,
-				order: r.meta.order,
-				deletedAt: r.meta.deletedAt,
+				order: r.order,
+				deletedAt: r.deletedAt,
 				cells: typedCells,
 				missingFields,
 				extraFields,
@@ -209,11 +207,9 @@ export function createCellWorkspace(
 	const client: CellWorkspaceClient = {
 		id,
 		ydoc,
-		rows,
-		cells,
+		table,
 		kv,
-		getRowsWithCells,
-		getTypedRowsWithCells,
+		getTypedRows,
 		batch,
 		destroy,
 	};

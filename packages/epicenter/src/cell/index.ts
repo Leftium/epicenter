@@ -6,11 +6,12 @@
  * - Only raw cell data is stored in the CRDT
  * - Schema is advisory (no enforcement, just type hints)
  *
- * File structure:
+ * Y.Doc structure (Option B - one Y.Array per table):
  * ```
- * {workspaceId}.json        # Schema definitions (local only)
- * {workspaceId}/
- *   workspace.yjs           # CRDT data (synced)
+ * Y.Doc
+ * ├── Y.Array('posts')    ← Table data (cells + row metadata)
+ * ├── Y.Array('users')    ← Another table
+ * └── Y.Array('kv')       ← Workspace-level key-values
  * ```
  *
  * @packageDocumentation
@@ -18,6 +19,9 @@
 
 // Factory
 export { createCellWorkspace } from './create-cell-workspace';
+
+// Table store factory (for advanced use)
+export { createTableStore } from './table-store';
 
 // Types
 export type {
@@ -27,17 +31,15 @@ export type {
 	SchemaTableDefinition,
 	SchemaKvDefinition,
 	WorkspaceSchema,
-	// Data types (Y.Doc)
+	// Data types
 	CellValue,
-	RowMeta,
-	// Store interfaces
-	RowsStore,
-	CellsStore,
-	KvStore,
-	// Helper types
+	RowData,
 	RowWithCells,
 	TypedCell,
 	TypedRowWithCells,
+	// Store interfaces
+	TableStore,
+	KvStore,
 	// Workspace client
 	CellWorkspaceClient,
 	CreateCellWorkspaceOptions,
@@ -46,23 +48,22 @@ export type {
 	ChangeHandler,
 } from './types';
 
-// Key utilities (useful for observers that receive raw keys)
+// Key utilities
 export {
 	generateRowId,
 	validateId,
-	rowKey,
+	validateFieldId,
 	cellKey,
-	parseRowKey,
 	parseCellKey,
-	tablePrefix,
-	rowCellPrefix,
+	rowPrefix,
 	hasPrefix,
-	extractAfterPrefix,
+	isReservedField,
+	ROW_ORDER_FIELD,
+	ROW_DELETED_AT_FIELD,
+	RESERVED_FIELDS,
 } from './keys';
 
-// Store array names (for advanced use cases like persistence providers)
-export { ROWS_ARRAY_NAME } from './stores/rows-store';
-export { CELLS_ARRAY_NAME } from './stores/cells-store';
+// KV store array name (for advanced use cases)
 export { KV_ARRAY_NAME } from './stores/kv-store';
 
 // Schema file utilities
@@ -77,3 +78,23 @@ export {
 	getSortedFields,
 	getNextFieldOrder,
 } from './schema-file';
+
+// Icon type and utilities from Core (for LWW-safe icons)
+export type { Icon, IconType } from '../core/schema/fields/types';
+export { parseIcon, createIcon, isIcon } from '../core/schema/fields/types';
+
+// Core field factories for programmatic schema creation
+export {
+	table,
+	setting,
+	id,
+	text,
+	richtext,
+	integer,
+	real,
+	boolean,
+	date,
+	select,
+	tags,
+	json,
+} from '../core/schema/fields/factories';

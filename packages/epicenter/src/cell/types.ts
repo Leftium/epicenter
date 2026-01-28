@@ -3,15 +3,17 @@
  *
  * Types for external-schema cell workspace with advisory schema and cell-level CRDT.
  *
- * Key difference from dynamic workspace:
+ * Architecture (Option B):
+ * - One Y.Array per table, accessed via `ydoc.getArray(tableId)`
+ * - Every entry is a cell value (including row metadata as reserved fields)
  * - Schema is external (JSON file), not in Y.Doc
  * - Schema is advisory only - no enforcement, just type hints
- * - Simpler structure: cells + rows only (no tables/fields stores in CRDT)
  *
  * @packageDocumentation
  */
 
 import type * as Y from 'yjs';
+import type { Icon } from '../core/schema/fields/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Types (External JSON)
@@ -43,8 +45,8 @@ export type SchemaFieldDefinition = {
 	type: FieldType;
 	/** Display order (lower = first) */
 	order: number;
-	/** Optional icon (emoji or icon reference) */
-	icon?: string | null;
+	/** Optional icon - tagged string format 'type:value' or plain emoji */
+	icon?: Icon | string | null;
 	/** Options for select/tags field types */
 	options?: string[];
 	/** Default value for new cells */
@@ -57,8 +59,8 @@ export type SchemaFieldDefinition = {
 export type SchemaTableDefinition = {
 	/** Display name of the table */
 	name: string;
-	/** Optional icon (emoji or icon reference) */
-	icon?: string | null;
+	/** Optional icon - tagged string format 'type:value' or plain emoji */
+	icon?: Icon | string | null;
 	/** Field definitions keyed by field ID */
 	fields: Record<string, SchemaFieldDefinition>;
 };
@@ -71,8 +73,8 @@ export type SchemaKvDefinition = {
 	name: string;
 	/** Data type hint */
 	type: FieldType;
-	/** Optional icon */
-	icon?: string | null;
+	/** Optional icon - tagged string format 'type:value' or plain emoji */
+	icon?: Icon | string | null;
 	/** Options for select field type */
 	options?: string[];
 	/** Default value */
@@ -88,8 +90,8 @@ export type SchemaKvDefinition = {
 export type WorkspaceSchema = {
 	/** Display name of the workspace */
 	name: string;
-	/** Optional icon (emoji or icon reference) */
-	icon?: string | null;
+	/** Optional icon - tagged string format 'type:value' or plain emoji */
+	icon?: Icon | string | null;
 	/** Table definitions keyed by table ID */
 	tables: Record<string, SchemaTableDefinition>;
 	/** Optional KV definitions for single values */
@@ -97,7 +99,7 @@ export type WorkspaceSchema = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// Data Types (Y.Doc)
+// Data Types
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -107,128 +109,17 @@ export type WorkspaceSchema = {
 export type CellValue = unknown;
 
 /**
- * Row metadata stored in Y.Doc.
- * The tableId is encoded in the key, not the value.
+ * A row with all its cell values (including metadata fields).
  */
-export type RowMeta = {
-	/** Fractional index for ordering within the table */
-	order: number;
-	/** Tombstone: null = active, timestamp = deleted at that time */
-	deletedAt: number | null;
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-// Change Events
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * A single change event for cells or rows.
- */
-export type ChangeEvent<T> =
-	| { type: 'add'; key: string; value: T }
-	| { type: 'update'; key: string; value: T; previousValue: T }
-	| { type: 'delete'; key: string; previousValue: T };
-
-/**
- * Handler for change events.
- */
-export type ChangeHandler<T> = (
-	changes: ChangeEvent<T>[],
-	transaction: Y.Transaction,
-) => void;
-
-// ════════════════════════════════════════════════════════════════════════════
-// Store Interfaces
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Store for row metadata.
- */
-export type RowsStore = {
-	/** Get row metadata by table and row ID */
-	get(tableId: string, rowId: string): RowMeta | undefined;
-	/** Set row metadata (creates or updates) */
-	set(tableId: string, rowId: string, meta: RowMeta): void;
-	/** Soft-delete a row (sets deletedAt) */
-	delete(tableId: string, rowId: string): void;
-	/** Check if a row exists (including soft-deleted) */
-	has(tableId: string, rowId: string): boolean;
-
-	/** Get all rows for a table, sorted by order (includes soft-deleted) */
-	getByTable(tableId: string): Array<{ id: string; meta: RowMeta }>;
-	/** Get active rows for a table, sorted by order (excludes soft-deleted) */
-	getActiveByTable(tableId: string): Array<{ id: string; meta: RowMeta }>;
-
-	// Convenience methods
-	/** Create a new row (generates ID if not provided, auto-assigns order) */
-	create(tableId: string, rowId?: string, order?: number): string;
-	/** Reorder a row (set new order value) */
-	reorder(tableId: string, rowId: string, newOrder: number): void;
-	/** Restore a soft-deleted row */
-	restore(tableId: string, rowId: string): void;
-
-	/** Observe changes to rows */
-	observe(handler: ChangeHandler<RowMeta>): () => void;
+export type RowData = {
+	/** Row identifier */
+	id: string;
+	/** All cells including _order and _deletedAt */
+	cells: Record<string, CellValue>;
 };
 
 /**
- * Store for cell values.
- */
-export type CellsStore = {
-	/** Get a cell value */
-	get(tableId: string, rowId: string, fieldId: string): CellValue | undefined;
-	/** Set a cell value */
-	set(tableId: string, rowId: string, fieldId: string, value: CellValue): void;
-	/** Delete a cell value (hard delete) */
-	delete(tableId: string, rowId: string, fieldId: string): void;
-	/** Check if a cell exists */
-	has(tableId: string, rowId: string, fieldId: string): boolean;
-
-	/**
-	 * Get all cells for a row by scanning with prefix.
-	 * Returns a map from fieldId to cell value.
-	 */
-	getByRow(tableId: string, rowId: string): Map<string, CellValue>;
-
-	/**
-	 * Get cells for a row for specific fields (direct lookups).
-	 * More efficient when you know the field IDs.
-	 */
-	getByRowFields(
-		tableId: string,
-		rowId: string,
-		fieldIds: string[],
-	): Map<string, CellValue>;
-
-	/** Observe changes to cells */
-	observe(handler: ChangeHandler<CellValue>): () => void;
-};
-
-/**
- * Store for workspace-level key-value pairs.
- */
-export type KvStore = {
-	/** Get a value by key */
-	get(key: string): unknown | undefined;
-	/** Set a value */
-	set(key: string, value: unknown): void;
-	/** Delete a value (hard delete) */
-	delete(key: string): void;
-	/** Check if a key exists */
-	has(key: string): boolean;
-	/** Get all key-value pairs */
-	getAll(): Map<string, unknown>;
-
-	/** Observe changes */
-	observe(handler: ChangeHandler<unknown>): () => void;
-};
-
-// ════════════════════════════════════════════════════════════════════════════
-// Helper Types
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * A row with its cell values, ready for rendering.
+ * A row with cells separated from metadata.
  */
 export type RowWithCells = {
 	id: string;
@@ -261,13 +152,99 @@ export type TypedRowWithCells = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
+// Change Events
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A single change event for cells.
+ */
+export type ChangeEvent<T> =
+	| { type: 'add'; key: string; value: T }
+	| { type: 'update'; key: string; value: T; previousValue: T }
+	| { type: 'delete'; key: string; previousValue: T };
+
+/**
+ * Handler for change events.
+ */
+export type ChangeHandler<T> = (
+	changes: ChangeEvent<T>[],
+	transaction: Y.Transaction,
+) => void;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Store Interfaces
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Store for a single table's data.
+ * Every entry is a cell, including row metadata.
+ */
+export type TableStore = {
+	/** The table identifier */
+	readonly tableId: string;
+
+	// Cell operations
+	/** Get a cell value */
+	get(rowId: string, fieldId: string): CellValue | undefined;
+	/** Set a cell value */
+	set(rowId: string, fieldId: string, value: CellValue): void;
+	/** Delete a cell value (hard delete) */
+	delete(rowId: string, fieldId: string): void;
+	/** Check if a cell exists */
+	has(rowId: string, fieldId: string): boolean;
+
+	// Row operations
+	/** Get all cells for a row (including metadata) */
+	getRow(rowId: string): Record<string, CellValue> | undefined;
+	/** Create a new row (sets _order and _deletedAt) */
+	createRow(rowId?: string, order?: number): string;
+	/** Soft-delete a row (sets _deletedAt) */
+	deleteRow(rowId: string): void;
+	/** Restore a soft-deleted row */
+	restoreRow(rowId: string): void;
+	/** Change a row's order */
+	reorderRow(rowId: string, newOrder: number): void;
+
+	// Bulk operations
+	/** Get all rows including deleted, with metadata in cells */
+	getAllRows(): RowData[];
+	/** Get active rows only, with metadata in cells */
+	getRows(): RowData[];
+	/** Get active rows with metadata separated from cells */
+	getRowsWithoutMeta(): RowWithCells[];
+
+	// Observation
+	/** Observe changes to cells */
+	observe(handler: ChangeHandler<CellValue>): () => void;
+};
+
+/**
+ * Store for workspace-level key-value pairs.
+ */
+export type KvStore = {
+	/** Get a value by key */
+	get(key: string): unknown | undefined;
+	/** Set a value */
+	set(key: string, value: unknown): void;
+	/** Delete a value (hard delete) */
+	delete(key: string): void;
+	/** Check if a key exists */
+	has(key: string): boolean;
+	/** Get all key-value pairs */
+	getAll(): Map<string, unknown>;
+
+	/** Observe changes */
+	observe(handler: ChangeHandler<unknown>): () => void;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 // Workspace Client
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
  * The main cell workspace client.
  *
- * Provides access to raw CRDT stores without schema enforcement.
+ * Provides access to table stores and KV store.
  * Schema is applied externally as a "lens" for viewing/editing.
  */
 export type CellWorkspaceClient = {
@@ -276,25 +253,22 @@ export type CellWorkspaceClient = {
 	/** The underlying Yjs document */
 	readonly ydoc: Y.Doc;
 
-	// Low-level store access
-	/** Row metadata store */
-	readonly rows: RowsStore;
-	/** Cell values store */
-	readonly cells: CellsStore;
+	/**
+	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
+	 * Table stores are cached - calling with same tableId returns same instance.
+	 */
+	table(tableId: string): TableStore;
+
 	/** KV store for workspace-level values */
 	readonly kv: KvStore;
 
-	// Helper methods
-	/**
-	 * Get all active rows for a table with their cell values.
-	 */
-	getRowsWithCells(tableId: string): RowWithCells[];
+	// Convenience methods with schema
 
 	/**
 	 * Get rows with typed cells validated against schema.
 	 * Schema is advisory - data that doesn't match is flagged, not rejected.
 	 */
-	getTypedRowsWithCells(
+	getTypedRows(
 		tableId: string,
 		tableSchema: SchemaTableDefinition,
 	): TypedRowWithCells[];

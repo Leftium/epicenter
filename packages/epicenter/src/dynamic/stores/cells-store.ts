@@ -9,6 +9,7 @@
  */
 
 import type * as Y from 'yjs';
+import { fieldId, rowId } from '../../cell/keys.js';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
 import { cellKey, validateId } from '../keys.js';
 import type {
@@ -28,43 +29,43 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 	return {
 		get(
 			tableId: string,
-			rowId: string,
-			fieldId: string,
+			row: string,
+			field: string,
 		): CellValue | undefined {
-			return ykv.get(cellKey(tableId, rowId, fieldId));
+			return ykv.get(cellKey(tableId, rowId(row), fieldId(field)));
 		},
 
 		set(
 			tableId: string,
-			rowId: string,
-			fieldId: string,
+			row: string,
+			field: string,
 			value: CellValue,
 		): void {
 			validateId(tableId, 'tableId');
-			validateId(rowId, 'rowId');
-			validateId(fieldId, 'fieldId');
-			ykv.set(cellKey(tableId, rowId, fieldId), value);
+			validateId(row, 'rowId');
+			validateId(field, 'fieldId');
+			ykv.set(cellKey(tableId, rowId(row), fieldId(field)), value);
 		},
 
-		delete(tableId: string, rowId: string, fieldId: string): void {
-			ykv.delete(cellKey(tableId, rowId, fieldId));
+		delete(tableId: string, row: string, field: string): void {
+			ykv.delete(cellKey(tableId, rowId(row), fieldId(field)));
 		},
 
-		has(tableId: string, rowId: string, fieldId: string): boolean {
-			return ykv.has(cellKey(tableId, rowId, fieldId));
+		has(tableId: string, row: string, field: string): boolean {
+			return ykv.has(cellKey(tableId, rowId(row), fieldId(field)));
 		},
 
 		getByRow(
 			tableId: string,
-			rowId: string,
+			row: string,
 			fieldIds: string[],
 		): Map<string, CellValue> {
 			const result = new Map<string, CellValue>();
-			for (const fieldId of fieldIds) {
-				const key = cellKey(tableId, rowId, fieldId);
+			for (const field of fieldIds) {
+				const key = cellKey(tableId, rowId(row), fieldId(field));
 				const value = ykv.get(key);
 				if (value !== undefined) {
-					result.set(fieldId, value);
+					result.set(field, value);
 				}
 			}
 			return result;

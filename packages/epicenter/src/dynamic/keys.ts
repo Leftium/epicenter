@@ -12,37 +12,14 @@
  * @packageDocumentation
  */
 
-import { customAlphabet } from 'nanoid';
-
-// ════════════════════════════════════════════════════════════════════════════
-// ID Generation
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Alphabet for generating row IDs.
- * Uses lowercase alphanumeric for URL-safety and readability.
- */
-const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
-
-/**
- * Generate a random row ID.
- * Uses 12 characters for sufficient uniqueness (62^12 possibilities).
- */
-const nanoid = customAlphabet(ALPHABET, 12);
-
-/**
- * Generate a unique row ID.
- *
- * @returns A 12-character alphanumeric ID
- *
- * @example
- * ```ts
- * const rowId = generateRowId(); // e.g., 'v1stgxr8z5jd'
- * ```
- */
-export function generateRowId(): string {
-	return nanoid();
-}
+// Re-export branded types from cell/keys for use throughout dynamic module
+export {
+	type RowId,
+	type FieldId,
+	rowId,
+	fieldId,
+	generateRowId,
+} from '../cell/keys.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Validation

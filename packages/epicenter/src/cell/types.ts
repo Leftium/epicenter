@@ -82,7 +82,7 @@ export type SchemaKvDefinition = {
 };
 
 /**
- * Complete workspace schema (stored in external JSON file).
+ * Complete workspace definition (can be stored as external JSON file).
  *
  * This is the "lens" through which you view the data.
  * The data itself doesn't need to comply with this schema.
@@ -90,6 +90,8 @@ export type SchemaKvDefinition = {
 export type WorkspaceSchema = {
 	/** Display name of the workspace */
 	name: string;
+	/** Optional description of the workspace */
+	description?: string;
 	/** Optional icon - tagged string format 'type:value' or plain emoji */
 	icon?: Icon | string | null;
 	/** Table definitions keyed by table ID */
@@ -227,13 +229,23 @@ export type KvStore = {
  * The main cell workspace client.
  *
  * Provides access to table stores and KV store.
- * Schema is applied externally as a "lens" for viewing/editing.
+ * Schema is applied as a "lens" for viewing/editing.
  */
 export type CellWorkspaceClient = {
 	/** Workspace identifier */
 	readonly id: string;
 	/** The underlying Yjs document */
 	readonly ydoc: Y.Doc;
+
+	// Workspace metadata (from definition)
+	/** Display name of the workspace */
+	readonly name: string;
+	/** Description of the workspace */
+	readonly description: string;
+	/** Icon for the workspace */
+	readonly icon: Icon | string | null;
+	/** The full workspace definition */
+	readonly definition: WorkspaceSchema;
 
 	/**
 	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
@@ -248,12 +260,10 @@ export type CellWorkspaceClient = {
 
 	/**
 	 * Get rows with typed cells validated against schema.
+	 * Uses the table schema from the definition.
 	 * Schema is advisory - data that doesn't match is flagged, not rejected.
 	 */
-	getTypedRows(
-		tableId: string,
-		tableSchema: SchemaTableDefinition,
-	): TypedRowWithCells[];
+	getTypedRows(tableId: string): TypedRowWithCells[];
 
 	/**
 	 * Batch multiple writes into a single Yjs transaction.
@@ -276,6 +286,8 @@ export type CellWorkspaceClient = {
 export type CreateCellWorkspaceOptions = {
 	/** Unique identifier for the workspace (used as Y.Doc guid) */
 	id: string;
+	/** Workspace definition (schema for tables and KV) */
+	definition: WorkspaceSchema;
 	/** Optional existing Y.Doc to use instead of creating a new one */
 	ydoc?: Y.Doc;
 };

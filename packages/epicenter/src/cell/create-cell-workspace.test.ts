@@ -1,14 +1,47 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import * as Y from 'yjs';
 import { createCellWorkspace } from './create-cell-workspace';
-import type { CellWorkspaceClient, SchemaTableDefinition, TableStore } from './types';
+import type {
+	CellWorkspaceClient,
+	TableStore,
+	WorkspaceSchema,
+} from './types';
+
+// Default test definition with posts table
+const testDefinition: WorkspaceSchema = {
+	name: 'Test Workspace',
+	description: 'A workspace for testing',
+	tables: {
+		posts: {
+			name: 'Blog Posts',
+			fields: {
+				title: { name: 'Title', type: 'text', order: 1 },
+				views: { name: 'Views', type: 'integer', order: 2 },
+				published: { name: 'Published', type: 'boolean', order: 3 },
+			},
+		},
+		users: {
+			name: 'Users',
+			fields: {
+				name: { name: 'Name', type: 'text', order: 1 },
+			},
+		},
+	},
+	kv: {
+		theme: { name: 'Theme', type: 'select', options: ['light', 'dark'] },
+		language: { name: 'Language', type: 'text' },
+	},
+};
 
 describe('createCellWorkspace', () => {
 	let workspace: CellWorkspaceClient;
 	let posts: TableStore;
 
 	beforeEach(() => {
-		workspace = createCellWorkspace({ id: 'test-workspace' });
+		workspace = createCellWorkspace({
+			id: 'test-workspace',
+			definition: testDefinition,
+		});
 		posts = workspace.table('posts');
 	});
 
@@ -19,9 +52,20 @@ describe('createCellWorkspace', () => {
 			expect(workspace.ydoc.guid).toBe('test-workspace');
 		});
 
+		test('exposes workspace metadata from definition', () => {
+			expect(workspace.name).toBe('Test Workspace');
+			expect(workspace.description).toBe('A workspace for testing');
+			expect(workspace.icon).toBeNull();
+			expect(workspace.definition).toBe(testDefinition);
+		});
+
 		test('can use existing ydoc', () => {
 			const existingYdoc = new Y.Doc({ guid: 'custom-guid' });
-			const ws = createCellWorkspace({ id: 'test', ydoc: existingYdoc });
+			const ws = createCellWorkspace({
+				id: 'test',
+				definition: testDefinition,
+				ydoc: existingYdoc,
+			});
 			expect(ws.ydoc).toBe(existingYdoc);
 		});
 
@@ -36,6 +80,12 @@ describe('createCellWorkspace', () => {
 			expect(posts).not.toBe(users);
 			expect(posts.tableId).toBe('posts');
 			expect(users.tableId).toBe('users');
+		});
+
+		test('can access tables not in definition', () => {
+			// Arbitrary table names should work
+			const arbitrary = workspace.table('arbitrary');
+			expect(arbitrary.tableId).toBe('arbitrary');
 		});
 	});
 
@@ -173,22 +223,13 @@ describe('createCellWorkspace', () => {
 	});
 
 	describe('getTypedRows', () => {
-		const postsSchema: SchemaTableDefinition = {
-			name: 'Blog Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-				published: { name: 'Published', type: 'boolean', order: 3 },
-			},
-		};
-
 		test('validates cell types against schema', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
 			posts.set(rowId, 'views', 100);
 			posts.set(rowId, 'published', true);
 
-			const rows = workspace.getTypedRows('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts');
 			expect(rows).toHaveLength(1);
 
 			const row = rows[0]!;
@@ -215,7 +256,7 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'views', 'not a number'); // Should be integer
 			posts.set(rowId, 'published', 'yes'); // Should be boolean
 
-			const rows = workspace.getTypedRows('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts');
 			const row = rows[0]!;
 
 			expect(row.cells.title!.valid).toBe(false);
@@ -228,7 +269,7 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'title', 'Hello');
 			// views and published are missing
 
-			const rows = workspace.getTypedRows('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts');
 			const row = rows[0]!;
 
 			expect(row.missingFields).toContain('views');
@@ -242,7 +283,7 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'unknownField', 'value');
 			posts.set(rowId, 'anotherExtra', 42);
 
-			const rows = workspace.getTypedRows('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts');
 			const row = rows[0]!;
 
 			expect(row.extraFields).toContain('unknownField');
@@ -254,18 +295,38 @@ describe('createCellWorkspace', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', null);
 
-			const rows = workspace.getTypedRows('posts', postsSchema);
+			const rows = workspace.getTypedRows('posts');
 			const row = rows[0]!;
 
 			expect(row.cells.title!.valid).toBe(true);
 			expect(row.cells.title!.value).toBeNull();
 		});
+
+		test('handles tables not in definition gracefully', () => {
+			const arbitrary = workspace.table('notInSchema');
+			arbitrary.set('row1', 'field1', 'value1');
+
+			const rows = workspace.getTypedRows('notInSchema');
+			expect(rows).toHaveLength(1);
+			expect(rows[0]!.cells.field1).toEqual({
+				value: 'value1',
+				type: 'json',
+				valid: true,
+			});
+			expect(rows[0]!.extraFields).toContain('field1');
+		});
 	});
 
 	describe('CRDT sync behavior', () => {
 		test('syncs between two workspaces', () => {
-			const ws1 = createCellWorkspace({ id: 'sync-test' });
-			const ws2 = createCellWorkspace({ id: 'sync-test' });
+			const ws1 = createCellWorkspace({
+				id: 'sync-test',
+				definition: testDefinition,
+			});
+			const ws2 = createCellWorkspace({
+				id: 'sync-test',
+				definition: testDefinition,
+			});
 
 			// Create row in ws1
 			const posts1 = ws1.table('posts');
@@ -293,8 +354,14 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('last-write-wins for concurrent cell edits', async () => {
-			const ws1 = createCellWorkspace({ id: 'lww-test' });
-			const ws2 = createCellWorkspace({ id: 'lww-test' });
+			const ws1 = createCellWorkspace({
+				id: 'lww-test',
+				definition: testDefinition,
+			});
+			const ws2 = createCellWorkspace({
+				id: 'lww-test',
+				definition: testDefinition,
+			});
 
 			// WS1 creates the row first
 			const posts1 = ws1.table('posts');
@@ -323,8 +390,14 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('same cell concurrent edit - later timestamp wins', async () => {
-			const ws1 = createCellWorkspace({ id: 'lww-same-cell' });
-			const ws2 = createCellWorkspace({ id: 'lww-same-cell' });
+			const ws1 = createCellWorkspace({
+				id: 'lww-same-cell',
+				definition: testDefinition,
+			});
+			const ws2 = createCellWorkspace({
+				id: 'lww-same-cell',
+				definition: testDefinition,
+			});
 
 			// WS1 creates the row first
 			const posts1 = ws1.table('posts');
@@ -424,128 +497,137 @@ describe('createCellWorkspace', () => {
 });
 
 describe('type validation', () => {
+	const makeDefinition = (
+		fieldName: string,
+		fieldType: string,
+	): WorkspaceSchema => ({
+		name: 'Test',
+		tables: {
+			test: {
+				name: 'Test',
+				fields: {
+					[fieldName]: { name: fieldName, type: fieldType as any, order: 1 },
+				},
+			},
+		},
+	});
+
 	test('text type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { text: { name: 'Text', type: 'text', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test',
+			definition: makeDefinition('text', 'text'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 		t.set(rowId, 'text', 'valid string');
 
-		const rows = ws.getTypedRows('test', schema);
+		const rows = ws.getTypedRows('test');
 		expect(rows[0]!.cells.text!.valid).toBe(true);
 
 		t.set(rowId, 'text', 123);
-		const rows2 = ws.getTypedRows('test', schema);
+		const rows2 = ws.getTypedRows('test');
 		expect(rows2[0]!.cells.text!.valid).toBe(false);
 	});
 
 	test('integer type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test-int' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { num: { name: 'Num', type: 'integer', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test-int',
+			definition: makeDefinition('num', 'integer'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 
 		t.set(rowId, 'num', 42);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(true);
 
 		t.set(rowId, 'num', 3.14);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(false);
 
 		t.set(rowId, 'num', '42');
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(false);
 	});
 
 	test('real type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test-real' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { num: { name: 'Num', type: 'real', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test-real',
+			definition: makeDefinition('num', 'real'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 
 		t.set(rowId, 'num', 3.14);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(true);
 
 		t.set(rowId, 'num', 42);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(true);
 
 		t.set(rowId, 'num', '3.14');
-		expect(ws.getTypedRows('test', schema)[0]!.cells.num!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.num!.valid).toBe(false);
 	});
 
 	test('boolean type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test-bool' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { flag: { name: 'Flag', type: 'boolean', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test-bool',
+			definition: makeDefinition('flag', 'boolean'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 
 		t.set(rowId, 'flag', true);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.flag!.valid).toBe(true);
 
 		t.set(rowId, 'flag', false);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.flag!.valid).toBe(true);
 
 		t.set(rowId, 'flag', 1);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.flag!.valid).toBe(false);
 
 		t.set(rowId, 'flag', 'true');
-		expect(ws.getTypedRows('test', schema)[0]!.cells.flag!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.flag!.valid).toBe(false);
 	});
 
 	test('tags type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test-tags' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { tags: { name: 'Tags', type: 'tags', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test-tags',
+			definition: makeDefinition('tags', 'tags'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 
 		t.set(rowId, 'tags', ['a', 'b', 'c']);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.tags!.valid).toBe(true);
 
 		t.set(rowId, 'tags', []);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.tags!.valid).toBe(true);
 
 		t.set(rowId, 'tags', [1, 2, 3]);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.tags!.valid).toBe(false);
 
 		t.set(rowId, 'tags', 'not-array');
-		expect(ws.getTypedRows('test', schema)[0]!.cells.tags!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.tags!.valid).toBe(false);
 	});
 
 	test('date/datetime type validation', () => {
-		const ws = createCellWorkspace({ id: 'type-test-date' });
-		const schema: SchemaTableDefinition = {
-			name: 'Test',
-			fields: { date: { name: 'Date', type: 'date', order: 1 } },
-		};
+		const ws = createCellWorkspace({
+			id: 'type-test-date',
+			definition: makeDefinition('date', 'date'),
+		});
 
 		const t = ws.table('test');
 		const rowId = t.createRow();
 
 		t.set(rowId, 'date', '2024-01-15');
-		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.date!.valid).toBe(true);
 
 		t.set(rowId, 'date', 1705276800000);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(true);
+		expect(ws.getTypedRows('test')[0]!.cells.date!.valid).toBe(true);
 
 		t.set(rowId, 'date', true);
-		expect(ws.getTypedRows('test', schema)[0]!.cells.date!.valid).toBe(false);
+		expect(ws.getTypedRows('test')[0]!.cells.date!.valid).toBe(false);
 	});
 });

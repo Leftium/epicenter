@@ -28,7 +28,6 @@ import type {
 	CellValue,
 	TypedRowWithCells,
 	TypedCell,
-	SchemaTableDefinition,
 	FieldType,
 	TableStore,
 } from './types';
@@ -86,7 +85,21 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  *
  * @example
  * ```ts
- * const workspace = createCellWorkspace({ id: 'my-workspace' });
+ * const workspace = createCellWorkspace({
+ *   id: 'my-workspace',
+ *   definition: {
+ *     name: 'My Blog',
+ *     tables: {
+ *       posts: {
+ *         name: 'Posts',
+ *         fields: {
+ *           title: { name: 'Title', type: 'text', order: 1 },
+ *           views: { name: 'Views', type: 'integer', order: 2 },
+ *         }
+ *       }
+ *     }
+ *   }
+ * });
  *
  * // Get a table store
  * const posts = workspace.table('posts');
@@ -101,15 +114,23 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  * // Read back
  * const rows = posts.getRows();
  * // [{ id: 'abc123', cells: { title: 'Hello World', views: 100 } }]
+ *
+ * // Get typed rows (uses definition's schema)
+ * const typedRows = workspace.getTypedRows('posts');
  * ```
  */
 export function createCellWorkspace(
 	options: CreateCellWorkspaceOptions,
 ): CellWorkspaceClient {
-	const { id, ydoc: existingYdoc } = options;
+	const { id, definition, ydoc: existingYdoc } = options;
 
 	// Create or use existing Y.Doc
 	const ydoc = existingYdoc ?? new Y.Doc({ guid: id });
+
+	// Extract metadata from definition
+	const name = definition.name;
+	const description = definition.description ?? '';
+	const icon = definition.icon ?? null;
 
 	// Cache table stores to avoid recreation
 	const tableStoreCache = new Map<string, TableStore>();
@@ -136,13 +157,29 @@ export function createCellWorkspace(
 
 	/**
 	 * Get rows with typed cells validated against schema.
+	 * Uses the table schema from the definition.
 	 */
-	function getTypedRows(
-		tableId: string,
-		tableSchema: SchemaTableDefinition,
-	): TypedRowWithCells[] {
+	function getTypedRows(tableId: string): TypedRowWithCells[] {
+		const tableSchema = definition.tables[tableId];
 		const tableStore = table(tableId);
 		const rows = tableStore.getRows();
+
+		// If table not in schema, return rows with all fields marked as 'json'
+		if (!tableSchema) {
+			return rows.map((r) => {
+				const typedCells: Record<string, TypedCell> = {};
+				for (const [fieldId, value] of Object.entries(r.cells)) {
+					typedCells[fieldId] = { value, type: 'json', valid: true };
+				}
+				return {
+					id: r.id,
+					cells: typedCells,
+					missingFields: [],
+					extraFields: Object.keys(r.cells),
+				};
+			});
+		}
+
 		const schemaFieldIds = Object.keys(tableSchema.fields);
 
 		return rows.map((r) => {
@@ -170,12 +207,12 @@ export function createCellWorkspace(
 
 			// Find missing fields (in schema but not in data)
 			const missingFields = schemaFieldIds.filter(
-				(id) => !(id in r.cells),
+				(fid) => !(fid in r.cells),
 			);
 
 			// Find extra fields (in data but not in schema)
 			const extraFields = dataFieldIds.filter(
-				(id) => !schemaFieldIds.includes(id),
+				(fid) => !schemaFieldIds.includes(fid),
 			);
 
 			return {
@@ -205,6 +242,10 @@ export function createCellWorkspace(
 	const client: CellWorkspaceClient = {
 		id,
 		ydoc,
+		name,
+		description,
+		icon,
+		definition,
 		table,
 		kv,
 		getTypedRows,

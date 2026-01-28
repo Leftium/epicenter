@@ -33,13 +33,16 @@ Patterns that scream "AI wrote this":
 
 ## Punctuation
 
-Replace " - " (space-hyphen-space) with proper punctuation:
+Never use " - " (space-hyphen-space) or " — " (space-em-dash-space). Prefer simpler punctuation:
 
-| Use           | When                                                          |
-| ------------- | ------------------------------------------------------------- |
-| Semicolon (;) | Related independent clauses: "The code works; the tests pass" |
-| Colon (:)     | Introducing explanation: "Here's the thing: it doesn't work"  |
-| Em dash (—)   | Dramatic pause: "It's fast—really fast"                       |
+| Prefer        | When                                                           |
+| ------------- | -------------------------------------------------------------- |
+| Period (.)    | Default choice. Two sentences are often clearer than one.      |
+| Colon (:)     | Introducing explanation: "Here's the thing: it doesn't work"   |
+| Semicolon (;) | Related independent clauses: "The code works; the tests pass"  |
+| Em dash (—)   | Sparingly, for interruption or emphasis: "It's fast—really fast" |
+
+Em dashes are fine but easy to overuse. When in doubt, use a period.
 
 ## Voice Matching
 

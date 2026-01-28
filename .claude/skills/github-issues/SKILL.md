@@ -3,7 +3,14 @@ name: github-issues
 description: GitHub issue comment guidelines for community interaction. Use when responding to GitHub issues, bug reports, feature requests, or any GitHub discussion.
 ---
 
-# GitHub Issue Comment Guidelines
+# GitHub Issue & PR Comment Guidelines
+
+## Anti-Patterns (Avoid These)
+
+- **Over-structured responses**: Don't use headers, numbered sections, or bullet lists for simple replies. A conversational paragraph is usually better.
+- **Formulaic openings**: Don't start every comment identically. Match the tone to the conversation.
+- **Restating what's obvious**: If someone asked a question, just answer it. Don't recap what they said.
+- **Corporate announcements**: "We are pleased to announce..." — just say what changed.
 
 ## Opening Pattern
 
@@ -96,7 +103,21 @@ Thank you!
 Hey @username, sorry to hear [problem]! Did you ever get a fix?
 ```
 
+### PR Discussion (back-and-forth)
+
+```
+Good catch! Updated to only clear the dev app cache in nuke mode.
+
+The flow is now:
+- `bun clean`: artifacts and node_modules
+- `bun nuke`: above + Rust targets + dev cache
+
+Let me know if you want a confirmation prompt before clearing.
+```
+
 ## Writing Style Notes
+
+See [writing-voice](../writing-voice/SKILL.md) for punctuation and tone guidelines.
 
 - Use casual, approachable language
 - Be genuinely enthusiastic about user contributions
@@ -104,3 +125,5 @@ Hey @username, sorry to hear [problem]! Did you ever get a fix?
 - Link to relevant issues, releases, or commits
 - Keep responses personal and conversational
 - Avoid corporate or overly formal language
+- PR comments can be brief: ongoing discussions don't need full greetings/closings
+- Match the energy: short question gets short answer, detailed report gets detailed response

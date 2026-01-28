@@ -1,9 +1,14 @@
 # Table-Partitioned Y.Doc Storage
 
 **Created**: 2026-01-28
-**Status**: Proposal
-**Supersedes**: `20260127T220000-external-schema-architecture.md` (storage format section)
+**Status**: Superseded
+**Superseded By**: Option B in `20260127T220000-external-schema-architecture.md`
 **Location**: `packages/epicenter/src/cell`
+
+> **Note**: This spec proposed using `Y.Map<Y.Array>` for table partitioning. This approach was
+> abandoned because Y.Map uses LWW at the Map level—when two clients independently create a Y.Array
+> for the same key, one client's entire Y.Array is lost. The implemented solution uses top-level
+> named Y.Arrays via `ydoc.getArray(tableId)` which merge correctly as Yjs shared types.
 
 ## Problem
 

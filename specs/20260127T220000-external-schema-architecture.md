@@ -1,342 +1,331 @@
 # External Schema Architecture
 
 **Created**: 2026-01-27
-**Status**: Active
-**Related**: `20260128T100000-table-partitioned-storage.md` (Y.Doc structure), `packages/epicenter/src/cell`
+**Updated**: 2026-01-28
+**Status**: Implemented
+**Location**: `packages/epicenter/src/cell`
 
-> **Note**: This spec defines the conceptual separation of schema (external JSON) from data (Y.Doc).
-> For the specific Y.Doc internal structure, see `20260128T100000-table-partitioned-storage.md`.
+## Summary
 
-## Problem Statement
+The Cell Workspace uses **external schema** (passed at creation time) with **top-level named Y.Arrays** for storage. Schema is a "lens" for viewing data - the CRDT stores raw cells without type enforcement.
 
-The current architecture stores schema definitions INSIDE the Y.Doc:
-- Static API: Schema in code, merged into Y.Doc
-- Dynamic API: Schema in Y.Doc (`Y.Map('definition')`)
-
-This creates complexity:
-1. Schema changes must go through CRDT sync
-2. Schema conflicts are possible (concurrent field renames, etc.)
-3. Epoch/versioning system needed for schema migrations
-4. Heavy machinery for what might be simple configuration
-
-## Proposed Architecture
-
-**Core Insight**: Separate schema (local config) from data (synced CRDT).
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           PROPOSED ARCHITECTURE                              │
+│                           CELL WORKSPACE ARCHITECTURE                        │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────┐    ┌─────────────────────────────────┐ │
-│  │     SCHEMA (Local JSON)         │    │      DATA (Y.Doc / CRDT)        │ │
+│  │     DEFINITION (Required)       │    │      DATA (Y.Doc / CRDT)        │ │
 │  │                                 │    │                                 │ │
-│  │  • Table definitions            │    │  • Cell values only             │ │
-│  │  • Field names, types, order    │    │  • Cell-level LWW               │ │
-│  │  • Display preferences          │    │  • Syncs between devices        │ │
-│  │  • NOT synced                   │    │  • No schema validation         │ │
-│  │  • User-editable JSON           │    │  • Just raw key-value pairs     │ │
-│  │                                 │    │                                 │ │
-│  │  Lives at:                      │    │  Lives at:                      │ │
-│  │  {workspaceId}.json             │    │  {workspaceId}/workspace.yjs    │ │
+│  │  • Workspace name, icon, desc   │    │  • Cell values only             │ │
+│  │  • Table definitions            │    │  • Cell-level LWW               │ │
+│  │  • Field names, types, order    │    │  • Syncs between devices        │ │
+│  │  • KV definitions               │    │  • No schema validation         │ │
+│  │                                 │    │  • Just raw key-value pairs     │ │
+│  │  Passed to createCellWorkspace  │    │                                 │ │
+│  │  (can be from JSON or code)     │    │  Y.Doc with named Y.Arrays      │ │
 │  └─────────────────────────────────┘    └─────────────────────────────────┘ │
 │                                                                             │
-│              Schema is the LENS through which you VIEW the data             │
+│              Definition is the LENS through which you VIEW the data         │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## File System Structure
+## Y.Doc Storage (Option B - Top-Level Named Y.Arrays)
 
-```
-{appLocalDataDir}/
-├── workspaces/
-│   ├── {workspaceId}.json           # Schema definitions (local only)
-│   ├── {workspaceId}/
-│   │   ├── workspace.yjs            # CRDT data (tables as cells)
-│   │   └── workspace.json           # Human-readable export (optional)
-│   │
-│   ├── {workspaceId2}.json
-│   └── {workspaceId2}/
-│       └── ...
-```
-
-### Schema File Format (`{workspaceId}.json`)
-
-```jsonc
-{
-  "name": "My Workspace",
-  "icon": "📝",
-  "tables": {
-    "posts": {
-      "name": "Blog Posts",
-      "icon": "📰",
-      "fields": {
-        "title": { "name": "Title", "type": "text", "order": 1 },
-        "published": { "name": "Published", "type": "boolean", "order": 2 },
-        "views": { "name": "Views", "type": "integer", "order": 3 }
-      }
-    },
-    "comments": {
-      "name": "Comments",
-      "fields": { ... }
-    }
-  },
-  "kv": {
-    "theme": { "name": "Theme", "type": "select", "options": ["light", "dark"] }
-  }
-}
-```
-
-### Data Storage Format (Y.Doc)
-
-> **See**: `20260128T100000-table-partitioned-storage.md` for the full Y.Doc structure.
-
-The Y.Doc uses **table-partitioned storage** with `Y.Map` of `Y.Array`:
+Each table gets its own top-level Y.Array via `ydoc.getArray(tableId)`. This avoids the Y.Map concurrent creation bug where two clients independently creating Y.Arrays for the same key causes one to lose all data.
 
 ```
 Y.Doc
-├── Y.Map('cells')              ← One Y.Array per table
-│   ├── 'posts' → Y.Array       ← YKeyValueLww<CellValue>
-│   │   ├── { key: 'row1:title', val: 'Hello', ts: ... }
-│   │   └── { key: 'row1:published', val: true, ts: ... }
-│   └── 'comments' → Y.Array
-│
-├── Y.Map('rows')               ← One Y.Array per table
-│   ├── 'posts' → Y.Array       ← YKeyValueLww<RowMeta>
-│   │   └── { key: 'row1', val: { order: 1, deletedAt: null }, ts: ... }
-│   └── 'comments' → Y.Array
-│
-└── Y.Array('kv')               ← YKeyValueLww<unknown>
+├── Y.Array('posts')    ← Table data (cells only)
+│   ├── { key: 'row1:title', val: 'Hello', ts: ... }
+│   ├── { key: 'row1:views', val: 100, ts: ... }
+│   └── ...
+├── Y.Array('users')    ← Another table
+│   └── ...
+└── Y.Array('kv')       ← Workspace-level key-values
     └── { key: 'theme', val: 'dark', ts: ... }
 ```
 
-**Key Insight**: The Y.Doc has NO idea about "tables" or "fields" as concepts. It just stores cells. The `tableId` is encoded in the Y.Map key, not the cell key—this enables table-scoped reads (O(table size) instead of O(total cells)).
+### Key Format
 
-## Design Questions
+Simple two-part keys within each table's Y.Array:
+```
+{rowId}:{fieldId}
+```
 
-### Q1: If schema isn't synced, how do collaborators share schema changes?
+Example: `abc123:title`, `abc123:views`, `xyz789:name`
 
-**Options**:
+### Why Not Y.Map of Y.Arrays?
 
-A. **Schema is truly local** - Each user defines their own view
-   - Pro: Maximum flexibility, no conflicts
-   - Con: Collaborators see different structures
+We initially tried `Y.Map<Y.Array>` for table partitioning. This fails because:
+- When two clients independently create a Y.Array for the same key, Y.Map uses LWW at the Map level
+- One client's Y.Array wins entirely, the other loses all its data
+- Named Y.Arrays via `ydoc.getArray(name)` merge correctly because they're Yjs shared types
 
-B. **Schema shared out-of-band** - Export/import schema JSON
-   - Pro: Explicit sharing when desired
-   - Con: Manual process
+## Definition Format
 
-C. **Schema in a separate sync channel** - Not in same Y.Doc but synced separately
-   - Pro: Best of both worlds
-   - Con: Complexity returns
+The definition is required when creating a workspace:
 
-**Recommendation**: Start with (A), allow (B) via export/import. (C) can come later.
+```typescript
+type WorkspaceSchema = {
+  name: string;
+  description?: string;
+  icon?: Icon | string | null;
+  tables: Record<string, SchemaTableDefinition>;
+  kv?: Record<string, SchemaKvDefinition>;
+};
 
-### Q2: What happens when data doesn't match schema?
+type SchemaTableDefinition = {
+  name: string;
+  icon?: Icon | string | null;
+  fields: Record<string, SchemaFieldDefinition>;
+};
 
-**Scenarios**:
+type SchemaFieldDefinition = {
+  name: string;
+  type: FieldType;
+  order: number;
+  icon?: Icon | string | null;
+  options?: string[];
+  default?: unknown;
+};
+
+type FieldType =
+  | 'text' | 'integer' | 'real' | 'boolean'
+  | 'date' | 'datetime' | 'select' | 'tags'
+  | 'json' | 'richtext';
+```
+
+## API
+
+### Factory
+
+```typescript
+const workspace = createCellWorkspace({
+  id: 'my-workspace',
+  definition: {
+    name: 'My Blog',
+    description: 'Personal blog',
+    icon: 'emoji:📝',
+    tables: {
+      posts: {
+        name: 'Posts',
+        fields: {
+          title: { name: 'Title', type: 'text', order: 1 },
+          views: { name: 'Views', type: 'integer', order: 2 },
+        }
+      }
+    }
+  }
+});
+
+// Or with JSON-loaded definition
+const definition = JSON.parse(await Bun.file('schema.json').text());
+createCellWorkspace({ id: 'blog', definition });
+```
+
+### Client
+
+```typescript
+type CellWorkspaceClient = {
+  // Identity
+  readonly id: string;
+  readonly ydoc: Y.Doc;
+
+  // Metadata (from definition)
+  readonly name: string;
+  readonly description: string;
+  readonly icon: Icon | string | null;
+  readonly definition: WorkspaceSchema;
+
+  // Data access
+  table(tableId: string): TableStore;
+  readonly kv: KvStore;
+
+  // Schema validation (uses definition's schema)
+  getTypedRows(tableId: string): TypedRowWithCells[];
+
+  // Utilities
+  batch<T>(fn: (ws: CellWorkspaceClient) => T): T;
+  destroy(): Promise<void>;
+};
+```
+
+### TableStore
+
+```typescript
+type TableStore = {
+  readonly tableId: string;
+
+  // Cell operations
+  get(rowId: string, fieldId: string): CellValue | undefined;
+  set(rowId: string, fieldId: string, value: CellValue): void;
+  delete(rowId: string, fieldId: string): void;
+  has(rowId: string, fieldId: string): boolean;
+
+  // Row operations
+  getRow(rowId: string): Record<string, CellValue> | undefined;
+  createRow(rowId?: string): string;  // Generate or validate ID only
+  deleteRow(rowId: string): void;     // Hard delete - removes all cells
+
+  // Bulk operations
+  getRows(): RowData[];     // Returns {id, cells}[] sorted by id
+  getRowIds(): string[];    // Returns all row IDs
+
+  // Observation
+  observe(handler: ChangeHandler<CellValue>): () => void;
+};
+```
+
+## Simplifications
+
+### No Reserved Fields
+
+Unlike the original proposal, there are no `_order` or `_deletedAt` reserved fields:
+- **Row ordering**: Application-level concern, implement as a regular field if needed
+- **Soft delete**: Application-level concern, implement as a `deletedAt` field if needed
+- **`deleteRow()`**: Hard delete - removes all cells for the row
+
+This keeps the CRDT layer minimal and focused on cell-level LWW merge semantics.
+
+### No Epochs or Head Doc
+
+With external schema:
+- No need for epochs (schema changes are local config changes)
+- No need for head doc (workspace identity is in the definition)
+- Workspace = single Y.Doc + definition
+
+## Schema as Lens
+
+The schema/definition is **advisory only**. The data doesn't need to comply:
+
+### What happens when data doesn't match schema?
 
 1. **Cell exists but field not in schema**
-   - Display as "unknown field" or hide
+   - `getTypedRows()` marks it as type `'json'` and puts it in `extraFields`
    - Data preserved, not deleted
 
 2. **Field in schema but cell doesn't exist**
-   - Display as empty/null
+   - `getTypedRows()` puts it in `missingFields`
    - No data created until user edits
 
 3. **Cell type doesn't match field type**
-   - Display with warning indicator
-   - Allow editing to fix
+   - `getTypedRows()` marks the cell as `valid: false`
+   - Data preserved as-is
 
-4. **Row exists in data but table not in schema**
-   - Data orphaned but preserved
-   - Can add table to schema to "recover"
+4. **Table not in schema but data exists**
+   - `table()` still works (creates Y.Array on demand)
+   - `getTypedRows()` returns all fields as `'json'` type
 
-**Key Principle**: Schema is advisory. Data is authoritative.
+### Arbitrary Access
 
-### Q3: Do we need KV separate from tables?
-
-**Arguments for keeping KV**:
-- Single values (not rows) are common
-- Settings, preferences, flags
-- Simpler API: `kv.get('theme')` vs `tables.settings.get('theme').cells.value`
-
-**Arguments for removing KV**:
-- Everything could be a single-row table
-- Reduces API surface
-- One fewer concept to explain
-
-**Recommendation**: Keep KV for simplicity, but make it optional.
-
-### Q4: Do we need row ordering?
-
-**Options**:
-
-A. **No row order** - Rows are unordered set
-   - Pro: Simpler, less conflict potential
-   - Con: Can't represent ordered lists
-
-B. **Order as cell** - `{tableId}:{rowId}:_order` cell
-   - Pro: Uses existing cell mechanism
-   - Con: Special field, ordering conflicts
-
-C. **Separate rows array** - Like current dynamic implementation
-   - Pro: Clean separation
-   - Con: More storage overhead
-
-**Recommendation**: (C) - Keep separate rows array with `order` property.
-
-## Implementation Simplifications
-
-### Remove Epochs
-
-The current architecture has epochs for schema versioning. With external schema:
-- No need for epochs
-- Workspace = single Y.Doc
-- Schema changes = edit JSON file, reload
-
-### Remove Head Doc
-
-Head Doc exists for:
-1. Workspace identity (name, icon) → Move to schema JSON
-2. Epoch tracking → Not needed
-
-With external schema, Head Doc becomes unnecessary.
-
-### Simplify to Two Files
-
-Per workspace:
-1. `{workspaceId}.json` - Schema + identity
-2. `{workspaceId}/workspace.yjs` - Data
-
-That's it. No epochs, no head doc, no definition syncing.
-
-## API Design
-
-### Reading Workspace
+You can access tables and fields not in the definition:
 
 ```typescript
-// Load schema from filesystem
-const schema = await loadSchema(workspaceId);
-// schema: { name, icon, tables: {...}, kv: {...} }
+// Table not in definition - still works
+const arbitrary = workspace.table('notInSchema');
+arbitrary.set('row1', 'anyField', 'anyValue');
 
-// Load data from Y.Doc
-const workspace = createCellWorkspace({ id: workspaceId });
-await workspace.whenSynced;
-
-// Combine for typed access
-const posts = workspace.table('posts', schema.tables.posts);
-// Returns helper that knows field types from schema
+// getTypedRows returns 'json' type for unknown tables
+const rows = workspace.getTypedRows('notInSchema');
+// All fields marked as type 'json', all in extraFields
 ```
 
-### Writing Data
+## Typed vs Untyped Definitions
+
+### Typed (Code-Defined)
 
 ```typescript
-// Schema provides type hints, but NOT enforced
-posts.setCell(rowId, 'title', 'Hello World');
+const definition = {
+  name: 'Blog',
+  tables: {
+    posts: {
+      name: 'Posts',
+      fields: {
+        title: { name: 'Title', type: 'text', order: 1 },
+      }
+    }
+  }
+} as const;
 
-// Can write cells for fields not in schema
-posts.setCell(rowId, 'unknownField', 'whatever');
-
-// Can write wrong types (schema mismatch, but allowed)
-posts.setCell(rowId, 'views', 'not a number');  // Stores as-is
+const workspace = createCellWorkspace({ id: 'blog', definition });
+// TypeScript knows the schema structure
 ```
 
-### Reading Data
+### Untyped (JSON-Loaded)
 
 ```typescript
-// Get all cells for a row
+const definition = JSON.parse(await Bun.file('schema.json').text());
+const workspace = createCellWorkspace({ id: 'blog', definition });
+// Works identically, but TypeScript sees unknown types
+```
+
+Both support arbitrary table/field access.
+
+## Usage Example
+
+```typescript
+const workspace = createCellWorkspace({
+  id: 'blog',
+  definition: {
+    name: 'My Blog',
+    tables: {
+      posts: {
+        name: 'Posts',
+        fields: {
+          title: { name: 'Title', type: 'text', order: 1 },
+          views: { name: 'Views', type: 'integer', order: 2 },
+        }
+      }
+    }
+  }
+});
+
+// Access workspace metadata
+console.log(workspace.name);        // 'My Blog'
+console.log(workspace.description); // ''
+
+// Get table store
+const posts = workspace.table('posts');
+
+// Create a row (just generates ID)
+const rowId = posts.createRow();
+
+// Set cells
+posts.set(rowId, 'title', 'Hello World');
+posts.set(rowId, 'views', 100);
+
+// Read back
 const row = posts.getRow(rowId);
-// { title: 'Hello World', published: true, views: 100 }
+// { title: 'Hello World', views: 100 }
 
-// Schema helps interpret types
-const typedRow = posts.getTypedRow(rowId, schema.tables.posts);
-// {
-//   title: { value: 'Hello World', type: 'text', valid: true },
-//   published: { value: true, type: 'boolean', valid: true },
-//   views: { value: 100, type: 'integer', valid: true }
-// }
+// Typed rows with validation
+const typedRows = workspace.getTypedRows('posts');
+// Validates types, identifies missing/extra fields
+
+// Delete row (hard delete)
+posts.deleteRow(rowId);
 ```
 
-## Migration Path
+## Verification
 
-From current dynamic implementation:
-1. Extract definitions from Y.Doc → Write to external JSON
-2. Keep cell storage as-is (already cell-level)
-3. Remove definition-related code from Y.Doc
-4. Update persistence to new file structure
+```bash
+cd packages/epicenter
+bun test src/cell/
+```
 
-## Comparison Table
-
-| Aspect | Static API | Dynamic API (current) | External Schema (proposed) |
-|--------|-----------|----------------------|---------------------------|
-| Schema location | Code | Y.Doc | Local JSON file |
-| Schema synced | N/A (compile time) | Yes (CRDT) | No (local only) |
-| Validation | On read | On read | Advisory only |
-| Data granularity | Row-level | Cell-level | Cell-level |
-| Conflict resolution | Row LWW | Cell LWW | Cell LWW |
-| Epochs | No | Yes | No |
-| Head Doc | No | Yes | No |
-| Complexity | Low | High | Medium |
-
-## Open Questions
-
-1. **Schema sharing**: How do teams share schema definitions?
-   - Git commit the JSON?
-   - Export/import UI?
-   - Separate sync mechanism later?
-
-2. **Schema versioning**: What if schema format itself evolves?
-   - Version field in JSON?
-   - Migration functions in code?
-
-3. **Default values**: Should schema define defaults for new cells?
-   - Or is that a UI concern?
-
-4. **Computed fields**: Should schema support formulas/computations?
-   - Probably a separate feature
-
-5. **Rich text cells**: How do Y.Text fields work with this model?
-   - Store docId reference in cell
-   - Separate Y.Doc for rich content
-
-## Next Steps
-
-1. [ ] Decide on schema sharing approach
-2. [ ] Design schema JSON format precisely
-3. [ ] Implement `CellWorkspace` (simplified Y.Doc wrapper)
-4. [ ] Implement schema file loading/saving
-5. [ ] Create migration utility from current format
-6. [ ] Update persistence layer for new file structure
+All 81 tests pass.
 
 ---
 
-## Appendix: Filesystem Visualization
+## Changelog
 
-```
-~/.local/share/com.epicenter.app/     # macOS/Linux appLocalDataDir
-├── registry.json                      # List of workspace IDs
-└── workspaces/
-    ├── abc123.json                    # Workspace "abc123" schema
-    │   {
-    │     "name": "My Notes",
-    │     "icon": "📝",
-    │     "tables": {
-    │       "notes": {
-    │         "name": "Notes",
-    │         "fields": {
-    │           "title": { "type": "text", "order": 1 },
-    │           "content": { "type": "richtext", "order": 2 }
-    │         }
-    │       }
-    │     }
-    │   }
-    │
-    ├── abc123/
-    │   └── workspace.yjs              # CRDT data
-    │
-    ├── def456.json                    # Another workspace schema
-    └── def456/
-        └── workspace.yjs
-```
+- **2026-01-27**: Initial draft with Y.Map of Y.Arrays
+- **2026-01-28**: Switched to Option B (top-level named Y.Arrays) to fix concurrent table creation
+- **2026-01-28**: Removed `_order` and `_deletedAt` reserved fields
+- **2026-01-28**: Made definition required in `createCellWorkspace`
+- **2026-01-28**: Added workspace metadata to client (`name`, `description`, `icon`, `definition`)
+- **2026-01-28**: Simplified `getTypedRows()` to use definition's schema (no second argument)

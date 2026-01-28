@@ -425,3 +425,107 @@ src/static/
 For tests spanning multiple modules, either:
 - Add to the test file of the highest-level consumer
 - Create a dedicated `[feature].integration.test.ts` if substantial
+
+# Branded Types Pattern
+
+## Use Brand Constructors, Never Raw Type Assertions
+
+When working with branded types (nominal typing), always create a brand constructor function. Never use `as BrandedType` assertions scattered throughout the codebase.
+
+### Bad Pattern (Scattered Assertions)
+
+```typescript
+// types.ts
+type RowId = string & Brand<'RowId'>;
+
+// file1.ts
+const id = someString as RowId;  // Bad: assertion here
+
+// file2.ts
+function getRow(id: string) {
+  doSomething(id as RowId);  // Bad: another assertion
+}
+
+// file3.ts
+const parsed = key.split(':')[0] as RowId;  // Bad: assertions everywhere
+```
+
+### Good Pattern (Brand Constructor)
+
+```typescript
+// types.ts
+import type { Brand } from 'wellcrafted/brand';
+
+type RowId = string & Brand<'RowId'>;
+
+// Brand constructor - THE ONLY place with `as RowId`
+function rowId(id: string): RowId {
+  return id as RowId;
+}
+
+// file1.ts
+const id = rowId(someString);  // Good: uses constructor
+
+// file2.ts
+function getRow(id: string) {
+  doSomething(rowId(id));  // Good: clear branding point
+}
+
+// file3.ts
+const parsed = rowId(key.split(':')[0]);  // Good: consistent
+```
+
+### Why Brand Constructors Are Better
+
+1. **Single source of truth**: Only one place has the type assertion
+2. **Future validation**: Easy to add runtime validation later
+3. **Searchable**: `rowId(` is easy to find and audit
+4. **Explicit boundaries**: Clear where unbranded -> branded conversion happens
+5. **Refactor-safe**: Change the branding logic in one place
+
+### Implementation Pattern
+
+```typescript
+import type { Brand } from 'wellcrafted/brand';
+
+// 1. Define the branded type
+export type RowId = string & Brand<'RowId'>;
+
+// 2. Create the brand constructor (only `as` assertion in codebase)
+export function rowId(id: string): RowId {
+  return id as RowId;
+}
+
+// 3. Optionally add validation
+export function rowId(id: string): RowId {
+  if (id.includes(':')) {
+    throw new Error(`RowId cannot contain ':': ${id}`);
+  }
+  return id as RowId;
+}
+```
+
+### Naming Convention
+
+| Branded Type | Constructor Function |
+|--------------|---------------------|
+| `RowId` | `rowId()` |
+| `FieldId` | `fieldId()` |
+| `UserId` | `userId()` |
+| `DocumentGuid` | `documentGuid()` |
+
+The constructor is the **lowercase camelCase** version of the type name.
+
+### When Functions Accept Branded Types
+
+If a function requires a branded type, callers must use the brand constructor:
+
+```typescript
+// Function requires branded RowId
+function getRow(id: RowId): Row { ... }
+
+// Caller must brand the string
+getRow(rowId(userInput));  // Explicit branding point
+```
+
+This makes type boundaries visible and intentional.

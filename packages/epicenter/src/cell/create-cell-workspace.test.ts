@@ -103,13 +103,13 @@ describe('createCellWorkspace', () => {
 		test('hard-deletes row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
-			expect(posts.getRow(rowId)).toBeDefined();
+			expect(posts.raw.getRow(rowId)).toBeDefined();
 
 			posts.deleteRow(rowId);
-			expect(posts.getRow(rowId)).toBeUndefined();
+			expect(posts.raw.getRow(rowId)).toBeUndefined();
 		});
 
-		test('getRows returns rows sorted by id', () => {
+		test('raw.getRows returns rows sorted by id', () => {
 			posts.createRow('row3');
 			posts.createRow('row1');
 			posts.createRow('row2');
@@ -118,7 +118,7 @@ describe('createCellWorkspace', () => {
 			posts.set('row1', 'title', 'First');
 			posts.set('row2', 'title', 'Second');
 
-			const rows = posts.getRows();
+			const rows = posts.raw.getRows();
 			expect(rows.map((r) => r.id)).toEqual(['row1', 'row2', 'row3']);
 		});
 
@@ -147,10 +147,20 @@ describe('createCellWorkspace', () => {
 	});
 
 	describe('cell operations', () => {
-		test('sets and gets cell value', () => {
+		test('sets and gets cell value (raw)', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello World');
-			expect(posts.get(rowId, 'title')).toBe('Hello World');
+			expect(posts.raw.get(rowId, 'title')).toBe('Hello World');
+		});
+
+		test('get() returns validated result', () => {
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello World');
+			const result = posts.get(rowId, 'title');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.value).toBe('Hello World');
+			}
 		});
 
 		test('deletes cell value', () => {
@@ -160,19 +170,32 @@ describe('createCellWorkspace', () => {
 			expect(posts.has(rowId, 'title')).toBe(false);
 		});
 
-		test('getRow returns all cells for a row', () => {
+		test('raw.getRow returns all cells for a row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
 			posts.set(rowId, 'views', 100);
 			posts.set(rowId, 'published', true);
 
-			const row = posts.getRow(rowId)!;
+			const row = posts.raw.getRow(rowId)!;
 			expect(row.title).toBe('Hello');
 			expect(row.views).toBe(100);
 			expect(row.published).toBe(true);
 		});
 
-		test('stores various data types', () => {
+		test('getRow() returns validated result', () => {
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello');
+			posts.set(rowId, 'views', 100);
+
+			const result = posts.getRow(rowId);
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.row.cells.title).toBe('Hello');
+				expect(result.row.cells.views).toBe(100);
+			}
+		});
+
+		test('stores various data types (raw access)', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'text', 'hello');
 			posts.set(rowId, 'number', 42);
@@ -182,13 +205,13 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'object', { nested: 'value' });
 			posts.set(rowId, 'null', null);
 
-			expect(posts.get(rowId, 'text')).toBe('hello');
-			expect(posts.get(rowId, 'number')).toBe(42);
-			expect(posts.get(rowId, 'float')).toBe(3.14);
-			expect(posts.get(rowId, 'bool')).toBe(true);
-			expect(posts.get(rowId, 'array')).toEqual(['a', 'b']);
-			expect(posts.get(rowId, 'object')).toEqual({ nested: 'value' });
-			expect(posts.get(rowId, 'null')).toBeNull();
+			expect(posts.raw.get(rowId, 'text')).toBe('hello');
+			expect(posts.raw.get(rowId, 'number')).toBe(42);
+			expect(posts.raw.get(rowId, 'float')).toBe(3.14);
+			expect(posts.raw.get(rowId, 'bool')).toBe(true);
+			expect(posts.raw.get(rowId, 'array')).toEqual(['a', 'b']);
+			expect(posts.raw.get(rowId, 'object')).toEqual({ nested: 'value' });
+			expect(posts.raw.get(rowId, 'null')).toBeNull();
 		});
 
 		test('validates fieldId does not contain colon', () => {
@@ -339,8 +362,8 @@ describe('createCellWorkspace', () => {
 
 			// Verify ws2 has the data
 			const posts2 = ws2.table('posts');
-			expect(posts2.getRow('row1')).toBeDefined();
-			expect(posts2.get('row1', 'title')).toBe('Hello from WS1');
+			expect(posts2.raw.getRow('row1')).toBeDefined();
+			expect(posts2.raw.get('row1', 'title')).toBe('Hello from WS1');
 
 			// Make change in ws2
 			posts2.set(rowId, 'title', 'Updated in WS2');
@@ -350,7 +373,7 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Verify ws1 has the update
-			expect(posts1.get('row1', 'title')).toBe('Updated in WS2');
+			expect(posts1.raw.get('row1', 'title')).toBe('Updated in WS2');
 		});
 
 		test('last-write-wins for concurrent cell edits', async () => {
@@ -383,10 +406,10 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have BOTH edits (different cells, both win)
-			expect(posts1.get('row1', 'title')).toBe('From WS1');
-			expect(posts1.get('row1', 'views')).toBe(999);
-			expect(posts2.get('row1', 'title')).toBe('From WS1');
-			expect(posts2.get('row1', 'views')).toBe(999);
+			expect(posts1.raw.get('row1', 'title')).toBe('From WS1');
+			expect(posts1.raw.get('row1', 'views')).toBe(999);
+			expect(posts2.raw.get('row1', 'title')).toBe('From WS1');
+			expect(posts2.raw.get('row1', 'views')).toBe(999);
 		});
 
 		test('same cell concurrent edit - later timestamp wins', async () => {
@@ -419,8 +442,8 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have the later value (WS2)
-			expect(posts1.get('row1', 'title')).toBe('From WS2 (later)');
-			expect(posts2.get('row1', 'title')).toBe('From WS2 (later)');
+			expect(posts1.raw.get('row1', 'title')).toBe('From WS2 (later)');
+			expect(posts2.raw.get('row1', 'title')).toBe('From WS2 (later)');
 		});
 	});
 
@@ -489,9 +512,69 @@ describe('createCellWorkspace', () => {
 			});
 
 			// Verify all writes completed
-			expect(posts.getRow('row1')).toBeDefined();
-			expect(posts.get('row1', 'title')).toBe('Hello');
-			expect(posts.get('row1', 'views')).toBe(100);
+			expect(posts.raw.getRow('row1')).toBeDefined();
+			expect(posts.raw.get('row1', 'title')).toBe('Hello');
+			expect(posts.raw.get('row1', 'views')).toBe(100);
+		});
+	});
+
+	describe('consolidated validation API', () => {
+		test('table has schema property', () => {
+			expect(posts.schema).toBeDefined();
+			expect(posts.schema.name).toBe('Blog Posts');
+		});
+
+		test('dynamic table has empty schema', () => {
+			const dynamicTable = workspace.table('dynamic');
+			expect(dynamicTable.schema.name).toBe('dynamic');
+			expect(dynamicTable.schema.fields).toEqual({});
+		});
+
+		test('getAll returns validated results', () => {
+			posts.set('row1', 'title', 'Valid');
+			posts.set('row1', 'views', 100);
+
+			posts.set('row2', 'title', 123); // Invalid - should be text
+			posts.set('row2', 'views', 'invalid'); // Invalid - should be integer
+
+			const results = posts.getAll();
+			expect(results.length).toBe(2);
+
+			const valid = results.filter((r) => r.status === 'valid');
+			const invalid = results.filter((r) => r.status === 'invalid');
+			expect(valid.length).toBe(1);
+			expect(invalid.length).toBe(1);
+		});
+
+		test('getAllValid filters out invalid rows', () => {
+			posts.set('row1', 'title', 'Valid');
+			posts.set('row2', 'title', 123); // Invalid
+
+			const validRows = posts.getAllValid();
+			expect(validRows.length).toBe(1);
+			expect(validRows[0]?.cells.title).toBe('Valid');
+		});
+
+		test('getAllInvalid returns only invalid rows', () => {
+			posts.set('row1', 'title', 'Valid');
+			posts.set('row2', 'views', 'not a number'); // Invalid
+
+			const invalidRows = posts.getAllInvalid();
+			expect(invalidRows.length).toBe(1);
+			expect(invalidRows[0]?.id).toBe('row2');
+			expect(invalidRows[0]?.errors.length).toBeGreaterThan(0);
+		});
+
+		test('dynamic tables pass all validation (no schema)', () => {
+			const dynamicTable = workspace.table('dynamic');
+			dynamicTable.set('row1', 'anything', { any: 'value' });
+			dynamicTable.set('row2', 'field', 12345);
+
+			const all = dynamicTable.getAll();
+			expect(all.every((r) => r.status === 'valid')).toBe(true);
+
+			const invalid = dynamicTable.getAllInvalid();
+			expect(invalid.length).toBe(0);
 		});
 	});
 });

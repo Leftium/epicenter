@@ -1,8 +1,8 @@
 /**
  * Table Store for Cell Workspace
  *
- * A unified store for a single table. Every entry is a cell value.
- * No built-in ordering or soft-delete - implement these as regular fields if needed.
+ * A unified store for a single table with integrated validation.
+ * Every entry is a cell value.
  *
  * Y.Doc structure:
  * ```
@@ -16,11 +16,27 @@
  */
 
 import type * as Y from 'yjs';
+import { Compile, type Validator } from 'typebox/compile';
+import type { TProperties, TSchema } from 'typebox';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww';
-import type { CellValue, TableStore, ChangeHandler, RowData } from './types';
+import type {
+	CellValue,
+	TableStore,
+	ChangeHandler,
+	RowData,
+	RawTableAccess,
+	SchemaTableDefinition,
+} from './types';
+import type {
+	GetCellResult,
+	GetResult,
+	RowResult,
+	InvalidRowResult,
+	ValidationError,
+} from './validation-types';
 import {
 	cellKey,
 	parseCellKey,
@@ -29,25 +45,127 @@ import {
 	validateId,
 	generateRowId,
 } from './keys';
+import {
+	schemaFieldToTypebox,
+	schemaTableToTypebox,
+} from './converters/to-typebox';
 
 /**
  * Create a table store backed by a Y.Array.
  *
  * @param tableId - The table identifier (used for error messages)
  * @param yarray - The Y.Array for this table's data
+ * @param schema - Schema for validation (use empty `{ name, fields: {} }` for dynamic tables)
  */
 export function createTableStore(
 	tableId: string,
 	yarray: Y.Array<YKeyValueLwwEntry<CellValue>>,
+	schema: SchemaTableDefinition,
 ): TableStore {
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 
+	// Compile validators once at construction
+	const rowValidator = Compile(schemaTableToTypebox(schema));
+
+	// Compile field validators lazily and cache them
+	const fieldValidators = new Map<string, Validator<TProperties, TSchema>>();
+
+	function getFieldValidator(
+		fieldId: string,
+	): Validator<TProperties, TSchema> | undefined {
+		let validator = fieldValidators.get(fieldId);
+		if (validator) return validator;
+
+		const fieldDef = schema.fields[fieldId];
+		if (!fieldDef) return undefined;
+
+		const fieldSchema = schemaFieldToTypebox(fieldDef);
+		validator = Compile(fieldSchema);
+		fieldValidators.set(fieldId, validator);
+		return validator;
+	}
+
 	// ══════════════════════════════════════════════════════════════════════
-	// Cell Operations
+	// Raw Operations (internal + exposed via raw property)
 	// ══════════════════════════════════════════════════════════════════════
 
-	function get(rowId: string, fieldId: string): CellValue | undefined {
+	function rawGet(rowId: string, fieldId: string): CellValue | undefined {
 		return ykv.get(cellKey(rowId, fieldId));
+	}
+
+	function rawGetRow(rowId: string): Record<string, CellValue> | undefined {
+		const prefix = rowPrefix(rowId);
+		const cells: Record<string, CellValue> = {};
+		let found = false;
+
+		for (const [key, entry] of ykv.map) {
+			if (hasPrefix(key, prefix)) {
+				const { fieldId } = parseCellKey(key);
+				cells[fieldId] = entry.val;
+				found = true;
+			}
+		}
+
+		return found ? cells : undefined;
+	}
+
+	function rawGetRows(): RowData[] {
+		// Group cells by rowId
+		const rowsMap = new Map<string, Record<string, CellValue>>();
+
+		for (const [key, entry] of ykv.map) {
+			const { rowId, fieldId } = parseCellKey(key);
+			let row = rowsMap.get(rowId);
+			if (!row) {
+				row = {};
+				rowsMap.set(rowId, row);
+			}
+			row[fieldId] = entry.val;
+		}
+
+		// Convert to array, sorted by id for deterministic ordering
+		const rows: RowData[] = [];
+		for (const [id, cells] of rowsMap) {
+			rows.push({ id, cells });
+		}
+
+		return rows.sort((a, b) => a.id.localeCompare(b.id));
+	}
+
+	const raw: RawTableAccess = {
+		get: rawGet,
+		getRow: rawGetRow,
+		getRows: rawGetRows,
+	};
+
+	// ══════════════════════════════════════════════════════════════════════
+	// Validated Cell Operations
+	// ══════════════════════════════════════════════════════════════════════
+
+	function get(rowId: string, fieldId: string): GetCellResult<unknown> {
+		const key = `${rowId}:${fieldId}`;
+		const value = rawGet(rowId, fieldId);
+
+		// Check if cell exists
+		if (value === undefined && !has(rowId, fieldId)) {
+			return { status: 'not_found', key };
+		}
+
+		// Get field validator
+		const validator = getFieldValidator(fieldId);
+
+		// Fields not in schema pass validation (advisory behavior)
+		if (!validator) {
+			return { status: 'valid', value };
+		}
+
+		// Validate the cell value
+		if (validator.Check(value)) {
+			return { status: 'valid', value };
+		}
+
+		const errors: ValidationError[] = [...validator.Errors(value)];
+		return { status: 'invalid', key, errors, value };
 	}
 
 	function set(rowId: string, fieldId: string, value: CellValue): void {
@@ -65,23 +183,30 @@ export function createTableStore(
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// Row Operations
+	// Validated Row Operations
 	// ══════════════════════════════════════════════════════════════════════
 
-	function getRow(rowId: string): Record<string, CellValue> | undefined {
-		const prefix = rowPrefix(rowId);
-		const cells: Record<string, CellValue> = {};
-		let found = false;
+	function getRow(rowId: string): GetResult<RowData> {
+		const cells = rawGetRow(rowId);
 
-		for (const [key, entry] of ykv.map) {
-			if (hasPrefix(key, prefix)) {
-				const { fieldId } = parseCellKey(key);
-				cells[fieldId] = entry.val;
-				found = true;
-			}
+		if (!cells) {
+			return { status: 'not_found', id: rowId };
 		}
 
-		return found ? cells : undefined;
+		const row: RowData = { id: rowId, cells };
+
+		if (rowValidator.Check(cells)) {
+			return { status: 'valid', row };
+		}
+
+		const errors: ValidationError[] = [...rowValidator.Errors(cells)];
+		return {
+			status: 'invalid',
+			id: rowId,
+			tableName: tableId,
+			errors,
+			row: cells,
+		};
 	}
 
 	function createRow(rowId?: string): string {
@@ -109,30 +234,54 @@ export function createTableStore(
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// Bulk Operations
+	// Bulk Operations (Validated)
 	// ══════════════════════════════════════════════════════════════════════
 
-	function getRows(): RowData[] {
-		// Group cells by rowId
-		const rowsMap = new Map<string, Record<string, CellValue>>();
+	function getAll(): RowResult<RowData>[] {
+		const rows = rawGetRows();
+		const results: RowResult<RowData>[] = [];
 
-		for (const [key, entry] of ykv.map) {
-			const { rowId, fieldId } = parseCellKey(key);
-			let row = rowsMap.get(rowId);
-			if (!row) {
-				row = {};
-				rowsMap.set(rowId, row);
+		for (const row of rows) {
+			if (rowValidator.Check(row.cells)) {
+				results.push({ status: 'valid', row });
+			} else {
+				const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
+				results.push({
+					status: 'invalid',
+					id: row.id,
+					tableName: tableId,
+					errors,
+					row: row.cells,
+				});
 			}
-			row[fieldId] = entry.val;
 		}
 
-		// Convert to array, sorted by id for deterministic ordering
-		const rows: RowData[] = [];
-		for (const [id, cells] of rowsMap) {
-			rows.push({ id, cells });
+		return results;
+	}
+
+	function getAllValid(): RowData[] {
+		const rows = rawGetRows();
+		return rows.filter((row) => rowValidator.Check(row.cells));
+	}
+
+	function getAllInvalid(): InvalidRowResult[] {
+		const rows = rawGetRows();
+		const results: InvalidRowResult[] = [];
+
+		for (const row of rows) {
+			if (!rowValidator.Check(row.cells)) {
+				const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
+				results.push({
+					status: 'invalid',
+					id: row.id,
+					tableName: tableId,
+					errors,
+					row: row.cells,
+				});
+			}
 		}
 
-		return rows.sort((a, b) => a.id.localeCompare(b.id));
+		return results;
 	}
 
 	function getRowIds(): string[] {
@@ -184,20 +333,24 @@ export function createTableStore(
 
 	return {
 		tableId,
+		schema,
+		raw,
 
-		// Cell operations
+		// Cell operations (validated)
 		get,
 		set,
 		delete: del,
 		has,
 
-		// Row operations
+		// Row operations (validated)
 		getRow,
 		createRow,
 		deleteRow,
 
-		// Bulk operations
-		getRows,
+		// Bulk operations (validated)
+		getAll,
+		getAllValid,
+		getAllInvalid,
 		getRowIds,
 
 		// Observation

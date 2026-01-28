@@ -1,8 +1,14 @@
 /**
  * ValidatedTableStore - Adds TypeBox validation to TableStore.
  *
- * Wraps a raw TableStore to provide validated access to cells and rows.
- * Validators are compiled once at construction for performance.
+ * @deprecated Use the consolidated TableStore which now includes validation.
+ * The new TableStore has validation built-in:
+ * - `table.get()` returns validated results
+ * - `table.getRow()` returns validated results
+ * - `table.getAll()` returns all rows with validation status
+ * - `table.getAllValid()` returns only valid rows
+ * - `table.getAllInvalid()` returns only invalid rows
+ * - `table.raw.*` provides unvalidated access
  *
  * @packageDocumentation
  */
@@ -78,6 +84,9 @@ export type ValidatedTableStore = {
 /**
  * Creates a ValidatedTableStore wrapping a TableStore with TypeBox validation.
  *
+ * @deprecated Use `createTableStore()` with a schema parameter instead.
+ * The new consolidated TableStore includes validation automatically.
+ *
  * @param tableId - The table identifier
  * @param schema - The table schema definition
  * @param tableStore - The underlying TableStore to wrap
@@ -85,27 +94,13 @@ export type ValidatedTableStore = {
  *
  * @example
  * ```typescript
- * const schema = {
- *   name: 'Posts',
- *   fields: {
- *     title: { name: 'Title', type: 'text', order: 1 },
- *     views: { name: 'Views', type: 'integer', order: 2 },
- *   }
- * };
- *
+ * // OLD WAY (deprecated):
  * const validated = createValidatedTableStore('posts', schema, rawStore);
  *
- * // Cell-level validation
- * const cellResult = validated.getValidated('row-1', 'views');
- * if (cellResult.status === 'valid') {
- *   console.log('Views:', cellResult.value);
- * }
- *
- * // Row-level validation
- * const rowResult = validated.getRowValidated('row-1');
- * if (rowResult.status === 'valid') {
- *   console.log('Row:', rowResult.row);
- * }
+ * // NEW WAY:
+ * const store = createTableStore('posts', yarray, schema);
+ * // store.get() returns validated results
+ * // store.raw.get() returns unvalidated access
  * ```
  */
 export function createValidatedTableStore(
@@ -135,7 +130,7 @@ export function createValidatedTableStore(
 
 	function getValidated(rowId: string, fieldId: string): GetCellResult<unknown> {
 		const key = `${rowId}:${fieldId}`;
-		const value = tableStore.get(rowId, fieldId);
+		const value = tableStore.raw.get(rowId, fieldId);
 
 		// Check if cell exists
 		if (value === undefined && !tableStore.has(rowId, fieldId)) {
@@ -160,7 +155,7 @@ export function createValidatedTableStore(
 	}
 
 	function getRowValidated(rowId: string): GetResult<RowData> {
-		const cells = tableStore.getRow(rowId);
+		const cells = tableStore.raw.getRow(rowId);
 
 		if (!cells) {
 			return { status: 'not_found', id: rowId };
@@ -183,7 +178,7 @@ export function createValidatedTableStore(
 	}
 
 	function getRowsValidated(): RowResult<RowData>[] {
-		const rows = tableStore.getRows();
+		const rows = tableStore.raw.getRows();
 		const results: RowResult<RowData>[] = [];
 
 		for (const row of rows) {
@@ -205,12 +200,12 @@ export function createValidatedTableStore(
 	}
 
 	function getRowsValid(): RowData[] {
-		const rows = tableStore.getRows();
+		const rows = tableStore.raw.getRows();
 		return rows.filter((row) => rowValidator.Check(row.cells));
 	}
 
 	function getRowsInvalid(): InvalidRowResult[] {
-		const rows = tableStore.getRows();
+		const rows = tableStore.raw.getRows();
 		const results: InvalidRowResult[] = [];
 
 		for (const row of rows) {

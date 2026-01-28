@@ -34,10 +34,6 @@ import type {
 import { createTableStore } from './table-store';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
 import { validateId } from './keys';
-import {
-	createValidatedTableStore,
-	type ValidatedTableStore,
-} from './validated-table-store';
 
 /**
  * Validate that a value matches the expected field type.
@@ -115,9 +111,12 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  * posts.set(rowId, 'title', 'Hello World');
  * posts.set(rowId, 'views', 100);
  *
- * // Read back
- * const rows = posts.getRows();
+ * // Read back (raw, no validation)
+ * const rows = posts.raw.getRows();
  * // [{ id: 'abc123', cells: { title: 'Hello World', views: 100 } }]
+ *
+ * // Get all valid rows
+ * const validRows = posts.getAllValid();
  *
  * // Get typed rows (uses definition's schema)
  * const typedRows = workspace.getTypedRows('posts');
@@ -139,15 +138,13 @@ export function createCellWorkspace(
 	// Cache table stores to avoid recreation
 	const tableStoreCache = new Map<string, TableStore>();
 
-	// Cache validated table stores
-	const validatedStoreCache = new Map<string, ValidatedTableStore>();
-
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
 	const kv = createKvStore(kvArray);
 
 	/**
 	 * Get or create a table store.
+	 * Passes schema from definition, or empty schema for dynamic tables.
 	 */
 	function table(tableId: string): TableStore {
 		validateId(tableId, 'tableId');
@@ -156,7 +153,9 @@ export function createCellWorkspace(
 		if (!store) {
 			// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
-			store = createTableStore(tableId, yarray);
+			// Use schema from definition, or empty schema for dynamic tables
+			const tableSchema = definition.tables[tableId] ?? { name: tableId, fields: {} };
+			store = createTableStore(tableId, yarray, tableSchema);
 			tableStoreCache.set(tableId, store);
 		}
 		return store;
@@ -166,29 +165,10 @@ export function createCellWorkspace(
 	 * Get rows with typed cells validated against schema.
 	 * Uses the table schema from the definition.
 	 */
-	/**
-	 * Get a validated table store with TypeBox validation.
-	 * Returns undefined for tables not in the schema (dynamic tables).
-	 */
-	function validatedTable(tableId: string): ValidatedTableStore | undefined {
-		const tableSchema = definition.tables[tableId];
-		if (!tableSchema) {
-			return undefined;
-		}
-
-		let validated = validatedStoreCache.get(tableId);
-		if (!validated) {
-			const tableStore = table(tableId);
-			validated = createValidatedTableStore(tableId, tableSchema, tableStore);
-			validatedStoreCache.set(tableId, validated);
-		}
-		return validated;
-	}
-
 	function getTypedRows(tableId: string): TypedRowWithCells[] {
 		const tableSchema = definition.tables[tableId];
 		const tableStore = table(tableId);
-		const rows = tableStore.getRows();
+		const rows = tableStore.raw.getRows();
 
 		// If table not in schema, return rows with all fields marked as 'json'
 		if (!tableSchema) {
@@ -275,7 +255,6 @@ export function createCellWorkspace(
 		table,
 		kv,
 		getTypedRows,
-		validatedTable,
 		batch,
 		destroy,
 	};

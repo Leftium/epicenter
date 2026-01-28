@@ -23,7 +23,8 @@ export { createCellWorkspace } from './create-cell-workspace';
 // Table store factory (for advanced use)
 export { createTableStore } from './table-store';
 
-// Validated table store
+// Validated table store (deprecated - use TableStore with schema instead)
+// Kept for backwards compatibility but will be removed in a future version
 export { createValidatedTableStore } from './validated-table-store';
 export type { ValidatedTableStore } from './validated-table-store';
 
@@ -65,6 +66,7 @@ export type {
 	TypedRowWithCells,
 	// Store interfaces
 	TableStore,
+	RawTableAccess,
 	KvStore,
 	// Workspace client
 	CellWorkspaceClient,

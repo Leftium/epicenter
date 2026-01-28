@@ -14,6 +14,7 @@
 
 import type * as Y from 'yjs';
 import type { Icon } from '../core/schema/fields/types';
+import type { GetCellResult, GetResult, InvalidRowResult, RowResult } from './validation-types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Types (External JSON)
@@ -166,34 +167,59 @@ export type ChangeHandler<T> = (
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Store for a single table's data.
- * Every entry is a cell value.
+ * Raw table access without validation (escape hatch).
+ */
+export type RawTableAccess = {
+	/** Get a cell value without validation */
+	get(rowId: string, fieldId: string): CellValue | undefined;
+	/** Get all cells for a row without validation */
+	getRow(rowId: string): Record<string, CellValue> | undefined;
+	/** Get all rows without validation */
+	getRows(): RowData[];
+};
+
+/**
+ * Store for a single table's data with integrated validation.
+ *
+ * Primary methods return validated results (Result types).
+ * Use the `raw` property for unvalidated access when needed.
  */
 export type TableStore = {
 	/** The table identifier */
 	readonly tableId: string;
+	/** The schema definition for this table (empty fields for dynamic tables) */
+	readonly schema: SchemaTableDefinition;
+	/** Raw access without validation (escape hatch) */
+	readonly raw: RawTableAccess;
 
-	// Cell operations
-	/** Get a cell value */
-	get(rowId: string, fieldId: string): CellValue | undefined;
-	/** Set a cell value */
+	// Cell operations (validated)
+	/** Get a validated cell value */
+	get(
+		rowId: string,
+		fieldId: string,
+	): GetCellResult<unknown>;
+	/** Set a cell value (writes bypass validation - advisory schema) */
 	set(rowId: string, fieldId: string, value: CellValue): void;
 	/** Delete a cell value (hard delete) */
 	delete(rowId: string, fieldId: string): void;
 	/** Check if a cell exists */
 	has(rowId: string, fieldId: string): boolean;
 
-	// Row operations
-	/** Get all cells for a row */
-	getRow(rowId: string): Record<string, CellValue> | undefined;
+	// Row operations (validated)
+	/** Get a validated row */
+	getRow(rowId: string): GetResult<RowData>;
 	/** Generate a row ID (or validate a custom one) */
 	createRow(rowId?: string): string;
 	/** Delete a row (hard delete - removes all cells) */
 	deleteRow(rowId: string): void;
 
-	// Bulk operations
-	/** Get all rows */
-	getRows(): RowData[];
+	// Bulk operations (validated)
+	/** Get all rows with validation results */
+	getAll(): RowResult<RowData>[];
+	/** Get all valid rows (filters out invalid ones) */
+	getAllValid(): RowData[];
+	/** Get all invalid rows with error details */
+	getAllInvalid(): InvalidRowResult[];
 	/** Get all row IDs */
 	getRowIds(): string[];
 
@@ -265,24 +291,6 @@ export type CellWorkspaceClient = {
 	 */
 	getTypedRows(tableId: string): TypedRowWithCells[];
 
-	/**
-	 * Get a validated table store for TypeBox-based validation.
-	 *
-	 * Returns undefined for tables not in the schema (dynamic tables).
-	 * Validated stores are cached - calling with same tableId returns same instance.
-	 *
-	 * @example
-	 * ```typescript
-	 * const validated = workspace.validatedTable('posts');
-	 * if (validated) {
-	 *   const result = validated.getRowValidated('row-1');
-	 *   if (result.status === 'valid') {
-	 *     console.log(result.row);
-	 *   }
-	 * }
-	 * ```
-	 */
-	validatedTable(tableId: string): import('./validated-table-store').ValidatedTableStore | undefined;
 
 	/**
 	 * Batch multiple writes into a single Yjs transaction.

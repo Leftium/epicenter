@@ -93,7 +93,7 @@ export type SchemaKvDefinition = {
  * This is the "lens" through which you view the data.
  * The data itself doesn't need to comply with this schema.
  */
-export type WorkspaceSchema = {
+export type WorkspaceDefinition = {
 	/** Display name of the workspace */
 	name: string;
 	/** Optional description of the workspace */
@@ -281,7 +281,7 @@ export type CellWorkspaceClient<
 	/** Icon for the workspace */
 	readonly icon: Icon | string | null;
 	/** The full workspace definition */
-	readonly definition: WorkspaceSchema & { tables: TTableDefs };
+	readonly definition: WorkspaceDefinition & { tables: TTableDefs };
 
 	/**
 	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
@@ -334,7 +334,7 @@ export type CreateCellWorkspaceOptions = {
 	/** Unique identifier for the workspace (used as Y.Doc guid) */
 	id: string;
 	/** Workspace definition (schema for tables and KV) */
-	definition: WorkspaceSchema;
+	definition: WorkspaceDefinition;
 	/** Optional existing Y.Doc to use instead of creating a new one */
 	ydoc?: Y.Doc;
 };
@@ -358,5 +358,5 @@ export type CreateCellWorkspaceWithHeadDocOptions<
 		getEpoch(): number;
 	};
 	/** Workspace definition (schema for tables and KV) */
-	definition: WorkspaceSchema & { tables: TTableDefs };
+	definition: WorkspaceDefinition & { tables: TTableDefs };
 };

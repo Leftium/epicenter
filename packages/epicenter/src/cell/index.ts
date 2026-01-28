@@ -106,7 +106,7 @@ export type {
 	TableStore,
 	TypedCell,
 	TypedRowWithCells,
-	WorkspaceSchema,
+	WorkspaceDefinition,
 } from './types';
 // Validation result types
 export type {

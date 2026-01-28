@@ -19,17 +19,17 @@
 import type {
 	SchemaFieldDefinition,
 	SchemaTableDefinition,
-	WorkspaceSchema,
+	WorkspaceDefinition,
 } from './types';
 
 /**
  * Parse a schema from JSON string.
  *
  * @param json - JSON string containing schema data
- * @returns Parsed WorkspaceSchema
+ * @returns Parsed WorkspaceDefinition
  * @throws Error if JSON is invalid or schema structure is malformed
  */
-export function parseSchema(json: string): WorkspaceSchema {
+export function parseSchema(json: string): WorkspaceDefinition {
 	const data = JSON.parse(json) as unknown;
 
 	if (!data || typeof data !== 'object') {
@@ -90,18 +90,18 @@ export function parseSchema(json: string): WorkspaceSchema {
 		}
 	}
 
-	return data as WorkspaceSchema;
+	return data as WorkspaceDefinition;
 }
 
 /**
  * Serialize a schema to JSON string.
  *
- * @param schema - WorkspaceSchema to serialize
+ * @param schema - WorkspaceDefinition to serialize
  * @param pretty - Whether to format with indentation (default: true)
  * @returns JSON string
  */
 export function stringifySchema(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	pretty = true,
 ): string {
 	return JSON.stringify(schema, null, pretty ? 2 : undefined);
@@ -112,12 +112,12 @@ export function stringifySchema(
  *
  * @param name - Display name for the workspace
  * @param icon - Optional icon for the workspace
- * @returns A new WorkspaceSchema with no tables
+ * @returns A new WorkspaceDefinition with no tables
  */
 export function createEmptySchema(
 	name: string,
 	icon?: string,
-): WorkspaceSchema {
+): WorkspaceDefinition {
 	return {
 		name,
 		icon: icon ?? null,
@@ -135,10 +135,10 @@ export function createEmptySchema(
  * @returns New schema with the table added
  */
 export function addTable(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
 	table: SchemaTableDefinition,
-): WorkspaceSchema {
+): WorkspaceDefinition {
 	return {
 		...schema,
 		tables: {
@@ -156,9 +156,9 @@ export function addTable(
  * @returns New schema without the table
  */
 export function removeTable(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
-): WorkspaceSchema {
+): WorkspaceDefinition {
 	const { [tableId]: _, ...tables } = schema.tables;
 	return {
 		...schema,
@@ -176,11 +176,11 @@ export function removeTable(
  * @returns New schema with the field added
  */
 export function addField(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
 	field: SchemaFieldDefinition,
-): WorkspaceSchema {
+): WorkspaceDefinition {
 	const table = schema.tables[tableId];
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
@@ -210,10 +210,10 @@ export function addField(
  * @returns New schema without the field
  */
 export function removeField(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
-): WorkspaceSchema {
+): WorkspaceDefinition {
 	const table = schema.tables[tableId];
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);

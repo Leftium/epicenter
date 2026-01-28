@@ -194,7 +194,7 @@ export type {
 	CellWorkspaceClient,
 	CreateCellWorkspaceWithHeadDocOptions,
 	InferCellExtensionExports,
-	WorkspaceSchema as CellWorkspaceSchema,
+	WorkspaceDefinition as CellWorkspaceDefinition,
 	SchemaTableDefinition as CellTableDefinition,
 	SchemaFieldDefinition as CellFieldDefinition,
 } from './cell';

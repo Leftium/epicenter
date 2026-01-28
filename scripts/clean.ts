@@ -6,14 +6,18 @@
  * Removes build artifacts, caches, and node_modules across the monorepo.
  *
  * Usage:
- *   bun run clean        # Remove JS build artifacts, caches, node_modules
- *   bun run clean --nuke # Above + remove Rust target directory (expensive!)
+ *   bun run clean        # Remove build artifacts, caches, node_modules
+ *   bun run clean --nuke # Above + Rust targets + dev webview cache (full reset)
  */
 
 import { readdir, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const isNuke = process.argv.includes('--nuke');
+
+// Only clear webview cache for dev apps, never production (would delete user's API keys/settings)
+const DEV_BUNDLE_ID = 'com.tauri.dev';
 
 const subDirs = [
 	// Build outputs
@@ -31,9 +35,10 @@ const subDirs = [
 	'src-tauri/gen',
 	// Dependencies (includes nested caches like node_modules/.vite)
 	'node_modules',
-	// Nuke mode: Rust target
-	...(isNuke ? ['src-tauri/target'] : []),
 ] as const;
+
+// Nuke-only: Rust compilation cache (several GB, takes minutes to rebuild)
+const NUKE_DIRS = ['src-tauri/target'] as const;
 
 async function main() {
 	console.log(
@@ -58,11 +63,16 @@ async function main() {
 		)
 	).flat();
 
+	// In nuke mode, also clean Rust targets (no-op for non-Tauri workspaces)
+	const allSubDirs: readonly string[] = isNuke
+		? [...subDirs, ...NUKE_DIRS]
+		: subDirs;
+
 	const dirsToRemove = [
 		'.turbo',
 		'node_modules',
 		...workspaceDirs.flatMap((workspace) =>
-			subDirs.map((subDir) => join(workspace, subDir)),
+			allSubDirs.map((subDir) => join(workspace, subDir)),
 		),
 	];
 
@@ -72,6 +82,34 @@ async function main() {
 		dirsToRemove.map((path) => rm(path, { recursive: true, force: true })),
 	);
 	console.log(`  ✓ Processed ${dirsToRemove.length} directories\n`);
+
+	// Nuke mode: also clear dev app webview cache (contains localStorage, so never touch production)
+	if (isNuke) {
+		const home = homedir();
+		const devCacheDirs =
+			{
+				darwin: [join(home, 'Library/WebKit', DEV_BUNDLE_ID)],
+				linux: [
+					join(home, '.local/share', DEV_BUNDLE_ID),
+					join(home, '.cache', DEV_BUNDLE_ID),
+				],
+				win32: [
+					join(
+						process.env.LOCALAPPDATA ?? join(home, 'AppData/Local'),
+						DEV_BUNDLE_ID,
+						'EBWebView',
+					),
+				],
+			}[process.platform as 'darwin' | 'linux' | 'win32'] ?? [];
+
+		if (devCacheDirs.length) {
+			console.log('Clearing dev app webview cache...');
+			await Promise.all(
+				devCacheDirs.map((p) => rm(p, { recursive: true, force: true })),
+			);
+			console.log(`  ✓ Cleared ${DEV_BUNDLE_ID} cache\n`);
+		}
+	}
 
 	console.log('✨ Clean complete!\n');
 

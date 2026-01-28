@@ -140,10 +140,7 @@ describe('createDynamicWorkspace', () => {
 	});
 
 	describe('batch', () => {
-		// Note: batch() currently does NOT use Yjs transactions due to a bug in
-		// YKeyValueLww where the observer incorrectly deletes entries added inside
-		// a wrapping transaction. This test is skipped until the bug is fixed.
-		test.skip('groups multiple operations into single transaction', () => {
+		test('groups multiple operations into single transaction', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			// Track observer calls

@@ -105,8 +105,65 @@ export class YKeyValueLww<T> {
 	/** The Y.Doc that owns this array. Required for transactions. */
 	readonly doc: Y.Doc;
 
-	/** In-memory index for O(1) key lookups. Maps key -> entry object. */
+	/**
+	 * In-memory index for O(1) key lookups. Maps key -> entry object.
+	 *
+	 * **Important**: This map is ONLY written to by the observer. The `set()` method
+	 * never directly updates this map. This "single-writer" architecture prevents
+	 * race conditions when operations are nested inside outer Yjs transactions.
+	 *
+	 * @see pending for how immediate reads work after `set()`
+	 */
 	readonly map: Map<string, YKeyValueLwwEntry<T>>;
+
+	/**
+	 * Pending entries written by `set()` but not yet processed by the observer.
+	 *
+	 * ## Why This Exists
+	 *
+	 * When `set()` is called inside a batch/transaction, the observer doesn't fire
+	 * until the outer transaction ends. Without `pending`, `get()` would return
+	 * undefined for values just written.
+	 *
+	 * ## Data Flow
+	 *
+	 * ```
+	 * set('foo', 1) is called:
+	 * ─────────────────────────────────────────────────────────────
+	 *
+	 *   set()
+	 *     │
+	 *     ├───► pending.set('foo', entry)    ← For immediate reads
+	 *     │
+	 *     └───► yarray.push(entry)           ← Source of truth (CRDT)
+	 *                 │
+	 *                 │  (observer fires after transaction ends)
+	 *                 ▼
+	 *           Observer
+	 *                 │
+	 *                 ├───► map.set('foo', entry)      ← Observer writes to map
+	 *                 │
+	 *                 └───► pending.delete('foo')      ← Clears pending
+	 *
+	 *
+	 * get('foo') is called:
+	 * ─────────────────────────────────────────────────────────────
+	 *
+	 *   get()
+	 *     │
+	 *     ├───► Check pending.get('foo')  ← If found, return it
+	 *     │
+	 *     └───► Check map.get('foo')      ← Fallback to map
+	 * ```
+	 *
+	 * ## Who Writes Where
+	 *
+	 * | Writer   | `pending` | `Y.Array` | `map`     |
+	 * |----------|-----------|-----------|-----------|
+	 * | `set()`  | ✅ writes | ✅ writes | ❌ never  |
+	 * | Observer | ❌ never  | ❌ never  | ✅ writes |
+	 */
+	private pending: Map<string, YKeyValueLwwEntry<T>> = new Map();
 
 	/** Registered change handlers. */
 	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
@@ -289,6 +346,12 @@ export class YKeyValueLww<T> {
 						}
 					}
 				}
+
+				// Clear from pending once processed (whether entry won or lost).
+				// Use reference equality to only clear if it's the exact entry we added.
+				if (this.pending.get(newEntry.key) === newEntry) {
+					this.pending.delete(newEntry.key);
+				}
 			}
 
 			// Delete loser entries
@@ -354,37 +417,131 @@ export class YKeyValueLww<T> {
 	}
 
 	/**
+	 * Check if the Y.Doc is currently inside an active transaction.
+	 *
+	 * Uses Yjs internal `_transaction` property. This is stable across Yjs versions
+	 * but is technically internal API (underscore prefix).
+	 */
+	private isInTransaction(): boolean {
+		return this.doc._transaction !== null;
+	}
+
+	/**
 	 * Set a key-value pair with automatic timestamp.
 	 * The timestamp enables LWW conflict resolution during sync.
+	 *
+	 * ## Single-Writer Architecture
+	 *
+	 * This method writes to `pending` and `Y.Array`, but NEVER directly to `map`.
+	 * The observer is the sole writer to `map`. This prevents race conditions when
+	 * `set()` is called inside an outer transaction (e.g., batch operations).
+	 *
+	 * ```
+	 * set()
+	 *   │
+	 *   ├───► pending.set(key, entry)    ← For immediate reads via get()
+	 *   │
+	 *   └───► yarray.push(entry)         ← Source of truth
+	 *               │
+	 *               ▼
+	 *         Observer fires (after transaction ends)
+	 *               │
+	 *               ├───► map.set(key, entry)
+	 *               └───► pending.delete(key)
+	 * ```
 	 */
 	set(key: string, val: T): void {
 		const entry: YKeyValueLwwEntry<T> = { key, val, ts: this.getTimestamp() };
-		const existing = this.map.get(key);
 
-		this.doc.transact(() => {
-			if (existing) this.deleteEntryByKey(key);
+		// Track in pending for immediate reads via get()
+		this.pending.set(key, entry);
+
+		const doWork = () => {
+			// Check map for existing entry (pending entries aren't in yarray yet)
+			if (this.map.has(key)) this.deleteEntryByKey(key);
 			this.yarray.push([entry]);
-		});
+		};
 
-		this.map.set(key, entry);
+		// Avoid nested transactions - if already in one, just do the work
+		if (this.isInTransaction()) {
+			doWork();
+		} else {
+			this.doc.transact(doWork);
+		}
+
+		// DO NOT update this.map here - observer is the sole writer to map
 	}
 
-	/** Delete a key. No-op if key doesn't exist. */
+	/**
+	 * Delete a key. No-op if key doesn't exist.
+	 *
+	 * Removes from `pending` immediately and triggers Y.Array deletion.
+	 * The observer will update `map` when the deletion is processed.
+	 */
 	delete(key: string): void {
+		// Remove from pending if present
+		this.pending.delete(key);
+
 		if (!this.map.has(key)) return;
 
 		this.deleteEntryByKey(key);
-		this.map.delete(key);
+		// DO NOT update this.map here - observer is the sole writer to map
 	}
 
-	/** Get value by key. O(1) via in-memory Map. */
+	/**
+	 * Get value by key. O(1) via in-memory Map.
+	 *
+	 * Checks `pending` first (for values written but not yet processed by observer),
+	 * then falls back to `map` (authoritative cache updated by observer).
+	 */
 	get(key: string): T | undefined {
+		// Check pending first (written by set() but observer hasn't fired yet)
+		const pending = this.pending.get(key);
+		if (pending) return pending.val;
+
 		return this.map.get(key)?.val;
 	}
 
-	/** Check if key exists. O(1) via in-memory Map. */
+	/**
+	 * Check if key exists. O(1) via in-memory Map.
+	 *
+	 * Checks both `pending` and `map` to handle values written but not yet
+	 * processed by the observer.
+	 */
 	has(key: string): boolean {
-		return this.map.has(key);
+		return this.pending.has(key) || this.map.has(key);
+	}
+
+	/**
+	 * Iterate over all entries (both pending and confirmed).
+	 *
+	 * Yields entries from both `pending` and `map`, with pending taking
+	 * precedence for keys that exist in both. This is necessary for code
+	 * that needs to iterate over all current values inside a batch.
+	 *
+	 * @example
+	 * ```typescript
+	 * for (const [key, entry] of kv.entries()) {
+	 *   console.log(key, entry.val);
+	 * }
+	 * ```
+	 */
+	*entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]> {
+		// Track keys we've already yielded from pending
+		const yieldedKeys = new Set<string>();
+
+		// Yield pending entries first (they take precedence)
+		for (const [key, entry] of this.pending) {
+			yieldedKeys.add(key);
+			yield [key, entry];
+		}
+
+		// Yield map entries that weren't in pending
+		for (const [key, entry] of this.map) {
+			if (!yieldedKeys.has(key)) {
+				yield [key, entry];
+			}
+		}
 	}
 
 	/** Register an observer. Called when keys are added, updated, or deleted. */

@@ -44,7 +44,8 @@ export function createTablesStore(
 
 		getAll(): Map<string, TableDefinition> {
 			const result = new Map<string, TableDefinition>();
-			for (const [key, entry] of ykv.map) {
+			// Use entries() to include both pending and confirmed entries
+			for (const [key, entry] of ykv.entries()) {
 				result.set(key, entry.val);
 			}
 			return result;
@@ -52,7 +53,8 @@ export function createTablesStore(
 
 		getActive(): Map<string, TableDefinition> {
 			const result = new Map<string, TableDefinition>();
-			for (const [key, entry] of ykv.map) {
+			// Use entries() to include both pending and confirmed entries
+			for (const [key, entry] of ykv.entries()) {
 				if (entry.val.deletedAt === null) {
 					result.set(key, entry.val);
 				}

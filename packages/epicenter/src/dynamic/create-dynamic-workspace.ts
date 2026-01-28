@@ -175,16 +175,21 @@ export function createDynamicWorkspace(
 		/**
 		 * Execute multiple operations as a logical batch.
 		 *
-		 * Note: Currently does NOT wrap in a Yjs transaction due to a bug in
-		 * YKeyValueLww where entries added inside a wrapping transaction are
-		 * incorrectly deleted by the observer when the transaction completes.
-		 * This means observers may fire multiple times instead of once.
+		 * Wraps all operations in a single Yjs transaction, which means:
+		 * - Observers fire once at the end (not after each operation)
+		 * - All changes are sent as a single update to sync peers
+		 * - Atomic semantics for the batch of operations
 		 *
-		 * TODO: Fix YKeyValueLww observer to properly handle nested transactions,
-		 * then re-enable: `return ydoc.transact(() => fn(client));`
+		 * ## How It Works
+		 *
+		 * YKeyValueLww uses a "single-writer" architecture where `set()` writes to
+		 * a `pending` map for immediate reads, and the observer is the sole writer
+		 * to the main `map`. This allows nested transactions to work correctly.
+		 *
+		 * @see YKeyValueLww.pending for the full data flow diagram
 		 */
 		batch<T>(fn: (ws: DynamicWorkspaceClient) => T): T {
-			return fn(client);
+			return ydoc.transact(() => fn(client));
 		},
 		/**
 		 * Destroy the workspace and release resources.

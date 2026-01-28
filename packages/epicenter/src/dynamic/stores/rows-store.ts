@@ -28,11 +28,14 @@ export function createRowsStore(ykv: YKeyValueLww<RowMeta>): RowsStore {
 	/**
 	 * Calculate the next order value for a new row in a table.
 	 * Returns max(existing orders) + 1, or 1 if no rows exist.
+	 *
+	 * Uses `entries()` to iterate over both pending and confirmed entries,
+	 * ensuring correct ordering when called inside a batch.
 	 */
 	function getNextOrder(tableId: string): number {
 		const prefix = tablePrefix(tableId);
 		let maxOrder = 0;
-		for (const [key, entry] of ykv.map) {
+		for (const [key, entry] of ykv.entries()) {
 			if (key.startsWith(prefix) && entry.val.deletedAt === null) {
 				maxOrder = Math.max(maxOrder, entry.val.order);
 			}
@@ -67,7 +70,8 @@ export function createRowsStore(ykv: YKeyValueLww<RowMeta>): RowsStore {
 			const prefix = tablePrefix(tableId);
 			const result: Array<{ id: string; meta: RowMeta }> = [];
 
-			for (const [key, entry] of ykv.map) {
+			// Use entries() to include both pending and confirmed entries
+			for (const [key, entry] of ykv.entries()) {
 				if (key.startsWith(prefix)) {
 					const { rowId } = parseRowKey(key);
 					result.push({ id: rowId, meta: entry.val });

@@ -266,6 +266,25 @@ export type CellWorkspaceClient = {
 	getTypedRows(tableId: string): TypedRowWithCells[];
 
 	/**
+	 * Get a validated table store for TypeBox-based validation.
+	 *
+	 * Returns undefined for tables not in the schema (dynamic tables).
+	 * Validated stores are cached - calling with same tableId returns same instance.
+	 *
+	 * @example
+	 * ```typescript
+	 * const validated = workspace.validatedTable('posts');
+	 * if (validated) {
+	 *   const result = validated.getRowValidated('row-1');
+	 *   if (result.status === 'valid') {
+	 *     console.log(result.row);
+	 *   }
+	 * }
+	 * ```
+	 */
+	validatedTable(tableId: string): import('./validated-table-store').ValidatedTableStore | undefined;
+
+	/**
 	 * Batch multiple writes into a single Yjs transaction.
 	 */
 	batch<T>(fn: (ws: CellWorkspaceClient) => T): T;

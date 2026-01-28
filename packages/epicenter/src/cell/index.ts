@@ -23,6 +23,33 @@ export { createCellWorkspace } from './create-cell-workspace';
 // Table store factory (for advanced use)
 export { createTableStore } from './table-store';
 
+// Validated table store
+export { createValidatedTableStore } from './validated-table-store';
+export type { ValidatedTableStore } from './validated-table-store';
+
+// TypeBox converters for cell schemas
+export {
+	schemaFieldToTypebox,
+	schemaTableToTypebox,
+} from './converters/to-typebox';
+
+// Validation result types
+export type {
+	// Cell-level results
+	ValidCellResult,
+	InvalidCellResult,
+	NotFoundCellResult,
+	CellResult,
+	GetCellResult,
+	// Re-exported from core (row-level)
+	ValidationError,
+	ValidRowResult,
+	InvalidRowResult,
+	NotFoundResult,
+	RowResult,
+	GetResult,
+} from './validation-types';
+
 // Types
 export type {
 	// Schema types (external JSON)

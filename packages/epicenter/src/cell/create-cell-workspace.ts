@@ -34,6 +34,10 @@ import type {
 import { createTableStore } from './table-store';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
 import { validateId } from './keys';
+import {
+	createValidatedTableStore,
+	type ValidatedTableStore,
+} from './validated-table-store';
 
 /**
  * Validate that a value matches the expected field type.
@@ -135,6 +139,9 @@ export function createCellWorkspace(
 	// Cache table stores to avoid recreation
 	const tableStoreCache = new Map<string, TableStore>();
 
+	// Cache validated table stores
+	const validatedStoreCache = new Map<string, ValidatedTableStore>();
+
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
 	const kv = createKvStore(kvArray);
@@ -159,6 +166,25 @@ export function createCellWorkspace(
 	 * Get rows with typed cells validated against schema.
 	 * Uses the table schema from the definition.
 	 */
+	/**
+	 * Get a validated table store with TypeBox validation.
+	 * Returns undefined for tables not in the schema (dynamic tables).
+	 */
+	function validatedTable(tableId: string): ValidatedTableStore | undefined {
+		const tableSchema = definition.tables[tableId];
+		if (!tableSchema) {
+			return undefined;
+		}
+
+		let validated = validatedStoreCache.get(tableId);
+		if (!validated) {
+			const tableStore = table(tableId);
+			validated = createValidatedTableStore(tableId, tableSchema, tableStore);
+			validatedStoreCache.set(tableId, validated);
+		}
+		return validated;
+	}
+
 	function getTypedRows(tableId: string): TypedRowWithCells[] {
 		const tableSchema = definition.tables[tableId];
 		const tableStore = table(tableId);
@@ -249,6 +275,7 @@ export function createCellWorkspace(
 		table,
 		kv,
 		getTypedRows,
+		validatedTable,
 		batch,
 		destroy,
 	};

@@ -1,8 +1,11 @@
 # External Schema Architecture
 
 **Created**: 2026-01-27
-**Status**: Proposal / Discussion
-**Related**: `packages/epicenter/src/dynamic`, `packages/epicenter/src/static`
+**Status**: Active
+**Related**: `20260128T100000-table-partitioned-storage.md` (Y.Doc structure), `packages/epicenter/src/cell`
+
+> **Note**: This spec defines the conceptual separation of schema (external JSON) from data (Y.Doc).
+> For the specific Y.Doc internal structure, see `20260128T100000-table-partitioned-storage.md`.
 
 ## Problem Statement
 
@@ -87,24 +90,28 @@ This creates complexity:
 
 ### Data Storage Format (Y.Doc)
 
+> **See**: `20260128T100000-table-partitioned-storage.md` for the full Y.Doc structure.
+
+The Y.Doc uses **table-partitioned storage** with `Y.Map` of `Y.Array`:
+
 ```
 Y.Doc
-├── Y.Array('cells')   ← YKeyValueLww<CellValue>
-│   ├── { key: 'posts:row1:title', val: 'Hello World', ts: 1706200001000 }
-│   ├── { key: 'posts:row1:published', val: true, ts: 1706200002000 }
-│   ├── { key: 'posts:row2:title', val: 'Second Post', ts: 1706200003000 }
-│   └── ...
+├── Y.Map('cells')              ← One Y.Array per table
+│   ├── 'posts' → Y.Array       ← YKeyValueLww<CellValue>
+│   │   ├── { key: 'row1:title', val: 'Hello', ts: ... }
+│   │   └── { key: 'row1:published', val: true, ts: ... }
+│   └── 'comments' → Y.Array
 │
-├── Y.Array('rows')    ← YKeyValueLww<RowMeta>  (optional, for row order)
-│   ├── { key: 'posts:row1', val: { order: 1 }, ts: ... }
-│   └── ...
+├── Y.Map('rows')               ← One Y.Array per table
+│   ├── 'posts' → Y.Array       ← YKeyValueLww<RowMeta>
+│   │   └── { key: 'row1', val: { order: 1, deletedAt: null }, ts: ... }
+│   └── 'comments' → Y.Array
 │
-└── Y.Array('kv')      ← YKeyValueLww<unknown>  (optional)
-    ├── { key: 'theme', val: 'dark', ts: ... }
-    └── ...
+└── Y.Array('kv')               ← YKeyValueLww<unknown>
+    └── { key: 'theme', val: 'dark', ts: ... }
 ```
 
-**Key Insight**: The Y.Doc has NO idea about "tables" or "fields" as concepts. It just stores cells keyed by `{tableId}:{rowId}:{fieldId}`.
+**Key Insight**: The Y.Doc has NO idea about "tables" or "fields" as concepts. It just stores cells. The `tableId` is encoded in the Y.Map key, not the cell key—this enables table-scoped reads (O(table size) instead of O(total cells)).
 
 ## Design Questions
 

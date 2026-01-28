@@ -1,18 +1,19 @@
 # Cell Workspace TypeBox Validation
 
 **Created**: 2026-01-28
+**Updated**: 2026-01-28
 **Status**: Implemented
 **Location**: `packages/epicenter/src/cell`
 
 ## Overview
 
-Adds TypeBox validation to cell workspace, providing JIT-compiled validators for advisory schema enforcement. This parallels the core workspace's TypeBox validation while accounting for cell workspace's simpler external schema format.
+Cell workspace provides integrated TypeBox validation with JIT-compiled validators for advisory schema enforcement. Validation is built directly into `TableStore`, with a unified API that returns result types for reads while allowing unrestricted writes.
 
 ## Background
 
 Cell workspace uses external JSON schemas (`SchemaFieldDefinition`) that differ from core's `Field` types. The schema is advisory—validation flags issues but doesn't reject data. This requires:
 
-1. A separate converter from `SchemaFieldDefinition` → TypeBox
+1. A converter from `SchemaFieldDefinition` → TypeBox
 2. All fields treated as optional and nullable (advisory nature)
 3. Additional properties allowed (unknown fields pass validation)
 
@@ -25,9 +26,9 @@ cell/
 ├── converters/
 │   └── to-typebox.ts         # SchemaFieldDefinition → TypeBox converter
 ├── validation-types.ts       # Cell-level result types
-├── validated-table-store.ts  # ValidatedTableStore wrapper
-├── types.ts                  # Added validatedTable() to CellWorkspaceClient
-└── create-cell-workspace.ts  # Implementation with caching
+├── table-store.ts            # TableStore with integrated validation
+├── types.ts                  # TableStore, RawTableAccess types
+└── create-cell-workspace.ts  # Factory with schema injection
 ```
 
 ### Result Type Hierarchy
@@ -65,44 +66,50 @@ All fields are wrapped with `Type.Optional()` because missing fields are valid i
 
 `schemaTableToTypebox(table)` creates a `TObject` with `additionalProperties: true`.
 
-### ValidatedTableStore
+### Unified TableStore API
 
-Wraps a `TableStore` to add validation:
+`TableStore` provides integrated validation with a clean separation:
 
 ```typescript
-type ValidatedTableStore = {
-  tableId: string;
-  schema: SchemaTableDefinition;
-  raw: TableStore;  // Access underlying store
+type TableStore = {
+  readonly tableId: string;
+  readonly schema: SchemaTableDefinition;
+  readonly raw: RawTableAccess;  // Escape hatch for unvalidated access
 
-  // Cell-level validation
-  getValidated(rowId, fieldId): GetCellResult<unknown>;
+  // Validated reads (return result types)
+  get(rowId, fieldId): GetCellResult<unknown>;
+  getRow(rowId): GetResult<RowData>;
+  getAll(): RowResult<RowData>[];
+  getAllValid(): RowData[];
+  getAllInvalid(): InvalidRowResult[];
 
-  // Row-level validation
-  getRowValidated(rowId): GetResult<RowData>;
-  getRowsValidated(): RowResult<RowData>[];
-  getRowsValid(): RowData[];
-  getRowsInvalid(): InvalidRowResult[];
+  // Unrestricted writes (advisory schema)
+  set(rowId, fieldId, value): void;
+  delete(rowId, fieldId): void;
+  deleteRow(rowId): void;
+  createRow(rowId?): string;
+
+  // Utilities
+  has(rowId, fieldId): boolean;
+  getRowIds(): string[];
+  observe(handler): () => void;
+};
+
+type RawTableAccess = {
+  get(rowId, fieldId): CellValue | undefined;
+  getRow(rowId): Record<string, CellValue> | undefined;
+  getRows(): RowData[];
 };
 ```
 
 Validators are compiled once at construction. Field validators are compiled lazily and cached.
 
-### CellWorkspaceClient Integration
+### Schema Handling
 
-Added `validatedTable(tableId)` method:
+- **Defined tables**: Schema comes from `WorkspaceSchema.tables[tableId]`
+- **Dynamic tables**: Empty schema `{ name: tableId, fields: {} }` is used, which passes all validation
 
-```typescript
-const validated = workspace.validatedTable('posts');
-if (validated) {
-  const result = validated.getRowValidated('row-1');
-  if (result.status === 'valid') {
-    console.log(result.row);
-  }
-}
-```
-
-Returns `undefined` for tables not in schema (dynamic tables). Validated stores are cached per tableId.
+Schema is always required—there's no `undefined` case to check.
 
 ## Usage
 
@@ -130,21 +137,23 @@ const workspace = createCellWorkspace({
 const posts = workspace.table('posts');
 const rowId = posts.createRow();
 posts.set(rowId, 'title', 'Hello');
-posts.set(rowId, 'views', 'not a number'); // Wrong type
+posts.set(rowId, 'views', 'not a number'); // Wrong type - writes always succeed
 
-const validated = workspace.validatedTable('posts')!;
-
-// Cell-level
-const cell = validated.getValidated(rowId, 'views');
+// Validated reads
+const cell = posts.get(rowId, 'views');
 // { status: 'invalid', key: 'row-1:views', errors: [...], value: 'not a number' }
 
-// Row-level
-const row = validated.getRowValidated(rowId);
+const row = posts.getRow(rowId);
 // { status: 'invalid', id: 'row-1', tableName: 'posts', errors: [...], row: {...} }
 
-// Filter helpers
-const validRows = validated.getRowsValid();    // Only valid rows
-const invalidRows = validated.getRowsInvalid(); // Only invalid with errors
+// Bulk operations
+const allResults = posts.getAll();      // All rows with validation status
+const validRows = posts.getAllValid();  // Only valid rows
+const invalidRows = posts.getAllInvalid(); // Only invalid with errors
+
+// Raw access (escape hatch)
+const rawValue = posts.raw.get(rowId, 'views');  // 'not a number'
+const rawRows = posts.raw.getRows();              // All rows, no validation
 ```
 
 ### Direct Store Access
@@ -152,10 +161,10 @@ const invalidRows = validated.getRowsInvalid(); // Only invalid with errors
 For programmatic use without workspace:
 
 ```typescript
-import { createValidatedTableStore, createTableStore } from '@epicenter/epicenter/cell';
+import { createTableStore } from '@epicenter/epicenter/cell';
 
-const tableStore = createTableStore('posts', yarray);
-const validated = createValidatedTableStore('posts', tableSchema, tableStore);
+const tableStore = createTableStore('posts', yarray, tableSchema);
+// Schema is required - use { name: 'posts', fields: {} } for dynamic tables
 ```
 
 ## API Reference
@@ -163,35 +172,40 @@ const validated = createValidatedTableStore('posts', tableSchema, tableStore);
 ### Exports from `@epicenter/epicenter/cell`
 
 **Functions:**
+- `createCellWorkspace(options)` - Create workspace client
+- `createTableStore(tableId, yarray, schema)` - Create table store directly
 - `schemaFieldToTypebox(field)` - Single field → TypeBox TSchema
 - `schemaTableToTypebox(table)` - Table definition → TypeBox TObject
-- `createValidatedTableStore(tableId, schema, store)` - Create validated wrapper
 
 **Types:**
-- `ValidatedTableStore` - The wrapper type
+- `TableStore` - Unified store with validation
+- `RawTableAccess` - Unvalidated access interface
 - `ValidCellResult<T>`, `InvalidCellResult`, `NotFoundCellResult`
 - `CellResult<T>`, `GetCellResult<T>`
 - Re-exports: `ValidationError`, `ValidRowResult`, `InvalidRowResult`, `NotFoundResult`, `RowResult`, `GetResult`
 
 ## Tests
 
-- `converters/to-typebox.test.ts` - 33 tests for field type conversion
-- `validated-table-store.test.ts` - 14 tests for validation logic
+- `converters/to-typebox.test.ts` - Field type conversion
+- `validated-table-store.test.ts` - TableStore validation logic (consolidated API)
+- `create-cell-workspace.test.ts` - Workspace integration
 
 ```bash
-bun test src/cell/converters/to-typebox.test.ts
-bun test src/cell/validated-table-store.test.ts
 bun test src/cell/  # All cell tests
 ```
 
 ## Design Decisions
 
-1. **Separate converter** - Cell's `SchemaFieldDefinition` differs structurally from core's `Field`. A separate converter is cleaner than adapting core's.
+1. **Unified API** - Validation is integrated into `TableStore` rather than a separate wrapper. This eliminates the `table()` vs `validatedTable()` choice and simplifies the API.
 
-2. **All fields optional** - Advisory validation means missing fields are valid. `Type.Optional()` wraps all properties.
+2. **Raw escape hatch** - `store.raw.*` provides unvalidated access when needed (performance-critical code, debugging, migrations).
 
-3. **Additional properties allowed** - `{ additionalProperties: true }` lets unknown fields pass. Data outside schema isn't flagged as invalid.
+3. **All fields optional** - Advisory validation means missing fields are valid. `Type.Optional()` wraps all properties.
 
-4. **Dynamic tables return undefined** - `validatedTable()` returns `undefined` for tables not in schema. This is intentional—dynamic tables have no schema to validate against.
+4. **Additional properties allowed** - `{ additionalProperties: true }` lets unknown fields pass. Data outside schema isn't flagged as invalid.
 
-5. **Lazy field validator caching** - Row validators compile eagerly (at construction). Field validators compile lazily (on first access per field). Both are cached.
+5. **Schema always required** - Dynamic tables use empty schema `{ name, fields: {} }` rather than `undefined`. This removes null checks throughout the codebase.
+
+6. **Lazy field validator caching** - Row validators compile eagerly (at construction). Field validators compile lazily (on first access per field). Both are cached.
+
+7. **Writes bypass validation** - `set()`, `delete()`, etc. don't validate. This supports CRDT semantics where all writes must succeed for convergence.

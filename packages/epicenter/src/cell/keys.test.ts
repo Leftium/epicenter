@@ -2,15 +2,10 @@ import { describe, test, expect } from 'bun:test';
 import {
 	generateRowId,
 	validateId,
-	validateFieldId,
 	cellKey,
 	parseCellKey,
 	rowPrefix,
 	hasPrefix,
-	isReservedField,
-	ROW_ORDER_FIELD,
-	ROW_DELETED_AT_FIELD,
-	RESERVED_FIELDS,
 } from './keys';
 
 describe('generateRowId', () => {
@@ -50,56 +45,10 @@ describe('validateId', () => {
 	});
 });
 
-describe('validateFieldId', () => {
-	test('accepts valid field ids', () => {
-		expect(() => validateFieldId('title')).not.toThrow();
-		expect(() => validateFieldId('my_field')).not.toThrow();
-		expect(() => validateFieldId('field123')).not.toThrow();
-	});
-
-	test('rejects reserved field names', () => {
-		expect(() => validateFieldId('_order')).toThrow(
-			'fieldId "_order" is reserved',
-		);
-		expect(() => validateFieldId('_deletedAt')).toThrow(
-			'fieldId "_deletedAt" is reserved',
-		);
-	});
-
-	test('rejects field ids with colon', () => {
-		expect(() => validateFieldId('invalid:field')).toThrow(
-			"fieldId cannot contain ':' character",
-		);
-	});
-});
-
-describe('reserved fields', () => {
-	test('ROW_ORDER_FIELD is _order', () => {
-		expect(ROW_ORDER_FIELD).toBe('_order');
-	});
-
-	test('ROW_DELETED_AT_FIELD is _deletedAt', () => {
-		expect(ROW_DELETED_AT_FIELD).toBe('_deletedAt');
-	});
-
-	test('RESERVED_FIELDS contains both', () => {
-		expect(RESERVED_FIELDS).toContain('_order');
-		expect(RESERVED_FIELDS).toContain('_deletedAt');
-	});
-
-	test('isReservedField identifies reserved fields', () => {
-		expect(isReservedField('_order')).toBe(true);
-		expect(isReservedField('_deletedAt')).toBe(true);
-		expect(isReservedField('title')).toBe(false);
-		expect(isReservedField('_other')).toBe(false);
-	});
-});
-
 describe('key construction', () => {
 	test('cellKey creates correct format (rowId:fieldId)', () => {
 		expect(cellKey('abc123', 'title')).toBe('abc123:title');
 		expect(cellKey('row1', 'views')).toBe('row1:views');
-		expect(cellKey('row1', '_order')).toBe('row1:_order');
 	});
 });
 

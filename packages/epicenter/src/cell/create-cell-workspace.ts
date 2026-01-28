@@ -5,14 +5,14 @@
  *
  * Architecture (Option B):
  * - One Y.Array per table, accessed via `ydoc.getArray(tableId)`
- * - Every entry is a cell value (including row metadata as reserved fields)
+ * - Every entry is a cell value
  * - Schema is external (JSON file), not in Y.Doc
  * - KV store uses a separate Y.Array
  *
  * Y.Doc structure:
  * ```
  * Y.Doc
- * ├── Y.Array('posts')    ← Table data (cells + row metadata)
+ * ├── Y.Array('posts')    ← Table data (cells only)
  * ├── Y.Array('users')    ← Another table
  * └── Y.Array('kv')       ← Workspace-level key-values
  * ```
@@ -99,8 +99,8 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  * posts.set(rowId, 'views', 100);
  *
  * // Read back
- * const rows = posts.getRowsWithoutMeta();
- * // [{ id: 'abc123', order: 1, deletedAt: null, cells: { title: 'Hello World', views: 100 } }]
+ * const rows = posts.getRows();
+ * // [{ id: 'abc123', cells: { title: 'Hello World', views: 100 } }]
  * ```
  */
 export function createCellWorkspace(
@@ -142,7 +142,7 @@ export function createCellWorkspace(
 		tableSchema: SchemaTableDefinition,
 	): TypedRowWithCells[] {
 		const tableStore = table(tableId);
-		const rows = tableStore.getRowsWithoutMeta();
+		const rows = tableStore.getRows();
 		const schemaFieldIds = Object.keys(tableSchema.fields);
 
 		return rows.map((r) => {
@@ -180,8 +180,6 @@ export function createCellWorkspace(
 
 			return {
 				id: r.id,
-				order: r.order,
-				deletedAt: r.deletedAt,
 				cells: typedCells,
 				missingFields,
 				extraFields,

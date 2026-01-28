@@ -4,40 +4,10 @@
  * With Option B architecture (one Y.Array per table), keys are simple:
  * - Cell key: `{rowId}:{fieldId}`
  *
- * Row metadata is stored as special cells with reserved field names.
- *
  * @packageDocumentation
  */
 
 import { customAlphabet } from 'nanoid';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Reserved Field Names
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Reserved field name for row ordering.
- * Stored as a cell with numeric value.
- */
-export const ROW_ORDER_FIELD = '_order';
-
-/**
- * Reserved field name for soft-delete timestamp.
- * Stored as a cell with number (timestamp) or null.
- */
-export const ROW_DELETED_AT_FIELD = '_deletedAt';
-
-/**
- * All reserved field names. Users cannot use these as field IDs.
- */
-export const RESERVED_FIELDS = [ROW_ORDER_FIELD, ROW_DELETED_AT_FIELD] as const;
-
-/**
- * Check if a field name is reserved.
- */
-export function isReservedField(fieldId: string): boolean {
-	return RESERVED_FIELDS.includes(fieldId as (typeof RESERVED_FIELDS)[number]);
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Generation
@@ -86,21 +56,6 @@ export function validateId(id: string, type: string): void {
 	}
 }
 
-/**
- * Validate that a field ID is not reserved.
- *
- * @param fieldId - The field ID to validate
- * @throws Error if the field ID is reserved
- */
-export function validateFieldId(fieldId: string): void {
-	validateId(fieldId, 'fieldId');
-	if (isReservedField(fieldId)) {
-		throw new Error(
-			`fieldId "${fieldId}" is reserved. Reserved fields: ${RESERVED_FIELDS.join(', ')}`,
-		);
-	}
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Key Construction
 // ════════════════════════════════════════════════════════════════════════════
@@ -115,7 +70,6 @@ export function validateFieldId(fieldId: string): void {
  * @example
  * ```ts
  * cellKey('abc123', 'title'); // 'abc123:title'
- * cellKey('abc123', '_order'); // 'abc123:_order' (row metadata)
  * ```
  */
 export function cellKey(rowId: string, fieldId: string): string {

@@ -34,7 +34,6 @@ export type {
 	// Data types
 	CellValue,
 	RowData,
-	RowWithCells,
 	TypedCell,
 	TypedRowWithCells,
 	// Store interfaces
@@ -52,15 +51,10 @@ export type {
 export {
 	generateRowId,
 	validateId,
-	validateFieldId,
 	cellKey,
 	parseCellKey,
 	rowPrefix,
 	hasPrefix,
-	isReservedField,
-	ROW_ORDER_FIELD,
-	ROW_DELETED_AT_FIELD,
-	RESERVED_FIELDS,
 } from './keys';
 
 // KV store array name (for advanced use cases)

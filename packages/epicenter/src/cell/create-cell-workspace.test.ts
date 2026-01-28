@@ -43,79 +43,44 @@ describe('createCellWorkspace', () => {
 		test('creates row with auto-generated id', () => {
 			const rowId = posts.createRow();
 			expect(rowId).toHaveLength(12);
-			expect(posts.getRow(rowId)).toBeDefined();
 		});
 
 		test('creates row with custom id', () => {
 			const rowId = posts.createRow('custom-id');
 			expect(rowId).toBe('custom-id');
-			expect(posts.getRow('custom-id')).toBeDefined();
 		});
 
-		test('auto-assigns order', () => {
-			const row1 = posts.createRow('row1');
-			const row2 = posts.createRow('row2');
-			const row3 = posts.createRow('row3');
-
-			expect(posts.get(row1, '_order')).toBe(1);
-			expect(posts.get(row2, '_order')).toBe(2);
-			expect(posts.get(row3, '_order')).toBe(3);
-		});
-
-		test('creates row with custom order', () => {
-			const rowId = posts.createRow('row1', 100);
-			expect(posts.get(rowId, '_order')).toBe(100);
-		});
-
-		test('soft-deletes row', () => {
+		test('hard-deletes row', () => {
 			const rowId = posts.createRow();
-			posts.deleteRow(rowId);
+			posts.set(rowId, 'title', 'Hello');
+			expect(posts.getRow(rowId)).toBeDefined();
 
-			const deletedAt = posts.get(rowId, '_deletedAt');
-			expect(deletedAt).not.toBeNull();
-			expect(typeof deletedAt).toBe('number');
+			posts.deleteRow(rowId);
+			expect(posts.getRow(rowId)).toBeUndefined();
 		});
 
-		test('restores soft-deleted row', () => {
-			const rowId = posts.createRow();
-			posts.deleteRow(rowId);
-			posts.restoreRow(rowId);
-
-			expect(posts.get(rowId, '_deletedAt')).toBeNull();
-		});
-
-		test('getRows returns active rows sorted by order', () => {
-			posts.createRow('row3', 3);
-			posts.createRow('row1', 1);
-			posts.createRow('row2', 2);
+		test('getRows returns rows sorted by id', () => {
+			posts.createRow('row3');
+			posts.createRow('row1');
+			posts.createRow('row2');
+			// Set a cell so each row actually has data
+			posts.set('row3', 'title', 'Third');
+			posts.set('row1', 'title', 'First');
+			posts.set('row2', 'title', 'Second');
 
 			const rows = posts.getRows();
 			expect(rows.map((r) => r.id)).toEqual(['row1', 'row2', 'row3']);
 		});
 
-		test('getRows excludes soft-deleted rows', () => {
+		test('getRowIds returns all row ids', () => {
 			posts.createRow('row1');
 			posts.createRow('row2');
-			posts.deleteRow('row1');
+			posts.set('row1', 'title', 'First');
+			posts.set('row2', 'title', 'Second');
 
-			const rows = posts.getRows();
-			expect(rows.map((r) => r.id)).toEqual(['row2']);
-		});
-
-		test('getAllRows includes soft-deleted rows', () => {
-			posts.createRow('row1');
-			posts.createRow('row2');
-			posts.deleteRow('row1');
-
-			const rows = posts.getAllRows();
-			expect(rows.map((r) => r.id)).toContain('row1');
-			expect(rows.map((r) => r.id)).toContain('row2');
-		});
-
-		test('reorders row', () => {
-			const rowId = posts.createRow('row1', 1);
-			posts.reorderRow(rowId, 100);
-			expect(posts.get(rowId, '_order')).toBe(100);
+			const ids = posts.getRowIds();
+			expect(ids).toContain('row1');
+			expect(ids).toContain('row2');
 		});
 
 		test('validates tableId does not contain colon', () => {
@@ -125,7 +90,7 @@ describe('createCellWorkspace', () => {
 		});
 
 		test('validates rowId does not contain colon', () => {
-			expect(() => posts.createRow('invalid:id')).toThrow(
+			expect(() => posts.set('invalid:id', 'title', 'Hello')).toThrow(
 				"rowId cannot contain ':' character",
 			);
 		});
@@ -155,9 +120,6 @@ describe('createCellWorkspace', () => {
 			expect(row.title).toBe('Hello');
 			expect(row.views).toBe(100);
 			expect(row.published).toBe(true);
-			// Also includes metadata
-			expect(row._order).toBe(1);
-			expect(row._deletedAt).toBeNull();
 		});
 
 		test('stores various data types', () => {
@@ -185,16 +147,6 @@ describe('createCellWorkspace', () => {
 				"fieldId cannot contain ':' character",
 			);
 		});
-
-		test('validates fieldId is not reserved', () => {
-			const rowId = posts.createRow();
-			expect(() => posts.set(rowId, '_order', 999)).toThrow(
-				'fieldId "_order" is reserved',
-			);
-			expect(() => posts.set(rowId, '_deletedAt', null)).toThrow(
-				'fieldId "_deletedAt" is reserved',
-			);
-		});
 	});
 
 	describe('kv store', () => {
@@ -217,40 +169,6 @@ describe('createCellWorkspace', () => {
 			expect(all.size).toBe(2);
 			expect(all.get('theme')).toBe('dark');
 			expect(all.get('language')).toBe('en');
-		});
-	});
-
-	describe('getRowsWithoutMeta', () => {
-		test('returns rows with cells separated from metadata', () => {
-			const row1 = posts.createRow();
-			const row2 = posts.createRow();
-
-			posts.set(row1, 'title', 'First Post');
-			posts.set(row1, 'views', 100);
-			posts.set(row2, 'title', 'Second Post');
-
-			const rows = posts.getRowsWithoutMeta();
-
-			expect(rows).toHaveLength(2);
-			expect(rows[0]!.id).toBe(row1);
-			expect(rows[0]!.order).toBe(1);
-			expect(rows[0]!.deletedAt).toBeNull();
-			expect(rows[0]!.cells).toEqual({ title: 'First Post', views: 100 });
-			expect(rows[1]!.id).toBe(row2);
-			expect(rows[1]!.cells).toEqual({ title: 'Second Post' });
-		});
-
-		test('excludes soft-deleted rows', () => {
-			const row1 = posts.createRow();
-			const row2 = posts.createRow();
-			posts.set(row1, 'title', 'First');
-			posts.set(row2, 'title', 'Second');
-
-			posts.deleteRow(row1);
-
-			const rows = posts.getRowsWithoutMeta();
-			expect(rows).toHaveLength(1);
-			expect(rows[0]!.cells.title).toBe('Second');
 		});
 	});
 
@@ -438,13 +356,13 @@ describe('createCellWorkspace', () => {
 			const events: any[] = [];
 			posts.observe((changes) => events.push(...changes));
 
-			posts.createRow('row1');
+			const rowId = posts.createRow('row1');
+			posts.set(rowId, 'title', 'Hello');
 
-			// Should have events for _order and _deletedAt
-			expect(events.length).toBeGreaterThanOrEqual(2);
-			const keys = events.map((e) => e.key);
-			expect(keys).toContain('row1:_order');
-			expect(keys).toContain('row1:_deletedAt');
+			expect(events).toHaveLength(1);
+			expect(events[0].type).toBe('add');
+			expect(events[0].key).toBe('row1:title');
+			expect(events[0].value).toBe('Hello');
 		});
 
 		test('observe fires on user cell changes', () => {

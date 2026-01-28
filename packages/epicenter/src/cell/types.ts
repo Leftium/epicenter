@@ -5,7 +5,7 @@
  *
  * Architecture (Option B):
  * - One Y.Array per table, accessed via `ydoc.getArray(tableId)`
- * - Every entry is a cell value (including row metadata as reserved fields)
+ * - Every entry is a cell value
  * - Schema is external (JSON file), not in Y.Doc
  * - Schema is advisory only - no enforcement, just type hints
  *
@@ -109,22 +109,12 @@ export type WorkspaceSchema = {
 export type CellValue = unknown;
 
 /**
- * A row with all its cell values (including metadata fields).
+ * A row with all its cell values.
  */
 export type RowData = {
 	/** Row identifier */
 	id: string;
-	/** All cells including _order and _deletedAt */
-	cells: Record<string, CellValue>;
-};
-
-/**
- * A row with cells separated from metadata.
- */
-export type RowWithCells = {
-	id: string;
-	order: number;
-	deletedAt: number | null;
+	/** All cells for this row */
 	cells: Record<string, CellValue>;
 };
 
@@ -142,8 +132,6 @@ export type TypedCell = {
  */
 export type TypedRowWithCells = {
 	id: string;
-	order: number;
-	deletedAt: number | null;
 	cells: Record<string, TypedCell>;
 	/** Fields in schema but not in data */
 	missingFields: string[];
@@ -177,7 +165,7 @@ export type ChangeHandler<T> = (
 
 /**
  * Store for a single table's data.
- * Every entry is a cell, including row metadata.
+ * Every entry is a cell value.
  */
 export type TableStore = {
 	/** The table identifier */
@@ -194,24 +182,18 @@ export type TableStore = {
 	has(rowId: string, fieldId: string): boolean;
 
 	// Row operations
-	/** Get all cells for a row (including metadata) */
+	/** Get all cells for a row */
 	getRow(rowId: string): Record<string, CellValue> | undefined;
-	/** Create a new row (sets _order and _deletedAt) */
-	createRow(rowId?: string, order?: number): string;
-	/** Soft-delete a row (sets _deletedAt) */
+	/** Generate a row ID (or validate a custom one) */
+	createRow(rowId?: string): string;
+	/** Delete a row (hard delete - removes all cells) */
 	deleteRow(rowId: string): void;
-	/** Restore a soft-deleted row */
-	restoreRow(rowId: string): void;
-	/** Change a row's order */
-	reorderRow(rowId: string, newOrder: number): void;
 
 	// Bulk operations
-	/** Get all rows including deleted, with metadata in cells */
-	getAllRows(): RowData[];
-	/** Get active rows only, with metadata in cells */
+	/** Get all rows */
 	getRows(): RowData[];
-	/** Get active rows with metadata separated from cells */
-	getRowsWithoutMeta(): RowWithCells[];
+	/** Get all row IDs */
+	getRowIds(): string[];
 
 	// Observation
 	/** Observe changes to cells */

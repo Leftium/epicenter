@@ -4,10 +4,7 @@
  * @fileoverview Clean script for Epicenter monorepo
  *
  * Removes build artifacts, caches, and node_modules across the monorepo.
- * Also clears Tauri webview cache and provides instructions for browser cache clearing.
- *
- * This script is cross-platform (macOS, Linux, Windows) unlike the previous
- * rm -rf based approach.
+ * Also clears Tauri webview cache.
  *
  * Usage:
  *   bun run clean        # Remove JS build artifacts, caches, node_modules
@@ -19,21 +16,20 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const currentPlatform = process.platform;
+const isSupportedPlatform =
+	currentPlatform === 'darwin' ||
+	currentPlatform === 'linux' ||
+	currentPlatform === 'win32';
 
-/** Check for --nuke flag */
 const isNuke = process.argv.includes('--nuke');
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
 
-/** Workspace parent directories (from package.json workspaces) */
 const workspaceParents = ['apps', 'packages', 'examples'] as const;
-
-/** Root-level directories to remove */
 const rootDirs = ['.turbo', 'node_modules'] as const;
 
-/** Subdirectories to remove within each workspace */
 const subDirs = [
 	// Build outputs
 	'.svelte-kit',
@@ -52,13 +48,34 @@ const subDirs = [
 	'node_modules',
 ] as const;
 
-/** Additional subdirs only removed in nuke mode (expensive to rebuild) */
 const nukeSubDirs = ['src-tauri/target'] as const;
-
-/** Tauri app cache directory names (for clearing webview cache) */
 const tauriCacheNames = ['whispering', 'epicenter'] as const;
 
-/** Get all workspace directories */
+// Compute Tauri cache directories once at startup
+const tauriCacheDirs = (() => {
+	if (!isSupportedPlatform) return [];
+	const home = homedir();
+	const cachePaths = {
+		darwin: [
+			...tauriCacheNames.map((name) => join(home, 'Library/WebKit', name)),
+			...tauriCacheNames.map((name) => join(home, 'Library/Caches', name)),
+		],
+		linux: [
+			...tauriCacheNames.map((name) => join(home, '.local/share', name)),
+			...tauriCacheNames.map((name) => join(home, '.cache', name)),
+		],
+		win32: [
+			...tauriCacheNames.map((name) =>
+				join(process.env.APPDATA ?? join(home, 'AppData/Roaming'), name),
+			),
+			...tauriCacheNames.map((name) =>
+				join(process.env.LOCALAPPDATA ?? join(home, 'AppData/Local'), name),
+			),
+		],
+	};
+	return cachePaths[currentPlatform as keyof typeof cachePaths];
+})();
+
 async function getWorkspaceDirs(): Promise<string[]> {
 	const results = await Promise.all(
 		workspaceParents.map(async (parent) => {
@@ -70,58 +87,9 @@ async function getWorkspaceDirs(): Promise<string[]> {
 			} catch {
 				return [];
 			}
-		})
+		}),
 	);
 	return results.flat();
-}
-
-// =============================================================================
-// PLATFORM SUPPORT
-// =============================================================================
-
-type SupportedPlatform = 'darwin' | 'linux' | 'win32';
-
-function isSupportedPlatform(p: string): p is SupportedPlatform {
-	return p === 'darwin' || p === 'linux' || p === 'win32';
-}
-
-/** Cache directory patterns by platform (returns paths for a given cache dir name) */
-const platformCachePaths = {
-	darwin: (home: string, cacheDir: string) => [
-		join(home, 'Library/WebKit', cacheDir),
-		join(home, 'Library/Caches', cacheDir),
-	],
-	linux: (home: string, cacheDir: string) => [
-		join(home, '.local/share', cacheDir),
-		join(home, '.cache', cacheDir),
-	],
-	win32: (home: string, cacheDir: string) => {
-		const appData = process.env.APPDATA ?? join(home, 'AppData/Roaming');
-		const localAppData =
-			process.env.LOCALAPPDATA ?? join(home, 'AppData/Local');
-		return [join(appData, cacheDir), join(localAppData, cacheDir)];
-	},
-} as const satisfies Record<SupportedPlatform, (home: string, cacheDir: string) => string[]>;
-
-function getTauriCacheDirs(): string[] {
-	if (!isSupportedPlatform(currentPlatform)) return [];
-	const home = homedir();
-	const getCachePaths = platformCachePaths[currentPlatform];
-	return tauriCacheNames.flatMap((name) => getCachePaths(home, name));
-}
-
-async function removeDir(path: string): Promise<void> {
-	await rm(path, { recursive: true, force: true });
-}
-
-/** Prompt user with a yes/no question, defaulting to yes */
-async function confirm(question: string): Promise<boolean> {
-	process.stdout.write(`${question} [Y/n] `);
-	for await (const line of console) {
-		const normalized = line.trim().toLowerCase();
-		return normalized === '' || normalized === 'y' || normalized === 'yes';
-	}
-	return false; // EOF
 }
 
 async function main() {
@@ -134,62 +102,39 @@ async function main() {
 
 	// Build list of directories to remove
 	const workspaceDirs = await getWorkspaceDirs();
-	const allSubDirs: readonly string[] = isNuke
-		? [...subDirs, ...nukeSubDirs]
-		: subDirs;
+	const allSubDirs = isNuke ? [...subDirs, ...nukeSubDirs] : subDirs;
 
 	const dirsToRemove = [
 		...rootDirs,
 		...workspaceDirs.flatMap((workspace) =>
-			allSubDirs.map((subDir) => join(workspace, subDir))
+			allSubDirs.map((subDir) => join(workspace, subDir)),
 		),
 	];
 
-	// Clean repo directories (parallel for speed)
+	// Clean repo directories (parallel)
 	console.log('Removing build artifacts and node_modules...');
-	await Promise.all(dirsToRemove.map(removeDir));
+	await Promise.all(
+		dirsToRemove.map((path) => rm(path, { recursive: true, force: true })),
+	);
 	console.log(`  ✓ Processed ${dirsToRemove.length} directories\n`);
 
 	// Clean Tauri webview cache (parallel)
-	console.log('Clearing Tauri webview cache...');
-	const tauriDirs = getTauriCacheDirs();
-	await Promise.all(tauriDirs.map(removeDir));
-	if (tauriDirs.length > 0) {
+	if (tauriCacheDirs.length > 0) {
+		console.log('Clearing Tauri webview cache...');
+		await Promise.all(
+			tauriCacheDirs.map((path) => rm(path, { recursive: true, force: true })),
+		);
 		console.log(`  ✓ Cleared webview cache for ${currentPlatform}\n`);
 	}
 
-	// Print warning for unsupported platforms
-	if (!isSupportedPlatform(currentPlatform)) {
-		console.log('  ⚠ Unknown platform - webview cache not cleared\n');
-		console.log('  Manual removal paths:');
-		console.log('    macOS:   ~/Library/WebKit/<app> and ~/Library/Caches/<app>');
-		console.log('    Linux:   ~/.local/share/<app> and ~/.cache/<app>');
-		console.log('    Windows: %APPDATA%\\<app> and %LOCALAPPDATA%\\<app>\n');
-	}
-
-	// Browser cache instructions (always manual)
-	console.log('━'.repeat(60));
-	console.log('📋 MANUAL STEP (if experiencing UI issues after clean):');
-	console.log('━'.repeat(60));
-	console.log(`
-🌐 Browser cache (localhost:1420 / localhost:1421):
-   DevTools → Application → Storage → Clear site data
-   Or: Right-click refresh button → "Empty Cache and Hard Reload"
-`);
-
 	console.log('✨ Clean complete!\n');
 
-	// Prompt to run bun install
-	const shouldInstall = await confirm('Run "bun install" now?');
-	if (shouldInstall) {
-		console.log('\n📦 Installing dependencies...\n');
-		const proc = Bun.spawn(['bun', 'install'], {
-			stdio: ['inherit', 'inherit', 'inherit'],
-		});
-		await proc.exited;
-	} else {
-		console.log('\nSkipped. Run "bun install" manually when ready.');
-	}
+	// Reinstall dependencies
+	console.log('📦 Installing dependencies...\n');
+	const proc = Bun.spawn(['bun', 'install'], {
+		stdio: ['inherit', 'inherit', 'inherit'],
+	});
+	await proc.exited;
 }
 
 main().catch(console.error);

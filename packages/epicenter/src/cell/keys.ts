@@ -8,35 +8,46 @@
  */
 
 import { customAlphabet } from 'nanoid';
+import type { Brand } from 'wellcrafted/brand';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Constants
+// ════════════════════════════════════════════════════════════════════════════
+
+const KEY_SEPARATOR = ':' as const;
+const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Branded Types
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Branded string for row identifiers. */
+export type RowId = string & Brand<'RowId'>;
+
+/** Branded string for field identifiers. */
+export type FieldId = string & Brand<'FieldId'>;
+
+/** Template literal type for cell keys: `{RowId}:{FieldId}` */
+export type CellKey = `${RowId}${typeof KEY_SEPARATOR}${FieldId}`;
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Generation
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Alphabet for generating row IDs.
- * Uses lowercase alphanumeric for URL-safety and readability.
- */
-const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
-
-/**
- * Generate a random row ID.
- * Uses 12 characters for sufficient uniqueness (36^12 possibilities).
- */
 const nanoid = customAlphabet(ALPHABET, 12);
 
 /**
  * Generate a unique row ID.
  *
- * @returns A 12-character alphanumeric ID
+ * @returns A 12-character alphanumeric branded RowId
  *
  * @example
  * ```ts
- * const rowId = generateRowId(); // e.g., 'v1stgxr8z5jd'
+ * const rowId = generateRowId(); // e.g., 'v1stgxr8z5jd' as RowId
  * ```
  */
-export function generateRowId(): string {
-	return nanoid();
+export function generateRowId(): RowId {
+	return nanoid() as RowId;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -44,15 +55,15 @@ export function generateRowId(): string {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Validate that an ID does not contain the separator character ':'.
+ * Validate that an ID does not contain the separator character.
  *
  * @param id - The ID to validate
  * @param type - A description of the ID type for error messages
- * @throws Error if the ID contains ':'
+ * @throws Error if the ID contains the separator
  */
 export function validateId(id: string, type: string): void {
-	if (id.includes(':')) {
-		throw new Error(`${type} cannot contain ':' character: "${id}"`);
+	if (id.includes(KEY_SEPARATOR)) {
+		throw new Error(`${type} cannot contain '${KEY_SEPARATOR}' character: "${id}"`);
 	}
 }
 
@@ -65,41 +76,44 @@ export function validateId(id: string, type: string): void {
  *
  * @param rowId - The row identifier
  * @param fieldId - The field identifier
- * @returns Key in format `{rowId}:{fieldId}`
+ * @returns Branded CellKey in format `{rowId}:{fieldId}`
  *
  * @example
  * ```ts
- * cellKey('abc123', 'title'); // 'abc123:title'
+ * cellKey(rowId, 'title' as FieldId); // 'abc123:title' as CellKey
  * ```
  */
-export function cellKey(rowId: string, fieldId: string): string {
-	return `${rowId}:${fieldId}`;
+export function cellKey(rowId: RowId, fieldId: FieldId): CellKey {
+	return `${rowId}${KEY_SEPARATOR}${fieldId}` as CellKey;
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // Key Parsing
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Parsed cell key components. */
+export interface ParsedCellKey {
+	rowId: RowId;
+	fieldId: FieldId;
+}
+
 /**
  * Parse a cell key into its component IDs.
  *
  * @param key - Key in format `{rowId}:{fieldId}`
- * @returns Object with rowId and fieldId
+ * @returns Object with branded rowId and fieldId
  * @throws Error if key format is invalid
  */
-export function parseCellKey(key: string): {
-	rowId: string;
-	fieldId: string;
-} {
-	const colonIndex = key.indexOf(':');
-	if (colonIndex === -1) {
+export function parseCellKey(key: CellKey | string): ParsedCellKey {
+	const separatorIndex = key.indexOf(KEY_SEPARATOR);
+	if (separatorIndex === -1) {
 		throw new Error(
-			`Invalid cell key format: "${key}" (expected "rowId:fieldId")`,
+			`Invalid cell key format: "${key}" (expected "rowId${KEY_SEPARATOR}fieldId")`,
 		);
 	}
 	return {
-		rowId: key.slice(0, colonIndex),
-		fieldId: key.slice(colonIndex + 1),
+		rowId: key.slice(0, separatorIndex) as RowId,
+		fieldId: key.slice(separatorIndex + 1) as FieldId,
 	};
 }
 
@@ -107,14 +121,17 @@ export function parseCellKey(key: string): {
 // Prefix Utilities
 // ════════════════════════════════════════════════════════════════════════════
 
+/** Prefix type for row-scoped key scanning. */
+export type RowPrefix = `${RowId}${typeof KEY_SEPARATOR}`;
+
 /**
  * Create a prefix for scanning all cells belonging to a row.
  *
  * @param rowId - The row identifier
- * @returns Prefix string `{rowId}:`
+ * @returns Typed prefix string `{rowId}:`
  */
-export function rowPrefix(rowId: string): string {
-	return `${rowId}:`;
+export function rowPrefix(rowId: RowId): RowPrefix {
+	return `${rowId}${KEY_SEPARATOR}` as RowPrefix;
 }
 
 /**

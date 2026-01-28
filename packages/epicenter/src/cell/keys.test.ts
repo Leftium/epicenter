@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	cellKey,
+	type FieldId,
 	generateRowId,
 	hasPrefix,
 	parseCellKey,
+	type RowId,
 	rowPrefix,
 	validateId,
 } from './keys';
@@ -47,27 +49,25 @@ describe('validateId', () => {
 
 describe('key construction', () => {
 	test('cellKey creates correct format (rowId:fieldId)', () => {
-		expect(cellKey('abc123', 'title')).toBe('abc123:title');
-		expect(cellKey('row1', 'views')).toBe('row1:views');
+		const key1 = cellKey('abc123' as RowId, 'title' as FieldId);
+		const key2 = cellKey('row1' as RowId, 'views' as FieldId);
+		expect<string>(key1).toBe('abc123:title');
+		expect<string>(key2).toBe('row1:views');
 	});
 });
 
 describe('key parsing', () => {
 	test('parseCellKey extracts components', () => {
 		const result = parseCellKey('abc123:title');
-		expect(result).toEqual({
-			rowId: 'abc123',
-			fieldId: 'title',
-		});
+		expect<string>(result.rowId).toBe('abc123');
+		expect<string>(result.fieldId).toBe('title');
 	});
 
 	test('parseCellKey handles fieldId with special characters', () => {
 		// Field ID could contain underscore
 		const result = parseCellKey('row1:my_field');
-		expect(result).toEqual({
-			rowId: 'row1',
-			fieldId: 'my_field',
-		});
+		expect<string>(result.rowId).toBe('row1');
+		expect<string>(result.fieldId).toBe('my_field');
 	});
 
 	test('parseCellKey throws on invalid format', () => {
@@ -79,8 +79,8 @@ describe('key parsing', () => {
 
 describe('prefix utilities', () => {
 	test('rowPrefix creates correct format (rowId:)', () => {
-		expect(rowPrefix('row1')).toBe('row1:');
-		expect(rowPrefix('abc123')).toBe('abc123:');
+		expect<string>(rowPrefix('row1' as RowId)).toBe('row1:');
+		expect<string>(rowPrefix('abc123' as RowId)).toBe('abc123:');
 	});
 
 	test('hasPrefix checks correctly', () => {

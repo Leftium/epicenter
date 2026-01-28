@@ -15,91 +15,113 @@
  */
 
 import { readdir, rm } from 'node:fs/promises';
-import { homedir, platform } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 
-const currentPlatform = platform();
+const currentPlatform = process.platform;
 
 /** Check for --nuke flag */
 const isNuke = process.argv.includes('--nuke');
 
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+/** Workspace parent directories (from package.json workspaces) */
+const workspaceParents = ['apps', 'packages', 'examples'] as const;
+
 /** Root-level directories to remove */
-const rootDirs = ['.turbo', 'node_modules'];
+const rootDirs = ['.turbo', 'node_modules'] as const;
 
-/** Subdirectories to remove within each app/package/example */
-const subDirs = ['.svelte-kit', 'dist', 'node_modules'];
+/** Subdirectories to remove within each workspace */
+const subDirs = [
+	// Build outputs
+	'.svelte-kit',
+	'.astro',
+	'.wxt',
+	'.output',
+	'.vercel',
+	'.build',
+	'dist',
+	// Caches
+	'.wrangler',
+	'.mf',
+	// Tauri generated files (no-op for non-Tauri workspaces)
+	'src-tauri/gen',
+	// Dependencies (includes nested caches like node_modules/.vite)
+	'node_modules',
+] as const;
 
-/** Additional specific paths to clean */
-const additionalPaths = ['apps/whispering/node_modules/.vite'];
+/** Additional subdirs only removed in nuke mode (expensive to rebuild) */
+const nukeSubDirs = ['src-tauri/target'] as const;
+
+/** Tauri app cache directory names (for clearing webview cache) */
+const tauriCacheNames = ['whispering', 'epicenter'] as const;
 
 /** Get all workspace directories */
 async function getWorkspaceDirs(): Promise<string[]> {
-	const dirs: string[] = [];
-
-	for (const parent of ['apps', 'packages', 'examples']) {
-		try {
-			const entries = await readdir(parent, { withFileTypes: true });
-			for (const entry of entries) {
-				if (entry.isDirectory()) {
-					dirs.push(join(parent, entry.name));
-				}
+	const results = await Promise.all(
+		workspaceParents.map(async (parent) => {
+			try {
+				const entries = await readdir(parent, { withFileTypes: true });
+				return entries
+					.filter((entry) => entry.isDirectory())
+					.map((entry) => join(parent, entry.name));
+			} catch {
+				return [];
 			}
-		} catch {
-			// Directory doesn't exist, skip
-		}
-	}
-
-	return dirs;
+		})
+	);
+	return results.flat();
 }
 
-/** Tauri webview cache directories by platform */
-const tauriCacheDirs = {
-	darwin: (home: string) => [
-		join(home, 'Library/WebKit/whispering'),
-		join(home, 'Library/Caches/whispering'),
+// =============================================================================
+// PLATFORM SUPPORT
+// =============================================================================
+
+type SupportedPlatform = 'darwin' | 'linux' | 'win32';
+
+function isSupportedPlatform(p: string): p is SupportedPlatform {
+	return p === 'darwin' || p === 'linux' || p === 'win32';
+}
+
+/** Cache directory patterns by platform (returns paths for a given cache dir name) */
+const platformCachePaths = {
+	darwin: (home: string, cacheDir: string) => [
+		join(home, 'Library/WebKit', cacheDir),
+		join(home, 'Library/Caches', cacheDir),
 	],
-	linux: (home: string) => [
-		join(home, '.local/share/whispering'),
-		join(home, '.cache/whispering'),
+	linux: (home: string, cacheDir: string) => [
+		join(home, '.local/share', cacheDir),
+		join(home, '.cache', cacheDir),
 	],
-	win32: (home: string) => {
-		const appData = process.env.APPDATA || join(home, 'AppData/Roaming');
+	win32: (home: string, cacheDir: string) => {
+		const appData = process.env.APPDATA ?? join(home, 'AppData/Roaming');
 		const localAppData =
-			process.env.LOCALAPPDATA || join(home, 'AppData/Local');
-		return [join(appData, 'whispering'), join(localAppData, 'whispering')];
+			process.env.LOCALAPPDATA ?? join(home, 'AppData/Local');
+		return [join(appData, cacheDir), join(localAppData, cacheDir)];
 	},
-} as const satisfies Record<string, (home: string) => string[]>;
+} as const satisfies Record<SupportedPlatform, (home: string, cacheDir: string) => string[]>;
 
 function getTauriCacheDirs(): string[] {
+	if (!isSupportedPlatform(currentPlatform)) return [];
 	const home = homedir();
-	return tauriCacheDirs[currentPlatform]?.(home) ?? [];
+	const getCachePaths = platformCachePaths[currentPlatform];
+	return tauriCacheNames.flatMap((name) => getCachePaths(home, name));
 }
 
-async function removeDir(path: string): Promise<boolean> {
-	try {
-		await rm(path, { recursive: true, force: true });
-		return true;
-	} catch {
-		return false;
-	}
+async function removeDir(path: string): Promise<void> {
+	await rm(path, { recursive: true, force: true });
 }
 
 /** Prompt user with a yes/no question, defaulting to yes */
 async function confirm(question: string): Promise<boolean> {
-	const rl = createInterface({
-		input: process.stdin,
-		output: process.stdout,
-	});
-
-	return new Promise((resolve) => {
-		rl.question(`${question} [Y/n] `, (answer) => {
-			rl.close();
-			const normalized = answer.trim().toLowerCase();
-			// Default to yes if empty or 'y'
-			resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
-		});
-	});
+	process.stdout.write(`${question} [Y/n] `);
+	for await (const line of console) {
+		const normalized = line.trim().toLowerCase();
+		return normalized === '' || normalized === 'y' || normalized === 'yes';
+	}
+	return false; // EOF
 }
 
 async function main() {
@@ -111,69 +133,49 @@ async function main() {
 	}
 
 	// Build list of directories to remove
-	const dirsToRemove: string[] = [...rootDirs, ...additionalPaths];
-
-	// Add Rust target directory if nuking
-	if (isNuke) {
-		dirsToRemove.push('apps/whispering/src-tauri/target');
-	}
-
-	// Add subdirs for each workspace directory
 	const workspaceDirs = await getWorkspaceDirs();
-	for (const workspaceDir of workspaceDirs) {
-		for (const subDir of subDirs) {
-			dirsToRemove.push(join(workspaceDir, subDir));
-		}
-	}
+	const allSubDirs: readonly string[] = isNuke
+		? [...subDirs, ...nukeSubDirs]
+		: subDirs;
 
-	// Clean repo directories
+	const dirsToRemove = [
+		...rootDirs,
+		...workspaceDirs.flatMap((workspace) =>
+			allSubDirs.map((subDir) => join(workspace, subDir))
+		),
+	];
+
+	// Clean repo directories (parallel for speed)
 	console.log('Removing build artifacts and node_modules...');
-	let removedCount = 0;
-	for (const dir of dirsToRemove) {
-		if (await removeDir(dir)) {
-			removedCount++;
-		}
-	}
+	await Promise.all(dirsToRemove.map(removeDir));
 	console.log(`  ✓ Processed ${dirsToRemove.length} directories\n`);
 
-	// Clean Tauri webview cache
+	// Clean Tauri webview cache (parallel)
 	console.log('Clearing Tauri webview cache...');
 	const tauriDirs = getTauriCacheDirs();
-	for (const dir of tauriDirs) {
-		await removeDir(dir);
-	}
+	await Promise.all(tauriDirs.map(removeDir));
 	if (tauriDirs.length > 0) {
-		console.log(`  ✓ Cleared webview cache for ${platform()}\n`);
+		console.log(`  ✓ Cleared webview cache for ${currentPlatform}\n`);
 	}
 
-	// Print manual instructions for other platforms
-	if (!(currentPlatform in tauriCacheDirs)) {
+	// Print warning for unsupported platforms
+	if (!isSupportedPlatform(currentPlatform)) {
 		console.log('  ⚠ Unknown platform - webview cache not cleared\n');
+		console.log('  Manual removal paths:');
+		console.log('    macOS:   ~/Library/WebKit/<app> and ~/Library/Caches/<app>');
+		console.log('    Linux:   ~/.local/share/<app> and ~/.cache/<app>');
+		console.log('    Windows: %APPDATA%\\<app> and %LOCALAPPDATA%\\<app>\n');
 	}
 
-	// Browser cache instructions
+	// Browser cache instructions (always manual)
 	console.log('━'.repeat(60));
-	console.log('📋 MANUAL STEPS (if experiencing UI issues after clean):');
+	console.log('📋 MANUAL STEP (if experiencing UI issues after clean):');
 	console.log('━'.repeat(60));
 	console.log(`
-🌐 Browser cache (localhost:1420):
-   1. Open DevTools (Cmd+Option+I / Ctrl+Shift+I)
-   2. Right-click the refresh button
-   3. Select "Empty Cache and Hard Reload"
-   
-   Or: DevTools → Application → Storage → Clear site data
+🌐 Browser cache (localhost:1420 / localhost:1421):
+   DevTools → Application → Storage → Clear site data
+   Or: Right-click refresh button → "Empty Cache and Hard Reload"
 `);
-
-	if (currentPlatform !== 'darwin') {
-		console.log(`🖥️  Tauri webview cache (manual removal if needed):`);
-		console.log(`   macOS:   ~/Library/WebKit/whispering
-            ~/Library/Caches/whispering`);
-		console.log(`   Linux:   ~/.local/share/whispering
-            ~/.cache/whispering`);
-		console.log(`   Windows: %APPDATA%\\whispering
-            %LOCALAPPDATA%\\whispering
-`);
-	}
 
 	console.log('✨ Clean complete!\n');
 

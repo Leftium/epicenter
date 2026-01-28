@@ -17,6 +17,12 @@
  * @packageDocumentation
  */
 
+// HeadDoc (re-exported from core for convenience)
+export { createHeadDoc, type HeadDoc } from '../core/docs/head-doc';
+
+// Lifecycle utilities (re-exported for extension authors)
+export { defineExports, type Lifecycle, type MaybePromise } from '../core/lifecycle';
+
 // Core field factories for programmatic schema creation
 export {
 	boolean,
@@ -42,6 +48,14 @@ export {
 } from './converters/to-typebox';
 // Factory
 export { createCellWorkspace } from './create-cell-workspace';
+// Extension types
+export type {
+	CellExtensionContext,
+	CellExtensionFactory,
+	CellExtensionFactoryMap,
+	CellWorkspaceBuilder,
+	InferCellExtensionExports,
+} from './extensions';
 
 // Key utilities
 export {
@@ -78,6 +92,8 @@ export type {
 	ChangeEvent,
 	ChangeHandler,
 	CreateCellWorkspaceOptions,
+	// HeadDoc-based options (new API)
+	CreateCellWorkspaceWithHeadDocOptions,
 	// Schema types (external JSON)
 	FieldType,
 	KvStore,

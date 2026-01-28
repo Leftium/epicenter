@@ -259,9 +259,17 @@ export type KvStore = {
  * Provides access to table stores and KV store.
  * Schema is applied as a "lens" for viewing/editing.
  */
-export type CellWorkspaceClient = {
-	/** Workspace identifier */
+export type CellWorkspaceClient<
+	TTableDefs extends Record<string, SchemaTableDefinition> = Record<
+		string,
+		SchemaTableDefinition
+	>,
+	TExtensions = {},
+> = {
+	/** Workspace identifier (no epoch suffix) */
 	readonly id: string;
+	/** Current epoch number (0 if not using HeadDoc) */
+	readonly epoch: number;
 	/** The underlying Yjs document */
 	readonly ydoc: Y.Doc;
 
@@ -273,16 +281,20 @@ export type CellWorkspaceClient = {
 	/** Icon for the workspace */
 	readonly icon: Icon | string | null;
 	/** The full workspace definition */
-	readonly definition: WorkspaceSchema;
+	readonly definition: WorkspaceSchema & { tables: TTableDefs };
 
 	/**
 	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
 	 * Table stores are cached - calling with same tableId returns same instance.
 	 */
+	table<K extends keyof TTableDefs>(tableId: K): TableStore;
 	table(tableId: string): TableStore;
 
 	/** KV store for workspace-level values */
 	readonly kv: KvStore;
+
+	/** Extension exports (empty object if no extensions) */
+	readonly extensions: TExtensions;
 
 	// Convenience methods with schema
 
@@ -296,7 +308,14 @@ export type CellWorkspaceClient = {
 	/**
 	 * Batch multiple writes into a single Yjs transaction.
 	 */
-	batch<T>(fn: (ws: CellWorkspaceClient) => T): T;
+	batch<T>(
+		fn: (ws: CellWorkspaceClient<TTableDefs, TExtensions>) => T,
+	): T;
+
+	/**
+	 * Resolves when all extensions are synced/ready.
+	 */
+	whenSynced: Promise<void>;
 
 	/**
 	 * Destroy the workspace client and release resources.
@@ -318,4 +337,26 @@ export type CreateCellWorkspaceOptions = {
 	definition: WorkspaceSchema;
 	/** Optional existing Y.Doc to use instead of creating a new one */
 	ydoc?: Y.Doc;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc-Based Options (New API)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Options for creating a cell workspace with HeadDoc.
+ *
+ * This is the new preferred API that integrates with the HeadDoc epoch system.
+ * The Y.Doc guid will be `{workspaceId}-{epoch}` for time-travel support.
+ */
+export type CreateCellWorkspaceWithHeadDocOptions<
+	TTableDefs extends Record<string, SchemaTableDefinition>,
+> = {
+	/** HeadDoc containing workspace identity and epoch state */
+	headDoc: {
+		workspaceId: string;
+		getEpoch(): number;
+	};
+	/** Workspace definition (schema for tables and KV) */
+	definition: WorkspaceSchema & { tables: TTableDefs };
 };

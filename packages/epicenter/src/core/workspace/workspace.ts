@@ -263,8 +263,12 @@ export type ClientBuilder<
  * This is a simple pass-through function that helps TypeScript infer
  * the definition types. It performs no normalization or transformation.
  *
+ * @deprecated Use `createCellWorkspace` from `@epicenter/hq` or `@epicenter/hq/cell` instead.
+ * The Cell API provides cell-level CRDT (better concurrent editing) and a simpler builder pattern.
+ *
  * @example
  * ```typescript
+ * // Old API (deprecated)
  * const definition = defineWorkspace({
  *   tables: {
  *     posts: table({
@@ -275,10 +279,16 @@ export type ClientBuilder<
  *   kv: {},
  * });
  *
- * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
- * const client = createClient(head)
- *   .withDefinition(definition)
- *   .withExtensions({ persistence });
+ * // New API (recommended)
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: {
+ *     name: 'Blog',
+ *     tables: {
+ *       posts: { name: 'Posts', fields: { title: { name: 'Title', type: 'text', order: 1 } } },
+ *     },
+ *   },
+ * }).withExtensions({});
  * ```
  *
  * @param definition - The workspace definition with tables and kv definitions
@@ -299,6 +309,27 @@ export function defineWorkspace<
 
 /**
  * Create a client builder for a workspace.
+ *
+ * @deprecated Use `createCellWorkspace` from `@epicenter/hq` or `@epicenter/hq/cell` instead.
+ * The Cell API provides:
+ * - Cell-level CRDT (better concurrent editing than row-level)
+ * - HeadDoc integration for epoch/time-travel support
+ * - Builder pattern with typed extensions
+ *
+ * ## Migration Example
+ *
+ * ```typescript
+ * // Old API (deprecated)
+ * const client = createClient(head)
+ *   .withDefinition({ tables: {...}, kv: {} })
+ *   .withExtensions({ persistence });
+ *
+ * // New API (recommended)
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'My Workspace', tables: {...} },
+ * }).withExtensions({ persistence });
+ * ```
  *
  * Returns a {@link ClientBuilder} for chaining `.withDefinition()` and `.withExtensions()`.
  * The client is only created when you call `.withExtensions()` (the terminal operation).

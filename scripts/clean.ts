@@ -35,10 +35,9 @@ const subDirs = [
 	'src-tauri/gen',
 	// Dependencies (includes nested caches like node_modules/.vite)
 	'node_modules',
+	// Nuke-only: Rust compilation cache (several GB, takes minutes to rebuild)
+	...(isNuke ? ['src-tauri/target'] : []),
 ] as const;
-
-// Nuke-only: Rust compilation cache (several GB, takes minutes to rebuild)
-const NUKE_DIRS = ['src-tauri/target'] as const;
 
 async function main() {
 	console.log(
@@ -63,16 +62,11 @@ async function main() {
 		)
 	).flat();
 
-	// In nuke mode, also clean Rust targets (no-op for non-Tauri workspaces)
-	const allSubDirs: readonly string[] = isNuke
-		? [...subDirs, ...NUKE_DIRS]
-		: subDirs;
-
 	const dirsToRemove = [
 		'.turbo',
 		'node_modules',
 		...workspaceDirs.flatMap((workspace) =>
-			allSubDirs.map((subDir) => join(workspace, subDir)),
+			subDirs.map((subDir) => join(workspace, subDir)),
 		),
 	];
 
@@ -86,21 +80,30 @@ async function main() {
 	// Nuke mode: also clear dev app webview cache (contains localStorage, so never touch production)
 	if (isNuke) {
 		const home = homedir();
-		const devCacheDirs =
-			{
-				darwin: [join(home, 'Library/WebKit', DEV_BUNDLE_ID)],
-				linux: [
+
+		let devCacheDirs: string[];
+		switch (process.platform) {
+			case 'darwin':
+				devCacheDirs = [join(home, 'Library/WebKit', DEV_BUNDLE_ID)];
+				break;
+			case 'linux':
+				devCacheDirs = [
 					join(home, '.local/share', DEV_BUNDLE_ID),
 					join(home, '.cache', DEV_BUNDLE_ID),
-				],
-				win32: [
+				];
+				break;
+			case 'win32':
+				devCacheDirs = [
 					join(
 						process.env.LOCALAPPDATA ?? join(home, 'AppData/Local'),
 						DEV_BUNDLE_ID,
 						'EBWebView',
 					),
-				],
-			}[process.platform as 'darwin' | 'linux' | 'win32'] ?? [];
+				];
+				break;
+			default:
+				devCacheDirs = [];
+		}
 
 		if (devCacheDirs.length) {
 			console.log('Clearing dev app webview cache...');

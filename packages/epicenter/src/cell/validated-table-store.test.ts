@@ -4,7 +4,10 @@ import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import { createTableStore } from './table-store';
 import type { CellValue, SchemaTableDefinition } from './types';
 
-function createTestStore(tableId: string, schema: SchemaTableDefinition = { name: tableId, fields: {} }) {
+function createTestStore(
+	tableId: string,
+	schema: SchemaTableDefinition = { name: tableId, fields: {} },
+) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 	return { ydoc, tableStore: createTableStore(tableId, yarray, schema) };

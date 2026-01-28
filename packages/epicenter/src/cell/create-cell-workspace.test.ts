@@ -1,11 +1,7 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createCellWorkspace } from './create-cell-workspace';
-import type {
-	CellWorkspaceClient,
-	TableStore,
-	WorkspaceSchema,
-} from './types';
+import type { CellWorkspaceClient, TableStore, WorkspaceSchema } from './types';
 
 // Default test definition with posts table
 const testDefinition: WorkspaceSchema = {

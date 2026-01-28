@@ -40,7 +40,10 @@ describe('createDynamicWorkspace', () => {
 			workspace.tables.create('posts', { name: 'Blog Posts', icon: '📝' });
 
 			// Add fields
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 			workspace.fields.create('posts', 'published', {
 				name: 'Published',
 				type: 'boolean',
@@ -97,7 +100,10 @@ describe('createDynamicWorkspace', () => {
 
 			// Setup
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 			workspace.fields.create('posts', 'body', { name: 'Body', type: 'text' });
 			const rowId = workspace.rows.create('posts');
 			workspace.cells.set('posts', rowId, 'title', 'Hello');
@@ -182,7 +188,10 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('contacts', { name: 'Contacts' });
-			workspace.fields.create('contacts', 'name', { name: 'Name', type: 'text' });
+			workspace.fields.create('contacts', 'name', {
+				name: 'Name',
+				type: 'text',
+			});
 			workspace.fields.create('contacts', 'email', {
 				name: 'Email',
 				type: 'text',
@@ -208,7 +217,11 @@ describe('createDynamicWorkspace', () => {
 
 			const rows = workspace.getRowsWithCells('contacts');
 			expect(rows).toHaveLength(3);
-			expect(rows.map((r) => r.cells.name)).toEqual(['Alice', 'Bob', 'Charlie']);
+			expect(rows.map((r) => r.cells.name)).toEqual([
+				'Alice',
+				'Bob',
+				'Charlie',
+			]);
 		});
 	});
 
@@ -217,9 +230,21 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'c', { name: 'C', type: 'text', order: 3 });
-			workspace.fields.create('posts', 'a', { name: 'A', type: 'text', order: 1 });
-			workspace.fields.create('posts', 'b', { name: 'B', type: 'text', order: 2 });
+			workspace.fields.create('posts', 'c', {
+				name: 'C',
+				type: 'text',
+				order: 3,
+			});
+			workspace.fields.create('posts', 'a', {
+				name: 'A',
+				type: 'text',
+				order: 1,
+			});
+			workspace.fields.create('posts', 'b', {
+				name: 'B',
+				type: 'text',
+				order: 2,
+			});
 
 			const table = workspace.getTableWithFields('posts');
 			expect(table!.fields.map((f) => f.id)).toEqual(['a', 'b', 'c']);
@@ -229,7 +254,10 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 			workspace.fields.create('posts', 'body', { name: 'Body', type: 'text' });
 			workspace.fields.delete('posts', 'body');
 
@@ -260,7 +288,10 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 
 			workspace.rows.create('posts', 'row-c', 3);
 			workspace.rows.create('posts', 'row-a', 1);
@@ -274,7 +305,10 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 
 			const row1 = workspace.rows.create('posts');
 			const row2 = workspace.rows.create('posts');
@@ -289,7 +323,10 @@ describe('createDynamicWorkspace', () => {
 			const workspace = createDynamicWorkspace({ id: 'test' });
 
 			workspace.tables.create('posts', { name: 'Posts' });
-			workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+			workspace.fields.create('posts', 'title', {
+				name: 'Title',
+				type: 'text',
+			});
 			workspace.fields.create('posts', 'body', { name: 'Body', type: 'text' });
 
 			const rowId = workspace.rows.create('posts');

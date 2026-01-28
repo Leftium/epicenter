@@ -9,6 +9,10 @@
 
 import * as Y from 'yjs';
 import { YKeyValueLww } from '../core/utils/y-keyvalue-lww.js';
+import { createCellsStore } from './stores/cells-store.js';
+import { createFieldsStore } from './stores/fields-store.js';
+import { createRowsStore } from './stores/rows-store.js';
+import { createTablesStore } from './stores/tables-store.js';
 import type {
 	CellValue,
 	CreateDynamicWorkspaceOptions,
@@ -19,10 +23,6 @@ import type {
 	TableDefinition,
 	TableWithFields,
 } from './types.js';
-import { createTablesStore } from './stores/tables-store.js';
-import { createFieldsStore } from './stores/fields-store.js';
-import { createRowsStore } from './stores/rows-store.js';
-import { createCellsStore } from './stores/cells-store.js';
 
 /**
  * Y.Array names for dynamic workspace storage.
@@ -79,12 +79,16 @@ export function createDynamicWorkspace(
 	const ydoc = options.ydoc ?? new Y.Doc({ guid: options.id });
 
 	// Initialize Y.Arrays (Y.Doc returns existing if already present)
-	const tablesArray = ydoc.getArray<{ key: string; val: TableDefinition; ts: number }>(
-		ARRAY_NAMES.tables,
-	);
-	const fieldsArray = ydoc.getArray<{ key: string; val: FieldDefinition; ts: number }>(
-		ARRAY_NAMES.fields,
-	);
+	const tablesArray = ydoc.getArray<{
+		key: string;
+		val: TableDefinition;
+		ts: number;
+	}>(ARRAY_NAMES.tables);
+	const fieldsArray = ydoc.getArray<{
+		key: string;
+		val: FieldDefinition;
+		ts: number;
+	}>(ARRAY_NAMES.fields);
 	const rowsArray = ydoc.getArray<{ key: string; val: RowMeta; ts: number }>(
 		ARRAY_NAMES.rows,
 	);

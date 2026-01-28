@@ -10,8 +10,13 @@
 
 import type * as Y from 'yjs';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
-import type { CellsStore, CellValue, ChangeEvent, ChangeHandler } from '../types.js';
 import { cellKey, validateId } from '../keys.js';
+import type {
+	CellsStore,
+	CellValue,
+	ChangeEvent,
+	ChangeHandler,
+} from '../types.js';
 
 /**
  * Create a CellsStore wrapping a YKeyValueLww instance.
@@ -21,7 +26,11 @@ import { cellKey, validateId } from '../keys.js';
  */
 export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 	return {
-		get(tableId: string, rowId: string, fieldId: string): CellValue | undefined {
+		get(
+			tableId: string,
+			rowId: string,
+			fieldId: string,
+		): CellValue | undefined {
 			return ykv.get(cellKey(tableId, rowId, fieldId));
 		},
 
@@ -88,7 +97,11 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 						change.action === 'delete' &&
 						change.oldValue !== undefined
 					) {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 				if (events.length > 0) {

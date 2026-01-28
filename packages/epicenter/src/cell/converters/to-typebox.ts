@@ -49,10 +49,7 @@ export function schemaFieldToTypebox(field: SchemaFieldDefinition): TSchema {
 /**
  * Converts a field type to its base TypeBox schema (without nullable wrapper).
  */
-function fieldTypeToTypebox(
-	type: FieldType,
-	options?: string[],
-): TSchema {
+function fieldTypeToTypebox(type: FieldType, options?: string[]): TSchema {
 	switch (type) {
 		case 'text':
 		case 'richtext':

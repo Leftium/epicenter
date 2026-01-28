@@ -6,9 +6,11 @@ import { createFieldsStore } from './fields-store.js';
 
 function createTestStore() {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<{ key: string; val: FieldDefinition; ts: number }>(
-		'dynamic:fields',
-	);
+	const yarray = ydoc.getArray<{
+		key: string;
+		val: FieldDefinition;
+		ts: number;
+	}>('dynamic:fields');
 	const ykv = new YKeyValueLww(yarray);
 	const store = createFieldsStore(ykv);
 	return { ydoc, ykv, store };
@@ -41,7 +43,10 @@ describe('FieldsStore', () => {
 			const { store } = createTestStore();
 			store.create('posts', 'title', { name: 'Title', type: 'text' });
 			store.create('posts', 'body', { name: 'Body', type: 'text' });
-			store.create('posts', 'published', { name: 'Published', type: 'boolean' });
+			store.create('posts', 'published', {
+				name: 'Published',
+				type: 'boolean',
+			});
 
 			expect(store.get('posts', 'title')?.order).toBe(1);
 			expect(store.get('posts', 'body')?.order).toBe(2);

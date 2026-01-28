@@ -15,40 +15,40 @@
  * @packageDocumentation
  */
 
-import type * as Y from 'yjs';
-import { Compile, type Validator } from 'typebox/compile';
 import type { TProperties, TSchema } from 'typebox';
+import { Compile, type Validator } from 'typebox/compile';
+import type * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww';
-import type {
-	CellValue,
-	TableStore,
-	ChangeHandler,
-	RowData,
-	RawTableAccess,
-	SchemaTableDefinition,
-} from './types';
-import type {
-	GetCellResult,
-	GetResult,
-	RowResult,
-	InvalidRowResult,
-	ValidationError,
-} from './validation-types';
-import {
-	cellKey,
-	parseCellKey,
-	rowPrefix,
-	hasPrefix,
-	validateId,
-	generateRowId,
-} from './keys';
 import {
 	schemaFieldToTypebox,
 	schemaTableToTypebox,
 } from './converters/to-typebox';
+import {
+	cellKey,
+	generateRowId,
+	hasPrefix,
+	parseCellKey,
+	rowPrefix,
+	validateId,
+} from './keys';
+import type {
+	CellValue,
+	ChangeHandler,
+	RawTableAccess,
+	RowData,
+	SchemaTableDefinition,
+	TableStore,
+} from './types';
+import type {
+	GetCellResult,
+	GetResult,
+	InvalidRowResult,
+	RowResult,
+	ValidationError,
+} from './validation-types';
 
 /**
  * Create a table store backed by a Y.Array.

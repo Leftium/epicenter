@@ -12,8 +12,8 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
-import type { KvStore, ChangeHandler, ChangeEvent } from '../types';
 import { validateId } from '../keys';
+import type { ChangeEvent, ChangeHandler, KvStore } from '../types';
 
 /**
  * Y.Array name for KV store.
@@ -55,7 +55,10 @@ export function createKvStore(
 
 	function observe(handler: ChangeHandler<unknown>): () => void {
 		const ykvHandler = (
-			changes: Map<string, import('../../core/utils/y-keyvalue-lww').YKeyValueLwwChange<unknown>>,
+			changes: Map<
+				string,
+				import('../../core/utils/y-keyvalue-lww').YKeyValueLwwChange<unknown>
+			>,
 			transaction: Y.Transaction,
 		) => {
 			const events: ChangeEvent<unknown>[] = [];

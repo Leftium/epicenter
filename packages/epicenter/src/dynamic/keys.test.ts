@@ -115,7 +115,9 @@ describe('key parsing', () => {
 		});
 
 		test('throws on invalid format', () => {
-			expect(() => parseCellKey('posts:row')).toThrow('Invalid cell key format');
+			expect(() => parseCellKey('posts:row')).toThrow(
+				'Invalid cell key format',
+			);
 			expect(() => parseCellKey('posts:row:field:extra')).toThrow(
 				'Invalid cell key format',
 			);

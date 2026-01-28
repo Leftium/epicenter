@@ -16,7 +16,11 @@
  * @packageDocumentation
  */
 
-import type { WorkspaceSchema, SchemaTableDefinition, SchemaFieldDefinition } from './types';
+import type {
+	SchemaFieldDefinition,
+	SchemaTableDefinition,
+	WorkspaceSchema,
+} from './types';
 
 /**
  * Parse a schema from JSON string.
@@ -55,7 +59,9 @@ export function parseSchema(json: string): WorkspaceSchema {
 		}
 
 		if (!tableObj.fields || typeof tableObj.fields !== 'object') {
-			throw new Error(`Table "${tableId}" must have a "fields" object property`);
+			throw new Error(
+				`Table "${tableId}" must have a "fields" object property`,
+			);
 		}
 
 		// Validate field structure
@@ -67,13 +73,19 @@ export function parseSchema(json: string): WorkspaceSchema {
 
 			const fieldObj = field as Record<string, unknown>;
 			if (typeof fieldObj.name !== 'string') {
-				throw new Error(`Field "${tableId}.${fieldId}" must have a "name" string property`);
+				throw new Error(
+					`Field "${tableId}.${fieldId}" must have a "name" string property`,
+				);
 			}
 			if (typeof fieldObj.type !== 'string') {
-				throw new Error(`Field "${tableId}.${fieldId}" must have a "type" string property`);
+				throw new Error(
+					`Field "${tableId}.${fieldId}" must have a "type" string property`,
+				);
 			}
 			if (typeof fieldObj.order !== 'number') {
-				throw new Error(`Field "${tableId}.${fieldId}" must have an "order" number property`);
+				throw new Error(
+					`Field "${tableId}.${fieldId}" must have an "order" number property`,
+				);
 			}
 		}
 	}
@@ -88,7 +100,10 @@ export function parseSchema(json: string): WorkspaceSchema {
  * @param pretty - Whether to format with indentation (default: true)
  * @returns JSON string
  */
-export function stringifySchema(schema: WorkspaceSchema, pretty = true): string {
+export function stringifySchema(
+	schema: WorkspaceSchema,
+	pretty = true,
+): string {
 	return JSON.stringify(schema, null, pretty ? 2 : undefined);
 }
 
@@ -99,7 +114,10 @@ export function stringifySchema(schema: WorkspaceSchema, pretty = true): string 
  * @param icon - Optional icon for the workspace
  * @returns A new WorkspaceSchema with no tables
  */
-export function createEmptySchema(name: string, icon?: string): WorkspaceSchema {
+export function createEmptySchema(
+	name: string,
+	icon?: string,
+): WorkspaceSchema {
 	return {
 		name,
 		icon: icon ?? null,

@@ -615,7 +615,8 @@ describe('YKeyValueLww', () => {
 		describe('Edge cases', () => {
 			test('set() with undefined value', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
-				const yarray = ydoc.getArray<YKeyValueLwwEntry<string | undefined>>('data');
+				const yarray =
+					ydoc.getArray<YKeyValueLwwEntry<string | undefined>>('data');
 				const kv = new YKeyValueLww(yarray);
 
 				kv.set('foo', undefined);

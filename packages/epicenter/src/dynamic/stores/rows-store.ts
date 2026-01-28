@@ -9,7 +9,6 @@
 
 import type * as Y from 'yjs';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
-import type { ChangeEvent, ChangeHandler, RowMeta, RowsStore } from '../types.js';
 import {
 	generateRowId,
 	parseRowKey,
@@ -17,6 +16,12 @@ import {
 	tablePrefix,
 	validateId,
 } from '../keys.js';
+import type {
+	ChangeEvent,
+	ChangeHandler,
+	RowMeta,
+	RowsStore,
+} from '../types.js';
 
 /**
  * Create a RowsStore wrapping a YKeyValueLww instance.
@@ -160,7 +165,11 @@ export function createRowsStore(ykv: YKeyValueLww<RowMeta>): RowsStore {
 						change.action === 'delete' &&
 						change.oldValue !== undefined
 					) {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 				if (events.length > 0) {

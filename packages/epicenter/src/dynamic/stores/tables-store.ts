@@ -9,8 +9,13 @@
 
 import type * as Y from 'yjs';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
-import type { ChangeEvent, ChangeHandler, TableDefinition, TablesStore } from '../types.js';
 import { validateId } from '../keys.js';
+import type {
+	ChangeEvent,
+	ChangeHandler,
+	TableDefinition,
+	TablesStore,
+} from '../types.js';
 
 /**
  * Create a TablesStore wrapping a YKeyValueLww instance.
@@ -98,7 +103,14 @@ export function createTablesStore(
 
 		observe(handler: ChangeHandler<TableDefinition>): () => void {
 			const wrappedHandler = (
-				changes: Map<string, { action: string; oldValue?: TableDefinition; newValue?: TableDefinition }>,
+				changes: Map<
+					string,
+					{
+						action: string;
+						oldValue?: TableDefinition;
+						newValue?: TableDefinition;
+					}
+				>,
 				transaction: Y.Transaction,
 			) => {
 				const events: ChangeEvent<TableDefinition>[] = [];
@@ -116,8 +128,15 @@ export function createTablesStore(
 							value: change.newValue,
 							previousValue: change.oldValue,
 						});
-					} else if (change.action === 'delete' && change.oldValue !== undefined) {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+					} else if (
+						change.action === 'delete' &&
+						change.oldValue !== undefined
+					) {
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 				if (events.length > 0) {

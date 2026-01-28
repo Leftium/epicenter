@@ -1,16 +1,16 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
-	parseSchema,
-	stringifySchema,
-	createEmptySchema,
-	addTable,
-	removeTable,
 	addField,
-	removeField,
-	getSortedFields,
+	addTable,
+	createEmptySchema,
 	getNextFieldOrder,
+	getSortedFields,
+	parseSchema,
+	removeField,
+	removeTable,
+	stringifySchema,
 } from './schema-file';
-import type { WorkspaceSchema, SchemaTableDefinition } from './types';
+import type { SchemaTableDefinition, WorkspaceSchema } from './types';
 
 describe('parseSchema', () => {
 	test('parses valid schema', () => {
@@ -108,7 +108,10 @@ describe('parseSchema', () => {
 		const json = JSON.stringify({
 			name: 'Test',
 			tables: {
-				posts: { name: 'Posts', fields: { title: { name: 'Title', order: 1 } } },
+				posts: {
+					name: 'Posts',
+					fields: { title: { name: 'Title', order: 1 } },
+				},
 			},
 		});
 		expect(() => parseSchema(json)).toThrow(
@@ -251,7 +254,11 @@ describe('addField', () => {
 	test('throws if table not found', () => {
 		const schema = createEmptySchema('Test');
 		expect(() =>
-			addField(schema, 'posts', 'title', { name: 'Title', type: 'text', order: 1 }),
+			addField(schema, 'posts', 'title', {
+				name: 'Title',
+				type: 'text',
+				order: 1,
+			}),
 		).toThrow('Table "posts" not found in schema');
 	});
 

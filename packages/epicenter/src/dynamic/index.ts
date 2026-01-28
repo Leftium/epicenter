@@ -50,26 +50,26 @@ export { createDynamicWorkspace } from './create-dynamic-workspace.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	// Schema types
-	CellValue,
-	FieldDefinition,
-	FieldType,
-	RowMeta,
-	TableDefinition,
 	// Store interfaces
 	CellsStore,
-	FieldsStore,
-	RowsStore,
-	TablesStore,
+	// Schema types
+	CellValue,
 	// Change events
 	ChangeEvent,
 	ChangeHandler,
-	// Helper types
-	RowWithCells,
-	TableWithFields,
 	// Client types
 	CreateDynamicWorkspaceOptions,
 	DynamicWorkspaceClient,
+	FieldDefinition,
+	FieldsStore,
+	FieldType,
+	RowMeta,
+	RowsStore,
+	// Helper types
+	RowWithCells,
+	TableDefinition,
+	TablesStore,
+	TableWithFields,
 } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════

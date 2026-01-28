@@ -1,11 +1,11 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
-	generateRowId,
-	validateId,
 	cellKey,
+	generateRowId,
+	hasPrefix,
 	parseCellKey,
 	rowPrefix,
-	hasPrefix,
+	validateId,
 } from './keys';
 
 describe('generateRowId', () => {
@@ -34,7 +34,7 @@ describe('validateId', () => {
 
 	test('rejects ids containing colon', () => {
 		expect(() => validateId('invalid:id', 'tableId')).toThrow(
-			"tableId cannot contain ':' character: \"invalid:id\"",
+			'tableId cannot contain \':\' character: "invalid:id"',
 		);
 		expect(() => validateId(':leading', 'fieldId')).toThrow(
 			"fieldId cannot contain ':' character",

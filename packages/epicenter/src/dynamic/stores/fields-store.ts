@@ -9,6 +9,7 @@
 
 import type * as Y from 'yjs';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
+import { fieldKey, parseFieldKey, tablePrefix, validateId } from '../keys.js';
 import type {
 	ChangeEvent,
 	ChangeHandler,
@@ -16,7 +17,6 @@ import type {
 	FieldsStore,
 	FieldType,
 } from '../types.js';
-import { fieldKey, parseFieldKey, tablePrefix, validateId } from '../keys.js';
 
 /**
  * Create a FieldsStore wrapping a YKeyValueLww instance.
@@ -139,9 +139,7 @@ export function createFieldsStore(
 			const key = fieldKey(tableId, fieldId);
 			const field = ykv.get(key);
 			if (!field) {
-				throw new Error(
-					`Field "${fieldId}" not found in table "${tableId}"`,
-				);
+				throw new Error(`Field "${fieldId}" not found in table "${tableId}"`);
 			}
 			ykv.set(key, { ...field, name: newName });
 		},
@@ -150,9 +148,7 @@ export function createFieldsStore(
 			const key = fieldKey(tableId, fieldId);
 			const field = ykv.get(key);
 			if (!field) {
-				throw new Error(
-					`Field "${fieldId}" not found in table "${tableId}"`,
-				);
+				throw new Error(`Field "${fieldId}" not found in table "${tableId}"`);
 			}
 			ykv.set(key, { ...field, order: newOrder });
 		},
@@ -161,9 +157,7 @@ export function createFieldsStore(
 			const key = fieldKey(tableId, fieldId);
 			const field = ykv.get(key);
 			if (!field) {
-				throw new Error(
-					`Field "${fieldId}" not found in table "${tableId}"`,
-				);
+				throw new Error(`Field "${fieldId}" not found in table "${tableId}"`);
 			}
 			if (field.deletedAt === null) {
 				return; // Already active
@@ -175,7 +169,11 @@ export function createFieldsStore(
 			const wrappedHandler = (
 				changes: Map<
 					string,
-					{ action: string; oldValue?: FieldDefinition; newValue?: FieldDefinition }
+					{
+						action: string;
+						oldValue?: FieldDefinition;
+						newValue?: FieldDefinition;
+					}
 				>,
 				transaction: Y.Transaction,
 			) => {
@@ -198,7 +196,11 @@ export function createFieldsStore(
 						change.action === 'delete' &&
 						change.oldValue !== undefined
 					) {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 				if (events.length > 0) {

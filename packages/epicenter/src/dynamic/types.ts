@@ -128,7 +128,10 @@ export type TablesStore = {
 
 	// Convenience methods
 	/** Create a new table */
-	create(tableId: string, options: { name: string; icon?: string | null }): void;
+	create(
+		tableId: string,
+		options: { name: string; icon?: string | null },
+	): void;
 	/** Rename a table */
 	rename(tableId: string, newName: string): void;
 	/** Restore a soft-deleted table */
@@ -154,7 +157,9 @@ export type FieldsStore = {
 	/** Get all fields for a table, sorted by order (includes soft-deleted) */
 	getByTable(tableId: string): Array<{ id: string; field: FieldDefinition }>;
 	/** Get active fields for a table, sorted by order (excludes soft-deleted) */
-	getActiveByTable(tableId: string): Array<{ id: string; field: FieldDefinition }>;
+	getActiveByTable(
+		tableId: string,
+	): Array<{ id: string; field: FieldDefinition }>;
 
 	// Convenience methods
 	/** Create a new field (auto-assigns order if not specified) */

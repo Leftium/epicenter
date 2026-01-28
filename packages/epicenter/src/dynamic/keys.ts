@@ -140,10 +140,15 @@ export function cellKey(
  * parseFieldKey('posts:title'); // { tableId: 'posts', fieldId: 'title' }
  * ```
  */
-export function parseFieldKey(key: string): { tableId: string; fieldId: string } {
+export function parseFieldKey(key: string): {
+	tableId: string;
+	fieldId: string;
+} {
 	const parts = key.split(':');
 	if (parts.length !== 2) {
-		throw new Error(`Invalid field key format: "${key}" (expected "tableId:fieldId")`);
+		throw new Error(
+			`Invalid field key format: "${key}" (expected "tableId:fieldId")`,
+		);
 	}
 	const [tableId, fieldId] = parts as [string, string];
 	return { tableId, fieldId };
@@ -164,7 +169,9 @@ export function parseFieldKey(key: string): { tableId: string; fieldId: string }
 export function parseRowKey(key: string): { tableId: string; rowId: string } {
 	const parts = key.split(':');
 	if (parts.length !== 2) {
-		throw new Error(`Invalid row key format: "${key}" (expected "tableId:rowId")`);
+		throw new Error(
+			`Invalid row key format: "${key}" (expected "tableId:rowId")`,
+		);
 	}
 	const [tableId, rowId] = parts as [string, string];
 	return { tableId, rowId };

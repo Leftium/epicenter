@@ -17,102 +17,94 @@
  * @packageDocumentation
  */
 
-// Factory
-export { createCellWorkspace } from './create-cell-workspace';
-
-// Table store factory (for advanced use)
-export { createTableStore } from './table-store';
-
+// Core field factories for programmatic schema creation
+export {
+	boolean,
+	date,
+	id,
+	integer,
+	json,
+	real,
+	richtext,
+	select,
+	setting,
+	table,
+	tags,
+	text,
+} from '../core/schema/fields/factories';
+// Icon type and utilities from Core (for LWW-safe icons)
+export type { Icon, IconType } from '../core/schema/fields/types';
+export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
 // TypeBox converters for cell schemas
 export {
 	schemaFieldToTypebox,
 	schemaTableToTypebox,
 } from './converters/to-typebox';
-
-// Validation result types
-export type {
-	// Cell-level results
-	ValidCellResult,
-	InvalidCellResult,
-	NotFoundCellResult,
-	CellResult,
-	GetCellResult,
-	// Re-exported from core (row-level)
-	ValidationError,
-	ValidRowResult,
-	InvalidRowResult,
-	NotFoundResult,
-	RowResult,
-	GetResult,
-} from './validation-types';
-
-// Types
-export type {
-	// Schema types (external JSON)
-	FieldType,
-	SchemaFieldDefinition,
-	SchemaTableDefinition,
-	SchemaKvDefinition,
-	WorkspaceSchema,
-	// Data types
-	CellValue,
-	RowData,
-	TypedCell,
-	TypedRowWithCells,
-	// Store interfaces
-	TableStore,
-	RawTableAccess,
-	KvStore,
-	// Workspace client
-	CellWorkspaceClient,
-	CreateCellWorkspaceOptions,
-	// Events
-	ChangeEvent,
-	ChangeHandler,
-} from './types';
+// Factory
+export { createCellWorkspace } from './create-cell-workspace';
 
 // Key utilities
 export {
-	generateRowId,
-	validateId,
 	cellKey,
+	generateRowId,
+	hasPrefix,
 	parseCellKey,
 	rowPrefix,
-	hasPrefix,
+	validateId,
 } from './keys';
-
-// KV store array name (for advanced use cases)
-export { KV_ARRAY_NAME } from './stores/kv-store';
-
 // Schema file utilities
 export {
-	parseSchema,
-	stringifySchema,
-	createEmptySchema,
-	addTable,
-	removeTable,
 	addField,
-	removeField,
-	getSortedFields,
+	addTable,
+	createEmptySchema,
 	getNextFieldOrder,
+	getSortedFields,
+	parseSchema,
+	removeField,
+	removeTable,
+	stringifySchema,
 } from './schema-file';
-
-// Icon type and utilities from Core (for LWW-safe icons)
-export type { Icon, IconType } from '../core/schema/fields/types';
-export { parseIcon, createIcon, isIcon } from '../core/schema/fields/types';
-
-// Core field factories for programmatic schema creation
-export {
-	table,
-	setting,
-	id,
-	text,
-	richtext,
-	integer,
-	real,
-	boolean,
-	date,
-	select,
-	tags,
-	json,
-} from '../core/schema/fields/factories';
+// KV store array name (for advanced use cases)
+export { KV_ARRAY_NAME } from './stores/kv-store';
+// Table store factory (for advanced use)
+export { createTableStore } from './table-store';
+// Types
+export type {
+	// Data types
+	CellValue,
+	// Workspace client
+	CellWorkspaceClient,
+	// Events
+	ChangeEvent,
+	ChangeHandler,
+	CreateCellWorkspaceOptions,
+	// Schema types (external JSON)
+	FieldType,
+	KvStore,
+	RawTableAccess,
+	RowData,
+	SchemaFieldDefinition,
+	SchemaKvDefinition,
+	SchemaTableDefinition,
+	// Store interfaces
+	TableStore,
+	TypedCell,
+	TypedRowWithCells,
+	WorkspaceSchema,
+} from './types';
+// Validation result types
+export type {
+	CellResult,
+	GetCellResult,
+	GetResult,
+	InvalidCellResult,
+	InvalidRowResult,
+	NotFoundCellResult,
+	NotFoundResult,
+	RowResult,
+	// Re-exported from core (row-level)
+	ValidationError,
+	// Cell-level results
+	ValidCellResult,
+	ValidRowResult,
+} from './validation-types';

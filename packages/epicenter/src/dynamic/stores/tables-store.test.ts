@@ -6,9 +6,11 @@ import { createTablesStore } from './tables-store.js';
 
 function createTestStore() {
 	const ydoc = new Y.Doc();
-	const yarray = ydoc.getArray<{ key: string; val: TableDefinition; ts: number }>(
-		'dynamic:tables',
-	);
+	const yarray = ydoc.getArray<{
+		key: string;
+		val: TableDefinition;
+		ts: number;
+	}>('dynamic:tables');
 	const ykv = new YKeyValueLww(yarray);
 	const store = createTablesStore(ykv);
 	return { ydoc, ykv, store };

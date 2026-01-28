@@ -14,7 +14,12 @@
 
 import type * as Y from 'yjs';
 import type { Icon } from '../core/schema/fields/types';
-import type { GetCellResult, GetResult, InvalidRowResult, RowResult } from './validation-types';
+import type {
+	GetCellResult,
+	GetResult,
+	InvalidRowResult,
+	RowResult,
+} from './validation-types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Types (External JSON)
@@ -194,10 +199,7 @@ export type TableStore = {
 
 	// Cell operations (validated)
 	/** Get a validated cell value */
-	get(
-		rowId: string,
-		fieldId: string,
-	): GetCellResult<unknown>;
+	get(rowId: string, fieldId: string): GetCellResult<unknown>;
 	/** Set a cell value (writes bypass validation - advisory schema) */
 	set(rowId: string, fieldId: string, value: CellValue): void;
 	/** Delete a cell value (hard delete) */
@@ -290,7 +292,6 @@ export type CellWorkspaceClient = {
 	 * Schema is advisory - data that doesn't match is flagged, not rejected.
 	 */
 	getTypedRows(tableId: string): TypedRowWithCells[];
-
 
 	/**
 	 * Batch multiple writes into a single Yjs transaction.

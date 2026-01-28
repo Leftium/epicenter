@@ -9,12 +9,12 @@
 
 // Re-export row-level types from core for convenience
 export type {
-	ValidationError,
-	ValidRowResult,
+	GetResult,
 	InvalidRowResult,
 	NotFoundResult,
 	RowResult,
-	GetResult,
+	ValidationError,
+	ValidRowResult,
 } from '../core/tables/table-helper';
 
 /**

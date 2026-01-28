@@ -22,18 +22,18 @@
 
 import * as Y from 'yjs';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
+import { validateId } from './keys';
+import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+import { createTableStore } from './table-store';
 import type {
+	CellValue,
 	CellWorkspaceClient,
 	CreateCellWorkspaceOptions,
-	CellValue,
-	TypedRowWithCells,
-	TypedCell,
 	FieldType,
 	TableStore,
+	TypedCell,
+	TypedRowWithCells,
 } from './types';
-import { createTableStore } from './table-store';
-import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
-import { validateId } from './keys';
 
 /**
  * Validate that a value matches the expected field type.
@@ -67,9 +67,7 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 			return typeof value === 'string';
 
 		case 'tags':
-			return (
-				Array.isArray(value) && value.every((v) => typeof v === 'string')
-			);
+			return Array.isArray(value) && value.every((v) => typeof v === 'string');
 
 		case 'json':
 			// Any JSON-serializable value is valid
@@ -154,7 +152,10 @@ export function createCellWorkspace(
 			// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			const tableSchema = definition.tables[tableId] ?? { name: tableId, fields: {} };
+			const tableSchema = definition.tables[tableId] ?? {
+				name: tableId,
+				fields: {},
+			};
 			store = createTableStore(tableId, yarray, tableSchema);
 			tableStoreCache.set(tableId, store);
 		}
@@ -212,9 +213,7 @@ export function createCellWorkspace(
 			}
 
 			// Find missing fields (in schema but not in data)
-			const missingFields = schemaFieldIds.filter(
-				(fid) => !(fid in r.cells),
-			);
+			const missingFields = schemaFieldIds.filter((fid) => !(fid in r.cells));
 
 			// Find extra fields (in data but not in schema)
 			const extraFields = dataFieldIds.filter(

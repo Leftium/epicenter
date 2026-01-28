@@ -710,3 +710,361 @@ describe('type validation', () => {
 		expect(ws.getTypedRows('test')[0]!.cells.date!.valid).toBe(false);
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc-based API tests (new)
+// ════════════════════════════════════════════════════════════════════════════
+
+import { defineExports } from '../core/lifecycle';
+
+describe('createCellWorkspace with HeadDoc', () => {
+	// Minimal HeadDoc mock for testing
+	const createMockHeadDoc = (workspaceId: string, epoch = 0) => ({
+		workspaceId,
+		getEpoch: () => epoch,
+	});
+
+	const testDefinition = {
+		name: 'Test Workspace',
+		tables: {
+			posts: {
+				name: 'Posts',
+				fields: {
+					title: { name: 'Title', type: 'text' as const, order: 1 },
+					views: { name: 'Views', type: 'integer' as const, order: 2 },
+				},
+			},
+			users: {
+				name: 'Users',
+				fields: {
+					name: { name: 'Name', type: 'text' as const, order: 1 },
+				},
+			},
+		},
+	} as const;
+
+	describe('builder pattern', () => {
+		test('returns builder with withExtensions method', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const builder = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			});
+
+			expect(typeof builder.withExtensions).toBe('function');
+		});
+
+		test('withExtensions creates workspace client', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.id).toBe('test-workspace');
+			expect(workspace.epoch).toBe(0);
+			expect(workspace.ydoc).toBeInstanceOf(Y.Doc);
+		});
+	});
+
+	describe('epoch-based doc ID', () => {
+		test('Y.Doc guid is workspaceId-epoch at epoch 0', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 0);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-0');
+		});
+
+		test('Y.Doc guid is workspaceId-epoch at epoch 1', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 1);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-1');
+		});
+
+		test('Y.Doc guid is workspaceId-epoch at epoch 42', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 42);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-42');
+		});
+
+		test('epoch is exposed on workspace client', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 5);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.epoch).toBe(5);
+		});
+	});
+
+	describe('extension system', () => {
+		test('extensions are initialized and accessible', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				mock: () =>
+					defineExports({
+						customValue: 'hello',
+					}),
+			});
+
+			expect(workspace.extensions.mock.customValue).toBe('hello');
+		});
+
+		test('extension receives correct context', () => {
+			const headDoc = createMockHeadDoc('ctx-test', 3);
+			let receivedContext: any = null;
+
+			createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				inspector: (ctx) => {
+					receivedContext = ctx;
+					return defineExports({});
+				},
+			});
+
+			expect(receivedContext.workspaceId).toBe('ctx-test');
+			expect(receivedContext.epoch).toBe(3);
+			expect(receivedContext.extensionId).toBe('inspector');
+			expect(receivedContext.ydoc).toBeInstanceOf(Y.Doc);
+			expect(typeof receivedContext.table).toBe('function');
+			expect(typeof receivedContext.kv.get).toBe('function');
+		});
+
+		test('extension can access tables from context', () => {
+			const headDoc = createMockHeadDoc('table-ctx-test');
+			let tablePosts: any = null;
+
+			createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				inspector: (ctx) => {
+					tablePosts = ctx.table('posts');
+					return defineExports({});
+				},
+			});
+
+			expect(tablePosts).not.toBeNull();
+			expect(tablePosts.tableId).toBe('posts');
+		});
+
+		test('multiple extensions are all initialized', () => {
+			const headDoc = createMockHeadDoc('multi-ext-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				ext1: () => defineExports({ value: 1 }),
+				ext2: () => defineExports({ value: 2 }),
+				ext3: () => defineExports({ value: 3 }),
+			});
+
+			expect(workspace.extensions.ext1.value).toBe(1);
+			expect(workspace.extensions.ext2.value).toBe(2);
+			expect(workspace.extensions.ext3.value).toBe(3);
+		});
+
+		test('extensions have normalized lifecycle', () => {
+			const headDoc = createMockHeadDoc('lifecycle-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				minimal: () => defineExports({}),
+			});
+
+			// defineExports should have added whenSynced and destroy
+			expect(workspace.extensions.minimal.whenSynced).toBeInstanceOf(Promise);
+			expect(typeof workspace.extensions.minimal.destroy).toBe('function');
+		});
+	});
+
+	describe('workspace lifecycle', () => {
+		test('whenSynced resolves when all extensions sync', async () => {
+			let syncResolve: () => void;
+			const syncPromise = new Promise<void>((resolve) => {
+				syncResolve = resolve;
+			});
+
+			const headDoc = createMockHeadDoc('sync-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				async: () =>
+					defineExports({
+						whenSynced: syncPromise,
+					}),
+			});
+
+			let synced = false;
+			workspace.whenSynced.then(() => {
+				synced = true;
+			});
+
+			expect(synced).toBe(false);
+			syncResolve!();
+			await workspace.whenSynced;
+			expect(synced).toBe(true);
+		});
+
+		test('destroy calls all extension destroys', async () => {
+			const destroyed: string[] = [];
+			const headDoc = createMockHeadDoc('destroy-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				ext1: () =>
+					defineExports({
+						destroy: () => {
+							destroyed.push('ext1');
+						},
+					}),
+				ext2: () =>
+					defineExports({
+						destroy: () => {
+							destroyed.push('ext2');
+						},
+					}),
+			});
+
+			await workspace.destroy();
+			expect(destroyed).toContain('ext1');
+			expect(destroyed).toContain('ext2');
+		});
+
+		test('destroy destroys Y.Doc', async () => {
+			const headDoc = createMockHeadDoc('ydoc-destroy-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const ydoc = workspace.ydoc;
+			expect(ydoc.isDestroyed).toBe(false);
+			await workspace.destroy();
+			expect(ydoc.isDestroyed).toBe(true);
+		});
+	});
+
+	describe('workspace functionality', () => {
+		test('can create and read rows', () => {
+			const headDoc = createMockHeadDoc('row-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const posts = workspace.table('posts');
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello World');
+			posts.set(rowId, 'views', 100);
+
+			const row = posts.raw.getRow(rowId);
+			expect(row?.title).toBe('Hello World');
+			expect(row?.views).toBe(100);
+		});
+
+		test('kv store works', () => {
+			const headDoc = createMockHeadDoc('kv-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			workspace.kv.set('theme', 'dark');
+			expect(workspace.kv.get('theme')).toBe('dark');
+		});
+
+		test('batch operations work', () => {
+			const headDoc = createMockHeadDoc('batch-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			workspace.batch((ws) => {
+				const posts = ws.table('posts');
+				const row1 = posts.createRow();
+				const row2 = posts.createRow();
+				posts.set(row1, 'title', 'Post 1');
+				posts.set(row2, 'title', 'Post 2');
+			});
+
+			const rows = workspace.table('posts').raw.getRows();
+			expect(rows.length).toBe(2);
+		});
+
+		test('getTypedRows works with HeadDoc API', () => {
+			const headDoc = createMockHeadDoc('typed-rows-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const posts = workspace.table('posts');
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Test Post');
+			posts.set(rowId, 'views', 42);
+
+			const typedRows = workspace.getTypedRows('posts');
+			expect(typedRows.length).toBe(1);
+			expect(typedRows[0]!.cells.title!.value).toBe('Test Post');
+			expect(typedRows[0]!.cells.title!.type).toBe('text');
+			expect(typedRows[0]!.cells.views!.value).toBe(42);
+			expect(typedRows[0]!.cells.views!.type).toBe('integer');
+		});
+	});
+
+	describe('legacy API compatibility', () => {
+		test('legacy API still works', () => {
+			const workspace = createCellWorkspace({
+				id: 'legacy-test',
+				definition: {
+					name: 'Legacy Workspace',
+					tables: {
+						items: {
+							name: 'Items',
+							fields: {
+								name: { name: 'Name', type: 'text', order: 1 },
+							},
+						},
+					},
+				},
+			});
+
+			expect(workspace.id).toBe('legacy-test');
+			expect(workspace.epoch).toBe(0);
+			expect(workspace.ydoc.guid).toBe('legacy-test');
+			expect(workspace.extensions).toEqual({});
+		});
+
+		test('legacy API has whenSynced that resolves immediately', async () => {
+			const workspace = createCellWorkspace({
+				id: 'legacy-sync-test',
+				definition: { name: 'Test', tables: {} },
+			});
+
+			// Should resolve immediately
+			await workspace.whenSynced;
+		});
+	});
+});

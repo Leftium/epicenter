@@ -4,7 +4,6 @@
  * @fileoverview Clean script for Epicenter monorepo
  *
  * Removes build artifacts, caches, and node_modules across the monorepo.
- * Also clears Tauri webview cache.
  *
  * Usage:
  *   bun run clean        # Remove JS build artifacts, caches, node_modules
@@ -12,7 +11,6 @@
  */
 
 import { readdir, rm } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const isNuke = process.argv.includes('--nuke');
@@ -36,41 +34,6 @@ const subDirs = [
 	// Nuke mode: Rust target
 	...(isNuke ? ['src-tauri/target'] : []),
 ] as const;
-
-/**
- * Returns platform-specific directories where Tauri WebView stores app data
- * and caches. Clearing these removes localStorage, cookies, and cached assets
- * that can cause stale state during development.
- */
-function getTauriCacheDirs(): string[] {
-	const platform = process.platform;
-	const home = homedir();
-	const names = ['whispering', 'epicenter'];
-
-	switch (platform) {
-		case 'darwin':
-			return [
-				...names.map((n) => join(home, 'Library/WebKit', n)),
-				...names.map((n) => join(home, 'Library/Caches', n)),
-			];
-		case 'linux':
-			return [
-				...names.map((n) => join(home, '.local/share', n)),
-				...names.map((n) => join(home, '.cache', n)),
-			];
-		case 'win32': {
-			const appData = process.env.APPDATA ?? join(home, 'AppData/Roaming');
-			const localAppData =
-				process.env.LOCALAPPDATA ?? join(home, 'AppData/Local');
-			return [
-				...names.map((n) => join(appData, n)),
-				...names.map((n) => join(localAppData, n)),
-			];
-		}
-		default:
-			return [];
-	}
-}
 
 async function main() {
 	console.log(
@@ -109,16 +72,6 @@ async function main() {
 		dirsToRemove.map((path) => rm(path, { recursive: true, force: true })),
 	);
 	console.log(`  ✓ Processed ${dirsToRemove.length} directories\n`);
-
-	// Clean Tauri webview cache
-	const tauriCacheDirs = getTauriCacheDirs();
-	if (tauriCacheDirs.length > 0) {
-		console.log('Clearing Tauri webview cache...');
-		await Promise.all(
-			tauriCacheDirs.map((path) => rm(path, { recursive: true, force: true })),
-		);
-		console.log(`  ✓ Cleared webview cache for ${process.platform}\n`);
-	}
 
 	console.log('✨ Clean complete!\n');
 

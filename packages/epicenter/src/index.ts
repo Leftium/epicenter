@@ -87,72 +87,66 @@ export { createRichContentId } from './core/rich-content/id';
 export type {
 	// New field type names (preferred)
 	BooleanField,
-	DateField,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
-	SelectField,
-	TagsField,
-	TextField,
-
 	// Legacy type aliases (deprecated, kept for backwards compatibility)
 	/** @deprecated Use `BooleanField` instead */
 	BooleanFieldSchema,
-	/** @deprecated Use `DateField` instead */
-	DateFieldSchema,
-	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
-	FieldSchema,
-	/** @deprecated Use `IdField` instead */
-	IdFieldSchema,
-	/** @deprecated Use `IntegerField` instead */
-	IntegerFieldSchema,
-	/** @deprecated Use `JsonField` instead */
-	JsonFieldSchema,
-	/** @deprecated Use `RealField` instead */
-	RealFieldSchema,
-	/** @deprecated Use `RichtextField` instead */
-	RichtextFieldSchema,
-	/** @deprecated Use `SelectField` instead */
-	SelectFieldSchema,
-	/** @deprecated Use `TagsField` instead */
-	TagsFieldSchema,
-	/** @deprecated Use `TextField` instead */
-	TextFieldSchema,
-
 	// Common types
 	CellValue,
+	DateField,
+	/** @deprecated Use `DateField` instead */
+	DateFieldSchema,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
+	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
+	FieldSchema,
 	FieldType,
 	Guid,
 	Icon,
 	IconType,
 	Id,
-	PartialRow,
-	Row,
-	TableDefinition,
-
-	// KV types
-	KvField,
-	KvValue,
-
+	IdField,
+	/** @deprecated Use `IdField` instead */
+	IdFieldSchema,
+	IntegerField,
+	/** @deprecated Use `IntegerField` instead */
+	IntegerFieldSchema,
+	JsonField,
+	/** @deprecated Use `JsonField` instead */
+	JsonFieldSchema,
 	// Deprecated KV types (kept for backwards compatibility)
 	/** @deprecated Use `KvField[]` array instead */
 	KvDefinition,
 	/** @deprecated Use `KvField[]` array instead */
 	KvDefinitionMap,
+	// KV types
+	KvField,
 	/** @deprecated Use `KvField[]` array instead */
 	KvMap,
-
+	KvValue,
+	PartialRow,
+	RealField,
+	/** @deprecated Use `RealField` instead */
+	RealFieldSchema,
+	RichtextField,
+	/** @deprecated Use `RichtextField` instead */
+	RichtextFieldSchema,
+	Row,
+	SelectField,
+	/** @deprecated Use `SelectField` instead */
+	SelectFieldSchema,
+	TableDefinition,
 	// Deprecated table types (kept for backwards compatibility)
 	/** @deprecated Use `TableDefinition[]` array instead */
 	TableDefinitionMap,
-
+	TagsField,
+	/** @deprecated Use `TagsField` instead */
+	TagsFieldSchema,
+	TextField,
+	/** @deprecated Use `TextField` instead */
+	TextFieldSchema,
 	// Date types
 	TimezoneId,
 } from './core/schema';
@@ -233,7 +227,6 @@ export {
 //
 // Import from '@epicenter/hq/cell' for full Cell API, or use these re-exports.
 
-export { createCellWorkspace } from './cell';
 export type {
 	CellExtensionContext,
 	CellExtensionFactory,
@@ -242,10 +235,11 @@ export type {
 	CellWorkspaceClient,
 	CreateCellWorkspaceWithHeadDocOptions,
 	InferCellExtensionExports,
-	WorkspaceDefinition as CellWorkspaceDefinition,
-	SchemaTableDefinition as CellTableDefinition,
 	SchemaFieldDefinition as CellFieldDefinition,
+	SchemaTableDefinition as CellTableDefinition,
+	WorkspaceDefinition as CellWorkspaceDefinition,
 } from './cell';
+export { createCellWorkspace } from './cell';
 
 // Note: Extensions (markdown, sqlite) are NOT re-exported here to avoid bundling
 // Node.js-only code in browser builds. Import them directly from subpaths:

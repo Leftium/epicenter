@@ -46,54 +46,49 @@ export {
 export type {
 	// New field type names (preferred)
 	BooleanField,
-	DateField,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
-	SelectField,
-	TagsField,
-	TextField,
-
 	// Legacy type aliases (deprecated, kept for backwards compatibility)
 	BooleanFieldSchema,
-	DateFieldSchema,
-	FieldSchema,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
-	RealFieldSchema,
-	RichtextFieldSchema,
-	SelectFieldSchema,
-	TagsFieldSchema,
-	TextFieldSchema,
-
 	// Common types
 	CellValue,
+	DateField,
+	DateFieldSchema,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
+	FieldSchema,
 	FieldType,
 	Icon,
 	IconType,
-	PartialRow,
-	Row,
-	TableDefinition,
-
-	// KV types
-	KvField,
-	KvValue,
-
+	IdField,
+	IdFieldSchema,
+	IntegerField,
+	IntegerFieldSchema,
+	JsonField,
+	JsonFieldSchema,
 	// Deprecated KV types (kept for backwards compatibility)
 	KvDefinition,
 	KvDefinitionMap,
+	// KV types
+	KvField,
 	KvMap,
-
+	KvValue,
+	PartialRow,
+	RealField,
+	RealFieldSchema,
+	RichtextField,
+	RichtextFieldSchema,
+	Row,
+	SelectField,
+	SelectFieldSchema,
+	TableDefinition,
 	// Deprecated table types (kept for backwards compatibility)
 	TableDefinitionMap,
+	TagsField,
+	TagsFieldSchema,
+	TextField,
+	TextFieldSchema,
 } from './fields/types.js';
 export { createIcon, isIcon, parseIcon } from './fields/types.js';
 export { standardSchemaToJsonSchema } from './standard/to-json-schema.js';

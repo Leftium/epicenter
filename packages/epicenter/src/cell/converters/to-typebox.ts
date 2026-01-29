@@ -38,7 +38,9 @@ import type { SchemaFieldDefinition, SchemaTableDefinition } from '../types';
  * // Returns Type.Union([Type.String(), Type.Null()])
  * ```
  */
-export function schemaFieldToTypebox(field: Field | SchemaFieldDefinition): TSchema {
+export function schemaFieldToTypebox(
+	field: Field | SchemaFieldDefinition,
+): TSchema {
 	const baseType = fieldToTypebox(field);
 	// All cell fields are nullable (advisory schema)
 	return Type.Union([baseType, Type.Null()]);

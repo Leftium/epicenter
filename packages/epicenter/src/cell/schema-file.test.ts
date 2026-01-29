@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { id, integer, text } from '../core/schema/fields/factories';
 import {
 	addField,
 	addTable,
@@ -10,7 +11,6 @@ import {
 	removeTable,
 	stringifySchema,
 } from './schema-file';
-import { id, text, integer } from '../core/schema/fields/factories';
 import type { SchemaTableDefinition, WorkspaceDefinition } from './types';
 
 /**
@@ -187,10 +187,7 @@ describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
 		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: [
-				id(),
-				text('title', { name: 'Title' }),
-			],
+			fields: [id(), text('title', { name: 'Title' })],
 		});
 		const schema: WorkspaceDefinition = {
 			name: 'Test',
@@ -323,7 +320,12 @@ describe('addField', () => {
 		});
 		schema = addTable(schema, 'posts', postsTable);
 
-		const updated = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
+		const updated = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
 
 		expect(getFieldById(updated.tables.posts!, 'title')).toBeDefined();
 		expect(getFieldById(updated.tables.posts!, 'title')!.name).toBe('Title');
@@ -344,7 +346,12 @@ describe('addField', () => {
 		});
 		schema = addTable(schema, 'posts', postsTable);
 
-		const updated = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
+		const updated = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
 
 		expect(getFieldById(schema.tables.posts!, 'title')).toBeUndefined();
 		expect(getFieldById(updated.tables.posts!, 'title')).toBeDefined();
@@ -359,8 +366,18 @@ describe('removeField', () => {
 			fields: [id()],
 		});
 		schema = addTable(schema, 'posts', postsTable);
-		schema = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
-		schema = addField(schema, 'posts', 'views', integer('views', { name: 'Views' }));
+		schema = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
+		schema = addField(
+			schema,
+			'posts',
+			'views',
+			integer('views', { name: 'Views' }),
+		);
 
 		const updated = removeField(schema, 'posts', 'title');
 		expect(getFieldById(updated.tables.posts!, 'title')).toBeUndefined();
@@ -379,10 +396,7 @@ describe('getFieldById', () => {
 	test('returns field by id', () => {
 		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: [
-				id(),
-				text('title', { name: 'Title' }),
-			],
+			fields: [id(), text('title', { name: 'Title' })],
 		});
 
 		expect(getFieldById(postsTable, 'title')).toBeDefined();
@@ -423,4 +437,3 @@ describe('getFieldIds', () => {
 		expect(getFieldIds(postsTable)).toEqual([]);
 	});
 });
-

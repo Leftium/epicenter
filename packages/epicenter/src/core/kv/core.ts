@@ -31,7 +31,9 @@ type KvDefinitionLike<TField extends KvField = KvField> = {
  * kv.has('theme');  // false (if no default)
  * ```
  */
-export type KvFunction<TKvDefinitionMap extends Record<string, KvDefinitionLike>> = {
+export type KvFunction<
+	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
+> = {
 	// ════════════════════════════════════════════════════════════════════
 	// KEY-VALUE OPERATIONS
 	// ════════════════════════════════════════════════════════════════════
@@ -192,10 +194,7 @@ export type KvFunction<TKvDefinitionMap extends Record<string, KvDefinitionLike>
  */
 export function createKv<
 	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
->(
-	ydoc: Y.Doc,
-	definitions: TKvDefinitionMap,
-): KvFunction<TKvDefinitionMap> {
+>(ydoc: Y.Doc, definitions: TKvDefinitionMap): KvFunction<TKvDefinitionMap> {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 	const kvHelpers = createKvHelpers({ ydoc, definitions });
 

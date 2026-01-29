@@ -54,13 +54,7 @@ type KvDefinitionLike<TField extends KvField = KvField> = {
  */
 export function createKvHelpers<
 	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
->({
-	ydoc,
-	definitions,
-}: {
-	ydoc: Y.Doc;
-	definitions: TKvDefinitionMap;
-}) {
+>({ ydoc, definitions }: { ydoc: Y.Doc; definitions: TKvDefinitionMap }) {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 
 	return Object.fromEntries(

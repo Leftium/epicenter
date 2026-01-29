@@ -1,6 +1,14 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { id, table, text, integer, boolean, select, setting } from '../core/schema/fields/factories';
+import {
+	boolean,
+	id,
+	integer,
+	select,
+	setting,
+	table,
+	text,
+} from '../core/schema/fields/factories';
 import { createCellWorkspace } from './create-cell-workspace';
 import type {
 	CellValue,
@@ -14,7 +22,11 @@ import type {
  * Helper to extract raw value from validated cell result.
  * Returns undefined if not found, otherwise the raw value.
  */
-function getRawValue(helper: TableHelper, rowId: string, fieldId: string): CellValue | undefined {
+function getRawValue(
+	helper: TableHelper,
+	rowId: string,
+	fieldId: string,
+): CellValue | undefined {
 	const result = helper.get(rowId, fieldId);
 	if (result.status === 'not_found') return undefined;
 	return result.value;
@@ -24,7 +36,10 @@ function getRawValue(helper: TableHelper, rowId: string, fieldId: string): CellV
  * Helper to extract raw row data from validated row result.
  * Returns undefined if not found, otherwise the cells record.
  */
-function getRawRow(helper: TableHelper, rowId: string): Record<string, CellValue> | undefined {
+function getRawRow(
+	helper: TableHelper,
+	rowId: string,
+): Record<string, CellValue> | undefined {
 	const result = helper.getRow(rowId);
 	if (result.status === 'not_found') return undefined;
 	if (result.status === 'valid') return result.row.cells;
@@ -36,9 +51,13 @@ function getRawRow(helper: TableHelper, rowId: string): Record<string, CellValue
  * Helper to extract all raw rows from validated results.
  */
 function getRawRows(helper: TableHelper): RowData[] {
-	return helper.getAll().map((r) =>
-		r.status === 'valid' ? r.row : { id: r.id, cells: r.row as Record<string, CellValue> },
-	);
+	return helper
+		.getAll()
+		.map((r) =>
+			r.status === 'valid'
+				? r.row
+				: { id: r.id, cells: r.row as Record<string, CellValue> },
+		);
 }
 
 // Default test definition with posts table
@@ -58,14 +77,14 @@ const testDefinition: WorkspaceDefinition = {
 		}),
 		users: table('users', {
 			name: 'Users',
-			fields: [
-				id(),
-				text('name', { name: 'Name' }),
-			] as const,
+			fields: [id(), text('name', { name: 'Name' })] as const,
 		}),
 	},
 	kv: {
-		theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] as const }) }),
+		theme: setting({
+			name: 'Theme',
+			field: select('theme', { options: ['light', 'dark'] as const }),
+		}),
 		language: setting({ name: 'Language', field: text('language') }),
 	},
 };
@@ -630,7 +649,13 @@ describe('type validation', () => {
 				name: 'Test',
 				fields: [
 					id(),
-					{ id: fieldName, name: fieldName, type: fieldType as any, description: '', icon: null },
+					{
+						id: fieldName,
+						name: fieldName,
+						type: fieldType as any,
+						description: '',
+						icon: null,
+					},
 				],
 			}),
 		},
@@ -785,10 +810,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 			}),
 			users: table('users', {
 				name: 'Users',
-				fields: [
-					id(),
-					text('name', { name: 'Name' }),
-				] as const,
+				fields: [id(), text('name', { name: 'Name' })] as const,
 			}),
 		},
 		kv: {},
@@ -1096,10 +1118,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 					tables: {
 						items: table('items', {
 							name: 'Items',
-							fields: [
-								id(),
-								text('name', { name: 'Name' }),
-							] as const,
+							fields: [id(), text('name', { name: 'Name' })] as const,
 						}),
 					},
 					kv: {},
@@ -1115,7 +1134,13 @@ describe('createCellWorkspace with HeadDoc', () => {
 		test('legacy API has whenSynced that resolves immediately', async () => {
 			const workspace = createCellWorkspace({
 				id: 'legacy-sync-test',
-				definition: { name: 'Test', description: '', icon: null, tables: {}, kv: {} },
+				definition: {
+					name: 'Test',
+					description: '',
+					icon: null,
+					tables: {},
+					kv: {},
+				},
 			});
 
 			// Should resolve immediately

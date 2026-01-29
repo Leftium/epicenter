@@ -118,11 +118,7 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			items: table('items', {
 				name: '',
-				fields: [
-					id(),
-					text('name'),
-					integer('quantity'),
-				] as const,
+				fields: [id(), text('name'), integer('quantity')] as const,
 			}),
 		});
 
@@ -144,11 +140,7 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			notifications: table('notifications', {
 				name: '',
-				fields: [
-					id(),
-					text('message'),
-					boolean('read'),
-				] as const,
+				fields: [id(), text('message'), boolean('read')] as const,
 			}),
 		});
 
@@ -227,11 +219,7 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			authors: table('authors', {
 				name: '',
-				fields: [
-					id(),
-					text('name'),
-					richtext('bio'),
-				] as const,
+				fields: [id(), text('name'), richtext('bio')] as const,
 			}),
 			books: table('books', {
 				name: '',
@@ -283,11 +271,7 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			comments: table('comments', {
 				name: '',
-				fields: [
-					id(),
-					text('text'),
-					integer('upvotes'),
-				] as const,
+				fields: [id(), text('text'), integer('upvotes')] as const,
 			}),
 		});
 

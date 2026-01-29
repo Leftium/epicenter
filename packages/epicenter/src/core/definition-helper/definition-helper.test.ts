@@ -151,11 +151,17 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 			definition.tables.set(
 				'users',
-				table('users', { name: 'Users', fields: [id(), text('name')] as const }),
+				table('users', {
+					name: 'Users',
+					fields: [id(), text('name')] as const,
+				}),
 			);
 
 			const all = definition.tables.toJSON();
@@ -190,7 +196,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			expect(definition.tables.get('posts')).toBeDefined();
@@ -242,7 +251,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			const titleSchema = definition.tables.get('posts')!.fields.get('title');
@@ -257,7 +269,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			expect(definition.tables.get('posts')!.fields.has('title')).toBe(true);
@@ -273,7 +288,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			definition.tables
@@ -332,7 +350,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			const keys = definition.tables.get('posts')!.fields.keys();
@@ -347,7 +368,10 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+				table('posts', {
+					name: 'Posts',
+					fields: [id(), text('title')] as const,
+				}),
 			);
 
 			const entries = definition.tables.get('posts')!.fields.entries();

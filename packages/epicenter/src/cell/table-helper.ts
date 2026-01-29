@@ -26,7 +26,6 @@ import {
 	schemaFieldToTypebox,
 	schemaTableToTypebox,
 } from './converters/to-typebox';
-import { getFieldById } from './schema-file';
 import {
 	CellKey,
 	FieldId,
@@ -37,6 +36,7 @@ import {
 	RowPrefix,
 	validateId,
 } from './keys';
+import { getFieldById } from './schema-file';
 import type {
 	CellValue,
 	ChangeHandler,
@@ -144,7 +144,10 @@ export function createTableHelper(
 			const value = rawGet(rowId, fieldId);
 
 			// Check if cell exists
-			if (value === undefined && !ykv.has(CellKey(RowId(rowId), FieldId(fieldId)))) {
+			if (
+				value === undefined &&
+				!ykv.has(CellKey(RowId(rowId), FieldId(fieldId)))
+			) {
 				return { status: 'not_found', key, value: undefined };
 			}
 
@@ -306,7 +309,11 @@ export function createTableHelper(
 							previousValue: change.oldValue,
 						});
 					} else if (change.action === 'delete') {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 

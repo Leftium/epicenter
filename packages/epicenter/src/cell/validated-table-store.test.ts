@@ -1,13 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { table, text, integer, select, id } from '../core/schema/fields/factories';
+import {
+	id,
+	integer,
+	select,
+	table,
+	text,
+} from '../core/schema/fields/factories';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import { createTableHelper } from './table-helper';
 import type { CellValue, SchemaTableDefinition } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = table(tableId, { name: tableId, fields: [id()] as const }),
+	schema: SchemaTableDefinition = table(tableId, {
+		name: tableId,
+		fields: [id()] as const,
+	}),
 ) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
@@ -20,7 +29,10 @@ const postsSchema = table('posts', {
 		id('id', { name: 'ID' }),
 		text('title', { name: 'Title' }),
 		integer('views', { name: 'Views' }),
-		select('status', { name: 'Status', options: ['draft', 'published'] as const }),
+		select('status', {
+			name: 'Status',
+			options: ['draft', 'published'] as const,
+		}),
 	] as const,
 });
 

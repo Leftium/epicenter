@@ -72,9 +72,7 @@ export function normalizeIcon(
  * isTableDefinition(notTable); // false
  * ```
  */
-export function isTableDefinition(
-	value: unknown,
-): value is TableDefinition {
+export function isTableDefinition(value: unknown): value is TableDefinition {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

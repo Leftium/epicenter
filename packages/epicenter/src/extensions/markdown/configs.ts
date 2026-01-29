@@ -521,10 +521,7 @@ export type DomainTitleFilenameSerializerOptions = {
 export function titleFilenameSerializer(
 	titleField: string,
 	options: TitleFilenameSerializerOptions = {},
-): MarkdownSerializer<
-	Fields,
-	ParsedFilename & { titleFromFilename: string }
-> {
+): MarkdownSerializer<Fields, ParsedFilename & { titleFromFilename: string }> {
 	const { stripNulls = true, maxTitleLength = 80 } = options;
 
 	return defineSerializer<Fields>()

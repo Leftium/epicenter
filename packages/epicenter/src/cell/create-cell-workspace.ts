@@ -198,7 +198,6 @@ function createCellWorkspaceLegacy({
 	definition,
 	ydoc: existingYdoc,
 }: CreateCellWorkspaceOptions): CellWorkspaceClient {
-
 	// Create or use existing Y.Doc
 	const ydoc = existingYdoc ?? new Y.Doc({ guid: id });
 
@@ -238,9 +237,13 @@ function createCellWorkspaceLegacy({
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 				// Use schema from definition, or empty schema for dynamic tables
-				const tableSchema =
-					definition.tables[tableId] ??
-					({ id: tableId, name: tableId, description: '', icon: null, fields: [] });
+				const tableSchema = definition.tables[tableId] ?? {
+					id: tableId,
+					name: tableId,
+					description: '',
+					icon: null,
+					fields: [],
+				};
 				store = createTableHelper(tableId, yarray, tableSchema);
 				tableHelperCache.set(tableId, store);
 			}
@@ -278,7 +281,7 @@ function createCellWorkspaceLegacy({
 				});
 			}
 
-			const schemaFieldIds = tableSchema.fields.map(f => f.id);
+			const schemaFieldIds = tableSchema.fields.map((f) => f.id);
 
 			return rows.map((r) => {
 				const typedCells: Record<string, TypedCell> = {};
@@ -286,7 +289,7 @@ function createCellWorkspaceLegacy({
 
 				// Process cells that exist in data
 				for (const [fieldId, value] of Object.entries(r.cells)) {
-					const fieldSchema = tableSchema.fields.find(f => f.id === fieldId);
+					const fieldSchema = tableSchema.fields.find((f) => f.id === fieldId);
 					if (fieldSchema) {
 						typedCells[fieldId] = {
 							value,
@@ -382,9 +385,13 @@ function createCellWorkspaceWithHeadDoc<
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			const tableSchema =
-				definition.tables[tableId as keyof TTableDefs] ??
-				({ id: tableId, name: tableId, description: '', icon: null, fields: [] });
+			const tableSchema = definition.tables[tableId as keyof TTableDefs] ?? {
+				id: tableId,
+				name: tableId,
+				description: '',
+				icon: null,
+				fields: [],
+			};
 			store = createTableHelper(tableId, yarray, tableSchema);
 			tableHelperCache.set(tableId, store);
 		}
@@ -463,14 +470,16 @@ function createCellWorkspaceWithHeadDoc<
 						});
 					}
 
-					const schemaFieldIds = tableSchema.fields.map(f => f.id);
+					const schemaFieldIds = tableSchema.fields.map((f) => f.id);
 
 					return rows.map((r) => {
 						const typedCells: Record<string, TypedCell> = {};
 						const dataFieldIds = Object.keys(r.cells);
 
 						for (const [fieldId, value] of Object.entries(r.cells)) {
-							const fieldSchema = tableSchema.fields.find(f => f.id === fieldId);
+							const fieldSchema = tableSchema.fields.find(
+								(f) => f.id === fieldId,
+							);
 							if (fieldSchema) {
 								typedCells[fieldId] = {
 									value,
@@ -486,7 +495,9 @@ function createCellWorkspaceWithHeadDoc<
 							}
 						}
 
-						const missingFields = schemaFieldIds.filter((fid) => !(fid in r.cells));
+						const missingFields = schemaFieldIds.filter(
+							(fid) => !(fid in r.cells),
+						);
 						const extraFields = dataFieldIds.filter(
 							(fid) => !schemaFieldIds.includes(fid),
 						);
@@ -502,7 +513,10 @@ function createCellWorkspaceWithHeadDoc<
 
 				batch<T>(
 					fn: (
-						ws: CellWorkspaceClient<TTableDefs, InferCellExtensionExports<TExtensions>>,
+						ws: CellWorkspaceClient<
+							TTableDefs,
+							InferCellExtensionExports<TExtensions>
+						>,
 					) => T,
 				): T {
 					return fn(this);

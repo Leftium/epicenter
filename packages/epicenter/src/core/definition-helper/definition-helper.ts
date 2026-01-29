@@ -422,7 +422,10 @@ function createTablesCollection(
 			return result;
 		},
 
-		set(tableName: string, definition: TableDefinition<readonly Field[]>): void {
+		set(
+			tableName: string,
+			definition: TableDefinition<readonly Field[]>,
+		): void {
 			const tablesMap = getOrCreateTablesMap();
 
 			let tableDefinitionMap = tablesMap.get(tableName);

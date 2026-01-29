@@ -75,7 +75,11 @@ export function createKvStore(
 							previousValue: change.oldValue,
 						});
 					} else if (change.action === 'delete') {
-						events.push({ type: 'delete', key, previousValue: change.oldValue });
+						events.push({
+							type: 'delete',
+							key,
+							previousValue: change.oldValue,
+						});
 					}
 				}
 

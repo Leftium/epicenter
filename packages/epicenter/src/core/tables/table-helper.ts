@@ -49,7 +49,11 @@ export type InvalidRowResult = {
  * A row that was not found.
  * Includes `row: undefined` so row can always be destructured regardless of status.
  */
-export type NotFoundResult = { status: 'not_found'; id: string; row: undefined };
+export type NotFoundResult = {
+	status: 'not_found';
+	id: string;
+	row: undefined;
+};
 
 /**
  * Result of validating a row.

@@ -39,7 +39,6 @@ import {
 import type {
 	CellValue,
 	ChangeHandler,
-	RawTableAccess,
 	RowData,
 	SchemaTableDefinition,
 	TableStore,
@@ -134,228 +133,194 @@ export function createTableStore(
 		return rows.sort((a, b) => a.id.localeCompare(b.id));
 	}
 
-	const raw: RawTableAccess = {
-		get: rawGet,
-		getRow: rawGetRow,
-		getRows: rawGetRows,
-	};
-
-	// ══════════════════════════════════════════════════════════════════════
-	// Validated Cell Operations
-	// ══════════════════════════════════════════════════════════════════════
-
-	function get(rowId: string, fieldId: string): GetCellResult<unknown> {
-		const key = `${rowId}:${fieldId}`;
-		const value = rawGet(rowId, fieldId);
-
-		// Check if cell exists
-		if (value === undefined && !has(rowId, fieldId)) {
-			return { status: 'not_found', key };
-		}
-
-		// Get field validator
-		const validator = getFieldValidator(fieldId);
-
-		// Fields not in schema pass validation (advisory behavior)
-		if (!validator) {
-			return { status: 'valid', value };
-		}
-
-		// Validate the cell value
-		if (validator.Check(value)) {
-			return { status: 'valid', value };
-		}
-
-		const errors: ValidationError[] = [...validator.Errors(value)];
-		return { status: 'invalid', key, errors, value };
-	}
-
-	function set(rowId: string, fieldId: string, value: CellValue): void {
-		validateId(rowId, 'rowId');
-		validateId(fieldId, 'fieldId');
-		ykv.set(cellKey(RowId(rowId), FieldId(fieldId)), value);
-	}
-
-	function del(rowId: string, fieldId: string): void {
-		ykv.delete(cellKey(RowId(rowId), FieldId(fieldId)));
-	}
-
-	function has(rowId: string, fieldId: string): boolean {
-		return ykv.has(cellKey(RowId(rowId), FieldId(fieldId)));
-	}
-
-	// ══════════════════════════════════════════════════════════════════════
-	// Validated Row Operations
-	// ══════════════════════════════════════════════════════════════════════
-
-	function getRow(rowId: string): GetResult<RowData> {
-		const cells = rawGetRow(rowId);
-
-		if (!cells) {
-			return { status: 'not_found', id: rowId };
-		}
-
-		const rowData: RowData = { id: rowId, cells };
-
-		if (rowValidator.Check(cells)) {
-			return { status: 'valid', row: rowData };
-		}
-
-		const errors: ValidationError[] = [...rowValidator.Errors(cells)];
-		return {
-			status: 'invalid',
-			id: rowId,
-			tableName: tableId,
-			errors,
-			row: cells,
-		};
-	}
-
-	function createRow(id?: string): string {
-		const newId = id ?? generateRowId();
-		if (id) validateId(id, 'rowId');
-		// Row is "created" implicitly when you set cells on it
-		// This just generates/validates the ID
-		return newId;
-	}
-
-	function deleteRow(rowId: string): void {
-		// Hard delete - remove all cells for this row
-		const prefix = rowPrefix(RowId(rowId));
-		const keysToDelete: string[] = [];
-
-		for (const [key] of ykv.map) {
-			if (hasPrefix(key, prefix)) {
-				keysToDelete.push(key);
-			}
-		}
-
-		for (const key of keysToDelete) {
-			ykv.delete(key);
-		}
-	}
-
-	// ══════════════════════════════════════════════════════════════════════
-	// Bulk Operations (Validated)
-	// ══════════════════════════════════════════════════════════════════════
-
-	function getAll(): RowResult<RowData>[] {
-		const rows = rawGetRows();
-		const results: RowResult<RowData>[] = [];
-
-		for (const row of rows) {
-			if (rowValidator.Check(row.cells)) {
-				results.push({ status: 'valid', row });
-			} else {
-				const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
-				results.push({
-					status: 'invalid',
-					id: row.id,
-					tableName: tableId,
-					errors,
-					row: row.cells,
-				});
-			}
-		}
-
-		return results;
-	}
-
-	function getAllValid(): RowData[] {
-		const rows = rawGetRows();
-		return rows.filter((row) => rowValidator.Check(row.cells));
-	}
-
-	function getAllInvalid(): InvalidRowResult[] {
-		const rows = rawGetRows();
-		const results: InvalidRowResult[] = [];
-
-		for (const row of rows) {
-			if (!rowValidator.Check(row.cells)) {
-				const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
-				results.push({
-					status: 'invalid',
-					id: row.id,
-					tableName: tableId,
-					errors,
-					row: row.cells,
-				});
-			}
-		}
-
-		return results;
-	}
-
-	function getRowIds(): string[] {
-		const ids = new Set<string>();
-		for (const [key] of ykv.map) {
-			const { rowId } = parseCellKey(key);
-			ids.add(rowId);
-		}
-		return Array.from(ids).sort();
-	}
-
-	// ══════════════════════════════════════════════════════════════════════
-	// Observation
-	// ══════════════════════════════════════════════════════════════════════
-
-	function observe(handler: ChangeHandler<CellValue>): () => void {
-		const ykvHandler = (
-			changes: Map<
-				string,
-				import('../core/utils/y-keyvalue-lww').YKeyValueLwwChange<CellValue>
-			>,
-			transaction: Y.Transaction,
-		) => {
-			const events: import('./types').ChangeEvent<CellValue>[] = [];
-
-			for (const [key, change] of changes) {
-				if (change.action === 'add') {
-					events.push({ type: 'add', key, value: change.newValue });
-				} else if (change.action === 'update') {
-					events.push({
-						type: 'update',
-						key,
-						value: change.newValue,
-						previousValue: change.oldValue,
-					});
-				} else if (change.action === 'delete') {
-					events.push({ type: 'delete', key, previousValue: change.oldValue });
-				}
-			}
-
-			if (events.length > 0) {
-				handler(events, transaction);
-			}
-		};
-
-		ykv.observe(ykvHandler);
-		return () => ykv.unobserve(ykvHandler);
-	}
-
 	return {
 		tableId,
 		schema,
-		raw,
+		raw: {
+			get: rawGet,
+			getRow: rawGetRow,
+			getRows: rawGetRows,
+		},
 
 		// Cell operations (validated)
-		get,
-		set,
-		delete: del,
-		has,
+		get(rowId: string, fieldId: string): GetCellResult<unknown> {
+			const key = `${rowId}:${fieldId}`;
+			const value = rawGet(rowId, fieldId);
+
+			// Check if cell exists
+			if (value === undefined && !ykv.has(cellKey(RowId(rowId), FieldId(fieldId)))) {
+				return { status: 'not_found', key };
+			}
+
+			// Get field validator
+			const validator = getFieldValidator(fieldId);
+
+			// Fields not in schema pass validation (advisory behavior)
+			if (!validator) {
+				return { status: 'valid', value };
+			}
+
+			// Validate the cell value
+			if (validator.Check(value)) {
+				return { status: 'valid', value };
+			}
+
+			const errors: ValidationError[] = [...validator.Errors(value)];
+			return { status: 'invalid', key, errors, value };
+		},
+
+		set(rowId: string, fieldId: string, value: CellValue): void {
+			validateId(rowId, 'rowId');
+			validateId(fieldId, 'fieldId');
+			ykv.set(cellKey(RowId(rowId), FieldId(fieldId)), value);
+		},
+
+		delete(rowId: string, fieldId: string): void {
+			ykv.delete(cellKey(RowId(rowId), FieldId(fieldId)));
+		},
+
+		has(rowId: string, fieldId: string): boolean {
+			return ykv.has(cellKey(RowId(rowId), FieldId(fieldId)));
+		},
 
 		// Row operations (validated)
-		getRow,
-		createRow,
-		deleteRow,
+		getRow(rowId: string): GetResult<RowData> {
+			const cells = rawGetRow(rowId);
+
+			if (!cells) {
+				return { status: 'not_found', id: rowId };
+			}
+
+			const rowData: RowData = { id: rowId, cells };
+
+			if (rowValidator.Check(cells)) {
+				return { status: 'valid', row: rowData };
+			}
+
+			const errors: ValidationError[] = [...rowValidator.Errors(cells)];
+			return {
+				status: 'invalid',
+				id: rowId,
+				tableName: tableId,
+				errors,
+				row: cells,
+			};
+		},
+
+		createRow(id?: string): string {
+			const newId = id ?? generateRowId();
+			if (id) validateId(id, 'rowId');
+			// Row is "created" implicitly when you set cells on it
+			// This just generates/validates the ID
+			return newId;
+		},
+
+		deleteRow(rowId: string): void {
+			// Hard delete - remove all cells for this row
+			const prefix = rowPrefix(RowId(rowId));
+			const keysToDelete: string[] = [];
+
+			for (const [key] of ykv.map) {
+				if (hasPrefix(key, prefix)) {
+					keysToDelete.push(key);
+				}
+			}
+
+			for (const key of keysToDelete) {
+				ykv.delete(key);
+			}
+		},
 
 		// Bulk operations (validated)
-		getAll,
-		getAllValid,
-		getAllInvalid,
-		getRowIds,
+		getAll(): RowResult<RowData>[] {
+			const rows = rawGetRows();
+			const results: RowResult<RowData>[] = [];
+
+			for (const row of rows) {
+				if (rowValidator.Check(row.cells)) {
+					results.push({ status: 'valid', row });
+				} else {
+					const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
+					results.push({
+						status: 'invalid',
+						id: row.id,
+						tableName: tableId,
+						errors,
+						row: row.cells,
+					});
+				}
+			}
+
+			return results;
+		},
+
+		getAllValid(): RowData[] {
+			const rows = rawGetRows();
+			return rows.filter((row) => rowValidator.Check(row.cells));
+		},
+
+		getAllInvalid(): InvalidRowResult[] {
+			const rows = rawGetRows();
+			const results: InvalidRowResult[] = [];
+
+			for (const row of rows) {
+				if (!rowValidator.Check(row.cells)) {
+					const errors: ValidationError[] = [...rowValidator.Errors(row.cells)];
+					results.push({
+						status: 'invalid',
+						id: row.id,
+						tableName: tableId,
+						errors,
+						row: row.cells,
+					});
+				}
+			}
+
+			return results;
+		},
+
+		getRowIds(): string[] {
+			const ids = new Set<string>();
+			for (const [key] of ykv.map) {
+				const { rowId } = parseCellKey(key);
+				ids.add(rowId);
+			}
+			return Array.from(ids).sort();
+		},
 
 		// Observation
-		observe,
+		observe(handler: ChangeHandler<CellValue>): () => void {
+			const ykvHandler = (
+				changes: Map<
+					string,
+					import('../core/utils/y-keyvalue-lww').YKeyValueLwwChange<CellValue>
+				>,
+				transaction: Y.Transaction,
+			) => {
+				const events: import('./types').ChangeEvent<CellValue>[] = [];
+
+				for (const [key, change] of changes) {
+					if (change.action === 'add') {
+						events.push({ type: 'add', key, value: change.newValue });
+					} else if (change.action === 'update') {
+						events.push({
+							type: 'update',
+							key,
+							value: change.newValue,
+							previousValue: change.oldValue,
+						});
+					} else if (change.action === 'delete') {
+						events.push({ type: 'delete', key, previousValue: change.oldValue });
+					}
+				}
+
+				if (events.length > 0) {
+					handler(events, transaction);
+				}
+			};
+
+			ykv.observe(ykvHandler);
+			return () => ykv.unobserve(ykvHandler);
+		},
 	};
 }

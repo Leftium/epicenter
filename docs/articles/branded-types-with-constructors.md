@@ -113,7 +113,7 @@ export function FieldId(id: string): FieldId {
 }
 
 // Functions require branded types
-export function cellKey(rowId: RowId, fieldId: FieldId): CellKey {
+export function CellKey(rowId: RowId, fieldId: FieldId): CellKey {
   return `${rowId}:${fieldId}` as CellKey;
 }
 
@@ -130,10 +130,10 @@ Callers are explicit about branding:
 // Clear where strings become branded
 const row = RowId(userInput);
 const field = FieldId('title');
-const key = cellKey(row, field);
+const key = CellKey(row, field);
 
 // Or inline for simple cases
-store.set(cellKey(RowId(id), FieldId('status')), 'active');
+store.set(CellKey(RowId(id), FieldId('status')), 'active');
 ```
 
 ## Why PascalCase?

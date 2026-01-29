@@ -27,13 +27,13 @@ import {
 	schemaTableToTypebox,
 } from './converters/to-typebox';
 import {
-	cellKey,
+	CellKey,
 	FieldId,
 	generateRowId,
 	hasPrefix,
 	parseCellKey,
 	RowId,
-	rowPrefix,
+	RowPrefix,
 	validateId,
 } from './keys';
 import type {
@@ -91,11 +91,11 @@ export function createTableHelper(
 	// ══════════════════════════════════════════════════════════════════════
 
 	function rawGet(rowId: string, fieldId: string): CellValue | undefined {
-		return ykv.get(cellKey(RowId(rowId), FieldId(fieldId)));
+		return ykv.get(CellKey(RowId(rowId), FieldId(fieldId)));
 	}
 
 	function rawGetRow(rowId: string): Record<string, CellValue> | undefined {
-		const prefix = rowPrefix(RowId(rowId));
+		const prefix = RowPrefix(RowId(rowId));
 		const cells: Record<string, CellValue> = {};
 		let found = false;
 
@@ -143,7 +143,7 @@ export function createTableHelper(
 			const value = rawGet(rowId, fieldId);
 
 			// Check if cell exists
-			if (value === undefined && !ykv.has(cellKey(RowId(rowId), FieldId(fieldId)))) {
+			if (value === undefined && !ykv.has(CellKey(RowId(rowId), FieldId(fieldId)))) {
 				return { status: 'not_found', key, value: undefined };
 			}
 
@@ -167,15 +167,15 @@ export function createTableHelper(
 		set(rowId: string, fieldId: string, value: CellValue): void {
 			validateId(rowId, 'rowId');
 			validateId(fieldId, 'fieldId');
-			ykv.set(cellKey(RowId(rowId), FieldId(fieldId)), value);
+			ykv.set(CellKey(RowId(rowId), FieldId(fieldId)), value);
 		},
 
 		delete(rowId: string, fieldId: string): void {
-			ykv.delete(cellKey(RowId(rowId), FieldId(fieldId)));
+			ykv.delete(CellKey(RowId(rowId), FieldId(fieldId)));
 		},
 
 		has(rowId: string, fieldId: string): boolean {
-			return ykv.has(cellKey(RowId(rowId), FieldId(fieldId)));
+			return ykv.has(CellKey(RowId(rowId), FieldId(fieldId)));
 		},
 
 		// Row operations (validated)
@@ -212,7 +212,7 @@ export function createTableHelper(
 
 		deleteRow(rowId: string): void {
 			// Hard delete - remove all cells for this row
-			const prefix = rowPrefix(RowId(rowId));
+			const prefix = RowPrefix(RowId(rowId));
 			const keysToDelete: string[] = [];
 
 			for (const [key] of ykv.map) {

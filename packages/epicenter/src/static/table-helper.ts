@@ -69,7 +69,7 @@ export function createTableHelper<
 		get(id: string): GetResult<TRow> {
 			const raw = ykv.get(id);
 			if (raw === undefined) {
-				return { status: 'not_found', id };
+				return { status: 'not_found', id, row: undefined };
 			}
 			return parseRow(id, raw);
 		},

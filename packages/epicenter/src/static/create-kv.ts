@@ -84,7 +84,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 			const raw = ykv.get(key);
 			if (raw === undefined) {
-				return { status: 'not_found' };
+				return { status: 'not_found', value: undefined };
 			}
 			return parseValue(raw, definition);
 		},

@@ -45,8 +45,11 @@ export type InvalidRowResult = {
 	row: unknown;
 };
 
-/** A row that was not found. */
-export type NotFoundResult = { status: 'not_found'; id: string };
+/**
+ * A row that was not found.
+ * Includes `row: undefined` so row can always be destructured regardless of status.
+ */
+export type NotFoundResult = { status: 'not_found'; id: string; row: undefined };
 
 /**
  * Result of validating a row.
@@ -367,7 +370,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 
 		get(id: string): GetResult<TRow> {
 			const rowMap = getRow(id);
-			if (!rowMap) return { status: 'not_found', id };
+			if (!rowMap) return { status: 'not_found', id, row: undefined };
 			return validateRow(id, reconstructRow(rowMap));
 		},
 
@@ -823,7 +826,7 @@ export function createUntypedTableHelper({
 
 		get(id: string): GetResult<TRow> {
 			const rowMap = getRow(id);
-			if (!rowMap) return { status: 'not_found', id };
+			if (!rowMap) return { status: 'not_found', id, row: undefined };
 			const row = reconstructRow(rowMap);
 			return { status: 'valid', row: row as TRow };
 		},

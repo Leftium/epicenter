@@ -144,7 +144,7 @@ export function createTableStore(
 
 			// Check if cell exists
 			if (value === undefined && !ykv.has(cellKey(RowId(rowId), FieldId(fieldId)))) {
-				return { status: 'not_found', key };
+				return { status: 'not_found', key, value: undefined };
 			}
 
 			// Get field validator
@@ -183,7 +183,7 @@ export function createTableStore(
 			const cells = rawGetRow(rowId);
 
 			if (!cells) {
-				return { status: 'not_found', id: rowId };
+				return { status: 'not_found', id: rowId, row: undefined };
 			}
 
 			const rowData: RowData = { id: rowId, cells };

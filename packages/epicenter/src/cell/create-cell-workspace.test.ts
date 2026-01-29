@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import { id, table, text, integer, boolean, select, setting } from '../core/schema/fields/factories';
 import { createCellWorkspace } from './create-cell-workspace';
 import type {
 	CellValue,
@@ -44,25 +45,28 @@ function getRawRows(helper: TableHelper): RowData[] {
 const testDefinition: WorkspaceDefinition = {
 	name: 'Test Workspace',
 	description: 'A workspace for testing',
+	icon: null,
 	tables: {
-		posts: {
+		posts: table({
 			name: 'Blog Posts',
 			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-				published: { name: 'Published', type: 'boolean', order: 3 },
+				id: id(),
+				title: text({ name: 'Title' }),
+				views: integer({ name: 'Views' }),
+				published: boolean({ name: 'Published' }),
 			},
-		},
-		users: {
+		}),
+		users: table({
 			name: 'Users',
 			fields: {
-				name: { name: 'Name', type: 'text', order: 1 },
+				id: id(),
+				name: text({ name: 'Name' }),
 			},
-		},
+		}),
 	},
 	kv: {
-		theme: { name: 'Theme', type: 'select', options: ['light', 'dark'] },
-		language: { name: 'Language', type: 'text' },
+		theme: setting({ name: 'Theme', field: select({ options: ['light', 'dark'] as const }) }),
+		language: setting({ name: 'Language', field: text() }),
 	},
 };
 
@@ -560,7 +564,8 @@ describe('createCellWorkspace', () => {
 		test('dynamic table has empty schema', () => {
 			const dynamicTable = workspace.table('dynamic');
 			expect(dynamicTable.schema.name).toBe('dynamic');
-			expect(dynamicTable.schema.fields).toEqual({});
+			// Dynamic tables have no fields defined (empty object at runtime)
+			expect(Object.keys(dynamicTable.schema.fields)).toHaveLength(0);
 		});
 
 		test('getAll returns validated results', () => {
@@ -618,14 +623,18 @@ describe('type validation', () => {
 		fieldType: string,
 	): WorkspaceDefinition => ({
 		name: 'Test',
+		description: '',
+		icon: null,
 		tables: {
-			test: {
+			test: table({
 				name: 'Test',
 				fields: {
-					[fieldName]: { name: fieldName, type: fieldType as any, order: 1 },
+					id: id(),
+					[fieldName]: { name: fieldName, type: fieldType as any, description: '', icon: null },
 				},
-			},
+			}),
 		},
+		kv: {},
 	});
 
 	test('text type validation', () => {
@@ -763,21 +772,26 @@ describe('createCellWorkspace with HeadDoc', () => {
 
 	const testDefinition = {
 		name: 'Test Workspace',
+		description: '',
+		icon: null,
 		tables: {
-			posts: {
+			posts: table({
 				name: 'Posts',
 				fields: {
-					title: { name: 'Title', type: 'text' as const, order: 1 },
-					views: { name: 'Views', type: 'integer' as const, order: 2 },
+					id: id(),
+					title: text({ name: 'Title' }),
+					views: integer({ name: 'Views' }),
 				},
-			},
-			users: {
+			}),
+			users: table({
 				name: 'Users',
 				fields: {
-					name: { name: 'Name', type: 'text' as const, order: 1 },
+					id: id(),
+					name: text({ name: 'Name' }),
 				},
-			},
+			}),
 		},
+		kv: {},
 	} as const;
 
 	describe('builder pattern', () => {
@@ -1077,14 +1091,18 @@ describe('createCellWorkspace with HeadDoc', () => {
 				id: 'legacy-test',
 				definition: {
 					name: 'Legacy Workspace',
+					description: '',
+					icon: null,
 					tables: {
-						items: {
+						items: table({
 							name: 'Items',
 							fields: {
-								name: { name: 'Name', type: 'text', order: 1 },
+								id: id(),
+								name: text({ name: 'Name' }),
 							},
-						},
+						}),
 					},
+					kv: {},
 				},
 			});
 
@@ -1097,7 +1115,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 		test('legacy API has whenSynced that resolves immediately', async () => {
 			const workspace = createCellWorkspace({
 				id: 'legacy-sync-test',
-				definition: { name: 'Test', tables: {} },
+				definition: { name: 'Test', description: '', icon: null, tables: {}, kv: {} },
 			});
 
 			// Should resolve immediately

@@ -73,7 +73,7 @@ function generateEmail(index: number) {
 		received_at: timestamp,
 		read: index % 3 === 0 ? 1 : 0,
 		starred: index % 10 === 0 ? 1 : 0,
-		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4],
+		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4] ?? 'inbox',
 	};
 }
 
@@ -162,6 +162,9 @@ console.log('--- YJS Test ---');
 const yjsStart = performance.now();
 
 const emailDefinition = defineWorkspace({
+	name: 'YJS vs SQLite Comparison',
+	description: '',
+	icon: null,
 	tables: {
 		emails: table({
 			name: 'Emails',

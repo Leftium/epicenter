@@ -9,9 +9,9 @@ import { tryAsync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
 import { defineExports, type ExtensionContext } from '../../core/extension';
 import type {
-	KvDefinitionMap,
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
 	Row,
-	TableDefinitionMap,
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
 } from '../../core/schema';
 import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
 import { createIndexLogger } from '../error-logger';
@@ -66,7 +66,7 @@ export type SqliteConfig = {
  * import { join } from 'node:path';
  *
  * const definition = defineWorkspace({
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
+ *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }) },
  *   kv: {},
  * });
  *

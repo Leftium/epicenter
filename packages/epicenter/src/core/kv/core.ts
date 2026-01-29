@@ -1,13 +1,21 @@
 import type * as Y from 'yjs';
 
-import type { KvDefinitionMap, KvValue } from '../schema';
+import type { KvField, KvValue } from '../schema';
 
 import { createKvHelpers, type KvChange, type KvGetResult } from './kv-helper';
 
 /** Y.Map storing all KV values, keyed by key name. */
-export type KvMap = Y.Map<KvValue>;
+export type KvYMap = Y.Map<KvValue>;
 
 export type { KvHelper } from './kv-helper';
+
+/**
+ * Minimal shape required for KV definitions - just needs a `field` property.
+ * This is compatible with both the old KvDefinition wrapper and direct field usage.
+ */
+type KvDefinitionLike<TField extends KvField = KvField> = {
+	field: TField;
+};
 
 /**
  * Flat Map-like API for accessing KV entries.
@@ -23,7 +31,7 @@ export type { KvHelper } from './kv-helper';
  * kv.has('theme');  // false (if no default)
  * ```
  */
-export type KvFunction<TKvDefinitionMap extends KvDefinitionMap> = {
+export type KvFunction<TKvDefinitionMap extends Record<string, KvDefinitionLike>> = {
 	// ════════════════════════════════════════════════════════════════════
 	// KEY-VALUE OPERATIONS
 	// ════════════════════════════════════════════════════════════════════
@@ -182,7 +190,9 @@ export type KvFunction<TKvDefinitionMap extends KvDefinitionMap> = {
  * settings.reset('theme'); // Back to default
  * ```
  */
-export function createKv<TKvDefinitionMap extends KvDefinitionMap>(
+export function createKv<
+	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
+>(
 	ydoc: Y.Doc,
 	definitions: TKvDefinitionMap,
 ): KvFunction<TKvDefinitionMap> {
@@ -412,6 +422,5 @@ export function createKv<TKvDefinitionMap extends KvDefinitionMap>(
  * Type alias for the return type of createKv.
  * Useful for typing function parameters that accept a KV instance.
  */
-export type Kv<TKvDefinitionMap extends KvDefinitionMap> = ReturnType<
-	typeof createKv<TKvDefinitionMap>
->;
+export type Kv<TKvDefinitionMap extends Record<string, KvDefinitionLike>> =
+	ReturnType<typeof createKv<TKvDefinitionMap>>;

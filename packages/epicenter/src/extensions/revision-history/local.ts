@@ -2,7 +2,10 @@ import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import type { ExtensionContext } from '../../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../../core/schema';
+import type {
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
+} from '../../core/schema';
 
 const SNAPSHOT_EXTENSION = '.ysnap';
 const METADATA_EXTENSION = '.json';

@@ -3,18 +3,26 @@ import type {
 	DefinitionYMap,
 	WorkspaceDefinitionMap,
 } from '../docs/workspace-doc';
-import type {
-	Field,
-	Icon,
-	KvDefinition,
-	KvField,
-	TableDefinition,
-	TableDefinitionMap,
-} from '../schema';
+import type { Field, Icon, KvField, TableDefinition } from '../schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * KV entry definition with metadata for UI display.
+ * This is an inline replacement for the deprecated KvDefinition type.
+ */
+type KvEntryDefinition = {
+	/** Display name shown in UI (e.g., "Theme") */
+	name: string;
+	/** Icon for this KV entry - tagged string format 'type:value' or null */
+	icon: Icon | null;
+	/** Description shown in tooltips/docs */
+	description: string;
+	/** The field schema for this KV entry */
+	field: KvField;
+};
 
 /** Y.Map storing table definitions, keyed by table name. */
 export type TablesDefinitionMap = Y.Map<Y.Map<unknown>>;
@@ -305,7 +313,7 @@ function createTableHelper(
  * definition.tables.toJSON();           // all tables as JSON
  * definition.tables.keys();             // ['posts', 'users', ...]
  * definition.tables.entries();          // [[name, def], ...]
- * definition.tables.set('tasks', table({ ... }));
+ * definition.tables.set('tasks', table('tasks', { ... }));
  * definition.tables.delete('oldTable');
  * ```
  */
@@ -512,13 +520,13 @@ export type KvHelper = {
 	setField(field: KvField): void;
 
 	/** Get the full KV definition as JSON. */
-	toJSON(): KvDefinition;
+	toJSON(): KvEntryDefinition;
 	/** Replace the entire KV definition. */
-	set(definition: KvDefinition): void;
+	set(definition: KvEntryDefinition): void;
 	/** Delete this KV entry. Returns true if deleted. */
 	delete(): boolean;
 	/** Observe changes to this KV entry. */
-	observe(callback: (definition: KvDefinition) => void): () => void;
+	observe(callback: (definition: KvEntryDefinition) => void): () => void;
 };
 
 function createKvHelper(
@@ -561,7 +569,7 @@ function createKvHelper(
 				icon: (kvEntryMap.get('icon') as Icon | null) ?? null,
 				description: (kvEntryMap.get('description') as string) ?? '',
 				field: kvEntryMap.get('field'),
-			} as KvDefinition;
+			} as KvEntryDefinition;
 		},
 
 		set(definition) {
@@ -611,13 +619,13 @@ export type KvCollection = {
 	/** Check if a KV entry exists. */
 	has(keyName: string): boolean;
 	/** Get all KV definitions as a plain object. */
-	toJSON(): Record<string, KvDefinition>;
+	toJSON(): Record<string, KvEntryDefinition>;
 	/** Get all KV key names. */
 	keys(): string[];
 	/** Get all KV entries as [name, definition] pairs. */
-	entries(): [string, KvDefinition][];
+	entries(): [string, KvEntryDefinition][];
 	/** Set (add or update) a KV definition. */
-	set(keyName: string, definition: KvDefinition): void;
+	set(keyName: string, definition: KvEntryDefinition): void;
 	/** Delete a KV entry. Returns true if deleted. */
 	delete(keyName: string): boolean;
 	/** Observe changes to KV entries (add/delete). */
@@ -660,18 +668,18 @@ function createKvCollection(definitionMap: DefinitionYMap): KvCollection {
 			return getKvMap()?.has(keyName) ?? false;
 		},
 
-		toJSON(): Record<string, KvDefinition> {
+		toJSON(): Record<string, KvEntryDefinition> {
 			const kvMap = getKvMap();
 			if (!kvMap) return {};
 
-			const result: Record<string, KvDefinition> = {};
+			const result: Record<string, KvEntryDefinition> = {};
 			for (const [keyName, kvEntryMap] of kvMap.entries()) {
 				result[keyName] = {
 					name: (kvEntryMap.get('name') as string) ?? '',
 					icon: (kvEntryMap.get('icon') as Icon | null) ?? null,
 					description: (kvEntryMap.get('description') as string) ?? '',
 					field: kvEntryMap.get('field'),
-				} as KvDefinition;
+				} as KvEntryDefinition;
 			}
 			return result;
 		},
@@ -682,11 +690,11 @@ function createKvCollection(definitionMap: DefinitionYMap): KvCollection {
 			return Array.from(kvMap.keys());
 		},
 
-		entries(): [string, KvDefinition][] {
+		entries(): [string, KvEntryDefinition][] {
 			const kvMap = getKvMap();
 			if (!kvMap) return [];
 
-			const result: [string, KvDefinition][] = [];
+			const result: [string, KvEntryDefinition][] = [];
 			for (const [keyName, kvEntryMap] of kvMap.entries()) {
 				result.push([
 					keyName,
@@ -695,13 +703,13 @@ function createKvCollection(definitionMap: DefinitionYMap): KvCollection {
 						icon: (kvEntryMap.get('icon') as Icon | null) ?? null,
 						description: (kvEntryMap.get('description') as string) ?? '',
 						field: kvEntryMap.get('field'),
-					} as KvDefinition,
+					} as KvEntryDefinition,
 				]);
 			}
 			return result;
 		},
 
-		set(keyName: string, definition: KvDefinition): void {
+		set(keyName: string, definition: KvEntryDefinition): void {
 			const kvMap = getOrCreateKvMap();
 
 			let kvEntryMap = kvMap.get(keyName);
@@ -817,8 +825,8 @@ export function createDefinition(definitionMap: DefinitionYMap) {
 		 * Existing definitions not in the payload are preserved.
 		 */
 		merge(input: {
-			tables: TableDefinitionMap;
-			kv: Record<string, KvDefinition>;
+			tables: Record<string, TableDefinition>;
+			kv: Record<string, KvEntryDefinition>;
 		}): void {
 			for (const [tableName, tableDefinition] of Object.entries(input.tables)) {
 				tables.set(tableName, tableDefinition);

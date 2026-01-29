@@ -2,7 +2,7 @@ import { type ArkErrors, type } from 'arktype';
 import { createTaggedError } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 
-import type { KvDefinitionMap, KvField, KvValue } from '../schema';
+import type { KvField, KvValue } from '../schema';
 import { fieldToYjsArktype, isNullableField } from '../schema';
 
 /**
@@ -39,12 +39,22 @@ export type KvGetResult<TValue> =
 	| { status: 'not_found'; key: string };
 
 /**
+ * Minimal shape required for KV definitions - just needs a `field` property.
+ * This is compatible with both the old KvDefinition wrapper and direct field usage.
+ */
+type KvDefinitionLike<TField extends KvField = KvField> = {
+	field: TField;
+};
+
+/**
  * Creates a collection of typed KV helpers for all keys in a definition map.
  *
  * Uses native Y.Map for efficient storage. KV data is stored directly
  * as key-value pairs in the map.
  */
-export function createKvHelpers<TKvDefinitionMap extends KvDefinitionMap>({
+export function createKvHelpers<
+	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
+>({
 	ydoc,
 	definitions,
 }: {

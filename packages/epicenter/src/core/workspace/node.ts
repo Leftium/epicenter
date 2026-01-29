@@ -63,7 +63,7 @@
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table({ name: 'Posts', fields: { id: id(), title: text() } }),
+ *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
  *   },
  *   kv: {},
  * });
@@ -125,7 +125,10 @@ import type {
 	WorkspaceDoc as WorkspaceDocSync,
 } from '../docs/workspace-doc';
 import type { ExtensionFactoryMap, InferExtensionExports } from '../extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../schema';
+import type {
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
+} from '../schema';
 import {
 	type ClientBuilder as ClientBuilderSync,
 	createClient as createClientSync,
@@ -334,7 +337,7 @@ export type ClientBuilder<
  *
  * ```typescript
  * const definition = defineWorkspace({
- *   tables: { recordings: table({ name: 'Recordings', fields: { id: id(), title: text() } }) },
+ *   tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] as const }) },
  *   kv: {},
  * });
  *
@@ -445,14 +448,14 @@ function createAsyncClientBuilder<
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table({
+ *     posts: table('posts', {
  *       name: 'Posts',
- *       fields: {
- *         id: id(),           // Primary key (always required)
- *         title: text(),      // NOT NULL text
- *         published: boolean({ default: false }),
- *         createdAt: date(),  // Temporal-aware date with timezone
- *       },
+ *       fields: [
+ *         id(),           // Primary key (always required)
+ *         text('title'),  // NOT NULL text
+ *         boolean('published', { default: false }),
+ *         date('createdAt'),  // Temporal-aware date with timezone
+ *       ] as const,
  *     }),
  *   },
  *   kv: {},

@@ -17,19 +17,18 @@ import { date, json, tags } from '../../../extensions/sqlite/builders';
 import type { DateTimeString } from '../fields/datetime';
 import { isNullableField } from '../fields/helpers';
 import type {
-	BooleanFieldSchema,
-	DateFieldSchema,
+	BooleanField,
+	DateField,
 	Field,
-	FieldSchema,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
-	RealFieldSchema,
-	RichtextFieldSchema,
-	SelectFieldSchema,
+	IdField,
+	IntegerField,
+	JsonField,
+	RealField,
+	RichtextField,
+	SelectField,
 	TableDefinitionMap,
-	TagsFieldSchema,
-	TextFieldSchema,
+	TagsField,
+	TextField,
 } from '../fields/types';
 
 export function toSqlIdentifier(displayName: string): string {
@@ -106,29 +105,29 @@ function convertTableToDrizzle<
 	return sqliteTable(tableName, columns);
 }
 
-type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
+type FieldToDrizzle<C extends Field> = C extends IdField
 	? IsPrimaryKey<
 			NotNull<SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>>
 		>
-	: C extends TextFieldSchema<infer TNullable>
+	: C extends TextField<infer TNullable>
 		? TNullable extends true
 			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
 			: NotNull<SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>>
-		: C extends RichtextFieldSchema
+		: C extends RichtextField
 			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
-			: C extends IntegerFieldSchema<infer TNullable>
+			: C extends IntegerField<infer TNullable>
 				? TNullable extends true
 					? SQLiteIntegerBuilderInitial<''>
 					: NotNull<SQLiteIntegerBuilderInitial<''>>
-				: C extends RealFieldSchema<infer TNullable>
+				: C extends RealField<infer TNullable>
 					? TNullable extends true
 						? SQLiteRealBuilderInitial<''>
 						: NotNull<SQLiteRealBuilderInitial<''>>
-					: C extends BooleanFieldSchema<infer TNullable>
+					: C extends BooleanField<infer TNullable>
 						? TNullable extends true
 							? SQLiteBooleanBuilderInitial<''>
 							: NotNull<SQLiteBooleanBuilderInitial<''>>
-						: C extends DateFieldSchema<infer TNullable>
+						: C extends DateField<infer TNullable>
 							? TNullable extends true
 								? $Type<
 										SQLiteTextBuilderInitial<
@@ -148,7 +147,7 @@ type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
 											DateTimeString
 										>
 									>
-							: C extends SelectFieldSchema<infer TOptions, infer TNullable>
+							: C extends SelectField<infer TOptions, infer TNullable>
 								? TNullable extends true
 									? SQLiteTextBuilderInitial<
 											'',
@@ -162,7 +161,7 @@ type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
 												number | undefined
 											>
 										>
-								: C extends TagsFieldSchema<infer TOptions, infer TNullable>
+								: C extends TagsField<infer TOptions, infer TNullable>
 									? TNullable extends true
 										? SQLiteCustomColumnBuilder<{
 												name: '';
@@ -182,7 +181,7 @@ type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
 													enumValues: undefined;
 												}>
 											>
-									: C extends JsonFieldSchema<
+									: C extends JsonField<
 												infer T extends TSchema,
 												infer TNullable
 											>
@@ -207,7 +206,7 @@ type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
 												>
 										: never;
 
-function convertFieldToDrizzle<C extends FieldSchema>(
+function convertFieldToDrizzle<C extends Field>(
 	columnName: string,
 	field: C,
 ): FieldToDrizzle<C> {
@@ -295,6 +294,6 @@ function convertFieldToDrizzle<C extends FieldSchema>(
 		}
 
 		default:
-			throw new Error(`Unknown field type: ${(field as FieldSchema).type}`);
+			throw new Error(`Unknown field type: ${(field as Field).type}`);
 	}
 }

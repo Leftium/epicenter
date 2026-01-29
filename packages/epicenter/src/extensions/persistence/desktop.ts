@@ -3,7 +3,10 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { defineExports, type ExtensionContext } from '../../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../../core/schema';
+import type {
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
+} from '../../core/schema';
 
 /**
  * Configuration for the persistence extension.

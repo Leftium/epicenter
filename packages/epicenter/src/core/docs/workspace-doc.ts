@@ -3,9 +3,9 @@ import { createDefinition, type Definition } from '../definition-helper';
 import { createKv, type Kv } from '../kv/core';
 import { defineExports, type Lifecycle } from '../lifecycle';
 import type {
-	KvDefinitionMap,
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
 	KvValue,
-	TableDefinitionMap,
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
 } from '../schema/fields/types';
 import { createTables, type Tables } from '../tables/create-tables';
 
@@ -231,7 +231,7 @@ export type ExtensionContext<
  * const workspace = createWorkspaceDoc({
  *   workspaceId: 'blog',
  *   epoch: 0,
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
+ *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }) },
  *   kv: {},
  *   extensionFactories: {
  *     persistence: ({ ydoc }) => persistence({ ydoc }, { filePath: './data.yjs' }),

@@ -238,10 +238,9 @@ function createCellWorkspaceLegacy({
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 				// Use schema from definition, or empty schema for dynamic tables
-				// Dynamic tables have no schema - cast is needed since FieldMap requires id
 				const tableSchema =
 					definition.tables[tableId] ??
-					({ name: tableId, description: '', icon: null, fields: [] } as SchemaTableDefinition);
+					({ id: tableId, name: tableId, description: '', icon: null, fields: [] });
 				store = createTableHelper(tableId, yarray, tableSchema);
 				tableHelperCache.set(tableId, store);
 			}
@@ -383,10 +382,9 @@ function createCellWorkspaceWithHeadDoc<
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			// Dynamic tables have no schema - cast is needed since FieldMap requires id
 			const tableSchema =
 				definition.tables[tableId as keyof TTableDefs] ??
-				({ name: tableId, description: '', icon: null, fields: [] } as SchemaTableDefinition);
+				({ id: tableId, name: tableId, description: '', icon: null, fields: [] });
 			store = createTableHelper(tableId, yarray, tableSchema);
 			tableHelperCache.set(tableId, store);
 		}

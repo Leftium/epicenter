@@ -85,37 +85,75 @@ export { LifecycleExports } from './core/lifecycle';
 export type { RichContentId } from './core/rich-content/id';
 export { createRichContentId } from './core/rich-content/id';
 export type {
+	// New field type names (preferred)
+	BooleanField,
+	DateField,
+	IdField,
+	IntegerField,
+	JsonField,
+	RealField,
+	RichtextField,
+	SelectField,
+	TagsField,
+	TextField,
+
+	// Legacy type aliases (deprecated, kept for backwards compatibility)
+	/** @deprecated Use `BooleanField` instead */
 	BooleanFieldSchema,
-	CellValue,
+	/** @deprecated Use `DateField` instead */
 	DateFieldSchema,
+	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
+	FieldSchema,
+	/** @deprecated Use `IdField` instead */
+	IdFieldSchema,
+	/** @deprecated Use `IntegerField` instead */
+	IntegerFieldSchema,
+	/** @deprecated Use `JsonField` instead */
+	JsonFieldSchema,
+	/** @deprecated Use `RealField` instead */
+	RealFieldSchema,
+	/** @deprecated Use `RichtextField` instead */
+	RichtextFieldSchema,
+	/** @deprecated Use `SelectField` instead */
+	SelectFieldSchema,
+	/** @deprecated Use `TagsField` instead */
+	TagsFieldSchema,
+	/** @deprecated Use `TextField` instead */
+	TextFieldSchema,
+
+	// Common types
+	CellValue,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
-	FieldSchema,
 	FieldType,
 	Guid,
 	Icon,
 	IconType,
 	Id,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
-	KvDefinition,
-	KvDefinitionMap,
-	KvField,
-	KvMap,
-	KvValue,
 	PartialRow,
-	RealFieldSchema,
-	RichtextFieldSchema,
 	Row,
-	SelectFieldSchema,
 	TableDefinition,
+
+	// KV types
+	KvField,
+	KvValue,
+
+	// Deprecated KV types (kept for backwards compatibility)
+	/** @deprecated Use `KvField[]` array instead */
+	KvDefinition,
+	/** @deprecated Use `KvField[]` array instead */
+	KvDefinitionMap,
+	/** @deprecated Use `KvField[]` array instead */
+	KvMap,
+
+	// Deprecated table types (kept for backwards compatibility)
+	/** @deprecated Use `TableDefinition[]` array instead */
 	TableDefinitionMap,
-	TagsFieldSchema,
-	TextFieldSchema,
+
+	// Date types
 	TimezoneId,
 } from './core/schema';
 // Column schema system
@@ -172,9 +210,17 @@ export {
 } from './core/workspace/normalize';
 export type {
 	ClientBuilder,
+	/** @deprecated Use `WorkspaceDefinitionV2` with arrays instead */
 	WorkspaceDefinition,
+	WorkspaceDefinitionV2,
 } from './core/workspace/workspace';
-export { createClient, defineWorkspace } from './core/workspace/workspace';
+export {
+	/** @deprecated Use `createCellWorkspace` from `@epicenter/hq/cell` instead */
+	createClient,
+	/** @deprecated Use `defineWorkspaceV2` or `createCellWorkspace` instead */
+	defineWorkspace,
+	defineWorkspaceV2,
+} from './core/workspace/workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Cell API (preferred for new projects)

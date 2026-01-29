@@ -44,35 +44,56 @@ export {
 	TIMEZONE_ID_REGEX,
 } from './fields/regex.js';
 export type {
+	// New field type names (preferred)
+	BooleanField,
+	DateField,
+	IdField,
+	IntegerField,
+	JsonField,
+	RealField,
+	RichtextField,
+	SelectField,
+	TagsField,
+	TextField,
+
+	// Legacy type aliases (deprecated, kept for backwards compatibility)
 	BooleanFieldSchema,
-	CellValue,
 	DateFieldSchema,
+	FieldSchema,
+	IdFieldSchema,
+	IntegerFieldSchema,
+	JsonFieldSchema,
+	RealFieldSchema,
+	RichtextFieldSchema,
+	SelectFieldSchema,
+	TagsFieldSchema,
+	TextFieldSchema,
+
+	// Common types
+	CellValue,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
-	FieldSchema,
 	FieldType,
 	Icon,
 	IconType,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
+	PartialRow,
+	Row,
+	TableDefinition,
+
+	// KV types
+	KvField,
+	KvValue,
+
+	// Deprecated KV types (kept for backwards compatibility)
 	KvDefinition,
 	KvDefinitionMap,
-	KvField,
 	KvMap,
-	KvValue,
-	PartialRow,
-	RealFieldSchema,
-	RichtextFieldSchema,
-	Row,
-	SelectFieldSchema,
-	TableDefinition,
+
+	// Deprecated table types (kept for backwards compatibility)
 	TableDefinitionMap,
-	TagsFieldSchema,
-	TextFieldSchema,
 } from './fields/types.js';
 export { createIcon, isIcon, parseIcon } from './fields/types.js';
 export { standardSchemaToJsonSchema } from './standard/to-json-schema.js';

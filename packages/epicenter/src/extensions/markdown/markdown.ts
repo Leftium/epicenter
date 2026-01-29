@@ -8,9 +8,9 @@ import { ExtensionErr, ExtensionError } from '../../core/errors';
 import { defineExports, type ExtensionContext } from '../../core/extension';
 import type {
 	Field,
-	KvDefinitionMap,
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
 	Row,
-	TableDefinitionMap,
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
 } from '../../core/schema';
 import type { TableHelper } from '../../core/tables/create-tables';
 import type { AbsolutePath } from '../../core/types';

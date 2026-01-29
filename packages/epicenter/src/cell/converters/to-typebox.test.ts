@@ -239,7 +239,7 @@ describe('schemaFieldToTypebox', () => {
 
 describe('schemaTableToTypebox', () => {
 	test('creates object schema from table definition', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -253,7 +253,7 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('validates rows with correct types', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -268,7 +268,7 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('allows additional properties (advisory behavior)', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -282,7 +282,7 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('rejects invalid field values', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -299,7 +299,7 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('can be compiled to JIT validator', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -318,7 +318,7 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('compiled validator reports errors', () => {
-		const tableSchema = table({
+		const tableSchema = table('posts', {
 			name: 'Posts',
 			fields: [
 				id(),

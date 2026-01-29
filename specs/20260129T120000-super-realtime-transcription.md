@@ -38,33 +38,20 @@ Result:   "This is **super** realtime transcription"
 
 ## Architecture
 
-### Event-Sourced Document
+### ProseMirror as Event Log
 
-Single operation log with origin metadata—not separate "players":
+ProseMirror transactions are already event-sourced—each change is a `Step` that can be stored, inverted, and rebased. We use transaction metadata to track origin and audio references.
 
-```typescript
-type Operation = {
-	type: 'insert' | 'delete' | 'replace' | 'move';
-	position: number;
-	text: string;
-	timestamp: number;
+See [Editor Implementation → Source of Truth Decision](#source-of-truth-decision) for details.
 
-	origin: 'keyboard' | 'transcription' | 'paste' | 'ime';
+**Key mappings:**
 
-	audio?: {
-		ref: string;
-		timeRange: [number, number];
-		confidence: number;
-		isFinal: boolean;
-	};
-};
-
-type Document = {
-	text: string; // materialized view
-	operations: Operation[]; // full history (source of truth)
-	spans: Span[]; // derived: contiguous runs with same origin
-};
-```
+| Concept               | ProseMirror                                  |
+| --------------------- | -------------------------------------------- |
+| Operation with origin | `Transaction` + `setMeta('origin', ...)`     |
+| Operation log         | Plugin state tracking committed transactions |
+| Spans with metadata   | Marks on text nodes                          |
+| Pauses                | Atomic inline nodes                          |
 
 ### Why Not CRDT?
 
@@ -74,52 +61,7 @@ Initially considered treating keyboard and transcription as two CRDT "users", bu
 - Compact tombstones lose audio refs
 - Don't expose operation log cleanly
 
-Event sourcing is more natural—**the log is a first-class citizen**.
-
----
-
-## Composition Model (IME-Inspired)
-
-Borrowed from Android dictation / IME input: **composition state** for in-progress input.
-
-```typescript
-type CompositionState = {
-	id: string;
-	origin: 'keyboard' | 'transcription' | 'ime';
-	text: string;
-	anchorPosition: number; // where in document this inserts
-	startTime: number;
-
-	audio?: {
-		ref: string;
-		timeRange: [number, number];
-		words: Array<{
-			text: string;
-			time: [number, number];
-			confidence: number;
-		}>;
-	};
-};
-```
-
-### Key Insight
-
-Transcription compositions span **entire utterances**, not words:
-
-```
-Speaking: "I'll meet you at the coffee shop"
-
-[I'll] -> [I'll meet] -> [I'll meet you] -> ... -> [I'll meet you at the coffee shop]
-                                                    ^ entire phrase underlined until pause
-```
-
-### Commit Triggers
-
-| Origin        | Commits when                               |
-| ------------- | ------------------------------------------ |
-| Transcription | Silence/pause detected; `isFinal` from ASR |
-| Keyboard      | Pause (~500ms), punctuation, blur          |
-| IME           | User selects candidate                     |
+ProseMirror's transaction model gives us event sourcing with first-class support for metadata, inversion, and rebasing.
 
 ---
 
@@ -147,8 +89,10 @@ A middleware between the WebSocket API and event consumer that tags and tracks u
 type Utterance = {
   id: string
   status: 'active' | 'draining' | 'complete'
-  anchorPosition: number
-  cutoffTime?: number
+  anchorPosition: number   // where text inserts in document
+  cutoffTime?: number      // for filtering late-arriving words
+  audioRef?: string        // recording this utterance belongs to
+  startTime?: number       // audio start time
 }
 
 type UtteranceTracker = {
@@ -215,38 +159,75 @@ function handleTranscriptResult(result: TranscriptResult) {
 }
 ```
 
-### When New Composition Starts Listening
+### When New Utterance Starts Listening
 
-Wait for `final` event from old composition before accepting interims into new:
+Wait for `final` event from old utterance before accepting interims into new:
 
 ```
-t=1.200  Click -> old='pending_final', new='pending_final'
-t=1.300  interim "more text" -> ignored (both pending)
-t=1.400  final "This is realtime transcription" -> commit old, new='listening'
-t=1.500  interim "super" -> accepted into new composition
+t=1.200  Click -> old='draining', new='active' (but waiting)
+t=1.300  interim "more text" -> ignored (old still draining)
+t=1.400  final "This is realtime transcription" -> commit old, new ready
+t=1.500  interim "super" -> accepted into new utterance
+```
+
+### Interim Text Styling
+
+Text from an `active` utterance that hasn't received `isFinal` yet should be visually distinct:
+
+- **Underline** — like IME composition
+- **Faded/gray** — indicates "may change"
+- **Both** — belt and suspenders
+
+ProseMirror decoration based on utterance status:
+
+```typescript
+function interimDecoration(utteranceId: string, from: number, to: number) {
+	return Decoration.inline(from, to, {
+		class: 'interim-text', // styled via CSS
+		'data-utterance': utteranceId,
+	});
+}
 ```
 
 ---
 
 ## Rich Metadata / Span Model
 
-Each span retains provenance for downstream applications:
+Spans are **derived from ProseMirror marks** for downstream applications (export, playback):
 
 ```typescript
+// Derived from walking ProseMirror doc and extracting marks
 type Span = {
-  text: string
-  range: [start: number, end: number]
-  origin: 'keyboard' | 'transcription' | 'replaced'
+	text: string;
+	range: [start: number, end: number];
+	origin: 'keyboard' | 'transcription' | 'paste';
 
-  audio?: {
-    recordingId: string
-    timeRange: [number, number]
-  }
+	audio?: {
+		recordingId: string;
+		timeRange: [number, number];
+	};
+};
 
-  original?: {  // if edited
-    text: string
-    audio: { ... }
-  }
+// Extract spans from ProseMirror doc
+function extractSpans(doc: Node): Span[] {
+	const spans: Span[] = [];
+	doc.descendants((node, pos) => {
+		if (node.isText) {
+			const mark = node.marks.find((m) => m.type.name === 'transcription');
+			spans.push({
+				text: node.text!,
+				range: [pos, pos + node.nodeSize],
+				origin: mark?.attrs.origin ?? 'keyboard',
+				audio: mark?.attrs.audioRef
+					? {
+							recordingId: mark.attrs.audioRef,
+							timeRange: mark.attrs.timeRange,
+						}
+					: undefined,
+			});
+		}
+	});
+	return mergeAdjacentSpans(spans); // combine contiguous same-origin spans
 }
 ```
 
@@ -264,46 +245,66 @@ type Span = {
 
 ## Pause Visualization
 
-Inspired by [Audapolis](https://github.com/bugbakery/audapolis), silences/pauses between words should be visualized using a **musical rest symbol** (𝄾).
+Inspired by [Audapolis](https://github.com/bugbakery/audapolis), silences/pauses between words should be visualized as inline pause markers.
 
-### Why Rest Symbols?
+### Why Pause Markers?
 
-- **Familiar notation** — recognizable as "silence"
 - **Editable** — user can select and delete pauses
 - **Non-textual** — doesn't clutter the transcript with "[pause]" text
-- **Compact** — single character, inline with text
+- **Compact** — inline with text
 
-### Symbol
+### Rendering Options
 
-Using the eighth rest: **𝄾** (U+1D13E)
+Implementation can choose:
+
+- **Icon/SVG** — custom pause icon (most reliable)
+- **Musical rest** — if font supports it (Audapolis uses custom font)
+- **Emoji** — ⏸ (pause button) has decent support
+- **Text** — `…` or `[·]` as fallback
 
 ```
-"This is 𝄾 super realtime 𝄾 transcription"
-         ↑               ↑
-       pause           pause
+"This is [pause] super realtime [pause] transcription"
+            ↑                      ↑
+         ~800ms                 ~300ms
 ```
 
-### Pause Span Type
+### Pause Node (ProseMirror)
+
+Pauses are **atomic inline nodes** in ProseMirror (not marks, since they don't wrap text):
 
 ```typescript
+// ProseMirror node spec (see also ProseMirror Implementation below)
+const pauseNode = {
+	group: 'inline',
+	inline: true,
+	atom: true, // can't place cursor inside
+	attrs: {
+		duration: {}, // milliseconds
+		audioRef: {}, // recording ID
+		timeRange: {}, // [start, end] in recording
+	},
+};
+
+// Derived type for export/playback
 type PauseSpan = {
 	type: 'pause';
-	duration: number; // milliseconds
-	range: [start: number, end: number]; // position in document (0-width or placeholder char)
-
+	duration: number;
+	position: number; // position in document
 	audio: {
 		recordingId: string;
-		timeRange: [number, number]; // actual silence in recording
+		timeRange: [number, number];
 	};
 };
 ```
 
 ### Visual Treatment
 
+Pauses can vary in visual weight based on duration (implementation detail):
+
 ```
-"This is [𝄽] super realtime [𝄾] transcription"
-         ↑                   ↑
-     ~800ms pause        ~300ms pause
+"This is [··] super realtime [·] transcription"
+           ↑                  ↑
+       ~800ms              ~300ms
 ```
 
 ### Interactions
@@ -331,11 +332,11 @@ const pauseNode = {
 		return [
 			'span',
 			{
-				class: 'pause-rest',
+				class: 'pause-marker',
 				'data-duration': node.attrs.duration,
 				title: `${node.attrs.duration}ms pause`,
 			},
-			'𝄾',
+			// Render via CSS content or icon font
 		];
 	},
 };
@@ -350,7 +351,7 @@ const pauseNode = {
 | Media-first (audio exists, derive text) | Input-first (text accumulates, audio attached) |
 | Edit text -> implicitly edit audio      | Edit text -> explicitly decide audio fate      |
 | Single recording session                | Multi-session, multi-source                    |
-| EDL (Edit Decision List)                | Event-sourced operation log                    |
+| EDL (Edit Decision List)                | ProseMirror transaction history                |
 
 Super-realtime captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
@@ -394,7 +395,7 @@ recognition.onresult = (event) => {
 - Requires internet (sends audio to Google/Apple servers)
 - No word-level timestamps (only full transcript)
 - No confidence scores per word
-- `finalize` not supported (can't force endpoint)
+- No native `finalize` (can fake via stop + restart, higher latency)
 - Browser-specific behavior (Chrome vs Safari vs Firefox)
 
 **Best for:** Demos, quick prototyping, users who don't want to install anything.
@@ -444,50 +445,222 @@ type ScribeBackend = {
 All backends implement the same interface:
 
 ```typescript
-interface TranscriptionBackend {
-	start(): void;
-	stop(): void;
-	finalize?(): void; // Force endpoint (not supported by Web Speech API)
+import { Result, Ok, Err } from 'wellcrafted/result';
+import { createTaggedError } from 'wellcrafted/error';
 
-	onInterim: (result: TranscriptResult) => void;
-	onFinal: (result: TranscriptResult) => void;
-	onError: (error: Error) => void;
+// Errors
+const { TranscriptionError, TranscriptionErr } = createTaggedError(
+	'TranscriptionError',
+).withContext<{ backend: string }>();
+type TranscriptionError = ReturnType<typeof TranscriptionError>;
+
+// Backend interface
+interface TranscriptionBackend {
+	readonly name: string; // 'sherpa' | 'scribe' | 'web-speech'
+
+	start(): Result<void, TranscriptionError>;
+	stop(): Result<void, TranscriptionError>;
+	finalize(): void; // Force endpoint (Web Speech: stop + restart)
+
+	onResult: (result: Transcript) => void;
 }
 
-type TranscriptResult = {
+// Aligned with transcription-rs Transcript type
+type Transcript = {
 	text: string;
-	isFinal: boolean;
-	words?: Array<{
-		text: string;
-		time: [start: number, end: number];
-		confidence: number;
-	}>;
+
+	// Result-level finality
+	isFinal: boolean; // this result won't be revised
+	isEndpoint: boolean; // natural speech boundary (pause/silence)
+	segmentId: number; // correlates partials with their final
+
+	// Timing (seconds)
+	start?: number;
+	end?: number;
+
+	// Metadata
+	confidence?: number;
+	language?: string;
+
+	// Word-level detail
+	words?: Word[];
+};
+
+type Word = {
+	text: string;
+	start: number;
+	end: number;
+	confidence?: number;
 };
 ```
 
-**Note:** Web Speech API doesn't provide `words` array—only `text`. The utterance tracker handles this gracefully by treating the entire transcript as a single "word" for timing purposes.
+**Backend capability matrix:**
+
+| Field         | Web Speech           | Sherpa | Scribe |
+| ------------- | -------------------- | ------ | ------ |
+| `text`        | ✓                    | ✓      | ✓      |
+| `isFinal`     | ✓                    | ✓      | ✓      |
+| `isEndpoint`  | forced only          | ✓      | ✓      |
+| `segmentId`   | ✓ (client-generated) | ✓      | ✓      |
+| `start`/`end` | ✗                    | ✓      | ✓      |
+| `words`       | ✗                    | ✓      | ✓      |
+| `confidence`  | ✗                    | ✓      | ✓      |
+
+**Notes:**
+
+- Web Speech API's `finalize()` implemented as stop + restart (higher latency)
+- Web Speech lacks timing/word data—utterance tracker treats full transcript as single segment
+- Uses WellCrafted Result type for explicit error handling
 
 ### Backend Selection Logic
 
+Auto-detect best available backend, fall back to Web Speech API:
+
 ```typescript
-function selectBackend(config: Config): TranscriptionBackend {
-	// User explicitly chose one
+const { BackendError, BackendErr } = createTaggedError('BackendError');
+type BackendError = ReturnType<typeof BackendError>;
+
+function detectBackend(): Result<TranscriptionBackend, BackendError> {
+	// Prefer Sherpa if available (e.g., WASM loaded, native module present)
+	if (isSherpaAvailable()) {
+		return Ok(createSherpaBackend(config));
+	}
+
+	// Prefer Scribe if API key configured
+	if (config.scribeApiKey) {
+		return Ok(createScribeBackend(config));
+	}
+
+	// Fall back to Web Speech API (zero-config, works in most browsers)
+	if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+		return Ok(createWebSpeechBackend());
+	}
+
+	return BackendErr({ message: 'No transcription backend available' });
+}
+
+// Allow explicit override
+function selectBackend(
+	config: Config,
+): Result<TranscriptionBackend, BackendError> {
 	if (config.preferredBackend) {
-		return createBackend(config.preferredBackend);
+		return Ok(createBackend(config.preferredBackend));
 	}
-
-	// Auto-select based on environment
-	if (config.isDemo || !config.hasApiKey) {
-		return createWebSpeechBackend(); // Zero-config fallback
-	}
-
-	if (config.prioritizeLatency) {
-		return createSherpaBackend(config); // Lowest latency
-	}
-
-	return createScribeBackend(config); // Best accuracy
+	return detectBackend();
 }
 ```
+
+**Priority order:**
+
+1. Sherpa (if available) — best latency, offline, no API costs
+2. Scribe (if API key configured) — best accuracy
+3. Web Speech API — zero-config fallback
+
+### Hot-Swapping Backends
+
+Switch backends on the fly without losing state:
+
+```typescript
+class TranscriptionManager {
+	private backend: TranscriptionBackend;
+	private audioBuffer: Float32Array[] = []; // keep recent audio for re-transcription
+
+	switchBackend(
+		newBackend: TranscriptionBackend,
+	): Result<void, TranscriptionError> {
+		// Finalize current utterance
+		this.backend.finalize();
+
+		// Swap
+		const { error } = this.backend.stop();
+		if (error) return error;
+
+		this.backend = newBackend;
+		this.backend.onResult = this.handleResult.bind(this);
+
+		return this.backend.start();
+	}
+
+  // Re-transcribe selection with batch API for higher accuracy
+  async retranscribe(from: number, to: number): Promise<Result<Transcript, TranscriptionError>> {
+    // Extract audio refs from marks in selection
+    const audioClips = this.getAudioClipsForRange(from, to);
+
+    // Stitch audio clips (may be reordered/edited by user)
+    const stitchedAudio = stitchAudioClips(audioClips);
+
+    // Batch transcription: more accurate than streaming
+    // - Larger models (not constrained by latency)
+    // - Full context (sees entire utterance)
+    // - More post-processing (punctuation, formatting)
+    return transcribeBatch(stitchedAudio, {
+      backend: 'scribe',
+      model: 'scribe_v2',
+    });
+  }
+
+  // Get audio clips for a document range, respecting edit order
+  private getAudioClipsForRange(from: number, to: number): AudioClip[] {
+    const clips: AudioClip[] = [];
+
+    doc.nodesBetween(from, to, (node, pos) => {
+      if (node.isText) {
+        const mark = node.marks.find(m => m.type.name === 'transcription');
+        if (mark?.attrs.audioRef) {
+          clips.push({
+            audioRef: mark.attrs.audioRef,
+            timeRange: mark.attrs.timeRange,
+          });
+        }
+      }
+    });
+
+    return clips;  // in document order (user's edited order)
+  }
+}
+}
+```
+
+**Use cases:**
+
+| Scenario                          | Action                                |
+| --------------------------------- | ------------------------------------- |
+| User clicks "enhance" on segment  | Re-transcribe with batch API          |
+| Sherpa confidence < threshold     | Auto-queue for batch re-transcription |
+| Network goes offline              | Fall back to Sherpa streaming         |
+| User toggles "high accuracy mode" | Switch to Scribe streaming            |
+
+**Streaming vs Batch:**
+
+| Mode      | Latency    | Accuracy | Use                                 |
+| --------- | ---------- | -------- | ----------------------------------- |
+| Streaming | ~100-500ms | Good     | Real-time feedback while speaking   |
+| Batch     | ~1-5s      | Best     | Re-transcription, "enhance" feature |
+
+**Re-transcribe edited selections:**
+
+User can reorder, delete, insert—then re-transcribe any selection:
+
+```
+Original:  "The quick brown fox jumps"
+Edited:    "brown fox quick jumps"      ← user reordered words
+Selection: "brown fox quick"
+
+Audio extraction (in document order):
+  "brown fox" → rec_001 [1.2s, 1.8s]
+  "quick"     → rec_001 [0.4s, 0.7s]
+
+Stitch audio → batch transcribe → replace selection with result
+```
+
+Works because ProseMirror marks preserve audio refs through copy/paste/reorder.
+
+**Requirements:**
+
+- Keep audio buffer for recent segments (for batch re-transcription)
+- Utterance tracker handles backend changes transparently
+- UI shows which backend produced each segment (optional)
+- Replace text in ProseMirror when batch result arrives
 
 ---
 
@@ -506,7 +679,7 @@ Regular `<textarea>` won't work because we need:
 
 1. **Rich spans with metadata** — each word/phrase knows its origin, audio ref, timestamps
 2. **Multiple cursors/anchors** — transcription insertion point vs user cursor
-3. **Custom rendering** — composition underlines, confidence highlighting
+3. **Custom rendering** — interim text styling, confidence highlighting
 4. **Programmatic manipulation** — inserting at arbitrary positions while user types elsewhere
 
 ### Library Options
@@ -524,27 +697,96 @@ Regular `<textarea>` won't work because we need:
 
 ProseMirror's model maps well to the requirements:
 
-| Super-Realtime Concept | ProseMirror Equivalent          |
-| ---------------------- | ------------------------------- |
-| Span with metadata     | Mark or Node with attrs         |
-| Transcription cursor   | Decoration (widget or inline)   |
-| Composition underline  | Decoration                      |
-| Operation log          | Transaction history (or custom) |
-| Insert at position     | `tr.insert(pos, content)`       |
+| Super-Realtime Concept | ProseMirror Equivalent         |
+| ---------------------- | ------------------------------ |
+| Span with metadata     | Mark with attrs                |
+| Pause                  | Atomic inline node             |
+| Transcription cursor   | Decoration (widget)            |
+| Interim text styling   | Decoration (inline)            |
+| Operation log          | Transaction history via plugin |
+| Insert at position     | `tr.insert(pos, content)`      |
 
 ### Source of Truth Decision
 
-ProseMirror has its own state management. Options:
+ProseMirror is already event-sourced under the hood—transactions are first-class values that can be stored, inverted, and rebased. See:
 
-1. **ProseMirror as source of truth** — derive spans from PM doc, store audio metadata in marks/attrs
-2. **Event log as source of truth** — PM is just a view, rebuild on each change
-3. **Sync both** — risky, state drift
+- [Change tracking example](https://prosemirror.net/examples/track/) — blame map, commit history, revert
+- [Collab example](https://prosemirror.net/examples/collab/) — OT-style sync
 
-**Recommendation:** Option 1 — ProseMirror as source of truth.
+**Recommendation:** Use ProseMirror's native transaction system.
 
-- Store audio metadata in PM marks: `{ origin: 'transcription', audioRef: '...', timeRange: [0, 1.5] }`
-- Extract spans when needed for export/playback
-- Transactions become the event log naturally
+```typescript
+// Plugin tracks origin metadata per transaction
+const trackPlugin = new Plugin({
+	state: {
+		init() {
+			return { commits: [], uncommittedSteps: [] };
+		},
+		apply(tr, tracked) {
+			if (tr.docChanged) {
+				const origin = tr.getMeta('origin') ?? 'keyboard'; // 'transcription' | 'keyboard' | 'paste'
+				const audioRef = tr.getMeta('audioRef');
+				// Store inverted steps for potential revert
+				const inverted = tr.steps.map((step, i) => ({
+					step: step.invert(tr.docs[i]),
+					origin,
+					audioRef,
+				}));
+				return {
+					...tracked,
+					uncommittedSteps: tracked.uncommittedSteps.concat(inverted),
+				};
+			}
+			return tracked;
+		},
+	},
+});
+
+// When inserting transcription
+view.dispatch(
+	tr
+		.insert(pos, content)
+		.setMeta('origin', 'transcription')
+		.setMeta('audioRef', utterance.audioRef)
+		.setMeta('timeRange', [start, end]),
+);
+```
+
+**Benefits:**
+
+- No separate event log to maintain—ProseMirror transactions _are_ the log
+- Built-in support for inversion (undo), rebasing (collab), blame tracking
+- Metadata travels with transactions naturally via `setMeta`/`getMeta`
+
+### Clipboard Handling
+
+ProseMirror supports rich clipboard content via props:
+
+- `clipboardSerializer` — custom serialization for copy (preserves marks as data attributes)
+- `clipboardParser` — custom parsing for paste (restores marks from data attributes)
+- `transformCopied` / `transformPasted` — hooks to modify slices
+
+This preserves audio metadata through cut/copy → paste within the editor:
+
+```typescript
+const editorProps = {
+	// Serialize marks to data attributes for clipboard
+	clipboardSerializer: DOMSerializer.fromSchema(schema), // default works if toDOM includes data-*
+
+	// Parse data attributes back to marks on paste
+	clipboardParser: DOMParser.fromSchema(schema), // default works if parseDOM handles data-*
+
+	// Or intercept paste for custom handling
+	handlePaste(view, event, slice) {
+		// slice contains marks with audio metadata intact
+		const tr = view.state.tr.replaceSelection(slice).setMeta('origin', 'paste');
+		view.dispatch(tr);
+		return true;
+	},
+};
+```
+
+**Note:** Metadata only survives paste within the same editor (or editors with compatible schemas). Pasting into external apps loses the metadata—just plain text transfers.
 
 ### Custom Mark Schema
 
@@ -571,21 +813,21 @@ const transcriptionMark = {
 };
 ```
 
-### Composition Rendering
+### Interim Text Rendering
 
-Use ProseMirror decorations for active compositions:
+Use ProseMirror decorations for active utterances (see also "Interim Text Styling" above):
 
 ```typescript
-function compositionDecorations(composition: CompositionState) {
+function utteranceDecorations(utterance: Utterance, from: number, to: number) {
 	return DecorationSet.create(doc, [
-		// Underline for composing text
-		Decoration.inline(composition.from, composition.to, {
-			class: 'composition-underline',
+		// Underline for interim text
+		Decoration.inline(from, to, {
+			class: 'interim-text',
 		}),
-		// Widget showing transcription anchor point
-		Decoration.widget(composition.anchorPosition, () => {
+		// Widget showing where next words will insert
+		Decoration.widget(utterance.anchorPosition, () => {
 			const marker = document.createElement('span');
-			marker.className = 'transcription-anchor';
+			marker.className = 'transcription-cursor';
 			return marker;
 		}),
 	]);
@@ -640,18 +882,24 @@ Potential actions:
 3. Learn that "realtime" is a frequent word for this user
 ```
 
-The event log captures this:
+ProseMirror's transaction history captures this:
 
 ```typescript
-{ type: 'insert', text: "This is real time transcription", origin: 'transcription', audio: {...} }
-{ type: 'replace', range: [8, 17], oldText: 'real time', newText: 'realtime', origin: 'keyboard' }
+// Transaction 1: transcription insert
+tr.insertText('This is real time transcription')
+	.setMeta('origin', 'transcription')
+	.setMeta('audioRef', 'rec_001');
+
+// Transaction 2: user correction (replaceWith stores inverted step)
+tr.replaceWith(8, 17, schema.text('realtime')).setMeta('origin', 'keyboard');
+// Plugin can extract: oldText from inverted step, newText from transaction
 ```
 
-You know:
+The plugin's commit history gives us:
 
-- What ASR said ("real time")
-- What user meant ("realtime")
-- The audio for that segment (could re-analyze or use for training)
+- What ASR said ("real time") — from inverted step
+- What user meant ("realtime") — from transaction
+- The audio for that segment — from mark attrs on original text
 
 ---
 
@@ -769,7 +1017,7 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 
 - Test latency of force-endpoint across different ASR APIs (Sherpa, ElevenLabs Scribe)
 - Handle Web Speech API's lack of word timestamps gracefully
-- Visual treatment of compositions (underline style, split rendering)
+- Visual treatment of interim text (underline style, fading)
 - How corrections feed back to ASR (contextual biasing / personal dictionary)
 - File format for persistence (consider Audapolis ZIP format as starting point)
 - Experiment with different commit triggers and timing thresholds

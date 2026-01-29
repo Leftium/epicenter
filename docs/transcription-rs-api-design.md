@@ -1,8 +1,29 @@
-# transcribe-rs Streaming API Design
+# transcription-rs API Design
 
 ## Overview
 
-A layered API design that exposes low-level control while providing high-level convenience. Consumers choose their level of abstraction.
+A new crate (`transcription-rs`) with a layered API design that exposes low-level control while providing high-level convenience. The existing `transcribe-rs` crate becomes a thin deprecated wrapper for backward compatibility.
+
+### Crate Strategy
+
+| Crate                  | Status     | Purpose                                                    |
+| ---------------------- | ---------- | ---------------------------------------------------------- |
+| **`transcription-rs`** | New        | Rich API with streaming support, `Transcript` type         |
+| **`transcribe-rs`**    | Deprecated | Thin wrapper, transforms to old `TranscriptionResult` type |
+
+**Migration path:**
+
+```toml
+# Old
+[dependencies]
+transcribe-rs = "0.2"  # now wraps transcription-rs
+
+# New (recommended)
+[dependencies]
+transcription-rs = "0.1"
+```
+
+Consumers choose their level of abstraction within `transcription-rs`.
 
 ## API Layers
 
@@ -64,12 +85,12 @@ pub struct Word {
 
 ### Type Naming Strategy
 
-The new type is named `Transcript` (not `TranscriptionResult`) to avoid collision with the existing API:
+| Crate              | Type                  | Notes                                          |
+| ------------------ | --------------------- | ---------------------------------------------- |
+| `transcription-rs` | `Transcript`          | New rich type with streaming fields            |
+| `transcribe-rs`    | `TranscriptionResult` | Old type, preserved for backward compatibility |
 
-- **`Transcript`** - new rich type with streaming fields
-- **`TranscriptionResult`** - old type, deprecated but preserved for backward compatibility
-
-In a future major version, `Transcript` may be renamed to `TranscriptionResult` once the old type is removed.
+The name `Transcript` aligns with the new crate name (`transcription-rs`) and avoids collision with the deprecated type.
 
 ### API Survey Reference
 
@@ -82,42 +103,72 @@ In a future major version, `Transcript` may be renamed to `TranscriptionResult` 
 | Deepgram       | `is_final: bool`         | `speech_final: bool`           | `confidence`                    |
 | Google Cloud   | interim vs final         | natural pauses                 | `stability` score               |
 
-### Breaking Change: Batch API
+### Batch API Comparison
+
+**`transcription-rs`** (new crate):
 
 ```rust
-// OLD (deprecated) - takes ownership, segments nested inside result
-#[deprecated(since = "0.2.0", note = "Use transcribe() instead")]
-fn transcribe_samples(&mut self, samples: Vec<f32>, ...) -> Result<TranscriptionResult, Error>;
-// where TranscriptionResult has: segments: Option<Vec<TranscriptionSegment>>
-
-// NEW - borrows, flat list of results
-fn transcribe(&mut self, samples: &[f32], ...) -> Result<Vec<Transcript>, Error>;
+// Borrows samples, returns flat list of Transcript
+fn transcribe_samples(&mut self, samples: &[f32], ...) -> Result<Vec<Transcript>, Error>;
 fn transcribe_file(&mut self, path: &Path, ...) -> Result<Vec<Transcript>, Error>;
 ```
 
-Changes:
-
-1. **Function rename:** `transcribe_samples` → `transcribe`
-2. **Borrow:** `Vec<f32>` → `&[f32]`
-3. **New return type:** `Vec<Transcript>` - each item is one segment, removes nested `segments` field
-4. **Type rename:** `TranscriptionResult` → `Transcript` (old type preserved for deprecated API)
-
-The deprecated `transcribe_samples` is a thin wrapper:
+**`transcribe-rs`** (deprecated wrapper):
 
 ```rust
-#[deprecated(since = "0.2.0", note = "Use transcribe() instead")]
-fn transcribe_samples(&mut self, samples: Vec<f32>, params: Option<Self::InferenceParams>)
-    -> Result<TranscriptionResult, Box<dyn std::error::Error>>
-{
-    let transcripts = self.transcribe(&samples, params)?;
-    Ok(TranscriptionResult {
-        text: transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" "),
-        segments: Some(transcripts.into_iter().map(|t| TranscriptionSegment {
-            start: t.start.unwrap_or(0.0),
-            end: t.end.unwrap_or(0.0),
-            text: t.text,
-        }).collect()),
-    })
+// Old signature preserved - wraps transcription-rs internally
+fn transcribe_samples(&mut self, samples: Vec<f32>, ...) -> Result<TranscriptionResult, Error>;
+fn transcribe_file(&mut self, path: &Path, ...) -> Result<TranscriptionResult, Error>;
+```
+
+| Aspect        | `transcription-rs` | `transcribe-rs` (wrapper)                    |
+| ------------- | ------------------ | -------------------------------------------- |
+| Samples param | `&[f32]` (borrow)  | `Vec<f32>` (owned)                           |
+| Return type   | `Vec<Transcript>`  | `TranscriptionResult` with nested `segments` |
+| Streaming     | Full support       | Not exposed                                  |
+
+### Wrapper Implementation
+
+`transcribe-rs` internally depends on `transcription-rs` and transforms types:
+
+```rust
+// transcribe-rs/Cargo.toml
+[dependencies]
+transcription-rs = "0.1"
+
+// transcribe-rs/src/lib.rs
+use transcription_rs::Transcript;
+
+pub struct TranscriptionResult {
+    pub text: String,
+    pub segments: Option<Vec<TranscriptionSegment>>,
+}
+
+pub struct TranscriptionSegment {
+    pub start: f32,
+    pub end: f32,
+    pub text: String,
+}
+
+impl TranscriptionEngine for WhisperEngine {
+    fn transcribe_samples(&mut self, samples: Vec<f32>, params: Option<Self::InferenceParams>)
+        -> Result<TranscriptionResult, Box<dyn std::error::Error>>
+    {
+        // Delegate to new crate
+        let transcripts = transcription_rs::TranscriptionEngine::transcribe_samples(
+            self, &samples, params
+        )?;
+
+        // Transform to old type
+        Ok(TranscriptionResult {
+            text: transcripts.iter().map(|t| t.text.as_str()).collect::<Vec<_>>().join(" "),
+            segments: Some(transcripts.into_iter().map(|t| TranscriptionSegment {
+                start: t.start.unwrap_or(0.0),
+                end: t.end.unwrap_or(0.0),
+                text: t.text,
+            }).collect()),
+        })
+    }
 }
 ```
 
@@ -222,7 +273,7 @@ impl Engine {
 ### High-Level Usage (Tauri)
 
 ```rust
-let engine = transcribe_rs::Engine::new(config)?;
+let engine = transcription_rs::Engine::new(config)?;
 
 engine.start_listening(|result| {
     match result {
@@ -303,7 +354,7 @@ impl Engine {
 ## Thread Model (High Level)
 
 ```
-CONSUMER THREAD                 transcribe-rs INTERNAL THREADS
+CONSUMER THREAD                 transcription-rs INTERNAL THREADS
 
 ┌──────────────────┐           ┌──────────────────┐    ┌──────────────────┐
 │ cpal callback    │           │ Decode Thread    │    │ Callback Thread  │
@@ -343,10 +394,10 @@ CONSUMER THREAD                 transcribe-rs INTERNAL THREADS
 
 ## Comparison with Original Proposal
 
-| Aspect               | Original B++                    | Revised                          |
+| Aspect               | Original B++                    | Revised (`transcription-rs`)     |
 | -------------------- | ------------------------------- | -------------------------------- |
 | Result type          | `Partial(text)` / `Final(text)` | Rich `Transcript` struct         |
 | Layers               | High only                       | Low + High                       |
 | Intermediate results | Lost in decode loop             | All captured via `drain_results` |
 | `samples` param      | Unclear                         | `&[f32]` (borrow, not owned)     |
-| Batch function       | `transcribe_samples(Vec<f32>)`  | `transcribe(&[f32])`             |
+| Backward compat      | Breaking change                 | `transcribe-rs` wrapper crate    |

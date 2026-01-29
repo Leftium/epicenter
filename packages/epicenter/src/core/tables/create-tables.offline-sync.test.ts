@@ -30,14 +30,14 @@ describe('Offline Sync Scenarios', () => {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesB = createTables(docB, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -69,14 +69,14 @@ describe('Offline Sync Scenarios', () => {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesB = createTables(docB, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -116,28 +116,28 @@ describe('Offline Sync Scenarios', () => {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 				const tablesB1 = createTables(docB1, {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 				const tablesA2 = createTables(docA2, {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 				const tablesB2 = createTables(docB2, {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 
@@ -183,14 +183,14 @@ describe('Offline Sync Scenarios', () => {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesOffline = createTables(docOffline, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -239,21 +239,21 @@ describe('Offline Sync Scenarios', () => {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesB = createTables(docB, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesC = createTables(docC, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -308,14 +308,14 @@ describe('Offline Sync Scenarios', () => {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 				const tablesB = createTables(docB, {
 					posts: table({
 						name: '',
 						description: '',
-						fields: { id: id(), title: text() },
+						fields: [id(), text('title')] as const,
 					}),
 				});
 
@@ -353,14 +353,14 @@ describe('Offline Sync Scenarios', () => {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 			const tablesB = createTables(docB, {
 				posts: table({
 					name: '',
 					description: '',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			});
 

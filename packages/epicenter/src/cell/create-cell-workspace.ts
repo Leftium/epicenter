@@ -241,7 +241,7 @@ function createCellWorkspaceLegacy({
 				// Dynamic tables have no schema - cast is needed since FieldMap requires id
 				const tableSchema =
 					definition.tables[tableId] ??
-					({ name: tableId, description: '', icon: null, fields: {} } as SchemaTableDefinition);
+					({ name: tableId, description: '', icon: null, fields: [] } as SchemaTableDefinition);
 				store = createTableHelper(tableId, yarray, tableSchema);
 				tableHelperCache.set(tableId, store);
 			}
@@ -279,7 +279,7 @@ function createCellWorkspaceLegacy({
 				});
 			}
 
-			const schemaFieldIds = Object.keys(tableSchema.fields);
+			const schemaFieldIds = tableSchema.fields.map(f => f.id);
 
 			return rows.map((r) => {
 				const typedCells: Record<string, TypedCell> = {};
@@ -287,7 +287,7 @@ function createCellWorkspaceLegacy({
 
 				// Process cells that exist in data
 				for (const [fieldId, value] of Object.entries(r.cells)) {
-					const fieldSchema = tableSchema.fields[fieldId];
+					const fieldSchema = tableSchema.fields.find(f => f.id === fieldId);
 					if (fieldSchema) {
 						typedCells[fieldId] = {
 							value,
@@ -386,7 +386,7 @@ function createCellWorkspaceWithHeadDoc<
 			// Dynamic tables have no schema - cast is needed since FieldMap requires id
 			const tableSchema =
 				definition.tables[tableId as keyof TTableDefs] ??
-				({ name: tableId, description: '', icon: null, fields: {} } as SchemaTableDefinition);
+				({ name: tableId, description: '', icon: null, fields: [] } as SchemaTableDefinition);
 			store = createTableHelper(tableId, yarray, tableSchema);
 			tableHelperCache.set(tableId, store);
 		}
@@ -465,14 +465,14 @@ function createCellWorkspaceWithHeadDoc<
 						});
 					}
 
-					const schemaFieldIds = Object.keys(tableSchema.fields);
+					const schemaFieldIds = tableSchema.fields.map(f => f.id);
 
 					return rows.map((r) => {
 						const typedCells: Record<string, TypedCell> = {};
 						const dataFieldIds = Object.keys(r.cells);
 
 						for (const [fieldId, value] of Object.entries(r.cells)) {
-							const fieldSchema = tableSchema.fields[fieldId];
+							const fieldSchema = tableSchema.fields.find(f => f.id === fieldId);
 							if (fieldSchema) {
 								typedCells[fieldId] = {
 									value,

@@ -25,6 +25,30 @@ import type {
 } from './types';
 
 /**
+ * Get a field by its ID from a table.
+ *
+ * @param table - The table definition to search
+ * @param fieldId - The ID of the field to find
+ * @returns The field definition if found, undefined otherwise
+ */
+export function getFieldById(
+	table: SchemaTableDefinition,
+	fieldId: string,
+): SchemaFieldDefinition | undefined {
+	return table.fields.find((f) => f.id === fieldId);
+}
+
+/**
+ * Get all field IDs from a table.
+ *
+ * @param table - The table definition
+ * @returns Array of field IDs in order
+ */
+export function getFieldIds(table: SchemaTableDefinition): string[] {
+	return table.fields.map((f) => f.id);
+}
+
+/**
  * Normalize icon input to Icon | null.
  */
 function normalizeIcon(icon: unknown): Icon | null {
@@ -76,9 +100,15 @@ export function parseSchema(json: string): WorkspaceDefinition {
 			);
 		}
 
-		// Validate field structure
-		const fields = tableObj.fields as Record<string, unknown>;
-		for (const [fieldId, field] of Object.entries(fields)) {
+		// Validate field structure (supports both Record and Array input)
+		const fields = tableObj.fields;
+		const fieldEntries: Array<[string, unknown]> = Array.isArray(fields)
+			? (fields as Array<{ id?: string } & Record<string, unknown>>).map(
+					(f, i) => [f.id ?? `field_${i}`, f],
+				)
+			: Object.entries(fields as Record<string, unknown>);
+
+		for (const [fieldId, field] of fieldEntries) {
 			if (!field || typeof field !== 'object') {
 				throw new Error(`Field "${tableId}.${fieldId}" must be an object`);
 			}
@@ -109,13 +139,28 @@ export function parseSchema(json: string): WorkspaceDefinition {
 	// Normalize tables
 	for (const [tableId, tableData] of Object.entries(tables)) {
 		const tableObj = tableData as Record<string, unknown>;
-		// Cast to SchemaTableDefinition since JSON parsing doesn't preserve FieldMap constraint
+
+		// Normalize fields to array format (supports both Record and Array input)
+		const rawFields = tableObj.fields;
+		const normalizedFields: SchemaFieldDefinition[] = Array.isArray(rawFields)
+			? (rawFields as Array<Record<string, unknown>>).map((f) => ({
+					...(f as object),
+					id: (f.id as string) ?? '',
+				})) as SchemaFieldDefinition[]
+			: Object.entries(rawFields as Record<string, unknown>).map(
+					([id, f]) =>
+						({
+							...(f as object),
+							id,
+						}) as SchemaFieldDefinition,
+				);
+
 		normalized.tables[tableId] = {
 			name: tableObj.name as string,
 			description: (tableObj.description as string) ?? '',
 			icon: normalizeIcon(tableObj.icon),
-			fields: tableObj.fields,
-		} as SchemaTableDefinition;
+			fields: normalizedFields,
+		};
 	}
 
 	return normalized;
@@ -201,19 +246,21 @@ export function removeTable(
  * @param schema - Existing schema
  * @param tableId - ID of the table to modify
  * @param fieldId - ID for the new field
- * @param field - Field definition
+ * @param field - Field definition (id property will be overwritten with fieldId)
  * @returns New schema with the field added
  */
 export function addField(
 	schema: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
-	field: SchemaFieldDefinition,
+	field: Omit<SchemaFieldDefinition, 'id'>,
 ): WorkspaceDefinition {
 	const table = schema.tables[tableId];
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
+
+	const newField = { ...field, id: fieldId } as SchemaFieldDefinition;
 
 	return {
 		...schema,
@@ -221,10 +268,7 @@ export function addField(
 			...schema.tables,
 			[tableId]: {
 				...table,
-				fields: {
-					...table.fields,
-					[fieldId]: field,
-				},
+				fields: [...table.fields, newField],
 			},
 		},
 	};
@@ -248,16 +292,13 @@ export function removeField(
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
 
-	const { [fieldId]: _, ...fields } = table.fields;
-
 	return {
 		...schema,
 		tables: {
 			...schema.tables,
 			[tableId]: {
 				...table,
-				// Cast needed: TypeScript loses FieldMap constraint after destructuring
-				fields: fields as SchemaTableDefinition['fields'],
+				fields: table.fields.filter((f) => f.id !== fieldId),
 			},
 		},
 	};

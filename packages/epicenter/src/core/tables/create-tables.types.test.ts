@@ -23,14 +23,14 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			posts: table({
 				name: '',
-				fields: {
-					id: id(),
-					title: text(),
-					content: richtext(),
-					tags: tags({ options: ['tech', 'personal', 'work'] }),
-					view_count: integer(),
-					published: boolean(),
-				},
+				fields: [
+					id(),
+					text('title'),
+					richtext('content'),
+					tags('tags', { options: ['tech', 'personal', 'work'] as const }),
+					integer('view_count'),
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -66,12 +66,12 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			products: table({
 				name: '',
-				fields: {
-					id: id(),
-					name: text(),
-					price: integer(),
-					in_stock: boolean(),
-				},
+				fields: [
+					id(),
+					text('name'),
+					integer('price'),
+					boolean('in_stock'),
+				] as const,
 			}),
 		});
 
@@ -91,12 +91,12 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			tasks: table({
 				name: '',
-				fields: {
-					id: id(),
-					title: text(),
-					completed: boolean(),
-					priority: select({ options: ['low', 'medium', 'high'] }),
-				},
+				fields: [
+					id(),
+					text('title'),
+					boolean('completed'),
+					select('priority', { options: ['low', 'medium', 'high'] as const }),
+				] as const,
 			}),
 		});
 
@@ -118,11 +118,11 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			items: table({
 				name: '',
-				fields: {
-					id: id(),
-					name: text(),
-					quantity: integer(),
-				},
+				fields: [
+					id(),
+					text('name'),
+					integer('quantity'),
+				] as const,
 			}),
 		});
 
@@ -144,11 +144,11 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			notifications: table({
 				name: '',
-				fields: {
-					id: id(),
-					message: text(),
-					read: boolean(),
-				},
+				fields: [
+					id(),
+					text('message'),
+					boolean('read'),
+				] as const,
 			}),
 		});
 
@@ -183,12 +183,12 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			articles: table({
 				name: '',
-				fields: {
-					id: id(),
-					title: text(),
-					description: richtext(), // string | null
-					content: richtext(), // string | null
-				},
+				fields: [
+					id(),
+					text('title'),
+					richtext('description'), // string | null
+					richtext('content'), // string | null
+				] as const,
 			}),
 		});
 
@@ -227,23 +227,23 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			authors: table({
 				name: '',
-				fields: {
-					id: id(),
-					name: text(),
-					bio: richtext(),
-				},
+				fields: [
+					id(),
+					text('name'),
+					richtext('bio'),
+				] as const,
 			}),
 			books: table({
 				name: '',
-				fields: {
-					id: id(),
-					author_id: text(),
-					title: text(),
-					chapters: tags({
-						options: ['Chapter 1', 'Chapter 2', 'Chapter 3'],
+				fields: [
+					id(),
+					text('author_id'),
+					text('title'),
+					tags('chapters', {
+						options: ['Chapter 1', 'Chapter 2', 'Chapter 3'] as const,
 					}),
-					published: boolean(),
-				},
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -283,11 +283,11 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			comments: table({
 				name: '',
-				fields: {
-					id: id(),
-					text: text(),
-					upvotes: integer(),
-				},
+				fields: [
+					id(),
+					text('text'),
+					integer('upvotes'),
+				] as const,
 			}),
 		});
 
@@ -307,13 +307,13 @@ describe('YjsDoc Type Inference', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
 			documents: table({
 				name: '',
-				fields: {
-					id: id(),
-					title: text(),
-					body: richtext(),
-					notes: richtext(),
-					tags: tags({ options: ['tag1', 'tag2'] }),
-				},
+				fields: [
+					id(),
+					text('title'),
+					richtext('body'),
+					richtext('notes'),
+					tags('tags', { options: ['tag1', 'tag2'] as const }),
+				] as const,
 			}),
 		});
 

@@ -84,13 +84,13 @@ const emailDefinition = defineWorkspace({
 		emails: table({
 			name: 'Emails',
 			description: 'Email messages for storage simulation',
-			fields: {
-				id: id(),
-				sender: text(),
-				subject: text(),
-				received_at: text(),
-				read: integer({ default: 0 }),
-			},
+			fields: [
+				id(),
+				text('sender'),
+				text('subject'),
+				text('received_at'),
+				integer('read', { default: 0 }),
+			] as const,
 		}),
 	},
 	kv: {},

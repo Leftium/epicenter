@@ -26,6 +26,7 @@ import {
 	schemaFieldToTypebox,
 	schemaTableToTypebox,
 } from './converters/to-typebox';
+import { getFieldById } from './schema-file';
 import {
 	CellKey,
 	FieldId,
@@ -77,7 +78,7 @@ export function createTableHelper(
 		let validator = fieldValidators.get(fieldId);
 		if (validator) return validator;
 
-		const fieldDef = schema.fields[fieldId];
+		const fieldDef = getFieldById(schema, fieldId);
 		if (!fieldDef) return undefined;
 
 		const fieldSchema = schemaFieldToTypebox(fieldDef);

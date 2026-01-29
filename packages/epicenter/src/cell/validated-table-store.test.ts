@@ -7,7 +7,7 @@ import type { CellValue, SchemaTableDefinition } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = table({ name: tableId, fields: { id: id() } }),
+	schema: SchemaTableDefinition = table({ name: tableId, fields: [id()] as const }),
 ) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
@@ -16,12 +16,12 @@ function createTestStore(
 
 const postsSchema = table({
 	name: 'Posts',
-	fields: {
-		id: id({ name: 'ID' }),
-		title: text({ name: 'Title' }),
-		views: integer({ name: 'Views' }),
-		status: select({ name: 'Status', options: ['draft', 'published'] }),
-	},
+	fields: [
+		id('id', { name: 'ID' }),
+		text('title', { name: 'Title' }),
+		integer('views', { name: 'Views' }),
+		select('status', { name: 'Status', options: ['draft', 'published'] as const }),
+	] as const,
 });
 
 describe('TableHelper with schema (consolidated API)', () => {
@@ -304,6 +304,8 @@ describe('TableHelper without schema (dynamic tables)', () => {
 	test('schema property has only id field for dynamic tables', () => {
 		const { tableHelper } = createTestStore('dynamic');
 		expect(tableHelper.schema.name).toBe('dynamic');
-		expect(Object.keys(tableHelper.schema.fields)).toEqual(['id']);
+		// Fields is now an array - check that it has one field with id 'id'
+		expect(tableHelper.schema.fields.length).toBe(1);
+		expect(tableHelper.schema.fields[0]?.id).toBe('id');
 	});
 });

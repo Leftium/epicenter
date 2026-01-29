@@ -6,11 +6,7 @@ import { tableToArktype } from './to-arktype';
 
 describe('tableToArktype', () => {
 	test('returns a complete arktype Type instance', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			count: integer(),
-		};
+		const fields = [id(), text('title'), integer('count')] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -19,11 +15,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('validates complete objects correctly', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			count: integer(),
-		};
+		const fields = [id(), text('title'), integer('count')] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -37,11 +29,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('rejects invalid objects', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			count: integer(),
-		};
+		const fields = [id(), text('title'), integer('count')] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -55,11 +43,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .partial() composition', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			count: integer(),
-		};
+		const fields = [id(), text('title'), integer('count')] as const;
 
 		const validator = tableToArktype(fields);
 		const partialValidator = validator.partial().merge({ id: type.string });
@@ -75,10 +59,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .array() composition', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-		};
+		const fields = [id(), text('title')] as const;
 
 		const validator = tableToArktype(fields);
 		const arrayValidator = validator.array();
@@ -92,10 +73,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .merge() composition', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-		};
+		const fields = [id(), text('title')] as const;
 
 		const validator = tableToArktype(fields);
 		const merged = validator.merge({ extra: type.boolean });
@@ -110,17 +88,17 @@ describe('tableToArktype', () => {
 	});
 
 	test('handles complex nested schema', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			metadata: json({
+		const fields = [
+			id(),
+			text('title'),
+			json('metadata', {
 				schema: Type.Object({
 					author: Type.String(),
 					tags: Type.Array(Type.String()),
 				}),
 			}),
-			status: select({ options: ['draft', 'published'] }),
-		};
+			select('status', { options: ['draft', 'published'] as const }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -145,16 +123,16 @@ describe('tableToArktype', () => {
 	});
 
 	test('nullable fields with .default(null) can be omitted and default to null', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			subtitle: text({ nullable: true }),
-			count: integer({ nullable: true }),
-			status: select({
-				options: ['draft', 'published'],
+		const fields = [
+			id(),
+			text('title'),
+			text('subtitle', { nullable: true }),
+			integer('count', { nullable: true }),
+			select('status', {
+				options: ['draft', 'published'] as const,
 				nullable: true,
 			}),
-		};
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -167,18 +145,19 @@ describe('tableToArktype', () => {
 
 		expect(result).not.toBeInstanceOf(type.errors);
 		if (!(result instanceof type.errors)) {
-			expect(result.subtitle).toBe(null);
-			expect(result.count).toBe(null);
-			expect(result.status).toBe(null);
+			const row = result as { subtitle: string | null; count: number | null; status: string | null };
+			expect(row.subtitle).toBe(null);
+			expect(row.count).toBe(null);
+			expect(row.status).toBe(null);
 		}
 	});
 
 	test('required fields must be present even when nullable fields are omitted', () => {
-		const fields = {
-			id: id(),
-			title: text(), // required
-			subtitle: text({ nullable: true }), // optional, defaults to null
-		};
+		const fields = [
+			id(),
+			text('title'), // required
+			text('subtitle', { nullable: true }), // optional, defaults to null
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -193,11 +172,11 @@ describe('tableToArktype', () => {
 	});
 
 	test('nullable fields accept null explicitly', () => {
-		const fields = {
-			id: id(),
-			title: text(),
-			subtitle: text({ nullable: true }),
-		};
+		const fields = [
+			id(),
+			text('title'),
+			text('subtitle', { nullable: true }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -209,7 +188,8 @@ describe('tableToArktype', () => {
 
 		expect(result).not.toBeInstanceOf(type.errors);
 		if (!(result instanceof type.errors)) {
-			expect(result.subtitle).toBe(null);
+			const row = result as { subtitle: string | null };
+			expect(row.subtitle).toBe(null);
 		}
 	});
 });

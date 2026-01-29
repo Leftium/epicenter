@@ -76,7 +76,7 @@ describe('createActionsRouter', () => {
 	});
 
 	test('mutation actions accept JSON body input', async () => {
-		let capturedInput: { title: string } | null = null;
+		let capturedInput: unknown = null;
 		const actions: Actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),

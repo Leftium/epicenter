@@ -17,19 +17,19 @@ import { date, json, tags } from '../../../extensions/sqlite/builders';
 import type { DateTimeString } from '../fields/datetime';
 import { isNullableField } from '../fields/helpers';
 import type {
-	BooleanField,
-	DateField,
+	BooleanFieldSchema,
+	DateFieldSchema,
 	Field,
-	FieldMap,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
-	SelectField,
+	FieldSchema,
+	IdFieldSchema,
+	IntegerFieldSchema,
+	JsonFieldSchema,
+	RealFieldSchema,
+	RichtextFieldSchema,
+	SelectFieldSchema,
 	TableDefinitionMap,
-	TagsField,
-	TextField,
+	TagsFieldSchema,
+	TextFieldSchema,
 } from '../fields/types';
 
 export function toSqlIdentifier(displayName: string): string {
@@ -46,7 +46,7 @@ export type TableDefinitionsToDrizzle<
 	TTableDefinitionMap extends TableDefinitionMap,
 > = {
 	[K in keyof TTableDefinitionMap & string]: ReturnType<
-		typeof convertTableToDrizzle<K, TTableDefinitionMap[K]['fields']>
+		typeof convertTableToDrizzle<K, TTableDefinitionMap[K]['fields'][number]>
 	>;
 };
 
@@ -92,44 +92,43 @@ export function convertTableDefinitionsToDrizzle<
 /** Convert a single table schema to a Drizzle SQLiteTable. */
 function convertTableToDrizzle<
 	TTableName extends string,
-	TFieldMap extends FieldMap,
->(tableName: TTableName, fieldsSchema: TFieldMap) {
+	TField extends Field,
+>(tableName: TTableName, fields: readonly TField[]) {
 	const columns = Object.fromEntries(
-		Object.keys(fieldsSchema).map((fieldKey) => {
-			const field = fieldsSchema[fieldKey as keyof TFieldMap]!;
-			const sqlColumnName = field.name ? toSqlIdentifier(field.name) : fieldKey;
-			return [fieldKey, convertFieldToDrizzle(sqlColumnName, field)];
+		fields.map((field) => {
+			const sqlColumnName = field.name ? toSqlIdentifier(field.name) : field.id;
+			return [field.id, convertFieldToDrizzle(sqlColumnName, field)];
 		}),
 	) as {
-		[Key in keyof TFieldMap]: FieldToDrizzle<TFieldMap[Key]>;
+		[K in TField['id']]: FieldToDrizzle<Extract<TField, { id: K }>>;
 	};
 
 	return sqliteTable(tableName, columns);
 }
 
-type FieldToDrizzle<C extends Field> = C extends IdField
+type FieldToDrizzle<C extends FieldSchema> = C extends IdFieldSchema
 	? IsPrimaryKey<
 			NotNull<SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>>
 		>
-	: C extends TextField<infer TNullable>
+	: C extends TextFieldSchema<infer TNullable>
 		? TNullable extends true
 			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
 			: NotNull<SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>>
-		: C extends RichtextField
+		: C extends RichtextFieldSchema
 			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
-			: C extends IntegerField<infer TNullable>
+			: C extends IntegerFieldSchema<infer TNullable>
 				? TNullable extends true
 					? SQLiteIntegerBuilderInitial<''>
 					: NotNull<SQLiteIntegerBuilderInitial<''>>
-				: C extends RealField<infer TNullable>
+				: C extends RealFieldSchema<infer TNullable>
 					? TNullable extends true
 						? SQLiteRealBuilderInitial<''>
 						: NotNull<SQLiteRealBuilderInitial<''>>
-					: C extends BooleanField<infer TNullable>
+					: C extends BooleanFieldSchema<infer TNullable>
 						? TNullable extends true
 							? SQLiteBooleanBuilderInitial<''>
 							: NotNull<SQLiteBooleanBuilderInitial<''>>
-						: C extends DateField<infer TNullable>
+						: C extends DateFieldSchema<infer TNullable>
 							? TNullable extends true
 								? $Type<
 										SQLiteTextBuilderInitial<
@@ -149,7 +148,7 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 											DateTimeString
 										>
 									>
-							: C extends SelectField<infer TOptions, infer TNullable>
+							: C extends SelectFieldSchema<infer TOptions, infer TNullable>
 								? TNullable extends true
 									? SQLiteTextBuilderInitial<
 											'',
@@ -163,7 +162,7 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 												number | undefined
 											>
 										>
-								: C extends TagsField<infer TOptions, infer TNullable>
+								: C extends TagsFieldSchema<infer TOptions, infer TNullable>
 									? TNullable extends true
 										? SQLiteCustomColumnBuilder<{
 												name: '';
@@ -183,7 +182,7 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 													enumValues: undefined;
 												}>
 											>
-									: C extends JsonField<
+									: C extends JsonFieldSchema<
 												infer T extends TSchema,
 												infer TNullable
 											>
@@ -208,7 +207,7 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 												>
 										: never;
 
-function convertFieldToDrizzle<C extends Field>(
+function convertFieldToDrizzle<C extends FieldSchema>(
 	columnName: string,
 	field: C,
 ): FieldToDrizzle<C> {
@@ -296,6 +295,6 @@ function convertFieldToDrizzle<C extends Field>(
 		}
 
 		default:
-			throw new Error(`Unknown field type: ${(field as Field).type}`);
+			throw new Error(`Unknown field type: ${(field as FieldSchema).type}`);
 	}
 }

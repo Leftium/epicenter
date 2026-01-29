@@ -1,7 +1,7 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import * as Y from 'yjs';
-import type { FieldMap, PartialRow, Row, TableDefinitionMap } from '../schema';
+import type { Field, PartialRow, Row, TableDefinitionMap } from '../schema';
 import { fieldsToTypebox } from '../schema';
 
 /**
@@ -185,7 +185,7 @@ export function createTableHelpers<
  * User A edits title, User B edits views → After sync: both changes preserved
  * ```
  */
-function createTableHelper<TFieldMap extends FieldMap>({
+function createTableHelper<TFields extends readonly Field[]>({
 	ydoc,
 	tableName,
 	ytables,
@@ -194,9 +194,9 @@ function createTableHelper<TFieldMap extends FieldMap>({
 	ydoc: Y.Doc;
 	tableName: string;
 	ytables: TablesMap;
-	fields: TFieldMap;
+	fields: TFields;
 }) {
-	type TRow = Row<TFieldMap>;
+	type TRow = Row<TFields> & { id: string };
 
 	const typeboxSchema = fieldsToTypebox(fields);
 	const rowValidator = Compile(typeboxSchema);
@@ -310,7 +310,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 	};
 
 	return {
-		update(partialRow: PartialRow<TFieldMap>): UpdateResult {
+		update(partialRow: PartialRow<TFields>): UpdateResult {
 			const rowMap = getRow(partialRow.id);
 			if (!rowMap) return { status: 'not_found_locally' };
 
@@ -343,7 +343,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 			});
 		},
 
-		updateMany(rows: PartialRow<TFieldMap>[]): UpdateManyResult {
+		updateMany(rows: PartialRow<TFields>[]): UpdateManyResult {
 			const applied: string[] = [];
 			const notFoundLocally: string[] = [];
 
@@ -574,7 +574,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 			let tableMap = getExistingTableMap();
 
 			const handler = (
-				events: Y.YEvent<unknown>[],
+				events: Y.YEvent<Y.Map<unknown>>[],
 				transaction: Y.Transaction,
 			) => {
 				const changedIds = new Set<string>();
@@ -668,8 +668,8 @@ function createTableHelper<TFieldMap extends FieldMap>({
 	};
 }
 
-export type TableHelper<TFieldMap extends FieldMap> = ReturnType<
-	typeof createTableHelper<TFieldMap>
+export type TableHelper<TFields extends readonly Field[]> = ReturnType<
+	typeof createTableHelper<TFields>
 >;
 
 /**
@@ -708,6 +708,8 @@ export type UntypedTableHelper = {
 		callback: (changedIds: ChangedRowIds, transaction: Y.Transaction) => void,
 	): () => void;
 	inferRow: { id: string } & Record<string, unknown>;
+	/** Access the underlying Y.Map for advanced use cases */
+	readonly raw: TableMap;
 };
 
 /**
@@ -965,7 +967,7 @@ export function createUntypedTableHelper({
 			let tableMap = getExistingTableMap();
 
 			const handler = (
-				events: Y.YEvent<unknown>[],
+				events: Y.YEvent<Y.Map<unknown>>[],
 				transaction: Y.Transaction,
 			) => {
 				const changedIds = new Set<string>();

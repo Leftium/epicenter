@@ -13,19 +13,18 @@ import type { DateTimeString } from '../fields/datetime';
 import { isNullableField } from '../fields/helpers';
 import { DATE_TIME_STRING_REGEX } from '../fields/regex';
 import type {
-	BooleanField,
-	DateField,
+	BooleanFieldSchema,
+	DateFieldSchema,
 	Field,
-	FieldMap,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
+	IdFieldSchema,
+	IntegerFieldSchema,
+	JsonFieldSchema,
+	RealFieldSchema,
+	RichtextFieldSchema,
 	Row,
-	SelectField,
-	TagsField,
-	TextField,
+	SelectFieldSchema,
+	TagsFieldSchema,
+	TextFieldSchema,
 } from '../fields/types';
 
 /**
@@ -40,39 +39,39 @@ import type {
  * type NullableInt = FieldToArktype<{ type: 'integer', nullable: true }>; // Type<number | null>
  * ```
  */
-export type FieldToArktype<C extends Field> = C extends IdField
+export type FieldToArktype<C extends Field> = C extends IdFieldSchema
 	? Type<string>
-	: C extends TextField<infer TNullable>
+	: C extends TextFieldSchema<infer TNullable>
 		? TNullable extends true
 			? Type<string | null>
 			: Type<string>
-		: C extends RichtextField
+		: C extends RichtextFieldSchema
 			? Type<string | null>
-			: C extends IntegerField<infer TNullable>
+			: C extends IntegerFieldSchema<infer TNullable>
 				? TNullable extends true
 					? Type<number | null>
 					: Type<number>
-				: C extends RealField<infer TNullable>
+				: C extends RealFieldSchema<infer TNullable>
 					? TNullable extends true
 						? Type<number | null>
 						: Type<number>
-					: C extends BooleanField<infer TNullable>
+					: C extends BooleanFieldSchema<infer TNullable>
 						? TNullable extends true
 							? Type<boolean | null>
 							: Type<boolean>
-						: C extends DateField<infer TNullable>
+						: C extends DateFieldSchema<infer TNullable>
 							? TNullable extends true
 								? Type<DateTimeString | null>
 								: Type<DateTimeString>
-							: C extends SelectField<infer TOptions, infer TNullable>
+							: C extends SelectFieldSchema<infer TOptions, infer TNullable>
 								? TNullable extends true
 									? Type<TOptions[number] | null>
 									: Type<TOptions[number]>
-								: C extends TagsField<infer TOptions, infer TNullable>
+								: C extends TagsFieldSchema<infer TOptions, infer TNullable>
 									? TNullable extends true
 										? Type<TOptions[number][] | null>
 										: Type<TOptions[number][]>
-									: C extends JsonField<
+									: C extends JsonFieldSchema<
 												infer T extends TSchema,
 												infer TNullable
 											>
@@ -88,18 +87,18 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * available (.partial(), .merge(), .array(), etc.). Use this for validating
  * complete row objects.
  *
- * @param fields - The table schema to convert
+ * @param fields - The table schema as a Field[] array
  * @returns Complete arktype Type instance with composition methods
  *
  * @example
  * ```typescript
- * const schema = {
- *   id: id(),
- *   title: text(),
- *   count: integer({ nullable: true }),
- * };
+ * const fields = [
+ *   id(),
+ *   text('title'),
+ *   integer('count', { nullable: true }),
+ * ] as const;
  *
- * const validator = tableToArktype(schema);
+ * const validator = tableToArktype(fields);
  *
  * // Use immediately for validation
  * const result = validator({ id: '123', title: 'Test', count: 42 });
@@ -112,17 +111,14 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * const arrayValidator = validator.array();
  * ```
  */
-export function tableToArktype<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
-): ObjectType<Row<TFieldMap>> {
-	return type(
-		Object.fromEntries(
-			Object.entries(fields).map(([fieldName, fieldDefinition]) => [
-				fieldName,
-				fieldToArktype(fieldDefinition),
-			]),
-		),
-	) as ObjectType<Row<TFieldMap>>;
+export function tableToArktype<TFields extends readonly Field[]>(
+	fields: TFields,
+): ObjectType<Row<TFields>> {
+	const properties: Record<string, Type> = {};
+	for (const field of fields) {
+		properties[field.id] = fieldToArktype(field);
+	}
+	return type(properties) as ObjectType<Row<TFields>>;
 }
 
 /**

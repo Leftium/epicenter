@@ -157,7 +157,7 @@ describe('Realistic Storage Comparison', () => {
 		for (let user = 0; user < 5; user++) {
 			for (let edit = 0; edit < 20; edit++) {
 				const rowIdx = (user + edit) % 10;
-				const col = ['col_a', 'col_b', 'col_c', 'col_d'][edit % 4];
+				const col = ['col_a', 'col_b', 'col_c', 'col_d'][edit % 4]!;
 				rows.update({
 					id: `row-${rowIdx}`,
 					[col]: `User${user}-Edit${edit}`,

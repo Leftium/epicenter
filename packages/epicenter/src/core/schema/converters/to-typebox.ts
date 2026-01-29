@@ -19,18 +19,17 @@ import {
 import { isNullableField } from '../fields/helpers';
 import { DATE_TIME_STRING_REGEX } from '../fields/regex';
 import type {
-	BooleanField,
-	DateField,
+	BooleanFieldSchema,
+	DateFieldSchema,
 	Field,
-	FieldMap,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
-	SelectField,
-	TagsField,
-	TextField,
+	IdFieldSchema,
+	IntegerFieldSchema,
+	JsonFieldSchema,
+	RealFieldSchema,
+	RichtextFieldSchema,
+	SelectFieldSchema,
+	TagsFieldSchema,
+	TextFieldSchema,
 } from '../fields/types';
 
 /**
@@ -47,39 +46,39 @@ import type {
  * type NullableInt = Static<typeof nullableSchema>; // number | null
  * ```
  */
-export type FieldToTypebox<C extends Field> = C extends IdField
+export type FieldToTypebox<C extends Field> = C extends IdFieldSchema
 	? TString
-	: C extends TextField<infer TNullable>
+	: C extends TextFieldSchema<infer TNullable>
 		? TNullable extends true
 			? TUnion<[TString, TNull]>
 			: TString
-		: C extends RichtextField
+		: C extends RichtextFieldSchema
 			? TUnion<[TString, TNull]>
-			: C extends IntegerField<infer TNullable>
+			: C extends IntegerFieldSchema<infer TNullable>
 				? TNullable extends true
 					? TUnion<[TInteger, TNull]>
 					: TInteger
-				: C extends RealField<infer TNullable>
+				: C extends RealFieldSchema<infer TNullable>
 					? TNullable extends true
 						? TUnion<[TNumber, TNull]>
 						: TNumber
-					: C extends BooleanField<infer TNullable>
+					: C extends BooleanFieldSchema<infer TNullable>
 						? TNullable extends true
 							? TUnion<[TBoolean, TNull]>
 							: TBoolean
-						: C extends DateField<infer TNullable>
+						: C extends DateFieldSchema<infer TNullable>
 							? TNullable extends true
 								? TUnion<[TString, TNull]>
 								: TString
-							: C extends SelectField<infer _TOptions, infer TNullable>
+							: C extends SelectFieldSchema<infer _TOptions, infer TNullable>
 								? TNullable extends true
 									? TUnion<TSchema[]>
 									: TUnion<TSchema[]>
-								: C extends TagsField<infer _TOptions, infer TNullable>
+								: C extends TagsFieldSchema<infer _TOptions, infer TNullable>
 									? TNullable extends true
 										? TUnion<[TArray, TNull]>
 										: TArray
-									: C extends JsonField<infer _TStandardSchema, infer TNullable>
+									: C extends JsonFieldSchema<infer _TStandardSchema, infer TNullable>
 										? TNullable extends true
 											? TUnion<[TSchema, TNull]>
 											: TSchema
@@ -91,20 +90,20 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * Use this when you need to validate entire row objects. The resulting schema
  * can be compiled to a JIT validator for high-performance validation.
  *
- * @param fields - The table schema containing all field definitions
+ * @param fields - Array of field definitions (each field has an `id` property)
  * @returns A TypeBox TObject schema representing the table structure
  *
  * @example
  * ```typescript
  * import { Compile } from 'typebox/compile';
  *
- * const schema = {
- *   id: id(),
- *   title: text(),
- *   count: integer({ nullable: true }),
- * };
+ * const fields = [
+ *   id(),
+ *   text('title'),
+ *   integer('count', { nullable: true }),
+ * ] as const;
  *
- * const typeboxSchema = fieldsToTypebox(schema);
+ * const typeboxSchema = fieldsToTypebox(fields);
  * const validator = Compile(typeboxSchema);
  *
  * validator.Check({ id: '123', title: 'Test', count: 42 }); // true
@@ -112,13 +111,13 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * validator.Check({ id: '123', title: 'Test' }); // false (missing count)
  * ```
  */
-export function fieldsToTypebox<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
+export function fieldsToTypebox<TFields extends readonly Field[]>(
+	fields: TFields,
 ): TObject {
 	const properties: Record<string, TSchema> = {};
 
-	for (const [fieldName, fieldDefinition] of Object.entries(fields)) {
-		properties[fieldName] = fieldToTypebox(fieldDefinition);
+	for (const field of fields) {
+		properties[field.id] = fieldToTypebox(field);
 	}
 
 	return Type.Object(properties);

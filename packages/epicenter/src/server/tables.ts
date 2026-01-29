@@ -2,7 +2,6 @@ import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
 import type { WorkspaceDoc } from '../core/docs/workspace-doc';
-import type { FieldMap, Row } from '../core/schema';
 import { tableToArktype } from '../core/schema';
 
 type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
@@ -14,7 +13,7 @@ export function createTablesPlugin(
 
 	for (const [workspaceId, workspaceDoc] of Object.entries(workspaceDocs)) {
 		for (const tableName of Object.keys(workspaceDoc.tables.definitions)) {
-			const tableHelper = workspaceDoc.tables(tableName);
+			const tableHelper = workspaceDoc.tables.get(tableName);
 			const fields = workspaceDoc.tables.definitions[tableName]!.fields;
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
@@ -45,8 +44,8 @@ export function createTablesPlugin(
 			app.post(
 				basePath,
 				({ body }) => {
-					tableHelper.upsert(body as Row<FieldMap>);
-					return Ok({ id: (body as Row<FieldMap>).id });
+					tableHelper.upsert(body as { id: string });
+					return Ok({ id: (body as { id: string }).id });
 				},
 				{
 					body: tableToArktype(fields),
@@ -59,7 +58,7 @@ export function createTablesPlugin(
 				({ params, body }) => {
 					const result = tableHelper.update({
 						id: params.id,
-						...(body as Partial<Row<FieldMap>>),
+						...(body as Record<string, unknown>),
 					});
 					return Ok(result);
 				},

@@ -1,4 +1,4 @@
-# Fluid Realtime Transcription (FRT)
+# (Realtime) Fluid Transcription (RFT)
 
 - **Realtime:** each word is transformed into text as you speak (not after)
 - **Fluid:** freely reposition the cursor, type corrections. Switch between speaking and editing (without waiting for the ASR to catch up.)
@@ -6,20 +6,20 @@
 ## Usage scenario
 
 1. Speak: `This is realtime transcription`
-2. Edit: click after `is`, type `**`, speak `fluid`, type `**`
-3. Result: `This is **fluid** realtime transcription`
+2. Edit: select `realtime`, speak `fluid`
+3. Result: `This is fluid transcription`
 
 ### More Examples
 
-| Goal                | Original Transcription | Editing Actions                                 | Result                        |
-| ------------------- | ---------------------- | ----------------------------------------------- | ----------------------------- |
-| **Insert (voice)**  | Send the report        | click after `the`, speak `quarterly`            | Send the _quarterly_ report |
-| **Insert (typed)**  | Call me tomorrow       | click after `me`, type ` back`                  | Call me _back_ tomorrow     |
-| **Replace (voice)** | Meet at the cafe       | select `cafe`, speak `library`                  | Meet at the _library_       |
-| **Fix homophone**   | Your welcome           | select `Your welcome`, 🪄 Enhance Transcription | _You're welcome_            |
-| **Delete + voice**  | The very big dog       | select `very big`, speak `small`                | The _small_ dog             |
-| **Format (mixed)**  | Yes                    | type ` (`, speak `finally`, type `!)`           | Yes _(finally!)_            |
-| **Type then speak** |                        | type `Svelte `, speak `component`               | _Svelte component_\*       |
+| Goal                | Original Transcription | Editing Actions                                         | Result                      |
+| ------------------- | ---------------------- | ------------------------------------------------------- | --------------------------- |
+| **Insert (voice)**  | Send the report        | 1. click after `the`<br>2. speak `quarterly`            | Send the _quarterly_ report |
+| **Insert (typed)**  | Call me tomorrow       | 1. click after `me`<br>2. type ` back`                  | Call me _back_ tomorrow     |
+| **Replace (voice)** | Meet at the cafe       | 1. select `cafe`<br>2. speak `library`                  | Meet at the _library_       |
+| **Fix homophone**   | Your welcome           | 1. select `Your welcome`<br>2. 🪄 Enhance Transcription | _You're welcome_            |
+| **Delete + voice**  | The very big dog       | 1. select `very big`<br>2. speak `small`                | The _small_ dog             |
+| **Format (mixed)**  | Yes                    | 1. type ` (`<br>2. speak `finally`<br>3. type `!)`      | Yes _(finally!)_            |
+| **Type then speak** |                        | 1. type `Svelte `\*<br>2. speak `component`             | _Svelte component_          |
 
 \*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.
 
@@ -350,14 +350,14 @@ const pauseNode = {
 
 ## Comparison to Descript
 
-| Descript                                | FRT                                            |
+| Descript                                | RFT                                            |
 | --------------------------------------- | ---------------------------------------------- |
 | Media-first (audio exists, derive text) | Input-first (text accumulates, audio attached) |
 | Edit text -> implicitly edit audio      | Edit text -> explicitly decide audio fate      |
 | Single recording session                | Multi-session, multi-source                    |
 | EDL (Edit Decision List)                | ProseMirror transaction history                |
 
-FRT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
+RFT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ---
 
@@ -708,7 +708,7 @@ Regular `<textarea>` won't work because we need:
 
 ProseMirror's model maps well to the requirements:
 
-| FRT Concept          | ProseMirror Equivalent         |
+| RFT Concept          | ProseMirror Equivalent         |
 | -------------------- | ------------------------------ |
 | Span with metadata   | Mark with attrs                |
 | Pause                | Atomic inline node             |
@@ -1016,9 +1016,9 @@ This is a good model for persistence—self-contained, portable.
 
 They support multiple speakers per document via `paragraph_start.speaker`. The UI shows speaker names in the left margin (visible in screenshot).
 
-### What FRT Adds
+### What RFT Adds
 
-| Audapolis                      | FRT                                           |
+| Audapolis                      | RFT                                           |
 | ------------------------------ | --------------------------------------------- |
 | Post-hoc editing               | Real-time editing during transcription        |
 | Single transcription source    | Multiple input sources (keyboard, ASR, paste) |

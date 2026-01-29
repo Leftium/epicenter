@@ -7,7 +7,7 @@
 
 ## Overview
 
-Cell workspace provides integrated TypeBox validation with JIT-compiled validators for advisory schema enforcement. Validation is built directly into `TableStore`, with a unified API that returns result types for reads while allowing unrestricted writes.
+Cell workspace provides integrated TypeBox validation with JIT-compiled validators for advisory schema enforcement. Validation is built directly into `TableHelper`, with a unified API that returns result types for reads while allowing unrestricted writes.
 
 ## Background
 
@@ -26,8 +26,8 @@ cell/
 ├── converters/
 │   └── to-typebox.ts         # SchemaFieldDefinition → TypeBox converter
 ├── validation-types.ts       # Cell-level result types
-├── table-store.ts            # TableStore with integrated validation
-├── types.ts                  # TableStore, result types
+├── table-helper.ts           # TableHelper with integrated validation
+├── types.ts                  # TableHelper, result types
 └── create-cell-workspace.ts  # Factory with schema injection
 ```
 
@@ -66,12 +66,12 @@ All fields are wrapped with `Type.Optional()` because missing fields are valid i
 
 `schemaTableToTypebox(table)` creates a `TObject` with `additionalProperties: true`.
 
-### Unified TableStore API
+### Unified TableHelper API
 
-`TableStore` provides integrated validation. All read operations return result types that include both the validation status and the raw value—so you always have access to the data regardless of validity:
+`TableHelper` provides integrated validation. All read operations return result types that include both the validation status and the raw value—so you always have access to the data regardless of validity:
 
 ```typescript
-type TableStore = {
+type TableHelper = {
   readonly tableId: string;
   readonly schema: SchemaTableDefinition;
 
@@ -150,14 +150,14 @@ if (result.status === 'invalid') {
 }
 ```
 
-### Direct Store Access
+### Direct Helper Access
 
 For programmatic use without workspace:
 
 ```typescript
-import { createTableStore } from '@epicenter/epicenter/cell';
+import { createTableHelper } from '@epicenter/epicenter/cell';
 
-const tableStore = createTableStore('posts', yarray, tableSchema);
+const tableHelper = createTableHelper('posts', yarray, tableSchema);
 // Schema is required - use { name: 'posts', fields: {} } for dynamic tables
 ```
 
@@ -167,12 +167,12 @@ const tableStore = createTableStore('posts', yarray, tableSchema);
 
 **Functions:**
 - `createCellWorkspace(options)` - Create workspace client
-- `createTableStore(tableId, yarray, schema)` - Create table store directly
+- `createTableHelper(tableId, yarray, schema)` - Create table helper directly
 - `schemaFieldToTypebox(field)` - Single field → TypeBox TSchema
 - `schemaTableToTypebox(table)` - Table definition → TypeBox TObject
 
 **Types:**
-- `TableStore` - Unified store with validation
+- `TableHelper` - Unified helper with validation
 - `ValidCellResult<T>`, `InvalidCellResult`, `NotFoundCellResult`
 - `CellResult<T>`, `GetCellResult<T>`
 - Re-exports: `ValidationError`, `ValidRowResult`, `InvalidRowResult`, `NotFoundResult`, `RowResult`, `GetResult`
@@ -180,7 +180,7 @@ const tableStore = createTableStore('posts', yarray, tableSchema);
 ## Tests
 
 - `converters/to-typebox.test.ts` - Field type conversion
-- `validated-table-store.test.ts` - TableStore validation logic (consolidated API)
+- `validated-table-store.test.ts` - TableHelper validation logic (consolidated API)
 - `create-cell-workspace.test.ts` - Workspace integration
 
 ```bash
@@ -189,9 +189,9 @@ bun test src/cell/  # All cell tests
 
 ## Design Decisions
 
-1. **Unified API** - Validation is integrated into `TableStore` rather than a separate wrapper. This eliminates the `table()` vs `validatedTable()` choice and simplifies the API.
+1. **Unified API** - Validation is integrated into `TableHelper` rather than a separate wrapper. This eliminates the `table()` vs `validatedTable()` choice and simplifies the API.
 
-2. **Raw escape hatch** - `store.raw.*` provides unvalidated access when needed (performance-critical code, debugging, migrations).
+2. **Raw escape hatch** - `helper.raw.*` provides unvalidated access when needed (performance-critical code, debugging, migrations).
 
 3. **All fields optional** - Advisory validation means missing fields are valid. `Type.Optional()` wraps all properties.
 

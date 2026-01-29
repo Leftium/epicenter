@@ -30,7 +30,7 @@
 
 import type * as Y from 'yjs';
 import type { Lifecycle } from '../core/lifecycle';
-import type { KvStore, SchemaTableDefinition, TableStore, WorkspaceDefinition } from './types';
+import type { KvStore, SchemaTableDefinition, TableHelper, WorkspaceDefinition } from './types';
 
 /**
  * Context provided to cell extension factories.
@@ -49,9 +49,9 @@ export type CellExtensionContext<
 	workspaceId: string;
 	/** Current epoch number */
 	epoch: number;
-	/** Get a table store by ID (typed based on definition) */
-	table<K extends keyof TTableDefs>(tableId: K): TableStore;
-	table(tableId: string): TableStore;
+	/** Get a table helper by ID (typed based on definition) */
+	table<K extends keyof TTableDefs>(tableId: K): TableHelper;
+	table(tableId: string): TableHelper;
 	/** KV store for workspace-level values */
 	kv: KvStore;
 	/** The full workspace definition */

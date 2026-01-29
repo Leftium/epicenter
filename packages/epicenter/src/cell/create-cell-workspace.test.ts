@@ -5,7 +5,7 @@ import type {
 	CellValue,
 	CellWorkspaceClient,
 	RowData,
-	TableStore,
+	TableHelper,
 	WorkspaceDefinition,
 } from './types';
 
@@ -13,8 +13,8 @@ import type {
  * Helper to extract raw value from validated cell result.
  * Returns undefined if not found, otherwise the raw value.
  */
-function getRawValue(store: TableStore, rowId: string, fieldId: string): CellValue | undefined {
-	const result = store.get(rowId, fieldId);
+function getRawValue(helper: TableHelper, rowId: string, fieldId: string): CellValue | undefined {
+	const result = helper.get(rowId, fieldId);
 	if (result.status === 'not_found') return undefined;
 	return result.value;
 }
@@ -23,8 +23,8 @@ function getRawValue(store: TableStore, rowId: string, fieldId: string): CellVal
  * Helper to extract raw row data from validated row result.
  * Returns undefined if not found, otherwise the cells record.
  */
-function getRawRow(store: TableStore, rowId: string): Record<string, CellValue> | undefined {
-	const result = store.getRow(rowId);
+function getRawRow(helper: TableHelper, rowId: string): Record<string, CellValue> | undefined {
+	const result = helper.getRow(rowId);
 	if (result.status === 'not_found') return undefined;
 	if (result.status === 'valid') return result.row.cells;
 	// For invalid, row contains the cells
@@ -34,8 +34,8 @@ function getRawRow(store: TableStore, rowId: string): Record<string, CellValue> 
 /**
  * Helper to extract all raw rows from validated results.
  */
-function getRawRows(store: TableStore): RowData[] {
-	return store.getAll().map((r) =>
+function getRawRows(helper: TableHelper): RowData[] {
+	return helper.getAll().map((r) =>
 		r.status === 'valid' ? r.row : { id: r.id, cells: r.row as Record<string, CellValue> },
 	);
 }
@@ -68,7 +68,7 @@ const testDefinition: WorkspaceDefinition = {
 
 describe('createCellWorkspace', () => {
 	let workspace: CellWorkspaceClient;
-	let posts: TableStore;
+	let posts: TableHelper;
 
 	beforeEach(() => {
 		workspace = createCellWorkspace({

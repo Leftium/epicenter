@@ -1,7 +1,7 @@
 /**
- * Table Store for Cell Workspace
+ * Table Helper for Cell Workspace
  *
- * A unified store for a single table with integrated validation.
+ * A unified helper for a single table with integrated validation.
  * Every entry is a cell value.
  *
  * Y.Doc structure:
@@ -41,7 +41,7 @@ import type {
 	ChangeHandler,
 	RowData,
 	SchemaTableDefinition,
-	TableStore,
+	TableHelper,
 } from './types';
 import type {
 	GetCellResult,
@@ -52,17 +52,17 @@ import type {
 } from './validation-types';
 
 /**
- * Create a table store backed by a Y.Array.
+ * Create a table helper backed by a Y.Array.
  *
  * @param tableId - The table identifier (used for error messages)
  * @param yarray - The Y.Array for this table's data
  * @param schema - Schema for validation (use empty `{ name, fields: {} }` for dynamic tables)
  */
-export function createTableStore(
+export function createTableHelper(
 	tableId: string,
 	yarray: Y.Array<YKeyValueLwwEntry<CellValue>>,
 	schema: SchemaTableDefinition,
-): TableStore {
+): TableHelper {
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 
 	// Compile validators once at construction

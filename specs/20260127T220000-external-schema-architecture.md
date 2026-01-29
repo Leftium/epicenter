@@ -142,7 +142,7 @@ type CellWorkspaceClient = {
   readonly definition: WorkspaceSchema;
 
   // Data access
-  table(tableId: string): TableStore;
+  table(tableId: string): TableHelper;
   readonly kv: KvStore;
 
   // Schema validation (uses definition's schema)
@@ -154,10 +154,10 @@ type CellWorkspaceClient = {
 };
 ```
 
-### TableStore
+### TableHelper
 
 ```typescript
-type TableStore = {
+type TableHelper = {
   readonly tableId: string;
 
   // Cell operations

@@ -31,7 +31,7 @@ import type {
 } from './extensions';
 import { validateId } from './keys';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
-import { createTableStore } from './table-store';
+import { createTableHelper } from './table-helper';
 import type {
 	CellValue,
 	CellWorkspaceClient,
@@ -40,7 +40,7 @@ import type {
 	FieldType,
 	RowData,
 	SchemaTableDefinition,
-	TableStore,
+	TableHelper,
 	TypedCell,
 	TypedRowWithCells,
 } from './types';
@@ -208,7 +208,7 @@ function createCellWorkspaceLegacy({
 	const icon = definition.icon ?? null;
 
 	// Cache table stores to avoid recreation
-	const tableStoreCache = new Map<string, TableStore>();
+	const tableHelperCache = new Map<string, TableHelper>();
 
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
@@ -230,10 +230,10 @@ function createCellWorkspaceLegacy({
 		 * Get or create a table store.
 		 * Passes schema from definition, or empty schema for dynamic tables.
 		 */
-		table(tableId: string): TableStore {
+		table(tableId: string): TableHelper {
 			validateId(tableId, 'tableId');
 
-			let store = tableStoreCache.get(tableId);
+			let store = tableHelperCache.get(tableId);
 			if (!store) {
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
@@ -242,8 +242,8 @@ function createCellWorkspaceLegacy({
 					name: tableId,
 					fields: {},
 				};
-				store = createTableStore(tableId, yarray, tableSchema);
-				tableStoreCache.set(tableId, store);
+				store = createTableHelper(tableId, yarray, tableSchema);
+				tableHelperCache.set(tableId, store);
 			}
 			return store;
 		},
@@ -367,7 +367,7 @@ function createCellWorkspaceWithHeadDoc<
 	const icon = definition.icon ?? null;
 
 	// Cache table stores to avoid recreation
-	const tableStoreCache = new Map<string, TableStore>();
+	const tableHelperCache = new Map<string, TableHelper>();
 
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
@@ -376,18 +376,18 @@ function createCellWorkspaceWithHeadDoc<
 	/**
 	 * Get or create a table store.
 	 */
-	function table(tableId: string): TableStore {
+	function table(tableId: string): TableHelper {
 		validateId(tableId, 'tableId');
 
-		let store = tableStoreCache.get(tableId);
+		let store = tableHelperCache.get(tableId);
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			const tableSchema = definition.tables[tableId as keyof TTableDefs] ?? {
 				name: tableId,
 				fields: {},
 			};
-			store = createTableStore(tableId, yarray, tableSchema);
-			tableStoreCache.set(tableId, store);
+			store = createTableHelper(tableId, yarray, tableSchema);
+			tableHelperCache.set(tableId, store);
 		}
 		return store;
 	}

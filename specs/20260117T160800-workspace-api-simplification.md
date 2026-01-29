@@ -119,7 +119,7 @@ type CellExtensionContext<TTableDefs> = {
   ydoc: Y.Doc;
   workspaceId: string;
   epoch: number;
-  table<K extends keyof TTableDefs>(tableId: K): TableStore;
+  table<K extends keyof TTableDefs>(tableId: K): TableHelper;
   kv: KvStore;
   definition: WorkspaceSchema & { tables: TTableDefs };
   extensionId: string;

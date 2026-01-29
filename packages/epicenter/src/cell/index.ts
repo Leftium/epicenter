@@ -71,8 +71,6 @@ export {
 	addField,
 	addTable,
 	createEmptySchema,
-	getNextFieldOrder,
-	getSortedFields,
 	parseSchema,
 	removeField,
 	removeTable,

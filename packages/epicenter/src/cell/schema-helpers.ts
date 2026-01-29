@@ -8,7 +8,7 @@
  * These cell-specific helpers are for JSON parsing scenarios.
  */
 
-import type { Icon, KvField } from '../core/schema/fields/types';
+import type { Field, Icon, KvField } from '../core/schema/fields/types';
 import { isIcon } from '../core/schema/fields/types';
 import type {
 	SchemaFieldDefinition,
@@ -31,6 +31,8 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  * For most use cases, prefer the core `table()` factory which provides
  * better type inference. This function is useful for JSON parsing.
  *
+ * Accepts Record-based fields input and converts to array-based output.
+ *
  * @example
  * ```ts
  * const posts = schemaTable({
@@ -44,17 +46,21 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  */
 export function schemaTable(options: {
 	name: string;
-	fields: Record<string, SchemaFieldDefinition>;
+	fields: Record<string, Field>;
 	description?: string;
 	icon?: string | Icon | null;
 }): SchemaTableDefinition {
-	// Cast needed: JSON parsing doesn't preserve FieldMap constraint
+	// Convert Record-based fields to array with id property
+	const fieldsArray: SchemaFieldDefinition[] = Object.entries(options.fields).map(
+		([fieldId, field]) => ({ ...field, id: fieldId }),
+	);
+
 	return {
 		name: options.name,
 		description: options.description ?? '',
 		icon: normalizeIcon(options.icon),
-		fields: options.fields,
-	} as SchemaTableDefinition;
+		fields: fieldsArray,
+	};
 }
 
 /**

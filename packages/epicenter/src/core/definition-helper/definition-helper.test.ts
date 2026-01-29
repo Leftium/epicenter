@@ -36,7 +36,7 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			);
 
@@ -44,7 +44,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -77,7 +77,7 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			);
 
@@ -97,14 +97,14 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			);
 
 			const snapshot = definition.tables.get('posts')?.toJSON();
 			expect(snapshot).toBeDefined();
 			expect(snapshot!.name).toBe('Posts');
-			expect(snapshot!.fields.id.type).toBe('id');
+			expect(snapshot!.fields.find((f) => f.id === 'id')!.type).toBe('id');
 		});
 
 		test('tables.has() checks existence', () => {
@@ -116,7 +116,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 
 			expect(definition.tables.has('posts')).toBe(true);
@@ -133,15 +133,15 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id(), title: text() },
+					fields: [id(), text('title')] as const,
 				}),
 			);
 
 			expect(definition.tables.get('posts')).toBeDefined();
 			const posts = definition.tables.get('posts')!.toJSON();
 			expect(posts.name).toBe('Posts');
-			expect(posts.fields.id!.type).toBe('id');
-			expect(posts.fields.title!.type).toBe('text');
+			expect(posts.fields.find((f) => f.id === 'id')!.type).toBe('id');
+			expect(posts.fields.find((f) => f.id === 'title')!.type).toBe('text');
 		});
 
 		test('tables.toJSON() returns all table definitions', () => {
@@ -151,11 +151,11 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 			definition.tables.set(
 				'users',
-				table({ name: 'Users', fields: { id: id(), name: text() } }),
+				table({ name: 'Users', fields: [id(), text('name')] as const }),
 			);
 
 			const all = definition.tables.toJSON();
@@ -171,11 +171,11 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 			definition.tables.set(
 				'users',
-				table({ name: 'Users', fields: { id: id() } }),
+				table({ name: 'Users', fields: [id()] as const }),
 			);
 
 			const entries = definition.tables.entries();
@@ -190,7 +190,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			expect(definition.tables.get('posts')).toBeDefined();
@@ -206,11 +206,11 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 			definition.tables.set(
 				'users',
-				table({ name: 'Users', fields: { id: id() } }),
+				table({ name: 'Users', fields: [id()] as const }),
 			);
 
 			const keys = definition.tables.keys();
@@ -227,7 +227,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 
 			expect(
@@ -242,7 +242,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			const titleSchema = definition.tables.get('posts')!.fields.get('title');
@@ -257,7 +257,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			expect(definition.tables.get('posts')!.fields.has('title')).toBe(true);
@@ -273,12 +273,12 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			definition.tables
 				.get('posts')!
-				.fields.set('dueDate', date({ nullable: true }));
+				.fields.set('dueDate', date('dueDate', { nullable: true }));
 
 			const field = definition.tables.get('posts')!.fields.get('dueDate');
 			expect(field).toBeDefined();
@@ -294,7 +294,7 @@ describe('createDefinition', () => {
 				'posts',
 				table({
 					name: 'Posts',
-					fields: { id: id(), title: text(), extra: boolean() },
+					fields: [id(), text('title'), boolean('extra')] as const,
 				}),
 			);
 
@@ -314,7 +314,7 @@ describe('createDefinition', () => {
 				'posts',
 				table({
 					name: 'Posts',
-					fields: { id: id(), title: text(), count: integer() },
+					fields: [id(), text('title'), integer('count')] as const,
 				}),
 			);
 
@@ -332,7 +332,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			const keys = definition.tables.get('posts')!.fields.keys();
@@ -347,7 +347,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id(), title: text() } }),
+				table({ name: 'Posts', fields: [id(), text('title')] as const }),
 			);
 
 			const entries = definition.tables.get('posts')!.fields.entries();
@@ -368,7 +368,7 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id() },
+					fields: [id()] as const,
 				}),
 			);
 
@@ -389,7 +389,7 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id() },
+					fields: [id()] as const,
 				}),
 			);
 
@@ -411,7 +411,7 @@ describe('createDefinition', () => {
 					name: 'Posts',
 					icon: '📝',
 					description: 'Blog posts',
-					fields: { id: id() },
+					fields: [id()] as const,
 				}),
 			);
 
@@ -432,7 +432,7 @@ describe('createDefinition', () => {
 				table({
 					name: 'Posts',
 					description: 'Blog posts',
-					fields: { id: id() },
+					fields: [id()] as const,
 				}),
 			);
 
@@ -461,7 +461,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -479,7 +479,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -500,7 +500,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -518,7 +518,10 @@ describe('createDefinition', () => {
 					name: 'Theme',
 					icon: 'emoji:🎨',
 					description: 'Color theme',
-					field: select({ options: ['light', 'dark'], default: 'light' }),
+					field: select('theme', {
+						options: ['light', 'dark'] as const,
+						default: 'light',
+					}),
 				}),
 			);
 
@@ -537,12 +540,12 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 			definition.kv.set(
 				'count',
-				setting({ name: 'Count', field: integer({ default: 0 }) }),
+				setting({ name: 'Count', field: integer('count', { default: 0 }) }),
 			);
 
 			const all = definition.kv.toJSON();
@@ -560,12 +563,12 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 			definition.kv.set(
 				'count',
-				setting({ name: 'Count', field: integer({ default: 0 }) }),
+				setting({ name: 'Count', field: integer('count', { default: 0 }) }),
 			);
 
 			const entries = definition.kv.entries();
@@ -582,7 +585,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -605,7 +608,7 @@ describe('createDefinition', () => {
 					name: 'Theme',
 					icon: 'emoji:🎨',
 					description: 'Color theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -625,7 +628,7 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
@@ -644,12 +647,14 @@ describe('createDefinition', () => {
 				'theme',
 				setting({
 					name: 'Theme',
-					field: select({ options: ['light', 'dark'] }),
+					field: select('theme', { options: ['light', 'dark'] as const }),
 				}),
 			);
 
 			const theme = definition.kv.get('theme')!;
-			theme.setField(select({ options: ['light', 'dark', 'auto'] }));
+			theme.setField(
+				select('theme', { options: ['light', 'dark', 'auto'] as const }),
+			);
 
 			expect(theme.field!.type).toBe('select');
 			expect(
@@ -666,13 +671,19 @@ describe('createDefinition', () => {
 
 			definition.merge({
 				tables: {
-					posts: table({ name: 'Posts', fields: { id: id(), title: text() } }),
-					users: table({ name: 'Users', fields: { id: id(), name: text() } }),
+					posts: table({
+						name: 'Posts',
+						fields: [id(), text('title')] as const,
+					}),
+					users: table({
+						name: 'Users',
+						fields: [id(), text('name')] as const,
+					}),
 				},
 				kv: {
 					theme: setting({
 						name: 'Theme',
-						field: select({ options: ['light', 'dark'] }),
+						field: select('theme', { options: ['light', 'dark'] as const }),
 					}),
 				},
 			});
@@ -696,7 +707,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 			expect(callCount).toBeGreaterThan(0);
 
@@ -715,7 +726,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 			expect(allChanges.length).toBeGreaterThan(0);
 			expect(allChanges.some((m) => m.get('posts') === 'add')).toBe(true);
@@ -730,7 +741,7 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 
 			const allChanges: Map<string, 'add' | 'update' | 'delete'>[] = [];
@@ -740,7 +751,7 @@ describe('createDefinition', () => {
 					allChanges.push(changes);
 				});
 
-			definition.tables.get('posts')!.fields.set('title', text());
+			definition.tables.get('posts')!.fields.set('title', text('title'));
 			expect(allChanges.length).toBeGreaterThan(0);
 			expect(allChanges.some((m) => m.get('title') === 'add')).toBe(true);
 
@@ -761,7 +772,7 @@ describe('createDefinition', () => {
 			// Create it
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 
 			// Now exists
@@ -776,14 +787,14 @@ describe('createDefinition', () => {
 
 			definition.tables.set(
 				'posts',
-				table({ name: 'Posts', fields: { id: id() } }),
+				table({ name: 'Posts', fields: [id()] as const }),
 			);
 
 			// Doesn't exist
 			expect(definition.tables.get('posts')!.fields.has('title')).toBe(false);
 
 			// Create it
-			definition.tables.get('posts')!.fields.set('title', text());
+			definition.tables.get('posts')!.fields.set('title', text('title'));
 
 			// Now exists
 			expect(definition.tables.get('posts')!.fields.has('title')).toBe(true);

@@ -9,6 +9,7 @@ import type {
 	KvDefinition,
 	KvField,
 	TableDefinition,
+	TableDefinitionMap,
 } from '../schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -21,8 +22,17 @@ export type TablesDefinitionMap = Y.Map<Y.Map<unknown>>;
 /** Y.Map storing KV definitions, keyed by key name. */
 export type KvDefinitionYMap = Y.Map<Y.Map<unknown>>;
 
-/** Y.Map storing fields for a single table, keyed by field name. */
+/** Y.Map storing fields for a single table, keyed by field id. */
 export type FieldsMap = Y.Map<Field>;
+
+/**
+ * Convert a fields Y.Map to an array.
+ * The Y.Map stores fields keyed by id; this returns them as Field[].
+ */
+function fieldsMapToArray(fieldsMap: Y.Map<Field> | null | undefined): Field[] {
+	if (!fieldsMap) return [];
+	return Array.from(fieldsMap.values());
+}
 
 /** Change action for collection observation. */
 export type ChangeAction = 'add' | 'delete';
@@ -237,8 +247,9 @@ function createTableHelper(
 				name: (tableDefinitionMap.get('name') as string) ?? '',
 				icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 				description: (tableDefinitionMap.get('description') as string) ?? '',
-				fields:
-					(tableDefinitionMap.get('fields') as Y.Map<Field>)?.toJSON() ?? {},
+				fields: fieldsMapToArray(
+					tableDefinitionMap.get('fields') as Y.Map<Field>,
+				),
 			} as TableDefinition;
 		},
 
@@ -254,8 +265,9 @@ function createTableHelper(
 			}
 
 			fieldsMap.clear();
-			for (const [fieldName, field] of Object.entries(definition.fields)) {
-				fieldsMap.set(fieldName, field as Field);
+			// Fields is an array; use field.id as the key
+			for (const field of definition.fields) {
+				fieldsMap.set(field.id, field);
 			}
 		},
 
@@ -309,7 +321,7 @@ export type TablesCollection = {
 	/** Get all tables as [name, definition] pairs. */
 	entries(): [string, TableDefinition][];
 	/** Set (add or update) a table definition. */
-	set(tableName: string, definition: TableDefinition): void;
+	set(tableName: string, definition: TableDefinition<readonly Field[]>): void;
 	/** Delete a table. Returns true if deleted. */
 	delete(tableName: string): boolean;
 	/** Observe changes to tables (add/delete). */
@@ -366,8 +378,9 @@ function createTablesCollection(
 					name: (tableDefinitionMap.get('name') as string) ?? '',
 					icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 					description: (tableDefinitionMap.get('description') as string) ?? '',
-					fields:
-						(tableDefinitionMap.get('fields') as Y.Map<Field>)?.toJSON() ?? {},
+					fields: fieldsMapToArray(
+						tableDefinitionMap.get('fields') as Y.Map<Field>,
+					),
 				} as TableDefinition;
 			}
 			return result;
@@ -392,16 +405,16 @@ function createTablesCollection(
 						icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 						description:
 							(tableDefinitionMap.get('description') as string) ?? '',
-						fields:
-							(tableDefinitionMap.get('fields') as Y.Map<Field>)?.toJSON() ??
-							{},
+						fields: fieldsMapToArray(
+							tableDefinitionMap.get('fields') as Y.Map<Field>,
+						),
 					} as TableDefinition,
 				]);
 			}
 			return result;
 		},
 
-		set(tableName: string, definition: TableDefinition): void {
+		set(tableName: string, definition: TableDefinition<readonly Field[]>): void {
 			const tablesMap = getOrCreateTablesMap();
 
 			let tableDefinitionMap = tablesMap.get(tableName);
@@ -420,8 +433,9 @@ function createTablesCollection(
 				tableDefinitionMap.set('fields', fieldsMap);
 			}
 
-			for (const [fieldName, field] of Object.entries(definition.fields)) {
-				fieldsMap.set(fieldName, field as Field);
+			// Fields is an array; use field.id as the key
+			for (const field of definition.fields) {
+				fieldsMap.set(field.id, field);
 			}
 
 			tableHelperCache.delete(tableName);
@@ -803,7 +817,7 @@ export function createDefinition(definitionMap: DefinitionYMap) {
 		 * Existing definitions not in the payload are preserved.
 		 */
 		merge(input: {
-			tables: Record<string, TableDefinition>;
+			tables: TableDefinitionMap;
 			kv: Record<string, KvDefinition>;
 		}): void {
 			for (const [tableName, tableDefinition] of Object.entries(input.tables)) {

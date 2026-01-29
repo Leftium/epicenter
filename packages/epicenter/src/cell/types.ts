@@ -34,7 +34,7 @@ import type {
 
 /**
  * Field definition - re-exported from core.
- * Use field factories (text(), integer(), etc.) to create these.
+ * Field = FieldSchema & { id: string }, with array position determining order.
  */
 export type SchemaFieldDefinition = Field;
 
@@ -42,7 +42,7 @@ export type SchemaFieldDefinition = Field;
  * Table definition - re-exported from core.
  * Use the `table()` helper to create these with defaults.
  */
-export type SchemaTableDefinition = TableDefinition;
+export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
 
 /**
  * KV definition - re-exported from core.

@@ -9,13 +9,12 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: text(),
-					view_count: integer(),
-					published: boolean(),
-				},
+				fields: [
+					id(),
+					text('title'),
+					integer('view_count'),
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -42,13 +41,12 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: text(),
-					view_count: integer(),
-					published: boolean(),
-				},
+				fields: [
+					id(),
+					text('title'),
+					integer('view_count'),
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -76,13 +74,12 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: text(),
-					view_count: integer(),
-					published: boolean(),
-				},
+				fields: [
+					id(),
+					text('title'),
+					integer('view_count'),
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -109,13 +106,12 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: text(),
-					view_count: integer(),
-					published: boolean(),
-				},
+				fields: [
+					id(),
+					text('title'),
+					integer('view_count'),
+					boolean('published'),
+				] as const,
 			}),
 		});
 
@@ -138,12 +134,13 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: richtext(),
-					tags: tags({ options: ['typescript', 'javascript', 'python'] }),
-				},
+				fields: [
+					id(),
+					richtext('title'),
+					tags('tags', {
+						options: ['typescript', 'javascript', 'python'] as const,
+					}),
+				] as const,
 			}),
 		});
 
@@ -179,12 +176,7 @@ describe('createTables', () => {
 		const doc = createTables(ydoc, {
 			posts: table({
 				name: '',
-				description: '',
-				fields: {
-					id: id(),
-					title: text(),
-					published: boolean(),
-				},
+				fields: [id(), text('title'), boolean('published')] as const,
 			}),
 		});
 
@@ -208,12 +200,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-						published: boolean(),
-					},
+					fields: [id(), text('title'), boolean('published')] as const,
 				}),
 			});
 
@@ -246,12 +233,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-						view_count: integer(),
-					},
+					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
 			});
 
@@ -287,11 +269,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -319,11 +297,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -356,11 +330,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						count: integer(),
-					},
+					fields: [id(), integer('count')] as const,
 				}),
 			});
 
@@ -396,11 +366,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -426,11 +392,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -460,12 +422,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-						view_count: integer(),
-					},
+					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
 			});
 
@@ -498,11 +455,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -536,11 +489,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -574,12 +523,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-						view_count: integer(),
-					},
+					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
 			});
 
@@ -635,11 +579,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -672,19 +612,11 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 				comments: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						content: text(),
-					},
+					fields: [id(), text('content')] as const,
 				}),
 			});
 
@@ -710,11 +642,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -739,11 +667,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: '',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -788,11 +712,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: 'Posts',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -813,11 +733,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: 'Posts',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -838,11 +754,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: 'Posts',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -860,11 +772,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: 'Posts',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -889,11 +797,7 @@ describe('createTables', () => {
 			const tables = createTables(ydoc, {
 				posts: table({
 					name: 'Posts',
-					description: '',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
@@ -914,16 +818,13 @@ describe('createTables', () => {
 				posts: table({
 					name: 'Posts',
 					description: 'Blog posts',
-					fields: {
-						id: id(),
-						title: text(),
-					},
+					fields: [id(), text('title')] as const,
 				}),
 			});
 
 			expect(tables.definitions.posts.name).toBe('Posts');
 			expect(tables.definitions.posts.description).toBe('Blog posts');
-			expect(tables.definitions.posts.fields.id).toBeDefined();
+			expect(tables.definitions.posts.fields[0]).toBeDefined();
 		});
 	});
 });

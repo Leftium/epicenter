@@ -49,24 +49,24 @@ const testDefinition: WorkspaceDefinition = {
 	tables: {
 		posts: table({
 			name: 'Blog Posts',
-			fields: {
-				id: id(),
-				title: text({ name: 'Title' }),
-				views: integer({ name: 'Views' }),
-				published: boolean({ name: 'Published' }),
-			},
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+				boolean('published', { name: 'Published' }),
+			] as const,
 		}),
 		users: table({
 			name: 'Users',
-			fields: {
-				id: id(),
-				name: text({ name: 'Name' }),
-			},
+			fields: [
+				id(),
+				text('name', { name: 'Name' }),
+			] as const,
 		}),
 	},
 	kv: {
-		theme: setting({ name: 'Theme', field: select({ options: ['light', 'dark'] as const }) }),
-		language: setting({ name: 'Language', field: text() }),
+		theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] as const }) }),
+		language: setting({ name: 'Language', field: text('language') }),
 	},
 };
 
@@ -628,10 +628,10 @@ describe('type validation', () => {
 		tables: {
 			test: table({
 				name: 'Test',
-				fields: {
-					id: id(),
-					[fieldName]: { name: fieldName, type: fieldType as any, description: '', icon: null },
-				},
+				fields: [
+					id(),
+					{ id: fieldName, name: fieldName, type: fieldType as any, description: '', icon: null },
+				],
 			}),
 		},
 		kv: {},
@@ -777,18 +777,18 @@ describe('createCellWorkspace with HeadDoc', () => {
 		tables: {
 			posts: table({
 				name: 'Posts',
-				fields: {
-					id: id(),
-					title: text({ name: 'Title' }),
-					views: integer({ name: 'Views' }),
-				},
+				fields: [
+					id(),
+					text('title', { name: 'Title' }),
+					integer('views', { name: 'Views' }),
+				] as const,
 			}),
 			users: table({
 				name: 'Users',
-				fields: {
-					id: id(),
-					name: text({ name: 'Name' }),
-				},
+				fields: [
+					id(),
+					text('name', { name: 'Name' }),
+				] as const,
 			}),
 		},
 		kv: {},
@@ -1096,10 +1096,10 @@ describe('createCellWorkspace with HeadDoc', () => {
 					tables: {
 						items: table({
 							name: 'Items',
-							fields: {
-								id: id(),
-								name: text({ name: 'Name' }),
-							},
+							fields: [
+								id(),
+								text('name', { name: 'Name' }),
+							] as const,
 						}),
 					},
 					kv: {},

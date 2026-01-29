@@ -2,7 +2,7 @@
  * @fileoverview Core field type definitions
  *
  * Contains the foundational types for the schema system:
- * - Field types (IdField, TextField, etc.)
+ * - Field types (IdFieldSchema, TextFieldSchema, etc.)
  * - Table and workspace schemas
  * - Row value types (CellValue, Row, PartialRow)
  *
@@ -124,10 +124,10 @@ export function isIcon(value: string): value is Icon {
  * TableDefinition
  * ├── name, icon, description    ← TableMetadata (table-level)
  * └── fields
- *     ├── "id"
+ *     ├── { id: "id", ... }
  *     │   ├── name, icon, description  ← FieldMetadata (column-level)
  *     │   └── type: "id"
- *     └── "title"
+ *     └── { id: "title", ... }
  *         ├── name, icon, description  ← FieldMetadata (column-level)
  *         ├── type: "text"
  *         └── nullable: false
@@ -136,14 +136,14 @@ export function isIcon(value: string): value is Icon {
  * @example
  * ```typescript
  * // Field with custom metadata
- * const titleField = text({
+ * const titleField = text('title', {
  *   name: 'Post Title',
  *   icon: 'emoji:📝',
  *   description: 'The main title displayed on the blog',
  * });
  *
  * // Field with defaults (name: '', icon: null, description: '')
- * const simpleField = text();
+ * const simpleField = text('title');
  * ```
  */
 export type FieldMetadata = {
@@ -173,38 +173,39 @@ export type FieldOptions = {
 // ============================================================================
 
 /**
- * ID field - auto-generated primary key.
+ * ID field schema - auto-generated primary key.
  * Always NOT NULL (implicit, no nullable field needed).
  */
-export type IdField = FieldMetadata & {
+export type IdFieldSchema = FieldMetadata & {
 	type: 'id';
 };
 
 /**
- * Text field - single-line string input.
+ * Text field schema - single-line string input.
  */
-export type TextField<TNullable extends boolean = boolean> = FieldMetadata & {
-	type: 'text';
-	nullable?: TNullable;
-	default?: string;
-};
+export type TextFieldSchema<TNullable extends boolean = boolean> =
+	FieldMetadata & {
+		type: 'text';
+		nullable?: TNullable;
+		default?: string;
+	};
 
 /**
- * Rich text reference field - stores ID pointing to separate rich content document.
+ * Rich text reference field schema - stores ID pointing to separate rich content document.
  * The ID references a separate Y.Doc for collaborative editing.
  * The row itself just stores the string ID (JSON-serializable).
  *
  * Always nullable - Y.Docs are created lazily when user first edits.
  * No need to specify nullable or default; they're implicit.
  */
-export type RichtextField = FieldMetadata & {
+export type RichtextFieldSchema = FieldMetadata & {
 	type: 'richtext';
 };
 
 /**
- * Integer field - whole numbers.
+ * Integer field schema - whole numbers.
  */
-export type IntegerField<TNullable extends boolean = boolean> =
+export type IntegerFieldSchema<TNullable extends boolean = boolean> =
 	FieldMetadata & {
 		type: 'integer';
 		nullable?: TNullable;
@@ -212,18 +213,19 @@ export type IntegerField<TNullable extends boolean = boolean> =
 	};
 
 /**
- * Real/float field - decimal numbers.
+ * Real/float field schema - decimal numbers.
  */
-export type RealField<TNullable extends boolean = boolean> = FieldMetadata & {
-	type: 'real';
-	nullable?: TNullable;
-	default?: number;
-};
+export type RealFieldSchema<TNullable extends boolean = boolean> =
+	FieldMetadata & {
+		type: 'real';
+		nullable?: TNullable;
+		default?: number;
+	};
 
 /**
- * Boolean field - true/false values.
+ * Boolean field schema - true/false values.
  */
-export type BooleanField<TNullable extends boolean = boolean> =
+export type BooleanFieldSchema<TNullable extends boolean = boolean> =
 	FieldMetadata & {
 		type: 'boolean';
 		nullable?: TNullable;
@@ -231,17 +233,18 @@ export type BooleanField<TNullable extends boolean = boolean> =
 	};
 
 /**
- * Date field - timezone-aware dates.
+ * Date field schema - timezone-aware dates.
  * Stored as DateTimeString format: `{iso}|{timezone}`.
  */
-export type DateField<TNullable extends boolean = boolean> = FieldMetadata & {
-	type: 'date';
-	nullable?: TNullable;
-	default?: DateTimeString;
-};
+export type DateFieldSchema<TNullable extends boolean = boolean> =
+	FieldMetadata & {
+		type: 'date';
+		nullable?: TNullable;
+		default?: DateTimeString;
+	};
 
 /**
- * Select field - single choice from predefined options.
+ * Select field schema - single choice from predefined options.
  *
  * @example
  * ```typescript
@@ -252,7 +255,7 @@ export type DateField<TNullable extends boolean = boolean> = FieldMetadata & {
  * }
  * ```
  */
-export type SelectField<
+export type SelectFieldSchema<
 	TOptions extends readonly [string, ...string[]] = readonly [
 		string,
 		...string[],
@@ -266,7 +269,7 @@ export type SelectField<
 };
 
 /**
- * Tags field - array of strings with optional validation.
+ * Tags field schema - array of strings with optional validation.
  * Stored as plain arrays (JSON-serializable).
  *
  * Two modes:
@@ -282,7 +285,7 @@ export type SelectField<
  * { type: 'tags' }
  * ```
  */
-export type TagsField<
+export type TagsFieldSchema<
 	TOptions extends readonly [string, ...string[]] = readonly [
 		string,
 		...string[],
@@ -296,7 +299,7 @@ export type TagsField<
 };
 
 /**
- * JSON field - arbitrary JSON validated by a TypeBox schema.
+ * JSON field schema - arbitrary JSON validated by a TypeBox schema.
  *
  * The `schema` property holds a TypeBox schema (TSchema), which IS JSON Schema.
  * TypeBox schemas are plain JSON objects that can be:
@@ -315,7 +318,7 @@ export type TagsField<
  * }
  * ```
  */
-export type JsonField<
+export type JsonFieldSchema<
 	T extends TSchema = TSchema,
 	TNullable extends boolean = boolean,
 > = FieldMetadata & {
@@ -330,26 +333,50 @@ export type JsonField<
 // ============================================================================
 
 /**
- * Discriminated union of all field definition types.
+ * Discriminated union of all field schema types (without id property).
  * Use `type` to narrow to a specific type.
  */
-export type Field =
-	| IdField
-	| TextField
-	| RichtextField
-	| IntegerField
-	| RealField
-	| BooleanField
-	| DateField
-	| SelectField
-	| TagsField
-	| JsonField;
+export type FieldSchema =
+	| IdFieldSchema
+	| TextFieldSchema
+	| RichtextFieldSchema
+	| IntegerFieldSchema
+	| RealFieldSchema
+	| BooleanFieldSchema
+	| DateFieldSchema
+	| SelectFieldSchema
+	| TagsFieldSchema
+	| JsonFieldSchema;
+
+/**
+ * THE Field type - schema with id property included.
+ * This is the normalized form used in TableDefinition.fields array.
+ */
+export type Field = FieldSchema & {
+	/** Field identifier */
+	id: string;
+};
 
 /**
  * Extract the type name from a field definition.
  * One of: 'id', 'text', 'richtext', 'integer', 'real', 'boolean', 'date', 'select', 'tags', 'json'
  */
-export type FieldType = Field['type'];
+export type FieldType = FieldSchema['type'];
+
+// ============================================================================
+// Type Utilities for Field Arrays
+// ============================================================================
+
+/**
+ * Get specific field by id from array.
+ */
+export type FieldById<TFields extends readonly Field[], K extends string> =
+	Extract<TFields[number], { id: K }>;
+
+/**
+ * Get union of all field ids from array.
+ */
+export type FieldIds<TFields extends readonly Field[]> = TFields[number]['id'];
 
 // ============================================================================
 // Value Types
@@ -362,81 +389,72 @@ export type FieldType = Field['type'];
  * define `nullable?: TNullable` (optional). When `TNullable = true`, the type
  * is `nullable?: true` which doesn't extend `{ nullable: true }` (required).
  *
- * This also correctly handles RichtextField (no nullable property)
+ * This also correctly handles RichtextFieldSchema (no nullable property)
  * because optional properties can be absent.
  */
-type IsNullable<C extends Field> = C extends { nullable?: true } ? true : false;
+type IsNullable<C extends FieldSchema> = C extends { nullable?: true }
+	? true
+	: false;
 
 /**
  * Maps a field definition to its runtime value type.
  *
- * - RichtextField → string | null (always nullable)
- * - TagsField → string[] (plain array)
- * - DateField → DateTimeString
+ * - RichtextFieldSchema → string | null (always nullable)
+ * - TagsFieldSchema → string[] (plain array)
+ * - DateFieldSchema → DateTimeString
  * - Other fields → primitive types
  *
  * Nullability is derived from the definition's `nullable` field.
  */
-export type CellValue<C extends Field = Field> = C extends IdField
-	? string
-	: C extends TextField
-		? IsNullable<C> extends true
-			? string | null
-			: string
-		: C extends RichtextField
-			? string | null // always nullable
-			: C extends IntegerField
-				? IsNullable<C> extends true
-					? number | null
-					: number
-				: C extends RealField
+export type CellValue<C extends FieldSchema = FieldSchema> =
+	C extends IdFieldSchema
+		? string
+		: C extends TextFieldSchema
+			? IsNullable<C> extends true
+				? string | null
+				: string
+			: C extends RichtextFieldSchema
+				? string | null // always nullable
+				: C extends IntegerFieldSchema
 					? IsNullable<C> extends true
 						? number | null
 						: number
-					: C extends BooleanField
+					: C extends RealFieldSchema
 						? IsNullable<C> extends true
-							? boolean | null
-							: boolean
-						: C extends DateField
+							? number | null
+							: number
+						: C extends BooleanFieldSchema
 							? IsNullable<C> extends true
-								? DateTimeString | null
-								: DateTimeString
-							: C extends SelectField<infer TOptions>
+								? boolean | null
+								: boolean
+							: C extends DateFieldSchema
 								? IsNullable<C> extends true
-									? TOptions[number] | null
-									: TOptions[number]
-								: C extends TagsField<infer TOptions>
+									? DateTimeString | null
+									: DateTimeString
+								: C extends SelectFieldSchema<infer TOptions>
 									? IsNullable<C> extends true
-										? TOptions[number][] | null
-										: TOptions[number][]
-									: C extends JsonField<infer T extends TSchema>
+										? TOptions[number] | null
+										: TOptions[number]
+									: C extends TagsFieldSchema<infer TOptions>
 										? IsNullable<C> extends true
-											? Static<T> | null
-											: Static<T>
-										: never;
+											? TOptions[number][] | null
+											: TOptions[number][]
+										: C extends JsonFieldSchema<infer T extends TSchema>
+											? IsNullable<C> extends true
+												? Static<T> | null
+												: Static<T>
+											: never;
 
 // ============================================================================
 // Table Schema Types
 // ============================================================================
 
 /**
- * Field definitions - maps field names to field definitions.
- * Must always include an 'id' field with IdField.
- *
- * @example
- * ```typescript
- * const postsFields = {
- *   id: id(),
- *   title: text(),
- *   status: select({ options: ['draft', 'published'] }),
- * } satisfies FieldMap;
- * ```
- */
-export type FieldMap = { id: IdField } & Record<string, Field>;
-
-/**
  * Table definition with metadata for UI display.
  * This is the **normalized** output type created by the `table()` factory function.
+ *
+ * Fields are stored as an array where array position determines display order.
+ * Each field has an `id` property.
  *
  * @example
  * ```typescript
@@ -444,22 +462,22 @@ export type FieldMap = { id: IdField } & Record<string, Field>;
  *   name: 'Posts',
  *   description: 'Blog posts and articles',
  *   icon: 'emoji:📝',
- *   fields: {
- *     id: id(),
- *     title: text(),
- *     status: select({ options: ['draft', 'published'] }),
- *   },
+ *   fields: [
+ *     { id: 'id', type: 'id', name: '', description: '', icon: null },
+ *     { id: 'title', type: 'text', name: '', description: '', icon: null },
+ *     { id: 'status', type: 'select', name: '', description: '', icon: null, options: ['draft', 'published'] },
+ *   ],
  * };
  * ```
  */
-export type TableDefinition<TFields extends FieldMap = FieldMap> = {
+export type TableDefinition<TFields extends readonly Field[] = Field[]> = {
 	/** Required display name shown in UI (e.g., "Blog Posts") */
 	name: string;
 	/** Required description shown in tooltips/docs */
 	description: string;
 	/** Icon for the table - tagged string format 'type:value' or null */
 	icon: Icon | null;
-	/** Field schema map for this table */
+	/** Field definitions as array (position = display order) */
 	fields: TFields;
 };
 
@@ -477,12 +495,12 @@ export type TableDefinition<TFields extends FieldMap = FieldMap> = {
  *     name: 'Posts',
  *     description: 'Blog posts',
  *     icon: 'emoji:📝',
- *     fields: { id: id(), title: text() },
+ *     fields: [id(), text('title')],
  *   },
  * };
  * ```
  */
-export type TableDefinitionMap = Record<string, TableDefinition>;
+export type TableDefinitionMap = Record<string, TableDefinition<readonly Field[]>>;
 
 // ============================================================================
 // Row Types
@@ -514,8 +532,8 @@ export type TableDefinitionMap = Record<string, TableDefinition>;
  * const json = JSON.stringify(row);
  * ```
  */
-export type Row<TFieldMap extends FieldMap = FieldMap> = {
-	[K in keyof TFieldMap]: CellValue<TFieldMap[K]>;
+export type Row<TFields extends readonly Field[] = Field[]> = {
+	[K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
 };
 
 /**
@@ -537,19 +555,19 @@ export type Row<TFieldMap extends FieldMap = FieldMap> = {
  * });
  * ```
  */
-export type PartialRow<TFieldMap extends FieldMap = FieldMap> = {
+export type PartialRow<TFields extends readonly Field[] = Field[]> = {
 	id: string;
-} & Partial<Omit<Row<TFieldMap>, 'id'>>;
+} & Partial<Omit<Row<TFields>, 'id'>>;
 
 // ============================================================================
 // Key-Value Schema Types
 // ============================================================================
 
 /**
- * Field definition for KV stores (excludes IdField).
+ * Field definition for KV stores (excludes IdFieldSchema).
  * KV entries don't have IDs; they're keyed by string.
  */
-export type KvField = Exclude<Field, IdField>;
+export type KvField = Exclude<FieldSchema, IdFieldSchema>;
 
 /**
  * Runtime value type for a KV entry.
@@ -568,7 +586,7 @@ export type KvValue<C extends KvField = KvField> = CellValue<C>;
  *   name: 'Theme',
  *   icon: 'emoji:🎨',
  *   description: 'Application color theme',
- *   field: select({ options: ['light', 'dark'] }),
+ *   field: select('theme', { options: ['light', 'dark'] }),
  * };
  * ```
  */
@@ -596,13 +614,13 @@ export type KvDefinition<TField extends KvField = KvField> = {
  *     name: 'Theme',
  *     icon: 'emoji:🎨',
  *     description: 'Application color theme',
- *     field: select({ options: ['light', 'dark'], default: 'light' }),
+ *     field: select('theme', { options: ['light', 'dark'], default: 'light' }),
  *   },
  *   fontSize: {
  *     name: 'Font Size',
  *     icon: 'emoji:🔤',
  *     description: 'Editor font size in pixels',
- *     field: integer({ default: 14 }),
+ *     field: integer('fontSize', { default: 14 }),
  *   },
  * };
  * ```
@@ -618,13 +636,13 @@ export type KvDefinitionMap = Record<string, KvDefinition>;
  * @example
  * ```typescript
  * const kv: KvMap = {
- *   theme: select({ options: ['light', 'dark'] as const, default: 'light' }),
- *   fontSize: integer({ default: 14 }),
+ *   theme: select('theme', { options: ['light', 'dark'] as const, default: 'light' }),
+ *   fontSize: integer('fontSize', { default: 14 }),
  * };
  *
  * // Use in defineWorkspace:
  * const definition = defineWorkspace({
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
+ *   tables: { posts: table({ name: 'Posts', fields: [id(), text('title')] as const }) },
  *   kv,  // KvMap
  * });
  * ```

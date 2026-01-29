@@ -310,7 +310,7 @@ export const sqlite = async <
 								row as Row<
 									TTableDefinitionMap[keyof TTableDefinitionMap &
 										string]['fields']
-								>,
+								> & { id: string },
 							);
 						}
 					}

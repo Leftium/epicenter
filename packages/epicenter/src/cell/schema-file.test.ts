@@ -3,16 +3,35 @@ import {
 	addField,
 	addTable,
 	createEmptySchema,
+	getFieldById,
+	getFieldIds,
 	parseSchema,
 	removeField,
 	removeTable,
 	stringifySchema,
 } from './schema-file';
-import { id, table, text, integer } from '../core/schema/fields/factories';
-import type { WorkspaceDefinition } from './types';
+import { id, text, integer } from '../core/schema/fields/factories';
+import type { SchemaTableDefinition, WorkspaceDefinition } from './types';
+
+/**
+ * Helper to create a table with array-based fields for cell workspace tests.
+ * Simulates what would come from parsed JSON.
+ */
+function cellTable(options: {
+	name: string;
+	fields: SchemaTableDefinition['fields'];
+	description?: string;
+}): SchemaTableDefinition {
+	return {
+		name: options.name,
+		description: options.description ?? '',
+		icon: null,
+		fields: options.fields,
+	};
+}
 
 describe('parseSchema', () => {
-	test('parses valid schema', () => {
+	test('parses valid schema with Record fields (normalizes to array)', () => {
 		const json = JSON.stringify({
 			name: 'Test Workspace',
 			icon: '📝',
@@ -24,8 +43,8 @@ describe('parseSchema', () => {
 					icon: null,
 					fields: {
 						id: id(),
-						title: text({ name: 'Title' }),
-						views: integer({ name: 'Views' }),
+						title: text('title', { name: 'Title' }),
+						views: integer('views', { name: 'Views' }),
 					},
 				},
 			},
@@ -36,7 +55,37 @@ describe('parseSchema', () => {
 		expect(schema.icon).toBe('emoji:📝');
 		expect(schema.tables.posts).toBeDefined();
 		expect(schema.tables.posts!.name).toBe('Blog Posts');
-		expect(schema.tables.posts!.fields.title).toBeDefined();
+		// Fields are now an array
+		expect(Array.isArray(schema.tables.posts!.fields)).toBe(true);
+		expect(getFieldById(schema.tables.posts!, 'title')).toBeDefined();
+		expect(getFieldIds(schema.tables.posts!)).toContain('title');
+	});
+
+	test('parses valid schema with Array fields', () => {
+		const json = JSON.stringify({
+			name: 'Test Workspace',
+			icon: '📝',
+			kv: {},
+			tables: {
+				posts: {
+					name: 'Blog Posts',
+					description: '',
+					icon: null,
+					fields: [
+						id(),
+						text('title', { name: 'Title' }),
+						integer('views', { name: 'Views' }),
+					],
+				},
+			},
+		});
+
+		const schema = parseSchema(json);
+		expect(schema.name).toBe('Test Workspace');
+		expect(schema.tables.posts).toBeDefined();
+		expect(Array.isArray(schema.tables.posts!.fields)).toBe(true);
+		expect(getFieldById(schema.tables.posts!, 'title')).toBeDefined();
+		expect(getFieldById(schema.tables.posts!, 'title')!.name).toBe('Title');
 	});
 
 	test('throws on non-object input', () => {
@@ -132,12 +181,12 @@ describe('parseSchema', () => {
 
 describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
-		const postsTable = table({
+		const postsTable = cellTable({
 			name: 'Posts',
-			fields: {
-				id: id(),
-				title: text({ name: 'Title' }),
-			},
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+			],
 		});
 		const schema: WorkspaceDefinition = {
 			name: 'Test',
@@ -153,6 +202,7 @@ describe('stringifySchema', () => {
 		const parsed = JSON.parse(json);
 		expect(parsed.name).toBe('Test');
 		expect(parsed.tables.posts.name).toBe('Posts');
+		expect(Array.isArray(parsed.tables.posts.fields)).toBe(true);
 	});
 
 	test('formats with indentation by default', () => {
@@ -186,7 +236,10 @@ describe('createEmptySchema', () => {
 describe('addTable', () => {
 	test('adds table to schema', () => {
 		const schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 
 		const updated = addTable(schema, 'posts', postsTable);
 		expect(updated.tables.posts).toBeDefined();
@@ -195,8 +248,14 @@ describe('addTable', () => {
 
 	test('preserves existing tables', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
-		const usersTable = table({ name: 'Users', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
+		const usersTable = cellTable({
+			name: 'Users',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
 		schema = addTable(schema, 'users', usersTable);
 
@@ -207,7 +266,10 @@ describe('addTable', () => {
 
 	test('is immutable', () => {
 		const schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 		const updated = addTable(schema, 'posts', postsTable);
 
 		expect(schema.tables.posts).toBeUndefined();
@@ -218,8 +280,14 @@ describe('addTable', () => {
 describe('removeTable', () => {
 	test('removes table from schema', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
-		const usersTable = table({ name: 'Users', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
+		const usersTable = cellTable({
+			name: 'Users',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
 		schema = addTable(schema, 'users', usersTable);
 
@@ -230,7 +298,10 @@ describe('removeTable', () => {
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
 
 		const updated = removeTable(schema, 'posts');
@@ -242,45 +313,54 @@ describe('removeTable', () => {
 describe('addField', () => {
 	test('adds field to table', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
 
-		const updated = addField(schema, 'posts', 'title', text({ name: 'Title' }));
+		const updated = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
 
-		expect(updated.tables.posts!.fields.title).toBeDefined();
-		expect(updated.tables.posts!.fields.title!.name).toBe('Title');
+		expect(getFieldById(updated.tables.posts!, 'title')).toBeDefined();
+		expect(getFieldById(updated.tables.posts!, 'title')!.name).toBe('Title');
 	});
 
 	test('throws if table not found', () => {
 		const schema = createEmptySchema('Test');
 		expect(() =>
-			addField(schema, 'posts', 'title', text({ name: 'Title' })),
+			addField(schema, 'posts', 'title', text('title', { name: 'Title' })),
 		).toThrow('Table "posts" not found in schema');
 	});
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
 
-		const updated = addField(schema, 'posts', 'title', text({ name: 'Title' }));
+		const updated = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
 
-		expect(schema.tables.posts!.fields.title).toBeUndefined();
-		expect(updated.tables.posts!.fields.title).toBeDefined();
+		expect(getFieldById(schema.tables.posts!, 'title')).toBeUndefined();
+		expect(getFieldById(updated.tables.posts!, 'title')).toBeDefined();
 	});
 });
 
 describe('removeField', () => {
 	test('removes field from table', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = table({ name: 'Posts', fields: { id: id() } });
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
 		schema = addTable(schema, 'posts', postsTable);
-		schema = addField(schema, 'posts', 'title', text({ name: 'Title' }));
-		schema = addField(schema, 'posts', 'views', integer({ name: 'Views' }));
+		schema = addField(schema, 'posts', 'title', text('title', { name: 'Title' }));
+		schema = addField(schema, 'posts', 'views', integer('views', { name: 'Views' }));
 
 		const updated = removeField(schema, 'posts', 'title');
-		expect(updated.tables.posts!.fields.title).toBeUndefined();
-		expect(updated.tables.posts!.fields.views).toBeDefined();
+		expect(getFieldById(updated.tables.posts!, 'title')).toBeUndefined();
+		expect(getFieldById(updated.tables.posts!, 'views')).toBeDefined();
 	});
 
 	test('throws if table not found', () => {
@@ -288,6 +368,55 @@ describe('removeField', () => {
 		expect(() => removeField(schema, 'posts', 'title')).toThrow(
 			'Table "posts" not found in schema',
 		);
+	});
+});
+
+describe('getFieldById', () => {
+	test('returns field by id', () => {
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+			],
+		});
+
+		expect(getFieldById(postsTable, 'title')).toBeDefined();
+		expect(getFieldById(postsTable, 'title')!.name).toBe('Title');
+	});
+
+	test('returns undefined for non-existent field', () => {
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [id()],
+		});
+
+		expect(getFieldById(postsTable, 'nonexistent')).toBeUndefined();
+	});
+});
+
+describe('getFieldIds', () => {
+	test('returns all field ids in order', () => {
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+			],
+		});
+
+		const ids = getFieldIds(postsTable);
+		expect(ids).toEqual(['id', 'title', 'views']);
+	});
+
+	test('returns empty array for table with no fields', () => {
+		const postsTable = cellTable({
+			name: 'Posts',
+			fields: [],
+		});
+
+		expect(getFieldIds(postsTable)).toEqual([]);
 	});
 });
 

@@ -13,7 +13,6 @@
  */
 
 import type {
-	FieldMap,
 	Icon,
 	KvDefinition,
 	KvField,
@@ -80,7 +79,7 @@ export function normalizeIcon(
  */
 export function isTableDefinition(
 	value: unknown,
-): value is TableDefinition<FieldMap> {
+): value is TableDefinition {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

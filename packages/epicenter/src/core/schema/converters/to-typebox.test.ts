@@ -36,7 +36,7 @@ describe('fieldToTypebox', () => {
 
 	describe('text', () => {
 		test('non-nullable accepts strings only', () => {
-			const schema = fieldToTypebox(text());
+			const schema = fieldToTypebox(text('title'));
 			expect(Value.Check(schema, 'hello')).toBe(true);
 			expect(Value.Check(schema, '')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(false);
@@ -44,7 +44,7 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('nullable accepts strings and null', () => {
-			const schema = fieldToTypebox(text({ nullable: true }));
+			const schema = fieldToTypebox(text('title', { nullable: true }));
 			expect(Value.Check(schema, 'hello')).toBe(true);
 			expect(Value.Check(schema, '')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -54,7 +54,7 @@ describe('fieldToTypebox', () => {
 
 	describe('richtext', () => {
 		test('always nullable - accepts strings and null', () => {
-			const schema = fieldToTypebox(richtext());
+			const schema = fieldToTypebox(richtext('content'));
 			expect(Value.Check(schema, 'content-id-123')).toBe(true);
 			expect(Value.Check(schema, '')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -64,7 +64,7 @@ describe('fieldToTypebox', () => {
 
 	describe('integer', () => {
 		test('accepts whole numbers', () => {
-			const schema = fieldToTypebox(integer());
+			const schema = fieldToTypebox(integer('count'));
 			expect(Value.Check(schema, 0)).toBe(true);
 			expect(Value.Check(schema, 42)).toBe(true);
 			expect(Value.Check(schema, -100)).toBe(true);
@@ -72,14 +72,14 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('rejects floats', () => {
-			const schema = fieldToTypebox(integer());
+			const schema = fieldToTypebox(integer('count'));
 			expect(Value.Check(schema, 42.5)).toBe(false);
 			expect(Value.Check(schema, 0.1)).toBe(false);
 			expect(Value.Check(schema, -3.14)).toBe(false);
 		});
 
 		test('rejects non-numbers', () => {
-			const schema = fieldToTypebox(integer());
+			const schema = fieldToTypebox(integer('count'));
 			expect(Value.Check(schema, '42')).toBe(false);
 			expect(Value.Check(schema, null)).toBe(false);
 			expect(Value.Check(schema, NaN)).toBe(false);
@@ -87,7 +87,7 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('nullable accepts null', () => {
-			const schema = fieldToTypebox(integer({ nullable: true }));
+			const schema = fieldToTypebox(integer('count', { nullable: true }));
 			expect(Value.Check(schema, 42)).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
@@ -95,7 +95,7 @@ describe('fieldToTypebox', () => {
 
 	describe('real', () => {
 		test('accepts any number', () => {
-			const schema = fieldToTypebox(real());
+			const schema = fieldToTypebox(real('price'));
 			expect(Value.Check(schema, 0)).toBe(true);
 			expect(Value.Check(schema, 42)).toBe(true);
 			expect(Value.Check(schema, 3.14159)).toBe(true);
@@ -103,13 +103,13 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('rejects non-numbers', () => {
-			const schema = fieldToTypebox(real());
+			const schema = fieldToTypebox(real('price'));
 			expect(Value.Check(schema, '3.14')).toBe(false);
 			expect(Value.Check(schema, null)).toBe(false);
 		});
 
 		test('nullable accepts null', () => {
-			const schema = fieldToTypebox(real({ nullable: true }));
+			const schema = fieldToTypebox(real('price', { nullable: true }));
 			expect(Value.Check(schema, 19.99)).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
@@ -117,13 +117,13 @@ describe('fieldToTypebox', () => {
 
 	describe('boolean', () => {
 		test('accepts true and false only', () => {
-			const schema = fieldToTypebox(boolean());
+			const schema = fieldToTypebox(boolean('active'));
 			expect(Value.Check(schema, true)).toBe(true);
 			expect(Value.Check(schema, false)).toBe(true);
 		});
 
 		test('rejects truthy/falsy values', () => {
-			const schema = fieldToTypebox(boolean());
+			const schema = fieldToTypebox(boolean('active'));
 			expect(Value.Check(schema, 0)).toBe(false);
 			expect(Value.Check(schema, 1)).toBe(false);
 			expect(Value.Check(schema, 'true')).toBe(false);
@@ -132,7 +132,7 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('nullable accepts null', () => {
-			const schema = fieldToTypebox(boolean({ nullable: true }));
+			const schema = fieldToTypebox(boolean('active', { nullable: true }));
 			expect(Value.Check(schema, true)).toBe(true);
 			expect(Value.Check(schema, false)).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -141,7 +141,7 @@ describe('fieldToTypebox', () => {
 
 	describe('date', () => {
 		test('accepts valid DateTimeString format', () => {
-			const schema = fieldToTypebox(date());
+			const schema = fieldToTypebox(date('createdAt'));
 			expect(
 				Value.Check(schema, '2024-01-01T20:00:00.000Z|America/New_York'),
 			).toBe(true);
@@ -152,7 +152,7 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('rejects invalid formats', () => {
-			const schema = fieldToTypebox(date());
+			const schema = fieldToTypebox(date('createdAt'));
 			expect(Value.Check(schema, '2024-01-01')).toBe(false);
 			expect(Value.Check(schema, '2024-01-01T20:00:00Z')).toBe(false);
 			expect(Value.Check(schema, 'not-a-date')).toBe(false);
@@ -161,7 +161,7 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('nullable accepts null', () => {
-			const schema = fieldToTypebox(date({ nullable: true }));
+			const schema = fieldToTypebox(date('createdAt', { nullable: true }));
 			expect(
 				Value.Check(schema, '2024-01-01T20:00:00.000Z|America/New_York'),
 			).toBe(true);
@@ -172,7 +172,7 @@ describe('fieldToTypebox', () => {
 	describe('select', () => {
 		test('accepts defined options only', () => {
 			const schema = fieldToTypebox(
-				select({ options: ['draft', 'published', 'archived'] }),
+				select('status', { options: ['draft', 'published', 'archived'] as const }),
 			);
 			expect(Value.Check(schema, 'draft')).toBe(true);
 			expect(Value.Check(schema, 'published')).toBe(true);
@@ -181,7 +181,7 @@ describe('fieldToTypebox', () => {
 
 		test('rejects undefined options', () => {
 			const schema = fieldToTypebox(
-				select({ options: ['draft', 'published', 'archived'] }),
+				select('status', { options: ['draft', 'published', 'archived'] as const }),
 			);
 			expect(Value.Check(schema, 'pending')).toBe(false);
 			expect(Value.Check(schema, 'DRAFT')).toBe(false);
@@ -191,7 +191,7 @@ describe('fieldToTypebox', () => {
 
 		test('nullable accepts null', () => {
 			const schema = fieldToTypebox(
-				select({ options: ['a', 'b'], nullable: true }),
+				select('status', { options: ['a', 'b'] as const, nullable: true }),
 			);
 			expect(Value.Check(schema, 'a')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -202,7 +202,7 @@ describe('fieldToTypebox', () => {
 	describe('tags', () => {
 		test('constrained tags accept valid options', () => {
 			const schema = fieldToTypebox(
-				tags({ options: ['tech', 'personal', 'work'] }),
+				tags('labels', { options: ['tech', 'personal', 'work'] as const }),
 			);
 			expect(Value.Check(schema, ['tech'])).toBe(true);
 			expect(Value.Check(schema, ['tech', 'work'])).toBe(true);
@@ -212,7 +212,7 @@ describe('fieldToTypebox', () => {
 
 		test('constrained tags reject invalid options', () => {
 			const schema = fieldToTypebox(
-				tags({ options: ['tech', 'personal', 'work'] }),
+				tags('labels', { options: ['tech', 'personal', 'work'] as const }),
 			);
 			expect(Value.Check(schema, ['invalid'])).toBe(false);
 			expect(Value.Check(schema, ['tech', 'invalid'])).toBe(false);
@@ -220,14 +220,14 @@ describe('fieldToTypebox', () => {
 		});
 
 		test('unconstrained tags accept any strings', () => {
-			const schema = fieldToTypebox(tags());
+			const schema = fieldToTypebox(tags('labels'));
 			expect(Value.Check(schema, ['anything', 'goes'])).toBe(true);
 			expect(Value.Check(schema, ['a', 'b', 'c', 'd', 'e'])).toBe(true);
 			expect(Value.Check(schema, [])).toBe(true);
 		});
 
 		test('rejects non-array and non-string elements', () => {
-			const schema = fieldToTypebox(tags());
+			const schema = fieldToTypebox(tags('labels'));
 			expect(Value.Check(schema, 'not-an-array')).toBe(false);
 			expect(Value.Check(schema, [1, 2, 3])).toBe(false);
 			expect(Value.Check(schema, ['valid', 123])).toBe(false);
@@ -236,7 +236,7 @@ describe('fieldToTypebox', () => {
 
 		test('nullable accepts null', () => {
 			const schema = fieldToTypebox(
-				tags({ options: ['a', 'b'], nullable: true }),
+				tags('labels', { options: ['a', 'b'] as const, nullable: true }),
 			);
 			expect(Value.Check(schema, ['a'])).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -246,7 +246,7 @@ describe('fieldToTypebox', () => {
 	describe('json', () => {
 		test('validates against embedded TypeBox schema', () => {
 			const schema = fieldToTypebox(
-				json({
+				json('data', {
 					schema: Type.Object({ name: Type.String(), age: Type.Number() }),
 				}),
 			);
@@ -256,7 +256,7 @@ describe('fieldToTypebox', () => {
 
 		test('rejects invalid structure', () => {
 			const schema = fieldToTypebox(
-				json({
+				json('data', {
 					schema: Type.Object({ name: Type.String(), age: Type.Number() }),
 				}),
 			);
@@ -268,7 +268,7 @@ describe('fieldToTypebox', () => {
 
 		test('nullable accepts null', () => {
 			const schema = fieldToTypebox(
-				json({
+				json('data', {
 					schema: Type.Object({ key: Type.String() }),
 					nullable: true,
 				}),
@@ -279,7 +279,7 @@ describe('fieldToTypebox', () => {
 
 		test('validates nested objects', () => {
 			const schema = fieldToTypebox(
-				json({
+				json('data', {
 					schema: Type.Object({
 						user: Type.Object({ name: Type.String(), email: Type.String() }),
 						settings: Type.Object({
@@ -304,7 +304,7 @@ describe('fieldToTypebox', () => {
 
 		test('validates arrays in schema', () => {
 			const schema = fieldToTypebox(
-				json({
+				json('data', {
 					schema: Type.Object({
 						items: Type.Array(Type.String()),
 						count: Type.Number(),
@@ -320,21 +320,18 @@ describe('fieldToTypebox', () => {
 
 describe('fieldsToTypebox', () => {
 	test('creates valid TypeBox object schema', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-		});
+		const schema = fieldsToTypebox([id(), text('title')] as const);
 		expect(schema.type).toBe('object');
 		expect(schema.properties).toBeDefined();
 	});
 
 	test('validates complete row', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			count: integer(),
-			active: boolean(),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			integer('count'),
+			boolean('active'),
+		] as const);
 
 		expect(
 			Value.Check(schema, {
@@ -347,11 +344,11 @@ describe('fieldsToTypebox', () => {
 	});
 
 	test('rejects missing required fields', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			count: integer(),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			integer('count'),
+		] as const);
 
 		expect(Value.Check(schema, { id: '123', title: 'Test' })).toBe(false);
 		expect(Value.Check(schema, { id: '123' })).toBe(false);
@@ -359,12 +356,12 @@ describe('fieldsToTypebox', () => {
 	});
 
 	test('handles mixed nullable and non-nullable fields', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			required: text(),
-			optional: text({ nullable: true }),
-			alsoOptional: integer({ nullable: true }),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('required'),
+			text('optional', { nullable: true }),
+			integer('alsoOptional', { nullable: true }),
+		] as const);
 
 		expect(
 			Value.Check(schema, {
@@ -386,18 +383,18 @@ describe('fieldsToTypebox', () => {
 	});
 
 	test('validates complex schema with all field types', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			content: richtext(),
-			views: integer(),
-			rating: real({ nullable: true }),
-			published: boolean(),
-			publishedAt: date({ nullable: true }),
-			status: select({ options: ['draft', 'published'] }),
-			tags: tags({ options: ['tech', 'news'] }),
-			metadata: json({ schema: Type.Object({ author: Type.String() }) }),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			richtext('content'),
+			integer('views'),
+			real('rating', { nullable: true }),
+			boolean('published'),
+			date('publishedAt', { nullable: true }),
+			select('status', { options: ['draft', 'published'] as const }),
+			tags('tags', { options: ['tech', 'news'] as const }),
+			json('metadata', { schema: Type.Object({ author: Type.String() }) }),
+		] as const);
 
 		expect(
 			Value.Check(schema, {
@@ -431,11 +428,11 @@ describe('fieldsToTypebox', () => {
 	});
 
 	test('rejects row with wrong field types', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			count: integer(),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			integer('count'),
+		] as const);
 
 		expect(
 			Value.Check(schema, {
@@ -457,15 +454,15 @@ describe('fieldsToTypebox', () => {
 
 describe('JSON Schema pass-through for json fields', () => {
 	test('json field produces valid JSON Schema that TypeBox can compile', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			settings: json({
+		const schema = fieldsToTypebox([
+			id(),
+			json('settings', {
 				schema: Type.Object({
 					theme: Type.Union([Type.Literal('light'), Type.Literal('dark')]),
 					fontSize: Type.Number(),
 				}),
 			}),
-		});
+		] as const);
 
 		const validator = Compile(schema);
 		expect(
@@ -477,12 +474,12 @@ describe('JSON Schema pass-through for json fields', () => {
 	});
 
 	test('json field validation errors include path information', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			config: json({
+		const schema = fieldsToTypebox([
+			id(),
+			json('config', {
 				schema: Type.Object({ name: Type.String(), count: Type.Number() }),
 			}),
-		});
+		] as const);
 
 		const validator = Compile(schema);
 		const errors = [
@@ -494,10 +491,10 @@ describe('JSON Schema pass-through for json fields', () => {
 	});
 
 	test('array composition works with JSON Schema via manual construction', () => {
-		const rowSchema = fieldsToTypebox({
-			id: id(),
-			data: json({ schema: Type.Object({ value: Type.Number() }) }),
-		});
+		const rowSchema = fieldsToTypebox([
+			id(),
+			json('data', { schema: Type.Object({ value: Type.Number() }) }),
+		] as const);
 
 		const arraySchema = { type: 'array', items: rowSchema };
 		const validator = Compile(arraySchema);
@@ -515,15 +512,15 @@ describe('JSON Schema pass-through for json fields', () => {
 	});
 
 	test('nested json schema validates correctly', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			nested: json({
+		const schema = fieldsToTypebox([
+			id(),
+			json('nested', {
 				schema: Type.Object({
 					user: Type.Object({ name: Type.String(), email: Type.String() }),
 					preferences: Type.Object({ notifications: Type.Boolean() }),
 				}),
 			}),
-		});
+		] as const);
 
 		const validator = Compile(schema);
 
@@ -551,11 +548,11 @@ describe('JSON Schema pass-through for json fields', () => {
 
 describe('Compile (JIT validation)', () => {
 	test('compiled validator produces same results as Value.Check', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			count: integer(),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			integer('count'),
+		] as const);
 
 		const validator = Compile(schema);
 		const validData = { id: '123', title: 'Test', count: 42 };
@@ -566,13 +563,13 @@ describe('Compile (JIT validation)', () => {
 	});
 
 	test('compiled validator validates complex schema', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			title: text(),
-			status: select({ options: ['draft', 'published'] }),
-			tags: tags({ options: ['tech', 'news'] }),
-			metadata: json({ schema: Type.Object({ author: Type.String() }) }),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('title'),
+			select('status', { options: ['draft', 'published'] as const }),
+			tags('tags', { options: ['tech', 'news'] as const }),
+			json('metadata', { schema: Type.Object({ author: Type.String() }) }),
+		] as const);
 
 		const validator = Compile(schema);
 
@@ -598,11 +595,11 @@ describe('Compile (JIT validation)', () => {
 	});
 
 	test('compiled validator handles nullable fields', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			name: text({ nullable: true }),
-			count: integer({ nullable: true }),
-		});
+		const schema = fieldsToTypebox([
+			id(),
+			text('name', { nullable: true }),
+			integer('count', { nullable: true }),
+		] as const);
 
 		const validator = Compile(schema);
 
@@ -611,10 +608,7 @@ describe('Compile (JIT validation)', () => {
 	});
 
 	test('compiled validator can report errors', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			count: integer(),
-		});
+		const schema = fieldsToTypebox([id(), integer('count')] as const);
 
 		const validator = Compile(schema);
 		const errors = [...validator.Errors({ id: '123', count: 'invalid' })];
@@ -624,10 +618,7 @@ describe('Compile (JIT validation)', () => {
 	});
 
 	test('compiled validator is reusable', () => {
-		const schema = fieldsToTypebox({
-			id: id(),
-			value: integer(),
-		});
+		const schema = fieldsToTypebox([id(), integer('value')] as const);
 
 		const validator = Compile(schema);
 

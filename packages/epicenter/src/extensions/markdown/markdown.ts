@@ -7,7 +7,7 @@ import { tryAsync, trySync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
 import { defineExports, type ExtensionContext } from '../../core/extension';
 import type {
-	FieldMap,
+	Field,
 	KvDefinitionMap,
 	Row,
 	TableDefinitionMap,
@@ -46,6 +46,19 @@ export const { MarkdownExtensionError, MarkdownExtensionErr } =
 		MarkdownExtensionContext | undefined
 	>();
 export type MarkdownExtensionError = ReturnType<typeof MarkdownExtensionError>;
+
+/**
+ * Field array type alias for serializer generics.
+ * Using readonly array matches the TableDefinition.fields type.
+ */
+type Fields = readonly Field[];
+
+/**
+ * Row type that guarantees an `id` property exists.
+ * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
+ * so we intersect with `{ id: string }` to make destructuring work.
+ */
+type RowWithId<TFields extends Fields> = Row<TFields> & { id: string };
 
 // Re-export config types and functions
 export type {
@@ -134,11 +147,11 @@ type TableConfigs<TTableDefinitionMap extends TableDefinitionMap> = {
  * Internal resolved config with all required fields.
  * This is what the provider uses internally after merging user config with defaults.
  */
-type ResolvedTableConfig<TFieldMap extends FieldMap> = {
+type ResolvedTableConfig<TFields extends Fields> = {
 	directory: AbsolutePath;
-	serialize: MarkdownSerializer<TFieldMap>['serialize'];
-	parseFilename: MarkdownSerializer<TFieldMap>['deserialize']['parseFilename'];
-	deserialize: MarkdownSerializer<TFieldMap>['deserialize']['fromContent'];
+	serialize: MarkdownSerializer<TFields>['serialize'];
+	parseFilename: MarkdownSerializer<TFields>['deserialize']['parseFilename'];
+	deserialize: MarkdownSerializer<TFields>['deserialize']['fromContent'];
 };
 
 /**
@@ -398,8 +411,8 @@ export const markdown = async <
 			/**
 			 * Write a YJS row to markdown file
 			 */
-			async function writeRowToMarkdown<TFieldMap extends FieldMap>(
-				row: Row<TFieldMap>,
+			async function writeRowToMarkdown<TFields extends Fields>(
+				row: RowWithId<TFields>,
 			) {
 				const { frontmatter, body, filename } = tableConfig.serialize({
 					row,
@@ -705,7 +718,7 @@ export const markdown = async <
 						return;
 					}
 
-					const validatedRow = row as Row<
+					const validatedRow = row as RowWithId<
 						TTableDefinitionMap[keyof TTableDefinitionMap & string]['fields']
 					>;
 
@@ -1291,7 +1304,7 @@ export const markdown = async <
 						fileExistsIds: Set<string>;
 						markdownRows: Map<
 							string,
-							Row<
+							RowWithId<
 								TTableDefinitionMap[keyof TTableDefinitionMap &
 									string]['fields']
 							>
@@ -1327,7 +1340,7 @@ export const markdown = async <
 
 								const markdownRows = new Map<
 									string,
-									Row<
+									RowWithId<
 										TTableDefinitionMap[keyof TTableDefinitionMap &
 											string]['fields']
 									>

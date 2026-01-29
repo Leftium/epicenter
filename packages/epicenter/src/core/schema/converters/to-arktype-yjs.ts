@@ -12,19 +12,19 @@ import type { Static, TSchema } from 'typebox';
 import { isNullableField } from '../fields/helpers';
 import { DATE_TIME_STRING_REGEX } from '../fields/regex';
 import type {
-	BooleanField,
-	DateField,
+	BooleanFieldSchema,
+	DateFieldSchema,
 	Field,
-	FieldMap,
-	IdField,
-	IntegerField,
-	JsonField,
-	RealField,
-	RichtextField,
+	FieldSchema,
+	IdFieldSchema,
+	IntegerFieldSchema,
+	JsonFieldSchema,
+	RealFieldSchema,
+	RichtextFieldSchema,
 	Row,
-	SelectField,
-	TagsField,
-	TextField,
+	SelectFieldSchema,
+	TagsFieldSchema,
+	TextFieldSchema,
 } from '../fields/types';
 
 /**
@@ -40,39 +40,39 @@ import type {
  * type TagsType = FieldToYjsArktype<{ type: 'tags', options: ['a', 'b'] }>; // Type<('a' | 'b')[]>
  * ```
  */
-export type FieldToYjsArktype<C extends Field> = C extends IdField
+export type FieldToYjsArktype<C extends FieldSchema> = C extends IdFieldSchema
 	? Type<string>
-	: C extends TextField<infer TNullable>
+	: C extends TextFieldSchema<infer TNullable>
 		? TNullable extends true
 			? Type<string | null>
 			: Type<string>
-		: C extends RichtextField
+		: C extends RichtextFieldSchema
 			? Type<string | null>
-			: C extends IntegerField<infer TNullable>
+			: C extends IntegerFieldSchema<infer TNullable>
 				? TNullable extends true
 					? Type<number | null>
 					: Type<number>
-				: C extends RealField<infer TNullable>
+				: C extends RealFieldSchema<infer TNullable>
 					? TNullable extends true
 						? Type<number | null>
 						: Type<number>
-					: C extends BooleanField<infer TNullable>
+					: C extends BooleanFieldSchema<infer TNullable>
 						? TNullable extends true
 							? Type<boolean | null>
 							: Type<boolean>
-						: C extends DateField<infer TNullable>
+						: C extends DateFieldSchema<infer TNullable>
 							? TNullable extends true
 								? Type<string | null>
 								: Type<string>
-							: C extends SelectField<infer TOptions, infer TNullable>
+							: C extends SelectFieldSchema<infer TOptions, infer TNullable>
 								? TNullable extends true
 									? Type<TOptions[number] | null>
 									: Type<TOptions[number]>
-								: C extends TagsField<infer TOptions, infer TNullable>
+								: C extends TagsFieldSchema<infer TOptions, infer TNullable>
 									? TNullable extends true
 										? Type<TOptions[number][] | null>
 										: Type<TOptions[number][]>
-									: C extends JsonField<
+									: C extends JsonFieldSchema<
 												infer T extends TSchema,
 												infer TNullable
 											>
@@ -111,17 +111,14 @@ export type FieldToYjsArktype<C extends Field> = C extends IdField
  * }
  * ```
  */
-export function tableToYjsArktype<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
-): ObjectType<Row<TFieldMap>> {
+export function tableToYjsArktype<TFields extends readonly Field[]>(
+	fields: TFields,
+): ObjectType<Row<TFields>> {
 	return type(
 		Object.fromEntries(
-			Object.entries(fields).map(([fieldName, fieldDefinition]) => [
-				fieldName,
-				fieldToYjsArktype(fieldDefinition),
-			]),
+			fields.map((field) => [field.id, fieldToYjsArktype(field)]),
 		),
-	) as ObjectType<Row<TFieldMap>>;
+	) as ObjectType<Row<TFields>>;
 }
 
 /**
@@ -147,7 +144,7 @@ export function tableToYjsArktype<TFieldMap extends FieldMap>(
  * tagsValidator(['invalid']); // type.errors
  * ```
  */
-export function fieldToYjsArktype<C extends Field>(
+export function fieldToYjsArktype<C extends FieldSchema>(
 	field: C,
 ): FieldToYjsArktype<C> {
 	let baseType: Type;

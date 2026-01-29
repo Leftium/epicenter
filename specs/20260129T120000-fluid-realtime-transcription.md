@@ -1,32 +1,25 @@
 # Fluid Realtime Transcription (FRT)
 
-A transcription experience where users can **switch fluidly between speaking and editing**—repositioning the cursor, typing corrections, then resuming dictation—without waiting for the previous utterance to fully process.
+- **Realtime:** each word is transformed into text as you speak (not after)
+- **Fluid:** reposition the cursor, type corrections. Freely switch between speaking and editing (without waiting for the ASR to catch up.)
 
-## Name Origin
+## Usage scenario
 
-- **Fluid** — seamless switching between input modes (speech, keyboard, mouse/touch); can reposition cursor and resume before previous utterance finishes
-- **Realtime** — streaming transcription appears as you speak, not after
-
-## Primary Example
-
-```
-Speaking: "This is realtime transcription"
-Final:    "This is realtime transcription"
-Action:   click after "is", type **, speak "fluid", type **
-Result:   "This is **fluid** realtime transcription"
-```
+1. Speak: "This is realtime transcription"
+2. Edit: click after "is", type **, speak "fluid", type **
+3. Result: "This is **fluid** realtime transcription"
 
 ### More Examples
 
-| Operation           | Original            | Action                                               | Result                         |
-| ------------------- | ------------------- | ---------------------------------------------------- | ------------------------------ |
-| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"                 | "Send the quarterly report"    |
-| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                       | "Call me back tomorrow"        |
-| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                       | "Meet at the library"          |
-| **Fix homophone**   | "Your welcome"      | select "Your welcome", 🪄 Enhance Transcription      | "You're welcome"               |
-| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                     | "The small dog"                |
-| **Format (mixed)**  | "This is important" | select "important", cut, type `**`, paste, type `**` | "This is **important**"        |
-| **Type then speak** | —                   | type "Svelte ", speak "components are easy"          | "Svelte components are easy"\* |
+| Goal                | Original Transcription | Editing Actions                                 | Result                        |
+| ------------------- | ---------------------- | ----------------------------------------------- | ----------------------------- |
+| **Insert (voice)**  | "Send the report"      | click after "the", speak "quarterly"            | "Send the _quarterly_ report" |
+| **Insert (typed)**  | "Call me tomorrow"     | click after "me", type " back"                  | "Call me _back_ tomorrow"     |
+| **Replace (voice)** | "Meet at the cafe"     | select "cafe", speak "library"                  | "Meet at the _library_"       |
+| **Fix homophone**   | "Your welcome"         | select "Your welcome", 🪄 Enhance Transcription | "_You're welcome_"            |
+| **Delete + voice**  | "The very big dog"     | select "very big", speak "small"                | "The _small_ dog"             |
+| **Format (mixed)**  | "Yes"                  | type " (", speak "finally", type "!)"           | "Yes _(finally!)_"            |
+| **Type then speak** |                        | type "Svelte ", speak "components"              | "_Svelte components_"\*       |
 
 \*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.
 

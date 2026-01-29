@@ -10,9 +10,10 @@
  *   bun run clean --nuke # Above + Rust targets + dev webview cache (full reset)
  */
 
-import { readdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { workspaces } from '../package.json';
 
 const isNuke = process.argv.includes('--nuke');
 
@@ -46,21 +47,10 @@ async function main() {
 			: '🧹 Cleaning Epicenter monorepo...\n',
 	);
 
-	// Discover all monorepo package roots (apps/*, packages/*, examples/*)
-	const packageRoots = (
-		await Promise.all(
-			['apps', 'packages', 'examples'].map(async (parent) => {
-				try {
-					const entries = await readdir(parent, { withFileTypes: true });
-					return entries
-						.filter((e) => e.isDirectory())
-						.map((e) => join(parent, e.name));
-				} catch {
-					return [];
-				}
-			}),
-		)
-	).flat();
+	// Discover all monorepo package roots from workspace config
+	const packageRoots = workspaces.packages.flatMap((pattern) => [
+		...new Bun.Glob(pattern).scanSync({ onlyFiles: false }),
+	]);
 
 	const dirsToRemove = [
 		'.turbo',

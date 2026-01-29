@@ -37,10 +37,12 @@ export type InvalidCellResult = {
 
 /**
  * A cell that was not found.
+ * Includes `value: undefined` so value can always be destructured regardless of status.
  */
 export type NotFoundCellResult = {
 	status: 'not_found';
 	key: string;
+	value: undefined;
 };
 
 /**

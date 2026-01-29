@@ -39,35 +39,55 @@ export type KvGetResult<TValue> =
 	| { status: 'not_found'; key: string };
 
 /**
- * Minimal shape required for KV definitions - just needs a `field` property.
- * This is compatible with both the old KvDefinition wrapper and direct field usage.
- */
-type KvDefinitionLike<TField extends KvField = KvField> = {
-	field: TField;
-};
-
-/**
- * Creates a collection of typed KV helpers for all keys in a definition map.
+ * Creates a collection of typed KV helpers for all fields in an array.
  *
+ * Each field's `.id` is used as the key in the returned helper map.
  * Uses native Y.Map for efficient storage. KV data is stored directly
  * as key-value pairs in the map.
+ *
+ * @param ydoc - The Y.Doc to store KV data in
+ * @param kvFields - Array of KvField definitions
+ *
+ * @example
+ * ```typescript
+ * const helpers = createKvHelpers({
+ *   ydoc,
+ *   kvFields: [
+ *     select('theme', { name: 'Theme', options: ['light', 'dark'] }),
+ *     integer('fontSize', { name: 'Font Size', default: 14 }),
+ *   ],
+ * });
+ *
+ * helpers.theme.set('dark');
+ * helpers.fontSize.get(); // { status: 'valid', value: 14 }
+ * ```
  */
-export function createKvHelpers<
-	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
->({ ydoc, definitions }: { ydoc: Y.Doc; definitions: TKvDefinitionMap }) {
+export function createKvHelpers<TKvFields extends readonly KvField[]>({
+	ydoc,
+	kvFields,
+}: {
+	ydoc: Y.Doc;
+	kvFields: TKvFields;
+}): {
+	[K in TKvFields[number]['id']]: KvHelper<
+		Extract<TKvFields[number], { id: K }>
+	>;
+} {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 
 	return Object.fromEntries(
-		Object.entries(definitions).map(([keyName, definition]) => [
-			keyName,
+		kvFields.map((field) => [
+			field.id,
 			createKvHelper({
-				keyName,
+				keyName: field.id,
 				ykvMap,
-				field: definition.field,
+				field,
 			}),
 		]),
 	) as {
-		[K in keyof TKvDefinitionMap]: KvHelper<TKvDefinitionMap[K]['field']>;
+		[K in TKvFields[number]['id']]: KvHelper<
+			Extract<TKvFields[number], { id: K }>
+		>;
 	};
 }
 

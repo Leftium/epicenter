@@ -428,6 +428,61 @@ export type FieldById<
 export type FieldIds<TFields extends readonly Field[]> = TFields[number]['id'];
 
 // ============================================================================
+// Type Utilities for Table Arrays
+// ============================================================================
+
+/**
+ * Get specific table by id from array.
+ *
+ * @example
+ * ```typescript
+ * type PostsTable = TableById<typeof workspace.tables, 'posts'>;
+ * ```
+ */
+export type TableById<
+	TTables extends readonly TableDefinition[],
+	K extends string,
+> = Extract<TTables[number], { id: K }>;
+
+/**
+ * Get union of all table ids from array.
+ *
+ * @example
+ * ```typescript
+ * type AllTableIds = TableIds<typeof workspace.tables>; // 'posts' | 'users' | ...
+ * ```
+ */
+export type TableIds<TTables extends readonly TableDefinition[]> =
+	TTables[number]['id'];
+
+// ============================================================================
+// Type Utilities for KV Field Arrays
+// ============================================================================
+
+/**
+ * Get specific KV field by id from array.
+ *
+ * @example
+ * ```typescript
+ * type ThemeField = KvFieldById<typeof workspace.kv, 'theme'>;
+ * ```
+ */
+export type KvFieldById<
+	TKv extends readonly KvField[],
+	K extends string,
+> = Extract<TKv[number], { id: K }>;
+
+/**
+ * Get union of all KV field ids from array.
+ *
+ * @example
+ * ```typescript
+ * type KvKeys = KvFieldIds<typeof workspace.kv>; // 'theme' | 'fontSize' | ...
+ * ```
+ */
+export type KvFieldIds<TKv extends readonly KvField[]> = TKv[number]['id'];
+
+// ============================================================================
 // Value Types
 // ============================================================================
 
@@ -692,3 +747,79 @@ export type KvDefinitionMap = Record<string, KvDefinition>;
  * @deprecated Use `KvField[]` (readonly array) instead. This type is kept for backward compatibility.
  */
 export type KvMap = Record<string, KvField>;
+
+// ============================================================================
+// Array ↔ Record Conversion Utilities
+// ============================================================================
+
+/**
+ * Convert a TableDefinition[] array to a Record<string, TableDefinition> map.
+ *
+ * Used internally when converting from array format to Record format for
+ * backward compatibility with existing code.
+ *
+ * @example
+ * ```typescript
+ * const tables = [table('posts', { ... }), table('users', { ... })];
+ * const map = tablesToMap(tables);
+ * // { posts: { id: 'posts', ... }, users: { id: 'users', ... } }
+ * ```
+ */
+export function tablesToMap<
+	TTables extends readonly TableDefinition<readonly Field[]>[],
+>(tables: TTables): { [K in TTables[number]['id']]: TableById<TTables, K> } {
+	return Object.fromEntries(tables.map((t) => [t.id, t])) as {
+		[K in TTables[number]['id']]: TableById<TTables, K>;
+	};
+}
+
+/**
+ * Convert a KvField[] array to a Record<string, { field: KvField }> map.
+ *
+ * Used internally when converting from array format to the legacy KvDefinitionLike format.
+ * The resulting map uses the field's `id` as the key.
+ *
+ * @example
+ * ```typescript
+ * const kv = [select('theme', { options: ['light', 'dark'] }), integer('fontSize')];
+ * const map = kvFieldsToMap(kv);
+ * // { theme: { field: { id: 'theme', ... } }, fontSize: { field: { id: 'fontSize', ... } } }
+ * ```
+ */
+export function kvFieldsToMap<TKv extends readonly KvField[]>(
+	kvFields: TKv,
+): { [K in TKv[number]['id']]: { field: KvFieldById<TKv, K> } } {
+	return Object.fromEntries(kvFields.map((f) => [f.id, { field: f }])) as {
+		[K in TKv[number]['id']]: { field: KvFieldById<TKv, K> };
+	};
+}
+
+/**
+ * Get a table by id from an array of TableDefinitions.
+ *
+ * @example
+ * ```typescript
+ * const postsTable = getTableById(workspace.tables, 'posts');
+ * ```
+ */
+export function getTableById<TTables extends readonly TableDefinition[]>(
+	tables: TTables,
+	id: string,
+): TableDefinition | undefined {
+	return tables.find((t) => t.id === id);
+}
+
+/**
+ * Get a KV field by id from an array of KvFields.
+ *
+ * @example
+ * ```typescript
+ * const themeField = getKvFieldById(workspace.kv, 'theme');
+ * ```
+ */
+export function getKvFieldById<TKv extends readonly KvField[]>(
+	kv: TKv,
+	id: string,
+): KvField | undefined {
+	return kv.find((f) => f.id === id);
+}

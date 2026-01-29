@@ -2,7 +2,12 @@ import type * as Y from 'yjs';
 
 import type { KvField, KvValue } from '../schema';
 
-import { createKvHelpers, type KvChange, type KvGetResult } from './kv-helper';
+import {
+	createKvHelper,
+	type KvChange,
+	type KvGetResult,
+	type KvHelper,
+} from './kv-helper';
 
 /** Y.Map storing all KV values, keyed by key name. */
 export type KvYMap = Y.Map<KvValue>;
@@ -12,6 +17,8 @@ export type { KvHelper } from './kv-helper';
 /**
  * Minimal shape required for KV definitions - just needs a `field` property.
  * This is compatible with both the old KvDefinition wrapper and direct field usage.
+ *
+ * @deprecated Use `KvField[]` arrays directly. The field's `id` serves as the key.
  */
 type KvDefinitionLike<TField extends KvField = KvField> = {
 	field: TField;
@@ -157,6 +164,10 @@ export type KvFunction<
 /**
  * Create a KV (key-value) store from definitions.
  *
+ * Accepts either:
+ * - Array format (new): `KvField[]` where each field's `.id` is the key
+ * - Record format (deprecated): `Record<string, { field: KvField }>`
+ *
  * The returned object provides a flat Map-like API with direct methods:
  * `kv.get('key')`, `kv.set('key', value)`, `kv.reset('key')`.
  *
@@ -164,25 +175,20 @@ export type KvFunction<
  * While tables have multiple rows with IDs, KV stores have one "row" of settings/state.
  *
  * @param ydoc - The Y.Doc to store KV data in
- * @param definitions - Map of key names to their definitions (metadata + field schema)
+ * @param definitions - Array of KvFields (new) or map of key names to definitions (deprecated)
  *
  * @example
  * ```typescript
- * import { createKv, kv, select, integer } from '@epicenter/hq';
+ * // New style (array format)
+ * const settings = createKv(ydoc, [
+ *   select('theme', { name: 'Theme', options: ['light', 'dark'], default: 'light' }),
+ *   integer('fontSize', { name: 'Font Size', default: 14 }),
+ * ]);
  *
+ * // Deprecated style (record format)
  * const settings = createKv(ydoc, {
- *   theme: kv({
- *     name: 'Theme',
- *     icon: 'emoji:🎨',
- *     field: select({ options: ['light', 'dark'], default: 'light' }),
- *     description: 'Application color theme',
- *   }),
- *   fontSize: kv({
- *     name: 'Font Size',
- *     icon: 'emoji:🔤',
- *     field: integer({ default: 14 }),
- *     description: 'Editor font size in pixels',
- *   }),
+ *   theme: { field: select('theme', { options: ['light', 'dark'] }) },
+ *   fontSize: { field: integer('fontSize', { default: 14 }) },
  * });
  *
  * // Flat Map-like API
@@ -196,7 +202,16 @@ export function createKv<
 	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
 >(ydoc: Y.Doc, definitions: TKvDefinitionMap): KvFunction<TKvDefinitionMap> {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
-	const kvHelpers = createKvHelpers({ ydoc, definitions });
+
+	// Build helpers map using Record keys (deprecated API uses Record keys, not field.id)
+	const kvHelpers = Object.fromEntries(
+		Object.entries(definitions).map(([keyName, definition]) => [
+			keyName,
+			createKvHelper({ keyName, ykvMap, field: definition.field }),
+		]),
+	) as {
+		[K in keyof TKvDefinitionMap]: KvHelper<TKvDefinitionMap[K]['field']>;
+	};
 
 	return {
 		// ════════════════════════════════════════════════════════════════════

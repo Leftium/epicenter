@@ -1,7 +1,7 @@
 import type * as Y from 'yjs';
 import type { TableDefinition } from '../schema';
 import {
-	createTableHelpers,
+	createTableHelper,
 	createUntypedTableHelper,
 	type TableHelper,
 	type TablesMap,
@@ -155,8 +155,24 @@ export function createTables<
 	ydoc: Y.Doc,
 	tableDefinitions: TTableDefinitionMap,
 ): TablesFunction<TTableDefinitionMap> {
-	const tableHelpers = createTableHelpers({ ydoc, tableDefinitions });
 	const ytables: TablesMap = ydoc.getMap('tables');
+
+	// Build helpers map using Record keys (deprecated API uses Record keys, not table.id)
+	const tableHelpers = Object.fromEntries(
+		Object.entries(tableDefinitions).map(([tableName, tableDefinition]) => [
+			tableName,
+			createTableHelper({
+				ydoc,
+				tableName,
+				ytables,
+				fields: tableDefinition.fields,
+			}),
+		]),
+	) as {
+		[K in keyof TTableDefinitionMap]: TableHelper<
+			TTableDefinitionMap[K]['fields']
+		>;
+	};
 
 	// Cache for dynamically-created table helpers (tables not in definition)
 	const dynamicTableHelpers = new Map<string, UntypedTableHelper>();

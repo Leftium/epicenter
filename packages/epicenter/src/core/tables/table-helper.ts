@@ -145,34 +145,55 @@ export type RowAction = 'add' | 'update' | 'delete';
 export type RowChanges = Map<string, RowAction>;
 
 /**
- * Creates a type-safe collection of table helpers for all tables in a definition.
+ * Creates a type-safe collection of table helpers for all tables in an array.
+ *
+ * Each table's `.id` is used as the key in the returned helper map.
+ *
+ * @param ydoc - The Y.Doc to store table data in
+ * @param tableDefinitions - Array of TableDefinition objects
+ *
+ * @example
+ * ```typescript
+ * const helpers = createTableHelpers({
+ *   ydoc,
+ *   tableDefinitions: [
+ *     table('posts', { name: 'Posts', fields: [id(), text('title')] }),
+ *     table('users', { name: 'Users', fields: [id(), text('name')] }),
+ *   ],
+ * });
+ *
+ * helpers.posts.upsert({ id: '1', title: 'Hello' });
+ * helpers.users.getAll();
+ * ```
  */
 export function createTableHelpers<
-	TTableDefinitionMap extends Record<string, TableDefinition>,
+	TTableDefinitions extends readonly TableDefinition[],
 >({
 	ydoc,
 	tableDefinitions,
 }: {
 	ydoc: Y.Doc;
-	tableDefinitions: TTableDefinitionMap;
-}) {
+	tableDefinitions: TTableDefinitions;
+}): {
+	[K in TTableDefinitions[number]['id']]: TableHelper<
+		Extract<TTableDefinitions[number], { id: K }>['fields']
+	>;
+} {
 	const ytables: TablesMap = ydoc.getMap('tables');
 
 	return Object.fromEntries(
-		Object.entries(tableDefinitions).map(([tableName, tableDefinition]) => {
-			return [
-				tableName,
-				createTableHelper({
-					ydoc,
-					tableName,
-					ytables,
-					fields: tableDefinition.fields,
-				}),
-			];
-		}),
+		tableDefinitions.map((tableDefinition) => [
+			tableDefinition.id,
+			createTableHelper({
+				ydoc,
+				tableName: tableDefinition.id,
+				ytables,
+				fields: tableDefinition.fields,
+			}),
+		]),
 	) as {
-		[TTableName in keyof TTableDefinitionMap]: TableHelper<
-			TTableDefinitionMap[TTableName]['fields']
+		[K in TTableDefinitions[number]['id']]: TableHelper<
+			Extract<TTableDefinitions[number], { id: K }>['fields']
 		>;
 	};
 }
@@ -189,7 +210,7 @@ export function createTableHelpers<
  * User A edits title, User B edits views → After sync: both changes preserved
  * ```
  */
-function createTableHelper<TFields extends readonly Field[]>({
+export function createTableHelper<TFields extends readonly Field[]>({
 	ydoc,
 	tableName,
 	ytables,

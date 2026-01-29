@@ -47,7 +47,7 @@ const testDefinition: WorkspaceDefinition = {
 	description: 'A workspace for testing',
 	icon: null,
 	tables: {
-		posts: table({
+		posts: table('posts', {
 			name: 'Blog Posts',
 			fields: [
 				id(),
@@ -56,7 +56,7 @@ const testDefinition: WorkspaceDefinition = {
 				boolean('published', { name: 'Published' }),
 			] as const,
 		}),
-		users: table({
+		users: table('users', {
 			name: 'Users',
 			fields: [
 				id(),
@@ -626,7 +626,7 @@ describe('type validation', () => {
 		description: '',
 		icon: null,
 		tables: {
-			test: table({
+			test: table('test', {
 				name: 'Test',
 				fields: [
 					id(),
@@ -775,7 +775,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 		description: '',
 		icon: null,
 		tables: {
-			posts: table({
+			posts: table('posts', {
 				name: 'Posts',
 				fields: [
 					id(),
@@ -783,7 +783,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 					integer('views', { name: 'Views' }),
 				] as const,
 			}),
-			users: table({
+			users: table('users', {
 				name: 'Users',
 				fields: [
 					id(),
@@ -1094,7 +1094,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 					description: '',
 					icon: null,
 					tables: {
-						items: table({
+						items: table('items', {
 							name: 'Items',
 							fields: [
 								id(),

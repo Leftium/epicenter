@@ -77,17 +77,103 @@ import {
 } from '../docs/workspace-doc';
 
 import type {
+	Field,
 	Icon,
-	KvDefinitionMap,
-	TableDefinitionMap,
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
+	KvField,
+	TableDefinition,
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
 } from '../schema/fields/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API: Types
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// New Array-Based Types (Preferred)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Complete workspace definition using arrays for tables and kv.
+ *
+ * This is the new preferred format where:
+ * - `tables` is an array of `TableDefinition` (each with its own `id`)
+ * - `kv` is an array of `KvField` (the field's `id` serves as the key)
+ *
+ * @example
+ * ```typescript
+ * const definition = defineWorkspaceV2({
+ *   name: 'My Blog',
+ *   description: 'Personal blog workspace',
+ *   icon: 'emoji:📝',
+ *   tables: [
+ *     table('posts', {
+ *       name: 'Posts',
+ *       fields: [id(), text('title'), select('status', { options: ['draft', 'published'] as const })] as const,
+ *     }),
+ *   ] as const,
+ *   kv: [
+ *     select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+ *     integer('fontSize', { name: 'Font Size', default: 14 }),
+ *   ] as const,
+ * });
+ * ```
+ */
+export type WorkspaceDefinitionV2<
+	TTableDefinitions extends readonly TableDefinition<readonly Field[]>[] = TableDefinition<readonly Field[]>[],
+	TKvFields extends readonly KvField[] = KvField[],
+> = {
+	/** Display name of the workspace */
+	name: string;
+	/** Description of the workspace */
+	description: string;
+	/** Icon for the workspace - tagged string format 'type:value' or null */
+	icon: Icon | null;
+	/** Table definitions as array (each TableDefinition has its own id) */
+	tables: TTableDefinitions;
+	/** KV fields directly (no wrapper, field.id is the key) */
+	kv: TKvFields;
+};
+
+/**
+ * Type inference helper for the new array-based workspace definition.
+ *
+ * @example
+ * ```typescript
+ * const definition = defineWorkspaceV2({
+ *   name: 'Blog',
+ *   tables: [table('posts', { name: 'Posts', fields: [id(), text('title')] as const })] as const,
+ *   kv: [select('theme', { options: ['light', 'dark'] as const })] as const,
+ * });
+ * ```
+ */
+export function defineWorkspaceV2<
+	const TTableDefinitions extends readonly TableDefinition<readonly Field[]>[],
+	const TKvFields extends readonly KvField[],
+>(
+	definition: WorkspaceDefinitionV2<TTableDefinitions, TKvFields> & {
+		description?: string;
+	},
+): WorkspaceDefinitionV2<TTableDefinitions, TKvFields> {
+	return {
+		name: definition.name,
+		description: definition.description ?? '',
+		icon: definition.icon ?? null,
+		tables: definition.tables,
+		kv: definition.kv,
+	};
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Legacy Record-Based Types (Deprecated)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Complete workspace definition including identity and schema.
+ *
+ * @deprecated Use `WorkspaceDefinitionV2` with arrays instead:
+ * - `tables` should be `TableDefinition[]` (each with its own `id`)
+ * - `kv` should be `KvField[]` (field's `id` serves as the key)
  *
  * Contains workspace identity (name, description, icon) alongside
  * table and KV definitions. This is the "lens" through which data is viewed.
@@ -99,15 +185,23 @@ import type {
  *
  * @example
  * ```typescript
+ * // Old style (deprecated)
  * const definition: WorkspaceDefinition = {
  *   name: 'My Blog',
  *   description: 'Personal blog workspace',
  *   icon: 'emoji:📝',
  *   tables: {
- *     posts: table({ name: 'Posts', fields: { id: id(), title: text() } }),
+ *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
  *   },
  *   kv: {},
  * };
+ *
+ * // New style (recommended)
+ * const definition = defineWorkspaceV2({
+ *   name: 'My Blog',
+ *   tables: [table('posts', { name: 'Posts', fields: [id(), text('title')] as const })] as const,
+ *   kv: [] as const,
+ * });
  * ```
  */
 export type WorkspaceDefinition<
@@ -285,9 +379,9 @@ export type ClientBuilder<
  * // Old API (deprecated)
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table({
+ *     posts: table('posts', {
  *       name: 'Posts',
- *       fields: { id: id(), title: text(), published: boolean({ default: false }) },
+ *       fields: [id(), text('title'), boolean('published', { default: false })] as const,
  *     }),
  *   },
  *   kv: {},
@@ -377,7 +471,7 @@ export function defineWorkspace<
  * const head = createHeadDoc({ workspaceId: 'whispering', providers: {} });
  * const client = createClient(head)
  *   .withDefinition({
- *     tables: { recordings: table({ name: 'Recordings', fields: { id: id(), title: text() } }) },
+ *     tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] as const }) },
  *     kv: {},
  *   })
  *   .withExtensions({

@@ -7,14 +7,14 @@ import type { CellValue, SchemaTableDefinition } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = table({ name: tableId, fields: [id()] as const }),
+	schema: SchemaTableDefinition = table(tableId, { name: tableId, fields: [id()] as const }),
 ) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 	return { ydoc, tableHelper: createTableHelper(tableId, yarray, schema) };
 }
 
-const postsSchema = table({
+const postsSchema = table('posts', {
 	name: 'Posts',
 	fields: [
 		id('id', { name: 'ID' }),

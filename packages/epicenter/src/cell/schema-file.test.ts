@@ -17,12 +17,16 @@ import type { SchemaTableDefinition, WorkspaceDefinition } from './types';
  * Helper to create a table with array-based fields for cell workspace tests.
  * Simulates what would come from parsed JSON.
  */
-function cellTable(options: {
-	name: string;
-	fields: SchemaTableDefinition['fields'];
-	description?: string;
-}): SchemaTableDefinition {
+function cellTable(
+	tableId: string,
+	options: {
+		name: string;
+		fields: SchemaTableDefinition['fields'];
+		description?: string;
+	},
+): SchemaTableDefinition {
 	return {
+		id: tableId,
 		name: options.name,
 		description: options.description ?? '',
 		icon: null,
@@ -181,7 +185,7 @@ describe('parseSchema', () => {
 
 describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -236,7 +240,7 @@ describe('createEmptySchema', () => {
 describe('addTable', () => {
 	test('adds table to schema', () => {
 		const schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -248,11 +252,11 @@ describe('addTable', () => {
 
 	test('preserves existing tables', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
-		const usersTable = cellTable({
+		const usersTable = cellTable('users', {
 			name: 'Users',
 			fields: [id()],
 		});
@@ -266,7 +270,7 @@ describe('addTable', () => {
 
 	test('is immutable', () => {
 		const schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -280,11 +284,11 @@ describe('addTable', () => {
 describe('removeTable', () => {
 	test('removes table from schema', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
-		const usersTable = cellTable({
+		const usersTable = cellTable('users', {
 			name: 'Users',
 			fields: [id()],
 		});
@@ -298,7 +302,7 @@ describe('removeTable', () => {
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -313,7 +317,7 @@ describe('removeTable', () => {
 describe('addField', () => {
 	test('adds field to table', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -334,7 +338,7 @@ describe('addField', () => {
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -350,7 +354,7 @@ describe('addField', () => {
 describe('removeField', () => {
 	test('removes field from table', () => {
 		let schema = createEmptySchema('Test');
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -373,7 +377,7 @@ describe('removeField', () => {
 
 describe('getFieldById', () => {
 	test('returns field by id', () => {
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -386,7 +390,7 @@ describe('getFieldById', () => {
 	});
 
 	test('returns undefined for non-existent field', () => {
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [id()],
 		});
@@ -397,7 +401,7 @@ describe('getFieldById', () => {
 
 describe('getFieldIds', () => {
 	test('returns all field ids in order', () => {
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [
 				id(),
@@ -411,7 +415,7 @@ describe('getFieldIds', () => {
 	});
 
 	test('returns empty array for table with no fields', () => {
-		const postsTable = cellTable({
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
 			fields: [],
 		});

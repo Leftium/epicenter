@@ -12,22 +12,22 @@ import type { Temporal } from 'temporal-polyfill';
 import type { Static, TSchema } from 'typebox';
 import { DateTimeString } from './datetime';
 import type {
-	BooleanFieldSchema,
-	DateFieldSchema,
+	BooleanField,
+	DateField,
 	Field,
 	FieldOptions,
 	Icon,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
+	IdField,
+	IntegerField,
+	JsonField,
 	KvDefinition,
 	KvField,
-	RealFieldSchema,
-	RichtextFieldSchema,
-	SelectFieldSchema,
+	RealField,
+	RichtextField,
+	SelectField,
 	TableDefinition,
-	TagsFieldSchema,
-	TextFieldSchema,
+	TagsField,
+	TextField,
 } from './types';
 import { isIcon } from './types';
 
@@ -49,7 +49,8 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
 /**
  * Factory function to create a TableDefinition.
  *
- * `name` and `fields` are required. `description` and `icon` are optional:
+ * Takes the table id as the first argument, then options:
+ * - `id`: Required unique identifier for the table (first argument).
  * - `name`: Required display name for the table.
  * - `fields`: Required field array (Field[]).
  * - `description`: Optional. Defaults to empty string.
@@ -57,50 +58,55 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  *
  * @example
  * ```typescript
- * // Minimal - name and fields required
- * const posts = table({
+ * // Minimal - id, name, and fields required
+ * const posts = table('posts', {
  *   name: 'Posts',
  *   fields: [id(), text('title'), boolean('published')] as const,
  * });
  *
  * // With icon (tagged format)
- * const posts = table({
+ * const posts = table('posts', {
  *   name: 'Posts',
  *   icon: 'emoji:📝',
  *   fields: [id(), text('title')] as const,
  * });
  *
  * // With icon shorthand (plain emoji)
- * const posts = table({
+ * const posts = table('posts', {
  *   name: 'Posts',
  *   icon: '📝',  // Converted to 'emoji:📝'
  *   fields: [id(), text('title')] as const,
  * });
  *
  * // Full - all metadata explicit
- * const posts = table({
+ * const posts = table('posts', {
  *   name: 'Blog Posts',
  *   description: 'Articles and blog posts',
  *   icon: 'emoji:📝',
  *   fields: [id(), text('title'), boolean('published')] as const,
  * });
  *
- * // In defineWorkspace
+ * // In defineWorkspace with arrays
  * defineWorkspace({
- *   tables: {
- *     posts: table({ name: 'Posts', fields: [id(), text('title')] as const }),
- *   },
- *   kv: {},
+ *   tables: [
+ *     table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+ *     table('comments', { name: 'Comments', fields: [id(), text('body')] as const }),
+ *   ] as const,
+ *   kv: [],
  * });
  * ```
  */
-export function table<const TFields extends readonly Field[]>(options: {
-	name: string;
-	fields: TFields;
-	description?: string;
-	icon?: string | Icon | null;
-}): TableDefinition<TFields> {
+export function table<const TFields extends readonly Field[]>(
+	tableId: string,
+	options: {
+		name: string;
+		fields: TFields;
+		description?: string;
+		icon?: string | Icon | null;
+	},
+): TableDefinition<TFields> {
 	return {
+		id: tableId,
 		name: options.name,
 		description: options.description ?? '',
 		icon: normalizeIcon(options.icon),
@@ -111,29 +117,21 @@ export function table<const TFields extends readonly Field[]>(options: {
 /**
  * Factory function to create a KvDefinition (setting) with sensible defaults.
  *
- * Requires `name` and `field`; other metadata is optional.
- * For tests where you don't care about the name, use `name: ''`.
- *
- * Conceptually, a KV store is like a single table row where each key is a column.
- * While TableDefinition wraps a map of fields, KvDefinition wraps a single field.
+ * @deprecated Use field factories directly. The field's metadata (name, icon, description)
+ * and id property serve as the KV key. No wrapper needed.
  *
  * @example
  * ```typescript
- * import { setting, select, integer } from '@epicenter/hq';
+ * // Old style (deprecated)
+ * kv: {
+ *   theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] }) }),
+ * }
  *
- * // Production use - with meaningful metadata
- * const theme = setting({
- *   name: 'Theme',
- *   icon: 'emoji:🎨',
- *   field: select('theme', { options: ['light', 'dark'], default: 'light' }),
- *   description: 'Application color theme',
- * });
- *
- * // Test use - minimal
- * const count = setting({
- *   name: '',
- *   field: integer('count', { default: 0 }),
- * });
+ * // New style (recommended) - use field factories directly
+ * kv: [
+ *   select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+ *   integer('fontSize', { name: 'Font Size', default: 14 }),
+ * ] as const
  * ```
  */
 export function setting<TField extends KvField>(options: {
@@ -151,7 +149,7 @@ export function setting<TField extends KvField>(options: {
 }
 
 /**
- * Create an ID field schema.
+ * Create an ID field.
  *
  * Defaults to field id 'id'. Can override with a custom id.
  *
@@ -161,15 +159,15 @@ export function setting<TField extends KvField>(options: {
  * id('userId')   // { id: 'userId', type: 'id', ... }
  * ```
  */
-export function id(): IdFieldSchema & { id: 'id' };
+export function id(): IdField & { id: 'id' };
 export function id<const K extends string>(
 	fieldId: K,
 	opts?: FieldOptions,
-): IdFieldSchema & { id: K };
+): IdField & { id: K };
 export function id<const K extends string>(
 	fieldId: K = 'id' as K,
 	{ name = '', description = '', icon = null }: FieldOptions = {},
-): IdFieldSchema & { id: K } {
+): IdField & { id: K } {
 	return {
 		id: fieldId,
 		type: 'id',
@@ -192,11 +190,11 @@ export function id<const K extends string>(
 export function text<const K extends string>(
 	id: K,
 	opts?: FieldOptions & { nullable?: false; default?: string },
-): TextFieldSchema<false> & { id: K };
+): TextField<false> & { id: K };
 export function text<const K extends string>(
 	id: K,
 	opts: FieldOptions & { nullable: true; default?: string },
-): TextFieldSchema<true> & { id: K };
+): TextField<true> & { id: K };
 export function text<const K extends string>(
 	id: K,
 	{
@@ -206,7 +204,7 @@ export function text<const K extends string>(
 		description = '',
 		icon = null,
 	}: FieldOptions & { nullable?: boolean; default?: string } = {},
-): TextFieldSchema<boolean> & { id: K } {
+): TextField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'text',
@@ -230,7 +228,7 @@ export function text<const K extends string>(
 export function richtext<const K extends string>(
 	id: K,
 	{ name = '', description = '', icon = null }: FieldOptions = {},
-): RichtextFieldSchema & { id: K } {
+): RichtextField & { id: K } {
 	return {
 		id,
 		type: 'richtext',
@@ -253,11 +251,11 @@ export function richtext<const K extends string>(
 export function integer<const K extends string>(
 	id: K,
 	opts?: FieldOptions & { nullable?: false; default?: number },
-): IntegerFieldSchema<false> & { id: K };
+): IntegerField<false> & { id: K };
 export function integer<const K extends string>(
 	id: K,
 	opts: FieldOptions & { nullable: true; default?: number },
-): IntegerFieldSchema<true> & { id: K };
+): IntegerField<true> & { id: K };
 export function integer<const K extends string>(
 	id: K,
 	{
@@ -267,7 +265,7 @@ export function integer<const K extends string>(
 		description = '',
 		icon = null,
 	}: FieldOptions & { nullable?: boolean; default?: number } = {},
-): IntegerFieldSchema<boolean> & { id: K } {
+): IntegerField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'integer',
@@ -292,11 +290,11 @@ export function integer<const K extends string>(
 export function real<const K extends string>(
 	id: K,
 	opts?: FieldOptions & { nullable?: false; default?: number },
-): RealFieldSchema<false> & { id: K };
+): RealField<false> & { id: K };
 export function real<const K extends string>(
 	id: K,
 	opts: FieldOptions & { nullable: true; default?: number },
-): RealFieldSchema<true> & { id: K };
+): RealField<true> & { id: K };
 export function real<const K extends string>(
 	id: K,
 	{
@@ -306,7 +304,7 @@ export function real<const K extends string>(
 		description = '',
 		icon = null,
 	}: FieldOptions & { nullable?: boolean; default?: number } = {},
-): RealFieldSchema<boolean> & { id: K } {
+): RealField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'real',
@@ -331,11 +329,11 @@ export function real<const K extends string>(
 export function boolean<const K extends string>(
 	id: K,
 	opts?: FieldOptions & { nullable?: false; default?: boolean },
-): BooleanFieldSchema<false> & { id: K };
+): BooleanField<false> & { id: K };
 export function boolean<const K extends string>(
 	id: K,
 	opts: FieldOptions & { nullable: true; default?: boolean },
-): BooleanFieldSchema<true> & { id: K };
+): BooleanField<true> & { id: K };
 export function boolean<const K extends string>(
 	id: K,
 	{
@@ -345,7 +343,7 @@ export function boolean<const K extends string>(
 		description = '',
 		icon = null,
 	}: FieldOptions & { nullable?: boolean; default?: boolean } = {},
-): BooleanFieldSchema<boolean> & { id: K } {
+): BooleanField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'boolean',
@@ -370,11 +368,11 @@ export function boolean<const K extends string>(
 export function date<const K extends string>(
 	id: K,
 	opts?: FieldOptions & { nullable?: false; default?: Temporal.ZonedDateTime },
-): DateFieldSchema<false> & { id: K };
+): DateField<false> & { id: K };
 export function date<const K extends string>(
 	id: K,
 	opts: FieldOptions & { nullable: true; default?: Temporal.ZonedDateTime },
-): DateFieldSchema<true> & { id: K };
+): DateField<true> & { id: K };
 export function date<const K extends string>(
 	id: K,
 	{
@@ -387,7 +385,7 @@ export function date<const K extends string>(
 		nullable?: boolean;
 		default?: Temporal.ZonedDateTime;
 	} = {},
-): DateFieldSchema<boolean> & { id: K } {
+): DateField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'date',
@@ -421,7 +419,7 @@ export function select<
 		nullable: true;
 		default?: TOptions[number];
 	},
-): SelectFieldSchema<TOptions, true> & { id: K };
+): SelectField<TOptions, true> & { id: K };
 export function select<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
@@ -432,7 +430,7 @@ export function select<
 		nullable?: false;
 		default?: TOptions[number];
 	},
-): SelectFieldSchema<TOptions, false> & { id: K };
+): SelectField<TOptions, false> & { id: K };
 export function select<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
@@ -450,7 +448,7 @@ export function select<
 		nullable?: boolean;
 		default?: TOptions[number];
 	},
-): SelectFieldSchema<TOptions, boolean> & { id: K } {
+): SelectField<TOptions, boolean> & { id: K } {
 	return {
 		id,
 		type: 'select',
@@ -487,7 +485,7 @@ export function tags<
 		nullable: true;
 		default?: TOptions[number][];
 	},
-): TagsFieldSchema<TOptions, true> & { id: K };
+): TagsField<TOptions, true> & { id: K };
 export function tags<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
@@ -498,14 +496,14 @@ export function tags<
 		nullable?: false;
 		default?: TOptions[number][];
 	},
-): TagsFieldSchema<TOptions, false> & { id: K };
+): TagsField<TOptions, false> & { id: K };
 export function tags<const K extends string, TNullable extends boolean = false>(
 	id: K,
 	opts?: FieldOptions & {
 		nullable?: TNullable;
 		default?: string[];
 	},
-): TagsFieldSchema<readonly [string, ...string[]], TNullable> & { id: K };
+): TagsField<readonly [string, ...string[]], TNullable> & { id: K };
 export function tags<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
@@ -523,7 +521,7 @@ export function tags<
 		nullable?: boolean;
 		default?: TOptions[number][] | string[];
 	} = {},
-): TagsFieldSchema<TOptions, boolean> & { id: K } {
+): TagsField<TOptions, boolean> & { id: K } {
 	return {
 		id,
 		type: 'tags',
@@ -559,7 +557,7 @@ export function json<const K extends string, const T extends TSchema>(
 		nullable: true;
 		default?: Static<T>;
 	},
-): JsonFieldSchema<T, true> & { id: K };
+): JsonField<T, true> & { id: K };
 export function json<const K extends string, const T extends TSchema>(
 	id: K,
 	opts: FieldOptions & {
@@ -567,7 +565,7 @@ export function json<const K extends string, const T extends TSchema>(
 		nullable?: false;
 		default?: Static<T>;
 	},
-): JsonFieldSchema<T, false> & { id: K };
+): JsonField<T, false> & { id: K };
 export function json<const K extends string, const T extends TSchema>(
 	id: K,
 	{
@@ -582,7 +580,7 @@ export function json<const K extends string, const T extends TSchema>(
 		nullable?: boolean;
 		default?: Static<T>;
 	},
-): JsonFieldSchema<T, boolean> & { id: K } {
+): JsonField<T, boolean> & { id: K } {
 	return {
 		id,
 		type: 'json',

@@ -4,7 +4,10 @@ import {
 	type ExtensionContext,
 	type ExtensionFactory,
 } from '../../core/extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../../core/schema';
+import type {
+	KvDefinitionMap, // Deprecated but kept for backward compat in type params
+	TableDefinitionMap, // Deprecated but kept for backward compat in type params
+} from '../../core/schema';
 
 /**
  * YJS document persistence extension using IndexedDB.

@@ -156,6 +156,7 @@ export function parseSchema(json: string): WorkspaceDefinition {
 				);
 
 		normalized.tables[tableId] = {
+			id: tableId,
 			name: tableObj.name as string,
 			description: (tableObj.description as string) ?? '',
 			icon: normalizeIcon(tableObj.icon),

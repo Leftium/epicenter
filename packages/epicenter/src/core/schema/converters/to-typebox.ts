@@ -19,17 +19,17 @@ import {
 import { isNullableField } from '../fields/helpers';
 import { DATE_TIME_STRING_REGEX } from '../fields/regex';
 import type {
-	BooleanFieldSchema,
-	DateFieldSchema,
+	BooleanField,
+	DateField,
 	Field,
-	IdFieldSchema,
-	IntegerFieldSchema,
-	JsonFieldSchema,
-	RealFieldSchema,
-	RichtextFieldSchema,
-	SelectFieldSchema,
-	TagsFieldSchema,
-	TextFieldSchema,
+	IdField,
+	IntegerField,
+	JsonField,
+	RealField,
+	RichtextField,
+	SelectField,
+	TagsField,
+	TextField,
 } from '../fields/types';
 
 /**
@@ -46,39 +46,39 @@ import type {
  * type NullableInt = Static<typeof nullableSchema>; // number | null
  * ```
  */
-export type FieldToTypebox<C extends Field> = C extends IdFieldSchema
+export type FieldToTypebox<C extends Field> = C extends IdField
 	? TString
-	: C extends TextFieldSchema<infer TNullable>
+	: C extends TextField<infer TNullable>
 		? TNullable extends true
 			? TUnion<[TString, TNull]>
 			: TString
-		: C extends RichtextFieldSchema
+		: C extends RichtextField
 			? TUnion<[TString, TNull]>
-			: C extends IntegerFieldSchema<infer TNullable>
+			: C extends IntegerField<infer TNullable>
 				? TNullable extends true
 					? TUnion<[TInteger, TNull]>
 					: TInteger
-				: C extends RealFieldSchema<infer TNullable>
+				: C extends RealField<infer TNullable>
 					? TNullable extends true
 						? TUnion<[TNumber, TNull]>
 						: TNumber
-					: C extends BooleanFieldSchema<infer TNullable>
+					: C extends BooleanField<infer TNullable>
 						? TNullable extends true
 							? TUnion<[TBoolean, TNull]>
 							: TBoolean
-						: C extends DateFieldSchema<infer TNullable>
+						: C extends DateField<infer TNullable>
 							? TNullable extends true
 								? TUnion<[TString, TNull]>
 								: TString
-							: C extends SelectFieldSchema<infer _TOptions, infer TNullable>
+							: C extends SelectField<infer _TOptions, infer TNullable>
 								? TNullable extends true
 									? TUnion<TSchema[]>
 									: TUnion<TSchema[]>
-								: C extends TagsFieldSchema<infer _TOptions, infer TNullable>
+								: C extends TagsField<infer _TOptions, infer TNullable>
 									? TNullable extends true
 										? TUnion<[TArray, TNull]>
 										: TArray
-									: C extends JsonFieldSchema<infer _TStandardSchema, infer TNullable>
+									: C extends JsonField<infer _TStandardSchema, infer TNullable>
 										? TNullable extends true
 											? TUnion<[TSchema, TNull]>
 											: TSchema

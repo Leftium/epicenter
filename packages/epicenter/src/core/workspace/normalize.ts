@@ -12,12 +12,7 @@
  * @module
  */
 
-import type {
-	Icon,
-	KvDefinition,
-	KvField,
-	TableDefinition,
-} from '../schema';
+import type { Icon, KvField, TableDefinition } from '../schema';
 import { isIcon } from '../schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +65,7 @@ export function normalizeIcon(
  *
  * @example
  * ```typescript
- * const tableDef = table({ name: 'Posts', fields: { id: id() } });
+ * const tableDef = table('posts', { name: 'Posts', fields: [id()] as const });
  * isTableDefinition(tableDef); // true
  *
  * const notTable = { id: id(), title: text() };
@@ -89,9 +84,11 @@ export function isTableDefinition(
 }
 
 /**
- * Check if a KV value is a full KvDefinition (has metadata).
+ * Check if a KV value is a full KvDefinition (has metadata wrapper).
  *
  * Detection: KvDefinition has `field` and `name` properties.
+ *
+ * @deprecated KvDefinition is deprecated. Use KvField directly (field's id serves as key).
  *
  * @example
  * ```typescript
@@ -102,7 +99,9 @@ export function isTableDefinition(
  * isKvDefinition(kvDef); // true
  * ```
  */
-export function isKvDefinition(value: unknown): value is KvDefinition<KvField> {
+export function isKvDefinition(
+	value: unknown,
+): value is { name: string; field: KvField } {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

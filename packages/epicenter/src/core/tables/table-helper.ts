@@ -1,7 +1,7 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import * as Y from 'yjs';
-import type { Field, PartialRow, Row, TableDefinitionMap } from '../schema';
+import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
 
 /**
@@ -144,7 +144,7 @@ export type RowChanges = Map<string, RowAction>;
  * Creates a type-safe collection of table helpers for all tables in a definition.
  */
 export function createTableHelpers<
-	TTableDefinitionMap extends TableDefinitionMap,
+	TTableDefinitionMap extends Record<string, TableDefinition>,
 >({
 	ydoc,
 	tableDefinitions,

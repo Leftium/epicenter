@@ -35,7 +35,7 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  *
  * @example
  * ```ts
- * const posts = schemaTable({
+ * const posts = schemaTable('posts', {
  *   name: 'Posts',
  *   fields: {
  *     id: id(),
@@ -44,18 +44,22 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  * });
  * ```
  */
-export function schemaTable(options: {
-	name: string;
-	fields: Record<string, Field>;
-	description?: string;
-	icon?: string | Icon | null;
-}): SchemaTableDefinition {
+export function schemaTable(
+	tableId: string,
+	options: {
+		name: string;
+		fields: Record<string, Field>;
+		description?: string;
+		icon?: string | Icon | null;
+	},
+): SchemaTableDefinition {
 	// Convert Record-based fields to array with id property
-	const fieldsArray: SchemaFieldDefinition[] = Object.entries(options.fields).map(
-		([fieldId, field]) => ({ ...field, id: fieldId }),
-	);
+	const fieldsArray: SchemaFieldDefinition[] = Object.entries(
+		options.fields,
+	).map(([fieldId, field]) => ({ ...field, id: fieldId }));
 
 	return {
+		id: tableId,
 		name: options.name,
 		description: options.description ?? '',
 		icon: normalizeIcon(options.icon),

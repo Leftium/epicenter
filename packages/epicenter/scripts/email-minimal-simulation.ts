@@ -81,7 +81,7 @@ const emailDefinition = defineWorkspace({
 	description: '',
 	icon: null,
 	tables: {
-		emails: table({
+		emails: table('emails', {
 			name: 'Emails',
 			description: 'Email messages for storage simulation',
 			fields: [

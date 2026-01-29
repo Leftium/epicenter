@@ -1,5 +1,5 @@
 import type * as Y from 'yjs';
-import type { TableDefinitionMap } from '../schema';
+import type { TableDefinition } from '../schema';
 import {
 	createTableHelpers,
 	createUntypedTableHelper,
@@ -32,7 +32,7 @@ export type {
  * This pattern eliminates collision risk between user-defined table names and
  * utility methods, since user names only appear as method arguments.
  */
-export type TablesFunction<TTableDefinitionMap extends TableDefinitionMap> = {
+export type TablesFunction<TTableDefinitionMap extends Record<string, TableDefinition>> = {
 	// ════════════════════════════════════════════════════════════════════
 	// TABLE ACCESS
 	// ════════════════════════════════════════════════════════════════════
@@ -123,15 +123,15 @@ export type TablesFunction<TTableDefinitionMap extends TableDefinitionMap> = {
  * ```typescript
  * const ydoc = new Y.Doc({ guid: 'workspace-123' });
  * const tables = createTables(ydoc, {
- *   posts: table({
+ *   posts: table('posts', {
  *     name: 'Posts',
- *     fields: { id: id(), title: text(), published: boolean() },
+ *     fields: [id(), text('title'), boolean('published')] as const,
  *   }),
- *   users: table({
+ *   users: table('users', {
  *     name: 'Users',
  *     description: 'User accounts',
  *     icon: '👤',
- *     fields: { id: id(), title: text(), published: boolean() },
+ *     fields: [id(), text('name'), boolean('active')] as const,
  *   }),
  * });
  *
@@ -147,7 +147,7 @@ export type TablesFunction<TTableDefinitionMap extends TableDefinitionMap> = {
  * posts.upsert({ id: '1', title: 'Hello', published: false });
  * ```
  */
-export function createTables<TTableDefinitionMap extends TableDefinitionMap>(
+export function createTables<TTableDefinitionMap extends Record<string, TableDefinition>>(
 	ydoc: Y.Doc,
 	tableDefinitions: TTableDefinitionMap,
 ): TablesFunction<TTableDefinitionMap> {
@@ -312,6 +312,6 @@ export function createTables<TTableDefinitionMap extends TableDefinitionMap>(
  * Type alias for the return type of createTables.
  * Useful for typing function parameters that accept a tables instance.
  */
-export type Tables<TTableDefinitionMap extends TableDefinitionMap> = ReturnType<
+export type Tables<TTableDefinitionMap extends Record<string, TableDefinition>> = ReturnType<
 	typeof createTables<TTableDefinitionMap>
 >;

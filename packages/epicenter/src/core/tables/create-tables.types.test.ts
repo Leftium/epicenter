@@ -20,8 +20,8 @@ import { createTables } from './create-tables';
 
 describe('YjsDoc Type Inference', () => {
 	test('should infer row types from definition', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			posts: table('posts', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -32,7 +32,7 @@ describe('YjsDoc Type Inference', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		// Test upsert() - accepts plain values (strings for richtext, arrays for tags)
 		doc.get('posts').upsert({
@@ -63,8 +63,8 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should infer types for getAll()', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			products: table('products', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('products', {
 				name: '',
 				fields: [
 					id(),
@@ -73,7 +73,7 @@ describe('YjsDoc Type Inference', () => {
 					boolean('in_stock'),
 				] as const,
 			}),
-		});
+		]);
 
 		doc.get('products').upsertMany([
 			{ id: '1', name: 'Widget', price: 1000, in_stock: true },
@@ -88,8 +88,8 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should infer predicate parameter types in filter()', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			tasks: table('tasks', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('tasks', {
 				name: '',
 				fields: [
 					id(),
@@ -98,7 +98,7 @@ describe('YjsDoc Type Inference', () => {
 					select('priority', { options: ['low', 'medium', 'high'] as const }),
 				] as const,
 			}),
-		});
+		]);
 
 		doc.get('tasks').upsertMany([
 			{ id: '1', title: 'Task 1', completed: false, priority: 'high' },
@@ -115,12 +115,12 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should infer predicate parameter types in find()', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			items: table('items', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('items', {
 				name: '',
 				fields: [id(), text('name'), integer('quantity')] as const,
 			}),
-		});
+		]);
 
 		doc.get('items').upsertMany([
 			{ id: '1', name: 'Item 1', quantity: 5 },
@@ -137,12 +137,12 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should infer observer handler parameter types', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			notifications: table('notifications', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('notifications', {
 				name: '',
 				fields: [id(), text('message'), boolean('read')] as const,
 			}),
-		});
+		]);
 
 		const addedNotifications: Array<{
 			id: string;
@@ -172,8 +172,8 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should handle nullable richtext types correctly', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			articles: table('articles', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('articles', {
 				name: '',
 				fields: [
 					id(),
@@ -182,7 +182,7 @@ describe('YjsDoc Type Inference', () => {
 					richtext('content'), // string | null
 				] as const,
 			}),
-		});
+		]);
 
 		// Test with null values
 		doc.get('articles').upsert({
@@ -216,12 +216,12 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should handle multi-table definitions with proper type inference', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			authors: table('authors', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('authors', {
 				name: '',
 				fields: [id(), text('name'), richtext('bio')] as const,
 			}),
-			books: table('books', {
+			table('books', {
 				name: '',
 				fields: [
 					id(),
@@ -233,7 +233,7 @@ describe('YjsDoc Type Inference', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		// Test authors table - richtext stores ID reference
 		doc.get('authors').upsert({
@@ -268,12 +268,12 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should properly type upsertMany with array of rows', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			comments: table('comments', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('comments', {
 				name: '',
 				fields: [id(), text('text'), integer('upvotes')] as const,
 			}),
-		});
+		]);
 
 		// Hover over the array to verify element type
 		const commentsToAdd = [
@@ -288,8 +288,8 @@ describe('YjsDoc Type Inference', () => {
 	});
 
 	test('should handle richtext and tags in complex scenarios', () => {
-		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), {
-			documents: table('documents', {
+		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
+			table('documents', {
 				name: '',
 				fields: [
 					id(),
@@ -299,7 +299,7 @@ describe('YjsDoc Type Inference', () => {
 					tags('tags', { options: ['tag1', 'tag2'] as const }),
 				] as const,
 			}),
-		});
+		]);
 
 		// Upsert with plain values (richtext stores ID, tags stores array)
 		doc.get('documents').upsert({

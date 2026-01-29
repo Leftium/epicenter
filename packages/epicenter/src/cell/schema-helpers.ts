@@ -3,18 +3,14 @@
  *
  * Factory functions for creating cell schema types with sensible defaults.
  *
- * NOTE: For most use cases, prefer using the core factory functions
- * `table()` and `setting()` from `../core/schema/fields/factories`.
+ * NOTE: For most use cases, prefer using the core factory function
+ * `table()` from `../core/schema/fields/factories`.
  * These cell-specific helpers are for JSON parsing scenarios.
  */
 
-import type { Field, Icon, KvField } from '../core/schema/fields/types';
+import type { Field, Icon } from '../core/schema/fields/types';
 import { isIcon } from '../core/schema/fields/types';
-import type {
-	SchemaFieldDefinition,
-	SchemaKvDefinition,
-	SchemaTableDefinition,
-} from './types';
+import type { SchemaFieldDefinition, SchemaTableDefinition } from './types';
 
 /**
  * Normalize icon input to Icon | null.
@@ -64,33 +60,5 @@ export function schemaTable(
 		description: options.description ?? '',
 		icon: normalizeIcon(options.icon),
 		fields: fieldsArray,
-	};
-}
-
-/**
- * Create a SchemaKvDefinition with sensible defaults.
- *
- * For most use cases, prefer the core `setting()` factory which provides
- * better type inference. This function is useful for JSON parsing.
- *
- * @example
- * ```ts
- * const theme = schemaKv({
- *   name: 'Theme',
- *   field: select({ options: ['light', 'dark'] }),
- * });
- * ```
- */
-export function schemaKv(options: {
-	name: string;
-	field: KvField;
-	description?: string;
-	icon?: string | Icon | null;
-}): SchemaKvDefinition {
-	return {
-		name: options.name,
-		description: options.description ?? '',
-		icon: normalizeIcon(options.icon),
-		field: options.field,
 	};
 }

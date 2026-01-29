@@ -128,13 +128,7 @@ export function parseSchema(json: string): WorkspaceDefinition {
 	}
 
 	// Normalize the parsed data
-	const normalized: WorkspaceDefinition = {
-		name: obj.name as string,
-		description: (obj.description as string) ?? '',
-		icon: normalizeIcon(obj.icon),
-		tables: {},
-		kv: obj.kv as WorkspaceDefinition['kv'],
-	};
+	const normalizedTables: SchemaTableDefinition[] = [];
 
 	// Normalize tables
 	for (const [tableId, tableData] of Object.entries(tables)) {
@@ -155,14 +149,22 @@ export function parseSchema(json: string): WorkspaceDefinition {
 						}) as SchemaFieldDefinition,
 				);
 
-		normalized.tables[tableId] = {
+		normalizedTables.push({
 			id: tableId,
 			name: tableObj.name as string,
 			description: (tableObj.description as string) ?? '',
 			icon: normalizeIcon(tableObj.icon),
 			fields: normalizedFields,
-		};
+		});
 	}
+
+	const normalized: WorkspaceDefinition = {
+		name: obj.name as string,
+		description: (obj.description as string) ?? '',
+		icon: normalizeIcon(obj.icon),
+		tables: normalizedTables,
+		kv: obj.kv as WorkspaceDefinition['kv'],
+	};
 
 	return normalized;
 }
@@ -196,8 +198,8 @@ export function createEmptySchema(
 		name,
 		description: '',
 		icon: normalizeIcon(icon),
-		tables: {},
-		kv: {},
+		tables: [],
+		kv: [],
 	};
 }
 
@@ -211,15 +213,13 @@ export function createEmptySchema(
  */
 export function addTable(
 	schema: WorkspaceDefinition,
-	tableId: string,
+	_tableId: string,
 	table: SchemaTableDefinition,
 ): WorkspaceDefinition {
+	// Note: tableId param kept for API compatibility but table.id is authoritative
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: table,
-		},
+		tables: [...schema.tables, table],
 	};
 }
 
@@ -234,10 +234,9 @@ export function removeTable(
 	schema: WorkspaceDefinition,
 	tableId: string,
 ): WorkspaceDefinition {
-	const { [tableId]: _, ...tables } = schema.tables;
 	return {
 		...schema,
-		tables,
+		tables: schema.tables.filter((t) => t.id !== tableId),
 	};
 }
 
@@ -256,7 +255,7 @@ export function addField(
 	fieldId: string,
 	field: Omit<SchemaFieldDefinition, 'id'>,
 ): WorkspaceDefinition {
-	const table = schema.tables[tableId];
+	const table = schema.tables.find((t) => t.id === tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
@@ -265,13 +264,14 @@ export function addField(
 
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: {
-				...table,
-				fields: [...table.fields, newField],
-			},
-		},
+		tables: schema.tables.map((t) =>
+			t.id === tableId
+				? {
+						...t,
+						fields: [...t.fields, newField],
+					}
+				: t,
+		),
 	};
 }
 
@@ -288,19 +288,20 @@ export function removeField(
 	tableId: string,
 	fieldId: string,
 ): WorkspaceDefinition {
-	const table = schema.tables[tableId];
+	const table = schema.tables.find((t) => t.id === tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
 
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: {
-				...table,
-				fields: table.fields.filter((f) => f.id !== fieldId),
-			},
-		},
+		tables: schema.tables.map((t) =>
+			t.id === tableId
+				? {
+						...t,
+						fields: t.fields.filter((f) => f.id !== fieldId),
+					}
+				: t,
+		),
 	};
 }

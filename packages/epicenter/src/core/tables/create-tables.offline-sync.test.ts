@@ -26,20 +26,20 @@ describe('Offline Sync Scenarios', () => {
 			const docA = new Y.Doc();
 			const docB = new Y.Doc();
 
-			const tablesA = createTables(docA, {
-				posts: table('posts', {
+			const tablesA = createTables(docA, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesB = createTables(docB, {
-				posts: table('posts', {
+			]);
+			const tablesB = createTables(docB, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tablesA.get('posts').upsert({ id: 'post-1', title: 'Original' });
 			Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
@@ -65,20 +65,20 @@ describe('Offline Sync Scenarios', () => {
 			const docA = new Y.Doc();
 			const docB = new Y.Doc();
 
-			const tablesA = createTables(docA, {
-				posts: table('posts', {
+			const tablesA = createTables(docA, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesB = createTables(docB, {
-				posts: table('posts', {
+			]);
+			const tablesB = createTables(docB, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tablesA.get('posts').upsert({ id: 'post-1', title: 'Original' });
 			Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
@@ -112,34 +112,34 @@ describe('Offline Sync Scenarios', () => {
 				docA1.clientID = docA2.clientID = 100 + i;
 				docB1.clientID = docB2.clientID = 200 + i;
 
-				const tablesA1 = createTables(docA1, {
-					posts: table('posts', {
+				const tablesA1 = createTables(docA1, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
-				const tablesB1 = createTables(docB1, {
-					posts: table('posts', {
+				]);
+				const tablesB1 = createTables(docB1, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
-				const tablesA2 = createTables(docA2, {
-					posts: table('posts', {
+				]);
+				const tablesA2 = createTables(docA2, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
-				const tablesB2 = createTables(docB2, {
-					posts: table('posts', {
+				]);
+				const tablesB2 = createTables(docB2, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
+				]);
 
 				tablesA1.get('posts').upsert({ id: 'post-1', title: 'Original' });
 				tablesA2.get('posts').upsert({ id: 'post-1', title: 'Original' });
@@ -179,20 +179,20 @@ describe('Offline Sync Scenarios', () => {
 			const docOnline = new Y.Doc();
 			const docOffline = new Y.Doc();
 
-			const tablesOnline = createTables(docOnline, {
-				posts: table('posts', {
+			const tablesOnline = createTables(docOnline, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesOffline = createTables(docOffline, {
-				posts: table('posts', {
+			]);
+			const tablesOffline = createTables(docOffline, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tablesOnline.get('posts').upsert({ id: 'post-1', title: 'Initial' });
 			Y.applyUpdate(docOffline, Y.encodeStateAsUpdate(docOnline));
@@ -235,27 +235,27 @@ describe('Offline Sync Scenarios', () => {
 			const docB = new Y.Doc();
 			const docC = new Y.Doc();
 
-			const tablesA = createTables(docA, {
-				posts: table('posts', {
+			const tablesA = createTables(docA, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesB = createTables(docB, {
-				posts: table('posts', {
+			]);
+			const tablesB = createTables(docB, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesC = createTables(docC, {
-				posts: table('posts', {
+			]);
+			const tablesC = createTables(docC, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tablesA.get('posts').upsert({ id: 'post-1', title: 'Original' });
 			Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
@@ -304,20 +304,20 @@ describe('Offline Sync Scenarios', () => {
 				const docA = new Y.Doc();
 				const docB = new Y.Doc();
 
-				const tablesA = createTables(docA, {
-					posts: table('posts', {
+				const tablesA = createTables(docA, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
-				const tablesB = createTables(docB, {
-					posts: table('posts', {
+				]);
+				const tablesB = createTables(docB, [
+					table('posts', {
 						name: '',
 						description: '',
 						fields: [id(), text('title')] as const,
 					}),
-				});
+				]);
 
 				tablesA.get('posts').upsert({ id: 'post-1', title: 'Original' });
 				Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));
@@ -349,20 +349,20 @@ describe('Offline Sync Scenarios', () => {
 			const docA = new Y.Doc();
 			const docB = new Y.Doc();
 
-			const tablesA = createTables(docA, {
-				posts: table('posts', {
+			const tablesA = createTables(docA, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
-			const tablesB = createTables(docB, {
-				posts: table('posts', {
+			]);
+			const tablesB = createTables(docB, [
+				table('posts', {
 					name: '',
 					description: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tablesA.get('posts').upsert({ id: 'post-1', title: 'Original' });
 			Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA));

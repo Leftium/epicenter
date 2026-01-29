@@ -3,10 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { defineExports, type ExtensionContext } from '../../core/extension';
-import type {
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
-} from '../../core/schema';
+import type { KvField, TableDefinition } from '../../core/schema';
 
 /**
  * Configuration for the persistence extension.
@@ -51,10 +48,10 @@ export type PersistenceConfig = {
  * ```
  */
 export const persistence = <
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	{ ydoc }: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
+	{ ydoc }: ExtensionContext<TTableDefinitions, TKvFields>,
 	{ filePath }: PersistenceConfig,
 ) => {
 	// Track async initialization via whenSynced

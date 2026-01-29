@@ -43,10 +43,11 @@ import type {
  * Extensions receive typed access to workspace resources. The `table()` method
  * is typed based on the workspace definition's table keys.
  *
- * @typeParam TTableDefs - The table definitions from the workspace schema
+ * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellExtensionContext<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
@@ -55,12 +56,12 @@ export type CellExtensionContext<
 	/** Current epoch number */
 	epoch: number;
 	/** Get a table helper by ID (typed based on definition) */
-	table<K extends keyof TTableDefs>(tableId: K): TableHelper;
+	table<K extends TTableDefs[number]['id']>(tableId: K): TableHelper;
 	table(tableId: string): TableHelper;
 	/** KV store for workspace-level values */
 	kv: KvStore;
 	/** The full workspace definition */
-	definition: WorkspaceDefinition & { tables: TTableDefs };
+	definition: WorkspaceDefinition;
 	/** This extension's ID (the key in the extensions map) */
 	extensionId: string;
 };
@@ -74,12 +75,12 @@ export type CellExtensionContext<
  * Use `defineExports()` to wrap your return for explicit type safety and
  * lifecycle normalization.
  *
- * @typeParam TTableDefs - The table definitions from the workspace schema
+ * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  * @typeParam TExports - Additional exports beyond lifecycle fields
  *
  * @example Persistence extension
  * ```typescript
- * const persistence: CellExtensionFactory<MyTables> = (ctx) => {
+ * const persistence: CellExtensionFactory = (ctx) => {
  *   const provider = new IndexeddbPersistence(ctx.ydoc.guid, ctx.ydoc);
  *   return defineExports({
  *     whenSynced: provider.whenSynced,
@@ -104,17 +105,19 @@ export type CellExtensionContext<
  * ```
  */
 export type CellExtensionFactory<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
 	TExports extends Lifecycle = Lifecycle,
 > = (context: CellExtensionContext<TTableDefs>) => TExports;
 
 /**
  * Map of extension factories keyed by extension ID.
  *
- * @typeParam TTableDefs - The table definitions from the workspace schema
+ * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellExtensionFactoryMap<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
 > = Record<string, CellExtensionFactory<TTableDefs, Lifecycle>>;
 
 /**
@@ -140,10 +143,11 @@ export type InferCellExtensionExports<T> = {
  * This is returned by `createCellWorkspace()` and allows adding extensions
  * with typed context based on the workspace definition.
  *
- * @typeParam TTableDefs - The table definitions from the workspace schema
+ * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellWorkspaceBuilder<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
 > = {
 	/**
 	 * Add extensions that receive typed context based on the definition.

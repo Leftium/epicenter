@@ -190,8 +190,8 @@ const emailDefinition = defineWorkspace({
 	name: 'Email Storage Simulation',
 	description: '',
 	icon: null,
-	tables: {
-		emails: table('emails', {
+	tables: [
+		table('emails', {
 			name: 'Emails',
 			description: 'Email messages for storage simulation',
 			fields: [
@@ -206,8 +206,8 @@ const emailDefinition = defineWorkspace({
 				text('folder', { default: 'inbox' }),
 			] as const,
 		}),
-	},
-	kv: {},
+	],
+	kv: [],
 });
 
 // Create the client

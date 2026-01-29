@@ -37,7 +37,6 @@ export {
 	real,
 	richtext,
 	select,
-	setting,
 	table,
 	tags,
 	text,

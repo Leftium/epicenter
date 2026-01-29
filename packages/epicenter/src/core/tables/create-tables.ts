@@ -33,7 +33,7 @@ export type {
  * utility methods, since user names only appear as method arguments.
  */
 export type TablesFunction<
-	TTableDefinitionMap extends Record<string, TableDefinition>,
+	TTableDefinitions extends readonly TableDefinition[],
 > = {
 	// ════════════════════════════════════════════════════════════════════
 	// TABLE ACCESS
@@ -47,9 +47,9 @@ export type TablesFunction<
 	 * tables.get('posts').getAll()  // Row[] - fully typed
 	 * ```
 	 */
-	get<K extends keyof TTableDefinitionMap & string>(
+	get<K extends TTableDefinitions[number]['id']>(
 		name: K,
-	): TableHelper<TTableDefinitionMap[K]['fields']>;
+	): TableHelper<Extract<TTableDefinitions[number], { id: K }>['fields']>;
 
 	/**
 	 * Get a table helper by name (untyped version for dynamic tables).
@@ -91,7 +91,7 @@ export type TablesFunction<
 	/**
 	 * The raw table definitions passed to createTables.
 	 */
-	definitions: TTableDefinitionMap;
+	definitions: TTableDefinitions;
 
 	// ════════════════════════════════════════════════════════════════════
 	// UTILITIES
@@ -124,18 +124,18 @@ export type TablesFunction<
  * @example
  * ```typescript
  * const ydoc = new Y.Doc({ guid: 'workspace-123' });
- * const tables = createTables(ydoc, {
- *   posts: table('posts', {
+ * const tables = createTables(ydoc, [
+ *   table('posts', {
  *     name: 'Posts',
  *     fields: [id(), text('title'), boolean('published')],
  *   }),
- *   users: table('users', {
+ *   table('users', {
  *     name: 'Users',
  *     description: 'User accounts',
  *     icon: '👤',
  *     fields: [id(), text('name'), boolean('active')],
  *   }),
- * });
+ * ]);
  *
  * // Tables are accessed via get()
  * tables.get('posts').upsert({ id: '1', title: 'Hello', published: false });
@@ -150,27 +150,27 @@ export type TablesFunction<
  * ```
  */
 export function createTables<
-	TTableDefinitionMap extends Record<string, TableDefinition>,
+	TTableDefinitions extends readonly TableDefinition[],
 >(
 	ydoc: Y.Doc,
-	tableDefinitions: TTableDefinitionMap,
-): TablesFunction<TTableDefinitionMap> {
+	tableDefinitions: TTableDefinitions,
+): TablesFunction<TTableDefinitions> {
 	const ytables: TablesMap = ydoc.getMap('tables');
 
-	// Build helpers map using Record keys (deprecated API uses Record keys, not table.id)
+	// Build helpers map from array of table definitions
 	const tableHelpers = Object.fromEntries(
-		Object.entries(tableDefinitions).map(([tableName, tableDefinition]) => [
-			tableName,
+		tableDefinitions.map((tableDefinition) => [
+			tableDefinition.id,
 			createTableHelper({
 				ydoc,
-				tableName,
+				tableName: tableDefinition.id,
 				ytables,
 				fields: tableDefinition.fields,
 			}),
 		]),
 	) as {
-		[K in keyof TTableDefinitionMap]: TableHelper<
-			TTableDefinitionMap[K]['fields']
+		[K in TTableDefinitions[number]['id']]: TableHelper<
+			Extract<TTableDefinitions[number], { id: K }>['fields']
 		>;
 	};
 
@@ -216,7 +216,9 @@ export function createTables<
 		get(
 			name: string,
 		):
-			| TableHelper<TTableDefinitionMap[keyof TTableDefinitionMap]['fields']>
+			| TableHelper<
+					Extract<TTableDefinitions[number], { id: string }>['fields']
+			  >
 			| UntypedTableHelper {
 			// Check if it's a defined table first
 			if (name in tableHelpers) {
@@ -275,8 +277,8 @@ export function createTables<
 		 */
 		clear(): void {
 			ydoc.transact(() => {
-				for (const tableName of Object.keys(tableDefinitions)) {
-					tableHelpers[tableName as keyof typeof tableHelpers].clear();
+				for (const tableDef of tableDefinitions) {
+					tableHelpers[tableDef.id as keyof typeof tableHelpers].clear();
 				}
 			});
 		},
@@ -325,13 +327,12 @@ export function createTables<
 			}
 			return result;
 		},
-	} as TablesFunction<TTableDefinitionMap>;
+	} as TablesFunction<TTableDefinitions>;
 }
 
 /**
  * Type alias for the return type of createTables.
  * Useful for typing function parameters that accept a tables instance.
  */
-export type Tables<
-	TTableDefinitionMap extends Record<string, TableDefinition>,
-> = ReturnType<typeof createTables<TTableDefinitionMap>>;
+export type Tables<TTableDefinitions extends readonly TableDefinition[]> =
+	ReturnType<typeof createTables<TTableDefinitions>>;

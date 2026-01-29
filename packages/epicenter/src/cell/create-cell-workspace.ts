@@ -145,16 +145,14 @@ export function createCellWorkspace(
  *   headDoc,
  *   definition: {
  *     name: 'My Blog',
- *     tables: {
- *       posts: {
+ *     tables: [
+ *       table('posts', {
  *         name: 'Posts',
- *         fields: {
- *           title: { name: 'Title', type: 'text', order: 1 },
- *           views: { name: 'Views', type: 'integer', order: 2 },
- *         }
- *       }
- *     }
- *   } as const,
+ *         fields: [id(), text('title'), integer('views')],
+ *       }),
+ *     ],
+ *     kv: [],
+ *   },
  * })
  *   .withExtensions({
  *     sqlite: (ctx) => {
@@ -168,19 +166,13 @@ export function createCellWorkspace(
  * // workspace.extensions.sqlite.db is typed
  * ```
  */
-export function createCellWorkspace<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
->(
-	options: CreateCellWorkspaceWithHeadDocOptions<TTableDefs>,
-): CellWorkspaceBuilder<TTableDefs>;
+export function createCellWorkspace(
+	options: CreateCellWorkspaceWithHeadDocOptions,
+): CellWorkspaceBuilder;
 
-export function createCellWorkspace<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
->(
-	options:
-		| CreateCellWorkspaceOptions
-		| CreateCellWorkspaceWithHeadDocOptions<TTableDefs>,
-): CellWorkspaceClient | CellWorkspaceBuilder<TTableDefs> {
+export function createCellWorkspace(
+	options: CreateCellWorkspaceOptions | CreateCellWorkspaceWithHeadDocOptions,
+): CellWorkspaceClient | CellWorkspaceBuilder {
 	// Detect which API is being used
 	if ('headDoc' in options) {
 		return createCellWorkspaceWithHeadDoc(options);
@@ -237,7 +229,7 @@ function createCellWorkspaceLegacy({
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 				// Use schema from definition, or empty schema for dynamic tables
-				const tableSchema = definition.tables[tableId] ?? {
+				const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
 					id: tableId,
 					name: tableId,
 					description: '',
@@ -255,7 +247,7 @@ function createCellWorkspaceLegacy({
 		 * Uses the table schema from the definition.
 		 */
 		getTypedRows(tableId: string): TypedRowWithCells[] {
-			const tableSchema = definition.tables[tableId];
+			const tableSchema = definition.tables.find((t) => t.id === tableId);
 			const tableStore = this.table(tableId);
 			// Get all rows (regardless of validation status) and extract RowData
 			const results = tableStore.getAll();
@@ -350,12 +342,10 @@ function createCellWorkspaceLegacy({
  * Create a cell workspace with HeadDoc integration.
  * Returns a builder for adding extensions.
  */
-function createCellWorkspaceWithHeadDoc<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
->({
+function createCellWorkspaceWithHeadDoc({
 	headDoc,
 	definition,
-}: CreateCellWorkspaceWithHeadDocOptions<TTableDefs>): CellWorkspaceBuilder<TTableDefs> {
+}: CreateCellWorkspaceWithHeadDocOptions): CellWorkspaceBuilder {
 	const workspaceId = headDoc.workspaceId;
 	const epoch = headDoc.getEpoch();
 
@@ -385,7 +375,7 @@ function createCellWorkspaceWithHeadDoc<
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			const tableSchema = definition.tables[tableId as keyof TTableDefs] ?? {
+			const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
 				id: tableId,
 				name: tableId,
 				description: '',
@@ -399,18 +389,21 @@ function createCellWorkspaceWithHeadDoc<
 	}
 
 	return {
-		withExtensions<TExtensions extends CellExtensionFactoryMap<TTableDefs>>(
+		withExtensions<TExtensions extends CellExtensionFactoryMap>(
 			extensionFactories: TExtensions,
-		): CellWorkspaceClient<TTableDefs, InferCellExtensionExports<TExtensions>> {
+		): CellWorkspaceClient<
+			readonly SchemaTableDefinition[],
+			InferCellExtensionExports<TExtensions>
+		> {
 			// Initialize extensions with typed context
 			const extensions = {} as InferCellExtensionExports<TExtensions>;
 
 			for (const [extensionId, factory] of Object.entries(extensionFactories)) {
-				const context: CellExtensionContext<TTableDefs> = {
+				const context: CellExtensionContext = {
 					ydoc,
 					workspaceId,
 					epoch,
-					table: table as CellExtensionContext<TTableDefs>['table'],
+					table,
 					kv,
 					definition,
 					extensionId,
@@ -426,7 +419,7 @@ function createCellWorkspaceWithHeadDoc<
 			).then(() => {});
 
 			const client: CellWorkspaceClient<
-				TTableDefs,
+				readonly SchemaTableDefinition[],
 				InferCellExtensionExports<TExtensions>
 			> = {
 				id: workspaceId,
@@ -436,7 +429,7 @@ function createCellWorkspaceWithHeadDoc<
 				description,
 				icon,
 				definition,
-				table: table as CellWorkspaceClient<TTableDefs>['table'],
+				table,
 				kv,
 				extensions,
 				whenSynced,
@@ -445,7 +438,7 @@ function createCellWorkspaceWithHeadDoc<
 				 * Get rows with typed cells validated against schema.
 				 */
 				getTypedRows(tableId: string): TypedRowWithCells[] {
-					const tableSchema = definition.tables[tableId as keyof TTableDefs];
+					const tableSchema = definition.tables.find((t) => t.id === tableId);
 					const tableStore = this.table(tableId);
 					// Get all rows (regardless of validation status) and extract RowData
 					const results = tableStore.getAll();
@@ -514,7 +507,7 @@ function createCellWorkspaceWithHeadDoc<
 				batch<T>(
 					fn: (
 						ws: CellWorkspaceClient<
-							TTableDefs,
+							readonly SchemaTableDefinition[],
 							InferCellExtensionExports<TExtensions>
 						>,
 					) => T,

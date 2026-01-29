@@ -20,8 +20,6 @@ import type {
 	IdField,
 	IntegerField,
 	JsonField,
-	KvDefinition,
-	KvField,
 	RealField,
 	RichtextField,
 	SelectField,
@@ -111,40 +109,6 @@ export function table<const TFields extends readonly Field[]>(
 		description: options.description ?? '',
 		icon: normalizeIcon(options.icon),
 		fields: options.fields,
-	};
-}
-
-/**
- * Factory function to create a KvDefinition (setting) with sensible defaults.
- *
- * @deprecated Use field factories directly. The field's metadata (name, icon, description)
- * and id property serve as the KV key. No wrapper needed.
- *
- * @example
- * ```typescript
- * // Old style (deprecated)
- * kv: {
- *   theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] }) }),
- * }
- *
- * // New style (recommended) - use field factories directly
- * kv: [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
- *   integer('fontSize', { name: 'Font Size', default: 14 }),
- * ]
- * ```
- */
-export function setting<TField extends KvField>(options: {
-	name: string;
-	field: TField;
-	icon?: string | Icon | null;
-	description?: string;
-}): KvDefinition<TField> {
-	return {
-		name: options.name,
-		icon: normalizeIcon(options.icon),
-		description: options.description ?? '',
-		field: options.field,
 	};
 }
 

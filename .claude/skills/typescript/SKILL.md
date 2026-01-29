@@ -8,31 +8,58 @@ description: TypeScript code style, type co-location, naming conventions (includ
 ## Core Rules
 
 - Always use `type` instead of `interface` in TypeScript.
+- **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
+
+  ```typescript
+  // Good - readonly only on the array
+  type Config = {
+  	version: number;
+  	vendor: string;
+  	items: readonly string[];
+  };
+
+  // Bad - readonly everywhere is noise
+  type Config = {
+  	readonly version: number;
+  	readonly vendor: string;
+  	readonly items: readonly string[];
+  };
+  ```
+
+  Exception: Match upstream library types exactly (e.g., standard-schema interfaces). See `docs/articles/readonly-is-mostly-noise.md` for rationale.
+
 - **Acronyms in camelCase**: Treat acronyms as single words, capitalizing only the first letter:
+
   ```typescript
   // Correct - acronyms as words
-  parseUrl()
-  defineKv()
-  readJson()
-  customerId
-  httpClient
+  parseUrl();
+  defineKv();
+  readJson();
+  customerId;
+  httpClient;
 
   // Incorrect - all-caps acronyms
-  parseURL()
-  defineKV()
-  readJSON()
-  customerID
-  HTTPClient
+  parseURL();
+  defineKV();
+  readJSON();
+  customerID;
+  HTTPClient;
   ```
+
   Exception: Match existing platform APIs (e.g., `XMLHttpRequest`). See `docs/articles/acronyms-in-camelcase.md` for rationale.
+
 - TypeScript 5.5+ automatically infers type predicates in `.filter()` callbacks. Don't add manual type assertions:
+
   ```typescript
   // Good - TypeScript infers the narrowed type automatically
   const filtered = items.filter((x) => x !== undefined);
 
   // Bad - unnecessary type predicate
-  const filtered = items.filter((x): x is NonNullable<typeof x> => x !== undefined);
+  const filtered = items.filter(
+  	(x): x is NonNullable<typeof x> => x !== undefined,
+  );
   ```
+
 - When moving components to new locations, always update relative imports to absolute imports (e.g., change `import Component from '../Component.svelte'` to `import Component from '$lib/components/Component.svelte'`)
 - When functions are only used in the return statement of a factory/creator function, use object method shorthand syntax instead of defining them separately. For example, instead of:
   ```typescript
@@ -97,13 +124,13 @@ export type UserModel = { ... };
 
 ## Pattern Summary
 
-| Pattern | Suffix | Description | Example |
-|---------|--------|-------------|---------|
-| Simple values (source of truth) | Plural noun with unit | Raw values array | `BITRATES_KBPS`, `SAMPLE_RATES` |
-| Rich array (source of truth) | Plural noun | Contains all metadata | `PROVIDERS`, `RECORDING_MODE_OPTIONS` |
-| IDs only (for validation) | `_IDS` | Derived from rich array | `PROVIDER_IDS` |
-| UI options `{value, label}` | `_OPTIONS` | For dropdowns/selects | `BITRATE_OPTIONS`, `SAMPLE_RATE_OPTIONS` |
-| Label map | `_TO_LABEL` (singular) | `Record<Id, string>` | `LANGUAGES_TO_LABEL` |
+| Pattern                         | Suffix                 | Description             | Example                                  |
+| ------------------------------- | ---------------------- | ----------------------- | ---------------------------------------- |
+| Simple values (source of truth) | Plural noun with unit  | Raw values array        | `BITRATES_KBPS`, `SAMPLE_RATES`          |
+| Rich array (source of truth)    | Plural noun            | Contains all metadata   | `PROVIDERS`, `RECORDING_MODE_OPTIONS`    |
+| IDs only (for validation)       | `_IDS`                 | Derived from rich array | `PROVIDER_IDS`                           |
+| UI options `{value, label}`     | `_OPTIONS`             | For dropdowns/selects   | `BITRATE_OPTIONS`, `SAMPLE_RATE_OPTIONS` |
+| Label map                       | `_TO_LABEL` (singular) | `Record<Id, string>`    | `LANGUAGES_TO_LABEL`                     |
 
 ## When to Use Each Pattern
 
@@ -116,8 +143,8 @@ Use when the label can be computed from the value:
 export const BITRATES_KBPS = ['16', '32', '64', '128'] as const;
 
 export const BITRATE_OPTIONS = BITRATES_KBPS.map((bitrate) => ({
-  value: bitrate,
-  label: `${bitrate} kbps`,
+	value: bitrate,
+	label: `${bitrate} kbps`,
 }));
 ```
 
@@ -129,15 +156,18 @@ Use when labels need richer information than the value alone:
 // constants/audio/sample-rate.ts
 export const SAMPLE_RATES = ['16000', '44100', '48000'] as const;
 
-const SAMPLE_RATE_METADATA: Record<SampleRate, { shortLabel: string; description: string }> = {
-  '16000': { shortLabel: '16 kHz', description: 'Optimized for speech' },
-  '44100': { shortLabel: '44.1 kHz', description: 'CD quality' },
-  '48000': { shortLabel: '48 kHz', description: 'Studio quality' },
+const SAMPLE_RATE_METADATA: Record<
+	SampleRate,
+	{ shortLabel: string; description: string }
+> = {
+	'16000': { shortLabel: '16 kHz', description: 'Optimized for speech' },
+	'44100': { shortLabel: '44.1 kHz', description: 'CD quality' },
+	'48000': { shortLabel: '48 kHz', description: 'Studio quality' },
 };
 
 export const SAMPLE_RATE_OPTIONS = SAMPLE_RATES.map((rate) => ({
-  value: rate,
-  label: `${SAMPLE_RATE_METADATA[rate].shortLabel} - ${SAMPLE_RATE_METADATA[rate].description}`,
+	value: rate,
+	label: `${SAMPLE_RATE_METADATA[rate].shortLabel} - ${SAMPLE_RATE_METADATA[rate].description}`,
 }));
 ```
 
@@ -151,41 +181,55 @@ export const RECORDING_MODES = ['manual', 'vad', 'upload'] as const;
 export type RecordingMode = (typeof RECORDING_MODES)[number];
 
 export const RECORDING_MODE_OPTIONS = [
-  { label: 'Manual', value: 'manual', icon: 'mic', desktopOnly: false },
-  { label: 'Voice Activated', value: 'vad', icon: 'mic-voice', desktopOnly: false },
-  { label: 'Upload File', value: 'upload', icon: 'upload', desktopOnly: false },
-] as const satisfies { label: string; value: RecordingMode; icon: string; desktopOnly: boolean }[];
+	{ label: 'Manual', value: 'manual', icon: 'mic', desktopOnly: false },
+	{
+		label: 'Voice Activated',
+		value: 'vad',
+		icon: 'mic-voice',
+		desktopOnly: false,
+	},
+	{ label: 'Upload File', value: 'upload', icon: 'upload', desktopOnly: false },
+] as const satisfies {
+	label: string;
+	value: RecordingMode;
+	icon: string;
+	desktopOnly: boolean;
+}[];
 
 // Derive IDs for validation if needed
-export const RECORDING_MODE_IDS = RECORDING_MODE_OPTIONS.map(o => o.value);
+export const RECORDING_MODE_IDS = RECORDING_MODE_OPTIONS.map((o) => o.value);
 ```
 
 ## Choosing a Pattern
 
-| Scenario | Pattern |
-|----------|---------|
-| Label = formatted value (e.g., "128 kbps") | Simple Values -> Derived |
-| Label needs separate data (e.g., "16 kHz - Optimized for speech") | Values + Metadata |
-| Options have extra UI fields (icon, description, disabled) | Rich Array |
-| Platform-specific or runtime-conditional content | Keep inline in component |
+| Scenario                                                          | Pattern                  |
+| ----------------------------------------------------------------- | ------------------------ |
+| Label = formatted value (e.g., "128 kbps")                        | Simple Values -> Derived |
+| Label needs separate data (e.g., "16 kHz - Optimized for speech") | Values + Metadata        |
+| Options have extra UI fields (icon, description, disabled)        | Rich Array               |
+| Platform-specific or runtime-conditional content                  | Keep inline in component |
 
 ## Naming Rules
 
 ### Source Arrays
+
 - Use **plural noun**: `PROVIDERS`, `MODES`, `LANGUAGES`
 - Add unit suffix when relevant: `BITRATES_KBPS`, `SAMPLE_RATES`
 - Avoid redundant `_VALUES` suffix
 
 ### Derived/Options Arrays
+
 - Use **plural noun** + `_OPTIONS` suffix: `BITRATE_OPTIONS`, `SAMPLE_RATE_OPTIONS`
 - For IDs: **plural noun** + `_IDS` suffix: `PROVIDER_IDS`
 
 ### Label Maps
+
 - Use **singular** `_TO_LABEL` suffix: `LANGUAGES_TO_LABEL`
 - Describes the operation (id -> label), not the container
 - Reads naturally: `LANGUAGES_TO_LABEL[lang]` = "get the label for this language"
 
 ### Constant Casing
+
 - Always use `SCREAMING_SNAKE_CASE` for exported constants
 - Never use `camelCase` for constant objects/arrays
 
@@ -194,7 +238,6 @@ export const RECORDING_MODE_IDS = RECORDING_MODE_OPTIONS.map(o => o.value);
 Options arrays should be co-located with their source array in the same file. Avoid creating options inline in Svelte components; import pre-defined options instead.
 
 Exception: Keep options inline when they have platform-specific or runtime-conditional content that would require importing platform constants into the data module.
-
 
 # Parameter Destructuring for Factory Functions
 
@@ -207,8 +250,8 @@ When writing factory functions that take options objects, destructure directly i
 ```typescript
 // DON'T: Extra line of ceremony
 function createSomething(opts: { foo: string; bar?: number }) {
-  const { foo, bar = 10 } = opts;  // Unnecessary extra line
-  return { foo, bar };
+	const { foo, bar = 10 } = opts; // Unnecessary extra line
+	return { foo, bar };
 }
 ```
 
@@ -217,7 +260,7 @@ function createSomething(opts: { foo: string; bar?: number }) {
 ```typescript
 // DO: Destructure directly in parameters
 function createSomething({ foo, bar = 10 }: { foo: string; bar?: number }) {
-  return { foo, bar };
+	return { foo, bar };
 }
 ```
 
@@ -270,6 +313,7 @@ export function createKeyRecorder({
   onClear: () => void;
 }) { ... }
 ```
+
 # Arktype Optional Properties
 
 ## Never Use `| undefined` for Optional Properties
@@ -281,8 +325,8 @@ When defining optional properties in arktype schemas, always use the `'key?'` sy
 ```typescript
 // DON'T: Explicit undefined union - breaks JSON Schema conversion
 const schema = type({
-  window_id: 'string | undefined',
-  url: 'string | undefined',
+	window_id: 'string | undefined',
+	url: 'string | undefined',
 });
 ```
 
@@ -293,8 +337,8 @@ This produces invalid JSON Schema with `anyOf: [{type: "string"}, {}]` because `
 ```typescript
 // DO: Optional property syntax - converts cleanly to JSON Schema
 const schema = type({
-  'window_id?': 'string',
-  'url?': 'string',
+	'window_id?': 'string',
+	'url?': 'string',
 });
 ```
 
@@ -302,10 +346,10 @@ This correctly omits properties from the `required` array in JSON Schema.
 
 ### Why This Matters
 
-| Syntax | TypeScript Behavior | JSON Schema |
-|--------|---------------------|-------------|
-| `key: 'string \| undefined'` | Required prop, accepts string or undefined | Broken (triggers fallback) |
-| `'key?': 'string'` | Optional prop, accepts string | Clean (omitted from `required`) |
+| Syntax                       | TypeScript Behavior                        | JSON Schema                     |
+| ---------------------------- | ------------------------------------------ | ------------------------------- |
+| `key: 'string \| undefined'` | Required prop, accepts string or undefined | Broken (triggers fallback)      |
+| `'key?': 'string'`           | Optional prop, accepts string              | Clean (omitted from `required`) |
 
 Both behave similarly in TypeScript, but only the `?` syntax converts correctly to JSON Schema for OpenAPI documentation and MCP tool schemas.
 
@@ -319,21 +363,21 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 
 ```typescript
 test('creates workspace with tables', () => {
-  const posts = defineTable()
-    .version(type({ id: 'string', title: 'string' }))
-    .migrate((row) => row);
+	const posts = defineTable()
+		.version(type({ id: 'string', title: 'string' }))
+		.migrate((row) => row);
 
-  const theme = defineKv()
-    .version(type({ mode: "'light' | 'dark'" }))
-    .migrate((v) => v);
+	const theme = defineKv()
+		.version(type({ mode: "'light' | 'dark'" }))
+		.migrate((v) => v);
 
-  const workspace = defineWorkspace({
-    id: 'test-app',
-    tables: { posts },
-    kv: { theme },
-  });
+	const workspace = defineWorkspace({
+		id: 'test-app',
+		tables: { posts },
+		kv: { theme },
+	});
 
-  expect(workspace.id).toBe('test-app');
+	expect(workspace.id).toBe('test-app');
 });
 ```
 
@@ -341,21 +385,21 @@ test('creates workspace with tables', () => {
 
 ```typescript
 test('creates workspace with tables', () => {
-  const workspace = defineWorkspace({
-    id: 'test-app',
-    tables: {
-      posts: defineTable()
-        .version(type({ id: 'string', title: 'string' }))
-        .migrate((row) => row),
-    },
-    kv: {
-      theme: defineKv()
-        .version(type({ mode: "'light' | 'dark'" }))
-        .migrate((v) => v),
-    },
-  });
+	const workspace = defineWorkspace({
+		id: 'test-app',
+		tables: {
+			posts: defineTable()
+				.version(type({ id: 'string', title: 'string' }))
+				.migrate((row) => row),
+		},
+		kv: {
+			theme: defineKv()
+				.version(type({ mode: "'light' | 'dark'" }))
+				.migrate((v) => v),
+		},
+	});
 
-  expect(workspace.id).toBe('test-app');
+	expect(workspace.id).toBe('test-app');
 });
 ```
 
@@ -369,6 +413,7 @@ test('creates workspace with tables', () => {
 ### When to Extract
 
 Extract to a variable when:
+
 - The value is used **multiple times** in the same test
 - You need to call **methods on the result** (e.g., `posts.migrate()`, `posts.versions`)
 - The definition is **shared across multiple tests** in a `beforeEach` or test fixture
@@ -408,12 +453,12 @@ src/static/
 
 ### What Gets Test Files
 
-| File Type | Test File? | Reason |
-|-----------|------------|--------|
-| Functions/classes with logic | Yes | Has behavior to test |
-| Type definitions only | No | No runtime behavior |
-| Re-export barrels (`index.ts`) | No | Just re-exports, tested via consumers |
-| Internal helpers | Maybe | Test via consumer if tightly coupled |
+| File Type                      | Test File? | Reason                                |
+| ------------------------------ | ---------- | ------------------------------------- |
+| Functions/classes with logic   | Yes        | Has behavior to test                  |
+| Type definitions only          | No         | No runtime behavior                   |
+| Re-export barrels (`index.ts`) | No         | Just re-exports, tested via consumers |
+| Internal helpers               | Maybe      | Test via consumer if tightly coupled  |
 
 ### Naming Convention
 
@@ -423,6 +468,7 @@ src/static/
 ### Integration Tests
 
 For tests spanning multiple modules, either:
+
 - Add to the test file of the highest-level consumer
 - Create a dedicated `[feature].integration.test.ts` if substantial
 
@@ -439,15 +485,15 @@ When working with branded types (nominal typing), always create a brand construc
 type RowId = string & Brand<'RowId'>;
 
 // file1.ts
-const id = someString as RowId;  // Bad: assertion here
+const id = someString as RowId; // Bad: assertion here
 
 // file2.ts
 function getRow(id: string) {
-  doSomething(id as RowId);  // Bad: another assertion
+	doSomething(id as RowId); // Bad: another assertion
 }
 
 // file3.ts
-const parsed = key.split(':')[0] as RowId;  // Bad: assertions everywhere
+const parsed = key.split(':')[0] as RowId; // Bad: assertions everywhere
 ```
 
 ### Good Pattern (Brand Constructor)
@@ -461,19 +507,19 @@ type RowId = string & Brand<'RowId'>;
 // Brand constructor - THE ONLY place with `as RowId`
 // Uses PascalCase to match the type name (avoids parameter shadowing)
 function RowId(id: string): RowId {
-  return id as RowId;
+	return id as RowId;
 }
 
 // file1.ts
-const id = RowId(someString);  // Good: uses constructor
+const id = RowId(someString); // Good: uses constructor
 
 // file2.ts
 function getRow(rowId: string) {
-  doSomething(RowId(rowId));  // Good: no shadowing issues
+	doSomething(RowId(rowId)); // Good: no shadowing issues
 }
 
 // file3.ts
-const parsed = RowId(key.split(':')[0]);  // Good: consistent
+const parsed = RowId(key.split(':')[0]); // Good: consistent
 ```
 
 ### Why Brand Constructors Are Better
@@ -496,26 +542,26 @@ export type RowId = string & Brand<'RowId'>;
 // 2. Create the brand constructor (only `as` assertion in codebase)
 // PascalCase matches the type - TypeScript allows same-name type + value
 export function RowId(id: string): RowId {
-  return id as RowId;
+	return id as RowId;
 }
 
 // 3. Optionally add validation
 export function RowId(id: string): RowId {
-  if (id.includes(':')) {
-    throw new Error(`RowId cannot contain ':': ${id}`);
-  }
-  return id as RowId;
+	if (id.includes(':')) {
+		throw new Error(`RowId cannot contain ':': ${id}`);
+	}
+	return id as RowId;
 }
 ```
 
 ### Naming Convention
 
-| Branded Type | Constructor Function |
-|--------------|---------------------|
-| `RowId` | `RowId()` |
-| `FieldId` | `FieldId()` |
-| `UserId` | `UserId()` |
-| `DocumentGuid` | `DocumentGuid()` |
+| Branded Type   | Constructor Function |
+| -------------- | -------------------- |
+| `RowId`        | `RowId()`            |
+| `FieldId`      | `FieldId()`          |
+| `UserId`       | `UserId()`           |
+| `DocumentGuid` | `DocumentGuid()`     |
 
 The constructor uses **PascalCase matching the type name**. TypeScript allows a type and value to share the same name (different namespaces). This avoids parameter shadowing issues.
 

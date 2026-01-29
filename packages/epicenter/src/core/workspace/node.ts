@@ -63,7 +63,7 @@
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+ *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
  *   },
  *   kv: {},
  * });
@@ -337,7 +337,7 @@ export type ClientBuilder<
  *
  * ```typescript
  * const definition = defineWorkspace({
- *   tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] as const }) },
+ *   tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] }) },
  *   kv: {},
  * });
  *
@@ -455,7 +455,7 @@ function createAsyncClientBuilder<
  *         text('title'),  // NOT NULL text
  *         boolean('published', { default: false }),
  *         date('createdAt'),  // Temporal-aware date with timezone
- *       ] as const,
+ *       ],
  *     }),
  *   },
  *   kv: {},

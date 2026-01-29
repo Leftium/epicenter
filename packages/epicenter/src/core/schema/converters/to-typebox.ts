@@ -101,7 +101,7 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  *   id(),
  *   text('title'),
  *   integer('count', { nullable: true }),
- * ] as const;
+ * ];
  *
  * const typeboxSchema = fieldsToTypebox(fields);
  * const validator = Compile(typeboxSchema);

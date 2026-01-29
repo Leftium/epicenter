@@ -61,21 +61,21 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  * // Minimal - id, name, and fields required
  * const posts = table('posts', {
  *   name: 'Posts',
- *   fields: [id(), text('title'), boolean('published')] as const,
+ *   fields: [id(), text('title'), boolean('published')],
  * });
  *
  * // With icon (tagged format)
  * const posts = table('posts', {
  *   name: 'Posts',
  *   icon: 'emoji:📝',
- *   fields: [id(), text('title')] as const,
+ *   fields: [id(), text('title')],
  * });
  *
  * // With icon shorthand (plain emoji)
  * const posts = table('posts', {
  *   name: 'Posts',
  *   icon: '📝',  // Converted to 'emoji:📝'
- *   fields: [id(), text('title')] as const,
+ *   fields: [id(), text('title')],
  * });
  *
  * // Full - all metadata explicit
@@ -83,15 +83,15 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
  *   name: 'Blog Posts',
  *   description: 'Articles and blog posts',
  *   icon: 'emoji:📝',
- *   fields: [id(), text('title'), boolean('published')] as const,
+ *   fields: [id(), text('title'), boolean('published')],
  * });
  *
  * // In defineWorkspace with arrays
  * defineWorkspace({
  *   tables: [
- *     table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
- *     table('comments', { name: 'Comments', fields: [id(), text('body')] as const }),
- *   ] as const,
+ *     table('posts', { name: 'Posts', fields: [id(), text('title')] }),
+ *     table('comments', { name: 'Comments', fields: [id(), text('body')] }),
+ *   ],
  *   kv: [],
  * });
  * ```
@@ -129,9 +129,9 @@ export function table<const TFields extends readonly Field[]>(
  *
  * // New style (recommended) - use field factories directly
  * kv: [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+ *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
  *   integer('fontSize', { name: 'Font Size', default: 14 }),
- * ] as const
+ * ]
  * ```
  */
 export function setting<TField extends KvField>(options: {
@@ -404,9 +404,9 @@ export function date<const K extends string>(
  *
  * @example
  * ```typescript
- * select('status', { options: ['draft', 'published'] as const })
- * select('priority', { options: ['low', 'medium', 'high'] as const, default: 'medium' })
- * select('category', { options: ['a', 'b', 'c'] as const, nullable: true })
+ * select('status', { options: ['draft', 'published'] })
+ * select('priority', { options: ['low', 'medium', 'high'], default: 'medium' })
+ * select('category', { options: ['a', 'b', 'c'], nullable: true })
  * ```
  */
 export function select<
@@ -470,9 +470,9 @@ export function select<
  *
  * @example
  * ```typescript
- * tags('labels')                                                      // unconstrained
- * tags('categories', { options: ['tech', 'news', 'sports'] as const }) // constrained
- * tags('tags', { nullable: true })                                    // nullable
+ * tags('labels')                                              // unconstrained
+ * tags('categories', { options: ['tech', 'news', 'sports'] }) // constrained
+ * tags('tags', { nullable: true })                            // nullable
  * ```
  */
 export function tags<

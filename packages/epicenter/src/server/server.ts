@@ -30,7 +30,7 @@ type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
  * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
  *
  * const definition = defineWorkspace({
- *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }) },
+ *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }) },
  *   kv: {},
  * });
  *

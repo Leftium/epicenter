@@ -191,11 +191,11 @@ export type RawTableAccess = {
  */
 export type TableStore = {
 	/** The table identifier */
-	readonly tableId: string;
+	tableId: string;
 	/** The schema definition for this table (empty fields for dynamic tables) */
-	readonly schema: SchemaTableDefinition;
+	schema: SchemaTableDefinition;
 	/** Raw access without validation (escape hatch) */
-	readonly raw: RawTableAccess;
+	raw: RawTableAccess;
 
 	// Cell operations (validated)
 	/** Get a validated cell value */
@@ -267,21 +267,21 @@ export type CellWorkspaceClient<
 	TExtensions = {},
 > = {
 	/** Workspace identifier (no epoch suffix) */
-	readonly id: string;
+	id: string;
 	/** Current epoch number (0 if not using HeadDoc) */
-	readonly epoch: number;
+	epoch: number;
 	/** The underlying Yjs document */
-	readonly ydoc: Y.Doc;
+	ydoc: Y.Doc;
 
 	// Workspace metadata (from definition)
 	/** Display name of the workspace */
-	readonly name: string;
+	name: string;
 	/** Description of the workspace */
-	readonly description: string;
+	description: string;
 	/** Icon for the workspace */
-	readonly icon: Icon | string | null;
+	icon: Icon | string | null;
 	/** The full workspace definition */
-	readonly definition: WorkspaceDefinition & { tables: TTableDefs };
+	definition: WorkspaceDefinition & { tables: TTableDefs };
 
 	/**
 	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
@@ -291,10 +291,10 @@ export type CellWorkspaceClient<
 	table(tableId: string): TableStore;
 
 	/** KV store for workspace-level values */
-	readonly kv: KvStore;
+	kv: KvStore;
 
 	/** Extension exports (empty object if no extensions) */
-	readonly extensions: TExtensions;
+	extensions: TExtensions;
 
 	// Convenience methods with schema
 

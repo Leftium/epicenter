@@ -1,25 +1,25 @@
 # Fluid Realtime Transcription (FRT)
 
 - **Realtime:** each word is transformed into text as you speak (not after)
-- **Fluid:** reposition the cursor, type corrections. Freely switch between speaking and editing (without waiting for the ASR to catch up.)
+- **Fluid:** freely reposition the cursor, type corrections. Switch between speaking and editing (without waiting for the ASR to catch up.)
 
 ## Usage scenario
 
-1. Speak: "This is realtime transcription"
-2. Edit: click after "is", type **, speak "fluid", type **
-3. Result: "This is **fluid** realtime transcription"
+1. Speak: `This is realtime transcription`
+2. Edit: click after `is`, type `**`, speak `fluid`, type `**`
+3. Result: `This is **fluid** realtime transcription`
 
 ### More Examples
 
 | Goal                | Original Transcription | Editing Actions                                 | Result                        |
 | ------------------- | ---------------------- | ----------------------------------------------- | ----------------------------- |
-| **Insert (voice)**  | "Send the report"      | click after "the", speak "quarterly"            | "Send the _quarterly_ report" |
-| **Insert (typed)**  | "Call me tomorrow"     | click after "me", type " back"                  | "Call me _back_ tomorrow"     |
-| **Replace (voice)** | "Meet at the cafe"     | select "cafe", speak "library"                  | "Meet at the _library_"       |
-| **Fix homophone**   | "Your welcome"         | select "Your welcome", 🪄 Enhance Transcription | "_You're welcome_"            |
-| **Delete + voice**  | "The very big dog"     | select "very big", speak "small"                | "The _small_ dog"             |
-| **Format (mixed)**  | "Yes"                  | type " (", speak "finally", type "!)"           | "Yes _(finally!)_"            |
-| **Type then speak** |                        | type "Svelte ", speak "components"              | "_Svelte components_"\*       |
+| **Insert (voice)**  | Send the report        | click after `the`, speak `quarterly`            | Send the _quarterly_ report |
+| **Insert (typed)**  | Call me tomorrow       | click after `me`, type ` back`                  | Call me _back_ tomorrow     |
+| **Replace (voice)** | Meet at the cafe       | select `cafe`, speak `library`                  | Meet at the _library_       |
+| **Fix homophone**   | Your welcome           | select `Your welcome`, 🪄 Enhance Transcription | _You're welcome_            |
+| **Delete + voice**  | The very big dog       | select `very big`, speak `small`                | The _small_ dog             |
+| **Format (mixed)**  | Yes                    | type ` (`, speak `finally`, type `!)`           | Yes _(finally!)_            |
+| **Type then speak** |                        | type `Svelte `, speak `component`               | _Svelte component_\*       |
 
 \*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.
 

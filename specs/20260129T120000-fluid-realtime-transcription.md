@@ -18,15 +18,17 @@ Result:   "This is **fluid** realtime transcription"
 
 ### More Examples
 
-| Operation           | Original            | Action                                               | Result                      |
-| ------------------- | ------------------- | ---------------------------------------------------- | --------------------------- |
-| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"                 | "Send the quarterly report" |
-| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                       | "Call me back tomorrow"     |
-| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                       | "Meet at the library"       |
-| **Fix homophone**   | "Your welcome"      | select "Your", 🪄 Enhance Transcription              | "You're welcome"            |
-| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                     | "The small dog"             |
-| **Format (mixed)**  | "This is important" | select "important", cut, type `**`, paste, type `**` | "This is **important**"     |
-| **Type then speak** | —                   | type "Thanks ", speak "for your help"                | "Thanks for your help"      |
+| Operation           | Original            | Action                                               | Result                         |
+| ------------------- | ------------------- | ---------------------------------------------------- | ------------------------------ |
+| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"                 | "Send the quarterly report"    |
+| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                       | "Call me back tomorrow"        |
+| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                       | "Meet at the library"          |
+| **Fix homophone**   | "Your welcome"      | select "Your welcome", 🪄 Enhance Transcription      | "You're welcome"               |
+| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                     | "The small dog"                |
+| **Format (mixed)**  | "This is important" | select "important", cut, type `**`, paste, type `**` | "This is **important**"        |
+| **Type then speak** | —                   | type "Svelte ", speak "components are easy"          | "Svelte components are easy"\* |
+
+\*ASR often transcribes "Svelte" as "Belt", "Help", "Spelt", etc.
 
 ---
 
@@ -645,6 +647,13 @@ class TranscriptionManager {
 | --------- | ---------- | -------- | ----------------------------------- |
 | Streaming | ~100-500ms | Good     | Real-time feedback while speaking   |
 | Batch     | ~1-5s      | Best     | Re-transcription, "enhance" feature |
+
+**🪄 Enhance Transcription modes:**
+
+| Mode       | What's sent                    | What's replaced       | Use                               |
+| ---------- | ------------------------------ | --------------------- | --------------------------------- |
+| Precise    | User's selection               | Selection only        | Fix specific word/phrase          |
+| Contextual | Expanded to sentence/paragraph | Entire expanded range | Better accuracy from more context |
 
 **Re-transcribe edited selections:**
 

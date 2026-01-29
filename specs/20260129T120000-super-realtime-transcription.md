@@ -15,11 +15,8 @@ A transcription system where users can **switch fluidly between speaking and edi
 ```
 Speaking: "This is realtime transcription"
 Final:    "This is realtime transcription"
-Realize:  want to add emphasis
 Action:   click after "is", type **, speak "super", type **
 Result:   "This is **super** realtime transcription"
-                    ↑
-        dictated word, manually bolded
 ```
 
 ### More Examples
@@ -257,15 +254,15 @@ Inspired by [Audapolis](https://github.com/bugbakery/audapolis), silences/pauses
 
 Implementation can choose:
 
-- **Icon/SVG** — custom pause icon (most reliable)
+- **Icon/SVG** — custom pause icon (most flexible)
 - **Musical rest** — if font supports it (Audapolis uses custom font)
-- **Emoji** — ⏸ (pause button) has decent support
+- **Emoji** — ⏸️ (pause button) has decent cross-platform support
 - **Text** — `…` or `[·]` as fallback
 
 ```
-"This is [pause] super realtime [pause] transcription"
-            ↑                      ↑
-         ~800ms                 ~300ms
+"This is ⏸️ super realtime ⏸️ transcription"
+          ↑                 ↑
+       ~800ms            ~300ms
 ```
 
 ### Pause Node (ProseMirror)
@@ -302,7 +299,7 @@ type PauseSpan = {
 Pauses can vary in visual weight based on duration (implementation detail):
 
 ```
-"This is [··] super realtime [·] transcription"
+"This is ⏸️⏸️ super realtime ⏸️ transcription"
            ↑                  ↑
        ~800ms              ~300ms
 ```
@@ -313,6 +310,21 @@ Pauses can vary in visual weight based on duration (implementation detail):
 | ------------ | ---------------------------------- |
 | Click pause  | Select it                          |
 | Delete pause | Remove silence from audio playback |
+
+### Endpoint Markers (Optional)
+
+Endpoints are natural speech boundaries detected by ASR (sentence ends, breath pauses). Unlike pauses which have duration, endpoints are instantaneous markers.
+
+**Should we render them?**
+
+| Render | Pros                                                            | Cons                                           |
+| ------ | --------------------------------------------------------------- | ---------------------------------------------- |
+| Yes    | Shows sentence structure, aids batch re-transcription selection | Visual clutter, may not align with punctuation |
+| No     | Cleaner view                                                    | Lose ASR's segmentation hints                  |
+
+**Recommendation:** Don't render by default—the information is in the data (via `isEndpoint` on Transcript), but showing it adds noise. Could be a debug/power-user toggle.
+
+If rendered, use a subtle visual like a thin vertical bar `│` or dot `·` that doesn't compete with the pause emoji.
 
 ### ProseMirror Implementation
 
@@ -336,7 +348,7 @@ const pauseNode = {
 				'data-duration': node.attrs.duration,
 				title: `${node.attrs.duration}ms pause`,
 			},
-			// Render via CSS content or icon font
+			'⏸️',
 		];
 	},
 };
@@ -786,7 +798,10 @@ const editorProps = {
 };
 ```
 
-**Note:** Metadata only survives paste within the same editor (or editors with compatible schemas). Pasting into external apps loses the metadata—just plain text transfers.
+**Notes:**
+
+- Metadata only survives paste within the same editor (or editors with compatible schemas). Pasting into external apps loses the metadata—just plain text transfers.
+- Plain text clipboard content should strip pause/endpoint markers (user expects clean text, not `⏸️` literals).
 
 ### Custom Mark Schema
 
@@ -1012,6 +1027,30 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 | Edit → replay                  | Edit → replay + TTS synthesis for typed text  |
 
 ---
+
+## Implementation Order
+
+Start with **Web Speech API**, then add Sherpa:
+
+| Phase | Backend    | Why                                                    |
+| ----- | ---------- | ------------------------------------------------------ |
+| 1     | Web Speech | Zero setup, fast iteration, proves architecture        |
+| 2     | Sherpa     | Adds word timestamps, real `finalize`, offline support |
+| 3     | Scribe     | Production accuracy, batch re-transcription            |
+
+**Why Web Speech first:**
+
+- **5 lines to first result** — no WASM loading, no model downloads
+- **No server required** — Sherpa/Scribe WebSocket APIs work but need a running server
+- **Handles its own audio** — Web Speech connects directly to mic; other APIs need audio capture (`getUserMedia` → `AudioWorklet` → WebSocket). Doesn't affect our unified `Transcript` interface, but adds implementation work.
+- **Architecture is backend-agnostic** — Sherpa adds optional fields (`words[]`, `confidence`), doesn't change shape
+- **Becomes the fallback anyway** — work isn't thrown away
+
+**Risk is low** because:
+
+- Sherpa's richer API adds fields, doesn't change the `Transcript` type shape
+- The hard part (cursor interrupt, draining, timestamp filtering) is backend-agnostic
+- `finalize` behavioral difference (Web Speech fakes via stop+restart) doesn't affect utterance tracker logic
 
 ## Open Questions / Next Steps
 

@@ -1,14 +1,14 @@
 # Super-Realtime Transcription
 
-A transcription system where users can **edit text while it's still being dictated**, resulting in output that's "more done" than realtime transcription alone.
+A transcription system where users can **switch fluidly between speaking and editing**—repositioning the cursor, typing corrections, then resuming dictation—without waiting for the previous utterance to fully process.
 
 ## Name Origin
 
 "Super-realtime" because:
 
-- User edits while transcription is still streaming
-- Output is "more done" than the input
-- Done before you're done speaking
+- User can reposition and resume before previous utterance finishes processing
+- Fluid switching between input modes (speech, keyboard, mouse/touch)
+- Output is "more done" than raw transcription
 
 ## Primary Example
 
@@ -16,18 +16,23 @@ A transcription system where users can **edit text while it's still being dictat
 Speaking: "This is realtime transcription"
 Final:    "This is realtime transcription"
 Realize:  want to add emphasis
-Action:   click after "is", before "realtime"
-Continue: "super"
-Result:   "This is super realtime transcription"
+Action:   click after "is", type **, speak "super", type **
+Result:   "This is **super** realtime transcription"
+                    ↑
+        dictated word, manually bolded
 ```
 
 ### More Examples
 
-| Original                        | Insert after | Speak                    | Result                                                |
-| ------------------------------- | ------------ | ------------------------ | ----------------------------------------------------- |
-| "Send the report to the client" | "the"        | "quarterly financial"    | "Send the quarterly financial report to the client"   |
-| "Share this with Sarah"         | "Sarah"      | "and the design team"    | "Share this with Sarah and the design team"           |
-| "Review the PR before merging"  | "PR"         | "from the new developer" | "Review the PR from the new developer before merging" |
+| Operation           | Original            | Action                                          | Result                      |
+| ------------------- | ------------------- | ----------------------------------------------- | --------------------------- |
+| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"            | "Send the quarterly report" |
+| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                  | "Call me back tomorrow"     |
+| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                  | "Meet at the library"       |
+| **Fix homophone**   | "Its ready to send" | click after "It", type `'`                      | "It's ready to send"        |
+| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                | "The small dog"             |
+| **Format (mixed)**  | "This is important" | select "important", type `**`, speak, type `**` | "This is **important**"     |
+| **Type then speak** | —                   | type "Thanks ", speak "for your help"           | "Thanks for your help"      |
 
 ---
 
@@ -351,10 +356,144 @@ Super-realtime captures **intent** (keyboard vs speech), not just **effect** (ke
 
 ---
 
+## Transcription Backends
+
+Three backends with different tradeoffs:
+
+| Backend               | Purpose                               | Latency             | Accuracy  | Setup         |
+| --------------------- | ------------------------------------- | ------------------- | --------- | ------------- |
+| **Web Speech API**    | Zero-config demo, broad compatibility | Medium (~300-500ms) | Good      | None          |
+| **Sherpa**            | Research, optimal latency             | Low (~100-200ms)    | Good      | Local install |
+| **ElevenLabs Scribe** | Production accuracy                   | Higher (~500ms+)    | Excellent | API key       |
+
+### Web Speech API
+
+Browser-native speech recognition. Zero dependencies, works immediately.
+
+```typescript
+type WebSpeechBackend = {
+	type: 'web-speech';
+	// No config needed - uses browser's built-in recognition
+};
+
+// Usage
+const recognition = new webkitSpeechRecognition();
+recognition.continuous = true;
+recognition.interimResults = true;
+
+recognition.onresult = (event) => {
+	const result = event.results[event.resultIndex];
+	const transcript = result[0].transcript;
+	const isFinal = result.isFinal;
+	// Map to our unified format
+};
+```
+
+**Limitations:**
+
+- Requires internet (sends audio to Google/Apple servers)
+- No word-level timestamps (only full transcript)
+- No confidence scores per word
+- `finalize` not supported (can't force endpoint)
+- Browser-specific behavior (Chrome vs Safari vs Firefox)
+
+**Best for:** Demos, quick prototyping, users who don't want to install anything.
+
+### Sherpa (sherpa-onnx)
+
+Local ASR via WebAssembly or native. Full control, no network dependency.
+
+```typescript
+type SherpaBackend = {
+	type: 'sherpa';
+	modelPath: string;
+	// Supports word-level timestamps, confidence scores, force endpoint
+};
+```
+
+**Capabilities:**
+
+- Word-level timestamps ✓
+- Confidence scores ✓
+- Force endpoint (`finalize`) ✓
+- Works offline ✓
+- Customizable models ✓
+
+**Best for:** Research, latency-sensitive use cases, privacy-conscious users.
+
+### ElevenLabs Scribe
+
+Cloud API with state-of-the-art accuracy. Two modes:
+
+```typescript
+type ScribeBackend = {
+	type: 'scribe';
+	apiKey: string;
+	mode: 'streaming' | 'batch';
+};
+```
+
+**Streaming mode:** Real-time via WebSocket, similar latency profile to Sherpa.
+
+**Batch mode:** Upload audio, get polished transcript. Higher accuracy, higher latency.
+
+**Best for:** Production use, when accuracy matters more than latency.
+
+### Unified Interface
+
+All backends implement the same interface:
+
+```typescript
+interface TranscriptionBackend {
+	start(): void;
+	stop(): void;
+	finalize?(): void; // Force endpoint (not supported by Web Speech API)
+
+	onInterim: (result: TranscriptResult) => void;
+	onFinal: (result: TranscriptResult) => void;
+	onError: (error: Error) => void;
+}
+
+type TranscriptResult = {
+	text: string;
+	isFinal: boolean;
+	words?: Array<{
+		text: string;
+		time: [start: number, end: number];
+		confidence: number;
+	}>;
+};
+```
+
+**Note:** Web Speech API doesn't provide `words` array—only `text`. The utterance tracker handles this gracefully by treating the entire transcript as a single "word" for timing purposes.
+
+### Backend Selection Logic
+
+```typescript
+function selectBackend(config: Config): TranscriptionBackend {
+	// User explicitly chose one
+	if (config.preferredBackend) {
+		return createBackend(config.preferredBackend);
+	}
+
+	// Auto-select based on environment
+	if (config.isDemo || !config.hasApiKey) {
+		return createWebSpeechBackend(); // Zero-config fallback
+	}
+
+	if (config.prioritizeLatency) {
+		return createSherpaBackend(config); // Lowest latency
+	}
+
+	return createScribeBackend(config); // Best accuracy
+}
+```
+
+---
+
 ## Planned Tech Stack
 
-- **Sherpa** — Local ASR, low latency for real-time interaction
-- **ElevenLabs Scribe** — Higher accuracy async pass
+- **Transcription** — Web Speech API (demo) / Sherpa (research) / Scribe (production)
 - **ElevenLabs TTS** — Synthesize typed text, potentially voice-cloned
 
 ---
@@ -628,7 +767,8 @@ They support multiple speakers per document via `paragraph_start.speaker`. The U
 
 ## Open Questions / Next Steps
 
-- Test latency of force-endpoint across different ASR APIs (Sherpa, ElevenLabs Scribe, Deepgram)
+- Test latency of force-endpoint across different ASR APIs (Sherpa, ElevenLabs Scribe)
+- Handle Web Speech API's lack of word timestamps gracefully
 - Visual treatment of compositions (underline style, split rendering)
 - How corrections feed back to ASR (contextual biasing / personal dictionary)
 - File format for persistence (consider Audapolis ZIP format as starting point)

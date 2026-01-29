@@ -326,7 +326,6 @@ export type JsonField<
 	T extends TSchema = TSchema,
 	TNullable extends boolean = boolean,
 > = FieldMetadata & {
-	id: string;
 	type: 'json';
 	schema: T;
 	nullable?: TNullable;

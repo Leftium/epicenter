@@ -1,14 +1,11 @@
-# Super-Realtime Transcription
+# Fluid Realtime Transcription (FRT)
 
 A transcription system where users can **switch fluidly between speaking and editing**—repositioning the cursor, typing corrections, then resuming dictation—without waiting for the previous utterance to fully process.
 
 ## Name Origin
 
-"Super-realtime" because:
-
-- User can reposition and resume before previous utterance finishes processing
-- Fluid switching between input modes (speech, keyboard, mouse/touch)
-- Output is "more done" than raw transcription
+- **Fluid** — seamless switching between input modes (speech, keyboard, mouse/touch); can reposition cursor and resume before previous utterance finishes
+- **Realtime** — streaming transcription appears as you speak, not after
 
 ## Primary Example
 
@@ -260,7 +257,7 @@ Implementation can choose:
 - **Text** — `…` or `[·]` as fallback
 
 ```
-"This is ⏸️ super realtime ⏸️ transcription"
+"This is ⏸️ fluid realtime ⏸️ transcription"
           ↑                 ↑
        ~800ms            ~300ms
 ```
@@ -299,7 +296,7 @@ type PauseSpan = {
 Pauses can vary in visual weight based on duration (implementation detail):
 
 ```
-"This is ⏸️⏸️ super realtime ⏸️ transcription"
+"This is ⏸️⏸️ fluid realtime ⏸️ transcription"
            ↑                  ↑
        ~800ms              ~300ms
 ```
@@ -358,14 +355,14 @@ const pauseNode = {
 
 ## Comparison to Descript
 
-| Descript                                | Super-Realtime                                 |
+| Descript                                | FRT                                            |
 | --------------------------------------- | ---------------------------------------------- |
 | Media-first (audio exists, derive text) | Input-first (text accumulates, audio attached) |
 | Edit text -> implicitly edit audio      | Edit text -> explicitly decide audio fate      |
 | Single recording session                | Multi-session, multi-source                    |
 | EDL (Edit Decision List)                | ProseMirror transaction history                |
 
-Super-realtime captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
+FRT captures **intent** (keyboard vs speech), not just **effect** (keep/cut).
 
 ---
 
@@ -709,14 +706,14 @@ Regular `<textarea>` won't work because we need:
 
 ProseMirror's model maps well to the requirements:
 
-| Super-Realtime Concept | ProseMirror Equivalent         |
-| ---------------------- | ------------------------------ |
-| Span with metadata     | Mark with attrs                |
-| Pause                  | Atomic inline node             |
-| Transcription cursor   | Decoration (widget)            |
-| Interim text styling   | Decoration (inline)            |
-| Operation log          | Transaction history via plugin |
-| Insert at position     | `tr.insert(pos, content)`      |
+| FRT Concept          | ProseMirror Equivalent         |
+| -------------------- | ------------------------------ |
+| Span with metadata   | Mark with attrs                |
+| Pause                | Atomic inline node             |
+| Transcription cursor | Decoration (widget)            |
+| Interim text styling | Decoration (inline)            |
+| Operation log        | Transaction history via plugin |
+| Insert at position   | `tr.insert(pos, content)`      |
 
 ### Source of Truth Decision
 
@@ -1017,9 +1014,9 @@ This is a good model for persistence—self-contained, portable.
 
 They support multiple speakers per document via `paragraph_start.speaker`. The UI shows speaker names in the left margin (visible in screenshot).
 
-### What Super-Realtime Adds
+### What FRT Adds
 
-| Audapolis                      | Super-Realtime                                |
+| Audapolis                      | FRT                                           |
 | ------------------------------ | --------------------------------------------- |
 | Post-hoc editing               | Real-time editing during transcription        |
 | Single transcription source    | Multiple input sources (keyboard, ASR, paste) |

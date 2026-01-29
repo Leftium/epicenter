@@ -28,11 +28,11 @@ import {
 } from './converters/to-typebox';
 import {
 	cellKey,
-	fieldId,
+	FieldId,
 	generateRowId,
 	hasPrefix,
 	parseCellKey,
-	rowId,
+	RowId,
 	rowPrefix,
 	validateId,
 } from './keys';
@@ -91,12 +91,12 @@ export function createTableStore(
 	// Raw Operations (internal + exposed via raw property)
 	// ══════════════════════════════════════════════════════════════════════
 
-	function rawGet(row: string, field: string): CellValue | undefined {
-		return ykv.get(cellKey(rowId(row), fieldId(field)));
+	function rawGet(rowId: string, fieldId: string): CellValue | undefined {
+		return ykv.get(cellKey(RowId(rowId), FieldId(fieldId)));
 	}
 
-	function rawGetRow(row: string): Record<string, CellValue> | undefined {
-		const prefix = rowPrefix(rowId(row));
+	function rawGetRow(rowId: string): Record<string, CellValue> | undefined {
+		const prefix = rowPrefix(RowId(rowId));
 		const cells: Record<string, CellValue> = {};
 		let found = false;
 
@@ -144,17 +144,17 @@ export function createTableStore(
 	// Validated Cell Operations
 	// ══════════════════════════════════════════════════════════════════════
 
-	function get(row: string, field: string): GetCellResult<unknown> {
-		const key = `${row}:${field}`;
-		const value = rawGet(row, field);
+	function get(rowId: string, fieldId: string): GetCellResult<unknown> {
+		const key = `${rowId}:${fieldId}`;
+		const value = rawGet(rowId, fieldId);
 
 		// Check if cell exists
-		if (value === undefined && !has(row, field)) {
+		if (value === undefined && !has(rowId, fieldId)) {
 			return { status: 'not_found', key };
 		}
 
 		// Get field validator
-		const validator = getFieldValidator(field);
+		const validator = getFieldValidator(fieldId);
 
 		// Fields not in schema pass validation (advisory behavior)
 		if (!validator) {
@@ -170,32 +170,32 @@ export function createTableStore(
 		return { status: 'invalid', key, errors, value };
 	}
 
-	function set(row: string, field: string, value: CellValue): void {
-		validateId(row, 'rowId');
-		validateId(field, 'fieldId');
-		ykv.set(cellKey(rowId(row), fieldId(field)), value);
+	function set(rowId: string, fieldId: string, value: CellValue): void {
+		validateId(rowId, 'rowId');
+		validateId(fieldId, 'fieldId');
+		ykv.set(cellKey(RowId(rowId), FieldId(fieldId)), value);
 	}
 
-	function del(row: string, field: string): void {
-		ykv.delete(cellKey(rowId(row), fieldId(field)));
+	function del(rowId: string, fieldId: string): void {
+		ykv.delete(cellKey(RowId(rowId), FieldId(fieldId)));
 	}
 
-	function has(row: string, field: string): boolean {
-		return ykv.has(cellKey(rowId(row), fieldId(field)));
+	function has(rowId: string, fieldId: string): boolean {
+		return ykv.has(cellKey(RowId(rowId), FieldId(fieldId)));
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
 	// Validated Row Operations
 	// ══════════════════════════════════════════════════════════════════════
 
-	function getRow(row: string): GetResult<RowData> {
-		const cells = rawGetRow(row);
+	function getRow(rowId: string): GetResult<RowData> {
+		const cells = rawGetRow(rowId);
 
 		if (!cells) {
-			return { status: 'not_found', id: row };
+			return { status: 'not_found', id: rowId };
 		}
 
-		const rowData: RowData = { id: row, cells };
+		const rowData: RowData = { id: rowId, cells };
 
 		if (rowValidator.Check(cells)) {
 			return { status: 'valid', row: rowData };
@@ -204,7 +204,7 @@ export function createTableStore(
 		const errors: ValidationError[] = [...rowValidator.Errors(cells)];
 		return {
 			status: 'invalid',
-			id: row,
+			id: rowId,
 			tableName: tableId,
 			errors,
 			row: cells,
@@ -219,9 +219,9 @@ export function createTableStore(
 		return newId;
 	}
 
-	function deleteRow(row: string): void {
+	function deleteRow(rowId: string): void {
 		// Hard delete - remove all cells for this row
-		const prefix = rowPrefix(rowId(row));
+		const prefix = rowPrefix(RowId(rowId));
 		const keysToDelete: string[] = [];
 
 		for (const [key] of ykv.map) {

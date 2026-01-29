@@ -40,7 +40,7 @@ export type CellKey = `${RowId}${typeof KEY_SEPARATOR}${FieldId}`;
  * @param id - The string to brand
  * @returns The branded RowId
  */
-export function rowId(id: string): RowId {
+export function RowId(id: string): RowId {
 	return id as RowId;
 }
 
@@ -50,7 +50,7 @@ export function rowId(id: string): RowId {
  * @param id - The string to brand
  * @returns The branded FieldId
  */
-export function fieldId(id: string): FieldId {
+export function FieldId(id: string): FieldId {
 	return id as FieldId;
 }
 
@@ -71,7 +71,7 @@ const nanoid = customAlphabet(ALPHABET, 12);
  * ```
  */
 export function generateRowId(): RowId {
-	return rowId(nanoid());
+	return RowId(nanoid());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -136,8 +136,8 @@ export function parseCellKey(key: CellKey | string): ParsedCellKey {
 		);
 	}
 	return {
-		rowId: rowId(key.slice(0, separatorIndex)),
-		fieldId: fieldId(key.slice(separatorIndex + 1)),
+		rowId: RowId(key.slice(0, separatorIndex)),
+		fieldId: FieldId(key.slice(separatorIndex + 1)),
 	};
 }
 

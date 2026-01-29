@@ -131,15 +131,16 @@ function generateEmail(index: number) {
 
 	return {
 		id: generateId(),
-		sender: SAMPLE_SENDERS[index % SAMPLE_SENDERS.length],
+		sender: SAMPLE_SENDERS[index % SAMPLE_SENDERS.length] ?? '',
 		recipient: 'me@example.com',
 		subject:
-			SAMPLE_SUBJECTS[index % SAMPLE_SUBJECTS.length] + ` (${index + 1})`,
+			(SAMPLE_SUBJECTS[index % SAMPLE_SUBJECTS.length] ?? '') +
+			` (${index + 1})`,
 		body: generateEmailBody(index),
 		received_at: timestamp,
 		read: index % 3 === 0 ? 1 : 0, // 33% read
 		starred: index % 10 === 0 ? 1 : 0, // 10% starred
-		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4],
+		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4] ?? 'inbox',
 	};
 }
 
@@ -186,6 +187,9 @@ console.log('');
 
 // Define the email definition
 const emailDefinition = defineWorkspace({
+	name: 'Email Storage Simulation',
+	description: '',
+	icon: null,
 	tables: {
 		emails: table({
 			name: 'Emails',

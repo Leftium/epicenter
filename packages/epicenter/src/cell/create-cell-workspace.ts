@@ -55,6 +55,7 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 	}
 
 	switch (type) {
+		case 'id':
 		case 'text':
 		case 'richtext':
 			return typeof value === 'string';
@@ -69,7 +70,6 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 			return typeof value === 'boolean';
 
 		case 'date':
-		case 'datetime':
 			// Accept string (ISO format) or number (timestamp)
 			return typeof value === 'string' || typeof value === 'number';
 
@@ -238,10 +238,10 @@ function createCellWorkspaceLegacy({
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 				// Use schema from definition, or empty schema for dynamic tables
-				const tableSchema = definition.tables[tableId] ?? {
-					name: tableId,
-					fields: {},
-				};
+				// Dynamic tables have no schema - cast is needed since FieldMap requires id
+				const tableSchema =
+					definition.tables[tableId] ??
+					({ name: tableId, description: '', icon: null, fields: {} } as SchemaTableDefinition);
 				store = createTableHelper(tableId, yarray, tableSchema);
 				tableHelperCache.set(tableId, store);
 			}
@@ -382,10 +382,11 @@ function createCellWorkspaceWithHeadDoc<
 		let store = tableHelperCache.get(tableId);
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
-			const tableSchema = definition.tables[tableId as keyof TTableDefs] ?? {
-				name: tableId,
-				fields: {},
-			};
+			// Use schema from definition, or empty schema for dynamic tables
+			// Dynamic tables have no schema - cast is needed since FieldMap requires id
+			const tableSchema =
+				definition.tables[tableId as keyof TTableDefs] ??
+				({ name: tableId, description: '', icon: null, fields: {} } as SchemaTableDefinition);
 			store = createTableHelper(tableId, yarray, tableSchema);
 			tableHelperCache.set(tableId, store);
 		}

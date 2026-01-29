@@ -1,31 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import { table, text, integer, select, id } from '../core/schema/fields/factories';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import { createTableHelper } from './table-helper';
 import type { CellValue, SchemaTableDefinition } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = { name: tableId, fields: {} },
+	schema: SchemaTableDefinition = table({ name: tableId, fields: { id: id() } }),
 ) {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 	return { ydoc, tableHelper: createTableHelper(tableId, yarray, schema) };
 }
 
-const postsSchema: SchemaTableDefinition = {
+const postsSchema = table({
 	name: 'Posts',
 	fields: {
-		title: { name: 'Title', type: 'text', order: 1 },
-		views: { name: 'Views', type: 'integer', order: 2 },
-		status: {
-			name: 'Status',
-			type: 'select',
-			order: 3,
-			options: ['draft', 'published'],
-		},
+		id: id({ name: 'ID' }),
+		title: text({ name: 'Title' }),
+		views: integer({ name: 'Views' }),
+		status: select({ name: 'Status', options: ['draft', 'published'] }),
 	},
-};
+});
 
 describe('TableHelper with schema (consolidated API)', () => {
 	describe('get (validated)', () => {
@@ -304,9 +301,9 @@ describe('TableHelper without schema (dynamic tables)', () => {
 		expect(valid.length).toBe(2);
 	});
 
-	test('schema property is empty for dynamic tables', () => {
+	test('schema property has only id field for dynamic tables', () => {
 		const { tableHelper } = createTestStore('dynamic');
 		expect(tableHelper.schema.name).toBe('dynamic');
-		expect(tableHelper.schema.fields).toEqual({});
+		expect(Object.keys(tableHelper.schema.fields)).toEqual(['id']);
 	});
 });

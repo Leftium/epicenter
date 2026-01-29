@@ -77,6 +77,7 @@ import {
 } from '../docs/workspace-doc';
 
 import type {
+	Icon,
 	KvDefinitionMap,
 	TableDefinitionMap,
 } from '../schema/fields/types';
@@ -86,29 +87,42 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Workspace definition containing tables and KV definitions.
+ * Complete workspace definition including identity and schema.
  *
- * This is the input type for `.withDefinition()`. It does NOT include
- * workspace identity (id, name, icon, description) which now lives in Head Doc.
+ * Contains workspace identity (name, description, icon) alongside
+ * table and KV definitions. This is the "lens" through which data is viewed.
+ *
+ * The data itself is separate from the definition - this enables:
+ * - Multiple definitions viewing the same data differently
+ * - Advisory validation (data flagged, not rejected)
+ * - Schema evolution without data migration
  *
  * @example
  * ```typescript
- * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
- * const client = createClient(head)
- *   .withDefinition({
- *     tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
- *     kv: {},
- *   })
- *   .withExtensions({ persistence });
+ * const definition: WorkspaceDefinition = {
+ *   name: 'My Blog',
+ *   description: 'Personal blog workspace',
+ *   icon: 'emoji:📝',
+ *   tables: {
+ *     posts: table({ name: 'Posts', fields: { id: id(), title: text() } }),
+ *   },
+ *   kv: {},
+ * };
  * ```
  */
 export type WorkspaceDefinition<
 	TTableDefinitionMap extends TableDefinitionMap = TableDefinitionMap,
 	TKvDefinitionMap extends KvDefinitionMap = KvDefinitionMap,
 > = {
-	/** Table definitions with metadata (name, icon, cover, description, fields). */
+	/** Display name of the workspace */
+	name: string;
+	/** Description of the workspace */
+	description: string;
+	/** Icon for the workspace - tagged string format 'type:value' or null */
+	icon: Icon | null;
+	/** Table definitions with metadata (name, icon, description, fields). */
 	tables: TTableDefinitionMap;
-	/** Key-value store definitions with metadata. */
+	/** KV definitions for workspace-level settings. */
 	kv: TKvDefinitionMap;
 };
 

@@ -10,11 +10,7 @@
  */
 
 import { type TObject, type TSchema, Type } from 'typebox';
-import type {
-	FieldType,
-	SchemaFieldDefinition,
-	SchemaTableDefinition,
-} from '../types';
+import type { SchemaFieldDefinition, SchemaTableDefinition } from '../types';
 
 /**
  * Converts a single SchemaFieldDefinition to a TypeBox TSchema.
@@ -22,11 +18,11 @@ import type {
  * All fields are nullable in cell workspace (advisory schema).
  *
  * Field type mappings:
- * - `text`, `richtext` -> `Type.String()`
+ * - `id`, `text`, `richtext` -> `Type.String()`
  * - `integer` -> `Type.Integer()`
  * - `real` -> `Type.Number()`
  * - `boolean` -> `Type.Boolean()`
- * - `date`, `datetime` -> `Type.String()`
+ * - `date` -> `Type.String()`
  * - `select` -> `Type.Union([Type.Literal(...), ...])` if options, else `Type.String()`
  * - `tags` -> `Type.Array(Type.Union([...]))` if options, else `Type.Array(Type.String())`
  * - `json` -> `Type.Unknown()`
@@ -36,21 +32,22 @@ import type {
  *
  * @example
  * ```typescript
- * const schema = schemaFieldToTypebox({ name: 'Title', type: 'text', order: 1 });
+ * const schema = schemaFieldToTypebox({ name: 'Title', type: 'text', ... });
  * // Returns Type.Union([Type.String(), Type.Null()])
  * ```
  */
 export function schemaFieldToTypebox(field: SchemaFieldDefinition): TSchema {
-	const baseType = fieldTypeToTypebox(field.type, field.options);
+	const baseType = fieldToTypebox(field);
 	// All cell fields are nullable (advisory schema)
 	return Type.Union([baseType, Type.Null()]);
 }
 
 /**
- * Converts a field type to its base TypeBox schema (without nullable wrapper).
+ * Converts a field definition to its base TypeBox schema (without nullable wrapper).
  */
-function fieldTypeToTypebox(type: FieldType, options?: string[]): TSchema {
-	switch (type) {
+function fieldToTypebox(field: SchemaFieldDefinition): TSchema {
+	switch (field.type) {
+		case 'id':
 		case 'text':
 		case 'richtext':
 			return Type.String();
@@ -65,19 +62,16 @@ function fieldTypeToTypebox(type: FieldType, options?: string[]): TSchema {
 			return Type.Boolean();
 
 		case 'date':
-		case 'datetime':
 			// Accept any string for dates (no strict validation in cell workspace)
 			return Type.String();
 
 		case 'select': {
-			if (options && options.length > 0) {
-				const literals = options.map((value) => Type.Literal(value));
-				return Type.Union(literals);
-			}
-			return Type.String();
+			const literals = field.options.map((value) => Type.Literal(value));
+			return Type.Union(literals);
 		}
 
 		case 'tags': {
+			const options = field.options;
 			if (options && options.length > 0) {
 				const literals = options.map((value) => Type.Literal(value));
 				return Type.Array(Type.Union(literals));

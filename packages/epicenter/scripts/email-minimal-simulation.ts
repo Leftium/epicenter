@@ -77,6 +77,9 @@ console.log('');
 
 // Minimal email definition
 const emailDefinition = defineWorkspace({
+	name: 'Email Minimal Simulation',
+	description: '',
+	icon: null,
 	tables: {
 		emails: table({
 			name: 'Emails',

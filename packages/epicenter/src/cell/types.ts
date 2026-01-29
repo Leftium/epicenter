@@ -13,7 +13,14 @@
  */
 
 import type * as Y from 'yjs';
-import type { Icon } from '../core/schema/fields/types';
+import type {
+	Field,
+	FieldType as CoreFieldType,
+	Icon,
+	KvDefinition,
+	TableDefinition,
+} from '../core/schema/fields/types';
+import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
 import type {
 	GetCellResult,
 	GetResult,
@@ -22,89 +29,37 @@ import type {
 } from './validation-types';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Schema Types (External JSON)
+// Schema Types (Re-exported from Core)
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Supported field types for schema definitions.
+ * Field definition - re-exported from core.
+ * Use field factories (text(), integer(), etc.) to create these.
  */
-export type FieldType =
-	| 'text'
-	| 'integer'
-	| 'real'
-	| 'boolean'
-	| 'date'
-	| 'datetime'
-	| 'select'
-	| 'tags'
-	| 'json'
-	| 'richtext';
+export type SchemaFieldDefinition = Field;
 
 /**
- * Field definition in external schema.
- * Purely advisory - describes how to interpret cell values.
+ * Table definition - re-exported from core.
+ * Use the `table()` helper to create these with defaults.
  */
-export type SchemaFieldDefinition = {
-	/** Display name of the field */
-	name: string;
-	/** Data type hint for the field */
-	type: FieldType;
-	/** Display order (lower = first) */
-	order: number;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Options for select/tags field types */
-	options?: string[];
-	/** Default value for new cells */
-	default?: unknown;
-};
+export type SchemaTableDefinition = TableDefinition;
 
 /**
- * Table definition in external schema.
+ * KV definition - re-exported from core.
+ * Use the `setting()` helper to create these with defaults.
  */
-export type SchemaTableDefinition = {
-	/** Display name of the table */
-	name: string;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Field definitions keyed by field ID */
-	fields: Record<string, SchemaFieldDefinition>;
-};
+export type SchemaKvDefinition = KvDefinition;
 
 /**
- * KV field definition in external schema.
+ * Complete workspace definition - re-exported from core.
+ * Includes workspace identity (name, description, icon) and schema (tables, kv).
  */
-export type SchemaKvDefinition = {
-	/** Display name of the KV field */
-	name: string;
-	/** Data type hint */
-	type: FieldType;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Options for select field type */
-	options?: string[];
-	/** Default value */
-	default?: unknown;
-};
+export type WorkspaceDefinition = CoreWorkspaceDefinition;
 
 /**
- * Complete workspace definition (can be stored as external JSON file).
- *
- * This is the "lens" through which you view the data.
- * The data itself doesn't need to comply with this schema.
+ * Field type discriminator - derived from Field['type'] in core.
  */
-export type WorkspaceDefinition = {
-	/** Display name of the workspace */
-	name: string;
-	/** Optional description of the workspace */
-	description?: string;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Table definitions keyed by table ID */
-	tables: Record<string, SchemaTableDefinition>;
-	/** Optional KV definitions for single values */
-	kv?: Record<string, SchemaKvDefinition>;
-};
+export type FieldType = CoreFieldType;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Data Types

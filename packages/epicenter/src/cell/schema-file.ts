@@ -16,11 +16,23 @@
  * @packageDocumentation
  */
 
+import type { Icon } from '../core/schema/fields/types';
+import { isIcon } from '../core/schema/fields/types';
 import type {
 	SchemaFieldDefinition,
 	SchemaTableDefinition,
 	WorkspaceDefinition,
 } from './types';
+
+/**
+ * Normalize icon input to Icon | null.
+ */
+function normalizeIcon(icon: unknown): Icon | null {
+	if (icon === undefined || icon === null) return null;
+	if (typeof icon !== 'string') return null;
+	if (isIcon(icon)) return icon;
+	return `emoji:${icon}` as Icon;
+}
 
 /**
  * Parse a schema from JSON string.
@@ -82,15 +94,31 @@ export function parseSchema(json: string): WorkspaceDefinition {
 					`Field "${tableId}.${fieldId}" must have a "type" string property`,
 				);
 			}
-			if (typeof fieldObj.order !== 'number') {
-				throw new Error(
-					`Field "${tableId}.${fieldId}" must have an "order" number property`,
-				);
-			}
 		}
 	}
 
-	return data as WorkspaceDefinition;
+	// Normalize the parsed data
+	const normalized: WorkspaceDefinition = {
+		name: obj.name as string,
+		description: (obj.description as string) ?? '',
+		icon: normalizeIcon(obj.icon),
+		tables: {},
+		kv: obj.kv as WorkspaceDefinition['kv'],
+	};
+
+	// Normalize tables
+	for (const [tableId, tableData] of Object.entries(tables)) {
+		const tableObj = tableData as Record<string, unknown>;
+		// Cast to SchemaTableDefinition since JSON parsing doesn't preserve FieldMap constraint
+		normalized.tables[tableId] = {
+			name: tableObj.name as string,
+			description: (tableObj.description as string) ?? '',
+			icon: normalizeIcon(tableObj.icon),
+			fields: tableObj.fields,
+		} as SchemaTableDefinition;
+	}
+
+	return normalized;
 }
 
 /**
@@ -116,11 +144,12 @@ export function stringifySchema(
  */
 export function createEmptySchema(
 	name: string,
-	icon?: string,
+	icon?: string | Icon | null,
 ): WorkspaceDefinition {
 	return {
 		name,
-		icon: icon ?? null,
+		description: '',
+		icon: normalizeIcon(icon),
 		tables: {},
 		kv: {},
 	};
@@ -227,31 +256,10 @@ export function removeField(
 			...schema.tables,
 			[tableId]: {
 				...table,
-				fields,
+				// Cast needed: TypeScript loses FieldMap constraint after destructuring
+				fields: fields as SchemaTableDefinition['fields'],
 			},
 		},
 	};
 }
 
-/**
- * Get sorted fields for a table.
- *
- * @param table - Table definition
- * @returns Array of [fieldId, field] tuples sorted by order
- */
-export function getSortedFields(
-	table: SchemaTableDefinition,
-): Array<[string, SchemaFieldDefinition]> {
-	return Object.entries(table.fields).sort(([, a], [, b]) => a.order - b.order);
-}
-
-/**
- * Calculate the next order value for a new field.
- *
- * @param table - Table definition
- * @returns The next order value (max + 1, or 1 if no fields)
- */
-export function getNextFieldOrder(table: SchemaTableDefinition): number {
-	const orders = Object.values(table.fields).map((f) => f.order);
-	return orders.length > 0 ? Math.max(...orders) + 1 : 1;
-}

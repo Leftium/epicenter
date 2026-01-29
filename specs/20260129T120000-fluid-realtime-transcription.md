@@ -23,7 +23,7 @@ Result:   "This is **fluid** realtime transcription"
 | **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"                 | "Send the quarterly report" |
 | **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                       | "Call me back tomorrow"     |
 | **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                       | "Meet at the library"       |
-| **Fix homophone**   | "Its ready to send" | click after "It", type `'`                           | "It's ready to send"        |
+| **Fix homophone**   | "Your welcome"      | select "Your", 🪄 Enhance Transcription              | "You're welcome"            |
 | **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                     | "The small dog"             |
 | **Format (mixed)**  | "This is important" | select "important", cut, type `**`, paste, type `**` | "This is **important**"     |
 | **Type then speak** | —                   | type "Thanks ", speak "for your help"                | "Thanks for your help"      |

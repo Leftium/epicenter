@@ -104,10 +104,10 @@ export function validateId(id: string, type: string): void {
  *
  * @example
  * ```ts
- * cellKey(rowId('abc123'), fieldId('title')); // 'abc123:title'
+ * CellKey(RowId('abc123'), FieldId('title')); // 'abc123:title'
  * ```
  */
-export function cellKey(rowId: RowId, fieldId: FieldId): CellKey {
+export function CellKey(rowId: RowId, fieldId: FieldId): CellKey {
 	return `${rowId}${KEY_SEPARATOR}${fieldId}` as CellKey;
 }
 
@@ -154,7 +154,7 @@ export type RowPrefix = `${RowId}${typeof KEY_SEPARATOR}`;
  * @param rowId - The row identifier
  * @returns Typed prefix string `{rowId}:`
  */
-export function rowPrefix(rowId: RowId): RowPrefix {
+export function RowPrefix(rowId: RowId): RowPrefix {
 	return `${rowId}${KEY_SEPARATOR}` as RowPrefix;
 }
 

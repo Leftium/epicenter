@@ -59,11 +59,11 @@ export type {
 
 // Key utilities
 export {
-	cellKey,
+	CellKey,
 	generateRowId,
 	hasPrefix,
 	parseCellKey,
-	rowPrefix,
+	RowPrefix,
 	validateId,
 } from './keys';
 // Schema file utilities

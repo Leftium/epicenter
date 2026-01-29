@@ -168,17 +168,17 @@ export type ChangeHandler<T> = (
 ) => void;
 
 // ════════════════════════════════════════════════════════════════════════════
-// Store Interfaces
+// Helper Interfaces
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Store for a single table's data with integrated validation.
+ * Helper for a single table's data with integrated validation.
  *
  * All methods return validated results that include both the value and validation status.
  * Even invalid results include the raw value via `.value` or `.row`, so there's no need
  * for separate "raw" access - you can always get the data regardless of validity.
  */
-export type TableStore = {
+export type TableHelper = {
 	/** The table identifier */
 	tableId: string;
 	/** The schema definition for this table (empty fields for dynamic tables) */
@@ -218,7 +218,7 @@ export type TableStore = {
 };
 
 /**
- * Store for workspace-level key-value pairs.
+ * Helper for workspace-level key-value pairs.
  */
 export type KvStore = {
 	/** Get a value by key */
@@ -243,7 +243,7 @@ export type KvStore = {
 /**
  * The main cell workspace client.
  *
- * Provides access to table stores and KV store.
+ * Provides access to table helpers and KV helper.
  * Schema is applied as a "lens" for viewing/editing.
  */
 export type CellWorkspaceClient<
@@ -271,11 +271,11 @@ export type CellWorkspaceClient<
 	definition: WorkspaceDefinition & { tables: TTableDefs };
 
 	/**
-	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
-	 * Table stores are cached - calling with same tableId returns same instance.
+	 * Get a table helper. Creates the underlying Y.Array if it doesn't exist.
+	 * Table helpers are cached - calling with same tableId returns same instance.
 	 */
-	table<K extends keyof TTableDefs>(tableId: K): TableStore;
-	table(tableId: string): TableStore;
+	table<K extends keyof TTableDefs>(tableId: K): TableHelper;
+	table(tableId: string): TableHelper;
 
 	/** KV store for workspace-level values */
 	kv: KvStore;

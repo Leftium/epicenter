@@ -80,8 +80,8 @@ export {
 } from './schema-file';
 // KV store array name (for advanced use cases)
 export { KV_ARRAY_NAME } from './stores/kv-store';
-// Table store factory (for advanced use)
-export { createTableStore } from './table-store';
+// Table helper factory (for advanced use)
+export { createTableHelper } from './table-helper';
 // Types
 export type {
 	// Data types
@@ -102,7 +102,7 @@ export type {
 	SchemaKvDefinition,
 	SchemaTableDefinition,
 	// Store interfaces
-	TableStore,
+	TableHelper,
 	TypedCell,
 	TypedRowWithCells,
 	WorkspaceDefinition,

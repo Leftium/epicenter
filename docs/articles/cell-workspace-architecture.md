@@ -113,7 +113,7 @@ The schema acts as a **lens** for viewing data, not a constraint on what can be 
 
 ## The API
 
-Creating a workspace gives you access to table stores:
+Creating a workspace gives you access to table helpers:
 
 ```typescript
 import { createCellWorkspace } from "@epicenter/epicenter/cell";

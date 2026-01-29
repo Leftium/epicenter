@@ -145,7 +145,11 @@ describe('tableToArktype', () => {
 
 		expect(result).not.toBeInstanceOf(type.errors);
 		if (!(result instanceof type.errors)) {
-			const row = result as { subtitle: string | null; count: number | null; status: string | null };
+			const row = result as {
+				subtitle: string | null;
+				count: number | null;
+				status: string | null;
+			};
 			expect(row.subtitle).toBe(null);
 			expect(row.count).toBe(null);
 			expect(row.status).toBe(null);

@@ -92,10 +92,16 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tables1 = createTables(doc1, {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		});
 		const tables2 = createTables(doc2, {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		});
 
 		tables1.get('posts').upsert({ id: 'post-1', title: 'Original' });
@@ -136,10 +142,16 @@ describe('Cell-Level CRDT Merging', () => {
 			const doc2 = new Y.Doc();
 
 			const tables1 = createTables(doc1, {
-				posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+				posts: table('posts', {
+					name: '',
+					fields: [id(), text('title')] as const,
+				}),
 			});
 			const tables2 = createTables(doc2, {
-				posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+				posts: table('posts', {
+					name: '',
+					fields: [id(), text('title')] as const,
+				}),
 			});
 
 			tables1.get('posts').upsert({ id: 'post-1', title: 'Original' });
@@ -464,7 +476,10 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		};
 
 		const tables1 = createTables(doc1, tableDefinitions);
@@ -540,7 +555,10 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		};
 
 		const tables1 = createTables(doc1, tableDefinitions);
@@ -673,7 +691,10 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		};
 
 		const tables1 = createTables(doc1, tableDefinitions);
@@ -702,7 +723,10 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		};
 
 		const tables1 = createTables(doc1, tableDefinitions);
@@ -739,7 +763,10 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		};
 
 		const tables1 = createTables(doc1, tableDefinitions);
@@ -821,7 +848,10 @@ describe('Cell-Level CRDT Merging', () => {
 		const ydoc = new Y.Doc({ guid: 'test-table-replacement' });
 
 		const tables = createTables(ydoc, {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		});
 
 		tables.get('posts').upsertMany([
@@ -863,7 +893,10 @@ describe('Cell-Level CRDT Merging', () => {
 		const ytables: TablesMap = ydoc.getMap('tables');
 
 		const tables = createTables(ydoc, {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		});
 
 		tables.get('posts').upsert({ id: 'post-1', title: 'Original' });
@@ -917,7 +950,10 @@ describe('Cell-Level CRDT Merging', () => {
 		const ytables: TablesMap = ydoc.getMap('tables');
 
 		const tables = createTables(ydoc, {
-			posts: table('posts', { name: '', fields: [id(), text('title')] as const }),
+			posts: table('posts', {
+				name: '',
+				fields: [id(), text('title')] as const,
+			}),
 		});
 
 		const changes: Array<{ action: string; id: string }> = [];

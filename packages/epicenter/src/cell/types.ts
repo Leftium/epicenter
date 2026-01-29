@@ -14,8 +14,8 @@
 
 import type * as Y from 'yjs';
 import type {
-	Field,
 	FieldType as CoreFieldType,
+	Field,
 	Icon,
 	KvDefinition,
 	TableDefinition,
@@ -250,9 +250,7 @@ export type CellWorkspaceClient<
 	/**
 	 * Batch multiple writes into a single Yjs transaction.
 	 */
-	batch<T>(
-		fn: (ws: CellWorkspaceClient<TTableDefs, TExtensions>) => T,
-	): T;
+	batch<T>(fn: (ws: CellWorkspaceClient<TTableDefs, TExtensions>) => T): T;
 
 	/**
 	 * Resolves when all extensions are synced/ready.

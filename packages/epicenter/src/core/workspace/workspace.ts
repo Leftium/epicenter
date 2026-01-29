@@ -120,7 +120,9 @@ import type {
  * ```
  */
 export type WorkspaceDefinitionV2<
-	TTableDefinitions extends readonly TableDefinition<readonly Field[]>[] = TableDefinition<readonly Field[]>[],
+	TTableDefinitions extends readonly TableDefinition<
+		readonly Field[]
+	>[] = TableDefinition<readonly Field[]>[],
 	TKvFields extends readonly KvField[] = KvField[],
 > = {
 	/** Display name of the workspace */

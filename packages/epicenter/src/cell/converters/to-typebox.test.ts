@@ -178,7 +178,6 @@ describe('schemaFieldToTypebox', () => {
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
-
 	});
 
 	describe('tags', () => {
@@ -270,10 +269,7 @@ describe('schemaTableToTypebox', () => {
 	test('allows additional properties (advisory behavior)', () => {
 		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: [
-				id(),
-				text('title', { name: 'Title' }),
-			] as const,
+			fields: [id(), text('title', { name: 'Title' })] as const,
 		});
 		const schema = schemaTableToTypebox(tableSchema);
 
@@ -320,10 +316,7 @@ describe('schemaTableToTypebox', () => {
 	test('compiled validator reports errors', () => {
 		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: [
-				id(),
-				text('title', { name: 'Title' }),
-			] as const,
+			fields: [id(), text('title', { name: 'Title' })] as const,
 		});
 		const schema = schemaTableToTypebox(tableSchema);
 		const validator = Compile(schema);

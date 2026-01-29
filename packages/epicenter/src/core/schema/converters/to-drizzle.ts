@@ -89,10 +89,10 @@ export function convertTableDefinitionsToDrizzle<
 }
 
 /** Convert a single table schema to a Drizzle SQLiteTable. */
-function convertTableToDrizzle<
-	TTableName extends string,
-	TField extends Field,
->(tableName: TTableName, fields: readonly TField[]) {
+function convertTableToDrizzle<TTableName extends string, TField extends Field>(
+	tableName: TTableName,
+	fields: readonly TField[],
+) {
 	const columns = Object.fromEntries(
 		fields.map((field) => {
 			const sqlColumnName = field.name ? toSqlIdentifier(field.name) : field.id;

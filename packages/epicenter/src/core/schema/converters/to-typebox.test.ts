@@ -172,7 +172,9 @@ describe('fieldToTypebox', () => {
 	describe('select', () => {
 		test('accepts defined options only', () => {
 			const schema = fieldToTypebox(
-				select('status', { options: ['draft', 'published', 'archived'] as const }),
+				select('status', {
+					options: ['draft', 'published', 'archived'] as const,
+				}),
 			);
 			expect(Value.Check(schema, 'draft')).toBe(true);
 			expect(Value.Check(schema, 'published')).toBe(true);
@@ -181,7 +183,9 @@ describe('fieldToTypebox', () => {
 
 		test('rejects undefined options', () => {
 			const schema = fieldToTypebox(
-				select('status', { options: ['draft', 'published', 'archived'] as const }),
+				select('status', {
+					options: ['draft', 'published', 'archived'] as const,
+				}),
 			);
 			expect(Value.Check(schema, 'pending')).toBe(false);
 			expect(Value.Check(schema, 'DRAFT')).toBe(false);

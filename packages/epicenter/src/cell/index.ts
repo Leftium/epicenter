@@ -21,7 +21,11 @@
 export { createHeadDoc, type HeadDoc } from '../core/docs/head-doc';
 
 // Lifecycle utilities (re-exported for extension authors)
-export { defineExports, type Lifecycle, type MaybePromise } from '../core/lifecycle';
+export {
+	defineExports,
+	type Lifecycle,
+	type MaybePromise,
+} from '../core/lifecycle';
 
 // Core field factories for programmatic schema creation
 export {

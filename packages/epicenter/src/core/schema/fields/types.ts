@@ -207,12 +207,13 @@ export type RichtextField = FieldMetadata & {
 /**
  * Integer field - whole numbers.
  */
-export type IntegerField<TNullable extends boolean = boolean> = FieldMetadata & {
-	id: string;
-	type: 'integer';
-	nullable?: TNullable;
-	default?: number;
-};
+export type IntegerField<TNullable extends boolean = boolean> =
+	FieldMetadata & {
+		id: string;
+		type: 'integer';
+		nullable?: TNullable;
+		default?: number;
+	};
 
 /**
  * Real/float field - decimal numbers.
@@ -227,12 +228,13 @@ export type RealField<TNullable extends boolean = boolean> = FieldMetadata & {
 /**
  * Boolean field - true/false values.
  */
-export type BooleanField<TNullable extends boolean = boolean> = FieldMetadata & {
-	id: string;
-	type: 'boolean';
-	nullable?: TNullable;
-	default?: boolean;
-};
+export type BooleanField<TNullable extends boolean = boolean> =
+	FieldMetadata & {
+		id: string;
+		type: 'boolean';
+		nullable?: TNullable;
+		default?: boolean;
+	};
 
 /**
  * Date field - timezone-aware dates.
@@ -420,8 +422,10 @@ export type FieldType = Field['type'];
 /**
  * Get specific field by id from array.
  */
-export type FieldById<TFields extends readonly Field[], K extends string> =
-	Extract<TFields[number], { id: K }>;
+export type FieldById<
+	TFields extends readonly Field[],
+	K extends string,
+> = Extract<TFields[number], { id: K }>;
 
 /**
  * Get union of all field ids from array.
@@ -556,7 +560,10 @@ export type TableDefinition<TFields extends readonly Field[] = Field[]> = {
  * ] as const;
  * ```
  */
-export type TableDefinitionMap = Record<string, TableDefinition<readonly Field[]>>;
+export type TableDefinitionMap = Record<
+	string,
+	TableDefinition<readonly Field[]>
+>;
 
 // ============================================================================
 // Row Types

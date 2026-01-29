@@ -14,7 +14,7 @@
 
 // Re-export from cell/keys - the RowId/FieldId exports include both
 // the type and the brand constructor function (same name, different namespaces)
-export { RowId, FieldId, generateRowId } from '../cell/keys.js';
+export { FieldId, generateRowId, RowId } from '../cell/keys.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Validation

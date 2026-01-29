@@ -143,10 +143,10 @@ export function parseSchema(json: string): WorkspaceDefinition {
 		// Normalize fields to array format (supports both Record and Array input)
 		const rawFields = tableObj.fields;
 		const normalizedFields: SchemaFieldDefinition[] = Array.isArray(rawFields)
-			? (rawFields as Array<Record<string, unknown>>).map((f) => ({
+			? ((rawFields as Array<Record<string, unknown>>).map((f) => ({
 					...(f as object),
 					id: (f.id as string) ?? '',
-				})) as SchemaFieldDefinition[]
+				})) as SchemaFieldDefinition[])
 			: Object.entries(rawFields as Record<string, unknown>).map(
 					([id, f]) =>
 						({
@@ -304,4 +304,3 @@ export function removeField(
 		},
 	};
 }
-

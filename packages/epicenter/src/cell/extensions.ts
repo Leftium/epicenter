@@ -30,7 +30,12 @@
 
 import type * as Y from 'yjs';
 import type { Lifecycle } from '../core/lifecycle';
-import type { KvStore, SchemaTableDefinition, TableHelper, WorkspaceDefinition } from './types';
+import type {
+	KvStore,
+	SchemaTableDefinition,
+	TableHelper,
+	WorkspaceDefinition,
+} from './types';
 
 /**
  * Context provided to cell extension factories.

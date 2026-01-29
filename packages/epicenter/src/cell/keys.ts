@@ -87,7 +87,9 @@ export function generateRowId(): RowId {
  */
 export function validateId(id: string, type: string): void {
 	if (id.includes(KEY_SEPARATOR)) {
-		throw new Error(`${type} cannot contain '${KEY_SEPARATOR}' character: "${id}"`);
+		throw new Error(
+			`${type} cannot contain '${KEY_SEPARATOR}' character: "${id}"`,
+		);
 	}
 }
 

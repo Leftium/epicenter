@@ -1,9 +1,6 @@
 import { WebsocketProvider } from 'y-websocket';
 import { defineExports, type ExtensionFactory } from '../core/extension';
-import type {
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
-} from '../core/schema';
+import type { KvField, TableDefinition } from '../core/schema';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MULTI-DEVICE SYNC ARCHITECTURE
@@ -226,11 +223,9 @@ export type WebsocketSyncConfig = {
  * ```
  */
 export function websocketSync<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
->(
-	config: WebsocketSyncConfig,
-): ExtensionFactory<TTableDefinitionMap, TKvDefinitionMap> {
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
+>(config: WebsocketSyncConfig): ExtensionFactory<TTableDefinitions, TKvFields> {
 	return ({ ydoc }) => {
 		const provider = new WebsocketProvider(
 			config.url,

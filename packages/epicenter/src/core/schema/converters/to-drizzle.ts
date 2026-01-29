@@ -26,7 +26,7 @@ import type {
 	RealField,
 	RichtextField,
 	SelectField,
-	TableDefinitionMap,
+	TableDefinition,
 	TagsField,
 	TextField,
 } from '../fields/types';
@@ -42,20 +42,23 @@ export function toSqlIdentifier(displayName: string): string {
  * `convertTableDefinitionsToDrizzle` in your type definitions.
  */
 export type TableDefinitionsToDrizzle<
-	TTableDefinitionMap extends TableDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
 > = {
-	[K in keyof TTableDefinitionMap & string]: ReturnType<
-		typeof convertTableToDrizzle<K, TTableDefinitionMap[K]['fields'][number]>
+	[K in TTableDefinitions[number]['id']]: ReturnType<
+		typeof convertTableToDrizzle<
+			K,
+			Extract<TTableDefinitions[number], { id: K }>['fields'][number]
+		>
 	>;
 };
 
 /**
  * Convert table definitions to Drizzle SQLite tables.
  *
- * This is the main entry point for converting a TableDefinitionMap
+ * This is the main entry point for converting table definitions
  * into Drizzle table definitions for database operations.
  *
- * @param definitions - The table definitions (from `tables.definitions`)
+ * @param definitions - The table definitions array (from `tables.definitions`)
  * @returns A record mapping table names to their Drizzle SQLiteTable representations
  *
  * @example
@@ -68,24 +71,20 @@ export type TableDefinitionsToDrizzle<
  * ```
  */
 export function convertTableDefinitionsToDrizzle<
-	TTableDefinitionMap extends TableDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
 >(
-	definitions: TTableDefinitionMap,
-): TableDefinitionsToDrizzle<TTableDefinitionMap> {
+	definitions: TTableDefinitions,
+): TableDefinitionsToDrizzle<TTableDefinitions> {
 	const result: Record<string, SQLiteTable> = {};
 
-	for (const tableName of Object.keys(definitions)) {
-		const tableDefinition = definitions[tableName];
-		if (!tableDefinition) {
-			throw new Error(`Table definition for "${tableName}" is undefined`);
-		}
-		result[tableName] = convertTableToDrizzle(
-			tableName,
+	for (const tableDefinition of definitions) {
+		result[tableDefinition.id] = convertTableToDrizzle(
+			tableDefinition.id,
 			tableDefinition.fields,
 		);
 	}
 
-	return result as TableDefinitionsToDrizzle<TTableDefinitionMap>;
+	return result as TableDefinitionsToDrizzle<TTableDefinitions>;
 }
 
 /** Convert a single table schema to a Drizzle SQLiteTable. */

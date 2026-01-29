@@ -252,6 +252,7 @@ function createTableHelper(
 
 		toJSON() {
 			return {
+				id: tableName,
 				name: (tableDefinitionMap.get('name') as string) ?? '',
 				icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 				description: (tableDefinitionMap.get('description') as string) ?? '',
@@ -383,6 +384,7 @@ function createTablesCollection(
 			const result: Record<string, TableDefinition> = {};
 			for (const [tableName, tableDefinitionMap] of tablesMap.entries()) {
 				result[tableName] = {
+					id: tableName,
 					name: (tableDefinitionMap.get('name') as string) ?? '',
 					icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 					description: (tableDefinitionMap.get('description') as string) ?? '',
@@ -409,6 +411,7 @@ function createTablesCollection(
 				result.push([
 					tableName,
 					{
+						id: tableName,
 						name: (tableDefinitionMap.get('name') as string) ?? '',
 						icon: (tableDefinitionMap.get('icon') as Icon | null) ?? null,
 						description:

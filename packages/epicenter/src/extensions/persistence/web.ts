@@ -4,10 +4,7 @@ import {
 	type ExtensionContext,
 	type ExtensionFactory,
 } from '../../core/extension';
-import type {
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
-} from '../../core/schema';
+import type { KvField, TableDefinition } from '../../core/schema';
 
 /**
  * YJS document persistence extension using IndexedDB.
@@ -102,11 +99,11 @@ import type {
  * @see {@link persistence} from `@epicenter/hq/extensions/persistence/desktop` for Node.js/filesystem version
  */
 export const persistence = (<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >({
 	ydoc,
-}: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>) => {
+}: ExtensionContext<TTableDefinitions, TKvFields>) => {
 	// y-indexeddb handles both loading and saving automatically
 	// Uses the YDoc's guid as the IndexedDB database name
 	const persistence = new IndexeddbPersistence(ydoc.guid, ydoc);
@@ -121,4 +118,4 @@ export const persistence = (<
 		}),
 		destroy: () => persistence.destroy(),
 	});
-}) satisfies ExtensionFactory<TableDefinitionMap, KvDefinitionMap>;
+}) satisfies ExtensionFactory<readonly TableDefinition[], readonly KvField[]>;

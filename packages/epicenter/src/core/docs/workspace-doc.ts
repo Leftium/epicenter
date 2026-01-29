@@ -2,11 +2,8 @@ import * as Y from 'yjs';
 import { createDefinition, type Definition } from '../definition-helper';
 import { createKv, type Kv } from '../kv/core';
 import { defineExports, type Lifecycle } from '../lifecycle';
-import type {
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
-	KvValue,
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
-} from '../schema/fields/types';
+import type { KvField, KvValue, TableDefinition } from '../schema/fields/types';
+import { kvFieldsToMap, tablesToMap } from '../schema/fields/types';
 import { createTables, type Tables } from '../tables/create-tables';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,28 +108,26 @@ export type ExtensionExports<T extends Record<string, unknown> = {}> =
  * the returned `whenSynced` promise.
  */
 export type ExtensionFactory<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 	TExports extends ExtensionExports = ExtensionExports,
-> = (
-	context: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
-) => TExports;
+> = (context: ExtensionContext<TTableDefinitions, TKvFields>) => TExports;
 
 /**
  * A map of extension factory functions keyed by extension ID.
  */
 export type ExtensionFactoryMap<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
-> = Record<string, ExtensionFactory<TTableDefinitionMap, TKvDefinitionMap>>;
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
+> = Record<string, ExtensionFactory<TTableDefinitions, TKvFields>>;
 
 /**
  * Utility type to infer exports from an extension factory map.
  */
 export type InferExtensionExports<TExtensionFactories> = {
 	[K in keyof TExtensionFactories]: TExtensionFactories[K] extends ExtensionFactory<
-		TableDefinitionMap,
-		KvDefinitionMap,
+		readonly TableDefinition[],
+		readonly KvField[],
 		infer TExports
 	>
 		? TExports extends ExtensionExports
@@ -160,8 +155,8 @@ export type InferExtensionExports<TExtensionFactories> = {
  * ```
  */
 export type ExtensionContext<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 > = {
 	/** The underlying Y.Doc instance. */
 	ydoc: Y.Doc;
@@ -170,9 +165,9 @@ export type ExtensionContext<
 	/** The epoch number for this workspace doc. */
 	epoch: number;
 	/** Typed table helpers for CRUD operations. */
-	tables: Tables<TTableDefinitionMap>;
+	tables: Tables<TTableDefinitions>;
 	/** Key-value store for simple values. */
-	kv: Kv<TKvDefinitionMap>;
+	kv: Kv<TKvFields>;
 	/**
 	 * Definition helper for managing table and KV definitions.
 	 *
@@ -253,12 +248,9 @@ export type ExtensionContext<
  * ```
  */
 export function createWorkspaceDoc<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
-	TExtensionFactories extends ExtensionFactoryMap<
-		TTableDefinitionMap,
-		TKvDefinitionMap
-	>,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
+	TExtensionFactories extends ExtensionFactoryMap<TTableDefinitions, TKvFields>,
 >({
 	workspaceId,
 	epoch,
@@ -268,12 +260,12 @@ export function createWorkspaceDoc<
 }: {
 	workspaceId: string;
 	epoch: number;
-	tables: TTableDefinitionMap;
-	kv: TKvDefinitionMap;
+	tables: TTableDefinitions;
+	kv: TKvFields;
 	extensionFactories: TExtensionFactories;
 }): WorkspaceDoc<
-	TTableDefinitionMap,
-	TKvDefinitionMap,
+	TTableDefinitions,
+	TKvFields,
 	InferExtensionExports<TExtensionFactories>
 > {
 	const docId = `${workspaceId}-${epoch}`;
@@ -300,7 +292,7 @@ export function createWorkspaceDoc<
 		extensionFactories,
 	)) {
 		// Build flattened context for this extension
-		const context: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap> = {
+		const context: ExtensionContext<TTableDefinitions, TKvFields> = {
 			ydoc,
 			workspaceId,
 			epoch,
@@ -336,10 +328,18 @@ export function createWorkspaceDoc<
 		// This ensures code is "last writer" over any persisted definition.
 		// For dynamic definition mode (empty tables/kv), this is a no-op.
 		const hasDefinition =
-			Object.keys(tableDefinitions).length > 0 ||
-			Object.keys(kvDefinitions).length > 0;
+			tableDefinitions.length > 0 || kvDefinitions.length > 0;
 		if (hasDefinition) {
-			definition.merge({ tables: tableDefinitions, kv: kvDefinitions });
+			definition.merge({
+				tables: tablesToMap(tableDefinitions) as Record<
+					string,
+					TableDefinition
+				>,
+				kv: kvFieldsToMap(kvDefinitions) as unknown as Record<
+					string,
+					{ field: KvField; name: string; icon: null; description: string }
+				>,
+			});
 		}
 	});
 
@@ -389,8 +389,9 @@ export function createWorkspaceDoc<
  * ```
  */
 export type WorkspaceDoc<
-	TTableDefinitionMap extends TableDefinitionMap = TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap = KvDefinitionMap,
+	TTableDefinitions extends
+		readonly TableDefinition[] = readonly TableDefinition[],
+	TKvFields extends readonly KvField[] = readonly KvField[],
 	TExtensions extends Record<string, ExtensionExports> = Record<
 		string,
 		ExtensionExports
@@ -403,9 +404,9 @@ export type WorkspaceDoc<
 	/** The epoch number for this workspace doc. */
 	epoch: number;
 	/** Typed table helpers for CRUD operations. */
-	tables: Tables<TTableDefinitionMap>;
+	tables: Tables<TTableDefinitions>;
 	/** Key-value store for simple values. */
-	kv: Kv<TKvDefinitionMap>;
+	kv: Kv<TKvFields>;
 	/** Definition helper for managing table and KV definitions. */
 	definition: Definition;
 	/** Extension exports keyed by extension ID. */

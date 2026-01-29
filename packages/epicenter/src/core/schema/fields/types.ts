@@ -594,29 +594,6 @@ export type TableDefinition<
 	fields: TFields;
 };
 
-/**
- * Map of table names to their full definitions (metadata + fields).
- *
- * @deprecated Use `TableDefinition[]` array instead. This type is kept for backward compatibility.
- *
- * @example
- * ```typescript
- * // Old style (deprecated)
- * const blogTables: TableDefinitionMap = {
- *   posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
- * };
- *
- * // New style (recommended)
- * const tables = [
- *   table('posts', { name: 'Posts', fields: [id(), text('title')] }),
- * ];
- * ```
- */
-export type TableDefinitionMap = Record<
-	string,
-	TableDefinition<readonly Field[]>
->;
-
 // ============================================================================
 // Row Types
 // ============================================================================
@@ -689,64 +666,6 @@ export type KvField = Exclude<Field, IdField>;
  * Runtime value type for a KV entry.
  */
 export type KvValue<C extends KvField = KvField> = CellValue<C>;
-
-/**
- * KV entry definition with metadata for UI display.
- *
- * @deprecated Use `KvField` directly. The field's metadata (name, icon, description)
- * and id property serve as the KV key. The `setting()` wrapper is no longer needed.
- *
- * @example
- * ```typescript
- * // Old style (deprecated)
- * kv: {
- *   theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] }) }),
- * }
- *
- * // New style (recommended)
- * kv: [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
- * ]
- * ```
- */
-export type KvDefinition<TField extends KvField = KvField> = {
-	/** Display name shown in UI (e.g., "Theme") */
-	name: string;
-	/** Icon for this KV entry - tagged string format 'type:value' or null */
-	icon: Icon | null;
-	/** Description shown in tooltips/docs */
-	description: string;
-	/** The field schema for this KV entry */
-	field: TField;
-};
-
-/**
- * Map of KV key names to their full definitions (metadata + field).
- *
- * @deprecated Use `KvField[]` (readonly array) instead. This type is kept for backward compatibility.
- *
- * @example
- * ```typescript
- * // Old style (deprecated)
- * const settingsKv: KvDefinitionMap = {
- *   theme: setting({ name: 'Theme', field: select('theme', { options: ['light', 'dark'] }) }),
- * };
- *
- * // New style (recommended)
- * const kv = [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
- *   integer('fontSize', { name: 'Font Size', default: 14 }),
- * ];
- * ```
- */
-export type KvDefinitionMap = Record<string, KvDefinition>;
-
-/**
- * Map of KV keys to their field schemas (no metadata).
- *
- * @deprecated Use `KvField[]` (readonly array) instead. This type is kept for backward compatibility.
- */
-export type KvMap = Record<string, KvField>;
 
 // ============================================================================
 // Array ↔ Record Conversion Utilities

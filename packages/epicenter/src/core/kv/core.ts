@@ -15,16 +15,6 @@ export type KvYMap = Y.Map<KvValue>;
 export type { KvHelper } from './kv-helper';
 
 /**
- * Minimal shape required for KV definitions - just needs a `field` property.
- * This is compatible with both the old KvDefinition wrapper and direct field usage.
- *
- * @deprecated Use `KvField[]` arrays directly. The field's `id` serves as the key.
- */
-type KvDefinitionLike<TField extends KvField = KvField> = {
-	field: TField;
-};
-
-/**
  * Flat Map-like API for accessing KV entries.
  *
  * The kv object provides direct methods: `kv.get('theme')`, `kv.set('theme', value)`.
@@ -38,9 +28,7 @@ type KvDefinitionLike<TField extends KvField = KvField> = {
  * kv.has('theme');  // false (if no default)
  * ```
  */
-export type KvFunction<
-	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
-> = {
+export type KvFunction<TKvFields extends readonly KvField[]> = {
 	// ════════════════════════════════════════════════════════════════════
 	// KEY-VALUE OPERATIONS
 	// ════════════════════════════════════════════════════════════════════
@@ -61,9 +49,9 @@ export type KvFunction<
 	 * }
 	 * ```
 	 */
-	get<K extends keyof TKvDefinitionMap & string>(
+	get<K extends TKvFields[number]['id']>(
 		key: K,
-	): KvGetResult<KvValue<TKvDefinitionMap[K]['field']>>;
+	): KvGetResult<KvValue<Extract<TKvFields[number], { id: K }>>>;
 
 	/**
 	 * Set the value for a specific KV key.
@@ -74,9 +62,9 @@ export type KvFunction<
 	 * kv.set('count', 42);
 	 * ```
 	 */
-	set<K extends keyof TKvDefinitionMap & string>(
+	set<K extends TKvFields[number]['id']>(
 		key: K,
-		value: KvValue<TKvDefinitionMap[K]['field']>,
+		value: KvValue<Extract<TKvFields[number], { id: K }>>,
 	): void;
 
 	/**
@@ -91,7 +79,7 @@ export type KvFunction<
 	 * kv.reset('theme'); // Back to schema default
 	 * ```
 	 */
-	reset<K extends keyof TKvDefinitionMap & string>(key: K): void;
+	reset<K extends TKvFields[number]['id']>(key: K): void;
 
 	/**
 	 * Observe changes to a specific KV key.
@@ -105,10 +93,10 @@ export type KvFunction<
 	 * });
 	 * ```
 	 */
-	observeKey<K extends keyof TKvDefinitionMap & string>(
+	observeKey<K extends TKvFields[number]['id']>(
 		key: K,
 		callback: (
-			change: KvChange<KvValue<TKvDefinitionMap[K]['field']>>,
+			change: KvChange<KvValue<Extract<TKvFields[number], { id: K }>>>,
 			transaction: Y.Transaction,
 		) => void,
 	): () => void;
@@ -138,7 +126,7 @@ export type KvFunction<
 	/**
 	 * The raw KV definitions passed to createKv.
 	 */
-	definitions: TKvDefinitionMap;
+	definitions: TKvFields;
 
 	// ════════════════════════════════════════════════════════════════════
 	// OBSERVATION
@@ -157,16 +145,16 @@ export type KvFunction<
 	 * Serialize all KV values to a plain JSON object.
 	 */
 	toJSON(): {
-		[K in keyof TKvDefinitionMap]: KvValue<TKvDefinitionMap[K]['field']>;
+		[K in TKvFields[number]['id']]: KvValue<
+			Extract<TKvFields[number], { id: K }>
+		>;
 	};
 };
 
 /**
  * Create a KV (key-value) store from definitions.
  *
- * Accepts either:
- * - Array format (new): `KvField[]` where each field's `.id` is the key
- * - Record format (deprecated): `Record<string, { field: KvField }>`
+ * Accepts an array of KvFields where each field's `.id` is the key.
  *
  * The returned object provides a flat Map-like API with direct methods:
  * `kv.get('key')`, `kv.set('key', value)`, `kv.reset('key')`.
@@ -175,21 +163,14 @@ export type KvFunction<
  * While tables have multiple rows with IDs, KV stores have one "row" of settings/state.
  *
  * @param ydoc - The Y.Doc to store KV data in
- * @param definitions - Array of KvFields (new) or map of key names to definitions (deprecated)
+ * @param kvFields - Array of KvFields where each field's `.id` is the key
  *
  * @example
  * ```typescript
- * // New style (array format)
  * const settings = createKv(ydoc, [
  *   select('theme', { name: 'Theme', options: ['light', 'dark'], default: 'light' }),
  *   integer('fontSize', { name: 'Font Size', default: 14 }),
  * ]);
- *
- * // Deprecated style (record format)
- * const settings = createKv(ydoc, {
- *   theme: { field: select('theme', { options: ['light', 'dark'] }) },
- *   fontSize: { field: integer('fontSize', { default: 14 }) },
- * });
  *
  * // Flat Map-like API
  * settings.set('theme', 'dark');
@@ -198,20 +179,19 @@ export type KvFunction<
  * settings.reset('theme'); // Back to default
  * ```
  */
-export function createKv<
-	TKvDefinitionMap extends Record<string, KvDefinitionLike>,
->(ydoc: Y.Doc, definitions: TKvDefinitionMap): KvFunction<TKvDefinitionMap> {
+export function createKv<TKvFields extends readonly KvField[]>(
+	ydoc: Y.Doc,
+	kvFields: TKvFields,
+): KvFunction<TKvFields> {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 
-	// Build helpers map using Record keys (deprecated API uses Record keys, not field.id)
+	// Build helpers map using field.id as the key
 	const kvHelpers = Object.fromEntries(
-		Object.entries(definitions).map(([keyName, definition]) => [
-			keyName,
-			createKvHelper({ keyName, ykvMap, field: definition.field }),
+		kvFields.map((field) => [
+			field.id,
+			createKvHelper({ keyName: field.id, ykvMap, field }),
 		]),
-	) as {
-		[K in keyof TKvDefinitionMap]: KvHelper<TKvDefinitionMap[K]['field']>;
-	};
+	) as Record<string, KvHelper<KvField>>;
 
 	return {
 		// ════════════════════════════════════════════════════════════════════
@@ -234,8 +214,8 @@ export function createKv<
 		 * }
 		 * ```
 		 */
-		get<K extends keyof TKvDefinitionMap & string>(key: K) {
-			return kvHelpers[key].get();
+		get<K extends TKvFields[number]['id']>(key: K) {
+			return kvHelpers[key as string]!.get() as any;
 		},
 
 		/**
@@ -247,11 +227,11 @@ export function createKv<
 		 * kv.set('count', 42);
 		 * ```
 		 */
-		set<K extends keyof TKvDefinitionMap & string>(
+		set<K extends TKvFields[number]['id']>(
 			key: K,
-			value: KvValue<TKvDefinitionMap[K]['field']>,
+			value: KvValue<Extract<TKvFields[number], { id: K }>>,
 		) {
-			kvHelpers[key].set(value);
+			kvHelpers[key as string]!.set(value);
 		},
 
 		/**
@@ -266,8 +246,8 @@ export function createKv<
 		 * kv.reset('theme'); // Back to schema default
 		 * ```
 		 */
-		reset<K extends keyof TKvDefinitionMap & string>(key: K) {
-			kvHelpers[key].reset();
+		reset<K extends TKvFields[number]['id']>(key: K) {
+			kvHelpers[key as string]!.reset();
 		},
 
 		/**
@@ -282,14 +262,14 @@ export function createKv<
 		 * });
 		 * ```
 		 */
-		observeKey<K extends keyof TKvDefinitionMap & string>(
+		observeKey<K extends TKvFields[number]['id']>(
 			key: K,
 			callback: (
-				change: KvChange<KvValue<TKvDefinitionMap[K]['field']>>,
+				change: KvChange<KvValue<Extract<TKvFields[number], { id: K }>>>,
 				transaction: Y.Transaction,
 			) => void,
 		) {
-			return kvHelpers[key].observe(callback);
+			return kvHelpers[key as string]!.observe(callback as any);
 		},
 
 		// ════════════════════════════════════════════════════════════════════
@@ -336,8 +316,8 @@ export function createKv<
 		 * ```
 		 */
 		clear(): void {
-			for (const keyName of Object.keys(definitions)) {
-				ykvMap.delete(keyName);
+			for (const field of kvFields) {
+				ykvMap.delete(field.id);
 			}
 		},
 
@@ -346,29 +326,30 @@ export function createKv<
 		// ════════════════════════════════════════════════════════════════════
 
 		/**
-		 * The raw KV definitions passed to createKv.
+		 * The raw KV fields passed to createKv.
 		 *
-		 * Provides access to the full definition including metadata (name, icon, description)
+		 * Provides access to the full field definitions including metadata (name, icon, description)
 		 * and the field schema. Useful for introspection, UI generation, or MCP/OpenAPI export.
 		 *
 		 * @example
 		 * ```typescript
-		 * // Access definition metadata
-		 * console.log(kv.definitions.theme.name);        // 'Theme'
-		 * console.log(kv.definitions.theme.icon);        // 'emoji:🎨'
-		 * console.log(kv.definitions.theme.description); // 'Application color theme'
+		 * // Access field metadata
+		 * const themeField = kv.definitions.find(f => f.id === 'theme');
+		 * console.log(themeField.name);        // 'Theme'
+		 * console.log(themeField.icon);        // 'emoji:🎨'
+		 * console.log(themeField.description); // 'Application color theme'
 		 *
 		 * // Access the field schema
-		 * console.log(kv.definitions.theme.field.type);    // 'select'
-		 * console.log(kv.definitions.theme.field.options); // ['light', 'dark']
+		 * console.log(themeField.type);    // 'select'
+		 * console.log(themeField.options); // ['light', 'dark']
 		 *
-		 * // Iterate over all definitions
-		 * for (const [key, def] of Object.entries(kv.definitions)) {
-		 *   console.log(`${def.name} (${key}): ${def.field.type}`);
+		 * // Iterate over all fields
+		 * for (const field of kv.definitions) {
+		 *   console.log(`${field.name} (${field.id}): ${field.type}`);
 		 * }
 		 * ```
 		 */
-		definitions,
+		definitions: kvFields,
 
 		// ════════════════════════════════════════════════════════════════════
 		// OBSERVATION
@@ -423,10 +404,14 @@ export function createKv<
 		 * ```
 		 */
 		toJSON(): {
-			[K in keyof TKvDefinitionMap]: KvValue<TKvDefinitionMap[K]['field']>;
+			[K in TKvFields[number]['id']]: KvValue<
+				Extract<TKvFields[number], { id: K }>
+			>;
 		} {
 			return ykvMap.toJSON() as {
-				[K in keyof TKvDefinitionMap]: KvValue<TKvDefinitionMap[K]['field']>;
+				[K in TKvFields[number]['id']]: KvValue<
+					Extract<TKvFields[number], { id: K }>
+				>;
 			};
 		},
 	};
@@ -436,5 +421,6 @@ export function createKv<
  * Type alias for the return type of createKv.
  * Useful for typing function parameters that accept a KV instance.
  */
-export type Kv<TKvDefinitionMap extends Record<string, KvDefinitionLike>> =
-	ReturnType<typeof createKv<TKvDefinitionMap>>;
+export type Kv<TKvFields extends readonly KvField[]> = ReturnType<
+	typeof createKv<TKvFields>
+>;

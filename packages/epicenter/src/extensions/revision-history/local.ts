@@ -2,10 +2,7 @@ import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import type { ExtensionContext } from '../../core/extension';
-import type {
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
-} from '../../core/schema';
+import type { KvField, TableDefinition } from '../../core/schema';
 
 const SNAPSHOT_EXTENSION = '.ysnap';
 const METADATA_EXTENSION = '.json';
@@ -146,13 +143,10 @@ export type LocalRevisionHistoryConfig = {
  * ```
  */
 export async function localRevisionHistory<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	{
-		ydoc,
-		workspaceId: id,
-	}: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
+	{ ydoc, workspaceId: id }: ExtensionContext<TTableDefinitions, TKvFields>,
 	{
 		directory,
 		epoch,

@@ -79,10 +79,8 @@ import {
 import type {
 	Field,
 	Icon,
-	KvDefinitionMap, // Deprecated but kept for backward compat in type params
 	KvField,
 	TableDefinition,
-	TableDefinitionMap, // Deprecated but kept for backward compat in type params
 } from '../schema/fields/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -173,9 +171,9 @@ export function defineWorkspaceV2<
 /**
  * Complete workspace definition including identity and schema.
  *
- * @deprecated Use `WorkspaceDefinitionV2` with arrays instead:
- * - `tables` should be `TableDefinition[]` (each with its own `id`)
- * - `kv` should be `KvField[]` (field's `id` serves as the key)
+ * Uses array-based types for tables and kv:
+ * - `tables` is `readonly TableDefinition[]` (each with its own `id`)
+ * - `kv` is `readonly KvField[]` (field's `id` serves as the key)
  *
  * Contains workspace identity (name, description, icon) alongside
  * table and KV definitions. This is the "lens" through which data is viewed.
@@ -187,28 +185,19 @@ export function defineWorkspaceV2<
  *
  * @example
  * ```typescript
- * // Old style (deprecated)
- * const definition: WorkspaceDefinition = {
+ * const definition = defineWorkspace({
  *   name: 'My Blog',
  *   description: 'Personal blog workspace',
  *   icon: 'emoji:📝',
- *   tables: {
- *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
- *   },
- *   kv: {},
- * };
- *
- * // New style (recommended)
- * const definition = defineWorkspaceV2({
- *   name: 'My Blog',
  *   tables: [table('posts', { name: 'Posts', fields: [id(), text('title')] })],
- *   kv: [],
+ *   kv: [select('theme', { options: ['light', 'dark'] })],
  * });
  * ```
  */
 export type WorkspaceDefinition<
-	TTableDefinitionMap extends TableDefinitionMap = TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap = KvDefinitionMap,
+	TTableDefinitions extends
+		readonly TableDefinition[] = readonly TableDefinition[],
+	TKvFields extends readonly KvField[] = readonly KvField[],
 > = {
 	/** Display name of the workspace */
 	name: string;
@@ -216,10 +205,10 @@ export type WorkspaceDefinition<
 	description: string;
 	/** Icon for the workspace - tagged string format 'type:value' or null */
 	icon: Icon | null;
-	/** Table definitions with metadata (name, icon, description, fields). */
-	tables: TTableDefinitionMap;
-	/** KV definitions for workspace-level settings. */
-	kv: TKvDefinitionMap;
+	/** Table definitions as array (each TableDefinition has its own id). */
+	tables: TTableDefinitions;
+	/** KV fields directly (no wrapper, field.id is the key). */
+	kv: TKvFields;
 };
 
 /**
@@ -272,7 +261,7 @@ export type WorkspaceDefinition<
  * const client = createClient(head)
  *   .withExtensions({
  *     persistence: (ctx) => persistence(ctx, { filePath }),
- *     //            ^^^ ctx: ExtensionContext<TableDefinitionMap, KvDefinitionMap> (generic)
+ *     //            ^^^ ctx: ExtensionContext<readonly TableDefinition[], readonly KvField[]> (generic)
  *   });
  * ```
  *
@@ -288,8 +277,8 @@ export type WorkspaceDefinition<
  * ```
  */
 export type ClientBuilder<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 > = {
 	/**
 	 * Attach a workspace definition for static definition mode.
@@ -304,15 +293,15 @@ export type ClientBuilder<
 	 * ```typescript
 	 * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
 	 * const client = createClient(head)
-	 *   .withDefinition({ tables: {...}, kv: {} })
+	 *   .withDefinition({ tables: [...], kv: [...] })
 	 *   .withExtensions({
 	 *     persistence: (ctx) => persistence(ctx, { filePath }),
 	 *   });
 	 * ```
 	 */
 	withDefinition<
-		TDefinitionTables extends TableDefinitionMap,
-		TDefinitionKv extends KvDefinitionMap,
+		TDefinitionTables extends readonly TableDefinition[],
+		TDefinitionKv extends readonly KvField[],
 	>(
 		definition: WorkspaceDefinition<TDefinitionTables, TDefinitionKv>,
 	): ClientBuilder<TDefinitionTables, TDefinitionKv>;
@@ -330,7 +319,7 @@ export type ClientBuilder<
 	 * // With extensions
 	 * const head = createHeadDoc({ workspaceId: 'whispering', providers: {} });
 	 * const workspace = createClient(head)
-	 *   .withDefinition({ tables: {...}, kv: {} })
+	 *   .withDefinition({ tables: [...], kv: [...] })
 	 *   .withExtensions({
 	 *     persistence: (ctx) => persistence(ctx, { filePath }),
 	 *     sqlite: (ctx) => sqlite(ctx, { dbPath }),
@@ -342,20 +331,20 @@ export type ClientBuilder<
 	 * // Without extensions
 	 * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
 	 * const workspace = createClient(head)
-	 *   .withDefinition({ tables: {...}, kv: {} })
+	 *   .withDefinition({ tables: [...], kv: [...] })
 	 *   .withExtensions({});
 	 * ```
 	 */
 	withExtensions<
 		TExtensionFactories extends ExtensionFactoryMap<
-			TTableDefinitionMap,
-			TKvDefinitionMap
+			TTableDefinitions,
+			TKvFields
 		>,
 	>(
 		extensions: TExtensionFactories,
 	): WorkspaceDoc<
-		TTableDefinitionMap,
-		TKvDefinitionMap,
+		TTableDefinitions,
+		TKvFields,
 		InferExtensionExports<TExtensionFactories>
 	>;
 };
@@ -405,8 +394,8 @@ export type ClientBuilder<
  * @returns The same definition, unchanged (for type inference)
  */
 export function defineWorkspace<
-	const TTables extends TableDefinitionMap,
-	const TKv extends KvDefinitionMap = Record<string, never>,
+	const TTables extends readonly TableDefinition[],
+	const TKv extends readonly KvField[] = readonly [],
 >(
 	definition: WorkspaceDefinition<TTables, TKv>,
 ): WorkspaceDefinition<TTables, TKv> {
@@ -515,12 +504,12 @@ export function defineWorkspace<
  */
 export function createClient(
 	head: HeadDoc,
-): ClientBuilder<TableDefinitionMap, KvDefinitionMap> {
+): ClientBuilder<readonly TableDefinition[], readonly KvField[]> {
 	return createClientBuilder({
 		id: head.workspaceId,
 		epoch: head.getEpoch(),
-		tables: {} as TableDefinitionMap,
-		kv: {} as KvDefinitionMap,
+		tables: [] as readonly TableDefinition[],
+		kv: [] as readonly KvField[],
 	});
 }
 
@@ -532,18 +521,18 @@ export function createClient(
  * which handles both creating typed helpers AND merging definition after sync.
  */
 function createClientBuilder<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(config: {
 	id: string;
 	epoch: number;
-	tables: TTableDefinitionMap;
-	kv: TKvDefinitionMap;
-}): ClientBuilder<TTableDefinitionMap, TKvDefinitionMap> {
+	tables: TTableDefinitions;
+	kv: TKvFields;
+}): ClientBuilder<TTableDefinitions, TKvFields> {
 	return {
 		withDefinition<
-			TDefinitionTables extends TableDefinitionMap,
-			TDefinitionKv extends KvDefinitionMap,
+			TDefinitionTables extends readonly TableDefinition[],
+			TDefinitionKv extends readonly KvField[],
 		>(
 			definition: WorkspaceDefinition<TDefinitionTables, TDefinitionKv>,
 		): ClientBuilder<TDefinitionTables, TDefinitionKv> {
@@ -557,14 +546,14 @@ function createClientBuilder<
 
 		withExtensions<
 			TExtensionFactories extends ExtensionFactoryMap<
-				TTableDefinitionMap,
-				TKvDefinitionMap
+				TTableDefinitions,
+				TKvFields
 			>,
 		>(
 			extensions: TExtensionFactories,
 		): WorkspaceDoc<
-			TTableDefinitionMap,
-			TKvDefinitionMap,
+			TTableDefinitions,
+			TKvFields,
 			InferExtensionExports<TExtensionFactories>
 		> {
 			// createWorkspaceDoc handles both:

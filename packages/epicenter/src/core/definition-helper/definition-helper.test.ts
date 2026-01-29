@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import {
-	boolean,
-	date,
-	id,
-	integer,
-	select,
-	setting,
-	table,
-	text,
-} from '../schema';
+import { boolean, date, id, integer, select, table, text } from '../schema';
 import { createDefinition } from './definition-helper';
 
 describe('createDefinition', () => {
@@ -40,13 +31,12 @@ describe('createDefinition', () => {
 				}),
 			);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const result = definition.toJSON();
 			expect(result.tables).toBeDefined();
@@ -481,13 +471,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const theme = definition.kv.get('theme');
 			expect(theme).toBeDefined();
@@ -499,13 +488,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const snapshot = definition.kv.get('theme')?.toJSON();
 			expect(snapshot).toBeDefined();
@@ -520,13 +508,12 @@ describe('createDefinition', () => {
 
 			expect(definition.kv.has('theme')).toBe(false);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			expect(definition.kv.has('theme')).toBe(true);
 		});
@@ -536,18 +523,15 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					icon: 'emoji:🎨',
-					description: 'Color theme',
-					field: select('theme', {
-						options: ['light', 'dark'] as const,
-						default: 'light',
-					}),
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: 'emoji:🎨',
+				description: 'Color theme',
+				field: select('theme', {
+					options: ['light', 'dark'] as const,
+					default: 'light',
 				}),
-			);
+			});
 
 			expect(definition.kv.get('theme')).toBeDefined();
 			const theme = definition.kv.get('theme')!.toJSON();
@@ -560,17 +544,18 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
-			definition.kv.set(
-				'count',
-				setting({ name: 'Count', field: integer('count', { default: 0 }) }),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
+			definition.kv.set('count', {
+				name: 'Count',
+				icon: null,
+				description: '',
+				field: integer('count', { default: 0 }),
+			});
 
 			const all = definition.kv.toJSON();
 			expect(Object.keys(all)).toHaveLength(2);
@@ -583,17 +568,18 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
-			definition.kv.set(
-				'count',
-				setting({ name: 'Count', field: integer('count', { default: 0 }) }),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
+			definition.kv.set('count', {
+				name: 'Count',
+				icon: null,
+				description: '',
+				field: integer('count', { default: 0 }),
+			});
 
 			const entries = definition.kv.entries();
 			expect(entries).toHaveLength(2);
@@ -605,13 +591,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			expect(definition.kv.get('theme')).toBeDefined();
 			const deleted = definition.kv.get('theme')!.delete();
@@ -626,15 +611,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					icon: 'emoji:🎨',
-					description: 'Color theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: 'emoji:🎨',
+				description: 'Color theme',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const theme = definition.kv.get('theme')!;
 			expect(theme.name).toBe('Theme');
@@ -648,13 +630,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const theme = definition.kv.get('theme')!;
 			theme.setName('Color Theme');
@@ -667,13 +648,12 @@ describe('createDefinition', () => {
 			const definitionMap = ydoc.getMap('definition');
 			const definition = createDefinition(definitionMap);
 
-			definition.kv.set(
-				'theme',
-				setting({
-					name: 'Theme',
-					field: select('theme', { options: ['light', 'dark'] as const }),
-				}),
-			);
+			definition.kv.set('theme', {
+				name: 'Theme',
+				icon: null,
+				description: '',
+				field: select('theme', { options: ['light', 'dark'] as const }),
+			});
 
 			const theme = definition.kv.get('theme')!;
 			theme.setField(
@@ -705,10 +685,12 @@ describe('createDefinition', () => {
 					}),
 				},
 				kv: {
-					theme: setting({
+					theme: {
 						name: 'Theme',
+						icon: null,
+						description: '',
 						field: select('theme', { options: ['light', 'dark'] as const }),
-					}),
+					},
 				},
 			});
 

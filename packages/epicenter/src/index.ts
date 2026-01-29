@@ -116,15 +116,8 @@ export type {
 	JsonField,
 	/** @deprecated Use `JsonField` instead */
 	JsonFieldSchema,
-	// Deprecated KV types (kept for backwards compatibility)
-	/** @deprecated Use `KvField[]` array instead */
-	KvDefinition,
-	/** @deprecated Use `KvField[]` array instead */
-	KvDefinitionMap,
 	// KV types
 	KvField,
-	/** @deprecated Use `KvField[]` array instead */
-	KvMap,
 	KvValue,
 	PartialRow,
 	RealField,
@@ -138,9 +131,6 @@ export type {
 	/** @deprecated Use `SelectField` instead */
 	SelectFieldSchema,
 	TableDefinition,
-	// Deprecated table types (kept for backwards compatibility)
-	/** @deprecated Use `TableDefinition[]` array instead */
-	TableDefinitionMap,
 	TagsField,
 	/** @deprecated Use `TagsField` instead */
 	TagsFieldSchema,

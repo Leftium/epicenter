@@ -6,8 +6,8 @@ import { createTables } from './create-tables';
 describe('createTables', () => {
 	test('should create and retrieve rows correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -16,7 +16,7 @@ describe('createTables', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		// Create a row
 		doc.get('posts').upsert({
@@ -38,8 +38,8 @@ describe('createTables', () => {
 
 	test('should handle batch operations', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -48,7 +48,7 @@ describe('createTables', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		// Create multiple rows
 		doc.get('posts').upsertMany([
@@ -71,8 +71,8 @@ describe('createTables', () => {
 
 	test('should filter and find rows correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -81,7 +81,7 @@ describe('createTables', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		doc.get('posts').upsertMany([
 			{ id: '1', title: 'Post 1', view_count: 10, published: true },
@@ -103,8 +103,8 @@ describe('createTables', () => {
 
 	test('should return not_found status for non-existent rows', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -113,7 +113,7 @@ describe('createTables', () => {
 					boolean('published'),
 				] as const,
 			}),
-		});
+		]);
 
 		// Test get() with non-existent id
 		const getResult = doc.get('posts').get('non-existent');
@@ -131,8 +131,8 @@ describe('createTables', () => {
 
 	test('should store and retrieve richtext and tags correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [
 					id(),
@@ -142,7 +142,7 @@ describe('createTables', () => {
 					}),
 				] as const,
 			}),
-		});
+		]);
 
 		doc.get('posts').upsert({
 			id: '1',
@@ -173,12 +173,12 @@ describe('createTables', () => {
 
 	test('rows are plain JSON-serializable objects', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
-		const doc = createTables(ydoc, {
-			posts: table('posts', {
+		const doc = createTables(ydoc, [
+			table('posts', {
 				name: '',
 				fields: [id(), text('title'), boolean('published')] as const,
 			}),
-		});
+		]);
 
 		doc.get('posts').upsert({ id: '1', title: 'Test', published: false });
 
@@ -197,12 +197,12 @@ describe('createTables', () => {
 	describe('observe', () => {
 		test('observe fires when row is added via upsert', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title'), boolean('published')] as const,
 				}),
-			});
+			]);
 
 			// Use a Set to collect unique IDs (observer may fire multiple times per transaction)
 			const changedRows = new Set<string>();
@@ -230,12 +230,12 @@ describe('createTables', () => {
 
 		test('observe fires when row field is modified', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsert({
 				id: 'post-1',
@@ -266,12 +266,12 @@ describe('createTables', () => {
 
 		test('observe fires when row is removed', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsert({ id: 'post-1', title: 'First' });
 			tables.get('posts').upsert({ id: 'post-2', title: 'Second' });
@@ -294,12 +294,12 @@ describe('createTables', () => {
 
 		test('callbacks can access row data via get()', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			const receivedRows: Array<{ id: string; title: string }> = [];
 
@@ -327,12 +327,12 @@ describe('createTables', () => {
 
 			const ytables: TablesMap = ydoc.getMap('tables');
 
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), integer('count')] as const,
 				}),
-			});
+			]);
 
 			let receivedResult: unknown = null;
 			tables.get('posts').observe((changedIds) => {
@@ -363,12 +363,12 @@ describe('createTables', () => {
 
 		test('unsubscribe stops callbacks', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Use a Set to collect unique IDs (observer may fire multiple times per transaction)
 			const changedIds = new Set<string>();
@@ -389,12 +389,12 @@ describe('createTables', () => {
 
 		test('transaction batching: upsertMany fires callback once with all changes', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			let callbackCount = 0;
 			const allChangedIds: Set<string>[] = [];
@@ -419,12 +419,12 @@ describe('createTables', () => {
 
 		test('transaction batching: multiple updates in transact fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-update' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsertMany([
 				{ id: 'post-1', title: 'First', view_count: 0 },
@@ -452,12 +452,12 @@ describe('createTables', () => {
 
 		test('transaction batching: mixed operations in transact fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-mixed' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsert({ id: 'post-1', title: 'First' });
 
@@ -486,12 +486,12 @@ describe('createTables', () => {
 
 		test('transaction batching: deleteMany fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-delete' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsertMany([
 				{ id: 'post-1', title: 'First' },
@@ -520,12 +520,12 @@ describe('createTables', () => {
 
 		test('same-row dedupe: multiple updates in one transaction emits final value', () => {
 			const ydoc = new Y.Doc({ guid: 'test-dedupe' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title'), integer('view_count')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsert({
 				id: 'post-1',
@@ -576,12 +576,12 @@ describe('createTables', () => {
 
 			const ytables: TablesMap = ydoc.getMap('tables');
 
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Use a Set to collect unique IDs (observer may fire multiple times)
 			const changedRowIds = new Set<string>();
@@ -609,16 +609,16 @@ describe('createTables', () => {
 
 		test('observer isolation: changes in other tables do not trigger callback', () => {
 			const ydoc = new Y.Doc({ guid: 'test-isolation' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-				comments: table('comments', {
+				table('comments', {
 					name: '',
 					fields: [id(), text('content')] as const,
 				}),
-			});
+			]);
 
 			const postsChanges: string[] = [];
 			tables.get('posts').observe((changedIds) => {
@@ -639,12 +639,12 @@ describe('createTables', () => {
 
 		test('callback fires after transaction completes, not during', () => {
 			const ydoc = new Y.Doc({ guid: 'test-timing' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			tables.get('posts').upsert({ id: 'post-1', title: 'Original' });
 
@@ -664,12 +664,12 @@ describe('createTables', () => {
 
 		test('multiple subscribers receive same changes', () => {
 			const ydoc = new Y.Doc({ guid: 'test-multi-sub' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: '',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Use Sets to collect unique IDs (observer may fire multiple times per transaction)
 			const subscriber1Changes = new Set<string>();
@@ -709,12 +709,12 @@ describe('createTables', () => {
 	describe('dynamic table access', () => {
 		test('table() returns typed helper for defined tables', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Access via table() should work the same as direct access
 			tables.get('posts').upsert({ id: '1', title: 'Hello' });
@@ -730,12 +730,12 @@ describe('createTables', () => {
 
 		test('table() returns untyped helper for undefined tables', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Access a table not in definition
 			const customTable = tables.get('custom_data');
@@ -751,12 +751,12 @@ describe('createTables', () => {
 
 		test('table() creates the same helper instance on repeated calls', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Defined table
 			expect(tables.get('posts')).toBe(tables.get('posts'));
@@ -769,12 +769,12 @@ describe('createTables', () => {
 
 		test('has() checks existence without creating table', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			// Initially no tables exist in YJS
 			expect(tables.has('posts')).toBe(false);
@@ -794,12 +794,12 @@ describe('createTables', () => {
 	describe('iteration methods', () => {
 		test('names() returns all table names in YJS', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
 			expect(tables.names()).toHaveLength(0);
 
@@ -814,17 +814,18 @@ describe('createTables', () => {
 	describe('new property names (non-$ prefixed)', () => {
 		test('definitions property provides table definitions', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
-			const tables = createTables(ydoc, {
-				posts: table('posts', {
+			const tables = createTables(ydoc, [
+				table('posts', {
 					name: 'Posts',
 					description: 'Blog posts',
 					fields: [id(), text('title')] as const,
 				}),
-			});
+			]);
 
-			expect(tables.definitions.posts.name).toBe('Posts');
-			expect(tables.definitions.posts.description).toBe('Blog posts');
-			expect(tables.definitions.posts.fields[0]).toBeDefined();
+			const postsDefinition = tables.definitions.find((t) => t.id === 'posts');
+			expect(postsDefinition?.name).toBe('Posts');
+			expect(postsDefinition?.description).toBe('Blog posts');
+			expect(postsDefinition?.fields[0]).toBeDefined();
 		});
 	});
 });

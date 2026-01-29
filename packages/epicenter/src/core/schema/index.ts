@@ -30,7 +30,6 @@ export {
 	real,
 	richtext,
 	select,
-	setting,
 	table,
 	tags,
 	text,
@@ -67,12 +66,8 @@ export type {
 	IntegerFieldSchema,
 	JsonField,
 	JsonFieldSchema,
-	// Deprecated KV types (kept for backwards compatibility)
-	KvDefinition,
-	KvDefinitionMap,
 	// KV types
 	KvField,
-	KvMap,
 	KvValue,
 	PartialRow,
 	RealField,
@@ -83,8 +78,6 @@ export type {
 	SelectField,
 	SelectFieldSchema,
 	TableDefinition,
-	// Deprecated table types (kept for backwards compatibility)
-	TableDefinitionMap,
 	TagsField,
 	TagsFieldSchema,
 	TextField,

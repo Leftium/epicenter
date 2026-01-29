@@ -5,7 +5,6 @@ import {
 	id,
 	integer,
 	select,
-	setting,
 	table,
 	text,
 } from '../core/schema/fields/factories';
@@ -65,8 +64,8 @@ const testDefinition: WorkspaceDefinition = {
 	name: 'Test Workspace',
 	description: 'A workspace for testing',
 	icon: null,
-	tables: {
-		posts: table('posts', {
+	tables: [
+		table('posts', {
 			name: 'Blog Posts',
 			fields: [
 				id(),
@@ -75,18 +74,15 @@ const testDefinition: WorkspaceDefinition = {
 				boolean('published', { name: 'Published' }),
 			] as const,
 		}),
-		users: table('users', {
+		table('users', {
 			name: 'Users',
 			fields: [id(), text('name', { name: 'Name' })] as const,
 		}),
-	},
-	kv: {
-		theme: setting({
-			name: 'Theme',
-			field: select('theme', { options: ['light', 'dark'] as const }),
-		}),
-		language: setting({ name: 'Language', field: text('language') }),
-	},
+	],
+	kv: [
+		select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+		text('language', { name: 'Language' }),
+	],
 };
 
 describe('createCellWorkspace', () => {
@@ -644,8 +640,8 @@ describe('type validation', () => {
 		name: 'Test',
 		description: '',
 		icon: null,
-		tables: {
-			test: table('test', {
+		tables: [
+			table('test', {
 				name: 'Test',
 				fields: [
 					id(),
@@ -658,8 +654,8 @@ describe('type validation', () => {
 					},
 				],
 			}),
-		},
-		kv: {},
+		],
+		kv: [],
 	});
 
 	test('text type validation', () => {
@@ -799,8 +795,8 @@ describe('createCellWorkspace with HeadDoc', () => {
 		name: 'Test Workspace',
 		description: '',
 		icon: null,
-		tables: {
-			posts: table('posts', {
+		tables: [
+			table('posts', {
 				name: 'Posts',
 				fields: [
 					id(),
@@ -808,12 +804,12 @@ describe('createCellWorkspace with HeadDoc', () => {
 					integer('views', { name: 'Views' }),
 				] as const,
 			}),
-			users: table('users', {
+			table('users', {
 				name: 'Users',
 				fields: [id(), text('name', { name: 'Name' })] as const,
 			}),
-		},
-		kv: {},
+		],
+		kv: [],
 	} as const;
 
 	describe('builder pattern', () => {
@@ -1115,13 +1111,13 @@ describe('createCellWorkspace with HeadDoc', () => {
 					name: 'Legacy Workspace',
 					description: '',
 					icon: null,
-					tables: {
-						items: table('items', {
+					tables: [
+						table('items', {
 							name: 'Items',
 							fields: [id(), text('name', { name: 'Name' })] as const,
 						}),
-					},
-					kv: {},
+					],
+					kv: [],
 				},
 			});
 
@@ -1138,8 +1134,8 @@ describe('createCellWorkspace with HeadDoc', () => {
 					name: 'Test',
 					description: '',
 					icon: null,
-					tables: {},
-					kv: {},
+					tables: [],
+					kv: [],
 				},
 			});
 

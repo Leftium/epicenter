@@ -80,8 +80,8 @@ const emailDefinition = defineWorkspace({
 	name: 'Email Minimal Simulation',
 	description: '',
 	icon: null,
-	tables: {
-		emails: table('emails', {
+	tables: [
+		table('emails', {
 			name: 'Emails',
 			description: 'Email messages for storage simulation',
 			fields: [
@@ -92,8 +92,8 @@ const emailDefinition = defineWorkspace({
 				integer('read', { default: 0 }),
 			] as const,
 		}),
-	},
-	kv: {},
+	],
+	kv: [],
 });
 
 console.log('Creating client...');

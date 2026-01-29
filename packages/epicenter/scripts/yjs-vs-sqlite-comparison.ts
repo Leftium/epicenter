@@ -165,8 +165,8 @@ const emailDefinition = defineWorkspace({
 	name: 'YJS vs SQLite Comparison',
 	description: '',
 	icon: null,
-	tables: {
-		emails: table('emails', {
+	tables: [
+		table('emails', {
 			name: 'Emails',
 			description: 'Email messages for comparison test',
 			fields: [
@@ -181,8 +181,8 @@ const emailDefinition = defineWorkspace({
 				text('folder', { default: 'inbox' }),
 			] as const,
 		}),
-	},
-	kv: {},
+	],
+	kv: [],
 });
 
 const head = createHeadDoc({ workspaceId: 'emails-compare', providers: {} });

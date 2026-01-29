@@ -17,7 +17,7 @@ import type {
 	FieldType as CoreFieldType,
 	Field,
 	Icon,
-	KvDefinition,
+	KvField,
 	TableDefinition,
 } from '../core/schema/fields/types';
 import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
@@ -48,7 +48,7 @@ export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
  * KV definition - re-exported from core.
  * Use the `setting()` helper to create these with defaults.
  */
-export type SchemaKvDefinition = KvDefinition;
+export type SchemaKvDefinition = KvField;
 
 /**
  * Complete workspace definition - re-exported from core.
@@ -202,10 +202,8 @@ export type KvStore = {
  * Schema is applied as a "lens" for viewing/editing.
  */
 export type CellWorkspaceClient<
-	TTableDefs extends Record<string, SchemaTableDefinition> = Record<
-		string,
-		SchemaTableDefinition
-	>,
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
 	TExtensions = {},
 > = {
 	/** Workspace identifier (no epoch suffix) */
@@ -223,13 +221,13 @@ export type CellWorkspaceClient<
 	/** Icon for the workspace */
 	icon: Icon | string | null;
 	/** The full workspace definition */
-	definition: WorkspaceDefinition & { tables: TTableDefs };
+	definition: WorkspaceDefinition;
 
 	/**
 	 * Get a table helper. Creates the underlying Y.Array if it doesn't exist.
 	 * Table helpers are cached - calling with same tableId returns same instance.
 	 */
-	table<K extends keyof TTableDefs>(tableId: K): TableHelper;
+	table<K extends TTableDefs[number]['id']>(tableId: K): TableHelper;
 	table(tableId: string): TableHelper;
 
 	/** KV store for workspace-level values */
@@ -289,14 +287,12 @@ export type CreateCellWorkspaceOptions = {
  * This is the new preferred API that integrates with the HeadDoc epoch system.
  * The Y.Doc guid will be `{workspaceId}-{epoch}` for time-travel support.
  */
-export type CreateCellWorkspaceWithHeadDocOptions<
-	TTableDefs extends Record<string, SchemaTableDefinition>,
-> = {
+export type CreateCellWorkspaceWithHeadDocOptions = {
 	/** HeadDoc containing workspace identity and epoch state */
 	headDoc: {
 		workspaceId: string;
 		getEpoch(): number;
 	};
 	/** Workspace definition (schema for tables and KV) */
-	definition: WorkspaceDefinition & { tables: TTableDefs };
+	definition: WorkspaceDefinition;
 };

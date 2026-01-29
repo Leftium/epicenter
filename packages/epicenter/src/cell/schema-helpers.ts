@@ -77,7 +77,7 @@ export function schemaTable(
  * ```ts
  * const theme = schemaKv({
  *   name: 'Theme',
- *   field: select({ options: ['light', 'dark'] as const }),
+ *   field: select({ options: ['light', 'dark'] }),
  * });
  * ```
  */

@@ -127,13 +127,13 @@ export type TablesFunction<
  * const tables = createTables(ydoc, {
  *   posts: table('posts', {
  *     name: 'Posts',
- *     fields: [id(), text('title'), boolean('published')] as const,
+ *     fields: [id(), text('title'), boolean('published')],
  *   }),
  *   users: table('users', {
  *     name: 'Users',
  *     description: 'User accounts',
  *     icon: '👤',
- *     fields: [id(), text('name'), boolean('active')] as const,
+ *     fields: [id(), text('name'), boolean('active')],
  *   }),
  * });
  *

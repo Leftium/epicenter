@@ -120,15 +120,18 @@ export function isIcon(value: string): value is Icon {
  * where each column can have its own display name, icon, and description.
  * Factory functions provide sensible defaults (empty string, null icon).
  *
+ * The `id` is included here because every field must have an identifier -
+ * it's as fundamental to a field's identity as its name.
+ *
  * ```
  * TableDefinition
  * ├── name, icon, description    ← TableMetadata (table-level)
  * └── fields
  *     ├── { id: "id", ... }
- *     │   ├── name, icon, description  ← FieldMetadata (column-level)
+ *     │   ├── id, name, icon, description  ← FieldMetadata (column-level)
  *     │   └── type: "id"
  *     └── { id: "title", ... }
- *         ├── name, icon, description  ← FieldMetadata (column-level)
+ *         ├── id, name, icon, description  ← FieldMetadata (column-level)
  *         ├── type: "text"
  *         └── nullable: false
  * ```
@@ -147,6 +150,8 @@ export function isIcon(value: string): value is Icon {
  * ```
  */
 export type FieldMetadata = {
+	/** Unique identifier for the field within its table. */
+	id: string;
 	/** Display name shown in UI. Empty string if not provided. */
 	name: string;
 	/** Description shown in tooltips/docs. Empty string if not provided. */
@@ -177,7 +182,6 @@ export type FieldOptions = {
  * Always NOT NULL (implicit, no nullable field needed).
  */
 export type IdField = FieldMetadata & {
-	id: string;
 	type: 'id';
 };
 
@@ -185,7 +189,6 @@ export type IdField = FieldMetadata & {
  * Text field - single-line string input.
  */
 export type TextField<TNullable extends boolean = boolean> = FieldMetadata & {
-	id: string;
 	type: 'text';
 	nullable?: TNullable;
 	default?: string;
@@ -200,7 +203,6 @@ export type TextField<TNullable extends boolean = boolean> = FieldMetadata & {
  * No need to specify nullable or default; they're implicit.
  */
 export type RichtextField = FieldMetadata & {
-	id: string;
 	type: 'richtext';
 };
 
@@ -209,7 +211,6 @@ export type RichtextField = FieldMetadata & {
  */
 export type IntegerField<TNullable extends boolean = boolean> =
 	FieldMetadata & {
-		id: string;
 		type: 'integer';
 		nullable?: TNullable;
 		default?: number;
@@ -219,7 +220,6 @@ export type IntegerField<TNullable extends boolean = boolean> =
  * Real/float field - decimal numbers.
  */
 export type RealField<TNullable extends boolean = boolean> = FieldMetadata & {
-	id: string;
 	type: 'real';
 	nullable?: TNullable;
 	default?: number;
@@ -230,7 +230,6 @@ export type RealField<TNullable extends boolean = boolean> = FieldMetadata & {
  */
 export type BooleanField<TNullable extends boolean = boolean> =
 	FieldMetadata & {
-		id: string;
 		type: 'boolean';
 		nullable?: TNullable;
 		default?: boolean;
@@ -241,7 +240,6 @@ export type BooleanField<TNullable extends boolean = boolean> =
  * Stored as DateTimeString format: `{iso}|{timezone}`.
  */
 export type DateField<TNullable extends boolean = boolean> = FieldMetadata & {
-	id: string;
 	type: 'date';
 	nullable?: TNullable;
 	default?: DateTimeString;
@@ -267,7 +265,6 @@ export type SelectField<
 	],
 	TNullable extends boolean = boolean,
 > = FieldMetadata & {
-	id: string;
 	type: 'select';
 	options: TOptions;
 	nullable?: TNullable;
@@ -298,7 +295,6 @@ export type TagsField<
 	],
 	TNullable extends boolean = boolean,
 > = FieldMetadata & {
-	id: string;
 	type: 'tags';
 	options?: TOptions;
 	nullable?: TNullable;
@@ -516,8 +512,8 @@ export type CellValue<C extends Field = Field> = C extends IdField
  *   fields: [
  *     id(),
  *     text('title'),
- *     select('status', { options: ['draft', 'published'] as const }),
- *   ] as const,
+ *     select('status', { options: ['draft', 'published'] }),
+ *   ],
  * });
  * // Result:
  * // {
@@ -529,7 +525,9 @@ export type CellValue<C extends Field = Field> = C extends IdField
  * // }
  * ```
  */
-export type TableDefinition<TFields extends readonly Field[] = Field[]> = {
+export type TableDefinition<
+	TFields extends readonly Field[] = readonly Field[],
+> = {
 	/** Unique identifier for this table */
 	id: string;
 	/** Required display name shown in UI (e.g., "Blog Posts") */
@@ -551,13 +549,13 @@ export type TableDefinition<TFields extends readonly Field[] = Field[]> = {
  * ```typescript
  * // Old style (deprecated)
  * const blogTables: TableDefinitionMap = {
- *   posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
+ *   posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
  * };
  *
  * // New style (recommended)
  * const tables = [
- *   table('posts', { name: 'Posts', fields: [id(), text('title')] as const }),
- * ] as const;
+ *   table('posts', { name: 'Posts', fields: [id(), text('title')] }),
+ * ];
  * ```
  */
 export type TableDefinitionMap = Record<
@@ -595,7 +593,7 @@ export type TableDefinitionMap = Record<
  * const json = JSON.stringify(row);
  * ```
  */
-export type Row<TFields extends readonly Field[] = Field[]> = {
+export type Row<TFields extends readonly Field[] = readonly Field[]> = {
 	[K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
 };
 
@@ -618,7 +616,7 @@ export type Row<TFields extends readonly Field[] = Field[]> = {
  * });
  * ```
  */
-export type PartialRow<TFields extends readonly Field[] = Field[]> = {
+export type PartialRow<TFields extends readonly Field[] = readonly Field[]> = {
 	id: string;
 } & Partial<Omit<Row<TFields>, 'id'>>;
 
@@ -653,8 +651,8 @@ export type KvValue<C extends KvField = KvField> = CellValue<C>;
  *
  * // New style (recommended)
  * kv: [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
- * ] as const
+ *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
+ * ]
  * ```
  */
 export type KvDefinition<TField extends KvField = KvField> = {
@@ -682,9 +680,9 @@ export type KvDefinition<TField extends KvField = KvField> = {
  *
  * // New style (recommended)
  * const kv = [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+ *   select('theme', { name: 'Theme', options: ['light', 'dark'] }),
  *   integer('fontSize', { name: 'Font Size', default: 14 }),
- * ] as const;
+ * ];
  * ```
  */
 export type KvDefinitionMap = Record<string, KvDefinition>;

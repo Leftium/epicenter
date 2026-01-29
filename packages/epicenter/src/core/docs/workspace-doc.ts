@@ -231,7 +231,7 @@ export type ExtensionContext<
  * const workspace = createWorkspaceDoc({
  *   workspaceId: 'blog',
  *   epoch: 0,
- *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }) },
+ *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }) },
  *   kv: {},
  *   extensionFactories: {
  *     persistence: ({ ydoc }) => persistence({ ydoc }, { filePath: './data.yjs' }),

@@ -9,6 +9,7 @@
 Convert `TableDefinition.fields` from `Record<string, Field>` to `Field[]` (array) with **no type lies**. The array approach is cleaner, preserves explicit ordering, and aligns better with JSON serialization semantics.
 
 **Key decisions:**
+
 1. **Array all the way down** - No hybrid Record input / Array output
 2. **ID-first factories** - `text('title')` not `field('title', text())`
 3. **Rename types** - `Field` → `FieldSchema`, `FieldWithId` → `Field`
@@ -27,52 +28,56 @@ Currently, `TableDefinition.fields` is typed as `Record<string, Field>`. This ha
 ### JSON Serialization
 
 **Current (Record):**
+
 ```json
 {
-  "name": "Posts",
-  "fields": {
-    "id": { "type": "id", "name": "", "icon": null },
-    "title": { "type": "text", "name": "", "icon": null },
-    "status": { "type": "select", "options": ["draft", "published"] }
-  }
+	"name": "Posts",
+	"fields": {
+		"id": { "type": "id", "name": "", "icon": null },
+		"title": { "type": "text", "name": "", "icon": null },
+		"status": { "type": "select", "options": ["draft", "published"] }
+	}
 }
 ```
 
 **Proposed (Array):**
+
 ```json
 {
-  "name": "Posts",
-  "fields": [
-    { "id": "id", "type": "id", "name": "", "icon": null },
-    { "id": "title", "type": "text", "name": "", "icon": null },
-    { "id": "status", "type": "select", "options": ["draft", "published"] }
-  ]
+	"name": "Posts",
+	"fields": [
+		{ "id": "id", "type": "id", "name": "", "icon": null },
+		{ "id": "title", "type": "text", "name": "", "icon": null },
+		{ "id": "status", "type": "select", "options": ["draft", "published"] }
+	]
 }
 ```
 
 ### TypeScript Definition
 
 **Current:**
+
 ```typescript
 const posts = table({
-  name: 'Posts',
-  fields: {
-    id: id(),
-    title: text(),
-    status: select({ options: ['draft', 'published'] as const }),
-  },
+	name: 'Posts',
+	fields: {
+		id: id(),
+		title: text(),
+		status: select({ options: ['draft', 'published'] as const }),
+	},
 });
 ```
 
 **Proposed (ID-first factories):**
+
 ```typescript
 const posts = table({
-  name: 'Posts',
-  fields: [
-    id(),  // defaults to 'id'
-    text('title'),
-    select('status', { options: ['draft', 'published'] as const }),
-  ] as const,
+	name: 'Posts',
+	fields: [
+		id(), // defaults to 'id'
+		text('title'),
+		select('status', { options: ['draft', 'published'] as const }),
+	] as const,
 });
 ```
 
@@ -82,13 +87,13 @@ const posts = table({
 
 ```typescript
 // BEFORE
-Field          // Union: IdField | TextField | SelectField | ...
-FieldWithId    // Field & { id: string }
-FieldMap       // { id: IdField } & Record<string, Field>
+Field; // Union: IdField | TextField | SelectField | ...
+FieldWithId; // Field & { id: string }
+FieldMap; // { id: IdField } & Record<string, Field>
 
 // AFTER
-FieldSchema    // Union: IdFieldSchema | TextFieldSchema | SelectFieldSchema | ...
-Field          // FieldSchema & { id: string } - THE field type everywhere
+FieldSchema; // Union: IdFieldSchema | TextFieldSchema | SelectFieldSchema | ...
+Field; // FieldSchema & { id: string } - THE field type everywhere
 // No FieldMap - concept removed entirely
 ```
 
@@ -98,34 +103,34 @@ Field          // FieldSchema & { id: string } - THE field type everywhere
 // Base field schemas (without id)
 type IdFieldSchema = FieldMetadata & { type: 'id' };
 type TextFieldSchema<TNullable extends boolean = boolean> = FieldMetadata & {
-  type: 'text';
-  nullable?: TNullable;
-  default?: string;
+	type: 'text';
+	nullable?: TNullable;
+	default?: string;
 };
 // ... etc for all field types
 
 // Union of all field schemas
 type FieldSchema =
-  | IdFieldSchema
-  | TextFieldSchema
-  | RichtextFieldSchema
-  | IntegerFieldSchema
-  | RealFieldSchema
-  | BooleanFieldSchema
-  | DateFieldSchema
-  | SelectFieldSchema
-  | TagsFieldSchema
-  | JsonFieldSchema;
+	| IdFieldSchema
+	| TextFieldSchema
+	| RichtextFieldSchema
+	| IntegerFieldSchema
+	| RealFieldSchema
+	| BooleanFieldSchema
+	| DateFieldSchema
+	| SelectFieldSchema
+	| TagsFieldSchema
+	| JsonFieldSchema;
 
 // THE Field type - schema + id
 type Field = FieldSchema & { id: string };
 
 // Table definition with array fields
 type TableDefinition<TFields extends readonly Field[] = Field[]> = {
-  name: string;
-  description: string;
-  icon: Icon | null;
-  fields: TFields;
+	name: string;
+	description: string;
+	icon: Icon | null;
+	fields: TFields;
 };
 ```
 
@@ -136,17 +141,20 @@ type TableDefinition<TFields extends readonly Field[] = Field[]> = {
 type FieldIds<TFields extends readonly Field[]> = TFields[number]['id'];
 
 // Get specific field by id
-type FieldById<TFields extends readonly Field[], K extends string> =
-  Extract<TFields[number], { id: K }>;
+type FieldById<TFields extends readonly Field[], K extends string> = Extract<
+	TFields[number],
+	{ id: K }
+>;
 
 // Row type - maps field ids to their value types
 type Row<TFields extends readonly Field[]> = {
-  [K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
+	[K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
 };
 
 // Partial row - id required, rest optional
-type PartialRow<TFields extends readonly Field[]> =
-  { id: string } & Partial<Omit<Row<TFields>, 'id'>>;
+type PartialRow<TFields extends readonly Field[]> = { id: string } & Partial<
+	Omit<Row<TFields>, 'id'>
+>;
 ```
 
 ### CellValue Update
@@ -170,22 +178,26 @@ function id<const K extends string>(fieldId: K): IdFieldSchema & { id: K };
 
 // text() - id first, options second
 function text<const K extends string>(
-  id: K,
-  opts?: { nullable?: false; default?: string } & FieldOptions
+	id: K,
+	opts?: { nullable?: false; default?: string } & FieldOptions,
 ): TextFieldSchema<false> & { id: K };
 
 function text<const K extends string>(
-  id: K,
-  opts: { nullable: true; default?: string } & FieldOptions
+	id: K,
+	opts: { nullable: true; default?: string } & FieldOptions,
 ): TextFieldSchema<true> & { id: K };
 
 // select() - id first, then options object with required `options`
 function select<
-  const K extends string,
-  const TOptions extends readonly [string, ...string[]]
+	const K extends string,
+	const TOptions extends readonly [string, ...string[]],
 >(
-  id: K,
-  opts: { options: TOptions; nullable?: false; default?: TOptions[number] } & FieldOptions
+	id: K,
+	opts: {
+		options: TOptions;
+		nullable?: false;
+		default?: TOptions[number];
+	} & FieldOptions,
 ): SelectFieldSchema<TOptions, false> & { id: K };
 
 // ... similar pattern for all factories
@@ -195,27 +207,27 @@ function select<
 
 ```typescript
 export function text<const K extends string>(
-  id: K,
-  {
-    nullable = false,
-    default: defaultValue,
-    name = '',
-    description = '',
-    icon = null,
-  }: {
-    nullable?: boolean;
-    default?: string;
-  } & FieldOptions = {}
+	id: K,
+	{
+		nullable = false,
+		default: defaultValue,
+		name = '',
+		description = '',
+		icon = null,
+	}: {
+		nullable?: boolean;
+		default?: string;
+	} & FieldOptions = {},
 ): TextFieldSchema<boolean> & { id: K } {
-  return {
-    id,
-    type: 'text',
-    name,
-    description,
-    icon,
-    ...(nullable && { nullable: true }),
-    ...(defaultValue !== undefined && { default: defaultValue }),
-  };
+	return {
+		id,
+		type: 'text',
+		name,
+		description,
+		icon,
+		...(nullable && { nullable: true }),
+		...(defaultValue !== undefined && { default: defaultValue }),
+	};
 }
 ```
 
@@ -223,17 +235,17 @@ export function text<const K extends string>(
 
 ```typescript
 export function table<const TFields extends readonly Field[]>(options: {
-  name: string;
-  fields: TFields;
-  description?: string;
-  icon?: string | Icon | null;
+	name: string;
+	fields: TFields;
+	description?: string;
+	icon?: string | Icon | null;
 }): TableDefinition<TFields> {
-  return {
-    name: options.name,
-    description: options.description ?? '',
-    icon: normalizeIcon(options.icon),
-    fields: options.fields,
-  };
+	return {
+		name: options.name,
+		description: options.description ?? '',
+		icon: normalizeIcon(options.icon),
+		fields: options.fields,
+	};
 }
 ```
 
@@ -243,17 +255,17 @@ export function table<const TFields extends readonly Field[]>(options: {
 
 ```typescript
 const posts = table({
-  name: 'Posts',
-  fields: [
-    id(),
-    text('title'),
-    text('subtitle', { nullable: true }),
-    integer('views', { default: 0 }),
-    boolean('published', { default: false }),
-    select('status', { options: ['draft', 'review', 'published'] as const }),
-    tags('categories'),
-    date('createdAt'),
-  ] as const,
+	name: 'Posts',
+	fields: [
+		id(),
+		text('title'),
+		text('subtitle', { nullable: true }),
+		integer('views', { default: 0 }),
+		boolean('published', { default: false }),
+		select('status', { options: ['draft', 'review', 'published'] as const }),
+		tags('categories'),
+		date('createdAt'),
+	] as const,
 });
 ```
 
@@ -261,19 +273,19 @@ const posts = table({
 
 ```typescript
 const posts = table({
-  name: 'Posts',
-  icon: '📝',
-  description: 'Blog posts and articles',
-  fields: [
-    id(),
-    text('title', { name: 'Post Title', icon: 'emoji:📝' }),
-    select('status', {
-      options: ['draft', 'published'] as const,
-      name: 'Status',
-      icon: 'emoji:📊',
-      default: 'draft',
-    }),
-  ] as const,
+	name: 'Posts',
+	icon: '📝',
+	description: 'Blog posts and articles',
+	fields: [
+		id(),
+		text('title', { name: 'Post Title', icon: 'emoji:📝' }),
+		select('status', {
+			options: ['draft', 'published'] as const,
+			name: 'Status',
+			icon: 'emoji:📊',
+			default: 'draft',
+		}),
+	] as const,
 });
 ```
 
@@ -285,7 +297,7 @@ type PostRow = Row<typeof posts.fields>;
 // { id: string; title: string; subtitle: string | null; views: number; ... }
 
 // Field access
-const titleField = posts.fields.find(f => f.id === 'title');
+const titleField = posts.fields.find((f) => f.id === 'title');
 // Type: Field (narrowed from union)
 ```
 
@@ -293,34 +305,34 @@ const titleField = posts.fields.find(f => f.id === 'title');
 
 ### Phase 1: Core Type Renames
 
-| File | Changes |
-|------|---------|
+| File                          | Changes                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `core/schema/fields/types.ts` | Rename `Field` → `FieldSchema`, add new `Field = FieldSchema & { id }`, remove `FieldMap`, update `Row`/`PartialRow` |
 
 ### Phase 2: Factory Updates
 
-| File | Changes |
-|------|---------|
+| File                              | Changes                                     |
+| --------------------------------- | ------------------------------------------- |
 | `core/schema/fields/factories.ts` | Update all factories to ID-first signatures |
 
 ### Phase 3: Consumer Updates
 
-| File | Changes |
-|------|---------|
+| File                                   | Changes                                     |
+| -------------------------------------- | ------------------------------------------- |
 | `core/schema/converters/to-drizzle.ts` | Iterate array instead of `Object.entries()` |
-| `core/schema/converters/to-arktype.ts` | Same |
-| `core/tables/*.ts` | Update field access patterns |
-| `core/definition-helper/*.ts` | Update field access patterns |
-| `cell/*.ts` | Already mostly done, verify alignment |
+| `core/schema/converters/to-arktype.ts` | Same                                        |
+| `core/tables/*.ts`                     | Update field access patterns                |
+| `core/definition-helper/*.ts`          | Update field access patterns                |
+| `cell/*.ts`                            | Already mostly done, verify alignment       |
 
 ### Phase 4: Test Updates
 
-| File | Changes |
-|------|---------|
-| `core/tables/*.test.ts` | Update table definitions to array syntax |
-| `core/definition-helper/*.test.ts` | Same |
-| `core/schema/converters/*.test.ts` | Same |
-| `cell/*.test.ts` | Already done, verify |
+| File                               | Changes                                  |
+| ---------------------------------- | ---------------------------------------- |
+| `core/tables/*.test.ts`            | Update table definitions to array syntax |
+| `core/definition-helper/*.test.ts` | Same                                     |
+| `core/schema/converters/*.test.ts` | Same                                     |
+| `cell/*.test.ts`                   | Already done, verify                     |
 
 ## Migration Patterns
 
@@ -343,12 +355,12 @@ for (const field of table.fields) { ... }  // field.id available
 ```typescript
 // Get field by id (returns undefined if not found)
 function getFieldById(fields: Field[], id: string): Field | undefined {
-  return fields.find(f => f.id === id);
+	return fields.find((f) => f.id === id);
 }
 
 // Get all field ids
 function getFieldIds(fields: Field[]): string[] {
-  return fields.map(f => f.id);
+	return fields.map((f) => f.id);
 }
 ```
 
@@ -374,15 +386,57 @@ function getFieldIds(fields: Field[]): string[] {
 
 ## Risks and Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Breaking existing code | This is internal refactor; no external API yet |
+| Risk                     | Mitigation                                      |
+| ------------------------ | ----------------------------------------------- |
+| Breaking existing code   | This is internal refactor; no external API yet  |
 | Type inference regresses | Test with complex select/tags options to verify |
-| `as const` forgotten | Add lint rule or document prominently |
-| Duplicate field ids | Add runtime validation in `table()` factory |
+| `as const` forgotten     | Add lint rule or document prominently           |
+| Duplicate field ids      | Add runtime validation in `table()` factory     |
 
 ## Notes
 
-- The `as const` on the fields array is required for literal type inference
-- Consider adding a helper like `fields(...)` that auto-applies const assertion
+- ~~The `as const` on the fields array is required for literal type inference~~ **UPDATE**: `as const` is no longer needed! The factory functions use `<const T>` generics which infer literal types automatically.
+- ~~Consider adding a helper like `fields(...)` that auto-applies const assertion~~ Not needed anymore.
 - The `id()` factory defaults to `'id'` since that's always the name
+
+## Follow-up: Removed `as const` Requirement (2026-01-29)
+
+A follow-up refactor removed the need for `as const` at call sites:
+
+**Before:**
+
+```typescript
+const posts = table('posts', {
+	name: 'Posts',
+	fields: [
+		id(),
+		text('title'),
+		select('status', { options: ['draft', 'published'] as const }),
+	] as const,
+});
+```
+
+**After:**
+
+```typescript
+const posts = table('posts', {
+	name: 'Posts',
+	fields: [
+		id(),
+		text('title'),
+		select('status', { options: ['draft', 'published'] }),
+	],
+});
+```
+
+**How it works:**
+
+- The `table()` factory has `<const TFields extends readonly Field[]>` in its generic
+- The `select()` and `tags()` factories have `<const TOptions extends readonly [string, ...string[]]>`
+- TypeScript infers literal types when the function has a `const` type parameter
+
+**Changes made:**
+
+- Updated type defaults: `TableDefinition<TFields = readonly Field[]>`, `Row<TFields = readonly Field[]>`, `PartialRow<TFields = readonly Field[]>`
+- Removed 193 instances of `as const` from call sites
+- Updated all JSDoc examples

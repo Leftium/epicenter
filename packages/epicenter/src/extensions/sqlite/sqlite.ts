@@ -66,7 +66,7 @@ export type SqliteConfig = {
  * import { join } from 'node:path';
  *
  * const definition = defineWorkspace({
- *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] as const }) },
+ *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }) },
  *   kv: {},
  * });
  *

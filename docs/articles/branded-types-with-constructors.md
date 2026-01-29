@@ -14,13 +14,15 @@ import type { Brand } from 'wellcrafted/brand';
 // 1. Define the branded type
 export type RowId = string & Brand<'RowId'>;
 
-// 2. Create the brand constructor
-export function rowId(id: string): RowId {
+// 2. Create the brand constructor (PascalCase matches the type)
+export function RowId(id: string): RowId {
   return id as RowId;
 }
 ```
 
-That's it. The `rowId()` function is the only place in the entire codebase that uses `as RowId`.
+That's it. The `RowId()` function is the only place in the entire codebase that uses `as RowId`.
+
+TypeScript allows a type and a value to share the same name - they live in different namespaces. This lets us use `RowId` for both.
 
 ## Why This Matters
 
@@ -28,7 +30,7 @@ That's it. The `rowId()` function is the only place in the entire codebase that 
 
 ```typescript
 // user-service.ts
-const userId = data.id as UserId;
+const id = data.id as UserId;
 
 // post-service.ts
 function getPost(id: string) {
@@ -52,32 +54,33 @@ Problems:
 
 ```typescript
 // user-service.ts
-const userId = userId(data.id);
+const id = UserId(data.id);
 
 // post-service.ts
 function getPost(id: string) {
-  return db.posts.get(postId(id));
+  return db.posts.get(PostId(id));
 }
 
 // api-handler.ts
-const parsed = userId(params.userId);
+const parsed = UserId(params.userId);
 
 // component.ts
-onClick={() => deleteUser(userId(selectedId))}
+onClick={() => deleteUser(UserId(selectedId))}
 ```
 
 Benefits:
 - **One assertion** - only in the constructor function
 - **Easy to add validation** - change one function
-- **Explicit boundaries** - `userId()` calls mark branding points
-- **Searchable** - find all branding with `userId(`
+- **Explicit boundaries** - `UserId()` calls mark branding points
+- **Searchable** - find all branding with `UserId(`
+- **No shadowing** - PascalCase constructor doesn't shadow camelCase parameters
 
 ## Adding Validation Later
 
 The constructor is the perfect place to add runtime checks:
 
 ```typescript
-export function rowId(id: string): RowId {
+export function RowId(id: string): RowId {
   if (id.includes(':')) {
     throw new Error(`RowId cannot contain ':' separator: "${id}"`);
   }
@@ -88,7 +91,7 @@ export function rowId(id: string): RowId {
 }
 ```
 
-Every `rowId()` call in the codebase now validates automatically.
+Every `RowId()` call in the codebase now validates automatically.
 
 ## Real Example: Cell Keys
 
@@ -101,23 +104,23 @@ export type FieldId = string & Brand<'FieldId'>;
 export type CellKey = `${RowId}:${FieldId}`;
 
 // Brand constructors - only assertions in codebase
-export function rowId(id: string): RowId {
+export function RowId(id: string): RowId {
   return id as RowId;
 }
 
-export function fieldId(id: string): FieldId {
+export function FieldId(id: string): FieldId {
   return id as FieldId;
 }
 
 // Functions require branded types
-export function cellKey(row: RowId, field: FieldId): CellKey {
-  return `${row}:${field}` as CellKey;
+export function cellKey(rowId: RowId, fieldId: FieldId): CellKey {
+  return `${rowId}:${fieldId}` as CellKey;
 }
 
 // Parsing returns branded types
 export function parseCellKey(key: string): { rowId: RowId; fieldId: FieldId } {
   const [row, field] = key.split(':');
-  return { rowId: rowId(row), fieldId: fieldId(field) };
+  return { rowId: RowId(row), fieldId: FieldId(field) };
 }
 ```
 
@@ -125,40 +128,44 @@ Callers are explicit about branding:
 
 ```typescript
 // Clear where strings become branded
-const row = rowId(userInput);
-const field = fieldId('title');
+const row = RowId(userInput);
+const field = FieldId('title');
 const key = cellKey(row, field);
 
 // Or inline for simple cases
-store.set(cellKey(rowId(id), fieldId('status')), 'active');
+store.set(cellKey(RowId(id), FieldId('status')), 'active');
+```
+
+## Why PascalCase?
+
+We use PascalCase for brand constructors (`RowId()` not `rowId()`) because:
+
+1. **Matches the type name** - `RowId` the type and `RowId()` the constructor
+2. **No parameter shadowing** - a `rowId` parameter doesn't shadow the `RowId()` function
+3. **Familiar pattern** - similar to constructors in C#, Rust's `String::from`, etc.
+
+```typescript
+// With PascalCase: no shadowing, parameters keep natural names
+function getRow(rowId: string) {
+  return store.get(RowId(rowId));  // Works! Different cases
+}
+
+// With camelCase: forced to rename parameters
+function getRow(row: string) {  // Can't use "rowId" - would shadow
+  return store.get(rowId(row));
+}
 ```
 
 ## Naming Convention
 
 | Branded Type | Constructor |
 |--------------|-------------|
-| `RowId` | `rowId()` |
-| `FieldId` | `fieldId()` |
-| `UserId` | `userId()` |
-| `WorkspaceGuid` | `workspaceGuid()` |
+| `RowId` | `RowId()` |
+| `FieldId` | `FieldId()` |
+| `UserId` | `UserId()` |
+| `WorkspaceGuid` | `WorkspaceGuid()` |
 
-The constructor is the **lowercase camelCase** version of the type.
-
-## Parameter Shadowing
-
-When a function parameter has the same name as the brand constructor, rename the parameter:
-
-```typescript
-// Bad: `rowId` parameter shadows the constructor
-function getRow(rowId: string) {
-  return store.get(rowId(rowId));  // Error: rowId is not a function
-}
-
-// Good: rename parameter to avoid shadowing
-function getRow(row: string) {
-  return store.get(rowId(row));  // Works!
-}
-```
+The constructor uses **PascalCase matching the type name**.
 
 ## When to Use Branded Types
 
@@ -188,7 +195,7 @@ This creates a unique symbol-based brand that TypeScript tracks, preventing acci
 ## Summary
 
 1. **Define the type**: `type RowId = string & Brand<'RowId'>`
-2. **Create the constructor**: `function rowId(s: string): RowId { return s as RowId }`
+2. **Create the constructor**: `function RowId(s: string): RowId { return s as RowId }`
 3. **Never use `as RowId` anywhere else**
 4. **Call the constructor** at branding boundaries
 

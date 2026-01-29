@@ -12,14 +12,9 @@
  * @packageDocumentation
  */
 
-// Re-export branded types from cell/keys for use throughout dynamic module
-export {
-	type RowId,
-	type FieldId,
-	rowId,
-	fieldId,
-	generateRowId,
-} from '../cell/keys.js';
+// Re-export from cell/keys - the RowId/FieldId exports include both
+// the type and the brand constructor function (same name, different namespaces)
+export { RowId, FieldId, generateRowId } from '../cell/keys.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Validation

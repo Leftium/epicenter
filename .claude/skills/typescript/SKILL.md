@@ -459,29 +459,31 @@ import type { Brand } from 'wellcrafted/brand';
 type RowId = string & Brand<'RowId'>;
 
 // Brand constructor - THE ONLY place with `as RowId`
-function rowId(id: string): RowId {
+// Uses PascalCase to match the type name (avoids parameter shadowing)
+function RowId(id: string): RowId {
   return id as RowId;
 }
 
 // file1.ts
-const id = rowId(someString);  // Good: uses constructor
+const id = RowId(someString);  // Good: uses constructor
 
 // file2.ts
-function getRow(id: string) {
-  doSomething(rowId(id));  // Good: clear branding point
+function getRow(rowId: string) {
+  doSomething(RowId(rowId));  // Good: no shadowing issues
 }
 
 // file3.ts
-const parsed = rowId(key.split(':')[0]);  // Good: consistent
+const parsed = RowId(key.split(':')[0]);  // Good: consistent
 ```
 
 ### Why Brand Constructors Are Better
 
 1. **Single source of truth**: Only one place has the type assertion
 2. **Future validation**: Easy to add runtime validation later
-3. **Searchable**: `rowId(` is easy to find and audit
+3. **Searchable**: `RowId(` is easy to find and audit
 4. **Explicit boundaries**: Clear where unbranded -> branded conversion happens
 5. **Refactor-safe**: Change the branding logic in one place
+6. **No shadowing**: PascalCase constructor doesn't shadow camelCase parameters
 
 ### Implementation Pattern
 
@@ -492,12 +494,13 @@ import type { Brand } from 'wellcrafted/brand';
 export type RowId = string & Brand<'RowId'>;
 
 // 2. Create the brand constructor (only `as` assertion in codebase)
-export function rowId(id: string): RowId {
+// PascalCase matches the type - TypeScript allows same-name type + value
+export function RowId(id: string): RowId {
   return id as RowId;
 }
 
 // 3. Optionally add validation
-export function rowId(id: string): RowId {
+export function RowId(id: string): RowId {
   if (id.includes(':')) {
     throw new Error(`RowId cannot contain ':': ${id}`);
   }
@@ -509,12 +512,12 @@ export function rowId(id: string): RowId {
 
 | Branded Type | Constructor Function |
 |--------------|---------------------|
-| `RowId` | `rowId()` |
-| `FieldId` | `fieldId()` |
-| `UserId` | `userId()` |
-| `DocumentGuid` | `documentGuid()` |
+| `RowId` | `RowId()` |
+| `FieldId` | `FieldId()` |
+| `UserId` | `UserId()` |
+| `DocumentGuid` | `DocumentGuid()` |
 
-The constructor is the **lowercase camelCase** version of the type name.
+The constructor uses **PascalCase matching the type name**. TypeScript allows a type and value to share the same name (different namespaces). This avoids parameter shadowing issues.
 
 ### When Functions Accept Branded Types
 
@@ -524,8 +527,10 @@ If a function requires a branded type, callers must use the brand constructor:
 // Function requires branded RowId
 function getRow(id: RowId): Row { ... }
 
-// Caller must brand the string
-getRow(rowId(userInput));  // Explicit branding point
+// Caller must brand the string - no shadowing since RowId() is PascalCase
+function processRow(rowId: string) {
+  getRow(RowId(rowId));  // rowId param doesn't shadow RowId() function
+}
 ```
 
-This makes type boundaries visible and intentional.
+This makes type boundaries visible and intentional, without forcing awkward parameter renames.

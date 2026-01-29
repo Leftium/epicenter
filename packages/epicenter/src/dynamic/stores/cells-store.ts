@@ -9,7 +9,7 @@
  */
 
 import type * as Y from 'yjs';
-import { fieldId, rowId } from '../../cell/keys.js';
+import { FieldId, RowId } from '../../cell/keys.js';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
 import { cellKey, validateId } from '../keys.js';
 import type {
@@ -29,43 +29,43 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 	return {
 		get(
 			tableId: string,
-			row: string,
-			field: string,
+			rowId: string,
+			fieldId: string,
 		): CellValue | undefined {
-			return ykv.get(cellKey(tableId, rowId(row), fieldId(field)));
+			return ykv.get(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
 		set(
 			tableId: string,
-			row: string,
-			field: string,
+			rowId: string,
+			fieldId: string,
 			value: CellValue,
 		): void {
 			validateId(tableId, 'tableId');
-			validateId(row, 'rowId');
-			validateId(field, 'fieldId');
-			ykv.set(cellKey(tableId, rowId(row), fieldId(field)), value);
+			validateId(rowId, 'rowId');
+			validateId(fieldId, 'fieldId');
+			ykv.set(cellKey(tableId, RowId(rowId), FieldId(fieldId)), value);
 		},
 
-		delete(tableId: string, row: string, field: string): void {
-			ykv.delete(cellKey(tableId, rowId(row), fieldId(field)));
+		delete(tableId: string, rowId: string, fieldId: string): void {
+			ykv.delete(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
-		has(tableId: string, row: string, field: string): boolean {
-			return ykv.has(cellKey(tableId, rowId(row), fieldId(field)));
+		has(tableId: string, rowId: string, fieldId: string): boolean {
+			return ykv.has(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
 		getByRow(
 			tableId: string,
-			row: string,
+			rowId: string,
 			fieldIds: string[],
 		): Map<string, CellValue> {
 			const result = new Map<string, CellValue>();
-			for (const field of fieldIds) {
-				const key = cellKey(tableId, rowId(row), fieldId(field));
+			for (const fieldId of fieldIds) {
+				const key = cellKey(tableId, RowId(rowId), FieldId(fieldId));
 				const value = ykv.get(key);
 				if (value !== undefined) {
-					result.set(field, value);
+					result.set(fieldId, value);
 				}
 			}
 			return result;

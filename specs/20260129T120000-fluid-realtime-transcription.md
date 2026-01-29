@@ -1,6 +1,6 @@
 # Fluid Realtime Transcription (FRT)
 
-A transcription system where users can **switch fluidly between speaking and editing**—repositioning the cursor, typing corrections, then resuming dictation—without waiting for the previous utterance to fully process.
+A transcription experience where users can **switch fluidly between speaking and editing**—repositioning the cursor, typing corrections, then resuming dictation—without waiting for the previous utterance to fully process.
 
 ## Name Origin
 
@@ -12,21 +12,21 @@ A transcription system where users can **switch fluidly between speaking and edi
 ```
 Speaking: "This is realtime transcription"
 Final:    "This is realtime transcription"
-Action:   click after "is", type **, speak "super", type **
-Result:   "This is **super** realtime transcription"
+Action:   click after "is", type **, speak "fluid", type **
+Result:   "This is **fluid** realtime transcription"
 ```
 
 ### More Examples
 
-| Operation           | Original            | Action                                          | Result                      |
-| ------------------- | ------------------- | ----------------------------------------------- | --------------------------- |
-| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"            | "Send the quarterly report" |
-| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                  | "Call me back tomorrow"     |
-| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                  | "Meet at the library"       |
-| **Fix homophone**   | "Its ready to send" | click after "It", type `'`                      | "It's ready to send"        |
-| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                | "The small dog"             |
-| **Format (mixed)**  | "This is important" | select "important", type `**`, speak, type `**` | "This is **important**"     |
-| **Type then speak** | —                   | type "Thanks ", speak "for your help"           | "Thanks for your help"      |
+| Operation           | Original            | Action                                               | Result                      |
+| ------------------- | ------------------- | ---------------------------------------------------- | --------------------------- |
+| **Insert (voice)**  | "Send the report"   | click after "the", speak "quarterly"                 | "Send the quarterly report" |
+| **Insert (typed)**  | "Call me tomorrow"  | click after "me", type " back"                       | "Call me back tomorrow"     |
+| **Replace (voice)** | "Meet at the cafe"  | select "cafe", speak "library"                       | "Meet at the library"       |
+| **Fix homophone**   | "Its ready to send" | click after "It", type `'`                           | "It's ready to send"        |
+| **Delete + voice**  | "The very big dog"  | select "very big", speak "small"                     | "The small dog"             |
+| **Format (mixed)**  | "This is important" | select "important", cut, type `**`, paste, type `**` | "This is **important**"     |
+| **Type then speak** | —                   | type "Thanks ", speak "for your help"                | "Thanks for your help"      |
 
 ---
 

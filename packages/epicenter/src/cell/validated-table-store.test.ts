@@ -196,43 +196,49 @@ describe('TableStore with schema (consolidated API)', () => {
 		});
 	});
 
-	describe('raw access', () => {
-		test('provides unvalidated access to cells', () => {
+	describe('value access on invalid results', () => {
+		test('invalid cell result still contains the raw value', () => {
 			const { tableStore } = createTestStore('posts', postsSchema);
 
 			const rowId = tableStore.createRow();
 			tableStore.set(rowId, 'views', 'not a number'); // Invalid value
 
-			// raw.get returns the value without validation
-			const rawValue = tableStore.raw.get(rowId, 'views');
-			expect(rawValue).toBe('not a number');
-
-			// But validated get returns invalid status
-			const validatedResult = tableStore.get(rowId, 'views');
-			expect(validatedResult.status).toBe('invalid');
+			// Validated get returns invalid status but still includes the value
+			const result = tableStore.get(rowId, 'views');
+			expect(result.status).toBe('invalid');
+			if (result.status === 'invalid') {
+				expect(result.value).toBe('not a number');
+			}
 		});
 
-		test('raw.getRow returns row without validation', () => {
+		test('invalid row result still contains the raw row data', () => {
 			const { tableStore } = createTestStore('posts', postsSchema);
 
 			const rowId = tableStore.createRow();
 			tableStore.set(rowId, 'title', 123); // Invalid
 			tableStore.set(rowId, 'views', 'string'); // Invalid
 
-			const rawRow = tableStore.raw.getRow(rowId);
-			expect(rawRow).toBeDefined();
-			expect(rawRow?.title).toBe(123);
-			expect(rawRow?.views).toBe('string');
+			const result = tableStore.getRow(rowId);
+			expect(result.status).toBe('invalid');
+			if (result.status === 'invalid') {
+				// For invalid rows, .row contains the raw cells data
+				const cells = result.row as Record<string, unknown>;
+				expect(cells.title).toBe(123);
+				expect(cells.views).toBe('string');
+			}
 		});
 
-		test('raw.getRows returns all rows without validation', () => {
+		test('getAll returns all rows including invalid ones', () => {
 			const { tableStore } = createTestStore('posts', postsSchema);
 
 			tableStore.set('row1', 'title', 'Valid');
 			tableStore.set('row2', 'title', 123); // Invalid
 
-			const rawRows = tableStore.raw.getRows();
-			expect(rawRows.length).toBe(2);
+			const results = tableStore.getAll();
+			expect(results.length).toBe(2);
+			// Both valid and invalid rows are returned
+			expect(results.some((r) => r.status === 'valid')).toBe(true);
+			expect(results.some((r) => r.status === 'invalid')).toBe(true);
 		});
 	});
 

@@ -38,6 +38,7 @@ import type {
 	CreateCellWorkspaceOptions,
 	CreateCellWorkspaceWithHeadDocOptions,
 	FieldType,
+	RowData,
 	SchemaTableDefinition,
 	TableStore,
 	TypedCell,
@@ -254,7 +255,13 @@ function createCellWorkspaceLegacy({
 		getTypedRows(tableId: string): TypedRowWithCells[] {
 			const tableSchema = definition.tables[tableId];
 			const tableStore = this.table(tableId);
-			const rows = tableStore.raw.getRows();
+			// Get all rows (regardless of validation status) and extract RowData
+			const results = tableStore.getAll();
+			const rows: RowData[] = results.map((r) =>
+				r.status === 'valid'
+					? r.row
+					: { id: r.id, cells: r.row as Record<string, CellValue> },
+			);
 
 			// If table not in schema, return rows with all fields marked as 'json'
 			if (!tableSchema) {
@@ -434,7 +441,13 @@ function createCellWorkspaceWithHeadDoc<
 				getTypedRows(tableId: string): TypedRowWithCells[] {
 					const tableSchema = definition.tables[tableId as keyof TTableDefs];
 					const tableStore = this.table(tableId);
-					const rows = tableStore.raw.getRows();
+					// Get all rows (regardless of validation status) and extract RowData
+					const results = tableStore.getAll();
+					const rows: RowData[] = results.map((r) =>
+						r.status === 'valid'
+							? r.row
+							: { id: r.id, cells: r.row as Record<string, CellValue> },
+					);
 
 					if (!tableSchema) {
 						return rows.map((r) => {

@@ -172,30 +172,17 @@ export type ChangeHandler<T> = (
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Raw table access without validation (escape hatch).
- */
-export type RawTableAccess = {
-	/** Get a cell value without validation */
-	get(rowId: string, fieldId: string): CellValue | undefined;
-	/** Get all cells for a row without validation */
-	getRow(rowId: string): Record<string, CellValue> | undefined;
-	/** Get all rows without validation */
-	getRows(): RowData[];
-};
-
-/**
  * Store for a single table's data with integrated validation.
  *
- * Primary methods return validated results (Result types).
- * Use the `raw` property for unvalidated access when needed.
+ * All methods return validated results that include both the value and validation status.
+ * Even invalid results include the raw value via `.value` or `.row`, so there's no need
+ * for separate "raw" access - you can always get the data regardless of validity.
  */
 export type TableStore = {
 	/** The table identifier */
 	tableId: string;
 	/** The schema definition for this table (empty fields for dynamic tables) */
 	schema: SchemaTableDefinition;
-	/** Raw access without validation (escape hatch) */
-	raw: RawTableAccess;
 
 	// Cell operations (validated)
 	/** Get a validated cell value */

@@ -1,7 +1,44 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createCellWorkspace } from './create-cell-workspace';
-import type { CellWorkspaceClient, TableStore, WorkspaceDefinition } from './types';
+import type {
+	CellValue,
+	CellWorkspaceClient,
+	RowData,
+	TableStore,
+	WorkspaceDefinition,
+} from './types';
+
+/**
+ * Helper to extract raw value from validated cell result.
+ * Returns undefined if not found, otherwise the raw value.
+ */
+function getRawValue(store: TableStore, rowId: string, fieldId: string): CellValue | undefined {
+	const result = store.get(rowId, fieldId);
+	if (result.status === 'not_found') return undefined;
+	return result.value;
+}
+
+/**
+ * Helper to extract raw row data from validated row result.
+ * Returns undefined if not found, otherwise the cells record.
+ */
+function getRawRow(store: TableStore, rowId: string): Record<string, CellValue> | undefined {
+	const result = store.getRow(rowId);
+	if (result.status === 'not_found') return undefined;
+	if (result.status === 'valid') return result.row.cells;
+	// For invalid, row contains the cells
+	return result.row as Record<string, CellValue>;
+}
+
+/**
+ * Helper to extract all raw rows from validated results.
+ */
+function getRawRows(store: TableStore): RowData[] {
+	return store.getAll().map((r) =>
+		r.status === 'valid' ? r.row : { id: r.id, cells: r.row as Record<string, CellValue> },
+	);
+}
 
 // Default test definition with posts table
 const testDefinition: WorkspaceDefinition = {
@@ -99,13 +136,13 @@ describe('createCellWorkspace', () => {
 		test('hard-deletes row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
-			expect(posts.raw.getRow(rowId)).toBeDefined();
+			expect(getRawRow(posts, rowId)).toBeDefined();
 
 			posts.deleteRow(rowId);
-			expect(posts.raw.getRow(rowId)).toBeUndefined();
+			expect(getRawRow(posts, rowId)).toBeUndefined();
 		});
 
-		test('raw.getRows returns rows sorted by id', () => {
+		test('getAll returns rows sorted by id', () => {
 			posts.createRow('row3');
 			posts.createRow('row1');
 			posts.createRow('row2');
@@ -114,7 +151,7 @@ describe('createCellWorkspace', () => {
 			posts.set('row1', 'title', 'First');
 			posts.set('row2', 'title', 'Second');
 
-			const rows = posts.raw.getRows();
+			const rows = getRawRows(posts);
 			expect(rows.map((r) => r.id)).toEqual(['row1', 'row2', 'row3']);
 		});
 
@@ -143,10 +180,10 @@ describe('createCellWorkspace', () => {
 	});
 
 	describe('cell operations', () => {
-		test('sets and gets cell value (raw)', () => {
+		test('sets and gets cell value', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello World');
-			expect(posts.raw.get(rowId, 'title')).toBe('Hello World');
+			expect(getRawValue(posts, rowId, 'title')).toBe('Hello World');
 		});
 
 		test('get() returns validated result', () => {
@@ -166,13 +203,13 @@ describe('createCellWorkspace', () => {
 			expect(posts.has(rowId, 'title')).toBe(false);
 		});
 
-		test('raw.getRow returns all cells for a row', () => {
+		test('getRow returns all cells for a row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
 			posts.set(rowId, 'views', 100);
 			posts.set(rowId, 'published', true);
 
-			const row = posts.raw.getRow(rowId)!;
+			const row = getRawRow(posts, rowId)!;
 			expect(row.title).toBe('Hello');
 			expect(row.views).toBe(100);
 			expect(row.published).toBe(true);
@@ -191,7 +228,7 @@ describe('createCellWorkspace', () => {
 			}
 		});
 
-		test('stores various data types (raw access)', () => {
+		test('stores various data types', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'text', 'hello');
 			posts.set(rowId, 'number', 42);
@@ -201,13 +238,13 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'object', { nested: 'value' });
 			posts.set(rowId, 'null', null);
 
-			expect(posts.raw.get(rowId, 'text')).toBe('hello');
-			expect(posts.raw.get(rowId, 'number')).toBe(42);
-			expect(posts.raw.get(rowId, 'float')).toBe(3.14);
-			expect(posts.raw.get(rowId, 'bool')).toBe(true);
-			expect(posts.raw.get(rowId, 'array')).toEqual(['a', 'b']);
-			expect(posts.raw.get(rowId, 'object')).toEqual({ nested: 'value' });
-			expect(posts.raw.get(rowId, 'null')).toBeNull();
+			expect(getRawValue(posts, rowId, 'text')).toBe('hello');
+			expect(getRawValue(posts, rowId, 'number')).toBe(42);
+			expect(getRawValue(posts, rowId, 'float')).toBe(3.14);
+			expect(getRawValue(posts, rowId, 'bool')).toBe(true);
+			expect(getRawValue(posts, rowId, 'array')).toEqual(['a', 'b']);
+			expect(getRawValue(posts, rowId, 'object')).toEqual({ nested: 'value' });
+			expect(getRawValue(posts, rowId, 'null')).toBeNull();
 		});
 
 		test('validates fieldId does not contain colon', () => {
@@ -358,8 +395,8 @@ describe('createCellWorkspace', () => {
 
 			// Verify ws2 has the data
 			const posts2 = ws2.table('posts');
-			expect(posts2.raw.getRow('row1')).toBeDefined();
-			expect(posts2.raw.get('row1', 'title')).toBe('Hello from WS1');
+			expect(getRawRow(posts2, 'row1')).toBeDefined();
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('Hello from WS1');
 
 			// Make change in ws2
 			posts2.set(rowId, 'title', 'Updated in WS2');
@@ -369,7 +406,7 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Verify ws1 has the update
-			expect(posts1.raw.get('row1', 'title')).toBe('Updated in WS2');
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('Updated in WS2');
 		});
 
 		test('last-write-wins for concurrent cell edits', async () => {
@@ -402,10 +439,10 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have BOTH edits (different cells, both win)
-			expect(posts1.raw.get('row1', 'title')).toBe('From WS1');
-			expect(posts1.raw.get('row1', 'views')).toBe(999);
-			expect(posts2.raw.get('row1', 'title')).toBe('From WS1');
-			expect(posts2.raw.get('row1', 'views')).toBe(999);
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('From WS1');
+			expect(getRawValue(posts1, 'row1', 'views')).toBe(999);
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('From WS1');
+			expect(getRawValue(posts2, 'row1', 'views')).toBe(999);
 		});
 
 		test('same cell concurrent edit - later timestamp wins', async () => {
@@ -438,8 +475,8 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have the later value (WS2)
-			expect(posts1.raw.get('row1', 'title')).toBe('From WS2 (later)');
-			expect(posts2.raw.get('row1', 'title')).toBe('From WS2 (later)');
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('From WS2 (later)');
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('From WS2 (later)');
 		});
 	});
 
@@ -508,9 +545,9 @@ describe('createCellWorkspace', () => {
 			});
 
 			// Verify all writes completed
-			expect(posts.raw.getRow('row1')).toBeDefined();
-			expect(posts.raw.get('row1', 'title')).toBe('Hello');
-			expect(posts.raw.get('row1', 'views')).toBe(100);
+			expect(getRawRow(posts, 'row1')).toBeDefined();
+			expect(getRawValue(posts, 'row1', 'title')).toBe('Hello');
+			expect(getRawValue(posts, 'row1', 'views')).toBe(100);
 		});
 	});
 
@@ -978,7 +1015,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 			posts.set(rowId, 'title', 'Hello World');
 			posts.set(rowId, 'views', 100);
 
-			const row = posts.raw.getRow(rowId);
+			const row = getRawRow(posts, rowId);
 			expect(row?.title).toBe('Hello World');
 			expect(row?.views).toBe(100);
 		});
@@ -1009,7 +1046,7 @@ describe('createCellWorkspace with HeadDoc', () => {
 				posts.set(row2, 'title', 'Post 2');
 			});
 
-			const rows = workspace.table('posts').raw.getRows();
+			const rows = getRawRows(workspace.table('posts'));
 			expect(rows.length).toBe(2);
 		});
 

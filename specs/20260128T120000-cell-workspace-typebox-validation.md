@@ -27,7 +27,7 @@ cell/
 │   └── to-typebox.ts         # SchemaFieldDefinition → TypeBox converter
 ├── validation-types.ts       # Cell-level result types
 ├── table-store.ts            # TableStore with integrated validation
-├── types.ts                  # TableStore, RawTableAccess types
+├── types.ts                  # TableStore, result types
 └── create-cell-workspace.ts  # Factory with schema injection
 ```
 
@@ -68,15 +68,14 @@ All fields are wrapped with `Type.Optional()` because missing fields are valid i
 
 ### Unified TableStore API
 
-`TableStore` provides integrated validation with a clean separation:
+`TableStore` provides integrated validation. All read operations return result types that include both the validation status and the raw value—so you always have access to the data regardless of validity:
 
 ```typescript
 type TableStore = {
   readonly tableId: string;
   readonly schema: SchemaTableDefinition;
-  readonly raw: RawTableAccess;  // Escape hatch for unvalidated access
 
-  // Validated reads (return result types)
+  // Validated reads (return result types with both status AND value)
   get(rowId, fieldId): GetCellResult<unknown>;
   getRow(rowId): GetResult<RowData>;
   getAll(): RowResult<RowData>[];
@@ -93,12 +92,6 @@ type TableStore = {
   has(rowId, fieldId): boolean;
   getRowIds(): string[];
   observe(handler): () => void;
-};
-
-type RawTableAccess = {
-  get(rowId, fieldId): CellValue | undefined;
-  getRow(rowId): Record<string, CellValue> | undefined;
-  getRows(): RowData[];
 };
 ```
 
@@ -151,9 +144,10 @@ const allResults = posts.getAll();      // All rows with validation status
 const validRows = posts.getAllValid();  // Only valid rows
 const invalidRows = posts.getAllInvalid(); // Only invalid with errors
 
-// Raw access (escape hatch)
-const rawValue = posts.raw.get(rowId, 'views');  // 'not a number'
-const rawRows = posts.raw.getRows();              // All rows, no validation
+// Access raw value from any result (no separate "raw" API needed)
+if (result.status === 'invalid') {
+  const rawValue = result.value;  // 'not a number' - always available
+}
 ```
 
 ### Direct Store Access
@@ -179,7 +173,6 @@ const tableStore = createTableStore('posts', yarray, tableSchema);
 
 **Types:**
 - `TableStore` - Unified store with validation
-- `RawTableAccess` - Unvalidated access interface
 - `ValidCellResult<T>`, `InvalidCellResult`, `NotFoundCellResult`
 - `CellResult<T>`, `GetCellResult<T>`
 - Re-exports: `ValidationError`, `ValidRowResult`, `InvalidRowResult`, `NotFoundResult`, `RowResult`, `GetResult`

@@ -97,7 +97,6 @@ export type {
 	// Schema types (external JSON)
 	FieldType,
 	KvStore,
-	RawTableAccess,
 	RowData,
 	SchemaFieldDefinition,
 	SchemaKvDefinition,

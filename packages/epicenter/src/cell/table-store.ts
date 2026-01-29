@@ -87,7 +87,7 @@ export function createTableStore(
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// Raw Operations (internal + exposed via raw property)
+	// Internal Raw Operations (used by validated methods)
 	// ══════════════════════════════════════════════════════════════════════
 
 	function rawGet(rowId: string, fieldId: string): CellValue | undefined {
@@ -136,11 +136,6 @@ export function createTableStore(
 	return {
 		tableId,
 		schema,
-		raw: {
-			get: rawGet,
-			getRow: rawGetRow,
-			getRows: rawGetRows,
-		},
 
 		// Cell operations (validated)
 		get(rowId: string, fieldId: string): GetCellResult<unknown> {

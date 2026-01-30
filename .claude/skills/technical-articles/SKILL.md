@@ -5,109 +5,69 @@ description: Writing technical articles and blog posts. Use when creating articl
 
 # Technical Articles
 
-Two modes: **punchy** for single patterns, **narrative** for explorations.
+All articles must follow [writing-voice](../writing-voice/SKILL.md) rules.
 
-## Punchy Mode (Default)
+## Core Principles
 
-For articles explaining one pattern or technique. 30-80 lines.
+Title should BE the takeaway, not a topic. "Write Context to a File, Not a Prompt" not "Context Management in Agent Workflows".
 
-### Structure
+Lead with a TL;DR (one sentence, bold the key insight) and a blockquote with the core principle. Reader should get it in 5 seconds.
 
-1. **TL;DR**: One sentence, bold the key insight
-2. **The Problem**: Show broken code, explain why in 1-2 sentences
-3. **The Solution**: Show fixed code, explain in 1-2 sentences
-4. **When to Apply**: Bullet list of triggers
-5. **Summary**: Table or one-liner
+Code speaks louder than prose. Show real examples from actual codebases, not abstract `foo`/`bar` illustrations. If the code is self-explanatory, don't over-explain.
 
-### Example
+ASCII diagrams for architecture or flow:
 
-```markdown
-# Parse at the Edges
-
-**TL;DR**: Keep data serialized throughout the system. Parse to rich objects only at the moment you need them.
-
-## The Problem
-
-[code showing parse → serialize → parse → serialize churn]
-
-The rich object was only needed briefly. Every other step was pure churn.
-
-## The Solution
-
-If data enters serialized and leaves serialized, keep it serialized in the middle.
-
-## When to Apply
-
-- Dates: Keep as ISO strings, parse for date pickers
-- Markdown: Keep as strings, parse for rendering
-- JSON columns: Pass through, parse when accessing fields
-
-## Summary
-
-| Data Type | Keep As    | Parse For          |
-| --------- | ---------- | ------------------ |
-| Dates     | ISO string | Date math, pickers |
-| Markdown  | String     | Rendering          |
+```
+Conversation          Spec File           Subagent
+    │                    │                   │
+    │  write context     │                   │
+    │───────────────────>│                   │
+    │                    │                   │
+    │                    │   read file       │
+    │                    │<──────────────────│
+    │                    │                   │
+    │                    │   fresh context   │
+    │                    │──────────────────>│
 ```
 
-### Rules
+Tables for comparisons (skim-friendly, respect reader time):
 
-- No preamble ("In this article...")
-- Code speaks. Prose explains WHY.
-- Short sentences. Fragments fine.
-- End with table or one-liner, not conclusion paragraph
+| Instead of                | Do this            |
+| ------------------------- | ------------------ |
+| Copy-pasting context      | Write to spec file |
+| Re-explaining each prompt | Pass the filename  |
 
-### Style Preferences
+## Constraints
 
-- **Lead with solution**: Show the pattern first, then explain the problem as context (not the other way around)
-- **Blockquotes for key insights**: Put the core insight in a blockquote near the top. Repeat it later if it reinforces understanding.
-- **Inline links**: Link to related patterns within the prose, not just in a "References" section at the end
-- **Tight prose**: Cut sections that don't add value. If the code is self-explanatory, don't over-explain.
+Bullet lists and numbered lists: max 1-2 of each per article. If you need more, convert to prose or a table.
 
----
+Section headings: use sparingly. Not every paragraph needs a heading. Let content flow.
 
-## Narrative Mode
+Bold text: reserve for TL;DR only. Never bold in body content.
 
-For lessons learned, explorations, or when the journey matters. 150-250 lines.
+No space-dash-space: use colons, semicolons, or em dashes per writing-voice.
 
-### Structure
+No rigid template: structure should fit the content, not the other way around. Some articles need a "Problem/Solution" flow; others just show code and explain. Don't force sections.
 
-1. **Hook**: Drop into a scenario ("I was refactoring X when...")
-2. **The Problem**: Show the pain with specific examples
-3. **The Realization**: What clicked ("Here's what I realized...")
-4. **The Refactor**: Show the change with code
-5. **What Changed**: Concrete improvements
-6. **The Lesson**: Distill to a principle
+## What Makes Articles Good
 
-### Example Opening
+- Real code from real codebases, not abstract examples
+- ASCII diagrams that clarify architecture or data flow
+- One table that summarizes the key comparison
+- Tight prose that explains WHY, not WHAT (code shows WHAT)
+- 30-80 lines for most articles; longer only if content demands it
 
-```markdown
-# The Case Against catch-all `types.ts`
+## What Makes Articles Bad
 
-I was refactoring a database schema system when I opened `types.ts` and stared at 750 lines of type definitions. DateTime types at the top. Validator types in the middle. Everything that vaguely related to "data" lived in this one file.
+- Rigid section structure that doesn't fit the content
+- Multiple bullet lists and numbered lists throughout
+- Abstract `foo`/`bar` code examples
+- Over-explaining self-explanatory code
+- Bold formatting scattered through body text
+- Marketing language or AI giveaways
 
-But here's the weird part: the DateTime functions lived in `datetime.ts`. Why were the types separated from their implementations?
-```
+## Narrative Mode (Rare)
 
-### Rules
+Most "journey to an insight" articles still work better as punchy. Use narrative only when the discovery process itself is the insight and can't be compressed.
 
-- Specific details ("750 lines", not "a large file")
-- First person is optional—direct statements ("Agent skills aren't complicated") can be stronger than manufactured drama ("I spent way too long thinking...")
-- Build to an insight, don't start with it
-- Show before/after code
-- End with a transferable principle
-- Mix short and long sentences
-- Use blockquotes to highlight realizations or key insights
-
----
-
-## Choosing a Mode
-
-| Use Punchy             | Use Narrative         |
-| ---------------------- | --------------------- |
-| Single pattern or rule | Journey to an insight |
-| Reference material     | Lesson learned        |
-| Quick lookup           | Story worth telling   |
-| 30-80 lines            | 150-250 lines         |
-
-Default to punchy. Use narrative when the story adds value.
+When narrative fits: specific details ("750 lines", not "a large file"), direct statements over manufactured drama, build to an insight rather than starting with it.

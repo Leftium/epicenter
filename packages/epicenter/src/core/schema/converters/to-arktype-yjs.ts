@@ -110,7 +110,7 @@ export type FieldToYjsArktype<C extends Field> = C extends IdField
  * }
  * ```
  */
-export function tableToYjsArktype<TFields extends readonly Field[]>(
+export function tableToYjsArktype<const TFields extends readonly Field[]>(
 	fields: TFields,
 ): ObjectType<Row<TFields>> {
 	return type(

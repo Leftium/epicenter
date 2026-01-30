@@ -39,6 +39,20 @@ export function getFieldById(
 }
 
 /**
+ * Get a table by its ID from an array of tables.
+ *
+ * @param tables - The array of table definitions to search
+ * @param tableId - The ID of the table to find
+ * @returns The table definition if found, undefined otherwise
+ */
+export function getTableById(
+	tables: readonly SchemaTableDefinition[],
+	tableId: string,
+): SchemaTableDefinition | undefined {
+	return tables.find((t) => t.id === tableId);
+}
+
+/**
  * Get all field IDs from a table.
  *
  * @param table - The table definition
@@ -172,15 +186,15 @@ export function parseSchema(json: string): WorkspaceDefinition {
 /**
  * Serialize a schema to JSON string.
  *
- * @param schema - WorkspaceDefinition to serialize
+ * @param definition - WorkspaceDefinition to serialize
  * @param pretty - Whether to format with indentation (default: true)
  * @returns JSON string
  */
 export function stringifySchema(
-	schema: WorkspaceDefinition,
+	definition: WorkspaceDefinition,
 	pretty = true,
 ): string {
-	return JSON.stringify(schema, null, pretty ? 2 : undefined);
+	return JSON.stringify(definition, null, pretty ? 2 : undefined);
 }
 
 /**
@@ -206,56 +220,56 @@ export function createEmptySchema(
 /**
  * Add a table to a schema (immutable).
  *
- * @param schema - Existing schema
+ * @param definition - Existing schema
  * @param tableId - ID for the new table
  * @param table - Table definition
  * @returns New schema with the table added
  */
 export function addTable(
-	schema: WorkspaceDefinition,
+	definition: WorkspaceDefinition,
 	_tableId: string,
 	table: SchemaTableDefinition,
 ): WorkspaceDefinition {
 	// Note: tableId param kept for API compatibility but table.id is authoritative
 	return {
-		...schema,
-		tables: [...schema.tables, table],
+		...definition,
+		tables: [...definition.tables, table],
 	};
 }
 
 /**
  * Remove a table from a schema (immutable).
  *
- * @param schema - Existing schema
+ * @param definition - Existing schema
  * @param tableId - ID of the table to remove
  * @returns New schema without the table
  */
 export function removeTable(
-	schema: WorkspaceDefinition,
+	definition: WorkspaceDefinition,
 	tableId: string,
 ): WorkspaceDefinition {
 	return {
-		...schema,
-		tables: schema.tables.filter((t) => t.id !== tableId),
+		...definition,
+		tables: definition.tables.filter((t) => t.id !== tableId),
 	};
 }
 
 /**
  * Add a field to a table in a schema (immutable).
  *
- * @param schema - Existing schema
+ * @param definition - Existing schema
  * @param tableId - ID of the table to modify
  * @param fieldId - ID for the new field
  * @param field - Field definition (id property will be overwritten with fieldId)
  * @returns New schema with the field added
  */
 export function addField(
-	schema: WorkspaceDefinition,
+	definition: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
 	field: Omit<SchemaFieldDefinition, 'id'>,
 ): WorkspaceDefinition {
-	const table = schema.tables.find((t) => t.id === tableId);
+	const table = getTableById(definition.tables, tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
@@ -263,8 +277,8 @@ export function addField(
 	const newField = { ...field, id: fieldId } as SchemaFieldDefinition;
 
 	return {
-		...schema,
-		tables: schema.tables.map((t) =>
+		...definition,
+		tables: definition.tables.map((t) =>
 			t.id === tableId
 				? {
 						...t,
@@ -278,7 +292,7 @@ export function addField(
 /**
  * Remove a field from a table in a schema (immutable).
  *
- * @param schema - Existing schema
+ * @param definition - Existing schema
  * @param tableId - ID of the table to modify
  * @param fieldId - ID of the field to remove
  * @returns New schema without the field
@@ -288,7 +302,7 @@ export function removeField(
 	tableId: string,
 	fieldId: string,
 ): WorkspaceDefinition {
-	const table = schema.tables.find((t) => t.id === tableId);
+	const table = getTableById(schema.tables, tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}

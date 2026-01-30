@@ -177,7 +177,7 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
  * settings.reset('theme'); // Back to default
  * ```
  */
-export function createKv<TKvFields extends readonly KvField[]>(
+export function createKv<const TKvFields extends readonly KvField[]>(
 	ydoc: Y.Doc,
 	kvFields: TKvFields,
 ): KvFunction<TKvFields> {

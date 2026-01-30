@@ -153,7 +153,7 @@ export type TablesFunction<
  * ```
  */
 export function createTables<
-	TTableDefinitions extends readonly TableDefinition[],
+	const TTableDefinitions extends readonly TableDefinition[],
 >(
 	ydoc: Y.Doc,
 	tableDefinitions: TTableDefinitions,

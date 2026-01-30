@@ -111,7 +111,7 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * const arrayValidator = validator.array();
  * ```
  */
-export function tableToArktype<TFields extends readonly Field[]>(
+export function tableToArktype<const TFields extends readonly Field[]>(
 	fields: TFields,
 ): ObjectType<Row<TFields>> {
 	const properties: Record<string, Type> = {};

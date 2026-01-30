@@ -626,7 +626,7 @@ export type KvValue<C extends KvField = KvField> = CellValue<C>;
  * ```
  */
 export function tablesToMap<
-	TTables extends readonly TableDefinition<readonly Field[]>[],
+	const TTables extends readonly TableDefinition<readonly Field[]>[],
 >(tables: TTables): { [K in TableIds<TTables>]: TableById<TTables, K> } {
 	return Object.fromEntries(tables.map((t) => [t.id, t])) as {
 		[K in TableIds<TTables>]: TableById<TTables, K>;
@@ -646,7 +646,7 @@ export function tablesToMap<
  * // { theme: { field: { id: 'theme', ... } }, fontSize: { field: { id: 'fontSize', ... } } }
  * ```
  */
-export function kvFieldsToMap<TKv extends readonly KvField[]>(
+export function kvFieldsToMap<const TKv extends readonly KvField[]>(
 	kvFields: TKv,
 ): { [K in KvFieldIds<TKv>]: { field: KvFieldById<TKv, K> } } {
 	return Object.fromEntries(kvFields.map((f) => [f.id, { field: f }])) as {

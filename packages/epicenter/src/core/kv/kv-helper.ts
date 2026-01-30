@@ -62,7 +62,7 @@ export type KvGetResult<TValue> =
  * helpers.fontSize.get(); // { status: 'valid', value: 14 }
  * ```
  */
-export function createKvHelpers<TKvFields extends readonly KvField[]>({
+export function createKvHelpers<const TKvFields extends readonly KvField[]>({
 	ydoc,
 	kvFields,
 }: {

@@ -30,6 +30,7 @@ import type {
 	InferCellExtensionExports,
 } from './extensions';
 import { validateId } from './keys';
+import { getFieldById, getTableById } from './schema-file';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
 import { createTableHelper } from './table-helper';
 import type {
@@ -230,7 +231,7 @@ function createCellWorkspaceLegacy({
 				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 				// Use schema from definition, or empty schema for dynamic tables
-				const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
+				const tableSchema = getTableById(definition.tables, tableId) ?? {
 					id: tableId,
 					name: tableId,
 					description: '',
@@ -248,7 +249,7 @@ function createCellWorkspaceLegacy({
 		 * Uses the table schema from the definition.
 		 */
 		getTypedRows(tableId: string): TypedRowWithCells[] {
-			const tableSchema = definition.tables.find((t) => t.id === tableId);
+			const tableSchema = getTableById(definition.tables, tableId);
 			const tableStore = this.table(tableId);
 			// Get all rows (regardless of validation status) and extract RowData
 			const results = tableStore.getAll();
@@ -282,7 +283,7 @@ function createCellWorkspaceLegacy({
 
 				// Process cells that exist in data
 				for (const [fieldId, value] of Object.entries(r.cells)) {
-					const fieldSchema = tableSchema.fields.find((f) => f.id === fieldId);
+					const fieldSchema = getFieldById(tableSchema, fieldId);
 					if (fieldSchema) {
 						typedCells[fieldId] = {
 							value,
@@ -376,7 +377,7 @@ function createCellWorkspaceWithHeadDoc({
 		if (!store) {
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
+			const tableSchema = getTableById(definition.tables, tableId) ?? {
 				id: tableId,
 				name: tableId,
 				description: '',
@@ -439,7 +440,7 @@ function createCellWorkspaceWithHeadDoc({
 				 * Get rows with typed cells validated against schema.
 				 */
 				getTypedRows(tableId: string): TypedRowWithCells[] {
-					const tableSchema = definition.tables.find((t) => t.id === tableId);
+					const tableSchema = getTableById(definition.tables, tableId);
 					const tableStore = this.table(tableId);
 					// Get all rows (regardless of validation status) and extract RowData
 					const results = tableStore.getAll();
@@ -471,9 +472,7 @@ function createCellWorkspaceWithHeadDoc({
 						const dataFieldIds = Object.keys(r.cells);
 
 						for (const [fieldId, value] of Object.entries(r.cells)) {
-							const fieldSchema = tableSchema.fields.find(
-								(f) => f.id === fieldId,
-							);
+							const fieldSchema = getFieldById(tableSchema, fieldId);
 							if (fieldSchema) {
 								typedCells[fieldId] = {
 									value,

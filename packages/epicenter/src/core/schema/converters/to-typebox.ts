@@ -111,7 +111,7 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * validator.Check({ id: '123', title: 'Test' }); // false (missing count)
  * ```
  */
-export function fieldsToTypebox<TFields extends readonly Field[]>(
+export function fieldsToTypebox<const TFields extends readonly Field[]>(
 	fields: TFields,
 ): TObject {
 	const properties: Record<string, TSchema> = {};

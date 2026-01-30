@@ -34,37 +34,13 @@ import type {
 	WorkspaceDefinition,
 } from './types.js';
 
-/** Config for createWorkspace when passing raw config (not a definition) */
-type CreateWorkspaceConfig<
-	TId extends string,
-	TTableDefinitions extends TableDefinitions,
-	TKvDefinitions extends KvDefinitions,
-> = {
-	id: TId;
-	tables?: TTableDefinitions;
-	kv?: TKvDefinitions;
-};
-
-/** Check if input is a WorkspaceDefinition (has tableDefinitions) or raw config (has tables) */
-function isWorkspaceDefinition<
-	TId extends string,
-	TTableDefinitions extends TableDefinitions,
-	TKvDefinitions extends KvDefinitions,
->(
-	input:
-		| WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions>
-		| CreateWorkspaceConfig<TId, TTableDefinitions, TKvDefinitions>,
-): input is WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions> {
-	return 'tableDefinitions' in input;
-}
-
 /**
  * Create a workspace client.
  *
  * The returned client IS directly usable (no extensions) AND has `.withExtensions()`
  * for adding extensions like persistence or SQLite.
  *
- * @param input - Either a WorkspaceDefinition from defineWorkspace() or raw config
+ * @param config - Workspace config (or WorkspaceDefinition from defineWorkspace())
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtensions()
  */
 export function createWorkspace<
@@ -72,21 +48,12 @@ export function createWorkspace<
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 >(
-	input:
-		| WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions>
-		| CreateWorkspaceConfig<TId, TTableDefinitions, TKvDefinitions>,
+	config: WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions>,
 ): WorkspaceClientBuilder<TId, TTableDefinitions, TKvDefinitions> {
-	const id = input.id;
-	const tableDefinitions = isWorkspaceDefinition(input)
-		? input.tableDefinitions
-		: ((input.tables ?? {}) as TTableDefinitions);
-	const kvDefinitions = isWorkspaceDefinition(input)
-		? input.kvDefinitions
-		: ((input.kv ?? {}) as TKvDefinitions);
-
+	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
-	const tables = createTables(ydoc, tableDefinitions);
-	const kv = createKv(ydoc, kvDefinitions);
+	const tables = createTables(ydoc, (config.tables ?? {}) as TTableDefinitions);
+	const kv = createKv(ydoc, (config.kv ?? {}) as TKvDefinitions);
 
 	const destroy = async (): Promise<void> => {
 		ydoc.destroy();

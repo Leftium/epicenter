@@ -293,15 +293,20 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	): () => void;
 };
 
-/** Workspace definition created by defineWorkspace() */
+/**
+ * Workspace definition created by defineWorkspace().
+ *
+ * This is a pure data structure for composability and type inference.
+ * Pass to createWorkspace() to instantiate.
+ */
 export type WorkspaceDefinition<
 	TId extends string,
-	TTableDefinitions extends TableDefinitions,
-	TKvDefinitions extends KvDefinitions,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
 > = {
 	id: TId;
-	tableDefinitions: TTableDefinitions;
-	kvDefinitions: TKvDefinitions;
+	tables?: TTableDefinitions;
+	kv?: TKvDefinitions;
 };
 
 /**

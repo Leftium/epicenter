@@ -1,22 +1,20 @@
 /**
  * defineWorkspace() - Pure definition of a workspace schema.
  *
- * This creates a reusable definition that can be passed to createWorkspace().
- * Optional for composability; you can also pass the config directly to createWorkspace().
+ * A passthrough for type inference and composability. The returned definition
+ * can be reused across multiple createWorkspace() calls or shared between modules.
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createWorkspace, defineTable, defineKv } from 'epicenter/static';
+ * import { defineWorkspace, createWorkspace, defineTable } from 'epicenter/static';
  *
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .migrate((row) => row);
+ * const posts = defineTable(type({ id: 'string', title: 'string' }));
  *
- * // Option 1: Reusable definition
+ * // Reusable definition with inferred types
  * const workspace = defineWorkspace({ id: 'my-app', tables: { posts } });
  * const client = createWorkspace(workspace);
  *
- * // Option 2: Direct (skip defineWorkspace)
+ * // Or pass config directly (same result, less composable)
  * const client = createWorkspace({ id: 'my-app', tables: { posts } });
  * ```
  */
@@ -28,33 +26,25 @@ import type {
 } from './types.js';
 
 /**
- * Defines a workspace with tables and KV stores.
+ * Define a workspace schema for type inference and composability.
  *
- * Returns a pure definition object. Use createWorkspace() to instantiate.
- *
- * @param config - Workspace configuration
- * @param config.id - Workspace identifier (used as Y.Doc guid)
- * @param config.tables - Optional map of table definitions
- * @param config.kv - Optional map of KV definitions
- * @returns WorkspaceDefinition (pass to createWorkspace)
+ * This is a pure passthrough that returns the input with proper generic inference.
+ * Use when you want to share a workspace definition across modules or need
+ * TypeScript to infer the full generic signature.
  */
 export function defineWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
->({
-	id,
-	tables: tableDefinitions = {} as TTableDefinitions,
-	kv: kvDefinitions = {} as TKvDefinitions,
-}: {
+>(config: {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
 }): WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions> {
 	return {
-		id,
-		tableDefinitions,
-		kvDefinitions,
+		id: config.id,
+		tables: (config.tables ?? {}) as TTableDefinitions,
+		kv: (config.kv ?? {}) as TKvDefinitions,
 	};
 }
 

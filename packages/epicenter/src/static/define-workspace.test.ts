@@ -20,8 +20,8 @@ describe('defineWorkspace', () => {
 		});
 
 		expect(workspace.id).toBe('test-app');
-		expect(workspace.tableDefinitions).toHaveProperty('posts');
-		expect(workspace.kvDefinitions).toHaveProperty('theme');
+		expect(workspace.tables).toHaveProperty('posts');
+		expect(workspace.kv).toHaveProperty('theme');
 	});
 
 	test('createWorkspace() returns client with tables and kv', () => {

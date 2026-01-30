@@ -67,16 +67,32 @@ Searched 200+ usages of `id()` across the codebase.
 
 Researched how to reject specific string literals at compile time.
 
-| Pattern                      | Error Clarity                    | Type Checker Cost | Used By                  |
-| ---------------------------- | -------------------------------- | ----------------- | ------------------------ |
-| `T extends 'id' ? never : T` | Poor ("not assignable to never") | Low               | Common                   |
-| Branded Error Type           | Excellent (custom message)       | Low               | Drizzle ORM              |
-| Template Literal             | Poor                             | Medium            | TanStack Router          |
-| `[T] extends [never]`        | N/A (detection, not rejection)   | Low               | XState, TypeScript tests |
+| Pattern                      | Error Clarity                                | Type Checker Cost | Used By                  |
+| ---------------------------- | -------------------------------------------- | ----------------- | ------------------------ |
+| `T extends 'id' ? never : T` | Poor ("not assignable to never")             | Low               | Common (broken)          |
+| Object Error Type            | Excellent (`SchemaError<"CODE", "message">`) | Low               | Drizzle ORM              |
+| Template Literal             | Poor                                         | Medium            | TanStack Router          |
+| `[T] extends [never]`        | N/A (detection, not rejection)               | Low               | XState, TypeScript tests |
 
-**Key finding**: Drizzle's branded error pattern provides descriptive compile-time messages.
+**Key finding**: TypeScript shows the EXPECTED TYPE in error messages. If expected type is `never`, you get useless errors. If expected type is an object containing your message, you get readable errors.
 
-**Implication**: Use branded error types for clear "id is reserved" messaging.
+**Implication**: Return an object type (not `never`) for invalid field IDs so the message appears in hover.
+
+```typescript
+// ❌ BROKEN: Returns never
+type ValidFieldId<K> = K extends 'id' ? never : K;
+// Error: "not assignable to type 'never'"
+
+// ✅ CORRECT: Returns object type with message
+type SchemaError<Code extends string, Msg extends string> = {
+	readonly __errorCode: Code;
+	readonly __message: Msg;
+};
+type ValidFieldId<K> = K extends 'id'
+	? SchemaError<'RESERVED', `"${K}" is reserved`>
+	: K;
+// Error: "not assignable to type 'SchemaError<"RESERVED", "\"id\" is reserved">'"
+```
 
 ### Existing Constraints
 
@@ -100,7 +116,7 @@ Researched how to reject specific string literals at compile time.
 | Support composite keys     | No                      | CRDTs need stable synthetic IDs; use unique constraints instead |
 | Include ID in Y.Map row    | Yes                     | Rows need to be self-contained when passed around               |
 | Unify Field/KvField        | Yes                     | Distinction only existed because of IdField                     |
-| Error message approach     | Branded Error Type      | Drizzle pattern gives readable compile-time messages            |
+| Error message approach     | Object Error Type       | Return object type (not `never`) so TypeScript shows message    |
 
 ## Architecture
 

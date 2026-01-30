@@ -43,6 +43,33 @@ type Field = TextField | SelectField | BooleanField | ...
 type KvField = Field  // Same thing now
 ```
 
+## Compile-Time Enforcement
+
+With implicit ID, 'id' becomes reserved. The type system rejects `text({ id: 'id' })`:
+
+```typescript
+type SchemaError<Code extends string, Message extends string> = {
+	readonly __errorCode: Code;
+	readonly __message: Message;
+};
+
+type ValidFieldId<K extends string> = K extends 'id'
+	? SchemaError<
+			'RESERVED_FIELD',
+			`"${K}" is reserved - tables have implicit ID`
+		>
+	: K;
+```
+
+When someone writes `text({ id: 'id' })`, they see:
+
+```
+Type '"id"' is not assignable to type
+'SchemaError<"RESERVED_FIELD", "\"id\" is reserved - tables have implicit ID">'
+```
+
+The error message explains exactly what's wrong.
+
 ## Why This Works for CRDTs
 
 Yjs and other CRDTs need stable, globally unique identifiers for merge semantics. Custom ID names don't help; the CRDT doesn't care what you call the field. It needs a synthetic ID to track the row across peers.
@@ -60,22 +87,6 @@ If you need `[userId, postId]` uniqueness, use a unique constraint. The syntheti
 | Tables without any ID            | Every table gets one; CRDTs need it  |
 
 These aren't oversights. They're decisions that keep the core model simple. The serialization layer can reshape data for external systems; the schema layer models your domain with CRDT-friendly constraints.
-
-## The Type-Level Enforcement
-
-With implicit ID, 'id' becomes reserved. Trying to define `text({ id: 'id' })` fails at compile time:
-
-```typescript
-interface FieldError<T extends string> {
-	__error: T;
-}
-
-type ValidFieldId<T extends string> = T extends 'id'
-	? FieldError<'"id" is reserved - tables have implicit ID'>
-	: T;
-```
-
-You see the error in your IDE before running anything.
 
 ## Migration
 

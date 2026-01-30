@@ -1,92 +1,108 @@
-# Use Branded Error Types for Readable Compile-Time Rejections
+# Return Object Types for Readable Compile-Time Rejections
 
-**TL;DR**: When rejecting specific string literals at compile time, return a **branded error type instead of `never`** to give developers a readable message in their IDE.
+**TL;DR**: When rejecting specific string literals at compile time, **return an object type containing your message, not `never`**. TypeScript shows the expected type in errors; if that type contains your message, developers see it.
 
-> The Drizzle ORM pattern: make the error type carry the explanation.
+> The key insight: TypeScript's error says "X is not assignable to type Y". Make Y be your error message.
 
-## The Problem
+## The Broken Pattern
 
-You want to prevent certain strings from being used. The naive approach:
-
-```typescript
-type Reserved = 'id' | 'createdAt'
-
-type ValidName<T extends string> = T extends Reserved ? never : T
-
-function defineField<T extends string>(name: ValidName<T>) { ... }
-
-defineField('title')  // OK
-defineField('id')     // Error: Argument of type '"id"' is not assignable to type 'never'
-```
-
-That error message is useless. "Not assignable to never" tells you nothing about why 'id' is forbidden.
-
-## The Drizzle Pattern
-
-Create a branded type that carries the error message:
+The naive approach returns `never` for invalid cases:
 
 ```typescript
-interface FieldError<T extends string> {
-  __fieldError: T
-}
+type ValidFieldId<T extends string> = T extends 'id' ? never : T;
 
-type Reserved = 'id' | 'createdAt'
+declare function text<const K extends string>(opts: {
+	id: ValidFieldId<K>;
+}): void;
 
-type ValidName<T extends string> =
-  T extends Reserved
-    ? FieldError<`"${T}" is reserved - tables have implicit ID`>
-    : T
-
-function defineField<T extends string>(
-  name: ValidName<T> extends FieldError<any> ? never : T
-) { ... }
+text({ id: 'id' });
+// Error: Type '"id"' is not assignable to type 'never'
 ```
 
-Now when someone writes `defineField('id')`, hovering over the error shows:
+That error is useless. "Not assignable to never" tells you nothing about why 'id' is forbidden.
 
-```
-ValidName<"id"> = FieldError<'"id" is reserved - tables have implicit ID'>
+## The Fix: Object Error Types
+
+Return an object type that contains your message. Strings can't satisfy object types, so TypeScript shows your message in the error:
+
+```typescript
+type SchemaError<Code extends string, Message extends string> = {
+	readonly __errorCode: Code;
+	readonly __message: Message;
+};
+
+type ValidFieldId<K extends string> = K extends 'id'
+	? SchemaError<
+			'RESERVED_FIELD',
+			`"${K}" is reserved - tables have implicit ID`
+		>
+	: K;
+
+declare function text<const K extends string>(opts: {
+	id: ValidFieldId<K>;
+}): void;
+
+text({ id: 'id' });
+// Error: Type '"id"' is not assignable to type
+// 'SchemaError<"RESERVED_FIELD", "\"id\" is reserved - tables have implicit ID">'
 ```
 
-The error message is right there in the type.
+The error now shows exactly why `'id'` is rejected.
+
+## Why It Works
+
+TypeScript error messages follow the pattern: "Type X is not assignable to type Y".
+
+| Expected Type (Y)            | Error Shows                                               |
+| ---------------------------- | --------------------------------------------------------- |
+| `never`                      | "not assignable to type 'never'"                          |
+| `SchemaError<"CODE", "msg">` | "not assignable to type 'SchemaError<\"CODE\", \"msg\">'" |
+
+The expected type appears verbatim in the error. Put your message there.
+
+## Multiple Error Cases
+
+Handle different invalid patterns with different error codes:
+
+```typescript
+type ReservedFields = 'id' | 'createdAt' | 'updatedAt';
+
+type ValidFieldId<K extends string> = K extends ReservedFields
+	? SchemaError<'RESERVED', `"${K}" is auto-managed`>
+	: K extends `_${string}`
+		? SchemaError<'INTERNAL', `"${K}" - underscore prefix is internal`>
+		: K extends ''
+			? SchemaError<'EMPTY', 'Field ID cannot be empty'>
+			: K;
+
+text({ id: '_private' });
+// Error: not assignable to type 'SchemaError<"INTERNAL", "\"_private\" - underscore prefix is internal">'
+```
+
+## Named Error Types
+
+Make the type name itself descriptive; it appears in the error:
+
+```typescript
+type RESERVED_FIELD<Field extends string> = {
+	readonly __field: Field;
+	readonly __reason: 'is auto-managed by the system';
+};
+
+type ValidFieldId<K extends string> = K extends 'id' ? RESERVED_FIELD<K> : K;
+
+text({ id: 'id' });
+// Error: not assignable to type 'RESERVED_FIELD<"id">'
+```
+
+The type name `RESERVED_FIELD` signals the problem at a glance.
 
 ## Comparison
 
-| Approach         | Error Message               | Discoverability    |
-| ---------------- | --------------------------- | ------------------ |
-| Return `never`   | "not assignable to never"   | None               |
-| Branded Error    | `FieldError<"reason here">` | Hover shows reason |
-| Template Literal | "not assignable to never"   | None               |
+| Approach          | Error Message                                    |
+| ----------------- | ------------------------------------------------ |
+| Return `never`    | "not assignable to 'never'"                      |
+| Object with props | "not assignable to '{ \_\_error: \"message\" }'" |
+| Named error type  | "not assignable to 'RESERVED_FIELD<\"id\">'"     |
 
-## Real Usage
-
-Drizzle ORM uses this for query builder constraints:
-
-```typescript
-type SQLiteDeletePrepare<T> = SQLitePreparedQuery<{
-	all: T['returning'] extends undefined
-		? DrizzleTypeError<'.all() cannot be used without .returning()'>
-		: T['returning'][];
-}>;
-```
-
-When you call `.all()` without `.returning()`, the type resolves to `DrizzleTypeError<'...'>`; you see exactly what's wrong.
-
-## The Pattern
-
-```typescript
-// 1. Define the branded error type
-interface MyError<T extends string> {
-  __error: T
-}
-
-// 2. Create a validation type that returns the error
-type Validate<T> = T extends Forbidden
-  ? MyError<`"${T}" is not allowed because [reason]`>
-  : T
-
-// 3. In the function signature, reject the error type
-function myFn<T>(value: Validate<T> extends MyError<any> ? never : T) { ... }
-```
-
-The key insight: the error type exists only to carry a message. It's never instantiated at runtime. TypeScript's type system becomes your error messaging system.
+All object-based approaches show readable messages. Choose based on how much detail you want in the type name vs properties.

@@ -7,9 +7,7 @@
  * import { createKv, defineKv } from 'epicenter/static';
  * import { type } from 'arktype';
  *
- * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .migrate((v) => v);
+ * const theme = defineKv(type({ mode: "'light' | 'dark'" }));
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
  * const kv = createKv(ydoc, { theme });

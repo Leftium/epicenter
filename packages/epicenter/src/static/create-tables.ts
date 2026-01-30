@@ -7,9 +7,7 @@
  * import { createTables, defineTable } from 'epicenter/static';
  * import { type } from 'arktype';
  *
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .migrate((row) => row);
+ * const posts = defineTable(type({ id: 'string', title: 'string' }));
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
  * const tables = createTables(ydoc, { posts });

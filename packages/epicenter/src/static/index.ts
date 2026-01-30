@@ -18,9 +18,7 @@
  *     return row;
  *   });
  *
- * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .migrate((v) => v);
+ * const theme = defineKv(type({ mode: "'light' | 'dark'" }));
  *
  * // Create client (synchronous, directly usable)
  * const client = createWorkspace({

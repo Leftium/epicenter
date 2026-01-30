@@ -88,16 +88,11 @@ export function createWorkspace<
 	const tables = createTables(ydoc, tableDefinitions);
 	const kv = createKv(ydoc, kvDefinitions);
 
-	async function destroy(): Promise<void> {
+	const destroy = async (): Promise<void> => {
 		ydoc.destroy();
-	}
+	};
 
-	const baseClient: WorkspaceClient<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		Record<string, never>
-	> = {
+	return {
 		id,
 		ydoc,
 		tables,
@@ -105,42 +100,40 @@ export function createWorkspace<
 		capabilities: {} as InferCapabilityExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
+		withExtensions<TCapabilities extends CapabilityMap>(
+			capabilities: TCapabilities,
+		): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
+			const capabilityExports = Object.fromEntries(
+				Object.entries(capabilities).map(([name, factory]) => [
+					name,
+					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
+						ydoc,
+						workspaceId: id,
+						tables,
+						kv,
+					}),
+				]),
+			) as Record<string, Lifecycle>;
+
+			const destroyWithCapabilities = async (): Promise<void> => {
+				await Promise.all(
+					Object.values(capabilityExports).map((c) => c.destroy()),
+				);
+				ydoc.destroy();
+			};
+
+			return {
+				id,
+				ydoc,
+				tables,
+				kv,
+				capabilities:
+					capabilityExports as InferCapabilityExports<TCapabilities>,
+				destroy: destroyWithCapabilities,
+				[Symbol.asyncDispose]: destroyWithCapabilities,
+			};
+		},
 	};
-
-	function withExtensions<TCapabilities extends CapabilityMap>(
-		capabilities: TCapabilities,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
-		const capabilityExports = Object.fromEntries(
-			Object.entries(capabilities).map(([name, factory]) => [
-				name,
-				(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
-					ydoc,
-					workspaceId: id,
-					tables,
-					kv,
-				}),
-			]),
-		) as Record<string, Lifecycle>;
-
-		async function destroyWithCapabilities(): Promise<void> {
-			await Promise.all(
-				Object.values(capabilityExports).map((c) => c.destroy()),
-			);
-			ydoc.destroy();
-		}
-
-		return {
-			id,
-			ydoc,
-			tables,
-			kv,
-			capabilities: capabilityExports as InferCapabilityExports<TCapabilities>,
-			destroy: destroyWithCapabilities,
-			[Symbol.asyncDispose]: destroyWithCapabilities,
-		};
-	}
-
-	return Object.assign(baseClient, { withExtensions });
 }
 
 export type { WorkspaceClient, WorkspaceClientBuilder };

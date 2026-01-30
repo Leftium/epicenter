@@ -163,9 +163,8 @@ export function createTables<
 			tableDefinition.id,
 			createTableHelper({
 				ydoc,
-				tableName: tableDefinition.id,
 				ytables,
-				fields: tableDefinition.fields,
+				tableDefinition,
 			}),
 		]),
 	) as {

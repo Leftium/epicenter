@@ -186,9 +186,8 @@ export function createTableHelpers<
 			tableDefinition.id,
 			createTableHelper({
 				ydoc,
-				tableName: tableDefinition.id,
 				ytables,
-				fields: tableDefinition.fields,
+				tableDefinition,
 			}),
 		]),
 	) as {
@@ -210,18 +209,17 @@ export function createTableHelpers<
  * User A edits title, User B edits views → After sync: both changes preserved
  * ```
  */
-export function createTableHelper<TFields extends readonly Field[]>({
+export function createTableHelper<TTableDef extends TableDefinition>({
 	ydoc,
-	tableName,
 	ytables,
-	fields,
+	tableDefinition,
 }: {
 	ydoc: Y.Doc;
-	tableName: string;
 	ytables: TablesMap;
-	fields: TFields;
+	tableDefinition: TTableDef;
 }) {
-	type TRow = Row<TFields> & { id: string };
+	const { id: tableName, fields } = tableDefinition;
+	type TRow = Row<TTableDef['fields']> & { id: string };
 
 	const typeboxSchema = fieldsToTypebox(fields);
 	const rowValidator = Compile(typeboxSchema);
@@ -335,7 +333,7 @@ export function createTableHelper<TFields extends readonly Field[]>({
 	};
 
 	return {
-		update(partialRow: PartialRow<TFields>): UpdateResult {
+		update(partialRow: PartialRow<TTableDef['fields']>): UpdateResult {
 			const rowMap = getRow(partialRow.id);
 			if (!rowMap) return { status: 'not_found_locally' };
 
@@ -368,7 +366,7 @@ export function createTableHelper<TFields extends readonly Field[]>({
 			});
 		},
 
-		updateMany(rows: PartialRow<TFields>[]): UpdateManyResult {
+		updateMany(rows: PartialRow<TTableDef['fields']>[]): UpdateManyResult {
 			const applied: string[] = [];
 			const notFoundLocally: string[] = [];
 
@@ -694,7 +692,7 @@ export function createTableHelper<TFields extends readonly Field[]>({
 }
 
 export type TableHelper<TFields extends readonly Field[]> = ReturnType<
-	typeof createTableHelper<TFields>
+	typeof createTableHelper<TableDefinition<TFields>>
 >;
 
 /**

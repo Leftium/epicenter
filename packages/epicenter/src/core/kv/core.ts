@@ -187,10 +187,7 @@ export function createKv<TKvFields extends readonly KvField[]>(
 
 	// Build helpers map using field.id as the key
 	const kvHelpers = Object.fromEntries(
-		kvFields.map((field) => [
-			field.id,
-			createKvHelper({ keyName: field.id, ykvMap, field }),
-		]),
+		kvFields.map((field) => [field.id, createKvHelper({ ykvMap, field })]),
 	) as Record<string, KvHelper<KvField>>;
 
 	return {

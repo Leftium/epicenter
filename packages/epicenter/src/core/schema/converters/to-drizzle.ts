@@ -45,10 +45,7 @@ export type TableDefinitionsToDrizzle<
 	TTableDefinitions extends readonly TableDefinition[],
 > = {
 	[K in TTableDefinitions[number]['id']]: ReturnType<
-		typeof convertTableToDrizzle<
-			K,
-			Extract<TTableDefinitions[number], { id: K }>['fields'][number]
-		>
+		typeof convertTableToDrizzle<Extract<TTableDefinitions[number], { id: K }>>
 	>;
 };
 
@@ -78,30 +75,28 @@ export function convertTableDefinitionsToDrizzle<
 	const result: Record<string, SQLiteTable> = {};
 
 	for (const tableDefinition of definitions) {
-		result[tableDefinition.id] = convertTableToDrizzle(
-			tableDefinition.id,
-			tableDefinition.fields,
-		);
+		result[tableDefinition.id] = convertTableToDrizzle(tableDefinition);
 	}
 
 	return result as TableDefinitionsToDrizzle<TTableDefinitions>;
 }
 
 /** Convert a single table schema to a Drizzle SQLiteTable. */
-function convertTableToDrizzle<TTableName extends string, TField extends Field>(
-	tableName: TTableName,
-	fields: readonly TField[],
+function convertTableToDrizzle<TTableDef extends TableDefinition>(
+	tableDefinition: TTableDef,
 ) {
 	const columns = Object.fromEntries(
-		fields.map((field) => {
+		tableDefinition.fields.map((field) => {
 			const sqlColumnName = field.name ? toSqlIdentifier(field.name) : field.id;
 			return [field.id, convertFieldToDrizzle(sqlColumnName, field)];
 		}),
 	) as {
-		[K in TField['id']]: FieldToDrizzle<Extract<TField, { id: K }>>;
+		[K in TTableDef['fields'][number]['id']]: FieldToDrizzle<
+			Extract<TTableDef['fields'][number], { id: K }>
+		>;
 	};
 
-	return sqliteTable(tableName, columns);
+	return sqliteTable(tableDefinition.id, columns);
 }
 
 type FieldToDrizzle<C extends Field> = C extends IdField

@@ -63,7 +63,7 @@
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
+ *     posts: table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }),
  *   },
  *   kv: {},
  * });
@@ -335,7 +335,7 @@ export type ClientBuilder<
  *
  * ```typescript
  * const definition = defineWorkspace({
- *   tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] }) },
+ *   tables: { recordings: table({ id: 'recordings', name: 'Recordings', fields: [id(), text({ id: 'title' })] }) },
  *   kv: {},
  * });
  *
@@ -443,13 +443,14 @@ function createAsyncClientBuilder<
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table('posts', {
+ *     posts: table({
+ *       id: 'posts',
  *       name: 'Posts',
  *       fields: [
  *         id(),           // Primary key (always required)
- *         text('title'),  // NOT NULL text
- *         boolean('published', { default: false }),
- *         date('createdAt'),  // Temporal-aware date with timezone
+ *         text({ id: 'title' }),  // NOT NULL text
+ *         boolean({ id: 'published', default: false }),
+ *         date({ id: 'createdAt' }),  // Temporal-aware date with timezone
  *       ],
  *     }),
  *   },

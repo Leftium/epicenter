@@ -126,15 +126,17 @@ export type TablesFunction<
  * ```typescript
  * const ydoc = new Y.Doc({ guid: 'workspace-123' });
  * const tables = createTables(ydoc, [
- *   table('posts', {
+ *   table({
+ *     id: 'posts',
  *     name: 'Posts',
- *     fields: [id(), text('title'), boolean('published')],
+ *     fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })],
  *   }),
- *   table('users', {
+ *   table({
+ *     id: 'users',
  *     name: 'Users',
  *     description: 'User accounts',
  *     icon: '👤',
- *     fields: [id(), text('name'), boolean('active')],
+ *     fields: [id(), text({ id: 'name' }), boolean({ id: 'active' })],
  *   }),
  * ]);
  *

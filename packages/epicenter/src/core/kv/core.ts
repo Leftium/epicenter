@@ -166,8 +166,8 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
  * @example
  * ```typescript
  * const settings = createKv(ydoc, [
- *   select('theme', { name: 'Theme', options: ['light', 'dark'], default: 'light' }),
- *   integer('fontSize', { name: 'Font Size', default: 14 }),
+ *   select({ id: 'theme', name: 'Theme', options: ['light', 'dark'], default: 'light' }),
+ *   integer({ id: 'fontSize', name: 'Font Size', default: 14 }),
  * ]);
  *
  * // Flat Map-like API

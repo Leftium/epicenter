@@ -10,7 +10,7 @@
 
 import type * as Y from 'yjs';
 import { FieldId, RowId } from '../../cell/keys.js';
-import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
+import type { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
 import { cellKey, validateId } from '../keys.js';
 import type {
 	CellsStore,

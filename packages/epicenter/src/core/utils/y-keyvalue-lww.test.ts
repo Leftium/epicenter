@@ -285,7 +285,7 @@ describe('YKeyValueLww', () => {
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
 
-				let valuesInBatch: string[] = [];
+				const valuesInBatch: string[] = [];
 
 				ydoc.transact(() => {
 					kv.set('foo', 'first');
@@ -389,7 +389,7 @@ describe('YKeyValueLww', () => {
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
 
-				let keysInBatch: string[] = [];
+				const keysInBatch: string[] = [];
 
 				ydoc.transact(() => {
 					kv.set('a', '1');
@@ -412,7 +412,7 @@ describe('YKeyValueLww', () => {
 				// Set initial values (will be in map after transaction)
 				kv.set('existing', 'old');
 
-				let entriesInBatch: Array<[string, string]> = [];
+				const entriesInBatch: Array<[string, string]> = [];
 
 				ydoc.transact(() => {
 					kv.set('new', 'value');

@@ -11,25 +11,25 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tables1 = createTables(doc1, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
 
 		const tables2 = createTables(doc2, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -92,15 +92,15 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tables1 = createTables(doc1, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
 		const tables2 = createTables(doc2, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
 
@@ -142,15 +142,15 @@ describe('Cell-Level CRDT Merging', () => {
 			const doc2 = new Y.Doc();
 
 			const tables1 = createTables(doc1, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tables2 = createTables(doc2, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -185,13 +185,13 @@ describe('Cell-Level CRDT Merging', () => {
 	test('partial updates preserve unmentioned fields', () => {
 		const ydoc = new Y.Doc({ guid: 'test' });
 		const tables = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -223,13 +223,13 @@ describe('Cell-Level CRDT Merging', () => {
 		doc3.clientID = 3;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		];
@@ -286,13 +286,13 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		];
@@ -343,9 +343,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -384,9 +384,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -432,9 +432,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -476,9 +476,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
@@ -514,9 +514,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -555,9 +555,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
@@ -596,9 +596,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -637,13 +637,13 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('views'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		];
@@ -691,9 +691,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
@@ -723,9 +723,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
@@ -763,9 +763,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
@@ -805,9 +805,9 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 
 		const tableDefinitions = [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), integer('views')] as const,
+				fields: [id(), text({ id: 'title' }), integer({ id: 'views' })] as const,
 			}),
 		];
 
@@ -848,9 +848,9 @@ describe('Cell-Level CRDT Merging', () => {
 		const ydoc = new Y.Doc({ guid: 'test-table-replacement' });
 
 		const tables = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
 
@@ -893,9 +893,9 @@ describe('Cell-Level CRDT Merging', () => {
 		const ytables: TablesMap = ydoc.getMap('tables');
 
 		const tables = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
 
@@ -950,9 +950,9 @@ describe('Cell-Level CRDT Merging', () => {
 		const ytables: TablesMap = ydoc.getMap('tables');
 
 		const tables = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title')] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
 

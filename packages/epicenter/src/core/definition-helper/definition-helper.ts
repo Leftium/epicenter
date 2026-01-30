@@ -314,7 +314,7 @@ function createTableHelper(
  * definition.tables.toJSON();           // all tables as JSON
  * definition.tables.keys();             // ['posts', 'users', ...]
  * definition.tables.entries();          // [[name, def], ...]
- * definition.tables.set('tasks', table('tasks', { ... }));
+ * definition.tables.set('tasks', table({ id: 'tasks', ... }));
  * definition.tables.delete('oldTable');
  * ```
  */

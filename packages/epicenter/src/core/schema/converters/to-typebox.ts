@@ -99,8 +99,8 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  *
  * const fields = [
  *   id(),
- *   text('title'),
- *   integer('count', { nullable: true }),
+ *   text({ id: 'title' }),
+ *   integer({ id: 'count', nullable: true }),
  * ];
  *
  * const typeboxSchema = fieldsToTypebox(fields);

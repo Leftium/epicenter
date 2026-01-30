@@ -53,8 +53,8 @@ export type KvGetResult<TValue> =
  * const helpers = createKvHelpers({
  *   ydoc,
  *   kvFields: [
- *     select('theme', { name: 'Theme', options: ['light', 'dark'] }),
- *     integer('fontSize', { name: 'Font Size', default: 14 }),
+ *     select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] }),
+ *     integer({ id: 'fontSize', name: 'Font Size', default: 14 }),
  *   ],
  * });
  *

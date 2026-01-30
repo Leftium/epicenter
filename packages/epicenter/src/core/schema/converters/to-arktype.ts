@@ -94,8 +94,8 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * ```typescript
  * const fields = [
  *   id(),
- *   text('title'),
- *   integer('count', { nullable: true }),
+ *   text({ id: 'title' }),
+ *   integer({ id: 'count', nullable: true }),
  * ];
  *
  * const validator = tableToArktype(fields);

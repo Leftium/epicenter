@@ -27,17 +27,17 @@ describe('Offline Sync Scenarios', () => {
 			const docB = new Y.Doc();
 
 			const tablesA = createTables(docA, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesB = createTables(docB, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -66,17 +66,17 @@ describe('Offline Sync Scenarios', () => {
 			const docB = new Y.Doc();
 
 			const tablesA = createTables(docA, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesB = createTables(docB, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -113,31 +113,31 @@ describe('Offline Sync Scenarios', () => {
 				docB1.clientID = docB2.clientID = 200 + i;
 
 				const tablesA1 = createTables(docA1, [
-					table('posts', {
+					table({ id: 'posts', 
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 				const tablesB1 = createTables(docB1, [
-					table('posts', {
+					table({ id: 'posts', 
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 				const tablesA2 = createTables(docA2, [
-					table('posts', {
+					table({ id: 'posts', 
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 				const tablesB2 = createTables(docB2, [
-					table('posts', {
+					table({ id: 'posts', 
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 
@@ -180,17 +180,17 @@ describe('Offline Sync Scenarios', () => {
 			const docOffline = new Y.Doc();
 
 			const tablesOnline = createTables(docOnline, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesOffline = createTables(docOffline, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -236,24 +236,24 @@ describe('Offline Sync Scenarios', () => {
 			const docC = new Y.Doc();
 
 			const tablesA = createTables(docA, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesB = createTables(docB, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesC = createTables(docC, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -305,17 +305,18 @@ describe('Offline Sync Scenarios', () => {
 				const docB = new Y.Doc();
 
 				const tablesA = createTables(docA, [
-					table('posts', {
+					table({
+						id: 'posts',
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 				const tablesB = createTables(docB, [
-					table('posts', {
+					table({ id: 'posts', 
 						name: '',
 						description: '',
-						fields: [id(), text('title')] as const,
+						fields: [id(), text({ id: 'title' })] as const,
 					}),
 				]);
 
@@ -350,17 +351,17 @@ describe('Offline Sync Scenarios', () => {
 			const docB = new Y.Doc();
 
 			const tablesA = createTables(docA, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 			const tablesB = createTables(docB, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
 					description: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 

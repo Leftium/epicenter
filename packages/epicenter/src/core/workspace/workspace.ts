@@ -105,14 +105,11 @@ import type {
  *   description: 'Personal blog workspace',
  *   icon: 'emoji:📝',
  *   tables: [
- *     table('posts', {
- *       name: 'Posts',
- *       fields: [id(), text('title'), select('status', { options: ['draft', 'published'] })],
- *     }),
+ *     table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' }), select({ id: 'status', options: ['draft', 'published'] })] }),
  *   ],
  *   kv: [
- *     select('theme', { name: 'Theme', options: ['light', 'dark'] }),
- *     integer('fontSize', { name: 'Font Size', default: 14 }),
+ *     select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] }),
+ *     integer({ id: 'fontSize', name: 'Font Size', default: 14 }),
  *   ],
  * });
  * ```
@@ -142,8 +139,8 @@ export type WorkspaceDefinitionV2<
  * ```typescript
  * const definition = defineWorkspaceV2({
  *   name: 'Blog',
- *   tables: [table('posts', { name: 'Posts', fields: [id(), text('title')] })],
- *   kv: [select('theme', { options: ['light', 'dark'] })],
+ *   tables: [table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] })],
+ *   kv: [select({ id: 'theme', options: ['light', 'dark'] })],
  * });
  * ```
  */
@@ -189,8 +186,8 @@ export function defineWorkspaceV2<
  *   name: 'My Blog',
  *   description: 'Personal blog workspace',
  *   icon: 'emoji:📝',
- *   tables: [table('posts', { name: 'Posts', fields: [id(), text('title')] })],
- *   kv: [select('theme', { options: ['light', 'dark'] })],
+ *   tables: [table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] })],
+ *   kv: [select({ id: 'theme', options: ['light', 'dark'] })],
  * });
  * ```
  */
@@ -370,10 +367,7 @@ export type ClientBuilder<
  * // Old API (deprecated)
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table('posts', {
- *       name: 'Posts',
- *       fields: [id(), text('title'), boolean('published', { default: false })],
- *     }),
+ *     posts: table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' }), boolean({ id: 'published', default: false })] }),
  *   },
  *   kv: {},
  * });
@@ -462,7 +456,7 @@ export function defineWorkspace<
  * const head = createHeadDoc({ workspaceId: 'whispering', providers: {} });
  * const client = createClient(head)
  *   .withDefinition({
- *     tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] }) },
+ *     tables: { recordings: table({ id: 'recordings', name: 'Recordings', fields: [id(), text({ id: 'title' })] }) },
  *     kv: {},
  *   })
  *   .withExtensions({

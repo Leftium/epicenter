@@ -139,14 +139,10 @@ export function isIcon(value: string): value is Icon {
  * @example
  * ```typescript
  * // Field with custom metadata
- * const titleField = text('title', {
- *   name: 'Post Title',
- *   icon: 'emoji:📝',
- *   description: 'The main title displayed on the blog',
- * });
+ * const titleField = text({ id: 'title', name: 'Post Title', icon: 'emoji:📝', description: 'The main title displayed on the blog' });
  *
  * // Field with defaults (name: '', icon: null, description: '')
- * const simpleField = text('title');
+ * const simpleField = text({ id: 'title' });
  * ```
  */
 export type FieldMetadata = {
@@ -559,16 +555,11 @@ export type CellValue<C extends Field = Field> = C extends IdField
  *
  * @example
  * ```typescript
- * const postsTable = table('posts', {
- *   name: 'Posts',
- *   description: 'Blog posts and articles',
- *   icon: 'emoji:📝',
- *   fields: [
- *     id(),
- *     text('title'),
- *     select('status', { options: ['draft', 'published'] }),
- *   ],
- * });
+ * const postsTable = table({ id: 'posts', name: 'Posts', description: 'Blog posts and articles', icon: 'emoji:📝', fields: [
+ *   id(),
+ *   text({ id: 'title' }),
+ *   select({ id: 'status', options: ['draft', 'published'] }),
+ * ] });
  * // Result:
  * // {
  * //   id: 'posts',
@@ -679,7 +670,7 @@ export type KvValue<C extends KvField = KvField> = CellValue<C>;
  *
  * @example
  * ```typescript
- * const tables = [table('posts', { ... }), table('users', { ... })];
+ * const tables = [table({ id: 'posts', ... }), table({ id: 'users', ... })];
  * const map = tablesToMap(tables);
  * // { posts: { id: 'posts', ... }, users: { id: 'users', ... } }
  * ```
@@ -700,7 +691,7 @@ export function tablesToMap<
  *
  * @example
  * ```typescript
- * const kv = [select('theme', { options: ['light', 'dark'] }), integer('fontSize')];
+ * const kv = [select({ id: 'theme', options: ['light', 'dark'] }), integer({ id: 'fontSize' })];
  * const map = kvFieldsToMap(kv);
  * // { theme: { field: { id: 'theme', ... } }, fontSize: { field: { id: 'fontSize', ... } } }
  * ```

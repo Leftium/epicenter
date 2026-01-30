@@ -158,8 +158,8 @@ export type RowChanges = Map<string, RowAction>;
  * const helpers = createTableHelpers({
  *   ydoc,
  *   tableDefinitions: [
- *     table('posts', { name: 'Posts', fields: [id(), text('title')] }),
- *     table('users', { name: 'Users', fields: [id(), text('name')] }),
+ *     table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }),
+ *     table({ id: 'users', name: 'Users', fields: [id(), text({ id: 'name' })] }),
  *   ],
  * });
  *

@@ -8,7 +8,7 @@
  */
 
 import type * as Y from 'yjs';
-import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
+import type { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
 import { validateId } from '../keys.js';
 import type {
 	ChangeEvent,

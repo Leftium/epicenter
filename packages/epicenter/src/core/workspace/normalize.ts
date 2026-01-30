@@ -65,10 +65,10 @@ export function normalizeIcon(
  *
  * @example
  * ```typescript
- * const tableDef = table('posts', { name: 'Posts', fields: [id()] });
+ * const tableDef = table({ id: 'posts', name: 'Posts', fields: [id()] });
  * isTableDefinition(tableDef); // true
  *
- * const notTable = { id: id(), title: text() };
+ * const notTable = { id: id(), title: text({ id: 'title' }) };
  * isTableDefinition(notTable); // false
  * ```
  */

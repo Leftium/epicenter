@@ -13,7 +13,8 @@ import type { CellValue, SchemaTableDefinition } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = table(tableId, {
+	schema: SchemaTableDefinition = table({
+		id: tableId,
 		name: tableId,
 		fields: [id()] as const,
 	}),
@@ -23,13 +24,15 @@ function createTestStore(
 	return { ydoc, tableHelper: createTableHelper(tableId, yarray, schema) };
 }
 
-const postsSchema = table('posts', {
+const postsSchema = table({
+	id: 'posts',
 	name: 'Posts',
 	fields: [
-		id('id', { name: 'ID' }),
-		text('title', { name: 'Title' }),
-		integer('views', { name: 'Views' }),
-		select('status', {
+		id({ id: 'id', name: 'ID' }),
+		text({ id: 'title', name: 'Title' }),
+		integer({ id: 'views', name: 'Views' }),
+		select({
+			id: 'status',
 			name: 'Status',
 			options: ['draft', 'published'] as const,
 		}),

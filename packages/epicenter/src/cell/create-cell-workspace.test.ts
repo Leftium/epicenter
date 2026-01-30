@@ -65,23 +65,25 @@ const testDefinition: WorkspaceDefinition = {
 	description: 'A workspace for testing',
 	icon: null,
 	tables: [
-		table('posts', {
+		table({
+			id: 'posts',
 			name: 'Blog Posts',
 			fields: [
 				id(),
-				text('title', { name: 'Title' }),
-				integer('views', { name: 'Views' }),
-				boolean('published', { name: 'Published' }),
+				text({ id: 'title', name: 'Title' }),
+				integer({ id: 'views', name: 'Views' }),
+				boolean({ id: 'published', name: 'Published' }),
 			] as const,
 		}),
-		table('users', {
+		table({
+			id: 'users',
 			name: 'Users',
-			fields: [id(), text('name', { name: 'Name' })] as const,
+			fields: [id(), text({ id: 'name', name: 'Name' })] as const,
 		}),
 	],
 	kv: [
-		select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
-		text('language', { name: 'Language' }),
+		select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] as const }),
+		text({ id: 'language', name: 'Language' }),
 	],
 };
 
@@ -641,7 +643,8 @@ describe('type validation', () => {
 		description: '',
 		icon: null,
 		tables: [
-			table('test', {
+			table({
+				id: 'test',
 				name: 'Test',
 				fields: [
 					id(),
@@ -796,17 +799,19 @@ describe('createCellWorkspace with HeadDoc', () => {
 		description: '',
 		icon: null,
 		tables: [
-			table('posts', {
+			table({
+				id: 'posts',
 				name: 'Posts',
 				fields: [
 					id(),
-					text('title', { name: 'Title' }),
-					integer('views', { name: 'Views' }),
+					text({ id: 'title', name: 'Title' }),
+					integer({ id: 'views', name: 'Views' }),
 				] as const,
 			}),
-			table('users', {
+			table({
+				id: 'users',
 				name: 'Users',
-				fields: [id(), text('name', { name: 'Name' })] as const,
+				fields: [id(), text({ id: 'name', name: 'Name' })] as const,
 			}),
 		],
 		kv: [],
@@ -1112,9 +1117,10 @@ describe('createCellWorkspace with HeadDoc', () => {
 					description: '',
 					icon: null,
 					tables: [
-						table('items', {
+						table({
+							id: 'items',
 							name: 'Items',
-							fields: [id(), text('name', { name: 'Name' })] as const,
+							fields: [id(), text({ id: 'name', name: 'Name' })] as const,
 						}),
 					],
 					kv: [],

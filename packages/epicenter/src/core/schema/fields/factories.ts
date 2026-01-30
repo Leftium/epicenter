@@ -4,8 +4,12 @@
  * Each function returns a minimal schema object with `type` as the discriminant.
  * No redundant JSON Schema fields; derive JSON Schema on-demand for export.
  *
- * All factories follow the ID-first pattern: the field id is the first argument,
- * and options (including metadata) come second.
+ * All factories follow the **single options object pattern**: every property
+ * (including `id`) is passed in one destructured object. This provides:
+ * - Self-documenting call sites: `{ id: 'title', nullable: true }`
+ * - Consistent shape across all field helpers
+ * - Easy to add new properties without breaking signatures
+ * - `name` defaults to `id` if not provided
  */
 
 import type { Temporal } from 'temporal-polyfill';
@@ -15,7 +19,7 @@ import type {
 	BooleanField,
 	DateField,
 	Field,
-	FieldOptions,
+	FieldMetadata,
 	Icon,
 	IdField,
 	IntegerField,
@@ -28,6 +32,94 @@ import type {
 	TextField,
 } from './types';
 import { isIcon } from './types';
+
+// ============================================================================
+// Shared Options Types (with JSDoc for IDE hover)
+// ============================================================================
+
+/**
+ * Input options for field metadata in factory functions.
+ *
+ * These options describe the **input** to field helpers like `text()`, `select()`, etc.
+ * All properties are optional and will be normalized to required values in the
+ * resulting {@link FieldMetadata} output.
+ *
+ * **Normalization behavior:**
+ * - `name` → defaults to the field's `id` if omitted
+ * - `description` → defaults to empty string `''` if omitted
+ * - `icon` → plain emoji strings (e.g., `'📝'`) are normalized to tagged format (`'emoji:📝'`)
+ *
+ * @see {@link FieldMetadata} for the normalized output type after factory processing
+ *
+ * @example
+ * ```typescript
+ * // Input (FieldMetadataOptions)
+ * text({ id: 'title', icon: '📝' })
+ *
+ * // Output (FieldMetadata)
+ * // {
+ * //   id: 'title',
+ * //   name: 'title',        // normalized: defaults to id
+ * //   description: '',      // normalized: defaults to empty string
+ * //   icon: 'emoji:📝',     // normalized: plain emoji → tagged format
+ * //   type: 'text'
+ * // }
+ * ```
+ */
+type FieldMetadataOptions = {
+	/**
+	 * Display name shown in UI.
+	 *
+	 * Optional in options; normalized to the field's `id` if omitted.
+	 *
+	 * @see {@link FieldMetadata.name} for the normalized output (always `string`)
+	 *
+	 * @example
+	 * ```typescript
+	 * text({ id: 'firstName' })              // name = 'firstName'
+	 * text({ id: 'firstName', name: 'First Name' }) // name = 'First Name'
+	 * ```
+	 */
+	name?: string;
+
+	/**
+	 * Description shown in tooltips and documentation.
+	 *
+	 * Optional in options; normalized to empty string `''` if omitted.
+	 *
+	 * @see {@link FieldMetadata.description} for the normalized output (always `string`)
+	 *
+	 * @example
+	 * ```typescript
+	 * text({ id: 'email', description: 'Primary contact email address' })
+	 * ```
+	 */
+	description?: string;
+
+	/**
+	 * Icon for the field in UI.
+	 *
+	 * Accepts:
+	 * - Tagged format: `'emoji:📝'`, `'lucide:file-text'`, `'url:https://...'`
+	 * - Plain emoji shorthand: `'📝'` (normalized to `'emoji:📝'`)
+	 * - `null` or omitted (defaults to `null`)
+	 *
+	 * @see {@link FieldMetadata.icon} for the normalized output (always `Icon | null`)
+	 * @see {@link Icon} for the tagged string format
+	 *
+	 * @example
+	 * ```typescript
+	 * text({ id: 'title', icon: '📝' })           // → 'emoji:📝'
+	 * text({ id: 'title', icon: 'lucide:type' })  // → 'lucide:type'
+	 * text({ id: 'title' })                       // → null
+	 * ```
+	 */
+	icon?: Icon | string | null;
+};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
 /**
  * Normalize icon input to Icon | null.
@@ -44,318 +136,454 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
 	return `emoji:${icon}` as Icon;
 }
 
+// ============================================================================
+// Table Factory
+// ============================================================================
+
 /**
- * Factory function to create a TableDefinition.
+ * Creates a table definition.
  *
- * Takes the table id as the first argument, then options:
- * - `id`: Required unique identifier for the table (first argument).
- * - `name`: Required display name for the table.
- * - `fields`: Required field array (Field[]).
- * - `description`: Optional. Defaults to empty string.
- * - `icon`: Optional. Accepts Icon string ('emoji:📝'), plain emoji ('📝'), or null. Defaults to null.
+ * Unlike field helpers, `name` is required for tables because table names
+ * are always user-facing and should be human-readable (e.g., "Blog Posts" not "blogPosts").
  *
  * @example
  * ```typescript
  * // Minimal - id, name, and fields required
- * const posts = table('posts', {
+ * table({
+ *   id: 'posts',
  *   name: 'Posts',
- *   fields: [id(), text('title'), boolean('published')],
+ *   fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })],
  * });
  *
  * // With icon (tagged format)
- * const posts = table('posts', {
+ * table({
+ *   id: 'posts',
  *   name: 'Posts',
  *   icon: 'emoji:📝',
- *   fields: [id(), text('title')],
+ *   fields: [id(), text({ id: 'title' })],
  * });
  *
  * // With icon shorthand (plain emoji)
- * const posts = table('posts', {
+ * table({
+ *   id: 'posts',
  *   name: 'Posts',
  *   icon: '📝',  // Converted to 'emoji:📝'
- *   fields: [id(), text('title')],
+ *   fields: [id(), text({ id: 'title' })],
  * });
  *
  * // Full - all metadata explicit
- * const posts = table('posts', {
+ * table({
+ *   id: 'posts',
  *   name: 'Blog Posts',
  *   description: 'Articles and blog posts',
  *   icon: 'emoji:📝',
- *   fields: [id(), text('title'), boolean('published')],
+ *   fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })],
  * });
  *
  * // In defineWorkspace with arrays
  * defineWorkspace({
  *   tables: [
- *     table('posts', { name: 'Posts', fields: [id(), text('title')] }),
- *     table('comments', { name: 'Comments', fields: [id(), text('body')] }),
+ *     table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }),
+ *     table({ id: 'comments', name: 'Comments', fields: [id(), text({ id: 'body' })] }),
  *   ],
  *   kv: [],
  * });
  * ```
  */
-export function table<const TFields extends readonly Field[]>(
-	tableId: string,
-	options: {
-		name: string;
-		fields: TFields;
-		description?: string;
-		icon?: string | Icon | null;
-	},
-): TableDefinition<TFields> {
+export function table<const TFields extends readonly Field[]>({
+	id,
+	name,
+	fields,
+	description = '',
+	icon = null,
+}: {
+	/** Unique identifier for this table. Used as storage key. */
+	id: string;
+	/** Display name shown in UI. Required for tables. */
+	name: string;
+	/** Field definitions for this table. */
+	fields: TFields;
+	/** Description for tooltips/docs. Defaults to empty string. */
+	description?: string;
+	/** Icon for UI. Accepts tagged or plain emoji. Defaults to null. */
+	icon?: string | Icon | null;
+}): TableDefinition<TFields> {
 	return {
-		id: tableId,
-		name: options.name,
-		description: options.description ?? '',
-		icon: normalizeIcon(options.icon),
-		fields: options.fields,
+		id,
+		name,
+		description,
+		icon: normalizeIcon(icon),
+		fields,
 	};
 }
 
+// ============================================================================
+// ID Field Factory
+// ============================================================================
+
 /**
- * Create an ID field.
- *
- * Defaults to field id 'id'. Can override with a custom id.
+ * Creates an ID field (primary key).
+ * Can be called with no args (defaults to id='id') or with options.
  *
  * @example
  * ```typescript
- * id()           // { id: 'id', type: 'id', ... }
- * id('userId')   // { id: 'userId', type: 'id', ... }
+ * id()                        // → { id: 'id', name: 'id', type: 'id', ... }
+ * id({ id: 'postId' })        // → { id: 'postId', name: 'postId', type: 'id', ... }
+ * id({ id: 'postId', name: 'Post ID' })
  * ```
  */
 export function id(): IdField & { id: 'id' };
+export function id<const K extends string>(opts: {
+	/** Unique identifier for this field. Defaults to 'id'. */
+	id: K;
+	/** Display name. Defaults to id. */
+	name?: string;
+	/** Description for tooltips/docs. Defaults to empty string. */
+	description?: string;
+	/** Icon for UI. Defaults to null. */
+	icon?: Icon | string | null;
+}): IdField & { id: K };
 export function id<const K extends string>(
-	fieldId: K,
-	opts?: FieldOptions,
-): IdField & { id: K };
-export function id<const K extends string>(
-	fieldId: K = 'id' as K,
-	{ name = '', description = '', icon = null }: FieldOptions = {},
+	opts: {
+		id?: K;
+		name?: string;
+		description?: string;
+		icon?: Icon | string | null;
+	} = {},
 ): IdField & { id: K } {
+	const fieldId = (opts.id ?? 'id') as K;
 	return {
 		id: fieldId,
 		type: 'id',
-		name,
-		description,
-		icon,
+		name: opts.name ?? fieldId,
+		description: opts.description ?? '',
+		icon: normalizeIcon(opts.icon),
 	};
 }
 
+// ============================================================================
+// Text Field Factory
+// ============================================================================
+
 /**
- * Create a text field schema.
+ * Creates a text (string) field.
  *
  * @example
  * ```typescript
- * text('title')                          // non-nullable
- * text('subtitle', { nullable: true })   // nullable
- * text('name', { default: 'Untitled' })  // with default
+ * text({ id: 'title' })
+ * text({ id: 'title', name: 'Post Title' })
+ * text({ id: 'subtitle', nullable: true })
+ * text({ id: 'status', default: 'active' })
  * ```
  */
 export function text<const K extends string>(
-	id: K,
-	opts?: FieldOptions & { nullable?: false; default?: string },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. Defaults to false. */
+		nullable?: false;
+		/** Default value for new rows. */
+		default?: string;
+	} & FieldMetadataOptions,
 ): TextField<false> & { id: K };
+
 export function text<const K extends string>(
-	id: K,
-	opts: FieldOptions & { nullable: true; default?: string },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
+		nullable: true;
+		/** Default value for new rows. */
+		default?: string;
+	} & FieldMetadataOptions,
 ): TextField<true> & { id: K };
-export function text<const K extends string>(
-	id: K,
-	{
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & { nullable?: boolean; default?: string } = {},
-): TextField<boolean> & { id: K } {
+
+export function text<const K extends string>({
+	id,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	nullable?: boolean;
+	default?: string;
+} & FieldMetadataOptions): TextField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'text',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
 	};
 }
 
+// ============================================================================
+// Richtext Field Factory
+// ============================================================================
+
 /**
- * Create a richtext field schema.
+ * Creates a richtext field.
+ * Richtext fields are always nullable (Y.Docs created lazily).
  *
  * @example
  * ```typescript
- * richtext('content')
- * richtext('body', { name: 'Post Body', icon: 'emoji:📝' })
+ * richtext({ id: 'content' })
+ * richtext({ id: 'body', name: 'Post Body', icon: 'emoji:📝' })
  * ```
  */
-export function richtext<const K extends string>(
-	id: K,
-	{ name = '', description = '', icon = null }: FieldOptions = {},
-): RichtextField & { id: K } {
+export function richtext<const K extends string>({
+	id,
+	name,
+	description = '',
+	icon = null,
+}: {
+	/** Unique identifier for this field within its table. */
+	id: K;
+} & FieldMetadataOptions): RichtextField & { id: K } {
 	return {
 		id,
 		type: 'richtext',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 	};
 }
 
+// ============================================================================
+// Integer Field Factory
+// ============================================================================
+
 /**
- * Create an integer field schema.
+ * Creates an integer field.
  *
  * @example
  * ```typescript
- * integer('views')                        // non-nullable
- * integer('rating', { nullable: true })   // nullable
- * integer('count', { default: 0 })        // with default
+ * integer({ id: 'views' })                        // non-nullable
+ * integer({ id: 'rating', nullable: true })       // nullable
+ * integer({ id: 'count', default: 0 })            // with default
  * ```
  */
 export function integer<const K extends string>(
-	id: K,
-	opts?: FieldOptions & { nullable?: false; default?: number },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. Defaults to false. */
+		nullable?: false;
+		/** Default value for new rows. */
+		default?: number;
+	} & FieldMetadataOptions,
 ): IntegerField<false> & { id: K };
+
 export function integer<const K extends string>(
-	id: K,
-	opts: FieldOptions & { nullable: true; default?: number },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
+		nullable: true;
+		/** Default value for new rows. */
+		default?: number;
+	} & FieldMetadataOptions,
 ): IntegerField<true> & { id: K };
-export function integer<const K extends string>(
-	id: K,
-	{
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & { nullable?: boolean; default?: number } = {},
-): IntegerField<boolean> & { id: K } {
+
+export function integer<const K extends string>({
+	id,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	nullable?: boolean;
+	default?: number;
+} & FieldMetadataOptions): IntegerField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'integer',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
 	};
 }
 
+// ============================================================================
+// Real Field Factory
+// ============================================================================
+
 /**
- * Create a real (float) field schema.
+ * Creates a real (float) field.
  *
  * @example
  * ```typescript
- * real('price')                          // non-nullable
- * real('discount', { nullable: true })   // nullable
- * real('rate', { default: 0.0 })         // with default
+ * real({ id: 'price' })                          // non-nullable
+ * real({ id: 'discount', nullable: true })       // nullable
+ * real({ id: 'rate', default: 0.0 })             // with default
  * ```
  */
 export function real<const K extends string>(
-	id: K,
-	opts?: FieldOptions & { nullable?: false; default?: number },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. Defaults to false. */
+		nullable?: false;
+		/** Default value for new rows. */
+		default?: number;
+	} & FieldMetadataOptions,
 ): RealField<false> & { id: K };
+
 export function real<const K extends string>(
-	id: K,
-	opts: FieldOptions & { nullable: true; default?: number },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
+		nullable: true;
+		/** Default value for new rows. */
+		default?: number;
+	} & FieldMetadataOptions,
 ): RealField<true> & { id: K };
-export function real<const K extends string>(
-	id: K,
-	{
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & { nullable?: boolean; default?: number } = {},
-): RealField<boolean> & { id: K } {
+
+export function real<const K extends string>({
+	id,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	nullable?: boolean;
+	default?: number;
+} & FieldMetadataOptions): RealField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'real',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
 	};
 }
 
+// ============================================================================
+// Boolean Field Factory
+// ============================================================================
+
 /**
- * Create a boolean field schema.
+ * Creates a boolean field.
  *
  * @example
  * ```typescript
- * boolean('published')                       // non-nullable
- * boolean('verified', { nullable: true })    // nullable
- * boolean('active', { default: false })      // with default
+ * boolean({ id: 'published' })                       // non-nullable
+ * boolean({ id: 'verified', nullable: true })        // nullable
+ * boolean({ id: 'active', default: false })          // with default
  * ```
  */
 export function boolean<const K extends string>(
-	id: K,
-	opts?: FieldOptions & { nullable?: false; default?: boolean },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. Defaults to false. */
+		nullable?: false;
+		/** Default value for new rows. */
+		default?: boolean;
+	} & FieldMetadataOptions,
 ): BooleanField<false> & { id: K };
+
 export function boolean<const K extends string>(
-	id: K,
-	opts: FieldOptions & { nullable: true; default?: boolean },
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
+		nullable: true;
+		/** Default value for new rows. */
+		default?: boolean;
+	} & FieldMetadataOptions,
 ): BooleanField<true> & { id: K };
-export function boolean<const K extends string>(
-	id: K,
-	{
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & { nullable?: boolean; default?: boolean } = {},
-): BooleanField<boolean> & { id: K } {
+
+export function boolean<const K extends string>({
+	id,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	nullable?: boolean;
+	default?: boolean;
+} & FieldMetadataOptions): BooleanField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'boolean',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
 	};
 }
 
+// ============================================================================
+// Date Field Factory
+// ============================================================================
+
 /**
- * Create a date field schema.
+ * Creates a date field.
  *
  * @example
  * ```typescript
- * date('createdAt')                        // non-nullable
- * date('deletedAt', { nullable: true })    // nullable
- * date('startDate', { default: now })      // with default (Temporal.ZonedDateTime)
+ * date({ id: 'createdAt' })                        // non-nullable
+ * date({ id: 'deletedAt', nullable: true })        // nullable
+ * date({ id: 'startDate', default: now })          // with default (Temporal.ZonedDateTime)
  * ```
  */
 export function date<const K extends string>(
-	id: K,
-	opts?: FieldOptions & { nullable?: false; default?: Temporal.ZonedDateTime },
-): DateField<false> & { id: K };
-export function date<const K extends string>(
-	id: K,
-	opts: FieldOptions & { nullable: true; default?: Temporal.ZonedDateTime },
-): DateField<true> & { id: K };
-export function date<const K extends string>(
-	id: K,
-	{
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & {
-		nullable?: boolean;
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. Defaults to false. */
+		nullable?: false;
+		/** Default value for new rows. */
 		default?: Temporal.ZonedDateTime;
-	} = {},
-): DateField<boolean> & { id: K } {
+	} & FieldMetadataOptions,
+): DateField<false> & { id: K };
+
+export function date<const K extends string>(
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
+		nullable: true;
+		/** Default value for new rows. */
+		default?: Temporal.ZonedDateTime;
+	} & FieldMetadataOptions,
+): DateField<true> & { id: K };
+
+export function date<const K extends string>({
+	id,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	nullable?: boolean;
+	default?: Temporal.ZonedDateTime;
+} & FieldMetadataOptions): DateField<boolean> & { id: K } {
 	return {
 		id,
 		type: 'date',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && {
 			default: DateTimeString.stringify(defaultValue),
@@ -363,70 +591,88 @@ export function date<const K extends string>(
 	};
 }
 
+// ============================================================================
+// Select Field Factory
+// ============================================================================
+
 /**
- * Create a select field schema.
+ * Creates a select field (single choice from predefined options).
  *
  * @example
  * ```typescript
- * select('status', { options: ['draft', 'published'] })
- * select('priority', { options: ['low', 'medium', 'high'], default: 'medium' })
- * select('category', { options: ['a', 'b', 'c'], nullable: true })
+ * select({ id: 'status', options: ['draft', 'published'] })
+ * select({ id: 'status', options: ['draft', 'published'], default: 'draft' })
+ * select({ id: 'priority', options: ['low', 'medium', 'high'], name: 'Priority Level' })
+ * select({ id: 'category', options: ['a', 'b', 'c'], nullable: true })
  * ```
  */
 export function select<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
 >(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Allowed values for this field. Must have at least one option. */
 		options: TOptions;
+		/** Whether null values are allowed. */
 		nullable: true;
+		/** Default value for new rows. Must be one of the options. */
 		default?: TOptions[number];
-	},
+	} & FieldMetadataOptions,
 ): SelectField<TOptions, true> & { id: K };
+
 export function select<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
 >(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Allowed values for this field. Must have at least one option. */
 		options: TOptions;
+		/** Whether null values are allowed. Defaults to false. */
 		nullable?: false;
+		/** Default value for new rows. Must be one of the options. */
 		default?: TOptions[number];
-	},
+	} & FieldMetadataOptions,
 ): SelectField<TOptions, false> & { id: K };
+
 export function select<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
->(
-	id: K,
-	{
-		options,
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & {
-		options: TOptions;
-		nullable?: boolean;
-		default?: TOptions[number];
-	},
-): SelectField<TOptions, boolean> & { id: K } {
+>({
+	id,
+	options,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	options: TOptions;
+	nullable?: boolean;
+	default?: TOptions[number];
+} & FieldMetadataOptions): SelectField<TOptions, boolean> & { id: K } {
 	return {
 		id,
 		type: 'select',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		options,
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
 	};
 }
 
+// ============================================================================
+// Tags Field Factory
+// ============================================================================
+
 /**
- * Create a tags field schema.
+ * Creates a tags field (array of strings).
  *
  * Two modes:
  * - With `options`: Only values from options are allowed
@@ -434,64 +680,77 @@ export function select<
  *
  * @example
  * ```typescript
- * tags('labels')                                              // unconstrained
- * tags('categories', { options: ['tech', 'news', 'sports'] }) // constrained
- * tags('tags', { nullable: true })                            // nullable
+ * tags({ id: 'labels' })                                              // unconstrained
+ * tags({ id: 'categories', options: ['tech', 'news', 'sports'] })     // constrained
+ * tags({ id: 'tags', nullable: true })                                // nullable
  * ```
  */
 export function tags<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
 >(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Allowed values for this field. If omitted, any strings are allowed. */
 		options: TOptions;
+		/** Whether null values are allowed. */
 		nullable: true;
+		/** Default value for new rows. */
 		default?: TOptions[number][];
-	},
+	} & FieldMetadataOptions,
 ): TagsField<TOptions, true> & { id: K };
+
 export function tags<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
 >(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Allowed values for this field. If omitted, any strings are allowed. */
 		options: TOptions;
+		/** Whether null values are allowed. Defaults to false. */
 		nullable?: false;
+		/** Default value for new rows. */
 		default?: TOptions[number][];
-	},
+	} & FieldMetadataOptions,
 ): TagsField<TOptions, false> & { id: K };
+
 export function tags<const K extends string, TNullable extends boolean = false>(
-	id: K,
-	opts?: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** Whether null values are allowed. */
 		nullable?: TNullable;
+		/** Default value for new rows. */
 		default?: string[];
-	},
+	} & FieldMetadataOptions,
 ): TagsField<readonly [string, ...string[]], TNullable> & { id: K };
+
 export function tags<
 	const K extends string,
 	const TOptions extends readonly [string, ...string[]],
->(
-	id: K,
-	{
-		options,
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & {
-		options?: TOptions;
-		nullable?: boolean;
-		default?: TOptions[number][] | string[];
-	} = {},
-): TagsField<TOptions, boolean> & { id: K } {
+>({
+	id,
+	options,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	options?: TOptions;
+	nullable?: boolean;
+	default?: TOptions[number][] | string[];
+} & FieldMetadataOptions): TagsField<TOptions, boolean> & { id: K } {
 	return {
 		id,
 		type: 'tags',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		...(options && { options }),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && {
@@ -500,57 +759,72 @@ export function tags<
 	};
 }
 
+// ============================================================================
+// JSON Field Factory
+// ============================================================================
+
 /**
- * Create a JSON field schema with TypeBox validation.
+ * Creates a JSON field with TypeBox schema validation.
  *
  * @example
  * ```typescript
  * import { Type } from 'typebox';
  *
- * json('settings', { schema: Type.Object({ theme: Type.String() }) })
- * json('config', {
+ * json({ id: 'settings', schema: Type.Object({ theme: Type.String() }) })
+ * json({ id: 'metadata', schema: MySchema, nullable: true })
+ * json({
+ *   id: 'config',
  *   schema: Type.Object({ darkMode: Type.Boolean() }),
  *   default: { darkMode: false }
  * })
  * ```
  */
 export function json<const K extends string, const T extends TSchema>(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** TypeBox schema for validation. */
 		schema: T;
+		/** Whether null values are allowed. */
 		nullable: true;
+		/** Default value for new rows. Must conform to schema. */
 		default?: Static<T>;
-	},
+	} & FieldMetadataOptions,
 ): JsonField<T, true> & { id: K };
+
 export function json<const K extends string, const T extends TSchema>(
-	id: K,
-	opts: FieldOptions & {
+	opts: {
+		/** Unique identifier for this field within its table. */
+		id: K;
+		/** TypeBox schema for validation. */
 		schema: T;
+		/** Whether null values are allowed. Defaults to false. */
 		nullable?: false;
+		/** Default value for new rows. Must conform to schema. */
 		default?: Static<T>;
-	},
+	} & FieldMetadataOptions,
 ): JsonField<T, false> & { id: K };
-export function json<const K extends string, const T extends TSchema>(
-	id: K,
-	{
-		schema,
-		nullable = false,
-		default: defaultValue,
-		name = '',
-		description = '',
-		icon = null,
-	}: FieldOptions & {
-		schema: T;
-		nullable?: boolean;
-		default?: Static<T>;
-	},
-): JsonField<T, boolean> & { id: K } {
+
+export function json<const K extends string, const T extends TSchema>({
+	id,
+	schema,
+	nullable = false,
+	default: defaultValue,
+	name,
+	description = '',
+	icon = null,
+}: {
+	id: K;
+	schema: T;
+	nullable?: boolean;
+	default?: Static<T>;
+} & FieldMetadataOptions): JsonField<T, boolean> & { id: K } {
 	return {
 		id,
 		type: 'json',
-		name,
+		name: name ?? id,
 		description,
-		icon,
+		icon: normalizeIcon(icon),
 		schema,
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),

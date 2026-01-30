@@ -6,7 +6,11 @@ import { tableToArktype } from './to-arktype';
 
 describe('tableToArktype', () => {
 	test('returns a complete arktype Type instance', () => {
-		const fields = [id(), text('title'), integer('count')] as const;
+		const fields = [
+			id(),
+			text({ id: 'title' }),
+			integer({ id: 'count' }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -15,7 +19,11 @@ describe('tableToArktype', () => {
 	});
 
 	test('validates complete objects correctly', () => {
-		const fields = [id(), text('title'), integer('count')] as const;
+		const fields = [
+			id(),
+			text({ id: 'title' }),
+			integer({ id: 'count' }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -29,7 +37,11 @@ describe('tableToArktype', () => {
 	});
 
 	test('rejects invalid objects', () => {
-		const fields = [id(), text('title'), integer('count')] as const;
+		const fields = [
+			id(),
+			text({ id: 'title' }),
+			integer({ id: 'count' }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 
@@ -43,7 +55,11 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .partial() composition', () => {
-		const fields = [id(), text('title'), integer('count')] as const;
+		const fields = [
+			id(),
+			text({ id: 'title' }),
+			integer({ id: 'count' }),
+		] as const;
 
 		const validator = tableToArktype(fields);
 		const partialValidator = validator.partial().merge({ id: type.string });
@@ -59,7 +75,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .array() composition', () => {
-		const fields = [id(), text('title')] as const;
+		const fields = [id(), text({ id: 'title' })] as const;
 
 		const validator = tableToArktype(fields);
 		const arrayValidator = validator.array();
@@ -73,7 +89,7 @@ describe('tableToArktype', () => {
 	});
 
 	test('supports .merge() composition', () => {
-		const fields = [id(), text('title')] as const;
+		const fields = [id(), text({ id: 'title' })] as const;
 
 		const validator = tableToArktype(fields);
 		const merged = validator.merge({ extra: type.boolean });
@@ -90,14 +106,15 @@ describe('tableToArktype', () => {
 	test('handles complex nested schema', () => {
 		const fields = [
 			id(),
-			text('title'),
-			json('metadata', {
+			text({ id: 'title' }),
+			json({
+				id: 'metadata',
 				schema: Type.Object({
 					author: Type.String(),
 					tags: Type.Array(Type.String()),
 				}),
 			}),
-			select('status', { options: ['draft', 'published'] as const }),
+			select({ id: 'status', options: ['draft', 'published'] as const }),
 		] as const;
 
 		const validator = tableToArktype(fields);
@@ -125,10 +142,11 @@ describe('tableToArktype', () => {
 	test('nullable fields with .default(null) can be omitted and default to null', () => {
 		const fields = [
 			id(),
-			text('title'),
-			text('subtitle', { nullable: true }),
-			integer('count', { nullable: true }),
-			select('status', {
+			text({ id: 'title' }),
+			text({ id: 'subtitle', nullable: true }),
+			integer({ id: 'count', nullable: true }),
+			select({
+				id: 'status',
 				options: ['draft', 'published'] as const,
 				nullable: true,
 			}),
@@ -159,8 +177,8 @@ describe('tableToArktype', () => {
 	test('required fields must be present even when nullable fields are omitted', () => {
 		const fields = [
 			id(),
-			text('title'), // required
-			text('subtitle', { nullable: true }), // optional, defaults to null
+			text({ id: 'title' }), // required
+			text({ id: 'subtitle', nullable: true }), // optional, defaults to null
 		] as const;
 
 		const validator = tableToArktype(fields);
@@ -178,8 +196,8 @@ describe('tableToArktype', () => {
 	test('nullable fields accept null explicitly', () => {
 		const fields = [
 			id(),
-			text('title'),
-			text('subtitle', { nullable: true }),
+			text({ id: 'title' }),
+			text({ id: 'subtitle', nullable: true }),
 		] as const;
 
 		const validator = tableToArktype(fields);

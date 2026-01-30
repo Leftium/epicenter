@@ -7,13 +7,13 @@ describe('createTables', () => {
 	test('should create and retrieve rows correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('view_count'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'view_count' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -39,13 +39,13 @@ describe('createTables', () => {
 	test('should handle batch operations', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('view_count'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'view_count' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -72,13 +72,13 @@ describe('createTables', () => {
 	test('should filter and find rows correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('view_count'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'view_count' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -104,13 +104,13 @@ describe('createTables', () => {
 	test('should return not_found status for non-existent rows', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					text('title'),
-					integer('view_count'),
-					boolean('published'),
+					text({ id: 'title' }),
+					integer({ id: 'view_count' }),
+					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
@@ -132,12 +132,12 @@ describe('createTables', () => {
 	test('should store and retrieve richtext and tags correctly', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
 				fields: [
 					id(),
-					richtext('title'),
-					tags('tags', {
+					richtext({ id: 'title' }),
+					tags({ id: 'tags', 
 						options: ['typescript', 'javascript', 'python'] as const,
 					}),
 				] as const,
@@ -174,9 +174,9 @@ describe('createTables', () => {
 	test('rows are plain JSON-serializable objects', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
-			table('posts', {
+			table({ id: 'posts', 
 				name: '',
-				fields: [id(), text('title'), boolean('published')] as const,
+				fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })] as const,
 			}),
 		]);
 
@@ -198,9 +198,9 @@ describe('createTables', () => {
 		test('observe fires when row is added via upsert', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title'), boolean('published')] as const,
+					fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })] as const,
 				}),
 			]);
 
@@ -231,9 +231,9 @@ describe('createTables', () => {
 		test('observe fires when row field is modified', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title'), integer('view_count')] as const,
+					fields: [id(), text({ id: 'title' }), integer({ id: 'view_count' })] as const,
 				}),
 			]);
 
@@ -267,9 +267,9 @@ describe('createTables', () => {
 		test('observe fires when row is removed', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -295,9 +295,9 @@ describe('createTables', () => {
 		test('callbacks can access row data via get()', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -328,9 +328,9 @@ describe('createTables', () => {
 			const ytables: TablesMap = ydoc.getMap('tables');
 
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), integer('count')] as const,
+					fields: [id(), integer({ id: 'count' })] as const,
 				}),
 			]);
 
@@ -364,9 +364,9 @@ describe('createTables', () => {
 		test('unsubscribe stops callbacks', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -390,9 +390,9 @@ describe('createTables', () => {
 		test('transaction batching: upsertMany fires callback once with all changes', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -420,9 +420,9 @@ describe('createTables', () => {
 		test('transaction batching: multiple updates in transact fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-update' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title'), integer('view_count')] as const,
+					fields: [id(), text({ id: 'title' }), integer({ id: 'view_count' })] as const,
 				}),
 			]);
 
@@ -453,9 +453,9 @@ describe('createTables', () => {
 		test('transaction batching: mixed operations in transact fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-mixed' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -487,9 +487,9 @@ describe('createTables', () => {
 		test('transaction batching: deleteMany fires callback once', () => {
 			const ydoc = new Y.Doc({ guid: 'test-batch-delete' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -521,9 +521,9 @@ describe('createTables', () => {
 		test('same-row dedupe: multiple updates in one transaction emits final value', () => {
 			const ydoc = new Y.Doc({ guid: 'test-dedupe' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title'), integer('view_count')] as const,
+					fields: [id(), text({ id: 'title' }), integer({ id: 'view_count' })] as const,
 				}),
 			]);
 
@@ -577,9 +577,9 @@ describe('createTables', () => {
 			const ytables: TablesMap = ydoc.getMap('tables');
 
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -610,13 +610,13 @@ describe('createTables', () => {
 		test('observer isolation: changes in other tables do not trigger callback', () => {
 			const ydoc = new Y.Doc({ guid: 'test-isolation' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
-				table('comments', {
+				table({ id: 'comments', 
 					name: '',
-					fields: [id(), text('content')] as const,
+					fields: [id(), text({ id: 'content' })] as const,
 				}),
 			]);
 
@@ -640,9 +640,9 @@ describe('createTables', () => {
 		test('callback fires after transaction completes, not during', () => {
 			const ydoc = new Y.Doc({ guid: 'test-timing' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -665,9 +665,9 @@ describe('createTables', () => {
 		test('multiple subscribers receive same changes', () => {
 			const ydoc = new Y.Doc({ guid: 'test-multi-sub' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: '',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -710,9 +710,9 @@ describe('createTables', () => {
 		test('table() returns typed helper for defined tables', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -731,9 +731,9 @@ describe('createTables', () => {
 		test('table() returns untyped helper for undefined tables', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -752,9 +752,9 @@ describe('createTables', () => {
 		test('table() creates the same helper instance on repeated calls', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -770,9 +770,9 @@ describe('createTables', () => {
 		test('has() checks existence without creating table', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -795,9 +795,9 @@ describe('createTables', () => {
 		test('names() returns all table names in YJS', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 
@@ -815,10 +815,10 @@ describe('createTables', () => {
 		test('definitions property provides table definitions', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
-				table('posts', {
+				table({ id: 'posts', 
 					name: 'Posts',
 					description: 'Blog posts',
-					fields: [id(), text('title')] as const,
+					fields: [id(), text({ id: 'title' })] as const,
 				}),
 			]);
 

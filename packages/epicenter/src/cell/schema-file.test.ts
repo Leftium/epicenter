@@ -47,8 +47,8 @@ describe('parseSchema', () => {
 					icon: null,
 					fields: {
 						id: id(),
-						title: text('title', { name: 'Title' }),
-						views: integer('views', { name: 'Views' }),
+						title: text({ id: 'title', name: 'Title' }),
+						views: integer({ id: 'views', name: 'Views' }),
 					},
 				},
 			},
@@ -78,8 +78,8 @@ describe('parseSchema', () => {
 					icon: null,
 					fields: [
 						id(),
-						text('title', { name: 'Title' }),
-						integer('views', { name: 'Views' }),
+						text({ id: 'title', name: 'Title' }),
+						integer({ id: 'views', name: 'Views' }),
 					],
 				},
 			},
@@ -189,7 +189,7 @@ describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
 		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: [id(), text('title', { name: 'Title' })],
+			fields: [id(), text({ id: 'title', name: 'Title' })],
 		});
 		const schema: WorkspaceDefinition = {
 			name: 'Test',
@@ -325,7 +325,7 @@ describe('addField', () => {
 			schema,
 			'posts',
 			'title',
-			text('title', { name: 'Title' }),
+			text({ id: 'title', name: 'Title' }),
 		);
 
 		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
@@ -336,7 +336,7 @@ describe('addField', () => {
 	test('throws if table not found', () => {
 		const schema = createEmptySchema('Test');
 		expect(() =>
-			addField(schema, 'posts', 'title', text('title', { name: 'Title' })),
+			addField(schema, 'posts', 'title', text({ id: 'title', name: 'Title' })),
 		).toThrow('Table "posts" not found in schema');
 	});
 
@@ -352,7 +352,7 @@ describe('addField', () => {
 			schema,
 			'posts',
 			'title',
-			text('title', { name: 'Title' }),
+			text({ id: 'title', name: 'Title' }),
 		);
 
 		const postsFromSchema = schema.tables.find((t) => t.id === 'posts')!;
@@ -374,13 +374,13 @@ describe('removeField', () => {
 			schema,
 			'posts',
 			'title',
-			text('title', { name: 'Title' }),
+			text({ id: 'title', name: 'Title' }),
 		);
 		schema = addField(
 			schema,
 			'posts',
 			'views',
-			integer('views', { name: 'Views' }),
+			integer({ id: 'views', name: 'Views' }),
 		);
 
 		const updated = removeField(schema, 'posts', 'title');
@@ -401,7 +401,7 @@ describe('getFieldById', () => {
 	test('returns field by id', () => {
 		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: [id(), text('title', { name: 'Title' })],
+			fields: [id(), text({ id: 'title', name: 'Title' })],
 		});
 
 		expect(getFieldById(postsTable, 'title')).toBeDefined();
@@ -424,8 +424,8 @@ describe('getFieldIds', () => {
 			name: 'Posts',
 			fields: [
 				id(),
-				text('title', { name: 'Title' }),
-				integer('views', { name: 'Views' }),
+				text({ id: 'title', name: 'Title' }),
+				integer({ id: 'views', name: 'Views' }),
 			],
 		});
 

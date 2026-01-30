@@ -146,9 +146,10 @@ export function createCellWorkspace(
  *   definition: {
  *     name: 'My Blog',
  *     tables: [
- *       table('posts', {
+ *       table({
+ *         id: 'posts',
  *         name: 'Posts',
- *         fields: [id(), text('title'), integer('views')],
+ *         fields: [id(), text({ id: 'title' }), integer({ id: 'views' })],
  *       }),
  *     ],
  *     kv: [],

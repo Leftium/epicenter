@@ -1,5 +1,6 @@
 import type * as Y from 'yjs';
 import type { TableDefinition } from '../schema';
+import type { TableById } from '../schema/fields/types';
 import {
 	createTableHelper,
 	createUntypedTableHelper,
@@ -49,7 +50,7 @@ export type TablesFunction<
 	 */
 	get<K extends TTableDefinitions[number]['id']>(
 		name: K,
-	): TableHelper<Extract<TTableDefinitions[number], { id: K }>['fields']>;
+	): TableHelper<TableById<TTableDefinitions, K>['fields']>;
 
 	/**
 	 * Get a table helper by name (untyped version for dynamic tables).
@@ -169,7 +170,7 @@ export function createTables<
 		]),
 	) as {
 		[K in TTableDefinitions[number]['id']]: TableHelper<
-			Extract<TTableDefinitions[number], { id: K }>['fields']
+			TableById<TTableDefinitions, K>['fields']
 		>;
 	};
 

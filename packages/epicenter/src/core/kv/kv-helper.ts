@@ -2,7 +2,7 @@ import { type ArkErrors, type } from 'arktype';
 import { createTaggedError } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 
-import type { KvField, KvValue } from '../schema';
+import type { KvField, KvFieldById, KvValue } from '../schema';
 import { fieldToYjsArktype, isNullableField } from '../schema';
 
 /**
@@ -69,9 +69,7 @@ export function createKvHelpers<TKvFields extends readonly KvField[]>({
 	ydoc: Y.Doc;
 	kvFields: TKvFields;
 }): {
-	[K in TKvFields[number]['id']]: KvHelper<
-		Extract<TKvFields[number], { id: K }>
-	>;
+	[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
 } {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 
@@ -84,9 +82,7 @@ export function createKvHelpers<TKvFields extends readonly KvField[]>({
 			}),
 		]),
 	) as {
-		[K in TKvFields[number]['id']]: KvHelper<
-			Extract<TKvFields[number], { id: K }>
-		>;
+		[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
 	};
 }
 

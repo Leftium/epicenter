@@ -233,12 +233,18 @@ export type TableHelper<TRow extends { id: string }> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Map of table definitions (uses `any` to allow variance in generic parameters) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TableDefinitions = Record<string, TableDefinition<any>>;
+export type TableDefinitions = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
+	TableDefinition<any>
+>;
 
 /** Map of KV definitions (uses `any` to allow variance in generic parameters) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type KvDefinitions = Record<string, KvDefinition<any>>;
+export type KvDefinitions = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
+	KvDefinition<any>
+>;
 
 /** Tables helper object with all table helpers */
 export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
@@ -303,7 +309,7 @@ export type WorkspaceDefinition<
 	 * Capabilities are schema-generic and will receive this workspace's
 	 * specific table/kv types when called.
 	 */
-	create<TCapabilities extends CapabilityMap = {}>(
+	create<TCapabilities extends CapabilityMap = Record<string, never>>(
 		capabilities?: TCapabilities,
 	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities>;
 };
@@ -332,6 +338,8 @@ export type CapabilityContext<
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
+	/** Workspace identifier */
+	workspaceId: string;
 	/** Typed table helpers for the workspace */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */
@@ -394,8 +402,11 @@ export type CapabilityFactory<
  * // Returns: { db, whenSynced: Promise.resolve(), destroy: closeFn }
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type CapabilityMap = Record<string, (...args: any[]) => Lifecycle>;
+export type CapabilityMap = Record<
+	string,
+	// biome-ignore lint/suspicious/noExplicitAny: capability factories are variadic
+	(...args: any[]) => Lifecycle
+>;
 
 /**
  * Infer exports from a capability map.
@@ -416,10 +427,15 @@ export type WorkspaceClient<
 	TKvDefinitions extends KvDefinitions,
 	TCapabilities extends CapabilityMap,
 > = {
+	/** Workspace identifier */
 	id: TId;
+	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
+	/** Typed table helpers */
 	tables: TablesHelper<TTableDefinitions>;
+	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
+	/** Capability exports */
 	capabilities: InferCapabilityExports<TCapabilities>;
 
 	/** Cleanup all resources */

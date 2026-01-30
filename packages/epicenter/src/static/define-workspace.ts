@@ -57,8 +57,8 @@ import type {
  */
 export function defineWorkspace<
 	TId extends string,
-	TTableDefinitions extends TableDefinitions = {},
-	TKvDefinitions extends KvDefinitions = {},
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
 >({
 	id,
 	tables: tableDefinitions = {} as TTableDefinitions,
@@ -73,11 +73,13 @@ export function defineWorkspace<
 		tableDefinitions,
 		kvDefinitions,
 
-		create<TCapabilities extends CapabilityMap = {}>(
-			capabilities: TCapabilities = {} as TCapabilities,
+		create<TCapabilities extends CapabilityMap = Record<string, never>>(
+			capabilities?: TCapabilities,
 		): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
-			// Create Y.Doc with workspace id as guid
-			const ydoc = new Y.Doc({ guid: id });
+			// Create Y.Doc with workspace ID as GUID
+			const ydoc = new Y.Doc({
+				guid: id,
+			});
 
 			// Create tables and KV helpers
 			const tables = createTables(ydoc, tableDefinitions);
@@ -85,10 +87,11 @@ export function defineWorkspace<
 
 			// Initialize capabilities (each returns Lifecycle via defineExports)
 			const capabilityExports = Object.fromEntries(
-				Object.entries(capabilities).map(([name, factory]) => [
+				Object.entries(capabilities ?? {}).map(([name, factory]) => [
 					name,
 					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
 						ydoc,
+						workspaceId: id,
 						tables,
 						kv,
 					}),

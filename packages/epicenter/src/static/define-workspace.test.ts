@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { defineExports } from '../core/lifecycle.js';
+import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
@@ -27,7 +28,7 @@ describe('defineWorkspace', () => {
 		expect(workspace.kvDefinitions).toHaveProperty('theme');
 	});
 
-	test('workspace.create() returns client with tables and kv', () => {
+	test('createWorkspace() returns client with tables and kv', () => {
 		const workspace = defineWorkspace({
 			id: 'test-app',
 			tables: {
@@ -42,7 +43,7 @@ describe('defineWorkspace', () => {
 			},
 		});
 
-		const client = workspace.create();
+		const client = createWorkspace(workspace);
 
 		expect(client.id).toBe('test-app');
 		expect(client.ydoc).toBeInstanceOf(Y.Doc);
@@ -65,7 +66,7 @@ describe('defineWorkspace', () => {
 			},
 		});
 
-		const client = workspace.create();
+		const client = createWorkspace(workspace);
 
 		// Use tables
 		client.tables.posts.set({ id: '1', title: 'Hello' });
@@ -78,7 +79,7 @@ describe('defineWorkspace', () => {
 		expect(themeResult.status).toBe('valid');
 	});
 
-	test('workspace.create() with capabilities', () => {
+	test('createWorkspace().withExtensions() with capabilities', () => {
 		const workspace = defineWorkspace({
 			id: 'test-app',
 			tables: {
@@ -98,7 +99,7 @@ describe('defineWorkspace', () => {
 				customMethod: () => 'hello',
 			});
 
-		const client = workspace.create({
+		const client = createWorkspace(workspace).withExtensions({
 			mock: mockCapability,
 		});
 
@@ -134,7 +135,7 @@ describe('defineWorkspace', () => {
 				status: 'idle' as 'idle' | 'syncing' | 'synced',
 			});
 
-		const client = workspace.create({
+		const client = createWorkspace(workspace).withExtensions({
 			persistence: persistenceCapability,
 			sync: syncCapability,
 		});
@@ -183,7 +184,7 @@ describe('defineWorkspace', () => {
 				},
 			});
 
-		const client = workspace.create({
+		const client = createWorkspace(workspace).withExtensions({
 			mock: mockCapability,
 		});
 
@@ -196,11 +197,67 @@ describe('defineWorkspace', () => {
 			id: 'empty-app',
 		});
 
-		const client = workspace.create();
+		const client = createWorkspace(workspace);
 
 		expect(client.id).toBe('empty-app');
 		expect(Object.keys(client.tables)).toHaveLength(0);
 		// KV always has methods (get, set, delete, observe), but no keys are defined
 		expect(client.kv.get).toBeDefined();
+	});
+
+	test('createWorkspace with direct config (without defineWorkspace)', () => {
+		const client = createWorkspace({
+			id: 'direct-app',
+			tables: {
+				posts: defineTable()
+					.version(type({ id: 'string', title: 'string' }))
+					.migrate((row) => row),
+			},
+		});
+
+		expect(client.id).toBe('direct-app');
+		expect(client.tables.posts).toBeDefined();
+
+		client.tables.posts.set({ id: '1', title: 'Direct' });
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+	});
+
+	test('createWorkspace client is usable before withExtensions', () => {
+		const client = createWorkspace({
+			id: 'builder-app',
+			tables: {
+				posts: defineTable()
+					.version(type({ id: 'string', title: 'string' }))
+					.migrate((row) => row),
+			},
+		});
+
+		client.tables.posts.set({ id: '1', title: 'Before Extensions' });
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		expect(typeof client.withExtensions).toBe('function');
+	});
+
+	test('withExtensions shares same ydoc', () => {
+		const baseClient = createWorkspace({
+			id: 'shared-doc-app',
+			tables: {
+				posts: defineTable()
+					.version(type({ id: 'string', title: 'string' }))
+					.migrate((row) => row),
+			},
+		});
+
+		baseClient.tables.posts.set({ id: '1', title: 'Original' });
+		const clientWithExt = baseClient.withExtensions({});
+
+		expect(clientWithExt.ydoc).toBe(baseClient.ydoc);
+
+		const result = clientWithExt.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Original');
+		}
 	});
 });

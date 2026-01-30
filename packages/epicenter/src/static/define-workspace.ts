@@ -1,59 +1,42 @@
 /**
- * defineWorkspace() - High-level API for creating workspaces with tables, KV, and capabilities.
+ * defineWorkspace() - Pure definition of a workspace schema.
+ *
+ * This creates a reusable definition that can be passed to createWorkspace().
+ * Optional for composability; you can also pass the config directly to createWorkspace().
  *
  * @example
  * ```typescript
- * import { defineWorkspace, defineTable, defineKv } from 'epicenter/static';
- * import { type } from 'arktype';
+ * import { defineWorkspace, createWorkspace, defineTable, defineKv } from 'epicenter/static';
  *
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string' }))
  *   .migrate((row) => row);
  *
- * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .migrate((v) => v);
+ * // Option 1: Reusable definition
+ * const workspace = defineWorkspace({ id: 'my-app', tables: { posts } });
+ * const client = createWorkspace(workspace);
  *
- * const workspace = defineWorkspace({
- *   id: 'my-app',
- *   tables: { posts },
- *   kv: { theme },
- * });
- *
- * // Synchronous creation
- * const client = workspace.create();
- *
- * // With capabilities
- * const client = workspace.create({ sqlite, persistence });
- * await client.capabilities.persistence.whenSynced;
+ * // Option 2: Direct (skip defineWorkspace)
+ * const client = createWorkspace({ id: 'my-app', tables: { posts } });
  * ```
  */
 
-import * as Y from 'yjs';
-import type { Lifecycle } from '../core/lifecycle.js';
-import { createKv } from './create-kv.js';
-import { createTables } from './create-tables.js';
 import type {
-	CapabilityFactory,
-	CapabilityMap,
-	InferCapabilityExports,
 	KvDefinitions,
 	TableDefinitions,
-	WorkspaceClient,
 	WorkspaceDefinition,
 } from './types.js';
 
 /**
- * Defines a workspace with tables, KV stores, and optional capabilities.
+ * Defines a workspace with tables and KV stores.
  *
- * The returned workspace definition can be used to create workspace clients
- * with `.create()`.
+ * Returns a pure definition object. Use createWorkspace() to instantiate.
  *
  * @param config - Workspace configuration
  * @param config.id - Workspace identifier (used as Y.Doc guid)
  * @param config.tables - Optional map of table definitions
  * @param config.kv - Optional map of KV definitions
- * @returns WorkspaceDefinition with `.create()` method
+ * @returns WorkspaceDefinition (pass to createWorkspace)
  */
 export function defineWorkspace<
 	TId extends string,
@@ -72,58 +55,8 @@ export function defineWorkspace<
 		id,
 		tableDefinitions,
 		kvDefinitions,
-
-		create<TCapabilities extends CapabilityMap = Record<string, never>>(
-			capabilities?: TCapabilities,
-		): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
-			// Create Y.Doc with workspace ID as GUID
-			const ydoc = new Y.Doc({
-				guid: id,
-			});
-
-			// Create tables and KV helpers
-			const tables = createTables(ydoc, tableDefinitions);
-			const kv = createKv(ydoc, kvDefinitions);
-
-			// Initialize capabilities (each returns Lifecycle via defineExports)
-			const capabilityExports = Object.fromEntries(
-				Object.entries(capabilities ?? {}).map(([name, factory]) => [
-					name,
-					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
-						ydoc,
-						workspaceId: id,
-						tables,
-						kv,
-					}),
-				]),
-			) as Record<string, Lifecycle>;
-
-			// Destroy function - capabilities guarantee destroy() exists via Lifecycle
-			async function destroy(): Promise<void> {
-				await Promise.all(
-					Object.values(capabilityExports).map((c) => c.destroy()),
-				);
-				ydoc.destroy();
-			}
-
-			return {
-				id,
-				ydoc,
-				tables,
-				kv,
-				capabilities:
-					capabilityExports as InferCapabilityExports<TCapabilities>,
-				destroy,
-				[Symbol.asyncDispose]: destroy,
-			};
-		},
 	};
 }
 
 // Re-export types for convenience
-export type {
-	CapabilityFactory,
-	CapabilityMap,
-	WorkspaceClient,
-	WorkspaceDefinition,
-};
+export type { WorkspaceDefinition };

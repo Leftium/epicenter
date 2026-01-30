@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * import { defineWorkspace, defineTable, defineKv } from 'epicenter/static';
+ * import { createWorkspace, defineTable, defineKv } from 'epicenter/static';
  * import { type } from 'arktype';
  *
  * // Define schemas with versioning
@@ -22,19 +22,20 @@
  *   .version(type({ mode: "'light' | 'dark'" }))
  *   .migrate((v) => v);
  *
- * // Define workspace
- * const workspace = defineWorkspace({
+ * // Create client (synchronous, directly usable)
+ * const client = createWorkspace({
  *   id: 'my-app',
  *   tables: { posts },
  *   kv: { theme },
  * });
  *
- * // Create client (synchronous)
- * const client = workspace.create();
- *
  * // Use tables and KV
  * client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
  * client.kv.set('theme', { mode: 'dark' });
+ *
+ * // Or add extensions
+ * const clientWithExt = createWorkspace({ id: 'my-app', tables: { posts } })
+ *   .withExtensions({ sqlite, persistence });
  *
  * // Cleanup
  * await client.destroy();
@@ -50,6 +51,12 @@
 export { defineKv } from './define-kv.js';
 export { defineTable } from './define-table.js';
 export { defineWorkspace } from './define-workspace.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workspace Creation
+// ════════════════════════════════════════════════════════════════════════════
+
+export { createWorkspace } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Lower-Level APIs (Bring Your Own Y.Doc)
@@ -99,6 +106,7 @@ export type {
 	// Result types - building blocks
 	ValidRowResult,
 	WorkspaceClient,
+	WorkspaceClientBuilder,
 	// Workspace types
 	WorkspaceDefinition,
 } from './types.js';

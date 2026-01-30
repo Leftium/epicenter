@@ -9,6 +9,7 @@
  */
 
 import type * as Y from 'yjs';
+import { FieldId, RowId } from '../../cell/keys.js';
 import { YKeyValueLww } from '../../core/utils/y-keyvalue-lww.js';
 import { cellKey, validateId } from '../keys.js';
 import type {
@@ -31,7 +32,7 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 			rowId: string,
 			fieldId: string,
 		): CellValue | undefined {
-			return ykv.get(cellKey(tableId, rowId, fieldId));
+			return ykv.get(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
 		set(
@@ -43,15 +44,15 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 			validateId(tableId, 'tableId');
 			validateId(rowId, 'rowId');
 			validateId(fieldId, 'fieldId');
-			ykv.set(cellKey(tableId, rowId, fieldId), value);
+			ykv.set(cellKey(tableId, RowId(rowId), FieldId(fieldId)), value);
 		},
 
 		delete(tableId: string, rowId: string, fieldId: string): void {
-			ykv.delete(cellKey(tableId, rowId, fieldId));
+			ykv.delete(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
 		has(tableId: string, rowId: string, fieldId: string): boolean {
-			return ykv.has(cellKey(tableId, rowId, fieldId));
+			return ykv.has(cellKey(tableId, RowId(rowId), FieldId(fieldId)));
 		},
 
 		getByRow(
@@ -61,7 +62,7 @@ export function createCellsStore(ykv: YKeyValueLww<CellValue>): CellsStore {
 		): Map<string, CellValue> {
 			const result = new Map<string, CellValue>();
 			for (const fieldId of fieldIds) {
-				const key = cellKey(tableId, rowId, fieldId);
+				const key = cellKey(tableId, RowId(rowId), FieldId(fieldId));
 				const value = ykv.get(key);
 				if (value !== undefined) {
 					result.set(fieldId, value);

@@ -63,7 +63,7 @@
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table({ name: 'Posts', fields: { id: id(), title: text() } }),
+ *     posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }),
  *   },
  *   kv: {},
  * });
@@ -125,7 +125,7 @@ import type {
 	WorkspaceDoc as WorkspaceDocSync,
 } from '../docs/workspace-doc';
 import type { ExtensionFactoryMap, InferExtensionExports } from '../extension';
-import type { KvDefinitionMap, TableDefinitionMap } from '../schema';
+import type { KvField, TableDefinition } from '../schema';
 import {
 	type ClientBuilder as ClientBuilderSync,
 	createClient as createClientSync,
@@ -178,14 +178,15 @@ import {
  * @see {@link ../docs/workspace-doc.ts} - Where `WorkspaceDocSync` is defined
  */
 export type WorkspaceDoc<
-	TTableDefinitionMap extends TableDefinitionMap = TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap = KvDefinitionMap,
+	TTableDefinitions extends
+		readonly TableDefinition[] = readonly TableDefinition[],
+	TKvFields extends readonly KvField[] = readonly KvField[],
 	TExtensionExports extends Record<string, ExtensionExports> = Record<
 		string,
 		ExtensionExports
 	>,
 > = Omit<
-	WorkspaceDocSync<TTableDefinitionMap, TKvDefinitionMap, TExtensionExports>,
+	WorkspaceDocSync<TTableDefinitions, TKvFields, TExtensionExports>,
 	'whenSynced'
 >;
 
@@ -223,8 +224,8 @@ export type WorkspaceDoc<
  * This matches the Node.js philosophy of awaiting initialization before returning.
  */
 export type ClientBuilder<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 > = {
 	/**
 	 * Attach a workspace definition for static definition mode.
@@ -234,7 +235,7 @@ export type ClientBuilder<
 	 *
 	 * @example
 	 * ```typescript
-	 * const definition = defineWorkspace({ tables: {...}, kv: {} });
+	 * const definition = defineWorkspace({ tables: [...], kv: [...] });
 	 * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
 	 *
 	 * const client = await createClient(head)
@@ -245,8 +246,8 @@ export type ClientBuilder<
 	 * ```
 	 */
 	withDefinition<
-		TDefinitionTables extends TableDefinitionMap,
-		TDefinitionKv extends KvDefinitionMap,
+		TDefinitionTables extends readonly TableDefinition[],
+		TDefinitionKv extends readonly KvField[],
 	>(
 		definition: WorkspaceDefinition<TDefinitionTables, TDefinitionKv>,
 	): ClientBuilder<TDefinitionTables, TDefinitionKv>;
@@ -262,7 +263,7 @@ export type ClientBuilder<
 	 * @example
 	 * ```typescript
 	 * // With extensions
-	 * const definition = defineWorkspace({ tables: {...}, kv: {} });
+	 * const definition = defineWorkspace({ tables: [...], kv: [...] });
 	 * const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
 	 *
 	 * const client = await createClient(head)
@@ -283,15 +284,15 @@ export type ClientBuilder<
 	 */
 	withExtensions<
 		TExtensionFactories extends ExtensionFactoryMap<
-			TTableDefinitionMap,
-			TKvDefinitionMap
+			TTableDefinitions,
+			TKvFields
 		>,
 	>(
 		extensions: TExtensionFactories,
 	): Promise<
 		WorkspaceDoc<
-			TTableDefinitionMap,
-			TKvDefinitionMap,
+			TTableDefinitions,
+			TKvFields,
 			InferExtensionExports<TExtensionFactories>
 		>
 	>;
@@ -334,7 +335,7 @@ export type ClientBuilder<
  *
  * ```typescript
  * const definition = defineWorkspace({
- *   tables: { recordings: table({ name: 'Recordings', fields: { id: id(), title: text() } }) },
+ *   tables: { recordings: table('recordings', { name: 'Recordings', fields: [id(), text('title')] }) },
  *   kv: {},
  * });
  *
@@ -381,7 +382,7 @@ export type ClientBuilder<
  */
 export function createClient(
 	head: HeadDoc,
-): ClientBuilder<TableDefinitionMap, KvDefinitionMap> {
+): ClientBuilder<readonly TableDefinition[], readonly KvField[]> {
 	// Get the sync builder from workspace.ts
 	const syncBuilder = createClientSync(head);
 
@@ -393,15 +394,15 @@ export function createClient(
  * Internal: Create an async ClientBuilder that wraps a sync ClientBuilder.
  */
 function createAsyncClientBuilder<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	syncBuilder: ClientBuilderSync<TTableDefinitionMap, TKvDefinitionMap>,
-): ClientBuilder<TTableDefinitionMap, TKvDefinitionMap> {
+	syncBuilder: ClientBuilderSync<TTableDefinitions, TKvFields>,
+): ClientBuilder<TTableDefinitions, TKvFields> {
 	return {
 		withDefinition<
-			TDefinitionTables extends TableDefinitionMap,
-			TDefinitionKv extends KvDefinitionMap,
+			TDefinitionTables extends readonly TableDefinition[],
+			TDefinitionKv extends readonly KvField[],
 		>(
 			definition: WorkspaceDefinition<TDefinitionTables, TDefinitionKv>,
 		): ClientBuilder<TDefinitionTables, TDefinitionKv> {
@@ -410,16 +411,13 @@ function createAsyncClientBuilder<
 		},
 
 		async withExtensions<
-			TExtFact extends ExtensionFactoryMap<
-				TTableDefinitionMap,
-				TKvDefinitionMap
-			>,
+			TExtFact extends ExtensionFactoryMap<TTableDefinitions, TKvFields>,
 		>(
 			extensions: TExtFact,
 		): Promise<
 			WorkspaceDoc<
-				TTableDefinitionMap,
-				TKvDefinitionMap,
+				TTableDefinitions,
+				TKvFields,
 				InferExtensionExports<TExtFact>
 			>
 		> {
@@ -445,14 +443,14 @@ function createAsyncClientBuilder<
  *
  * const definition = defineWorkspace({
  *   tables: {
- *     posts: table({
+ *     posts: table('posts', {
  *       name: 'Posts',
- *       fields: {
- *         id: id(),           // Primary key (always required)
- *         title: text(),      // NOT NULL text
- *         published: boolean({ default: false }),
- *         createdAt: date(),  // Temporal-aware date with timezone
- *       },
+ *       fields: [
+ *         id(),           // Primary key (always required)
+ *         text('title'),  // NOT NULL text
+ *         boolean('published', { default: false }),
+ *         date('createdAt'),  // Temporal-aware date with timezone
+ *       ],
  *     }),
  *   },
  *   kv: {},

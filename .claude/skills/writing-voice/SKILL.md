@@ -25,6 +25,7 @@ Patterns that scream "AI wrote this":
 - **Marketing words**: "game-changing", "revolutionary", "unleash", "empower"
 - **Structured sections**: "Key Features:", "Benefits:", "Why This Matters:"
 - **Vague superlatives**: "incredibly powerful", "seamlessly integrates"
+- **Dramatic hyperbole**: "feels like an eternity", "pain point", "excruciating" — use facts instead
 - **AI adjectives**: "perfectly", "effortlessly", "beautifully", "elegantly"
 - **Space-hyphen-space**: "The code works - the tests pass"
 - **Overusing fragments**: "Every. Single. Time." (once is emphasis, twice is a pattern)

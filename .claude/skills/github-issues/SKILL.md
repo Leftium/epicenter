@@ -12,6 +12,8 @@ description: GitHub issue comment guidelines for community interaction. Use when
 - **Restating what's obvious**: If someone asked a question, just answer it. Don't recap what they said.
 - **Corporate announcements**: "We are pleased to announce..." — just say what changed.
 
+Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+
 ## Opening Pattern
 
 Always start with a personal greeting using the user's GitHub handle:

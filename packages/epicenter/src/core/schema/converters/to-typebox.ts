@@ -22,7 +22,6 @@ import type {
 	BooleanField,
 	DateField,
 	Field,
-	FieldMap,
 	IdField,
 	IntegerField,
 	JsonField,
@@ -91,20 +90,20 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * Use this when you need to validate entire row objects. The resulting schema
  * can be compiled to a JIT validator for high-performance validation.
  *
- * @param fields - The table schema containing all field definitions
+ * @param fields - Array of field definitions (each field has an `id` property)
  * @returns A TypeBox TObject schema representing the table structure
  *
  * @example
  * ```typescript
  * import { Compile } from 'typebox/compile';
  *
- * const schema = {
- *   id: id(),
- *   title: text(),
- *   count: integer({ nullable: true }),
- * };
+ * const fields = [
+ *   id(),
+ *   text('title'),
+ *   integer('count', { nullable: true }),
+ * ];
  *
- * const typeboxSchema = fieldsToTypebox(schema);
+ * const typeboxSchema = fieldsToTypebox(fields);
  * const validator = Compile(typeboxSchema);
  *
  * validator.Check({ id: '123', title: 'Test', count: 42 }); // true
@@ -112,13 +111,13 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * validator.Check({ id: '123', title: 'Test' }); // false (missing count)
  * ```
  */
-export function fieldsToTypebox<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
+export function fieldsToTypebox<TFields extends readonly Field[]>(
+	fields: TFields,
 ): TObject {
 	const properties: Record<string, TSchema> = {};
 
-	for (const [fieldName, fieldDefinition] of Object.entries(fields)) {
-		properties[fieldName] = fieldToTypebox(fieldDefinition);
+	for (const field of fields) {
+		properties[field.id] = fieldToTypebox(field);
 	}
 
 	return Type.Object(properties);

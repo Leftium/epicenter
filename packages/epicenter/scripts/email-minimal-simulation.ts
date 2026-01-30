@@ -77,20 +77,23 @@ console.log('');
 
 // Minimal email definition
 const emailDefinition = defineWorkspace({
-	tables: {
-		emails: table({
+	name: 'Email Minimal Simulation',
+	description: '',
+	icon: null,
+	tables: [
+		table('emails', {
 			name: 'Emails',
 			description: 'Email messages for storage simulation',
-			fields: {
-				id: id(),
-				sender: text(),
-				subject: text(),
-				received_at: text(),
-				read: integer({ default: 0 }),
-			},
+			fields: [
+				id(),
+				text('sender'),
+				text('subject'),
+				text('received_at'),
+				integer('read', { default: 0 }),
+			] as const,
 		}),
-	},
-	kv: {},
+	],
+	kv: [],
 });
 
 console.log('Creating client...');

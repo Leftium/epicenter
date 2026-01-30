@@ -73,7 +73,7 @@ function generateEmail(index: number) {
 		received_at: timestamp,
 		read: index % 3 === 0 ? 1 : 0,
 		starred: index % 10 === 0 ? 1 : 0,
-		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4],
+		folder: ['inbox', 'archive', 'sent', 'drafts'][index % 4] ?? 'inbox',
 	};
 }
 
@@ -162,24 +162,27 @@ console.log('--- YJS Test ---');
 const yjsStart = performance.now();
 
 const emailDefinition = defineWorkspace({
-	tables: {
-		emails: table({
+	name: 'YJS vs SQLite Comparison',
+	description: '',
+	icon: null,
+	tables: [
+		table('emails', {
 			name: 'Emails',
 			description: 'Email messages for comparison test',
-			fields: {
-				id: id(),
-				sender: text(),
-				recipient: text(),
-				subject: text(),
-				body: text(),
-				received_at: text(),
-				read: integer({ default: 0 }),
-				starred: integer({ default: 0 }),
-				folder: text({ default: 'inbox' }),
-			},
+			fields: [
+				id(),
+				text('sender'),
+				text('recipient'),
+				text('subject'),
+				text('body'),
+				text('received_at'),
+				integer('read', { default: 0 }),
+				integer('starred', { default: 0 }),
+				text('folder', { default: 'inbox' }),
+			] as const,
 		}),
-	},
-	kv: {},
+	],
+	kv: [],
 });
 
 const head = createHeadDoc({ workspaceId: 'emails-compare', providers: {} });

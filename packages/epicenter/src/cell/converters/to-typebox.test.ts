@@ -1,38 +1,39 @@
 import { describe, expect, test } from 'bun:test';
+import { Type } from 'typebox';
 import { Compile } from 'typebox/compile';
 import { Value } from 'typebox/value';
-import type { SchemaFieldDefinition, SchemaTableDefinition } from '../types';
+import {
+	boolean,
+	date,
+	id,
+	integer,
+	json,
+	real,
+	richtext,
+	select,
+	table,
+	tags,
+	text,
+} from '../../core/schema/fields/factories';
 import { schemaFieldToTypebox, schemaTableToTypebox } from './to-typebox';
 
 describe('schemaFieldToTypebox', () => {
 	describe('text', () => {
 		test('accepts strings', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Title',
-				type: 'text',
-				order: 1,
-			};
+			const field = text('title', { name: 'Title' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 'hello')).toBe(true);
 			expect(Value.Check(schema, '')).toBe(true);
 		});
 
 		test('accepts null (all fields nullable)', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Title',
-				type: 'text',
-				order: 1,
-			};
+			const field = text('title', { name: 'Title' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
 
 		test('rejects non-strings', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Title',
-				type: 'text',
-				order: 1,
-			};
+			const field = text('title', { name: 'Title' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 123)).toBe(false);
 			expect(Value.Check(schema, {})).toBe(false);
@@ -41,11 +42,7 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('richtext', () => {
 		test('accepts strings and null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Content',
-				type: 'richtext',
-				order: 1,
-			};
+			const field = richtext('content', { name: 'Content' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 'content')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -54,11 +51,7 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('integer', () => {
 		test('accepts whole numbers', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Count',
-				type: 'integer',
-				order: 1,
-			};
+			const field = integer('count', { name: 'Count' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 0)).toBe(true);
 			expect(Value.Check(schema, 42)).toBe(true);
@@ -66,31 +59,19 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Count',
-				type: 'integer',
-				order: 1,
-			};
+			const field = integer('count', { name: 'Count' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
 
 		test('rejects floats', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Count',
-				type: 'integer',
-				order: 1,
-			};
+			const field = integer('count', { name: 'Count' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 42.5)).toBe(false);
 		});
 
 		test('rejects non-numbers', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Count',
-				type: 'integer',
-				order: 1,
-			};
+			const field = integer('count', { name: 'Count' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, '42')).toBe(false);
 		});
@@ -98,11 +79,7 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('real', () => {
 		test('accepts any number', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Price',
-				type: 'real',
-				order: 1,
-			};
+			const field = real('price', { name: 'Price' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 0)).toBe(true);
 			expect(Value.Check(schema, 3.14)).toBe(true);
@@ -110,11 +87,7 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Price',
-				type: 'real',
-				order: 1,
-			};
+			const field = real('price', { name: 'Price' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
@@ -122,32 +95,20 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('boolean', () => {
 		test('accepts true and false', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Active',
-				type: 'boolean',
-				order: 1,
-			};
+			const field = boolean('active', { name: 'Active' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, true)).toBe(true);
 			expect(Value.Check(schema, false)).toBe(true);
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Active',
-				type: 'boolean',
-				order: 1,
-			};
+			const field = boolean('active', { name: 'Active' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
 
 		test('rejects truthy/falsy values', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Active',
-				type: 'boolean',
-				order: 1,
-			};
+			const field = boolean('active', { name: 'Active' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 0)).toBe(false);
 			expect(Value.Check(schema, 1)).toBe(false);
@@ -157,11 +118,7 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('date', () => {
 		test('accepts any string (no strict validation)', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Created',
-				type: 'date',
-				order: 1,
-			};
+			const field = date('created', { name: 'Created' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, '2024-01-01')).toBe(true);
 			expect(Value.Check(schema, '2024-01-01T12:00:00Z')).toBe(true);
@@ -169,21 +126,13 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Created',
-				type: 'date',
-				order: 1,
-			};
+			const field = date('created', { name: 'Created' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
 
 		test('rejects non-strings', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Created',
-				type: 'date',
-				order: 1,
-			};
+			const field = date('created', { name: 'Created' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 1704067200000)).toBe(false);
 		});
@@ -191,11 +140,8 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('datetime', () => {
 		test('produces string schema (same as date)', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Updated',
-				type: 'datetime',
-				order: 1,
-			};
+			// Note: datetime uses date factory since they're equivalent at runtime
+			const field = date('updated', { name: 'Updated' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, '2024-01-01T12:00:00Z')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
@@ -204,12 +150,10 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('select', () => {
 		test('accepts defined options', () => {
-			const field: SchemaFieldDefinition = {
+			const field = select('status', {
 				name: 'Status',
-				type: 'select',
-				order: 1,
-				options: ['draft', 'published', 'archived'],
-			};
+				options: ['draft', 'published', 'archived'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 'draft')).toBe(true);
 			expect(Value.Check(schema, 'published')).toBe(true);
@@ -217,47 +161,31 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('rejects undefined options', () => {
-			const field: SchemaFieldDefinition = {
+			const field = select('status', {
 				name: 'Status',
-				type: 'select',
-				order: 1,
-				options: ['draft', 'published'],
-			};
+				options: ['draft', 'published'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, 'pending')).toBe(false);
 			expect(Value.Check(schema, 'DRAFT')).toBe(false);
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
+			const field = select('status', {
 				name: 'Status',
-				type: 'select',
-				order: 1,
-				options: ['draft', 'published'],
-			};
+				options: ['draft', 'published'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
-		});
-
-		test('falls back to string if no options', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Status',
-				type: 'select',
-				order: 1,
-			};
-			const schema = schemaFieldToTypebox(field);
-			expect(Value.Check(schema, 'anything')).toBe(true);
 		});
 	});
 
 	describe('tags', () => {
 		test('accepts array of defined options', () => {
-			const field: SchemaFieldDefinition = {
+			const field = tags('tags', {
 				name: 'Tags',
-				type: 'tags',
-				order: 1,
-				options: ['tech', 'personal', 'work'],
-			};
+				options: ['tech', 'personal', 'work'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, ['tech'])).toBe(true);
 			expect(Value.Check(schema, ['tech', 'work'])).toBe(true);
@@ -265,34 +193,26 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('rejects invalid options', () => {
-			const field: SchemaFieldDefinition = {
+			const field = tags('tags', {
 				name: 'Tags',
-				type: 'tags',
-				order: 1,
-				options: ['tech', 'personal'],
-			};
+				options: ['tech', 'personal'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, ['invalid'])).toBe(false);
 			expect(Value.Check(schema, ['tech', 'invalid'])).toBe(false);
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
+			const field = tags('tags', {
 				name: 'Tags',
-				type: 'tags',
-				order: 1,
-				options: ['tech'],
-			};
+				options: ['tech'] as const,
+			});
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
 
 		test('falls back to string array if no options', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Tags',
-				type: 'tags',
-				order: 1,
-			};
+			const field = tags('tags', { name: 'Tags' });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, ['anything', 'goes'])).toBe(true);
 		});
@@ -300,11 +220,7 @@ describe('schemaFieldToTypebox', () => {
 
 	describe('json', () => {
 		test('accepts any value (Type.Unknown)', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Data',
-				type: 'json',
-				order: 1,
-			};
+			const field = json('data', { name: 'Data', schema: Type.Unknown() });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, { key: 'value' })).toBe(true);
 			expect(Value.Check(schema, [1, 2, 3])).toBe(true);
@@ -313,11 +229,7 @@ describe('schemaFieldToTypebox', () => {
 		});
 
 		test('accepts null', () => {
-			const field: SchemaFieldDefinition = {
-				name: 'Data',
-				type: 'json',
-				order: 1,
-			};
+			const field = json('data', { name: 'Data', schema: Type.Unknown() });
 			const schema = schemaFieldToTypebox(field);
 			expect(Value.Check(schema, null)).toBe(true);
 		});
@@ -326,54 +238,55 @@ describe('schemaFieldToTypebox', () => {
 
 describe('schemaTableToTypebox', () => {
 	test('creates object schema from table definition', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+			] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 		expect(schema.type).toBe('object');
 		expect(schema.properties).toBeDefined();
 	});
 
 	test('validates rows with correct types', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+			] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 
 		expect(Value.Check(schema, { title: 'Hello', views: 100 })).toBe(true);
 		expect(Value.Check(schema, { title: 'Hello', views: null })).toBe(true);
 	});
 
 	test('allows additional properties (advisory behavior)', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+			fields: [id(), text('title', { name: 'Title' })] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 
 		expect(Value.Check(schema, { title: 'Hello', extra: 'field' })).toBe(true);
 		expect(Value.Check(schema, { title: 'Hello', another: 123 })).toBe(true);
 	});
 
 	test('rejects invalid field values', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+			] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 
 		expect(Value.Check(schema, { title: 123, views: 100 })).toBe(false);
 		expect(Value.Check(schema, { title: 'Hello', views: 'not a number' })).toBe(
@@ -382,19 +295,18 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('can be compiled to JIT validator', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				status: {
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				select('status', {
 					name: 'Status',
-					type: 'select',
-					order: 2,
-					options: ['draft', 'published'],
-				},
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+					options: ['draft', 'published'] as const,
+				}),
+			] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 		const validator = Compile(schema);
 
 		expect(validator.Check({ title: 'Hello', status: 'draft' })).toBe(true);
@@ -402,13 +314,11 @@ describe('schemaTableToTypebox', () => {
 	});
 
 	test('compiled validator reports errors', () => {
-		const table: SchemaTableDefinition = {
+		const tableSchema = table('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-			},
-		};
-		const schema = schemaTableToTypebox(table);
+			fields: [id(), text('title', { name: 'Title' })] as const,
+		});
+		const schema = schemaTableToTypebox(tableSchema);
 		const validator = Compile(schema);
 		const errors = [...validator.Errors({ title: 123 })];
 

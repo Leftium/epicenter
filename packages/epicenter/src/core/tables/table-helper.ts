@@ -1,8 +1,9 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import * as Y from 'yjs';
-import type { FieldMap, PartialRow, Row, TableDefinitionMap } from '../schema';
+import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
+import type { TableById } from '../schema/fields/types';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -45,8 +46,15 @@ export type InvalidRowResult = {
 	row: unknown;
 };
 
-/** A row that was not found. */
-export type NotFoundResult = { status: 'not_found'; id: string };
+/**
+ * A row that was not found.
+ * Includes `row: undefined` so row can always be destructured regardless of status.
+ */
+export type NotFoundResult = {
+	status: 'not_found';
+	id: string;
+	row: undefined;
+};
 
 /**
  * Result of validating a row.
@@ -138,34 +146,54 @@ export type RowAction = 'add' | 'update' | 'delete';
 export type RowChanges = Map<string, RowAction>;
 
 /**
- * Creates a type-safe collection of table helpers for all tables in a definition.
+ * Creates a type-safe collection of table helpers for all tables in an array.
+ *
+ * Each table's `.id` is used as the key in the returned helper map.
+ *
+ * @param ydoc - The Y.Doc to store table data in
+ * @param tableDefinitions - Array of TableDefinition objects
+ *
+ * @example
+ * ```typescript
+ * const helpers = createTableHelpers({
+ *   ydoc,
+ *   tableDefinitions: [
+ *     table('posts', { name: 'Posts', fields: [id(), text('title')] }),
+ *     table('users', { name: 'Users', fields: [id(), text('name')] }),
+ *   ],
+ * });
+ *
+ * helpers.posts.upsert({ id: '1', title: 'Hello' });
+ * helpers.users.getAll();
+ * ```
  */
 export function createTableHelpers<
-	TTableDefinitionMap extends TableDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
 >({
 	ydoc,
 	tableDefinitions,
 }: {
 	ydoc: Y.Doc;
-	tableDefinitions: TTableDefinitionMap;
-}) {
+	tableDefinitions: TTableDefinitions;
+}): {
+	[K in TTableDefinitions[number]['id']]: TableHelper<
+		TableById<TTableDefinitions, K>['fields']
+	>;
+} {
 	const ytables: TablesMap = ydoc.getMap('tables');
 
 	return Object.fromEntries(
-		Object.entries(tableDefinitions).map(([tableName, tableDefinition]) => {
-			return [
-				tableName,
-				createTableHelper({
-					ydoc,
-					tableName,
-					ytables,
-					fields: tableDefinition.fields,
-				}),
-			];
-		}),
+		tableDefinitions.map((tableDefinition) => [
+			tableDefinition.id,
+			createTableHelper({
+				ydoc,
+				ytables,
+				tableDefinition,
+			}),
+		]),
 	) as {
-		[TTableName in keyof TTableDefinitionMap]: TableHelper<
-			TTableDefinitionMap[TTableName]['fields']
+		[K in TTableDefinitions[number]['id']]: TableHelper<
+			TableById<TTableDefinitions, K>['fields']
 		>;
 	};
 }
@@ -182,18 +210,17 @@ export function createTableHelpers<
  * User A edits title, User B edits views → After sync: both changes preserved
  * ```
  */
-function createTableHelper<TFieldMap extends FieldMap>({
+export function createTableHelper<TTableDef extends TableDefinition>({
 	ydoc,
-	tableName,
 	ytables,
-	fields,
+	tableDefinition,
 }: {
 	ydoc: Y.Doc;
-	tableName: string;
 	ytables: TablesMap;
-	fields: TFieldMap;
+	tableDefinition: TTableDef;
 }) {
-	type TRow = Row<TFieldMap>;
+	const { id: tableName, fields } = tableDefinition;
+	type TRow = Row<TTableDef['fields']> & { id: string };
 
 	const typeboxSchema = fieldsToTypebox(fields);
 	const rowValidator = Compile(typeboxSchema);
@@ -307,7 +334,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 	};
 
 	return {
-		update(partialRow: PartialRow<TFieldMap>): UpdateResult {
+		update(partialRow: PartialRow<TTableDef['fields']>): UpdateResult {
 			const rowMap = getRow(partialRow.id);
 			if (!rowMap) return { status: 'not_found_locally' };
 
@@ -340,7 +367,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 			});
 		},
 
-		updateMany(rows: PartialRow<TFieldMap>[]): UpdateManyResult {
+		updateMany(rows: PartialRow<TTableDef['fields']>[]): UpdateManyResult {
 			const applied: string[] = [];
 			const notFoundLocally: string[] = [];
 
@@ -367,7 +394,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 
 		get(id: string): GetResult<TRow> {
 			const rowMap = getRow(id);
-			if (!rowMap) return { status: 'not_found', id };
+			if (!rowMap) return { status: 'not_found', id, row: undefined };
 			return validateRow(id, reconstructRow(rowMap));
 		},
 
@@ -571,7 +598,7 @@ function createTableHelper<TFieldMap extends FieldMap>({
 			let tableMap = getExistingTableMap();
 
 			const handler = (
-				events: Y.YEvent<unknown>[],
+				events: Y.YEvent<Y.Map<unknown>>[],
 				transaction: Y.Transaction,
 			) => {
 				const changedIds = new Set<string>();
@@ -665,8 +692,8 @@ function createTableHelper<TFieldMap extends FieldMap>({
 	};
 }
 
-export type TableHelper<TFieldMap extends FieldMap> = ReturnType<
-	typeof createTableHelper<TFieldMap>
+export type TableHelper<TFields extends readonly Field[]> = ReturnType<
+	typeof createTableHelper<TableDefinition<TFields>>
 >;
 
 /**
@@ -705,6 +732,8 @@ export type UntypedTableHelper = {
 		callback: (changedIds: ChangedRowIds, transaction: Y.Transaction) => void,
 	): () => void;
 	inferRow: { id: string } & Record<string, unknown>;
+	/** Access the underlying Y.Map for advanced use cases */
+	readonly raw: TableMap;
 };
 
 /**
@@ -823,7 +852,7 @@ export function createUntypedTableHelper({
 
 		get(id: string): GetResult<TRow> {
 			const rowMap = getRow(id);
-			if (!rowMap) return { status: 'not_found', id };
+			if (!rowMap) return { status: 'not_found', id, row: undefined };
 			const row = reconstructRow(rowMap);
 			return { status: 'valid', row: row as TRow };
 		},
@@ -962,7 +991,7 @@ export function createUntypedTableHelper({
 			let tableMap = getExistingTableMap();
 
 			const handler = (
-				events: Y.YEvent<unknown>[],
+				events: Y.YEvent<Y.Map<unknown>>[],
 				transaction: Y.Transaction,
 			) => {
 				const changedIds = new Set<string>();

@@ -15,7 +15,6 @@ import type {
 	BooleanField,
 	DateField,
 	Field,
-	FieldMap,
 	IdField,
 	IntegerField,
 	JsonField,
@@ -111,17 +110,14 @@ export type FieldToYjsArktype<C extends Field> = C extends IdField
  * }
  * ```
  */
-export function tableToYjsArktype<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
-): ObjectType<Row<TFieldMap>> {
+export function tableToYjsArktype<TFields extends readonly Field[]>(
+	fields: TFields,
+): ObjectType<Row<TFields>> {
 	return type(
 		Object.fromEntries(
-			Object.entries(fields).map(([fieldName, fieldDefinition]) => [
-				fieldName,
-				fieldToYjsArktype(fieldDefinition),
-			]),
+			fields.map((field) => [field.id, fieldToYjsArktype(field)]),
 		),
-	) as ObjectType<Row<TFieldMap>>;
+	) as ObjectType<Row<TFields>>;
 }
 
 /**

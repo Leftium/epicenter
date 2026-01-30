@@ -23,8 +23,15 @@ export type InvalidRowResult = {
 	row: unknown;
 };
 
-/** A row that was not found. */
-export type NotFoundResult = { status: 'not_found'; id: string };
+/**
+ * A row that was not found.
+ * Includes `row: undefined` so row can always be destructured regardless of status.
+ */
+export type NotFoundResult = {
+	status: 'not_found';
+	id: string;
+	row: undefined;
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Composed Types
@@ -59,7 +66,7 @@ export type KvGetResult<TValue> =
 			errors: readonly StandardSchemaV1.Issue[];
 			value: unknown;
 	  }
-	| { status: 'not_found' };
+	| { status: 'not_found'; value: undefined };
 
 /** Change event for KV observation */
 export type KvChange<TValue> =

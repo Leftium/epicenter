@@ -16,20 +16,56 @@
  * @packageDocumentation
  */
 
+import type { Icon } from '../core/schema/fields/types';
+import { isIcon } from '../core/schema/fields/types';
 import type {
 	SchemaFieldDefinition,
 	SchemaTableDefinition,
-	WorkspaceSchema,
+	WorkspaceDefinition,
 } from './types';
+
+/**
+ * Get a field by its ID from a table.
+ *
+ * @param table - The table definition to search
+ * @param fieldId - The ID of the field to find
+ * @returns The field definition if found, undefined otherwise
+ */
+export function getFieldById(
+	table: SchemaTableDefinition,
+	fieldId: string,
+): SchemaFieldDefinition | undefined {
+	return table.fields.find((f) => f.id === fieldId);
+}
+
+/**
+ * Get all field IDs from a table.
+ *
+ * @param table - The table definition
+ * @returns Array of field IDs in order
+ */
+export function getFieldIds(table: SchemaTableDefinition): string[] {
+	return table.fields.map((f) => f.id);
+}
+
+/**
+ * Normalize icon input to Icon | null.
+ */
+function normalizeIcon(icon: unknown): Icon | null {
+	if (icon === undefined || icon === null) return null;
+	if (typeof icon !== 'string') return null;
+	if (isIcon(icon)) return icon;
+	return `emoji:${icon}` as Icon;
+}
 
 /**
  * Parse a schema from JSON string.
  *
  * @param json - JSON string containing schema data
- * @returns Parsed WorkspaceSchema
+ * @returns Parsed WorkspaceDefinition
  * @throws Error if JSON is invalid or schema structure is malformed
  */
-export function parseSchema(json: string): WorkspaceSchema {
+export function parseSchema(json: string): WorkspaceDefinition {
 	const data = JSON.parse(json) as unknown;
 
 	if (!data || typeof data !== 'object') {
@@ -64,9 +100,15 @@ export function parseSchema(json: string): WorkspaceSchema {
 			);
 		}
 
-		// Validate field structure
-		const fields = tableObj.fields as Record<string, unknown>;
-		for (const [fieldId, field] of Object.entries(fields)) {
+		// Validate field structure (supports both Record and Array input)
+		const fields = tableObj.fields;
+		const fieldEntries: Array<[string, unknown]> = Array.isArray(fields)
+			? (fields as Array<{ id?: string } & Record<string, unknown>>).map(
+					(f, i) => [f.id ?? `field_${i}`, f],
+				)
+			: Object.entries(fields as Record<string, unknown>);
+
+		for (const [fieldId, field] of fieldEntries) {
 			if (!field || typeof field !== 'object') {
 				throw new Error(`Field "${tableId}.${fieldId}" must be an object`);
 			}
@@ -82,26 +124,60 @@ export function parseSchema(json: string): WorkspaceSchema {
 					`Field "${tableId}.${fieldId}" must have a "type" string property`,
 				);
 			}
-			if (typeof fieldObj.order !== 'number') {
-				throw new Error(
-					`Field "${tableId}.${fieldId}" must have an "order" number property`,
-				);
-			}
 		}
 	}
 
-	return data as WorkspaceSchema;
+	// Normalize the parsed data
+	const normalizedTables: SchemaTableDefinition[] = [];
+
+	// Normalize tables
+	for (const [tableId, tableData] of Object.entries(tables)) {
+		const tableObj = tableData as Record<string, unknown>;
+
+		// Normalize fields to array format (supports both Record and Array input)
+		const rawFields = tableObj.fields;
+		const normalizedFields: SchemaFieldDefinition[] = Array.isArray(rawFields)
+			? ((rawFields as Array<Record<string, unknown>>).map((f) => ({
+					...(f as object),
+					id: (f.id as string) ?? '',
+				})) as SchemaFieldDefinition[])
+			: Object.entries(rawFields as Record<string, unknown>).map(
+					([id, f]) =>
+						({
+							...(f as object),
+							id,
+						}) as SchemaFieldDefinition,
+				);
+
+		normalizedTables.push({
+			id: tableId,
+			name: tableObj.name as string,
+			description: (tableObj.description as string) ?? '',
+			icon: normalizeIcon(tableObj.icon),
+			fields: normalizedFields,
+		});
+	}
+
+	const normalized: WorkspaceDefinition = {
+		name: obj.name as string,
+		description: (obj.description as string) ?? '',
+		icon: normalizeIcon(obj.icon),
+		tables: normalizedTables,
+		kv: obj.kv as WorkspaceDefinition['kv'],
+	};
+
+	return normalized;
 }
 
 /**
  * Serialize a schema to JSON string.
  *
- * @param schema - WorkspaceSchema to serialize
+ * @param schema - WorkspaceDefinition to serialize
  * @param pretty - Whether to format with indentation (default: true)
  * @returns JSON string
  */
 export function stringifySchema(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	pretty = true,
 ): string {
 	return JSON.stringify(schema, null, pretty ? 2 : undefined);
@@ -112,17 +188,18 @@ export function stringifySchema(
  *
  * @param name - Display name for the workspace
  * @param icon - Optional icon for the workspace
- * @returns A new WorkspaceSchema with no tables
+ * @returns A new WorkspaceDefinition with no tables
  */
 export function createEmptySchema(
 	name: string,
-	icon?: string,
-): WorkspaceSchema {
+	icon?: string | Icon | null,
+): WorkspaceDefinition {
 	return {
 		name,
-		icon: icon ?? null,
-		tables: {},
-		kv: {},
+		description: '',
+		icon: normalizeIcon(icon),
+		tables: [],
+		kv: [],
 	};
 }
 
@@ -135,16 +212,14 @@ export function createEmptySchema(
  * @returns New schema with the table added
  */
 export function addTable(
-	schema: WorkspaceSchema,
-	tableId: string,
+	schema: WorkspaceDefinition,
+	_tableId: string,
 	table: SchemaTableDefinition,
-): WorkspaceSchema {
+): WorkspaceDefinition {
+	// Note: tableId param kept for API compatibility but table.id is authoritative
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: table,
-		},
+		tables: [...schema.tables, table],
 	};
 }
 
@@ -156,13 +231,12 @@ export function addTable(
  * @returns New schema without the table
  */
 export function removeTable(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
-): WorkspaceSchema {
-	const { [tableId]: _, ...tables } = schema.tables;
+): WorkspaceDefinition {
 	return {
 		...schema,
-		tables,
+		tables: schema.tables.filter((t) => t.id !== tableId),
 	};
 }
 
@@ -172,32 +246,32 @@ export function removeTable(
  * @param schema - Existing schema
  * @param tableId - ID of the table to modify
  * @param fieldId - ID for the new field
- * @param field - Field definition
+ * @param field - Field definition (id property will be overwritten with fieldId)
  * @returns New schema with the field added
  */
 export function addField(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
-	field: SchemaFieldDefinition,
-): WorkspaceSchema {
-	const table = schema.tables[tableId];
+	field: Omit<SchemaFieldDefinition, 'id'>,
+): WorkspaceDefinition {
+	const table = schema.tables.find((t) => t.id === tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
 
+	const newField = { ...field, id: fieldId } as SchemaFieldDefinition;
+
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: {
-				...table,
-				fields: {
-					...table.fields,
-					[fieldId]: field,
-				},
-			},
-		},
+		tables: schema.tables.map((t) =>
+			t.id === tableId
+				? {
+						...t,
+						fields: [...t.fields, newField],
+					}
+				: t,
+		),
 	};
 }
 
@@ -210,48 +284,24 @@ export function addField(
  * @returns New schema without the field
  */
 export function removeField(
-	schema: WorkspaceSchema,
+	schema: WorkspaceDefinition,
 	tableId: string,
 	fieldId: string,
-): WorkspaceSchema {
-	const table = schema.tables[tableId];
+): WorkspaceDefinition {
+	const table = schema.tables.find((t) => t.id === tableId);
 	if (!table) {
 		throw new Error(`Table "${tableId}" not found in schema`);
 	}
 
-	const { [fieldId]: _, ...fields } = table.fields;
-
 	return {
 		...schema,
-		tables: {
-			...schema.tables,
-			[tableId]: {
-				...table,
-				fields,
-			},
-		},
+		tables: schema.tables.map((t) =>
+			t.id === tableId
+				? {
+						...t,
+						fields: t.fields.filter((f) => f.id !== fieldId),
+					}
+				: t,
+		),
 	};
-}
-
-/**
- * Get sorted fields for a table.
- *
- * @param table - Table definition
- * @returns Array of [fieldId, field] tuples sorted by order
- */
-export function getSortedFields(
-	table: SchemaTableDefinition,
-): Array<[string, SchemaFieldDefinition]> {
-	return Object.entries(table.fields).sort(([, a], [, b]) => a.order - b.order);
-}
-
-/**
- * Calculate the next order value for a new field.
- *
- * @param table - Table definition
- * @returns The next order value (max + 1, or 1 if no fields)
- */
-export function getNextFieldOrder(table: SchemaTableDefinition): number {
-	const orders = Object.values(table.fields).map((f) => f.order);
-	return orders.length > 0 ? Math.max(...orders) + 1 : 1;
 }

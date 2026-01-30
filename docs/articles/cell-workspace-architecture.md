@@ -113,7 +113,7 @@ The schema acts as a **lens** for viewing data, not a constraint on what can be 
 
 ## The API
 
-Creating a workspace gives you access to table stores:
+Creating a workspace gives you access to table helpers:
 
 ```typescript
 import { createCellWorkspace } from "@epicenter/epicenter/cell";
@@ -155,13 +155,14 @@ const validOnly = posts.getAllValid(); // RowData[] - pre-filtered
 const problems = posts.getAllInvalid(); // InvalidRowResult[] - with errors
 ```
 
-For performance-critical code or when you just need raw data:
+Raw values are always available in results, even when invalid:
 
 ```typescript
-// Escape hatch - no validation overhead
-const rawValue = posts.raw.get(rowId, "views");     // "not a number"
-const rawRow = posts.raw.getRow(rowId);             // { title: "Hello", ... }
-const rawRows = posts.raw.getRows();                // all rows, no validation
+// Invalid results still include the value
+if (result.status === "invalid") {
+  const rawValue = result.value;  // "not a number" - always accessible
+  const errors = result.errors;   // validation errors for display
+}
 ```
 
 ---
@@ -225,7 +226,8 @@ ws1.table("posts").set("row1", "title", "From Device 1");
 Y.applyUpdate(ws2.ydoc, Y.encodeStateAsUpdate(ws1.ydoc));
 
 // ws2 now has the data
-ws2.table("posts").raw.get("row1", "title");  // "From Device 1"
+const result = ws2.table("posts").get("row1", "title");
+// result.value === "From Device 1"
 ```
 
 Concurrent edits to different cells both win. Concurrent edits to the same cell use LWW (later timestamp wins).

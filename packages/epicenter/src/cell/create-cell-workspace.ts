@@ -21,16 +21,26 @@
  */
 
 import * as Y from 'yjs';
+import { defineExports, type Lifecycle } from '../core/lifecycle';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
+import type {
+	CellExtensionContext,
+	CellExtensionFactoryMap,
+	CellWorkspaceBuilder,
+	InferCellExtensionExports,
+} from './extensions';
 import { validateId } from './keys';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
-import { createTableStore } from './table-store';
+import { createTableHelper } from './table-helper';
 import type {
 	CellValue,
 	CellWorkspaceClient,
 	CreateCellWorkspaceOptions,
+	CreateCellWorkspaceWithHeadDocOptions,
 	FieldType,
-	TableStore,
+	RowData,
+	SchemaTableDefinition,
+	TableHelper,
 	TypedCell,
 	TypedRowWithCells,
 } from './types';
@@ -45,6 +55,7 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 	}
 
 	switch (type) {
+		case 'id':
 		case 'text':
 		case 'richtext':
 			return typeof value === 'string';
@@ -59,7 +70,6 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 			return typeof value === 'boolean';
 
 		case 'date':
-		case 'datetime':
 			// Accept string (ISO format) or number (timestamp)
 			return typeof value === 'string' || typeof value === 'number';
 
@@ -78,10 +88,20 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
 	}
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Legacy API (id-based)
+// ════════════════════════════════════════════════════════════════════════════
+
 /**
- * Create a cell workspace client.
+ * Create a cell workspace client (legacy API).
  *
- * @example
+ * @deprecated Use the HeadDoc-based API instead:
+ * ```ts
+ * const workspace = createCellWorkspace({ headDoc, definition })
+ *   .withExtensions({ ... });
+ * ```
+ *
+ * @example Legacy usage
  * ```ts
  * const workspace = createCellWorkspace({
  *   id: 'my-workspace',
@@ -98,33 +118,78 @@ function validateCellType(value: CellValue, type: FieldType): boolean {
  *     }
  *   }
  * });
- *
- * // Get a table store
- * const posts = workspace.table('posts');
- *
- * // Create a row
- * const rowId = posts.createRow();
- *
- * // Set cells
- * posts.set(rowId, 'title', 'Hello World');
- * posts.set(rowId, 'views', 100);
- *
- * // Read back (raw, no validation)
- * const rows = posts.raw.getRows();
- * // [{ id: 'abc123', cells: { title: 'Hello World', views: 100 } }]
- *
- * // Get all valid rows
- * const validRows = posts.getAllValid();
- *
- * // Get typed rows (uses definition's schema)
- * const typedRows = workspace.getTypedRows('posts');
  * ```
  */
 export function createCellWorkspace(
 	options: CreateCellWorkspaceOptions,
-): CellWorkspaceClient {
-	const { id, definition, ydoc: existingYdoc } = options;
+): CellWorkspaceClient;
 
+/**
+ * Create a cell workspace client with HeadDoc integration.
+ *
+ * This is the preferred API that integrates with the HeadDoc epoch system.
+ * The Y.Doc guid will be `{workspaceId}-{epoch}` for time-travel support.
+ *
+ * Returns a builder that allows adding extensions with typed context.
+ *
+ * @example
+ * ```ts
+ * const headDoc = createHeadDoc({
+ *   workspaceId: 'my-workspace',
+ *   providers: { persistence },
+ * });
+ *
+ * await headDoc.whenSynced;
+ *
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: {
+ *     name: 'My Blog',
+ *     tables: [
+ *       table('posts', {
+ *         name: 'Posts',
+ *         fields: [id(), text('title'), integer('views')],
+ *       }),
+ *     ],
+ *     kv: [],
+ *   },
+ * })
+ *   .withExtensions({
+ *     sqlite: (ctx) => {
+ *       // ctx.table('posts') is typed!
+ *       const posts = ctx.table('posts');
+ *       return defineExports({ db: ... });
+ *     },
+ *   });
+ *
+ * await workspace.whenSynced;
+ * // workspace.extensions.sqlite.db is typed
+ * ```
+ */
+export function createCellWorkspace(
+	options: CreateCellWorkspaceWithHeadDocOptions,
+): CellWorkspaceBuilder;
+
+export function createCellWorkspace(
+	options: CreateCellWorkspaceOptions | CreateCellWorkspaceWithHeadDocOptions,
+): CellWorkspaceClient | CellWorkspaceBuilder {
+	// Detect which API is being used
+	if ('headDoc' in options) {
+		return createCellWorkspaceWithHeadDoc(options);
+	}
+
+	// Legacy API
+	return createCellWorkspaceLegacy(options);
+}
+
+/**
+ * Legacy implementation (id-based, no extensions).
+ */
+function createCellWorkspaceLegacy({
+	id,
+	definition,
+	ydoc: existingYdoc,
+}: CreateCellWorkspaceOptions): CellWorkspaceClient {
 	// Create or use existing Y.Doc
 	const ydoc = existingYdoc ?? new Y.Doc({ guid: id });
 
@@ -134,7 +199,167 @@ export function createCellWorkspace(
 	const icon = definition.icon ?? null;
 
 	// Cache table stores to avoid recreation
-	const tableStoreCache = new Map<string, TableStore>();
+	const tableHelperCache = new Map<string, TableHelper>();
+
+	// Initialize KV store
+	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
+	const kv = createKvStore(kvArray);
+
+	const client: CellWorkspaceClient = {
+		id,
+		epoch: 0,
+		ydoc,
+		name,
+		description,
+		icon,
+		definition,
+		kv,
+		extensions: {},
+		whenSynced: Promise.resolve(),
+
+		/**
+		 * Get or create a table store.
+		 * Passes schema from definition, or empty schema for dynamic tables.
+		 */
+		table(tableId: string): TableHelper {
+			validateId(tableId, 'tableId');
+
+			let store = tableHelperCache.get(tableId);
+			if (!store) {
+				// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
+				// Use schema from definition, or empty schema for dynamic tables
+				const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
+					id: tableId,
+					name: tableId,
+					description: '',
+					icon: null,
+					fields: [],
+				};
+				store = createTableHelper(tableId, yarray, tableSchema);
+				tableHelperCache.set(tableId, store);
+			}
+			return store;
+		},
+
+		/**
+		 * Get rows with typed cells validated against schema.
+		 * Uses the table schema from the definition.
+		 */
+		getTypedRows(tableId: string): TypedRowWithCells[] {
+			const tableSchema = definition.tables.find((t) => t.id === tableId);
+			const tableStore = this.table(tableId);
+			// Get all rows (regardless of validation status) and extract RowData
+			const results = tableStore.getAll();
+			const rows: RowData[] = results.map((r) =>
+				r.status === 'valid'
+					? r.row
+					: { id: r.id, cells: r.row as Record<string, CellValue> },
+			);
+
+			// If table not in schema, return rows with all fields marked as 'json'
+			if (!tableSchema) {
+				return rows.map((r) => {
+					const typedCells: Record<string, TypedCell> = {};
+					for (const [fieldId, value] of Object.entries(r.cells)) {
+						typedCells[fieldId] = { value, type: 'json', valid: true };
+					}
+					return {
+						id: r.id,
+						cells: typedCells,
+						missingFields: [],
+						extraFields: Object.keys(r.cells),
+					};
+				});
+			}
+
+			const schemaFieldIds = tableSchema.fields.map((f) => f.id);
+
+			return rows.map((r) => {
+				const typedCells: Record<string, TypedCell> = {};
+				const dataFieldIds = Object.keys(r.cells);
+
+				// Process cells that exist in data
+				for (const [fieldId, value] of Object.entries(r.cells)) {
+					const fieldSchema = tableSchema.fields.find((f) => f.id === fieldId);
+					if (fieldSchema) {
+						typedCells[fieldId] = {
+							value,
+							type: fieldSchema.type,
+							valid: validateCellType(value, fieldSchema.type),
+						};
+					} else {
+						// Field exists in data but not in schema - mark as 'json' (unknown)
+						typedCells[fieldId] = {
+							value,
+							type: 'json',
+							valid: true,
+						};
+					}
+				}
+
+				// Find missing fields (in schema but not in data)
+				const missingFields = schemaFieldIds.filter((fid) => !(fid in r.cells));
+
+				// Find extra fields (in data but not in schema)
+				const extraFields = dataFieldIds.filter(
+					(fid) => !schemaFieldIds.includes(fid),
+				);
+
+				return {
+					id: r.id,
+					cells: typedCells,
+					missingFields,
+					extraFields,
+				};
+			});
+		},
+
+		batch<T>(fn: (ws: CellWorkspaceClient) => T): T {
+			// Note: Currently does NOT wrap in a Yjs transaction due to a bug in
+			// YKeyValueLww where entries added inside a wrapping transaction are
+			// incorrectly deleted by the observer when the transaction completes.
+			// This means observers may fire multiple times instead of once.
+			//
+			// TODO: Fix YKeyValueLww observer to properly handle nested transactions,
+			// then re-enable: `return ydoc.transact(() => fn(this));`
+			return fn(this);
+		},
+
+		async destroy(): Promise<void> {
+			ydoc.destroy();
+		},
+	};
+
+	return client;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc-based API (new)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Create a cell workspace with HeadDoc integration.
+ * Returns a builder for adding extensions.
+ */
+function createCellWorkspaceWithHeadDoc({
+	headDoc,
+	definition,
+}: CreateCellWorkspaceWithHeadDocOptions): CellWorkspaceBuilder {
+	const workspaceId = headDoc.workspaceId;
+	const epoch = headDoc.getEpoch();
+
+	// Doc ID includes epoch for time-travel support
+	const docId = `${workspaceId}-${epoch}`;
+	const ydoc = new Y.Doc({ guid: docId, gc: false });
+
+	// Extract metadata from definition
+	const name = definition.name;
+	const description = definition.description ?? '';
+	const icon = definition.icon ?? null;
+
+	// Cache table stores to avoid recreation
+	const tableHelperCache = new Map<string, TableHelper>();
 
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
@@ -142,121 +367,163 @@ export function createCellWorkspace(
 
 	/**
 	 * Get or create a table store.
-	 * Passes schema from definition, or empty schema for dynamic tables.
 	 */
-	function table(tableId: string): TableStore {
+	function table(tableId: string): TableHelper {
 		validateId(tableId, 'tableId');
 
-		let store = tableStoreCache.get(tableId);
+		let store = tableHelperCache.get(tableId);
 		if (!store) {
-			// Use ydoc.getArray() - this creates a named shared type that merges correctly on sync
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
 			// Use schema from definition, or empty schema for dynamic tables
-			const tableSchema = definition.tables[tableId] ?? {
+			const tableSchema = definition.tables.find((t) => t.id === tableId) ?? {
+				id: tableId,
 				name: tableId,
-				fields: {},
+				description: '',
+				icon: null,
+				fields: [],
 			};
-			store = createTableStore(tableId, yarray, tableSchema);
-			tableStoreCache.set(tableId, store);
+			store = createTableHelper(tableId, yarray, tableSchema);
+			tableHelperCache.set(tableId, store);
 		}
 		return store;
 	}
 
-	/**
-	 * Get rows with typed cells validated against schema.
-	 * Uses the table schema from the definition.
-	 */
-	function getTypedRows(tableId: string): TypedRowWithCells[] {
-		const tableSchema = definition.tables[tableId];
-		const tableStore = table(tableId);
-		const rows = tableStore.raw.getRows();
+	return {
+		withExtensions<TExtensions extends CellExtensionFactoryMap>(
+			extensionFactories: TExtensions,
+		): CellWorkspaceClient<
+			readonly SchemaTableDefinition[],
+			InferCellExtensionExports<TExtensions>
+		> {
+			// Initialize extensions with typed context
+			const extensions = {} as InferCellExtensionExports<TExtensions>;
 
-		// If table not in schema, return rows with all fields marked as 'json'
-		if (!tableSchema) {
-			return rows.map((r) => {
-				const typedCells: Record<string, TypedCell> = {};
-				for (const [fieldId, value] of Object.entries(r.cells)) {
-					typedCells[fieldId] = { value, type: 'json', valid: true };
-				}
-				return {
-					id: r.id,
-					cells: typedCells,
-					missingFields: [],
-					extraFields: Object.keys(r.cells),
+			for (const [extensionId, factory] of Object.entries(extensionFactories)) {
+				const context: CellExtensionContext = {
+					ydoc,
+					workspaceId,
+					epoch,
+					table,
+					kv,
+					definition,
+					extensionId,
 				};
-			});
-		}
-
-		const schemaFieldIds = Object.keys(tableSchema.fields);
-
-		return rows.map((r) => {
-			const typedCells: Record<string, TypedCell> = {};
-			const dataFieldIds = Object.keys(r.cells);
-
-			// Process cells that exist in data
-			for (const [fieldId, value] of Object.entries(r.cells)) {
-				const fieldSchema = tableSchema.fields[fieldId];
-				if (fieldSchema) {
-					typedCells[fieldId] = {
-						value,
-						type: fieldSchema.type,
-						valid: validateCellType(value, fieldSchema.type),
-					};
-				} else {
-					// Field exists in data but not in schema - mark as 'json' (unknown)
-					typedCells[fieldId] = {
-						value,
-						type: 'json',
-						valid: true,
-					};
-				}
+				(extensions as Record<string, unknown>)[extensionId] = defineExports(
+					factory(context),
+				);
 			}
 
-			// Find missing fields (in schema but not in data)
-			const missingFields = schemaFieldIds.filter((fid) => !(fid in r.cells));
+			// Aggregate whenSynced from all extensions
+			const whenSynced = Promise.all(
+				Object.values(extensions).map((e) => (e as Lifecycle).whenSynced),
+			).then(() => {});
 
-			// Find extra fields (in data but not in schema)
-			const extraFields = dataFieldIds.filter(
-				(fid) => !schemaFieldIds.includes(fid),
-			);
+			const client: CellWorkspaceClient<
+				readonly SchemaTableDefinition[],
+				InferCellExtensionExports<TExtensions>
+			> = {
+				id: workspaceId,
+				epoch,
+				ydoc,
+				name,
+				description,
+				icon,
+				definition,
+				table,
+				kv,
+				extensions,
+				whenSynced,
 
-			return {
-				id: r.id,
-				cells: typedCells,
-				missingFields,
-				extraFields,
+				/**
+				 * Get rows with typed cells validated against schema.
+				 */
+				getTypedRows(tableId: string): TypedRowWithCells[] {
+					const tableSchema = definition.tables.find((t) => t.id === tableId);
+					const tableStore = this.table(tableId);
+					// Get all rows (regardless of validation status) and extract RowData
+					const results = tableStore.getAll();
+					const rows: RowData[] = results.map((r) =>
+						r.status === 'valid'
+							? r.row
+							: { id: r.id, cells: r.row as Record<string, CellValue> },
+					);
+
+					if (!tableSchema) {
+						return rows.map((r) => {
+							const typedCells: Record<string, TypedCell> = {};
+							for (const [fieldId, value] of Object.entries(r.cells)) {
+								typedCells[fieldId] = { value, type: 'json', valid: true };
+							}
+							return {
+								id: r.id,
+								cells: typedCells,
+								missingFields: [],
+								extraFields: Object.keys(r.cells),
+							};
+						});
+					}
+
+					const schemaFieldIds = tableSchema.fields.map((f) => f.id);
+
+					return rows.map((r) => {
+						const typedCells: Record<string, TypedCell> = {};
+						const dataFieldIds = Object.keys(r.cells);
+
+						for (const [fieldId, value] of Object.entries(r.cells)) {
+							const fieldSchema = tableSchema.fields.find(
+								(f) => f.id === fieldId,
+							);
+							if (fieldSchema) {
+								typedCells[fieldId] = {
+									value,
+									type: fieldSchema.type,
+									valid: validateCellType(value, fieldSchema.type),
+								};
+							} else {
+								typedCells[fieldId] = {
+									value,
+									type: 'json',
+									valid: true,
+								};
+							}
+						}
+
+						const missingFields = schemaFieldIds.filter(
+							(fid) => !(fid in r.cells),
+						);
+						const extraFields = dataFieldIds.filter(
+							(fid) => !schemaFieldIds.includes(fid),
+						);
+
+						return {
+							id: r.id,
+							cells: typedCells,
+							missingFields,
+							extraFields,
+						};
+					});
+				},
+
+				batch<T>(
+					fn: (
+						ws: CellWorkspaceClient<
+							readonly SchemaTableDefinition[],
+							InferCellExtensionExports<TExtensions>
+						>,
+					) => T,
+				): T {
+					return fn(this);
+				},
+
+				async destroy(): Promise<void> {
+					await Promise.allSettled(
+						Object.values(extensions).map((e) => (e as Lifecycle).destroy()),
+					);
+					ydoc.destroy();
+				},
 			};
-		});
-	}
 
-	function batch<T>(fn: (ws: CellWorkspaceClient) => T): T {
-		// Note: Currently does NOT wrap in a Yjs transaction due to a bug in
-		// YKeyValueLww where entries added inside a wrapping transaction are
-		// incorrectly deleted by the observer when the transaction completes.
-		// This means observers may fire multiple times instead of once.
-		//
-		// TODO: Fix YKeyValueLww observer to properly handle nested transactions,
-		// then re-enable: `return ydoc.transact(() => fn(client));`
-		return fn(client);
-	}
-
-	async function destroy(): Promise<void> {
-		ydoc.destroy();
-	}
-
-	const client: CellWorkspaceClient = {
-		id,
-		ydoc,
-		name,
-		description,
-		icon,
-		definition,
-		table,
-		kv,
-		getTypedRows,
-		batch,
-		destroy,
+			return client;
+		},
 	};
-
-	return client;
 }

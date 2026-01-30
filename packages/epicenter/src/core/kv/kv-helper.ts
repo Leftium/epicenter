@@ -2,7 +2,7 @@ import { type ArkErrors, type } from 'arktype';
 import { createTaggedError } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 
-import type { KvDefinitionMap, KvField, KvValue } from '../schema';
+import type { KvField, KvFieldById, KvValue } from '../schema';
 import { fieldToYjsArktype, isNullableField } from '../schema';
 
 /**
@@ -39,45 +39,63 @@ export type KvGetResult<TValue> =
 	| { status: 'not_found'; key: string };
 
 /**
- * Creates a collection of typed KV helpers for all keys in a definition map.
+ * Creates a collection of typed KV helpers for all fields in an array.
  *
+ * Each field's `.id` is used as the key in the returned helper map.
  * Uses native Y.Map for efficient storage. KV data is stored directly
  * as key-value pairs in the map.
+ *
+ * @param ydoc - The Y.Doc to store KV data in
+ * @param kvFields - Array of KvField definitions
+ *
+ * @example
+ * ```typescript
+ * const helpers = createKvHelpers({
+ *   ydoc,
+ *   kvFields: [
+ *     select('theme', { name: 'Theme', options: ['light', 'dark'] }),
+ *     integer('fontSize', { name: 'Font Size', default: 14 }),
+ *   ],
+ * });
+ *
+ * helpers.theme.set('dark');
+ * helpers.fontSize.get(); // { status: 'valid', value: 14 }
+ * ```
  */
-export function createKvHelpers<TKvDefinitionMap extends KvDefinitionMap>({
+export function createKvHelpers<TKvFields extends readonly KvField[]>({
 	ydoc,
-	definitions,
+	kvFields,
 }: {
 	ydoc: Y.Doc;
-	definitions: TKvDefinitionMap;
-}) {
+	kvFields: TKvFields;
+}): {
+	[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
+} {
 	const ykvMap = ydoc.getMap<KvValue>('kv');
 
 	return Object.fromEntries(
-		Object.entries(definitions).map(([keyName, definition]) => [
-			keyName,
+		kvFields.map((field) => [
+			field.id,
 			createKvHelper({
-				keyName,
 				ykvMap,
-				field: definition.field,
+				field,
 			}),
 		]),
 	) as {
-		[K in keyof TKvDefinitionMap]: KvHelper<TKvDefinitionMap[K]['field']>;
+		[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
 	};
 }
 
 export function createKvHelper<TField extends KvField>({
-	keyName,
 	ykvMap,
 	field,
 }: {
-	keyName: string;
 	ykvMap: Y.Map<KvValue>;
 	field: TField;
 }) {
 	type TValue = KvValue<TField>;
 
+	const keyName = field.id;
 	const nullable = isNullableField(field);
 	const validator = fieldToYjsArktype(field);
 

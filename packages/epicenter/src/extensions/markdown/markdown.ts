@@ -6,12 +6,8 @@ import { tryAsync, trySync } from 'wellcrafted/result';
 
 import { ExtensionErr, ExtensionError } from '../../core/errors';
 import { defineExports, type ExtensionContext } from '../../core/extension';
-import type {
-	FieldMap,
-	KvDefinitionMap,
-	Row,
-	TableDefinitionMap,
-} from '../../core/schema';
+import type { Field, KvField, Row, TableDefinition } from '../../core/schema';
+import type { TableById } from '../../core/schema/fields/types';
 import type { TableHelper } from '../../core/tables/create-tables';
 import type { AbsolutePath } from '../../core/types';
 import { createIndexLogger } from '../error-logger';
@@ -46,6 +42,19 @@ export const { MarkdownExtensionError, MarkdownExtensionErr } =
 		MarkdownExtensionContext | undefined
 	>();
 export type MarkdownExtensionError = ReturnType<typeof MarkdownExtensionError>;
+
+/**
+ * Field array type alias for serializer generics.
+ * Using readonly array matches the TableDefinition.fields type.
+ */
+type Fields = readonly Field[];
+
+/**
+ * Row type that guarantees an `id` property exists.
+ * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
+ * so we intersect with `{ id: string }` to make destructuring work.
+ */
+type RowWithId<TFields extends Fields> = Row<TFields> & { id: string };
 
 // Re-export config types and functions
 export type {
@@ -124,9 +133,9 @@ type RowToFilenameMap = Record<string, string>;
  *
  * Use serializer factories like `bodyFieldSerializer()` or `titleFilenameSerializer()`.
  */
-type TableConfigs<TTableDefinitionMap extends TableDefinitionMap> = {
-	[K in keyof TTableDefinitionMap]?: TableMarkdownConfig<
-		TTableDefinitionMap[K]['fields']
+type TableConfigs<TTableDefinitions extends readonly TableDefinition[]> = {
+	[K in TTableDefinitions[number]['id']]?: TableMarkdownConfig<
+		TableById<TTableDefinitions, K>['fields']
 	>;
 };
 
@@ -134,11 +143,11 @@ type TableConfigs<TTableDefinitionMap extends TableDefinitionMap> = {
  * Internal resolved config with all required fields.
  * This is what the provider uses internally after merging user config with defaults.
  */
-type ResolvedTableConfig<TFieldMap extends FieldMap> = {
+type ResolvedTableConfig<TFields extends Fields> = {
 	directory: AbsolutePath;
-	serialize: MarkdownSerializer<TFieldMap>['serialize'];
-	parseFilename: MarkdownSerializer<TFieldMap>['deserialize']['parseFilename'];
-	deserialize: MarkdownSerializer<TFieldMap>['deserialize']['fromContent'];
+	serialize: MarkdownSerializer<TFields>['serialize'];
+	parseFilename: MarkdownSerializer<TFields>['deserialize']['parseFilename'];
+	deserialize: MarkdownSerializer<TFields>['deserialize']['fromContent'];
 };
 
 /**
@@ -171,7 +180,7 @@ type ResolvedTableConfig<TFieldMap extends FieldMap> = {
  * ```
  */
 export type MarkdownExtensionConfig<
-	TTableDefinitionMap extends TableDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
 > = {
 	/**
 	 * Absolute path to the workspace directory where markdown files are stored.
@@ -252,7 +261,7 @@ export type MarkdownExtensionConfig<
 	 * }
 	 * ```
 	 */
-	tableConfigs?: TableConfigs<TTableDefinitionMap>;
+	tableConfigs?: TableConfigs<TTableDefinitions>;
 
 	/**
 	 * Enable verbose debug logging for troubleshooting file sync issues.
@@ -271,11 +280,11 @@ export type MarkdownExtensionConfig<
 };
 
 export const markdown = async <
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
+	TTableDefinitions extends readonly TableDefinition[],
+	TKvFields extends readonly KvField[],
 >(
-	context: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
-	config: MarkdownExtensionConfig<TTableDefinitionMap>,
+	context: ExtensionContext<TTableDefinitions, TKvFields>,
+	config: MarkdownExtensionConfig<TTableDefinitions>,
 ) => {
 	const { workspaceId: id, tables, ydoc } = context;
 	const {
@@ -293,8 +302,7 @@ export const markdown = async <
 			}
 		: () => {};
 
-	const userTableConfigs: TableConfigs<TTableDefinitionMap> =
-		tableConfigs ?? {};
+	const userTableConfigs: TableConfigs<TTableDefinitions> = tableConfigs ?? {};
 
 	mkdirSync(logsDir, { recursive: true });
 
@@ -345,10 +353,20 @@ export const markdown = async <
 	 * We resolve these to a flat internal structure for efficient runtime access.
 	 */
 	// Cast is correct: Object.fromEntries loses key specificity (returns { [k: string]: V }),
-	// but we know keys are exactly keyof TTableDefinitionMap since we iterate tables.definitions.
-	const resolvedConfigs = Object.fromEntries(
-		Object.keys(tables.definitions).map((tableName) => {
-			const userConfig = userTableConfigs[tableName] ?? {};
+	// but we know keys are exactly table IDs since we iterate tables.definitions.
+	const resolvedConfigs: Record<
+		string,
+		ResolvedTableConfig<TTableDefinitions[number]['fields']>
+	> = Object.fromEntries(
+		tables.definitions.map((tableDefinition) => {
+			const tableName = tableDefinition.id;
+			const userConfig =
+				(
+					userTableConfigs as Record<
+						string,
+						TableMarkdownConfig<Fields> | undefined
+					>
+				)[tableName] ?? {};
 
 			// Resolve serializer: user-provided or default
 			const serializer = userConfig.serializer ?? defaultSerializer();
@@ -360,9 +378,7 @@ export const markdown = async <
 			) as AbsolutePath;
 
 			// Flatten for internal use
-			const config: ResolvedTableConfig<
-				TTableDefinitionMap[keyof TTableDefinitionMap & string]['fields']
-			> = {
+			const config: ResolvedTableConfig<TTableDefinitions[number]['fields']> = {
 				directory,
 				serialize: serializer.serialize,
 				parseFilename: serializer.deserialize.parseFilename,
@@ -371,11 +387,7 @@ export const markdown = async <
 
 			return [tableName, config];
 		}),
-	) as unknown as {
-		[K in keyof TTableDefinitionMap & string]: ResolvedTableConfig<
-			TTableDefinitionMap[K]['fields']
-		>;
-	};
+	);
 
 	/**
 	 * Register YJS observers to sync changes from YJS to markdown files
@@ -389,7 +401,10 @@ export const markdown = async <
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 			const table = tables.get(tableName);
-			const fields = tables.definitions[tableName]!.fields;
+			const tableDefinition = tables.definitions.find(
+				(d) => d.id === tableName,
+			);
+			const fields = tableDefinition!.fields;
 			// Initialize tracking map for this table
 			if (!tracking[tableName]) {
 				tracking[tableName] = {};
@@ -398,8 +413,8 @@ export const markdown = async <
 			/**
 			 * Write a YJS row to markdown file
 			 */
-			async function writeRowToMarkdown<TFieldMap extends FieldMap>(
-				row: Row<TFieldMap>,
+			async function writeRowToMarkdown<TFields extends Fields>(
+				row: RowWithId<TFields>,
 			) {
 				const { frontmatter, body, filename } = tableConfig.serialize({
 					row,
@@ -539,7 +554,10 @@ export const markdown = async <
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 			const table = tables.get(tableName);
-			const fields = tables.definitions[tableName]!.fields;
+			const tableDefinition = tables.definitions.find(
+				(d) => d.id === tableName,
+			);
+			const fields = tableDefinition!.fields;
 			// Ensure table directory exists
 			const { error: mkdirError } = trySync({
 				try: () => {
@@ -705,8 +723,8 @@ export const markdown = async <
 						return;
 					}
 
-					const validatedRow = row as Row<
-						TTableDefinitionMap[keyof TTableDefinitionMap & string]['fields']
+					const validatedRow = row as RowWithId<
+						TTableDefinitions[number]['fields']
 					>;
 
 					// Success: remove from diagnostics if it was previously invalid
@@ -858,7 +876,10 @@ export const markdown = async <
 		diagnostics.clear();
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
-			const fields = tables.definitions[tableName]!.fields;
+			const tableDefinition = tables.definitions.find(
+				(d) => d.id === tableName,
+			);
+			const fields = tableDefinition!.fields;
 			const filePaths = await listMarkdownFiles(tableConfig.directory);
 
 			await Promise.all(
@@ -1009,7 +1030,8 @@ export const markdown = async <
 	 */
 	for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 		const table = tables.get(tableName);
-		const fields = tables.definitions[tableName]!.fields;
+		const tableDefinition = tables.definitions.find((d) => d.id === tableName);
+		const fields = tableDefinition!.fields;
 		// Initialize tracking map for this table
 		if (!tracking[tableName]) {
 			tracking[tableName] = {};
@@ -1126,7 +1148,10 @@ export const markdown = async <
 						Object.entries(resolvedConfigs).map(
 							async ([tableName, tableConfig]) => {
 								const table = tables.get(tableName);
-								const fields = tables.definitions[tableName]!.fields;
+								const tableDefinition = tables.definitions.find(
+									(d) => d.id === tableName,
+								);
+								const fields = tableDefinition!.fields;
 								const tableTracking = tracking[tableName];
 								const filePaths = await listMarkdownFiles(
 									tableConfig.directory,
@@ -1284,17 +1309,12 @@ export const markdown = async <
 
 					type TableSyncData = {
 						tableName: string;
-						table: TableHelper<
-							TTableDefinitionMap[keyof TTableDefinitionMap]['fields']
-						>;
+						table: TableHelper<TTableDefinitions[number]['fields']>;
 						yjsIds: Set<string>;
 						fileExistsIds: Set<string>;
 						markdownRows: Map<
 							string,
-							Row<
-								TTableDefinitionMap[keyof TTableDefinitionMap &
-									string]['fields']
-							>
+							RowWithId<TTableDefinitions[number]['fields']>
 						>;
 						markdownFilenames: Map<string, string>;
 					};
@@ -1303,7 +1323,10 @@ export const markdown = async <
 						Object.entries(resolvedConfigs).map(
 							async ([tableName, tableConfig]): Promise<TableSyncData> => {
 								const table = tables.get(tableName);
-								const fields = tables.definitions[tableName]!.fields;
+								const tableDefinition = tables.definitions.find(
+									(d) => d.id === tableName,
+								);
+								const fields = tableDefinition!.fields;
 								const yjsIds = new Set(
 									table
 										.getAll()
@@ -1327,10 +1350,7 @@ export const markdown = async <
 
 								const markdownRows = new Map<
 									string,
-									Row<
-										TTableDefinitionMap[keyof TTableDefinitionMap &
-											string]['fields']
-									>
+									RowWithId<TTableDefinitions[number]['fields']>
 								>();
 								const markdownFilenames = new Map<string, string>();
 

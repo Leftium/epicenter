@@ -16,7 +16,6 @@ import type {
 	BooleanField,
 	DateField,
 	Field,
-	FieldMap,
 	IdField,
 	IntegerField,
 	JsonField,
@@ -88,18 +87,18 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * available (.partial(), .merge(), .array(), etc.). Use this for validating
  * complete row objects.
  *
- * @param fields - The table schema to convert
+ * @param fields - The table schema as a Field[] array
  * @returns Complete arktype Type instance with composition methods
  *
  * @example
  * ```typescript
- * const schema = {
- *   id: id(),
- *   title: text(),
- *   count: integer({ nullable: true }),
- * };
+ * const fields = [
+ *   id(),
+ *   text('title'),
+ *   integer('count', { nullable: true }),
+ * ];
  *
- * const validator = tableToArktype(schema);
+ * const validator = tableToArktype(fields);
  *
  * // Use immediately for validation
  * const result = validator({ id: '123', title: 'Test', count: 42 });
@@ -112,17 +111,14 @@ export type FieldToArktype<C extends Field> = C extends IdField
  * const arrayValidator = validator.array();
  * ```
  */
-export function tableToArktype<TFieldMap extends FieldMap>(
-	fields: TFieldMap,
-): ObjectType<Row<TFieldMap>> {
-	return type(
-		Object.fromEntries(
-			Object.entries(fields).map(([fieldName, fieldDefinition]) => [
-				fieldName,
-				fieldToArktype(fieldDefinition),
-			]),
-		),
-	) as ObjectType<Row<TFieldMap>>;
+export function tableToArktype<TFields extends readonly Field[]>(
+	fields: TFields,
+): ObjectType<Row<TFields>> {
+	const properties: Record<string, Type> = {};
+	for (const field of fields) {
+		properties[field.id] = fieldToArktype(field);
+	}
+	return type(properties) as ObjectType<Row<TFields>>;
 }
 
 /**

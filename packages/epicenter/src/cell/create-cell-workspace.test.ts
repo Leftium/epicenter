@@ -1,37 +1,93 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
+import {
+	boolean,
+	id,
+	integer,
+	select,
+	table,
+	text,
+} from '../core/schema/fields/factories';
 import { createCellWorkspace } from './create-cell-workspace';
-import type { CellWorkspaceClient, TableStore, WorkspaceSchema } from './types';
+import type {
+	CellValue,
+	CellWorkspaceClient,
+	RowData,
+	TableHelper,
+	WorkspaceDefinition,
+} from './types';
+
+/**
+ * Helper to extract raw value from validated cell result.
+ * Returns undefined if not found, otherwise the raw value.
+ */
+function getRawValue(
+	helper: TableHelper,
+	rowId: string,
+	fieldId: string,
+): CellValue | undefined {
+	const result = helper.get(rowId, fieldId);
+	if (result.status === 'not_found') return undefined;
+	return result.value;
+}
+
+/**
+ * Helper to extract raw row data from validated row result.
+ * Returns undefined if not found, otherwise the cells record.
+ */
+function getRawRow(
+	helper: TableHelper,
+	rowId: string,
+): Record<string, CellValue> | undefined {
+	const result = helper.getRow(rowId);
+	if (result.status === 'not_found') return undefined;
+	if (result.status === 'valid') return result.row.cells;
+	// For invalid, row contains the cells
+	return result.row as Record<string, CellValue>;
+}
+
+/**
+ * Helper to extract all raw rows from validated results.
+ */
+function getRawRows(helper: TableHelper): RowData[] {
+	return helper
+		.getAll()
+		.map((r) =>
+			r.status === 'valid'
+				? r.row
+				: { id: r.id, cells: r.row as Record<string, CellValue> },
+		);
+}
 
 // Default test definition with posts table
-const testDefinition: WorkspaceSchema = {
+const testDefinition: WorkspaceDefinition = {
 	name: 'Test Workspace',
 	description: 'A workspace for testing',
-	tables: {
-		posts: {
+	icon: null,
+	tables: [
+		table('posts', {
 			name: 'Blog Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 2 },
-				published: { name: 'Published', type: 'boolean', order: 3 },
-			},
-		},
-		users: {
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+				boolean('published', { name: 'Published' }),
+			] as const,
+		}),
+		table('users', {
 			name: 'Users',
-			fields: {
-				name: { name: 'Name', type: 'text', order: 1 },
-			},
-		},
-	},
-	kv: {
-		theme: { name: 'Theme', type: 'select', options: ['light', 'dark'] },
-		language: { name: 'Language', type: 'text' },
-	},
+			fields: [id(), text('name', { name: 'Name' })] as const,
+		}),
+	],
+	kv: [
+		select('theme', { name: 'Theme', options: ['light', 'dark'] as const }),
+		text('language', { name: 'Language' }),
+	],
 };
 
 describe('createCellWorkspace', () => {
 	let workspace: CellWorkspaceClient;
-	let posts: TableStore;
+	let posts: TableHelper;
 
 	beforeEach(() => {
 		workspace = createCellWorkspace({
@@ -99,13 +155,13 @@ describe('createCellWorkspace', () => {
 		test('hard-deletes row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
-			expect(posts.raw.getRow(rowId)).toBeDefined();
+			expect(getRawRow(posts, rowId)).toBeDefined();
 
 			posts.deleteRow(rowId);
-			expect(posts.raw.getRow(rowId)).toBeUndefined();
+			expect(getRawRow(posts, rowId)).toBeUndefined();
 		});
 
-		test('raw.getRows returns rows sorted by id', () => {
+		test('getAll returns rows sorted by id', () => {
 			posts.createRow('row3');
 			posts.createRow('row1');
 			posts.createRow('row2');
@@ -114,7 +170,7 @@ describe('createCellWorkspace', () => {
 			posts.set('row1', 'title', 'First');
 			posts.set('row2', 'title', 'Second');
 
-			const rows = posts.raw.getRows();
+			const rows = getRawRows(posts);
 			expect(rows.map((r) => r.id)).toEqual(['row1', 'row2', 'row3']);
 		});
 
@@ -143,10 +199,10 @@ describe('createCellWorkspace', () => {
 	});
 
 	describe('cell operations', () => {
-		test('sets and gets cell value (raw)', () => {
+		test('sets and gets cell value', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello World');
-			expect(posts.raw.get(rowId, 'title')).toBe('Hello World');
+			expect(getRawValue(posts, rowId, 'title')).toBe('Hello World');
 		});
 
 		test('get() returns validated result', () => {
@@ -166,13 +222,13 @@ describe('createCellWorkspace', () => {
 			expect(posts.has(rowId, 'title')).toBe(false);
 		});
 
-		test('raw.getRow returns all cells for a row', () => {
+		test('getRow returns all cells for a row', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'title', 'Hello');
 			posts.set(rowId, 'views', 100);
 			posts.set(rowId, 'published', true);
 
-			const row = posts.raw.getRow(rowId)!;
+			const row = getRawRow(posts, rowId)!;
 			expect(row.title).toBe('Hello');
 			expect(row.views).toBe(100);
 			expect(row.published).toBe(true);
@@ -191,7 +247,7 @@ describe('createCellWorkspace', () => {
 			}
 		});
 
-		test('stores various data types (raw access)', () => {
+		test('stores various data types', () => {
 			const rowId = posts.createRow();
 			posts.set(rowId, 'text', 'hello');
 			posts.set(rowId, 'number', 42);
@@ -201,13 +257,13 @@ describe('createCellWorkspace', () => {
 			posts.set(rowId, 'object', { nested: 'value' });
 			posts.set(rowId, 'null', null);
 
-			expect(posts.raw.get(rowId, 'text')).toBe('hello');
-			expect(posts.raw.get(rowId, 'number')).toBe(42);
-			expect(posts.raw.get(rowId, 'float')).toBe(3.14);
-			expect(posts.raw.get(rowId, 'bool')).toBe(true);
-			expect(posts.raw.get(rowId, 'array')).toEqual(['a', 'b']);
-			expect(posts.raw.get(rowId, 'object')).toEqual({ nested: 'value' });
-			expect(posts.raw.get(rowId, 'null')).toBeNull();
+			expect(getRawValue(posts, rowId, 'text')).toBe('hello');
+			expect(getRawValue(posts, rowId, 'number')).toBe(42);
+			expect(getRawValue(posts, rowId, 'float')).toBe(3.14);
+			expect(getRawValue(posts, rowId, 'bool')).toBe(true);
+			expect(getRawValue(posts, rowId, 'array')).toEqual(['a', 'b']);
+			expect(getRawValue(posts, rowId, 'object')).toEqual({ nested: 'value' });
+			expect(getRawValue(posts, rowId, 'null')).toBeNull();
 		});
 
 		test('validates fieldId does not contain colon', () => {
@@ -358,8 +414,8 @@ describe('createCellWorkspace', () => {
 
 			// Verify ws2 has the data
 			const posts2 = ws2.table('posts');
-			expect(posts2.raw.getRow('row1')).toBeDefined();
-			expect(posts2.raw.get('row1', 'title')).toBe('Hello from WS1');
+			expect(getRawRow(posts2, 'row1')).toBeDefined();
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('Hello from WS1');
 
 			// Make change in ws2
 			posts2.set(rowId, 'title', 'Updated in WS2');
@@ -369,7 +425,7 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Verify ws1 has the update
-			expect(posts1.raw.get('row1', 'title')).toBe('Updated in WS2');
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('Updated in WS2');
 		});
 
 		test('last-write-wins for concurrent cell edits', async () => {
@@ -402,10 +458,10 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have BOTH edits (different cells, both win)
-			expect(posts1.raw.get('row1', 'title')).toBe('From WS1');
-			expect(posts1.raw.get('row1', 'views')).toBe(999);
-			expect(posts2.raw.get('row1', 'title')).toBe('From WS1');
-			expect(posts2.raw.get('row1', 'views')).toBe(999);
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('From WS1');
+			expect(getRawValue(posts1, 'row1', 'views')).toBe(999);
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('From WS1');
+			expect(getRawValue(posts2, 'row1', 'views')).toBe(999);
 		});
 
 		test('same cell concurrent edit - later timestamp wins', async () => {
@@ -438,8 +494,8 @@ describe('createCellWorkspace', () => {
 			Y.applyUpdate(ws1.ydoc, update2);
 
 			// Both should have the later value (WS2)
-			expect(posts1.raw.get('row1', 'title')).toBe('From WS2 (later)');
-			expect(posts2.raw.get('row1', 'title')).toBe('From WS2 (later)');
+			expect(getRawValue(posts1, 'row1', 'title')).toBe('From WS2 (later)');
+			expect(getRawValue(posts2, 'row1', 'title')).toBe('From WS2 (later)');
 		});
 	});
 
@@ -508,9 +564,9 @@ describe('createCellWorkspace', () => {
 			});
 
 			// Verify all writes completed
-			expect(posts.raw.getRow('row1')).toBeDefined();
-			expect(posts.raw.get('row1', 'title')).toBe('Hello');
-			expect(posts.raw.get('row1', 'views')).toBe(100);
+			expect(getRawRow(posts, 'row1')).toBeDefined();
+			expect(getRawValue(posts, 'row1', 'title')).toBe('Hello');
+			expect(getRawValue(posts, 'row1', 'views')).toBe(100);
 		});
 	});
 
@@ -523,7 +579,8 @@ describe('createCellWorkspace', () => {
 		test('dynamic table has empty schema', () => {
 			const dynamicTable = workspace.table('dynamic');
 			expect(dynamicTable.schema.name).toBe('dynamic');
-			expect(dynamicTable.schema.fields).toEqual({});
+			// Dynamic tables have no fields defined (empty object at runtime)
+			expect(Object.keys(dynamicTable.schema.fields)).toHaveLength(0);
 		});
 
 		test('getAll returns validated results', () => {
@@ -579,16 +636,26 @@ describe('type validation', () => {
 	const makeDefinition = (
 		fieldName: string,
 		fieldType: string,
-	): WorkspaceSchema => ({
+	): WorkspaceDefinition => ({
 		name: 'Test',
-		tables: {
-			test: {
+		description: '',
+		icon: null,
+		tables: [
+			table('test', {
 				name: 'Test',
-				fields: {
-					[fieldName]: { name: fieldName, type: fieldType as any, order: 1 },
-				},
-			},
-		},
+				fields: [
+					id(),
+					{
+						id: fieldName,
+						name: fieldName,
+						type: fieldType as any,
+						description: '',
+						icon: null,
+					},
+				],
+			}),
+		],
+		kv: [],
 	});
 
 	test('text type validation', () => {
@@ -708,5 +775,372 @@ describe('type validation', () => {
 
 		t.set(rowId, 'date', true);
 		expect(ws.getTypedRows('test')[0]!.cells.date!.valid).toBe(false);
+	});
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc-based API tests (new)
+// ════════════════════════════════════════════════════════════════════════════
+
+import { defineExports } from '../core/lifecycle';
+
+describe('createCellWorkspace with HeadDoc', () => {
+	// Minimal HeadDoc mock for testing
+	const createMockHeadDoc = (workspaceId: string, epoch = 0) => ({
+		workspaceId,
+		getEpoch: () => epoch,
+	});
+
+	const testDefinition = {
+		name: 'Test Workspace',
+		description: '',
+		icon: null,
+		tables: [
+			table('posts', {
+				name: 'Posts',
+				fields: [
+					id(),
+					text('title', { name: 'Title' }),
+					integer('views', { name: 'Views' }),
+				] as const,
+			}),
+			table('users', {
+				name: 'Users',
+				fields: [id(), text('name', { name: 'Name' })] as const,
+			}),
+		],
+		kv: [],
+	} as const;
+
+	describe('builder pattern', () => {
+		test('returns builder with withExtensions method', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const builder = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			});
+
+			expect(typeof builder.withExtensions).toBe('function');
+		});
+
+		test('withExtensions creates workspace client', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.id).toBe('test-workspace');
+			expect(workspace.epoch).toBe(0);
+			expect(workspace.ydoc).toBeInstanceOf(Y.Doc);
+		});
+	});
+
+	describe('epoch-based doc ID', () => {
+		test('Y.Doc guid is workspaceId-epoch at epoch 0', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 0);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-0');
+		});
+
+		test('Y.Doc guid is workspaceId-epoch at epoch 1', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 1);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-1');
+		});
+
+		test('Y.Doc guid is workspaceId-epoch at epoch 42', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 42);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.ydoc.guid).toBe('my-workspace-42');
+		});
+
+		test('epoch is exposed on workspace client', () => {
+			const headDoc = createMockHeadDoc('my-workspace', 5);
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			expect(workspace.epoch).toBe(5);
+		});
+	});
+
+	describe('extension system', () => {
+		test('extensions are initialized and accessible', () => {
+			const headDoc = createMockHeadDoc('test-workspace');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				mock: () =>
+					defineExports({
+						customValue: 'hello',
+					}),
+			});
+
+			expect(workspace.extensions.mock.customValue).toBe('hello');
+		});
+
+		test('extension receives correct context', () => {
+			const headDoc = createMockHeadDoc('ctx-test', 3);
+			let receivedContext: any = null;
+
+			createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				inspector: (ctx) => {
+					receivedContext = ctx;
+					return defineExports({});
+				},
+			});
+
+			expect(receivedContext.workspaceId).toBe('ctx-test');
+			expect(receivedContext.epoch).toBe(3);
+			expect(receivedContext.extensionId).toBe('inspector');
+			expect(receivedContext.ydoc).toBeInstanceOf(Y.Doc);
+			expect(typeof receivedContext.table).toBe('function');
+			expect(typeof receivedContext.kv.get).toBe('function');
+		});
+
+		test('extension can access tables from context', () => {
+			const headDoc = createMockHeadDoc('table-ctx-test');
+			let tablePosts: any = null;
+
+			createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				inspector: (ctx) => {
+					tablePosts = ctx.table('posts');
+					return defineExports({});
+				},
+			});
+
+			expect(tablePosts).not.toBeNull();
+			expect(tablePosts.tableId).toBe('posts');
+		});
+
+		test('multiple extensions are all initialized', () => {
+			const headDoc = createMockHeadDoc('multi-ext-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				ext1: () => defineExports({ value: 1 }),
+				ext2: () => defineExports({ value: 2 }),
+				ext3: () => defineExports({ value: 3 }),
+			});
+
+			expect(workspace.extensions.ext1.value).toBe(1);
+			expect(workspace.extensions.ext2.value).toBe(2);
+			expect(workspace.extensions.ext3.value).toBe(3);
+		});
+
+		test('extensions have normalized lifecycle', () => {
+			const headDoc = createMockHeadDoc('lifecycle-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				minimal: () => defineExports({}),
+			});
+
+			// defineExports should have added whenSynced and destroy
+			expect(workspace.extensions.minimal.whenSynced).toBeInstanceOf(Promise);
+			expect(typeof workspace.extensions.minimal.destroy).toBe('function');
+		});
+	});
+
+	describe('workspace lifecycle', () => {
+		test('whenSynced resolves when all extensions sync', async () => {
+			let syncResolve: () => void;
+			const syncPromise = new Promise<void>((resolve) => {
+				syncResolve = resolve;
+			});
+
+			const headDoc = createMockHeadDoc('sync-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				async: () =>
+					defineExports({
+						whenSynced: syncPromise,
+					}),
+			});
+
+			let synced = false;
+			workspace.whenSynced.then(() => {
+				synced = true;
+			});
+
+			expect(synced).toBe(false);
+			syncResolve!();
+			await workspace.whenSynced;
+			expect(synced).toBe(true);
+		});
+
+		test('destroy calls all extension destroys', async () => {
+			const destroyed: string[] = [];
+			const headDoc = createMockHeadDoc('destroy-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({
+				ext1: () =>
+					defineExports({
+						destroy: () => {
+							destroyed.push('ext1');
+						},
+					}),
+				ext2: () =>
+					defineExports({
+						destroy: () => {
+							destroyed.push('ext2');
+						},
+					}),
+			});
+
+			await workspace.destroy();
+			expect(destroyed).toContain('ext1');
+			expect(destroyed).toContain('ext2');
+		});
+
+		test('destroy destroys Y.Doc', async () => {
+			const headDoc = createMockHeadDoc('ydoc-destroy-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const ydoc = workspace.ydoc;
+			expect(ydoc.isDestroyed).toBe(false);
+			await workspace.destroy();
+			expect(ydoc.isDestroyed).toBe(true);
+		});
+	});
+
+	describe('workspace functionality', () => {
+		test('can create and read rows', () => {
+			const headDoc = createMockHeadDoc('row-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const posts = workspace.table('posts');
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Hello World');
+			posts.set(rowId, 'views', 100);
+
+			const row = getRawRow(posts, rowId);
+			expect(row?.title).toBe('Hello World');
+			expect(row?.views).toBe(100);
+		});
+
+		test('kv store works', () => {
+			const headDoc = createMockHeadDoc('kv-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			workspace.kv.set('theme', 'dark');
+			expect(workspace.kv.get('theme')).toBe('dark');
+		});
+
+		test('batch operations work', () => {
+			const headDoc = createMockHeadDoc('batch-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			workspace.batch((ws) => {
+				const posts = ws.table('posts');
+				const row1 = posts.createRow();
+				const row2 = posts.createRow();
+				posts.set(row1, 'title', 'Post 1');
+				posts.set(row2, 'title', 'Post 2');
+			});
+
+			const rows = getRawRows(workspace.table('posts'));
+			expect(rows.length).toBe(2);
+		});
+
+		test('getTypedRows works with HeadDoc API', () => {
+			const headDoc = createMockHeadDoc('typed-rows-test');
+			const workspace = createCellWorkspace({
+				headDoc,
+				definition: testDefinition,
+			}).withExtensions({});
+
+			const posts = workspace.table('posts');
+			const rowId = posts.createRow();
+			posts.set(rowId, 'title', 'Test Post');
+			posts.set(rowId, 'views', 42);
+
+			const typedRows = workspace.getTypedRows('posts');
+			expect(typedRows.length).toBe(1);
+			expect(typedRows[0]!.cells.title!.value).toBe('Test Post');
+			expect(typedRows[0]!.cells.title!.type).toBe('text');
+			expect(typedRows[0]!.cells.views!.value).toBe(42);
+			expect(typedRows[0]!.cells.views!.type).toBe('integer');
+		});
+	});
+
+	describe('legacy API compatibility', () => {
+		test('legacy API still works', () => {
+			const workspace = createCellWorkspace({
+				id: 'legacy-test',
+				definition: {
+					name: 'Legacy Workspace',
+					description: '',
+					icon: null,
+					tables: [
+						table('items', {
+							name: 'Items',
+							fields: [id(), text('name', { name: 'Name' })] as const,
+						}),
+					],
+					kv: [],
+				},
+			});
+
+			expect(workspace.id).toBe('legacy-test');
+			expect(workspace.epoch).toBe(0);
+			expect(workspace.ydoc.guid).toBe('legacy-test');
+			expect(workspace.extensions).toEqual({});
+		});
+
+		test('legacy API has whenSynced that resolves immediately', async () => {
+			const workspace = createCellWorkspace({
+				id: 'legacy-sync-test',
+				definition: {
+					name: 'Test',
+					description: '',
+					icon: null,
+					tables: [],
+					kv: [],
+				},
+			});
+
+			// Should resolve immediately
+			await workspace.whenSynced;
+		});
 	});
 });

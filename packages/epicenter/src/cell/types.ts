@@ -13,7 +13,14 @@
  */
 
 import type * as Y from 'yjs';
-import type { Icon } from '../core/schema/fields/types';
+import type {
+	FieldType as CoreFieldType,
+	Field,
+	Icon,
+	KvField,
+	TableDefinition,
+} from '../core/schema/fields/types';
+import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
 import type {
 	GetCellResult,
 	GetResult,
@@ -22,89 +29,37 @@ import type {
 } from './validation-types';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Schema Types (External JSON)
+// Schema Types (Re-exported from Core)
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Supported field types for schema definitions.
+ * Field definition - re-exported from core.
+ * Field = FieldSchema & { id: string }, with array position determining order.
  */
-export type FieldType =
-	| 'text'
-	| 'integer'
-	| 'real'
-	| 'boolean'
-	| 'date'
-	| 'datetime'
-	| 'select'
-	| 'tags'
-	| 'json'
-	| 'richtext';
+export type SchemaFieldDefinition = Field;
 
 /**
- * Field definition in external schema.
- * Purely advisory - describes how to interpret cell values.
+ * Table definition - re-exported from core.
+ * Use the `table()` helper to create these with defaults.
  */
-export type SchemaFieldDefinition = {
-	/** Display name of the field */
-	name: string;
-	/** Data type hint for the field */
-	type: FieldType;
-	/** Display order (lower = first) */
-	order: number;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Options for select/tags field types */
-	options?: string[];
-	/** Default value for new cells */
-	default?: unknown;
-};
+export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
 
 /**
- * Table definition in external schema.
+ * KV definition - re-exported from core.
+ * Use the `setting()` helper to create these with defaults.
  */
-export type SchemaTableDefinition = {
-	/** Display name of the table */
-	name: string;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Field definitions keyed by field ID */
-	fields: Record<string, SchemaFieldDefinition>;
-};
+export type SchemaKvDefinition = KvField;
 
 /**
- * KV field definition in external schema.
+ * Complete workspace definition - re-exported from core.
+ * Includes workspace identity (name, description, icon) and schema (tables, kv).
  */
-export type SchemaKvDefinition = {
-	/** Display name of the KV field */
-	name: string;
-	/** Data type hint */
-	type: FieldType;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Options for select field type */
-	options?: string[];
-	/** Default value */
-	default?: unknown;
-};
+export type WorkspaceDefinition = CoreWorkspaceDefinition;
 
 /**
- * Complete workspace definition (can be stored as external JSON file).
- *
- * This is the "lens" through which you view the data.
- * The data itself doesn't need to comply with this schema.
+ * Field type discriminator - derived from Field['type'] in core.
  */
-export type WorkspaceSchema = {
-	/** Display name of the workspace */
-	name: string;
-	/** Optional description of the workspace */
-	description?: string;
-	/** Optional icon - tagged string format 'type:value' or plain emoji */
-	icon?: Icon | string | null;
-	/** Table definitions keyed by table ID */
-	tables: Record<string, SchemaTableDefinition>;
-	/** Optional KV definitions for single values */
-	kv?: Record<string, SchemaKvDefinition>;
-};
+export type FieldType = CoreFieldType;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Data Types
@@ -168,34 +123,21 @@ export type ChangeHandler<T> = (
 ) => void;
 
 // ════════════════════════════════════════════════════════════════════════════
-// Store Interfaces
+// Helper Interfaces
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Raw table access without validation (escape hatch).
- */
-export type RawTableAccess = {
-	/** Get a cell value without validation */
-	get(rowId: string, fieldId: string): CellValue | undefined;
-	/** Get all cells for a row without validation */
-	getRow(rowId: string): Record<string, CellValue> | undefined;
-	/** Get all rows without validation */
-	getRows(): RowData[];
-};
-
-/**
- * Store for a single table's data with integrated validation.
+ * Helper for a single table's data with integrated validation.
  *
- * Primary methods return validated results (Result types).
- * Use the `raw` property for unvalidated access when needed.
+ * All methods return validated results that include both the value and validation status.
+ * Even invalid results include the raw value via `.value` or `.row`, so there's no need
+ * for separate "raw" access - you can always get the data regardless of validity.
  */
-export type TableStore = {
+export type TableHelper = {
 	/** The table identifier */
-	readonly tableId: string;
+	tableId: string;
 	/** The schema definition for this table (empty fields for dynamic tables) */
-	readonly schema: SchemaTableDefinition;
-	/** Raw access without validation (escape hatch) */
-	readonly raw: RawTableAccess;
+	schema: SchemaTableDefinition;
 
 	// Cell operations (validated)
 	/** Get a validated cell value */
@@ -231,7 +173,7 @@ export type TableStore = {
 };
 
 /**
- * Store for workspace-level key-value pairs.
+ * Helper for workspace-level key-value pairs.
  */
 export type KvStore = {
 	/** Get a value by key */
@@ -256,33 +198,43 @@ export type KvStore = {
 /**
  * The main cell workspace client.
  *
- * Provides access to table stores and KV store.
+ * Provides access to table helpers and KV helper.
  * Schema is applied as a "lens" for viewing/editing.
  */
-export type CellWorkspaceClient = {
-	/** Workspace identifier */
-	readonly id: string;
+export type CellWorkspaceClient<
+	TTableDefs extends
+		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TExtensions = {},
+> = {
+	/** Workspace identifier (no epoch suffix) */
+	id: string;
+	/** Current epoch number (0 if not using HeadDoc) */
+	epoch: number;
 	/** The underlying Yjs document */
-	readonly ydoc: Y.Doc;
+	ydoc: Y.Doc;
 
 	// Workspace metadata (from definition)
 	/** Display name of the workspace */
-	readonly name: string;
+	name: string;
 	/** Description of the workspace */
-	readonly description: string;
+	description: string;
 	/** Icon for the workspace */
-	readonly icon: Icon | string | null;
+	icon: Icon | string | null;
 	/** The full workspace definition */
-	readonly definition: WorkspaceSchema;
+	definition: WorkspaceDefinition;
 
 	/**
-	 * Get a table store. Creates the underlying Y.Array if it doesn't exist.
-	 * Table stores are cached - calling with same tableId returns same instance.
+	 * Get a table helper. Creates the underlying Y.Array if it doesn't exist.
+	 * Table helpers are cached - calling with same tableId returns same instance.
 	 */
-	table(tableId: string): TableStore;
+	table<K extends TTableDefs[number]['id']>(tableId: K): TableHelper;
+	table(tableId: string): TableHelper;
 
 	/** KV store for workspace-level values */
-	readonly kv: KvStore;
+	kv: KvStore;
+
+	/** Extension exports (empty object if no extensions) */
+	extensions: TExtensions;
 
 	// Convenience methods with schema
 
@@ -296,7 +248,12 @@ export type CellWorkspaceClient = {
 	/**
 	 * Batch multiple writes into a single Yjs transaction.
 	 */
-	batch<T>(fn: (ws: CellWorkspaceClient) => T): T;
+	batch<T>(fn: (ws: CellWorkspaceClient<TTableDefs, TExtensions>) => T): T;
+
+	/**
+	 * Resolves when all extensions are synced/ready.
+	 */
+	whenSynced: Promise<void>;
 
 	/**
 	 * Destroy the workspace client and release resources.
@@ -315,7 +272,27 @@ export type CreateCellWorkspaceOptions = {
 	/** Unique identifier for the workspace (used as Y.Doc guid) */
 	id: string;
 	/** Workspace definition (schema for tables and KV) */
-	definition: WorkspaceSchema;
+	definition: WorkspaceDefinition;
 	/** Optional existing Y.Doc to use instead of creating a new one */
 	ydoc?: Y.Doc;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc-Based Options (New API)
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Options for creating a cell workspace with HeadDoc.
+ *
+ * This is the new preferred API that integrates with the HeadDoc epoch system.
+ * The Y.Doc guid will be `{workspaceId}-{epoch}` for time-travel support.
+ */
+export type CreateCellWorkspaceWithHeadDocOptions = {
+	/** HeadDoc containing workspace identity and epoch state */
+	headDoc: {
+		workspaceId: string;
+		getEpoch(): number;
+	};
+	/** Workspace definition (schema for tables and KV) */
+	definition: WorkspaceDefinition;
 };

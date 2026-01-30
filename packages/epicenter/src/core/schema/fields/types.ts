@@ -2,7 +2,7 @@
  * @fileoverview Core field type definitions
  *
  * Contains the foundational types for the schema system:
- * - Field types (IdField, TextField, etc.)
+ * - Field types (IdFieldSchema, TextFieldSchema, etc.)
  * - Table and workspace schemas
  * - Row value types (CellValue, Row, PartialRow)
  *
@@ -120,15 +120,18 @@ export function isIcon(value: string): value is Icon {
  * where each column can have its own display name, icon, and description.
  * Factory functions provide sensible defaults (empty string, null icon).
  *
+ * The `id` is included here because every field must have an identifier -
+ * it's as fundamental to a field's identity as its name.
+ *
  * ```
  * TableDefinition
  * ├── name, icon, description    ← TableMetadata (table-level)
  * └── fields
- *     ├── "id"
- *     │   ├── name, icon, description  ← FieldMetadata (column-level)
+ *     ├── { id: "id", ... }
+ *     │   ├── id, name, icon, description  ← FieldMetadata (column-level)
  *     │   └── type: "id"
- *     └── "title"
- *         ├── name, icon, description  ← FieldMetadata (column-level)
+ *     └── { id: "title", ... }
+ *         ├── id, name, icon, description  ← FieldMetadata (column-level)
  *         ├── type: "text"
  *         └── nullable: false
  * ```
@@ -136,17 +139,19 @@ export function isIcon(value: string): value is Icon {
  * @example
  * ```typescript
  * // Field with custom metadata
- * const titleField = text({
+ * const titleField = text('title', {
  *   name: 'Post Title',
  *   icon: 'emoji:📝',
  *   description: 'The main title displayed on the blog',
  * });
  *
  * // Field with defaults (name: '', icon: null, description: '')
- * const simpleField = text();
+ * const simpleField = text('title');
  * ```
  */
 export type FieldMetadata = {
+	/** Unique identifier for the field within its table. */
+	id: string;
 	/** Display name shown in UI. Empty string if not provided. */
 	name: string;
 	/** Description shown in tooltips/docs. Empty string if not provided. */
@@ -169,7 +174,7 @@ export type FieldOptions = {
 };
 
 // ============================================================================
-// Field Schema Types
+// Field Types (with id included)
 // ============================================================================
 
 /**
@@ -246,6 +251,7 @@ export type DateField<TNullable extends boolean = boolean> = FieldMetadata & {
  * @example
  * ```typescript
  * {
+ *   id: 'status',
  *   type: 'select',
  *   options: ['draft', 'published', 'archived'],
  *   default: 'draft'
@@ -276,10 +282,10 @@ export type SelectField<
  * @example
  * ```typescript
  * // Validated tags
- * { type: 'tags', options: ['urgent', 'normal', 'low'] }
+ * { id: 'priority', type: 'tags', options: ['urgent', 'normal', 'low'] }
  *
  * // Unconstrained tags
- * { type: 'tags' }
+ * { id: 'labels', type: 'tags' }
  * ```
  */
 export type TagsField<
@@ -309,6 +315,7 @@ export type TagsField<
  * import { Type } from 'typebox';
  *
  * {
+ *   id: 'settings',
  *   type: 'json',
  *   schema: Type.Object({ theme: Type.String(), darkMode: Type.Boolean() }),
  *   default: { theme: 'dark', darkMode: true }
@@ -326,12 +333,59 @@ export type JsonField<
 };
 
 // ============================================================================
+// Legacy Type Aliases (for backwards compatibility)
+// ============================================================================
+
+/** @deprecated Use `IdField` instead */
+export type IdFieldSchema = IdField;
+/** @deprecated Use `TextField` instead */
+export type TextFieldSchema<TNullable extends boolean = boolean> =
+	TextField<TNullable>;
+/** @deprecated Use `RichtextField` instead */
+export type RichtextFieldSchema = RichtextField;
+/** @deprecated Use `IntegerField` instead */
+export type IntegerFieldSchema<TNullable extends boolean = boolean> =
+	IntegerField<TNullable>;
+/** @deprecated Use `RealField` instead */
+export type RealFieldSchema<TNullable extends boolean = boolean> =
+	RealField<TNullable>;
+/** @deprecated Use `BooleanField` instead */
+export type BooleanFieldSchema<TNullable extends boolean = boolean> =
+	BooleanField<TNullable>;
+/** @deprecated Use `DateField` instead */
+export type DateFieldSchema<TNullable extends boolean = boolean> =
+	DateField<TNullable>;
+/** @deprecated Use `SelectField` instead */
+export type SelectFieldSchema<
+	TOptions extends readonly [string, ...string[]] = readonly [
+		string,
+		...string[],
+	],
+	TNullable extends boolean = boolean,
+> = SelectField<TOptions, TNullable>;
+/** @deprecated Use `TagsField` instead */
+export type TagsFieldSchema<
+	TOptions extends readonly [string, ...string[]] = readonly [
+		string,
+		...string[],
+	],
+	TNullable extends boolean = boolean,
+> = TagsField<TOptions, TNullable>;
+/** @deprecated Use `JsonField` instead */
+export type JsonFieldSchema<
+	T extends TSchema = TSchema,
+	TNullable extends boolean = boolean,
+> = JsonField<T, TNullable>;
+
+// ============================================================================
 // Discriminated Unions and Utility Types
 // ============================================================================
 
 /**
- * Discriminated union of all field definition types.
+ * Discriminated union of all field types.
  * Use `type` to narrow to a specific type.
+ *
+ * All fields include the `id` property - it's part of the field definition itself.
  */
 export type Field =
 	| IdField
@@ -346,10 +400,87 @@ export type Field =
 	| JsonField;
 
 /**
+ * @deprecated Use `Field` instead. FieldSchema is now identical to Field.
+ */
+export type FieldSchema = Field;
+
+/**
  * Extract the type name from a field definition.
  * One of: 'id', 'text', 'richtext', 'integer', 'real', 'boolean', 'date', 'select', 'tags', 'json'
  */
 export type FieldType = Field['type'];
+
+// ============================================================================
+// Type Utilities for Field Arrays
+// ============================================================================
+
+/**
+ * Get specific field by id from array.
+ */
+export type FieldById<
+	TFields extends readonly Field[],
+	K extends string,
+> = Extract<TFields[number], { id: K }>;
+
+/**
+ * Get union of all field ids from array.
+ */
+export type FieldIds<TFields extends readonly Field[]> = TFields[number]['id'];
+
+// ============================================================================
+// Type Utilities for Table Arrays
+// ============================================================================
+
+/**
+ * Get specific table by id from array.
+ *
+ * @example
+ * ```typescript
+ * type PostsTable = TableById<typeof workspace.tables, 'posts'>;
+ * ```
+ */
+export type TableById<
+	TTables extends readonly TableDefinition[],
+	K extends string,
+> = Extract<TTables[number], { id: K }>;
+
+/**
+ * Get union of all table ids from array.
+ *
+ * @example
+ * ```typescript
+ * type AllTableIds = TableIds<typeof workspace.tables>; // 'posts' | 'users' | ...
+ * ```
+ */
+export type TableIds<TTables extends readonly TableDefinition[]> =
+	TTables[number]['id'];
+
+// ============================================================================
+// Type Utilities for KV Field Arrays
+// ============================================================================
+
+/**
+ * Get specific KV field by id from array.
+ *
+ * @example
+ * ```typescript
+ * type ThemeField = KvFieldById<typeof workspace.kv, 'theme'>;
+ * ```
+ */
+export type KvFieldById<
+	TKv extends readonly KvField[],
+	K extends string,
+> = Extract<TKv[number], { id: K }>;
+
+/**
+ * Get union of all KV field ids from array.
+ *
+ * @example
+ * ```typescript
+ * type KvKeys = KvFieldIds<typeof workspace.kv>; // 'theme' | 'fontSize' | ...
+ * ```
+ */
+export type KvFieldIds<TKv extends readonly KvField[]> = TKv[number]['id'];
 
 // ============================================================================
 // Value Types
@@ -420,69 +551,48 @@ export type CellValue<C extends Field = Field> = C extends IdField
 // ============================================================================
 
 /**
- * Field definitions - maps field names to field definitions.
- * Must always include an 'id' field with IdField.
- *
- * @example
- * ```typescript
- * const postsFields = {
- *   id: id(),
- *   title: text(),
- *   status: select({ options: ['draft', 'published'] }),
- * } satisfies FieldMap;
- * ```
- */
-export type FieldMap = { id: IdField } & Record<string, Field>;
-
-/**
  * Table definition with metadata for UI display.
  * This is the **normalized** output type created by the `table()` factory function.
  *
+ * Fields are stored as an array where array position determines display order.
+ * Each field has an `id` property.
+ *
  * @example
  * ```typescript
- * const postsTable: TableDefinition = {
+ * const postsTable = table('posts', {
  *   name: 'Posts',
  *   description: 'Blog posts and articles',
  *   icon: 'emoji:📝',
- *   fields: {
- *     id: id(),
- *     title: text(),
- *     status: select({ options: ['draft', 'published'] }),
- *   },
- * };
+ *   fields: [
+ *     id(),
+ *     text('title'),
+ *     select('status', { options: ['draft', 'published'] }),
+ *   ],
+ * });
+ * // Result:
+ * // {
+ * //   id: 'posts',
+ * //   name: 'Posts',
+ * //   description: 'Blog posts and articles',
+ * //   icon: 'emoji:📝',
+ * //   fields: [...]
+ * // }
  * ```
  */
-export type TableDefinition<TFields extends FieldMap = FieldMap> = {
+export type TableDefinition<
+	TFields extends readonly Field[] = readonly Field[],
+> = {
+	/** Unique identifier for this table */
+	id: string;
 	/** Required display name shown in UI (e.g., "Blog Posts") */
 	name: string;
 	/** Required description shown in tooltips/docs */
 	description: string;
 	/** Icon for the table - tagged string format 'type:value' or null */
 	icon: Icon | null;
-	/** Field schema map for this table */
+	/** Field definitions as array (position = display order) */
 	fields: TFields;
 };
-
-/**
- * Map of table names to their full definitions (metadata + fields).
- *
- * This is the normalized format that flows through the entire system
- * (capabilities, table helpers, etc.). Created using the `table()` factory
- * function for each table.
- *
- * @example
- * ```typescript
- * const blogTables: TableDefinitionMap = {
- *   posts: {
- *     name: 'Posts',
- *     description: 'Blog posts',
- *     icon: 'emoji:📝',
- *     fields: { id: id(), title: text() },
- *   },
- * };
- * ```
- */
-export type TableDefinitionMap = Record<string, TableDefinition>;
 
 // ============================================================================
 // Row Types
@@ -514,8 +624,8 @@ export type TableDefinitionMap = Record<string, TableDefinition>;
  * const json = JSON.stringify(row);
  * ```
  */
-export type Row<TFieldMap extends FieldMap = FieldMap> = {
-	[K in keyof TFieldMap]: CellValue<TFieldMap[K]>;
+export type Row<TFields extends readonly Field[] = readonly Field[]> = {
+	[K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
 };
 
 /**
@@ -537,9 +647,9 @@ export type Row<TFieldMap extends FieldMap = FieldMap> = {
  * });
  * ```
  */
-export type PartialRow<TFieldMap extends FieldMap = FieldMap> = {
+export type PartialRow<TFields extends readonly Field[] = readonly Field[]> = {
 	id: string;
-} & Partial<Omit<Row<TFieldMap>, 'id'>>;
+} & Partial<Omit<Row<TFields>, 'id'>>;
 
 // ============================================================================
 // Key-Value Schema Types
@@ -547,7 +657,8 @@ export type PartialRow<TFieldMap extends FieldMap = FieldMap> = {
 
 /**
  * Field definition for KV stores (excludes IdField).
- * KV entries don't have IDs; they're keyed by string.
+ * KV entries don't have row IDs; they're keyed by string.
+ * The field's `id` property is used as the key in the KV store.
  */
 export type KvField = Exclude<Field, IdField>;
 
@@ -556,77 +667,78 @@ export type KvField = Exclude<Field, IdField>;
  */
 export type KvValue<C extends KvField = KvField> = CellValue<C>;
 
-/**
- * KV entry definition with metadata for UI display.
- *
- * Parallel to TableDefinition, but wraps a single field instead of a fields map.
- * Conceptually, a KV store is like a single row where each key is a column.
- *
- * @example
- * ```typescript
- * const themeKv: KvDefinition = {
- *   name: 'Theme',
- *   icon: 'emoji:🎨',
- *   description: 'Application color theme',
- *   field: select({ options: ['light', 'dark'] }),
- * };
- * ```
- */
-export type KvDefinition<TField extends KvField = KvField> = {
-	/** Display name shown in UI (e.g., "Theme") */
-	name: string;
-	/** Icon for this KV entry - tagged string format 'type:value' or null */
-	icon: Icon | null;
-	/** Description shown in tooltips/docs */
-	description: string;
-	/** The field schema for this KV entry */
-	field: TField;
-};
+// ============================================================================
+// Array ↔ Record Conversion Utilities
+// ============================================================================
 
 /**
- * Map of KV key names to their full definitions (metadata + field).
+ * Convert a TableDefinition[] array to a Record<string, TableDefinition> map.
  *
- * This is the normalized format that flows through the entire system.
- * Created using the `kv()` factory function for each key-value entry.
+ * Used internally when converting from array format to Record format for
+ * backward compatibility with existing code.
  *
  * @example
  * ```typescript
- * const settingsKv: KvDefinitionMap = {
- *   theme: {
- *     name: 'Theme',
- *     icon: 'emoji:🎨',
- *     description: 'Application color theme',
- *     field: select({ options: ['light', 'dark'], default: 'light' }),
- *   },
- *   fontSize: {
- *     name: 'Font Size',
- *     icon: 'emoji:🔤',
- *     description: 'Editor font size in pixels',
- *     field: integer({ default: 14 }),
- *   },
- * };
+ * const tables = [table('posts', { ... }), table('users', { ... })];
+ * const map = tablesToMap(tables);
+ * // { posts: { id: 'posts', ... }, users: { id: 'users', ... } }
  * ```
  */
-export type KvDefinitionMap = Record<string, KvDefinition>;
+export function tablesToMap<
+	TTables extends readonly TableDefinition<readonly Field[]>[],
+>(tables: TTables): { [K in TTables[number]['id']]: TableById<TTables, K> } {
+	return Object.fromEntries(tables.map((t) => [t.id, t])) as {
+		[K in TTables[number]['id']]: TableById<TTables, K>;
+	};
+}
 
 /**
- * Map of KV keys to their field schemas (no metadata).
+ * Convert a KvField[] array to a Record<string, { field: KvField }> map.
  *
- * This is a minimal input format for KV definitions where metadata
- * (name, icon, etc.) is auto-generated.
+ * Used internally when converting from array format to the legacy KvDefinitionLike format.
+ * The resulting map uses the field's `id` as the key.
  *
  * @example
  * ```typescript
- * const kv: KvMap = {
- *   theme: select({ options: ['light', 'dark'] as const, default: 'light' }),
- *   fontSize: integer({ default: 14 }),
- * };
- *
- * // Use in defineWorkspace:
- * const definition = defineWorkspace({
- *   tables: { posts: table({ name: 'Posts', fields: { id: id(), title: text() } }) },
- *   kv,  // KvMap
- * });
+ * const kv = [select('theme', { options: ['light', 'dark'] }), integer('fontSize')];
+ * const map = kvFieldsToMap(kv);
+ * // { theme: { field: { id: 'theme', ... } }, fontSize: { field: { id: 'fontSize', ... } } }
  * ```
  */
-export type KvMap = Record<string, KvField>;
+export function kvFieldsToMap<TKv extends readonly KvField[]>(
+	kvFields: TKv,
+): { [K in TKv[number]['id']]: { field: KvFieldById<TKv, K> } } {
+	return Object.fromEntries(kvFields.map((f) => [f.id, { field: f }])) as {
+		[K in TKv[number]['id']]: { field: KvFieldById<TKv, K> };
+	};
+}
+
+/**
+ * Get a table by id from an array of TableDefinitions.
+ *
+ * @example
+ * ```typescript
+ * const postsTable = getTableById(workspace.tables, 'posts');
+ * ```
+ */
+export function getTableById<TTables extends readonly TableDefinition[]>(
+	tables: TTables,
+	id: string,
+): TableDefinition | undefined {
+	return tables.find((t) => t.id === id);
+}
+
+/**
+ * Get a KV field by id from an array of KvFields.
+ *
+ * @example
+ * ```typescript
+ * const themeField = getKvFieldById(workspace.kv, 'theme');
+ * ```
+ */
+export function getKvFieldById<TKv extends readonly KvField[]>(
+	kv: TKv,
+	id: string,
+): KvField | undefined {
+	return kv.find((f) => f.id === id);
+}

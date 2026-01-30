@@ -85,35 +85,59 @@ export { LifecycleExports } from './core/lifecycle';
 export type { RichContentId } from './core/rich-content/id';
 export { createRichContentId } from './core/rich-content/id';
 export type {
+	// New field type names (preferred)
 	BooleanField,
+	// Legacy type aliases (deprecated, kept for backwards compatibility)
+	/** @deprecated Use `BooleanField` instead */
+	BooleanFieldSchema,
+	// Common types
 	CellValue,
 	DateField,
+	/** @deprecated Use `DateField` instead */
+	DateFieldSchema,
 	Field,
-	FieldMap,
+	FieldById,
+	FieldIds,
 	FieldMetadata,
 	FieldOptions,
+	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
+	FieldSchema,
 	FieldType,
 	Guid,
 	Icon,
 	IconType,
 	Id,
 	IdField,
+	/** @deprecated Use `IdField` instead */
+	IdFieldSchema,
 	IntegerField,
+	/** @deprecated Use `IntegerField` instead */
+	IntegerFieldSchema,
 	JsonField,
-	KvDefinition,
-	KvDefinitionMap,
+	/** @deprecated Use `JsonField` instead */
+	JsonFieldSchema,
+	// KV types
 	KvField,
-	KvMap,
 	KvValue,
 	PartialRow,
 	RealField,
+	/** @deprecated Use `RealField` instead */
+	RealFieldSchema,
 	RichtextField,
+	/** @deprecated Use `RichtextField` instead */
+	RichtextFieldSchema,
 	Row,
 	SelectField,
+	/** @deprecated Use `SelectField` instead */
+	SelectFieldSchema,
 	TableDefinition,
-	TableDefinitionMap,
 	TagsField,
+	/** @deprecated Use `TagsField` instead */
+	TagsFieldSchema,
 	TextField,
+	/** @deprecated Use `TextField` instead */
+	TextFieldSchema,
+	// Date types
 	TimezoneId,
 } from './core/schema';
 // Column schema system
@@ -170,9 +194,42 @@ export {
 } from './core/workspace/normalize';
 export type {
 	ClientBuilder,
+	/** @deprecated Use `WorkspaceDefinitionV2` with arrays instead */
 	WorkspaceDefinition,
+	WorkspaceDefinitionV2,
 } from './core/workspace/workspace';
-export { createClient, defineWorkspace } from './core/workspace/workspace';
+export {
+	/** @deprecated Use `createCellWorkspace` from `@epicenter/hq/cell` instead */
+	createClient,
+	/** @deprecated Use `defineWorkspaceV2` or `createCellWorkspace` instead */
+	defineWorkspace,
+	defineWorkspaceV2,
+} from './core/workspace/workspace';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Cell API (preferred for new projects)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// The Cell API is the recommended approach for new projects:
+// - Cell-level LWW CRDT (better concurrent editing than row-level)
+// - HeadDoc integration for epoch/time-travel support
+// - Builder pattern with typed extensions
+//
+// Import from '@epicenter/hq/cell' for full Cell API, or use these re-exports.
+
+export type {
+	CellExtensionContext,
+	CellExtensionFactory,
+	CellExtensionFactoryMap,
+	CellWorkspaceBuilder,
+	CellWorkspaceClient,
+	CreateCellWorkspaceWithHeadDocOptions,
+	InferCellExtensionExports,
+	SchemaFieldDefinition as CellFieldDefinition,
+	SchemaTableDefinition as CellTableDefinition,
+	WorkspaceDefinition as CellWorkspaceDefinition,
+} from './cell';
+export { createCellWorkspace } from './cell';
 
 // Note: Extensions (markdown, sqlite) are NOT re-exported here to avoid bundling
 // Node.js-only code in browser builds. Import them directly from subpaths:

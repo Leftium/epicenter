@@ -1,28 +1,54 @@
 import { describe, expect, test } from 'bun:test';
+import { id, integer, text } from '../core/schema/fields/factories';
 import {
 	addField,
 	addTable,
 	createEmptySchema,
-	getNextFieldOrder,
-	getSortedFields,
+	getFieldById,
+	getFieldIds,
 	parseSchema,
 	removeField,
 	removeTable,
 	stringifySchema,
 } from './schema-file';
-import type { SchemaTableDefinition, WorkspaceSchema } from './types';
+import type { SchemaTableDefinition, WorkspaceDefinition } from './types';
+
+/**
+ * Helper to create a table with array-based fields for cell workspace tests.
+ * Simulates what would come from parsed JSON.
+ */
+function cellTable(
+	tableId: string,
+	options: {
+		name: string;
+		fields: SchemaTableDefinition['fields'];
+		description?: string;
+	},
+): SchemaTableDefinition {
+	return {
+		id: tableId,
+		name: options.name,
+		description: options.description ?? '',
+		icon: null,
+		fields: options.fields,
+	};
+}
 
 describe('parseSchema', () => {
-	test('parses valid schema', () => {
+	test('parses valid schema with Record fields (normalizes to array)', () => {
 		const json = JSON.stringify({
 			name: 'Test Workspace',
 			icon: '📝',
+			kv: {},
 			tables: {
 				posts: {
 					name: 'Blog Posts',
+					description: '',
+					icon: null,
 					fields: {
-						title: { name: 'Title', type: 'text', order: 1 },
-						views: { name: 'Views', type: 'integer', order: 2 },
+						id: id(),
+						title: text('title', { name: 'Title' }),
+						views: integer('views', { name: 'Views' }),
 					},
 				},
 			},
@@ -30,10 +56,42 @@ describe('parseSchema', () => {
 
 		const schema = parseSchema(json);
 		expect(schema.name).toBe('Test Workspace');
-		expect(schema.icon).toBe('📝');
-		expect(schema.tables.posts).toBeDefined();
-		expect(schema.tables.posts!.name).toBe('Blog Posts');
-		expect(schema.tables.posts!.fields.title).toBeDefined();
+		expect(schema.icon).toBe('emoji:📝');
+		const postsTable = schema.tables.find((t) => t.id === 'posts');
+		expect(postsTable).toBeDefined();
+		expect(postsTable!.name).toBe('Blog Posts');
+		// Fields are now an array
+		expect(Array.isArray(postsTable!.fields)).toBe(true);
+		expect(getFieldById(postsTable!, 'title')).toBeDefined();
+		expect(getFieldIds(postsTable!)).toContain('title');
+	});
+
+	test('parses valid schema with Array fields', () => {
+		const json = JSON.stringify({
+			name: 'Test Workspace',
+			icon: '📝',
+			kv: {},
+			tables: {
+				posts: {
+					name: 'Blog Posts',
+					description: '',
+					icon: null,
+					fields: [
+						id(),
+						text('title', { name: 'Title' }),
+						integer('views', { name: 'Views' }),
+					],
+				},
+			},
+		});
+
+		const schema = parseSchema(json);
+		expect(schema.name).toBe('Test Workspace');
+		const postsTable = schema.tables.find((t) => t.id === 'posts');
+		expect(postsTable).toBeDefined();
+		expect(Array.isArray(postsTable!.fields)).toBe(true);
+		expect(getFieldById(postsTable!, 'title')).toBeDefined();
+		expect(getFieldById(postsTable!, 'title')!.name).toBe('Title');
 	});
 
 	test('throws on non-object input', () => {
@@ -96,7 +154,12 @@ describe('parseSchema', () => {
 		const json = JSON.stringify({
 			name: 'Test',
 			tables: {
-				posts: { name: 'Posts', fields: { title: { type: 'text', order: 1 } } },
+				posts: {
+					name: 'Posts',
+					description: '',
+					icon: null,
+					fields: { title: { type: 'text' } },
+				},
 			},
 		});
 		expect(() => parseSchema(json)).toThrow(
@@ -110,7 +173,9 @@ describe('parseSchema', () => {
 			tables: {
 				posts: {
 					name: 'Posts',
-					fields: { title: { name: 'Title', order: 1 } },
+					description: '',
+					icon: null,
+					fields: { title: { name: 'Title' } },
 				},
 			},
 		});
@@ -118,41 +183,27 @@ describe('parseSchema', () => {
 			'Field "posts.title" must have a "type" string property',
 		);
 	});
-
-	test('throws on field missing order', () => {
-		const json = JSON.stringify({
-			name: 'Test',
-			tables: {
-				posts: {
-					name: 'Posts',
-					fields: { title: { name: 'Title', type: 'text' } },
-				},
-			},
-		});
-		expect(() => parseSchema(json)).toThrow(
-			'Field "posts.title" must have an "order" number property',
-		);
-	});
 });
 
 describe('stringifySchema', () => {
 	test('serializes schema to JSON', () => {
-		const schema: WorkspaceSchema = {
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id(), text('title', { name: 'Title' })],
+		});
+		const schema: WorkspaceDefinition = {
 			name: 'Test',
-			tables: {
-				posts: {
-					name: 'Posts',
-					fields: {
-						title: { name: 'Title', type: 'text', order: 1 },
-					},
-				},
-			},
+			description: '',
+			icon: null,
+			kv: [],
+			tables: [postsTable],
 		};
 
 		const json = stringifySchema(schema);
 		const parsed = JSON.parse(json);
 		expect(parsed.name).toBe('Test');
-		expect(parsed.tables.posts.name).toBe('Posts');
+		expect(parsed.tables[0].name).toBe('Posts');
+		expect(Array.isArray(parsed.tables[0].fields)).toBe(true);
 	});
 
 	test('formats with indentation by default', () => {
@@ -173,128 +224,169 @@ describe('createEmptySchema', () => {
 		const schema = createEmptySchema('My Workspace');
 		expect(schema.name).toBe('My Workspace');
 		expect(schema.icon).toBeNull();
-		expect(schema.tables).toEqual({});
-		expect(schema.kv).toEqual({});
+		expect(schema.tables).toEqual([]);
+		expect(schema.kv).toEqual([]);
 	});
 
 	test('creates schema with icon', () => {
 		const schema = createEmptySchema('My Workspace', '📝');
-		expect(schema.icon).toBe('📝');
+		expect(schema.icon).toBe('emoji:📝');
 	});
 });
 
 describe('addTable', () => {
 	test('adds table to schema', () => {
 		const schema = createEmptySchema('Test');
-		const table: SchemaTableDefinition = {
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: {},
-		};
+			fields: [id()],
+		});
 
-		const updated = addTable(schema, 'posts', table);
-		expect(updated.tables.posts).toBeDefined();
-		expect(updated.tables.posts!.name).toBe('Posts');
+		const updated = addTable(schema, 'posts', postsTable);
+		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts');
+		expect(postsFromUpdated).toBeDefined();
+		expect(postsFromUpdated!.name).toBe('Posts');
 	});
 
 	test('preserves existing tables', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
-		schema = addTable(schema, 'users', { name: 'Users', fields: {} });
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
+		});
+		const usersTable = cellTable('users', {
+			name: 'Users',
+			fields: [id()],
+		});
+		schema = addTable(schema, 'posts', postsTable);
+		schema = addTable(schema, 'users', usersTable);
 
-		expect(Object.keys(schema.tables)).toHaveLength(2);
-		expect(schema.tables.posts).toBeDefined();
-		expect(schema.tables.users).toBeDefined();
+		expect(schema.tables).toHaveLength(2);
+		expect(schema.tables.find((t) => t.id === 'posts')).toBeDefined();
+		expect(schema.tables.find((t) => t.id === 'users')).toBeDefined();
 	});
 
 	test('is immutable', () => {
 		const schema = createEmptySchema('Test');
-		const updated = addTable(schema, 'posts', { name: 'Posts', fields: {} });
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
+		});
+		const updated = addTable(schema, 'posts', postsTable);
 
-		expect(schema.tables.posts).toBeUndefined();
-		expect(updated.tables.posts).toBeDefined();
+		expect(schema.tables.find((t) => t.id === 'posts')).toBeUndefined();
+		expect(updated.tables.find((t) => t.id === 'posts')).toBeDefined();
 	});
 });
 
 describe('removeTable', () => {
 	test('removes table from schema', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
-		schema = addTable(schema, 'users', { name: 'Users', fields: {} });
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
+		});
+		const usersTable = cellTable('users', {
+			name: 'Users',
+			fields: [id()],
+		});
+		schema = addTable(schema, 'posts', postsTable);
+		schema = addTable(schema, 'users', usersTable);
 
 		const updated = removeTable(schema, 'posts');
-		expect(updated.tables.posts).toBeUndefined();
-		expect(updated.tables.users).toBeDefined();
+		expect(updated.tables.find((t) => t.id === 'posts')).toBeUndefined();
+		expect(updated.tables.find((t) => t.id === 'users')).toBeDefined();
 	});
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
+		});
+		schema = addTable(schema, 'posts', postsTable);
 
 		const updated = removeTable(schema, 'posts');
-		expect(schema.tables.posts).toBeDefined();
-		expect(updated.tables.posts).toBeUndefined();
+		expect(schema.tables.find((t) => t.id === 'posts')).toBeDefined();
+		expect(updated.tables.find((t) => t.id === 'posts')).toBeUndefined();
 	});
 });
 
 describe('addField', () => {
 	test('adds field to table', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
-
-		const updated = addField(schema, 'posts', 'title', {
-			name: 'Title',
-			type: 'text',
-			order: 1,
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
 		});
+		schema = addTable(schema, 'posts', postsTable);
 
-		expect(updated.tables.posts!.fields.title).toBeDefined();
-		expect(updated.tables.posts!.fields.title!.name).toBe('Title');
+		const updated = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
+
+		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
+		expect(getFieldById(postsFromUpdated, 'title')).toBeDefined();
+		expect(getFieldById(postsFromUpdated, 'title')!.name).toBe('Title');
 	});
 
 	test('throws if table not found', () => {
 		const schema = createEmptySchema('Test');
 		expect(() =>
-			addField(schema, 'posts', 'title', {
-				name: 'Title',
-				type: 'text',
-				order: 1,
-			}),
+			addField(schema, 'posts', 'title', text('title', { name: 'Title' })),
 		).toThrow('Table "posts" not found in schema');
 	});
 
 	test('is immutable', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
-
-		const updated = addField(schema, 'posts', 'title', {
-			name: 'Title',
-			type: 'text',
-			order: 1,
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
 		});
+		schema = addTable(schema, 'posts', postsTable);
 
-		expect(schema.tables.posts!.fields.title).toBeUndefined();
-		expect(updated.tables.posts!.fields.title).toBeDefined();
+		const updated = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
+
+		const postsFromSchema = schema.tables.find((t) => t.id === 'posts')!;
+		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
+		expect(getFieldById(postsFromSchema, 'title')).toBeUndefined();
+		expect(getFieldById(postsFromUpdated, 'title')).toBeDefined();
 	});
 });
 
 describe('removeField', () => {
 	test('removes field from table', () => {
 		let schema = createEmptySchema('Test');
-		schema = addTable(schema, 'posts', { name: 'Posts', fields: {} });
-		schema = addField(schema, 'posts', 'title', {
-			name: 'Title',
-			type: 'text',
-			order: 1,
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
 		});
-		schema = addField(schema, 'posts', 'views', {
-			name: 'Views',
-			type: 'integer',
-			order: 2,
-		});
+		schema = addTable(schema, 'posts', postsTable);
+		schema = addField(
+			schema,
+			'posts',
+			'title',
+			text('title', { name: 'Title' }),
+		);
+		schema = addField(
+			schema,
+			'posts',
+			'views',
+			integer('views', { name: 'Views' }),
+		);
 
 		const updated = removeField(schema, 'posts', 'title');
-		expect(updated.tables.posts!.fields.title).toBeUndefined();
-		expect(updated.tables.posts!.fields.views).toBeDefined();
+		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
+		expect(getFieldById(postsFromUpdated, 'title')).toBeUndefined();
+		expect(getFieldById(postsFromUpdated, 'views')).toBeDefined();
 	});
 
 	test('throws if table not found', () => {
@@ -305,51 +397,48 @@ describe('removeField', () => {
 	});
 });
 
-describe('getSortedFields', () => {
-	test('returns fields sorted by order', () => {
-		const table: SchemaTableDefinition = {
+describe('getFieldById', () => {
+	test('returns field by id', () => {
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: {
-				views: { name: 'Views', type: 'integer', order: 3 },
-				title: { name: 'Title', type: 'text', order: 1 },
-				published: { name: 'Published', type: 'boolean', order: 2 },
-			},
-		};
+			fields: [id(), text('title', { name: 'Title' })],
+		});
 
-		const sorted = getSortedFields(table);
-		expect(sorted.map(([id]) => id)).toEqual(['title', 'published', 'views']);
+		expect(getFieldById(postsTable, 'title')).toBeDefined();
+		expect(getFieldById(postsTable, 'title')!.name).toBe('Title');
 	});
 
-	test('returns empty array for table with no fields', () => {
-		const table: SchemaTableDefinition = {
-			name: 'Empty',
-			fields: {},
-		};
+	test('returns undefined for non-existent field', () => {
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [id()],
+		});
 
-		expect(getSortedFields(table)).toEqual([]);
+		expect(getFieldById(postsTable, 'nonexistent')).toBeUndefined();
 	});
 });
 
-describe('getNextFieldOrder', () => {
-	test('returns 1 for table with no fields', () => {
-		const table: SchemaTableDefinition = {
-			name: 'Empty',
-			fields: {},
-		};
+describe('getFieldIds', () => {
+	test('returns all field ids in order', () => {
+		const postsTable = cellTable('posts', {
+			name: 'Posts',
+			fields: [
+				id(),
+				text('title', { name: 'Title' }),
+				integer('views', { name: 'Views' }),
+			],
+		});
 
-		expect(getNextFieldOrder(table)).toBe(1);
+		const ids = getFieldIds(postsTable);
+		expect(ids).toEqual(['id', 'title', 'views']);
 	});
 
-	test('returns max + 1 for table with fields', () => {
-		const table: SchemaTableDefinition = {
+	test('returns empty array for table with no fields', () => {
+		const postsTable = cellTable('posts', {
 			name: 'Posts',
-			fields: {
-				title: { name: 'Title', type: 'text', order: 1 },
-				views: { name: 'Views', type: 'integer', order: 5 },
-				published: { name: 'Published', type: 'boolean', order: 3 },
-			},
-		};
+			fields: [],
+		});
 
-		expect(getNextFieldOrder(table)).toBe(6);
+		expect(getFieldIds(postsTable)).toEqual([]);
 	});
 });

@@ -580,3 +580,35 @@ function processRow(rowId: string) {
 ```
 
 This makes type boundaries visible and intentional, without forcing awkward parameter renames.
+
+# Const Generic Array Inference
+
+Use `const T extends readonly T[]` to preserve literal types without requiring `as const` at call sites.
+
+| Pattern                             | Plain `['a','b','c']`      | With `as const`            |
+| ----------------------------------- | -------------------------- | -------------------------- |
+| `T extends string[]`                | `string[]`                 | `["a", "b", "c"]`          |
+| `T extends readonly string[]`       | `string[]`                 | `readonly ["a", "b", "c"]` |
+| `const T extends string[]`          | `["a", "b", "c"]`          | `["a", "b", "c"]`          |
+| `const T extends readonly string[]` | `readonly ["a", "b", "c"]` | `readonly ["a", "b", "c"]` |
+
+The `const` modifier preserves literal types; the `readonly` constraint determines mutability.
+
+```typescript
+// From packages/epicenter/src/core/schema/fields/factories.ts
+export function select<const TOptions extends readonly [string, ...string[]]>({
+	id,
+	options,
+}: {
+	id: string;
+	options: TOptions;
+}): SelectField<TOptions> {
+	// ...
+}
+
+// Caller gets literal union type — no `as const` needed
+const status = select({ id: 'status', options: ['draft', 'published'] });
+// status.options[number] is "draft" | "published", not string
+```
+
+See `docs/articles/typescript-const-modifier-generic-type-parameters.md` for details.

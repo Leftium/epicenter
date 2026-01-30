@@ -85,58 +85,38 @@ export { LifecycleExports } from './core/lifecycle';
 export type { RichContentId } from './core/rich-content/id';
 export { createRichContentId } from './core/rich-content/id';
 export type {
-	// New field type names (preferred)
+	// Field types
 	BooleanField,
-	// Legacy type aliases (deprecated, kept for backwards compatibility)
-	/** @deprecated Use `BooleanField` instead */
-	BooleanFieldSchema,
-	// Common types
 	CellValue,
 	DateField,
-	/** @deprecated Use `DateField` instead */
-	DateFieldSchema,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
-	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
-	FieldSchema,
 	FieldType,
 	Guid,
 	Icon,
 	IconType,
 	Id,
 	IdField,
-	/** @deprecated Use `IdField` instead */
-	IdFieldSchema,
 	IntegerField,
-	/** @deprecated Use `IntegerField` instead */
-	IntegerFieldSchema,
 	JsonField,
-	/** @deprecated Use `JsonField` instead */
-	JsonFieldSchema,
 	// KV types
 	KvField,
+	KvFieldById,
+	KvFieldIds,
 	KvValue,
 	PartialRow,
 	RealField,
-	/** @deprecated Use `RealField` instead */
-	RealFieldSchema,
 	RichtextField,
-	/** @deprecated Use `RichtextField` instead */
-	RichtextFieldSchema,
 	Row,
 	SelectField,
-	/** @deprecated Use `SelectField` instead */
-	SelectFieldSchema,
+	TableById,
 	TableDefinition,
+	TableIds,
 	TagsField,
-	/** @deprecated Use `TagsField` instead */
-	TagsFieldSchema,
 	TextField,
-	/** @deprecated Use `TextField` instead */
-	TextFieldSchema,
 	// Date types
 	TimezoneId,
 } from './core/schema';

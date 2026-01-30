@@ -2,7 +2,7 @@
  * @fileoverview Core field type definitions
  *
  * Contains the foundational types for the schema system:
- * - Field types (IdFieldSchema, TextFieldSchema, etc.)
+ * - Field types (IdField, TextField, etc.)
  * - Table and workspace schemas
  * - Row value types (CellValue, Row, PartialRow)
  *
@@ -329,51 +329,6 @@ export type JsonField<
 };
 
 // ============================================================================
-// Legacy Type Aliases (for backwards compatibility)
-// ============================================================================
-
-/** @deprecated Use `IdField` instead */
-export type IdFieldSchema = IdField;
-/** @deprecated Use `TextField` instead */
-export type TextFieldSchema<TNullable extends boolean = boolean> =
-	TextField<TNullable>;
-/** @deprecated Use `RichtextField` instead */
-export type RichtextFieldSchema = RichtextField;
-/** @deprecated Use `IntegerField` instead */
-export type IntegerFieldSchema<TNullable extends boolean = boolean> =
-	IntegerField<TNullable>;
-/** @deprecated Use `RealField` instead */
-export type RealFieldSchema<TNullable extends boolean = boolean> =
-	RealField<TNullable>;
-/** @deprecated Use `BooleanField` instead */
-export type BooleanFieldSchema<TNullable extends boolean = boolean> =
-	BooleanField<TNullable>;
-/** @deprecated Use `DateField` instead */
-export type DateFieldSchema<TNullable extends boolean = boolean> =
-	DateField<TNullable>;
-/** @deprecated Use `SelectField` instead */
-export type SelectFieldSchema<
-	TOptions extends readonly [string, ...string[]] = readonly [
-		string,
-		...string[],
-	],
-	TNullable extends boolean = boolean,
-> = SelectField<TOptions, TNullable>;
-/** @deprecated Use `TagsField` instead */
-export type TagsFieldSchema<
-	TOptions extends readonly [string, ...string[]] = readonly [
-		string,
-		...string[],
-	],
-	TNullable extends boolean = boolean,
-> = TagsField<TOptions, TNullable>;
-/** @deprecated Use `JsonField` instead */
-export type JsonFieldSchema<
-	T extends TSchema = TSchema,
-	TNullable extends boolean = boolean,
-> = JsonField<T, TNullable>;
-
-// ============================================================================
 // Discriminated Unions and Utility Types
 // ============================================================================
 
@@ -394,11 +349,6 @@ export type Field =
 	| SelectField
 	| TagsField
 	| JsonField;
-
-/**
- * @deprecated Use `Field` instead. FieldSchema is now identical to Field.
- */
-export type FieldSchema = Field;
 
 /**
  * Extract the type name from a field definition.
@@ -616,7 +566,7 @@ export type TableDefinition<
  * ```
  */
 export type Row<TFields extends readonly Field[] = readonly Field[]> = {
-	[K in TFields[number]['id']]: CellValue<FieldById<TFields, K>>;
+	[K in FieldIds<TFields>]: CellValue<FieldById<TFields, K>>;
 };
 
 /**
@@ -677,9 +627,9 @@ export type KvValue<C extends KvField = KvField> = CellValue<C>;
  */
 export function tablesToMap<
 	TTables extends readonly TableDefinition<readonly Field[]>[],
->(tables: TTables): { [K in TTables[number]['id']]: TableById<TTables, K> } {
+>(tables: TTables): { [K in TableIds<TTables>]: TableById<TTables, K> } {
 	return Object.fromEntries(tables.map((t) => [t.id, t])) as {
-		[K in TTables[number]['id']]: TableById<TTables, K>;
+		[K in TableIds<TTables>]: TableById<TTables, K>;
 	};
 }
 
@@ -698,38 +648,8 @@ export function tablesToMap<
  */
 export function kvFieldsToMap<TKv extends readonly KvField[]>(
 	kvFields: TKv,
-): { [K in TKv[number]['id']]: { field: KvFieldById<TKv, K> } } {
+): { [K in KvFieldIds<TKv>]: { field: KvFieldById<TKv, K> } } {
 	return Object.fromEntries(kvFields.map((f) => [f.id, { field: f }])) as {
-		[K in TKv[number]['id']]: { field: KvFieldById<TKv, K> };
+		[K in KvFieldIds<TKv>]: { field: KvFieldById<TKv, K> };
 	};
-}
-
-/**
- * Get a table by id from an array of TableDefinitions.
- *
- * @example
- * ```typescript
- * const postsTable = getTableById(workspace.tables, 'posts');
- * ```
- */
-export function getTableById<TTables extends readonly TableDefinition[]>(
-	tables: TTables,
-	id: string,
-): TableDefinition | undefined {
-	return tables.find((t) => t.id === id);
-}
-
-/**
- * Get a KV field by id from an array of KvFields.
- *
- * @example
- * ```typescript
- * const themeField = getKvFieldById(workspace.kv, 'theme');
- * ```
- */
-export function getKvFieldById<TKv extends readonly KvField[]>(
-	kv: TKv,
-	id: string,
-): KvField | undefined {
-	return kv.find((f) => f.id === id);
 }

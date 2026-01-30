@@ -9,9 +9,7 @@ describe('createKv', () => {
 	test('set and get a value', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			theme: defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.migrate((v) => v),
+			theme: defineKv(type({ mode: "'light' | 'dark'" })),
 		});
 
 		kv.set('theme', { mode: 'dark' });
@@ -26,9 +24,7 @@ describe('createKv', () => {
 	test('get returns not_found for unset key', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			theme: defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.migrate((v) => v),
+			theme: defineKv(type({ mode: "'light' | 'dark'" })),
 		});
 
 		const result = kv.get('theme');
@@ -38,9 +34,7 @@ describe('createKv', () => {
 	test('delete removes the value', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			theme: defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.migrate((v) => v),
+			theme: defineKv(type({ mode: "'light' | 'dark'" })),
 		});
 
 		kv.set('theme', { mode: 'dark' });

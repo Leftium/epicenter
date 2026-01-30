@@ -12,14 +12,10 @@ describe('defineWorkspace', () => {
 		const workspace = defineWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
 
@@ -29,21 +25,15 @@ describe('defineWorkspace', () => {
 	});
 
 	test('createWorkspace() returns client with tables and kv', () => {
-		const workspace = defineWorkspace({
+		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
-
-		const client = createWorkspace(workspace);
 
 		expect(client.id).toBe('test-app');
 		expect(client.ydoc).toBeInstanceOf(Y.Doc);
@@ -52,21 +42,15 @@ describe('defineWorkspace', () => {
 	});
 
 	test('client.tables and client.kv work correctly', () => {
-		const workspace = defineWorkspace({
+		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 			kv: {
-				theme: defineKv()
-					.version(type({ mode: "'light' | 'dark'" }))
-					.migrate((v) => v),
+				theme: defineKv(type({ mode: "'light' | 'dark'" })),
 			},
 		});
-
-		const client = createWorkspace(workspace);
 
 		// Use tables
 		client.tables.posts.set({ id: '1', title: 'Hello' });
@@ -80,15 +64,6 @@ describe('defineWorkspace', () => {
 	});
 
 	test('createWorkspace().withExtensions() with capabilities', () => {
-		const workspace = defineWorkspace({
-			id: 'test-app',
-			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
-			},
-		});
-
 		// Mock capability with custom exports - uses defineExports for lifecycle
 		const mockCapability = (_context: {
 			ydoc: Y.Doc;
@@ -99,7 +74,12 @@ describe('defineWorkspace', () => {
 				customMethod: () => 'hello',
 			});
 
-		const client = createWorkspace(workspace).withExtensions({
+		const client = createWorkspace({
+			id: 'test-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		}).withExtensions({
 			mock: mockCapability,
 		});
 
@@ -108,15 +88,6 @@ describe('defineWorkspace', () => {
 	});
 
 	test('capability exports are fully typed', () => {
-		const workspace = defineWorkspace({
-			id: 'test-app',
-			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
-			},
-		});
-
 		// Capability with rich exports - defineExports fills in whenSynced/destroy
 		const persistenceCapability = () =>
 			defineExports({
@@ -135,7 +106,12 @@ describe('defineWorkspace', () => {
 				status: 'idle' as 'idle' | 'syncing' | 'synced',
 			});
 
-		const client = createWorkspace(workspace).withExtensions({
+		const client = createWorkspace({
+			id: 'test-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		}).withExtensions({
 			persistence: persistenceCapability,
 			sync: syncCapability,
 		});
@@ -167,15 +143,6 @@ describe('defineWorkspace', () => {
 	});
 
 	test('client.destroy() cleans up', async () => {
-		const workspace = defineWorkspace({
-			id: 'test-app',
-			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
-			},
-		});
-
 		let destroyed = false;
 		const mockCapability = () =>
 			defineExports({
@@ -184,7 +151,12 @@ describe('defineWorkspace', () => {
 				},
 			});
 
-		const client = createWorkspace(workspace).withExtensions({
+		const client = createWorkspace({
+			id: 'test-app',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		}).withExtensions({
 			mock: mockCapability,
 		});
 
@@ -209,9 +181,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'direct-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		});
 
@@ -227,9 +197,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'builder-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		});
 
@@ -243,9 +211,7 @@ describe('defineWorkspace', () => {
 		const baseClient = createWorkspace({
 			id: 'shared-doc-app',
 			tables: {
-				posts: defineTable()
-					.version(type({ id: 'string', title: 'string' }))
-					.migrate((row) => row),
+				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		});
 

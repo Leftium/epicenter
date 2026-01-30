@@ -30,7 +30,7 @@ import type {
 	InferCellExtensionExports,
 } from './extensions';
 import { validateId } from './keys';
-import { getFieldById, getTableById } from './schema-file';
+import { getTableById } from './schema-file';
 import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
 import { createTableHelper } from './table-helper';
 import type {
@@ -283,7 +283,7 @@ function createCellWorkspaceLegacy({
 
 				// Process cells that exist in data
 				for (const [fieldId, value] of Object.entries(r.cells)) {
-					const fieldSchema = getFieldById(tableSchema, fieldId);
+					const fieldSchema = tableSchema.fields.find((f) => f.id === fieldId);
 					if (fieldSchema) {
 						typedCells[fieldId] = {
 							value,
@@ -472,7 +472,9 @@ function createCellWorkspaceWithHeadDoc({
 						const dataFieldIds = Object.keys(r.cells);
 
 						for (const [fieldId, value] of Object.entries(r.cells)) {
-							const fieldSchema = getFieldById(tableSchema, fieldId);
+							const fieldSchema = tableSchema.fields.find(
+								(f) => f.id === fieldId,
+							);
 							if (fieldSchema) {
 								typedCells[fieldId] = {
 									value,

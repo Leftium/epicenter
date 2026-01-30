@@ -36,7 +36,7 @@ import {
 	RowPrefix,
 	validateId,
 } from './keys';
-import { getFieldById } from './schema-file';
+
 import type {
 	CellValue,
 	ChangeHandler,
@@ -78,7 +78,7 @@ export function createTableHelper(
 		let validator = fieldValidators.get(fieldId);
 		if (validator) return validator;
 
-		const fieldDef = getFieldById(schema, fieldId);
+		const fieldDef = schema.fields.find((f) => f.id === fieldId);
 		if (!fieldDef) return undefined;
 
 		const fieldSchema = schemaFieldToTypebox(fieldDef);

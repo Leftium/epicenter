@@ -25,20 +25,6 @@ import type {
 } from './types';
 
 /**
- * Get a field by its ID from a table.
- *
- * @param table - The table definition to search
- * @param fieldId - The ID of the field to find
- * @returns The field definition if found, undefined otherwise
- */
-export function getFieldById(
-	table: SchemaTableDefinition,
-	fieldId: string,
-): SchemaFieldDefinition | undefined {
-	return table.fields.find((f) => f.id === fieldId);
-}
-
-/**
  * Get a table by its ID from an array of tables.
  *
  * @param tables - The array of table definitions to search
@@ -50,16 +36,6 @@ export function getTableById(
 	tableId: string,
 ): SchemaTableDefinition | undefined {
 	return tables.find((t) => t.id === tableId);
-}
-
-/**
- * Get all field IDs from a table.
- *
- * @param table - The table definition
- * @returns Array of field IDs in order
- */
-export function getFieldIds(table: SchemaTableDefinition): string[] {
-	return table.fields.map((f) => f.id);
 }
 
 /**

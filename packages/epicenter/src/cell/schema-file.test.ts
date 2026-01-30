@@ -4,8 +4,6 @@ import {
 	addField,
 	addTable,
 	createEmptySchema,
-	getFieldById,
-	getFieldIds,
 	parseSchema,
 	removeField,
 	removeTable,
@@ -62,8 +60,8 @@ describe('parseSchema', () => {
 		expect(postsTable!.name).toBe('Blog Posts');
 		// Fields are now an array
 		expect(Array.isArray(postsTable!.fields)).toBe(true);
-		expect(getFieldById(postsTable!, 'title')).toBeDefined();
-		expect(getFieldIds(postsTable!)).toContain('title');
+		expect(postsTable!.fields.find((f) => f.id === 'title')).toBeDefined();
+		expect(postsTable!.fields.map((f) => f.id)).toContain('title');
 	});
 
 	test('parses valid schema with Array fields', () => {
@@ -90,8 +88,10 @@ describe('parseSchema', () => {
 		const postsTable = schema.tables.find((t) => t.id === 'posts');
 		expect(postsTable).toBeDefined();
 		expect(Array.isArray(postsTable!.fields)).toBe(true);
-		expect(getFieldById(postsTable!, 'title')).toBeDefined();
-		expect(getFieldById(postsTable!, 'title')!.name).toBe('Title');
+		expect(postsTable!.fields.find((f) => f.id === 'title')).toBeDefined();
+		expect(postsTable!.fields.find((f) => f.id === 'title')!.name).toBe(
+			'Title',
+		);
 	});
 
 	test('throws on non-object input', () => {
@@ -329,8 +329,10 @@ describe('addField', () => {
 		);
 
 		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
-		expect(getFieldById(postsFromUpdated, 'title')).toBeDefined();
-		expect(getFieldById(postsFromUpdated, 'title')!.name).toBe('Title');
+		expect(postsFromUpdated.fields.find((f) => f.id === 'title')).toBeDefined();
+		expect(postsFromUpdated.fields.find((f) => f.id === 'title')!.name).toBe(
+			'Title',
+		);
 	});
 
 	test('throws if table not found', () => {
@@ -362,8 +364,10 @@ describe('addField', () => {
 
 		const postsFromSchema = definition.tables.find((t) => t.id === 'posts')!;
 		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
-		expect(getFieldById(postsFromSchema, 'title')).toBeUndefined();
-		expect(getFieldById(postsFromUpdated, 'title')).toBeDefined();
+		expect(
+			postsFromSchema.fields.find((f) => f.id === 'title'),
+		).toBeUndefined();
+		expect(postsFromUpdated.fields.find((f) => f.id === 'title')).toBeDefined();
 	});
 });
 
@@ -390,8 +394,10 @@ describe('removeField', () => {
 
 		const updated = removeField(definition, 'posts', 'title');
 		const postsFromUpdated = updated.tables.find((t) => t.id === 'posts')!;
-		expect(getFieldById(postsFromUpdated, 'title')).toBeUndefined();
-		expect(getFieldById(postsFromUpdated, 'views')).toBeDefined();
+		expect(
+			postsFromUpdated.fields.find((f) => f.id === 'title'),
+		).toBeUndefined();
+		expect(postsFromUpdated.fields.find((f) => f.id === 'views')).toBeDefined();
 	});
 
 	test('throws if table not found', () => {
@@ -399,51 +405,5 @@ describe('removeField', () => {
 		expect(() => removeField(definition, 'posts', 'title')).toThrow(
 			'Table "posts" not found in schema',
 		);
-	});
-});
-
-describe('getFieldById', () => {
-	test('returns field by id', () => {
-		const postsTable = cellTable('posts', {
-			name: 'Posts',
-			fields: [id(), text({ id: 'title', name: 'Title' })],
-		});
-
-		expect(getFieldById(postsTable, 'title')).toBeDefined();
-		expect(getFieldById(postsTable, 'title')!.name).toBe('Title');
-	});
-
-	test('returns undefined for non-existent field', () => {
-		const postsTable = cellTable('posts', {
-			name: 'Posts',
-			fields: [id()],
-		});
-
-		expect(getFieldById(postsTable, 'nonexistent')).toBeUndefined();
-	});
-});
-
-describe('getFieldIds', () => {
-	test('returns all field ids in order', () => {
-		const postsTable = cellTable('posts', {
-			name: 'Posts',
-			fields: [
-				id(),
-				text({ id: 'title', name: 'Title' }),
-				integer({ id: 'views', name: 'Views' }),
-			],
-		});
-
-		const ids = getFieldIds(postsTable);
-		expect(ids).toEqual(['id', 'title', 'views']);
-	});
-
-	test('returns empty array for table with no fields', () => {
-		const postsTable = cellTable('posts', {
-			name: 'Posts',
-			fields: [],
-		});
-
-		expect(getFieldIds(postsTable)).toEqual([]);
 	});
 });

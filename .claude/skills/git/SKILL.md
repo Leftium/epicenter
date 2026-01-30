@@ -373,6 +373,7 @@ This doubles down on Svelte's philosophy of writing less, more intuitive code wh
 - Corporate language: "This PR enhances our solution by leveraging..."
 - Excessive structure: Multiple heading levels and subsections
 - Marketing speak: "game-changing", "revolutionary", "seamless"
+- Dramatic hyperbole: "feels like an eternity", "pain point", "excruciating" — stick to facts ("saves 150ms") not drama
 - Over-explaining simple changes
 - Apologetic tone for reasonable decisions
 

@@ -3,6 +3,7 @@ import type { TLocalizedValidationError } from 'typebox/error';
 import * as Y from 'yjs';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
+import type { TableById } from '../schema/fields/types';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -176,7 +177,7 @@ export function createTableHelpers<
 	tableDefinitions: TTableDefinitions;
 }): {
 	[K in TTableDefinitions[number]['id']]: TableHelper<
-		Extract<TTableDefinitions[number], { id: K }>['fields']
+		TableById<TTableDefinitions, K>['fields']
 	>;
 } {
 	const ytables: TablesMap = ydoc.getMap('tables');
@@ -192,7 +193,7 @@ export function createTableHelpers<
 		]),
 	) as {
 		[K in TTableDefinitions[number]['id']]: TableHelper<
-			Extract<TTableDefinitions[number], { id: K }>['fields']
+			TableById<TTableDefinitions, K>['fields']
 		>;
 	};
 }

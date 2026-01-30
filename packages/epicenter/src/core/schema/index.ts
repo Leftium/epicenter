@@ -68,6 +68,7 @@ export type {
 	JsonFieldSchema,
 	// KV types
 	KvField,
+	KvFieldById,
 	KvValue,
 	PartialRow,
 	RealField,

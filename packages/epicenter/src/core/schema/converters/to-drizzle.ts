@@ -20,6 +20,7 @@ import type {
 	BooleanField,
 	DateField,
 	Field,
+	FieldById,
 	IdField,
 	IntegerField,
 	JsonField,
@@ -92,7 +93,7 @@ function convertTableToDrizzle<TTableDef extends TableDefinition>(
 		}),
 	) as {
 		[K in TTableDef['fields'][number]['id']]: FieldToDrizzle<
-			Extract<TTableDef['fields'][number], { id: K }>
+			FieldById<TTableDef['fields'], K>
 		>;
 	};
 

@@ -7,6 +7,7 @@ import { tryAsync, trySync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
 import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { Field, KvField, Row, TableDefinition } from '../../core/schema';
+import type { TableById } from '../../core/schema/fields/types';
 import type { TableHelper } from '../../core/tables/create-tables';
 import type { AbsolutePath } from '../../core/types';
 import { createIndexLogger } from '../error-logger';
@@ -134,7 +135,7 @@ type RowToFilenameMap = Record<string, string>;
  */
 type TableConfigs<TTableDefinitions extends readonly TableDefinition[]> = {
 	[K in TTableDefinitions[number]['id']]?: TableMarkdownConfig<
-		Extract<TTableDefinitions[number], { id: K }>['fields']
+		TableById<TTableDefinitions, K>['fields']
 	>;
 };
 

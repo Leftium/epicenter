@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 
-import type { KvField, KvValue } from '../schema';
+import type { KvField, KvFieldById, KvValue } from '../schema';
 
 import {
 	createKvHelper,
@@ -51,7 +51,7 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
 	 */
 	get<K extends TKvFields[number]['id']>(
 		key: K,
-	): KvGetResult<KvValue<Extract<TKvFields[number], { id: K }>>>;
+	): KvGetResult<KvValue<KvFieldById<TKvFields, K>>>;
 
 	/**
 	 * Set the value for a specific KV key.
@@ -64,7 +64,7 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
 	 */
 	set<K extends TKvFields[number]['id']>(
 		key: K,
-		value: KvValue<Extract<TKvFields[number], { id: K }>>,
+		value: KvValue<KvFieldById<TKvFields, K>>,
 	): void;
 
 	/**
@@ -96,7 +96,7 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
 	observeKey<K extends TKvFields[number]['id']>(
 		key: K,
 		callback: (
-			change: KvChange<KvValue<Extract<TKvFields[number], { id: K }>>>,
+			change: KvChange<KvValue<KvFieldById<TKvFields, K>>>,
 			transaction: Y.Transaction,
 		) => void,
 	): () => void;
@@ -145,9 +145,7 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
 	 * Serialize all KV values to a plain JSON object.
 	 */
 	toJSON(): {
-		[K in TKvFields[number]['id']]: KvValue<
-			Extract<TKvFields[number], { id: K }>
-		>;
+		[K in TKvFields[number]['id']]: KvValue<KvFieldById<TKvFields, K>>;
 	};
 };
 
@@ -226,7 +224,7 @@ export function createKv<TKvFields extends readonly KvField[]>(
 		 */
 		set<K extends TKvFields[number]['id']>(
 			key: K,
-			value: KvValue<Extract<TKvFields[number], { id: K }>>,
+			value: KvValue<KvFieldById<TKvFields, K>>,
 		) {
 			kvHelpers[key as string]!.set(value);
 		},
@@ -262,7 +260,7 @@ export function createKv<TKvFields extends readonly KvField[]>(
 		observeKey<K extends TKvFields[number]['id']>(
 			key: K,
 			callback: (
-				change: KvChange<KvValue<Extract<TKvFields[number], { id: K }>>>,
+				change: KvChange<KvValue<KvFieldById<TKvFields, K>>>,
 				transaction: Y.Transaction,
 			) => void,
 		) {
@@ -401,14 +399,10 @@ export function createKv<TKvFields extends readonly KvField[]>(
 		 * ```
 		 */
 		toJSON(): {
-			[K in TKvFields[number]['id']]: KvValue<
-				Extract<TKvFields[number], { id: K }>
-			>;
+			[K in TKvFields[number]['id']]: KvValue<KvFieldById<TKvFields, K>>;
 		} {
 			return ykvMap.toJSON() as {
-				[K in TKvFields[number]['id']]: KvValue<
-					Extract<TKvFields[number], { id: K }>
-				>;
+				[K in TKvFields[number]['id']]: KvValue<KvFieldById<TKvFields, K>>;
 			};
 		},
 	};

@@ -5,6 +5,8 @@ description: In-code documentation, folder READMEs, and code comments. Use when 
 
 # Documentation
 
+Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+
 Documentation explains **why**, not **what**. Users can read code to see what it does. They need you to explain the reasoning.
 
 ## Folder READMEs

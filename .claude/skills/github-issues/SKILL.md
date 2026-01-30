@@ -5,6 +5,8 @@ description: GitHub issue comment guidelines for community interaction. Use when
 
 # GitHub Issue Comment Guidelines
 
+Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+
 ## Opening Pattern
 
 Always start with a personal greeting using the user's GitHub handle:

@@ -5,6 +5,8 @@ description: Social media post guidelines for LinkedIn, Reddit, and Twitter/X. U
 
 # Social Media Post Guidelines
 
+Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+
 ## Platform-Specific Brevity
 
 - **LinkedIn**: 3-5 lines max. State the feature, drop the link, done.

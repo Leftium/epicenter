@@ -5,6 +5,8 @@ description: Write technical specifications that give agents enough context to i
 
 # Specification Writing
 
+Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
+
 A specification gives an agent (or human) the context they need to implement a feature autonomously. The goal is NOT to describe everything exhaustively; it's to provide enough initial context that the implementer can do their own research and make informed decisions.
 
 > **Note**: This guide uses `[PLACEHOLDER]` markers for content you must fill in. Code blocks show templates; replace all bracketed content with your feature's details.

@@ -79,7 +79,6 @@ export function createKvHelpers<TKvFields extends readonly KvField[]>({
 		kvFields.map((field) => [
 			field.id,
 			createKvHelper({
-				keyName: field.id,
 				ykvMap,
 				field,
 			}),
@@ -92,16 +91,15 @@ export function createKvHelpers<TKvFields extends readonly KvField[]>({
 }
 
 export function createKvHelper<TField extends KvField>({
-	keyName,
 	ykvMap,
 	field,
 }: {
-	keyName: string;
 	ykvMap: Y.Map<KvValue>;
 	field: TField;
 }) {
 	type TValue = KvValue<TField>;
 
+	const keyName = field.id;
 	const nullable = isNullableField(field);
 	const validator = fieldToYjsArktype(field);
 

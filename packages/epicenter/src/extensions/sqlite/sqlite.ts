@@ -58,30 +58,27 @@ export type SqliteConfig = {
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
+ * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { sqlite } from '@epicenter/hq/extensions/sqlite';
  * import { join } from 'node:path';
- *
- * const definition = defineWorkspace({
- *   tables: { posts: table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }) },
- *   kv: {},
- * });
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     sqlite: (ctx) => sqlite(ctx, {
- *       dbPath: join(epicenterDir, 'sqlite', `${ctx.id}.db`),
- *       logsDir: join(epicenterDir, 'sqlite', 'logs'),
- *     }),
- *   });
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   sqlite: (ctx) => sqlite(ctx, {
+ *     dbPath: join(epicenterDir, 'sqlite', `${ctx.workspaceId}.db`),
+ *     logsDir: join(epicenterDir, 'sqlite', 'logs'),
+ *   }),
+ * });
  *
  * // Query with Drizzle:
- * const posts = await client.extensions.sqlite.db
+ * const posts = await workspace.extensions.sqlite.db
  *   .select()
- *   .from(client.extensions.sqlite.posts);
+ *   .from(workspace.extensions.sqlite.posts);
  * ```
  */
 export const sqlite = async <

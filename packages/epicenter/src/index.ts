@@ -172,19 +172,8 @@ export {
 	isTableDefinition,
 	normalizeIcon,
 } from './core/workspace/normalize';
-export type {
-	ClientBuilder,
-	/** @deprecated Use `WorkspaceDefinitionV2` with arrays instead */
-	WorkspaceDefinition,
-	WorkspaceDefinitionV2,
-} from './core/workspace/workspace';
-export {
-	/** @deprecated Use `createCellWorkspace` from `@epicenter/hq/cell` instead */
-	createClient,
-	/** @deprecated Use `defineWorkspaceV2` or `createCellWorkspace` instead */
-	defineWorkspace,
-	defineWorkspaceV2,
-} from './core/workspace/workspace';
+export type { WorkspaceDefinition } from './core/workspace/workspace';
+export { defineWorkspace } from './core/workspace/workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Cell API (preferred for new projects)

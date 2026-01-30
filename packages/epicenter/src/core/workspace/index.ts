@@ -15,5 +15,5 @@ export {
 	isTableDefinition,
 	normalizeIcon,
 } from './normalize';
-export type { ClientBuilder, WorkspaceDefinition } from './workspace';
-export { createClient, defineWorkspace } from './workspace';
+export type { WorkspaceDefinition } from './workspace';
+export { defineWorkspace } from './workspace';

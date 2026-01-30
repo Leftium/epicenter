@@ -80,65 +80,62 @@ export type LocalRevisionHistoryConfig = {
  *
  * @example Basic usage
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createCellWorkspace } from '@epicenter/hq/cell';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   persistence,
+ *   revisions: (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     epoch: 0,  // Snapshots saved to ./workspaces/{id}/0/snapshots/
+ *     maxVersions: 50,
+ *   }),
  * });
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     persistence,
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       epoch: 0,  // Snapshots saved to ./workspaces/{id}/0/snapshots/
- *       maxVersions: 50,
- *     }),
- *   });
- *
  * // Save a version manually (bypasses debounce)
- * client.extensions.revisions.save('Before refactor');
+ * workspace.extensions.revisions.save('Before refactor');
  *
  * // List all versions
- * const versions = await client.extensions.revisions.list();
+ * const versions = await workspace.extensions.revisions.list();
  *
  * // View a historical version (read-only)
- * const oldDoc = await client.extensions.revisions.view(5);
+ * const oldDoc = await workspace.extensions.revisions.view(5);
  * console.log(oldDoc.getText('content').toString());
  *
  * // Restore to a version (copies data to current doc)
- * await client.extensions.revisions.restore(5);
+ * await workspace.extensions.revisions.restore(5);
  * ```
  *
  * @example Custom debounce interval
  * ```typescript
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       epoch: 0,
- *       debounceMs: 5000,  // Save 5 seconds after last change
- *     }),
- *   });
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   revisions: (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     epoch: 0,
+ *     debounceMs: 5000,  // Save 5 seconds after last change
+ *   }),
+ * });
  * ```
  *
  * @example Google Docs-style slider UI
  * ```typescript
- * const versions = await client.extensions.revisions.list();
+ * const versions = await workspace.extensions.revisions.list();
  *
  * // Scrub through versions
  * async function onSliderChange(index: number) {
- *   const previewDoc = await client.extensions.revisions.view(index);
+ *   const previewDoc = await workspace.extensions.revisions.view(index);
  *   // Render previewDoc in read-only mode
  * }
  *
  * // Restore when user clicks "Restore"
  * async function onRestore(index: number) {
- *   await client.extensions.revisions.restore(index);
+ *   await workspace.extensions.revisions.restore(index);
  * }
  * ```
  */

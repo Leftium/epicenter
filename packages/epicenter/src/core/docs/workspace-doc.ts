@@ -373,14 +373,15 @@ export function createWorkspaceDoc<
 /**
  * The unified workspace abstraction with typed tables, kv, extensions, and lifecycle.
  *
- * This is the return type of `createWorkspaceDoc()` and `createClient()`.
+ * This is the return type of `createWorkspaceDoc()` and `createCellWorkspace()`.
  * It combines Y.Doc wrapper, typed accessors, extension exports, and lifecycle management.
  *
  * @example
  * ```typescript
- * const workspace: WorkspaceDoc<MyTables, MyKv, MyExtensions> = createClient('blog')
- *   .withDefinition(definition)
- *   .withExtensions({ persistence, sqlite });
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({ persistence, sqlite });
  *
  * await workspace.whenSynced;
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });

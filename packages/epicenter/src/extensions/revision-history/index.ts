@@ -6,35 +6,31 @@
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createCellWorkspace } from '@epicenter/hq/cell';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   revisions: (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     epoch: 0,
+ *     maxVersions: 50,
+ *   }),
  * });
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       epoch: 0,
- *       maxVersions: 50,
- *     }),
- *   });
- *
  * // Save manually (bypasses debounce)
- * client.extensions.revisions.save('Before refactor');
+ * workspace.extensions.revisions.save('Before refactor');
  *
  * // List versions
- * const versions = await client.extensions.revisions.list();
+ * const versions = await workspace.extensions.revisions.list();
  *
  * // View historical state (read-only)
- * const oldDoc = await client.extensions.revisions.view(5);
+ * const oldDoc = await workspace.extensions.revisions.view(5);
  *
  * // Restore to a version
- * await client.extensions.revisions.restore(5);
+ * await workspace.extensions.revisions.restore(5);
  * ```
  */
 export {

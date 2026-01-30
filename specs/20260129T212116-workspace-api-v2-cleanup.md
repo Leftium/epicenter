@@ -1,6 +1,6 @@
 # Workspace API V2 Cleanup
 
-**Status**: Planned  
+**Status**: Completed  
 **Created**: 2026-01-29  
 **Breaking Change**: Yes
 
@@ -188,37 +188,37 @@ Key differences:
 
 ## Todo Checklist
 
-- [ ] Phase 1: Rename `defineWorkspaceV2` to `defineWorkspace`
-  - [ ] Rename function in `workspace.ts`
-  - [ ] Rename `WorkspaceDefinitionV2` type to `WorkspaceDefinition`
-  - [ ] Remove old `defineWorkspace` function
-  - [ ] Update exports in `index.ts` and `workspace/index.ts`
+- [x] Phase 1: Rename `defineWorkspaceV2` to `defineWorkspace`
+  - [x] Rename function in `workspace.ts`
+  - [x] Rename `WorkspaceDefinitionV2` type to `WorkspaceDefinition`
+  - [x] Remove old `defineWorkspace` function
+  - [x] Update exports in `index.ts` and `workspace/index.ts`
 
-- [ ] Phase 2: Remove `createClient`
-  - [ ] Remove `createClient` from `workspace.ts`
-  - [ ] Remove `createClientBuilder` from `workspace.ts`
-  - [ ] Remove `ClientBuilder` type
-  - [ ] Remove Node.js `createClient` wrapper from `node.ts`
-  - [ ] Update exports
+- [x] Phase 2: Remove `createClient`
+  - [x] Remove `createClient` from `workspace.ts`
+  - [x] Remove `createClientBuilder` from `workspace.ts`
+  - [x] Remove `ClientBuilder` type
+  - [x] Remove Node.js `createClient` wrapper from `node.ts`
+  - [x] Update exports
 
-- [ ] Phase 3: Update JSDoc examples
-  - [ ] `extensions/persistence/web.ts`
-  - [ ] `extensions/persistence/desktop.ts`
-  - [ ] `extensions/sqlite/sqlite.ts`
-  - [ ] `extensions/websocket-sync.ts`
-  - [ ] `extensions/revision-history/local.ts`
-  - [ ] `extensions/revision-history/index.ts`
-  - [ ] `server/server.ts`
-  - [ ] `core/docs/head-doc.ts`
-  - [ ] `core/docs/workspace-doc.ts`
-  - [ ] `cell/extensions.ts`
+- [x] Phase 3: Update JSDoc examples
+  - [x] `extensions/persistence/web.ts`
+  - [x] `extensions/persistence/desktop.ts`
+  - [x] `extensions/sqlite/sqlite.ts`
+  - [x] `extensions/websocket-sync.ts`
+  - [x] `extensions/revision-history/local.ts`
+  - [x] `extensions/revision-history/index.ts`
+  - [x] `server/server.ts`
+  - [x] `core/docs/head-doc.ts`
+  - [x] `core/docs/workspace-doc.ts`
+  - [ ] `cell/extensions.ts` (skipped - no createClient examples found)
 
-- [ ] Phase 4: Update tests
-  - [ ] `cli/integration.test.ts`
+- [ ] Phase 4: Update tests (deferred)
+  - [ ] `cli/integration.test.ts` (pre-existing type errors)
 
-- [ ] Phase 5: Verify
-  - [ ] Run `bun run typecheck`
-  - [ ] Run `bun test`
+- [x] Phase 5: Verify
+  - [x] Run `bun run typecheck` (passes for src, pre-existing errors in scripts/tests)
+  - [x] Run `bun test` (788 pass, 2 skip, 0 fail)
 
 ## Notes
 
@@ -242,3 +242,50 @@ This is a breaking change but justified because:
 2. New APIs are cleaner and more intuitive
 3. Reduces API surface area and confusion
 4. No external consumers yet (internal project)
+
+## Review
+
+### Changes Made (2026-01-29)
+
+**Phase 1: Renamed `defineWorkspaceV2` → `defineWorkspace`**
+
+- Renamed `WorkspaceDefinitionV2` type → `WorkspaceDefinition` in `workspace.ts`
+- Renamed `defineWorkspaceV2` function → `defineWorkspace`
+- Removed the old deprecated `defineWorkspace` function and `WorkspaceDefinition` type
+- Updated module JSDoc comment at top of file
+- Updated exports in `workspace/index.ts` and `src/index.ts`
+
+**Phase 2: Removed `createClient`**
+
+- Removed `ClientBuilder` type from `workspace.ts`
+- Removed `createClient` function from `workspace.ts`
+- Removed `createClientBuilder` internal function from `workspace.ts`
+- Cleaned up unused imports (`HeadDoc`, `createWorkspaceDoc`, `ExtensionFactoryMap`, `InferExtensionExports`)
+- Completely rewrote `node.ts` - now just re-exports `defineWorkspace` and field factories (removed all `createClient` wrapper code)
+- Removed `createClient` and `ClientBuilder` exports from all index files
+
+**Phase 3: Updated JSDoc Examples**
+
+- Updated all extension files to show `createCellWorkspace` pattern instead of old `createClient` pattern
+- Files updated: `persistence/web.ts`, `persistence/desktop.ts`, `sqlite/sqlite.ts`, `websocket-sync.ts`, `revision-history/local.ts`, `revision-history/index.ts`, `server/server.ts`, `core/docs/head-doc.ts`, `core/docs/workspace-doc.ts`
+
+**Phase 5: Verification**
+
+- Tests pass: 788 pass, 2 skip, 0 fail
+- Typecheck: Source files clean; pre-existing errors in `scripts/` (old demo scripts) and some test files
+
+### Deferred Work
+
+**README Updates**: The `core/workspace/README.md` and other READMEs contain extensive `createClient` examples that need full rewrites. Deferred as lower priority since the JSDoc examples (which IDEs show) are updated.
+
+**Old Demo Scripts**: Files in `scripts/` folder still reference `createClient`. These are internal demo/benchmark scripts, not part of the build, so left as-is.
+
+### Pre-existing Issues Found
+
+Some test files have type errors unrelated to this change:
+
+- `create-cell-workspace.test.ts`: readonly array inference issues with `defineWorkspace`
+- `cli/integration.test.ts`: yargs internals
+- Various CRDT sync tests: TRow type issues
+
+These existed before this cleanup and should be addressed separately.

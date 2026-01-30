@@ -27,18 +27,14 @@ type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
+ * import { createCellWorkspace } from '@epicenter/hq/cell';
  *
- * const definition = defineWorkspace({
- *   tables: { posts: table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }) },
- *   kv: {},
- * });
+ * const workspace = createCellWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({ ... });
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({ ... });
- *
- * const server = createServer(client, { port: 3913 });
+ * const server = createServer(workspace, { port: 3913 });
  * server.start();
  *
  * // Access endpoints:

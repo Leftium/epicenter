@@ -260,10 +260,11 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 		 *
 		 * ```typescript
 		 * const actualEpoch = head.setOwnEpoch(2);
-		 * await oldClient.destroy();
-		 * const newClient = createClient(id, { epoch: actualEpoch })
-		 *   .withDefinition(definition)
-		 *   .withExtensions({});
+		 * await oldWorkspace.destroy();
+		 * const newWorkspace = createCellWorkspace({
+		 *   headDoc: head,
+		 *   definition: { name: 'Blog', tables: {...} },
+		 * }).withExtensions({});
 		 * ```
 		 *
 		 * @param epoch - The epoch number to set (clamped to current global epoch)
@@ -279,11 +280,12 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 		 * // User tries to set higher than global - clamped to 3
 		 * head.setOwnEpoch(5);  // Returns 3 (clamped)
 		 *
-		 * // Recreate client at the actual epoch
+		 * // Recreate workspace at the actual epoch
 		 * const epoch = head.setOwnEpoch(2);
-		 * const client = createClient(id, { epoch })
-		 *   .withDefinition(definition)
-		 *   .withExtensions({});
+		 * const workspace = createCellWorkspace({
+		 *   headDoc: head,
+		 *   definition: { name: 'Blog', tables: {...} },
+		 * }).withExtensions({});
 		 * ```
 		 */
 		setOwnEpoch(epoch: number): number {

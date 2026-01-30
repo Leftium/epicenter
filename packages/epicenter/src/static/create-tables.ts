@@ -7,12 +7,23 @@
  * import { createTables, defineTable } from 'epicenter/static';
  * import { type } from 'arktype';
  *
- * const posts = defineTable(type({ id: 'string', title: 'string' }));
+ * // Shorthand for single version
+ * const users = defineTable(type({ id: 'string', email: 'string' }));
+ *
+ * // Builder pattern for multiple versions with migration (use _v discriminant)
+ * const posts = defineTable()
+ *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
+ *     return row;
+ *   });
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const tables = createTables(ydoc, { posts });
+ * const tables = createTables(ydoc, { users, posts });
  *
- * tables.posts.set({ id: '1', title: 'Hello' });
+ * tables.users.set({ id: '1', email: 'test@example.com' });
+ * tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
  * ```
  */
 

@@ -87,10 +87,10 @@ export function defineTable<TSchema extends StandardSchemaV1>(
  * @example
  * ```typescript
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number' }))
+ *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (!('views' in row)) return { ...row, views: 0 };
+ *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
  *     return row;
  *   });
  * ```

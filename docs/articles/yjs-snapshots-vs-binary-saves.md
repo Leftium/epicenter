@@ -71,6 +71,14 @@ Y.applyUpdate(freshDoc, backup);
 
 This gives you disaster recovery without the storage overhead. You lose the ability to restore to arbitrary points in time, but you probably didn't need that anyway.
 
+## Production Systems Just Store the Binary
+
+[Y-Sweet](https://github.com/jamsocket/y-sweet), Jamsocket's open-source Yjs server, is a good example. Despite using the word "snapshot" in its codebase, it's not using the `Y.Snapshot` API at all. It serializes the complete document state as a binary blob and persists that to S3 or filesystem. No history, no delete sets, no GC disabled.
+
+This is how production Yjs infrastructure tends to work. The `Y.Snapshot` API exists for version history features, but most persistence layers skip it and store the binary.
+
+See [Y-Sweet "Snapshots" Aren't Yjs Snapshots](./y-sweet-snapshots-are-not-yjs-snapshots.md) for a deeper look at how y-sweet's persistence actually works.
+
 ## When Snapshots Are Worth It
 
 Snapshots earn their keep when history itself is valuable:
@@ -106,3 +114,9 @@ This bounds growth while preserving some history. More complex to implement, but
 | Both                  | Epoch compaction                   | More implementation complexity |
 
 Most apps don't need version history. If yours doesn't, skip snapshots entirely. Save the binary, keep GC on, and move on.
+
+## Related
+
+- [Y-Sweet "Snapshots" Aren't Yjs Snapshots](./y-sweet-snapshots-are-not-yjs-snapshots.md): Deep dive into how y-sweet actually persists documents
+- [YKeyValue: The Most Interesting Meta Data Structure in Yjs](./ykeyvalue-meta-data-structure.md): Another case where epoch-based compaction strips history
+- [Learn Yjs](https://learn.yjs.dev/): Interactive tutorials from Jamsocket

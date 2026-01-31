@@ -4,7 +4,6 @@ import {
 	boolean,
 	id,
 	integer,
-	richtext,
 	select,
 	table,
 	tags,
@@ -27,7 +26,7 @@ describe('YjsDoc Type Inference', () => {
 				fields: [
 					id(),
 					text({ id: 'title' }),
-					richtext({ id: 'content' }),
+					text({ id: 'content', nullable: true }),
 					tags({ id: 'tags', options: ['tech', 'personal', 'work'] as const }),
 					integer({ id: 'view_count' }),
 					boolean({ id: 'published' }),
@@ -35,11 +34,11 @@ describe('YjsDoc Type Inference', () => {
 			}),
 		]);
 
-		// Test upsert() - accepts plain values (strings for richtext, arrays for tags)
+		// Test upsert() - accepts plain values (strings, arrays for tags)
 		doc.get('posts').upsert({
 			id: '1',
 			title: 'Test Post',
-			content: 'rtxt_abc123', // richtext stores ID reference
+			content: 'abc123',
 			tags: ['tech'], // tags stores plain array
 			view_count: 0,
 			published: false,
@@ -58,7 +57,7 @@ describe('YjsDoc Type Inference', () => {
 			expect(row.published).toBe(false);
 
 			// Verify plain types are returned (no embedded CRDTs)
-			expect(row.content).toBe('rtxt_abc123');
+			expect(row.content).toBe('abc123');
 			expect(row.tags).toEqual(['tech']);
 		}
 	});
@@ -195,8 +194,8 @@ describe('YjsDoc Type Inference', () => {
 				fields: [
 					id(),
 					text({ id: 'title' }),
-					richtext({ id: 'description' }), // string | null
-					richtext({ id: 'content' }), // string | null
+					text({ id: 'description', nullable: true }), // string | null
+					text({ id: 'content', nullable: true }), // string | null
 				] as const,
 			}),
 		]);
@@ -216,19 +215,19 @@ describe('YjsDoc Type Inference', () => {
 			expect(article1Result.row.content).toBeNull();
 		}
 
-		// Test with string ID values
+		// Test with string values
 		doc.get('articles').upsert({
 			id: '2',
 			title: 'Article with content',
-			description: 'rtxt_desc123',
-			content: 'rtxt_content456',
+			description: 'desc123',
+			content: 'content456',
 		});
 
 		const article2Result = doc.get('articles').get('2');
 		expect(article2Result.status).toBe('valid');
 		if (article2Result.status === 'valid') {
-			expect(article2Result.row.description).toBe('rtxt_desc123');
-			expect(article2Result.row.content).toBe('rtxt_content456');
+			expect(article2Result.row.description).toBe('desc123');
+			expect(article2Result.row.content).toBe('content456');
 		}
 	});
 
@@ -237,7 +236,11 @@ describe('YjsDoc Type Inference', () => {
 			table({
 				id: 'authors',
 				name: '',
-				fields: [id(), text({ id: 'name' }), richtext({ id: 'bio' })] as const,
+				fields: [
+					id(),
+					text({ id: 'name' }),
+					text({ id: 'bio', nullable: true }),
+				] as const,
 			}),
 			table({
 				id: 'books',
@@ -255,14 +258,15 @@ describe('YjsDoc Type Inference', () => {
 			}),
 		]);
 
-		// Test authors table - richtext stores ID reference
+		// Test authors table
 		doc.get('authors').upsert({
 			id: 'author-1',
 			name: 'John Doe',
-			bio: 'rtxt_bio123',
+			bio: 'bio123',
 		});
 
 		const authorResult = doc.get('authors').get('author-1');
+		expect(authorResult.status).toBe('valid');
 		// Hover to verify type: GetResult<{ id: string; name: string; bio: string | null }>
 
 		// Test books table - tags stores plain array
@@ -320,18 +324,18 @@ describe('YjsDoc Type Inference', () => {
 				fields: [
 					id(),
 					text({ id: 'title' }),
-					richtext({ id: 'body' }),
-					richtext({ id: 'notes' }),
+					text({ id: 'body', nullable: true }),
+					text({ id: 'notes', nullable: true }),
 					tags({ id: 'tags', options: ['tag1', 'tag2'] as const }),
 				] as const,
 			}),
 		]);
 
-		// Upsert with plain values (richtext stores ID, tags stores array)
+		// Upsert with plain values (tags stores array)
 		doc.get('documents').upsert({
 			id: 'doc-1',
 			title: 'My Document',
-			body: 'rtxt_body123',
+			body: 'body123',
 			notes: null,
 			tags: ['tag1', 'tag2'],
 		});
@@ -343,7 +347,7 @@ describe('YjsDoc Type Inference', () => {
 		if (retrievedResult.status === 'valid') {
 			const retrieved = retrievedResult.row;
 			// These should all be plain types (no embedded CRDTs)
-			expect(retrieved.body).toBe('rtxt_body123');
+			expect(retrieved.body).toBe('body123');
 			expect(retrieved.tags).toEqual(['tag1', 'tag2']);
 			expect(retrieved.notes).toBeNull();
 		}

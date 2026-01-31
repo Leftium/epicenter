@@ -25,7 +25,6 @@ import type {
 	IntegerField,
 	JsonField,
 	RealField,
-	RichtextField,
 	SelectField,
 	TableDefinition,
 	TagsField,
@@ -108,23 +107,30 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 		? TNullable extends true
 			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
 			: NotNull<SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>>
-		: C extends RichtextField
-			? SQLiteTextBuilderInitial<'', [string, ...string[]], undefined>
-			: C extends IntegerField<infer TNullable>
+		: C extends IntegerField<infer TNullable>
+			? TNullable extends true
+				? SQLiteIntegerBuilderInitial<''>
+				: NotNull<SQLiteIntegerBuilderInitial<''>>
+			: C extends RealField<infer TNullable>
 				? TNullable extends true
-					? SQLiteIntegerBuilderInitial<''>
-					: NotNull<SQLiteIntegerBuilderInitial<''>>
-				: C extends RealField<infer TNullable>
+					? SQLiteRealBuilderInitial<''>
+					: NotNull<SQLiteRealBuilderInitial<''>>
+				: C extends BooleanField<infer TNullable>
 					? TNullable extends true
-						? SQLiteRealBuilderInitial<''>
-						: NotNull<SQLiteRealBuilderInitial<''>>
-					: C extends BooleanField<infer TNullable>
+						? SQLiteBooleanBuilderInitial<''>
+						: NotNull<SQLiteBooleanBuilderInitial<''>>
+					: C extends DateField<infer TNullable>
 						? TNullable extends true
-							? SQLiteBooleanBuilderInitial<''>
-							: NotNull<SQLiteBooleanBuilderInitial<''>>
-						: C extends DateField<infer TNullable>
-							? TNullable extends true
-								? $Type<
+							? $Type<
+									SQLiteTextBuilderInitial<
+										'',
+										[string, ...string[]],
+										undefined
+									>,
+									DateTimeString
+								>
+							: NotNull<
+									$Type<
 										SQLiteTextBuilderInitial<
 											'',
 											[string, ...string[]],
@@ -132,37 +138,48 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 										>,
 										DateTimeString
 									>
-								: NotNull<
-										$Type<
-											SQLiteTextBuilderInitial<
-												'',
-												[string, ...string[]],
-												undefined
-											>,
-											DateTimeString
-										>
+								>
+						: C extends SelectField<infer TOptions, infer TNullable>
+							? TNullable extends true
+								? SQLiteTextBuilderInitial<
+										'',
+										[...TOptions],
+										number | undefined
 									>
-							: C extends SelectField<infer TOptions, infer TNullable>
-								? TNullable extends true
-									? SQLiteTextBuilderInitial<
+								: NotNull<
+										SQLiteTextBuilderInitial<
 											'',
 											[...TOptions],
 											number | undefined
 										>
+									>
+							: C extends TagsField<infer TOptions, infer TNullable>
+								? TNullable extends true
+									? SQLiteCustomColumnBuilder<{
+											name: '';
+											dataType: 'custom';
+											columnType: 'SQLiteCustomColumn';
+											data: TOptions[number][];
+											driverParam: string;
+											enumValues: undefined;
+										}>
 									: NotNull<
-											SQLiteTextBuilderInitial<
-												'',
-												[...TOptions],
-												number | undefined
-											>
+											SQLiteCustomColumnBuilder<{
+												name: '';
+												dataType: 'custom';
+												columnType: 'SQLiteCustomColumn';
+												data: TOptions[number][];
+												driverParam: string;
+												enumValues: undefined;
+											}>
 										>
-								: C extends TagsField<infer TOptions, infer TNullable>
+								: C extends JsonField<infer T extends TSchema, infer TNullable>
 									? TNullable extends true
 										? SQLiteCustomColumnBuilder<{
 												name: '';
 												dataType: 'custom';
 												columnType: 'SQLiteCustomColumn';
-												data: TOptions[number][];
+												data: Static<T>;
 												driverParam: string;
 												enumValues: undefined;
 											}>
@@ -171,35 +188,12 @@ type FieldToDrizzle<C extends Field> = C extends IdField
 													name: '';
 													dataType: 'custom';
 													columnType: 'SQLiteCustomColumn';
-													data: TOptions[number][];
-													driverParam: string;
-													enumValues: undefined;
-												}>
-											>
-									: C extends JsonField<
-												infer T extends TSchema,
-												infer TNullable
-											>
-										? TNullable extends true
-											? SQLiteCustomColumnBuilder<{
-													name: '';
-													dataType: 'custom';
-													columnType: 'SQLiteCustomColumn';
 													data: Static<T>;
 													driverParam: string;
 													enumValues: undefined;
 												}>
-											: NotNull<
-													SQLiteCustomColumnBuilder<{
-														name: '';
-														dataType: 'custom';
-														columnType: 'SQLiteCustomColumn';
-														data: Static<T>;
-														driverParam: string;
-														enumValues: undefined;
-													}>
-												>
-										: never;
+											>
+									: never;
 
 function convertFieldToDrizzle<C extends Field>(
 	columnName: string,
@@ -217,12 +211,6 @@ function convertFieldToDrizzle<C extends Field>(
 			if (field.default !== undefined) {
 				column = column.default(field.default);
 			}
-			return column as FieldToDrizzle<C>;
-		}
-
-		case 'richtext': {
-			let column = text(columnName);
-			if (!isNullable) column = column.notNull();
 			return column as FieldToDrizzle<C>;
 		}
 

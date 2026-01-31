@@ -19,7 +19,6 @@ import type {
 	IntegerField,
 	JsonField,
 	RealField,
-	RichtextField,
 	Row,
 	SelectField,
 	TagsField,
@@ -45,40 +44,35 @@ export type FieldToYjsArktype<C extends Field> = C extends IdField
 		? TNullable extends true
 			? Type<string | null>
 			: Type<string>
-		: C extends RichtextField
-			? Type<string | null>
-			: C extends IntegerField<infer TNullable>
+		: C extends IntegerField<infer TNullable>
+			? TNullable extends true
+				? Type<number | null>
+				: Type<number>
+			: C extends RealField<infer TNullable>
 				? TNullable extends true
 					? Type<number | null>
 					: Type<number>
-				: C extends RealField<infer TNullable>
+				: C extends BooleanField<infer TNullable>
 					? TNullable extends true
-						? Type<number | null>
-						: Type<number>
-					: C extends BooleanField<infer TNullable>
+						? Type<boolean | null>
+						: Type<boolean>
+					: C extends DateField<infer TNullable>
 						? TNullable extends true
-							? Type<boolean | null>
-							: Type<boolean>
-						: C extends DateField<infer TNullable>
+							? Type<string | null>
+							: Type<string>
+						: C extends SelectField<infer TOptions, infer TNullable>
 							? TNullable extends true
-								? Type<string | null>
-								: Type<string>
-							: C extends SelectField<infer TOptions, infer TNullable>
+								? Type<TOptions[number] | null>
+								: Type<TOptions[number]>
+							: C extends TagsField<infer TOptions, infer TNullable>
 								? TNullable extends true
-									? Type<TOptions[number] | null>
-									: Type<TOptions[number]>
-								: C extends TagsField<infer TOptions, infer TNullable>
+									? Type<TOptions[number][] | null>
+									: Type<TOptions[number][]>
+								: C extends JsonField<infer T extends TSchema, infer TNullable>
 									? TNullable extends true
-										? Type<TOptions[number][] | null>
-										: Type<TOptions[number][]>
-									: C extends JsonField<
-												infer T extends TSchema,
-												infer TNullable
-											>
-										? TNullable extends true
-											? Type<Static<T> | null>
-											: Type<Static<T>>
-										: never;
+										? Type<Static<T> | null>
+										: Type<Static<T>>
+									: never;
 
 /**
  * Converts a table schema to an arktype Type for YJS Row validation.
@@ -151,7 +145,6 @@ export function fieldToYjsArktype<C extends Field>(
 	switch (field.type) {
 		case 'id':
 		case 'text':
-		case 'richtext':
 			baseType = type.string;
 			break;
 		case 'integer':

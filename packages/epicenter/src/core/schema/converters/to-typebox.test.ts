@@ -9,7 +9,6 @@ import {
 	integer,
 	json,
 	real,
-	richtext,
 	select,
 	tags,
 	text,
@@ -46,16 +45,6 @@ describe('fieldToTypebox', () => {
 		test('nullable accepts strings and null', () => {
 			const schema = fieldToTypebox(text({ id: 'title', nullable: true }));
 			expect(Value.Check(schema, 'hello')).toBe(true);
-			expect(Value.Check(schema, '')).toBe(true);
-			expect(Value.Check(schema, null)).toBe(true);
-			expect(Value.Check(schema, 123)).toBe(false);
-		});
-	});
-
-	describe('richtext', () => {
-		test('always nullable - accepts strings and null', () => {
-			const schema = fieldToTypebox(richtext({ id: 'content' }));
-			expect(Value.Check(schema, 'content-id-123')).toBe(true);
 			expect(Value.Check(schema, '')).toBe(true);
 			expect(Value.Check(schema, null)).toBe(true);
 			expect(Value.Check(schema, 123)).toBe(false);
@@ -400,7 +389,7 @@ describe('fieldsToTypebox', () => {
 		const schema = fieldsToTypebox([
 			id({ id: 'id' }),
 			text({ id: 'title' }),
-			richtext({ id: 'content' }),
+			text({ id: 'content', nullable: true }),
 			integer({ id: 'views' }),
 			real({ id: 'rating', nullable: true }),
 			boolean({ id: 'published' }),

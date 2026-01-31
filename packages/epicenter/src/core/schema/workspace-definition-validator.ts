@@ -54,11 +54,6 @@ const TextFieldSchema = Type.Union([
 	}),
 ]);
 
-const RichtextFieldSchema = Type.Union([
-	FieldMetadataSchema,
-	Type.Object({ type: Type.Literal('richtext') }),
-]);
-
 const IntegerFieldSchema = Type.Union([
 	FieldMetadataSchema,
 	Type.Object({
@@ -135,7 +130,6 @@ const JsonFieldSchema = Type.Union([
 export const FieldSchema = Type.Union([
 	IdFieldSchema,
 	TextFieldSchema,
-	RichtextFieldSchema,
 	IntegerFieldSchema,
 	RealFieldSchema,
 	BooleanFieldSchema,
@@ -150,7 +144,6 @@ export const FieldSchema = Type.Union([
  */
 export const KvFieldSchema = Type.Union([
 	TextFieldSchema,
-	RichtextFieldSchema,
 	IntegerFieldSchema,
 	RealFieldSchema,
 	BooleanFieldSchema,

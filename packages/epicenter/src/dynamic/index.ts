@@ -32,7 +32,6 @@ export {
 	integer,
 	json,
 	real,
-	richtext,
 	select,
 	table,
 	tags,

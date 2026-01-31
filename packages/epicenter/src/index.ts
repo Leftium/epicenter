@@ -74,7 +74,6 @@ export type {
 	KvValue,
 	PartialRow,
 	RealField,
-	RichtextField,
 	Row,
 	SelectField,
 	TableById,
@@ -102,7 +101,6 @@ export {
 	json,
 	parseIcon,
 	real,
-	richtext,
 	select,
 	TIMEZONE_ID_REGEX,
 	table,
@@ -141,9 +139,6 @@ export type {
 export { defineExports } from './dynamic/extension';
 export type { Kv, KvHelper } from './dynamic/kv/core';
 export { createKv } from './dynamic/kv/core';
-// Rich content ID generation
-export type { RichContentId } from './dynamic/rich-content/id';
-export { createRichContentId } from './dynamic/rich-content/id';
 export type { TableHelper, Tables } from './dynamic/tables/create-tables';
 // Table utilities
 export { createTables } from './dynamic/tables/create-tables';

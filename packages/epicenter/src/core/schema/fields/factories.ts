@@ -25,7 +25,6 @@ import type {
 	IntegerField,
 	JsonField,
 	RealField,
-	RichtextField,
 	SelectField,
 	TableDefinition,
 	TagsField,
@@ -318,38 +317,6 @@ export function text<const K extends string>({
 		icon: normalizeIcon(icon),
 		...(nullable && { nullable: true }),
 		...(defaultValue !== undefined && { default: defaultValue }),
-	};
-}
-
-// ============================================================================
-// Richtext Field Factory
-// ============================================================================
-
-/**
- * Creates a richtext field.
- * Richtext fields are always nullable (Y.Docs created lazily).
- *
- * @example
- * ```typescript
- * richtext({ id: 'content' })
- * richtext({ id: 'body', name: 'Post Body', icon: 'emoji:📝' })
- * ```
- */
-export function richtext<const K extends string>({
-	id,
-	name,
-	description = '',
-	icon = null,
-}: {
-	/** Unique identifier for this field within its table. */
-	id: K;
-} & FieldMetadataOptions): RichtextField & { id: K } {
-	return {
-		id,
-		type: 'richtext',
-		name: name ?? id,
-		description,
-		icon: normalizeIcon(icon),
 	};
 }
 

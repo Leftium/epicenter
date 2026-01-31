@@ -75,7 +75,6 @@ export {
 	json,
 	parseIcon,
 	real,
-	richtext,
 	select,
 	table,
 	tags,

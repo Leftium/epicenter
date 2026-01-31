@@ -7,7 +7,6 @@ import {
 	date as dateField,
 	integer,
 	real,
-	richtext,
 	select,
 	tags,
 	text,
@@ -377,49 +376,7 @@ describe('KV Helpers', () => {
 		});
 	});
 
-	describe('Richtext and Tags Fields', () => {
-		test('richtext field: get() returns string (ID reference)', () => {
-			const ydoc = new Y.Doc({ guid: 'test-kv' });
-			const kv = createKv(ydoc, [richtext({ id: 'notes' })]);
-
-			kv.set('notes', 'rtxt_abc123');
-			const result = kv.get('notes');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.value).toBe('rtxt_abc123');
-			}
-		});
-
-		test('richtext field: set() updates value correctly', () => {
-			const ydoc = new Y.Doc({ guid: 'test-kv' });
-			const kv = createKv(ydoc, [richtext({ id: 'notes' })]);
-
-			kv.set('notes', 'rtxt_first');
-			let result = kv.get('notes');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.value).toBe('rtxt_first');
-			}
-
-			kv.set('notes', 'rtxt_second');
-			result = kv.get('notes');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.value).toBe('rtxt_second');
-			}
-		});
-
-		test('richtext field: nullable returns null when not set', () => {
-			const ydoc = new Y.Doc({ guid: 'test-kv' });
-			const kv = createKv(ydoc, [richtext({ id: 'notes' })]);
-
-			const result = kv.get('notes');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.value).toBe(null);
-			}
-		});
-
+	describe('Tags Fields', () => {
 		test('tags field: get() returns plain array', () => {
 			const ydoc = new Y.Doc({ guid: 'test-kv' });
 			const kv = createKv(ydoc, [
@@ -542,19 +499,6 @@ describe('KV Helpers', () => {
 			kv.set('count', 3);
 
 			expect(values).toEqual([1, 2]);
-		});
-
-		test('observeChanges() fires when richtext is set', () => {
-			const ydoc = new Y.Doc({ guid: 'test-kv' });
-			const kv = createKv(ydoc, [richtext({ id: 'notes' })]);
-
-			let callCount = 0;
-			kv.observeKey('notes', () => {
-				callCount++;
-			});
-
-			kv.set('notes', 'rtxt_abc123');
-			expect(callCount).toBe(1);
 		});
 
 		test('observeChanges() fires when tags array is set', () => {

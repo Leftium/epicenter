@@ -24,7 +24,6 @@
  *
  * Special cases:
  * - `id`: Never nullable (implicit)
- * - `richtext`: Always nullable (implicit)
  *
  * ## Related Files
  *
@@ -191,18 +190,6 @@ export type TextField<TNullable extends boolean = boolean> = FieldMetadata & {
 };
 
 /**
- * Rich text reference field - stores ID pointing to separate rich content document.
- * The ID references a separate Y.Doc for collaborative editing.
- * The row itself just stores the string ID (JSON-serializable).
- *
- * Always nullable - Y.Docs are created lazily when user first edits.
- * No need to specify nullable or default; they're implicit.
- */
-export type RichtextField = FieldMetadata & {
-	type: 'richtext';
-};
-
-/**
  * Integer field - whole numbers.
  */
 export type IntegerField<TNullable extends boolean = boolean> =
@@ -341,7 +328,6 @@ export type JsonField<
 export type Field =
 	| IdField
 	| TextField
-	| RichtextField
 	| IntegerField
 	| RealField
 	| BooleanField
@@ -352,7 +338,7 @@ export type Field =
 
 /**
  * Extract the type name from a field definition.
- * One of: 'id', 'text', 'richtext', 'integer', 'real', 'boolean', 'date', 'select', 'tags', 'json'
+ * One of: 'id', 'text', 'integer', 'real', 'boolean', 'date', 'select', 'tags', 'json'
  */
 export type FieldType = Field['type'];
 
@@ -438,16 +424,12 @@ export type KvFieldIds<TKv extends readonly KvField[]> = TKv[number]['id'];
  * Uses optional property check `{ nullable?: true }` because field definitions
  * define `nullable?: TNullable` (optional). When `TNullable = true`, the type
  * is `nullable?: true` which doesn't extend `{ nullable: true }` (required).
- *
- * This also correctly handles RichtextField (no nullable property)
- * because optional properties can be absent.
  */
 type IsNullable<C extends Field> = C extends { nullable?: true } ? true : false;
 
 /**
  * Maps a field definition to its runtime value type.
  *
- * - RichtextField → string | null (always nullable)
  * - TagsField → string[] (plain array)
  * - DateField → DateTimeString
  * - Other fields → primitive types
@@ -460,37 +442,35 @@ export type CellValue<C extends Field = Field> = C extends IdField
 		? IsNullable<C> extends true
 			? string | null
 			: string
-		: C extends RichtextField
-			? string | null // always nullable
-			: C extends IntegerField
+		: C extends IntegerField
+			? IsNullable<C> extends true
+				? number | null
+				: number
+			: C extends RealField
 				? IsNullable<C> extends true
 					? number | null
 					: number
-				: C extends RealField
+				: C extends BooleanField
 					? IsNullable<C> extends true
-						? number | null
-						: number
-					: C extends BooleanField
+						? boolean | null
+						: boolean
+					: C extends DateField
 						? IsNullable<C> extends true
-							? boolean | null
-							: boolean
-						: C extends DateField
+							? DateTimeString | null
+							: DateTimeString
+						: C extends SelectField<infer TOptions>
 							? IsNullable<C> extends true
-								? DateTimeString | null
-								: DateTimeString
-							: C extends SelectField<infer TOptions>
+								? TOptions[number] | null
+								: TOptions[number]
+							: C extends TagsField<infer TOptions>
 								? IsNullable<C> extends true
-									? TOptions[number] | null
-									: TOptions[number]
-								: C extends TagsField<infer TOptions>
+									? TOptions[number][] | null
+									: TOptions[number][]
+								: C extends JsonField<infer T extends TSchema>
 									? IsNullable<C> extends true
-										? TOptions[number][] | null
-										: TOptions[number][]
-									: C extends JsonField<infer T extends TSchema>
-										? IsNullable<C> extends true
-											? Static<T> | null
-											: Static<T>
-										: never;
+										? Static<T> | null
+										: Static<T>
+									: never;
 
 // ============================================================================
 // Table Schema Types

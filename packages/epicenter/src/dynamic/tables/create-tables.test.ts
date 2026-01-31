@@ -1,14 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import {
-	boolean,
-	id,
-	integer,
-	richtext,
-	table,
-	tags,
-	text,
-} from '../../core/schema';
+import { boolean, id, integer, table, tags, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
 describe('createTables', () => {
@@ -149,7 +141,7 @@ describe('createTables', () => {
 				name: '',
 				fields: [
 					id(),
-					richtext({ id: 'title' }),
+					text({ id: 'title' }),
 					tags({
 						id: 'tags',
 						options: ['typescript', 'javascript', 'python'] as const,
@@ -160,20 +152,20 @@ describe('createTables', () => {
 
 		doc.get('posts').upsert({
 			id: '1',
-			title: 'rtxt_hello123',
+			title: 'hello123',
 			tags: ['typescript', 'javascript'],
 		});
 
 		const result1 = doc.get('posts').get('1');
 		expect(result1.status).toBe('valid');
 		if (result1.status === 'valid') {
-			expect(result1.row.title).toBe('rtxt_hello123');
+			expect(result1.row.title).toBe('hello123');
 			expect(result1.row.tags).toEqual(['typescript', 'javascript']);
 		}
 
 		doc.get('posts').upsert({
 			id: '2',
-			title: 'rtxt_second456',
+			title: 'second456',
 			tags: ['python'],
 		});
 
@@ -181,8 +173,8 @@ describe('createTables', () => {
 		expect(rows).toHaveLength(2);
 		const firstRow = rows[0]!;
 		const secondRow = rows[1]!;
-		expect(firstRow.title).toBe('rtxt_hello123');
-		expect(secondRow.title).toBe('rtxt_second456');
+		expect(firstRow.title).toBe('hello123');
+		expect(secondRow.title).toBe('second456');
 	});
 
 	test('rows are plain JSON-serializable objects', () => {

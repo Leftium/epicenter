@@ -7,7 +7,7 @@
 		".": "./src/index.ts",
 		"./dynamic": "./src/dynamic/index.ts",
 		"./static": "./src/static/index.ts",
-		"./node": "./src/core/workspace/node.ts",
+		"./node": "./src/dynamic/workspace/node.ts",
 		"./extensions/persistence": {
 			"browser": "./src/extensions/persistence/index.browser.ts",
 			"node": "./src/extensions/persistence/index.node.ts",

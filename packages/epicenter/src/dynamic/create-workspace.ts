@@ -29,9 +29,13 @@ import type {
 	InferExtensionExports,
 	WorkspaceBuilder,
 } from './extensions';
-import { createTableHelper } from './table-helper';
 import { validateId } from './keys';
-import { createKvStore, KV_ARRAY_NAME, TABLE_ARRAY_PREFIX } from './stores/kv-store';
+import {
+	createKvStore,
+	KV_ARRAY_NAME,
+	TABLE_ARRAY_PREFIX,
+} from './stores/kv-store';
+import { createTableHelper } from './table-helper';
 import type {
 	CellValue,
 	CreateWorkspaceOptions,
@@ -193,17 +197,17 @@ export function createWorkspace<TTableDefs extends readonly TableDef[]>(
 
 				batch<T>(
 					fn: (
-						ws: WorkspaceClient<
-							TTableDefs,
-							InferExtensionExports<TExtensions>
-						>,
+						ws: WorkspaceClient<TTableDefs, InferExtensionExports<TExtensions>>,
 					) => T,
 				): T {
-					// Note: Currently does NOT wrap in a Yjs transaction due to a bug in
-					// YKeyValueLww where entries added inside a wrapping transaction are
-					// incorrectly deleted by the observer when the transaction completes.
-					// TODO: Fix YKeyValueLww observer to properly handle nested transactions.
-					return fn(this);
+					// Wraps all operations in a single Y.js transaction:
+					// - Observers fire once at the end (not per operation)
+					// - All changes sent as single update to sync peers
+					// - Values set in batch are readable within same batch
+					//
+					// YKeyValueLww uses single-writer architecture where set() writes to
+					// a `pending` map for immediate reads. See YKeyValueLww.pending.
+					return ydoc.transact(() => fn(this));
 				},
 
 				async destroy(): Promise<void> {

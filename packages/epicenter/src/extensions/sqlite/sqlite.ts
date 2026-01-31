@@ -7,9 +7,9 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { KvField, Row, TableDefinition } from '../../core/schema';
 import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;

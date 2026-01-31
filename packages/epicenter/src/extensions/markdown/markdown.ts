@@ -5,11 +5,11 @@ import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync, trySync } from 'wellcrafted/result';
 import { getTableById } from '../../cell/schema-file';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { Field, KvField, Row, TableDefinition } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
-import type { TableHelper } from '../../core/tables/create-tables';
 import type { AbsolutePath } from '../../core/types';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { TableHelper } from '../../dynamic/tables/create-tables';
 import { createIndexLogger } from '../error-logger';
 import {
 	defaultSerializer,

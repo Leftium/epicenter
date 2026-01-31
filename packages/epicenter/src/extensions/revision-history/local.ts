@@ -1,8 +1,8 @@
 import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { ExtensionContext } from '../../core/extension';
 import type { KvField, TableDefinition } from '../../core/schema';
+import type { ExtensionContext } from '../../dynamic/extension';
 
 const SNAPSHOT_EXTENSION = '.ysnap';
 const METADATA_EXTENSION = '.json';

@@ -7,6 +7,7 @@ import type {
 } from '../../core/schema/fields/types';
 import { createKv, type Kv } from '../kv/core';
 import { createTables, type Tables } from '../tables/create-tables';
+import type { HeadDoc } from './head-doc';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Doc Top-Level Map Names
@@ -149,6 +150,15 @@ export type ExtensionContext<
  *
  * Y.Doc ID: `{workspaceId}-{epoch}`
  *
+ * ## HeadDoc Integration
+ *
+ * The workspace derives its identity from the HeadDoc:
+ * - `workspaceId` from `headDoc.workspaceId`
+ * - `epoch` from `headDoc.getOwnEpoch()` (this client's epoch, not global max)
+ *
+ * Using `getOwnEpoch()` allows each client to view a different epoch. For example,
+ * one client might be viewing epoch 2 while the global epoch is 3.
+ *
  * ## Structure
  *
  * ```
@@ -161,11 +171,13 @@ export type ExtensionContext<
  *
  * @example
  * ```typescript
+ * const headDoc = createHeadDoc({ workspaceId: 'blog', providers: { persistence } });
+ * await headDoc.whenSynced;
+ *
  * const workspace = createWorkspaceDoc({
- *   workspaceId: 'blog',
- *   epoch: 0,
- *   tables: { posts: table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }) },
- *   kv: {},
+ *   headDoc,
+ *   tables: [table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] })],
+ *   kv: [],
  *   extensionFactories: {
  *     persistence: ({ ydoc }) => persistence({ ydoc }, { filePath: './data.yjs' }),
  *     sqlite: ({ workspaceId, tables }) => sqlite({ workspaceId, tables }, { dbPath: './data.db' }),
@@ -190,14 +202,12 @@ export function createWorkspaceDoc<
 	TKvFields extends readonly KvField[],
 	TExtensionFactories extends ExtensionFactoryMap<TTableDefinitions, TKvFields>,
 >({
-	workspaceId,
-	epoch,
+	headDoc,
 	tables: tableDefinitions,
 	kv: kvDefinitions,
 	extensionFactories,
 }: {
-	workspaceId: string;
-	epoch: number;
+	headDoc: HeadDoc;
 	tables: TTableDefinitions;
 	kv: TKvFields;
 	extensionFactories: TExtensionFactories;
@@ -206,6 +216,10 @@ export function createWorkspaceDoc<
 	TKvFields,
 	InferExtensionExports<TExtensionFactories>
 > {
+	// Extract identity from HeadDoc
+	const workspaceId = headDoc.workspaceId;
+	const epoch = headDoc.getOwnEpoch();
+
 	const docId = `${workspaceId}-${epoch}`;
 	// gc: false is required for revision history snapshots to work
 	const ydoc = new Y.Doc({ guid: docId, gc: false });

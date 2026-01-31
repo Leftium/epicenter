@@ -7,13 +7,14 @@ import {
 	table,
 	text,
 } from '../core/schema/fields/factories';
+import type { Field, TableDefinition } from '../core/schema/fields/types';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import { createTableHelper } from './table-helper';
-import type { CellValue, SchemaTableDefinition } from './types';
+import type { CellValue } from './types';
 
 function createTestStore(
 	tableId: string,
-	schema: SchemaTableDefinition = table({
+	schema: TableDefinition<readonly Field[]> = table({
 		id: tableId,
 		name: tableId,
 		fields: [id()] as const,

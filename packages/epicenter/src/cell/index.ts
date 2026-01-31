@@ -17,6 +17,8 @@
  * @packageDocumentation
  */
 
+import type { Field, TableDefinition } from '../core/schema/fields/types';
+
 // HeadDoc (re-exported from core for convenience)
 export { createHeadDoc, type HeadDoc } from '../core/docs/head-doc';
 
@@ -42,8 +44,23 @@ export {
 	text,
 } from '../core/schema/fields/factories';
 // Icon type and utilities from Core (for LWW-safe icons)
-export type { Icon, IconType } from '../core/schema/fields/types';
+// Schema types (re-exported from core for backwards compatibility)
+export type {
+	Field,
+	Field as SchemaFieldDefinition,
+	FieldType,
+	Icon,
+	IconType,
+	KvField as SchemaKvDefinition,
+	TableDefinition,
+} from '../core/schema/fields/types';
 export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
+export type { WorkspaceDefinition } from '../core/workspace/workspace';
+/**
+ * Alias for TableDefinition for backwards compatibility.
+ * Consumers may use SchemaTableDefinition in their code.
+ */
+export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
 // TypeBox converters for cell schemas
 export {
 	schemaFieldToTypebox,
@@ -59,7 +76,6 @@ export type {
 	CellWorkspaceBuilder,
 	InferCellExtensionExports,
 } from './extensions';
-
 // Key utilities
 export {
 	CellKey,
@@ -87,18 +103,12 @@ export type {
 	CreateCellWorkspaceOptions,
 	// HeadDoc-based options (new API)
 	CreateCellWorkspaceWithHeadDocOptions,
-	// Schema types (external JSON)
-	FieldType,
+	// Store interfaces
 	KvStore,
 	RowData,
-	SchemaFieldDefinition,
-	SchemaKvDefinition,
-	SchemaTableDefinition,
-	// Store interfaces
 	TableHelper,
 	TypedCell,
 	TypedRowWithCells,
-	WorkspaceDefinition,
 } from './types';
 // Validation result types
 export type {

@@ -8,13 +8,13 @@ import {
 	table,
 	text,
 } from '../core/schema/fields/factories';
+import type { WorkspaceDefinition } from '../core/workspace/workspace';
 import { createCellWorkspace } from './create-cell-workspace';
 import type {
 	CellValue,
 	CellWorkspaceClient,
 	RowData,
 	TableHelper,
-	WorkspaceDefinition,
 } from './types';
 
 /**

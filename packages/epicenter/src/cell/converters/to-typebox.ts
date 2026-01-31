@@ -1,8 +1,8 @@
 /**
- * Converts cell SchemaFieldDefinition to TypeBox TSchema for runtime validation.
+ * Converts cell Field definitions to TypeBox TSchema for runtime validation.
  *
- * Cell schemas differ from core Field types - they're simpler advisory definitions
- * stored as external JSON. This converter handles that simpler structure.
+ * Cell schemas are advisory definitions stored as external JSON.
+ * This converter handles that simpler structure.
  *
  * TypeBox schemas can be compiled to JIT validators using `Compile()` from `typebox/compile`.
  *
@@ -10,8 +10,7 @@
  */
 
 import { type TObject, type TSchema, Type } from 'typebox';
-import type { Field } from '../../core/schema/fields/types';
-import type { SchemaFieldDefinition, SchemaTableDefinition } from '../types';
+import type { Field, TableDefinition } from '../../core/schema/fields/types';
 
 /**
  * Converts a single field definition to a TypeBox TSchema.
@@ -38,9 +37,7 @@ import type { SchemaFieldDefinition, SchemaTableDefinition } from '../types';
  * // Returns Type.Union([Type.String(), Type.Null()])
  * ```
  */
-export function schemaFieldToTypebox(
-	field: Field | SchemaFieldDefinition,
-): TSchema {
+export function schemaFieldToTypebox(field: Field): TSchema {
 	const baseType = fieldToTypebox(field);
 	// All cell fields are nullable (advisory schema)
 	return Type.Union([baseType, Type.Null()]);
@@ -49,7 +46,7 @@ export function schemaFieldToTypebox(
 /**
  * Converts a field definition to its base TypeBox schema (without nullable wrapper).
  */
-function fieldToTypebox(field: Field | SchemaFieldDefinition): TSchema {
+function fieldToTypebox(field: Field): TSchema {
 	switch (field.type) {
 		case 'id':
 		case 'text':
@@ -89,7 +86,7 @@ function fieldToTypebox(field: Field | SchemaFieldDefinition): TSchema {
 }
 
 /**
- * Converts a SchemaTableDefinition to a TypeBox TObject schema.
+ * Converts a TableDefinition to a TypeBox TObject schema.
  *
  * The resulting schema allows additional properties (fields not in schema pass validation).
  * This supports the advisory nature of cell schemas.
@@ -116,7 +113,9 @@ function fieldToTypebox(field: Field | SchemaFieldDefinition): TSchema {
  * validator.Check({ title: 'Hello', views: 100, extra: 'field' }); // true (additional props)
  * ```
  */
-export function schemaTableToTypebox(table: SchemaTableDefinition): TObject {
+export function schemaTableToTypebox(
+	table: TableDefinition<readonly Field[]>,
+): TObject {
 	const properties: Record<string, TSchema> = {};
 
 	for (const fieldDef of table.fields) {

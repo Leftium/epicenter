@@ -22,6 +22,11 @@
 
 import * as Y from 'yjs';
 import { defineExports, type Lifecycle } from '../core/lifecycle';
+import type {
+	Field,
+	FieldType,
+	TableDefinition,
+} from '../core/schema/fields/types';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import type {
 	CellExtensionContext,
@@ -38,9 +43,7 @@ import type {
 	CellWorkspaceClient,
 	CreateCellWorkspaceOptions,
 	CreateCellWorkspaceWithHeadDocOptions,
-	FieldType,
 	RowData,
-	SchemaTableDefinition,
 	TableHelper,
 	TypedCell,
 	TypedRowWithCells,
@@ -394,7 +397,7 @@ function createCellWorkspaceWithHeadDoc({
 		withExtensions<TExtensions extends CellExtensionFactoryMap>(
 			extensionFactories: TExtensions,
 		): CellWorkspaceClient<
-			readonly SchemaTableDefinition[],
+			readonly TableDefinition<readonly Field[]>[],
 			InferCellExtensionExports<TExtensions>
 		> {
 			// Initialize extensions with typed context
@@ -421,7 +424,7 @@ function createCellWorkspaceWithHeadDoc({
 			).then(() => {});
 
 			const client: CellWorkspaceClient<
-				readonly SchemaTableDefinition[],
+				readonly TableDefinition<readonly Field[]>[],
 				InferCellExtensionExports<TExtensions>
 			> = {
 				id: workspaceId,
@@ -509,7 +512,7 @@ function createCellWorkspaceWithHeadDoc({
 				batch<T>(
 					fn: (
 						ws: CellWorkspaceClient<
-							readonly SchemaTableDefinition[],
+							readonly TableDefinition<readonly Field[]>[],
 							InferCellExtensionExports<TExtensions>
 						>,
 					) => T,

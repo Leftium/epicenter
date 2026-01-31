@@ -30,12 +30,9 @@
 
 import type * as Y from 'yjs';
 import type { Lifecycle } from '../core/lifecycle';
-import type {
-	KvStore,
-	SchemaTableDefinition,
-	TableHelper,
-	WorkspaceDefinition,
-} from './types';
+import type { Field, TableDefinition } from '../core/schema/fields/types';
+import type { WorkspaceDefinition } from '../core/workspace/workspace';
+import type { KvStore, TableHelper } from './types';
 
 /**
  * Context provided to cell extension factories.
@@ -46,8 +43,9 @@ import type {
  * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellExtensionContext<
-	TTableDefs extends
-		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TTableDefs extends readonly TableDefinition<
+		readonly Field[]
+	>[] = readonly TableDefinition<readonly Field[]>[],
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
@@ -105,8 +103,9 @@ export type CellExtensionContext<
  * ```
  */
 export type CellExtensionFactory<
-	TTableDefs extends
-		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TTableDefs extends readonly TableDefinition<
+		readonly Field[]
+	>[] = readonly TableDefinition<readonly Field[]>[],
 	TExports extends Lifecycle = Lifecycle,
 > = (context: CellExtensionContext<TTableDefs>) => TExports;
 
@@ -116,8 +115,9 @@ export type CellExtensionFactory<
  * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellExtensionFactoryMap<
-	TTableDefs extends
-		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TTableDefs extends readonly TableDefinition<
+		readonly Field[]
+	>[] = readonly TableDefinition<readonly Field[]>[],
 > = Record<string, CellExtensionFactory<TTableDefs, Lifecycle>>;
 
 /**
@@ -146,8 +146,9 @@ export type InferCellExtensionExports<T> = {
  * @typeParam TTableDefs - The table definitions from the workspace schema (array format)
  */
 export type CellWorkspaceBuilder<
-	TTableDefs extends
-		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TTableDefs extends readonly TableDefinition<
+		readonly Field[]
+	>[] = readonly TableDefinition<readonly Field[]>[],
 > = {
 	/**
 	 * Add extensions that receive typed context based on the definition.

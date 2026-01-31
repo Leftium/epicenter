@@ -18,6 +18,7 @@
 import type { TProperties, TSchema } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
+import type { Field, TableDefinition } from '../core/schema/fields/types';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
@@ -36,14 +37,7 @@ import {
 	RowPrefix,
 	validateId,
 } from './keys';
-
-import type {
-	CellValue,
-	ChangeHandler,
-	RowData,
-	SchemaTableDefinition,
-	TableHelper,
-} from './types';
+import type { CellValue, ChangeHandler, RowData, TableHelper } from './types';
 import type {
 	GetCellResult,
 	GetResult,
@@ -62,7 +56,7 @@ import type {
 export function createTableHelper(
 	tableId: string,
 	yarray: Y.Array<YKeyValueLwwEntry<CellValue>>,
-	schema: SchemaTableDefinition,
+	schema: TableDefinition<readonly Field[]>,
 ): TableHelper {
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 

@@ -16,13 +16,9 @@
  * @packageDocumentation
  */
 
-import type { Icon } from '../core/schema/fields/types';
+import type { Field, Icon, TableDefinition } from '../core/schema/fields/types';
 import { isIcon } from '../core/schema/fields/types';
-import type {
-	SchemaFieldDefinition,
-	SchemaTableDefinition,
-	WorkspaceDefinition,
-} from './types';
+import type { WorkspaceDefinition } from '../core/workspace/workspace';
 
 /**
  * Get a table by its ID from an array of tables.
@@ -32,9 +28,9 @@ import type {
  * @returns The table definition if found, undefined otherwise
  */
 export function getTableById(
-	tables: readonly SchemaTableDefinition[],
+	tables: readonly TableDefinition<readonly Field[]>[],
 	tableId: string,
-): SchemaTableDefinition | undefined {
+): TableDefinition<readonly Field[]> | undefined {
 	return tables.find((t) => t.id === tableId);
 }
 
@@ -118,7 +114,7 @@ export function parseSchema(json: string): WorkspaceDefinition {
 	}
 
 	// Normalize the parsed data
-	const normalizedTables: SchemaTableDefinition[] = [];
+	const normalizedTables: TableDefinition<readonly Field[]>[] = [];
 
 	// Normalize tables
 	for (const [tableId, tableData] of Object.entries(tables)) {
@@ -126,17 +122,17 @@ export function parseSchema(json: string): WorkspaceDefinition {
 
 		// Normalize fields to array format (supports both Record and Array input)
 		const rawFields = tableObj.fields;
-		const normalizedFields: SchemaFieldDefinition[] = Array.isArray(rawFields)
+		const normalizedFields: Field[] = Array.isArray(rawFields)
 			? ((rawFields as Array<Record<string, unknown>>).map((f) => ({
 					...(f as object),
 					id: (f.id as string) ?? '',
-				})) as SchemaFieldDefinition[])
+				})) as Field[])
 			: Object.entries(rawFields as Record<string, unknown>).map(
 					([id, f]) =>
 						({
 							...(f as object),
 							id,
-						}) as SchemaFieldDefinition,
+						}) as Field,
 				);
 
 		normalizedTables.push({

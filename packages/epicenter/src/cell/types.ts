@@ -14,52 +14,18 @@
 
 import type * as Y from 'yjs';
 import type {
-	FieldType as CoreFieldType,
 	Field,
+	FieldType,
 	Icon,
-	KvField,
 	TableDefinition,
 } from '../core/schema/fields/types';
-import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
+import type { WorkspaceDefinition } from '../core/workspace/workspace';
 import type {
 	GetCellResult,
 	GetResult,
 	InvalidRowResult,
 	RowResult,
 } from './validation-types';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Schema Types (Re-exported from Core)
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Field definition - re-exported from core.
- * Field = FieldSchema & { id: string }, with array position determining order.
- */
-export type SchemaFieldDefinition = Field;
-
-/**
- * Table definition - re-exported from core.
- * Use the `table()` helper to create these with defaults.
- */
-export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
-
-/**
- * KV definition - re-exported from core.
- * Use the `setting()` helper to create these with defaults.
- */
-export type SchemaKvDefinition = KvField;
-
-/**
- * Complete workspace definition - re-exported from core.
- * Includes workspace identity (name, description, icon) and schema (tables, kv).
- */
-export type WorkspaceDefinition = CoreWorkspaceDefinition;
-
-/**
- * Field type discriminator - derived from Field['type'] in core.
- */
-export type FieldType = CoreFieldType;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Data Types
@@ -137,7 +103,7 @@ export type TableHelper = {
 	/** The table identifier */
 	tableId: string;
 	/** The schema definition for this table (empty fields for dynamic tables) */
-	schema: SchemaTableDefinition;
+	schema: TableDefinition<readonly Field[]>;
 
 	// Cell operations (validated)
 	/** Get a validated cell value */
@@ -202,8 +168,9 @@ export type KvStore = {
  * Schema is applied as a "lens" for viewing/editing.
  */
 export type CellWorkspaceClient<
-	TTableDefs extends
-		readonly SchemaTableDefinition[] = readonly SchemaTableDefinition[],
+	TTableDefs extends readonly TableDefinition<
+		readonly Field[]
+	>[] = readonly TableDefinition<readonly Field[]>[],
 	TExtensions = {},
 > = {
 	/** Workspace identifier (no epoch suffix) */

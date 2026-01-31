@@ -8,9 +8,8 @@
  * These cell-specific helpers are for JSON parsing scenarios.
  */
 
-import type { Field, Icon } from '../core/schema/fields/types';
+import type { Field, Icon, TableDefinition } from '../core/schema/fields/types';
 import { isIcon } from '../core/schema/fields/types';
-import type { SchemaFieldDefinition, SchemaTableDefinition } from './types';
 
 /**
  * Normalize icon input to Icon | null.
@@ -22,7 +21,7 @@ function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
 }
 
 /**
- * Create a SchemaTableDefinition with sensible defaults.
+ * Create a TableDefinition with sensible defaults.
  *
  * For most use cases, prefer the core `table()` factory which provides
  * better type inference. This function is useful for JSON parsing.
@@ -48,11 +47,11 @@ export function schemaTable(
 		description?: string;
 		icon?: string | Icon | null;
 	},
-): SchemaTableDefinition {
+): TableDefinition<readonly Field[]> {
 	// Convert Record-based fields to array with id property
-	const fieldsArray: SchemaFieldDefinition[] = Object.entries(
-		options.fields,
-	).map(([fieldId, field]) => ({ ...field, id: fieldId }));
+	const fieldsArray: Field[] = Object.entries(options.fields).map(
+		([fieldId, field]) => ({ ...field, id: fieldId }),
+	);
 
 	return {
 		id: tableId,

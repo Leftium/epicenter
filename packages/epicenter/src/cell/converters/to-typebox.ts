@@ -15,8 +15,9 @@ import type { Field, TableDefinition } from '../../core/schema/fields/types';
 /**
  * Converts a single field definition to a TypeBox TSchema.
  *
- * All fields are nullable in cell workspace (advisory schema).
- * Accepts `Field` (FieldSchema & { id }) - the id is not used for conversion.
+ * Returns a strict schema representing the ideal data shape.
+ * Advisory behavior (accepting invalid data) is handled at the application layer,
+ * not by making schemas permissive.
  *
  * Field type mappings:
  * - `id`, `text`, `richtext` -> `Type.String()`
@@ -24,29 +25,20 @@ import type { Field, TableDefinition } from '../../core/schema/fields/types';
  * - `real` -> `Type.Number()`
  * - `boolean` -> `Type.Boolean()`
  * - `date` -> `Type.String()`
- * - `select` -> `Type.Union([Type.Literal(...), ...])` if options, else `Type.String()`
+ * - `select` -> `Type.Union([Type.Literal(...), ...])`
  * - `tags` -> `Type.Array(Type.Union([...]))` if options, else `Type.Array(Type.String())`
  * - `json` -> `Type.Unknown()`
  *
- * @param field - The field definition to convert (id property not required)
- * @returns A TypeBox TSchema wrapped with nullable (union with null)
+ * @param field - The field definition to convert
+ * @returns A strict TypeBox TSchema for the field type
  *
  * @example
  * ```typescript
  * const schema = schemaFieldToTypebox({ name: 'Title', type: 'text', ... });
- * // Returns Type.Union([Type.String(), Type.Null()])
+ * // Returns Type.String()
  * ```
  */
 export function schemaFieldToTypebox(field: Field): TSchema {
-	const baseType = fieldToTypebox(field);
-	// All cell fields are nullable (advisory schema)
-	return Type.Union([baseType, Type.Null()]);
-}
-
-/**
- * Converts a field definition to its base TypeBox schema (without nullable wrapper).
- */
-function fieldToTypebox(field: Field): TSchema {
 	switch (field.type) {
 		case 'id':
 		case 'text':
@@ -109,7 +101,7 @@ function fieldToTypebox(field: Field): TSchema {
  *
  * const validator = Compile(tableSchema);
  * validator.Check({ title: 'Hello', views: 100 }); // true
- * validator.Check({ title: 'Hello', views: null }); // true (nullable)
+ * validator.Check({ title: 'Hello', views: null }); // false (strict schema)
  * validator.Check({ title: 'Hello', views: 100, extra: 'field' }); // true (additional props)
  * ```
  */

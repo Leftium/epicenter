@@ -55,16 +55,17 @@ describe('TableHelper with schema (consolidated API)', () => {
 			}
 		});
 
-		test('returns valid for null value (all fields nullable)', () => {
+		test('returns invalid for null value (strict schema, forgiving retrieval)', () => {
 			const { tableHelper } = createTestStore('posts', postsSchema);
 
 			const rowId = tableHelper.createRow();
 			tableHelper.set(rowId, 'views', null);
 
 			const result = tableHelper.get(rowId, 'views');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.value).toBe(null);
+			expect(result.status).toBe('invalid');
+			if (result.status === 'invalid') {
+				expect(result.errors.length).toBeGreaterThan(0);
+				expect(result.value).toBe(null); // Value still returned (forgiving)
 			}
 		});
 

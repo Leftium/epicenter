@@ -15,13 +15,10 @@
  * @packageDocumentation
  */
 
-import type { TProperties, TSchema } from 'typebox';
+import { type TObject, type TProperties, type TSchema, Type } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
-import {
-	schemaFieldToTypebox,
-	schemaTableToTypebox,
-} from '../cell/converters/to-typebox';
+import type { Field } from '../core/schema/fields/types';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -51,6 +48,41 @@ import type {
 	ValidationError,
 } from './types';
 
+/** Convert a Field to its TypeBox schema. */
+function fieldToTypebox(field: Field): TSchema {
+	switch (field.type) {
+		case 'id':
+		case 'text':
+		case 'richtext':
+		case 'date':
+			return Type.String();
+		case 'integer':
+			return Type.Integer();
+		case 'real':
+			return Type.Number();
+		case 'boolean':
+			return Type.Boolean();
+		case 'select':
+			return Type.Union(field.options.map((v) => Type.Literal(v)));
+		case 'tags': {
+			const opts = field.options;
+			if (opts?.length) return Type.Array(Type.Union(opts.map((v) => Type.Literal(v))));
+			return Type.Array(Type.String());
+		}
+		case 'json':
+			return Type.Unknown();
+	}
+}
+
+/** Convert a GridTableDefinition to a TypeBox object schema. */
+function tableToTypebox(table: GridTableDefinition): TObject {
+	const properties: Record<string, TSchema> = {};
+	for (const field of table.fields) {
+		properties[field.id] = Type.Optional(fieldToTypebox(field));
+	}
+	return Type.Object(properties, { additionalProperties: true });
+}
+
 /**
  * Create a grid table helper backed by a Y.Array.
  *
@@ -66,7 +98,7 @@ export function createGridTableHelper(
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 
 	// Compile validators once at construction
-	const rowValidator = Compile(schemaTableToTypebox(schema));
+	const rowValidator = Compile(tableToTypebox(schema));
 
 	// Compile field validators lazily and cache them
 	const fieldValidators = new Map<string, Validator<TProperties, TSchema>>();
@@ -80,7 +112,7 @@ export function createGridTableHelper(
 		const fieldDef = schema.fields.find((f) => f.id === fieldId);
 		if (!fieldDef) return undefined;
 
-		const fieldSchema = schemaFieldToTypebox(fieldDef);
+		const fieldSchema = fieldToTypebox(fieldDef);
 		validator = Compile(fieldSchema);
 		fieldValidators.set(fieldId, validator);
 		return validator;

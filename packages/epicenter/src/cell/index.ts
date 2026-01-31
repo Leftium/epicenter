@@ -61,11 +61,6 @@ export type { WorkspaceDefinition } from '../core/workspace/workspace';
  * Consumers may use SchemaTableDefinition in their code.
  */
 export type SchemaTableDefinition = TableDefinition<readonly Field[]>;
-// TypeBox converters for cell schemas
-export {
-	schemaFieldToTypebox,
-	schemaTableToTypebox,
-} from './converters/to-typebox';
 // Factory
 export { createCellWorkspace } from './create-cell-workspace';
 // Extension types

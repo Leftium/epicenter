@@ -15,7 +15,7 @@
  * @packageDocumentation
  */
 
-import type { TProperties, TSchema } from 'typebox';
+import { type TObject, type TProperties, type TSchema, Type } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
 import type { Field, TableDefinition } from '../core/schema/fields/types';
@@ -23,10 +23,6 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww';
-import {
-	schemaFieldToTypebox,
-	schemaTableToTypebox,
-} from './converters/to-typebox';
 import {
 	CellKey,
 	FieldId,
@@ -46,6 +42,41 @@ import type {
 	ValidationError,
 } from './validation-types';
 
+/** Convert a Field to its TypeBox schema. */
+function fieldToTypebox(field: Field): TSchema {
+	switch (field.type) {
+		case 'id':
+		case 'text':
+		case 'richtext':
+		case 'date':
+			return Type.String();
+		case 'integer':
+			return Type.Integer();
+		case 'real':
+			return Type.Number();
+		case 'boolean':
+			return Type.Boolean();
+		case 'select':
+			return Type.Union(field.options.map((v) => Type.Literal(v)));
+		case 'tags': {
+			const opts = field.options;
+			if (opts?.length) return Type.Array(Type.Union(opts.map((v) => Type.Literal(v))));
+			return Type.Array(Type.String());
+		}
+		case 'json':
+			return Type.Unknown();
+	}
+}
+
+/** Convert a TableDefinition to a TypeBox object schema. */
+function tableToTypebox(table: TableDefinition<readonly Field[]>): TObject {
+	const properties: Record<string, TSchema> = {};
+	for (const field of table.fields) {
+		properties[field.id] = Type.Optional(fieldToTypebox(field));
+	}
+	return Type.Object(properties, { additionalProperties: true });
+}
+
 /**
  * Create a table helper backed by a Y.Array.
  *
@@ -61,7 +92,7 @@ export function createTableHelper(
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 
 	// Compile validators once at construction
-	const rowValidator = Compile(schemaTableToTypebox(schema));
+	const rowValidator = Compile(tableToTypebox(schema));
 
 	// Compile field validators lazily and cache them
 	const fieldValidators = new Map<string, Validator<TProperties, TSchema>>();
@@ -75,7 +106,7 @@ export function createTableHelper(
 		const fieldDef = schema.fields.find((f) => f.id === fieldId);
 		if (!fieldDef) return undefined;
 
-		const fieldSchema = schemaFieldToTypebox(fieldDef);
+		const fieldSchema = fieldToTypebox(fieldDef);
 		validator = Compile(fieldSchema);
 		fieldValidators.set(fieldId, validator);
 		return validator;

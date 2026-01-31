@@ -48,6 +48,11 @@
 // Re-export from core for backwards compatibility
 export type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
 export { defineWorkspace } from '../../core/schema/workspace-definition';
+export {
+	validateWorkspaceDefinition,
+	WorkspaceDefinitionSchema,
+	WorkspaceDefinitionValidator,
+} from '../../core/schema/workspace-definition-validator';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Doc Structure: Three Top-Level Maps

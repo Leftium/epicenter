@@ -19,12 +19,14 @@ import type { Field, Icon, KvField, TableDefinition } from './fields/types';
  * Complete workspace definition using arrays for tables and kv.
  *
  * The standard format where:
+ * - `id` is the unique workspace identifier (e.g., 'epicenter.whispering')
  * - `tables` is an array of `TableDefinition` (each with its own `id`)
  * - `kv` is an array of `KvField` (the field's `id` serves as the key)
  *
  * @example
  * ```typescript
  * const definition = defineWorkspace({
+ *   id: 'epicenter.blog',
  *   name: 'My Blog',
  *   description: 'Personal blog workspace',
  *   icon: 'emoji:📝',
@@ -44,6 +46,8 @@ export type WorkspaceDefinition<
 	>[] = TableDefinition<readonly Field[]>[],
 	TKvFields extends readonly KvField[] = KvField[],
 > = {
+	/** Unique workspace identifier (e.g., 'epicenter.whispering') */
+	id: string;
 	/** Display name of the workspace */
 	name: string;
 	/** Description of the workspace */
@@ -66,6 +70,7 @@ export type WorkspaceDefinition<
  * @example
  * ```typescript
  * const definition = defineWorkspace({
+ *   id: 'epicenter.blog',
  *   name: 'Blog',
  *   tables: [table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] })],
  *   kv: [select({ id: 'theme', options: ['light', 'dark'] })],
@@ -81,6 +86,7 @@ export function defineWorkspace<
 	},
 ): WorkspaceDefinition<TTableDefinitions, TKvFields> {
 	return {
+		id: definition.id,
 		name: definition.name,
 		description: definition.description ?? '',
 		icon: definition.icon ?? null,

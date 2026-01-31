@@ -36,7 +36,7 @@ This module provides typed wrappers for the Y.Doc types that power collaborative
 | ---- | --------- | ---------------------- | ----------------------- | --------------------- |
 | 1    | Registry  | GUID (workspace ID)    | `{registryId}`          | `createRegistryDoc()` |
 | 2    | Head      | Epoch (version number) | `{workspaceId}`         | `createHeadDoc()`     |
-| 3    | Workspace | Definition + Data      | `{workspaceId}-{epoch}` | `createClient()`      |
+| 3    | Workspace | Data only              | `{workspaceId}-{epoch}` | `createClient()`      |
 
 ## Why Three Documents?
 
@@ -67,18 +67,15 @@ A single Y.Doc per workspace seems simpler, but creates problems:
 │  ID: {workspaceId}                                               │
 │  Scope: Shared (syncs with all workspace collaborators)          │
 │                                                                  │
-│  Y.Map('meta')                                                   │
-│    ├── name: string         // "My Workspace"                    │
-│    ├── icon: IconDefinition | null                               │
-│    └── description: string                                       │
-│                                                                  │
 │  Y.Map('epochs')                                                 │
 │    └── {clientId}: number   // Per-client epoch proposals        │
 │                                                                  │
-│  getMeta() → { name, icon, description }                         │
 │  getEpoch() → max(all epoch values)                              │
 │                                                                  │
-│  Purpose: "What is this workspace? What's the current epoch?"    │
+│  Purpose: "What's the current epoch for this workspace?"         │
+│                                                                  │
+│  Note: Workspace metadata (name, icon, description) is stored    │
+│  in static definition.json files, NOT in Y.Doc.                  │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               │ Read epoch, compute Workspace Doc ID
@@ -88,27 +85,17 @@ A single Y.Doc per workspace seems simpler, but creates problems:
 │  ID: {workspaceId}-{epoch}                                       │
 │  Scope: Shared (syncs with all workspace collaborators)          │
 │                                                                  │
-│  Y.Map('definition')                                             │
-│    ├── tables: { [tableName]: {                                  │
-│    │     name: string,                                           │
-│    │     icon: IconDefinition | null,                            │
-│    │     description: string,                                    │
-│    │     fields: { [fieldName]: FieldSchema }                    │
-│    │   }}                                                        │
-│    └── kv: { [keyName]: {                                        │
-│          name: string,                                           │
-│          icon: IconDefinition | null,                            │
-│          description: string,                                    │
-│          field: FieldSchema                                      │
-│        }}                                                        │
+│  Y.Array('table:{tableName}')  <- One array per table            │
+│    └── { key: rowId, val: { field: value, ... }, ts: number }    │
 │                                                                  │
-│  Y.Map('tables')                                                 │
-│    └── {tableName}: Y.Map<rowId, Y.Map<fieldName, value>>        │
+│  Y.Array('kv')  <- KV settings as LWW entries                    │
+│    └── { key: keyName, val: value, ts: number }                  │
 │                                                                  │
-│  Y.Map('kv')                                                     │
-│    └── {keyName}: value                                          │
+│  Purpose: "Data only for this epoch (no definition)"             │
 │                                                                  │
-│  Purpose: "Definition + data for this epoch"                     │
+│  Note: Schema definitions are stored in static JSON files,       │
+│  NOT in Y.Doc. This keeps Y.Docs lean and focused on data.       │
+│  Both tables and KV use YKeyValueLww for last-write-wins CRDT.   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -278,12 +265,12 @@ Epoch 2: Compacted data (fresh Y.Doc)
 they both propose the same "next" epoch. After sync, `getEpoch()` returns that
 value; no epochs are skipped.
 
-## Definition Merge Semantics
+## Static Definition Architecture
 
-When `createClient()` is called, the code-defined definition is merged into the Y.Doc:
+Definitions are stored in static JSON files, NOT in Y.Doc. This is a deliberate design choice:
 
 ```typescript
-// Code defines definition (simple format)
+// Definition is static (from code or definition.json file)
 const definition = defineWorkspace({
 	id: 'blog',
 	tables: {
@@ -292,36 +279,33 @@ const definition = defineWorkspace({
 	kv: {},
 });
 
-// Or with table metadata (TableDefinitionMap format)
-const definition = defineWorkspace({
-	id: 'blog',
-	tables: {
-		posts: {
-			name: 'Blog Posts',
-			icon: { type: 'emoji', value: '📝' },
-			cover: null,
-			description: 'All blog posts',
-			fields: { id: id(), title: text(), published: boolean() },
-		},
-	},
-	kv: {},
-});
-
-// On createClient(), definition is merged into Y.Doc internally
+// createClient() uses definition for type safety but doesn't store it in Y.Doc
 const client = createClient(definition.id)
 	.withDefinition(definition)
 	.withExtensions({});
 ```
 
-**Merge rules:**
+**Why static definitions?**
 
-- Table doesn't exist → add it with default metadata
-- Table exists → merge metadata (name, icon, cover, description)
-- Field doesn't exist → add it
-- Field exists with different value → update it
-- Field exists with same value → no-op (CRDT handles)
+1. **Lean Y.Docs**: Y.Doc contains only data (rows, KV values), not schema
+2. **Predictable migrations**: Schema changes happen through code, not CRDT sync
+3. **Type safety**: Definition comes from TypeScript, enabling compile-time checking
+4. **Validation**: Use `validateWorkspaceDefinition()` when loading from JSON files
 
-This is idempotent and safe for concurrent calls.
+For runtime validation of definitions loaded from external sources:
+
+```typescript
+import { validateWorkspaceDefinition } from '@epicenter/hq';
+
+const json = await Bun.file('definition.json').json();
+const result = validateWorkspaceDefinition(json);
+if (result.ok) {
+	const definition = result.data;
+	// Use definition...
+} else {
+	console.error('Invalid definition:', result.errors);
+}
+```
 
 ## Simplified Flow (Prototyping)
 
@@ -351,27 +335,36 @@ const client = createClient(definition.id)
 
 **Note:** Workspace Doc creation is handled internally by `createClient()` in the workspace module.
 
-## Definition Storage
+## Data Storage Format
 
-The Y.Doc stores the full `FieldSchema` directly; no conversion needed:
+Y.Doc contains only data, stored using YKeyValueLww (Last-Write-Wins) pattern:
 
 ```typescript
-// FieldSchema stored as-is in Y.Doc
+// Table row stored as LWW entry in Y.Array('table:posts')
 {
-  type: 'text',
-  name: 'Title',
-  description: 'Post title',
-  icon: { type: 'emoji', value: '📝' },
-  nullable: true
+  key: 'row-abc123',           // Row ID
+  val: {                       // Row data
+    id: 'row-abc123',
+    title: 'Hello World',
+    published: true
+  },
+  ts: 1706200000000            // Timestamp for LWW resolution
+}
+
+// KV setting stored as LWW entry in Y.Array('kv')
+{
+  key: 'theme',                // Setting key
+  val: 'dark',                 // Setting value
+  ts: 1706200000000            // Timestamp for LWW resolution
 }
 ```
 
-**Why this works:**
+**Why YKeyValueLww?**
 
-1. FieldSchema is fully JSON-serializable
-2. Enables Notion-like collaborative definition editing (rename fields, add descriptions, set icons)
-3. Changes sync via CRDT to all collaborators
-4. TypeScript types come from code definition (compile-time safety)
+1. Predictable conflict resolution: "last write wins" based on timestamp
+2. Self-healing clock skew: devices adopt highest timestamp seen from peers
+3. Efficient storage: one entry per key after compaction
+4. Simple mental model: same pattern for tables and KV
 
 ## Usage
 

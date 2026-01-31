@@ -5,8 +5,6 @@ import type {
 	KvValue,
 	TableDefinition,
 } from '../../core/schema/fields/types';
-import { kvFieldsToMap, tablesToMap } from '../../core/schema/fields/types';
-import { createDefinition, type Definition } from '../definition-helper';
 import { createKv, type Kv } from '../kv/core';
 import { createTables, type Tables } from '../tables/create-tables';
 
@@ -15,62 +13,27 @@ import { createTables, type Tables } from '../tables/create-tables';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The three top-level Y.Map names in a Workspace Y.Doc.
+ * The two top-level Y.Map names in a Workspace Y.Doc.
  *
- * Each workspace epoch has a single Y.Doc with three top-level maps:
- * - `definition`: Table/KV definitions (field schemas, table metadata)
+ * Each workspace epoch has a single Y.Doc with two top-level maps:
  * - `kv`: Settings values (actual KV data)
  * - `tables`: Table data (rows organized by table name)
  *
+ * Note: Definitions (table/KV schemas) are stored in static JSON files,
+ * NOT in Y.Doc. This keeps Y.Docs lean and focused on data only.
+ *
  * Note: Workspace-level identity (name, icon, description) lives in the
- * Head Doc's `meta` map, NOT here. This ensures renaming applies to all epochs.
+ * Head Doc, NOT here. This ensures renaming applies to all epochs.
  *
  * This 1:1 mapping enables independent observation and different persistence
  * strategies per map.
  */
 export const WORKSPACE_DOC_MAPS = {
-	/** Table/KV definitions. Rarely changes. */
-	DEFINITION: 'definition',
 	/** Settings values. Changes occasionally. Persisted to kv.json */
 	KV: 'kv',
 	/** Table row data. Changes frequently. Persisted to tables.sqlite */
 	TABLES: 'tables',
 } as const;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Type Definitions for Y.Doc Structure
-// ─────────────────────────────────────────────────────────────────────────────
-
-import type { Icon } from '../../core/schema/fields/types.js';
-
-/**
- * The structure stored in Y.Map('definition') in the Workspace Doc.
- *
- * Contains table and KV definitions (NOT workspace identity).
- * Workspace identity (name, icon, description) lives in the Head Doc's `meta` map.
- *
- * @see WorkspaceMeta in head-doc.ts for workspace identity
- */
-export type WorkspaceDefinitionMap = {
-	/** Table definitions (name, icon, description, fields) */
-	tables: {
-		[tableName: string]: {
-			name: string;
-			icon: Icon | null;
-			description: string;
-			fields: Record<string, unknown>; // Field objects
-		};
-	};
-	/** KV definitions (name, icon, description, field) */
-	kv: {
-		[key: string]: {
-			name: string;
-			icon: Icon | null;
-			description: string;
-			field: unknown; // Field object
-		};
-	};
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Map Type Aliases
@@ -85,11 +48,8 @@ export type TableYMap = Y.Map<RowYMap>;
 /** Y.Map storing all tables, keyed by table name. */
 export type TablesYMap = Y.Map<TableYMap>;
 
-/** Y.Map storing KV values, keyed by key name. */
-export type KvYMap = Y.Map<KvValue>;
-
-/** Y.Map storing workspace definition (tables and kv definitions). */
-export type DefinitionYMap = Y.Map<unknown>;
+/** Y.Array storing KV values as LWW entries (key, val, ts). */
+export type KvYArray = Y.Array<{ key: string; val: KvValue; ts: number }>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Extension Types
@@ -172,24 +132,6 @@ export type ExtensionContext<
 	tables: Tables<TTableDefinitions>;
 	/** Key-value store for simple values. */
 	kv: Kv<TKvFields>;
-	/**
-	 * Definition helper for managing table and KV definitions.
-	 *
-	 * Provides typed CRUD operations for dynamic definition editing (Notion-like UIs).
-	 *
-	 * @example
-	 * ```typescript
-	 * // Add a column to a table
-	 * definition.tables.table('posts')?.fields.set('dueDate', date());
-	 *
-	 * // Update table metadata
-	 * definition.tables.table('posts')?.metadata.set({ name: 'Blog Posts' });
-	 *
-	 * // Add a KV setting
-	 * definition.kv.set('theme', { name: 'Theme', field: select({ options: ['light', 'dark'] }) });
-	 * ```
-	 */
-	definition: Definition;
 	/** This extension's key from `.withExtensions({ key: ... })`. */
 	extensionId: string;
 };
@@ -204,26 +146,18 @@ export type ExtensionContext<
  * This is the primary abstraction for working with workspaces. It combines:
  * - Y.Doc wrapper with typed table and kv helpers
  * - Extension initialization and lifecycle management
- * - Definition merge and observation capabilities
  *
  * Y.Doc ID: `{workspaceId}-{epoch}`
  *
  * ## Structure
  *
  * ```
- * Y.Map('definition')  - Table/KV definitions (rarely changes)
  * Y.Map('kv')          - Settings values (changes occasionally)
  * Y.Map('tables')      - Row data by table name (changes frequently)
  * ```
  *
- * ## Definition Merging
- *
- * After all extensions sync (e.g., persistence loads from disk), the provided
- * `tables` and `kv` definitions are automatically merged into the Y.Doc's definition map.
- * This ensures code-defined definition is the "last writer" over persisted state.
- *
- * For dynamic definition mode (no code-defined definition), pass empty objects `{}` for
- * both `tables` and `kv`.
+ * Note: Definitions (table/KV schemas) are stored in static JSON files,
+ * NOT in Y.Doc. This keeps Y.Docs lean and focused on data only.
  *
  * @example
  * ```typescript
@@ -238,7 +172,7 @@ export type ExtensionContext<
  *   },
  * });
  *
- * // Wait for extensions to sync (definition is merged automatically)
+ * // Wait for extensions to sync
  * await workspace.whenSynced;
  *
  * // Use typed table helpers
@@ -276,15 +210,10 @@ export function createWorkspaceDoc<
 	// gc: false is required for revision history snapshots to work
 	const ydoc = new Y.Doc({ guid: docId, gc: false });
 
-	const definitionMap = ydoc.getMap(
-		WORKSPACE_DOC_MAPS.DEFINITION,
-	) as DefinitionYMap;
-
 	// Create table and kv helpers bound to the Y.Doc
 	// These just bind to Y.Maps - actual data comes from persistence
 	const tables = createTables(ydoc, tableDefinitions);
 	const kv = createKv(ydoc, kvDefinitions);
-	const definition = createDefinition(definitionMap);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Extension Initialization
@@ -302,7 +231,6 @@ export function createWorkspaceDoc<
 			epoch,
 			tables,
 			kv,
-			definition,
 			extensionId,
 		};
 
@@ -319,32 +247,11 @@ export function createWorkspaceDoc<
 	// Aggregate all extension whenSynced promises
 	// Fail-fast: any rejection rejects the whole thing (UI shows error state)
 	//
-	// ORDER OF OPERATIONS (critical for correctness):
-	// 1. Wait for all extensions' whenSynced (e.g., persistence finishes loading disk state)
-	// 2. THEN merge definition (code-defined definition is "last writer")
-	// 3. Resolve whenSynced
-	//
 	// See: specs/20260119T231252-resilient-client-architecture.md
 	const whenSynced = Promise.all(
 		Object.values(extensions).map((e) => (e as Lifecycle).whenSynced),
 	).then(() => {
-		// After persistence has loaded disk state, merge the code-defined definition.
-		// This ensures code is "last writer" over any persisted definition.
-		// For dynamic definition mode (empty tables/kv), this is a no-op.
-		const hasDefinition =
-			tableDefinitions.length > 0 || kvDefinitions.length > 0;
-		if (hasDefinition) {
-			definition.merge({
-				tables: tablesToMap(tableDefinitions) as Record<
-					string,
-					TableDefinition
-				>,
-				kv: kvFieldsToMap(kvDefinitions) as unknown as Record<
-					string,
-					{ field: KvField; name: string; icon: null; description: string }
-				>,
-			});
-		}
+		// All extensions synced - workspace is ready
 	});
 
 	const destroy = async () => {
@@ -362,7 +269,6 @@ export function createWorkspaceDoc<
 		epoch,
 		tables,
 		kv,
-		definition,
 		extensions,
 		whenSynced,
 		destroy,
@@ -415,8 +321,6 @@ export type WorkspaceDoc<
 	tables: Tables<TTableDefinitions>;
 	/** Key-value store for simple values. */
 	kv: Kv<TKvFields>;
-	/** Definition helper for managing table and KV definitions. */
-	definition: Definition;
 	/** Extension exports keyed by extension ID. */
 	extensions: TExtensions;
 	/** Promise that resolves when all extensions have synced. */

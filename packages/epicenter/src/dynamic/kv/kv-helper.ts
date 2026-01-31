@@ -4,6 +4,11 @@ import type * as Y from 'yjs';
 
 import type { KvField, KvFieldById, KvValue } from '../../core/schema';
 import { fieldToYjsArktype, isNullableField } from '../../core/schema';
+import {
+	YKeyValueLww,
+	type YKeyValueLwwChange,
+	type YKeyValueLwwEntry,
+} from '../../core/utils/y-keyvalue-lww';
 
 /**
  * Change event for a KV value.
@@ -42,8 +47,8 @@ export type KvGetResult<TValue> =
  * Creates a collection of typed KV helpers for all fields in an array.
  *
  * Each field's `.id` is used as the key in the returned helper map.
- * Uses native Y.Map for efficient storage. KV data is stored directly
- * as key-value pairs in the map.
+ * Uses YKeyValueLww for last-write-wins conflict resolution. KV data is stored
+ * as `{ key, val, ts }` entries in a Y.Array.
  *
  * @param ydoc - The Y.Doc to store KV data in
  * @param kvFields - Array of KvField definitions
@@ -71,13 +76,14 @@ export function createKvHelpers<const TKvFields extends readonly KvField[]>({
 }): {
 	[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
 } {
-	const ykvMap = ydoc.getMap<KvValue>('kv');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<KvValue>>('kv');
+	const ykvLww = new YKeyValueLww(yarray);
 
 	return Object.fromEntries(
 		kvFields.map((field) => [
 			field.id,
 			createKvHelper({
-				ykvMap,
+				ykvLww,
 				field,
 			}),
 		]),
@@ -87,10 +93,10 @@ export function createKvHelpers<const TKvFields extends readonly KvField[]>({
 }
 
 export function createKvHelper<TField extends KvField>({
-	ykvMap,
+	ykvLww,
 	field,
 }: {
-	ykvMap: Y.Map<KvValue>;
+	ykvLww: YKeyValueLww<KvValue>;
 	field: TField;
 }) {
 	type TValue = KvValue<TField>;
@@ -123,7 +129,7 @@ export function createKvHelper<TField extends KvField>({
 		 * ```
 		 */
 		get(): KvGetResult<TValue> {
-			const rawValue = ykvMap.get(keyName);
+			const rawValue = ykvLww.get(keyName);
 
 			// Handle undefined: default → null → not_found
 			if (rawValue === undefined) {
@@ -172,7 +178,7 @@ export function createKvHelper<TField extends KvField>({
 		 * ```
 		 */
 		set(value: TValue): void {
-			ykvMap.set(keyName, value as KvValue);
+			ykvLww.set(keyName, value as KvValue);
 		},
 
 		/**
@@ -203,35 +209,18 @@ export function createKvHelper<TField extends KvField>({
 			callback: (change: KvChange<TValue>, transaction: Y.Transaction) => void,
 		): () => void {
 			const handler = (
-				event: Y.YMapEvent<KvValue>,
+				changes: Map<string, YKeyValueLwwChange<KvValue>>,
 				transaction: Y.Transaction,
 			) => {
-				const keyChange = event.changes.keys.get(keyName);
+				const keyChange = changes.get(keyName);
 				if (!keyChange) return;
 
-				const newValue = ykvMap.get(keyName) as TValue;
-
-				if (keyChange.action === 'add') {
-					callback({ action: 'add', newValue }, transaction);
-				} else if (keyChange.action === 'update') {
-					callback(
-						{
-							action: 'update',
-							oldValue: keyChange.oldValue as TValue,
-							newValue,
-						},
-						transaction,
-					);
-				} else if (keyChange.action === 'delete') {
-					callback(
-						{ action: 'delete', oldValue: keyChange.oldValue as TValue },
-						transaction,
-					);
-				}
+				// Map YKeyValueLwwChange to KvChange (they're the same structure)
+				callback(keyChange as KvChange<TValue>, transaction);
 			};
 
-			ykvMap.observe(handler);
-			return () => ykvMap.unobserve(handler);
+			ykvLww.observe(handler);
+			return () => ykvLww.unobserve(handler);
 		},
 
 		/**
@@ -252,7 +241,7 @@ export function createKvHelper<TField extends KvField>({
 			} else if (nullable) {
 				this.set(null as TValue);
 			} else {
-				ykvMap.delete(keyName);
+				ykvLww.delete(keyName);
 			}
 		},
 

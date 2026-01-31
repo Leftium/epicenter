@@ -1,6 +1,10 @@
 import type * as Y from 'yjs';
 
 import type { KvField, KvFieldById, KvValue } from '../../core/schema';
+import {
+	YKeyValueLww,
+	type YKeyValueLwwEntry,
+} from '../../core/utils/y-keyvalue-lww';
 
 import {
 	createKvHelper,
@@ -9,8 +13,8 @@ import {
 	type KvHelper,
 } from './kv-helper';
 
-/** Y.Map storing all KV values, keyed by key name. */
-export type KvYMap = Y.Map<KvValue>;
+/** Y.Array storing all KV values as LWW entries (key, val, ts). */
+export type KvYArray = Y.Array<YKeyValueLwwEntry<KvValue>>;
 
 export type { KvHelper } from './kv-helper';
 
@@ -157,6 +161,9 @@ export type KvFunction<TKvFields extends readonly KvField[]> = {
  * The returned object provides a flat Map-like API with direct methods:
  * `kv.get('key')`, `kv.set('key', value)`, `kv.reset('key')`.
  *
+ * Uses YKeyValueLww for last-write-wins conflict resolution. Data is stored
+ * as `{ key, val, ts }` entries in a Y.Array.
+ *
  * Conceptually, a KV store is like a single table row where each key is a column.
  * While tables have multiple rows with IDs, KV stores have one "row" of settings/state.
  *
@@ -181,11 +188,12 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 	ydoc: Y.Doc,
 	kvFields: TKvFields,
 ): KvFunction<TKvFields> {
-	const ykvMap = ydoc.getMap<KvValue>('kv');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<KvValue>>('kv');
+	const ykvLww = new YKeyValueLww(yarray);
 
 	// Build helpers map using field.id as the key
 	const kvHelpers = Object.fromEntries(
-		kvFields.map((field) => [field.id, createKvHelper({ ykvMap, field })]),
+		kvFields.map((field) => [field.id, createKvHelper({ ykvLww, field })]),
 	) as Record<string, KvHelper<KvField>>;
 
 	return {
@@ -285,7 +293,7 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		 * ```
 		 */
 		has(key: string): boolean {
-			return ykvMap.has(key);
+			return ykvLww.has(key);
 		},
 
 		// ════════════════════════════════════════════════════════════════════
@@ -295,7 +303,7 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		/**
 		 * Clear all KV values, resetting them to their definition defaults.
 		 *
-		 * Deletes all keys from the underlying Y.Map. After clearing,
+		 * Deletes all keys from the underlying storage. After clearing,
 		 * `get()` will return defaults (if defined), `null` (if nullable),
 		 * or `not_found` status.
 		 *
@@ -312,7 +320,7 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		 */
 		clear(): void {
 			for (const field of kvFields) {
-				ykvMap.delete(field.id);
+				ykvLww.delete(field.id);
 			}
 		},
 
@@ -371,8 +379,10 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		 * ```
 		 */
 		observe(callback: () => void): () => void {
-			ykvMap.observeDeep(callback);
-			return () => ykvMap.unobserveDeep(callback);
+			// Wrap the callback to match YKeyValueLww's change handler signature
+			const handler = () => callback();
+			ykvLww.observe(handler);
+			return () => ykvLww.unobserve(handler);
 		},
 
 		// ════════════════════════════════════════════════════════════════════
@@ -382,7 +392,7 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		/**
 		 * Serialize all KV values to a plain JSON object.
 		 *
-		 * Returns the raw Y.Map contents. Keys may be missing if never set,
+		 * Returns the raw storage contents. Keys may be missing if never set,
 		 * and values may not match the schema (no validation performed).
 		 * Useful for debugging, persistence, or API responses.
 		 *
@@ -401,7 +411,11 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 		toJSON(): {
 			[K in TKvFields[number]['id']]: KvValue<KvFieldById<TKvFields, K>>;
 		} {
-			return ykvMap.toJSON() as {
+			const result: Record<string, KvValue> = {};
+			for (const [key, entry] of ykvLww.entries()) {
+				result[key] = entry.val;
+			}
+			return result as {
 				[K in TKvFields[number]['id']]: KvValue<KvFieldById<TKvFields, K>>;
 			};
 		},

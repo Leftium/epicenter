@@ -1,4 +1,4 @@
-export { createHeadDoc, type HeadDoc, type WorkspaceMeta } from './head-doc';
+export { createHeadDoc, type HeadDoc } from './head-doc';
 export {
 	defineExports,
 	type InferProviderExports,
@@ -10,9 +10,7 @@ export {
 } from './provider-types';
 export {
 	createWorkspaceDoc,
-	type DefinitionYMap as DefinitionMap,
-	type KvYMap,
+	type KvYArray,
 	WORKSPACE_DOC_MAPS,
-	type WorkspaceDefinitionMap,
 	type WorkspaceDoc,
 } from './workspace-doc';

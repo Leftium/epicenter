@@ -85,3 +85,8 @@ export type {
 } from './standard/types.js';
 export type { WorkspaceDefinition } from './workspace-definition.js';
 export { defineWorkspace } from './workspace-definition.js';
+export {
+	validateWorkspaceDefinition,
+	WorkspaceDefinitionSchema,
+	WorkspaceDefinitionValidator,
+} from './workspace-definition-validator.js';

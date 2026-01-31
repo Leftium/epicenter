@@ -41,12 +41,19 @@ Every piece of data lives in a `Y.Doc`, which provides conflict-free merging, re
 ┌─────────────────────────────────────────────────────────────┐
 │                      Y.Doc (CRDT)                            │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │ Y.Map('tables')                                        │  │
-│  │   ├── posts: Y.Map<id, Y.Map<field, value>>           │  │
-│  │   ├── users: Y.Map<id, Y.Map<field, value>>           │  │
-│  │   └── ...                                              │  │
+│  │ Y.Array('table:posts')  <- LWW entries per table      │  │
+│  │   └── { key: rowId, val: { fields... }, ts: number }  │  │
+│  │                                                        │  │
+│  │ Y.Array('table:users')  <- Another table              │  │
+│  │   └── { key: rowId, val: { fields... }, ts: number }  │  │
+│  │                                                        │  │
+│  │ Y.Array('kv')  <- Settings as LWW entries             │  │
+│  │   └── { key: name, val: value, ts: number }           │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
+
+Note: Schema definitions are stored in static JSON files, NOT in Y.Doc.
+This keeps Y.Docs lean and focused on data only.
 ```
 
 ### Three-Layer Data Flow

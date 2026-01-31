@@ -116,17 +116,14 @@ export {
 export type { AbsolutePath, ProjectDir } from './core/types';
 // Y.Doc wrappers for collaborative workspace architecture
 export type {
-	DefinitionMap,
 	HeadDoc,
 	InferProviderExports,
-	KvYMap,
+	KvYArray,
 	ProviderContext,
 	ProviderExports,
 	ProviderFactory,
 	ProviderFactoryMap,
-	WorkspaceDefinitionMap,
 	WorkspaceDoc,
-	WorkspaceMeta,
 } from './dynamic/docs';
 export {
 	createHeadDoc,
@@ -171,7 +168,12 @@ export {
 	normalizeIcon,
 } from './dynamic/workspace/normalize';
 export type { WorkspaceDefinition } from './dynamic/workspace/workspace';
-export { defineWorkspace } from './dynamic/workspace/workspace';
+export {
+	defineWorkspace,
+	validateWorkspaceDefinition,
+	WorkspaceDefinitionSchema,
+	WorkspaceDefinitionValidator,
+} from './dynamic/workspace/workspace';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:

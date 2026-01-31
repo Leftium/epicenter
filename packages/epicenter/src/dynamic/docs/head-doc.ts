@@ -1,30 +1,10 @@
 import * as Y from 'yjs';
 
-import type { Icon } from '../../core/schema/fields/types.js';
 import type {
 	InferProviderExports,
 	Lifecycle,
 	ProviderFactoryMap,
 } from './provider-types.js';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Workspace Meta Type
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Workspace identity metadata stored in the Head Doc.
- *
- * This is separate from the definition/data (which lives in Workspace Docs)
- * because renaming a workspace should apply to all epochs immediately.
- */
-export type WorkspaceMeta = {
-	/** Display name of the workspace */
-	name: string;
-	/** Optional icon (tagged string format: 'emoji:📝', 'lucide:file', 'url:...') */
-	icon: Icon | null;
-	/** Optional description */
-	description: string;
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Head Doc
@@ -120,7 +100,6 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 	const { workspaceId, providers: providerFactories } = options;
 	const ydoc = new Y.Doc({ guid: workspaceId });
 	const epochsMap = ydoc.getMap<number>('epochs');
-	const metaMap = ydoc.getMap<string | Icon | null>('meta');
 
 	// Initialize providers synchronously — async work is in their whenSynced
 	const providers = {} as InferProviderExports<T>;
@@ -356,120 +335,6 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 
 			epochsMap.observeDeep(handler);
 			return () => epochsMap.unobserveDeep(handler);
-		},
-
-		// ─────────────────────────────────────────────────────────────────────────
-		// Meta (Workspace Identity)
-		// ─────────────────────────────────────────────────────────────────────────
-
-		/**
-		 * Get the workspace metadata (name, icon, description).
-		 *
-		 * These values are shared across all epochs and collaborators.
-		 * Renaming a workspace applies immediately to everyone.
-		 *
-		 * @returns The workspace meta object
-		 *
-		 * @example
-		 * ```typescript
-		 * const meta = head.getMeta();
-		 * console.log(meta.name);        // "Whispering"
-		 * console.log(meta.icon);        // 'emoji:🎙️'
-		 * console.log(meta.description); // "Voice recordings"
-		 * ```
-		 */
-		getMeta(): WorkspaceMeta {
-			return {
-				name: (metaMap.get('name') as string) ?? '',
-				icon: (metaMap.get('icon') as Icon | null) ?? null,
-				description: (metaMap.get('description') as string) ?? '',
-			};
-		},
-
-		/**
-		 * Set the workspace metadata.
-		 *
-		 * Only the provided fields are updated; others are left unchanged.
-		 * Changes sync to all collaborators via CRDT.
-		 *
-		 * @param meta - Partial meta object with fields to update
-		 *
-		 * @example
-		 * ```typescript
-		 * // Update just the name
-		 * head.setMeta({ name: 'My Workspace' });
-		 *
-		 * // Update multiple fields
-		 * head.setMeta({
-		 *   name: 'Whispering',
-		 *   icon: 'emoji:🎙️',
-		 *   description: 'Voice recordings and transcriptions',
-		 * });
-		 * ```
-		 */
-		setMeta(meta: Partial<WorkspaceMeta>): void {
-			if (meta.name !== undefined) {
-				metaMap.set('name', meta.name);
-			}
-			if (meta.icon !== undefined) {
-				metaMap.set('icon', meta.icon);
-			}
-			if (meta.description !== undefined) {
-				metaMap.set('description', meta.description);
-			}
-		},
-
-		/**
-		 * Observe workspace metadata changes.
-		 *
-		 * Fires when any meta field (name, icon, description) changes.
-		 * The callback receives the full meta object.
-		 *
-		 * @param callback - Function called with the new meta when it changes
-		 * @returns Unsubscribe function
-		 *
-		 * @example
-		 * ```typescript
-		 * const unsubscribe = head.observeMeta((meta) => {
-		 *   console.log(`Workspace renamed to: ${meta.name}`);
-		 *   // Update UI, document title, etc.
-		 * });
-		 *
-		 * // Later: stop observing
-		 * unsubscribe();
-		 * ```
-		 */
-		observeMeta(callback: (meta: WorkspaceMeta) => void) {
-			const handler = () => {
-				callback(this.getMeta());
-			};
-
-			metaMap.observeDeep(handler);
-			return () => metaMap.unobserveDeep(handler);
-		},
-
-		/**
-		 * Check if workspace metadata has been initialized.
-		 *
-		 * Useful for migration: if meta is empty, you may need to
-		 * copy name/icon/description from an older Workspace Doc.
-		 *
-		 * @returns true if meta has at least a name set
-		 *
-		 * @example
-		 * ```typescript
-		 * if (!head.hasMeta()) {
-		 *   // Set initial identity for new workspace
-		 *   head.setMeta({
-		 *     name: 'My Workspace',
-		 *     icon: null,
-		 *     description: '',
-		 *   });
-		 * }
-		 * ```
-		 */
-		hasMeta(): boolean {
-			return metaMap.has('name') && (metaMap.get('name') as string) !== '';
 		},
 
 		/**

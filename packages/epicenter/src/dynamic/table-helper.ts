@@ -18,7 +18,7 @@
 import { type TObject, type TProperties, type TSchema, Type } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
-import type { Field } from '../core/schema/fields/types';
+import { fieldToTypebox } from '../core/schema/converters/to-typebox';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -47,32 +47,6 @@ import type {
 	TableHelper,
 	ValidationError,
 } from './types';
-
-/** Convert a Field to its TypeBox schema. */
-function fieldToTypebox(field: Field): TSchema {
-	switch (field.type) {
-		case 'id':
-		case 'text':
-		case 'richtext':
-		case 'date':
-			return Type.String();
-		case 'integer':
-			return Type.Integer();
-		case 'real':
-			return Type.Number();
-		case 'boolean':
-			return Type.Boolean();
-		case 'select':
-			return Type.Union(field.options.map((v) => Type.Literal(v)));
-		case 'tags': {
-			const opts = field.options;
-			if (opts?.length) return Type.Array(Type.Union(opts.map((v) => Type.Literal(v))));
-			return Type.Array(Type.String());
-		}
-		case 'json':
-			return Type.Unknown();
-	}
-}
 
 /** Convert a TableDef to a TypeBox object schema. */
 function tableToTypebox(table: TableDef): TObject {

@@ -7,9 +7,10 @@
  * @packageDocumentation
  */
 
-import { type TProperties, type TSchema, Type } from 'typebox';
+import type { TProperties, TSchema } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
+import { fieldToTypebox } from '../../core/schema/converters/to-typebox';
 import type { KvField } from '../../core/schema/fields/types';
 import {
 	YKeyValueLww,
@@ -37,32 +38,6 @@ export const KV_ARRAY_NAME = 'kv';
  * Tables are stored as `table:{tableId}` to avoid collisions with reserved names.
  */
 export const TABLE_ARRAY_PREFIX = 'table:';
-
-/** Convert a KvField to its TypeBox schema. */
-function fieldToTypebox(field: KvField): TSchema {
-	switch (field.type) {
-		case 'text':
-		case 'richtext':
-		case 'date':
-			return Type.String();
-		case 'integer':
-			return Type.Integer();
-		case 'real':
-			return Type.Number();
-		case 'boolean':
-			return Type.Boolean();
-		case 'select':
-			return Type.Union(field.options.map((v) => Type.Literal(v)));
-		case 'tags': {
-			const opts = field.options;
-			if (opts?.length)
-				return Type.Array(Type.Union(opts.map((v) => Type.Literal(v))));
-			return Type.Array(Type.String());
-		}
-		case 'json':
-			return Type.Unknown();
-	}
-}
 
 /**
  * Create a KV store backed by YKeyValueLww with validation.

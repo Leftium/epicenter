@@ -5,7 +5,6 @@ import {
 	createTableHelper,
 	createUntypedTableHelper,
 	type TableHelper,
-	type TablesMap,
 	type UntypedTableHelper,
 } from './table-helper';
 
@@ -15,11 +14,8 @@ export type {
 	InvalidRowResult,
 	RowAction,
 	RowChanges,
-	RowMap,
 	RowResult,
 	TableHelper,
-	TableMap,
-	TablesMap,
 	UntypedTableHelper,
 	ValidRowResult,
 } from './table-helper';
@@ -158,15 +154,12 @@ export function createTables<
 	ydoc: Y.Doc,
 	tableDefinitions: TTableDefinitions,
 ): TablesFunction<TTableDefinitions> {
-	const ytables: TablesMap = ydoc.getMap('tables');
-
 	// Build helpers map from array of table definitions
 	const tableHelpers = Object.fromEntries(
 		tableDefinitions.map((tableDefinition) => [
 			tableDefinition.id,
 			createTableHelper({
 				ydoc,
-				ytables,
 				tableDefinition,
 			}),
 		]),
@@ -185,7 +178,7 @@ export function createTables<
 	const getOrCreateDynamicHelper = (name: string): UntypedTableHelper => {
 		let helper = dynamicTableHelpers.get(name);
 		if (!helper) {
-			helper = createUntypedTableHelper({ ydoc, tableName: name, ytables });
+			helper = createUntypedTableHelper({ ydoc, tableName: name });
 			dynamicTableHelpers.set(name, helper);
 		}
 		return helper;
@@ -235,36 +228,66 @@ export function createTables<
 		// ════════════════════════════════════════════════════════════════════
 
 		/**
-		 * Check if a table exists in YJS storage (without creating it).
+		 * Check if a table has any data in YJS storage.
 		 *
-		 * Use this when you need to check existence before performing operations,
-		 * without triggering table creation.
+		 * For defined tables, checks if the table's Y.Array has any rows.
+		 * For dynamic tables, also checks if the Y.Array has any rows.
+		 *
+		 * Note: This checks for *data*, not just existence. An empty table
+		 * returns false even if it was previously used.
 		 *
 		 * @example
 		 * ```typescript
 		 * if (tables.has('custom')) {
-		 *   // Table exists, safe to read
+		 *   // Table has data, safe to read
 		 *   const rows = tables.get('custom').getAll()
 		 * }
 		 * ```
 		 */
 		has(name: string): boolean {
-			return ytables.has(name);
+			// Check defined tables first
+			if (name in tableHelpers) {
+				return tableHelpers[name as keyof typeof tableHelpers].count() > 0;
+			}
+			// Check dynamic tables - peek at the Y.Array without creating a helper
+			const yarray = ydoc.getArray(`table:${name}`);
+			return yarray.length > 0;
 		},
 
 		/**
-		 * Get all table names that exist in YJS storage.
+		 * Get all table names that have data in YJS storage.
 		 *
-		 * Returns names of every table that has been created, including both
-		 * definition-declared tables and dynamically-created tables.
+		 * Returns names of defined tables that have at least one row,
+		 * plus any dynamic tables that have been accessed and have data.
+		 *
+		 * Note: This only includes tables with data. Empty tables are not returned.
+		 * Dynamic tables are only tracked after being accessed via `tables.get()`.
 		 *
 		 * @example
 		 * ```typescript
-		 * tables.names()  // ['posts', 'users', 'custom_123', ...]
+		 * tables.names()  // ['posts', 'users'] - only tables with data
 		 * ```
 		 */
 		names(): string[] {
-			return Array.from(ytables.keys());
+			const names: string[] = [];
+
+			// Check defined tables
+			for (const tableDef of tableDefinitions) {
+				if (
+					tableHelpers[tableDef.id as keyof typeof tableHelpers].count() > 0
+				) {
+					names.push(tableDef.id);
+				}
+			}
+
+			// Check dynamic tables that have been accessed
+			for (const [name, helper] of dynamicTableHelpers) {
+				if (helper.count() > 0) {
+					names.push(name);
+				}
+			}
+
+			return names;
 		},
 
 		// ════════════════════════════════════════════════════════════════════
@@ -310,7 +333,8 @@ export function createTables<
 		 * Serialize all tables to JSON.
 		 *
 		 * Returns an object where keys are table names and values are arrays
-		 * of rows (as plain objects). Useful for debugging or serialization.
+		 * of rows (as plain objects). Includes defined tables and any dynamic
+		 * tables that have been accessed.
 		 *
 		 * @example
 		 * ```typescript
@@ -320,13 +344,24 @@ export function createTables<
 		 */
 		toJSON(): Record<string, unknown[]> {
 			const result: Record<string, unknown[]> = {};
-			for (const name of ytables.keys()) {
-				const helper =
-					name in tableHelpers
-						? tableHelpers[name as keyof typeof tableHelpers]
-						: getOrCreateDynamicHelper(name);
-				result[name] = helper.getAllValid();
+
+			// Serialize defined tables
+			for (const tableDef of tableDefinitions) {
+				const helper = tableHelpers[tableDef.id as keyof typeof tableHelpers];
+				const rows = helper.getAllValid();
+				if (rows.length > 0) {
+					result[tableDef.id] = rows;
+				}
 			}
+
+			// Serialize dynamic tables that have been accessed
+			for (const [name, helper] of dynamicTableHelpers) {
+				const rows = helper.getAllValid();
+				if (rows.length > 0) {
+					result[name] = rows;
+				}
+			}
+
 			return result;
 		},
 	} as TablesFunction<TTableDefinitions>;

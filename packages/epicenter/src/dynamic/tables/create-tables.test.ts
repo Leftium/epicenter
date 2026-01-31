@@ -352,11 +352,6 @@ describe('createTables', () => {
 
 		test('raw values passed through even for invalid data', () => {
 			const ydoc = new Y.Doc({ guid: 'test-observe' });
-			type RowMap = Y.Map<unknown>;
-			type TableMap = Y.Map<RowMap>;
-			type TablesMap = Y.Map<TableMap>;
-
-			const ytables: TablesMap = ydoc.getMap('tables');
 
 			const tables = createTables(ydoc, [
 				table({
@@ -368,24 +363,22 @@ describe('createTables', () => {
 
 			let receivedResult: unknown = null;
 			tables.get('posts').observe((changedIds) => {
-				for (const id of changedIds) {
-					receivedResult = tables.get('posts').get(id);
+				for (const rowId of changedIds) {
+					receivedResult = tables.get('posts').get(rowId);
 				}
 			});
 
-			let postsTable = ytables.get('posts');
-			if (!postsTable) {
-				postsTable = new Y.Map() as TableMap;
-				ytables.set('posts', postsTable);
-			}
-
-			const rowMap = new Y.Map() as RowMap;
-			postsTable.set('bad-row', rowMap);
-			// Set all values in a transaction so the observer fires once with complete data
-			ydoc.transact(() => {
-				rowMap.set('id', 'bad-row');
-				rowMap.set('count', 'not a number');
-			});
+			// Directly manipulate the underlying Y.Array to insert invalid data
+			// This simulates data coming from a remote peer with schema mismatch
+			// With cell-level storage, we need to insert cell keys (rowId:fieldId)
+			const yarray = ydoc.getArray<{ key: string; val: unknown; ts: number }>(
+				'table:posts',
+			);
+			const now = Date.now();
+			yarray.push([
+				{ key: 'bad-row:id', val: 'bad-row', ts: now },
+				{ key: 'bad-row:count', val: 'not a number', ts: now },
+			]);
 
 			expect(receivedResult).toMatchObject({
 				status: 'invalid',
@@ -614,13 +607,8 @@ describe('createTables', () => {
 			expect(change.view_count).toBe(100);
 		});
 
-		test('empty row deleted before first cell change emits change', () => {
-			const ydoc = new Y.Doc({ guid: 'test-empty-row-delete' });
-			type RowMap = Y.Map<unknown>;
-			type TableMap = Y.Map<RowMap>;
-			type TablesMap = Y.Map<TableMap>;
-
-			const ytables: TablesMap = ydoc.getMap('tables');
+		test('row added then deleted emits change', () => {
+			const ydoc = new Y.Doc({ guid: 'test-row-add-delete' });
 
 			const tables = createTables(ydoc, [
 				table({
@@ -638,20 +626,25 @@ describe('createTables', () => {
 				}
 			});
 
-			let postsTable = ytables.get('posts');
-			if (!postsTable) {
-				postsTable = new Y.Map() as TableMap;
-				ytables.set('posts', postsTable);
-			}
+			// Directly manipulate the underlying Y.Array to simulate add then delete
+			// With cell-level storage, we need to insert cell keys (rowId:fieldId)
+			const yarray = ydoc.getArray<{ key: string; val: unknown; ts: number }>(
+				'table:posts',
+			);
 
-			const emptyRowMap = new Y.Map() as RowMap;
-			postsTable.set('empty-row', emptyRowMap);
+			// Add a row (cell-level keys)
+			const now = Date.now();
+			yarray.push([
+				{ key: 'temp-row:id', val: 'temp-row', ts: now },
+				{ key: 'temp-row:title', val: 'Temporary', ts: now },
+			]);
 
-			postsTable.delete('empty-row');
+			// Delete the row (in YKeyValueLww, delete removes all cells)
+			tables.get('posts').delete('temp-row');
 
 			// The row ID should be in the changed set; verify deletion via get()
-			expect(changedRowIds.has('empty-row')).toBe(true);
-			expect(tables.get('posts').get('empty-row').status).toBe('not_found');
+			expect(changedRowIds.has('temp-row')).toBe(true);
+			expect(tables.get('posts').get('temp-row').status).toBe('not_found');
 		});
 
 		test('observer isolation: changes in other tables do not trigger callback', () => {

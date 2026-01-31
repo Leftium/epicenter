@@ -1,16 +1,15 @@
 /**
- * Dynamic Workspace - Cell-Level CRDT API
+ * Dynamic Workspace - Row-Level YKeyValueLww API
  *
  * A unified workspace implementation with:
- * - Cell-level CRDT storage (one Y.Array per table)
+ * - Row-level LWW (Last-Write-Wins) CRDT storage via YKeyValueLww
  * - External schema with validation (definition passed in)
  * - Optional HeadDoc for time travel and epochs
- * - Builder pattern for type-safe extension setup
  *
  * Y.Doc structure:
  * ```
  * Y.Doc
- * +-- Y.Array('table:posts')  <- Table data (cells)
+ * +-- Y.Array('table:posts')  <- Table data (rows as LWW entries)
  * +-- Y.Array('table:users')  <- Another table
  * +-- Y.Array('kv')           <- Workspace-level key-values
  * ```
@@ -24,6 +23,7 @@ export {
 	type Lifecycle,
 	type MaybePromise,
 } from '../core/lifecycle';
+
 // Core field factories for programmatic schema creation
 export {
 	boolean,
@@ -38,22 +38,14 @@ export {
 	tags,
 	text,
 } from '../core/schema/fields/factories';
+
 // Icon type and utilities from Core
 export type { Icon, IconType } from '../core/schema/fields/types';
 export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
-// Factory
-export { createWorkspace, createWorkspaceYDoc } from './create-workspace';
-// HeadDoc (now local to dynamic)
+
+// HeadDoc (for time travel and epochs)
 export { createHeadDoc, type HeadDoc } from './docs/head-doc';
 
-// Extension types
-export type {
-	ExtensionContext,
-	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
-	WorkspaceBuilder,
-} from './extensions';
 // Key utilities
 export {
 	CellKey,
@@ -66,47 +58,29 @@ export {
 	RowPrefix,
 	validateId,
 } from './keys';
-// KV store
+// KV store (YKeyValueLww-based)
+export { createKvHelper, type KvHelper } from './kv/kv-helper';
+// Tables API (YKeyValueLww-based row-level storage)
 export {
-	createKvStore,
-	KV_ARRAY_NAME,
-	TABLE_ARRAY_PREFIX,
-} from './stores/kv-store';
-// Table helper factory (for advanced use)
-export { createTableHelper } from './table-helper';
-
-// Types
-export type {
-	// Data types
-	CellValue,
-	ChangeEvent,
-	ChangeHandler,
-	CreateWorkspaceOptions,
-	FieldDefinition,
-	FieldType,
-	GetCellResult,
-	GetResult,
-	HeadDocInterface,
-	InvalidCellResult,
-	InvalidKvResult,
-	InvalidRowResult,
-	KvDefinition,
-	KvGetResult,
-	KvResult,
-	KvStore,
-	NotFoundCellResult,
-	NotFoundKvResult,
-	NotFoundRowResult,
-	RowData,
-	RowResult,
-	TableDef,
-	TableHelper,
-	TypedCell,
-	TypedRowWithCells,
-	ValidationError,
-	ValidCellResult,
-	ValidKvResult,
-	ValidRowResult,
-	WorkspaceClient,
-	WorkspaceDef,
-} from './types';
+	createTables,
+	type GetResult,
+	type InvalidRowResult,
+	type RowResult,
+	type TableHelper,
+	type Tables,
+	type TablesFunction,
+	type UntypedTableHelper,
+	type ValidRowResult,
+} from './tables/create-tables';
+export {
+	type ChangedRowIds,
+	createTableHelper,
+	createTableHelpers,
+	createUntypedTableHelper,
+	type DeleteManyResult,
+	type DeleteResult,
+	type NotFoundResult,
+	type UpdateManyResult,
+	type UpdateResult,
+	type ValidationError,
+} from './tables/table-helper';

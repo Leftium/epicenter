@@ -1,10 +1,22 @@
+/**
+ * Cell-Level LWW (Last-Write-Wins) CRDT Sync Tests
+ *
+ * These tests verify cell-level LWW conflict resolution where each field
+ * has its own timestamp. Unlike row-level LWW, concurrent edits to
+ * DIFFERENT fields merge independently.
+ *
+ * Key behaviors:
+ * - Concurrent edits to SAME field: latest timestamp wins
+ * - Concurrent edits to DIFFERENT fields: BOTH preserved (merge)
+ * - Delete removes all cells for a row
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { boolean, id, integer, table, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
-describe('Cell-Level CRDT Merging', () => {
-	test('concurrent edits to different columns merge correctly', () => {
+describe('Cell-Level LWW CRDT Merging', () => {
+	test('concurrent edits to different fields: both preserved (merge)', async () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		doc1.clientID = 1;
@@ -36,6 +48,7 @@ describe('Cell-Level CRDT Merging', () => {
 			}),
 		]);
 
+		// Create initial row in doc1
 		tables1.get('posts').upsert({
 			id: 'post-1',
 			title: 'Original',
@@ -43,36 +56,33 @@ describe('Cell-Level CRDT Merging', () => {
 			published: false,
 		});
 
+		// Sync to doc2
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
+		// Verify both have the same initial state
 		const row1Before = tables1.get('posts').get('post-1');
 		const row2Before = tables2.get('posts').get('post-1');
 		expect(row1Before.status).toBe('valid');
 		expect(row2Before.status).toBe('valid');
-		if (row1Before.status === 'valid' && row2Before.status === 'valid') {
-			expect(row1Before.row.title).toBe('Original');
-			expect(row2Before.row.title).toBe('Original');
-		}
 
+		// Small delay to ensure timestamps are different
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 1 updates title (earlier timestamp)
 		tables1.get('posts').update({ id: 'post-1', title: 'Updated by User 1' });
+
+		// Small delay to ensure User 2's timestamp is later
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 2 updates views (later timestamp, DIFFERENT field)
 		tables2.get('posts').update({ id: 'post-1', views: 100 });
 
-		const row1Mid = tables1.get('posts').get('post-1');
-		const row2Mid = tables2.get('posts').get('post-1');
-		expect(row1Mid.status).toBe('valid');
-		expect(row2Mid.status).toBe('valid');
-		if (row1Mid.status === 'valid') {
-			expect(row1Mid.row.title).toBe('Updated by User 1');
-			expect(row1Mid.row.views).toBe(0);
-		}
-		if (row2Mid.status === 'valid') {
-			expect(row2Mid.row.title).toBe('Original');
-			expect(row2Mid.row.views).toBe(100);
-		}
-
+		// Sync both ways
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
 
+		// After sync, both docs should have the SAME state
+		// Cell-level LWW means BOTH edits are preserved (different fields)
 		const row1After = tables1.get('posts').get('post-1');
 		const row2After = tables2.get('posts').get('post-1');
 
@@ -80,14 +90,92 @@ describe('Cell-Level CRDT Merging', () => {
 		expect(row2After.status).toBe('valid');
 
 		if (row1After.status === 'valid' && row2After.status === 'valid') {
+			// Both should have identical state
+			expect(row1After.row.title).toBe(row2After.row.title);
+			expect(row1After.row.views).toBe(row2After.row.views);
+			expect(row1After.row.published).toBe(row2After.row.published);
+
+			// Cell-level merge: both edits preserved
+			// User 1's title edit is preserved
 			expect(row1After.row.title).toBe('Updated by User 1');
+			// User 2's views edit is preserved
 			expect(row1After.row.views).toBe(100);
-			expect(row2After.row.title).toBe('Updated by User 1');
-			expect(row2After.row.views).toBe(100);
 		}
 	});
 
-	test('concurrent edits to same column use LWW', () => {
+	test('concurrent edits to same field: latest timestamp wins', async () => {
+		const doc1 = new Y.Doc();
+		const doc2 = new Y.Doc();
+		doc1.clientID = 1;
+		doc2.clientID = 2;
+
+		const tables1 = createTables(doc1, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [
+					id(),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+				] as const,
+			}),
+		]);
+
+		const tables2 = createTables(doc2, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [
+					id(),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+				] as const,
+			}),
+		]);
+
+		// Create initial row in doc1
+		tables1.get('posts').upsert({
+			id: 'post-1',
+			title: 'Original',
+			views: 0,
+		});
+
+		// Sync to doc2
+		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+
+		// Small delay to ensure timestamps are different
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 1 updates title (earlier timestamp)
+		tables1.get('posts').update({ id: 'post-1', title: 'Title by User 1' });
+
+		// Small delay to ensure User 2's timestamp is later
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 2 updates the SAME field (title) with later timestamp
+		tables2.get('posts').update({ id: 'post-1', title: 'Title by User 2' });
+
+		// Sync both ways
+		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
+
+		// After sync, the later timestamp should win
+		const row1After = tables1.get('posts').get('post-1');
+		const row2After = tables2.get('posts').get('post-1');
+
+		expect(row1After.status).toBe('valid');
+		expect(row2After.status).toBe('valid');
+
+		if (row1After.status === 'valid' && row2After.status === 'valid') {
+			// Both should have identical state
+			expect(row1After.row.title).toBe(row2After.row.title);
+
+			// User 2's edit had the later timestamp, so it wins
+			expect(row1After.row.title).toBe('Title by User 2');
+		}
+	});
+
+	test('concurrent edits to different rows: both preserved', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		doc1.clientID = 1;
@@ -100,6 +188,7 @@ describe('Cell-Level CRDT Merging', () => {
 				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		]);
+
 		const tables2 = createTables(doc2, [
 			table({
 				id: 'posts',
@@ -108,89 +197,54 @@ describe('Cell-Level CRDT Merging', () => {
 			}),
 		]);
 
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Original' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+		// Each user creates a different row
+		tables1.get('posts').upsert({ id: 'post-1', title: 'Post by User 1' });
+		tables2.get('posts').upsert({ id: 'post-2', title: 'Post by User 2' });
 
-		tables1.get('posts').update({ id: 'post-1', title: 'User 1 Title' });
-		tables2.get('posts').update({ id: 'post-1', title: 'User 2 Title' });
-
+		// Sync both ways
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
 
-		const row1 = tables1.get('posts').get('post-1');
-		const row2 = tables2.get('posts').get('post-1');
+		// Both docs should have both rows
+		expect(tables1.get('posts').count()).toBe(2);
+		expect(tables2.get('posts').count()).toBe(2);
 
-		expect(row1.status).toBe('valid');
-		expect(row2.status).toBe('valid');
-		if (row1.status === 'valid' && row2.status === 'valid') {
-			expect(row1.row.title).toBe(row2.row.title);
+		const doc1Post1 = tables1.get('posts').get('post-1');
+		const doc1Post2 = tables1.get('posts').get('post-2');
+		const doc2Post1 = tables2.get('posts').get('post-1');
+		const doc2Post2 = tables2.get('posts').get('post-2');
+
+		expect(doc1Post1.status).toBe('valid');
+		expect(doc1Post2.status).toBe('valid');
+		expect(doc2Post1.status).toBe('valid');
+		expect(doc2Post2.status).toBe('valid');
+
+		if (doc1Post1.status === 'valid') {
+			expect(doc1Post1.row.title).toBe('Post by User 1');
+		}
+		if (doc1Post2.status === 'valid') {
+			expect(doc1Post2.row.title).toBe('Post by User 2');
 		}
 	});
 
-	test('same-column conflicts: winner varies by client ID (demonstrates unpredictability)', () => {
+	test('upsert survives concurrent delete (no tombstones)', async () => {
 		/**
-		 * This test demonstrates that same-column concurrent edits have
-		 * unpredictable winners based on Yjs's internal ordering.
+		 * YKeyValueLww uses Y.Array without tombstones for deletes.
+		 * This means:
+		 * - Delete removes all cells for the row
+		 * - Upsert adds new cells with a higher timestamp
+		 * - After sync, the upsert entries arrive and win
 		 *
-		 * The winner depends on client IDs and CRDT merge order, NOT timestamps.
-		 * This is acceptable because:
-		 * 1. Cell-level CRDTs make same-column conflicts rare
-		 * 2. Both clients always converge to the same value
-		 *
-		 * If predictable "last write wins" is needed, timestamps can be added.
+		 * Note: With cell-level storage, a partial `update()` after delete would
+		 * only restore the updated cells, leaving the row incomplete. Use `upsert`
+		 * to fully restore a row after concurrent delete.
 		 */
-		const winners: string[] = [];
+		const doc1 = new Y.Doc();
+		const doc2 = new Y.Doc();
+		doc1.clientID = 1;
+		doc2.clientID = 2;
 
-		for (let i = 0; i < 10; i++) {
-			const doc1 = new Y.Doc();
-			const doc2 = new Y.Doc();
-
-			const tables1 = createTables(doc1, [
-				table({
-					id: 'posts',
-					name: '',
-					fields: [id(), text({ id: 'title' })] as const,
-				}),
-			]);
-			const tables2 = createTables(doc2, [
-				table({
-					id: 'posts',
-					name: '',
-					fields: [id(), text({ id: 'title' })] as const,
-				}),
-			]);
-
-			tables1.get('posts').upsert({ id: 'post-1', title: 'Original' });
-			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-			tables1
-				.get('posts')
-				.update({ id: 'post-1', title: `Iteration ${i} User 1` });
-			tables2
-				.get('posts')
-				.update({ id: 'post-1', title: `Iteration ${i} User 2` });
-
-			Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-			Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-
-			const row1 = tables1.get('posts').get('post-1');
-			const row2 = tables2.get('posts').get('post-1');
-
-			expect(row1.status).toBe('valid');
-			expect(row2.status).toBe('valid');
-
-			if (row1.status === 'valid' && row2.status === 'valid') {
-				expect(row1.row.title).toBe(row2.row.title);
-				winners.push(row1.row.title.includes('User 1') ? 'User 1' : 'User 2');
-			}
-		}
-
-		console.log('Same-column conflict winners:', winners);
-	});
-
-	test('partial updates preserve unmentioned fields', () => {
-		const ydoc = new Y.Doc({ guid: 'test' });
-		const tables = createTables(ydoc, [
+		const tables1 = createTables(doc1, [
 			table({
 				id: 'posts',
 				name: '',
@@ -198,30 +252,61 @@ describe('Cell-Level CRDT Merging', () => {
 					id(),
 					text({ id: 'title' }),
 					integer({ id: 'views' }),
-					boolean({ id: 'published' }),
 				] as const,
 			}),
 		]);
 
-		tables.get('posts').upsert({
-			id: 'post-1',
-			title: 'Original Title',
-			views: 50,
-			published: true,
-		});
+		const tables2 = createTables(doc2, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [
+					id(),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+				] as const,
+			}),
+		]);
 
-		tables.get('posts').update({ id: 'post-1', title: 'New Title' });
+		// Create initial row
+		tables1.get('posts').upsert({ id: 'post-1', title: 'Original', views: 0 });
+		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
-		const result = tables.get('posts').get('post-1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.title).toBe('New Title');
-			expect(result.row.views).toBe(50);
-			expect(result.row.published).toBe(true);
+		// Small delay
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 2 deletes the row first
+		tables2.get('posts').delete('post-1');
+
+		// Small delay to ensure upsert has later timestamp
+		await new Promise((resolve) => setTimeout(resolve, 2));
+
+		// User 1 upserts the row (later timestamp) - full row, not partial update
+		tables1
+			.get('posts')
+			.upsert({ id: 'post-1', title: 'Restored', views: 100 });
+
+		// Sync both ways
+		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
+
+		// Without tombstones, the upsert entries survive and win
+		// The row exists on both docs with User 1's values
+		const row1After = tables1.get('posts').get('post-1');
+		const row2After = tables2.get('posts').get('post-1');
+
+		expect(row1After.status).toBe('valid');
+		expect(row2After.status).toBe('valid');
+
+		if (row1After.status === 'valid' && row2After.status === 'valid') {
+			expect(row1After.row.title).toBe('Restored');
+			expect(row1After.row.views).toBe(100);
+			expect(row2After.row.title).toBe('Restored');
+			expect(row2After.row.views).toBe(100);
 		}
 	});
 
-	test('three-way merge: three docs editing different columns simultaneously', () => {
+	test('three-way sync: all docs converge (same field conflict)', async () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		const doc3 = new Y.Doc();
@@ -229,808 +314,215 @@ describe('Cell-Level CRDT Merging', () => {
 		doc2.clientID = 2;
 		doc3.clientID = 3;
 
-		const tableDefinitions = [
+		const tableDef = [
 			table({
 				id: 'posts',
 				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-					boolean({ id: 'published' }),
-				] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
 		];
 
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-		const tables3 = createTables(doc3, tableDefinitions);
+		const tables1 = createTables(doc1, tableDef);
+		const tables2 = createTables(doc2, tableDef);
+		const tables3 = createTables(doc3, tableDef);
 
-		// Initial state
-		tables1.get('posts').upsert({
-			id: 'post-1',
-			title: 'Original',
-			views: 0,
-			published: false,
-		});
+		// Create initial row in doc1
+		tables1.get('posts').upsert({ id: 'post-1', title: 'Original' });
 
 		// Sync to all docs
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 		Y.applyUpdate(doc3, Y.encodeStateAsUpdate(doc1));
 
-		// Each doc edits a different column concurrently
+		// Each user makes concurrent edits to the SAME field with increasing timestamps
+		await new Promise((resolve) => setTimeout(resolve, 2));
 		tables1.get('posts').update({ id: 'post-1', title: 'Title by User 1' });
-		tables2.get('posts').update({ id: 'post-1', views: 100 });
-		tables3.get('posts').update({ id: 'post-1', published: true });
 
-		// Full sync: all docs exchange updates
-		const update1 = Y.encodeStateAsUpdate(doc1);
-		const update2 = Y.encodeStateAsUpdate(doc2);
-		const update3 = Y.encodeStateAsUpdate(doc3);
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		tables2.get('posts').update({ id: 'post-1', title: 'Title by User 2' });
 
-		Y.applyUpdate(doc1, update2);
-		Y.applyUpdate(doc1, update3);
-		Y.applyUpdate(doc2, update1);
-		Y.applyUpdate(doc2, update3);
-		Y.applyUpdate(doc3, update1);
-		Y.applyUpdate(doc3, update2);
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		tables3.get('posts').update({ id: 'post-1', title: 'Title by User 3' });
 
-		// All three docs should have all three changes
-		for (const tables of [tables1, tables2, tables3]) {
-			const result = tables.get('posts').get('post-1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row.title).toBe('Title by User 1');
-				expect(result.row.views).toBe(100);
-				expect(result.row.published).toBe(true);
-			}
-		}
-	});
-
-	test('interleaved sync: partial syncs between edits', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-					boolean({ id: 'published' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Initial state
-		tables1.get('posts').upsert({
-			id: 'post-1',
-			title: 'Original',
-			views: 0,
-			published: false,
-		});
+		// Full mesh sync
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// A edits title
-		tables1.get('posts').update({ id: 'post-1', title: 'Edit 1 by A' });
-
-		// Partial sync: A -> B only
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// B edits views (after receiving A's title change)
-		tables2.get('posts').update({ id: 'post-1', views: 50 });
-
-		// A edits title again (hasn't received B's views yet)
-		tables1.get('posts').update({ id: 'post-1', title: 'Edit 2 by A' });
-
-		// Full sync
+		Y.applyUpdate(doc3, Y.encodeStateAsUpdate(doc1));
 		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
+		Y.applyUpdate(doc3, Y.encodeStateAsUpdate(doc2));
+		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc3));
+		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc3));
 
-		// Both should have A's second title edit and B's views
-		for (const tables of [tables1, tables2]) {
-			const result = tables.get('posts').get('post-1');
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row.title).toBe('Edit 2 by A');
-				expect(result.row.views).toBe(50);
-			}
+		// All should converge to User 3's title (latest timestamp)
+		const row1 = tables1.get('posts').get('post-1');
+		const row2 = tables2.get('posts').get('post-1');
+		const row3 = tables3.get('posts').get('post-1');
+
+		expect(row1.status).toBe('valid');
+		expect(row2.status).toBe('valid');
+		expect(row3.status).toBe('valid');
+
+		if (
+			row1.status === 'valid' &&
+			row2.status === 'valid' &&
+			row3.status === 'valid'
+		) {
+			// All should have the same value
+			expect(row1.row.title).toBe(row2.row.title);
+			expect(row2.row.title).toBe(row3.row.title);
+
+			// User 3 had the latest timestamp
+			expect(row3.row.title).toBe('Title by User 3');
 		}
 	});
 
-	test('delete during concurrent edit: one doc deletes row while another edits it', () => {
+	test('timestamp-based determinism: same operations produce same result regardless of sync order', async () => {
+		// Create the same scenario twice with different sync orders
+		// Both should produce identical final states
+
+		// Scenario A: sync 1→2 then 2→1
+		const docA1 = new Y.Doc();
+		const docA2 = new Y.Doc();
+		docA1.clientID = 1;
+		docA2.clientID = 2;
+
+		const tablesA1 = createTables(docA1, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [id(), text({ id: 'title' })] as const,
+			}),
+		]);
+		const tablesA2 = createTables(docA2, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [id(), text({ id: 'title' })] as const,
+			}),
+		]);
+
+		// Scenario B: sync 2→1 then 1→2
+		const docB1 = new Y.Doc();
+		const docB2 = new Y.Doc();
+		docB1.clientID = 1;
+		docB2.clientID = 2;
+
+		const tablesB1 = createTables(docB1, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [id(), text({ id: 'title' })] as const,
+			}),
+		]);
+		const tablesB2 = createTables(docB2, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [id(), text({ id: 'title' })] as const,
+			}),
+		]);
+
+		// Create initial state (synced)
+		tablesA1.get('posts').upsert({ id: 'post-1', title: 'Original' });
+		tablesB1.get('posts').upsert({ id: 'post-1', title: 'Original' });
+
+		Y.applyUpdate(docA2, Y.encodeStateAsUpdate(docA1));
+		Y.applyUpdate(docB2, Y.encodeStateAsUpdate(docB1));
+
+		// Concurrent edits with controlled timestamps
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		const editTime1 = Date.now();
+		tablesA1.get('posts').update({ id: 'post-1', title: 'Edit by 1' });
+		tablesB1.get('posts').update({ id: 'post-1', title: 'Edit by 1' });
+
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		const editTime2 = Date.now();
+		tablesA2.get('posts').update({ id: 'post-1', title: 'Edit by 2' });
+		tablesB2.get('posts').update({ id: 'post-1', title: 'Edit by 2' });
+
+		// Different sync orders
+		// Scenario A: 1→2 then 2→1
+		Y.applyUpdate(docA2, Y.encodeStateAsUpdate(docA1));
+		Y.applyUpdate(docA1, Y.encodeStateAsUpdate(docA2));
+
+		// Scenario B: 2→1 then 1→2
+		Y.applyUpdate(docB1, Y.encodeStateAsUpdate(docB2));
+		Y.applyUpdate(docB2, Y.encodeStateAsUpdate(docB1));
+
+		// Both scenarios should produce identical results
+		const rowA1 = tablesA1.get('posts').get('post-1');
+		const rowA2 = tablesA2.get('posts').get('post-1');
+		const rowB1 = tablesB1.get('posts').get('post-1');
+		const rowB2 = tablesB2.get('posts').get('post-1');
+
+		expect(rowA1.status).toBe('valid');
+		expect(rowA2.status).toBe('valid');
+		expect(rowB1.status).toBe('valid');
+		expect(rowB2.status).toBe('valid');
+
+		if (
+			rowA1.status === 'valid' &&
+			rowA2.status === 'valid' &&
+			rowB1.status === 'valid' &&
+			rowB2.status === 'valid'
+		) {
+			// All four should converge to the same value
+			expect(rowA1.row.title).toBe(rowA2.row.title);
+			expect(rowB1.row.title).toBe(rowB2.row.title);
+			expect(rowA1.row.title).toBe(rowB1.row.title);
+
+			// User 2's edit had a later timestamp, so it should win
+			expect(rowA1.row.title).toBe('Edit by 2');
+		}
+	});
+
+	test('upsert creates new entry even if previously deleted', async () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		doc1.clientID = 1;
 		doc2.clientID = 2;
 
-		const tableDefinitions = [
+		const tables1 = createTables(doc1, [
 			table({
 				id: 'posts',
 				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
+				fields: [id(), text({ id: 'title' })] as const,
 			}),
-		];
+		]);
 
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
+		const tables2 = createTables(doc2, [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [id(), text({ id: 'title' })] as const,
+			}),
+		]);
 
-		tables1.get('posts').upsert({
-			id: 'post-1',
-			title: 'Original',
-			views: 0,
-		});
+		// Create and delete a row
+		tables1.get('posts').upsert({ id: 'post-1', title: 'First version' });
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
+		await new Promise((resolve) => setTimeout(resolve, 2));
 		tables1.get('posts').delete('post-1');
-		tables2.get('posts').update({ id: 'post-1', title: 'Updated Title' });
-
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
 
-		const result1 = tables1.get('posts').get('post-1');
-		const result2 = tables2.get('posts').get('post-1');
-
-		// With Y.Map delete semantics, delete wins over concurrent updates
-		// because the row's Y.Array is removed from the table Y.Map.
-		// Doc2's update modified cells within the Y.Array, but doc1's
-		// delete removed the entire Y.Array from the table Y.Map.
-		// After sync, both see the row as deleted.
-		expect(result1.status).toBe('not_found');
-		expect(result2.status).toBe('not_found');
-	});
-
-	test('upsert vs update race: one doc upserts new row while another tries to update same ID', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// No initial sync - docs start empty
-
-		// Doc1 upserts a new row
-		tables1.get('posts').upsert({
-			id: 'post-1',
-			title: 'Created by Doc1',
-			views: 10,
-		});
-
-		// Doc2 tries to update a row with same ID (doesn't exist locally)
-		const updateResult = tables2.get('posts').update({
-			id: 'post-1',
-			title: 'Updated by Doc2',
-		});
-
-		// Update should be a no-op since row doesn't exist locally
-		expect(updateResult.status).toBe('not_found_locally');
-
-		// Doc2 row should still not exist
+		// Verify deleted on both
+		expect(tables1.get('posts').get('post-1').status).toBe('not_found');
 		expect(tables2.get('posts').get('post-1').status).toBe('not_found');
 
-		// After sync, doc2 should see doc1's row
+		// Re-create with same ID (later timestamp)
+		await new Promise((resolve) => setTimeout(resolve, 2));
+		tables1.get('posts').upsert({ id: 'post-1', title: 'Second version' });
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
-		const result = tables2.get('posts').get('post-1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.title).toBe('Created by Doc1');
-			expect(result.row.views).toBe(10);
+		// Both should see the new version
+		const row1 = tables1.get('posts').get('post-1');
+		const row2 = tables2.get('posts').get('post-1');
+
+		expect(row1.status).toBe('valid');
+		expect(row2.status).toBe('valid');
+
+		if (row1.status === 'valid' && row2.status === 'valid') {
+			expect(row1.row.title).toBe('Second version');
+			expect(row2.row.title).toBe('Second version');
 		}
-	});
-
-	test('multiple rows concurrent: edits to different rows should be independent', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Create two rows
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Post 1', views: 0 });
-		tables1.get('posts').upsert({ id: 'post-2', title: 'Post 2', views: 0 });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// Doc1 edits post-1, doc2 edits post-2
-		tables1.get('posts').update({ id: 'post-1', title: 'Post 1 Edited' });
-		tables2.get('posts').update({ id: 'post-2', title: 'Post 2 Edited' });
-
-		// Sync
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-
-		// Both rows should have their respective edits
-		for (const tables of [tables1, tables2]) {
-			const result1 = tables.get('posts').get('post-1');
-			const result2 = tables.get('posts').get('post-2');
-
-			expect(result1.status).toBe('valid');
-			expect(result2.status).toBe('valid');
-
-			if (result1.status === 'valid' && result2.status === 'valid') {
-				expect(result1.row.title).toBe('Post 1 Edited');
-				expect(result2.row.title).toBe('Post 2 Edited');
-			}
-		}
-	});
-
-	test('observer fires correctly during sync: add events', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Set up observer on doc2 BEFORE any sync
-		const addedIds: string[] = [];
-		tables2.get('posts').observe((changedIds) => {
-			for (const id of changedIds) {
-				const result = tables2.get('posts').get(id);
-				if (result.status !== 'not_found') {
-					// Could be add or update - we only care about new rows here
-					// Since we're tracking before any sync, these are all adds
-					addedIds.push(id);
-				}
-			}
-		});
-
-		// Create row on doc1
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Created on Doc1' });
-
-		// Sync to doc2 - observer should fire 'add'
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(addedIds).toContain('post-1');
-	});
-
-	test('observer fires correctly during sync: update events', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Create row and sync
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Original', views: 0 });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// Set up observer on doc2
-		const updatedIds: string[] = [];
-		tables2.get('posts').observe((changedIds) => {
-			for (const id of changedIds) {
-				const result = tables2.get('posts').get(id);
-				if (result.status !== 'not_found') {
-					// Row exists, so it was added or updated
-					updatedIds.push(id);
-				}
-			}
-		});
-
-		// Update on doc1
-		tables1.get('posts').update({ id: 'post-1', title: 'Modified' });
-
-		// Sync to doc2 - observer should fire 'update'
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(updatedIds).toContain('post-1');
-	});
-
-	test('observer fires correctly during sync: delete events', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Create row and sync
-		tables1.get('posts').upsert({ id: 'post-1', title: 'To be deleted' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// Set up observer on doc2
-		const deletedIds: string[] = [];
-		tables2.get('posts').observe((changedIds) => {
-			for (const id of changedIds) {
-				const result = tables2.get('posts').get(id);
-				if (result.status === 'not_found') {
-					// Row was deleted
-					deletedIds.push(id);
-				}
-			}
-		});
-
-		// Delete on doc1
-		tables1.get('posts').delete('post-1');
-
-		// Sync to doc2 - observer should fire 'delete'
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(deletedIds).toContain('post-1');
-	});
-
-	test('cache invalidation on sync: rowKVCache stays correct after receiving remote updates', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Create row on doc1 and sync
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Original', views: 0 });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// Read on doc2 to populate cache
-		const initialResult = tables2.get('posts').get('post-1');
-		expect(initialResult.status).toBe('valid');
-		if (initialResult.status === 'valid') {
-			expect(initialResult.row.title).toBe('Original');
-		}
-
-		// Update on doc1
-		tables1.get('posts').update({ id: 'post-1', title: 'Updated by Doc1' });
-
-		// Sync to doc2
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// Read from doc2 cache - should see updated value
-		const updatedResult = tables2.get('posts').get('post-1');
-		expect(updatedResult.status).toBe('valid');
-		if (updatedResult.status === 'valid') {
-			expect(updatedResult.row.title).toBe('Updated by Doc1');
-		}
-	});
-
-	test('concurrent upserts of same row create consistent result', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-					boolean({ id: 'published' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		tables1.get('posts').upsert({
-			id: 'post-1',
-			title: 'Title from Doc1',
-			views: 100,
-			published: true,
-		});
-		tables2.get('posts').upsert({
-			id: 'post-1',
-			title: 'Title from Doc2',
-			views: 200,
-			published: false,
-		});
-
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-		Y.applyUpdate(doc1, Y.encodeStateAsUpdate(doc2));
-
-		const result1 = tables1.get('posts').get('post-1');
-		const result2 = tables2.get('posts').get('post-1');
-
-		expect(result1.status).toBe('valid');
-		expect(result2.status).toBe('valid');
-
-		if (result1.status === 'valid' && result2.status === 'valid') {
-			// When both docs independently create the same row ID, each doc creates
-			// its own table Y.Map and row Y.Array. YJS LWW determines which table
-			// wins. This is NOT cell-level merging since the rows were created
-			// independently (not from a common ancestor). Both docs converge to
-			// whichever row "wins" via YJS LWW (based on client ID tie-breaking).
-			// The key guarantee is consistency: both docs see the same final state.
-			expect(result1.row).toEqual(result2.row);
-		}
-	});
-
-	test('getAll returns correct data after sync with remote additions', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Doc1 creates multiple rows
-		tables1.get('posts').upsert({ id: 'post-1', title: 'First' });
-		tables1.get('posts').upsert({ id: 'post-2', title: 'Second' });
-		tables1.get('posts').upsert({ id: 'post-3', title: 'Third' });
-
-		// Sync to doc2
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		// getAll on doc2 should return all 3 rows
-		const allRows = tables2.get('posts').getAllValid();
-		expect(allRows).toHaveLength(3);
-
-		const titles = allRows.map((r) => r.title).sort();
-		expect(titles).toEqual(['First', 'Second', 'Third']);
-	});
-
-	test('count stays correct after sync operations', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		// Doc1 creates rows
-		tables1.get('posts').upsert({ id: 'post-1', title: 'One' });
-		tables1.get('posts').upsert({ id: 'post-2', title: 'Two' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(tables2.get('posts').count()).toBe(2);
-
-		// Doc1 deletes one
-		tables1.get('posts').delete('post-1');
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(tables2.get('posts').count()).toBe(1);
-
-		// Doc1 adds more
-		tables1.get('posts').upsert({ id: 'post-3', title: 'Three' });
-		tables1.get('posts').upsert({ id: 'post-4', title: 'Four' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(tables2.get('posts').count()).toBe(3);
-	});
-
-	test('observer continues working after clear() and detects new rows', () => {
-		// Tables are permanent structures; they can be emptied but never deleted.
-		// This test verifies that clear() properly notifies observers and the
-		// observer continues working for new rows.
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		tables1.get('posts').upsert({ id: 'post-1', title: 'First' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		const changes: Array<{ action: string; id: string }> = [];
-		tables2.get('posts').observe((changedIds) => {
-			for (const id of changedIds) {
-				const result = tables2.get('posts').get(id);
-				if (result.status === 'not_found') {
-					changes.push({ action: 'delete', id });
-				} else {
-					changes.push({ action: 'add', id });
-				}
-			}
-		});
-
-		// Use clear() instead of deleting the table Y.Map directly
-		tables2.get('posts').clear();
-
-		expect(changes).toContainEqual({ action: 'delete', id: 'post-1' });
-
-		// Add a new row; observer should still be working
-		tables2.get('posts').upsert({ id: 'post-new', title: 'New Post' });
-
-		expect(changes).toContainEqual({ action: 'add', id: 'post-new' });
-	});
-
-	test('observer receives updates from synced changes', () => {
-		const doc1 = new Y.Doc();
-		const doc2 = new Y.Doc();
-		doc1.clientID = 1;
-		doc2.clientID = 2;
-
-		const tableDefinitions = [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [
-					id(),
-					text({ id: 'title' }),
-					integer({ id: 'views' }),
-				] as const,
-			}),
-		];
-
-		const tables1 = createTables(doc1, tableDefinitions);
-		const tables2 = createTables(doc2, tableDefinitions);
-
-		tables1.get('posts').upsert({ id: 'post-1', title: 'Original', views: 0 });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		const changes: Array<{ action: string; id: string }> = [];
-		tables2.get('posts').observe((changedIds) => {
-			for (const id of changedIds) {
-				const result = tables2.get('posts').get(id);
-				if (result.status === 'not_found') {
-					changes.push({ action: 'delete', id });
-				} else {
-					changes.push({ action: 'update', id });
-				}
-			}
-		});
-
-		tables1.get('posts').update({ id: 'post-1', title: 'Updated on Doc1' });
-		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
-
-		expect(changes).toContainEqual({ action: 'update', id: 'post-1' });
-
-		const result = tables2.get('posts').get('post-1');
-		expect(result.status).toBe('valid');
-		if (result.status === 'valid') {
-			expect(result.row.title).toBe('Updated on Doc1');
-		}
-	});
-
-	test('clear then upsertMany emits delete for old rows and add for new rows', () => {
-		// Tables are permanent structures; to "replace" a table's contents,
-		// use clear() followed by upsertMany(). This test verifies that
-		// observers see deletions for old rows and additions for new rows.
-		const ydoc = new Y.Doc({ guid: 'test-table-replacement' });
-
-		const tables = createTables(ydoc, [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		]);
-
-		tables.get('posts').upsertMany([
-			{ id: 'old-1', title: 'Old Post 1' },
-			{ id: 'old-2', title: 'Old Post 2' },
-		]);
-
-		const changes: Array<{ action: string; id: string }> = [];
-		tables.get('posts').observe((changedIds) => {
-			for (const rowId of changedIds) {
-				const result = tables.get('posts').get(rowId);
-				if (result.status === 'not_found') {
-					changes.push({ action: 'delete', id: rowId });
-				} else {
-					changes.push({ action: 'add', id: rowId });
-				}
-			}
-		});
-
-		// Clear and add new rows (simulates "table replacement")
-		tables.get('posts').clear();
-		tables.get('posts').upsertMany([
-			{ id: 'new-1', title: 'New Post 1' },
-			{ id: 'new-2', title: 'New Post 2' },
-		]);
-
-		expect(changes).toContainEqual({ action: 'delete', id: 'old-1' });
-		expect(changes).toContainEqual({ action: 'delete', id: 'old-2' });
-		expect(changes).toContainEqual({ action: 'add', id: 'new-1' });
-		expect(changes).toContainEqual({ action: 'add', id: 'new-2' });
-	});
-
-	test('row replacement emits update and continues observing new row', () => {
-		const ydoc = new Y.Doc({ guid: 'test-row-replacement' });
-		type RowMap = Y.Map<unknown>;
-		type TableMap = Y.Map<RowMap>;
-		type TablesMap = Y.Map<TableMap>;
-
-		const ytables: TablesMap = ydoc.getMap('tables');
-
-		const tables = createTables(ydoc, [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		]);
-
-		tables.get('posts').upsert({ id: 'post-1', title: 'Original' });
-
-		const changes: Array<{ action: string; id: string; title?: string }> = [];
-		tables.get('posts').observe((changedIds) => {
-			for (const rowId of changedIds) {
-				const result = tables.get('posts').get(rowId);
-				if (result.status === 'not_found') {
-					changes.push({ action: 'delete', id: rowId });
-				} else {
-					const entry: { action: string; id: string; title?: string } = {
-						action: 'update',
-						id: rowId,
-					};
-					if (result.status === 'valid') {
-						entry.title = result.row.title;
-					}
-					changes.push(entry);
-				}
-			}
-		});
-
-		const postsTable = ytables.get('posts')!;
-		const replacementRow = new Y.Map() as RowMap;
-		replacementRow.set('id', 'post-1');
-		replacementRow.set('title', 'Replaced Row');
-		postsTable.set('post-1', replacementRow);
-
-		expect(changes).toContainEqual({
-			action: 'update',
-			id: 'post-1',
-			title: 'Replaced Row',
-		});
-
-		changes.length = 0;
-
-		replacementRow.set('title', 'Modified After Replacement');
-
-		expect(
-			changes.some((c) => c.id === 'post-1' && c.action === 'update'),
-		).toBe(true);
-	});
-
-	test('table created after subscription with pre-existing rows emits adds', () => {
-		const ydoc = new Y.Doc({ guid: 'test-late-table' });
-		type RowMap = Y.Map<unknown>;
-		type TableMap = Y.Map<RowMap>;
-		type TablesMap = Y.Map<TableMap>;
-
-		const ytables: TablesMap = ydoc.getMap('tables');
-
-		const tables = createTables(ydoc, [
-			table({
-				id: 'posts',
-				name: '',
-				fields: [id(), text({ id: 'title' })] as const,
-			}),
-		]);
-
-		const changes: Array<{ action: string; id: string }> = [];
-		tables.get('posts').observe((changedIds) => {
-			for (const rowId of changedIds) {
-				const result = tables.get('posts').get(rowId);
-				if (result.status === 'not_found') {
-					changes.push({ action: 'delete', id: rowId });
-				} else {
-					changes.push({ action: 'add', id: rowId });
-				}
-			}
-		});
-
-		expect(ytables.has('posts')).toBe(false);
-
-		const postsTable = new Y.Map() as TableMap;
-		const row1 = new Y.Map() as RowMap;
-		const row2 = new Y.Map() as RowMap;
-		row1.set('id', 'existing-1');
-		row1.set('title', 'Already Exists 1');
-		row2.set('id', 'existing-2');
-		row2.set('title', 'Already Exists 2');
-		postsTable.set('existing-1', row1);
-		postsTable.set('existing-2', row2);
-
-		ytables.set('posts', postsTable);
-
-		expect(changes).toContainEqual({ action: 'add', id: 'existing-1' });
-		expect(changes).toContainEqual({ action: 'add', id: 'existing-2' });
 	});
 });

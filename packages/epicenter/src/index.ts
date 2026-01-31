@@ -175,8 +175,8 @@ export { defineWorkspace } from './dynamic/workspace/workspace';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:
-//   import { createWorkspace } from '@epicenter/hq/dynamic';  // Cell-level CRDT
-//   import { createWorkspace } from '@epicenter/hq/static';   // Row-level CRDT
+//   import { createTables } from '@epicenter/hq/dynamic';     // Row-level YKeyValueLww
+//   import { createWorkspace } from '@epicenter/hq/static';   // Row-level with versioning
 //
 // Extensions are also NOT re-exported here to avoid bundling Node.js-only code
 // in browser builds. Import them directly from subpaths:

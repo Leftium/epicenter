@@ -70,15 +70,7 @@ export {
 	validateId,
 } from './keys';
 // Schema file utilities
-export {
-	addField,
-	addTable,
-	createEmptySchema,
-	parseSchema,
-	removeField,
-	removeTable,
-	stringifySchema,
-} from './schema-file';
+export { getTableById, parseSchema } from './schema-file';
 // KV store array name (for advanced use cases)
 export { KV_ARRAY_NAME } from './stores/kv-store';
 // Table helper factory (for advanced use)

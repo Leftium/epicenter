@@ -1,24 +1,26 @@
 # Y.Array Tombstones Are Tiny: Why Add/Delete Cycles Don't Bloat Your Doc
 
-**TL;DR**: Y.Array deletions create tombstones that only store metadata, not the full value. After 5 cycles of adding and deleting 1,000 rows, the Y.Doc stays at **34 bytes**.
+**TL;DR**: Y.Array deletions create tombstones that only store metadata, not the full value. After 5 cycles of adding and deleting 1,000 items, the Y.Doc stays at **2 bytes**.
 
 > When you delete from Y.Array, Yjs keeps just enough metadata to know something was deleted. The actual data gets garbage collected.
 
-Run this stress test and watch the magic:
+Run this stress test with vanilla Yjs:
 
 ```typescript
+import * as Y from 'yjs';
+
 const ydoc = new Y.Doc();
-const tables = createTables(ydoc, { posts: postDefinition });
+const yarray = ydoc.getArray('data');
 
 for (let cycle = 0; cycle < 5; cycle++) {
-  // Add 1,000 rows (~72KB of data)
+  // Add 1,000 items
   for (let i = 0; i < 1_000; i++) {
-    tables.posts.set({ id: `id-${i}`, title: `Post ${i}`, views: i });
+    yarray.push([{ id: `id-${i}`, title: `Post ${i}`, views: i }]);
   }
 
-  // Delete all 1,000 rows
-  for (let i = 0; i < 1_000; i++) {
-    tables.posts.delete(`id-${i}`);
+  // Delete all 1,000 items (from end to avoid index shifting)
+  for (let i = 999; i >= 0; i--) {
+    yarray.delete(i);
   }
 
   console.log(`Cycle ${cycle + 1}: ${Y.encodeStateAsUpdate(ydoc).byteLength} bytes`);
@@ -28,14 +30,14 @@ for (let cycle = 0; cycle < 5; cycle++) {
 Output:
 
 ```
-Cycle 1: 34 bytes
-Cycle 2: 34 bytes
-Cycle 3: 34 bytes
-Cycle 4: 34 bytes
-Cycle 5: 34 bytes
+Cycle 1: 2 bytes
+Cycle 2: 2 bytes
+Cycle 3: 2 bytes
+Cycle 4: 2 bytes
+Cycle 5: 2 bytes
 ```
 
-Five thousand inserts. Five thousand deletes. 34 bytes.
+Five thousand inserts. Five thousand deletes. 2 bytes.
 
 This isn't a bug. Y.Array tombstones work differently than Y.Map's history retention.
 
@@ -51,7 +53,7 @@ Y.Map behavior (problematic for KV stores):
 │ Result: 100k updates = 100k values retained         │
 └─────────────────────────────────────────────────────┘
 
-Y.Array behavior (used by YKeyValue):
+Y.Array behavior:
 ┌─────────────────────────────────────────────────────┐
 │ array.push(entry1)      → stores entry1             │
 │ array.delete(0)         → tombstone (no data)       │
@@ -68,32 +70,22 @@ Y.Map retains historical values because it needs them for CRDT conflict resoluti
 
 | Scenario | Y.Doc Size |
 |----------|------------|
-| Empty doc | 34 bytes |
-| After 1,000 inserts | 72 KB |
-| After 1,000 inserts + 1,000 deletes | 34 bytes |
-| After 5 cycles of 1,000 inserts/deletes | 34 bytes |
-| 10,000 rows retained | 733 KB |
+| Empty Y.Array | 2 bytes |
+| 1,000 items | ~72 KB |
+| 1,000 items added then deleted | 2 bytes |
+| 5 cycles of 1,000 add/delete | 2 bytes |
+| 10,000 items retained | ~733 KB |
 
 The pattern holds: live data determines size, not operation history.
 
-## Why This Matters for Local-First Apps
+## Why This Matters
 
-Traditional databases worry about transaction logs and vacuum operations. With Y.Array-backed storage:
+Traditional databases worry about transaction logs and vacuum operations. With Y.Array:
 
 1. Users can create and delete freely without doc bloat
-2. Undo/redo at the application level doesn't accumulate CRDT overhead
-3. Temporary scratch data (drafts, staging) can be deleted cleanly
+2. Temporary data (drafts, scratch work) disappears cleanly
+3. No garbage collection or compaction needed
 
-The YKeyValue pattern exploits this by using Y.Array as the backing store. Each `set()` appends a new entry and deletes the old one. Each `delete()` just removes the entry. No value retention, no unbounded growth.
+The 2-byte floor is just the minimal Y.Doc structure metadata. Your actual data lives and dies cleanly.
 
-```typescript
-// YKeyValue under the hood
-set(key, value) {
-  if (this.map.has(key)) {
-    this.deleteEntryByKey(key);  // Old value becomes a tiny tombstone
-  }
-  this.yarray.push([{ key, val: value }]);  // Only new value stored
-}
-```
-
-The 34-byte floor is just the minimal Y.Doc overhead: client ID tracking and empty structure metadata. Your actual data lives and dies cleanly.
+This property makes Y.Array the ideal foundation for building key-value stores on top of Yjs. See [YKeyValue: A Space-Efficient Key-Value Store on Yjs](./ykeyvalue-space-efficient-kv-store.md) for how to exploit this for table-like data patterns.

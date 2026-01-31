@@ -49,7 +49,6 @@ export type { ExtensionError } from './core/errors';
 export { ExtensionErr } from './core/errors';
 // Lifecycle protocol (shared by providers and extensions)
 export type { Lifecycle, MaybePromise } from './core/lifecycle';
-export { LifecycleExports } from './core/lifecycle';
 export type {
 	// Field types
 	BooleanField,

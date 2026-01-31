@@ -1,6 +1,6 @@
 import { WebsocketProvider } from 'y-websocket';
-import { defineExports, type ExtensionFactory } from '../core/extension';
 import type { KvField, TableDefinition } from '../core/schema';
+import { defineExports, type ExtensionFactory } from '../dynamic/extension';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MULTI-DEVICE SYNC ARCHITECTURE

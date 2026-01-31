@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { dirname, join, parse, resolve } from 'node:path';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
 import type { ProjectDir } from '../core/types';
+import type { WorkspaceDoc } from '../dynamic/docs/workspace-doc';
 
 type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
 

@@ -9,7 +9,7 @@ import {
 	table,
 	tags,
 	text,
-} from '../schema';
+} from '../../core/schema';
 import { createTables } from './create-tables';
 
 /**

@@ -20,7 +20,7 @@ import type {
 	KvField,
 	TableDefinition,
 } from '../core/schema/fields/types';
-import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
+import type { WorkspaceDefinition as CoreWorkspaceDefinition } from './workspace/workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Types (Re-exported from Core)

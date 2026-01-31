@@ -1,9 +1,14 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import * as Y from 'yjs';
-import type { Field, PartialRow, Row, TableDefinition } from '../schema';
-import { fieldsToTypebox } from '../schema';
-import type { TableById } from '../schema/fields/types';
+import type {
+	Field,
+	PartialRow,
+	Row,
+	TableDefinition,
+} from '../../core/schema';
+import { fieldsToTypebox } from '../../core/schema';
+import type { TableById } from '../../core/schema/fields/types';
 
 /**
  * A single validation error from TypeBox schema validation.

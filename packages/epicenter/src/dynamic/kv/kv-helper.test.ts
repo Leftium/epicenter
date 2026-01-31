@@ -11,7 +11,7 @@ import {
 	select,
 	tags,
 	text,
-} from '../schema';
+} from '../../core/schema';
 import { createKv } from './core';
 
 describe('KV Helpers', () => {

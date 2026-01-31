@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
-import type { TableDefinition } from '../schema';
-import type { TableById } from '../schema/fields/types';
+import type { TableDefinition } from '../../core/schema';
+import type { TableById } from '../../core/schema/fields/types';
 import {
 	createTableHelper,
 	createUntypedTableHelper,

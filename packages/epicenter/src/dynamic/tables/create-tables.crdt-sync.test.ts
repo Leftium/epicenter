@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { boolean, id, integer, table, text } from '../schema';
+import { boolean, id, integer, table, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
 describe('Cell-Level CRDT Merging', () => {

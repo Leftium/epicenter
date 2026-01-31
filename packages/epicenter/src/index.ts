@@ -44,46 +44,12 @@ export {
 	isQuery,
 	iterateActions,
 } from './core/actions';
-// Y.Doc wrappers for collaborative workspace architecture
-export type {
-	DefinitionMap,
-	HeadDoc,
-	InferProviderExports,
-	KvYMap,
-	ProviderContext,
-	ProviderExports,
-	ProviderFactory,
-	ProviderFactoryMap,
-	WorkspaceDefinitionMap,
-	WorkspaceDoc,
-	WorkspaceMeta,
-} from './core/docs';
-export {
-	createHeadDoc,
-	createWorkspaceDoc,
-	WORKSPACE_DOC_MAPS,
-} from './core/docs';
-
 export type { ExtensionError } from './core/errors';
 // Error types
 export { ExtensionErr } from './core/errors';
-// Extension system (workspace-level plugins)
-export type {
-	ExtensionContext,
-	ExtensionExports,
-	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
-} from './core/extension';
-export { defineExports } from './core/extension';
-export type { Kv, KvHelper } from './core/kv/core';
-export { createKv } from './core/kv/core';
 // Lifecycle protocol (shared by providers and extensions)
 export type { Lifecycle, MaybePromise } from './core/lifecycle';
 export { LifecycleExports } from './core/lifecycle';
-// Rich content ID generation
-export type { RichContentId } from './core/rich-content/id';
-export { createRichContentId } from './core/rich-content/id';
 export type {
 	// Field types
 	BooleanField,
@@ -147,9 +113,44 @@ export {
 	text,
 	toSqlIdentifier,
 } from './core/schema';
-export type { TableHelper, Tables } from './core/tables/create-tables';
+// Core types
+export type { AbsolutePath, ProjectDir } from './core/types';
+// Y.Doc wrappers for collaborative workspace architecture
+export type {
+	DefinitionMap,
+	HeadDoc,
+	InferProviderExports,
+	KvYMap,
+	ProviderContext,
+	ProviderExports,
+	ProviderFactory,
+	ProviderFactoryMap,
+	WorkspaceDefinitionMap,
+	WorkspaceDoc,
+	WorkspaceMeta,
+} from './dynamic/docs';
+export {
+	createHeadDoc,
+	createWorkspaceDoc,
+	WORKSPACE_DOC_MAPS,
+} from './dynamic/docs';
+// Extension system (workspace-level plugins)
+export type {
+	ExtensionContext,
+	ExtensionExports,
+	ExtensionFactory,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+} from './dynamic/extension';
+export { defineExports } from './dynamic/extension';
+export type { Kv, KvHelper } from './dynamic/kv/core';
+export { createKv } from './dynamic/kv/core';
+// Rich content ID generation
+export type { RichContentId } from './dynamic/rich-content/id';
+export { createRichContentId } from './dynamic/rich-content/id';
+export type { TableHelper, Tables } from './dynamic/tables/create-tables';
 // Table utilities
-export { createTables } from './core/tables/create-tables';
+export { createTables } from './dynamic/tables/create-tables';
 export type {
 	DeleteManyResult,
 	DeleteResult,
@@ -162,18 +163,16 @@ export type {
 	UpdateManyResult,
 	UpdateResult,
 	ValidRowResult,
-} from './core/tables/table-helper';
-// Core types
-export type { AbsolutePath, ProjectDir } from './core/types';
+} from './dynamic/tables/table-helper';
 // Workspace normalization helpers
 export {
 	DEFAULT_KV_ICON,
 	isKvDefinition,
 	isTableDefinition,
 	normalizeIcon,
-} from './core/workspace/normalize';
-export type { WorkspaceDefinition } from './core/workspace/workspace';
-export { defineWorkspace } from './core/workspace/workspace';
+} from './dynamic/workspace/normalize';
+export type { WorkspaceDefinition } from './dynamic/workspace/workspace';
+export { defineWorkspace } from './dynamic/workspace/workspace';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:

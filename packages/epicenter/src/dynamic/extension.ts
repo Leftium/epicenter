@@ -16,6 +16,8 @@
  * Use `defineExports()` to wrap your extension's return value for lifecycle normalization.
  */
 
+// Re-export lifecycle utilities for extension authors
+export { defineExports, type Lifecycle } from '../core/lifecycle';
 // Re-export all extension types from workspace-doc (the canonical location)
 export type {
 	ExtensionContext,
@@ -24,5 +26,3 @@ export type {
 	ExtensionFactoryMap,
 	InferExtensionExports,
 } from './docs/workspace-doc';
-// Re-export lifecycle utilities for extension authors
-export { defineExports, type Lifecycle } from './lifecycle';

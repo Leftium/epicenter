@@ -12,8 +12,8 @@
  * @module
  */
 
-import type { Icon, KvField, TableDefinition } from '../schema';
-import { isIcon } from '../schema';
+import type { Icon, KvField, TableDefinition } from '../../core/schema';
+import { isIcon } from '../../core/schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants

@@ -1,9 +1,9 @@
 import * as Y from 'yjs';
+import type { Field, Icon, KvField, TableDefinition } from '../../core/schema';
 import type {
 	DefinitionYMap,
 	WorkspaceDefinitionMap,
 } from '../docs/workspace-doc';
-import type { Field, Icon, KvField, TableDefinition } from '../schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

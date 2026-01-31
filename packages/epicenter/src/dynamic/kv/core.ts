@@ -1,6 +1,6 @@
 import type * as Y from 'yjs';
 
-import type { KvField, KvFieldById, KvValue } from '../schema';
+import type { KvField, KvFieldById, KvValue } from '../../core/schema';
 
 import {
 	createKvHelper,

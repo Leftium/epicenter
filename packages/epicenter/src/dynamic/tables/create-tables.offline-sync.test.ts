@@ -17,7 +17,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { id, table, text } from '../schema';
+import { id, table, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
 describe('Offline Sync Scenarios', () => {

@@ -1,8 +1,8 @@
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
 import { tableToArktype } from '../core/schema';
+import type { WorkspaceDoc } from '../dynamic/docs/workspace-doc';
 
 type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
 

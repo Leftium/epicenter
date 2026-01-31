@@ -47,7 +47,7 @@ import type {
 	Icon,
 	KvField,
 	TableDefinition,
-} from '../schema/fields/types';
+} from '../../core/schema/fields/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API: Types

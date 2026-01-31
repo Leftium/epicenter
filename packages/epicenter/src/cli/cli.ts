@@ -1,6 +1,6 @@
 import yargs from 'yargs';
 import type { Actions } from '../core/actions';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
+import type { WorkspaceDoc } from '../dynamic/docs/workspace-doc';
 import { createServer, DEFAULT_PORT } from '../server/server';
 import { buildActionCommands } from './command-builder';
 

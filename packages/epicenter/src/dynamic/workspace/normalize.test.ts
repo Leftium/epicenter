@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Icon } from '../schema/fields/types';
+import type { Icon } from '../../core/schema/fields/types';
 import { normalizeIcon } from './normalize';
 
 describe('normalizeIcon', () => {

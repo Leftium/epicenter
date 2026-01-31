@@ -1,9 +1,13 @@
 import * as Y from 'yjs';
+import { defineExports, type Lifecycle } from '../../core/lifecycle';
+import type {
+	KvField,
+	KvValue,
+	TableDefinition,
+} from '../../core/schema/fields/types';
+import { kvFieldsToMap, tablesToMap } from '../../core/schema/fields/types';
 import { createDefinition, type Definition } from '../definition-helper';
 import { createKv, type Kv } from '../kv/core';
-import { defineExports, type Lifecycle } from '../lifecycle';
-import type { KvField, KvValue, TableDefinition } from '../schema/fields/types';
-import { kvFieldsToMap, tablesToMap } from '../schema/fields/types';
 import { createTables, type Tables } from '../tables/create-tables';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +41,7 @@ export const WORKSPACE_DOC_MAPS = {
 // Type Definitions for Y.Doc Structure
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Icon } from '../schema/fields/types.js';
+import type { Icon } from '../../core/schema/fields/types.js';
 
 /**
  * The structure stored in Y.Map('definition') in the Workspace Doc.

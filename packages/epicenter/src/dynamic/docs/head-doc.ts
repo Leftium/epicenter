@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 
-import type { Icon } from '../schema/fields/types.js';
+import type { Icon } from '../../core/schema/fields/types.js';
 import type {
 	InferProviderExports,
 	Lifecycle,

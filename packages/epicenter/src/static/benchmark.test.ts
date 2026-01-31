@@ -51,6 +51,112 @@ function measureTime<T>(fn: () => T): { result: T; durationMs: number } {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Storage Analysis - What's Actually Being Stored
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('storage analysis', () => {
+	test('small row: actual payload vs Y.Doc overhead', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, { posts: postDefinition });
+
+		// Example row
+		const row = { id: 'id-000001', title: 'Post 1', views: 42 };
+		const jsonPayload = JSON.stringify(row);
+		console.log('\n=== SMALL ROW ANALYSIS ===');
+		console.log(`Row data: ${jsonPayload}`);
+		console.log(`JSON payload size: ${jsonPayload.length} bytes`);
+
+		// What Y.js actually stores (from YKeyValueLww):
+		// { key: 'id-000001', val: { id: 'id-000001', ... }, ts: 1706200000000 }
+		const yEntry = { key: row.id, val: row, ts: Date.now() };
+		console.log(`Y.js wrapper JSON: ${JSON.stringify(yEntry).length} bytes`);
+		console.log(
+			`Overhead: +${JSON.stringify(yEntry).length - jsonPayload.length} bytes (ID stored twice + timestamp)`,
+		);
+
+		// Insert 1000 rows
+		for (let i = 0; i < 1_000; i++) {
+			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+		}
+
+		const encoded = Y.encodeStateAsUpdate(ydoc);
+		const pureJsonSize = jsonPayload.length * 1_000;
+		console.log(`\nWith 1,000 rows:`);
+		console.log(`  Y.Doc binary: ${(encoded.byteLength / 1024).toFixed(2)} KB`);
+		console.log(`  Per row: ${(encoded.byteLength / 1_000).toFixed(0)} bytes`);
+		console.log(
+			`  Pure JSON would be: ~${(pureJsonSize / 1024).toFixed(0)} KB`,
+		);
+		console.log(
+			`  CRDT overhead: ${((encoded.byteLength / pureJsonSize - 1) * 100).toFixed(0)}%`,
+		);
+	});
+
+	test('realistic row: notes with 500 chars of content', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, { notes: noteDefinition });
+
+		const sampleContent = `This is a realistic note with actual content. 
+It might contain multiple paragraphs and various formatting.
+Users typically write notes that are a few hundred characters long.
+Some notes are longer, some are shorter, but this is a reasonable average.
+Let's add a bit more to make it realistic. The quick brown fox jumps over the lazy dog.`;
+
+		const row = {
+			id: generateId(0),
+			title: 'Meeting Notes - Q4 Planning',
+			content: sampleContent,
+			tags: ['work', 'meetings', 'planning'],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		const jsonPayload = JSON.stringify(row);
+		console.log('\n=== REALISTIC ROW ANALYSIS ===');
+		console.log(`Content length: ${sampleContent.length} chars`);
+		console.log(`Full row JSON: ${jsonPayload.length} bytes`);
+
+		for (let i = 0; i < 1_000; i++) {
+			tables.notes.set({
+				id: generateId(i),
+				title: `Note ${i}`,
+				content: sampleContent,
+				tags: ['tag1', 'tag2'],
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			});
+		}
+
+		const encoded = Y.encodeStateAsUpdate(ydoc);
+		console.log(`\nWith 1,000 notes (~500 chars each):`);
+		console.log(
+			`  Y.Doc binary: ${(encoded.byteLength / 1024).toFixed(0)} KB (${(encoded.byteLength / 1024 / 1024).toFixed(2)} MB)`,
+		);
+		console.log(`  Per row: ${(encoded.byteLength / 1_000).toFixed(0)} bytes`);
+	});
+
+	test('upper ceiling estimates', () => {
+		console.log('\n=== PRACTICAL LIMITS ===');
+		console.log(
+			'Based on benchmarks (~75 bytes/small row, ~700 bytes/note):\n',
+		);
+
+		console.log('| Rows     | Small Rows  | Notes (~500 chars) |');
+		console.log('|----------|-------------|---------------------|');
+		console.log('| 1,000    | ~75 KB      | ~700 KB             |');
+		console.log('| 10,000   | ~750 KB     | ~7 MB               |');
+		console.log('| 50,000   | ~3.7 MB     | ~35 MB              |');
+		console.log('| 100,000  | ~7.5 MB     | ~70 MB              |');
+
+		console.log('\nRecommendations:');
+		console.log('  ✓ 10K rows: Sweet spot for local-first (fast, <10MB)');
+		console.log('  ⚠ 50K rows: Still works, slower inserts (~5s)');
+		console.log('  ✗ 100K+ rows: Consider pagination/archiving');
+		console.log('  Note: Deletes are O(n) - avoid repeated bulk delete cycles');
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // createWorkspace Benchmarks
 // ═══════════════════════════════════════════════════════════════════════════════
 

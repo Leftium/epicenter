@@ -10,9 +10,9 @@
  * Y.Doc structure:
  * ```
  * Y.Doc
- * +-- Y.Array('posts')    <- Table data (cells)
- * +-- Y.Array('users')    <- Another table
- * +-- Y.Array('kv')       <- Workspace-level key-values
+ * +-- Y.Array('table:posts')  <- Table data (cells)
+ * +-- Y.Array('table:users')  <- Another table
+ * +-- Y.Array('kv')           <- Workspace-level key-values
  * ```
  *
  * @packageDocumentation
@@ -76,7 +76,7 @@ export {
 } from './keys';
 
 // KV store
-export { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+export { createKvStore, KV_ARRAY_NAME, TABLE_ARRAY_PREFIX } from './stores/kv-store';
 
 // Types
 export type {
@@ -91,10 +91,14 @@ export type {
 	GetResult,
 	HeadDocInterface,
 	InvalidCellResult,
+	InvalidKvResult,
 	InvalidRowResult,
 	KvDefinition,
+	KvGetResult,
+	KvResult,
 	KvStore,
 	NotFoundCellResult,
+	NotFoundKvResult,
 	NotFoundRowResult,
 	RowData,
 	RowResult,
@@ -104,6 +108,7 @@ export type {
 	TypedRowWithCells,
 	ValidationError,
 	ValidCellResult,
+	ValidKvResult,
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceDef,

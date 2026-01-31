@@ -12,9 +12,9 @@
  * Y.Doc structure:
  * ```
  * Y.Doc
- * +-- Y.Array('posts')    <- Table data (cells only)
- * +-- Y.Array('users')    <- Another table
- * +-- Y.Array('kv')       <- Workspace-level key-values
+ * +-- Y.Array('table:posts')  <- Table data (cells only)
+ * +-- Y.Array('table:users')  <- Another table
+ * +-- Y.Array('kv')           <- Workspace-level key-values
  * ```
  *
  * @packageDocumentation
@@ -31,7 +31,7 @@ import type {
 } from './extensions';
 import { createTableHelper } from './table-helper';
 import { validateId } from './keys';
-import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+import { createKvStore, KV_ARRAY_NAME, TABLE_ARRAY_PREFIX } from './stores/kv-store';
 import type {
 	CellValue,
 	CreateWorkspaceOptions,
@@ -110,9 +110,9 @@ export function createWorkspace<TTableDefs extends readonly TableDef[]>(
 	// Cache table helpers to avoid recreation
 	const tableHelperCache = new Map<string, TableHelper>();
 
-	// Initialize KV store
+	// Initialize KV store with validation from definition
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
-	const kv = createKvStore(kvArray);
+	const kv = createKvStore(kvArray, definition.kv ?? []);
 
 	/**
 	 * Get or create a table helper.
@@ -122,7 +122,9 @@ export function createWorkspace<TTableDefs extends readonly TableDef[]>(
 
 		let helper = tableHelperCache.get(tableId);
 		if (!helper) {
-			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(tableId);
+			const yarray = ydoc.getArray<YKeyValueLwwEntry<CellValue>>(
+				`${TABLE_ARRAY_PREFIX}${tableId}`,
+			);
 			// Use schema from definition, or empty schema for dynamic tables
 			const tableSchema = getTableById(definition.tables, tableId) ?? {
 				id: tableId,

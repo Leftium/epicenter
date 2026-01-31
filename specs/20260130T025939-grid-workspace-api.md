@@ -286,17 +286,29 @@ type InvalidRowResult = {
 ### KvStore
 
 ```typescript
+/** Result of getting a KV value with validation. */
+type KvGetResult<TValue> =
+	| { status: 'valid'; value: TValue }
+	| { status: 'invalid'; key: string; errors: ValidationError[]; value: unknown }
+	| { status: 'not_found'; key: string; value: undefined };
+
 type KvStore = {
-	/** Get a value by key */
-	get(key: string): unknown | undefined;
+	/** Get a validated value by key */
+	get(key: string): KvGetResult<unknown>;
+	/** Get a raw value by key (no validation) */
+	getRaw(key: string): unknown | undefined;
 	/** Set a value */
 	set(key: string, value: unknown): void;
 	/** Delete a value (hard delete) */
 	delete(key: string): void;
 	/** Check if a key exists */
 	has(key: string): boolean;
-	/** Get all key-value pairs */
-	getAll(): Map<string, unknown>;
+	/** Get all key-value pairs with validation results */
+	getAll(): KvResult<unknown>[];
+	/** Get all valid key-value pairs */
+	getAllValid(): Map<string, unknown>;
+	/** Get all invalid key-value pairs with error details */
+	getAllInvalid(): InvalidKvResult[];
 	/** Observe changes */
 	observe(handler: ChangeHandler<unknown>): () => void;
 };

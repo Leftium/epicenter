@@ -255,18 +255,39 @@ export type TableHelper = {
 // KV Store
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Helper for workspace-level key-value pairs. */
+/** Result of getting a KV value - reuses cell result types. */
+export type KvGetResult<TValue> = GetCellResult<TValue>;
+
+/** A KV entry that passed validation. */
+export type ValidKvResult<TValue> = ValidCellResult<TValue>;
+
+/** A KV entry that exists but failed validation. */
+export type InvalidKvResult = InvalidCellResult;
+
+/** A KV entry that was not found. */
+export type NotFoundKvResult = NotFoundCellResult;
+
+/** Result of validating a KV entry (exists, may be valid or invalid). */
+export type KvResult<TValue> = ValidKvResult<TValue> | InvalidKvResult;
+
+/** Helper for workspace-level key-value pairs with validation. */
 export type KvStore = {
-	/** Get a value by key */
-	get(key: string): unknown | undefined;
+	/** Get a validated value by key */
+	get(key: string): KvGetResult<unknown>;
+	/** Get a raw value by key (no validation) */
+	getRaw(key: string): unknown | undefined;
 	/** Set a value */
 	set(key: string, value: unknown): void;
 	/** Delete a value (hard delete) */
 	delete(key: string): void;
 	/** Check if a key exists */
 	has(key: string): boolean;
-	/** Get all key-value pairs */
-	getAll(): Map<string, unknown>;
+	/** Get all key-value pairs with validation results */
+	getAll(): KvResult<unknown>[];
+	/** Get all valid key-value pairs */
+	getAllValid(): Map<string, unknown>;
+	/** Get all invalid key-value pairs with error details */
+	getAllInvalid(): InvalidKvResult[];
 	/** Observe changes */
 	observe(handler: ChangeHandler<unknown>): () => void;
 };

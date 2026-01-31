@@ -261,7 +261,7 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 		 * ```typescript
 		 * const actualEpoch = head.setOwnEpoch(2);
 		 * await oldWorkspace.destroy();
-		 * const newWorkspace = createCellWorkspace({
+		 * const newWorkspace = createWorkspace({
 		 *   headDoc: head,
 		 *   definition: { name: 'Blog', tables: {...} },
 		 * }).withExtensions({});
@@ -282,7 +282,7 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 		 *
 		 * // Recreate workspace at the actual epoch
 		 * const epoch = head.setOwnEpoch(2);
-		 * const workspace = createCellWorkspace({
+		 * const workspace = createWorkspace({
 		 *   headDoc: head,
 		 *   definition: { name: 'Blog', tables: {...} },
 		 * }).withExtensions({});

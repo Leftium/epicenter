@@ -1,8 +1,7 @@
 /**
- * KV Store for Cell Workspace
+ * KV Store for Dynamic Workspace
  *
  * Stores workspace-level key-value pairs in Y.Doc using YKeyValueLww.
- * Simple string keys (no prefixing needed).
  *
  * @packageDocumentation
  */
@@ -10,10 +9,11 @@
 import type * as Y from 'yjs';
 import {
 	YKeyValueLww,
+	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
 import { validateId } from '../keys';
-import type { ChangeEvent, ChangeHandler, KvStore } from '../types';
+import type { ChangeEvent, ChangeHandler, KvStore } from '../types.js';
 
 /**
  * Y.Array name for KV store.
@@ -56,10 +56,7 @@ export function createKvStore(
 
 		observe(handler: ChangeHandler<unknown>): () => void {
 			const ykvHandler = (
-				changes: Map<
-					string,
-					import('../../core/utils/y-keyvalue-lww').YKeyValueLwwChange<unknown>
-				>,
+				changes: Map<string, YKeyValueLwwChange<unknown>>,
 				transaction: Y.Transaction,
 			) => {
 				const events: ChangeEvent<unknown>[] = [];

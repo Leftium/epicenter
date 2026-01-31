@@ -33,11 +33,11 @@ import type { KvField, TableDefinition } from '../../core/schema';
  *
  * @example Basic usage in a browser app
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // 'blog' becomes the IndexedDB database name
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({ persistence });
@@ -45,11 +45,11 @@ import type { KvField, TableDefinition } from '../../core/schema';
  *
  * @example In a Svelte/React component
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // Inside component setup/onMount:
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({ persistence });
@@ -60,20 +60,22 @@ import type { KvField, TableDefinition } from '../../core/schema';
  *
  * @example Multi-workspace setup
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // Each workspace gets its own IndexedDB database
  * // 'blog' → IndexedDB database named 'blog'
- * const blogWorkspace = createCellWorkspace({
+ * const blogWorkspace = createWorkspace({
+ *   id: 'blog',
  *   headDoc: blogHeadDoc,
- *   definition: { name: 'Blog', tables: {...} },
+ *   definition: { name: 'Blog', tables: [...] },
  * }).withExtensions({ persistence });
  *
  * // 'notes' → IndexedDB database named 'notes'
- * const notesWorkspace = createCellWorkspace({
+ * const notesWorkspace = createWorkspace({
+ *   id: 'notes',
  *   headDoc: notesHeadDoc,
- *   definition: { name: 'Notes', tables: {...} },
+ *   definition: { name: 'Notes', tables: [...] },
  * }).withExtensions({ persistence });
  *
  * // Workspaces are isolated, each with separate IndexedDB storage

@@ -1,282 +1,274 @@
 /**
  * Dynamic Workspace Type Definitions
  *
- * Types for runtime-editable, Notion-like databases with cell-level CRDT granularity.
+ * Types for the unified Dynamic Workspace API with optional HeadDoc support.
+ *
+ * Architecture:
+ * - Cell-level CRDT storage (one Y.Array per table)
+ * - External schema with validation (definition passed in)
+ * - Optional HeadDoc for time travel and epochs
  *
  * @packageDocumentation
  */
 
+import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
+import type {
+	FieldType as CoreFieldType,
+	Field,
+	Icon,
+	KvField,
+	TableDefinition,
+} from '../core/schema/fields/types';
+import type { WorkspaceDefinition as CoreWorkspaceDefinition } from '../core/workspace/workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Field Types
+// Schema Types (Re-exported from Core)
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Field definition - re-exported from core. */
+export type FieldDefinition = Field;
+
+/** Table definition - re-exported from core. */
+export type TableDef = TableDefinition<readonly Field[]>;
+
+/** KV definition - re-exported from core. */
+export type KvDefinition = KvField;
+
+/** Complete workspace definition - re-exported from core. */
+export type WorkspaceDef = CoreWorkspaceDefinition;
+
+/** Field type discriminator. */
+export type FieldType = CoreFieldType;
+
+// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc Interface
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Supported field types for dynamic tables.
- */
-export type FieldType =
-	| 'text'
-	| 'integer'
-	| 'real'
-	| 'boolean'
-	| 'date'
-	| 'datetime'
-	| 'select'
-	| 'tags'
-	| 'json';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Schema Definitions
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Definition of a field within a table.
+ * Minimal HeadDoc interface required by Dynamic Workspace.
  *
- * Order is stored directly on the field (not on the table) to eliminate
- * orphaning risk during concurrent modifications.
+ * This allows any object with these methods to be used as a HeadDoc,
+ * enabling flexibility in how HeadDoc is created/managed.
  */
-export type FieldDefinition = {
-	/** Display name of the field */
-	name: string;
-	/** Data type of the field */
-	type: FieldType;
-	/** Fractional index for ordering (supports insertion via fractional values) */
-	order: number;
-	/** Tombstone: null = active, timestamp = deleted at that time */
-	deletedAt: number | null;
-	/** Optional icon (emoji or icon reference) */
-	icon?: string | null;
-	/** Options for select/tags field types */
-	options?: string[];
-	/** Default value for new cells */
-	default?: unknown;
+export type HeadDocInterface = {
+	/** The workspace ID (no epoch suffix) */
+	workspaceId: string;
+	/** Get the current epoch number */
+	getEpoch(): number;
 };
 
-/**
- * Definition of a table.
- *
- * Note: Field order is NOT stored here - it's derived from field definitions.
- */
-export type TableDefinition = {
-	/** Display name of the table */
-	name: string;
-	/** Tombstone: null = active, timestamp = deleted at that time */
-	deletedAt: number | null;
-	/** Optional icon (emoji or icon reference) */
-	icon?: string | null;
-};
+// ════════════════════════════════════════════════════════════════════════════
+// Data Types
+// ════════════════════════════════════════════════════════════════════════════
 
-/**
- * Metadata for a row.
- *
- * Note: tableId is encoded in the key, not the value.
- */
-export type RowMeta = {
-	/** Fractional index for ordering within the table */
-	order: number;
-	/** Tombstone: null = active, timestamp = deleted at that time */
-	deletedAt: number | null;
-};
-
-/**
- * Cell values can be any JSON-serializable value.
- * The actual type depends on the field type.
- */
+/** Cell values can be any JSON-serializable value. */
 export type CellValue = unknown;
+
+/** A row with all its cell values. */
+export type RowData = {
+	/** Row identifier */
+	id: string;
+	/** All cells for this row */
+	cells: Record<string, CellValue>;
+};
+
+/** Typed cell with validation status. */
+export type TypedCell = {
+	value: CellValue;
+	type: FieldType;
+	valid: boolean;
+};
+
+/** A row with typed cells (includes validation against schema). */
+export type TypedRowWithCells = {
+	id: string;
+	cells: Record<string, TypedCell>;
+	/** Fields in schema but not in data */
+	missingFields: string[];
+	/** Fields in data but not in schema */
+	extraFields: string[];
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// Validation Types
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A single validation error from TypeBox schema validation.
+ *
+ * Contains detailed information about why a row field failed validation,
+ * including the JSON path to the invalid field, the expected schema,
+ * and a human-readable error message.
+ */
+export type ValidationError = TLocalizedValidationError;
+
+/** A cell that passed validation. */
+export type ValidCellResult<TValue> = {
+	status: 'valid';
+	value: TValue;
+};
+
+/** A cell that exists but failed validation. */
+export type InvalidCellResult = {
+	status: 'invalid';
+	key: string;
+	errors: ValidationError[];
+	value: unknown;
+};
+
+/** A cell that was not found. */
+export type NotFoundCellResult = {
+	status: 'not_found';
+	key: string;
+	value: undefined;
+};
+
+/** Result of getting a single cell. */
+export type GetCellResult<TValue> =
+	| ValidCellResult<TValue>
+	| InvalidCellResult
+	| NotFoundCellResult;
+
+/** A row that passed validation. */
+export type ValidRowResult<TRow> = {
+	status: 'valid';
+	row: TRow;
+};
+
+/** A row that exists but failed validation. */
+export type InvalidRowResult = {
+	status: 'invalid';
+	id: string;
+	tableName?: string;
+	errors: ValidationError[];
+	row: Record<string, CellValue>;
+};
+
+/** A row that was not found. */
+export type NotFoundRowResult = {
+	status: 'not_found';
+	id: string;
+	row: undefined;
+};
+
+/** Result of getting a single row. */
+export type GetResult<TRow> =
+	| ValidRowResult<TRow>
+	| InvalidRowResult
+	| NotFoundRowResult;
+
+/** Result of validating a row (exists, may be valid or invalid). */
+export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
 
 // ════════════════════════════════════════════════════════════════════════════
 // Change Events
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * A single change event for any store.
- */
+/** A single change event for cells. */
 export type ChangeEvent<T> =
 	| { type: 'add'; key: string; value: T }
 	| { type: 'update'; key: string; value: T; previousValue: T }
 	| { type: 'delete'; key: string; previousValue: T };
 
-/**
- * Handler for change events.
- */
+/** Handler for change events. */
 export type ChangeHandler<T> = (
 	changes: ChangeEvent<T>[],
 	transaction: Y.Transaction,
 ) => void;
 
 // ════════════════════════════════════════════════════════════════════════════
-// Store Interfaces
+// Table Helper
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Store for table definitions.
- */
-export type TablesStore = {
-	/** Get a table by ID */
-	get(tableId: string): TableDefinition | undefined;
-	/** Set a table definition (creates or updates) */
-	set(tableId: string, table: TableDefinition): void;
-	/** Soft-delete a table (sets deletedAt) */
-	delete(tableId: string): void;
-	/** Check if a table exists (including soft-deleted) */
-	has(tableId: string): boolean;
-	/** Get all tables (including soft-deleted) */
-	getAll(): Map<string, TableDefinition>;
-	/** Get all active tables (not soft-deleted) */
-	getActive(): Map<string, TableDefinition>;
-
-	// Convenience methods
-	/** Create a new table */
-	create(
-		tableId: string,
-		options: { name: string; icon?: string | null },
-	): void;
-	/** Rename a table */
-	rename(tableId: string, newName: string): void;
-	/** Restore a soft-deleted table */
-	restore(tableId: string): void;
-
-	/** Observe changes to tables */
-	observe(handler: ChangeHandler<TableDefinition>): () => void;
-};
-
-/**
- * Store for field definitions.
- */
-export type FieldsStore = {
-	/** Get a field by table and field ID */
-	get(tableId: string, fieldId: string): FieldDefinition | undefined;
-	/** Set a field definition (creates or updates) */
-	set(tableId: string, fieldId: string, field: FieldDefinition): void;
-	/** Soft-delete a field (sets deletedAt) */
-	delete(tableId: string, fieldId: string): void;
-	/** Check if a field exists (including soft-deleted) */
-	has(tableId: string, fieldId: string): boolean;
-
-	/** Get all fields for a table, sorted by order (includes soft-deleted) */
-	getByTable(tableId: string): Array<{ id: string; field: FieldDefinition }>;
-	/** Get active fields for a table, sorted by order (excludes soft-deleted) */
-	getActiveByTable(
-		tableId: string,
-	): Array<{ id: string; field: FieldDefinition }>;
-
-	// Convenience methods
-	/** Create a new field (auto-assigns order if not specified) */
-	create(
-		tableId: string,
-		fieldId: string,
-		options: {
-			name: string;
-			type: FieldType;
-			order?: number;
-			icon?: string | null;
-			options?: string[];
-			default?: unknown;
-		},
-	): void;
-	/** Rename a field */
-	rename(tableId: string, fieldId: string, newName: string): void;
-	/** Reorder a field (set new order value) */
-	reorder(tableId: string, fieldId: string, newOrder: number): void;
-	/** Restore a soft-deleted field */
-	restore(tableId: string, fieldId: string): void;
-
-	/** Observe changes to fields */
-	observe(handler: ChangeHandler<FieldDefinition>): () => void;
-};
-
-/**
- * Store for row metadata.
- */
-export type RowsStore = {
-	/** Get row metadata by table and row ID */
-	get(tableId: string, rowId: string): RowMeta | undefined;
-	/** Set row metadata (creates or updates) */
-	set(tableId: string, rowId: string, meta: RowMeta): void;
-	/** Soft-delete a row (sets deletedAt) */
-	delete(tableId: string, rowId: string): void;
-	/** Check if a row exists (including soft-deleted) */
-	has(tableId: string, rowId: string): boolean;
-
-	/** Get all rows for a table, sorted by order (includes soft-deleted) */
-	getByTable(tableId: string): Array<{ id: string; meta: RowMeta }>;
-	/** Get active rows for a table, sorted by order (excludes soft-deleted) */
-	getActiveByTable(tableId: string): Array<{ id: string; meta: RowMeta }>;
-
-	// Convenience methods
-	/** Create a new row (generates ID if not provided, auto-assigns order if not specified) */
-	create(tableId: string, rowId?: string, order?: number): string;
-	/** Reorder a row (set new order value) */
-	reorder(tableId: string, rowId: string, newOrder: number): void;
-	/** Restore a soft-deleted row */
-	restore(tableId: string, rowId: string): void;
-
-	/** Observe changes to rows */
-	observe(handler: ChangeHandler<RowMeta>): () => void;
-};
-
-/**
- * Store for cell values.
+ * Helper for a single table's data with integrated validation.
  *
- * Cells do NOT have tombstones - they are filtered out based on
- * their field's or row's deletedAt status.
+ * All methods return validated results that include both the value and validation status.
  */
-export type CellsStore = {
-	/** Get a cell value */
-	get(tableId: string, rowId: string, fieldId: string): CellValue | undefined;
+export type TableHelper = {
+	/** The table identifier */
+	tableId: string;
+	/** The schema definition for this table */
+	schema: TableDef;
+
+	// ═══════════════════════════════════════════════════════════════
+	// CELL OPERATIONS (validated)
+	// ═══════════════════════════════════════════════════════════════
+
+	/** Get a validated cell value */
+	getCell(rowId: string, fieldId: string): GetCellResult<unknown>;
 	/** Set a cell value */
-	set(tableId: string, rowId: string, fieldId: string, value: CellValue): void;
-	/** Delete a cell value (hard delete, not tombstone) */
-	delete(tableId: string, rowId: string, fieldId: string): void;
+	setCell(rowId: string, fieldId: string, value: CellValue): void;
+	/** Delete a cell value (hard delete) */
+	deleteCell(rowId: string, fieldId: string): void;
 	/** Check if a cell exists */
-	has(tableId: string, rowId: string, fieldId: string): boolean;
+	hasCell(rowId: string, fieldId: string): boolean;
+
+	// ═══════════════════════════════════════════════════════════════
+	// ROW OPERATIONS (validated)
+	// ═══════════════════════════════════════════════════════════════
+
+	/** Get a validated row */
+	getRow(rowId: string): GetResult<RowData>;
 
 	/**
-	 * Get all cells for a row using direct lookups (not prefix scan).
-	 * Returns a map from fieldId to cell value.
+	 * Create a new row.
+	 * @param rowId - Optional custom row ID (generated if not provided)
 	 */
-	getByRow(
-		tableId: string,
-		rowId: string,
-		fieldIds: string[],
-	): Map<string, CellValue>;
+	createRow(rowId?: string): string;
+
+	/**
+	 * Create a new row with initial cells.
+	 * @param opts - Options with optional ID and initial cells
+	 */
+	createRow(opts: { id?: string; cells?: Record<string, CellValue> }): string;
+
+	/** Set all cells for a row at once (replaces existing cells) */
+	setRow(rowId: string, cells: Record<string, CellValue>): void;
+
+	/** Delete a row (hard delete - removes all cells) */
+	deleteRow(rowId: string): void;
+
+	// ═══════════════════════════════════════════════════════════════
+	// BULK OPERATIONS (validated)
+	// ═══════════════════════════════════════════════════════════════
+
+	/** Get all rows with validation results */
+	getAll(): RowResult<RowData>[];
+	/** Get all valid rows (filters out invalid ones) */
+	getAllValid(): RowData[];
+	/** Get all invalid rows with error details */
+	getAllInvalid(): InvalidRowResult[];
+	/** Get all row IDs */
+	getRowIds(): string[];
+
+	// ═══════════════════════════════════════════════════════════════
+	// OBSERVATION
+	// ═══════════════════════════════════════════════════════════════
 
 	/** Observe changes to cells */
 	observe(handler: ChangeHandler<CellValue>): () => void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// High-Level Helper Types
+// KV Store
 // ════════════════════════════════════════════════════════════════════════════
 
-/**
- * A table with its field definitions, ready for rendering.
- */
-export type TableWithFields = {
-	id: string;
-	name: string;
-	icon: string | null;
-	deletedAt: number | null;
-	fields: Array<{
-		id: string;
-		name: string;
-		type: FieldType;
-		order: number;
-		icon: string | null;
-		options?: string[];
-		default?: unknown;
-	}>;
-};
-
-/**
- * A row with its cell values, ready for rendering.
- */
-export type RowWithCells = {
-	id: string;
-	order: number;
-	deletedAt: number | null;
-	cells: Record<string, CellValue>;
+/** Helper for workspace-level key-value pairs. */
+export type KvStore = {
+	/** Get a value by key */
+	get(key: string): unknown | undefined;
+	/** Set a value */
+	set(key: string, value: unknown): void;
+	/** Delete a value (hard delete) */
+	delete(key: string): void;
+	/** Check if a key exists */
+	has(key: string): boolean;
+	/** Get all key-value pairs */
+	getAll(): Map<string, unknown>;
+	/** Observe changes */
+	observe(handler: ChangeHandler<unknown>): () => void;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -284,50 +276,67 @@ export type RowWithCells = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The main dynamic workspace client.
+ * The main Dynamic Workspace client.
  *
- * Provides access to all stores and high-level helper methods.
+ * Provides access to table helpers and KV store with validation.
  */
-export type DynamicWorkspaceClient = {
-	/** Workspace identifier */
-	readonly id: string;
-	/** The underlying Yjs document */
-	readonly ydoc: Y.Doc;
+export type WorkspaceClient<
+	TTableDefs extends readonly TableDef[] = readonly TableDef[],
+	TExtensions = {},
+> = {
+	// ═══════════════════════════════════════════════════════════════
+	// IDENTITY
+	// ═══════════════════════════════════════════════════════════════
 
-	// Low-level store access
-	/** Table definitions store */
-	readonly tables: TablesStore;
-	/** Field definitions store */
-	readonly fields: FieldsStore;
-	/** Row metadata store */
-	readonly rows: RowsStore;
-	/** Cell values store */
-	readonly cells: CellsStore;
+	/** Workspace identifier (no epoch suffix) */
+	id: string;
+	/** Current epoch number (0 if no HeadDoc) */
+	epoch: number;
+	/** The underlying Y.Doc instance */
+	ydoc: Y.Doc;
 
-	// High-level helpers
+	// ═══════════════════════════════════════════════════════════════
+	// METADATA (from definition)
+	// ═══════════════════════════════════════════════════════════════
+
+	/** Display name of the workspace */
+	name: string;
+	/** Description of the workspace */
+	description: string;
+	/** Icon for the workspace */
+	icon: Icon | null;
+	/** The full workspace definition (access schema here) */
+	definition: WorkspaceDef;
+
+	// ═══════════════════════════════════════════════════════════════
+	// DATA ACCESS
+	// ═══════════════════════════════════════════════════════════════
+
 	/**
-	 * Get a table with all its active field definitions.
-	 * Returns null if the table doesn't exist or is deleted.
+	 * Get a table helper. Creates the underlying Y.Array if it doesn't exist.
+	 * Table helpers are cached - calling with same tableId returns same instance.
 	 */
-	getTableWithFields(tableId: string): TableWithFields | null;
+	table<K extends TTableDefs[number]['id']>(tableId: K): TableHelper;
+	table(tableId: string): TableHelper;
 
-	/**
-	 * Get all active rows for a table with their cell values.
-	 * Only includes cells for active fields.
-	 */
-	getRowsWithCells(tableId: string): RowWithCells[];
+	/** KV store for workspace-level values */
+	kv: KvStore;
 
-	/**
-	 * Batch multiple writes into a single Yjs transaction.
-	 * Observers receive all changes in one callback.
-	 */
-	batch<T>(fn: (ws: DynamicWorkspaceClient) => T): T;
+	// ═══════════════════════════════════════════════════════════════
+	// LIFECYCLE
+	// ═══════════════════════════════════════════════════════════════
 
-	// Lifecycle
-	/**
-	 * Destroy the workspace client and release resources.
-	 */
+	/** Batch multiple writes into a single Y.Doc transaction */
+	batch<T>(fn: (ws: WorkspaceClient<TTableDefs, TExtensions>) => T): T;
+
+	/** Resolves when all extensions are synced/ready */
+	whenSynced: Promise<void>;
+
+	/** Destroy the workspace client and release resources */
 	destroy(): Promise<void>;
+
+	/** Extension exports */
+	extensions: TExtensions;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -335,11 +344,36 @@ export type DynamicWorkspaceClient = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Options for creating a dynamic workspace.
+ * Options for creating a Dynamic Workspace.
+ *
+ * The workspace ID is required in the options.
  */
-export type CreateDynamicWorkspaceOptions = {
-	/** Unique identifier for the workspace (used as Y.Doc guid) */
+export type CreateWorkspaceOptions = {
+	/**
+	 * Unique identifier for the workspace.
+	 *
+	 * Required. Dynamic workspaces require the ID to be passed in options.
+	 */
 	id: string;
-	/** Optional existing Y.Doc to use instead of creating a new one */
+
+	/** Workspace definition (schema for tables and KV) - always required */
+	definition: WorkspaceDef;
+
+	/**
+	 * Optional HeadDoc for time travel support.
+	 *
+	 * When present:
+	 * - Y.Doc GUID becomes `{workspaceId}-{epoch}`
+	 * - Garbage collection is disabled
+	 * - Time travel / snapshots are enabled
+	 *
+	 * When absent:
+	 * - Y.Doc GUID is just `{workspaceId}`
+	 * - Garbage collection is enabled
+	 * - No time travel
+	 */
+	headDoc?: HeadDocInterface;
+
+	/** Optional existing Y.Doc to use instead of creating new */
 	ydoc?: Y.Doc;
 };

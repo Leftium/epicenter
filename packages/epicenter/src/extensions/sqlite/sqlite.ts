@@ -58,14 +58,14 @@ export type SqliteConfig = {
  *
  * @example
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { sqlite } from '@epicenter/hq/extensions/sqlite';
  * import { join } from 'node:path';
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({

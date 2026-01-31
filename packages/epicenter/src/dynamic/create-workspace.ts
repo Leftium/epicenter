@@ -1,5 +1,5 @@
 /**
- * Grid Workspace Factory
+ * Dynamic Workspace Factory
  *
  * Creates a unified workspace client with optional HeadDoc support.
  *
@@ -24,40 +24,42 @@ import * as Y from 'yjs';
 import { defineExports, type Lifecycle } from '../core/lifecycle';
 import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww';
 import type {
-	GridExtensionContext,
-	GridExtensionFactoryMap,
-	GridWorkspaceBuilder,
-	InferGridExtensionExports,
+	ExtensionContext,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+	WorkspaceBuilder,
 } from './extensions';
-import { createGridTableHelper } from './grid-table-helper';
+import { createTableHelper } from './table-helper';
 import { validateId } from './keys';
-import { createGridKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+import { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
 import type {
 	CellValue,
-	CreateGridWorkspaceOptions,
-	GridTableDefinition,
-	GridTableHelper,
-	GridWorkspaceClient,
+	CreateWorkspaceOptions,
+	TableDef,
+	TableHelper,
+	WorkspaceClient,
 } from './types';
 
 /**
  * Get a table by its ID from an array of tables.
  */
 function getTableById(
-	tables: readonly GridTableDefinition[],
+	tables: readonly TableDef[],
 	tableId: string,
-): GridTableDefinition | undefined {
+): TableDef | undefined {
 	return tables.find((t) => t.id === tableId);
 }
 
 /**
- * Create a Grid Workspace with optional HeadDoc support.
+ * Create a Dynamic Workspace with optional HeadDoc support.
  *
  * Returns a builder that allows adding extensions with typed context.
  *
  * @example Without HeadDoc (simple, GC enabled)
  * ```typescript
- * const client = createGridWorkspace({
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ *
+ * const client = createWorkspace({
  *   id: 'my-workspace',
  *   definition,
  * }).withExtensions({
@@ -68,6 +70,8 @@ function getTableById(
  *
  * @example With HeadDoc (time travel enabled, GC disabled)
  * ```typescript
+ * import { createWorkspace, createHeadDoc } from '@epicenter/hq/dynamic';
+ *
  * const headDoc = createHeadDoc({
  *   workspaceId: 'my-workspace',
  *   providers: { persistence },
@@ -75,7 +79,7 @@ function getTableById(
  *
  * await headDoc.whenSynced;
  *
- * const client = createGridWorkspace({
+ * const client = createWorkspace({
  *   id: 'my-workspace',
  *   definition,
  *   headDoc,
@@ -85,13 +89,11 @@ function getTableById(
  * });
  * ```
  */
-export function createGridWorkspace<
-	TTableDefs extends readonly GridTableDefinition[],
->(
-	options: CreateGridWorkspaceOptions & {
+export function createWorkspace<TTableDefs extends readonly TableDef[]>(
+	options: CreateWorkspaceOptions & {
 		definition: { tables: TTableDefs };
 	},
-): GridWorkspaceBuilder<TTableDefs> {
+): WorkspaceBuilder<TTableDefs> {
 	const { definition, headDoc, ydoc: existingYdoc, id: workspaceId } = options;
 
 	// Determine epoch based on HeadDoc presence
@@ -106,16 +108,16 @@ export function createGridWorkspace<
 	const icon = definition.icon ?? null;
 
 	// Cache table helpers to avoid recreation
-	const tableHelperCache = new Map<string, GridTableHelper>();
+	const tableHelperCache = new Map<string, TableHelper>();
 
 	// Initialize KV store
 	const kvArray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_ARRAY_NAME);
-	const kv = createGridKvStore(kvArray);
+	const kv = createKvStore(kvArray);
 
 	/**
 	 * Get or create a table helper.
 	 */
-	function table(tableId: string): GridTableHelper {
+	function table(tableId: string): TableHelper {
 		validateId(tableId, 'tableId');
 
 		let helper = tableHelperCache.get(tableId);
@@ -129,28 +131,27 @@ export function createGridWorkspace<
 				icon: null,
 				fields: [],
 			};
-			helper = createGridTableHelper(tableId, yarray, tableSchema);
+			helper = createTableHelper(tableId, yarray, tableSchema);
 			tableHelperCache.set(tableId, helper);
 		}
 		return helper;
 	}
 
 	return {
-		withExtensions<TExtensions extends GridExtensionFactoryMap<TTableDefs>>(
+		withExtensions<TExtensions extends ExtensionFactoryMap<TTableDefs>>(
 			extensionFactories: TExtensions,
-		): GridWorkspaceClient<TTableDefs, InferGridExtensionExports<TExtensions>> {
+		): WorkspaceClient<TTableDefs, InferExtensionExports<TExtensions>> {
 			// Initialize extensions with typed context
-			const extensions = {} as InferGridExtensionExports<TExtensions>;
+			const extensions = {} as InferExtensionExports<TExtensions>;
 
 			for (const [extensionId, factory] of Object.entries(extensionFactories)) {
-				const context: GridExtensionContext<TTableDefs> = {
+				const context: ExtensionContext<TTableDefs> = {
 					ydoc,
 					workspaceId,
 					epoch,
-					table: table as GridExtensionContext<TTableDefs>['table'],
+					table: table as ExtensionContext<TTableDefs>['table'],
 					kv,
-					definition:
-						definition as GridExtensionContext<TTableDefs>['definition'],
+					definition: definition as ExtensionContext<TTableDefs>['definition'],
 					extensionId,
 				};
 				(extensions as Record<string, unknown>)[extensionId] = defineExports(
@@ -163,9 +164,9 @@ export function createGridWorkspace<
 				Object.values(extensions).map((e) => (e as Lifecycle).whenSynced),
 			).then(() => {});
 
-			const client: GridWorkspaceClient<
+			const client: WorkspaceClient<
 				TTableDefs,
-				InferGridExtensionExports<TExtensions>
+				InferExtensionExports<TExtensions>
 			> = {
 				// Identity
 				id: workspaceId,
@@ -176,10 +177,10 @@ export function createGridWorkspace<
 				name,
 				description,
 				icon,
-				definition: definition as GridWorkspaceClient<TTableDefs>['definition'],
+				definition: definition as WorkspaceClient<TTableDefs>['definition'],
 
 				// Data access
-				table: table as GridWorkspaceClient<TTableDefs>['table'],
+				table: table as WorkspaceClient<TTableDefs>['table'],
 				kv,
 
 				// Extensions
@@ -190,9 +191,9 @@ export function createGridWorkspace<
 
 				batch<T>(
 					fn: (
-						ws: GridWorkspaceClient<
+						ws: WorkspaceClient<
 							TTableDefs,
-							InferGridExtensionExports<TExtensions>
+							InferExtensionExports<TExtensions>
 						>,
 					) => T,
 				): T {
@@ -219,7 +220,7 @@ export function createGridWorkspace<
 /**
  * Create a Y.Doc with appropriate GUID and GC settings based on HeadDoc presence.
  *
- * This is the shared logic used by both Grid and Static workspaces.
+ * This is the shared logic used by workspace factories.
  *
  * @param workspaceId - The workspace identifier
  * @param headDoc - Optional HeadDoc for epoch/time-travel support

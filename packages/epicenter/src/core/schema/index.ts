@@ -75,6 +75,7 @@ export type {
 	TextField,
 } from './fields/types.js';
 export { createIcon, isIcon, parseIcon } from './fields/types.js';
+export { getTableById, parseSchema } from './schema-file.js';
 export { standardSchemaToJsonSchema } from './standard/to-json-schema.js';
 export type {
 	StandardJSONSchemaV1,

@@ -23,12 +23,12 @@
  * });
  * ```
  *
- * To create a workspace client, use `createCellWorkspace` from `@epicenter/hq/cell`:
+ * To create a workspace client, use `createWorkspace` from `@epicenter/hq/dynamic`:
  *
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({ persistence });
@@ -37,7 +37,7 @@
  * ## Related Modules
  *
  * - {@link ../docs/workspace-doc.ts} - WorkspaceDoc type definition
- * - {@link ../../cell/index.ts} - Cell workspace API (createCellWorkspace)
+ * - {@link ../../dynamic/index.ts} - Dynamic workspace API (createWorkspace)
  *
  * @module
  */

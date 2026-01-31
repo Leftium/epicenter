@@ -2,12 +2,12 @@
  * Node.js entry point for workspace definition utilities.
  *
  * This module re-exports workspace definition helpers for Node.js environments.
- * For creating workspace clients, use `createCellWorkspace` from `@epicenter/hq/cell`.
+ * For creating workspace clients, use `createWorkspace` from `@epicenter/hq/dynamic`.
  *
  * @example
  * ```typescript
  * import { defineWorkspace, id, text, table } from '@epicenter/hq/node';
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
  * const definition = defineWorkspace({
  *   name: 'Blog',
@@ -17,8 +17,8 @@
  *   kv: [],
  * });
  *
- * // Use createCellWorkspace to create workspace clients
- * const workspace = createCellWorkspace({
+ * // Use createWorkspace to create workspace clients
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({ persistence });

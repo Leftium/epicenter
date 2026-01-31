@@ -27,9 +27,9 @@ type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
  *
  * @example
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({ ... });

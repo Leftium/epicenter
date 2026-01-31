@@ -1,15 +1,15 @@
 /**
- * Table Helper for Cell Workspace
+ * Dynamic Table Helper
  *
  * A unified helper for a single table with integrated validation.
- * Every entry is a cell value.
+ * Every entry is a cell value stored in a Y.Array.
  *
  * Y.Doc structure:
  * ```
- * Y.Array(tableId)              ← One array per table
- * ├── { key: 'row1:title',      val: 'Hello',  ts: ... }
- * ├── { key: 'row1:views',      val: 100,      ts: ... }
- * └── ...
+ * Y.Array(tableId)              <- One array per table
+ * +-- { key: 'row1:title',      val: 'Hello',  ts: ... }
+ * +-- { key: 'row1:views',      val: 100,      ts: ... }
+ * +-- ...
  * ```
  *
  * @packageDocumentation
@@ -18,9 +18,10 @@
 import { type TObject, type TProperties, type TSchema, Type } from 'typebox';
 import { Compile, type Validator } from 'typebox/compile';
 import type * as Y from 'yjs';
-import type { Field, TableDefinition } from '../core/schema/fields/types';
+import type { Field } from '../core/schema/fields/types';
 import {
 	YKeyValueLww,
+	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww';
 import {
@@ -33,14 +34,19 @@ import {
 	RowPrefix,
 	validateId,
 } from './keys';
-import type { CellValue, ChangeHandler, RowData, TableHelper } from './types';
 import type {
+	CellValue,
+	ChangeEvent,
+	ChangeHandler,
 	GetCellResult,
 	GetResult,
 	InvalidRowResult,
+	RowData,
 	RowResult,
+	TableDef,
+	TableHelper,
 	ValidationError,
-} from './validation-types';
+} from './types';
 
 /** Convert a Field to its TypeBox schema. */
 function fieldToTypebox(field: Field): TSchema {
@@ -68,8 +74,8 @@ function fieldToTypebox(field: Field): TSchema {
 	}
 }
 
-/** Convert a TableDefinition to a TypeBox object schema. */
-function tableToTypebox(table: TableDefinition<readonly Field[]>): TObject {
+/** Convert a TableDef to a TypeBox object schema. */
+function tableToTypebox(table: TableDef): TObject {
 	const properties: Record<string, TSchema> = {};
 	for (const field of table.fields) {
 		properties[field.id] = Type.Optional(fieldToTypebox(field));
@@ -82,12 +88,12 @@ function tableToTypebox(table: TableDefinition<readonly Field[]>): TObject {
  *
  * @param tableId - The table identifier (used for error messages)
  * @param yarray - The Y.Array for this table's data
- * @param schema - Schema for validation (use empty `{ name, fields: {} }` for dynamic tables)
+ * @param schema - Schema for validation
  */
 export function createTableHelper(
 	tableId: string,
 	yarray: Y.Array<YKeyValueLwwEntry<CellValue>>,
-	schema: TableDefinition<readonly Field[]>,
+	schema: TableDef,
 ): TableHelper {
 	const ykv = new YKeyValueLww<CellValue>(yarray);
 
@@ -113,7 +119,7 @@ export function createTableHelper(
 	}
 
 	// ══════════════════════════════════════════════════════════════════════
-	// Internal Raw Operations (used by validated methods)
+	// Internal Raw Operations
 	// ══════════════════════════════════════════════════════════════════════
 
 	function rawGet(rowId: string, fieldId: string): CellValue | undefined {
@@ -163,8 +169,11 @@ export function createTableHelper(
 		tableId,
 		schema,
 
-		// Cell operations (validated)
-		get(rowId: string, fieldId: string): GetCellResult<unknown> {
+		// ═══════════════════════════════════════════════════════════════
+		// CELL OPERATIONS
+		// ═══════════════════════════════════════════════════════════════
+
+		getCell(rowId: string, fieldId: string): GetCellResult<unknown> {
 			const key = `${rowId}:${fieldId}`;
 			const value = rawGet(rowId, fieldId);
 
@@ -193,21 +202,24 @@ export function createTableHelper(
 			return { status: 'invalid', key, errors, value };
 		},
 
-		set(rowId: string, fieldId: string, value: CellValue): void {
+		setCell(rowId: string, fieldId: string, value: CellValue): void {
 			validateId(rowId, 'rowId');
 			validateId(fieldId, 'fieldId');
 			ykv.set(CellKey(RowId(rowId), FieldId(fieldId)), value);
 		},
 
-		delete(rowId: string, fieldId: string): void {
+		deleteCell(rowId: string, fieldId: string): void {
 			ykv.delete(CellKey(RowId(rowId), FieldId(fieldId)));
 		},
 
-		has(rowId: string, fieldId: string): boolean {
+		hasCell(rowId: string, fieldId: string): boolean {
 			return ykv.has(CellKey(RowId(rowId), FieldId(fieldId)));
 		},
 
-		// Row operations (validated)
+		// ═══════════════════════════════════════════════════════════════
+		// ROW OPERATIONS
+		// ═══════════════════════════════════════════════════════════════
+
 		getRow(rowId: string): GetResult<RowData> {
 			const cells = rawGetRow(rowId);
 
@@ -231,12 +243,42 @@ export function createTableHelper(
 			};
 		},
 
-		createRow(id?: string): string {
+		createRow(
+			idOrOpts?: string | { id?: string; cells?: Record<string, CellValue> },
+		): string {
+			// Handle overloads
+			if (typeof idOrOpts === 'string' || idOrOpts === undefined) {
+				// Simple overload: createRow(rowId?)
+				const newId = idOrOpts ?? generateRowId();
+				if (idOrOpts) validateId(idOrOpts, 'rowId');
+				return newId;
+			}
+
+			// Options overload: createRow({ id?, cells? })
+			const { id, cells } = idOrOpts;
 			const newId = id ?? generateRowId();
 			if (id) validateId(id, 'rowId');
-			// Row is "created" implicitly when you set cells on it
-			// This just generates/validates the ID
+
+			// Set initial cells if provided
+			if (cells) {
+				for (const [fieldId, value] of Object.entries(cells)) {
+					this.setCell(newId, fieldId, value);
+				}
+			}
+
 			return newId;
+		},
+
+		setRow(rowId: string, cells: Record<string, CellValue>): void {
+			validateId(rowId, 'rowId');
+
+			// First, delete all existing cells for this row
+			this.deleteRow(rowId);
+
+			// Then set all new cells
+			for (const [fieldId, value] of Object.entries(cells)) {
+				this.setCell(rowId, fieldId, value);
+			}
 		},
 
 		deleteRow(rowId: string): void {
@@ -255,7 +297,10 @@ export function createTableHelper(
 			}
 		},
 
-		// Bulk operations (validated)
+		// ═══════════════════════════════════════════════════════════════
+		// BULK OPERATIONS
+		// ═══════════════════════════════════════════════════════════════
+
 		getAll(): RowResult<RowData>[] {
 			const rows = rawGetRows();
 			const results: RowResult<RowData>[] = [];
@@ -312,16 +357,16 @@ export function createTableHelper(
 			return Array.from(ids).sort();
 		},
 
-		// Observation
+		// ═══════════════════════════════════════════════════════════════
+		// OBSERVATION
+		// ═══════════════════════════════════════════════════════════════
+
 		observe(handler: ChangeHandler<CellValue>): () => void {
 			const ykvHandler = (
-				changes: Map<
-					string,
-					import('../core/utils/y-keyvalue-lww').YKeyValueLwwChange<CellValue>
-				>,
+				changes: Map<string, YKeyValueLwwChange<CellValue>>,
 				transaction: Y.Transaction,
 			) => {
-				const events: import('./types').ChangeEvent<CellValue>[] = [];
+				const events: ChangeEvent<CellValue>[] = [];
 
 				for (const [key, change] of changes) {
 					if (change.action === 'add') {

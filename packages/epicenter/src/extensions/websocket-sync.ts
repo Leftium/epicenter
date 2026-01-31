@@ -135,11 +135,11 @@ export type WebsocketSyncConfig = {
  *
  * @example Single extension (browser to local server)
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * // Browser connects to its own local Elysia server
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({
@@ -149,7 +149,7 @@ export type WebsocketSyncConfig = {
  *
  * @example Multi-extension (phone connecting to all nodes)
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * const SYNC_NODES = {
@@ -159,7 +159,7 @@ export type WebsocketSyncConfig = {
  * } as const;
  *
  * // Phone browser connects to ALL available sync nodes
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({
@@ -172,7 +172,7 @@ export type WebsocketSyncConfig = {
  *
  * @example Server-to-server sync (Elysia servers syncing with each other)
  * ```typescript
- * import { createCellWorkspace } from '@epicenter/hq/cell';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * // Desktop server connects to laptop and cloud as a CLIENT
@@ -181,7 +181,7 @@ export type WebsocketSyncConfig = {
  *   cloud: 'wss://sync.myapp.com/sync',
  * } as const;
  *
- * const workspace = createCellWorkspace({
+ * const workspace = createWorkspace({
  *   headDoc,
  *   definition: { name: 'Blog', tables: {...} },
  * }).withExtensions({

@@ -1,13 +1,124 @@
 # Consolidate Grid Implementation into Dynamic Namespace
 
 **Date**: 2026-01-30
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 **Related**: `specs/20260130T025939-grid-workspace-api.md`, `specs/20260127T150000-dynamic-workspace-architecture.md`
 
 ## Overview
 
 Replace the old Dynamic workspace implementation with Grid's implementation, using the `dynamic` namespace. This consolidates three overlapping systems (Cell, Grid, old Dynamic) into one canonical cell-level CRDT workspace API exported from `@epicenter/hq/dynamic`.
+
+**Key Design Decision**: Static and Dynamic are completely separate sub-path exports. They do NOT export from root `index.ts`. This means no namespace prefixes are needed - both use `createWorkspace`, `WorkspaceClient`, etc.
+
+## API Surface After Consolidation
+
+### Import Patterns
+
+```typescript
+// Dynamic workspace (cell-level CRDT, external schema)
+import { createWorkspace, WorkspaceClient } from '@epicenter/hq/dynamic';
+
+// Static workspace (row-level CRDT, arktype schema, migrations)
+import { createWorkspace, WorkspaceClient } from '@epicenter/hq/static';
+
+// Core utilities (shared, if needed)
+import { generateId, DateTimeString } from '@epicenter/hq';
+```
+
+### Dynamic Workspace Usage
+
+```typescript
+import {
+  // Factory
+  createWorkspace,
+
+  // Field helpers (all 11)
+  id, text, richtext, integer, real, boolean, date, select, tags, json, table,
+
+  // Icon utilities
+  createIcon, isIcon, parseIcon,
+
+  // Key utilities
+  CellKey, FieldId, RowId, RowPrefix,
+  generateRowId, parseCellKey, hasPrefix, validateId,
+
+  // HeadDoc (optional time travel)
+  createHeadDoc,
+
+  // Extension authoring
+  defineExports,
+
+  // Types
+  type WorkspaceClient,
+  type WorkspaceBuilder,
+  type TableHelper,
+  type ExtensionContext,
+  type KvStore,
+} from '@epicenter/hq/dynamic';
+
+const workspace = createWorkspace({
+  id: 'my-workspace',
+  definition: {
+    name: 'My Workspace',
+    tables: [
+      table({
+        id: 'posts',
+        name: 'Posts',
+        fields: [
+          id(),
+          text({ id: 'title' }),
+          richtext({ id: 'content' }),
+          date({ id: 'createdAt' }),
+          select({ id: 'status', options: ['draft', 'published'] as const }),
+          tags({ id: 'categories', options: ['tech', 'design'] as const }),
+        ],
+      }),
+    ],
+    kv: [],
+  },
+  headDoc, // Optional - enables time travel, disables GC
+}).withExtensions({
+  persistence,
+  sqlite,
+});
+
+// Access tables with validation
+const posts = workspace.table('posts');
+const result = posts.getRow('row123');
+if (result.status === 'valid') {
+  console.log(result.row.title);
+}
+```
+
+### Type Naming (No Prefixes)
+
+Since imports come from distinct paths, no "Dynamic" or "Static" prefix is needed:
+
+| Current (Grid) | After Consolidation |
+|----------------|---------------------|
+| `createGridWorkspace` | `createWorkspace` |
+| `GridWorkspaceClient` | `WorkspaceClient` |
+| `GridWorkspaceBuilder` | `WorkspaceBuilder` |
+| `GridTableHelper` | `TableHelper` |
+| `GridExtensionContext` | `ExtensionContext` |
+| `GridKvStore` | `KvStore` |
+
+### Field Helpers Inventory
+
+All 11 field helpers available from `@epicenter/hq/dynamic`:
+
+1. **`id()`** - Primary key, always NOT NULL
+2. **`text({ id, nullable?, default? })`** - String field
+3. **`richtext({ id })`** - Y.Doc reference (always nullable, lazy creation)
+4. **`integer({ id, nullable?, default? })`** - Integer field
+5. **`real({ id, nullable?, default? })`** - Float field
+6. **`boolean({ id, nullable?, default? })`** - Boolean field
+7. **`date({ id, nullable?, default? })`** - Temporal.ZonedDateTime with timezone
+8. **`select({ id, options, nullable?, default? })`** - Single choice from tuple
+9. **`tags({ id, options?, nullable?, default? })`** - Array of strings
+10. **`json({ id, schema, nullable?, default? })`** - TypeBox-validated JSON
+11. **`table({ id, name, fields, description?, icon? })`** - Table definition
 
 ## Motivation
 
@@ -67,18 +178,18 @@ This creates problems:
 
 ### Desired State
 
-One canonical implementation in `@epicenter/hq/dynamic`:
+One canonical implementation in `@epicenter/hq/dynamic` with clean naming:
 
 ```typescript
-import { createDynamicWorkspace } from '@epicenter/hq/dynamic';
+import { createWorkspace } from '@epicenter/hq/dynamic';
 
-const client = createDynamicWorkspace({
-	id: 'my-workspace',
-	definition,
-	headDoc, // Optional
+const client = createWorkspace({
+  id: 'my-workspace',
+  definition,
+  headDoc, // Optional
 }).withExtensions({
-	persistence,
-	sqlite,
+  persistence,
+  sqlite,
 });
 ```
 
@@ -113,16 +224,16 @@ The name "dynamic" refers to the cell-level granularity (vs Static's row-level),
 ```typescript
 // From cell/index.ts - utilities that should move to dynamic
 export {
-	schemaFieldToTypebox,
-	schemaTableToTypebox,
+  schemaFieldToTypebox,
+  schemaTableToTypebox,
 } from './converters/to-typebox';
 export { getTableById, parseSchema } from './schema-file';
 export type {
-	CellResult,
-	GetCellResult,
-	NotFoundCellResult,
-	ValidCellResult,
-	InvalidCellResult,
+  CellResult,
+  GetCellResult,
+  NotFoundCellResult,
+  ValidCellResult,
+  InvalidCellResult,
 } from './validation-types';
 ```
 
@@ -131,8 +242,8 @@ export type {
 ```typescript
 // grid/grid-table-helper.ts line 22-24
 import {
-	schemaFieldToTypebox,
-	schemaTableToTypebox,
+  schemaFieldToTypebox,
+  schemaTableToTypebox,
 } from '../cell/converters/to-typebox';
 ```
 
@@ -151,18 +262,20 @@ import {
 
 ## Design Decisions
 
-| Decision           | Choice                   | Rationale                                                        |
-| ------------------ | ------------------------ | ---------------------------------------------------------------- |
-| Namespace          | `dynamic`                | Already exists, avoids new import paths, contrasts with `static` |
-| Implementation     | Grid's                   | Cleaner API, no legacy baggage, better typing                    |
-| Factory name       | `createDynamicWorkspace` | Matches namespace, familiar pattern                              |
-| TypeBox converters | Move to core             | Used by both Grid and Cell; avoid circular deps                  |
-| Schema file utils  | Move to core             | General-purpose utilities                                        |
-| `getTypedRows()`   | Defer                    | Cell has it, Grid doesn't; add later if needed                   |
-| Cell folder        | Delete                   | All functionality moves to dynamic or core                       |
-| Grid folder        | Delete                   | All functionality moves to dynamic                               |
-| Old Dynamic        | Delete                   | Superseded design, no external users                             |
-| Main export        | Re-export from dynamic   | `createDynamicWorkspace` from root `index.ts`                    |
+| Decision                 | Choice                          | Rationale                                                        |
+| ------------------------ | ------------------------------- | ---------------------------------------------------------------- |
+| Namespace                | `dynamic`                       | Already exists, avoids new import paths, contrasts with `static` |
+| Implementation           | Grid's                          | Cleaner API, no legacy baggage, better typing                    |
+| Factory name             | `createWorkspace`               | No prefix needed - import path provides context                  |
+| Type names               | `WorkspaceClient`, etc.         | No prefix needed - import path provides context                  |
+| Root index.ts            | Does NOT export dynamic/static  | Separate sub-paths, no collisions                                |
+| TypeBox converters       | Move to core                    | Used by both Grid and Cell; avoid circular deps                  |
+| Schema file utils        | Move to core                    | General-purpose utilities                                        |
+| `getTypedRows()`         | Defer                           | Cell has it, Grid doesn't; add later if needed                   |
+| Cell folder              | Delete                          | All functionality moves to dynamic or core                       |
+| Grid folder              | Delete                          | All functionality moves to dynamic                               |
+| Old Dynamic              | Delete                          | Superseded design, no external users                             |
+| Backwards compatibility  | Clean break                     | No type aliases, no re-exports from old paths                    |
 
 ## Architecture
 
@@ -184,8 +297,8 @@ packages/epicenter/src/
 │   └── ...
 │
 ├── grid/                           # TO MERGE INTO DYNAMIC
-│   ├── create-grid-workspace.ts    # → Rename to create-dynamic-workspace.ts
-│   ├── grid-table-helper.ts        # → Rename to dynamic-table-helper.ts
+│   ├── create-grid-workspace.ts    # → Rename to create-workspace.ts
+│   ├── grid-table-helper.ts        # → Rename to table-helper.ts
 │   ├── extensions.ts               # → Keep, rename types
 │   └── ...
 │
@@ -206,11 +319,14 @@ packages/epicenter/src/
 │   │   └── schema-file.ts          # ← from cell/schema-file.ts
 │   └── ...
 │
+├── static/                         # (unchanged, separate sub-path)
+│   └── index.ts                    # Exports createWorkspace, WorkspaceClient, etc.
+│
 ├── dynamic/                        # REPLACED with Grid implementation
-│   ├── index.ts                    # Public exports
-│   ├── types.ts                    # Type definitions
-│   ├── create-dynamic-workspace.ts # ← from grid/create-grid-workspace.ts
-│   ├── dynamic-table-helper.ts     # ← from grid/grid-table-helper.ts
+│   ├── index.ts                    # Exports createWorkspace, WorkspaceClient, etc.
+│   ├── types.ts                    # Type definitions (no Grid prefix)
+│   ├── create-workspace.ts         # ← from grid/create-grid-workspace.ts
+│   ├── table-helper.ts             # ← from grid/grid-table-helper.ts
 │   ├── extensions.ts               # ← from grid/extensions.ts
 │   ├── validation-types.ts         # ← from cell/validation-types.ts
 │   ├── stores/
@@ -218,7 +334,23 @@ packages/epicenter/src/
 │   └── keys.ts                     # ← from grid/keys.ts
 │
 ├── cell/                           # DELETED
-└── grid/                           # DELETED
+├── grid/                           # DELETED
+│
+└── index.ts                        # Core utilities only (NOT static/dynamic)
+```
+
+### Package Exports Configuration
+
+Update `package.json` exports:
+
+```json
+{
+  "exports": {
+    ".": "./dist/index.js",
+    "./dynamic": "./dist/dynamic/index.js",
+    "./static": "./dist/static/index.js"
+  }
+}
 ```
 
 ## Implementation Plan
@@ -235,44 +367,52 @@ packages/epicenter/src/
 ### Phase 2: Replace Dynamic with Grid Implementation
 
 - [ ] **2.1** Delete all files in `dynamic/` (old implementation)
-- [ ] **2.2** Copy `grid/create-grid-workspace.ts` → `dynamic/create-dynamic-workspace.ts`
-- [ ] **2.3** Copy `grid/grid-table-helper.ts` → `dynamic/dynamic-table-helper.ts`
+- [ ] **2.2** Copy `grid/create-grid-workspace.ts` → `dynamic/create-workspace.ts`
+- [ ] **2.3** Copy `grid/grid-table-helper.ts` → `dynamic/table-helper.ts`
 - [ ] **2.4** Copy `grid/extensions.ts` → `dynamic/extensions.ts`
 - [ ] **2.5** Copy `grid/types.ts` → `dynamic/types.ts`
 - [ ] **2.6** Copy `grid/keys.ts` → `dynamic/keys.ts`
 - [ ] **2.7** Copy `grid/stores/kv-store.ts` → `dynamic/stores/kv-store.ts`
 - [ ] **2.8** Copy `cell/validation-types.ts` → `dynamic/validation-types.ts`
 
-### Phase 3: Rename and Update References
+### Phase 3: Rename - Remove Prefixes
 
-- [ ] **3.1** In `dynamic/create-dynamic-workspace.ts`:
-  - Rename `createGridWorkspace` → `createDynamicWorkspace`
-  - Rename `GridWorkspaceBuilder` → `DynamicWorkspaceBuilder`
-  - Rename `GridWorkspaceClient` → `DynamicWorkspaceClient`
+- [ ] **3.1** In `dynamic/create-workspace.ts`:
+  - Rename `createGridWorkspace` → `createWorkspace`
+  - Rename `GridWorkspaceBuilder` → `WorkspaceBuilder`
+  - Rename `GridWorkspaceClient` → `WorkspaceClient`
   - Update internal imports to use `./` paths
-- [ ] **3.2** In `dynamic/dynamic-table-helper.ts`:
-  - Rename `createGridTableHelper` → `createDynamicTableHelper`
-  - Rename `GridTableHelper` → `DynamicTableHelper`
+- [ ] **3.2** In `dynamic/table-helper.ts`:
+  - Rename `createGridTableHelper` → `createTableHelper`
+  - Rename `GridTableHelper` → `TableHelper`
   - Update imports to use `../core/schema/converters/to-typebox`
 - [ ] **3.3** In `dynamic/extensions.ts`:
-  - Rename all `Grid*` types to `Dynamic*`
+  - Rename `GridExtensionContext` → `ExtensionContext`
+  - Rename `GridExtensionFactory` → `ExtensionFactory`
+  - Rename all `Grid*` types to remove prefix
 - [ ] **3.4** In `dynamic/types.ts`:
-  - Rename all `Grid*` types to `Dynamic*`
-- [ ] **3.5** Create new `dynamic/index.ts` with all exports
+  - Rename all `Grid*` types to remove prefix
+- [ ] **3.5** In `dynamic/stores/kv-store.ts`:
+  - Rename `GridKvStore` → `KvStore`
+  - Rename `createGridKvStore` → `createKvStore`
+- [ ] **3.6** Create new `dynamic/index.ts` with all exports (no prefixes)
 
-### Phase 4: Update Main Package Exports
+### Phase 4: Update Root Package Exports
 
 - [ ] **4.1** Update `src/index.ts`:
   - Remove Cell re-exports
-  - Add Dynamic re-exports (`createDynamicWorkspace`, types)
-  - Keep deprecation notices temporarily
-- [ ] **4.2** Update `package.json` exports map if needed
+  - Remove Grid re-exports
+  - Do NOT add Dynamic exports (separate sub-path)
+  - Keep core utilities only
+- [ ] **4.2** Update `package.json` exports map for sub-paths
 
 ### Phase 5: Update Dependents
 
 - [ ] **5.1** Search for all `@epicenter/hq/cell` imports in the codebase
-- [ ] **5.2** Update extension documentation (`persistence`, `sqlite`, `websocket-sync`)
-- [ ] **5.3** Update test files to use new imports
+- [ ] **5.2** Search for all `@epicenter/hq/grid` imports in the codebase
+- [ ] **5.3** Update extension documentation (`persistence`, `sqlite`, `websocket-sync`)
+- [ ] **5.4** Update test files to use new imports
+- [ ] **5.5** Update JSDoc examples throughout
 
 ### Phase 6: Delete Old Code
 
@@ -286,14 +426,15 @@ packages/epicenter/src/
 - [ ] **7.1** Ensure all tests pass
 - [ ] **7.2** Ensure type checking passes
 - [ ] **7.3** Update package README if needed
-- [ ] **7.4** Mark spec as Implemented
+- [ ] **7.4** Update any JSDoc that references old names
+- [ ] **7.5** Mark spec as Implemented
 
 ## Edge Cases
 
 ### Extension Documentation References Cell
 
 1. All extension JSDoc examples reference `createCellWorkspace`
-2. During migration, update these to `createDynamicWorkspace`
+2. During migration, update these to `createWorkspace` (from `@epicenter/hq/dynamic`)
 3. Search pattern: `createCellWorkspace` in `src/extensions/`
 
 ### Grid Imports from Cell
@@ -308,17 +449,18 @@ packages/epicenter/src/
 2. After Phase 5, tests should be renamed and updated
 3. Consider keeping test coverage, just updating imports
 
-### Main Index Re-exports Cell Types
+### Main Index Should NOT Export Dynamic/Static
 
-1. `src/index.ts` exports `CellWorkspaceClient`, `CellExtensionContext`, etc.
-2. These become `DynamicWorkspaceClient`, `DynamicExtensionContext`, etc.
-3. Could add type aliases for backwards compatibility (decision point)
+1. `src/index.ts` currently exports `CellWorkspaceClient`, etc.
+2. After migration, root index exports ONLY core utilities
+3. Dynamic types come from `@epicenter/hq/dynamic`
+4. Static types come from `@epicenter/hq/static`
 
 ## Open Questions
 
 1. **Should we add backwards-compatible type aliases?**
-   - Options: (a) Add aliases like `type CellWorkspaceClient = DynamicWorkspaceClient`, (b) Clean break
-   - **Recommendation**: Clean break. No external consumers yet; internal migration is manageable.
+   - Options: (a) Add aliases like `type CellWorkspaceClient = WorkspaceClient`, (b) Clean break
+   - **Decision**: Clean break. No external consumers yet; internal migration is manageable.
 
 2. **Should `getTypedRows()` be added to Dynamic?**
    - Cell has this method on the client; Grid doesn't
@@ -332,18 +474,21 @@ packages/epicenter/src/
 4. **Should `createWorkspaceYDoc` be exported from dynamic or core?**
    - Grid exports it from `grid/index.ts`
    - It's a general utility that could benefit Static too
-   - **Recommendation**: Export from both dynamic and core for discoverability.
+   - **Recommendation**: Export from dynamic. Core shouldn't know about workspace-specific Y.Doc setup.
 
 ## Success Criteria
 
-- [ ] `createDynamicWorkspace` works identically to current `createGridWorkspace`
-- [ ] All existing Grid tests pass with renamed imports
-- [ ] No `cell/` or `grid/` directories remain
-- [ ] `@epicenter/hq/dynamic` exports all necessary types and utilities
-- [ ] Extension examples work with `createDynamicWorkspace`
-- [ ] TypeScript type checking passes
-- [ ] Full test suite passes
-- [ ] No runtime regressions in workspace functionality
+- [x] `createWorkspace` from `@epicenter/hq/dynamic` works identically to current `createGridWorkspace`
+- [x] `createWorkspace` from `@epicenter/hq/static` unchanged
+- [x] All existing Grid tests pass with renamed imports
+- [x] No `cell/` or `grid/` directories remain
+- [x] `@epicenter/hq/dynamic` exports all necessary types and utilities
+- [x] `@epicenter/hq` does NOT export dynamic/static workspace APIs
+- [x] Extension examples work with `createWorkspace` from dynamic
+- [x] TypeScript type checking passes (pre-existing issues in scripts/tests unrelated to this change)
+- [x] Full test suite passes (509 tests pass)
+- [x] No runtime regressions in workspace functionality
+- [x] All JSDoc updated to reflect new naming
 
 ## References
 

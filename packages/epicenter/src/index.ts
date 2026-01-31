@@ -175,32 +175,12 @@ export {
 export type { WorkspaceDefinition } from './core/workspace/workspace';
 export { defineWorkspace } from './core/workspace/workspace';
 
-// ════════════════════════════════════════════════════════════════════════════
-// Cell API (preferred for new projects)
-// ════════════════════════════════════════════════════════════════════════════
+// Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
+// Import from sub-paths:
+//   import { createWorkspace } from '@epicenter/hq/dynamic';  // Cell-level CRDT
+//   import { createWorkspace } from '@epicenter/hq/static';   // Row-level CRDT
 //
-// The Cell API is the recommended approach for new projects:
-// - Cell-level LWW CRDT (better concurrent editing than row-level)
-// - HeadDoc integration for epoch/time-travel support
-// - Builder pattern with typed extensions
-//
-// Import from '@epicenter/hq/cell' for full Cell API, or use these re-exports.
-
-export type {
-	CellExtensionContext,
-	CellExtensionFactory,
-	CellExtensionFactoryMap,
-	CellWorkspaceBuilder,
-	CellWorkspaceClient,
-	CreateCellWorkspaceWithHeadDocOptions,
-	InferCellExtensionExports,
-	SchemaFieldDefinition as CellFieldDefinition,
-	SchemaTableDefinition as CellTableDefinition,
-	WorkspaceDefinition as CellWorkspaceDefinition,
-} from './cell';
-export { createCellWorkspace } from './cell';
-
-// Note: Extensions (markdown, sqlite) are NOT re-exported here to avoid bundling
-// Node.js-only code in browser builds. Import them directly from subpaths:
-//   import { markdown } from '@epicenter/hq/extensions/markdown';
+// Extensions are also NOT re-exported here to avoid bundling Node.js-only code
+// in browser builds. Import them directly from subpaths:
+//   import { persistence } from '@epicenter/hq/extensions/persistence';
 //   import { sqlite } from '@epicenter/hq/extensions/sqlite';

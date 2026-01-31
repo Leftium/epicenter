@@ -1,88 +1,110 @@
 /**
- * Dynamic Workspace API for Epicenter
+ * Dynamic Workspace - Cell-Level CRDT API
  *
- * A runtime-editable, Notion-like database system with cell-level CRDT granularity.
- * Complements the Static Workspace API for use cases where schemas need to be
- * editable at runtime.
+ * A unified workspace implementation with:
+ * - Cell-level CRDT storage (one Y.Array per table)
+ * - External schema with validation (definition passed in)
+ * - Optional HeadDoc for time travel and epochs
+ * - Builder pattern for type-safe extension setup
  *
- * @example
- * ```typescript
- * import { createDynamicWorkspace } from 'epicenter/dynamic';
- *
- * // Create workspace
- * const workspace = createDynamicWorkspace({ id: 'my-workspace' });
- *
- * // Create a table
- * workspace.tables.create('posts', { name: 'Blog Posts', icon: '📝' });
- *
- * // Add fields (order is auto-assigned if not specified)
- * workspace.fields.create('posts', 'title', { name: 'Title', type: 'text' });
- * workspace.fields.create('posts', 'published', { name: 'Published', type: 'boolean' });
- *
- * // Add a row (returns the generated rowId)
- * const rowId = workspace.rows.create('posts');
- *
- * // Set cell values
- * workspace.cells.set('posts', rowId, 'title', 'Hello World');
- * workspace.cells.set('posts', rowId, 'published', false);
- *
- * // Read table with all fields
- * const table = workspace.getTableWithFields('posts');
- *
- * // Read rows with cells
- * const rows = workspace.getRowsWithCells('posts');
- *
- * // Cleanup
- * await workspace.destroy();
+ * Y.Doc structure:
+ * ```
+ * Y.Doc
+ * +-- Y.Array('posts')    <- Table data (cells)
+ * +-- Y.Array('users')    <- Another table
+ * +-- Y.Array('kv')       <- Workspace-level key-values
  * ```
  *
  * @packageDocumentation
  */
 
-// ════════════════════════════════════════════════════════════════════════════
+// HeadDoc (re-exported from core for convenience)
+export { createHeadDoc, type HeadDoc } from '../core/docs/head-doc';
+
+// Lifecycle utilities (re-exported for extension authors)
+export {
+	defineExports,
+	type Lifecycle,
+	type MaybePromise,
+} from '../core/lifecycle';
+
+// Core field factories for programmatic schema creation
+export {
+	boolean,
+	date,
+	id,
+	integer,
+	json,
+	real,
+	richtext,
+	select,
+	table,
+	tags,
+	text,
+} from '../core/schema/fields/factories';
+
+// Icon type and utilities from Core
+export type { Icon, IconType } from '../core/schema/fields/types';
+export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
+
 // Factory
-// ════════════════════════════════════════════════════════════════════════════
+export { createWorkspace, createWorkspaceYDoc } from './create-workspace';
 
-export { createDynamicWorkspace } from './create-dynamic-workspace.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Types
-// ════════════════════════════════════════════════════════════════════════════
-
+// Extension types
 export type {
-	// Store interfaces
-	CellsStore,
-	// Schema types
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+	WorkspaceBuilder,
+} from './extensions';
+
+// Table helper factory (for advanced use)
+export { createTableHelper } from './table-helper';
+
+// Key utilities
+export {
+	CellKey,
+	FieldId,
+	generateRowId,
+	hasPrefix,
+	type ParsedCellKey,
+	parseCellKey,
+	RowId,
+	RowPrefix,
+	validateId,
+} from './keys';
+
+// KV store
+export { createKvStore, KV_ARRAY_NAME } from './stores/kv-store';
+
+// Types
+export type {
+	// Data types
 	CellValue,
-	// Change events
 	ChangeEvent,
 	ChangeHandler,
-	// Client types
-	CreateDynamicWorkspaceOptions,
-	DynamicWorkspaceClient,
+	CreateWorkspaceOptions,
 	FieldDefinition,
-	FieldsStore,
 	FieldType,
-	RowMeta,
-	RowsStore,
-	// Helper types
-	RowWithCells,
-	TableDefinition,
-	TablesStore,
-	TableWithFields,
-} from './types.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Key Utilities (for advanced use cases)
-// ════════════════════════════════════════════════════════════════════════════
-
-export {
-	cellKey,
-	fieldKey,
-	generateRowId,
-	parseCellKey,
-	parseFieldKey,
-	parseRowKey,
-	rowKey,
-	validateId,
-} from './keys.js';
+	GetCellResult,
+	GetResult,
+	HeadDocInterface,
+	InvalidCellResult,
+	InvalidRowResult,
+	KvDefinition,
+	KvStore,
+	NotFoundCellResult,
+	NotFoundRowResult,
+	RowData,
+	RowResult,
+	TableDef,
+	TableHelper,
+	TypedCell,
+	TypedRowWithCells,
+	ValidationError,
+	ValidCellResult,
+	ValidRowResult,
+	WorkspaceClient,
+	WorkspaceDef,
+} from './types';

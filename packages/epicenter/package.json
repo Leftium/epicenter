@@ -5,7 +5,7 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./cell": "./src/cell/index.ts",
+		"./dynamic": "./src/dynamic/index.ts",
 		"./static": "./src/static/index.ts",
 		"./node": "./src/core/workspace/node.ts",
 		"./extensions/persistence": {

@@ -316,57 +316,65 @@ export class YKeyValue<T> {
 				});
 
 			const keysToRemove = new Set<string>();
-			const allEntries = yarray.toArray();
 
-			this.doc.transact(() => {
-				for (
-					let i = allEntries.length - 1;
-					i >= 0 && (addedEntriesByKey.size > 0 || keysToRemove.size > 0);
-					i--
-				) {
-					const currentEntry = allEntries[i]!;
+			// Guard: skip the O(n) toArray() call if nothing was added.
+			// This helps delete-only operations, but unlike the LWW version, we still need
+			// toArray() for inserts because this algorithm iterates the array by index to
+			// find and remove duplicates. The LWW version can skip toArray() for new keys
+			// because it only needs indexOf() for conflict resolution.
+			if (addedEntriesByKey.size > 0) {
+				const allEntries = yarray.toArray();
 
-					if (keysToRemove.has(currentEntry.key)) {
-						keysToRemove.delete(currentEntry.key);
-						yarray.delete(i, 1);
-					} else if (addedEntriesByKey.get(currentEntry.key) === currentEntry) {
-						const previousEntry = this.map.get(currentEntry.key);
-						if (previousEntry) {
-							keysToRemove.add(currentEntry.key);
-							changes.set(currentEntry.key, {
-								action: 'update',
-								oldValue: previousEntry.val,
-								newValue: currentEntry.val,
-							});
-						} else {
-							const deleteEvent = changes.get(currentEntry.key);
-							if (deleteEvent && deleteEvent.action === 'delete') {
+				this.doc.transact(() => {
+					for (
+						let i = allEntries.length - 1;
+						i >= 0 && (addedEntriesByKey.size > 0 || keysToRemove.size > 0);
+						i--
+					) {
+						const currentEntry = allEntries[i]!;
+
+						if (keysToRemove.has(currentEntry.key)) {
+							keysToRemove.delete(currentEntry.key);
+							yarray.delete(i, 1);
+						} else if (addedEntriesByKey.get(currentEntry.key) === currentEntry) {
+							const previousEntry = this.map.get(currentEntry.key);
+							if (previousEntry) {
+								keysToRemove.add(currentEntry.key);
 								changes.set(currentEntry.key, {
 									action: 'update',
+									oldValue: previousEntry.val,
 									newValue: currentEntry.val,
-									oldValue: deleteEvent.oldValue,
 								});
 							} else {
-								changes.set(currentEntry.key, {
-									action: 'add',
-									newValue: currentEntry.val,
-								});
+								const deleteEvent = changes.get(currentEntry.key);
+								if (deleteEvent && deleteEvent.action === 'delete') {
+									changes.set(currentEntry.key, {
+										action: 'update',
+										newValue: currentEntry.val,
+										oldValue: deleteEvent.oldValue,
+									});
+								} else {
+									changes.set(currentEntry.key, {
+										action: 'add',
+										newValue: currentEntry.val,
+									});
+								}
 							}
-						}
-						addedEntriesByKey.delete(currentEntry.key);
-						this.map.set(currentEntry.key, currentEntry);
+							addedEntriesByKey.delete(currentEntry.key);
+							this.map.set(currentEntry.key, currentEntry);
 
-						// Clear from pending once processed.
-						// Use reference equality to only clear if it's the exact entry we added.
-						if (this.pending.get(currentEntry.key) === currentEntry) {
-							this.pending.delete(currentEntry.key);
+							// Clear from pending once processed.
+							// Use reference equality to only clear if it's the exact entry we added.
+							if (this.pending.get(currentEntry.key) === currentEntry) {
+								this.pending.delete(currentEntry.key);
+							}
+						} else if (addedEntriesByKey.has(currentEntry.key)) {
+							keysToRemove.add(currentEntry.key);
+							addedEntriesByKey.delete(currentEntry.key);
 						}
-					} else if (addedEntriesByKey.has(currentEntry.key)) {
-						keysToRemove.add(currentEntry.key);
-						addedEntriesByKey.delete(currentEntry.key);
 					}
-				}
-			});
+				});
+			}
 
 			if (changes.size > 0) {
 				for (const handler of this.changeHandlers) {

@@ -16,9 +16,9 @@
  * @packageDocumentation
  */
 
-import type { WorkspaceDefinition } from '../../dynamic/workspace/workspace';
 import type { Field, Icon, TableDefinition } from './fields/types';
 import { isIcon } from './fields/types';
+import type { WorkspaceDefinition } from './workspace-definition';
 
 /**
  * Get a table by its ID from an array of tables.

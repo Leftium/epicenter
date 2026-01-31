@@ -83,3 +83,5 @@ export type {
 	StandardSchemaWithJSONSchema,
 	StandardTypedV1,
 } from './standard/types.js';
+export type { WorkspaceDefinition } from './workspace-definition.js';
+export { defineWorkspace } from './workspace-definition.js';

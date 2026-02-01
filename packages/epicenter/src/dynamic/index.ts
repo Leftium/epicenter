@@ -76,18 +76,6 @@ export {
 // TABLES & KV
 // ════════════════════════════════════════════════════════════════════════════
 
-// Key utilities
-export {
-	CellKey,
-	FieldId,
-	hasPrefix,
-	type ParsedCellKey,
-	parseCellKey,
-	RowId,
-	RowPrefix,
-	validateId,
-} from './keys';
-
 // KV store (YKeyValueLww-based)
 export { createKvHelper, type KvHelper } from './kv/kv-helper';
 

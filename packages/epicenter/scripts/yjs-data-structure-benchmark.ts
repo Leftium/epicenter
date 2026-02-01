@@ -65,8 +65,6 @@ type PlainRow = {
 	active: boolean;
 };
 
-const COLUMNS = ['id', 'name', 'age', 'email', 'active'] as const;
-
 function createPlainRow(id: string, suffix = ''): PlainRow {
 	return {
 		id,
@@ -77,7 +75,7 @@ function createPlainRow(id: string, suffix = ''): PlainRow {
 	};
 }
 
-function createYMapRow(doc: Y.Doc, id: string, suffix = ''): Y.Map<unknown> {
+function createYMapRow(_doc: Y.Doc, id: string, suffix = ''): Y.Map<unknown> {
 	const row = new Y.Map<unknown>();
 	row.set('id', id);
 	row.set('name', `User ${id}${suffix}`);

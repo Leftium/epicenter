@@ -9,7 +9,7 @@
  */
 
 import { type Static, Type } from 'typebox';
-import { Compile, type TCompileReturn } from 'typebox/compile';
+import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 
 // ─────────────────────────────────────────────────────────────────────────────

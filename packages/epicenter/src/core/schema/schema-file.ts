@@ -16,7 +16,7 @@
  * @packageDocumentation
  */
 
-import type { Field, TableDefinition } from './fields/types';
+import type { TableDefinition } from './fields/types';
 
 /**
  * Get a table by its ID from an array of tables.
@@ -26,8 +26,8 @@ import type { Field, TableDefinition } from './fields/types';
  * @returns The table definition if found, undefined otherwise
  */
 export function getTableById(
-	tables: readonly TableDefinition<readonly Field[]>[],
+	tables: readonly TableDefinition[],
 	tableId: string,
-): TableDefinition<readonly Field[]> | undefined {
+) {
 	return tables.find((t) => t.id === tableId);
 }

@@ -4,6 +4,8 @@
 
 > When you delete from Y.Array, Yjs keeps just enough metadata to know something was deleted. The actual data gets garbage collected.
 
+> **Important**: This only applies when garbage collection is enabled (`gc: true`, the default). With `gc: false`, tombstones cannot be merged and will consume ~40 bytes each. See [YKeyValue vs Y.Map: Why One Setting Inverts Everything](./ykeyvalue-vs-ymap-decision-guide.md) for the full comparison.
+
 Run this stress test with vanilla Yjs:
 
 ```typescript

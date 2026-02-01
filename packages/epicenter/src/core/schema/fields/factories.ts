@@ -170,7 +170,10 @@ type FieldMetadataOptions = {
  * });
  * ```
  */
-export function table<const TFields extends readonly Field[]>({
+export function table<
+	const TId extends string,
+	const TFields extends readonly Field[],
+>({
 	id,
 	name,
 	fields,
@@ -178,7 +181,7 @@ export function table<const TFields extends readonly Field[]>({
 	icon = null,
 }: {
 	/** Unique identifier for this table. Used as storage key. */
-	id: string;
+	id: TId;
 	/** Display name shown in UI. Required for tables. */
 	name: string;
 	/** Field definitions for this table. */
@@ -187,7 +190,7 @@ export function table<const TFields extends readonly Field[]>({
 	description?: string;
 	/** Icon for UI. Accepts tagged or plain emoji. Defaults to null. */
 	icon?: string | Icon | null;
-}): TableDefinition<TFields> {
+}): TableDefinition<TId, TFields> {
 	return {
 		id,
 		name,

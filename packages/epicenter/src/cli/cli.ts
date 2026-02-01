@@ -1,17 +1,18 @@
 import yargs from 'yargs';
 import type { Actions } from '../core/actions';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
+import type { WorkspaceClient } from '../dynamic/workspace/types';
 import { createServer, DEFAULT_PORT } from '../server/server';
 import { buildActionCommands } from './command-builder';
 
-type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
+// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
+type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
 
 type CLIOptions = {
 	actions?: Actions;
 };
 
 export function createCLI(
-	clients: AnyWorkspaceDoc | AnyWorkspaceDoc[],
+	clients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: CLIOptions,
 ) {
 	const clientArray = Array.isArray(clients) ? clients : [clients];

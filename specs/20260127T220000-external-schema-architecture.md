@@ -39,13 +39,13 @@ Each table gets its own top-level Y.Array via `ydoc.getArray(tableId)`. This avo
 
 ```
 Y.Doc
-├── Y.Array('posts')    ← Table data (cells only)
+├── Y.Array('table:posts')  ← Table data (cells only), prefixed to avoid collisions
 │   ├── { key: 'row1:title', val: 'Hello', ts: ... }
 │   ├── { key: 'row1:views', val: 100, ts: ... }
 │   └── ...
-├── Y.Array('users')    ← Another table
+├── Y.Array('table:users')  ← Another table
 │   └── ...
-└── Y.Array('kv')       ← Workspace-level key-values
+└── Y.Array('kv')           ← Workspace-level key-values
     └── { key: 'theme', val: 'dark', ts: ... }
 ```
 

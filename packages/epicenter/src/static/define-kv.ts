@@ -82,10 +82,10 @@ export function defineKv<TSchema extends StandardSchemaV1>(
  * @example
  * ```typescript
  * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
+ *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+ *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' as const };
  *     return v;
  *   });
  * ```

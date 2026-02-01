@@ -48,13 +48,13 @@ Each table is stored as a Y.Array containing timestamped cell entries. The key e
 
 ```
 Y.Doc
-├── Y.Array("posts")
+├── Y.Array("table:posts")           ← prefixed to avoid collisions
 │   ├── { key: "row1:title",     val: "Hello World",  ts: 1706200000000 }
 │   ├── { key: "row1:views",     val: 100,            ts: 1706200000001 }
 │   ├── { key: "row1:published", val: true,           ts: 1706200000002 }
 │   ├── { key: "row2:title",     val: "Another Post", ts: 1706200001000 }
 │   └── ...
-├── Y.Array("users")
+├── Y.Array("table:users")
 │   └── ...
 └── Y.Array("kv")                    ← workspace-level settings
     ├── { key: "theme", val: "dark", ts: ... }

@@ -26,9 +26,7 @@ describe('defineTable', () => {
 			const schema = type({ id: 'string', title: 'string' });
 
 			const shorthand = defineTable(schema);
-			const builder = defineTable()
-				.version(schema)
-				.migrate((row) => row);
+			const builder = defineTable(schema);
 
 			// Both should validate the same data
 			const testRow = { id: '1', title: 'Test' };
@@ -42,9 +40,7 @@ describe('defineTable', () => {
 
 	describe('builder syntax', () => {
 		test('creates valid table definition with single version', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row);
+			const posts = defineTable(type({ id: 'string', title: 'string' }));
 
 			const result = posts.schema['~standard'].validate({
 				id: '1',

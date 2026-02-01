@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { KvField, TableDefinition } from '../../core/schema';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 
 /**
  * Configuration for the persistence extension.
@@ -26,25 +26,21 @@ export type PersistenceConfig = {
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  * import { join } from 'node:path';
- *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
- * });
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     persistence: (ctx) => persistence(ctx, {
- *       filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
- *     }),
- *   });
+ * const workspace = createWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   persistence: (ctx) => persistence(ctx, {
+ *     filePath: join(epicenterDir, 'persistence', `${ctx.workspaceId}.yjs`),
+ *   }),
+ * });
  * ```
  */
 export const persistence = <

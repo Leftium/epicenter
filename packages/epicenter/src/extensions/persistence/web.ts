@@ -1,10 +1,10 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
+import type { KvField, TableDefinition } from '../../core/schema';
 import {
 	defineExports,
 	type ExtensionContext,
 	type ExtensionFactory,
-} from '../../core/extension';
-import type { KvField, TableDefinition } from '../../core/schema';
+} from '../../dynamic/extension';
 
 /**
  * YJS document persistence extension using IndexedDB.
@@ -33,29 +33,26 @@ import type { KvField, TableDefinition } from '../../core/schema';
  *
  * @example Basic usage in a browser app
  * ```typescript
- * import { defineWorkspace, createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
- * const definition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
- * });
- *
  * // 'blog' becomes the IndexedDB database name
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({ persistence });
+ * const workspace = createWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({ persistence });
  * ```
  *
  * @example In a Svelte/React component
  * ```typescript
- * import { definition } from './workspace-config';
- * import { createClient } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // Inside component setup/onMount:
- * const client = createClient(definition.id, { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({ persistence });
+ * const workspace = createWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({ persistence });
  *
  * // Data persists across page refreshes!
  * // Check DevTools → Application → IndexedDB to see the database
@@ -63,26 +60,23 @@ import type { KvField, TableDefinition } from '../../core/schema';
  *
  * @example Multi-workspace setup
  * ```typescript
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { persistence } from '@epicenter/hq/extensions/persistence';
+ *
  * // Each workspace gets its own IndexedDB database
- * const blogDefinition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
- * });
- *
- * const notesDefinition = defineWorkspace({
- *   tables: { ... },
- *   kv: {},
- * });
- *
  * // 'blog' → IndexedDB database named 'blog'
- * const blogClient = createClient('blog', { epoch })
- *   .withDefinition(blogDefinition)
- *   .withExtensions({ persistence });
+ * const blogWorkspace = createWorkspace({
+ *   id: 'blog',
+ *   headDoc: blogHeadDoc,
+ *   definition: { name: 'Blog', tables: [...] },
+ * }).withExtensions({ persistence });
  *
  * // 'notes' → IndexedDB database named 'notes'
- * const notesClient = createClient('notes', { epoch })
- *   .withDefinition(notesDefinition)
- *   .withExtensions({ persistence });
+ * const notesWorkspace = createWorkspace({
+ *   id: 'notes',
+ *   headDoc: notesHeadDoc,
+ *   definition: { name: 'Notes', tables: [...] },
+ * }).withExtensions({ persistence });
  *
  * // Workspaces are isolated, each with separate IndexedDB storage
  * ```

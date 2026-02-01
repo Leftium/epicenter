@@ -1,9 +1,9 @@
-import { stat } from 'node:fs/promises';
 import { dirname, join, parse, resolve } from 'node:path';
-import type { WorkspaceDoc } from '../core/docs/workspace-doc';
 import type { ProjectDir } from '../core/types';
+import type { WorkspaceClient } from '../dynamic/workspace/types';
 
-type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
+// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
+type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
 
 export async function findProjectDir(
 	startDir: string = process.cwd(),
@@ -25,17 +25,12 @@ export async function findProjectDir(
 }
 
 async function fileExists(path: string): Promise<boolean> {
-	try {
-		const stats = await stat(path);
-		return stats.isFile();
-	} catch {
-		return false;
-	}
+	return Bun.file(path).exists();
 }
 
 export async function loadClients(
 	projectDir: ProjectDir,
-): Promise<AnyWorkspaceDoc[]> {
+): Promise<AnyWorkspaceClient[]> {
 	const configPath = join(projectDir, 'epicenter.config.ts');
 
 	if (!(await fileExists(configPath))) {
@@ -59,9 +54,9 @@ export async function loadClients(
 	}
 
 	for (const client of clients) {
-		if (!isWorkspaceDoc(client)) {
+		if (!isWorkspaceClient(client)) {
 			throw new Error(
-				`Invalid client in epicenter.config.ts. Expected WorkspaceDoc with workspaceId and contracts properties.`,
+				`Invalid client in epicenter.config.ts. Expected WorkspaceClient with workspaceId and tables properties.`,
 			);
 		}
 	}
@@ -69,7 +64,7 @@ export async function loadClients(
 	return clients;
 }
 
-function isWorkspaceDoc(value: unknown): value is AnyWorkspaceDoc {
+function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 	return (
 		typeof value === 'object' &&
 		value !== null &&

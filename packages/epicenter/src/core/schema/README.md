@@ -144,22 +144,18 @@ The codebase uses **Field** for raw type constraints and **Definition** for meta
 **Definition** = metadata + field(s):
 
 ```typescript
-// TableDefinition: name, icon, cover, description + fields (FieldMap)
+// TableDefinition: name, icon, description + fields array
 {
+  id: 'posts',
   name: 'Blog Posts',
-  icon: { type: 'emoji', value: '📝' },
-  cover: null,
+  icon: 'emoji:📝',
   description: 'All blog posts',
-  fields: { id: id(), title: text(), published: boolean() }
+  fields: [id(), text({ id: 'title' }), boolean({ id: 'published' })]
 }
 
-// KvDefinition: name, icon, description + field (single Field)
-{
-  name: 'Theme',
-  icon: { type: 'emoji', value: '🎨' },
-  description: 'Application color theme',
-  field: { type: 'select', options: ['light', 'dark'] }
-}
+// KvField: field with id used as key in KV store
+// (KvDefinition wrapper is deprecated)
+select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] })
 ```
 
 This distinction keeps the naming predictable: if you're working with raw type constraints, look for `Field`; if you need metadata, look for `Definition`.

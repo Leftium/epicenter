@@ -44,99 +44,43 @@ export {
 	isQuery,
 	iterateActions,
 } from './core/actions';
-// Y.Doc wrappers for collaborative workspace architecture
-export type {
-	DefinitionMap,
-	HeadDoc,
-	InferProviderExports,
-	KvYMap,
-	ProviderContext,
-	ProviderExports,
-	ProviderFactory,
-	ProviderFactoryMap,
-	WorkspaceDefinitionMap,
-	WorkspaceDoc,
-	WorkspaceMeta,
-} from './core/docs';
-export {
-	createHeadDoc,
-	createWorkspaceDoc,
-	WORKSPACE_DOC_MAPS,
-} from './core/docs';
-
 export type { ExtensionError } from './core/errors';
 // Error types
 export { ExtensionErr } from './core/errors';
-// Extension system (workspace-level plugins)
-export type {
-	ExtensionContext,
-	ExtensionExports,
-	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
-} from './core/extension';
-export { defineExports } from './core/extension';
-export type { Kv, KvHelper } from './core/kv/core';
-export { createKv } from './core/kv/core';
 // Lifecycle protocol (shared by providers and extensions)
 export type { Lifecycle, MaybePromise } from './core/lifecycle';
-export { LifecycleExports } from './core/lifecycle';
-// Rich content ID generation
-export type { RichContentId } from './core/rich-content/id';
-export { createRichContentId } from './core/rich-content/id';
 export type {
-	// New field type names (preferred)
+	// Field types
 	BooleanField,
-	// Legacy type aliases (deprecated, kept for backwards compatibility)
-	/** @deprecated Use `BooleanField` instead */
-	BooleanFieldSchema,
-	// Common types
 	CellValue,
 	DateField,
-	/** @deprecated Use `DateField` instead */
-	DateFieldSchema,
 	Field,
 	FieldById,
 	FieldIds,
 	FieldMetadata,
 	FieldOptions,
-	/** @deprecated Use `Field` instead. FieldSchema is now identical to Field. */
-	FieldSchema,
 	FieldType,
 	Guid,
 	Icon,
 	IconType,
 	Id,
 	IdField,
-	/** @deprecated Use `IdField` instead */
-	IdFieldSchema,
 	IntegerField,
-	/** @deprecated Use `IntegerField` instead */
-	IntegerFieldSchema,
 	JsonField,
-	/** @deprecated Use `JsonField` instead */
-	JsonFieldSchema,
 	// KV types
 	KvField,
+	KvFieldById,
+	KvFieldIds,
 	KvValue,
 	PartialRow,
 	RealField,
-	/** @deprecated Use `RealField` instead */
-	RealFieldSchema,
-	RichtextField,
-	/** @deprecated Use `RichtextField` instead */
-	RichtextFieldSchema,
 	Row,
 	SelectField,
-	/** @deprecated Use `SelectField` instead */
-	SelectFieldSchema,
+	TableById,
 	TableDefinition,
+	TableIds,
 	TagsField,
-	/** @deprecated Use `TagsField` instead */
-	TagsFieldSchema,
 	TextField,
-	/** @deprecated Use `TextField` instead */
-	TextFieldSchema,
 	// Date types
 	TimezoneId,
 } from './core/schema';
@@ -155,9 +99,9 @@ export {
 	isIcon,
 	isNullableField,
 	json,
+	normalizeIcon,
 	parseIcon,
 	real,
-	richtext,
 	select,
 	TIMEZONE_ID_REGEX,
 	table,
@@ -167,71 +111,67 @@ export {
 	text,
 	toSqlIdentifier,
 } from './core/schema';
-export type { TableHelper, Tables } from './core/tables/create-tables';
+// Core types
+export type { AbsolutePath, ProjectDir } from './core/types';
+// Extension system (workspace-level plugins)
+export type {
+	ExtensionContext,
+	ExtensionExports,
+	ExtensionFactory,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+} from './dynamic/extension';
+export { defineExports } from './dynamic/extension';
+// Y.Doc wrappers for collaborative workspace architecture
+// Y.Doc wrappers (flattened from dynamic/docs/)
+export { createHeadDoc, type HeadDoc } from './dynamic/head-doc';
+export type { Kv, KvHelper } from './dynamic/kv/core';
+export { createKv } from './dynamic/kv/core';
+export type {
+	InferProviderExports,
+	ProviderContext,
+	ProviderExports,
+	ProviderFactory,
+	ProviderFactoryMap,
+} from './dynamic/provider-types';
+export type { TableHelper, Tables } from './dynamic/tables/create-tables';
 // Table utilities
-export { createTables } from './core/tables/create-tables';
+export { createTables } from './dynamic/tables/create-tables';
 export type {
 	DeleteManyResult,
 	DeleteResult,
 	GetResult,
 	InvalidRowResult,
 	NotFoundResult,
-	RowAction,
-	RowChanges,
 	RowResult,
 	UpdateManyResult,
 	UpdateResult,
 	ValidRowResult,
-} from './core/tables/table-helper';
-// Core types
-export type { AbsolutePath, ProjectDir } from './core/types';
-// Workspace normalization helpers
-export {
-	DEFAULT_KV_ICON,
-	isKvDefinition,
-	isTableDefinition,
-	normalizeIcon,
-} from './core/workspace/normalize';
+} from './dynamic/tables/table-helper';
+// Workspace client types
 export type {
-	ClientBuilder,
-	/** @deprecated Use `WorkspaceDefinitionV2` with arrays instead */
-	WorkspaceDefinition,
-	WorkspaceDefinitionV2,
-} from './core/workspace/workspace';
+	WorkspaceClient,
+	WorkspaceClientBuilder,
+} from './dynamic/workspace/types';
+export type { WorkspaceDefinition } from './dynamic/workspace/workspace';
 export {
-	/** @deprecated Use `createCellWorkspace` from `@epicenter/hq/cell` instead */
-	createClient,
-	/** @deprecated Use `defineWorkspaceV2` or `createCellWorkspace` instead */
 	defineWorkspace,
-	defineWorkspaceV2,
-} from './core/workspace/workspace';
-
-// ════════════════════════════════════════════════════════════════════════════
-// Cell API (preferred for new projects)
-// ════════════════════════════════════════════════════════════════════════════
-//
-// The Cell API is the recommended approach for new projects:
-// - Cell-level LWW CRDT (better concurrent editing than row-level)
-// - HeadDoc integration for epoch/time-travel support
-// - Builder pattern with typed extensions
-//
-// Import from '@epicenter/hq/cell' for full Cell API, or use these re-exports.
-
+	validateWorkspaceDefinition,
+	WorkspaceDefinitionSchema,
+	WorkspaceDefinitionValidator,
+} from './dynamic/workspace/workspace';
 export type {
-	CellExtensionContext,
-	CellExtensionFactory,
-	CellExtensionFactoryMap,
-	CellWorkspaceBuilder,
-	CellWorkspaceClient,
-	CreateCellWorkspaceWithHeadDocOptions,
-	InferCellExtensionExports,
-	SchemaFieldDefinition as CellFieldDefinition,
-	SchemaTableDefinition as CellTableDefinition,
-	WorkspaceDefinition as CellWorkspaceDefinition,
-} from './cell';
-export { createCellWorkspace } from './cell';
+	KvYArray,
+	TablesYMap,
+	TableYMap,
+} from './dynamic/workspace-doc';
 
-// Note: Extensions (markdown, sqlite) are NOT re-exported here to avoid bundling
-// Node.js-only code in browser builds. Import them directly from subpaths:
-//   import { markdown } from '@epicenter/hq/extensions/markdown';
+// Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
+// Import from sub-paths:
+//   import { createTables } from '@epicenter/hq/dynamic';     // Row-level YKeyValueLww
+//   import { createWorkspace } from '@epicenter/hq/static';   // Row-level with versioning
+//
+// Extensions are also NOT re-exported here to avoid bundling Node.js-only code
+// in browser builds. Import them directly from subpaths:
+//   import { persistence } from '@epicenter/hq/extensions/persistence';
 //   import { sqlite } from '@epicenter/hq/extensions/sqlite';

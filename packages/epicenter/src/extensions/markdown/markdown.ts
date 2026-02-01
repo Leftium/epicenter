@@ -3,13 +3,13 @@ import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync, trySync } from 'wellcrafted/result';
-
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { Field, KvField, Row, TableDefinition } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
-import type { TableHelper } from '../../core/tables/create-tables';
+import { getTableById } from '../../core/schema/schema-file';
 import type { AbsolutePath } from '../../core/types';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { TableHelper } from '../../dynamic/tables/create-tables';
 import { createIndexLogger } from '../error-logger';
 import {
 	defaultSerializer,
@@ -401,9 +401,7 @@ export const markdown = async <
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 			const table = tables.get(tableName);
-			const tableDefinition = tables.definitions.find(
-				(d) => d.id === tableName,
-			);
+			const tableDefinition = getTableById(tables.definitions, tableName);
 			const fields = tableDefinition!.fields;
 			// Initialize tracking map for this table
 			if (!tracking[tableName]) {
@@ -554,9 +552,7 @@ export const markdown = async <
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 			const table = tables.get(tableName);
-			const tableDefinition = tables.definitions.find(
-				(d) => d.id === tableName,
-			);
+			const tableDefinition = getTableById(tables.definitions, tableName);
 			const fields = tableDefinition!.fields;
 			// Ensure table directory exists
 			const { error: mkdirError } = trySync({
@@ -876,9 +872,7 @@ export const markdown = async <
 		diagnostics.clear();
 
 		for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
-			const tableDefinition = tables.definitions.find(
-				(d) => d.id === tableName,
-			);
+			const tableDefinition = getTableById(tables.definitions, tableName);
 			const fields = tableDefinition!.fields;
 			const filePaths = await listMarkdownFiles(tableConfig.directory);
 
@@ -1030,7 +1024,7 @@ export const markdown = async <
 	 */
 	for (const [tableName, tableConfig] of Object.entries(resolvedConfigs)) {
 		const table = tables.get(tableName);
-		const tableDefinition = tables.definitions.find((d) => d.id === tableName);
+		const tableDefinition = getTableById(tables.definitions, tableName);
 		const fields = tableDefinition!.fields;
 		// Initialize tracking map for this table
 		if (!tracking[tableName]) {
@@ -1148,8 +1142,9 @@ export const markdown = async <
 						Object.entries(resolvedConfigs).map(
 							async ([tableName, tableConfig]) => {
 								const table = tables.get(tableName);
-								const tableDefinition = tables.definitions.find(
-									(d) => d.id === tableName,
+								const tableDefinition = getTableById(
+									tables.definitions,
+									tableName,
 								);
 								const fields = tableDefinition!.fields;
 								const tableTracking = tracking[tableName];
@@ -1323,8 +1318,9 @@ export const markdown = async <
 						Object.entries(resolvedConfigs).map(
 							async ([tableName, tableConfig]): Promise<TableSyncData> => {
 								const table = tables.get(tableName);
-								const tableDefinition = tables.definitions.find(
-									(d) => d.id === tableName,
+								const tableDefinition = getTableById(
+									tables.definitions,
+									tableName,
 								);
 								const fields = tableDefinition!.fields;
 								const yjsIds = new Set(

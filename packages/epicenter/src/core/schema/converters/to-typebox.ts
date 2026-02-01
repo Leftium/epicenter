@@ -26,7 +26,6 @@ import type {
 	IntegerField,
 	JsonField,
 	RealField,
-	RichtextField,
 	SelectField,
 	TagsField,
 	TextField,
@@ -52,37 +51,35 @@ export type FieldToTypebox<C extends Field> = C extends IdField
 		? TNullable extends true
 			? TUnion<[TString, TNull]>
 			: TString
-		: C extends RichtextField
-			? TUnion<[TString, TNull]>
-			: C extends IntegerField<infer TNullable>
+		: C extends IntegerField<infer TNullable>
+			? TNullable extends true
+				? TUnion<[TInteger, TNull]>
+				: TInteger
+			: C extends RealField<infer TNullable>
 				? TNullable extends true
-					? TUnion<[TInteger, TNull]>
-					: TInteger
-				: C extends RealField<infer TNullable>
+					? TUnion<[TNumber, TNull]>
+					: TNumber
+				: C extends BooleanField<infer TNullable>
 					? TNullable extends true
-						? TUnion<[TNumber, TNull]>
-						: TNumber
-					: C extends BooleanField<infer TNullable>
+						? TUnion<[TBoolean, TNull]>
+						: TBoolean
+					: C extends DateField<infer TNullable>
 						? TNullable extends true
-							? TUnion<[TBoolean, TNull]>
-							: TBoolean
-						: C extends DateField<infer TNullable>
+							? TUnion<[TString, TNull]>
+							: TString
+						: C extends SelectField<infer _TOptions, infer TNullable>
 							? TNullable extends true
-								? TUnion<[TString, TNull]>
-								: TString
-							: C extends SelectField<infer _TOptions, infer TNullable>
+								? TUnion<TSchema[]>
+								: TUnion<TSchema[]>
+							: C extends TagsField<infer _TOptions, infer TNullable>
 								? TNullable extends true
-									? TUnion<TSchema[]>
-									: TUnion<TSchema[]>
-								: C extends TagsField<infer _TOptions, infer TNullable>
+									? TUnion<[TArray, TNull]>
+									: TArray
+								: C extends JsonField<infer _TStandardSchema, infer TNullable>
 									? TNullable extends true
-										? TUnion<[TArray, TNull]>
-										: TArray
-									: C extends JsonField<infer _TStandardSchema, infer TNullable>
-										? TNullable extends true
-											? TUnion<[TSchema, TNull]>
-											: TSchema
-										: never;
+										? TUnion<[TSchema, TNull]>
+										: TSchema
+									: never;
 
 /**
  * Converts a table schema to a TypeBox TObject schema.
@@ -99,8 +96,8 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  *
  * const fields = [
  *   id(),
- *   text('title'),
- *   integer('count', { nullable: true }),
+ *   text({ id: 'title' }),
+ *   integer({ id: 'count', nullable: true }),
  * ];
  *
  * const typeboxSchema = fieldsToTypebox(fields);
@@ -111,7 +108,7 @@ export type FieldToTypebox<C extends Field> = C extends IdField
  * validator.Check({ id: '123', title: 'Test' }); // false (missing count)
  * ```
  */
-export function fieldsToTypebox<TFields extends readonly Field[]>(
+export function fieldsToTypebox<const TFields extends readonly Field[]>(
 	fields: TFields,
 ): TObject {
 	const properties: Record<string, TSchema> = {};
@@ -130,7 +127,7 @@ export function fieldsToTypebox<TFields extends readonly Field[]>(
  * complete row objects. The resulting schema is JIT-compilable.
  *
  * Field type mappings:
- * - `id`, `text`, `richtext` → `Type.String()`
+ * - `id`, `text` → `Type.String()`
  * - `integer` → `Type.Integer()`
  * - `real` → `Type.Number()`
  * - `boolean` → `Type.Boolean()`
@@ -157,7 +154,6 @@ export function fieldToTypebox<C extends Field>(field: C): FieldToTypebox<C> {
 	switch (field.type) {
 		case 'id':
 		case 'text':
-		case 'richtext':
 			baseType = Type.String();
 			break;
 

@@ -7,9 +7,9 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import { defineExports, type ExtensionContext } from '../../core/extension';
 import type { KvField, Row, TableDefinition } from '../../core/schema';
 import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -58,30 +58,27 @@ export type SqliteConfig = {
  *
  * @example
  * ```typescript
- * import { defineWorkspace, createClient, id, text, table } from '@epicenter/hq';
+ * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { sqlite } from '@epicenter/hq/extensions/sqlite';
  * import { join } from 'node:path';
- *
- * const definition = defineWorkspace({
- *   tables: { posts: table('posts', { name: 'Posts', fields: [id(), text('title')] }) },
- *   kv: {},
- * });
  *
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const client = createClient('blog', { epoch })
- *   .withDefinition(definition)
- *   .withExtensions({
- *     sqlite: (ctx) => sqlite(ctx, {
- *       dbPath: join(epicenterDir, 'sqlite', `${ctx.id}.db`),
- *       logsDir: join(epicenterDir, 'sqlite', 'logs'),
- *     }),
- *   });
+ * const workspace = createWorkspace({
+ *   headDoc,
+ *   definition: { name: 'Blog', tables: {...} },
+ * }).withExtensions({
+ *   sqlite: (ctx) => sqlite(ctx, {
+ *     dbPath: join(epicenterDir, 'sqlite', `${ctx.workspaceId}.db`),
+ *     logsDir: join(epicenterDir, 'sqlite', 'logs'),
+ *   }),
+ * });
  *
  * // Query with Drizzle:
- * const posts = await client.extensions.sqlite.db
+ * const posts = await workspace.extensions.sqlite.db
  *   .select()
- *   .from(client.extensions.sqlite.posts);
+ *   .from(workspace.extensions.sqlite.posts);
  * ```
  */
 export const sqlite = async <

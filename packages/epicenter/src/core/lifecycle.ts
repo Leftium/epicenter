@@ -223,19 +223,3 @@ export function defineExports<T extends Record<string, unknown> = {}>(
 		destroy: destroy ?? (() => {}),
 	} as Lifecycle & T;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy exports (deprecated, for backward compatibility)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * @deprecated Use `Lifecycle` instead. Will be removed in next major version.
- */
-export type LifecycleExports<
-	T extends Record<string, unknown> = Record<string, unknown>,
-> = Lifecycle & T;
-
-/**
- * @deprecated Use `defineExports` instead. Will be removed in next major version.
- */
-export const LifecycleExports = defineExports;

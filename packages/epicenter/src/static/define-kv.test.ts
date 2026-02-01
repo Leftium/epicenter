@@ -23,9 +23,7 @@ describe('defineKv', () => {
 			const schema = type({ collapsed: 'boolean', width: 'number' });
 
 			const shorthand = defineKv(schema);
-			const builder = defineKv()
-				.version(schema)
-				.migrate((v) => v);
+			const builder = defineKv(schema);
 
 			// Both should validate the same data
 			const testValue = { collapsed: true, width: 300 };
@@ -39,9 +37,7 @@ describe('defineKv', () => {
 
 	describe('builder syntax', () => {
 		test('creates valid KV definition with single version', () => {
-			const theme = defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.migrate((v) => v);
+			const theme = defineKv(type({ mode: "'light' | 'dark'" }));
 
 			const result = theme.schema['~standard'].validate({ mode: 'light' });
 			expect(result).not.toHaveProperty('issues');

@@ -899,7 +899,7 @@ The WebSocket sync extension enables real-time Y.Doc synchronization using the y
 
 ```typescript
 import { createClient } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
@@ -1216,7 +1216,7 @@ type ProviderPaths = {
 ```typescript
 import { setupPersistence } from '@epicenter/hq/providers';
 import { sqliteProvider, markdownProvider } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
 
 providers: {
   // Filesystem persistence (Node.js) or IndexedDB (browser)

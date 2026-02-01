@@ -1,4 +1,3 @@
-import { stat } from 'node:fs/promises';
 import { dirname, join, parse, resolve } from 'node:path';
 import type { ProjectDir } from '../core/types';
 import type { WorkspaceClient } from '../dynamic/workspace/types';
@@ -26,12 +25,7 @@ export async function findProjectDir(
 }
 
 async function fileExists(path: string): Promise<boolean> {
-	try {
-		const stats = await stat(path);
-		return stats.isFile();
-	} catch {
-		return false;
-	}
+	return Bun.file(path).exists();
 }
 
 export async function loadClients(

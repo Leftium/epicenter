@@ -164,6 +164,9 @@ export function parseCellKey(key: string): { rowId: RowId; fieldId: FieldId } {
 		);
 	}
 	const [rowIdStr, fieldIdStr] = parts;
+	if (!rowIdStr || !fieldIdStr) {
+		throw new Error(`Invalid cell key format: "${key}"`);
+	}
 	return {
 		rowId: RowId(rowIdStr),
 		fieldId: FieldId(fieldIdStr),

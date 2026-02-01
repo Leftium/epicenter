@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
-import { tableToArktype } from '../core/schema';
+import { Id, tableToArktype } from '../core/schema';
 import type { WorkspaceClient } from '../dynamic/workspace/types';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
@@ -26,7 +26,7 @@ export function createTablesPlugin(
 			app.get(
 				`${basePath}/:id`,
 				({ params, status }) => {
-					const result = tableHelper.get(params.id);
+					const result = tableHelper.get(Id(params.id));
 
 					switch (result.status) {
 						case 'valid':
@@ -45,7 +45,7 @@ export function createTablesPlugin(
 			app.post(
 				basePath,
 				({ body }) => {
-					tableHelper.upsert(body as { id: string });
+					tableHelper.upsert(body as { id: Id });
 					return Ok({ id: (body as { id: string }).id });
 				},
 				{
@@ -58,7 +58,7 @@ export function createTablesPlugin(
 				`${basePath}/:id`,
 				({ params, body }) => {
 					const result = tableHelper.update({
-						id: params.id,
+						id: Id(params.id),
 						...(body as Record<string, unknown>),
 					});
 					return Ok(result);
@@ -72,7 +72,7 @@ export function createTablesPlugin(
 			app.delete(
 				`${basePath}/:id`,
 				({ params }) => {
-					const result = tableHelper.delete(params.id);
+					const result = tableHelper.delete(Id(params.id));
 					return Ok(result);
 				},
 				{

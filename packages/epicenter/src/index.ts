@@ -63,7 +63,7 @@ export type {
 	Guid,
 	Icon,
 	IconType,
-	Id,
+	// Id is exported as a value (function) below, which also provides the type
 	IdField,
 	IntegerField,
 	JsonField,
@@ -93,6 +93,7 @@ export {
 	date,
 	generateGuid,
 	generateId,
+	Id,
 	ISO_DATETIME_REGEX,
 	id,
 	integer,

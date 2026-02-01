@@ -25,21 +25,14 @@ import type {
 	TableDefinition,
 } from '../../core/schema';
 import { fieldsToTypebox } from '../../core/schema';
+import type { Id } from '../../core/schema/fields/id.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
 import { TableKey } from '../../core/ydoc-keys';
-import {
-	CellKey,
-	FieldId,
-	hasPrefix,
-	parseCellKey,
-	RowId,
-	RowPrefix,
-	validateId,
-} from './keys';
+import { CellKey, FieldId, hasPrefix, parseCellKey, RowPrefix } from './keys';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -67,7 +60,7 @@ export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
 /** A row that exists but failed validation. */
 export type InvalidRowResult = {
 	status: 'invalid';
-	id: string;
+	id: Id;
 	errors: ValidationError[];
 	row: unknown;
 };
@@ -78,7 +71,7 @@ export type InvalidRowResult = {
  */
 export type NotFoundResult = {
 	status: 'not_found';
-	id: string;
+	id: Id;
 	row: undefined;
 };
 
@@ -113,13 +106,13 @@ export type UpdateResult =
  * - `none_applied`: No rows were found locally (nothing was updated)
  */
 export type UpdateManyResult =
-	| { status: 'all_applied'; applied: string[] }
+	| { status: 'all_applied'; applied: Id[] }
 	| {
 			status: 'partially_applied';
-			applied: string[];
-			notFoundLocally: string[];
+			applied: Id[];
+			notFoundLocally: Id[];
 	  }
-	| { status: 'none_applied'; notFoundLocally: string[] };
+	| { status: 'none_applied'; notFoundLocally: Id[] };
 
 /**
  * Result of deleting a single row.
@@ -140,13 +133,13 @@ export type DeleteResult =
  * - `none_deleted`: No rows were found locally (nothing was deleted)
  */
 export type DeleteManyResult =
-	| { status: 'all_deleted'; deleted: string[] }
+	| { status: 'all_deleted'; deleted: Id[] }
 	| {
 			status: 'partially_deleted';
-			deleted: string[];
-			notFoundLocally: string[];
+			deleted: Id[];
+			notFoundLocally: Id[];
 	  }
-	| { status: 'none_deleted'; notFoundLocally: string[] };
+	| { status: 'none_deleted'; notFoundLocally: Id[] };
 
 /**
  * Set of row IDs that changed.
@@ -159,7 +152,7 @@ export type DeleteManyResult =
  * This simple contract avoids semantic complexity around action classification
  * and lets callers decide how to handle changes.
  */
-export type ChangedRowIds = Set<string>;
+export type ChangedRowIds = Set<Id>;
 
 /**
  * Creates a single table helper with type-safe CRUD operations.
@@ -184,7 +177,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	ydoc: Y.Doc;
 	tableDefinition: TTableDef;
 }) {
-	type TRow = Row<TTableDef['fields']> & { id: string };
+	type TRow = Row<TTableDef['fields']> & { id: Id };
 
 	// Get or create the Y.Array for this table using the table: prefix convention
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(tableId));
@@ -196,7 +189,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	/**
 	 * Validate a row against the table schema.
 	 */
-	const validateRow = (id: string, row: unknown): RowResult<TRow> => {
+	const validateRow = (id: Id, row: unknown): RowResult<TRow> => {
 		if (rowValidator.Check(row)) {
 			return { status: 'valid', row: row as TRow };
 		}
@@ -208,8 +201,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		};
 	};
 
-	function reconstructRow(rowId: string): Record<string, unknown> | undefined {
-		const prefix = RowPrefix(RowId(rowId));
+	function reconstructRow(rowId: Id): Record<string, unknown> | undefined {
+		const prefix = RowPrefix(rowId);
 		const cells: Record<string, unknown> = {};
 		let found = false;
 		for (const [key, entry] of ykv.map) {
@@ -222,8 +215,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		return found ? cells : undefined;
 	}
 
-	function collectRows(): Map<string, Record<string, unknown>> {
-		const rows = new Map<string, Record<string, unknown>>();
+	function collectRows(): Map<Id, Record<string, unknown>> {
+		const rows = new Map<Id, Record<string, unknown>>();
 		for (const [key, entry] of ykv.map) {
 			const { rowId, fieldId } = parseCellKey(key);
 			const existing = rows.get(rowId) ?? {};
@@ -233,27 +226,24 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		return rows;
 	}
 
-	function setRowCells(
-		rowData: { id: string } & Record<string, unknown>,
-	): void {
-		validateId(rowData.id, 'RowId');
-		const rowId = RowId(rowData.id);
+	function setRowCells(rowData: { id: Id } & Record<string, unknown>): void {
+		// Id is already validated at construction time
 		for (const [fieldId, value] of Object.entries(rowData)) {
-			const cellKey = CellKey(rowId, FieldId(fieldId));
+			const cellKey = CellKey(rowData.id, FieldId(fieldId));
 			ykv.set(cellKey, value);
 		}
 	}
 
-	function hasRow(rowId: string): boolean {
-		const prefix = RowPrefix(RowId(rowId));
+	function hasRow(rowId: Id): boolean {
+		const prefix = RowPrefix(rowId);
 		for (const key of ykv.map.keys()) {
 			if (hasPrefix(key, prefix)) return true;
 		}
 		return false;
 	}
 
-	function deleteRowCells(rowId: string): boolean {
-		const prefix = RowPrefix(RowId(rowId));
+	function deleteRowCells(rowId: Id): boolean {
+		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
 		const keysToDelete = keys.filter((key) => hasPrefix(key, prefix));
 		for (const key of keysToDelete) {
@@ -292,8 +282,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		updateMany(rows: PartialRow<TTableDef['fields']>[]): UpdateManyResult {
-			const applied: string[] = [];
-			const notFoundLocally: string[] = [];
+			const applied: Id[] = [];
+			const notFoundLocally: Id[] = [];
 
 			ydoc.transact(() => {
 				for (const partialRow of rows) {
@@ -313,7 +303,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 			return { status: 'partially_applied', applied, notFoundLocally };
 		},
 
-		get(id: string): GetResult<TRow> {
+		get(id: Id): GetResult<TRow> {
 			const row = reconstructRow(id);
 			if (row === undefined) return { status: 'not_found', id, row: undefined };
 			return validateRow(id, row);
@@ -348,18 +338,18 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 			return result;
 		},
 
-		has(id: string): boolean {
+		has(id: Id): boolean {
 			return hasRow(id);
 		},
 
-		delete(id: string): DeleteResult {
+		delete(id: Id): DeleteResult {
 			if (!deleteRowCells(id)) return { status: 'not_found_locally' };
 			return { status: 'deleted' };
 		},
 
-		deleteMany(ids: string[]): DeleteManyResult {
-			const deleted: string[] = [];
-			const notFoundLocally: string[] = [];
+		deleteMany(ids: Id[]): DeleteManyResult {
+			const deleted: Id[] = [];
+			const notFoundLocally: Id[] = [];
 
 			ydoc.transact(() => {
 				for (const id of ids) {
@@ -478,7 +468,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
 				transaction: Y.Transaction,
 			) => {
-				const changedIds = new Set<string>();
+				const changedIds = new Set<Id>();
 				for (const key of changes.keys()) {
 					const { rowId } = parseCellKey(key);
 					changedIds.add(rowId);
@@ -511,22 +501,22 @@ export type TableHelper<
 
 /**
  * A table helper for dynamically-created tables without a definition.
- * No validation is performed; all rows are treated as `Record<string, unknown> & { id: string }`.
+ * No validation is performed; all rows are treated as `Record<string, unknown> & { id: Id }`.
  */
 export type UntypedTableHelper = {
-	update(partialRow: { id: string } & Record<string, unknown>): UpdateResult;
-	upsert(rowData: { id: string } & Record<string, unknown>): void;
-	upsertMany(rows: ({ id: string } & Record<string, unknown>)[]): void;
+	update(partialRow: { id: Id } & Record<string, unknown>): UpdateResult;
+	upsert(rowData: { id: Id } & Record<string, unknown>): void;
+	upsertMany(rows: ({ id: Id } & Record<string, unknown>)[]): void;
 	updateMany(
-		rows: ({ id: string } & Record<string, unknown>)[],
+		rows: ({ id: Id } & Record<string, unknown>)[],
 	): UpdateManyResult;
-	get(id: string): GetResult<{ id: string } & Record<string, unknown>>;
-	getAll(): RowResult<{ id: string } & Record<string, unknown>>[];
-	getAllValid(): ({ id: string } & Record<string, unknown>)[];
+	get(id: Id): GetResult<{ id: Id } & Record<string, unknown>>;
+	getAll(): RowResult<{ id: Id } & Record<string, unknown>>[];
+	getAllValid(): ({ id: Id } & Record<string, unknown>)[];
 	getAllInvalid(): InvalidRowResult[];
-	has(id: string): boolean;
-	delete(id: string): DeleteResult;
-	deleteMany(ids: string[]): DeleteManyResult;
+	has(id: Id): boolean;
+	delete(id: Id): DeleteResult;
+	deleteMany(ids: Id[]): DeleteManyResult;
 	/**
 	 * Delete all rows from the table.
 	 *
@@ -536,22 +526,22 @@ export type UntypedTableHelper = {
 	clear(): void;
 	count(): number;
 	filter(
-		predicate: (row: { id: string } & Record<string, unknown>) => boolean,
-	): ({ id: string } & Record<string, unknown>)[];
+		predicate: (row: { id: Id } & Record<string, unknown>) => boolean,
+	): ({ id: Id } & Record<string, unknown>)[];
 	find(
-		predicate: (row: { id: string } & Record<string, unknown>) => boolean,
-	): ({ id: string } & Record<string, unknown>) | null;
+		predicate: (row: { id: Id } & Record<string, unknown>) => boolean,
+	): ({ id: Id } & Record<string, unknown>) | null;
 	observe(
 		callback: (changedIds: ChangedRowIds, transaction: Y.Transaction) => void,
 	): () => void;
-	inferRow: { id: string } & Record<string, unknown>;
+	inferRow: { id: Id } & Record<string, unknown>;
 };
 
 /**
  * Creates a table helper for a dynamic/undefined table (no field schema validation).
  *
  * Used by `tables.table(name)` when accessing a table that isn't in the
- * workspace definition. All rows are typed as `{ id: string } & Record<string, unknown>`
+ * workspace definition. All rows are typed as `{ id: Id } & Record<string, unknown>`
  * and no validation is performed.
  */
 export function createUntypedTableHelper({
@@ -561,14 +551,14 @@ export function createUntypedTableHelper({
 	ydoc: Y.Doc;
 	tableName: string;
 }): UntypedTableHelper {
-	type TRow = { id: string } & Record<string, unknown>;
+	type TRow = { id: Id } & Record<string, unknown>;
 
 	// Get or create the Y.Array for this table using the table: prefix convention
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(tableName));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 
-	function reconstructRow(rowId: string): Record<string, unknown> | undefined {
-		const prefix = RowPrefix(RowId(rowId));
+	function reconstructRow(rowId: Id): Record<string, unknown> | undefined {
+		const prefix = RowPrefix(rowId);
 		const cells: Record<string, unknown> = {};
 		let found = false;
 		for (const [key, entry] of ykv.map) {
@@ -581,8 +571,8 @@ export function createUntypedTableHelper({
 		return found ? cells : undefined;
 	}
 
-	function collectRows(): Map<string, Record<string, unknown>> {
-		const rows = new Map<string, Record<string, unknown>>();
+	function collectRows(): Map<Id, Record<string, unknown>> {
+		const rows = new Map<Id, Record<string, unknown>>();
 		for (const [key, entry] of ykv.map) {
 			const { rowId, fieldId } = parseCellKey(key);
 			const existing = rows.get(rowId) ?? {};
@@ -593,24 +583,23 @@ export function createUntypedTableHelper({
 	}
 
 	function setRowCells(rowData: TRow): void {
-		validateId(rowData.id, 'RowId');
-		const rowId = RowId(rowData.id);
+		// Id is already validated at construction time
 		for (const [fieldId, value] of Object.entries(rowData)) {
-			const cellKey = CellKey(rowId, FieldId(fieldId));
+			const cellKey = CellKey(rowData.id, FieldId(fieldId));
 			ykv.set(cellKey, value);
 		}
 	}
 
-	function hasRow(rowId: string): boolean {
-		const prefix = RowPrefix(RowId(rowId));
+	function hasRow(rowId: Id): boolean {
+		const prefix = RowPrefix(rowId);
 		for (const key of ykv.map.keys()) {
 			if (hasPrefix(key, prefix)) return true;
 		}
 		return false;
 	}
 
-	function deleteRowCells(rowId: string): boolean {
-		const prefix = RowPrefix(RowId(rowId));
+	function deleteRowCells(rowId: Id): boolean {
+		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
 		const keysToDelete = keys.filter((key) => hasPrefix(key, prefix));
 		for (const key of keysToDelete) {
@@ -641,8 +630,8 @@ export function createUntypedTableHelper({
 		},
 
 		updateMany(rows: TRow[]): UpdateManyResult {
-			const applied: string[] = [];
-			const notFoundLocally: string[] = [];
+			const applied: Id[] = [];
+			const notFoundLocally: Id[] = [];
 
 			ydoc.transact(() => {
 				for (const partialRow of rows) {
@@ -662,7 +651,7 @@ export function createUntypedTableHelper({
 			return { status: 'partially_applied', applied, notFoundLocally };
 		},
 
-		get(id: string): GetResult<TRow> {
+		get(id: Id): GetResult<TRow> {
 			const row = reconstructRow(id);
 			if (row === undefined) return { status: 'not_found', id, row: undefined };
 			// No validation for untyped tables - always valid
@@ -690,18 +679,18 @@ export function createUntypedTableHelper({
 			return [];
 		},
 
-		has(id: string): boolean {
+		has(id: Id): boolean {
 			return hasRow(id);
 		},
 
-		delete(id: string): DeleteResult {
+		delete(id: Id): DeleteResult {
 			if (!deleteRowCells(id)) return { status: 'not_found_locally' };
 			return { status: 'deleted' };
 		},
 
-		deleteMany(ids: string[]): DeleteManyResult {
-			const deleted: string[] = [];
-			const notFoundLocally: string[] = [];
+		deleteMany(ids: Id[]): DeleteManyResult {
+			const deleted: Id[] = [];
+			const notFoundLocally: Id[] = [];
 
 			ydoc.transact(() => {
 				for (const id of ids) {
@@ -761,7 +750,7 @@ export function createUntypedTableHelper({
 				changes: Map<string, YKeyValueLwwChange<unknown>>,
 				transaction: Y.Transaction,
 			) => {
-				const changedIds = new Set<string>();
+				const changedIds = new Set<Id>();
 				for (const key of changes.keys()) {
 					const { rowId } = parseCellKey(key);
 					changedIds.add(rowId);

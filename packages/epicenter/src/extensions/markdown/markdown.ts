@@ -4,7 +4,8 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync, trySync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import type { Field, KvField, Row, TableDefinition } from '../../core/schema';
+import type { Field, Id, KvField, Row, TableDefinition } from '../../core/schema';
+import { Id as createId } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
 import { getTableById } from '../../core/schema/schema-file';
 import type { AbsolutePath } from '../../core/types';
@@ -54,7 +55,7 @@ type Fields = readonly Field[];
  * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
  * so we intersect with `{ id: string }` to make destructuring work.
  */
-type RowWithId<TFields extends Fields> = Row<TFields> & { id: string };
+type RowWithId<TFields extends Fields> = Row<TFields> & { id: Id };
 
 // Re-export config types and functions
 export type {
@@ -719,9 +720,11 @@ export const markdown = async <
 						return;
 					}
 
-					const validatedRow = row as RowWithId<
-						TTableDefinitions[number]['fields']
-					>;
+					// Convert id from string to branded Id type
+					const validatedRow = {
+						...row,
+						id: createId((row as { id: string }).id),
+					} as RowWithId<TTableDefinitions[number]['fields']>;
 
 					// Success: remove from diagnostics if it was previously invalid
 					diagnostics.remove({ filePath: absolutePath });
@@ -783,8 +786,9 @@ export const markdown = async <
 					});
 
 					if (rowIdToDelete) {
-						if (table.has(rowIdToDelete)) {
-							table.delete(rowIdToDelete);
+						const brandedRowId = createId(rowIdToDelete);
+						if (table.has(brandedRowId)) {
+							table.delete(brandedRowId);
 							dbg(
 								'HANDLER',
 								`UNLINK deleted row ${tableName}/${rowIdToDelete}`,
@@ -1068,7 +1072,7 @@ export const markdown = async <
 
 			// Parse filename to extract row ID and check if row exists in Y.js
 			const parsed = tableConfig.parseFilename(filename);
-			const rowId = parsed?.id;
+			const rowId = parsed?.id ? createId(parsed.id) : undefined;
 
 			if (!rowId || !table.has(rowId)) {
 				// Orphan file: no valid row ID or row doesn't exist in Y.js
@@ -1305,13 +1309,13 @@ export const markdown = async <
 					type TableSyncData = {
 						tableName: string;
 						table: TableHelper<string, TTableDefinitions[number]['fields']>;
-						yjsIds: Set<string>;
-						fileExistsIds: Set<string>;
+						yjsIds: Set<Id>;
+						fileExistsIds: Set<Id>;
 						markdownRows: Map<
-							string,
+							Id,
 							RowWithId<TTableDefinitions[number]['fields']>
 						>;
-						markdownFilenames: Map<string, string>;
+						markdownFilenames: Map<Id, string>;
 					};
 
 					const allTableData = await Promise.all(
@@ -1337,18 +1341,20 @@ export const markdown = async <
 
 								const fileExistsIds = new Set(
 									filePaths
-										.map(
-											(filePath) =>
-												tableConfig.parseFilename(path.basename(filePath))?.id,
-										)
-										.filter((id): id is string => Boolean(id)),
+										.map((filePath) => {
+											const parsed = tableConfig.parseFilename(
+												path.basename(filePath),
+											);
+											return parsed?.id ? createId(parsed.id) : undefined;
+										})
+										.filter((id): id is Id => Boolean(id)),
 								);
 
 								const markdownRows = new Map<
-									string,
+									Id,
 									RowWithId<TTableDefinitions[number]['fields']>
 								>();
-								const markdownFilenames = new Map<string, string>();
+								const markdownFilenames = new Map<Id, string>();
 
 								await Promise.all(
 									filePaths.map(async (filePath) => {
@@ -1433,8 +1439,13 @@ export const markdown = async <
 											return;
 										}
 
-										markdownRows.set(row.id, row);
-										markdownFilenames.set(row.id, filename);
+										// Convert row.id from string to branded Id
+										const rowWithBrandedId = {
+											...row,
+											id: createId((row as { id: string }).id),
+										} as RowWithId<TTableDefinitions[number]['fields']>;
+										markdownRows.set(rowWithBrandedId.id, rowWithBrandedId);
+										markdownFilenames.set(rowWithBrandedId.id, filename);
 									}),
 								);
 

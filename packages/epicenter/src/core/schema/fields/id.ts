@@ -23,14 +23,27 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 export type Id = string & Brand<'Id'>;
 
 /**
- * GUID type - branded string for globally unique workspace identifiers.
+ * Create a branded Id from an arbitrary string.
  *
- * 15-character alphanumeric string, safe for millions of workspaces globally.
- * Used for YJS document coordination and sync.
+ * Validates that the string does not contain ':' (reserved for cell-key separator).
+ * Use this when you have a string ID that needs to be used as a row identifier.
  *
- * @see {@link generateGuid}
+ * @param value - The string to brand as an Id
+ * @returns A branded Id
+ * @throws If the value contains ':'
+ *
+ * @example
+ * ```typescript
+ * const id = Id('my-custom-id');
+ * const generated = generateId(); // Also returns Id
+ * ```
  */
-export type Guid = string & Brand<'Guid'>;
+export function Id(value: string): Id {
+	if (value.includes(':')) {
+		throw new Error(`Id cannot contain ':': "${value}"`);
+	}
+	return value as Id;
+}
 
 /**
  * Generates a table row ID - 10 character alphanumeric string.
@@ -48,6 +61,16 @@ export function generateId(): Id {
 	const nanoid = customAlphabet(ALPHABET, 10);
 	return nanoid() as Id;
 }
+
+/**
+ * GUID type - branded string for globally unique workspace identifiers.
+ *
+ * 15-character alphanumeric string, safe for millions of workspaces globally.
+ * Used for YJS document coordination and sync.
+ *
+ * @see {@link generateGuid}
+ */
+export type Guid = string & Brand<'Guid'>;
 
 /**
  * Generates a globally unique workspace identifier - 15 character alphanumeric string.

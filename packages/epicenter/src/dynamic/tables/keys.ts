@@ -1,7 +1,6 @@
 import { regex } from 'arkregex';
 import type { Brand } from 'wellcrafted/brand';
-import type { Id } from '../../core/schema/fields/id.js';
-import { Id as createId } from '../../core/schema/fields/id.js';
+import { Id } from '../../core/schema/fields/id.js';
 
 const KEY_SEPARATOR = ':' as const;
 
@@ -138,8 +137,7 @@ export function parseCellKey(key: string): { rowId: Id; fieldId: FieldId } {
 		);
 	}
 	return {
-		rowId: createId(match.groups.rowId),
+		rowId: Id(match.groups.rowId),
 		fieldId: FieldId(match.groups.fieldId),
 	};
 }
-

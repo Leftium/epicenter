@@ -113,6 +113,9 @@ export {
 } from './core/schema';
 // Core types
 export type { AbsolutePath, ProjectDir } from './core/types';
+export type { KvKey, TableKey as TableKeyType } from './core/ydoc-keys';
+// Y.Doc storage keys (for direct Y.Doc access / custom providers)
+export { KV_KEY, TableKey } from './core/ydoc-keys';
 // Extension system (workspace-level plugins)
 export type {
 	ExtensionContext,
@@ -125,8 +128,8 @@ export { defineExports } from './dynamic/extension';
 // Y.Doc wrappers for collaborative workspace architecture
 // Y.Doc wrappers (flattened from dynamic/docs/)
 export { createHeadDoc, type HeadDoc } from './dynamic/head-doc';
-export type { Kv, KvHelper } from './dynamic/kv/core';
-export { createKv } from './dynamic/kv/core';
+export type { Kv, KvHelper } from './dynamic/kv/create-kv';
+export { createKv } from './dynamic/kv/create-kv';
 export type {
 	InferProviderExports,
 	ProviderContext,

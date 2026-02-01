@@ -21,7 +21,7 @@
 import * as Y from 'yjs';
 import { defineExports, type Lifecycle } from '../../core/lifecycle';
 import type { KvField, TableDefinition } from '../../core/schema/fields/types';
-import { createKv } from '../kv/core';
+import { createKv } from '../kv/create-kv';
 import { createTables } from '../tables/create-tables';
 import type {
 	CreateWorkspaceConfig,

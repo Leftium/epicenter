@@ -5,6 +5,7 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
+import { KV_KEY } from '../../core/ydoc-keys';
 
 import {
 	createKvHelper,
@@ -185,7 +186,7 @@ export function createKv<const TKvFields extends readonly KvField[]>(
 	ydoc: Y.Doc,
 	kvFields: TKvFields,
 ): KvFunction<TKvFields> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<KvValue>>('kv');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<KvValue>>(KV_KEY);
 	const ykvLww = new YKeyValueLww(yarray);
 
 	// Build helpers map using field.id as the key

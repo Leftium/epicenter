@@ -258,9 +258,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	type TRow = Row<TTableDef['fields']> & { id: string };
 
 	// Get or create the Y.Array for this table using the table: prefix convention
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(
-		`table:${tableId}`,
-	);
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${tableId}`);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 
 	const typeboxSchema = fieldsToTypebox(fields);

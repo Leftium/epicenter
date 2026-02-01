@@ -6,7 +6,6 @@
  * @packageDocumentation
  */
 
-import { customAlphabet } from 'nanoid';
 import type { Brand } from 'wellcrafted/brand';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -14,7 +13,6 @@ import type { Brand } from 'wellcrafted/brand';
 // ════════════════════════════════════════════════════════════════════════════
 
 const KEY_SEPARATOR = ':' as const;
-const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Branded Types
@@ -50,17 +48,6 @@ export function FieldId(id: string): FieldId {
 // ════════════════════════════════════════════════════════════════════════════
 // ID Generation
 // ════════════════════════════════════════════════════════════════════════════
-
-const nanoid = customAlphabet(ALPHABET, 12);
-
-/**
- * Generate a unique row ID.
- *
- * @returns A 12-character alphanumeric branded RowId
- */
-export function generateRowId(): RowId {
-	return RowId(nanoid());
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID Validation

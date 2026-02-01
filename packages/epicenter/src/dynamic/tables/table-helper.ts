@@ -68,7 +68,6 @@ export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
 export type InvalidRowResult = {
 	status: 'invalid';
 	id: string;
-	tableName: string;
 	errors: ValidationError[];
 	row: unknown;
 };
@@ -213,6 +212,7 @@ export function createTableHelpers<
 	tableDefinitions: TTableDefinitions;
 }): {
 	[K in TTableDefinitions[number]['id']]: TableHelper<
+		K,
 		TableById<TTableDefinitions, K>['fields']
 	>;
 } {
@@ -226,6 +226,7 @@ export function createTableHelpers<
 		]),
 	) as {
 		[K in TTableDefinitions[number]['id']]: TableHelper<
+			K,
 			TableById<TTableDefinitions, K>['fields']
 		>;
 	};
@@ -249,17 +250,16 @@ export function createTableHelpers<
  */
 export function createTableHelper<TTableDef extends TableDefinition>({
 	ydoc,
-	tableDefinition,
+	tableDefinition: { id: tableId, fields },
 }: {
 	ydoc: Y.Doc;
 	tableDefinition: TTableDef;
 }) {
-	const { id: tableName, fields } = tableDefinition;
 	type TRow = Row<TTableDef['fields']> & { id: string };
 
 	// Get or create the Y.Array for this table using the table: prefix convention
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(
-		`table:${tableName}`,
+		`table:${tableId}`,
 	);
 	const ykv = new YKeyValueLww<unknown>(yarray);
 
@@ -276,7 +276,6 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		return {
 			status: 'invalid',
 			id,
-			tableName,
 			errors: rowValidator.Errors(row),
 			row,
 		};
@@ -337,6 +336,9 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	}
 
 	return {
+		/** The table's unique identifier */
+		id: tableId,
+
 		update(partialRow: PartialRow<TTableDef['fields']>): UpdateResult {
 			if (reconstructRow(partialRow.id) === undefined) {
 				return { status: 'not_found_locally' };
@@ -575,9 +577,10 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	};
 }
 
-export type TableHelper<TFields extends readonly Field[]> = ReturnType<
-	typeof createTableHelper<TableDefinition<TFields>>
->;
+export type TableHelper<
+	TId extends string = string,
+	TFields extends readonly Field[] = readonly Field[],
+> = ReturnType<typeof createTableHelper<TableDefinition<TId, TFields>>>;
 
 /**
  * A table helper for dynamically-created tables without a definition.

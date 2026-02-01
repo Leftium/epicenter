@@ -505,7 +505,7 @@ export const markdown = async <
 							ExtensionError({
 								message: `YJS observer: validation failed for ${tableName}/${id}: ${errorMessages}`,
 								context: {
-									tableName: result.tableName,
+									tableName,
 									rowId: id,
 								},
 							}),
@@ -1304,7 +1304,7 @@ export const markdown = async <
 
 					type TableSyncData = {
 						tableName: string;
-						table: TableHelper<TTableDefinitions[number]['fields']>;
+						table: TableHelper<string, TTableDefinitions[number]['fields']>;
 						yjsIds: Set<string>;
 						fileExistsIds: Set<string>;
 						markdownRows: Map<

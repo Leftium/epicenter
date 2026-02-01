@@ -46,7 +46,7 @@ export type TablesFunction<
 	 */
 	get<K extends TTableDefinitions[number]['id']>(
 		name: K,
-	): TableHelper<TableById<TTableDefinitions, K>['fields']>;
+	): TableHelper<string, TableById<TTableDefinitions, K>['fields']>;
 
 	/**
 	 * Get a table helper by name (untyped version for dynamic tables).
@@ -165,6 +165,7 @@ export function createTables<
 		]),
 	) as {
 		[K in TTableDefinitions[number]['id']]: TableHelper<
+			string,
 			TableById<TTableDefinitions, K>['fields']
 		>;
 	};
@@ -212,6 +213,7 @@ export function createTables<
 			name: string,
 		):
 			| TableHelper<
+					string,
 					Extract<TTableDefinitions[number], { id: string }>['fields']
 			  >
 			| UntypedTableHelper {

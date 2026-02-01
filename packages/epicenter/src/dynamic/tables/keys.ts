@@ -1,8 +1,12 @@
+import { regex } from 'arkregex';
 import type { Brand } from 'wellcrafted/brand';
 import type { Id } from '../../core/schema/fields/id.js';
 import { Id as createId } from '../../core/schema/fields/id.js';
 
 const KEY_SEPARATOR = ':' as const;
+
+/** Regex for parsing cell keys with typed capture groups. */
+const CELL_KEY_REGEX = regex('^(?<rowId>[^:]+):(?<fieldId>[^:]+)$');
 
 /**
  * Branded type for field identifiers.
@@ -127,19 +131,15 @@ export function RowPrefix(rowId: Id): RowPrefix {
  * ```
  */
 export function parseCellKey(key: string): { rowId: Id; fieldId: FieldId } {
-	const parts = key.split(KEY_SEPARATOR);
-	if (parts.length !== 2) {
+	const match = CELL_KEY_REGEX.exec(key);
+	if (!match?.groups) {
 		throw new Error(
 			`Invalid cell key format: "${key}". Expected format: "rowId:fieldId"`,
 		);
 	}
-	const [rowIdStr, fieldIdStr] = parts;
-	if (!rowIdStr || !fieldIdStr) {
-		throw new Error(`Invalid cell key format: "${key}"`);
-	}
 	return {
-		rowId: createId(rowIdStr),
-		fieldId: FieldId(fieldIdStr),
+		rowId: createId(match.groups.rowId),
+		fieldId: FieldId(match.groups.fieldId),
 	};
 }
 

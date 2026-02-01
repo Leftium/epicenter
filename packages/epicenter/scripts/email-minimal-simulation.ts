@@ -11,17 +11,18 @@
 
 import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { persistence } from '../src/extensions/persistence/desktop';
 import {
-	createClient,
 	createHeadDoc,
+	createWorkspace,
 	defineWorkspace,
-	generateId,
+	type ExtensionContext,
 	id,
 	integer,
 	table,
 	text,
-} from '../src/index';
+} from '../src/dynamic';
+import { persistence } from '../src/extensions/persistence/desktop';
+import { generateId } from '../src/index';
 
 const EMAIL_COUNT = Number(process.argv[2]) || 100_000;
 const BATCH_SIZE = 1_000;
@@ -77,6 +78,7 @@ console.log('');
 
 // Minimal email definition
 const emailDefinition = defineWorkspace({
+	id: 'email-minimal-simulation',
 	name: 'Email Minimal Simulation',
 	description: '',
 	icon: null,
@@ -100,14 +102,15 @@ const emailDefinition = defineWorkspace({
 console.log('Creating client...');
 const totalStart = performance.now();
 const head = createHeadDoc({ workspaceId: 'emails-minimal', providers: {} });
-await using client = await createClient(head)
-	.withDefinition(emailDefinition)
-	.withExtensions({
-		persistence: (ctx) =>
-			persistence(ctx, {
-				filePath: YJS_PATH,
-			}),
-	});
+await using client = createWorkspace({
+	headDoc: head,
+	definition: emailDefinition,
+}).withExtensions({
+	persistence: (ctx: ExtensionContext) =>
+		persistence(ctx, {
+			filePath: YJS_PATH,
+		}),
+});
 console.log('Client created\n');
 
 // Sample email for size estimation

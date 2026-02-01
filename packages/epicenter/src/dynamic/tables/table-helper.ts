@@ -25,12 +25,12 @@ import type {
 	TableDefinition,
 } from '../../core/schema';
 import { fieldsToTypebox } from '../../core/schema';
-
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
+import { TableKey } from '../../core/ydoc-keys';
 import {
 	CellKey,
 	FieldId,
@@ -187,7 +187,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	type TRow = Row<TTableDef['fields']> & { id: string };
 
 	// Get or create the Y.Array for this table using the table: prefix convention
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${tableId}`);
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(tableId));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 
 	const typeboxSchema = fieldsToTypebox(fields);
@@ -564,9 +564,7 @@ export function createUntypedTableHelper({
 	type TRow = { id: string } & Record<string, unknown>;
 
 	// Get or create the Y.Array for this table using the table: prefix convention
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(
-		`table:${tableName}`,
-	);
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(tableName));
 	const ykv = new YKeyValueLww<unknown>(yarray);
 
 	function reconstructRow(rowId: string): Record<string, unknown> | undefined {

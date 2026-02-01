@@ -34,6 +34,7 @@ import {
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww.js';
+import { KV_KEY } from '../core/ydoc-keys.js';
 import type {
 	InferKvValue,
 	KvBatchTransaction,
@@ -58,7 +59,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
 	// All KV values share a single YKeyValueLww store
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww(yarray);
 
 	/**

@@ -1,6 +1,7 @@
 import type * as Y from 'yjs';
 import type { TableDefinition } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
+import { TableKey } from '../../core/ydoc-keys';
 import {
 	createTableHelper,
 	createUntypedTableHelper,
@@ -250,7 +251,7 @@ export function createTables<
 				return tableHelpers[name as keyof typeof tableHelpers].count() > 0;
 			}
 			// Check dynamic tables - peek at the Y.Array without creating a helper
-			const yarray = ydoc.getArray(`table:${name}`);
+			const yarray = ydoc.getArray(TableKey(name));
 			return yarray.length > 0;
 		},
 

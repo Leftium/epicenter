@@ -448,15 +448,6 @@ export type KvFieldIds<TKv extends readonly KvField[]> = TKv[number]['id'];
 // ============================================================================
 
 /**
- * Helper type to check if a field definition is nullable.
- *
- * Uses optional property check `{ nullable?: true }` because field definitions
- * define `nullable?: TNullable` (optional). When `TNullable = true`, the type
- * is `nullable?: true` which doesn't extend `{ nullable: true }` (required).
- */
-type IsNullable<C extends Field> = C extends { nullable?: true } ? true : false;
-
-/**
  * Maps a field definition to its runtime value type.
  *
  * - TagsField → string[] (plain array)
@@ -467,36 +458,39 @@ type IsNullable<C extends Field> = C extends { nullable?: true } ? true : false;
  */
 export type CellValue<C extends Field = Field> = C extends IdField
 	? string
-	: C extends TextField
-		? IsNullable<C> extends true
+	: C extends TextField<infer TTextNullable>
+		? true extends TTextNullable
 			? string | null
 			: string
-		: C extends IntegerField
-			? IsNullable<C> extends true
+		: C extends IntegerField<infer TIntegerNullable>
+			? true extends TIntegerNullable
 				? number | null
 				: number
-			: C extends RealField
-				? IsNullable<C> extends true
+			: C extends RealField<infer TRealNullable>
+				? true extends TRealNullable
 					? number | null
 					: number
-				: C extends BooleanField
-					? IsNullable<C> extends true
+				: C extends BooleanField<infer TBooleanNullable>
+					? true extends TBooleanNullable
 						? boolean | null
 						: boolean
-					: C extends DateField
-						? IsNullable<C> extends true
+					: C extends DateField<infer TDateNullable>
+						? true extends TDateNullable
 							? DateTimeString | null
 							: DateTimeString
-						: C extends SelectField<infer TOptions>
-							? IsNullable<C> extends true
+						: C extends SelectField<infer TOptions, infer TSelectNullable>
+							? true extends TSelectNullable
 								? TOptions[number] | null
 								: TOptions[number]
-							: C extends TagsField<infer TOptions>
-								? IsNullable<C> extends true
+							: C extends TagsField<infer TOptions, infer TTagsNullable>
+								? true extends TTagsNullable
 									? TOptions[number][] | null
 									: TOptions[number][]
-								: C extends JsonField<infer T extends TSchema>
-									? IsNullable<C> extends true
+								: C extends JsonField<
+											infer T extends TSchema,
+											infer TJsonNullable
+										>
+									? true extends TJsonNullable
 										? Static<T> | null
 										: Static<T>
 									: never;
@@ -530,10 +524,11 @@ export type CellValue<C extends Field = Field> = C extends IdField
  * ```
  */
 export type TableDefinition<
+	TId extends string = string,
 	TFields extends readonly Field[] = readonly Field[],
 > = {
 	/** Unique identifier for this table */
-	id: string;
+	id: TId;
 	/** Required display name shown in UI (e.g., "Blog Posts") */
 	name: string;
 	/** Required description shown in tooltips/docs */

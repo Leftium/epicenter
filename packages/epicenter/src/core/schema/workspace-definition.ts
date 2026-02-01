@@ -9,7 +9,7 @@
  * @module
  */
 
-import type { Field, Icon, KvField, TableDefinition } from './fields/types';
+import type { Icon, KvField, TableDefinition } from './fields/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Definition Types
@@ -41,9 +41,7 @@ import type { Field, Icon, KvField, TableDefinition } from './fields/types';
  * ```
  */
 export type WorkspaceDefinition<
-	TTableDefinitions extends readonly TableDefinition<
-		readonly Field[]
-	>[] = TableDefinition<readonly Field[]>[],
+	TTableDefinitions extends readonly TableDefinition[] = TableDefinition[],
 	TKvFields extends readonly KvField[] = KvField[],
 > = {
 	/** Unique workspace identifier (e.g., 'epicenter.whispering') */
@@ -78,7 +76,7 @@ export type WorkspaceDefinition<
  * ```
  */
 export function defineWorkspace<
-	const TTableDefinitions extends readonly TableDefinition<readonly Field[]>[],
+	const TTableDefinitions extends readonly TableDefinition[],
 	const TKvFields extends readonly KvField[],
 >(
 	definition: WorkspaceDefinition<TTableDefinitions, TKvFields> & {

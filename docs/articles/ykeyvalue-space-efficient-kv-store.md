@@ -4,6 +4,8 @@
 
 > Y.Map retains all historical values. Y.Array tombstones are tiny. Build your KV store on Y.Array.
 
+> **Important**: These benchmarks assume `gc: true` (the default). With `gc: false` (needed for version history/snapshots), Y.Map is actually 2x MORE efficient because YKeyValue's tombstones can't be merged. See [YKeyValue vs Y.Map: Quick Decision Guide](./ykeyvalue-vs-ymap-decision-guide.md) for the full comparison.
+
 ## The Problem with Y.Map
 
 Y.Map looks like the obvious choice for key-value data. But it has a fatal flaw for update-heavy patterns:

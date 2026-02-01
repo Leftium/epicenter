@@ -65,7 +65,12 @@ export {
 
 // Icon type and utilities from Core
 export type { Icon, IconType } from '../core/schema/fields/types';
-export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
+export {
+	createIcon,
+	isIcon,
+	normalizeIcon,
+	parseIcon,
+} from '../core/schema/fields/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLES & KV

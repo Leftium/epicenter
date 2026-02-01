@@ -108,6 +108,35 @@ export function isIcon(value: string): value is Icon {
 	);
 }
 
+/**
+ * Normalize icon input to canonical Icon format.
+ *
+ * Converts various input formats to a canonical `Icon | null`:
+ * - Valid Icon strings (tagged format) → unchanged
+ * - Plain emoji strings → converted to `'emoji:{value}'`
+ * - `null` or `undefined` → `null`
+ *
+ * This provides DX convenience: users can write `icon: '📝'` instead of
+ * `icon: 'emoji:📝'` in schema definitions.
+ *
+ * @example
+ * ```typescript
+ * normalizeIcon('📝');           // 'emoji:📝'
+ * normalizeIcon('emoji:📝');     // 'emoji:📝' (unchanged)
+ * normalizeIcon('lucide:file');  // 'lucide:file' (unchanged)
+ * normalizeIcon(null);           // null
+ * normalizeIcon(undefined);      // null
+ * ```
+ */
+export function normalizeIcon(
+	icon: string | Icon | null | undefined,
+): Icon | null {
+	if (icon === undefined || icon === null) return null;
+	if (isIcon(icon)) return icon;
+	// Plain string (emoji) → convert to tagged format
+	return `emoji:${icon}` as Icon;
+}
+
 // ============================================================================
 // Field Metadata
 // ============================================================================

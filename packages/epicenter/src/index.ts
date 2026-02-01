@@ -99,6 +99,7 @@ export {
 	isIcon,
 	isNullableField,
 	json,
+	normalizeIcon,
 	parseIcon,
 	real,
 	select,
@@ -149,13 +150,6 @@ export type {
 	UpdateResult,
 	ValidRowResult,
 } from './dynamic/tables/table-helper';
-// Workspace normalization helpers
-export {
-	DEFAULT_KV_ICON,
-	isKvDefinition,
-	isTableDefinition,
-	normalizeIcon,
-} from './dynamic/workspace/normalize';
 // Workspace client types
 export type {
 	WorkspaceClient,

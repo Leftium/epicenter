@@ -30,7 +30,7 @@ import type {
 	TagsField,
 	TextField,
 } from './types';
-import { isIcon } from './types';
+import { normalizeIcon } from './types';
 
 // ============================================================================
 // Shared Options Types (with JSDoc for IDE hover)
@@ -115,25 +115,6 @@ type FieldMetadataOptions = {
 	 */
 	icon?: Icon | string | null;
 };
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Normalize icon input to Icon | null.
- *
- * Accepts:
- * - Icon string (tagged format) → unchanged
- * - Plain emoji string → converted to 'emoji:{value}'
- * - null/undefined → null
- */
-function normalizeIcon(icon: string | Icon | null | undefined): Icon | null {
-	if (icon === undefined || icon === null) return null;
-	if (isIcon(icon)) return icon;
-	// Plain string (emoji) → convert to tagged format
-	return `emoji:${icon}` as Icon;
-}
 
 // ============================================================================
 // Table Factory

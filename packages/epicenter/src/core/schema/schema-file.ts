@@ -16,8 +16,8 @@
  * @packageDocumentation
  */
 
-import type { Field, Icon, TableDefinition } from './fields/types';
-import { isIcon } from './fields/types';
+import type { Field, TableDefinition } from './fields/types';
+import { normalizeIcon } from './fields/types';
 import type { WorkspaceDefinition } from './workspace-definition';
 
 /**
@@ -35,13 +35,14 @@ export function getTableById(
 }
 
 /**
- * Normalize icon input to Icon | null.
+ * Safely normalize icon from unknown JSON input.
+ * Handles the type narrowing before calling normalizeIcon.
  */
-function normalizeIcon(icon: unknown): Icon | null {
-	if (icon === undefined || icon === null) return null;
-	if (typeof icon !== 'string') return null;
-	if (isIcon(icon)) return icon;
-	return `emoji:${icon}` as Icon;
+function normalizeIconFromJson(
+	icon: unknown,
+): ReturnType<typeof normalizeIcon> {
+	if (typeof icon === 'string') return normalizeIcon(icon);
+	return null;
 }
 
 /**
@@ -59,6 +60,10 @@ export function parseSchema(json: string): WorkspaceDefinition {
 	}
 
 	const obj = data as Record<string, unknown>;
+
+	if (typeof obj.id !== 'string') {
+		throw new Error('Schema must have an "id" string property');
+	}
 
 	if (typeof obj.name !== 'string') {
 		throw new Error('Schema must have a "name" string property');
@@ -139,15 +144,16 @@ export function parseSchema(json: string): WorkspaceDefinition {
 			id: tableId,
 			name: tableObj.name as string,
 			description: (tableObj.description as string) ?? '',
-			icon: normalizeIcon(tableObj.icon),
+			icon: normalizeIconFromJson(tableObj.icon),
 			fields: normalizedFields,
 		});
 	}
 
 	const normalized: WorkspaceDefinition = {
+		id: obj.id as string,
 		name: obj.name as string,
 		description: (obj.description as string) ?? '',
-		icon: normalizeIcon(obj.icon),
+		icon: normalizeIconFromJson(obj.icon),
 		tables: normalizedTables,
 		kv: obj.kv as WorkspaceDefinition['kv'],
 	};

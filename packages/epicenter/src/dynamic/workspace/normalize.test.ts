@@ -6,8 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Icon } from '../../core/schema/fields/types';
-import { normalizeIcon } from './normalize';
+import { type Icon, normalizeIcon } from '../../core/schema/fields/types';
 
 describe('normalizeIcon', () => {
 	test('plain emoji string → Icon tagged string', () => {

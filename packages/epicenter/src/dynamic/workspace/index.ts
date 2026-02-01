@@ -12,13 +12,6 @@ export type {
 } from './create-workspace';
 // The builder pattern API
 export { createWorkspace } from './create-workspace';
-// Normalization helpers (for external use if needed)
-export {
-	DEFAULT_KV_ICON,
-	isKvDefinition,
-	isTableDefinition,
-	normalizeIcon,
-} from './normalize';
 // Types for the API
 export type {
 	CreateWorkspaceConfig,

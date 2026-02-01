@@ -143,8 +143,6 @@ export type {
 	GetResult,
 	InvalidRowResult,
 	NotFoundResult,
-	RowAction,
-	RowChanges,
 	RowResult,
 	UpdateManyResult,
 	UpdateResult,
@@ -164,7 +162,6 @@ export {
 } from './dynamic/workspace/workspace';
 export type {
 	KvYArray,
-	RowYMap,
 	TablesYMap,
 	TableYMap,
 } from './dynamic/workspace-doc';

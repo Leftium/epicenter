@@ -80,7 +80,6 @@ export {
 export {
 	CellKey,
 	FieldId,
-	generateRowId,
 	hasPrefix,
 	type ParsedCellKey,
 	parseCellKey,
@@ -101,15 +100,12 @@ export {
 	type TableHelper,
 	type Tables,
 	type TablesFunction,
-	type UntypedTableHelper,
 	type ValidRowResult,
 } from './tables/create-tables';
 
 export {
 	type ChangedRowIds,
 	createTableHelper,
-	createTableHelpers,
-	createUntypedTableHelper,
 	type DeleteManyResult,
 	type DeleteResult,
 	type NotFoundResult,

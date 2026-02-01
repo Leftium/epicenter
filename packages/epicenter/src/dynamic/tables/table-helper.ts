@@ -25,7 +25,7 @@ import type {
 	TableDefinition,
 } from '../../core/schema';
 import { fieldsToTypebox } from '../../core/schema';
-import type { TableById } from '../../core/schema/fields/types';
+
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -160,77 +160,6 @@ export type DeleteManyResult =
  * and lets callers decide how to handle changes.
  */
 export type ChangedRowIds = Set<string>;
-
-/**
- * @deprecated Use ChangedRowIds (Set<string>) instead. RowAction is no longer tracked.
- */
-export type RowAction = 'add' | 'update' | 'delete';
-
-/**
- * @deprecated Use ChangedRowIds (Set<string>) instead. The new observe() returns just IDs.
- */
-export type RowChanges = Map<string, RowAction>;
-
-// Legacy type aliases for backwards compatibility with code expecting Y.Map types
-// These are no longer used internally but kept for API compatibility
-/** @deprecated Storage is now YKeyValueLww-based, not nested Y.Map */
-export type RowMap = Y.Map<unknown>;
-/** @deprecated Storage is now YKeyValueLww-based, not nested Y.Map */
-export type TableMap = Y.Map<RowMap>;
-/** @deprecated Storage is now YKeyValueLww-based, not nested Y.Map */
-export type TablesMap = Y.Map<TableMap>;
-
-/**
- * Creates a type-safe collection of table helpers for all tables in an array.
- *
- * Each table's `.id` is used as the key in the returned helper map.
- *
- * @param ydoc - The Y.Doc to store table data in
- * @param tableDefinitions - Array of TableDefinition objects
- *
- * @example
- * ```typescript
- * const helpers = createTableHelpers({
- *   ydoc,
- *   tableDefinitions: [
- *     table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }),
- *     table({ id: 'users', name: 'Users', fields: [id(), text({ id: 'name' })] }),
- *   ],
- * });
- *
- * helpers.posts.upsert({ id: '1', title: 'Hello' });
- * helpers.users.getAll();
- * ```
- */
-export function createTableHelpers<
-	TTableDefinitions extends readonly TableDefinition[],
->({
-	ydoc,
-	tableDefinitions,
-}: {
-	ydoc: Y.Doc;
-	tableDefinitions: TTableDefinitions;
-}): {
-	[K in TTableDefinitions[number]['id']]: TableHelper<
-		K,
-		TableById<TTableDefinitions, K>['fields']
-	>;
-} {
-	return Object.fromEntries(
-		tableDefinitions.map((tableDefinition) => [
-			tableDefinition.id,
-			createTableHelper({
-				ydoc,
-				tableDefinition,
-			}),
-		]),
-	) as {
-		[K in TTableDefinitions[number]['id']]: TableHelper<
-			K,
-			TableById<TTableDefinitions, K>['fields']
-		>;
-	};
-}
 
 /**
  * Creates a single table helper with type-safe CRUD operations.

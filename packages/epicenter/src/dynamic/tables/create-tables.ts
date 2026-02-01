@@ -12,8 +12,6 @@ import {
 export type {
 	GetResult,
 	InvalidRowResult,
-	RowAction,
-	RowChanges,
 	RowResult,
 	TableHelper,
 	UntypedTableHelper,

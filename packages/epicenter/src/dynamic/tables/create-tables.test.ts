@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { Id, boolean, id, integer, table, tags, text } from '../../core/schema';
+import { boolean, Id, id, integer, table, tags, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
 describe('createTables', () => {
@@ -464,8 +464,12 @@ describe('createTables', () => {
 			});
 
 			ydoc.transact(() => {
-				tables.get('posts').update({ id: Id('post-1'), title: 'Updated First' });
-				tables.get('posts').update({ id: Id('post-2'), title: 'Updated Second' });
+				tables
+					.get('posts')
+					.update({ id: Id('post-1'), title: 'Updated First' });
+				tables
+					.get('posts')
+					.update({ id: Id('post-2'), title: 'Updated Second' });
 			});
 
 			expect(callbackCount).toBe(1);
@@ -586,7 +590,9 @@ describe('createTables', () => {
 
 			ydoc.transact(() => {
 				tables.get('posts').update({ id: Id('post-1'), title: 'First Update' });
-				tables.get('posts').update({ id: Id('post-1'), title: 'Second Update' });
+				tables
+					.get('posts')
+					.update({ id: Id('post-1'), title: 'Second Update' });
 				tables.get('posts').update({ id: Id('post-1'), view_count: 100 });
 			});
 
@@ -662,7 +668,9 @@ describe('createTables', () => {
 			});
 
 			tables.get('comments').upsert({ id: Id('comment-1'), content: 'Hello' });
-			tables.get('comments').update({ id: Id('comment-1'), content: 'Updated' });
+			tables
+				.get('comments')
+				.update({ id: Id('comment-1'), content: 'Updated' });
 			tables.get('comments').delete(Id('comment-1'));
 
 			expect(postsChanges).toHaveLength(0);

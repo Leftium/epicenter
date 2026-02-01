@@ -507,9 +507,7 @@ export type UntypedTableHelper = {
 	update(partialRow: { id: Id } & Record<string, unknown>): UpdateResult;
 	upsert(rowData: { id: Id } & Record<string, unknown>): void;
 	upsertMany(rows: ({ id: Id } & Record<string, unknown>)[]): void;
-	updateMany(
-		rows: ({ id: Id } & Record<string, unknown>)[],
-	): UpdateManyResult;
+	updateMany(rows: ({ id: Id } & Record<string, unknown>)[]): UpdateManyResult;
 	get(id: Id): GetResult<{ id: Id } & Record<string, unknown>>;
 	getAll(): RowResult<{ id: Id } & Record<string, unknown>>[];
 	getAllValid(): ({ id: Id } & Record<string, unknown>)[];

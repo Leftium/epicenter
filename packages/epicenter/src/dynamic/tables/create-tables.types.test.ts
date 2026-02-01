@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
 	boolean,
-	id,
 	Id,
+	id,
 	integer,
 	select,
 	table,

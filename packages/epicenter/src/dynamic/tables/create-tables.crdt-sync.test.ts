@@ -12,7 +12,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { boolean, id, integer, table, text, Id } from '../../core/schema';
+import { boolean, Id, id, integer, table, text } from '../../core/schema';
 import { createTables } from './create-tables';
 
 describe('Cell-Level LWW CRDT Merging', () => {
@@ -69,7 +69,9 @@ describe('Cell-Level LWW CRDT Merging', () => {
 		await new Promise((resolve) => setTimeout(resolve, 2));
 
 		// User 1 updates title (earlier timestamp)
-		tables1.get('posts').update({ id: Id('post-1'), title: 'Updated by User 1' });
+		tables1
+			.get('posts')
+			.update({ id: Id('post-1'), title: 'Updated by User 1' });
 
 		// Small delay to ensure User 2's timestamp is later
 		await new Promise((resolve) => setTimeout(resolve, 2));
@@ -269,7 +271,9 @@ describe('Cell-Level LWW CRDT Merging', () => {
 		]);
 
 		// Create initial row
-		tables1.get('posts').upsert({ id: Id('post-1'), title: 'Original', views: 0 });
+		tables1
+			.get('posts')
+			.upsert({ id: Id('post-1'), title: 'Original', views: 0 });
 		Y.applyUpdate(doc2, Y.encodeStateAsUpdate(doc1));
 
 		// Small delay

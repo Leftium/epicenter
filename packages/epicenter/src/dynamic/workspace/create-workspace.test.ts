@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { defineExports } from '../../core/lifecycle';
-import { boolean, id, Id, integer, select, table, text } from '../../core/schema';
+import {
+	boolean,
+	Id,
+	id,
+	integer,
+	select,
+	table,
+	text,
+} from '../../core/schema';
 import { defineWorkspace } from '../../core/schema/workspace-definition';
 import { createHeadDoc } from '../head-doc';
 import { createWorkspace } from './create-workspace';

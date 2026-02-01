@@ -4,7 +4,13 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync, trySync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import type { Field, Id, KvField, Row, TableDefinition } from '../../core/schema';
+import type {
+	Field,
+	Id,
+	KvField,
+	Row,
+	TableDefinition,
+} from '../../core/schema';
 import { Id as createId } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
 import { getTableById } from '../../core/schema/schema-file';

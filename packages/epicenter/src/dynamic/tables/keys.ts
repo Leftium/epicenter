@@ -63,7 +63,9 @@ export type RowPrefix = `${Id}${typeof KEY_SEPARATOR}`;
  * ```
  */
 export function FieldId(id: string): FieldId {
-	validateId(id, 'FieldId');
+	if (id.includes(KEY_SEPARATOR)) {
+		throw new Error(`FieldId cannot contain '${KEY_SEPARATOR}': "${id}"`);
+	}
 	return id as FieldId;
 }
 
@@ -141,45 +143,3 @@ export function parseCellKey(key: string): { rowId: Id; fieldId: FieldId } {
 	};
 }
 
-/**
- * Check if a key starts with a given prefix.
- *
- * Useful for filtering keys by row prefix in range queries.
- *
- * @param key - The key to check
- * @param prefix - The prefix to match
- * @returns True if the key starts with the prefix, false otherwise
- *
- * @example
- * ```typescript
- * const prefix = RowPrefix(Id('row-1'));
- * if (hasPrefix('row-1:name', prefix)) {
- *   // This cell belongs to row-1
- * }
- * ```
- */
-export function hasPrefix(key: string, prefix: string): boolean {
-	return key.startsWith(prefix);
-}
-
-/**
- * Validate that an ID does not contain the key separator character.
- *
- * Throws an error if the ID contains ':' since this would break cell key parsing.
- * Called automatically by {@link FieldId} constructor.
- *
- * @param id - The ID to validate
- * @param type - The type name (for error messages)
- * @throws If the ID contains the ':' separator character
- *
- * @example
- * ```typescript
- * validateId('field-1', 'FieldId'); // OK
- * validateId('field:1', 'FieldId'); // Throws error
- * ```
- */
-export function validateId(id: string, type: string): void {
-	if (id.includes(KEY_SEPARATOR)) {
-		throw new Error(`${type} cannot contain '${KEY_SEPARATOR}': "${id}"`);
-	}
-}

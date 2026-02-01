@@ -32,7 +32,7 @@ import {
 	type YKeyValueLwwEntry,
 } from '../../core/utils/y-keyvalue-lww';
 import { TableKey } from '../../core/ydoc-keys';
-import { CellKey, FieldId, hasPrefix, parseCellKey, RowPrefix } from './keys';
+import { CellKey, FieldId, parseCellKey, RowPrefix } from './keys';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -206,7 +206,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		const cells: Record<string, unknown> = {};
 		let found = false;
 		for (const [key, entry] of ykv.map) {
-			if (hasPrefix(key, prefix)) {
+			if (key.startsWith(prefix)) {
 				const { fieldId } = parseCellKey(key);
 				cells[fieldId] = entry.val;
 				found = true;
@@ -237,7 +237,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	function hasRow(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		for (const key of ykv.map.keys()) {
-			if (hasPrefix(key, prefix)) return true;
+			if (key.startsWith(prefix)) return true;
 		}
 		return false;
 	}
@@ -245,7 +245,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	function deleteRowCells(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
-		const keysToDelete = keys.filter((key) => hasPrefix(key, prefix));
+		const keysToDelete = keys.filter((key) => key.startsWith(prefix));
 		for (const key of keysToDelete) {
 			ykv.delete(key);
 		}
@@ -562,7 +562,7 @@ export function createUntypedTableHelper({
 		const cells: Record<string, unknown> = {};
 		let found = false;
 		for (const [key, entry] of ykv.map) {
-			if (hasPrefix(key, prefix)) {
+			if (key.startsWith(prefix)) {
 				const { fieldId } = parseCellKey(key);
 				cells[fieldId] = entry.val;
 				found = true;
@@ -593,7 +593,7 @@ export function createUntypedTableHelper({
 	function hasRow(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		for (const key of ykv.map.keys()) {
-			if (hasPrefix(key, prefix)) return true;
+			if (key.startsWith(prefix)) return true;
 		}
 		return false;
 	}
@@ -601,7 +601,7 @@ export function createUntypedTableHelper({
 	function deleteRowCells(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
-		const keysToDelete = keys.filter((key) => hasPrefix(key, prefix));
+		const keysToDelete = keys.filter((key) => key.startsWith(prefix));
 		for (const key of keysToDelete) {
 			ykv.delete(key);
 		}

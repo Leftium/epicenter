@@ -328,12 +328,13 @@ const client = createClient(definition.id)
 
 ## Files
 
-| File              | Factory               | Purpose                   |
-| ----------------- | --------------------- | ------------------------- |
-| `registry-doc.ts` | `createRegistryDoc()` | Personal workspace index  |
-| `head-doc.ts`     | `createHeadDoc()`     | Epoch pointer (CRDT-safe) |
+| File                | Factory           | Purpose                   |
+| ------------------- | ----------------- | ------------------------- |
+| `head-doc.ts`       | `createHeadDoc()` | Epoch pointer (CRDT-safe) |
+| `workspace-doc.ts`  | (types only)      | Y.Map type aliases        |
+| `provider-types.ts` | (types only)      | Provider factory types    |
 
-**Note:** Workspace Doc creation is handled internally by `createClient()` in the workspace module.
+**Note:** Workspace Doc creation is handled internally by `createClient()` in the `workspace/` module.
 
 ## Data Storage Format
 
@@ -369,15 +370,10 @@ Y.Doc contains only data, stored using YKeyValueLww (Last-Write-Wins) pattern:
 ## Usage
 
 ```typescript
-import { createRegistryDoc, createHeadDoc } from './docs';
-import { defineWorkspace, id, text } from '@epicenter/hq';
-
-// Registry (user's workspace list)
-const registry = createRegistryDoc({ registryId: 'user123' });
-registry.addWorkspace('workspace456');
+import { createHeadDoc, defineWorkspace, id, text } from '@epicenter/hq';
 
 // Head (epoch pointer)
-const head = createHeadDoc({ workspaceId: 'workspace456' });
+const head = createHeadDoc({ workspaceId: 'workspace456', providers: {} });
 const epoch = head.getEpoch(); // 0
 
 // Bump epoch (CRDT-safe)
@@ -386,8 +382,6 @@ const newEpoch = head.bumpEpoch(); // 1
 // Define and create workspace (Workspace Doc created internally)
 const definition = defineWorkspace({
 	id: 'workspace456',
-	slug: 'blog',
-	name: 'Blog',
 	tables: { posts: { id: id(), title: text() } },
 	kv: {},
 });

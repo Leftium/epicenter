@@ -23,7 +23,7 @@
 
 export type { WorkspaceDefinition } from '../core/schema/workspace-definition';
 // HeadDoc (for time travel and epochs)
-export { createHeadDoc, type HeadDoc } from './docs/head-doc';
+export { createHeadDoc, type HeadDoc } from './head-doc';
 // The new builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {

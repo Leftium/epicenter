@@ -112,20 +112,6 @@ export {
 } from './core/schema';
 // Core types
 export type { AbsolutePath, ProjectDir } from './core/types';
-// Y.Doc wrappers for collaborative workspace architecture
-export type {
-	HeadDoc,
-	InferProviderExports,
-	KvYArray,
-	ProviderContext,
-	ProviderExports,
-	ProviderFactory,
-	ProviderFactoryMap,
-	RowYMap,
-	TablesYMap,
-	TableYMap,
-} from './dynamic/docs';
-export { createHeadDoc, WORKSPACE_DOC_MAPS } from './dynamic/docs';
 // Extension system (workspace-level plugins)
 export type {
 	ExtensionContext,
@@ -135,8 +121,18 @@ export type {
 	InferExtensionExports,
 } from './dynamic/extension';
 export { defineExports } from './dynamic/extension';
+// Y.Doc wrappers for collaborative workspace architecture
+// Y.Doc wrappers (flattened from dynamic/docs/)
+export { createHeadDoc, type HeadDoc } from './dynamic/head-doc';
 export type { Kv, KvHelper } from './dynamic/kv/core';
 export { createKv } from './dynamic/kv/core';
+export type {
+	InferProviderExports,
+	ProviderContext,
+	ProviderExports,
+	ProviderFactory,
+	ProviderFactoryMap,
+} from './dynamic/provider-types';
 export type { TableHelper, Tables } from './dynamic/tables/create-tables';
 // Table utilities
 export { createTables } from './dynamic/tables/create-tables';
@@ -172,6 +168,13 @@ export {
 	WorkspaceDefinitionSchema,
 	WorkspaceDefinitionValidator,
 } from './dynamic/workspace/workspace';
+export type {
+	KvYArray,
+	RowYMap,
+	TablesYMap,
+	TableYMap,
+} from './dynamic/workspace-doc';
+export { WORKSPACE_DOC_MAPS } from './dynamic/workspace-doc';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:

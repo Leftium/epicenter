@@ -1,8 +1,8 @@
 import type * as Y from 'yjs';
-import type { Lifecycle } from '../../core/lifecycle';
+import type { Lifecycle } from '../core/lifecycle';
 
 // Re-export lifecycle utilities for provider authors
-export { defineExports, type Lifecycle } from '../../core/lifecycle';
+export { defineExports, type Lifecycle } from '../core/lifecycle';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Doc-Level Provider Types

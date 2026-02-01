@@ -434,6 +434,8 @@ Any file importing these should NOT be updated:
 
 **Status**: ✅ Completed (2026-01-31)
 
+**Note (2026-01-31)**: After this reorganization, the `dynamic/docs/` folder was further flattened. The files `head-doc.ts`, `workspace-doc.ts`, and `provider-types.ts` were moved directly into `dynamic/`, and the README was renamed to `YDOC-ARCHITECTURE.md`. See the subsequent specs for details on this flatten.
+
 ### Summary of Changes
 
 The reorganization was successfully executed. `core/` now contains only shared primitives; all dynamic-specific code lives in `dynamic/`.

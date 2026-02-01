@@ -120,9 +120,9 @@ workspace.extensions.sqlite;  // Typed!
 import type * as Y from 'yjs';
 import type { Lifecycle } from '../../core/lifecycle';
 import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
-import type { Tables, TablesFunction } from '../tables/create-tables';
-import type { Kv, KvFunction } from '../kv/core';
-import type { HeadDoc } from '../docs/head-doc';
+import type { Tables, TablesFunction } from './tables/create-tables';
+import type { Kv, KvFunction } from './kv/core';
+import type { HeadDoc } from './head-doc';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES
@@ -267,8 +267,8 @@ export type CreateWorkspaceConfig<
 
 import * as Y from 'yjs';
 import { defineExports, type Lifecycle } from '../../core/lifecycle';
-import { createTables } from '../tables/create-tables';
-import { createKv } from '../kv/core';
+import { createTables } from './tables/create-tables';
+import { createKv } from './kv/core';
 import type {
 	CreateWorkspaceConfig,
 	ExtensionContext,
@@ -662,6 +662,8 @@ Static uses `capabilities`, dynamic uses `extensions`. Should we unify?
 ---
 
 ## Implementation Notes (2026-01-31)
+
+**Note (2026-01-31)**: After this implementation, the `dynamic/docs/` folder was flattened. Files like `head-doc.ts` and `workspace-doc.ts` were moved directly into `dynamic/`, so imports in this spec that reference `../docs/head-doc` should be updated to `./head-doc`. The workspace builder pattern itself remains unchanged.
 
 ### Files Created
 

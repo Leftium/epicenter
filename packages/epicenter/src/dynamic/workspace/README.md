@@ -128,7 +128,7 @@ The `epoch` determines which Workspace Doc to connect to.
 
 **CRDT Safety**: The Head Doc uses a per-client MAX pattern to handle concurrent
 epoch bumps safely. Each client writes their proposal to their own key; `getEpoch()`
-returns `max()` of all proposals. See `../docs/README.md` for details.
+returns `max()` of all proposals. See `../YDOC-ARCHITECTURE.md` for details.
 
 ```typescript
 // New workspace or prototyping (epoch defaults to 0)

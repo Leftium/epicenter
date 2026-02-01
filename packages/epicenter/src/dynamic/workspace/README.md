@@ -45,36 +45,31 @@ const workspace = defineWorkspace({
 	kv: {},
 });
 
-// Full definition (explicit metadata) — ALL tables have full metadata
+// Full definition (explicit metadata) — uses table() helper with arrays
 const workspace = defineWorkspace({
 	id: 'epicenter.whispering',
 	name: 'Whispering',
-	tables: {
-		recordings: {
+	tables: [
+		table({
+			id: 'recordings',
 			name: 'Recordings',
-			icon: { type: 'emoji', value: '🎙️' },
+			icon: 'emoji:🎙️',
 			description: 'Voice recordings',
-			fields: { id: id(), title: text(), transcript: text() },
-		},
-		transformations: {
+			fields: [id(), text({ id: 'title' }), text({ id: 'transcript' })],
+		}),
+		table({
+			id: 'transformations',
 			name: 'Transformations',
-			icon: { type: 'emoji', value: '✨' },
+			icon: 'emoji:✨',
 			description: 'Text transformations',
-			fields: { id: id(), name: text(), prompt: text() },
-		},
-	},
-	kv: {},
+			fields: [id(), text({ id: 'name' }), text({ id: 'prompt' })],
+		}),
+	],
+	kv: [],
 });
 ```
 
-When using minimal input, defaults are applied:
-
-- `name` defaults to humanized `id` (e.g., "epicenter.whispering" → "Epicenter whispering")
-- Table `name` defaults to humanized key (e.g., "blogPosts" → "Blog posts")
-- Table `icon` defaults to `{ type: 'emoji', value: '📄' }`
-- Table `description` defaults to `''`
-
-**Note**: No mixing allowed. Either all tables are minimal or all have full metadata.
+Icons use a tagged string format: `'emoji:📝'`, `'lucide:file-text'`, or `'url:https://...'`. Plain emoji strings like `'📝'` are automatically normalized to `'emoji:📝'`.
 
 ## What is a Workspace?
 

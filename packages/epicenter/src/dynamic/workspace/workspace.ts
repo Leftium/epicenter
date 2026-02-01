@@ -55,32 +55,22 @@ export {
 } from '../../core/schema/workspace-definition-validator';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Y.Doc Structure: Three Top-Level Maps
+// Y.Doc Structure: YKeyValueLww Arrays
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // HEAD DOC (per workspace, all epochs)
-// Y.Map('meta') - Workspace identity
-//   └── name: string
-//   └── icon: Icon | null
-//   └── description: string
-// Y.Map('epochs') - Epoch tracking
-//   └── [clientId]: number
+// Y.Map('meta') - Workspace identity (name, icon, description)
+// Y.Map('epochs') - Epoch tracking per client
 //
 // WORKSPACE DOC (per epoch)
-// Y.Map('definition') - Table/KV definitions (rarely changes)
-//   └── tables: Y.Map<tableName, { name, icon, description, fields }>
-//   └── kv: Y.Map<keyName, { name, icon, description, field }>
+// Uses YKeyValueLww for cell-level LWW conflict resolution:
 //
-// Y.Map('kv') - Settings values (changes occasionally)
-//   └── [key]: value
+// Y.Array('table:{tableName}') - Table data as LWW entries
+//   └── { key: 'rowId:fieldId', val: value, ts: timestamp }
+//   └── Cell-level timestamps enable clean concurrent field merges
 //
-// Y.Map('tables') - Table data (changes frequently)
-//   └── [tableName]: Y.Map<rowId, Y.Map<fieldName, value>>
+// Y.Array('kv') - KV settings as LWW entries
+//   └── { key: 'settingId', val: value, ts: timestamp }
 //
-// This enables:
-// - Independent observation (no observeDeep needed)
-// - Different persistence strategies per map
-// - Collaborative definition editing via Y.Map('definition')
-// - Workspace identity (name/icon) shared across all epochs
-//
-// See specs/20260121T231500-doc-architecture-v2.md for details.
+// Note: Table/KV definitions are static (from code or definition.json),
+// NOT stored in Y.Doc. This keeps documents lean and focused on data.

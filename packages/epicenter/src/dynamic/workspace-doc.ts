@@ -14,29 +14,6 @@ import type { KvValue } from '../core/schema/fields/types';
 // Y.Doc Top-Level Map Names
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * The two top-level Y.Map names in a Workspace Y.Doc.
- *
- * Each workspace epoch has a single Y.Doc with two top-level maps:
- * - `kv`: Settings values (actual KV data)
- * - `tables`: Table data (rows organized by table name)
- *
- * Note: Definitions (table/KV schemas) are stored in static JSON files,
- * NOT in Y.Doc. This keeps Y.Docs lean and focused on data only.
- *
- * Note: Workspace-level identity (name, icon, description) lives in the
- * Head Doc, NOT here. This ensures renaming applies to all epochs.
- *
- * This 1:1 mapping enables independent observation and different persistence
- * strategies per map.
- */
-export const WORKSPACE_DOC_MAPS = {
-	/** Settings values. Changes occasionally. Persisted to kv.json */
-	KV: 'kv',
-	/** Table row data. Changes frequently. Persisted to tables.sqlite */
-	TABLES: 'tables',
-} as const;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Map Type Aliases
 // ─────────────────────────────────────────────────────────────────────────────

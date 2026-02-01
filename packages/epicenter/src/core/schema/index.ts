@@ -78,7 +78,7 @@ export {
 	normalizeIcon,
 	parseIcon,
 } from './fields/types.js';
-export { getTableById, parseSchema } from './schema-file.js';
+export { getTableById } from './schema-file.js';
 export { standardSchemaToJsonSchema } from './standard/to-json-schema.js';
 export type {
 	StandardJSONSchemaV1,

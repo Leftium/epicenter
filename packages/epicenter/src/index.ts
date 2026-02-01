@@ -168,7 +168,6 @@ export type {
 	TablesYMap,
 	TableYMap,
 } from './dynamic/workspace-doc';
-export { WORKSPACE_DOC_MAPS } from './dynamic/workspace-doc';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:

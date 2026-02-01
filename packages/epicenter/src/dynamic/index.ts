@@ -17,6 +17,31 @@
  * @packageDocumentation
  */
 
+// ════════════════════════════════════════════════════════════════════════════
+// WORKSPACE API (builder pattern)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { WorkspaceDefinition } from '../core/schema/workspace-definition';
+// HeadDoc (for time travel and epochs)
+export { createHeadDoc, type HeadDoc } from './docs/head-doc';
+// The new builder pattern API
+export { createWorkspace } from './workspace/create-workspace';
+export type {
+	CreateWorkspaceConfig,
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+	WorkspaceClient,
+	WorkspaceClientBuilder,
+} from './workspace/types';
+// Workspace definition helpers
+export { defineWorkspace } from './workspace/workspace';
+
+// ════════════════════════════════════════════════════════════════════════════
+// LIFECYCLE & CORE UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+
 // Lifecycle utilities (re-exported for extension authors)
 export {
 	defineExports,
@@ -42,8 +67,9 @@ export {
 export type { Icon, IconType } from '../core/schema/fields/types';
 export { createIcon, isIcon, parseIcon } from '../core/schema/fields/types';
 
-// HeadDoc (for time travel and epochs)
-export { createHeadDoc, type HeadDoc } from './docs/head-doc';
+// ════════════════════════════════════════════════════════════════════════════
+// TABLES & KV
+// ════════════════════════════════════════════════════════════════════════════
 
 // Key utilities
 export {
@@ -57,8 +83,10 @@ export {
 	RowPrefix,
 	validateId,
 } from './keys';
+
 // KV store (YKeyValueLww-based)
 export { createKvHelper, type KvHelper } from './kv/kv-helper';
+
 // Tables API (YKeyValueLww-based row-level storage)
 export {
 	createTables,
@@ -71,6 +99,7 @@ export {
 	type UntypedTableHelper,
 	type ValidRowResult,
 } from './tables/create-tables';
+
 export {
 	type ChangedRowIds,
 	createTableHelper,

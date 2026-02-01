@@ -39,7 +39,7 @@
  *
  * ## Related Modules
  *
- * - {@link ../docs/workspace-doc.ts} - WorkspaceDoc type definition
+ * - {@link ./types.ts} - WorkspaceClient type definition
  * - {@link ../../dynamic/index.ts} - Dynamic workspace API (createWorkspace)
  *
  * @module

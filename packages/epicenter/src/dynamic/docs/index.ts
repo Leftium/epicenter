@@ -9,8 +9,9 @@ export {
 	type ProviderFactoryMap,
 } from './provider-types';
 export {
-	createWorkspaceDoc,
 	type KvYArray,
+	type RowYMap,
+	type TablesYMap,
+	type TableYMap,
 	WORKSPACE_DOC_MAPS,
-	type WorkspaceDoc,
 } from './workspace-doc';

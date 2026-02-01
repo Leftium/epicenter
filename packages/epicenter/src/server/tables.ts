@@ -2,19 +2,20 @@ import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
 import { tableToArktype } from '../core/schema';
-import type { WorkspaceDoc } from '../dynamic/docs/workspace-doc';
+import type { WorkspaceClient } from '../dynamic/workspace/types';
 
-type AnyWorkspaceDoc = WorkspaceDoc<any, any, any>;
+// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
+type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
 
 export function createTablesPlugin(
-	workspaceDocs: Record<string, AnyWorkspaceDoc>,
+	workspaceClients: Record<string, AnyWorkspaceClient>,
 ) {
 	const app = new Elysia();
 
-	for (const [workspaceId, workspaceDoc] of Object.entries(workspaceDocs)) {
-		for (const tableName of Object.keys(workspaceDoc.tables.definitions)) {
-			const tableHelper = workspaceDoc.tables.get(tableName);
-			const fields = workspaceDoc.tables.definitions[tableName]!.fields;
+	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
+		for (const tableName of Object.keys(workspace.tables.definitions)) {
+			const tableHelper = workspace.tables.get(tableName);
+			const fields = workspace.tables.definitions[tableName]!.fields;
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
 

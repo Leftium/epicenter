@@ -121,13 +121,11 @@ export type {
 	ProviderExports,
 	ProviderFactory,
 	ProviderFactoryMap,
-	WorkspaceDoc,
+	RowYMap,
+	TablesYMap,
+	TableYMap,
 } from './dynamic/docs';
-export {
-	createHeadDoc,
-	createWorkspaceDoc,
-	WORKSPACE_DOC_MAPS,
-} from './dynamic/docs';
+export { createHeadDoc, WORKSPACE_DOC_MAPS } from './dynamic/docs';
 // Extension system (workspace-level plugins)
 export type {
 	ExtensionContext,
@@ -162,6 +160,11 @@ export {
 	isTableDefinition,
 	normalizeIcon,
 } from './dynamic/workspace/normalize';
+// Workspace client types
+export type {
+	WorkspaceClient,
+	WorkspaceClientBuilder,
+} from './dynamic/workspace/types';
 export type { WorkspaceDefinition } from './dynamic/workspace/workspace';
 export {
 	defineWorkspace,

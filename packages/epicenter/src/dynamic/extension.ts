@@ -1,7 +1,7 @@
 /**
  * Extension types and utilities.
  *
- * Re-exports extension types from workspace-doc.ts (the canonical location)
+ * Re-exports extension types from workspace/types.ts (the canonical location)
  * plus lifecycle utilities for extension authors.
  *
  * ## Extensions vs Providers
@@ -17,12 +17,23 @@
  */
 
 // Re-export lifecycle utilities for extension authors
-export { defineExports, type Lifecycle } from '../core/lifecycle';
-// Re-export all extension types from workspace-doc (the canonical location)
+import { defineExports, type Lifecycle } from '../core/lifecycle';
+export { defineExports, type Lifecycle };
+
+/**
+ * Extension exports combining lifecycle protocol with custom exports.
+ *
+ * The framework guarantees `whenSynced` and `destroy` exist on all extensions.
+ * Use `defineExports()` to easily create compliant extension returns.
+ */
+export type ExtensionExports<
+	T extends Record<string, unknown> = Record<string, unknown>,
+> = Lifecycle & T;
+
+// Re-export all extension types from workspace/types.ts (the canonical location)
 export type {
 	ExtensionContext,
-	ExtensionExports,
 	ExtensionFactory,
 	ExtensionFactoryMap,
 	InferExtensionExports,
-} from './docs/workspace-doc';
+} from './workspace/types';

@@ -2,12 +2,11 @@ import { type ArkErrors, type } from 'arktype';
 import { createTaggedError } from 'wellcrafted/error';
 import type * as Y from 'yjs';
 
-import type { KvField, KvFieldById, KvValue } from '../../core/schema';
+import type { KvField, KvValue } from '../../core/schema';
 import { fieldToYjsArktype, isNullableField } from '../../core/schema';
-import {
+import type {
 	YKeyValueLww,
-	type YKeyValueLwwChange,
-	type YKeyValueLwwEntry,
+	YKeyValueLwwChange,
 } from '../../core/utils/y-keyvalue-lww';
 
 /**
@@ -29,10 +28,10 @@ type KvValidationContext = {
 	summary: string;
 };
 
-export const { KvValidationError } =
+const { KvValidationError } =
 	createTaggedError('KvValidationError').withContext<KvValidationContext>();
 
-export type KvValidationError = ReturnType<typeof KvValidationError>;
+type KvValidationError = ReturnType<typeof KvValidationError>;
 
 /**
  * Result of getting a KV value.
@@ -42,55 +41,6 @@ export type KvGetResult<TValue> =
 	| { status: 'valid'; value: TValue }
 	| { status: 'invalid'; key: string; error: KvValidationError }
 	| { status: 'not_found'; key: string };
-
-/**
- * Creates a collection of typed KV helpers for all fields in an array.
- *
- * Each field's `.id` is used as the key in the returned helper map.
- * Uses YKeyValueLww for last-write-wins conflict resolution. KV data is stored
- * as `{ key, val, ts }` entries in a Y.Array.
- *
- * @param ydoc - The Y.Doc to store KV data in
- * @param kvFields - Array of KvField definitions
- *
- * @example
- * ```typescript
- * const helpers = createKvHelpers({
- *   ydoc,
- *   kvFields: [
- *     select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] }),
- *     integer({ id: 'fontSize', name: 'Font Size', default: 14 }),
- *   ],
- * });
- *
- * helpers.theme.set('dark');
- * helpers.fontSize.get(); // { status: 'valid', value: 14 }
- * ```
- */
-export function createKvHelpers<const TKvFields extends readonly KvField[]>({
-	ydoc,
-	kvFields,
-}: {
-	ydoc: Y.Doc;
-	kvFields: TKvFields;
-}): {
-	[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
-} {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<KvValue>>('kv');
-	const ykvLww = new YKeyValueLww(yarray);
-
-	return Object.fromEntries(
-		kvFields.map((field) => [
-			field.id,
-			createKvHelper({
-				ykvLww,
-				field,
-			}),
-		]),
-	) as {
-		[K in TKvFields[number]['id']]: KvHelper<KvFieldById<TKvFields, K>>;
-	};
-}
 
 export function createKvHelper<TField extends KvField>({
 	ykvLww,

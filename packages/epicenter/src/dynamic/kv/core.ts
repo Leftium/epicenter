@@ -13,9 +13,6 @@ import {
 	type KvHelper,
 } from './kv-helper';
 
-/** Y.Array storing all KV values as LWW entries (key, val, ts). */
-export type KvYArray = Y.Array<YKeyValueLwwEntry<KvValue>>;
-
 export type { KvHelper } from './kv-helper';
 
 /**

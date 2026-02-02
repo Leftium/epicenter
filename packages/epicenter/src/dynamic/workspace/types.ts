@@ -58,8 +58,6 @@ export type ExtensionContext<
 	ydoc: Y.Doc;
 	/** Workspace identifier (from definition.id) */
 	workspaceId: string;
-	/** Epoch number (always 0 in simple mode) */
-	epoch: number;
 	/** The workspace definition with typed tables and kv fields */
 	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;
 	/** Typed table helpers */
@@ -146,8 +144,6 @@ export type WorkspaceClient<
 > = {
 	/** Workspace identifier */
 	workspaceId: string;
-	/** Current epoch number */
-	epoch: number;
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Typed table helpers */
@@ -204,4 +200,3 @@ export type WorkspaceClientBuilder<
 		extensions: TExtensions,
 	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
 };
-

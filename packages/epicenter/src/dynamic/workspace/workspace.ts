@@ -62,7 +62,7 @@ export {
 // Y.Map('meta') - Workspace identity (name, icon, description)
 // Y.Map('epochs') - Epoch tracking per client
 //
-// WORKSPACE DOC (per epoch)
+// WORKSPACE DOC
 // Uses YKeyValueLww for cell-level LWW conflict resolution:
 //
 // Y.Array('table:{tableName}') - Table data as LWW entries

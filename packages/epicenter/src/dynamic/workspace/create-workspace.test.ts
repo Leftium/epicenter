@@ -55,7 +55,6 @@ describe('createWorkspace', () => {
 
 			// Should be usable immediately
 			expect(workspace.workspaceId).toBe('test-workspace');
-			expect(workspace.epoch).toBe(0);
 			expect(workspace.ydoc).toBeInstanceOf(Y.Doc);
 			expect(workspace.tables).toBeDefined();
 			expect(workspace.kv).toBeDefined();
@@ -143,7 +142,6 @@ describe('createWorkspace', () => {
 				capture: (ctx) => {
 					receivedContext = {
 						workspaceId: ctx.workspaceId,
-						epoch: ctx.epoch,
 						extensionId: ctx.extensionId,
 						hasYdoc: ctx.ydoc instanceof Y.Doc,
 						hasTables: typeof ctx.tables.get === 'function',
@@ -156,7 +154,6 @@ describe('createWorkspace', () => {
 
 			expect(receivedContext).toBeDefined();
 			expect(receivedContext?.workspaceId).toBe('test-workspace');
-			expect(receivedContext?.epoch).toBe(0);
 			expect(receivedContext?.extensionId).toBe('capture');
 			expect(receivedContext?.hasYdoc).toBe(true);
 			expect(receivedContext?.hasTables).toBe(true);

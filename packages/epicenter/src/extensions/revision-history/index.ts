@@ -13,7 +13,6 @@
  *   .withExtensions({
  *     revisions: (ctx) => localRevisionHistory(ctx, {
  *       directory: './workspaces',
- *       epoch: 0,
  *       maxVersions: 50,
  *     }),
  *   });

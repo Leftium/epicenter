@@ -96,7 +96,6 @@ export function createWorkspace<
 		Record<string, never>
 	> = {
 		workspaceId,
-		epoch: 0, // Hardcoded for backwards compat
 		ydoc,
 		tables,
 		kv,
@@ -125,7 +124,6 @@ export function createWorkspace<
 				const context: ExtensionContext<TTableDefinitions, TKvFields> = {
 					ydoc,
 					workspaceId,
-					epoch: 0, // Hardcoded for backwards compat
 					definition,
 					tables,
 					kv,
@@ -154,7 +152,6 @@ export function createWorkspace<
 
 			return {
 				workspaceId,
-				epoch: 0, // Hardcoded for backwards compat
 				ydoc,
 				tables,
 				kv,

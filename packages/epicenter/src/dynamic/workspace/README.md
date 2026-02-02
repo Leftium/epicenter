@@ -5,23 +5,32 @@ A workspace is a self-contained domain module with its own definition and typed 
 ## Quick Start
 
 ```typescript
-import { createWorkspace, defineWorkspace, id, text, table } from '@epicenter/hq/dynamic';
+import {
+	createWorkspace,
+	defineWorkspace,
+	id,
+	text,
+	table,
+} from '@epicenter/hq/dynamic';
 
 const definition = defineWorkspace({
-  id: 'my-workspace',
-  name: 'My Workspace',
-  description: '',
-  icon: null,
-  tables: [
-    table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] }),
-  ],
-  kv: [],
+	id: 'my-workspace',
+	name: 'My Workspace',
+	description: '',
+	icon: null,
+	tables: [
+		table({
+			id: 'posts',
+			name: 'Posts',
+			fields: [id(), text({ id: 'title' })],
+		}),
+	],
+	kv: [],
 });
 
-const workspace = createWorkspace(definition)
-  .withExtensions({
-    persistence: (ctx) => myPersistence(ctx),
-  });
+const workspace = createWorkspace(definition).withExtensions({
+	persistence: (ctx) => myPersistence(ctx),
+});
 
 await workspace.whenSynced;
 workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
@@ -35,18 +44,18 @@ Creates a workspace definition. Pure function, no I/O.
 
 ```typescript
 const definition = defineWorkspace({
-  id: 'epicenter.blog',           // Locally-scoped identifier
-  name: 'Blog',                   // Display name
-  description: 'Blog posts',      // Optional description
-  icon: 'emoji:📝',               // Optional icon (emoji:, lucide:, or url:)
-  tables: [
-    table({
-      id: 'posts',
-      name: 'Posts',
-      fields: [id(), text({ id: 'title' }), text({ id: 'content' })],
-    }),
-  ],
-  kv: [],                         // Key-value definitions
+	id: 'epicenter.blog', // Locally-scoped identifier
+	name: 'Blog', // Display name
+	description: 'Blog posts', // Optional description
+	icon: 'emoji:📝', // Optional icon (emoji:, lucide:, or url:)
+	tables: [
+		table({
+			id: 'posts',
+			name: 'Posts',
+			fields: [id(), text({ id: 'title' }), text({ id: 'content' })],
+		}),
+	],
+	kv: [], // Key-value definitions
 });
 ```
 
@@ -55,17 +64,15 @@ const definition = defineWorkspace({
 Creates a workspace from a definition. Returns a builder for adding extensions.
 
 ```typescript
-const workspace = createWorkspace(definition)
-  .withExtensions({
-    sqlite: (ctx) => sqliteExtension(ctx),
-    persistence: (ctx) => persistenceExtension(ctx),
-  });
+const workspace = createWorkspace(definition).withExtensions({
+	sqlite: (ctx) => sqliteExtension(ctx),
+	persistence: (ctx) => persistenceExtension(ctx),
+});
 ```
 
 **Key details:**
 
 - Y.Doc created with `gc: true` for efficient YKeyValueLww storage
-- Epoch is always 0 (no versioning in simple mode)
 - No HeadDoc needed
 
 ### Extension Context
@@ -74,13 +81,12 @@ Extensions receive an `ExtensionContext` with:
 
 ```typescript
 interface ExtensionContext {
-  ydoc: Y.Doc;                    // The underlying Y.Doc
-  workspaceId: string;            // Workspace ID
-  epoch: number;                  // Always 0 in simple mode
-  definition: WorkspaceDefinition;
-  tables: Tables;                 // Table operations
-  kv: KeyValueStore;              // Key-value store
-  extensionId: string;            // The extension's key name
+	ydoc: Y.Doc; // The underlying Y.Doc
+	workspaceId: string; // Workspace ID
+	definition: WorkspaceDefinition;
+	tables: Tables; // Table operations
+	kv: KeyValueStore; // Key-value store
+	extensionId: string; // The extension's key name
 }
 ```
 
@@ -107,7 +113,9 @@ await using workspace = ...;      // Auto-cleanup with dispose
 const workspace = createWorkspace(definition).withExtensions({});
 
 // Create
-workspace.tables.get('posts').upsert({ id: '1', title: 'Hello', content: '...' });
+workspace.tables
+	.get('posts')
+	.upsert({ id: '1', title: 'Hello', content: '...' });
 
 // Read
 const post = workspace.tables.get('posts').get({ id: '1' });
@@ -138,14 +146,18 @@ await workspace.whenSynced;
 
 ```typescript
 {
-  await using workspace = createWorkspace(definition).withExtensions({ persistence });
-  workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
-  // Auto-disposed when block exits
+	await using workspace = createWorkspace(definition).withExtensions({
+		persistence,
+	});
+	workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
+	// Auto-disposed when block exits
 }
 
 {
-  await using workspace = createWorkspace(definition).withExtensions({ persistence });
-  const posts = workspace.tables.get('posts').getAllValid();
-  // Auto-disposed when block exits
+	await using workspace = createWorkspace(definition).withExtensions({
+		persistence,
+	});
+	const posts = workspace.tables.get('posts').getAllValid();
+	// Auto-disposed when block exits
 }
 ```

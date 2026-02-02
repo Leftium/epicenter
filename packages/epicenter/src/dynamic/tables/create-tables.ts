@@ -172,18 +172,6 @@ export function createTables<
 	// Cache for dynamically-created table helpers (tables not in definition)
 	const dynamicTableHelpers = new Map<string, UntypedTableHelper>();
 
-	/**
-	 * Get or create an untyped table helper for a dynamic table.
-	 */
-	const getOrCreateDynamicHelper = (name: string): UntypedTableHelper => {
-		let helper = dynamicTableHelpers.get(name);
-		if (!helper) {
-			helper = createUntypedTableHelper({ ydoc, tableName: name });
-			dynamicTableHelpers.set(name, helper);
-		}
-		return helper;
-	};
-
 	// ════════════════════════════════════════════════════════════════════
 	// BUILD TABLES OBJECT WITH METHODS
 	// ════════════════════════════════════════════════════════════════════
@@ -221,7 +209,12 @@ export function createTables<
 				return tableHelpers[name as keyof typeof tableHelpers];
 			}
 			// Otherwise return/create a dynamic helper
-			return getOrCreateDynamicHelper(name);
+			let helper = dynamicTableHelpers.get(name);
+			if (!helper) {
+				helper = createUntypedTableHelper({ ydoc, tableName: name });
+				dynamicTableHelpers.set(name, helper);
+			}
+			return helper;
 		},
 
 		// ════════════════════════════════════════════════════════════════════

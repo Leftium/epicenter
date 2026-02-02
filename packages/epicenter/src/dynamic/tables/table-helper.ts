@@ -234,14 +234,6 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		}
 	}
 
-	function hasRow(rowId: Id): boolean {
-		const prefix = RowPrefix(rowId);
-		for (const key of ykv.map.keys()) {
-			if (key.startsWith(prefix)) return true;
-		}
-		return false;
-	}
-
 	function deleteRowCells(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
@@ -339,7 +331,11 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		has(id: Id): boolean {
-			return hasRow(id);
+			const prefix = RowPrefix(id);
+			for (const key of ykv.map.keys()) {
+				if (key.startsWith(prefix)) return true;
+			}
+			return false;
 		},
 
 		delete(id: Id): DeleteResult {
@@ -588,14 +584,6 @@ export function createUntypedTableHelper({
 		}
 	}
 
-	function hasRow(rowId: Id): boolean {
-		const prefix = RowPrefix(rowId);
-		for (const key of ykv.map.keys()) {
-			if (key.startsWith(prefix)) return true;
-		}
-		return false;
-	}
-
 	function deleteRowCells(rowId: Id): boolean {
 		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
@@ -678,7 +666,11 @@ export function createUntypedTableHelper({
 		},
 
 		has(id: Id): boolean {
-			return hasRow(id);
+			const prefix = RowPrefix(id);
+			for (const key of ykv.map.keys()) {
+				if (key.startsWith(prefix)) return true;
+			}
+			return false;
 		},
 
 		delete(id: Id): DeleteResult {

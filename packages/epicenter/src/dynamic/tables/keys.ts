@@ -1,19 +1,11 @@
+import { regex } from 'arkregex';
 import type { Brand } from 'wellcrafted/brand';
+import { Id } from '../../core/schema/fields/id.js';
 
 const KEY_SEPARATOR = ':' as const;
 
-/**
- * Branded type for row identifiers.
- *
- * Ensures type safety when working with row IDs in cell keys.
- * Use the {@link RowId} constructor to create branded row IDs.
- *
- * @example
- * ```typescript
- * const rowId = RowId('row-123');
- * ```
- */
-export type RowId = string & Brand<'RowId'>;
+/** Regex for parsing cell keys with typed capture groups. */
+const CELL_KEY_REGEX = regex('^(?<rowId>[^:]+):(?<fieldId>[^:]+)$');
 
 /**
  * Branded type for field identifiers.
@@ -36,11 +28,11 @@ export type FieldId = string & Brand<'FieldId'>;
  *
  * @example
  * ```typescript
- * const key: CellKey = CellKey(RowId('row-1'), FieldId('name'));
+ * const key: CellKey = CellKey(Id('row-1'), FieldId('name'));
  * // key is "row-1:name"
  * ```
  */
-export type CellKey = `${RowId}${typeof KEY_SEPARATOR}${FieldId}`;
+export type CellKey = `${Id}${typeof KEY_SEPARATOR}${FieldId}`;
 
 /**
  * Template literal type for row prefixes.
@@ -51,32 +43,11 @@ export type CellKey = `${RowId}${typeof KEY_SEPARATOR}${FieldId}`;
  *
  * @example
  * ```typescript
- * const prefix: RowPrefix = RowPrefix(RowId('row-1'));
+ * const prefix: RowPrefix = RowPrefix(Id('row-1'));
  * // prefix is "row-1:"
  * ```
  */
-export type RowPrefix = `${RowId}${typeof KEY_SEPARATOR}`;
-
-/**
- * Create a branded RowId from a string.
- *
- * Validates that the ID does not contain the key separator character.
- * Throws an error if validation fails.
- *
- * @param id - The row identifier string
- * @returns A branded RowId
- * @throws If the ID contains the ':' separator character
- *
- * @example
- * ```typescript
- * const rowId = RowId('row-123');
- * const cellKey = CellKey(rowId, FieldId('name'));
- * ```
- */
-export function RowId(id: string): RowId {
-	validateId(id, 'RowId');
-	return id as RowId;
-}
+export type RowPrefix = `${Id}${typeof KEY_SEPARATOR}`;
 
 /**
  * Create a branded FieldId from a string.
@@ -91,11 +62,13 @@ export function RowId(id: string): RowId {
  * @example
  * ```typescript
  * const fieldId = FieldId('email');
- * const cellKey = CellKey(RowId('row-1'), fieldId);
+ * const cellKey = CellKey(Id('row-1'), fieldId);
  * ```
  */
 export function FieldId(id: string): FieldId {
-	validateId(id, 'FieldId');
+	if (id.includes(KEY_SEPARATOR)) {
+		throw new Error(`FieldId cannot contain '${KEY_SEPARATOR}': "${id}"`);
+	}
 	return id as FieldId;
 }
 
@@ -103,7 +76,7 @@ export function FieldId(id: string): FieldId {
  * Create a cell key from a row ID and field ID.
  *
  * Combines a row ID and field ID into a compound key using ':' as separator.
- * Both IDs must be branded (use {@link RowId} and {@link FieldId} constructors).
+ * Both IDs must be branded (use {@link Id} and {@link FieldId} constructors).
  *
  * @param rowId - The branded row identifier
  * @param fieldId - The branded field identifier
@@ -111,11 +84,11 @@ export function FieldId(id: string): FieldId {
  *
  * @example
  * ```typescript
- * const key = CellKey(RowId('row-1'), FieldId('name'));
+ * const key = CellKey(Id('row-1'), FieldId('name'));
  * // key is "row-1:name"
  * ```
  */
-export function CellKey(rowId: RowId, fieldId: FieldId): CellKey {
+export function CellKey(rowId: Id, fieldId: FieldId): CellKey {
 	return `${rowId}${KEY_SEPARATOR}${fieldId}` as CellKey;
 }
 
@@ -130,12 +103,12 @@ export function CellKey(rowId: RowId, fieldId: FieldId): CellKey {
  *
  * @example
  * ```typescript
- * const prefix = RowPrefix(RowId('row-1'));
+ * const prefix = RowPrefix(Id('row-1'));
  * // prefix is "row-1:"
  * // Can be used to find all keys starting with "row-1:"
  * ```
  */
-export function RowPrefix(rowId: RowId): RowPrefix {
+export function RowPrefix(rowId: Id): RowPrefix {
 	return `${rowId}${KEY_SEPARATOR}` as RowPrefix;
 }
 
@@ -152,66 +125,19 @@ export function RowPrefix(rowId: RowId): RowPrefix {
  * @example
  * ```typescript
  * const { rowId, fieldId } = parseCellKey('row-1:name');
- * // rowId is RowId('row-1')
+ * // rowId is Id('row-1')
  * // fieldId is FieldId('name')
  * ```
  */
-export function parseCellKey(key: string): { rowId: RowId; fieldId: FieldId } {
-	const parts = key.split(KEY_SEPARATOR);
-	if (parts.length !== 2) {
+export function parseCellKey(key: string): { rowId: Id; fieldId: FieldId } {
+	const match = CELL_KEY_REGEX.exec(key);
+	if (!match?.groups) {
 		throw new Error(
 			`Invalid cell key format: "${key}". Expected format: "rowId:fieldId"`,
 		);
 	}
-	const [rowIdStr, fieldIdStr] = parts;
-	if (!rowIdStr || !fieldIdStr) {
-		throw new Error(`Invalid cell key format: "${key}"`);
-	}
 	return {
-		rowId: RowId(rowIdStr),
-		fieldId: FieldId(fieldIdStr),
+		rowId: Id(match.groups.rowId),
+		fieldId: FieldId(match.groups.fieldId),
 	};
-}
-
-/**
- * Check if a key starts with a given prefix.
- *
- * Useful for filtering keys by row prefix in range queries.
- *
- * @param key - The key to check
- * @param prefix - The prefix to match
- * @returns True if the key starts with the prefix, false otherwise
- *
- * @example
- * ```typescript
- * const prefix = RowPrefix(RowId('row-1'));
- * if (hasPrefix('row-1:name', prefix)) {
- *   // This cell belongs to row-1
- * }
- * ```
- */
-export function hasPrefix(key: string, prefix: string): boolean {
-	return key.startsWith(prefix);
-}
-
-/**
- * Validate that an ID does not contain the key separator character.
- *
- * Throws an error if the ID contains ':' since this would break cell key parsing.
- * Called automatically by {@link RowId} and {@link FieldId} constructors.
- *
- * @param id - The ID to validate
- * @param type - The type name (for error messages)
- * @throws If the ID contains the ':' separator character
- *
- * @example
- * ```typescript
- * validateId('row-1', 'RowId'); // OK
- * validateId('row:1', 'RowId'); // Throws error
- * ```
- */
-export function validateId(id: string, type: string): void {
-	if (id.includes(KEY_SEPARATOR)) {
-		throw new Error(`${type} cannot contain '${KEY_SEPARATOR}': "${id}"`);
-	}
 }

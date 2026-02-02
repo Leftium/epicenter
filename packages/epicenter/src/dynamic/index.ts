@@ -73,23 +73,19 @@ export {
 } from '../core/schema/fields/types';
 
 // ════════════════════════════════════════════════════════════════════════════
+// Y.DOC STORAGE KEYS
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { KvKey, TableKey as TableKeyType } from '../core/ydoc-keys';
+// Y.Doc array key conventions (for direct Y.Doc access / custom providers)
+export { KV_KEY, TableKey } from '../core/ydoc-keys';
+
+// ════════════════════════════════════════════════════════════════════════════
 // TABLES & KV
 // ════════════════════════════════════════════════════════════════════════════
 
-// Key utilities
-export {
-	CellKey,
-	FieldId,
-	generateRowId,
-	hasPrefix,
-	type ParsedCellKey,
-	parseCellKey,
-	RowId,
-	RowPrefix,
-	validateId,
-} from './keys';
-
 // KV store (YKeyValueLww-based)
+export { createKv, type Kv } from './kv/create-kv';
 export { createKvHelper, type KvHelper } from './kv/kv-helper';
 
 // Tables API (YKeyValueLww-based row-level storage)
@@ -101,15 +97,12 @@ export {
 	type TableHelper,
 	type Tables,
 	type TablesFunction,
-	type UntypedTableHelper,
 	type ValidRowResult,
 } from './tables/create-tables';
 
 export {
 	type ChangedRowIds,
 	createTableHelper,
-	createTableHelpers,
-	createUntypedTableHelper,
 	type DeleteManyResult,
 	type DeleteResult,
 	type NotFoundResult,

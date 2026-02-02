@@ -336,6 +336,23 @@ const client = createClient(definition.id)
 
 **Note:** Workspace Doc creation is handled internally by `createClient()` in the `workspace/` module.
 
+## Storage Key Constants
+
+Y.Doc array keys are defined in `core/ydoc-keys.ts` and exported from all public entry points:
+
+```typescript
+import { KV_KEY, TableKey } from '@epicenter/hq';
+
+// KV_KEY is the literal 'kv'
+const kvArray = ydoc.getArray(KV_KEY);
+
+// TableKey() creates 'table:{name}' with generic passthrough
+const postsArray = ydoc.getArray(TableKey('posts'));
+// Type: Y.Array<...> with key 'table:posts' (literal type preserved)
+```
+
+Use these constants when building custom providers or accessing the raw Y.Doc.
+
 ## Data Storage Format
 
 Y.Doc contains only data, stored using YKeyValueLww (Last-Write-Wins) pattern:

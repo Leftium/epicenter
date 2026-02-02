@@ -11,7 +11,7 @@ import {
 	tags,
 	text,
 } from '../../core/schema';
-import { createKv } from './core';
+import { createKv } from './create-kv';
 
 describe('KV Helpers', () => {
 	describe('Basic Operations', () => {

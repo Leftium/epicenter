@@ -32,6 +32,7 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
 } from '../core/utils/y-keyvalue-lww.js';
+import { TableKey } from '../core/ydoc-keys.js';
 import { createTableHelper } from './table-helper.js';
 import type {
 	InferTableRow,
@@ -59,7 +60,7 @@ export function createTables<TTableDefinitions extends TableDefinitions>(
 
 	for (const [name, definition] of Object.entries(definitions)) {
 		// Each table gets its own Y.Array for isolation
-		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(`table:${name}`);
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
 		const ykv = new YKeyValueLww(yarray);
 
 		helpers[name] = createTableHelper(ykv, definition);

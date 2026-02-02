@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
 	boolean,
+	Id,
 	id,
 	integer,
 	select,
@@ -36,7 +37,7 @@ describe('YjsDoc Type Inference', () => {
 
 		// Test upsert() - accepts plain values (strings, arrays for tags)
 		doc.get('posts').upsert({
-			id: '1',
+			id: Id('1'),
 			title: 'Test Post',
 			content: 'abc123',
 			tags: ['tech'], // tags stores plain array
@@ -45,13 +46,13 @@ describe('YjsDoc Type Inference', () => {
 		});
 
 		// Test get() - returns GetResult<Row>
-		const result = doc.get('posts').get('1');
+		const result = doc.get('posts').get(Id('1'));
 		expect(result.status).toBe('valid');
 
 		if (result.status === 'valid') {
 			const row = result.row;
 			// Verify property access works
-			expect(row.id).toBe('1');
+			expect(row.id).toBe(Id('1'));
 			expect(row.title).toBe('Test Post');
 			expect(row.view_count).toBe(0);
 			expect(row.published).toBe(false);
@@ -77,8 +78,8 @@ describe('YjsDoc Type Inference', () => {
 		]);
 
 		doc.get('products').upsertMany([
-			{ id: '1', name: 'Widget', price: 1000, in_stock: true },
-			{ id: '2', name: 'Gadget', price: 2000, in_stock: false },
+			{ id: Id('1'), name: 'Widget', price: 1000, in_stock: true },
+			{ id: Id('2'), name: 'Gadget', price: 2000, in_stock: false },
 		]);
 
 		// getAllValid() returns Row[] directly
@@ -106,8 +107,8 @@ describe('YjsDoc Type Inference', () => {
 		]);
 
 		doc.get('tasks').upsertMany([
-			{ id: '1', title: 'Task 1', completed: false, priority: 'high' },
-			{ id: '2', title: 'Task 2', completed: true, priority: 'low' },
+			{ id: Id('1'), title: 'Task 1', completed: false, priority: 'high' },
+			{ id: Id('2'), title: 'Task 2', completed: true, priority: 'low' },
 		]);
 
 		// Hover over 'task' parameter to verify inferred type
@@ -133,8 +134,8 @@ describe('YjsDoc Type Inference', () => {
 		]);
 
 		doc.get('items').upsertMany([
-			{ id: '1', name: 'Item 1', quantity: 5 },
-			{ id: '2', name: 'Item 2', quantity: 0 },
+			{ id: Id('1'), name: 'Item 1', quantity: 5 },
+			{ id: Id('2'), name: 'Item 2', quantity: 0 },
 		]);
 
 		// Hover over 'item' parameter to verify inferred type
@@ -175,7 +176,7 @@ describe('YjsDoc Type Inference', () => {
 		});
 
 		doc.get('notifications').upsert({
-			id: '1',
+			id: Id('1'),
 			message: 'Test notification',
 			read: false,
 		});
@@ -202,13 +203,13 @@ describe('YjsDoc Type Inference', () => {
 
 		// Test with null values
 		doc.get('articles').upsert({
-			id: '1',
+			id: Id('1'),
 			title: 'Article without content',
 			description: null,
 			content: null,
 		});
 
-		const article1Result = doc.get('articles').get('1');
+		const article1Result = doc.get('articles').get(Id('1'));
 		expect(article1Result.status).toBe('valid');
 		if (article1Result.status === 'valid') {
 			expect(article1Result.row.description).toBeNull();
@@ -217,13 +218,13 @@ describe('YjsDoc Type Inference', () => {
 
 		// Test with string values
 		doc.get('articles').upsert({
-			id: '2',
+			id: Id('2'),
 			title: 'Article with content',
 			description: 'desc123',
 			content: 'content456',
 		});
 
-		const article2Result = doc.get('articles').get('2');
+		const article2Result = doc.get('articles').get(Id('2'));
 		expect(article2Result.status).toBe('valid');
 		if (article2Result.status === 'valid') {
 			expect(article2Result.row.description).toBe('desc123');
@@ -260,25 +261,25 @@ describe('YjsDoc Type Inference', () => {
 
 		// Test authors table
 		doc.get('authors').upsert({
-			id: 'author-1',
+			id: Id('author-1'),
 			name: 'John Doe',
 			bio: 'bio123',
 		});
 
-		const authorResult = doc.get('authors').get('author-1');
+		const authorResult = doc.get('authors').get(Id('author-1'));
 		expect(authorResult.status).toBe('valid');
 		// Hover to verify type: GetResult<{ id: string; name: string; bio: string | null }>
 
 		// Test books table - tags stores plain array
 		doc.get('books').upsert({
-			id: 'book-1',
-			author_id: 'author-1',
+			id: Id('book-1'),
+			author_id: Id('author-1'),
 			title: 'My Book',
 			chapters: ['Chapter 1', 'Chapter 2'],
 			published: true,
 		});
 
-		const bookResult = doc.get('books').get('book-1');
+		const bookResult = doc.get('books').get(Id('book-1'));
 		// Hover to verify type: GetResult<{ id: string; author_id: string; title: string; chapters: string[]; published: boolean }>
 
 		expect(authorResult.status).toBe('valid');
@@ -306,8 +307,8 @@ describe('YjsDoc Type Inference', () => {
 
 		// Hover over the array to verify element type
 		const commentsToAdd = [
-			{ id: '1', text: 'First comment', upvotes: 5 },
-			{ id: '2', text: 'Second comment', upvotes: 10 },
+			{ id: Id('1'), text: 'First comment', upvotes: 5 },
+			{ id: Id('2'), text: 'Second comment', upvotes: 10 },
 		];
 
 		doc.get('comments').upsertMany(commentsToAdd);
@@ -333,7 +334,7 @@ describe('YjsDoc Type Inference', () => {
 
 		// Upsert with plain values (tags stores array)
 		doc.get('documents').upsert({
-			id: 'doc-1',
+			id: Id('doc-1'),
 			title: 'My Document',
 			body: 'body123',
 			notes: null,
@@ -341,7 +342,7 @@ describe('YjsDoc Type Inference', () => {
 		});
 
 		// Test retrieval
-		const retrievedResult = doc.get('documents').get('doc-1');
+		const retrievedResult = doc.get('documents').get(Id('doc-1'));
 		expect(retrievedResult.status).toBe('valid');
 
 		if (retrievedResult.status === 'valid') {

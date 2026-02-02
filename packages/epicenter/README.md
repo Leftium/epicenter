@@ -42,10 +42,10 @@ Every piece of data lives in a `Y.Doc`, which provides conflict-free merging, re
 │                      Y.Doc (CRDT)                            │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ Y.Array('table:posts')  <- LWW entries per table      │  │
-│  │   └── { key: rowId, val: { fields... }, ts: number }  │  │
+│  │   └── { key: id, val: { fields... }, ts: number }     │  │
 │  │                                                        │  │
 │  │ Y.Array('table:users')  <- Another table              │  │
-│  │   └── { key: rowId, val: { fields... }, ts: number }  │  │
+│  │   └── { key: id, val: { fields... }, ts: number }     │  │
 │  │                                                        │  │
 │  │ Y.Array('kv')  <- Settings as LWW entries             │  │
 │  │   └── { key: name, val: value, ts: number }           │  │

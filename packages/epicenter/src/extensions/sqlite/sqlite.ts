@@ -7,7 +7,8 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import { ExtensionErr, ExtensionError } from '../../core/errors';
-import type { KvField, Row, TableDefinition } from '../../core/schema';
+import type { Id, KvField, Row, TableDefinition } from '../../core/schema';
+import { Id as createId } from '../../core/schema';
 import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
 import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 import { createIndexLogger } from '../error-logger';
@@ -302,11 +303,14 @@ export const sqlite = async <
 						const rows = await sqliteDb.select().from(drizzleTable);
 						for (const row of rows) {
 							// Cast is safe: Drizzle schema is derived from workspace definition
-							table.upsert(
-								row as Row<TTableDefinitions[number]['fields']> & {
-									id: string;
-								},
-							);
+							// Convert string id to branded Id type
+							const rowWithBrandedId = {
+								...row,
+								id: createId((row as { id: string }).id),
+							} as Row<TTableDefinitions[number]['fields']> & {
+								id: Id;
+							};
+							table.upsert(rowWithBrandedId);
 						}
 					}
 

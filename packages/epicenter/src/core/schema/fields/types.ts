@@ -34,6 +34,7 @@
 
 import type { Static, TSchema } from 'typebox';
 import type { DateTimeString } from './datetime';
+import type { Id } from './id';
 
 // ============================================================================
 // Icon Type (Tagged String)
@@ -457,7 +458,7 @@ export type KvFieldIds<TKv extends readonly KvField[]> = TKv[number]['id'];
  * Nullability is derived from the definition's `nullable` field.
  */
 export type CellValue<C extends Field = Field> = C extends IdField
-	? string
+	? Id
 	: C extends TextField<infer TTextNullable>
 		? true extends TTextNullable
 			? string | null
@@ -593,7 +594,7 @@ export type Row<TFields extends readonly Field[] = readonly Field[]> = {
  * ```
  */
 export type PartialRow<TFields extends readonly Field[] = readonly Field[]> = {
-	id: string;
+	id: Id;
 } & Partial<Omit<Row<TFields>, 'id'>>;
 
 // ============================================================================

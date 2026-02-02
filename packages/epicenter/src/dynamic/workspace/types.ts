@@ -25,7 +25,7 @@ import type { Lifecycle } from '../../core/lifecycle';
 import type { KvField, TableDefinition } from '../../core/schema/fields/types';
 import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
 import type { HeadDoc } from '../head-doc';
-import type { Kv } from '../kv/core';
+import type { Kv } from '../kv/create-kv';
 import type { Tables } from '../tables/create-tables';
 
 // ════════════════════════════════════════════════════════════════════════════

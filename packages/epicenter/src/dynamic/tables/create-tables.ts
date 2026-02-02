@@ -1,6 +1,7 @@
 import type * as Y from 'yjs';
 import type { TableDefinition } from '../../core/schema';
 import type { TableById } from '../../core/schema/fields/types';
+import { TableKey } from '../../core/ydoc-keys';
 import {
 	createTableHelper,
 	createUntypedTableHelper,
@@ -12,8 +13,6 @@ import {
 export type {
 	GetResult,
 	InvalidRowResult,
-	RowAction,
-	RowChanges,
 	RowResult,
 	TableHelper,
 	UntypedTableHelper,
@@ -173,18 +172,6 @@ export function createTables<
 	// Cache for dynamically-created table helpers (tables not in definition)
 	const dynamicTableHelpers = new Map<string, UntypedTableHelper>();
 
-	/**
-	 * Get or create an untyped table helper for a dynamic table.
-	 */
-	const getOrCreateDynamicHelper = (name: string): UntypedTableHelper => {
-		let helper = dynamicTableHelpers.get(name);
-		if (!helper) {
-			helper = createUntypedTableHelper({ ydoc, tableName: name });
-			dynamicTableHelpers.set(name, helper);
-		}
-		return helper;
-	};
-
 	// ════════════════════════════════════════════════════════════════════
 	// BUILD TABLES OBJECT WITH METHODS
 	// ════════════════════════════════════════════════════════════════════
@@ -222,7 +209,12 @@ export function createTables<
 				return tableHelpers[name as keyof typeof tableHelpers];
 			}
 			// Otherwise return/create a dynamic helper
-			return getOrCreateDynamicHelper(name);
+			let helper = dynamicTableHelpers.get(name);
+			if (!helper) {
+				helper = createUntypedTableHelper({ ydoc, tableName: name });
+				dynamicTableHelpers.set(name, helper);
+			}
+			return helper;
 		},
 
 		// ════════════════════════════════════════════════════════════════════
@@ -252,7 +244,7 @@ export function createTables<
 				return tableHelpers[name as keyof typeof tableHelpers].count() > 0;
 			}
 			// Check dynamic tables - peek at the Y.Array without creating a helper
-			const yarray = ydoc.getArray(`table:${name}`);
+			const yarray = ydoc.getArray(TableKey(name));
 			return yarray.length > 0;
 		},
 

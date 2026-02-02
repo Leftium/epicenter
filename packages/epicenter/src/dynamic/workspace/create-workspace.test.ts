@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { defineExports } from '../../core/lifecycle';
-import { boolean, id, integer, select, table, text } from '../../core/schema';
+import {
+	boolean,
+	Id,
+	id,
+	integer,
+	select,
+	table,
+	text,
+} from '../../core/schema';
 import { defineWorkspace } from '../../core/schema/workspace-definition';
 import { createHeadDoc } from '../head-doc';
 import { createWorkspace } from './create-workspace';
@@ -87,7 +95,7 @@ describe('createWorkspace', () => {
 			} as any);
 
 			// Read back
-			const result = workspace.tables.get('posts').get('1');
+			const result = workspace.tables.get('posts').get(Id('1'));
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
 				expect((result.row as any).title).toBe('Hello World');
@@ -381,7 +389,7 @@ describe('createWorkspace', () => {
 				published: true,
 			} as any);
 
-			const result = workspace.tables.get('posts').get('1');
+			const result = workspace.tables.get('posts').get(Id('1'));
 			if (result.status === 'valid') {
 				// Verify values at runtime
 				expect((result.row as any).title).toBe('Test');

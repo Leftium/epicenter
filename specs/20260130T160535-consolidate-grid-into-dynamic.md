@@ -39,9 +39,8 @@ import {
   // Icon utilities
   createIcon, isIcon, parseIcon,
 
-  // Key utilities
-  CellKey, FieldId, RowId, RowPrefix,
-  generateRowId, parseCellKey, hasPrefix, validateId,
+  // Key utilities (internal - not exported from public API)
+  // Note: RowId was consolidated into Id (see specs/20260201T025500-consolidate-id-types.md)
 
   // HeadDoc (optional time travel)
   createHeadDoc,

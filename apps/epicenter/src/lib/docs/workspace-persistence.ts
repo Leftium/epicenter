@@ -1,10 +1,9 @@
-import type { KvDefinitionMap, TableDefinitionMap } from '@epicenter/hq';
 import {
 	defineExports,
 	type ExtensionContext,
-	type ProviderExports,
-} from '@epicenter/hq';
-import { appLocalDataDir, dirname, join } from '@tauri-apps/api/path';
+	type Lifecycle,
+} from '@epicenter/hq/dynamic';
+import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 import * as Y from 'yjs';
 
@@ -26,12 +25,8 @@ export type WorkspacePersistenceConfig = {
 const FILE_NAMES = {
 	/** Full Y.Doc binary - sync source of truth */
 	WORKSPACE_YJS: 'workspace.yjs',
-	/** Definition metadata from Y.Map('definition') */
-	DEFINITION_JSON: 'definition.json',
 	/** Settings values from Y.Map('kv') */
 	KV_JSON: 'kv.json',
-	/** Snapshots directory */
-	SNAPSHOTS_DIR: 'snapshots',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -47,74 +42,53 @@ const FILE_NAMES = {
  *    - Saved immediately on every Y.Doc update
  *    - Loaded on startup to restore state
  *
- * 2. **Definition JSON (definition.json)**: Human-readable table/KV definitions
- *    - Extracted from Y.Map('definition')
- *    - Debounced writes (default 500ms)
- *    - Git-friendly for version control
- *
- * 3. **KV JSON (kv.json)**: Human-readable settings
+ * 2. **KV JSON (kv.json)**: Human-readable settings mirror
  *    - Extracted from Y.Map('kv')
  *    - Debounced writes (default 500ms)
  *
  * **Storage Layout:**
  * ```
- * {appLocalDataDir}/workspaces/{workspaceId}/{epoch}/
- * ├── workspace.yjs
- * ├── definition.json
- * ├── kv.json
- * └── snapshots/
- *     └── {unix-ms}.ysnap
+ * {appLocalDataDir}/workspaces/{workspaceId}/
+ * ├── workspace.yjs   # Y.Doc binary (source of truth)
+ * └── kv.json         # KV values mirror
  * ```
  *
- * Note: Workspace identity (name, icon, description) lives in Head Doc's
- * Y.Map('meta'), not in the Workspace Doc.
+ * Note: Workspace definition is stored separately at the parent level
+ * as `{workspaceId}.json`.
  *
  * @param ctx - The extension context
  * @param config - Optional configuration for debounce timing
- * @returns Provider exports with `whenSynced` promise and `destroy` cleanup
+ * @returns Lifecycle with `whenSynced` promise and `destroy` cleanup
  *
  * @example
  * ```typescript
- * const client = createClient(head)
- *   .withDefinition(definition)
+ * const client = createWorkspace(definition)
  *   .withExtensions({
  *     persistence: (ctx) => workspacePersistence(ctx),
  *   });
  * ```
  */
-export function workspacePersistence<
-	TTableDefinitionMap extends TableDefinitionMap,
-	TKvDefinitionMap extends KvDefinitionMap,
->(
-	ctx: ExtensionContext<TTableDefinitionMap, TKvDefinitionMap>,
+export function workspacePersistence(
+	ctx: ExtensionContext,
 	config: WorkspacePersistenceConfig = {},
-): ProviderExports {
-	const { ydoc, workspaceId, epoch, definition, kv } = ctx;
+): Lifecycle {
+	const { ydoc, workspaceId, kv } = ctx;
 	const { jsonDebounceMs = 500 } = config;
 
 	// For logging
-	const logPath = `workspaces/${workspaceId}/${epoch}`;
+	const logPath = `workspaces/${workspaceId}`;
 
 	// Resolve paths once, cache the promise
 	const pathsPromise = (async () => {
 		const baseDir = await appLocalDataDir();
-		const epochDir = await join(
-			baseDir,
-			'workspaces',
-			workspaceId,
-			epoch.toString(),
-		);
-		const workspaceYjsPath = await join(epochDir, FILE_NAMES.WORKSPACE_YJS);
-		const definitionJsonPath = await join(epochDir, FILE_NAMES.DEFINITION_JSON);
-		const kvJsonPath = await join(epochDir, FILE_NAMES.KV_JSON);
-		const snapshotsDir = await join(epochDir, FILE_NAMES.SNAPSHOTS_DIR);
+		const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
+		const workspaceYjsPath = await join(workspaceDir, FILE_NAMES.WORKSPACE_YJS);
+		const kvJsonPath = await join(workspaceDir, FILE_NAMES.KV_JSON);
 
 		return {
-			epochDir,
+			workspaceDir,
 			workspaceYjsPath,
-			definitionJsonPath,
 			kvJsonPath,
-			snapshotsDir,
 		};
 	})();
 
@@ -139,41 +113,7 @@ export function workspacePersistence<
 	ydoc.on('update', saveYDoc);
 
 	// =========================================================================
-	// 2. Definition JSON Persistence (definition.json)
-	// =========================================================================
-
-	let definitionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-	const saveDefinitionJson = async () => {
-		const { definitionJsonPath } = await pathsPromise;
-		try {
-			const definitionSnapshot = definition.toJSON();
-			const json = JSON.stringify(definitionSnapshot, null, '\t');
-			await writeFile(definitionJsonPath, new TextEncoder().encode(json));
-			console.log(
-				`[WorkspacePersistence] Saved definition.json for ${workspaceId}`,
-			);
-		} catch (error) {
-			console.error(
-				`[WorkspacePersistence] Failed to save definition.json:`,
-				error,
-			);
-		}
-	};
-
-	const scheduleDefinitionSave = () => {
-		if (definitionDebounceTimer) clearTimeout(definitionDebounceTimer);
-		definitionDebounceTimer = setTimeout(async () => {
-			definitionDebounceTimer = null;
-			await saveDefinitionJson();
-		}, jsonDebounceMs);
-	};
-
-	// Observe definition changes using the definition helper's observe method
-	const unsubscribeDefinition = definition.observe(scheduleDefinitionSave);
-
-	// =========================================================================
-	// 3. KV JSON Persistence (kv.json)
+	// 2. KV JSON Persistence (kv.json)
 	// =========================================================================
 
 	let kvDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -202,18 +142,15 @@ export function workspacePersistence<
 	const unsubscribeKv = kv.observe(scheduleKvSave);
 
 	// =========================================================================
-	// Return Provider Exports
+	// Return Lifecycle
 	// =========================================================================
 
 	return defineExports({
 		whenSynced: (async () => {
-			const { epochDir, workspaceYjsPath, snapshotsDir } = await pathsPromise;
+			const { workspaceDir, workspaceYjsPath } = await pathsPromise;
 
-			// Ensure directories exist
-			const epochDirParent = await dirname(epochDir);
-			await mkdir(epochDirParent, { recursive: true }).catch(() => {});
-			await mkdir(epochDir, { recursive: true }).catch(() => {});
-			await mkdir(snapshotsDir, { recursive: true }).catch(() => {});
+			// Ensure workspace directory exists
+			await mkdir(workspaceDir, { recursive: true }).catch(() => {});
 
 			// Load existing Y.Doc state from disk
 			let isNewFile = false;
@@ -233,17 +170,12 @@ export function workspacePersistence<
 				await saveYDoc();
 			}
 
-			// Initial JSON saves
-			await saveDefinitionJson();
+			// Initial KV JSON save
 			await saveKvJson();
 		})(),
 
 		destroy() {
-			// Clear debounce timers
-			if (definitionDebounceTimer) {
-				clearTimeout(definitionDebounceTimer);
-				definitionDebounceTimer = null;
-			}
+			// Clear debounce timer
 			if (kvDebounceTimer) {
 				clearTimeout(kvDebounceTimer);
 				kvDebounceTimer = null;
@@ -252,8 +184,7 @@ export function workspacePersistence<
 			// Remove Y.Doc observer
 			ydoc.off('update', saveYDoc);
 
-			// Remove map observers via unsubscribe functions
-			unsubscribeDefinition();
+			// Remove KV observer
 			unsubscribeKv();
 		},
 	});

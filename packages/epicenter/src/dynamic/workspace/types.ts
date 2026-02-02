@@ -8,11 +8,11 @@
  *
  * ```typescript
  * // Direct use (no extensions)
- * const workspace = createWorkspace({ headDoc, definition });
+ * const workspace = createWorkspace(definition);
  * workspace.tables.get('posts').upsert({...});  // Works immediately!
  *
  * // With extensions (chained)
- * const workspace = createWorkspace({ headDoc, definition })
+ * const workspace = createWorkspace(definition)
  *   .withExtensions({ sqlite, persistence });
  * workspace.extensions.sqlite;  // Typed!
  * ```
@@ -24,7 +24,6 @@ import type * as Y from 'yjs';
 import type { Lifecycle } from '../../core/lifecycle';
 import type { KvField, TableDefinition } from '../../core/schema/fields/types';
 import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
-import type { HeadDoc } from '../head-doc';
 import type { Kv } from '../kv/create-kv';
 import type { Tables } from '../tables/create-tables';
 
@@ -57,10 +56,12 @@ export type ExtensionContext<
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
-	/** Workspace identifier (from headDoc.workspaceId) */
+	/** Workspace identifier (from definition.id) */
 	workspaceId: string;
-	/** Epoch number (from headDoc.getOwnEpoch()) */
+	/** Epoch number (always 0 in simple mode) */
 	epoch: number;
+	/** The workspace definition with typed tables and kv fields */
+	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;
 	/** Typed table helpers */
 	tables: Tables<TTableDefinitions>;
 	/** Typed KV helper */
@@ -189,7 +190,7 @@ export type WorkspaceClientBuilder<
 	 *
 	 * @example
 	 * ```typescript
-	 * const workspace = createWorkspace({ headDoc, definition })
+	 * const workspace = createWorkspace(definition)
 	 *   .withExtensions({
 	 *     sqlite: (ctx) => sqliteExtension(ctx),
 	 *     persistence: (ctx) => persistenceExtension(ctx),
@@ -204,22 +205,3 @@ export type WorkspaceClientBuilder<
 	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
 };
 
-// ════════════════════════════════════════════════════════════════════════════
-// CONFIGURATION TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Configuration for createWorkspace().
- *
- * @typeParam TTableDefinitions - Table definitions from the workspace definition
- * @typeParam TKvFields - KV field definitions from the workspace definition
- */
-export type CreateWorkspaceConfig<
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
-> = {
-	/** HeadDoc instance (provides workspaceId and epoch) */
-	headDoc: HeadDoc;
-	/** Workspace definition (name, tables, kv) */
-	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;
-};

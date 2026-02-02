@@ -9,16 +9,14 @@
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
- *   revisions: (ctx) => localRevisionHistory(ctx, {
- *     directory: './workspaces',
- *     epoch: 0,
- *     maxVersions: 50,
- *   }),
- * });
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
+ *   .withExtensions({
+ *     revisions: (ctx) => localRevisionHistory(ctx, {
+ *       directory: './workspaces',
+ *       epoch: 0,
+ *       maxVersions: 50,
+ *     }),
+ *   });
  *
  * // Save manually (bypasses debounce)
  * workspace.extensions.revisions.save('Before refactor');

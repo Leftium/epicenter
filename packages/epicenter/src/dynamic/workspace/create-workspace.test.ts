@@ -11,7 +11,6 @@ import {
 	text,
 } from '../../core/schema';
 import { defineWorkspace } from '../../core/schema/workspace-definition';
-import { createHeadDoc } from '../head-doc';
 import { createWorkspace } from './create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -45,16 +44,6 @@ const testDefinition = defineWorkspace({
 	kv: [settingsKv],
 });
 
-/**
- * Create a test HeadDoc with in-memory providers.
- */
-function createTestHeadDoc(workspaceId: string) {
-	return createHeadDoc({
-		workspaceId,
-		providers: {},
-	});
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // TESTS
 // ════════════════════════════════════════════════════════════════════════════
@@ -62,11 +51,7 @@ function createTestHeadDoc(workspaceId: string) {
 describe('createWorkspace', () => {
 	describe('direct usage (no extensions)', () => {
 		test('returns a usable client immediately', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const workspace = createWorkspace(testDefinition);
 
 			// Should be usable immediately
 			expect(workspace.workspaceId).toBe('test-workspace');
@@ -79,14 +64,19 @@ describe('createWorkspace', () => {
 			expect(typeof workspace.destroy).toBe('function');
 		});
 
-		test('tables are usable without extensions', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+		test('Y.Doc has correct guid and gc settings', () => {
+			const workspace = createWorkspace(testDefinition);
 
-			// Insert a row (using type assertion due to pre-existing type inference limitations)
+			// guid should be definition.id
+			expect(workspace.ydoc.guid).toBe('test-workspace');
+			// gc should be true for efficient YKeyValueLww storage
+			expect(workspace.ydoc.gc).toBe(true);
+		});
+
+		test('tables are usable without extensions', () => {
+			const workspace = createWorkspace(testDefinition);
+
+			// Insert a row
 			workspace.tables.get('posts').upsert({
 				id: '1',
 				title: 'Hello World',
@@ -105,11 +95,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('kv is usable without extensions', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const workspace = createWorkspace(testDefinition);
 
 			// Set a KV value
 			workspace.kv.set('theme', 'dark');
@@ -123,11 +109,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('whenSynced resolves immediately without extensions', async () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const workspace = createWorkspace(testDefinition);
 
 			// Should resolve immediately since there are no extensions
 			await expect(workspace.whenSynced).resolves.toBeUndefined();
@@ -136,11 +118,7 @@ describe('createWorkspace', () => {
 
 	describe('.withExtensions()', () => {
 		test('returns a new client with extensions', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const baseWorkspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const baseWorkspace = createWorkspace(testDefinition);
 
 			// Use inline factory for better type inference
 			const workspace = baseWorkspace.withExtensions({
@@ -158,11 +136,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('extensions receive correct context', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const baseWorkspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const baseWorkspace = createWorkspace(testDefinition);
 
 			let receivedContext: Record<string, unknown> | undefined;
 			baseWorkspace.withExtensions({
@@ -174,6 +148,7 @@ describe('createWorkspace', () => {
 						hasYdoc: ctx.ydoc instanceof Y.Doc,
 						hasTables: typeof ctx.tables.get === 'function',
 						hasKv: typeof ctx.kv.get === 'function',
+						hasDefinition: ctx.definition !== undefined,
 					};
 					return defineExports();
 				},
@@ -186,14 +161,11 @@ describe('createWorkspace', () => {
 			expect(receivedContext?.hasYdoc).toBe(true);
 			expect(receivedContext?.hasTables).toBe(true);
 			expect(receivedContext?.hasKv).toBe(true);
+			expect(receivedContext?.hasDefinition).toBe(true);
 		});
 
 		test('whenSynced aggregates all extension promises', async () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const baseWorkspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const baseWorkspace = createWorkspace(testDefinition);
 
 			let resolved1 = false;
 			let resolved2 = false;
@@ -230,11 +202,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('base client extensions remains empty after chaining', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const baseWorkspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const baseWorkspace = createWorkspace(testDefinition);
 
 			const chainedWorkspace = baseWorkspace.withExtensions({
 				mock: () => defineExports({ data: 'test' }),
@@ -249,13 +217,9 @@ describe('createWorkspace', () => {
 
 	describe('lifecycle', () => {
 		test('destroy() cleans up Y.Doc', async () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const workspace = createWorkspace(testDefinition);
 
-			// Add some data (using type assertion due to pre-existing type inference limitations)
+			// Add some data
 			workspace.tables.get('posts').upsert({
 				id: '1',
 				title: 'Test',
@@ -270,11 +234,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('destroy() calls extension destroy functions', async () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const baseWorkspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const baseWorkspace = createWorkspace(testDefinition);
 
 			let destroyed1 = false;
 			let destroyed2 = false;
@@ -305,13 +265,9 @@ describe('createWorkspace', () => {
 		});
 
 		test('Symbol.asyncDispose works for await using', async () => {
-			const headDoc = createTestHeadDoc('test-workspace');
 			let destroyed = false;
 
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			}).withExtensions({
+			const workspace = createWorkspace(testDefinition).withExtensions({
 				tracker: () =>
 					defineExports({
 						destroy: () => {
@@ -327,61 +283,11 @@ describe('createWorkspace', () => {
 		});
 	});
 
-	describe('HeadDoc integration', () => {
-		test('extracts workspaceId from headDoc', () => {
-			const headDoc = createTestHeadDoc('my-workspace-id');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: defineWorkspace({
-					id: 'my-workspace-id',
-					name: 'My Workspace',
-					description: '',
-					icon: null,
-					tables: [],
-					kv: [],
-				}),
-			});
-
-			expect(workspace.workspaceId).toBe('my-workspace-id');
-		});
-
-		test('extracts epoch from headDoc.getOwnEpoch()', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-
-			// Bump epoch on headDoc
-			headDoc.bumpEpoch();
-			headDoc.bumpEpoch();
-
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
-
-			expect(workspace.epoch).toBe(2);
-		});
-
-		test('Y.Doc guid is {workspaceId}-{epoch}', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			headDoc.bumpEpoch(); // epoch = 1
-
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
-
-			expect(workspace.ydoc.guid).toBe('test-workspace-1');
-		});
-	});
-
 	describe('type inference', () => {
 		test('table types work at runtime', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			});
+			const workspace = createWorkspace(testDefinition);
 
-			// Insert data (using type assertion due to pre-existing type inference limitations)
+			// Insert data
 			workspace.tables.get('posts').upsert({
 				id: '1',
 				title: 'Test',
@@ -399,11 +305,7 @@ describe('createWorkspace', () => {
 		});
 
 		test('extension types are inferred correctly', () => {
-			const headDoc = createTestHeadDoc('test-workspace');
-			const workspace = createWorkspace({
-				headDoc,
-				definition: testDefinition,
-			}).withExtensions({
+			const workspace = createWorkspace(testDefinition).withExtensions({
 				myExt: () =>
 					defineExports({
 						version: 1,

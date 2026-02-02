@@ -33,14 +33,12 @@ export type PersistenceConfig = {
  * const projectDir = '/my/project';
  * const epicenterDir = join(projectDir, '.epicenter');
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
- *   persistence: (ctx) => persistence(ctx, {
- *     filePath: join(epicenterDir, 'persistence', `${ctx.workspaceId}.yjs`),
- *   }),
- * });
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
+ *   .withExtensions({
+ *     persistence: (ctx) => persistence(ctx, {
+ *       filePath: join(epicenterDir, 'persistence', `${ctx.workspaceId}.yjs`),
+ *     }),
+ *   });
  * ```
  */
 export const persistence = <

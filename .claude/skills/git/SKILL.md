@@ -309,9 +309,9 @@ To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="fle
 
 For PRs that change APIs, storage structures, or architectural patterns, use this section order:
 
-1. **Introductory Paragraphs (1-2)**: What the change does and why it exists. Include breaking change notice if applicable.
+1. **Introductory Paragraphs (1-2)**: What the change does and why it exists. Include breaking change notice if applicable. End with a **one-sentence decision summary**: "We chose X over Y because Z."
 
-2. **API Migration**: Before/after code examples showing the new usage. This is mandatory for any API change.
+2. **API Migration**: Before/after code examples showing the new usage. Mandatory for any API change.
 
 3. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
 
@@ -321,14 +321,26 @@ For PRs that change APIs, storage structures, or architectural patterns, use thi
 
 6. **Future Work**: What could be re-added later, what's intentionally deferred.
 
-7. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end. Often unnecessary—GitHub's "Files changed" tab already shows this.
+7. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end.
 
 **Key principles**:
 
-- Code snippets and ASCII art are valuable—feature them prominently
+- **Visual-first**: Each section should lead with code or ASCII diagrams; prose explains the visuals
+- Code snippets and ASCII art are the most scannable—feature them prominently
+- Rationale is prose-only (no visual needed); it explains the thinking
 - Skip the "Changes" section entirely, or make it minimal at the end
-- Rationale explains the thinking; Future Work acknowledges scope limits
-- Let the visual aids (code, diagrams) do the heavy lifting
+
+**When to use Architectural format**:
+
+- Public API shape changes (exports, signatures, config formats)
+- Persistent data format changes (storage layout, migrations)
+- Cross-package contract changes
+- New subsystem or major refactor
+
+**When to use Simple format**:
+
+- Localized fix/feature with no consumer migration
+- Behavior-preserving internal refactor
 
 #### Voice and Tone
 

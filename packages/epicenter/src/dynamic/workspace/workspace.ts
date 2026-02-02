@@ -31,10 +31,7 @@
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ persistence });
+ * const workspace = createWorkspace(definition).withExtensions({ persistence });
  * ```
  *
  * ## Related Modules

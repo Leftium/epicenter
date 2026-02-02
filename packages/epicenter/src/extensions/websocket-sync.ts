@@ -139,10 +139,7 @@ export type WebsocketSyncConfig = {
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * // Browser connects to its own local Elysia server
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   sync: websocketSync({ url: 'ws://localhost:3913/sync' }),
  * });
  * ```
@@ -159,10 +156,7 @@ export type WebsocketSyncConfig = {
  * } as const;
  *
  * // Phone browser connects to ALL available sync nodes
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   // Create an extension for each sync node
  *   syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
  *   syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
@@ -181,10 +175,7 @@ export type WebsocketSyncConfig = {
  *   cloud: 'wss://sync.myapp.com/sync',
  * } as const;
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   // Server acts as both:
  *   // 1. A sync server (via createSyncPlugin in server.ts)
  *   // 2. A sync client connecting to other servers

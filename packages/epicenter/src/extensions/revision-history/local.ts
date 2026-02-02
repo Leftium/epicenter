@@ -72,10 +72,7 @@ export type LocalRevisionHistoryConfig = {
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   persistence,
  *   revisions: (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
@@ -99,10 +96,7 @@ export type LocalRevisionHistoryConfig = {
  *
  * @example Custom debounce interval
  * ```typescript
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   revisions: (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
  *     debounceMs: 5000,  // Save 5 seconds after last change

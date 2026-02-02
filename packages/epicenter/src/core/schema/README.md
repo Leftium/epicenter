@@ -154,7 +154,6 @@ The codebase uses **Field** for raw type constraints and **Definition** for meta
 }
 
 // KvField: field with id used as key in KV store
-// (KvDefinition wrapper is deprecated)
 select({ id: 'theme', name: 'Theme', options: ['light', 'dark'] })
 ```
 

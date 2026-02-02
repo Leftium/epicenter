@@ -18,10 +18,7 @@
  * });
  *
  * // Use createWorkspace to create workspace clients
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ persistence });
+ * const workspace = createWorkspace(definition).withExtensions({ persistence });
  * ```
  *
  * @module

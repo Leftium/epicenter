@@ -16,8 +16,8 @@ Epicenter uses a simple definition-first architecture where workspace schema liv
 │   └──────────────────────┘          └──────────────────────┘               │
 │           │                                  │                              │
 │           ▼                                  ▼                              │
-│     {id}.json                          {id}/workspace.yjs                   │
-│                                        {id}/kv.json                         │
+│     {id}/definition.json             {id}/workspace.yjs                     │
+│                                      {id}/kv.json                           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -26,41 +26,47 @@ Epicenter uses a simple definition-first architecture where workspace schema liv
 
 ```
 {appLocalDataDir}/workspaces/
-├── blog-workspace.json              # WorkspaceDefinition (schema + metadata)
-├── blog-workspace/                  # Data folder
+├── blog-workspace/
+│   ├── definition.json              # WorkspaceDefinition (schema + metadata)
 │   ├── workspace.yjs                # Y.Doc binary (source of truth)
 │   └── kv.json                      # KV values mirror
-├── notes-app.json
 └── notes-app/
+    ├── definition.json
     ├── workspace.yjs
     └── kv.json
 ```
 
 ## Definition JSON Format
 
-`{workspaceId}.json`:
+`{workspaceId}/definition.json`:
+
 ```json
 {
-  "id": "blog-workspace",
-  "name": "My Blog",
-  "description": "Personal blog content",
-  "icon": "emoji:📝",
-  "tables": [
-    {
-      "id": "posts",
-      "name": "Posts",
-      "icon": "emoji:📄",
-      "description": "Blog posts",
-      "fields": [
-        { "id": "id", "type": "id" },
-        { "id": "title", "type": "text", "name": "Title" },
-        { "id": "content", "type": "text", "name": "Content" }
-      ]
-    }
-  ],
-  "kv": [
-    { "id": "theme", "type": "select", "options": ["light", "dark"], "default": "light" }
-  ]
+	"id": "blog-workspace",
+	"name": "My Blog",
+	"description": "Personal blog content",
+	"icon": "emoji:📝",
+	"tables": [
+		{
+			"id": "posts",
+			"name": "Posts",
+			"icon": "emoji:📄",
+			"description": "Blog posts",
+			"fields": [
+				{ "id": "id", "type": "id" },
+				{ "id": "title", "type": "text", "name": "Title" },
+				{ "id": "content", "type": "text", "name": "Content" }
+			]
+		}
+	],
+	"kv": [
+		{
+			"id": "theme",
+			"type": "select",
+			"options": ["light", "dark"],
+			"default": "light"
+		}
+	]
 }
 ```
 
@@ -71,11 +77,11 @@ Epicenter uses a simple definition-first architecture where workspace schema liv
 // gc: true (for efficient YKeyValueLww storage)
 
 // Table data (rows as LWW entries)
-Y.Array('table:posts')
-Y.Array('table:users')
+Y.Array('table:posts');
+Y.Array('table:users');
 
 // Workspace-level key-values
-Y.Array('kv')
+Y.Array('kv');
 ```
 
 ## API Usage
@@ -89,7 +95,7 @@ import { createWorkspaceClient } from '$lib/docs/workspace';
 // 1. Load definition from JSON file
 const definition = await getWorkspace(workspaceId);
 if (!definition) {
-  throw new Error('Workspace not found');
+	throw new Error('Workspace not found');
 }
 
 // 2. Create workspace client with persistence
@@ -106,12 +112,12 @@ client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 import { createWorkspaceDefinition } from '$lib/services/workspaces';
 
 const definition = await createWorkspaceDefinition({
-  id: 'my-workspace',
-  name: 'My Workspace',
-  description: '',
-  icon: null,
-  tables: [],
-  kv: [],
+	id: 'my-workspace',
+	name: 'My Workspace',
+	description: '',
+	icon: null,
+	tables: [],
+	kv: [],
 });
 ```
 
@@ -121,7 +127,7 @@ const definition = await createWorkspaceDefinition({
 import { listWorkspaces } from '$lib/services/workspaces';
 
 const workspaces = await listWorkspaces();
-// Returns all WorkspaceDefinition objects from JSON files
+// Returns all WorkspaceDefinition objects from definition.json files
 ```
 
 ## File Structure
@@ -141,6 +147,7 @@ $lib/
 ### GC Setting
 
 Simple mode uses `gc: true` for efficient YKeyValueLww storage:
+
 - Tombstones from updates get merged into tiny metadata
 - 200-1000x smaller than Y.Map for update-heavy data
 - Trade-off: No snapshot/time-travel capability
@@ -149,7 +156,7 @@ See `docs/articles/ykeyvalue-gc-the-hidden-variable.md` for details.
 
 ### No Registry
 
-Workspaces are discovered by globbing `*.json` files in the workspaces directory. No separate registry Y.Doc needed.
+Workspaces are discovered by listing directories in the workspaces folder and reading `definition.json` from each. No separate registry Y.Doc needed.
 
 ### No HeadDoc
 

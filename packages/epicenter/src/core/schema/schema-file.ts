@@ -8,7 +8,7 @@
  *
  * File structure:
  * ```
- * {workspaceId}.json        # Schema definitions (local only)
+ * {workspaceId}/definition.json   # Schema definitions (local only)
  * {workspaceId}/
  *   workspace.yjs           # CRDT data (synced)
  * ```

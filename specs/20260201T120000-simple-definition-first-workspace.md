@@ -10,6 +10,7 @@
 This specification has been fully implemented with the following changes:
 
 ### Breaking Changes
+
 - Removed `HeadDoc` entirely from the codebase
 - Removed `createHeadDoc()` function
 - Removed `registry` module (workspace discovery via JSON files now)
@@ -17,10 +18,12 @@ This specification has been fully implemented with the following changes:
 - Removed epoch-based folder structure (flat structure now)
 
 ### Deferred to Future
+
 - SQLite materialized views (`tables.sqlite`) - placeholder for now
 - Versioned workspaces with `versionControl: true` flag - archived patterns preserved in `docs/articles/archived-head-registry-patterns.md`
 
 ### Files Changed
+
 - **Package**: `create-workspace.ts`, `types.ts`, `index.ts` (HeadDoc removed)
 - **App**: New `services/workspaces.ts`, simplified `workspace.ts`, updated persistence
 - **Deleted**: `head-doc.ts`, `head.ts`, `head-persistence.ts`, `registry.ts`, `registry-persistence.ts`, `reactive-*.svelte.ts`
@@ -41,6 +44,7 @@ const workspace = createWorkspace({ headDoc: head, definition });
 ```
 
 Most workspaces don't need:
+
 - Epoch-based versioning
 - Time-travel / snapshots
 - Schema migrations across epochs
@@ -54,8 +58,10 @@ For these simple cases, the HeadDoc is overhead. The `WorkspaceDefinition` alrea
 ```typescript
 import { createWorkspace } from '@epicenter/hq/dynamic';
 
-const workspace = createWorkspace(definition)
-  .withExtensions({ persistence, sqlite });
+const workspace = createWorkspace(definition).withExtensions({
+	persistence,
+	sqlite,
+});
 
 await workspace.whenSynced;
 ```
@@ -64,12 +70,12 @@ await workspace.whenSynced;
 
 ```typescript
 type WorkspaceDefinition = {
-  id: string;           // Workspace identifier (Y.Doc guid)
-  name: string;         // Display name
-  description: string;  // Description
-  icon: Icon | null;    // Emoji or Lucide icon
-  tables: TableDefinition[];
-  kv: KvField[];
+	id: string; // Workspace identifier (Y.Doc guid)
+	name: string; // Display name
+	description: string; // Description
+	icon: Icon | null; // Emoji or Lucide icon
+	tables: TableDefinition[];
+	kv: KvField[];
 };
 ```
 
@@ -78,12 +84,13 @@ type WorkspaceDefinition = {
 ```typescript
 // Simple mode: gc: true for efficient storage
 const ydoc = new Y.Doc({
-  guid: definition.id,
-  gc: true  // Tombstones get merged → 200-1000x smaller
+	guid: definition.id,
+	gc: true, // Tombstones get merged → 200-1000x smaller
 });
 ```
 
 With `gc: true`, YKeyValueLww is extremely efficient:
+
 - Tombstones from updates get merged into tiny metadata
 - 200-1000x smaller than Y.Map for update-heavy data
 - Trade-off: No snapshot/time-travel capability
@@ -92,23 +99,24 @@ With `gc: true`, YKeyValueLww is extremely efficient:
 
 ```
 {appDataDir}/workspaces/
-├── {workspaceId}.json          # WorkspaceDefinition (schema + metadata)
-└── {workspaceId}/              # Data folder
+└── {workspaceId}/
+    ├── definition.json         # WorkspaceDefinition (schema + metadata)
     ├── workspace.yjs           # Y.Doc binary (source of truth)
     ├── tables.sqlite           # Materialized view for queries
     └── kv.json                 # KV values mirror
 ```
 
 **Example:**
+
 ```
 workspaces/
-├── blog-workspace.json
 ├── blog-workspace/
+│   ├── definition.json
 │   ├── workspace.yjs
 │   ├── tables.sqlite
 │   └── kv.json
-├── notes-app.json
 └── notes-app/
+    ├── definition.json
     ├── workspace.yjs
     ├── tables.sqlite
     └── kv.json
@@ -116,30 +124,36 @@ workspaces/
 
 ### Definition JSON Format
 
-`{workspaceId}.json`:
+`{workspaceId}/definition.json`:
+
 ```json
 {
-  "id": "blog-workspace",
-  "name": "My Blog",
-  "description": "Personal blog content",
-  "icon": "emoji:📝",
-  "tables": [
-    {
-      "id": "posts",
-      "name": "Posts",
-      "icon": "emoji:📄",
-      "fields": [
-        { "id": "id", "type": "id" },
-        { "id": "title", "type": "text", "name": "Title" },
-        { "id": "content", "type": "text", "name": "Content" },
-        { "id": "published", "type": "boolean", "default": false }
-      ]
-    }
-  ],
-  "kv": [
-    { "id": "theme", "type": "select", "options": ["light", "dark"], "default": "light" },
-    { "id": "postsPerPage", "type": "integer", "default": 10 }
-  ]
+	"id": "blog-workspace",
+	"name": "My Blog",
+	"description": "Personal blog content",
+	"icon": "emoji:📝",
+	"tables": [
+		{
+			"id": "posts",
+			"name": "Posts",
+			"icon": "emoji:📄",
+			"fields": [
+				{ "id": "id", "type": "id" },
+				{ "id": "title", "type": "text", "name": "Title" },
+				{ "id": "content", "type": "text", "name": "Content" },
+				{ "id": "published", "type": "boolean", "default": false }
+			]
+		}
+	],
+	"kv": [
+		{
+			"id": "theme",
+			"type": "select",
+			"options": ["light", "dark"],
+			"default": "light"
+		},
+		{ "id": "postsPerPage", "type": "integer", "default": 10 }
+	]
 }
 ```
 
@@ -151,20 +165,20 @@ List all workspaces by globbing JSON files:
 import { readDir } from '@tauri-apps/plugin-fs';
 
 async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
-  const baseDir = await appLocalDataDir();
-  const workspacesDir = await join(baseDir, 'workspaces');
+	const baseDir = await appLocalDataDir();
+	const workspacesDir = await join(baseDir, 'workspaces');
 
-  const entries = await readDir(workspacesDir);
-  const definitions: WorkspaceDefinition[] = [];
+	const entries = await readDir(workspacesDir);
+	const definitions: WorkspaceDefinition[] = [];
 
-  for (const entry of entries) {
-    if (entry.name?.endsWith('.json')) {
-      const content = await readTextFile(await join(workspacesDir, entry.name));
-      definitions.push(JSON.parse(content));
-    }
-  }
+	for (const entry of entries) {
+		if (entry.name?.endsWith('.json')) {
+			const content = await readTextFile(await join(workspacesDir, entry.name));
+			definitions.push(JSON.parse(content));
+		}
+	}
 
-  return definitions;
+	return definitions;
 }
 ```
 
@@ -174,7 +188,7 @@ async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
 
 Add new overload that takes definition directly:
 
-```typescript
+````typescript
 /**
  * Create a simple workspace from a definition.
  *
@@ -194,10 +208,10 @@ Add new overload that takes definition directly:
  * ```
  */
 export function createWorkspace<
-  const TTableDefinitions extends readonly TableDefinition[],
-  const TKvFields extends readonly KvField[],
+	const TTableDefinitions extends readonly TableDefinition[],
+	const TKvFields extends readonly KvField[],
 >(
-  definition: WorkspaceDefinition<TTableDefinitions, TKvFields>,
+	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>,
 ): WorkspaceClientBuilder<TTableDefinitions, TKvFields>;
 
 /**
@@ -215,44 +229,50 @@ export function createWorkspace<
  * ```
  */
 export function createWorkspace<
-  const TTableDefinitions extends readonly TableDefinition[],
-  const TKvFields extends readonly KvField[],
+	const TTableDefinitions extends readonly TableDefinition[],
+	const TKvFields extends readonly KvField[],
 >(
-  config: CreateWorkspaceConfig<TTableDefinitions, TKvFields>,
+	config: CreateWorkspaceConfig<TTableDefinitions, TKvFields>,
 ): WorkspaceClientBuilder<TTableDefinitions, TKvFields>;
 
 // Implementation
 export function createWorkspace<
-  const TTableDefinitions extends readonly TableDefinition[],
-  const TKvFields extends readonly KvField[],
+	const TTableDefinitions extends readonly TableDefinition[],
+	const TKvFields extends readonly KvField[],
 >(
-  configOrDefinition:
-    | WorkspaceDefinition<TTableDefinitions, TKvFields>
-    | CreateWorkspaceConfig<TTableDefinitions, TKvFields>,
+	configOrDefinition:
+		| WorkspaceDefinition<TTableDefinitions, TKvFields>
+		| CreateWorkspaceConfig<TTableDefinitions, TKvFields>,
 ): WorkspaceClientBuilder<TTableDefinitions, TKvFields> {
+	// Detect which overload was called
+	const isSimpleMode =
+		'id' in configOrDefinition && !('headDoc' in configOrDefinition);
 
-  // Detect which overload was called
-  const isSimpleMode = 'id' in configOrDefinition && !('headDoc' in configOrDefinition);
+	if (isSimpleMode) {
+		// Simple mode: definition only, gc: true
+		const definition = configOrDefinition as WorkspaceDefinition<
+			TTableDefinitions,
+			TKvFields
+		>;
+		const workspaceId = definition.id;
 
-  if (isSimpleMode) {
-    // Simple mode: definition only, gc: true
-    const definition = configOrDefinition as WorkspaceDefinition<TTableDefinitions, TKvFields>;
-    const workspaceId = definition.id;
+		// gc: true for efficient YKeyValueLww storage
+		const ydoc = new Y.Doc({ guid: workspaceId, gc: true });
 
-    // gc: true for efficient YKeyValueLww storage
-    const ydoc = new Y.Doc({ guid: workspaceId, gc: true });
+		const tables = createTables(ydoc, definition.tables ?? []);
+		const kv = createKv(ydoc, definition.kv ?? []);
 
-    const tables = createTables(ydoc, definition.tables ?? []);
-    const kv = createKv(ydoc, definition.kv ?? []);
-
-    // ... rest of implementation (same pattern as current)
-  } else {
-    // Versioned mode: existing implementation with HeadDoc
-    const config = configOrDefinition as CreateWorkspaceConfig<TTableDefinitions, TKvFields>;
-    // ... existing implementation
-  }
+		// ... rest of implementation (same pattern as current)
+	} else {
+		// Versioned mode: existing implementation with HeadDoc
+		const config = configOrDefinition as CreateWorkspaceConfig<
+			TTableDefinitions,
+			TKvFields
+		>;
+		// ... existing implementation
+	}
 }
-```
+````
 
 ### packages/epicenter/src/dynamic/workspace/types.ts
 
@@ -260,16 +280,17 @@ Add definition to ExtensionContext for persistence access:
 
 ```typescript
 export type ExtensionContext<
-  TTableDefinitions extends readonly TableDefinition[] = readonly TableDefinition[],
-  TKvFields extends readonly KvField[] = readonly KvField[],
+	TTableDefinitions extends readonly TableDefinition[] =
+		readonly TableDefinition[],
+	TKvFields extends readonly KvField[] = readonly KvField[],
 > = {
-  ydoc: Y.Doc;
-  workspaceId: string;
-  epoch: number;              // 0 for simple mode
-  tables: Tables<TTableDefinitions>;
-  kv: Kv<TKvFields>;
-  extensionId: string;
-  definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;  // ADD THIS
+	ydoc: Y.Doc;
+	workspaceId: string;
+	epoch: number; // 0 for simple mode
+	tables: Tables<TTableDefinitions>;
+	kv: Kv<TKvFields>;
+	extensionId: string;
+	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>; // ADD THIS
 };
 ```
 
@@ -290,7 +311,10 @@ export type { WorkspaceDefinition } from '../core/schema/workspace-definition';
 Simplify to use new API:
 
 ```typescript
-import { createWorkspace, type WorkspaceDefinition } from '@epicenter/hq/dynamic';
+import {
+	createWorkspace,
+	type WorkspaceDefinition,
+} from '@epicenter/hq/dynamic';
 import { workspacePersistence } from './workspace-persistence';
 
 /**
@@ -299,10 +323,9 @@ import { workspacePersistence } from './workspace-persistence';
  * Loads definition from JSON file if not provided.
  */
 export function createWorkspaceClient(definition: WorkspaceDefinition) {
-  return createWorkspace(definition)
-    .withExtensions({
-      persistence: (ctx) => workspacePersistence(ctx),
-    });
+	return createWorkspace(definition).withExtensions({
+		persistence: (ctx) => workspacePersistence(ctx),
+	});
 }
 ```
 
@@ -312,137 +335,137 @@ Update to work with simple mode:
 
 ```typescript
 import {
-  defineExports,
-  type ExtensionContext,
-  type Lifecycle,
+	defineExports,
+	type ExtensionContext,
+	type Lifecycle,
 } from '@epicenter/hq/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 import * as Y from 'yjs';
 
 export type WorkspacePersistenceConfig = {
-  /** Debounce interval for SQLite/JSON writes. @default 500 */
-  debounceMs?: number;
+	/** Debounce interval for SQLite/JSON writes. @default 500 */
+	debounceMs?: number;
 };
 
 const FILE_NAMES = {
-  WORKSPACE_YJS: 'workspace.yjs',
-  TABLES_SQLITE: 'tables.sqlite',
-  KV_JSON: 'kv.json',
+	WORKSPACE_YJS: 'workspace.yjs',
+	TABLES_SQLITE: 'tables.sqlite',
+	KV_JSON: 'kv.json',
 } as const;
 
 export function workspacePersistence<TTableDefs, TKvFields>(
-  ctx: ExtensionContext<TTableDefs, TKvFields>,
-  config: WorkspacePersistenceConfig = {},
+	ctx: ExtensionContext<TTableDefs, TKvFields>,
+	config: WorkspacePersistenceConfig = {},
 ): Lifecycle {
-  const { ydoc, workspaceId, tables, kv } = ctx;
-  const { debounceMs = 500 } = config;
+	const { ydoc, workspaceId, tables, kv } = ctx;
+	const { debounceMs = 500 } = config;
 
-  // Resolve paths
-  const pathsPromise = (async () => {
-    const baseDir = await appLocalDataDir();
-    const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
-    return {
-      workspaceDir,
-      yjsPath: await join(workspaceDir, FILE_NAMES.WORKSPACE_YJS),
-      sqlitePath: await join(workspaceDir, FILE_NAMES.TABLES_SQLITE),
-      kvPath: await join(workspaceDir, FILE_NAMES.KV_JSON),
-    };
-  })();
+	// Resolve paths
+	const pathsPromise = (async () => {
+		const baseDir = await appLocalDataDir();
+		const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
+		return {
+			workspaceDir,
+			yjsPath: await join(workspaceDir, FILE_NAMES.WORKSPACE_YJS),
+			sqlitePath: await join(workspaceDir, FILE_NAMES.TABLES_SQLITE),
+			kvPath: await join(workspaceDir, FILE_NAMES.KV_JSON),
+		};
+	})();
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 1. Y.Doc Binary Persistence (immediate on every update)
-  // ─────────────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────────────────────────────────
+	// 1. Y.Doc Binary Persistence (immediate on every update)
+	// ─────────────────────────────────────────────────────────────────────────
 
-  const saveYDoc = async () => {
-    const { yjsPath } = await pathsPromise;
-    const state = Y.encodeStateAsUpdate(ydoc);
-    await writeFile(yjsPath, state);
-  };
+	const saveYDoc = async () => {
+		const { yjsPath } = await pathsPromise;
+		const state = Y.encodeStateAsUpdate(ydoc);
+		await writeFile(yjsPath, state);
+	};
 
-  ydoc.on('update', saveYDoc);
+	ydoc.on('update', saveYDoc);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 2. SQLite Materialized View (debounced full dump)
-  // ─────────────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────────────────────────────────
+	// 2. SQLite Materialized View (debounced full dump)
+	// ─────────────────────────────────────────────────────────────────────────
 
-  let sqliteTimer: ReturnType<typeof setTimeout> | null = null;
+	let sqliteTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const saveSqlite = async () => {
-    const { sqlitePath } = await pathsPromise;
-    // Full dump of all tables to SQLite
-    // Implementation: iterate tables.names(), get all rows, write to SQLite
-    // For now, this is a placeholder - actual SQLite impl needed
-    console.log(`[Persistence] Would save SQLite to ${sqlitePath}`);
-  };
+	const saveSqlite = async () => {
+		const { sqlitePath } = await pathsPromise;
+		// Full dump of all tables to SQLite
+		// Implementation: iterate tables.names(), get all rows, write to SQLite
+		// For now, this is a placeholder - actual SQLite impl needed
+		console.log(`[Persistence] Would save SQLite to ${sqlitePath}`);
+	};
 
-  const scheduleSqliteSave = () => {
-    if (sqliteTimer) clearTimeout(sqliteTimer);
-    sqliteTimer = setTimeout(() => {
-      sqliteTimer = null;
-      saveSqlite();
-    }, debounceMs);
-  };
+	const scheduleSqliteSave = () => {
+		if (sqliteTimer) clearTimeout(sqliteTimer);
+		sqliteTimer = setTimeout(() => {
+			sqliteTimer = null;
+			saveSqlite();
+		}, debounceMs);
+	};
 
-  // Observe all table changes
-  for (const tableName of tables.names()) {
-    tables.get(tableName).observe(scheduleSqliteSave);
-  }
+	// Observe all table changes
+	for (const tableName of tables.names()) {
+		tables.get(tableName).observe(scheduleSqliteSave);
+	}
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 3. KV JSON Persistence (debounced)
-  // ─────────────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────────────────────────────────
+	// 3. KV JSON Persistence (debounced)
+	// ─────────────────────────────────────────────────────────────────────────
 
-  let kvTimer: ReturnType<typeof setTimeout> | null = null;
+	let kvTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const saveKvJson = async () => {
-    const { kvPath } = await pathsPromise;
-    const kvData = kv.toJSON();
-    const json = JSON.stringify(kvData, null, '\t');
-    await writeFile(kvPath, new TextEncoder().encode(json));
-  };
+	const saveKvJson = async () => {
+		const { kvPath } = await pathsPromise;
+		const kvData = kv.toJSON();
+		const json = JSON.stringify(kvData, null, '\t');
+		await writeFile(kvPath, new TextEncoder().encode(json));
+	};
 
-  const scheduleKvSave = () => {
-    if (kvTimer) clearTimeout(kvTimer);
-    kvTimer = setTimeout(() => {
-      kvTimer = null;
-      saveKvJson();
-    }, debounceMs);
-  };
+	const scheduleKvSave = () => {
+		if (kvTimer) clearTimeout(kvTimer);
+		kvTimer = setTimeout(() => {
+			kvTimer = null;
+			saveKvJson();
+		}, debounceMs);
+	};
 
-  kv.observe(scheduleKvSave);
+	kv.observe(scheduleKvSave);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Return Lifecycle
-  // ─────────────────────────────────────────────────────────────────────────
+	// ─────────────────────────────────────────────────────────────────────────
+	// Return Lifecycle
+	// ─────────────────────────────────────────────────────────────────────────
 
-  return defineExports({
-    whenSynced: (async () => {
-      const { workspaceDir, yjsPath } = await pathsPromise;
+	return defineExports({
+		whenSynced: (async () => {
+			const { workspaceDir, yjsPath } = await pathsPromise;
 
-      // Ensure directory exists
-      await mkdir(workspaceDir, { recursive: true }).catch(() => {});
+			// Ensure directory exists
+			await mkdir(workspaceDir, { recursive: true }).catch(() => {});
 
-      // Load existing Y.Doc state
-      try {
-        const savedState = await readFile(yjsPath);
-        Y.applyUpdate(ydoc, new Uint8Array(savedState));
-        console.log(`[Persistence] Loaded ${workspaceId}/workspace.yjs`);
-      } catch {
-        console.log(`[Persistence] Creating new ${workspaceId}/workspace.yjs`);
-        await saveYDoc();
-      }
+			// Load existing Y.Doc state
+			try {
+				const savedState = await readFile(yjsPath);
+				Y.applyUpdate(ydoc, new Uint8Array(savedState));
+				console.log(`[Persistence] Loaded ${workspaceId}/workspace.yjs`);
+			} catch {
+				console.log(`[Persistence] Creating new ${workspaceId}/workspace.yjs`);
+				await saveYDoc();
+			}
 
-      // Initial saves
-      await saveKvJson();
-    })(),
+			// Initial saves
+			await saveKvJson();
+		})(),
 
-    destroy() {
-      ydoc.off('update', saveYDoc);
-      if (sqliteTimer) clearTimeout(sqliteTimer);
-      if (kvTimer) clearTimeout(kvTimer);
-    },
-  });
+		destroy() {
+			ydoc.off('update', saveYDoc);
+			if (sqliteTimer) clearTimeout(sqliteTimer);
+			if (kvTimer) clearTimeout(kvTimer);
+		},
+	});
 }
 ```
 
@@ -453,7 +476,13 @@ New service for workspace management:
 ```typescript
 import type { WorkspaceDefinition } from '@epicenter/hq/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
-import { readDir, readTextFile, writeTextFile, mkdir, remove } from '@tauri-apps/plugin-fs';
+import {
+	readDir,
+	readTextFile,
+	writeTextFile,
+	mkdir,
+	remove,
+} from '@tauri-apps/plugin-fs';
 import { generateGuid } from '@epicenter/hq';
 
 const WORKSPACES_DIR = 'workspaces';
@@ -462,123 +491,120 @@ const WORKSPACES_DIR = 'workspaces';
  * Get the workspaces directory path.
  */
 async function getWorkspacesDir(): Promise<string> {
-  const baseDir = await appLocalDataDir();
-  return join(baseDir, WORKSPACES_DIR);
+	const baseDir = await appLocalDataDir();
+	return join(baseDir, WORKSPACES_DIR);
 }
 
 /**
  * List all workspace definitions by reading JSON files.
  */
 export async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
-  const dir = await getWorkspacesDir();
+	const dir = await getWorkspacesDir();
 
-  try {
-    const entries = await readDir(dir);
-    const definitions: WorkspaceDefinition[] = [];
+	try {
+		const entries = await readDir(dir);
+		const definitions: WorkspaceDefinition[] = [];
 
-    for (const entry of entries) {
-      if (entry.name?.endsWith('.json') && entry.isFile) {
-        try {
-          const filePath = await join(dir, entry.name);
-          const content = await readTextFile(filePath);
-          definitions.push(JSON.parse(content));
-        } catch (e) {
-          console.warn(`Failed to parse ${entry.name}:`, e);
-        }
-      }
-    }
+		for (const entry of entries) {
+			if (entry.name?.endsWith('.json') && entry.isFile) {
+				try {
+					const filePath = await join(dir, entry.name);
+					const content = await readTextFile(filePath);
+					definitions.push(JSON.parse(content));
+				} catch (e) {
+					console.warn(`Failed to parse ${entry.name}:`, e);
+				}
+			}
+		}
 
-    return definitions;
-  } catch {
-    // Directory doesn't exist yet
-    return [];
-  }
+		return definitions;
+	} catch {
+		// Directory doesn't exist yet
+		return [];
+	}
 }
 
 /**
  * Get a single workspace definition by ID.
  */
-export async function getWorkspace(id: string): Promise<WorkspaceDefinition | null> {
-  const dir = await getWorkspacesDir();
-  const filePath = await join(dir, `${id}.json`);
+export async function getWorkspace(
+	id: string,
+): Promise<WorkspaceDefinition | null> {
+	const dir = await getWorkspacesDir();
+	const filePath = await join(dir, id, 'definition.json');
 
-  try {
-    const content = await readTextFile(filePath);
-    return JSON.parse(content);
-  } catch {
-    return null;
-  }
+	try {
+		const content = await readTextFile(filePath);
+		return JSON.parse(content);
+	} catch {
+		return null;
+	}
 }
 
 /**
  * Create a new workspace.
  */
 export async function createWorkspaceDefinition(
-  input: Omit<WorkspaceDefinition, 'id'> & { id?: string }
+	input: Omit<WorkspaceDefinition, 'id'> & { id?: string },
 ): Promise<WorkspaceDefinition> {
-  const dir = await getWorkspacesDir();
-  await mkdir(dir, { recursive: true }).catch(() => {});
+	const dir = await getWorkspacesDir();
 
-  const definition: WorkspaceDefinition = {
-    id: input.id ?? generateGuid(),
-    name: input.name,
-    description: input.description ?? '',
-    icon: input.icon ?? null,
-    tables: input.tables ?? [],
-    kv: input.kv ?? [],
-  };
+	const definition: WorkspaceDefinition = {
+		id: input.id ?? generateGuid(),
+		name: input.name,
+		description: input.description ?? '',
+		icon: input.icon ?? null,
+		tables: input.tables ?? [],
+		kv: input.kv ?? [],
+	};
 
-  // Write definition JSON
-  const filePath = await join(dir, `${definition.id}.json`);
-  await writeTextFile(filePath, JSON.stringify(definition, null, '\t'));
+	// Create workspace folder
+	const workspaceDir = await join(dir, definition.id);
+	await mkdir(workspaceDir, { recursive: true });
 
-  // Create data directory
-  const dataDir = await join(dir, definition.id);
-  await mkdir(dataDir, { recursive: true }).catch(() => {});
+	// Write definition.json inside the folder
+	const filePath = await join(workspaceDir, 'definition.json');
+	await writeTextFile(filePath, JSON.stringify(definition, null, '\t'));
 
-  return definition;
+	return definition;
 }
 
 /**
  * Update a workspace definition.
  */
 export async function updateWorkspaceDefinition(
-  id: string,
-  updates: Partial<Omit<WorkspaceDefinition, 'id'>>
+	id: string,
+	updates: Partial<Omit<WorkspaceDefinition, 'id'>>,
 ): Promise<WorkspaceDefinition | null> {
-  const existing = await getWorkspace(id);
-  if (!existing) return null;
+	const existing = await getWorkspace(id);
+	if (!existing) return null;
 
-  const updated: WorkspaceDefinition = {
-    ...existing,
-    ...updates,
-    id, // Ensure ID doesn't change
-  };
+	const updated: WorkspaceDefinition = {
+		...existing,
+		...updates,
+		id, // Ensure ID doesn't change
+	};
 
-  const dir = await getWorkspacesDir();
-  const filePath = await join(dir, `${id}.json`);
-  await writeTextFile(filePath, JSON.stringify(updated, null, '\t'));
+	const dir = await getWorkspacesDir();
+	const filePath = await join(dir, id, 'definition.json');
+	await writeTextFile(filePath, JSON.stringify(updated, null, '\t'));
 
-  return updated;
+	return updated;
 }
 
 /**
  * Delete a workspace and all its data.
  */
 export async function deleteWorkspace(id: string): Promise<boolean> {
-  const dir = await getWorkspacesDir();
+	const dir = await getWorkspacesDir();
 
-  try {
-    // Delete definition JSON
-    await remove(await join(dir, `${id}.json`));
-
-    // Delete data directory
-    await remove(await join(dir, id), { recursive: true }).catch(() => {});
-
-    return true;
-  } catch {
-    return false;
-  }
+	try {
+		// Delete workspace folder (includes definition.json)
+		await remove(await join(dir, id), { recursive: true });
+		return true;
+	} catch {
+		return false;
+	}
 }
 ```
 
@@ -592,22 +618,22 @@ import { getWorkspace } from '$lib/services/workspaces';
 import { createWorkspaceClient } from '$lib/docs/workspace';
 
 export async function load({ params }) {
-  const { id } = params;
+	const { id } = params;
 
-  // Load definition from JSON file
-  const definition = await getWorkspace(id);
-  if (!definition) {
-    throw error(404, `Workspace "${id}" not found`);
-  }
+	// Load definition from JSON file
+	const definition = await getWorkspace(id);
+	if (!definition) {
+		throw error(404, `Workspace "${id}" not found`);
+	}
 
-  // Create workspace client
-  const client = createWorkspaceClient(definition);
-  await client.whenSynced;
+	// Create workspace client
+	const client = createWorkspaceClient(definition);
+	await client.whenSynced;
 
-  return {
-    definition,
-    client,
-  };
+	return {
+		definition,
+		client,
+	};
 }
 ```
 
@@ -668,27 +694,27 @@ export async function load({ params }) {
 
 ### packages/epicenter/
 
-| File | Action |
-|------|--------|
-| `src/dynamic/workspace/create-workspace.ts` | Add overload for simple mode |
-| `src/dynamic/workspace/types.ts` | Add `definition` to ExtensionContext |
-| `src/dynamic/index.ts` | Verify exports |
+| File                                        | Action                               |
+| ------------------------------------------- | ------------------------------------ |
+| `src/dynamic/workspace/create-workspace.ts` | Add overload for simple mode         |
+| `src/dynamic/workspace/types.ts`            | Add `definition` to ExtensionContext |
+| `src/dynamic/index.ts`                      | Verify exports                       |
 
 ### apps/epicenter/
 
-| File | Action |
-|------|--------|
-| `src/lib/services/workspaces.ts` | **NEW** - Workspace CRUD via JSON files |
-| `src/lib/docs/workspace.ts` | Simplify to use new API |
-| `src/lib/docs/workspace-persistence.ts` | Remove epochs, add SQLite placeholder |
-| `src/lib/docs/head.ts` | **DELETE** (not needed) |
-| `src/lib/docs/head-persistence.ts` | **DELETE** (not needed) |
-| `src/lib/docs/registry.ts` | **DELETE** (using JSON files) |
-| `src/lib/docs/registry-persistence.ts` | **DELETE** (using JSON files) |
-| `src/lib/docs/reactive-head.svelte.ts` | **DELETE** (not needed) |
-| `src/lib/templates/*.ts` | Fix to match WorkspaceDefinition format |
-| `src/lib/query/workspaces.ts` | Update to use workspaces service |
-| `src/routes/**/+layout.ts` | Update loaders |
+| File                                    | Action                                  |
+| --------------------------------------- | --------------------------------------- |
+| `src/lib/services/workspaces.ts`        | **NEW** - Workspace CRUD via JSON files |
+| `src/lib/docs/workspace.ts`             | Simplify to use new API                 |
+| `src/lib/docs/workspace-persistence.ts` | Remove epochs, add SQLite placeholder   |
+| `src/lib/docs/head.ts`                  | **DELETE** (not needed)                 |
+| `src/lib/docs/head-persistence.ts`      | **DELETE** (not needed)                 |
+| `src/lib/docs/registry.ts`              | **DELETE** (using JSON files)           |
+| `src/lib/docs/registry-persistence.ts`  | **DELETE** (using JSON files)           |
+| `src/lib/docs/reactive-head.svelte.ts`  | **DELETE** (not needed)                 |
+| `src/lib/templates/*.ts`                | Fix to match WorkspaceDefinition format |
+| `src/lib/query/workspaces.ts`           | Update to use workspaces service        |
+| `src/routes/**/+layout.ts`              | Update loaders                          |
 
 ## Future Considerations
 
@@ -720,6 +746,7 @@ const workspace = createWorkspace(definition); // Detects flag, uses HeadDoc int
 ### SQLite Implementation
 
 The SQLite materialized view needs:
+
 - Drizzle schema generation from TableDefinition
 - Full table dump on debounced save
 - Query API via `workspace.extensions.sqlite.db`
@@ -736,12 +763,14 @@ This can be a separate extension or built into persistence.
 ## Migration Path
 
 Existing workspaces use the epoch folder structure:
+
 ```
 workspaces/{id}/head.yjs
 workspaces/{id}/{epoch}/workspace.yjs
 ```
 
 Migration options:
+
 1. **Manual**: User exports and reimports
 2. **Automatic**: Detect old structure, migrate on first load
 3. **Parallel**: Support both structures during transition

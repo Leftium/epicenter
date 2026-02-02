@@ -289,48 +289,46 @@ Preserve individual commits; they tell the story of how the work evolved.
 
 ### Pull Request Body Format
 
-Use clean paragraph format instead of bullet points or structured sections:
+#### Simple PRs (single-purpose changes)
+
+Use clean paragraph format:
 
 **First Paragraph**: Explain what the change does and what problem it solves.
 
-- Focus on the user-facing benefit or technical improvement
-- Use clear, descriptive language about the behavior change
-
 **Subsequent Paragraphs**: Explain how the implementation works.
-
-- Describe the technical approach taken
-- Explain key classes, methods, or patterns used
-- Include reasoning for technical decisions (e.g., why `flex-1` is needed)
 
 **Example**:
 
 ```
 This change enables proper vertical scrolling for drawer components when content exceeds the available drawer height. Previously, drawers with long content could overflow without proper scrolling behavior, making it difficult for users to access all content and resulting in poor mobile UX.
 
-To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="flex-1 overflow-y-auto">` container. The `flex-1` class ensures the content area takes up all remaining space after the fixed drag handle at the top, while `overflow-y-auto` enables vertical scrolling when the content height exceeds the available space. This maintains the drag handle as a fixed element while allowing the content to scroll independently, preserving the expected drawer interaction pattern.
+To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="flex-1 overflow-y-auto">` container. The `flex-1` class ensures the content area takes up all remaining space after the fixed drag handle at the top, while `overflow-y-auto` enables vertical scrolling when the content height exceeds the available space.
 ```
 
-#### Body Structure
+#### Architectural PRs (API changes, structural refactors)
 
-1. **Context Section** (if needed for complex changes):
-   - Use bullet points for multiple related observations
-   - Mix technical detail with accessible explanations
-   - Acknowledge trade-offs: "we'd like to X, but at the same time Y is problematic"
+For PRs that change APIs, storage structures, or architectural patterns, use this section order:
 
-2. **Solution Description**:
-   - Lead with what changed in plain language
-   - Show code examples inline to illustrate the improvement
-   - Compare before/after when it clarifies the change
+1. **Introductory Paragraphs (1-2)**: What the change does and why it exists. Include breaking change notice if applicable.
 
-3. **Technical Details**:
-   - Explain the "why" behind architectural decisions
-   - Reference philosophical goals: "This doubles down on what people love about..."
-   - Connect to long-term vision when relevant
+2. **API Migration**: Before/after code examples showing the new usage. This is mandatory for any API change.
 
-4. **Outstanding Work** (if applicable):
-   - List TODOs candidly
-   - Be specific about what remains
-   - No need to apologize; just state what's left
+3. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
+
+4. **Technical Details**: Extension points, type definitions, configuration formats—with code examples.
+
+5. **Rationale**: Why this approach was chosen. What the old approach was designed for, why it didn't work in practice, what the new approach enables.
+
+6. **Future Work**: What could be re-added later, what's intentionally deferred.
+
+7. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end. Often unnecessary—GitHub's "Files changed" tab already shows this.
+
+**Key principles**:
+
+- Code snippets and ASCII art are valuable—feature them prominently
+- Skip the "Changes" section entirely, or make it minimal at the end
+- Rationale explains the thinking; Future Work acknowledges scope limits
+- Let the visual aids (code, diagrams) do the heavy lifting
 
 #### Voice and Tone
 
@@ -366,12 +364,12 @@ This doubles down on Svelte's philosophy of writing less, more intuitive code wh
 #### What to Avoid
 
 - **Listing files changed**: Never enumerate which files were modified. GitHub's "Files changed" tab already shows this; the PR description should explain WHY, not WHAT files
-- Bullet points or structured lists
+- **"Changes" sections at the top**: If you need a changes summary, put it at the very end and keep it minimal. Most PRs don't need one.
+- **Test plans**: Skip unless specifically requested. Tests should be in the code, not described in prose.
+- Bullet points or structured lists (in simple PRs)
 - Section headers like "## Summary" or "## Changes Made"
-- Test plans or checklists (unless specifically requested)
 - Marketing language or excessive formatting
 - Corporate language: "This PR enhances our solution by leveraging..."
-- Excessive structure: Multiple heading levels and subsections
 - Marketing speak: "game-changing", "revolutionary", "seamless"
 - Dramatic hyperbole: "feels like an eternity", "pain point", "excruciating" — stick to facts ("saves 150ms") not drama
 - Over-explaining simple changes

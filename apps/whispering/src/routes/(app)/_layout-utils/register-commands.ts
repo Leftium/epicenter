@@ -1,11 +1,11 @@
 import { partitionResults } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
-import { rpc } from '$lib/query';
-import type { Accelerator } from '$lib/services/global-shortcut-manager';
+import { desktopRpc, rpc } from '$lib/query';
+import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
 import {
 	type CommandId,
 	shortcutStringToArray,
-} from '$lib/services/local-shortcut-manager';
+} from '$lib/services/isomorphic/local-shortcut-manager';
 import { settings } from '$lib/stores/settings.svelte';
 
 /**
@@ -20,11 +20,11 @@ export async function syncLocalShortcutsWithSettings() {
 			.map((command) => {
 				const keyCombination = settings.value[`shortcuts.local.${command.id}`];
 				if (!keyCombination) {
-					return rpc.shortcuts.unregisterCommandLocally.execute({
+					return rpc.localShortcuts.unregisterCommand({
 						commandId: command.id as CommandId,
 					});
 				}
-				return rpc.shortcuts.registerCommandLocally.execute({
+				return rpc.localShortcuts.registerCommand({
 					command,
 					keyCombination: shortcutStringToArray(keyCombination),
 				});
@@ -33,7 +33,7 @@ export async function syncLocalShortcutsWithSettings() {
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		rpc.notify.error.execute({
+		rpc.notify.error({
 			title: 'Error registering local commands',
 			description: errs.map((err) => err.error.message).join('\n'),
 			action: { type: 'more-details', error: errs },
@@ -60,12 +60,12 @@ export async function syncGlobalShortcutsWithSettings() {
 
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
-			rpc.shortcuts.registerCommandGlobally.execute(item),
+			desktopRpc.globalShortcuts.registerCommand(item),
 		),
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		rpc.notify.error.execute({
+		rpc.notify.error({
 			title: 'Error registering global commands',
 			description: errs.map((err) => err.error.message).join('\n'),
 			action: { type: 'more-details', error: errs },
@@ -87,7 +87,7 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 			if (localShortcuts.has(shortcut)) {
 				// If duplicates found, reset all local shortcuts to defaults
 				settings.resetLocalShortcuts();
-				rpc.notify.success.execute({
+				rpc.notify.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
@@ -120,7 +120,7 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 			if (globalShortcuts.has(shortcut)) {
 				// If duplicates found, reset all global shortcuts to defaults
 				settings.resetGlobalShortcuts();
-				rpc.notify.success.execute({
+				rpc.notify.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',

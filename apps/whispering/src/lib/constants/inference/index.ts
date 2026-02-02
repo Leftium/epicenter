@@ -15,4 +15,10 @@ export {
 	OPENAI_INFERENCE_MODEL_OPTIONS,
 	OPENAI_INFERENCE_MODELS,
 } from './openai-models';
-export { INFERENCE_PROVIDER_OPTIONS, INFERENCE_PROVIDERS } from './providers';
+export {
+	INFERENCE_PROVIDER_IDS,
+	INFERENCE_PROVIDER_OPTIONS,
+	INFERENCE_PROVIDERS,
+	type InferenceProvider,
+	type InferenceProviderId,
+} from './providers';

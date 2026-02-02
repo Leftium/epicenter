@@ -1,14 +1,17 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { Button } from '@epicenter/ui/button';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
+	import { cn } from '@epicenter/ui/utils';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { CheckIcon, MicIcon, RefreshCwIcon } from '@lucide/svelte';
-	import { Badge } from '@repo/ui/badge';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import { Badge } from '@epicenter/ui/badge';
 
 	const combobox = useCombobox();
 
@@ -44,13 +47,13 @@
 	} as const;
 
 	const getDevicesQuery = createQuery(() => ({
-		...rpc.recorder.enumerateDevices.options(),
+		...rpc.recorder.enumerateDevices.options,
 		enabled: combobox.open,
 	}));
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning.execute(getDevicesQuery.error);
+			rpc.notify.warning(getDevicesQuery.error);
 		}
 	});
 </script>
@@ -58,9 +61,9 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
-				tooltipContent={isDeviceSelected
+				tooltip={isDeviceSelected
 					? `Recording via ${RECORDING_METHODS[selectedMethod].label} - Change device or method`
 					: `Select recording device (${RECORDING_METHODS[selectedMethod].label} method)`}
 				role="combobox"
@@ -71,9 +74,9 @@
 				{#if isDeviceSelected}
 					<MicIcon class="size-4 text-green-500" />
 				{:else}
-					<MicIcon class="size-4 text-amber-500" />
+					<MicIcon class="size-4 text-warning" />
 				{/if}
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
@@ -90,7 +93,10 @@
 							<Command.Item
 								value={`method-${methodKey} ${method.label} ${method.description}`}
 								onSelect={() => {
-									settings.updateKey('recording.method', methodKey);
+									settings.updateKey(
+										'recording.method',
+										methodKey as keyof typeof RECORDING_METHODS,
+									);
 									getDevicesQuery.refetch();
 								}}
 								class="flex items-center gap-3 px-3 py-2"
@@ -165,12 +171,11 @@
 							getDevicesQuery.refetch();
 						}}
 					>
-						<RefreshCwIcon
-							class={cn(
-								'mr-2 size-4',
-								getDevicesQuery.isRefetching && 'animate-spin',
-							)}
-						/>
+						{#if getDevicesQuery.isRefetching}
+							<Spinner />
+						{:else}
+							<RefreshCwIcon class="size-4" />
+						{/if}
 						Refresh devices
 					</Command.Item>
 				</Command.Group>

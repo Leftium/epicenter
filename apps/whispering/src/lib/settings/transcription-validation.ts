@@ -1,11 +1,12 @@
 import {
 	TRANSCRIPTION_SERVICES,
 	type TranscriptionService,
-} from '$lib/services/transcription/registry';
+} from '$lib/services/isomorphic/transcription/registry';
 import { settings } from '$lib/stores/settings.svelte';
 
 /**
  * Gets the currently selected transcription service.
+ * Returns undefined if the service is not available on this platform.
  *
  * @returns The selected transcription service, or undefined if none selected or invalid
  */

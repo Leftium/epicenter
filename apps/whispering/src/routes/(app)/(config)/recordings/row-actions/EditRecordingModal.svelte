@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { Button } from '@repo/ui/button';
-	import * as Modal from '@repo/ui/modal';
-	import { Input } from '@repo/ui/input';
-	import { Label } from '@repo/ui/label';
-	import { Textarea } from '@repo/ui/textarea';
+	import { Button } from '@epicenter/ui/button';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Input } from '@epicenter/ui/input';
+	import { Label } from '@epicenter/ui/label';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/db';
-	import * as services from '$lib/services';
+	import type { Recording } from '$lib/services/isomorphic/db';
+	import { services } from '$lib/services';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { PencilIcon as EditIcon, Loader2Icon } from '@lucide/svelte';
+	import EditIcon from '@lucide/svelte/icons/pencil';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { onDestroy } from 'svelte';
 
-	const updateRecording = createMutation(rpc.db.recordings.update.options);
-
-	const deleteRecording = createMutation(rpc.db.recordings.delete.options);
+	const updateRecording = createMutation(
+		() => rpc.db.recordings.update.options,
+	);
 
 	let { recording }: { recording: Recording } = $props();
 
@@ -69,7 +69,7 @@
 	 * Uses accessor pattern for reactive updates.
 	 */
 	const audioPlaybackUrlQuery = createQuery(
-		rpc.db.recordings.getAudioPlaybackUrl(() => recording.id).options,
+		() => rpc.db.recordings.getAudioPlaybackUrl(() => recording.id).options,
 	);
 
 	const audioUrl = $derived(audioPlaybackUrlQuery.data);
@@ -82,8 +82,8 @@
 
 		confirmationDialog.open({
 			title: 'Unsaved changes',
-			subtitle: 'You have unsaved changes. Are you sure you want to leave?',
-			confirmText: 'Leave',
+			description: 'You have unsaved changes. Are you sure you want to leave?',
+			confirm: { text: 'Leave' },
 			onConfirm: () => {
 				// Reset working copy and dirty flag
 				workingCopy = recording;
@@ -102,14 +102,9 @@
 <Modal.Root bind:open={isDialogOpen}>
 	<Modal.Trigger>
 		{#snippet child({ props })}
-			<WhisperingButton
-				tooltipContent="Edit recording"
-				variant="ghost"
-				size="icon"
-				{...props}
-			>
+			<Button tooltip="Edit recording" variant="ghost" size="icon" {...props}>
 				<EditIcon class="size-4" />
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Modal.Trigger>
 	<Modal.Content
@@ -132,7 +127,7 @@
 				Make changes to your recording and click save when you're done.
 			</Modal.Description>
 		</Modal.Header>
-		<div class="space-y-4 py-4">
+		<div class="space-y-4 p-4">
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label for="title" class="text-right">Title</Label>
 				<Input
@@ -170,7 +165,7 @@
 				/>
 			</div>
 			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="transcribedText" class="text-right">Transcribed Text</Label>
+				<Label for="transcribedText" class="text-right">Transcript</Label>
 				<Textarea
 					id="transcribedText"
 					value={workingCopy.transcribedText}
@@ -196,35 +191,30 @@
 				onclick={() => {
 					confirmationDialog.open({
 						title: 'Delete recording',
-						subtitle: 'Are you sure? This action cannot be undone.',
-						confirmText: 'Delete',
-						onConfirm: () => {
-							deleteRecording.mutate($state.snapshot(recording), {
-								onSuccess: () => {
-									isDialogOpen = false;
-									rpc.notify.success.execute({
-										title: 'Deleted recording!',
-										description:
-											'Your recording has been deleted successfully.',
-									});
-								},
-								onError: (error) => {
-									rpc.notify.error.execute({
-										title: 'Failed to delete recording!',
-										description: 'Your recording could not be deleted.',
-										action: { type: 'more-details', error: error },
-									});
-								},
+						description: 'Are you sure? This action cannot be undone.',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: async () => {
+							const { error } = await rpc.db.recordings.delete(
+								$state.snapshot(recording),
+							);
+							if (error) {
+								rpc.notify.error({
+									title: 'Failed to delete recording!',
+									description: 'Your recording could not be deleted.',
+									action: { type: 'more-details', error },
+								});
+								throw error;
+							}
+							isDialogOpen = false;
+							rpc.notify.success({
+								title: 'Deleted recording!',
+								description: 'Your recording has been deleted successfully.',
 							});
 						},
 					});
 				}}
 				variant="destructive"
-				disabled={deleteRecording.isPending}
 			>
-				{#if deleteRecording.isPending}
-					<Loader2Icon class="mr-2 size-4 animate-spin" />
-				{/if}
 				Delete
 			</Button>
 			<Button variant="outline" onclick={() => promptUserConfirmLeave()}>
@@ -234,14 +224,14 @@
 				onclick={() => {
 					updateRecording.mutate($state.snapshot(workingCopy), {
 						onSuccess: () => {
-							rpc.notify.success.execute({
+							rpc.notify.success({
 								title: 'Updated recording!',
 								description: 'Your recording has been updated successfully.',
 							});
 							isDialogOpen = false;
 						},
 						onError: (error) => {
-							rpc.notify.error.execute({
+							rpc.notify.error({
 								title: 'Failed to update recording!',
 								description: 'Your recording could not be updated.',
 								action: { type: 'more-details', error: error },
@@ -252,7 +242,7 @@
 				disabled={updateRecording.isPending || !isWorkingCopyDirty}
 			>
 				{#if updateRecording.isPending}
-					<Loader2Icon class="mr-2 size-4 animate-spin" />
+					<Spinner />
 				{/if}
 				Save
 			</Button>

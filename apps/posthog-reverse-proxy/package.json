@@ -7,12 +7,13 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy --minify",
-		"tail": "wrangler tail"
+		"tail": "wrangler tail",
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
-		"@repo/config": "workspace:*",
+		"@epicenter/config": "workspace:*",
 		"@cloudflare/workers-types": "^4.20250803.0",
-		"typescript": "^5.9.2",
-		"wrangler": "^4.28.0"
+		"typescript": "catalog:",
+		"wrangler": "catalog:"
 	}
 }

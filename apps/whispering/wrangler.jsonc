@@ -7,7 +7,7 @@
 	// When setting up in Cloudflare dashboard:
 	//
 	// Build command:
-	//   bun ci && bun run build --filter=@repo/whispering
+	//   bun ci && bun run build --filter=@epicenter/whispering
 	//
 	// Deploy command:
 	//   cd apps/whispering && npx wrangler deploy

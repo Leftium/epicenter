@@ -1,13 +1,17 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { Button } from '@epicenter/ui/button';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
+	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
+	import { cn } from '@epicenter/ui/utils';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { CheckIcon, MicIcon, RefreshCwIcon } from '@lucide/svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import { Spinner } from '@epicenter/ui/spinner';
 
 	const combobox = useCombobox();
 
@@ -19,13 +23,13 @@
 	const isDeviceSelected = $derived(!!selectedDeviceId);
 
 	const getDevicesQuery = createQuery(() => ({
-		...rpc.vadRecorder.enumerateDevices.options(),
+		...vadRecorder.enumerateDevices.options,
 		enabled: combobox.open,
 	}));
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning.execute(getDevicesQuery.error);
+			rpc.notify.warning(getDevicesQuery.error);
 		}
 	});
 </script>
@@ -33,9 +37,9 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
-				tooltipContent={isDeviceSelected
+				tooltip={isDeviceSelected
 					? 'Change VAD recording device'
 					: 'Select a VAD recording device'}
 				role="combobox"
@@ -47,9 +51,9 @@
 				{#if isDeviceSelected}
 					<MicIcon class="size-4 text-green-500" />
 				{:else}
-					<MicIcon class="size-4 text-amber-500" />
+					<MicIcon class="size-4 text-warning" />
 				{/if}
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
@@ -66,7 +70,7 @@
 					</div>
 				{:else if getDevicesQuery.isError}
 					<div class="p-4 text-center text-sm text-destructive">
-						{getDevicesQuery.error.title}
+						{getDevicesQuery.error?.title}
 					</div>
 				{:else}
 					{#each getDevicesQuery.data as device (device.id)}
@@ -99,12 +103,11 @@
 						getDevicesQuery.refetch();
 					}}
 				>
-					<RefreshCwIcon
-						class={cn(
-							'mr-2 size-4',
-							getDevicesQuery.isRefetching && 'animate-spin',
-						)}
-					/>
+					{#if getDevicesQuery.isRefetching}
+						<Spinner />
+					{:else}
+						<RefreshCwIcon class="size-4" />
+					{/if}
 					Refresh devices
 				</Command.Item>
 			</Command.Group>

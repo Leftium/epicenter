@@ -1,20 +1,22 @@
 <script lang="ts">
-	import LabeledInput from '$lib/components/labeled/LabeledInput.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { Badge } from '@repo/ui/badge';
-	import { Checkbox } from '@repo/ui/checkbox';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
+	import { Checkbox } from '@epicenter/ui/checkbox';
+	import * as Field from '@epicenter/ui/field';
+	import { Input } from '@epicenter/ui/input';
 	import {
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
-	} from '$lib/services/recorder/ffmpeg';
+	} from '$lib/services/desktop/recorder/ffmpeg';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
-	import { RotateCcw, AlertTriangle } from '@lucide/svelte';
+	import { cn } from '@epicenter/ui/utils';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
-	import * as Alert from '@repo/ui/alert';
-	import { Link } from '@repo/ui/link';
+	import { desktopRpc } from '$lib/query';
+	import * as Alert from '@epicenter/ui/alert';
+	import { Link } from '@epicenter/ui/link';
 
 	// Compression preset definitions (UI only - not stored in settings)
 	const COMPRESSION_PRESETS = {
@@ -59,7 +61,9 @@
 	}
 
 	// Check if FFmpeg is installed
-	const ffmpegQuery = createQuery(rpc.ffmpeg.checkFfmpegInstalled.options);
+	const ffmpegQuery = createQuery(
+		() => desktopRpc.ffmpeg.checkFfmpegInstalled.options,
+	);
 
 	const isFfmpegInstalled = $derived(ffmpegQuery.data ?? false);
 	const isFfmpegCheckLoading = $derived(ffmpegQuery.isPending);
@@ -70,37 +74,35 @@
 
 <div class="space-y-4">
 	<!-- Enable/Disable Toggle -->
-	<div class="flex items-center gap-3">
+	<Field.Field orientation="horizontal">
 		<Checkbox
-			id="compression-enabled-{Math.random().toString(36).substr(2, 9)}"
-			bind:checked={
-				() => settings.value['transcription.compressionEnabled'],
-				(checked) =>
-					settings.updateKey('transcription.compressionEnabled', checked)
-			}
+			id="compression-enabled"
+			checked={settings.value['transcription.compressionEnabled']}
+			onCheckedChange={(checked) =>
+				settings.updateKey(
+					'transcription.compressionEnabled',
+					checked === true,
+				)}
 			disabled={!isFfmpegInstalled}
 		/>
-		<div class="flex-1">
+		<Field.Content>
 			<div class="flex items-center gap-2">
-				<label
+				<Field.Label
 					for="compression-enabled"
-					class={cn(
-						'text-sm font-medium',
-						!isFfmpegInstalled && 'text-muted-foreground',
-					)}
+					class={cn(!isFfmpegInstalled && 'text-muted-foreground')}
 				>
 					Compress audio before transcription
-				</label>
+				</Field.Label>
 				{#if showRecommendedBadge}
 					<Badge variant="secondary" class="text-xs">Recommended</Badge>
 				{/if}
 			</div>
-			<p class="text-xs mt-1 text-muted-foreground">
+			<Field.Description>
 				Reduce file sizes and trim silence for faster uploads and lower API
 				costs
-			</p>
-		</div>
-	</div>
+			</Field.Description>
+		</Field.Content>
+	</Field.Field>
 
 	{#if settings.value['transcription.compressionEnabled']}
 		<!-- Preset Selection Badges -->
@@ -108,8 +110,8 @@
 			<p class="text-base font-medium">Compression Presets</p>
 			<div class="flex flex-wrap gap-2">
 				{#each Object.entries(COMPRESSION_PRESETS) as [presetKey, preset]}
-					<WhisperingButton
-						tooltipContent={preset.description}
+					<Button
+						tooltip={preset.description}
 						variant={isPresetActive(presetKey as CompressionPresetKey)
 							? 'default'
 							: 'outline'}
@@ -128,7 +130,7 @@
 					>
 						<span class="mr-1">{preset.icon}</span>
 						<span>{preset.label}</span>
-					</WhisperingButton>
+					</Button>
 				{/each}
 			</div>
 			<p class="text-muted-foreground text-xs">
@@ -137,23 +139,26 @@
 		</div>
 
 		<!-- Custom Options Input -->
-		<LabeledInput
-			id="compression-options-{Math.random().toString(36).substr(2, 9)}"
-			label="Custom Options"
-			bind:value={
-				() => settings.value['transcription.compressionOptions'],
-				(value) => settings.updateKey('transcription.compressionOptions', value)
-			}
-			placeholder={FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
-			description="FFmpeg compression options. Changes here will be reflected in real-time during transcription."
-		>
-			{#snippet actionSlot()}
+		<Field.Field>
+			<Field.Label for="compression-options">Custom Options</Field.Label>
+			<div class="flex gap-2">
+				<Input
+					id="compression-options"
+					value={settings.value['transcription.compressionOptions']}
+					oninput={(e) =>
+						settings.updateKey(
+							'transcription.compressionOptions',
+							e.currentTarget.value,
+						)}
+					placeholder={FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
+					class="flex-1"
+				/>
 				{#if settings.value['transcription.compressionOptions'] !== FFMPEG_DEFAULT_COMPRESSION_OPTIONS}
-					<WhisperingButton
-						tooltipContent="Reset to default"
+					<Button
+						tooltip="Reset to default"
 						variant="ghost"
 						size="icon"
-						class="h-6 w-6"
+						class="h-9 w-9"
 						onclick={() => {
 							settings.updateKey(
 								'transcription.compressionOptions',
@@ -162,10 +167,14 @@
 						}}
 					>
 						<RotateCcw class="h-3 w-3" />
-					</WhisperingButton>
+					</Button>
 				{/if}
-			{/snippet}
-		</LabeledInput>
+			</div>
+			<Field.Description>
+				FFmpeg compression options. Changes here will be reflected in real-time
+				during transcription.
+			</Field.Description>
+		</Field.Field>
 
 		<!-- Command Preview -->
 		<div class="text-xs text-muted-foreground">

@@ -1,10 +1,12 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
+	import { Button } from '@epicenter/ui/button';
+	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import { getDefaultRecordingsFolder } from '$lib/services/recorder';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { ExternalLink, FolderOpen, RotateCcw } from '@lucide/svelte';
-	import { Input } from '@repo/ui/input';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import { Input } from '@epicenter/ui/input';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 
 	// Top-level await to get the default app data directory
@@ -12,7 +14,7 @@
 
 	// Initialize the default path asynchronously
 	if (window.__TAURI_INTERNALS__) {
-		getDefaultRecordingsFolder().then((path) => {
+		PATHS.DB.RECORDINGS().then((path) => {
 			defaultRecordingsFolder = path;
 		});
 	}
@@ -53,7 +55,7 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				rpc.notify.error.execute({
+				rpc.notify.error({
 					title: 'Failed to open folder',
 					description: error instanceof Error ? error.message : 'Unknown error',
 				});
@@ -70,28 +72,28 @@
 		<Input type="text" value={displayPath} readonly class="flex-1" />
 	{/if}
 
-	<WhisperingButton
-		tooltipContent="Select output folder"
+	<Button
+		tooltip="Select output folder"
 		variant="outline"
 		size="icon"
 		onclick={selectOutputFolder}
 	>
 		<FolderOpen class="h-4 w-4" />
-	</WhisperingButton>
+	</Button>
 
-	<WhisperingButton
-		tooltipContent="Open output folder"
+	<Button
+		tooltip="Open output folder"
 		variant="outline"
 		size="icon"
 		onclick={openOutputFolder}
 		disabled={displayPath === null}
 	>
 		<ExternalLink class="h-4 w-4" />
-	</WhisperingButton>
+	</Button>
 
 	{#if settings.value['recording.cpal.outputFolder']}
-		<WhisperingButton
-			tooltipContent="Reset to default folder"
+		<Button
+			tooltip="Reset to default folder"
 			variant="outline"
 			size="icon"
 			onclick={() => {
@@ -99,6 +101,6 @@
 			}}
 		>
 			<RotateCcw class="h-4 w-4" />
-		</WhisperingButton>
+		</Button>
 	{/if}
 </div>

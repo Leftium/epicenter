@@ -59,13 +59,33 @@
 </script>
 
 <script lang="ts">
-	import * as Dialog from '@repo/ui/dialog';
-	import { Button } from '@repo/ui/button';
+	import * as Dialog from '@epicenter/ui/dialog';
+	import { Button } from '@epicenter/ui/button';
+	import { Progress } from '@epicenter/ui/progress';
+	import { ScrollArea } from '@epicenter/ui/scroll-area';
+	import { Separator } from '@epicenter/ui/separator';
 	import { relaunch } from '@tauri-apps/plugin-process';
 	import { rpc } from '$lib/query';
-	import * as Alert from '@repo/ui/alert';
-	import { AlertTriangle } from '@lucide/svelte';
+	import * as Alert from '@epicenter/ui/alert';
+	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
+	import DownloadIcon from '@lucide/svelte/icons/download';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { marked } from 'marked';
+	import DOMPurify from 'dompurify';
+	import { Link } from '@epicenter/ui/link';
+
+	const GITHUB_RELEASES_URL =
+		'https://github.com/EpicenterHQ/epicenter/releases/tag';
+
+	function getGitHubReleaseUrl(version: string) {
+		const tag = version.startsWith('v') ? version : `v${version}`;
+		return `${GITHUB_RELEASES_URL}/${tag}`;
+	}
+
+	function renderMarkdown(markdown: string): string {
+		const html = marked.parse(markdown) as string;
+		return DOMPurify.sanitize(html);
+	}
 
 	async function handleDownloadAndInstall() {
 		if (!updateDialog.update) return;
@@ -87,7 +107,7 @@
 						updateDialog.updateProgress(downloaded, contentLength);
 						break;
 					case 'Finished':
-						rpc.notify.success.execute({
+						rpc.notify.success({
 							title: 'Update installed successfully!',
 							description: 'Restart Whispering to apply the update.',
 							action: {
@@ -101,7 +121,7 @@
 			});
 		} catch (err) {
 			updateDialog.setError(extractErrorMessage(err));
-			rpc.notify.error.execute({
+			rpc.notify.error({
 				title: 'Failed to install update',
 				description: extractErrorMessage(err),
 			});
@@ -110,48 +130,58 @@
 </script>
 
 <Dialog.Root bind:open={updateDialog.isOpen}>
-	<Dialog.Content class="sm:max-w-xl">
+	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Update Available</Dialog.Title>
 			<Dialog.Description>
-				Version {updateDialog.update?.version} is now available
+				Version {updateDialog.update?.version} is ready to install
 				{#if updateDialog.update?.date}
-					(Released: {new Date(updateDialog.update.date).toLocaleDateString()})
+					&middot; {new Date(updateDialog.update.date).toLocaleDateString()}
+				{/if}
+				{#if updateDialog.update?.version}
+					&middot;
+					<Link
+						href={getGitHubReleaseUrl(updateDialog.update.version)}
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						View release notes
+					</Link>
 				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 
 		{#if updateDialog.update?.body}
-			<div class="bg-muted rounded-md p-4 max-h-64 overflow-y-auto">
-				<h4 class="text-sm font-semibold mb-2">Release Notes:</h4>
-				<div class="text-sm whitespace-pre-wrap">
-					{updateDialog.update.body}
+			<ScrollArea class="max-h-[300px]">
+				<div class="prose prose-sm max-w-none pr-4">
+					{@html renderMarkdown(updateDialog.update.body)}
 				</div>
-			</div>
+			</ScrollArea>
+			<Separator />
 		{/if}
 
 		{#if updateDialog.isDownloading || updateDialog.isDownloadComplete}
 			<div class="space-y-2">
-				<div class="text-sm text-muted-foreground">
-					{#if updateDialog.isDownloadComplete}
-						Download complete! Ready to restart.
-					{:else}
-						Downloading update... {Math.round(updateDialog.progressPercentage)}%
-					{/if}
+				<div
+					class="flex items-center justify-between text-sm text-muted-foreground"
+				>
+					<span>
+						{updateDialog.isDownloadComplete
+							? 'Download complete'
+							: 'Downloading...'}
+					</span>
+					<span class="tabular-nums">
+						{Math.round(updateDialog.progressPercentage)}%
+					</span>
 				</div>
-				<div class="w-full bg-secondary rounded-full h-2">
-					<div
-						class="bg-primary h-2 rounded-full transition-all duration-300"
-						style="width: {updateDialog.progressPercentage}%"
-					></div>
-				</div>
+				<Progress value={updateDialog.progressPercentage} max={100} />
 			</div>
 		{/if}
 
 		{#if updateDialog.error}
 			<Alert.Root variant="destructive">
-				<AlertTriangle class="size-4" />
-				<Alert.Title>Error installing update</Alert.Title>
+				<AlertTriangleIcon />
+				<Alert.Title>Installation failed</Alert.Title>
 				<Alert.Description>
 					{updateDialog.error}
 				</Alert.Description>
@@ -173,7 +203,12 @@
 					onclick={handleDownloadAndInstall}
 					disabled={updateDialog.isDownloading}
 				>
-					{updateDialog.isDownloading ? 'Downloading...' : 'Download & Install'}
+					{#if updateDialog.isDownloading}
+						Downloading...
+					{:else}
+						<DownloadIcon />
+						Install Update
+					{/if}
 				</Button>
 			{/if}
 		</Dialog.Footer>

@@ -1,67 +1,67 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { Button } from '@repo/ui/button';
-	import * as Dialog from '@repo/ui/dialog';
-	import { Separator } from '@repo/ui/separator';
+	import { Button } from '@epicenter/ui/button';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Separator } from '@epicenter/ui/separator';
 	import { rpc } from '$lib/query';
-	import { generateDefaultTransformation } from '$lib/services/db';
+	import { generateDefaultTransformation } from '$lib/services/isomorphic/db';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { PlusIcon } from '@lucide/svelte';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 
 	const createTransformation = createMutation(
-		rpc.db.transformations.create.options,
+		() => rpc.db.transformations.create.options,
 	);
 
-	let isDialogOpen = $state(false);
+	let isModalOpen = $state(false);
 	let transformation = $state(generateDefaultTransformation());
 
 	function promptUserConfirmLeave() {
 		confirmationDialog.open({
 			title: 'Unsaved changes',
-			subtitle: 'You have unsaved changes. Are you sure you want to leave?',
-			confirmText: 'Leave',
+			description: 'You have unsaved changes. Are you sure you want to leave?',
+			confirm: { text: 'Leave' },
 			onConfirm: () => {
-				isDialogOpen = false;
+				isModalOpen = false;
 			},
 		});
 	}
 </script>
 
-<Dialog.Root bind:open={isDialogOpen}>
-	<Dialog.Trigger>
+<Modal.Root bind:open={isModalOpen}>
+	<Modal.Trigger>
 		{#snippet child({ props })}
 			<Button {...props}>
-				<PlusIcon class="size-4 mr-2" />
+				<PlusIcon class="size-4" />
 				Create Transformation
 			</Button>
 		{/snippet}
-	</Dialog.Trigger>
+	</Modal.Trigger>
 
-	<Dialog.Content
+	<Modal.Content
 		class="max-h-[80vh] sm:max-w-7xl"
 		onEscapeKeydown={(e) => {
 			e.preventDefault();
-			if (isDialogOpen) {
+			if (isModalOpen) {
 				promptUserConfirmLeave();
 			}
 		}}
 		onInteractOutside={(e) => {
 			e.preventDefault();
-			if (isDialogOpen) {
+			if (isModalOpen) {
 				promptUserConfirmLeave();
 			}
 		}}
 	>
-		<Dialog.Header>
-			<Dialog.Title>Create Transformation</Dialog.Title>
+		<Modal.Header>
+			<Modal.Title>Create Transformation</Modal.Title>
 			<Separator />
-		</Dialog.Header>
+		</Modal.Header>
 
 		<Editor bind:transformation />
 
-		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (isDialogOpen = false)}>
+		<Modal.Footer>
+			<Button variant="outline" onclick={() => (isModalOpen = false)}>
 				Cancel
 			</Button>
 			<Button
@@ -69,16 +69,16 @@
 				onclick={() =>
 					createTransformation.mutate($state.snapshot(transformation), {
 						onSuccess: () => {
-							isDialogOpen = false;
+							isModalOpen = false;
 							transformation = generateDefaultTransformation();
-							rpc.notify.success.execute({
+							rpc.notify.success({
 								title: 'Created transformation!',
 								description:
 									'Your transformation has been created successfully.',
 							});
 						},
 						onError: (error) => {
-							rpc.notify.error.execute({
+							rpc.notify.error({
 								title: 'Failed to create transformation!',
 								description: 'Your transformation could not be created.',
 								action: { type: 'more-details', error },
@@ -88,6 +88,6 @@
 			>
 				Create
 			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+		</Modal.Footer>
+	</Modal.Content>
+</Modal.Root>

@@ -1,16 +1,17 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { Button } from '@epicenter/ui/button';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import {
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
-	import { CheckIcon, ChevronDown } from '@lucide/svelte';
+	import { cn } from '@epicenter/ui/utils';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 
 	let { class: className }: { class?: string } = $props();
 
@@ -34,10 +35,10 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltipContent={currentMode
+				tooltip={currentMode
 					? `Recording mode: ${currentMode.label}`
 					: 'Select recording mode'}
 				role="combobox"
@@ -46,10 +47,10 @@
 				size="icon"
 			>
 				<ChevronDown class="size-4" />
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content class="p-0 w-48">
+	<Popover.Content align="end" class="p-0 w-48">
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>

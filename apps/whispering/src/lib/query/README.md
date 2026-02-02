@@ -4,7 +4,7 @@ The query layer is the reactive bridge between your UI components and the isolat
 
 ```typescript
 import { createQueryFactories } from 'wellcrafted/query';
-import { queryClient } from './_client';
+import { queryClient } from './client';
 
 export const { defineQuery, defineMutation } =
 	createQueryFactories(queryClient);
@@ -12,22 +12,22 @@ export const { defineQuery, defineMutation } =
 
 These factory functions `defineQuery` and `defineMutations` take in query options with result query functions, you get two ways to use it:
 
-1. **`.options()`** - Returns query/mutation options to pass into `createQuery`/`createMutation`. This registers a subscription with TanStack Query.
+1. **`.options`** - A static object containing query/mutation options. Wrap in an accessor function for reactive use: `() => x.options`
 2. **`.fetch()`/`.execute()`** - Imperative fetching/execution without subscriptions. These still go through TanStack Query's cache/mutation cache, so mutations still register and can be debugged in the devtools.
 
 ## The Dual Interface Pattern
 
 Every operation in the query layer provides **two interfaces** to match how you want to use it:
 
-### Reactive Interface (`.options()`) - Automatic State Management
+### Reactive Interface (`.options`) - Automatic State Management
 
 ```svelte
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
 
-	// Reactive in components - automatic state management
-	const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+	// Reactive in components - wrap .options in accessor function
+	const recordings = createQuery(() => rpc.recordings.getAllRecordings.options);
 	// Syncs: recordings.isPending, recordings.data, recordings.error, recordings.isStale automatically
 </script>
 
@@ -102,7 +102,7 @@ The query layer uses the TanStack Query client to manipulate the cache for optim
 ```typescript
 // From recordings mutations
 createRecording: defineMutation({
-	resultMutationFn: async (recording: Recording) => {
+	mutationFn: async (recording: Recording) => {
 		const { data, error } = await services.db.createRecording(recording);
 		if (error) return Err(error);
 
@@ -121,7 +121,7 @@ The query layer co-locates three key things in one place: (1) the service call, 
 
 ## Error Transformation Pattern
 
-A critical responsibility of the query layer is transforming service-specific errors into `WhisperingError` types that work seamlessly with our toast notification system. This transformation happens inside `resultMutationFn` or `resultQueryFn`, creating a clean boundary between business logic errors and UI presentation.
+A critical responsibility of the query layer is transforming service-specific errors into `WhisperingError` types that work seamlessly with our toast notification system. This transformation happens inside `mutationFn` or `queryFn`, creating a clean boundary between business logic errors and UI presentation.
 
 ### Error Handling Architecture
 
@@ -138,9 +138,9 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
 Services return their own specific error types (e.g., `RecorderServiceError`, `CpalRecorderServiceError`), which contain detailed error information. The query layer transforms these into `WhisperingError` with UI-friendly formatting:
 
 ```typescript
-// From manualRecorder.ts - Error transformation in resultMutationFn
+// From manualRecorder.ts - Error transformation in mutationFn
 startRecording: defineMutation({
-	resultMutationFn: async ({ toastId }: { toastId: string }) => {
+	mutationFn: async ({ toastId }: { toastId: string }) => {
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 			await services.recorder.startRecording(recordingSettings, {
 				sendStatus: (options) =>
@@ -176,7 +176,7 @@ startRecording: defineMutation({
    type RecorderServiceError = TaggedError<'RecorderServiceError'>;
    ```
 
-2. **Query Layer**: Transforms to `WhisperingError` in `resultMutationFn`/`resultQueryFn`
+2. **Query Layer**: Transforms to `WhisperingError` in `mutationFn`/`queryFn`
 
    ```typescript
    if (serviceError) {
@@ -208,7 +208,7 @@ startRecording: defineMutation({
 ```typescript
 // From cpalRecorder.ts
 getRecorderState: defineQuery({
-	resultQueryFn: async () => {
+	queryFn: async () => {
 		const { data: recorderState, error: getRecorderStateError } =
 			await services.cpalRecorder.getRecorderState();
 
@@ -250,7 +250,7 @@ if (getRecorderStateError) {
 // BAD: Query layer should wrap errors, not return raw service errors
 getRecorderState: defineQuery({
 	queryKey: recorderKeys.state,
-	resultQueryFn: () => services.recorder.getRecorderState(), // Missing error wrapping!
+	queryFn: () => services.recorder.getRecorderState(), // Missing error wrapping!
 	initialData: 'IDLE' as WhisperingRecordingState,
 });
 ```
@@ -260,7 +260,7 @@ getRecorderState: defineQuery({
 ```typescript
 // GOOD: Query wraps service errors, UI uses them directly
 getRecorderState: defineQuery({
-	resultQueryFn: async () => {
+	queryFn: async () => {
 		const { data, error } = await services.recorder.getRecorderState();
 		if (error) {
 			return Err(
@@ -298,7 +298,7 @@ Unlike server-side rendered applications where the query client lifecycle is man
 - Direct Query Client Access: We can call `queryClient.fetchQuery()` and `queryClient.getMutationCache().build()` directly
 - Imperative Control: No need to go through reactive hooks for one-time operations
 - Performance Benefits\*\*: We can build mutations using direct execution rather than creating unnecessary subscribers
-- Flexible Interfaces: Both reactive (`.options()`) and imperative (`.execute()`, `.fetch()`) patterns work seamlessly
+- Flexible Interfaces: Both reactive (`.options`) and imperative (`.execute()`, `.fetch()`) patterns work seamlessly
 
 This enables our unique dual interface pattern where every query and mutation provides both reactive and imperative APIs.
 
@@ -451,7 +451,7 @@ RPC provides:
 1. **Services**: Pure functions that return `Result<T, E>` (never throw)
 2. **Query Layer**: Uses WellCrafted's factories to wrap service functions
 3. **RPC Namespace**: Bundles all queries into one global object for easy access
-4. **UI Components**: Choose reactive (`.options()`) or imperative (`.execute()`) based on needs
+4. **UI Components**: Choose reactive (`.options`) or imperative (`.execute()`) based on needs
 
 ## Real-World RPC Usage Throughout the App
 
@@ -500,7 +500,7 @@ async function copyToClipboard(text: string) {
 }
 
 // ❌ Alternative with createMutation (unnecessary overhead)
-// const copyMutation = createMutation(rpc.clipboard.copyToClipboard.options());
+// const copyMutation = createMutation(() => rpc.clipboard.copyToClipboard.options);
 // copyMutation.mutate({ text }); // Creates observer, manages state we don't need
 ```
 
@@ -538,8 +538,8 @@ async function stopAndTranscribe() {
 }
 
 // ❌ With createMutation (overkill for workflows)
-// const stopMutation = createMutation(rpc.manualRecorder.stopRecording.options());
-// const createMutation = createMutation(rpc.recordings.createRecording.options());
+// const stopMutation = createMutation(() => rpc.manualRecorder.stopRecording.options);
+// const createMutation = createMutation(() => rpc.recordings.createRecording.options);
 // Multiple observers created, state managed unnecessarily
 ```
 
@@ -556,13 +556,13 @@ const devices = createQuery(rpc.recorder.enumerateDevices.options);
 ```typescript
 // From: /routes/+layout/alwaysOnTop.svelte.ts
 const recorderStateQuery = createQuery(() => ({
-	...rpc.manualRecorder.getRecorderState.options(),
+	...rpc.manualRecorder.getRecorderState.options,
 	// Only enable this query when in manual recording mode
 	enabled: settings.value['recording.mode'] === 'manual',
 }));
 
 const vadStateQuery = createQuery(() => ({
-	...rpc.vadRecorder.getVadState.options(),
+	...rpc.vadRecorder.getVadState.options,
 	// Only enable when using voice activity detection
 	enabled: settings.value['recording.mode'] === 'vad',
 }));
@@ -673,7 +673,7 @@ WellCrafted handles the `Result<T, E>` unwrapping, so TanStack Query gets regula
 
 These factory functions (`defineQuery` and `defineMutation`) take query options with result functions - functions that return `Result<T, E>`. From there, you get two ways to use it:
 
-- `.options()` - Returns query/mutation options to pass into TanStack Query hooks
+- `.options` - Static object with query/mutation options (wrap in accessor: `() => x.options`)
 - `.fetch()` / `.execute()` - Direct execution methods
 
 **`defineQuery`** - For data fetching:
@@ -682,11 +682,11 @@ These factory functions (`defineQuery` and `defineMutation`) take query options 
 // Your service returns Result<T, E>
 const userQuery = defineQuery({
 	queryKey: ['users', userId],
-	resultQueryFn: () => services.getUser(userId), // Returns Result<User, ApiError>
+	queryFn: () => services.getUser(userId), // Returns Result<User, ApiError>
 });
 
 // ✅ Reactive interface - creates query observer
-const query = createQuery(userQuery.options());
+const query = createQuery(() => userQuery.options);
 // - Subscribes to state changes
 // - Manages loading, error, success states
 // - Triggers component re-renders
@@ -703,7 +703,7 @@ const { data, error } = await userQuery.fetch();
 ```typescript
 const createRecording = defineMutation({
 	mutationKey: ['recordings', 'create'],
-	resultMutationFn: async (recording) => {
+	mutationFn: async (recording) => {
 		const result = await services.db.createRecording(recording);
 		if (result.error) return Err(result.error);
 
@@ -717,7 +717,7 @@ const createRecording = defineMutation({
 });
 
 // ✅ Reactive interface - creates mutation observer
-const mutation = createMutation(createRecording.options());
+const mutation = createMutation(() => createRecording.options);
 // - Subscribes to mutation state (isPending, isError, etc.)
 // - Triggers component re-renders on state changes
 // - Useful for loading states and error displays
@@ -738,7 +738,7 @@ const { error } = await createRecording.execute(recording);
 export const recordings = {
 	getAllRecordings: defineQuery({
 		queryKey: ['recordings'],
-		resultQueryFn: () => services.db.getAllRecordings(),
+		queryFn: () => services.db.getAllRecordings(),
 	}),
 };
 ```
@@ -749,7 +749,7 @@ export const recordings = {
 getRecordingById: (id: Accessor<string>) =>
   defineQuery({
     queryKey: ['recordings', id()], // Dynamic key based on ID
-    resultQueryFn: () => services.db.getRecordingById(id()),
+    queryFn: () => services.db.getRecordingById(id()),
   }),
 ```
 
@@ -758,7 +758,7 @@ getRecordingById: (id: Accessor<string>) =>
 ```typescript
 createRecording: defineMutation({
   mutationKey: ['recordings', 'create'],
-  resultMutationFn: async (recording: Recording) => {
+  mutationFn: async (recording: Recording) => {
     const result = await services.db.createRecording(recording);
     if (result.error) return Err(result.error);
 
@@ -789,7 +789,7 @@ function transcribeBlob(blob: Blob) {
 
 ```typescript
 transcribeRecording: defineMutation({
-  resultMutationFn: async (recording) => {
+  mutationFn: async (recording) => {
     // Step 1: Update status
     await recordings.updateRecording.execute({
       ...recording,
@@ -821,7 +821,7 @@ transcribeRecording: defineMutation({
 	import { rpc } from '$lib/query';
 
 	// This automatically subscribes to updates
-	const recordings = createQuery(rpc.recordings.getAllRecordings.options());
+	const recordings = createQuery(() => rpc.recordings.getAllRecordings.options);
 </script>
 
 {#if recordings.isPending}
@@ -869,11 +869,11 @@ Actions in the query layer always return `Ok` after handling errors. They notify
 
 ```typescript
 const startManualRecording = defineMutation({
-	resultMutationFn: async () => {
+	mutationFn: async () => {
 		const { error } = await recorder.startRecording.execute();
 		if (error) {
 			notify.error.execute(error); // Notify user
-			return Ok(undefined);         // Action succeeded
+			return Ok(undefined); // Action succeeded
 		}
 		notify.success.execute({ title: 'Recording started' });
 		return Ok(undefined);
@@ -976,7 +976,7 @@ if (error) {
 
 ```typescript
 const vadStateQuery = createQuery(() => ({
-	...rpc.vadRecorder.getVadState.options(),
+	...rpc.vadRecorder.getVadState.options,
 	enabled: settings.value['recording.mode'] === 'vad',
 }));
 ```
@@ -985,7 +985,7 @@ const vadStateQuery = createQuery(() => ({
 
 ```typescript
 defineMutation({
-	resultMutationFn: async (recording) => {
+	mutationFn: async (recording) => {
 		const result = await services.db.createRecording(recording);
 		if (result.error) return Err(result.error);
 
@@ -1043,7 +1043,7 @@ Wraps services with reactivity and caching:
 export const recordings = {
 	getAllRecordings: defineQuery({
 		queryKey: ['recordings'],
-		resultQueryFn: () => services.db.getAllRecordings(), // Calls the service
+		queryFn: () => services.db.getAllRecordings(), // Calls the service
 	}),
 };
 ```
@@ -1093,3 +1093,23 @@ When you need to add new functionality:
 4. **Use in components** via either reactive or imperative patterns
 
 This keeps everything organized and testable while giving you a unified way to access all app functionality.
+
+## Query Layer vs Stores
+
+The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/stores/` instead.
+
+| Aspect             | `$lib/query/`                           | `$lib/stores/`                                |
+| ------------------ | --------------------------------------- | --------------------------------------------- |
+| **Pattern**        | Stale-while-revalidate (TanStack Query) | Singleton reactive state                      |
+| **State Location** | TanStack Query cache                    | Module-level `$state` runes                   |
+| **Updates**        | Cached with background refresh          | Immediate, live                               |
+| **Use Case**       | Data fetching, mutations, cached data   | Hardware state, user preferences, live status |
+
+**Examples:**
+
+- Recording state from API → Query layer (`rpc.recorder.getRecorderState`)
+- VAD hardware state (IDLE/LISTENING/SPEECH_DETECTED) → Store (`vadRecorder.state`)
+- User settings → Store (`settings.value`)
+- Database recordings → Query layer (`rpc.db.recordings.getAll`)
+
+See `$lib/stores/README.md` for the stores documentation.

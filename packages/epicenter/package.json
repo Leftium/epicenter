@@ -1,0 +1,75 @@
+{
+	"name": "@epicenter/hq",
+	"version": "0.0.1",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./dynamic": "./src/dynamic/index.ts",
+		"./static": "./src/static/index.ts",
+		"./node": "./src/dynamic/workspace/node.ts",
+		"./extensions/persistence": {
+			"browser": "./src/extensions/persistence/index.browser.ts",
+			"node": "./src/extensions/persistence/index.node.ts",
+			"default": "./src/extensions/persistence/index.node.ts"
+		},
+		"./extensions/persistence/web": "./src/extensions/persistence/web.ts",
+		"./extensions/persistence/desktop": "./src/extensions/persistence/desktop.ts",
+		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
+		"./extensions/markdown": {
+			"node": "./src/extensions/markdown/index.ts",
+			"default": "./src/extensions/markdown/index.ts"
+		},
+		"./extensions/sqlite": {
+			"node": "./src/extensions/sqlite/index.ts",
+			"default": "./src/extensions/sqlite/index.ts"
+		},
+		"./extensions/revision-history": {
+			"node": "./src/extensions/revision-history/index.ts",
+			"default": "./src/extensions/revision-history/index.ts"
+		},
+		"./cli": "./src/cli/index.ts",
+		"./server": "./src/server/index.ts"
+	},
+	"bin": {
+		"epicenter": "./src/cli/bin.ts"
+	},
+	"license": "AGPL-3.0",
+	"scripts": {
+		"lint": "eslint .",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"tinybase": "^5.4.2",
+		"@ark/json-schema": "^0.0.4",
+		"@elysiajs/openapi": "^1.4.11",
+		"@sindresorhus/slugify": "^3.0.0",
+		"@standard-schema/spec": "^1.1.0",
+		"@tursodatabase/database": "^0.3.2",
+		"@types/bun": "catalog:",
+		"arkregex": "catalog:",
+		"arktype": "catalog:",
+		"chokidar": "^5.0.0",
+		"drizzle-orm": "catalog:",
+		"elysia": "^1.2.25",
+		"lib0": "^0.2.99",
+		"mime": "catalog:",
+		"nanoid": "catalog:",
+		"temporal-polyfill": "^0.3.0",
+		"typebox": "^1.0.75",
+		"wellcrafted": "catalog:",
+		"y-indexeddb": "^9.0.12",
+		"y-protocols": "^1.0.6",
+		"y-websocket": "^2.1.0",
+		"yargs": "catalog:",
+		"yjs": "^13.6.27"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"@types/yargs": "catalog:",
+		"better-sqlite3": "^12.4.1",
+		"drizzle-kit": "catalog:",
+		"filenamify": "^7.0.1",
+		"typescript": "catalog:"
+	}
+}

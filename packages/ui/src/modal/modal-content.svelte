@@ -14,14 +14,14 @@
 
 	let {
 		children,
-		hideClose = false,
+		showCloseButton = true,
 		ref = $bindable(null),
 		...rest
-	}: DialogContentProps & { hideClose?: boolean } = $props();
+	}: DialogContentProps & { showCloseButton?: boolean } = $props();
 </script>
 
 {#if modal.view === 'desktop'}
-	<Dialog.Content bind:ref {...rest} {hideClose}>
+	<Dialog.Content bind:ref {...rest} {showCloseButton}>
 		{@render children?.()}
 	</Dialog.Content>
 {:else}

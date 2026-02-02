@@ -1,11 +1,18 @@
 /*
 	Installed from @ieedan/shadcn-svelte-extras
+	Modified to support injectable copy function for cross-platform compatibility
 */
+
+type CopyFn = (text: string) => Promise<void>;
 
 type Options = {
 	/** The time before the copied status is reset. */
 	delay: number;
+	/** Custom copy function. Defaults to navigator.clipboard.writeText. */
+	copyFn: CopyFn;
 };
+
+const defaultCopyFn: CopyFn = (text) => navigator.clipboard.writeText(text);
 
 /** Use this hook to copy text to the clipboard and show a copied state.
  *
@@ -28,14 +35,30 @@ type Options = {
  * </button>
  * ```
  *
+ * ## Custom Copy Function
+ * ```svelte
+ * <script lang="ts">
+ * 		import { UseClipboard } from "$lib/hooks/use-clipboard.svelte";
+ *
+ * 		// Use a custom copy function (e.g., for Tauri cross-platform support)
+ * 		const clipboard = new UseClipboard({
+ * 			copyFn: async (text) => {
+ * 				await myCustomClipboardApi.writeText(text);
+ * 			}
+ * 		});
+ * </script>
+ * ```
+ *
  */
 export class UseClipboard {
 	#copiedStatus = $state<'success' | 'failure'>();
 	private delay: number;
+	private copyFn: CopyFn;
 	private timeout: ReturnType<typeof setTimeout> | undefined = undefined;
 
-	constructor({ delay = 500 }: Partial<Options> = {}) {
+	constructor({ delay = 500, copyFn = defaultCopyFn }: Partial<Options> = {}) {
 		this.delay = delay;
+		this.copyFn = copyFn;
 	}
 
 	/** Copies the given text to the users clipboard.
@@ -55,7 +78,7 @@ export class UseClipboard {
 		}
 
 		try {
-			await navigator.clipboard.writeText(text);
+			await this.copyFn(text);
 
 			this.#copiedStatus = 'success';
 

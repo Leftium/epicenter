@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use tracing::{debug, error, info};
+use log::{debug, error, info};
 
 /// Simple result type using String for errors
 pub type Result<T> = std::result::Result<T, String>;
@@ -184,7 +184,8 @@ impl RecorderState {
             tx.send(RecorderCmd::Start(reply_tx))
                 .map_err(|e| format!("Failed to send start command: {}", e))?;
             // Wait for worker thread to confirm the command was processed
-            reply_rx.recv()
+            reply_rx
+                .recv()
                 .map_err(|e| format!("Failed to receive start confirmation: {}", e))?;
         } else {
             return Err("No recording session initialized".to_string());
@@ -200,7 +201,8 @@ impl RecorderState {
             tx.send(RecorderCmd::Stop(reply_tx))
                 .map_err(|e| format!("Failed to send stop command: {}", e))?;
             // Wait for worker thread to confirm the command was processed
-            reply_rx.recv()
+            reply_rx
+                .recv()
                 .map_err(|e| format!("Failed to receive stop confirmation: {}", e))?;
         }
 

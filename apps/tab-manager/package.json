@@ -1,0 +1,40 @@
+{
+	"name": "@epicenter/tab-manager",
+	"version": "0.0.1",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"dev": "wxt",
+		"dev:firefox": "wxt -b firefox",
+		"build": "wxt build",
+		"build:firefox": "wxt build -b firefox",
+		"zip": "wxt zip",
+		"zip:firefox": "wxt zip -b firefox",
+		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
+		"postinstall": "wxt prepare"
+	},
+	"dependencies": {
+		"@epicenter/hq": "workspace:*",
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"@tanstack/svelte-query": "catalog:",
+		"@tanstack/svelte-query-devtools": "catalog:",
+		"arktype": "catalog:",
+		"clsx": "catalog:",
+		"tailwind-merge": "catalog:",
+		"wellcrafted": "catalog:",
+		"y-indexeddb": "^9.0.12",
+		"yjs": "^13.6.27"
+	},
+	"devDependencies": {
+		"wxt": "^0.20.8",
+		"@wxt-dev/module-svelte": "^2.0.3",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"typescript": "catalog:",
+		"@types/node": "catalog:",
+		"tailwindcss": "catalog:",
+		"@tailwindcss/vite": "^4.1.8",
+		"vite": "catalog:"
+	}
+}

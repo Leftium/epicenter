@@ -1,14 +1,18 @@
 <script lang="ts">
-	import { LabeledTextarea } from '$lib/components/labeled/index.js';
-	import { Button } from '@repo/ui/button';
-	import * as SectionHeader from '@repo/ui/section-header';
-	import { Separator } from '@repo/ui/separator';
+	import * as Field from '@epicenter/ui/field';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import { Button } from '@epicenter/ui/button';
+	import * as SectionHeader from '@epicenter/ui/section-header';
+	import { Separator } from '@epicenter/ui/separator';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { Loader2Icon, PlayIcon } from '@lucide/svelte';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import PlayIcon from '@lucide/svelte/icons/play';
 
-	const transformInput = createMutation(rpc.transformer.transformInput.options);
+	const transformInput = createMutation(
+		() => rpc.transformer.transformInput.options,
+	);
 
 	let { transformation }: { transformation: Transformation } = $props();
 
@@ -27,22 +31,26 @@
 	<Separator />
 
 	<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-		<LabeledTextarea
-			id="input"
-			label="Input Text"
-			bind:value={input}
-			placeholder="Enter text to transform..."
-			rows={5}
-		/>
+		<Field.Field>
+			<Field.Label for="input">Input Text</Field.Label>
+			<Textarea
+				id="input"
+				bind:value={input}
+				placeholder="Enter text to transform..."
+				rows={5}
+			/>
+		</Field.Field>
 
-		<LabeledTextarea
-			id="output"
-			label="Output Text"
-			value={output}
-			placeholder="Transformed text will appear here..."
-			rows={5}
-			readonly
-		/>
+		<Field.Field>
+			<Field.Label for="output">Output Text</Field.Label>
+			<Textarea
+				id="output"
+				value={output}
+				placeholder="Transformed text will appear here..."
+				rows={5}
+				readonly
+			/>
+		</Field.Field>
 	</div>
 
 	<Button
@@ -61,9 +69,9 @@
 		class="w-full"
 	>
 		{#if transformInput.isPending}
-			<Loader2Icon class="mr-2 size-4 animate-spin" />
+			<Spinner />
 		{:else}
-			<PlayIcon class="mr-2 size-4" />
+			<PlayIcon class="size-4" />
 		{/if}
 		{transformInput.isPending
 			? 'Running Transformation...'

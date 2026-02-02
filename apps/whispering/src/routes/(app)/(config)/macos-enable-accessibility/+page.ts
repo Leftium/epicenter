@@ -1,8 +1,8 @@
-import * as services from '$lib/services';
+import { desktopServices } from '$lib/services';
 
 export const load = async () => {
 	const { data: isAccessibilityGranted } =
-		await services.permissions.accessibility.check();
+		await desktopServices.permissions.accessibility.check();
 
 	return {
 		isAccessibilityGranted: isAccessibilityGranted ?? false,

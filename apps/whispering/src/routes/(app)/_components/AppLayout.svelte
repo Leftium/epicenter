@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Dialog from '@repo/ui/dialog';
-	// import { extension } from '@repo/extension';
+	import * as Dialog from '@epicenter/ui/dialog';
+	// import { extension } from '@epicenter/extension';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -10,7 +10,8 @@
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { rpc } from '$lib/query';
-	import * as services from '$lib/services';
+	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+	import { services } from '$lib/services';
 	import { settings } from '$lib/stores/settings.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
@@ -31,41 +32,40 @@
 	} from '../_layout-utils/register-permissions';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 	import { registerOnboarding } from '../_layout-utils/register-onboarding';
-	import { migrateModelPaths } from '../_layout-utils/migration';
 
 	const getRecorderStateQuery = createQuery(
-		rpc.recorder.getRecorderState.options,
+		() => rpc.recorder.getRecorderState.options,
 	);
-	const getVadStateQuery = createQuery(rpc.vadRecorder.getVadState.options);
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
 	let cleanupMicrophonePermission: (() => void) | undefined;
 
-	onMount(async () => {
+	onMount(() => {
+		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
-
 		syncLocalShortcutsWithSettings();
 		resetLocalShortcutsToDefaultIfDuplicates();
-		await checkFfmpegRecordingMethodCompatibility();
-		await checkCompressionRecommendation();
-		if (window.__TAURI_INTERNALS__) {
-			// Run one-time migrations before other operations
-			await migrateModelPaths();
-
-			syncGlobalShortcutsWithSettings();
-			resetGlobalShortcutsToDefaultIfDuplicates();
-			await checkForUpdates();
-			await checkIndexedDBMigration();
-		} else {
-			// const _notifyWhisperingTabReadyResult =
-			// await extension.notifyWhisperingTabReady(undefined);
-		}
 		registerOnboarding();
-
-		// Register permission checkers separately
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
 		cleanupMicrophonePermission = registerMicrophonePermission();
+
+		if (window.__TAURI_INTERNALS__) {
+			syncGlobalShortcutsWithSettings();
+			resetGlobalShortcutsToDefaultIfDuplicates();
+
+			// Async operations - fire and forget, don't block UI rendering
+			// These show toasts/notifications on completion, no need to await
+			Promise.allSettled([
+				checkFfmpegRecordingMethodCompatibility(),
+				checkCompressionRecommendation(),
+				checkForUpdates(),
+				checkIndexedDBMigration(),
+			]);
+		} else {
+			// Browser extension context - notify that the Whispering tab is ready
+			// extension.notifyWhisperingTabReady(undefined);
+		}
 	});
 
 	onDestroy(() => {
@@ -80,7 +80,7 @@
 
 	$effect(() => {
 		getRecorderStateQuery.data;
-		getVadStateQuery.data;
+		vadRecorder.state; // Reactive VAD state access
 		services.db.recordings.cleanupExpired({
 			recordingRetentionStrategy:
 				settings.value['database.recordingRetentionStrategy'],
@@ -93,7 +93,7 @@
 
 <button
 	class="xxs:hidden hover:bg-accent hover:text-accent-foreground h-screen w-screen transform duration-300 ease-in-out"
-	onclick={commandCallbacks.toggleManualRecording}
+	onclick={() => commandCallbacks.toggleManualRecording()}
 >
 	<span
 		style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));"
@@ -107,7 +107,7 @@
 	</span>
 </button>
 
-<div class="hidden flex-col items-center gap-2 xxs:flex min-w-0">
+<div class="hidden flex-1 flex-col gap-2 xxs:flex min-w-0 w-full">
 	{@render children()}
 </div>
 
@@ -115,11 +115,3 @@
 <MoreDetailsDialog />
 <NotificationLog />
 <UpdateDialog />
-
-<style>
-	:global(body) {
-		min-height: 100vh;
-		display: grid;
-		grid-template-rows: 1fr auto;
-	}
-</style>

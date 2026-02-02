@@ -1,11 +1,7 @@
-<!--
-	Installed from @ieedan/shadcn-svelte-extras
--->
-
 <script lang="ts">
 	import { Button } from '#/button';
 	import { UseClipboard } from '#/hooks/use-clipboard.svelte';
-	import { cn } from '#/utils/utils';
+	import { cn } from '#/utils.js';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -20,18 +16,20 @@
 		variant = 'ghost',
 		size = 'icon',
 		onCopy,
+		copyFn,
 		class: className,
 		tabindex = -1,
 		children,
 		...rest
 	}: CopyButtonProps = $props();
 
-	// this way if the user passes text then the button will be the default size
+	// svelte-ignore state_referenced_locally - intentional one-time size adjustment based on initial children
 	if (size === 'icon' && children) {
 		size = 'default';
 	}
 
-	const clipboard = new UseClipboard();
+	// svelte-ignore state_referenced_locally - clipboard instance created once with initial copyFn
+	const clipboard = new UseClipboard({ copyFn });
 </script>
 
 <Button

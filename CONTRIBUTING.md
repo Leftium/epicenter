@@ -14,32 +14,40 @@ Epicenter is a monorepo containing multiple applications. The main application r
 
 ### Quick Setup
 
-1. **Clone the repository**
+1. **Fork and clone the repository**
+
+   [Fork the repository](https://github.com/EpicenterHQ/epicenter/fork) and clone your fork:
+
    ```bash
-   git clone https://github.com/epicenter-md/epicenter.git
+   git clone https://github.com/<your-username>/epicenter.git
    cd epicenter
    ```
 
+   > New to open source? Check out [How to Contribute to Open Source](https://egghead.io/courses/how-to-contribute-to-an-open-source-project-on-github) (free video series).
+
 2. **Install dependencies**
+
    ```bash
    bun install
    ```
-   
+
    > **Note**: If you see a version warning, run `bun upgrade` to update to the required version. The repository uses Bun 1.2.19 to ensure consistency across all contributors.
-   
+
    > **Note**: Desktop app development requires external tools not installed by the command above. Install these manually.
    > (For example: [Rust](https://www.rust-lang.org/tools/install) and [CMake](https://cmake.org/download/))
 
 3. **Navigate to the Whispering app**
+
    ```bash
    cd apps/whispering
    ```
 
 4. **Start development**
+
    ```bash
    # Run both web and desktop mode
    bun dev
-   
+
    # Or run just the web version
    bun dev:web
    ```
@@ -70,6 +78,7 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
 ## Development Workflow
 
 1. **Create a branch** for your feature or fix
+
    ```bash
    git checkout -b feat/your-feature-name
    ```
@@ -77,35 +86,109 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
 2. **Make your changes** following our coding standards (see below)
 
 3. **Test your changes** thoroughly
+
    ```bash
    # Run tests if available
    bun test
    ```
 
 4. **Commit using conventional commits**
+
    ```bash
    git commit -m "feat(whispering): add new feature"
    ```
 
 5. **Push and create a pull request**
+
    ```bash
    git push origin feat/your-feature-name
    ```
 
+   Create a PR to merge your fork's branch into `EpicenterHQ/epicenter:main`:
+   Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter) — GitHub usually shows a "Compare & pull request" banner for recent pushes.
+
+<details>
+<summary>Tips for new contributors</summary>
+
+**Keeping your fork updated**
+
+Before starting new work, sync with the main repo:
+
+```bash
+git fetch upstream
+git checkout main
+git merge upstream/main
+```
+
+> Note: Add the upstream remote to sync with the main repo:
+>
+> ```bash
+> git remote add upstream https://github.com/EpicenterHQ/epicenter.git
+> ```
+
+**If your PR has conflicts**
+
+Rebase your branch on the latest main:
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+</details>
+
+## Local Development: Testing the CLI
+
+If you're working on Epicenter's CLI (`packages/epicenter`), you can test it locally without publishing using `bun link`.
+
+### One-Time Setup
+
+Link the package globally from the package directory:
+
+```bash
+cd packages/epicenter
+bun link
+```
+
+This makes the `epicenter` command available globally on your system, pointing to your local development version.
+
+### Using the CLI
+
+Now you can use the `epicenter` command from any directory:
+
+```bash
+epicenter --help
+```
+
+The CLI will use your local development version, so any changes you make to the CLI code will be reflected immediately.
+
+### Unlinking
+
+When you're done testing, you can unlink the package:
+
+```bash
+cd packages/epicenter
+bun unlink
+```
+
 ## Coding Standards
 
 ### TypeScript
+
 - Use `type` instead of `interface`
 - Prefer absolute imports over relative imports
 - Use object method shorthand syntax when appropriate
 
 ### Svelte
+
 - We use Svelte 5 with the latest runes syntax
 - Follow shadcn-svelte patterns for UI components
 - Use Tailwind CSS for styling
 
 ### Commits
+
 We follow [Conventional Commits](https://www.conventionalcommits.org/):
+
 - `feat`: New features
 - `fix`: Bug fixes
 - `docs`: Documentation changes
@@ -114,6 +197,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 - `chore`: Maintenance tasks
 
 Examples:
+
 - `feat(whispering): add model selection for OpenAI providers`
 - `fix(sound): resolve audio import paths`
 - `docs: update contribution guidelines`
@@ -121,7 +205,9 @@ Examples:
 ## Troubleshooting
 
 ### Version Mismatch Warning
+
 If you see a warning about Bun version mismatch:
+
 ```bash
 # Update to the latest Bun version
 bun upgrade
@@ -131,6 +217,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 ```
 
 ### Installation Issues
+
 - Make sure you're in the repository root when running `bun install`
 - Clear the cache if you encounter issues: `bun pm cache rm`
 - On Windows, you may need to run your terminal as Administrator
@@ -144,6 +231,7 @@ curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.19"
 ## Philosophy
 
 We believe in:
+
 - **Local-first**: Your data stays on your machine
 - **Open source**: Everything is transparent and auditable
 - **User ownership**: You own your data and choose your models
@@ -160,6 +248,7 @@ We believe in:
 ## Questions?
 
 Feel free to:
+
 - Open an issue for discussion
 - Join our Discord and DM me directly to get started
 

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { Label } from '@repo/ui/label';
-	import * as Select from '@repo/ui/select';
-	import { Badge } from '@repo/ui/badge';
-	import { cn } from '@repo/ui/utils';
+	import { Label } from '@epicenter/ui/label';
+	import * as Select from '@epicenter/ui/select';
+	import { Badge } from '@epicenter/ui/badge';
+	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
 	import {
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
 		TRANSCRIPTION_SERVICE_IDS,
-	} from '$lib/services/transcription/registry';
+	} from '$lib/services/isomorphic/transcription/registry';
 
 	type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
 
@@ -72,12 +72,7 @@
 	<Label class={cn('text-sm', hideLabel && 'sr-only')} for={id}>
 		{label}
 	</Label>
-	<Select.Root
-		type="single"
-		items={items.map((service) => ({ value: service.id, label: service.name }))}
-		bind:value={selected}
-		{disabled}
-	>
+	<Select.Root type="single" bind:value={selected} {disabled}>
 		<Select.Trigger class={cn('w-full', className)} {id}>
 			<div class="flex items-center gap-2">
 				{#if selectedService}

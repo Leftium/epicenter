@@ -1,9 +1,9 @@
 [package]
 name = "whispering"
-version = "7.7.2"
+version = "7.11.0"
 description = "A Tauri App"
 authors = ["you"]
-repository = "https://github.com/epicenter-md/epicenter"
+repository = "https://github.com/EpicenterHQ/epicenter"
 edition = "2021"
 
 [package.metadata]
@@ -37,6 +37,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-os = "2"
 tauri-plugin-process = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-autostart = "2"
 tauri-plugin-aptabase = "1"
 enigo = "0.5.0"
 cpal = "0.16.0"
@@ -48,15 +49,25 @@ tempfile = "3.8"
 rubato = "0.15"
 tauri-plugin-macos-permissions = "2.3.0"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
-transcribe-rs = "0.1.0"
 regex = "1"
 rayon = "1.10"
+log = "0.4"
+tauri-plugin-log = "2"
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.29", features = ["signal"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Console"] }
+# Windows: Only parakeet is available due to MSVC runtime library conflicts (MT_StaticRelease vs MD_DynamicRelease)
+# - whisper-cpp: whisper-rs-sys conflicts with tokenizers/esaxx-rs
+# - moonshine: tokenizers/esaxx-rs (static CRT) conflicts with ort (dynamic CRT)
+# Parakeet works because it uses ort without tokenizers dependency
+transcribe-rs = { version = "0.2.1", features = ["parakeet"] }
+
+[target.'cfg(not(windows))'.dependencies]
+# macOS/Linux: full whisper-cpp support
+transcribe-rs = { version = "0.2.1", features = ["whisper", "parakeet", "moonshine"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys =  "0.1.3"
@@ -88,4 +99,3 @@ incremental = true # Compile your binary in smaller steps.
 # opt-level = "s" # Prioritizes small binary size. Use `3` if you prefer speed.
 panic = "abort" # Higher performance by disabling panic handlers.
 strip = true # Ensures debug symbols are removed.
-

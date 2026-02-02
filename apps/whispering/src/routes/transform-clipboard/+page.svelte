@@ -5,18 +5,18 @@
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { rpc } from '$lib/query';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
-	import { Textarea } from '@repo/ui/textarea';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
-	import { Button } from '@repo/ui/button';
-	import { LayersIcon } from '@lucide/svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
+	import { Button } from '@epicenter/ui/button';
+	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
 
 	const combobox = useCombobox();
 
 	const clipboardQuery = createQuery(() => ({
-		...rpc.text.readFromClipboard.options(),
+		...rpc.text.readFromClipboard.options,
 		refetchInterval: 1000,
 	}));
 
@@ -56,7 +56,7 @@
 		if (!window.__TAURI_INTERNALS__) return;
 
 		if (clipboardQuery.error) {
-			rpc.notify.error.execute({
+			rpc.notify.error({
 				title: '❌ Failed to read clipboard',
 				description: clipboardQuery.error.message,
 				action: { type: 'more-details', error: clipboardQuery.error },
@@ -65,7 +65,7 @@
 		}
 
 		if (clipboardQuery.isSuccess && !clipboardQuery.data?.trim()) {
-			rpc.notify.info.execute({
+			rpc.notify.info({
 				title: 'Empty clipboard',
 				description: 'Please copy some text before running a transformation.',
 			});
@@ -117,27 +117,27 @@
 					combobox.closeAndFocusTrigger();
 
 					const toastId = nanoid();
-					rpc.notify.loading.execute({
+					rpc.notify.loading({
 						id: toastId,
 						title: '🔄 Running transformation...',
 						description: 'Transforming your clipboard text...',
 					});
 
 					const { data: output, error: transformError } =
-						await rpc.transformer.transformInput.execute({
+						await rpc.transformer.transformInput({
 							input: clipboardText,
 							transformation,
 						});
 
 					if (transformError) {
-						rpc.notify.error.execute({ id: toastId, ...transformError });
+						rpc.notify.error({ id: toastId, ...transformError });
 						await transformClipboardWindow.hide();
 						return;
 					}
 
-					rpc.sound.playSoundIfEnabled.execute('transformationComplete');
+					rpc.sound.playSoundIfEnabled('transformationComplete');
 
-					await rpc.delivery.deliverTransformationResult.execute({
+					await rpc.delivery.deliverTransformationResult({
 						text: output,
 						toastId,
 					});

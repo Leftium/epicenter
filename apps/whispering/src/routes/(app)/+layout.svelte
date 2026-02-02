@@ -3,11 +3,15 @@
 	import { goto } from '$app/navigation';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { rpc } from '$lib/query';
-	import * as services from '$lib/services';
+	import { services } from '$lib/services';
+	import { settings } from '$lib/stores/settings.svelte';
+	import * as Sidebar from '@epicenter/ui/sidebar';
 	import AppLayout from './_components/AppLayout.svelte';
+	import VerticalNav from './_components/VerticalNav.svelte';
 
 	let { children } = $props();
 
+	let sidebarOpen = $state(false);
 	let unlistenNavigate: UnlistenFn | null = null;
 
 	$effect(() => {
@@ -17,7 +21,7 @@
 
 	// Log app started event once on mount
 	$effect(() => {
-		rpc.analytics.logEvent.execute({ type: 'app_started' });
+		rpc.analytics.logEvent({ type: 'app_started' });
 	});
 
 	// Listen for navigation events from other windows
@@ -35,6 +39,13 @@
 	});
 </script>
 
-<AppLayout>
-	{@render children()}
-</AppLayout>
+<Sidebar.Provider bind:open={sidebarOpen}>
+	{#if settings.value['ui.layoutMode'] === 'sidebar'}
+		<VerticalNav />
+	{/if}
+	<Sidebar.Inset>
+		<AppLayout>
+			{@render children()}
+		</AppLayout>
+	</Sidebar.Inset>
+</Sidebar.Provider>

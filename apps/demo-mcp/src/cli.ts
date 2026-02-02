@@ -21,10 +21,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Adapter } from '@epicenter/vault-core';
+import { createVault, defaultConvention } from '@epicenter/vault-core';
+import { markdownFormat } from '@epicenter/vault-core/codecs';
 import { createClient } from '@libsql/client';
-import type { Adapter } from '@repo/vault-core';
-import { createVault, defaultConvention } from '@repo/vault-core';
-import { markdownFormat } from '@repo/vault-core/codecs';
 import { drizzle } from 'drizzle-orm/libsql';
 
 // -------------------------------------------------------------
@@ -39,12 +39,16 @@ function parseArgs(argv: string[]): CLIArgs {
 	const out: CLIArgs = { _: [] };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
+		if (!a) continue; // Skip if somehow undefined
 		if (a === '--file') {
-			out.file = argv[++i];
+			const nextArg = argv[++i];
+			if (nextArg) out.file = nextArg;
 		} else if (a.startsWith('--file=')) {
-			out.file = a.slice('--file='.length);
+			const value = a.slice('--file='.length);
+			if (value) out.file = value;
 		} else if (a === '--db') {
-			out.db = argv[++i];
+			const nextArg = argv[++i];
+			if (nextArg) out.db = nextArg;
 		} else if (a.startsWith('--db=')) {
 			out.db = a.slice('--db='.length);
 		} else if (a === '--repo') {

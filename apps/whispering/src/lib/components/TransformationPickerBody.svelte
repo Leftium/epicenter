@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { Badge } from '@repo/ui/badge';
-	import * as Command from '@repo/ui/command';
-	import { Kbd } from '@repo/ui/kbd';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Command from '@epicenter/ui/command';
+	import { Kbd } from '@epicenter/ui/kbd';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { LayersIcon } from '@lucide/svelte';
+	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { onMount } from 'svelte';
 
 	const transformationsQuery = createQuery(
-		rpc.db.transformations.getAll.options,
+		() => rpc.db.transformations.getAll.options,
 	);
 
 	const transformations = $derived(transformationsQuery.data ?? []);

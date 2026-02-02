@@ -245,3 +245,47 @@
 .prose-invert {
 	@apply text-primary-foreground;
 }
+
+/* Small prose variant for compact contexts like dialogs */
+.prose-sm {
+	@apply text-sm leading-normal;
+
+	& h1 {
+		@apply text-xl mt-4 first:mt-0;
+	}
+
+	& h2 {
+		@apply text-lg mt-4 first:mt-0 border-b-0 pb-0;
+	}
+
+	& h3 {
+		@apply text-base mt-3 first:mt-0;
+	}
+
+	& h4,
+	& h5,
+	& h6 {
+		@apply text-sm mt-3 first:mt-0;
+	}
+
+	& p {
+		@apply mt-2 [&:not(:first-child)]:mt-2;
+	}
+
+	& ul,
+	& ol {
+		@apply my-2 ml-4;
+	}
+
+	& li {
+		@apply mt-1;
+	}
+
+	& pre {
+		@apply my-2 p-2 text-xs;
+	}
+
+	& blockquote {
+		@apply mt-2 pl-3;
+	}
+}

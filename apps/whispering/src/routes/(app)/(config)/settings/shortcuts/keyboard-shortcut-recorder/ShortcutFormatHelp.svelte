@@ -1,10 +1,8 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import * as Alert from '@repo/ui/alert';
-	import { Badge } from '@repo/ui/badge';
-	import { Button } from '@repo/ui/button';
-	import * as Dialog from '@repo/ui/dialog';
-	import * as Tooltip from '@repo/ui/tooltip';
+	import * as Alert from '@epicenter/ui/alert';
+	import { Button } from '@epicenter/ui/button';
+	import * as Kbd from '@epicenter/ui/kbd';
+	import * as Modal from '@epicenter/ui/modal';
 	import {
 		ACCELERATOR_SECTIONS,
 		CommandOrAlt,
@@ -13,7 +11,9 @@
 		OPTION_DEAD_KEYS,
 	} from '$lib/constants/keyboard';
 	import { IS_MACOS } from '$lib/constants/platform';
-	import { AlertTriangle, ExternalLink, HelpCircle } from '@lucide/svelte';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import HelpCircle from '@lucide/svelte/icons/help-circle';
 
 	let { type }: { type: 'local' | 'global' } = $props();
 	let dialogOpen = $state(false);
@@ -43,29 +43,29 @@
 	} as const;
 </script>
 
-<WhisperingButton
+<Button
 	variant="ghost"
 	size="icon"
 	class="size-6"
 	onclick={() => (dialogOpen = true)}
-	tooltipContent="Click for shortcut format guide"
+	tooltip="Click for shortcut format guide"
 >
 	<HelpCircle class="size-4" />
 	<span class="sr-only">Shortcut format help</span>
-</WhisperingButton>
+</Button>
 
-<Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content class="sm:max-w-3xl">
-		<Dialog.Header>
-			<Dialog.Title>
+<Modal.Root bind:open={dialogOpen}>
+	<Modal.Content class="sm:max-w-3xl">
+		<Modal.Header>
+			<Modal.Title>
 				{isLocal ? 'Local' : 'Global'} Shortcut Format Guide
-			</Dialog.Title>
-			<Dialog.Description>
+			</Modal.Title>
+			<Modal.Description>
 				Learn how to format keyboard shortcuts for {isLocal
 					? 'in-app'
 					: 'system-wide'} use.
-			</Dialog.Description>
-		</Dialog.Header>
+			</Modal.Description>
+		</Modal.Header>
 
 		<div class="flex flex-col gap-4">
 			<!-- Quick format summary -->
@@ -89,10 +89,8 @@
 					<h4 class="text-sm font-semibold mb-1">Modifiers</h4>
 					<p class="text-xs text-muted-foreground mb-2">Hold with other keys</p>
 					<div class="flex flex-wrap sm:flex-col gap-1">
-						{#each (isLocal ? KEYBOARD_EVENT_SUPPORTED_KEY_SECTIONS.at(0) : ACCELERATOR_SECTIONS.at(0)).keys as modifier}
-							<Badge variant="outline" class="font-mono text-sm justify-start">
-								{modifier}
-							</Badge>
+						{#each (isLocal ? KEYBOARD_EVENT_SUPPORTED_KEY_SECTIONS[0] : ACCELERATOR_SECTIONS[0]).keys as modifier}
+							<Kbd.Root>{modifier}</Kbd.Root>
 						{/each}
 					</div>
 				</div>
@@ -108,9 +106,7 @@
 								</p>
 								<div class="flex flex-wrap gap-1">
 									{#each section.keys as key}
-										<Badge variant="secondary" class="font-mono text-xs">
-											{key}
-										</Badge>
+										<Kbd.Root>{key}</Kbd.Root>
 									{/each}
 								</div>
 							</div>
@@ -140,9 +136,7 @@
 						</p>
 						<div class="flex flex-wrap gap-1 my-2">
 							{#each OPTION_DEAD_KEYS as key}
-								<Badge variant="outline" class="font-mono text-xs">
-									Option+{key.toUpperCase()}
-								</Badge>
+								<Kbd.Root>Option + {key.toUpperCase()}</Kbd.Root>
 							{/each}
 						</div>
 						<p class="font-medium">Workarounds:</p>
@@ -155,19 +149,19 @@
 			{/if}
 		</div>
 
-		<Dialog.Footer>
+		<Modal.Footer>
 			{#if !isLocal}
 				<Button
 					variant="outline"
-					href="https://www.electronjs.org/docs/latest/api/accelerator"
+					href="https://v2.tauri.app/plugin/global-shortcut/"
 					target="_blank"
 					rel="noreferrer"
 				>
-					<ExternalLink class="mr-2 size-4" />
+					<ExternalLink class="size-4" />
 					View documentation
 				</Button>
 			{/if}
 			<Button onclick={() => (dialogOpen = false)}>Close</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+		</Modal.Footer>
+	</Modal.Content>
+</Modal.Root>

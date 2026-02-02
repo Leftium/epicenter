@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { Button } from '@repo/ui/button';
-	import * as Card from '@repo/ui/card';
+	import { Button } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
 	import { rpc } from '$lib/query';
-	import { generateDefaultTransformation } from '$lib/services/db';
+	import { generateDefaultTransformation } from '$lib/services/isomorphic/db';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	const createTransformation = createMutation(
-		rpc.db.transformations.create.options,
+		() => rpc.db.transformations.create.options,
 	);
 
 	let transformation = $state(generateDefaultTransformation());
@@ -29,14 +29,14 @@
 					createTransformation.mutate($state.snapshot(transformation), {
 						onSuccess: () => {
 							goto('/transformations');
-							rpc.notify.success.execute({
+							rpc.notify.success({
 								title: 'Created transformation!',
 								description:
 									'Your transformation has been created successfully.',
 							});
 						},
 						onError: (error) => {
-							rpc.notify.error.execute({
+							rpc.notify.error({
 								title: 'Failed to create transformation!',
 								description: 'Your transformation could not be created.',
 								action: { type: 'more-details', error },

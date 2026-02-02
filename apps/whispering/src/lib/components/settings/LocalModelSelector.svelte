@@ -1,10 +1,12 @@
 <script lang="ts">
-	import type { LocalModelConfig } from '$lib/services/transcription/local/types';
-	import { FolderOpen, Paperclip, X } from '@lucide/svelte';
-	import { Button } from '@repo/ui/button';
-	import * as Card from '@repo/ui/card';
-	import { Input } from '@repo/ui/input';
-	import * as Tabs from '@repo/ui/tabs';
+	import type { LocalModelConfig } from '$lib/services/isomorphic/transcription/local/types';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import X from '@lucide/svelte/icons/x';
+	import { Button } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
+	import { Input } from '@epicenter/ui/input';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import { basename } from '@tauri-apps/api/path';
 	import { open } from '@tauri-apps/plugin-dialog';
 	import { readDir } from '@tauri-apps/plugin-fs';
@@ -69,6 +71,7 @@
 				case 'whispercpp':
 					return value.endsWith(m.file.filename);
 				case 'parakeet':
+				case 'moonshine':
 					return value.endsWith(m.directoryName);
 			}
 		}) ?? null,

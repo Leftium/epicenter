@@ -3,7 +3,7 @@
 -->
 
 <script lang="ts">
-	import { cn } from '#/utils/utils';
+	import { cn } from '#/utils.js';
 
 	import type { ChatBubbleMessageProps } from './types';
 

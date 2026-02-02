@@ -18,9 +18,9 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '@repo/ui/utils';
-	import { ClipboardIcon } from '$lib/components/icons';
-	import CopyToClipboardButton from './CopyToClipboardButton.svelte';
+	import { cn } from '@epicenter/ui/utils';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { CopyButton } from '@epicenter/ui/copy-button';
 
 	const {
 		copyableText,
@@ -35,10 +35,9 @@
 
 <pre class={cn(copyableVariants({ variant }), className)}>
 {copyableText}
-	<CopyToClipboardButton
+	<CopyButton
 		class="absolute right-4 top-1/2 -translate-y-1/2"
-		contentDescription={variant === 'code' ? 'code' : 'transcribed text'}
-		textToCopy={copyableText}>
-		<ClipboardIcon class="size-4" />
-	</CopyToClipboardButton>
+		copyFn={createCopyFn(variant === 'code' ? 'code' : 'transcript')}
+		text={copyableText}
+	/>
 </pre>

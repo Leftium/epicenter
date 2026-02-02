@@ -1,0 +1,901 @@
+/**
+ * Background service worker for Tab Manager.
+ *
+ * This is the hub of the extension:
+ * 1. Holds the authoritative Y.Doc
+ * 2. Syncs Browser ↔ Y.Doc (bidirectional)
+ * 3. Syncs Y.Doc ↔ Server via WebSocket
+ *
+ * Bidirectional sync:
+ * - Downstream (Browser → Y.Doc): Browser events trigger incremental updates
+ * - Upstream (Y.Doc → Browser): Y.Doc observers trigger Browser APIs
+ *
+ * Multi-device sync:
+ * - Each device has a unique ID stored in storage.local
+ * - All IDs (tab, window, group) are scoped: `${deviceId}_${nativeId}`
+ * - Each device only manages its own rows, never deleting other devices' data
+ *
+ * Sync strategy:
+ * - Initial sync: `refetchAll()` queries all tabs/windows/groups from Browser
+ * - Incremental sync: Event handlers update only the specific tab/window/group that changed
+ * - Y.Doc observers call Browser APIs only for THIS device's data
+ * - Coordination flags prevent infinite loops between the two directions
+ */
+
+import { defineWorkspace, generateGuid } from '@epicenter/hq';
+import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { Ok, tryAsync } from 'wellcrafted/result';
+import { defineBackground } from 'wxt/utils/define-background';
+import { createBrowserConverters } from '$lib/browser-helpers';
+import {
+	generateDefaultDeviceName,
+	getBrowserName,
+	getDeviceId,
+	parseGroupId,
+	parseTabId,
+	parseWindowId,
+} from '$lib/device-id';
+import type { Tab, Window } from '$lib/epicenter/browser.schema';
+import { BROWSER_SCHEMA } from '$lib/epicenter/schema';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync Coordination
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bidirectional sync coordination state.
+ *
+ * Prevents infinite loops during two-way synchronization between Browser and Y.Doc.
+ *
+ * Primary mechanism: Y.js transaction `origin` parameter
+ * - Remote changes (from WebSocket): origin !== null (WebSocket provider instance)
+ * - Local changes (our refetch): origin === null (default Y.js behavior)
+ *
+ * The observers check `origin` to distinguish remote vs local changes and only
+ * act on remote changes (when a markdown file changes on the server).
+ *
+ * Counters for secondary coordination (not booleans - see below):
+ * - `yDocChangeCount`: Incremented when calling Browser APIs from Y.Doc observers
+ *   Prevents Browser events from triggering refetch during our own API calls.
+ * - `refetchCount`: Incremented when syncing Browser → Y.Doc (refetch functions)
+ *   Used as a secondary guard in refetch helpers.
+ *
+ * Why counters instead of booleans:
+ * Multiple async operations can run concurrently. A boolean causes race conditions:
+ * - Event A sets flag = true, awaits async work
+ * - Event B sets flag = true, awaits async work
+ * - Event A completes, sets flag = false (BUG! B is still working)
+ * - Observer sees false, processes B's side effect, creates infinite loop
+ *
+ * With counters:
+ * - Event A increments to 1, awaits async work
+ * - Event B increments to 2, awaits async work
+ * - Event A completes, decrements to 1 (still > 0, protected)
+ * - Event B completes, decrements to 0
+ */
+const syncCoordination = {
+	/** Count of concurrent Y.Doc change handlers calling Browser APIs */
+	yDocChangeCount: 0,
+	/** Count of concurrent refetch operations (Browser → Y.Doc) */
+	refetchCount: 0,
+	/**
+	 * Set of tab IDs that were recently added by local Browser events.
+	 * Used to detect echoes: if onAdd fires for a tab_id in this set, it's our own echo.
+	 * Entries are removed after a short timeout to prevent memory leaks.
+	 */
+	recentlyAddedTabIds: new Set<number>(),
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Background Service Worker
+// ─────────────────────────────────────────────────────────────────────────────
+
+// NOTE: defineBackground callback CANNOT be async (MV3 constraint).
+// Event listeners must be registered synchronously at the top level.
+// We use the "deferred handler" pattern: store initPromise, await it in handlers.
+export default defineBackground(() => {
+	console.log('[Background] Initializing Tab Manager...');
+
+	// Get device ID early (cached after first call)
+	const deviceIdPromise = getDeviceId();
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Workspace Definition (needs deviceId for refetch functions)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	const backgroundWorkspace = defineWorkspace({
+		id: generateGuid(),
+		slug: 'browser',
+		name: 'Browser Tabs',
+		kv: {},
+		tables: BROWSER_SCHEMA,
+		// @ts-expect-error - extensions API not yet implemented
+		extensions: {
+			/**
+			 * WebSocket sync extension for server connection.
+			 */
+			serverSync: websocketSync({
+				url: 'ws://localhost:3913/sync',
+			}),
+		},
+		actions: ({ ydoc, tables }) => ({
+			tables,
+
+			/**
+			 * Register this device in the devices table.
+			 */
+			async registerDevice() {
+				const deviceId = await deviceIdPromise;
+				const existingDevice = tables.get('devices').get({ id: deviceId });
+
+				// Get existing name if valid, otherwise generate default
+				const existingName =
+					existingDevice.status === 'valid' ? existingDevice.row.name : null;
+
+				tables.get('devices').upsert({
+					id: deviceId,
+					// Keep existing name if set, otherwise generate default
+					name: existingName ?? (await generateDefaultDeviceName()),
+					last_seen: new Date().toISOString(),
+					browser: getBrowserName(),
+				});
+			},
+
+			/**
+			 * Refetch tabs from Browser and diff into Y.Doc.
+			 * Only manages THIS device's tabs - other devices' tabs are untouched.
+			 */
+			async refetchTabs() {
+				const deviceId = await deviceIdPromise;
+				const { tabToRow } = createBrowserConverters(deviceId);
+				const browserTabs = await browser.tabs.query({});
+				const tabIds = new Set(
+					browserTabs
+						.filter((t): t is typeof t & { id: number } => t.id !== undefined)
+						.map((t) => t.id),
+				);
+				const existingYDocTabs = tables.get('tabs').getAllValid();
+
+				const { TabId } = createBrowserConverters(deviceId);
+
+				ydoc.transact(() => {
+					// Upsert all browser tabs (with device-scoped IDs)
+					for (const tab of browserTabs) {
+						if (tab.id === undefined) continue;
+						tables.get('tabs').upsert(tabToRow(tab));
+					}
+
+					// Delete only THIS device's tabs that aren't in browser OR have malformed IDs
+					for (const existing of existingYDocTabs) {
+						if (existing.device_id !== deviceId) continue; // Skip other devices!
+
+						// Check 1: tab_id doesn't exist in browser
+						if (!tabIds.has(existing.tab_id)) {
+							tables.get('tabs').delete({ id: existing.id });
+							continue;
+						}
+
+						// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
+						// Expected: "${deviceId}_${tabId}", but copied files may have " copy 2" suffix
+						const expectedId = TabId(existing.tab_id);
+						if (existing.id !== expectedId) {
+							tables.get('tabs').delete({ id: existing.id });
+						}
+					}
+				});
+			},
+
+			/**
+			 * Refetch windows from Browser and diff into Y.Doc.
+			 * Only manages THIS device's windows - other devices' windows are untouched.
+			 */
+			async refetchWindows() {
+				const deviceId = await deviceIdPromise;
+				const { windowToRow, WindowId } = createBrowserConverters(deviceId);
+				const browserWindows = await browser.windows.getAll();
+				const windowIds = new Set(
+					browserWindows
+						.filter((w): w is typeof w & { id: number } => w.id !== undefined)
+						.map((w) => w.id),
+				);
+				const existingYDocWindows = tables.get('windows').getAllValid();
+
+				ydoc.transact(() => {
+					// Upsert all browser windows (with device-scoped IDs)
+					for (const win of browserWindows) {
+						if (win.id === undefined) continue;
+						tables.get('windows').upsert(windowToRow(win));
+					}
+
+					// Delete only THIS device's windows that aren't in browser OR have malformed IDs
+					for (const existing of existingYDocWindows) {
+						if (existing.device_id !== deviceId) continue; // Skip other devices!
+
+						// Check 1: window_id doesn't exist in browser
+						if (!windowIds.has(existing.window_id)) {
+							tables.get('windows').delete({ id: existing.id });
+							continue;
+						}
+
+						// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
+						const expectedId = WindowId(existing.window_id);
+						if (existing.id !== expectedId) {
+							tables.get('windows').delete({ id: existing.id });
+						}
+					}
+				});
+			},
+
+			/**
+			 * Refetch tab groups from Browser and diff into Y.Doc.
+			 * Only manages THIS device's groups - other devices' groups are untouched.
+			 */
+			async refetchTabGroups() {
+				if (!browser.tabGroups) return;
+
+				const deviceId = await deviceIdPromise;
+				const { tabGroupToRow, GroupId } = createBrowserConverters(deviceId);
+				const browserGroups = await browser.tabGroups.query({});
+				const groupIds = new Set(browserGroups.map((g) => g.id));
+				const existingYDocGroups = tables.get('tab_groups').getAllValid();
+
+				ydoc.transact(() => {
+					// Upsert all browser groups (with device-scoped IDs)
+					for (const group of browserGroups) {
+						tables.get('tab_groups').upsert(tabGroupToRow(group));
+					}
+
+					// Delete only THIS device's groups that aren't in browser OR have malformed IDs
+					for (const existing of existingYDocGroups) {
+						if (existing.device_id !== deviceId) continue; // Skip other devices!
+
+						// Check 1: group_id doesn't exist in browser
+						if (!groupIds.has(existing.group_id)) {
+							tables.get('tab_groups').delete({ id: existing.id });
+							continue;
+						}
+
+						// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
+						const expectedId = GroupId(existing.group_id);
+						if (existing.id !== expectedId) {
+							tables.get('tab_groups').delete({ id: existing.id });
+						}
+					}
+				});
+			},
+
+			/**
+			 * Refetch all (tabs, windows, tab groups) from Browser.
+			 */
+			async refetchAll() {
+				// Register device first
+				await this.registerDevice();
+				// Refetch windows first (tabs reference windows)
+				await this.refetchWindows();
+				await this.refetchTabs();
+				await this.refetchTabGroups();
+
+				console.log('[Background] Refetched all from Browser:', {
+					tabs: tables.get('tabs').getAllValid().length,
+					windows: tables.get('windows').getAllValid().length,
+					tabGroups: tables.get('tab_groups').getAllValid().length,
+				});
+			},
+
+			getAllTabs(): Tab[] {
+				return tables
+					.get('tabs')
+					.getAllValid()
+					.sort((a, b) => a.index - b.index);
+			},
+
+			getAllWindows(): Window[] {
+				return tables.get('windows').getAllValid();
+			},
+
+			getTabsByWindow(windowId: string): Tab[] {
+				return tables.tabs
+					.filter((t) => t.window_id === windowId)
+					.sort((a, b) => a.index - b.index);
+			},
+		}),
+	});
+
+	const client = createWorkspaceClient(backgroundWorkspace);
+
+	// Debug: Listen for all Y.Doc updates to see if we're receiving them
+	client.$ydoc.on('update', (update: Uint8Array, origin: unknown) => {
+		// Get the ytables Y.Map to inspect structure
+		const ytables = client.$ydoc.getMap('tables');
+		const tabsTable = ytables.get('tabs') as Map<string, unknown> | undefined;
+
+		// Get entries from tabs table if it's a Y.Map
+		let tabsEntries: string[] = [];
+		if (tabsTable && typeof tabsTable.keys === 'function') {
+			tabsEntries = Array.from(tabsTable.keys()).slice(0, 5);
+		}
+
+		console.log('[Background] Y.Doc update received', {
+			updateSize: update.length,
+			origin: origin === null ? 'local' : 'remote',
+			ytablesSize: ytables.size,
+			ytablesKeys: Array.from(ytables.keys()),
+			tabsTableExists: !!tabsTable,
+			tabsTableSize: tabsTable?.size ?? 'N/A',
+			tabsFirstFiveKeys: tabsEntries,
+		});
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Initialization Promise (Deferred Handler Pattern)
+	// All event handlers await this before processing to avoid race conditions.
+	// This ensures Browser state is synced to Y.Doc before any handler runs.
+	// ─────────────────────────────────────────────────────────────────────────
+
+	const initPromise = client
+		.refetchAll()
+		.then(() => console.log('[Background] Initial refetch complete'))
+		.catch((err) => console.error('[Background] Initial refetch failed:', err));
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Browser Keepalive (Chrome MV3 only)
+	// Chrome service workers go dormant after ~30 seconds of inactivity.
+	// We use Chrome Alarms API to wake the service worker periodically,
+	// keeping the WebSocket connection alive for real-time Y.Doc sync.
+	// Firefox doesn't have this limitation (uses Event Pages, not service workers).
+	//
+	// NOTE: WebSocket messages from the server CANNOT wake a dormant service worker.
+	// When dormant, the WebSocket connection is suspended/closed. Only Browser events
+	// (alarms, tabs, runtime messages, etc.) can wake the worker.
+	// ─────────────────────────────────────────────────────────────────────────
+
+	if (import.meta.env.CHROME && browser.alarms) {
+		const KEEPALIVE_ALARM = 'keepalive';
+		const KEEPALIVE_INTERVAL_MINUTES = 0.4; // ~24 seconds (under 30s threshold)
+
+		// Create the keepalive alarm
+		browser.alarms.create(KEEPALIVE_ALARM, {
+			periodInMinutes: KEEPALIVE_INTERVAL_MINUTES,
+		});
+
+		// Handle alarm - the act of waking the service worker keeps the WebSocket alive
+		browser.alarms.onAlarm.addListener((alarm) => {
+			if (alarm.name === KEEPALIVE_ALARM) {
+				// No-op: just waking the service worker is sufficient
+			}
+		});
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Lifecycle Events - Re-sync on explicit browser events
+	// onInstalled: Extension install, update, or Browser update
+	// onStartup: Browser session start (user profile loads)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	browser.runtime.onInstalled.addListener(async () => {
+		console.log('[Background] onInstalled: re-syncing...');
+		await client
+			.refetchAll()
+			.then(() => console.log('[Background] onInstalled: refetch complete'))
+			.catch((err) =>
+				console.error('[Background] onInstalled: refetch failed:', err),
+			);
+	});
+
+	browser.runtime.onStartup.addListener(async () => {
+		console.log('[Background] onStartup: re-syncing...');
+		await client
+			.refetchAll()
+			.then(() => console.log('[Background] onStartup: refetch complete'))
+			.catch((err) =>
+				console.error('[Background] onStartup: refetch failed:', err),
+			);
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Browser Event Listeners - Incremental Updates
+	// Instead of refetching ALL tabs on every event, we only update the
+	// specific tab/window/group that changed. This dramatically reduces
+	// YJS operations (from N upserts to 1 upsert per event).
+	// ─────────────────────────────────────────────────────────────────────────
+
+	const { tables } = client;
+
+	// Helper: Upsert a single tab by querying Browser (for events that don't provide full tab)
+	const upsertTabById = async (tabId: number) => {
+		const deviceId = await deviceIdPromise;
+		const { tabToRow } = createBrowserConverters(deviceId);
+		await tryAsync({
+			try: async () => {
+				const tab = await browser.tabs.get(tabId);
+				tables.get('tabs').upsert(tabToRow(tab));
+			},
+			catch: (error) => {
+				// Tab may have been closed already
+				console.warn(`[Background] Failed to get tab ${tabId}:`, error);
+				return Ok(undefined);
+			},
+		});
+	};
+
+	// Helper: Upsert a single window by querying Browser
+	const upsertWindowById = async (windowId: number) => {
+		const deviceId = await deviceIdPromise;
+		const { windowToRow } = createBrowserConverters(deviceId);
+		await tryAsync({
+			try: async () => {
+				const window = await browser.windows.get(windowId);
+				tables.get('windows').upsert(windowToRow(window));
+			},
+			catch: (error) => {
+				// Window may have been closed already
+				console.warn(`[Background] Failed to get window ${windowId}:`, error);
+				return Ok(undefined);
+			},
+		});
+	};
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Tab Event Handlers - Incremental updates (1 tab at a time)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	// onCreated: Full Tab object provided
+	browser.tabs.onCreated.addListener(async (tab) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+		const tabId = tab.id;
+		if (tabId === undefined) return;
+
+		const deviceId = await deviceIdPromise;
+		const { tabToRow } = createBrowserConverters(deviceId);
+
+		// Track this tab as recently added to detect echoes in onAdd observer
+		syncCoordination.recentlyAddedTabIds.add(tabId);
+		// Remove after 5 seconds to prevent memory leaks
+		setTimeout(() => {
+			syncCoordination.recentlyAddedTabIds.delete(tabId);
+		}, 5000);
+
+		syncCoordination.refetchCount++;
+		tables.get('tabs').upsert(tabToRow(tab));
+		syncCoordination.refetchCount--;
+	});
+
+	// onRemoved: Only tabId provided - delete directly
+	browser.tabs.onRemoved.addListener(async (tabId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		const deviceId = await deviceIdPromise;
+		const { TabId } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+		tables.get('tabs').delete({ id: TabId(tabId) });
+		syncCoordination.refetchCount--;
+	});
+
+	// onUpdated: Full Tab object provided (3rd arg)
+	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+		if (tab.id === undefined) return;
+
+		const deviceId = await deviceIdPromise;
+		const { tabToRow } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+		tables.get('tabs').upsert(tabToRow(tab));
+		syncCoordination.refetchCount--;
+	});
+
+	// onMoved: Only tabId + moveInfo provided - need to query Browser
+	browser.tabs.onMoved.addListener(async (tabId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		syncCoordination.refetchCount++;
+		await upsertTabById(tabId);
+		syncCoordination.refetchCount--;
+	});
+
+	// onActivated: Only activeInfo provided - need to query Browser
+	// Note: We need to update BOTH the newly activated tab AND the previously active tab
+	// in the same window (to set active: false on the old one)
+	browser.tabs.onActivated.addListener(async (activeInfo) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		const deviceId = await deviceIdPromise;
+		const { TabId, WindowId } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+
+		const deviceWindowId = WindowId(activeInfo.windowId);
+		const deviceTabId = TabId(activeInfo.tabId);
+
+		// Find and update the previously active tab in this window (set active: false)
+		const previouslyActiveTabs = tables.tabs
+			.filter((t) => t.window_id === deviceWindowId && t.active)
+			.filter((t) => t.id !== deviceTabId);
+
+		for (const prevTab of previouslyActiveTabs) {
+			tables.get('tabs').upsert({ ...prevTab, active: false });
+		}
+
+		// Update the newly activated tab
+		await upsertTabById(activeInfo.tabId);
+
+		syncCoordination.refetchCount--;
+	});
+
+	// onAttached: Tab moved between windows - need to query Browser
+	browser.tabs.onAttached.addListener(async (tabId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		syncCoordination.refetchCount++;
+		await upsertTabById(tabId);
+		syncCoordination.refetchCount--;
+	});
+
+	// onDetached: Tab detached from window - need to query Browser
+	browser.tabs.onDetached.addListener(async (tabId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		syncCoordination.refetchCount++;
+		await upsertTabById(tabId);
+		syncCoordination.refetchCount--;
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Window Event Handlers - Incremental updates (1 window at a time)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	// onCreated: Full Window object provided
+	browser.windows.onCreated.addListener(async (window) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+		if (window.id === undefined) return;
+
+		const deviceId = await deviceIdPromise;
+		const { windowToRow } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+		tables.get('windows').upsert(windowToRow(window));
+		syncCoordination.refetchCount--;
+	});
+
+	// onRemoved: Only windowId provided - delete directly
+	browser.windows.onRemoved.addListener(async (windowId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		const deviceId = await deviceIdPromise;
+		const { WindowId } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+		tables.get('windows').delete({ id: WindowId(windowId) });
+		syncCoordination.refetchCount--;
+	});
+
+	// onFocusChanged: Only windowId provided - need to query Browser
+	// Note: windowId can be WINDOW_ID_NONE (-1) when all windows lose focus
+	// We need to update BOTH the newly focused window AND previously focused windows
+	browser.windows.onFocusChanged.addListener(async (windowId) => {
+		await initPromise;
+		if (syncCoordination.yDocChangeCount > 0) return;
+
+		const deviceId = await deviceIdPromise;
+		const { WindowId } = createBrowserConverters(deviceId);
+		syncCoordination.refetchCount++;
+
+		const deviceWindowId = WindowId(windowId);
+
+		// Find and update previously focused windows (set focused: false)
+		const previouslyFocusedWindows = tables.windows
+			.filter((w) => w.focused)
+			.filter((w) => w.id !== deviceWindowId);
+
+		for (const prevWindow of previouslyFocusedWindows) {
+			tables.get('windows').upsert({ ...prevWindow, focused: false });
+		}
+
+		// Update the newly focused window (if not WINDOW_ID_NONE)
+		if (windowId !== browser.windows.WINDOW_ID_NONE) {
+			await upsertWindowById(windowId);
+		}
+
+		syncCoordination.refetchCount--;
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Tab Group Event Handlers - Incremental updates (Chrome 88+ only)
+	// ─────────────────────────────────────────────────────────────────────────
+
+	if (browser.tabGroups) {
+		// onCreated: Full TabGroup object provided
+		browser.tabGroups.onCreated.addListener(async (group) => {
+			await initPromise;
+			if (syncCoordination.yDocChangeCount > 0) return;
+
+			const deviceId = await deviceIdPromise;
+			const { tabGroupToRow } = createBrowserConverters(deviceId);
+			syncCoordination.refetchCount++;
+			tables.get('tab_groups').upsert(tabGroupToRow(group));
+			syncCoordination.refetchCount--;
+		});
+
+		// onRemoved: Full TabGroup object provided
+		browser.tabGroups.onRemoved.addListener(async (group) => {
+			await initPromise;
+			if (syncCoordination.yDocChangeCount > 0) return;
+
+			const deviceId = await deviceIdPromise;
+			const { GroupId } = createBrowserConverters(deviceId);
+			syncCoordination.refetchCount++;
+			tables.get('tab_groups').delete({ id: GroupId(group.id) });
+			syncCoordination.refetchCount--;
+		});
+
+		// onUpdated: Full TabGroup object provided
+		browser.tabGroups.onUpdated.addListener(async (group) => {
+			await initPromise;
+			if (syncCoordination.yDocChangeCount > 0) return;
+
+			const deviceId = await deviceIdPromise;
+			const { tabGroupToRow } = createBrowserConverters(deviceId);
+			syncCoordination.refetchCount++;
+			tables.get('tab_groups').upsert(tabGroupToRow(group));
+			syncCoordination.refetchCount--;
+		});
+	}
+
+	// ─────────────────────────────────────────────────────────────────────────
+	// Y.Doc Observers - trigger Browser APIs on upstream changes
+	// These handle changes synced from the server (e.g., markdown file deletions)
+	// Only process changes for THIS device - other devices manage themselves
+	// ─────────────────────────────────────────────────────────────────────────
+
+	client.tables.get('tabs').observe((changedIds, transaction) => {
+		for (const id of changedIds) {
+			const result = client.tables.get('tabs').get(id);
+			if (result.status === 'not_found') {
+				// Deleted
+				void (async () => {
+					await initPromise;
+
+					console.log('[Background] tabs.onDelete fired:', {
+						id,
+						origin: transaction.origin,
+						isRemote: transaction.origin !== null,
+					});
+
+					if (transaction.origin === null) {
+						console.log(
+							'[Background] tabs.onDelete SKIPPED: local origin (our own change)',
+						);
+						return;
+					}
+
+					const deviceId = await deviceIdPromise;
+					const parsed = parseTabId(id);
+
+					if (!parsed || parsed.deviceId !== deviceId) {
+						console.log(
+							'[Background] tabs.onDelete SKIPPED: different device or invalid ID',
+						);
+						return;
+					}
+
+					console.log(
+						'[Background] tabs.onDelete REMOVING Browser tab:',
+						parsed.tabId,
+					);
+					syncCoordination.yDocChangeCount++;
+					await tryAsync({
+						try: async () => {
+							await browser.tabs.remove(parsed.tabId);
+							console.log(
+								'[Background] tabs.onDelete SUCCESS: removed tab',
+								parsed.tabId,
+							);
+						},
+						catch: (error) => {
+							console.log(`[Background] Failed to close tab ${id}:`, error);
+							return Ok(undefined);
+						},
+					});
+					syncCoordination.yDocChangeCount--;
+				})();
+			} else if (result.status === 'valid') {
+				// Added or updated
+				const row = result.row;
+				void (async () => {
+					await initPromise;
+
+					console.log('[Background] tabs.onAdd fired:', {
+						origin: transaction.origin,
+						isRemote: transaction.origin !== null,
+						row,
+					});
+
+					if (transaction.origin === null) {
+						console.log(
+							'[Background] tabs.onAdd SKIPPED: local origin (our own change)',
+						);
+						return;
+					}
+
+					const deviceId = await deviceIdPromise;
+
+					if (row.device_id !== deviceId) {
+						console.log(
+							'[Background] tabs.onAdd SKIPPED: different device',
+							row.device_id,
+						);
+						return;
+					}
+
+					if (!row.url) {
+						console.log('[Background] tabs.onAdd SKIPPED: no URL in row');
+						return;
+					}
+
+					if (syncCoordination.recentlyAddedTabIds.has(row.tab_id)) {
+						console.log(
+							'[Background] tabs.onAdd SKIPPED: tab was recently added locally (echo)',
+							row.tab_id,
+						);
+						return;
+					}
+
+					const existingTab = await tryAsync({
+						try: () => browser.tabs.get(row.tab_id),
+						catch: () => Ok(undefined),
+					});
+
+					if (existingTab.data) {
+						console.log(
+							'[Background] tabs.onAdd SKIPPED: tab already exists in browser',
+							row.tab_id,
+						);
+						return;
+					}
+
+					console.log(
+						'[Background] tabs.onAdd CREATING tab with URL:',
+						row.url,
+					);
+					syncCoordination.yDocChangeCount++;
+					await tryAsync({
+						try: async () => {
+							await browser.tabs.create({ url: row.url });
+							console.log(
+								'[Background] tabs.onAdd tab created, now refetching...',
+							);
+
+							syncCoordination.refetchCount++;
+							await client.refetchTabs();
+							syncCoordination.refetchCount--;
+							console.log('[Background] tabs.onAdd refetch complete');
+						},
+						catch: (error) => {
+							console.log(
+								`[Background] Failed to create tab from ${row.id}:`,
+								error,
+							);
+							return Ok(undefined);
+						},
+					});
+					syncCoordination.yDocChangeCount--;
+				})();
+			}
+		}
+	});
+
+	client.tables.get('windows').observe((changedIds, transaction) => {
+		for (const id of changedIds) {
+			const result = client.tables.get('windows').get(id);
+			if (result.status === 'not_found') {
+				// Deleted
+				void (async () => {
+					await initPromise;
+
+					if (transaction.origin === null) return;
+
+					const deviceId = await deviceIdPromise;
+					const parsed = parseWindowId(id);
+
+					if (!parsed || parsed.deviceId !== deviceId) return;
+
+					syncCoordination.yDocChangeCount++;
+					await tryAsync({
+						try: async () => {
+							await browser.windows.remove(parsed.windowId);
+						},
+						catch: (error) => {
+							console.log(`[Background] Failed to close window ${id}:`, error);
+							return Ok(undefined);
+						},
+					});
+					syncCoordination.yDocChangeCount--;
+				})();
+			} else if (result.status === 'valid') {
+				// Added or updated
+				const row = result.row;
+				void (async () => {
+					await initPromise;
+
+					if (transaction.origin === null) return;
+
+					const deviceId = await deviceIdPromise;
+
+					if (row.device_id !== deviceId) return;
+
+					syncCoordination.yDocChangeCount++;
+					await tryAsync({
+						try: async () => {
+							await browser.windows.create({});
+
+							syncCoordination.refetchCount++;
+							await client.refetchWindows();
+							syncCoordination.refetchCount--;
+						},
+						catch: (error) => {
+							console.log(
+								`[Background] Failed to create window from ${row.id}:`,
+								error,
+							);
+							return Ok(undefined);
+						},
+					});
+					syncCoordination.yDocChangeCount--;
+				})();
+			}
+		}
+	});
+
+	if (browser.tabGroups) {
+		client.tables.get('tab_groups').observe((changedIds, transaction) => {
+			for (const id of changedIds) {
+				const result = client.tables.get('tab_groups').get(id);
+				if (result.status === 'not_found') {
+					// Deleted
+					void (async () => {
+						await initPromise;
+
+						if (transaction.origin === null) return;
+
+						const deviceId = await deviceIdPromise;
+						const parsed = parseGroupId(id);
+
+						if (!parsed || parsed.deviceId !== deviceId) return;
+
+						syncCoordination.yDocChangeCount++;
+						await tryAsync({
+							try: async () => {
+								const tabs = await browser.tabs.query({
+									groupId: parsed.groupId,
+								});
+								for (const tab of tabs) {
+									if (tab.id !== undefined) {
+										await browser.tabs.ungroup(tab.id);
+									}
+								}
+							},
+							catch: (error) => {
+								console.log(
+									`[Background] Failed to ungroup tab group ${id}:`,
+									error,
+								);
+								return Ok(undefined);
+							},
+						});
+						syncCoordination.yDocChangeCount--;
+					})();
+				}
+			}
+		});
+	}
+
+	console.log('[Background] Tab Manager initialized', {
+		tabs: client.getAllTabs().length,
+		windows: client.getAllWindows().length,
+	});
+});

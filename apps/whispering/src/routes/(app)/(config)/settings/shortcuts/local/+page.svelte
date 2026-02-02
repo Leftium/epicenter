@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Button } from '@repo/ui/button';
-	import { Separator } from '@repo/ui/separator';
+	import { Button } from '@epicenter/ui/button';
+	import { Separator } from '@epicenter/ui/separator';
 	import { rpc } from '$lib/query';
-	import { RotateCcw } from '@lucide/svelte';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
 	import { settings } from '$lib/stores/settings.svelte';
@@ -33,14 +33,14 @@
 			size="sm"
 			onclick={() => {
 				settings.resetLocalShortcuts();
-				rpc.notify.success.execute({
+				rpc.notify.success({
 					title: 'Shortcuts reset',
 					description: 'All local shortcuts have been reset to defaults.',
 				});
 			}}
 			class="shrink-0"
 		>
-			<RotateCcw class="mr-2 size-4" />
+			<RotateCcw class="size-4" />
 			Reset to defaults
 		</Button>
 	</div>

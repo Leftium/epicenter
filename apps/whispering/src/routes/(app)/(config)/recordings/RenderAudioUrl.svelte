@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { rpc } from '$lib/query';
-	import * as services from '$lib/services';
-	import { getRecordingTransitionId } from '$lib/utils/getRecordingTransitionId';
+	import { services } from '$lib/services';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 
 	let { id }: { id: string } = $props();
 
 	const audioUrlQuery = createQuery(
-		rpc.db.recordings.getAudioPlaybackUrl(() => id).options,
+		() => rpc.db.recordings.getAudioPlaybackUrl(() => id).options,
 	);
 
 	onDestroy(() => {
@@ -20,10 +20,7 @@
 {#if audioUrlQuery.data}
 	<audio
 		class="h-8"
-		style="view-transition-name: {getRecordingTransitionId({
-			recordingId: id,
-			propertyName: 'id',
-		})}"
+		style="view-transition-name: {viewTransition.recording(id).audio}"
 		controls
 		src={audioUrlQuery.data}
 	>

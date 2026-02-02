@@ -1,4 +1,5 @@
 import { Command as CommandPrimitive } from 'bits-ui';
+
 import Root from './command.svelte';
 import Dialog from './command-dialog.svelte';
 import Empty from './command-empty.svelte';
@@ -13,27 +14,27 @@ import Shortcut from './command-shortcut.svelte';
 const Loading = CommandPrimitive.Loading;
 
 export {
+	Root,
+	Dialog,
+	Empty,
+	Group,
+	Item,
+	LinkItem,
+	Input,
+	List,
+	Separator,
+	Shortcut,
+	Loading,
 	//
 	Root as Command,
 	Dialog as CommandDialog,
 	Empty as CommandEmpty,
 	Group as CommandGroup,
-	Input as CommandInput,
 	Item as CommandItem,
 	LinkItem as CommandLinkItem,
+	Input as CommandInput,
 	List as CommandList,
-	Loading as CommandLoading,
 	Separator as CommandSeparator,
 	Shortcut as CommandShortcut,
-	Dialog,
-	Empty,
-	Group,
-	Input,
-	Item,
-	LinkItem,
-	List,
-	Loading,
-	Root,
-	Separator,
-	Shortcut,
+	Loading as CommandLoading,
 };

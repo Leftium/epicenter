@@ -58,20 +58,20 @@
 </script>
 
 <script lang="ts">
-	import * as Dialog from '@repo/ui/dialog';
-	import { Button } from '@repo/ui/button';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Button } from '@epicenter/ui/button';
 </script>
 
-<Dialog.Root bind:open={moreDetailsDialog.isOpen}>
-	<Dialog.Content class="sm:max-w-xl">
-		<Dialog.Header>
-			<Dialog.Title>{moreDetailsDialog.title}</Dialog.Title>
-			<Dialog.Description>{moreDetailsDialog.description}</Dialog.Description>
-		</Dialog.Header>
+<Modal.Root bind:open={moreDetailsDialog.isOpen}>
+	<Modal.Content class="sm:max-w-xl">
+		<Modal.Header>
+			<Modal.Title>{moreDetailsDialog.title}</Modal.Title>
+			<Modal.Description>{moreDetailsDialog.description}</Modal.Description>
+		</Modal.Header>
 		<pre
 			class="bg-muted relative whitespace-pre-wrap break-words rounded p-4 pr-12 font-mono text-sm overflow-x-auto">{moreDetailsDialog.content}</pre>
 		{#if moreDetailsDialog.buttons.length !== 0}
-			<Dialog.Footer>
+			<Modal.Footer>
 				{#each moreDetailsDialog.buttons as button}
 					<Button
 						variant={button.variant}
@@ -83,7 +83,7 @@
 						{button.label}
 					</Button>
 				{/each}
-			</Dialog.Footer>
+			</Modal.Footer>
 		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+	</Modal.Content>
+</Modal.Root>

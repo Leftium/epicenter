@@ -20,8 +20,8 @@
 	@component
 -->
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { ExternalLink } from '@lucide/svelte';
+	import { Button } from '@epicenter/ui/button';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import { rpc } from '$lib/query';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 
@@ -63,7 +63,7 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				rpc.notify.error.execute({
+				rpc.notify.error({
 					title: 'Failed to open folder',
 					description: error instanceof Error ? error.message : 'Unknown error',
 				});
@@ -75,22 +75,18 @@
 
 {#if window.__TAURI_INTERNALS__}
 	{#if variant === 'icon'}
-		<WhisperingButton
-			tooltipContent={tooltipText}
+		<Button
+			tooltip={tooltipText}
 			variant="outline"
 			size="icon"
 			onclick={openFolder}
 		>
 			<ExternalLink class="h-4 w-4" />
-		</WhisperingButton>
+		</Button>
 	{:else}
-		<WhisperingButton
-			tooltipContent={tooltipText}
-			variant="outline"
-			onclick={openFolder}
-		>
-			<ExternalLink class="h-4 w-4 mr-2" />
+		<Button tooltip={tooltipText} variant="outline" onclick={openFolder}>
+			<ExternalLink class="h-4 w-4" />
 			{tooltipText}
-		</WhisperingButton>
+		</Button>
 	{/if}
 {/if}

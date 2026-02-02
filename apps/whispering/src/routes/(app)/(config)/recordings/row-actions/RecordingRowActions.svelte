@@ -1,45 +1,43 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import WhisperingTooltip from '$lib/components/WhisperingTooltip.svelte';
-	import CopyToClipboardButton from '$lib/components/copyable/CopyToClipboardButton.svelte';
-	import { ClipboardIcon, TrashIcon } from '$lib/components/icons';
-	import { Skeleton } from '@repo/ui/skeleton';
+	import { Button } from '@epicenter/ui/button';
+	import { CopyButton } from '@epicenter/ui/copy-button';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { TrashIcon } from '$lib/components/icons';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { rpc } from '$lib/query';
-	import { getRecordingTransitionId } from '$lib/utils/getRecordingTransitionId';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import {
-		AlertCircleIcon,
-		DownloadIcon,
-		EllipsisIcon,
-		FileStackIcon,
-		Loader2Icon,
-		PlayIcon,
-		RepeatIcon,
-	} from '@lucide/svelte';
+	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import FileStackIcon from '@lucide/svelte/icons/file-stack';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import RepeatIcon from '@lucide/svelte/icons/repeat';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
 	import ViewTransformationRunsDialog from './ViewTransformationRunsDialog.svelte';
 	import { nanoid } from 'nanoid/non-secure';
 
 	const transcribeRecording = createMutation(
-		rpc.transcription.transcribeRecording.options,
+		() => rpc.transcription.transcribeRecording.options,
 	);
 
-	const deleteRecording = createMutation(rpc.db.recordings.delete.options);
-
 	const downloadRecording = createMutation(
-		rpc.download.downloadRecording.options,
+		() => rpc.download.downloadRecording.options,
 	);
 
 	let { recordingId }: { recordingId: string } = $props();
 
 	const latestTransformationRunByRecordingIdQuery = createQuery(
-		rpc.db.runs.getLatestByRecordingId(() => recordingId).options,
+		() => rpc.db.runs.getLatestByRecordingId(() => recordingId).options,
 	);
 
 	const recordingQuery = createQuery(
-		rpc.db.recordings.getById(() => recordingId).options,
+		() => rpc.db.recordings.getById(() => recordingId).options,
 	);
 
 	const recording = $derived(recordingQuery.data);
@@ -53,8 +51,8 @@
 		<Skeleton class="size-8" />
 		<Skeleton class="size-8" />
 	{:else}
-		<WhisperingButton
-			tooltipContent={recording.transcriptionStatus === 'UNPROCESSED'
+		<Button
+			tooltip={recording.transcriptionStatus === 'UNPROCESSED'
 				? 'Start transcribing this recording'
 				: recording.transcriptionStatus === 'TRANSCRIBING'
 					? 'Currently transcribing...'
@@ -63,7 +61,7 @@
 						: 'Transcription failed - click to try again'}
 			onclick={() => {
 				const toastId = nanoid();
-				rpc.notify.loading.execute({
+				rpc.notify.loading({
 					id: toastId,
 					title: '📋 Transcribing...',
 					description: 'Your recording is being transcribed...',
@@ -71,10 +69,10 @@
 				transcribeRecording.mutate(recording, {
 					onError: (error) => {
 						if (error.name === 'WhisperingError') {
-							rpc.notify.error.execute({ id: toastId, ...error });
+							rpc.notify.error({ id: toastId, ...error });
 							return;
 						}
-						rpc.notify.error.execute({
+						rpc.notify.error({
 							id: toastId,
 							title: '❌ Failed to transcribe recording',
 							description: 'Your recording could not be transcribed.',
@@ -82,9 +80,9 @@
 						});
 					},
 					onSuccess: (transcribedText) => {
-						rpc.sound.playSoundIfEnabled.execute('transcriptionComplete');
+						rpc.sound.playSoundIfEnabled('transcriptionComplete');
 
-						rpc.delivery.deliverTranscriptionResult.execute({
+						rpc.delivery.deliverTranscriptionResult({
 							text: transcribedText,
 							toastId,
 						});
@@ -101,77 +99,73 @@
 			{:else if recording.transcriptionStatus === 'DONE'}
 				<RepeatIcon class="size-4 text-green-500" />
 			{:else if recording.transcriptionStatus === 'FAILED'}
-				<AlertCircleIcon class="size-4 text-red-500" />
+				<RotateCcwIcon class="size-4 text-red-500" />
 			{/if}
-		</WhisperingButton>
+		</Button>
 
 		<TransformationPicker recordingId={recording.id} />
 
 		<EditRecordingModal {recording} />
 
-		<CopyToClipboardButton
-			contentDescription="transcribed text"
-			textToCopy={recording.transcribedText}
-			viewTransitionName={getRecordingTransitionId({
-				recordingId,
-				propertyName: 'transcribedText',
-			})}
-		>
-			<ClipboardIcon class="size-4" />
-		</CopyToClipboardButton>
+		<CopyButton
+			text={recording.transcribedText}
+			copyFn={createCopyFn('transcript')}
+			style="view-transition-name: {viewTransition.recording(recordingId)
+				.transcript}"
+		/>
 
 		{#if latestTransformationRunByRecordingIdQuery.isPending}
-			<Loader2Icon class="size-4 animate-spin" />
+			<Spinner />
 		{:else if latestTransformationRunByRecordingIdQuery.isError}
-			<WhisperingTooltip
-				id={getRecordingTransitionId({
-					recordingId,
-					propertyName: 'latestTransformationRunOutput',
-				})}
-				tooltipContent="Error fetching latest transformation run output"
-			>
-				{#snippet trigger({ tooltip, tooltipProps })}
-					<AlertCircleIcon class="text-red-500" {...tooltipProps} />
-					<span class="sr-only">
-						{@render tooltip()}
-					</span>
-				{/snippet}
-			</WhisperingTooltip>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<AlertCircleIcon
+							class="text-red-500"
+							{...props}
+							id={viewTransition.recording(recordingId).transformationOutput}
+						/>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content class="max-w-xs text-center">
+					Error fetching latest transformation run output
+				</Tooltip.Content>
+			</Tooltip.Root>
 		{:else}
-			<CopyToClipboardButton
-				contentDescription="latest transformation run output"
-				textToCopy={latestTransformationRunByRecordingIdQuery.data?.status ===
+			<CopyButton
+				text={latestTransformationRunByRecordingIdQuery.data?.status ===
 				'completed'
 					? latestTransformationRunByRecordingIdQuery.data.output
 					: ''}
-				viewTransitionName={getRecordingTransitionId({
-					recordingId,
-					propertyName: 'latestTransformationRunOutput',
-				})}
+				copyFn={createCopyFn('latest transformation run output')}
+				style="view-transition-name: {viewTransition.recording(recordingId)
+					.transformationOutput}"
 			>
-				<FileStackIcon class="size-4" />
-			</CopyToClipboardButton>
+				{#snippet icon()}
+					<FileStackIcon class="size-4" />
+				{/snippet}
+			</CopyButton>
 		{/if}
 
 		<ViewTransformationRunsDialog {recordingId} />
 
-		<WhisperingButton
-			tooltipContent="Download recording"
+		<Button
+			tooltip="Download recording"
 			onclick={() =>
 				downloadRecording.mutate(recording, {
 					onError: (error) => {
 						if (error.name === 'WhisperingError') {
-							rpc.notify.error.execute(error);
+							rpc.notify.error(error);
 							return;
 						}
-						rpc.notify.error.execute({
+						rpc.notify.error({
 							title: 'Failed to download recording!',
 							description: 'Your recording could not be downloaded.',
 							action: { type: 'more-details', error },
 						});
 					},
 					onSuccess: () => {
-						rpc.notify.success.execute({
+						rpc.notify.success({
 							title: 'Recording downloaded!',
 							description: 'Your recording has been downloaded.',
 						});
@@ -181,41 +175,40 @@
 			size="icon"
 		>
 			{#if downloadRecording.isPending}
-				<Loader2Icon class="size-4 animate-spin" />
+				<Spinner />
 			{:else}
 				<DownloadIcon class="size-4" />
 			{/if}
-		</WhisperingButton>
+		</Button>
 
-		<WhisperingButton
-			tooltipContent="Delete recording"
+		<Button
+			tooltip="Delete recording"
 			onclick={() => {
 				confirmationDialog.open({
 					title: 'Delete recording',
-					subtitle: 'Are you sure you want to delete this recording?',
-					confirmText: 'Delete',
-					onConfirm: () =>
-						deleteRecording.mutate(recording, {
-							onSuccess: () => {
-								rpc.notify.success.execute({
-									title: 'Deleted recording!',
-									description: 'Your recording has been deleted.',
-								});
-							},
-							onError: (error) => {
-								rpc.notify.error.execute({
-									title: 'Failed to delete recording!',
-									description: 'Your recording could not be deleted.',
-									action: { type: 'more-details', error },
-								});
-							},
-						}),
+					description: 'Are you sure you want to delete this recording?',
+					confirm: { text: 'Delete', variant: 'destructive' },
+					onConfirm: async () => {
+						const { error } = await rpc.db.recordings.delete(recording);
+						if (error) {
+							rpc.notify.error({
+								title: 'Failed to delete recording!',
+								description: 'Your recording could not be deleted.',
+								action: { type: 'more-details', error },
+							});
+							throw error;
+						}
+						rpc.notify.success({
+							title: 'Deleted recording!',
+							description: 'Your recording has been deleted.',
+						});
+					},
 				});
 			}}
 			variant="ghost"
 			size="icon"
 		>
 			<TrashIcon class="size-4" />
-		</WhisperingButton>
+		</Button>
 	{/if}
 </div>

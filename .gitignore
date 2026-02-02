@@ -34,5 +34,9 @@ yarn-error.log*
 # Turborepo
 .turbo
 
-# Opencode
-.opencode
+# Epicenter
+.epicenter
+
+# WXT (browser extension framework)
+.wxt
+.output

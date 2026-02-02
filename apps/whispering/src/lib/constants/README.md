@@ -79,7 +79,7 @@ UI-related constants including window behavior options and icon mappings.
 Some constants have dependencies on services. For example, the `platform/is-macos.ts` constant depends on the `OsService`:
 
 ```typescript
-import { OsServiceLive } from '$lib/services/OsService';
+import { OsServiceLive } from '$lib/services/isomorphic/os';
 export const IS_MACOS = OsServiceLive.type() === 'Darwin';
 ```
 

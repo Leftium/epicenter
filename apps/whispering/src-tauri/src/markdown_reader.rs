@@ -1,6 +1,7 @@
 use rayon::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Counts markdown files in a directory without reading their contents.
 /// This is extremely fast as it only checks file extensions without I/O.
@@ -100,6 +101,42 @@ pub async fn read_markdown_files(directory_path: String) -> Result<Vec<String>, 
             .collect();
 
         Ok::<Vec<String>, String>(contents)
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
+}
+
+/// Deletes multiple files in parallel given their absolute paths.
+/// This is a single FFI call that handles bulk deletion natively in Rust,
+/// avoiding thousands of individual async calls for file removal.
+///
+/// Performance characteristics:
+/// - Uses Rayon for parallel file deletion (utilizes all CPU cores)
+/// - Wrapped in spawn_blocking for proper async handling
+/// - Silently skips files that don't exist or can't be deleted
+///
+/// # Arguments
+/// * `paths` - Array of absolute file paths to delete
+///
+/// # Returns
+/// * `Ok(u32)` - Number of files successfully deleted
+/// * `Err(String)` - Error message if the operation fails catastrophically
+#[tauri::command]
+pub async fn bulk_delete_files(paths: Vec<String>) -> Result<u32, String> {
+    tokio::task::spawn_blocking(move || {
+        let deleted = AtomicU32::new(0);
+
+        // Delete all files in parallel using Rayon
+        paths.par_iter().for_each(|path| {
+            let path = PathBuf::from(path);
+            if path.exists() && path.is_file() {
+                if fs::remove_file(&path).is_ok() {
+                    deleted.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        });
+
+        Ok::<u32, String>(deleted.load(Ordering::Relaxed))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?

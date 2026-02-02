@@ -1,7 +1,6 @@
 <script lang="ts" module>
-	import type { ToggleVariants } from '#toggle/index.js';
-
 	import { getContext, setContext } from 'svelte';
+	import type { ToggleVariants } from '#/toggle/index.js';
 	export function setToggleGroupCtx(props: ToggleVariants) {
 		setContext('toggleGroup', props);
 	}
@@ -12,21 +11,26 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '#/utils/utils.js';
 	import { ToggleGroup as ToggleGroupPrimitive } from 'bits-ui';
+	import { cn } from '#/utils.js';
 
 	let {
-		class: className,
 		ref = $bindable(null),
-		size = 'default',
 		value = $bindable(),
+		class: className,
+		size = 'default',
 		variant = 'default',
 		...restProps
 	}: ToggleGroupPrimitive.RootProps & ToggleVariants = $props();
 
+	// Use getters so child components receive reactive values when props change
 	setToggleGroupCtx({
-		size,
-		variant,
+		get variant() {
+			return variant;
+		},
+		get size() {
+			return size;
+		},
 	});
 </script>
 

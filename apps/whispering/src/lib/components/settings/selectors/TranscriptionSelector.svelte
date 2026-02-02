@@ -1,26 +1,24 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { Badge } from '@repo/ui/badge';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { sep } from '@tauri-apps/api/path';
+	import { Button } from '@epicenter/ui/button';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import {
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
-	} from '$lib/services/transcription/registry';
+	} from '$lib/services/isomorphic/transcription/registry';
 	import {
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,
 	} from '$lib/settings/transcription-validation';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
-	import {
-		CheckIcon,
-		MicIcon,
-		SettingsIcon,
-		ChevronRightIcon,
-	} from '@lucide/svelte';
+	import { cn } from '@epicenter/ui/utils';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	let { class: className }: { class?: string } = $props();
@@ -55,6 +53,7 @@
 	const combobox = useCombobox();
 
 	// Track which services are expanded
+	// svelte-ignore state_referenced_locally - intentional one-time init to expand the currently selected service
 	let expandedServices = new SvelteSet(
 		selectedService ? [selectedService.id] : [],
 	);
@@ -85,10 +84,10 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltipContent={selectedService
+				tooltip={selectedService
 					? `${selectedService.name}${
 							selectedService.location === 'cloud'
 								? ` - ${getSelectedModelNameOrUrl(selectedService)}`
@@ -117,10 +116,10 @@
 				{/if}
 				{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
 					<span
-						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-amber-500 before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-amber-500/50 before:animate-ping"
+						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
 					></span>
 				{/if}
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="p-0">
@@ -159,10 +158,10 @@
 								<div class="font-medium text-sm">{service.name}</div>
 								{#if modelPath}
 									<div class="text-xs text-muted-foreground truncate">
-										{modelPath.split('/').pop() || modelPath}
+										{modelPath.split(sep()).pop() || modelPath}
 									</div>
 								{:else if !isConfigured}
-									<span class="text-xs text-amber-600">
+									<span class="text-xs text-warning">
 										Model file required
 									</span>
 								{/if}
@@ -198,9 +197,7 @@
 								<div class="flex items-center gap-2">
 									<span class="font-medium text-sm">{service.name}</span>
 									{#if !isConfigured}
-										<span class="text-xs text-amber-600">
-											API key required
-										</span>
+										<span class="text-xs text-warning"> API key required </span>
 									{/if}
 								</div>
 								{#if isSelected && currentSelectedModelName}
@@ -284,7 +281,7 @@
 										{serverUrl}
 									</div>
 								{:else if !isConfigured}
-									<div class="text-xs text-amber-600">Server URL required</div>
+									<div class="text-xs text-warning">Server URL required</div>
 								{/if}
 							</div>
 						</Command.Item>

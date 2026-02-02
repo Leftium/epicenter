@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://whispering.epicenter.so">
+  <a href="https://whispering.epicenterhq.com">
     <img width="180" src="./src-tauri/recorder-state-icons/studio_microphone.png" alt="Whispering">
   </a>
   <h1 align="center">Epicenter Whispering</h1>
@@ -8,23 +8,23 @@
 
 <p align="center">
   <!-- Latest Version Badge -->
-  <img src="https://img.shields.io/github/v/release/epicenter-md/epicenter?style=flat-square&label=Latest%20Version&color=brightgreen" />
+  <img src="https://img.shields.io/github/v/release/EpicenterHQ/epicenter?style=flat-square&label=Latest%20Version&color=brightgreen" />
   <!-- License Badge -->
-  <a href="LICENSE" target="_blank">
-    <img alt="MIT License" src="https://img.shields.io/github/license/epicenter-md/epicenter.svg?style=flat-square" />
+  <a href="../../LICENSE" target="_blank">
+    <img alt="AGPLv3 License" src="https://img.shields.io/github/license/EpicenterHQ/epicenter.svg?style=flat-square" />
   </a>
   <!-- Discord Badge -->
-  <a href="https://go.epicenter.so/discord" target="_blank">
+  <a href="https://go.epicenterhq.com/discord" target="_blank">
     <img alt="Discord" src="https://img.shields.io/discord/1391098486178582549?style=flat-square&logo=discord&logoColor=white&label=Discord&color=5865F2" />
   </a>
   <!-- Platform Support Badges -->
-  <a href="https://github.com/epicenter-md/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="macOS" src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" />
   </a>
-  <a href="https://github.com/epicenter-md/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="Windows" src="https://img.shields.io/badge/-Windows-blue?style=flat-square&logo=windows&logoColor=white" />
   </a>
-  <a href="https://github.com/epicenter-md/epicenter/releases" target="_blank">
+  <a href="https://github.com/EpicenterHQ/epicenter/releases" target="_blank">
     <img alt="Linux" src="https://img.shields.io/badge/-Linux-yellow?style=flat-square&logo=linux&logoColor=white" />
   </a>
   <!-- Tech Stack Badges -->
@@ -90,17 +90,17 @@ Set up Whispering and be ready to transcribe in about two minutes.
 The fastest way to install Whispering on macOS:
 
 ```bash
-brew install --cask epicenter-whispering
+brew install --cask whispering
 ```
 
 This automatically handles installation and updates.
 
 #### Option 2: Direct Download
 
-| Architecture      | Download                                                                                                                                      | Requirements     |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| **Apple Silicon** | [Whispering_7.7.2_aarch64_darwin.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_aarch64_darwin.dmg) | M1/M2/M3/M4 Macs |
-| **Intel**         | [Whispering_7.7.2_x64_darwin.dmg](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_darwin.dmg)         | Intel-based Macs |
+| Architecture      | Download                                                                                                                          | Requirements     |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| **Apple Silicon** | [Whispering_7.11.0_aarch64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
+| **Intel**         | [Whispering_7.11.0_x64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_x64.dmg)         | Intel-based Macs |
 
 > **💡 Tip:** Not sure which Mac you have? Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
 >
@@ -126,10 +126,10 @@ This automatically handles installation and updates.
 
 #### Download Options
 
-| Installer Type    | Download                                                                                                                                            | Description                            |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| **MSI Installer** | [Whispering_7.7.2_x64_en-US_windows.msi](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64_en-US_windows.msi) | Recommended Standard Windows installer |
-| **EXE Installer** | [Whispering_7.7.2_x64-setup_windows.exe](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_x64-setup_windows.exe) | Alternative installer option           |
+| Installer Type    | Download                                                                                                                              | Description                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| **MSI Installer** | [Whispering_7.11.0_x64_en-US.msi](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_x64_en-US.msi) | Recommended Standard Windows installer |
+| **EXE Installer** | [Whispering_7.11.0_x64-setup.exe](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_x64-setup.exe) | Alternative installer option           |
 
 #### Installation
 
@@ -147,47 +147,47 @@ Whispering will appear in your Start Menu when complete.
 
 #### Download Options
 
-| Package Format  | Download                                                                                                                                          | Compatible With          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **AppImage**    | [Whispering_7.7.2_amd64_linux.AppImage](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.AppImage) | All Linux distributions  |
-| **DEB Package** | [Whispering_7.7.2_amd64_linux.deb](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.deb)           | Debian, Ubuntu, Pop!\_OS |
-| **RPM Package** | [Whispering-7.7.2-1.x86_64_linux.rpm](https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering-7.7.2-1.x86_64_linux.rpm)     | Fedora, RHEL, openSUSE   |
+| Package Format  | Download                                                                                                                                | Compatible With          |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **AppImage**    | [Whispering_7.11.0_amd64.AppImage](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_amd64.AppImage) | All Linux distributions  |
+| **DEB Package** | [Whispering_7.11.0_amd64.deb](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_amd64.deb)           | Debian, Ubuntu, Pop!\_OS |
+| **RPM Package** | [Whispering-7.11.0-1.x86_64.rpm](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering-7.11.0-1.x86_64.rpm)     | Fedora, RHEL, openSUSE   |
 
 #### Quick Install Commands
 
 **AppImage (Universal)**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.AppImage
-chmod +x Whispering_7.7.2_amd64_linux.AppImage
-./Whispering_7.7.2_amd64_linux.AppImage
+wget https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_amd64.AppImage
+chmod +x Whispering_7.11.0_amd64.AppImage
+./Whispering_7.11.0_amd64.AppImage
 ```
 
 **Debian/Ubuntu**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering_7.7.2_amd64_linux.deb
-sudo dpkg -i Whispering_7.7.2_amd64_linux.deb
+wget https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_amd64.deb
+sudo dpkg -i Whispering_7.11.0_amd64.deb
 ```
 
 **Fedora/RHEL**
 
 ```bash
-wget https://github.com/epicenter-md/epicenter/releases/download/v7.7.2/Whispering-7.7.2-1.x86_64_linux.rpm
-sudo rpm -i Whispering-7.7.2-1.x86_64_linux.rpm
+wget https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering-7.11.0-1.x86_64.rpm
+sudo rpm -i Whispering-7.11.0-1.x86_64.rpm
 ```
 
 </details>
 
 > [!TIP]
-> **Links not working?** Find all downloads at [GitHub Releases](https://github.com/epicenter-md/epicenter/releases/latest)
+> **Links not working?** Find all downloads at [GitHub Releases](https://github.com/EpicenterHQ/epicenter/releases/latest)
 
 <details>
 <summary><strong>Try in Browser (No Download)</strong></summary>
 
 <br>
 
-**[🚀 Open Whispering Web App →](https://whispering.epicenter.so)**
+**[🚀 Open Whispering Web App →](https://whispering.epicenterhq.com)**
 
 No installation needed! Works in any modern browser.
 
@@ -327,7 +327,7 @@ If you accidentally blocked microphone permissions, use the Registry solution:
 
 </details>
 
-See [Issue #526](https://github.com/epicenter-md/epicenter/issues/526) for more details.
+See [Issue #526](https://github.com/EpicenterHQ/epicenter/issues/526) for more details.
 
 </details>
 
@@ -357,7 +357,7 @@ Choose from multiple transcription providers based on your needs for speed, accu
 #### 🎙️ ElevenLabs
 
 - **API Key:** [elevenlabs.io/app/settings/api-keys](https://elevenlabs.io/app/settings/api-keys)
-- **Models:** `scribe_v1`, `scribe_v1_experimental`
+- **Models:** `scribe_v2`, `scribe_v1`, `scribe_v1_experimental`
 - **Why:** High-quality voice AI
 
 #### 🏠 Speaches (Local)
@@ -572,7 +572,7 @@ With Groq (my favorite): $0.02-$0.06/hour. With OpenAI: $0.18-$0.36/hour. Local 
 
 Your recordings stay on your device in IndexedDB. When you transcribe, audio goes directly to your chosen provider using your API key. No middleman servers. For maximum privacy, use local transcription.
 
-Note: we use anonymized event logging with [Aptabase](https://github.com/aptabase), an open-source, privacy-first analytics service. No personal data is attached to any of these events. You can see exactly what events we log [in `analytics.ts`](https://github.com/epicenter-md/epicenter/tree/main/apps/whispering/src/lib/services/analytics.ts) and where they are logged [by searching for `rpc.analytics.logEvent` in our codebase](https://github.com/search?q=repo%3Aepicenter-md%2Fepicenter+rpc.analytics.logEvent&type=code). You can turn this off in settings at any time.
+Note: we use anonymized event logging with [Aptabase](https://github.com/aptabase), an open-source, privacy-first analytics service. No personal data is attached to any of these events. You can see exactly what events we log [in `analytics.ts`](https://github.com/EpicenterHQ/epicenter/tree/main/apps/whispering/src/lib/services/analytics.ts) and where they are logged [by searching for `rpc.analytics.logEvent` in our codebase](https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+rpc.analytics.logEvent&type=code). You can turn this off in settings at any time.
 
 ### Can I format the output automatically?
 
@@ -580,11 +580,11 @@ Yes - set up AI transformations to fix grammar, translate languages, or reformat
 
 ### What platforms work?
 
-Desktop: Mac (Intel & Apple Silicon), Windows, Linux. Web: Any modern browser at [whispering.epicenter.so](https://whispering.epicenter.so).
+Desktop: Mac (Intel & Apple Silicon), Windows, Linux. Web: Any modern browser at [whispering.epicenterhq.com](https://whispering.epicenterhq.com).
 
 ### Found a bug?
 
-Open an issue on [GitHub](https://github.com/epicenter-md/epicenter/issues). I actively maintain this and respond quickly.
+Open an issue on [GitHub](https://github.com/EpicenterHQ/epicenter/issues). I actively maintain this and respond quickly.
 
 ## Development
 
@@ -631,9 +631,11 @@ The architecture achieves extensive code reuse through build-time platform detec
 
 ### Run Whispering in Local Development Mode
 
-1. Clone the repository: `git clone https://github.com/epicenter-md/epicenter.git`
+1. Clone the repository: `git clone https://github.com/EpicenterHQ/epicenter.git`
 2. Change into the project directory: `cd epicenter`
 3. Install the necessary dependencies: `bun i`
+
+> Want to contribute? See [CONTRIBUTING.md](../../CONTRIBUTING.md) for fork and PR instructions.
 
 To run the desktop app and website:
 
@@ -786,47 +788,47 @@ Adding a new transcription service involves four main steps:
 
    // Add import for your models
    import {
-     YOUR_SERVICE_MODELS,
-     type YourServiceModel,
+   	YOUR_SERVICE_MODELS,
+   	type YourServiceModel,
    } from './cloud/your-service';
 
    // Add to the TranscriptionModel union type
    type TranscriptionModel =
-     | OpenAIModel
-     | GroqModel
-     | ElevenLabsModel
-     | DeepgramModel
-     | YourServiceModel;
+   	| OpenAIModel
+   	| GroqModel
+   	| ElevenLabsModel
+   	| DeepgramModel
+   	| YourServiceModel;
 
    // Add to TRANSCRIPTION_SERVICE_IDS array
    export const TRANSCRIPTION_SERVICE_IDS = [
-     'whispercpp',
-     'parakeet',
-     'Groq',
-     'OpenAI',
-     'ElevenLabs',
-     'Deepgram',
-     'speaches',
-     'YourService', // Add your service here
+   	'whispercpp',
+   	'parakeet',
+   	'Groq',
+   	'OpenAI',
+   	'ElevenLabs',
+   	'Deepgram',
+   	'speaches',
+   	'YourService', // Add your service here
    ] as const;
 
    // Add to TRANSCRIPTION_SERVICES array (in the appropriate section)
    export const TRANSCRIPTION_SERVICES = [
-     // ... existing services
-     // Add in the cloud services section:
-     {
-       id: 'YourService',
-       name: 'Your Service Name',
-       icon: yourServiceIcon,
-       invertInDarkMode: true, // or false, depending on your icon
-       description: 'Description of what makes your service special',
-       models: YOUR_SERVICE_MODELS,
-       defaultModel: YOUR_SERVICE_MODELS[0],
-       modelSettingKey: 'transcription.yourservice.model',
-       apiKeyField: 'apiKeys.yourservice',
-       location: 'cloud', // or 'local' or 'self-hosted'
-     },
-     // ... rest of services
+   	// ... existing services
+   	// Add in the cloud services section:
+   	{
+   		id: 'YourService',
+   		name: 'Your Service Name',
+   		icon: yourServiceIcon,
+   		invertInDarkMode: true, // or false, depending on your icon
+   		description: 'Description of what makes your service special',
+   		models: YOUR_SERVICE_MODELS,
+   		defaultModel: YOUR_SERVICE_MODELS[0],
+   		modelSettingKey: 'transcription.yourservice.model',
+   		apiKeyField: 'apiKeys.yourservice',
+   		location: 'cloud', // or 'local' or 'self-hosted'
+   	},
+   	// ... rest of services
    ] as const satisfies SatisfiedTranscriptionService[];
    ```
 
@@ -1130,14 +1132,14 @@ Special thanks to [CJ Pais](https://github.com/cjpais) for creating and maintain
 
 ### License
 
-Whispering is released under the [MIT License](LICENSE). Fork it, modify it, build on top of it, make it yours.
+Whispering is released under the [AGPLv3 License](../../LICENSE). Fork it, modify it, build on top of it, make it yours.
 
 ### Support and Feedback
 
-We're built in public, shaped by user feedback. If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub issues tab](https://github.com/epicenter-md/epicenter/issues). I really appreciate it!
+We're built in public, shaped by user feedback. If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub issues tab](https://github.com/EpicenterHQ/epicenter/issues). I really appreciate it!
 
-- Community Discord: [Discord](https://go.epicenter.so/discord)
-- Feature Requests, Issues, and Bug Reports: [GitHub Issues](https://github.com/epicenter-md/epicenter/issues)
+- Community Discord: [Discord](https://go.epicenterhq.com/discord)
+- Feature Requests, Issues, and Bug Reports: [GitHub Issues](https://github.com/EpicenterHQ/epicenter/issues)
 
 ### Sponsors
 

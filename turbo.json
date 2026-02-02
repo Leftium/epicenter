@@ -9,7 +9,7 @@
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
 		},
-		"check": {
+		"typecheck": {
 			"cache": false,
 			"inputs": ["**/*.{ts,tsx,js,jsx,svelte,md,json}"]
 		},

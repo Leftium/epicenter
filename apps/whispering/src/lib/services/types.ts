@@ -1,5 +1,4 @@
 import type { Brand } from 'wellcrafted/brand';
-import type { Result } from 'wellcrafted/result';
 
 /**
  * Callback function for providing real-time status updates during multi-step recording operations.
@@ -72,47 +71,6 @@ export type DeviceAcquisitionOutcome =
 			reason: 'no-device-selected' | 'preferred-device-unavailable';
 			deviceId: DeviceIdentifier;
 	  };
-
-/**
- * Common recording service interface that both manual and CPAL recorders implement.
- *
- * Note: While both services follow this general shape, they may have platform-specific
- * parameters and return types. This interface represents the minimal common API.
- *
- * **Status Messaging Integration**: All recording methods that perform multi-step operations
- * (startRecording, stopRecording, cancelRecording) accept an UpdateStatusMessageFn callback
- * to provide real-time progress feedback to users through toast notifications.
- */
-export type RecordingService = {
-	/**
-	 * Enumerate available recording devices
-	 * @returns Array of device names/labels as identifiers
-	 */
-	enumerateRecordingDeviceIds(): Promise<Result<DeviceIdentifier[], unknown>>;
-
-	/**
-	 * Start recording with the specified device
-	 * @param selectedDeviceId - The device identifier to use (or null for default)
-	 * @param recordingId - Unique identifier for this recording session
-	 * @returns Information about device acquisition outcome
-	 */
-	startRecording(params: {
-		selectedDeviceId: DeviceIdentifier | null;
-		recordingId: string;
-		// Platform-specific params can be added here
-	}): Promise<Result<DeviceAcquisitionOutcome, unknown>>;
-
-	/**
-	 * Stop the current recording
-	 * @returns The recorded audio as a Blob
-	 */
-	stopRecording(): Promise<Result<Blob, unknown>>;
-
-	/**
-	 * Cancel the current recording without saving
-	 */
-	cancelRecording(): Promise<Result<void, unknown>>;
-};
 
 /**
  * Platform-agnostic device identifier for audio recording devices.

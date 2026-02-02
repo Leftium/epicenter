@@ -1,11 +1,14 @@
 {
-	"name": "@repo/config",
+	"name": "@epicenter/config",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
 	"exports": {
 		"./eslint": "./eslint.config.ts",
 		"./prettier": "./prettier.js"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
 	},
 	"peerDependencies": {
 		"eslint": ">=9.0.0",

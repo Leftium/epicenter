@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Card from '@repo/ui/card';
-	import { Badge } from '@repo/ui/badge';
-	import { Label } from '@repo/ui/label';
-	import { Switch } from '@repo/ui/switch';
+	import * as Card from '@epicenter/ui/card';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Label } from '@epicenter/ui/label';
+	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/stores/settings.svelte';
 </script>
@@ -22,7 +22,7 @@
 			{:else}
 				<Badge
 					variant="outline"
-					class="text-xs text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-400/30"
+					class="text-xs text-warning dark:text-warning border-warning dark:border-warning/30"
 				>
 					Disabled
 				</Badge>
@@ -59,7 +59,7 @@
 
 							// Log the change (will only send if analytics is now enabled)
 							if (checked) {
-								rpc.analytics.logEvent.execute({
+								rpc.analytics.logEvent({
 									type: 'settings_changed',
 									section: 'analytics',
 								});
@@ -101,27 +101,27 @@
 			</Card.Content>
 		</Card.Root>
 
-		<Card.Root class="border-amber-100 dark:border-amber-900/20">
+		<Card.Root class="border-warning dark:border-warning/20">
 			<Card.Header>
 				<Card.Title
-					class="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2"
+					class="text-sm font-medium text-warning dark:text-warning flex items-center gap-2"
 				>
-					<div class="w-2 h-2 bg-amber-500 rounded-full"></div>
+					<div class="w-2 h-2 bg-warning rounded-full"></div>
 					Never collected
 				</Card.Title>
 			</Card.Header>
 			<Card.Content>
 				<ul class="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
 					<li class="flex items-start gap-2">
-						<span class="text-amber-500 mt-1">•</span>
+						<span class="text-warning mt-1">•</span>
 						<span>Your actual transcriptions or recordings</span>
 					</li>
 					<li class="flex items-start gap-2">
-						<span class="text-amber-500 mt-1">•</span>
+						<span class="text-warning mt-1">•</span>
 						<span>Device IDs or user identifiers</span>
 					</li>
 					<li class="flex items-start gap-2">
-						<span class="text-amber-500 mt-1">•</span>
+						<span class="text-warning mt-1">•</span>
 						<span>API keys or any personal data</span>
 					</li>
 				</ul>
@@ -141,7 +141,7 @@
 		<Card.Content class="space-y-3">
 			<div class="grid gap-2 text-sm">
 				<a
-					href="https://github.com/epicenter-md/epicenter/tree/main/apps/whispering/src/lib/services/analytics.ts"
+					href="https://github.com/EpicenterHQ/epicenter/blob/main/apps/whispering/src/lib/services/analytics/types.ts"
 					target="_blank"
 					rel="noopener noreferrer"
 					class="group flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
@@ -156,7 +156,7 @@
 					>
 				</a>
 				<a
-					href="https://github.com/search?q=repo%3Aepicenter-md%2Fepicenter+rpc.analytics.logEvent&type=code"
+					href="https://github.com/search?q=repo%3AEpicenterHQ%2Fepicenter+rpc.analytics.logEvent&type=code"
 					target="_blank"
 					rel="noopener noreferrer"
 					class="group flex items-center gap-2 text-primary hover:text-primary/80 transition-colors"
@@ -200,8 +200,8 @@
 				>
 			</div>
 		{:else}
-			<div class="flex items-center gap-2 text-amber-700 dark:text-amber-400">
-				<div class="w-2 h-2 bg-amber-500 rounded-full"></div>
+			<div class="flex items-center gap-2 text-warning dark:text-warning">
+				<div class="w-2 h-2 bg-warning rounded-full"></div>
 				<span class="font-medium">Analytics disabled</span>
 				<span class="text-muted-foreground">• No data is being collected</span>
 			</div>

@@ -8,10 +8,9 @@ import { rpc } from '$lib/query';
 
 export async function checkForUpdates() {
 	try {
-		// Use mock or real check based on configuration
 		const update = await (shouldUseMockUpdates() ? mockCheck() : check());
 		if (update) {
-			rpc.notify.info.execute({
+			await rpc.notify.info({
 				title: `Update ${update.version} available`,
 				description: 'A new version of Whispering is available.',
 				action: {
@@ -23,7 +22,7 @@ export async function checkForUpdates() {
 			});
 		}
 	} catch (error) {
-		rpc.notify.error.execute({
+		rpc.notify.error({
 			title: 'Failed to check for updates',
 			description: extractErrorMessage(error),
 		});
@@ -54,34 +53,30 @@ async function mockCheck(): Promise<UpdateInfo> {
 	// Uncomment the line below to test this case:
 	// return null;
 
-	// Return mock update data that matches the full Update type
+	// Return mock update data that matches the real release notes format
 	return {
 		version: '2.0.0',
 		date: new Date().toISOString(),
-		body: `## What's New in v2.0.0
+		body: `This release adds automatic update checking on app startup and improves performance by 50% through optimized audio processing. We also added new dark mode theme options with better contrast.
 
-### 🚀 Features
-- Added automatic update checking on app startup
-- Improved performance by 50% through optimized audio processing
-- New dark mode theme options with better contrast
-- Enhanced keyboard shortcuts for faster workflow
-- Added progress indicators for long-running operations
+## Automatic Updates
 
-### 🐛 Bug Fixes
-- Fixed audio recording issues on macOS Sonoma
-- Resolved memory leak in long recording sessions
-- Fixed UI glitches in settings panel
-- Corrected text overflow in transcription results
-- Fixed crash when switching audio devices
+Whispering now checks for updates on startup and shows you what's new before installing. No more manually checking GitHub for new versions.
 
-### 💔 Breaking Changes
-- Minimum macOS version is now 11.0 (Big Sur)
-- Changed default recording hotkey to Cmd+Shift+R
-- Removed deprecated API endpoints
+## Performance Improvements
 
-### 📝 Notes
-This is a mock update for testing purposes. The actual update
-process would download and install real application files.`,
+Audio processing is now 50% faster thanks to optimized buffering and parallel processing. You should notice faster transcription times, especially for longer recordings.
+
+## What's Changed
+
+### Features
+* feat: add automatic update checking on app startup by @braden-w in https://github.com/EpicenterHQ/epicenter/pull/1234
+* feat: improve audio processing performance by @braden-w in https://github.com/EpicenterHQ/epicenter/pull/1235
+
+### Bug Fixes
+* fix: resolve memory leak in long recording sessions by @braden-w in https://github.com/EpicenterHQ/epicenter/pull/1236
+
+**Full Changelog**: https://github.com/EpicenterHQ/epicenter/compare/v1.9.0...v2.0.0`,
 		/**
 		 * Mock download and install function that simulates real update behavior
 		 */

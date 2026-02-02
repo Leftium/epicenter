@@ -1,9 +1,11 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
 	import { ChromeWebStoreIcon } from '$lib/components/icons';
-	import { Button } from '@repo/ui/button';
-	import { Card } from '@repo/ui/card';
-	import { CommandIcon, DownloadIcon, MicIcon, ZapIcon } from '@lucide/svelte';
+	import { Button } from '@epicenter/ui/button';
+	import { Card } from '@epicenter/ui/card';
+	import CommandIcon from '@lucide/svelte/icons/command';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import ZapIcon from '@lucide/svelte/icons/zap';
 </script>
 
 <svelte:head>
@@ -60,32 +62,36 @@
 
 		<div class="flex flex-col items-center gap-4">
 			<div class="flex flex-col gap-3 sm:flex-row">
-				<WhisperingButton
-					tooltipContent="Download Whispering Desktop App"
-					href="https://github.com/epicenter-md/epicenter/releases"
+				<Button
+					tooltip="Download Whispering Desktop App"
+					href="https://github.com/EpicenterHQ/epicenter/releases"
 					target="_blank"
 					rel="noopener noreferrer"
 					variant="default"
 					size="lg"
 					class="min-w-[200px]"
 				>
-					<DownloadIcon class="mr-2 size-5" />
+					<DownloadIcon class="size-5" />
 					Download for Desktop
-				</WhisperingButton>
-				<WhisperingButton
-					tooltipContent="Get the Chrome Extension"
+				</Button>
+				<Button
+					tooltip="Get the Chrome Extension"
 					href="https://chromewebstore.google.com/detail/whispering/oilbfihknpdbpfkcncojikmooipnlglo"
 					target="_blank"
 					rel="noopener noreferrer"
 					variant="outline"
 					size="lg"
 				>
-					<ChromeWebStoreIcon class="mr-2 size-5" />
+					<ChromeWebStoreIcon class="size-5" />
 					Chrome Extension
-				</WhisperingButton>
+				</Button>
 			</div>
 
-			<Button onclick={() => window.history.back()} variant="link" class="mt-2">
+			<Button
+				onclick={() => window.history.back()}
+				variant="ghost"
+				class="mt-2"
+			>
 				Go back
 			</Button>
 		</div>

@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
-import * as services from '$lib/services';
+import { desktopServices } from '$lib/services';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop
@@ -13,7 +13,7 @@ export function registerAccessibilityPermission() {
 	// Check accessibility permission once on mount
 	(async () => {
 		const { data: isAccessibilityGranted, error } =
-			await services.permissions.accessibility.check();
+			await desktopServices.permissions.accessibility.check();
 
 		if (error) {
 			console.error('Failed to check accessibility permissions:', error);
@@ -54,7 +54,7 @@ export function registerMicrophonePermission() {
 	// Check microphone permission once on mount
 	(async () => {
 		const { data: isMicrophoneGranted, error } =
-			await services.permissions.microphone.check();
+			await desktopServices.permissions.microphone.check();
 
 		if (error) {
 			console.error('Failed to check microphone permissions:', error);
@@ -71,7 +71,7 @@ export function registerMicrophonePermission() {
 					label: 'Enable Permission',
 					onClick: async () => {
 						const { error: requestError } =
-							await services.permissions.microphone.request();
+							await desktopServices.permissions.microphone.request();
 
 						if (requestError) {
 							toast.error('Failed to request microphone permission', {

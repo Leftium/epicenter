@@ -74,7 +74,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
 
-      - name: Prepare Vulkan SDK for Ubuntu
+      # Linux Vulkan SDK installation (required for whisper-cpp GPU acceleration on Linux)
+      # Note: Windows whisper-cpp is disabled due to MSVC runtime conflicts, so no Vulkan needed there
+      - name: Install Vulkan SDK (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
@@ -85,14 +87,7 @@ jobs:
       - name: setup bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
-
-      - name: Install Vulkan SDK
-        if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
+          bun-version-file: "package.json"
 
       - name: setup node
         uses: actions/setup-node@v4
@@ -113,7 +108,7 @@ jobs:
         run: bun install
 
       - name: Build frontend
-        run: bun --filter @repo/whispering build
+        run: bun --filter @epicenter/whispering build
 
       - uses: tauri-apps/tauri-action@v0
         env:

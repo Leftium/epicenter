@@ -5,7 +5,7 @@
 <script lang="ts">
 	import { Button } from '#/button';
 	import { UseAutoScroll } from '#/hooks/use-auto-scroll.svelte.js';
-	import { cn } from '#/utils/utils';
+	import { cn } from '#/utils.js';
 	import ArrowDownIcon from '@lucide/svelte/icons/arrow-down';
 	import { onMount } from 'svelte';
 	import { scale } from 'svelte/transition';

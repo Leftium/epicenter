@@ -2,6 +2,6 @@
 	Installed from @ieedan/shadcn-svelte-extras
 */
 
-import Link from './link.svelte';
+import Link, { type LinkProps } from './link.svelte';
 
-export { Link };
+export { Link, type LinkProps };

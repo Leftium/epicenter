@@ -1,23 +1,26 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { ClipboardIcon, TrashIcon } from '$lib/components/icons';
-	import { Badge } from '@repo/ui/badge';
-	import { Button, buttonVariants } from '@repo/ui/button';
-	import { Card } from '@repo/ui/card';
-	import { Checkbox } from '@repo/ui/checkbox';
-	import * as Dialog from '@repo/ui/dialog';
-	import * as DropdownMenu from '@repo/ui/dropdown-menu';
-	import { Input } from '@repo/ui/input';
-	import { Label } from '@repo/ui/label';
-	import { Skeleton } from '@repo/ui/skeleton';
-	import { SelectAllPopover, SortableTableHeader } from '@repo/ui/table';
-	import * as Table from '@repo/ui/table';
-	import { Textarea } from '@repo/ui/textarea';
+	import { TrashIcon } from '$lib/components/icons';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { CopyButton } from '@epicenter/ui/copy-button';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as ButtonGroup from '@epicenter/ui/button-group';
+	import { Card } from '@epicenter/ui/card';
+	import { Checkbox } from '@epicenter/ui/checkbox';
+	import * as Modal from '@epicenter/ui/modal';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import { Input } from '@epicenter/ui/input';
+	import { Label } from '@epicenter/ui/label';
+	import { Skeleton } from '@epicenter/ui/skeleton';
+	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
+	import * as Table from '@epicenter/ui/table';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/db';
-	import { cn } from '@repo/ui/utils';
-	import { createPersistedState } from '@repo/svelte-utils';
+	import type { Recording } from '$lib/services/isomorphic/db';
+	import { cn } from '@epicenter/ui/utils';
+	import { createPersistedState } from '@epicenter/svelte-utils';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import {
 		FlexRender,
@@ -35,19 +38,20 @@
 		getPaginationRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
-	import {
-		ChevronDownIcon,
-		EllipsisIcon,
-		EllipsisIcon as LoadingTranscriptionIcon,
-		RepeatIcon as RetryTranscriptionIcon,
-		PlayIcon as StartTranscriptionIcon,
-	} from '@lucide/svelte';
+	import * as Empty from '@epicenter/ui/empty';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
+	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
+	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
-	import { z } from 'zod';
+	import { type } from 'arktype';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
-	import TranscribedTextDialog from '$lib/components/copyable/TranscribedTextDialog.svelte';
+	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import { RecordingRowActions } from './row-actions';
 	import { format } from 'date-fns';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
@@ -55,13 +59,13 @@
 
 	/**
 	 * Returns a cell renderer for a date/time column using date-fns format.
-	 * @param {string} formatString - date-fns format string
-	 * @returns {(args: { getValue: () => string }) => string}
+	 *
+	 * @param formatString - date-fns format string
 	 */
 	function formattedCell(formatString: string) {
-		return ({ getValue }: { getValue: () => string }) => {
+		return ({ getValue }: { getValue: () => unknown }) => {
 			const value = getValue();
-			if (!value) return '';
+			if (typeof value !== 'string' || !value) return '';
 			const date = new Date(value);
 			if (Number.isNaN(date.getTime())) return value;
 			try {
@@ -72,13 +76,12 @@
 		};
 	}
 
-	const getAllRecordingsQuery = createQuery(rpc.db.recordings.getAll.options);
-	const transcribeRecordings = createMutation(
-		rpc.transcription.transcribeRecordings.options,
+	const getAllRecordingsQuery = createQuery(
+		() => rpc.db.recordings.getAll.options,
 	);
-	const deleteRecordings = createMutation(rpc.db.recordings.delete.options);
-	const copyToClipboard = createMutation(rpc.text.copyToClipboard.options);
-
+	const transcribeRecordings = createMutation(
+		() => rpc.transcription.transcribeRecordings.options,
+	);
 	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
 
 	const columns: ColumnDef<Recording>[] = [
@@ -169,17 +172,17 @@
 			cell: formattedCell(DATE_FORMAT),
 		},
 		{
-			id: 'Transcribed Text',
+			id: 'Transcript',
 			accessorKey: 'transcribedText',
 			header: ({ column }) =>
 				renderComponent(SortableTableHeader, {
 					column,
-					headerText: 'Transcribed Text',
+					headerText: 'Transcript',
 				}),
 			cell: ({ getValue, row }) => {
 				const transcribedText = getValue<string>();
 				if (!transcribedText) return;
-				return renderComponent(TranscribedTextDialog, {
+				return renderComponent(TranscriptDialog, {
 					recordingId: row.id,
 					transcribedText,
 				});
@@ -233,7 +236,7 @@
 	let sorting = createPersistedState({
 		key: 'whispering-recordings-data-table-sorting',
 		onParseError: (error) => [{ id: 'timestamp', desc: true }],
-		schema: z.array(z.object({ desc: z.boolean(), id: z.string() })),
+		schema: type({ desc: 'boolean', id: 'string' }).array(),
 	});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
@@ -245,12 +248,12 @@
 			'Created At': false,
 			'Updated At': false,
 		}),
-		schema: z.record(z.string(), z.boolean()),
+		schema: type('Record<string, boolean>'),
 	});
 	let rowSelection = createPersistedState({
 		key: 'whispering-recordings-data-table-row-selection',
 		onParseError: (error) => ({}),
-		schema: z.record(z.string(), z.boolean()),
+		schema: type('Record<string, boolean>'),
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
 	let globalFilter = $state('');
@@ -377,14 +380,14 @@
 			/>
 			<div class="flex w-full items-center justify-between gap-2">
 				{#if selectedRecordingRows.length > 0}
-					<WhisperingButton
-						tooltipContent="Transcribe selected recordings"
+					<Button
+						tooltip="Transcribe selected recordings"
 						variant="outline"
 						size="icon"
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
 							const toastId = nanoid();
-							rpc.notify.loading.execute({
+							rpc.notify.loading({
 								id: toastId,
 								title: 'Transcribing queries.recordings...',
 								description: 'This may take a while.',
@@ -396,7 +399,7 @@
 										const isAllSuccessful = errs.length === 0;
 										if (isAllSuccessful) {
 											const n = oks.length;
-											rpc.notify.success.execute({
+											rpc.notify.success({
 												id: toastId,
 												title: `Transcribed ${n} recording${n === 1 ? '' : 's'}!`,
 												description: `Your ${n} recording${n === 1 ? ' has' : 's have'} been transcribed successfully.`,
@@ -406,7 +409,7 @@
 										const isAllFailed = oks.length === 0;
 										if (isAllFailed) {
 											const n = errs.length;
-											rpc.notify.error.execute({
+											rpc.notify.error({
 												id: toastId,
 												title: `Failed to transcribe ${n} recording${n === 1 ? '' : 's'}`,
 												description:
@@ -418,7 +421,7 @@
 											return;
 										}
 										// Mixed results
-										rpc.notify.warning.execute({
+										rpc.notify.warning({
 											id: toastId,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
 											description: `${oks.length} succeeded, ${errs.length} failed.`,
@@ -444,29 +447,29 @@
 						{:else}
 							<StartTranscriptionIcon class="size-4" />
 						{/if}
-					</WhisperingButton>
+					</Button>
 
-					<Dialog.Root
+					<Modal.Root
 						open={isDialogOpen}
 						onOpenChange={(v) => (isDialogOpen = v)}
 					>
-						<Dialog.Trigger>
-							<WhisperingButton
-								tooltipContent="Copy transcribed text from selected recordings"
+						<Modal.Trigger>
+							<Button
+								tooltip="Copy transcripts from selected recordings"
 								variant="outline"
 								size="icon"
 							>
-								<ClipboardIcon class="size-4" />
-							</WhisperingButton>
-						</Dialog.Trigger>
-						<Dialog.Content>
-							<Dialog.Header>
-								<Dialog.Title>Copy Transcripts</Dialog.Title>
-								<Dialog.Description>
+								<CopyIcon class="size-4" />
+							</Button>
+						</Modal.Trigger>
+						<Modal.Content>
+							<Modal.Header>
+								<Modal.Title>Copy Transcripts</Modal.Title>
+								<Modal.Description>
 									Make changes to your profile here. Click save when you're
 									done.
-								</Dialog.Description>
-							</Dialog.Header>
+								</Modal.Description>
+							</Modal.Header>
 							<div class="grid gap-4 py-4">
 								<div class="grid grid-cols-4 items-center gap-4">
 									<Label for="template" class="text-right">Template</Label>
@@ -491,74 +494,54 @@
 								class="h-32"
 								value={joinedTranscriptionsText}
 							/>
-							<Dialog.Footer>
-								<WhisperingButton
-									tooltipContent="Copy transcriptions"
-									onclick={() => {
-										copyToClipboard.mutate(
-											{ text: joinedTranscriptionsText },
-											{
-												onSuccess: () => {
-													isDialogOpen = false;
-													rpc.notify.success.execute({
-														title: 'Copied transcribed texts to clipboard!',
-														description: joinedTranscriptionsText,
-													});
-												},
-												onError: (error) => {
-													rpc.notify.error.execute({
-														title:
-															'Error copying transcribed texts to clipboard',
-														description: error.message,
-														action: { type: 'more-details', error: error },
-													});
-												},
-											},
-										);
+							<Modal.Footer>
+								<CopyButton
+									text={joinedTranscriptionsText}
+									copyFn={createCopyFn('transcripts')}
+									size="default"
+									onCopy={(status) => {
+										if (status === 'success') isDialogOpen = false;
 									}}
-									type="submit"
 								>
 									Copy Transcriptions
-								</WhisperingButton>
-							</Dialog.Footer>
-						</Dialog.Content>
-					</Dialog.Root>
+								</CopyButton>
+							</Modal.Footer>
+						</Modal.Content>
+					</Modal.Root>
 
-					<WhisperingButton
-						tooltipContent="Delete selected recordings"
+					<Button
+						tooltip="Delete selected recordings"
 						variant="outline"
 						size="icon"
 						onclick={() => {
 							confirmationDialog.open({
 								title: 'Delete recordings',
-								subtitle: 'Are you sure you want to delete these recordings?',
-								confirmText: 'Delete',
-								onConfirm: () => {
-									deleteRecordings.mutate(
+								description:
+									'Are you sure you want to delete these recordings?',
+								confirm: { text: 'Delete', variant: 'destructive' },
+								onConfirm: async () => {
+									const { error } = await rpc.db.recordings.delete(
 										selectedRecordingRows.map(({ original }) => original),
-										{
-											onSuccess: () => {
-												rpc.notify.success.execute({
-													title: 'Deleted recordings!',
-													description:
-														'Your recordings have been deleted successfully.',
-												});
-											},
-											onError: (error) => {
-												rpc.notify.error.execute({
-													title: 'Failed to delete recordings!',
-													description: 'Your recordings could not be deleted.',
-													action: { type: 'more-details', error: error },
-												});
-											},
-										},
 									);
+									if (error) {
+										rpc.notify.error({
+											title: 'Failed to delete recordings!',
+											description: 'Your recordings could not be deleted.',
+											action: { type: 'more-details', error },
+										});
+										throw error;
+									}
+									rpc.notify.success({
+										title: 'Deleted recordings!',
+										description:
+											'Your recordings have been deleted successfully.',
+									});
 								},
 							});
 						}}
 					>
 						<TrashIcon class="size-4" />
-					</WhisperingButton>
+					</Button>
 				{/if}
 
 				<OpenFolderButton
@@ -574,7 +557,7 @@
 						)}
 					>
 						Columns <ChevronDownIcon
-							class="ml-2 size-4 transition-transform duration-200"
+							class="size-4 transition-transform duration-200"
 						/>
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content>
@@ -640,12 +623,32 @@
 						{/each}
 					{:else}
 						<Table.Row>
-							<Table.Cell colspan={columns.length} class="h-24 text-center">
-								{#if globalFilter}
-									No recordings found.
-								{:else}
-									No recordings yet. Start recording to add one.
-								{/if}
+							<Table.Cell colspan={columns.length}>
+								<Empty.Root class="py-8">
+									<Empty.Header>
+										<Empty.Media variant="icon">
+											{#if globalFilter}
+												<SearchIcon />
+											{:else}
+												<MicIcon />
+											{/if}
+										</Empty.Media>
+										<Empty.Title>
+											{#if globalFilter}
+												No recordings found
+											{:else}
+												No recordings yet
+											{/if}
+										</Empty.Title>
+										<Empty.Description>
+											{#if globalFilter}
+												Try adjusting your search or filters.
+											{:else}
+												Start recording to add one.
+											{/if}
+										</Empty.Description>
+									</Empty.Header>
+								</Empty.Root>
 							</Table.Cell>
 						</Table.Row>
 					{/if}
@@ -658,7 +661,7 @@
 				{selectedRecordingRows.length} of {table.getFilteredRowModel().rows
 					.length} row(s) selected.
 			</div>
-			<div class="flex items-center space-x-2">
+			<ButtonGroup.Root>
 				<Button
 					variant="outline"
 					size="sm"
@@ -675,7 +678,7 @@
 				>
 					Next
 				</Button>
-			</div>
+			</ButtonGroup.Root>
 		</div>
 	</Card>
 </main>

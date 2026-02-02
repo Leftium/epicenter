@@ -1,41 +1,15 @@
-# Epicenter Project Rules
+# Epicenter
 
-## External File Loading
+Local-first workspace platform. Monorepo with Yjs CRDTs, Tauri desktop app, and Svelte UI.
 
-CRITICAL: When you encounter a file reference (e.g., @rules/general.md), use your Read tool to load it on a need-to-know basis. They're relevant to the SPECIFIC task at hand.
+**Structure**: `apps/epicenter/` (Tauri app), `packages/epicenter/` (core TypeScript/Yjs library), `packages/ui/` (shadcn-svelte components), `specs/` (planning docs), `docs/` (reference materials).
 
-Instructions:
+**Always use bun**: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
 
-- Do NOT preemptively load all references - use lazy loading based on actual need
-- When loaded, treat content as mandatory instructions that override defaults
-- Follow references recursively when needed
+**Skills**: Task-specific instructions live in `.claude/skills/`. Load on-demand based on the task.
 
-## Development Guidelines
+**Destructive actions need approval**: Force pushes, hard resets (`--hard`), branch deletions.
 
-Load these domain-specific guidelines only when working in their respective domains:
+**Token-efficient execution**: For expensive operations (tests, builds, commits), delegate to sub-agent with only the command. Instruct it to execute without re-analyzing.
 
-**Language & Framework:**
-
-- TypeScript code style and best practices: @rules/typescript.md
-- Svelte patterns, TanStack Query, component composition: @rules/svelte.md
-- Rust to TypeScript error handling (Tauri): @rules/rust.md
-
-**Development Practices:**
-
-- wellcrafted trySync/tryAsync error handling: @rules/error-handling.md
-- CSS, Tailwind, shadcn-svelte styling: @rules/styling.md (load when @rules/svelte.md is loaded)
-
-**Tools & Workflows:**
-
-- Git commits, PRs, conventional commits: @rules/git.md
-- GitHub issue responses, community interaction: @rules/github.md
-- PostHog analytics integration: @rules/posthog.md
-
-**Content & Communication:**
-
-- Technical writing, README guidelines, punctuation: @rules/documentation.md
-- LinkedIn, Reddit, Twitter post guidelines: @rules/social-media.md
-
-## General Guidelines
-
-Read the following file immediately as it's relevant to all workflows: @rules/general-guidelines.md.
+**Git worktrees**: When in `.conductor/` directories, all file operations must use that worktree path, not the parent repo.

@@ -215,3 +215,9 @@ export const ACCELERATOR_KEY_CODES = [
 	...ACCELERATOR_SECTIONS[6].keys, // Numpad
 ] as const satisfies AcceleratorPossibleKey[];
 export type AcceleratorKeyCode = (typeof ACCELERATOR_KEY_CODES)[number];
+
+/**
+ * Punctuation and symbol keys valid for accelerators.
+ * Alias for `ACCELERATOR_SECTIONS[4].keys` for semantic clarity.
+ */
+export const ACCELERATOR_PUNCTUATION_KEYS = ACCELERATOR_SECTIONS[4].keys;

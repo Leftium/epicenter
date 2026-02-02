@@ -2,24 +2,24 @@
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
 	import { rpc } from '$lib/query';
-	import type { TransformationRun } from '$lib/services/db';
-	import { getTransformationStepRunTransitionId } from '$lib/utils/getRecordingTransitionId';
-	import { ChevronDown, ChevronRight, Trash2 } from '@lucide/svelte';
-	import { Badge } from '@repo/ui/badge';
-	import { Button } from '@repo/ui/button';
-	import * as Card from '@repo/ui/card';
-	import { Label } from '@repo/ui/label';
-	import * as Table from '@repo/ui/table';
-	import { createMutation } from '@tanstack/svelte-query';
+	import type { TransformationRun } from '$lib/services/isomorphic/db';
+	import { viewTransition } from '$lib/utils/viewTransitions';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Button } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
+	import { Label } from '@epicenter/ui/label';
+	import * as Table from '@epicenter/ui/table';
 	import { format } from 'date-fns';
 
 	let { runs }: { runs: TransformationRun[] } = $props();
 
 	let expandedRunId = $state<string | null>(null);
-
-	const deleteRunMutation = createMutation(rpc.db.runs.delete.options);
 
 	function toggleRunExpanded(runId: string) {
 		expandedRunId = expandedRunId === runId ? null : runId;
@@ -31,19 +31,17 @@
 </script>
 
 {#if runs.length === 0}
-	<div class="flex h-full items-center justify-center">
-		<div class="flex flex-col items-center gap-4 text-center">
-			<div class="rounded-full bg-muted p-4">
-				<ChevronRight class="size-6 text-muted-foreground" />
-			</div>
-			<div class="space-y-1">
-				<h3 class="text-xl font-semibold">No Runs Yet</h3>
-				<p class="text-muted-foreground">
-					When you run a transformation, the results will appear here.
-				</p>
-			</div>
-		</div>
-	</div>
+	<Empty.Root class="h-full">
+		<Empty.Header>
+			<Empty.Media variant="icon">
+				<PlayIcon />
+			</Empty.Media>
+			<Empty.Title>No runs yet</Empty.Title>
+			<Empty.Description>
+				When you run a transformation, the results will appear here.
+			</Empty.Description>
+		</Empty.Header>
+	</Empty.Root>
 {:else}
 	<div class="space-y-4">
 		<div class="flex justify-end px-2">
@@ -53,34 +51,27 @@
 				onclick={() => {
 					confirmationDialog.open({
 						title: 'Clear all transformation runs?',
-						subtitle: `This will permanently delete all ${runs.length} run${runs.length !== 1 ? 's' : ''} from this history. This action cannot be undone.`,
-						confirmText: 'Delete All',
-						onConfirm: () => {
-							deleteRunMutation.mutate(runs, {
-								onSuccess: () => {
-									rpc.notify.success.execute({
-										title: `${runs.length} run${runs.length !== 1 ? 's' : ''} deleted successfully`,
-										description: 'All transformation runs have been deleted.',
-									});
-								},
-								onError: (error) => {
-									rpc.notify.error.execute({
-										title: 'Failed to delete runs',
-										description: error.message,
-									});
-								},
+						description: `This will permanently delete all ${runs.length} run${runs.length !== 1 ? 's' : ''} from this history. This action cannot be undone.`,
+						confirm: { text: 'Delete All', variant: 'destructive' },
+						onConfirm: async () => {
+							const { error } = await rpc.db.runs.delete(runs);
+							if (error) {
+								rpc.notify.error({
+									title: 'Failed to delete runs',
+									description: error.message,
+								});
+								throw error;
+							}
+							rpc.notify.success({
+								title: `${runs.length} run${runs.length !== 1 ? 's' : ''} deleted successfully`,
+								description: 'All transformation runs have been deleted.',
 							});
 						},
 					});
 				}}
-				disabled={deleteRunMutation.isPending}
 			>
-				<Trash2 class="mr-2 size-4" />
-				{#if deleteRunMutation.isPending}
-					Deleting...
-				{:else}
-					Clear All Runs
-				{/if}
+				<Trash2 class="size-4" />
+				Clear All Runs
 			</Button>
 		</div>
 		<div class="h-full overflow-y-auto px-2">
@@ -123,38 +114,35 @@
 								{run.completedAt ? formatDate(run.completedAt) : '-'}
 							</Table.Cell>
 							<Table.Cell class="text-right">
-								<WhisperingButton
+								<Button
 									variant="ghost"
 									size="icon"
-									tooltipContent="Delete run"
+									tooltip="Delete run"
 									onclick={() => {
 										confirmationDialog.open({
 											title: 'Delete transformation run?',
-											subtitle: `This will permanently delete the run from ${formatDate(run.startedAt)}. This action cannot be undone.`,
-											confirmText: 'Delete',
-											onConfirm: () => {
-												deleteRunMutation.mutate(run, {
-													onSuccess: () => {
-														rpc.notify.success.execute({
-															title: 'Run deleted successfully',
-															description:
-																'Your transformation run has been deleted.',
-														});
-													},
-													onError: (error) => {
-														rpc.notify.error.execute({
-															title: 'Failed to delete run',
-															description: error.message,
-														});
-													},
+											description: `This will permanently delete the run from ${formatDate(run.startedAt)}. This action cannot be undone.`,
+											confirm: { text: 'Delete', variant: 'destructive' },
+											onConfirm: async () => {
+												const { error } = await rpc.db.runs.delete(run);
+												if (error) {
+													rpc.notify.error({
+														title: 'Failed to delete run',
+														description: error.message,
+													});
+													throw error;
+												}
+												rpc.notify.success({
+													title: 'Run deleted successfully',
+													description:
+														'Your transformation run has been deleted.',
 												});
 											},
 										});
 									}}
-									disabled={deleteRunMutation.isPending}
 								>
 									<Trash2 class="size-4" />
-								</WhisperingButton>
+								</Button>
 							</Table.Cell>
 						</Table.Row>
 
@@ -203,10 +191,8 @@
 																</Table.Cell>
 																<Table.Cell>
 																	<TextPreviewDialog
-																		id={getTransformationStepRunTransitionId({
-																			stepRunId: stepRun.id,
-																			propertyName: 'input',
-																		})}
+																		id={viewTransition.stepRun(stepRun.id)
+																			.input}
 																		title="Step Input"
 																		label="step input"
 																		text={stepRun.input}
@@ -215,20 +201,16 @@
 																<Table.Cell>
 																	{#if stepRun.status === 'completed'}
 																		<TextPreviewDialog
-																			id={getTransformationStepRunTransitionId({
-																				stepRunId: stepRun.id,
-																				propertyName: 'output',
-																			})}
+																			id={viewTransition.stepRun(stepRun.id)
+																				.output}
 																			title="Step Output"
 																			label="step output"
 																			text={stepRun.output}
 																		/>
 																	{:else if stepRun.status === 'failed'}
 																		<TextPreviewDialog
-																			id={getTransformationStepRunTransitionId({
-																				stepRunId: stepRun.id,
-																				propertyName: 'error',
-																			})}
+																			id={viewTransition.stepRun(stepRun.id)
+																				.error}
 																			title="Step Error"
 																			label="step error"
 																			text={stepRun.error}

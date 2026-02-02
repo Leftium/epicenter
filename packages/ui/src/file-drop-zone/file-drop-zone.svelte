@@ -3,7 +3,7 @@
 -->
 
 <script lang="ts">
-	import { cn } from '#/utils/utils';
+	import { cn } from '#/utils.js';
 	import UploadIcon from '@lucide/svelte/icons/upload';
 	import { useId } from 'bits-ui';
 
@@ -25,6 +25,7 @@
 		...rest
 	}: FileDropZoneProps = $props();
 
+	// svelte-ignore state_referenced_locally - one-time dev warning at component init
 	if (maxFiles !== undefined && fileCount === undefined) {
 		console.warn(
 			'Make sure to provide FileDropZone with `fileCount` when using the `maxFiles` prompt',
@@ -108,6 +109,7 @@
 
 		for (let i = 0; i < uploadFiles.length; i++) {
 			const file = uploadFiles[i];
+			if (!file) continue;
 
 			const rejectedReason = shouldAcceptFile(file, (fileCount ?? 0) + i + 1);
 

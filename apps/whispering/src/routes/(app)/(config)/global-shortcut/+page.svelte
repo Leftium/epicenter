@@ -1,8 +1,7 @@
 <script lang="ts">
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
 	import { ChromeWebStoreIcon } from '$lib/components/icons';
-	import { Button } from '@repo/ui/button';
-	import { LaptopIcon as DesktopIcon } from '@lucide/svelte';
+	import { Button } from '@epicenter/ui/button';
+	import DesktopIcon from '@lucide/svelte/icons/laptop';
 </script>
 
 <svelte:head>
@@ -18,30 +17,31 @@
 			You can access global keyboard shortcuts on the extension and desktop app.
 		</p>
 		<div class="flex flex-col gap-2 md:flex-row">
-			<WhisperingButton
-				tooltipContent="Check out the Chrome Extension"
-				href="https://github.com/epicenter-md/epicenter/releases"
+			<Button
+				tooltip="Check out the Chrome Extension"
+				href="https://github.com/EpicenterHQ/epicenter/releases"
 				target="_blank"
 				rel="noopener noreferrer"
 				variant="default"
 				size="lg"
 			>
-				<DesktopIcon class="mr-2 size-6" />
+				<DesktopIcon class="size-6" />
 				Download for Desktop
-			</WhisperingButton>
-			<WhisperingButton
-				tooltipContent="Check out the desktop app"
+			</Button>
+			<Button
+				tooltip="Check out the desktop app"
 				href="https://chromewebstore.google.com/detail/whispering/oilbfihknpdbpfkcncojikmooipnlglo"
 				target="_blank"
 				rel="noopener noreferrer"
 				variant="outline"
 				size="lg"
 			>
-				<ChromeWebStoreIcon class="mr-2 size-6" />
+				<ChromeWebStoreIcon class="size-6" />
 				Get Chrome Extension
-			</WhisperingButton>
+			</Button>
 		</div>
-		<Button onclick={() => window.history.back()} variant="link">Go back</Button
+		<Button onclick={() => window.history.back()} variant="ghost"
+			>Go back</Button
 		>
 	</section>
 </main>

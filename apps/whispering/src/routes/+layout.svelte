@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onNavigate } from '$app/navigation';
-	import { queryClient } from '$lib/query/_client';
+	import { queryClient } from '$lib/query/client';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster, type ToasterProps } from 'svelte-sonner';
-	import MigrationDialog from '$lib/components/MigrationDialog.svelte';
-	import '@repo/ui/app.css';
+	import '@epicenter/ui/app.css';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 
 	let { children } = $props();
 
@@ -43,7 +43,9 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	{@render children()}
+	<Tooltip.Provider delayDuration={300} skipDelayDuration={150}>
+		{@render children()}
+	</Tooltip.Provider>
 </QueryClientProvider>
 
 <Toaster
@@ -52,11 +54,8 @@
 	theme={mode.current}
 	{...TOASTER_SETTINGS}
 />
-<ModeWatcher />
-<SvelteQueryDevtools client={queryClient} buttonPosition="bottom-left" />
-{#if window.__TAURI_INTERNALS__}
-	<MigrationDialog />
-{/if}
+<ModeWatcher defaultMode="dark" track={false} />
+<SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />
 
 <style>
 	/* Override inspector button to bottom-center positioning */

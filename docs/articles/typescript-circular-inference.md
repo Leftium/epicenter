@@ -4,60 +4,63 @@ I needed an API where one property's type depends on another property's inferred
 
 ```typescript
 defineWorkspace({
-  schema: {
-    posts: { id: 'string', title: 'string', content: 'string' }
-  },
-  indexes: ({ db }) => ({
-    sqlite: createSqliteIndex(db),
-    markdown: createMarkdownIndex('./posts')
-  }),
-  actions: ({ indexes }) => ({
-    getPost: async (id) => {
-      // I want 'indexes.sqlite' to be properly typed here
-      return indexes.sqlite.query({ id });  // But sqlite is typed as 'any'!
-    }
-  })
-})
+	tables: {
+		posts: { id: 'string', title: 'string', content: 'string' },
+	},
+	providers: ({ tables }) => ({
+		sqlite: createSqliteProvider(tables),
+		markdown: createMarkdownProvider('./posts'),
+	}),
+	actions: ({ providers }) => ({
+		getPost: async (id) => {
+			// I want 'providers.sqlite' to be properly typed here
+			return providers.sqlite.query({ id }); // But sqlite is typed as 'any'!
+		},
+	}),
+});
 ```
 
-TypeScript should infer the schema types into indexes, then both into actions. It does—mostly. Schema types flow through fine, but index types get widened to `any` in actions.
+TypeScript should infer the table types into providers, then both into exports. It does—mostly. Table types flow through fine, but provider types get widened to `any` in exports.
 
 **The Problem**: TypeScript infers all properties simultaneously. Using computed types like `ReturnType<>` creates a circular dependency:
 
 ```typescript
 // ❌ Broken: Parameterizing function types
 type Config<
-  TSchema,
-  TIndexesFn extends (ctx: { db: Db<TSchema> }) => any,
-  TActionsFn extends (ctx: {
-    db: Db<TSchema>,
-    indexes: ReturnType<TIndexesFn>  // Circular! Needs TIndexesFn to be inferred
-  }) => any
+	TSchema,
+	TProvidersFn extends (ctx: { tables: Tables<TSchema> }) => any,
+	TExportsFn extends (ctx: {
+		tables: Tables<TSchema>;
+		providers: ReturnType<TProvidersFn>; // Circular! Needs TProvidersFn to be inferred
+	}) => any,
 > = {
-  schema: TSchema,
-  indexes: TIndexesFn,
-  actions: TActionsFn
-}
+	tables: TSchema;
+	providers: TProvidersFn;
+	exports: TExportsFn;
+};
 ```
 
-TypeScript needs `ReturnType<TIndexesFn>` to check `TActionsFn`, but must finish inferring `TIndexesFn` first. Deadlock. It widens to `any` to break the cycle.
+TypeScript needs `ReturnType<TProvidersFn>` to check `TExportsFn`, but must finish inferring `TProvidersFn` first. Deadlock. It widens to `any` to break the cycle.
 
 **The Solution**: Parameterize return values directly, not function types:
 
 ```typescript
 // ✅ Works: Parameterizing values
 type Config<
-  TSchema,
-  TIndexMap,  // The value, not the function
-  TActionMap
+	TSchema,
+	TProviderMap, // The value, not the function
+	TExportMap,
 > = {
-  schema: TSchema,
-  indexes: (ctx: { db: Db<TSchema> }) => TIndexMap,
-  actions: (ctx: { db: Db<TSchema>, indexes: TIndexMap }) => TActionMap  // No ReturnType needed!
-}
+	tables: TSchema;
+	providers: (ctx: { tables: Tables<TSchema> }) => TProviderMap;
+	exports: (ctx: {
+		tables: Tables<TSchema>;
+		providers: TProviderMap;
+	}) => TExportMap; // No ReturnType needed!
+};
 ```
 
-TypeScript infers `TIndexMap` from the concrete return value. No circular dependency—you're inferring from values, not types-of-types-being-inferred.
+TypeScript infers `TProviderMap` from the concrete return value. No circular dependency—you're inferring from values, not types-of-types-being-inferred.
 
 This pattern applies to any API with dependent properties: ORMs where queries depend on schemas, routers where handlers depend on middleware, form libraries where validation depends on field types.
 

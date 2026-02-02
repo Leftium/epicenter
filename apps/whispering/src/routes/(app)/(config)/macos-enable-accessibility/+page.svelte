@@ -1,11 +1,13 @@
 <script lang="ts">
-	import { Button } from '@repo/ui/button';
-	import { Badge } from '@repo/ui/badge';
-	import * as Card from '@repo/ui/card';
-	import { SettingsIcon, CheckIcon, ArrowLeft } from '@lucide/svelte';
-	import * as services from '$lib/services';
+	import { Button } from '@epicenter/ui/button';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Card from '@epicenter/ui/card';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import { desktopServices } from '$lib/services';
 	import { toast } from 'svelte-sonner';
-	import { asShellCommand } from '$lib/services/command/types';
+	import { asShellCommand } from '$lib/services/desktop/command';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 
@@ -13,7 +15,7 @@
 	const isAccessibilityGranted = $derived(data.isAccessibilityGranted);
 
 	async function requestPermissionOrShowGuidance() {
-		const { error } = await services.permissions.accessibility.request();
+		const { error } = await desktopServices.permissions.accessibility.request();
 
 		if (error) {
 			toast.error('Failed to open accessibility settings', {
@@ -29,7 +31,7 @@
 
 	async function openSystemSettings() {
 		// Try opening System Settings directly (works on macOS 13+)
-		const { error: commandError } = await services.command.execute(
+		const { error: commandError } = await desktopServices.command(
 			asShellCommand(
 				'open x-apple.systemsettings:com.apple.SystemSettings.extension',
 			),
@@ -88,7 +90,7 @@
 					<!-- Direct video for web version -->
 					<video
 						class="max-w-md rounded-lg border"
-						src="https://github.com/epicenter-md/epicenter/releases/download/_assets/macos_enable_accessibility.mp4"
+						src="https://github.com/EpicenterHQ/epicenter/releases/download/_assets/macos_enable_accessibility.mp4"
 						autoplay
 						loop
 						controls
@@ -132,14 +134,14 @@
 						onclick={() => goto('/')}
 						class="flex-1 text-sm"
 					>
-						<ArrowLeft class="mr-2 size-4" />
+						<ArrowLeft class="size-4" />
 						Back to Home
 					</Button>
 					<Button
 						onclick={() => requestPermissionOrShowGuidance()}
 						class="flex-1 text-sm"
 					>
-						<SettingsIcon class="mr-2 size-4" />
+						<SettingsIcon class="size-4" />
 						Request Permission
 					</Button>
 				</div>
@@ -155,7 +157,7 @@
 							onclick={() => goto('/')}
 							class="flex-1 text-sm"
 						>
-							<ArrowLeft class="mr-2 size-4" />
+							<ArrowLeft class="size-4" />
 							Back to Home
 						</Button>
 						<Button
@@ -163,7 +165,7 @@
 							variant="outline"
 							class="flex-1 text-sm"
 						>
-							<SettingsIcon class="mr-2 size-4" />
+							<SettingsIcon class="size-4" />
 							Open Settings
 						</Button>
 					</div>

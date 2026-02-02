@@ -1,5 +1,5 @@
 {
-	"name": "@repo/vault-core",
+	"name": "@epicenter/vault-core",
 	"version": "0.0.0",
 	"description": "Core package for adapter & MCP functionality",
 	"type": "module",
@@ -10,7 +10,7 @@
 		"./utils/*": "./src/utils/*/index.ts"
 	},
 	"scripts": {
-		"check": "tsc --noEmit"
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@standard-schema/spec": "^1.0.0",

@@ -1,6 +1,6 @@
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
-import { rpc } from '$lib/query';
+import { desktopRpc } from '$lib/query';
 import { settings } from '$lib/stores/settings.svelte';
 
 export const COMPRESSION_RECOMMENDED_MESSAGE =
@@ -14,7 +14,11 @@ export const RECORDING_COMPATIBILITY_MESSAGE =
 
 function isUsingLocalTranscription(): boolean {
 	const service = settings.value['transcription.selectedTranscriptionService'];
-	return service === 'whispercpp' || service === 'parakeet';
+	return (
+		service === 'whispercpp' ||
+		service === 'parakeet' ||
+		service === 'moonshine'
+	);
 }
 
 /**
@@ -32,7 +36,10 @@ export function hasNavigatorLocalTranscriptionIssue({
 	const isUsingLocalTranscription =
 		settings.value['transcription.selectedTranscriptionService'] ===
 			'whispercpp' ||
-		settings.value['transcription.selectedTranscriptionService'] === 'parakeet';
+		settings.value['transcription.selectedTranscriptionService'] ===
+			'parakeet' ||
+		settings.value['transcription.selectedTranscriptionService'] ===
+			'moonshine';
 
 	return isUsingNavigator && isUsingLocalTranscription && !isFFmpegInstalled;
 }
@@ -65,7 +72,7 @@ export async function checkFfmpegRecordingMethodCompatibility() {
 	if (settings.value['recording.method'] !== 'ffmpeg') return;
 
 	const { data: ffmpegInstalled } =
-		await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
 	if (ffmpegInstalled) return; // FFmpeg is installed, all good
 
 	// FFmpeg recording method selected but not installed
@@ -94,7 +101,7 @@ export async function checkLocalTranscriptionCompatibility() {
 	if (!window.__TAURI_INTERNALS__) return;
 
 	const { data: ffmpegInstalled } =
-		await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
 
 	// Check if there are compatibility issues with local transcription
 	if (
@@ -135,7 +142,7 @@ export async function checkCompressionRecommendation() {
 	if (!isCompressionRecommended()) return;
 
 	const { data: ffmpegInstalled } =
-		await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
 	if (ffmpegInstalled) return; // FFmpeg is required for compression
 
 	// FFmpeg is RECOMMENDED for compression

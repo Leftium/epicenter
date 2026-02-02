@@ -38,7 +38,7 @@
 			"Bash(locale:*)",
 			"Bash(uptime:*)",
 			"Bash(hostname:*)",
-			"Bash(git:status)",
+			"Bash(git:status:*)",
 			"Bash(git:log:*)",
 			"Bash(git:diff:*)",
 			"Bash(git:branch:*)",
@@ -50,9 +50,16 @@
 			"Bash(git:checkout:*)",
 			"Bash(git:rev-list:*)",
 			"Bash(git:ls-files:*)",
+			"Bash(git:ls-tree:*)",
 			"Bash(git:describe:*)",
 			"Bash(git:rev-parse:*)",
+			"Bash(git:blame:*)",
+			"Bash(git:tag)",
+			"Bash(git:stash:list)",
+			"Bash(git:worktree:list)",
+			"Bash(git:shortlog:*)",
 			"Bash(git:config:--get:*)",
+			"Bash(git:config:--list)",
 			"Bash(npm:list:*)",
 			"Bash(npm:view:*)",
 			"Bash(yarn:list:*)",
@@ -119,11 +126,17 @@
 			"Bash(top:-b:*)",
 			"mcp__nia__nia_web_search",
 			"mcp__nia__search_documentation",
-			"mcp__nia__nia_deep_research_agent"
+			"mcp__nia__nia_deep_research_agent",
+			"mcp__deepwiki__ask_question",
+			"Bash(git checkout:*)",
+			"Bash(git add:*)",
+			"Bash(git commit:*)",
+			"Bash(bun run tsc:*)",
+			"Bash(bun run typecheck:*)",
+			"Bash(bun test:*)"
 		],
 		"deny": [],
 		"ask": [],
 		"additionalDirectories": ["../wellcrafted"]
-	},
-	"model": "sonnet"
+	}
 }

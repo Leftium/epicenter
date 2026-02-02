@@ -1,8 +1,8 @@
-import { rpc } from '$lib/query';
+import { desktopRpc } from '$lib/query';
 
 export const load = async () => {
 	const { data: ffmpegInstalled } =
-		await rpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
 
 	return {
 		ffmpegInstalled: ffmpegInstalled === true,

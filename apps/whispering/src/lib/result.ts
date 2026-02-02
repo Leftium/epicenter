@@ -1,6 +1,6 @@
 import type { TaggedError } from 'wellcrafted/error';
 import { Err, type Ok } from 'wellcrafted/result';
-import type { UnifiedNotificationOptions } from '$lib/services/notifications/types';
+import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
 
 /**
  * Custom error type for the Whispering application that combines error information
@@ -16,37 +16,81 @@ export type WhisperingError = Omit<
 	};
 
 /**
+ * Input type for creating WhisperingError.
+ * Allows either explicit description or serviceError (which auto-extracts .message).
+ */
+type WhisperingErrorInput = Omit<
+	WhisperingError,
+	'name' | 'severity' | 'description'
+> & {
+	/** Explicit description text */
+	description?: string;
+	/** Service-layer error to adapt. If provided, error.message becomes description */
+	serviceError?: TaggedError<string>;
+};
+
+/**
+ * Normalizes input to WhisperingError by handling serviceError.
+ * - If serviceError provided and no description, uses serviceError.message
+ * - If action is missing and serviceError provided, adds more-details action
+ */
+function normalizeInput(
+	args: WhisperingErrorInput,
+): Omit<WhisperingError, 'name' | 'severity'> {
+	const { serviceError, ...rest } = args;
+
+	// Derive description from serviceError if not explicitly provided
+	const description = rest.description ?? serviceError?.message ?? '';
+
+	// Auto-add more-details action if serviceError provided and no action specified
+	const action =
+		rest.action ??
+		(serviceError
+			? { type: 'more-details' as const, error: serviceError }
+			: undefined);
+
+	return { ...rest, description, action };
+}
+
+/**
  * Creates a WhisperingError with 'error' severity.
  * This is the primary factory function for creating error objects in the application.
+ *
+ * @example
+ * ```typescript
+ * // With explicit description
+ * WhisperingErr({ title: 'Error', description: 'Something went wrong' });
+ *
+ * // With serviceError (auto-extracts message and adds more-details action)
+ * WhisperingErr({ title: 'Error', serviceError: taggedError });
+ * ```
  */
-const WhisperingError = (
-	args: Omit<WhisperingError, 'name' | 'severity'>,
-): WhisperingError => ({ name: 'WhisperingError', severity: 'error', ...args });
+const WhisperingError = (args: WhisperingErrorInput): WhisperingError => ({
+	name: 'WhisperingError',
+	severity: 'error',
+	...normalizeInput(args),
+});
 
 /**
  * Creates a Err wrapping a WhisperingError.
  */
-export const WhisperingErr = (
-	args: Omit<WhisperingError, 'name' | 'severity'>,
-) => Err(WhisperingError(args));
+export const WhisperingErr = (args: WhisperingErrorInput) =>
+	Err(WhisperingError(args));
 
 /**
  * Creates a WhisperingError with 'warning' severity.
  */
-const WhisperingWarning = (
-	args: Omit<WhisperingError, 'name' | 'severity'>,
-): WhisperingError => ({
+const WhisperingWarning = (args: WhisperingErrorInput): WhisperingError => ({
 	name: 'WhisperingError',
 	severity: 'warning',
-	...args,
+	...normalizeInput(args),
 });
 
 /**
  * Creates a Err wrapping a WhisperingError with 'warning' severity.
  */
-export const WhisperingWarningErr = (
-	args: Omit<WhisperingError, 'name' | 'severity'>,
-) => Err(WhisperingWarning(args));
+export const WhisperingWarningErr = (args: WhisperingErrorInput) =>
+	Err(WhisperingWarning(args));
 
 /**
  * Result type for Whispering operations that can fail.
@@ -63,60 +107,3 @@ export type WhisperingResult<T> = Ok<T> | Err<WhisperingError>;
  * @template T - The type that may or may not be wrapped in a Promise
  */
 export type MaybePromise<T> = T | Promise<T>;
-
-/**
- * Adapts a TaggedError from lower-level libraries into a WhisperingError for user-facing notifications.
- * The error's message becomes the description, while you provide the title and display options.
- *
- * Commonly used with notify.error.execute() to show errors in the UI.
- *
- * @param error - The TaggedError to adapt (from services or libraries)
- * @param opts - Display options (title, action, etc.)
- * @returns A WhisperingError ready for notification display
- *
- * @example
- * ```typescript
- * // Pass to notification system for display
- * const { data, error } = await services.someOperation();
- * if (error) {
- *   notify.error.execute(
- *     adaptTaggedError(error, {
- *       title: 'Operation Failed',
- *       action: { type: 'more-details', error }
- *     })
- *   );
- * }
- * ```
- */
-export const fromTaggedError = (
-	error: TaggedError<string>,
-	opts: Omit<Parameters<typeof WhisperingError>[0], 'description'>,
-): WhisperingError => WhisperingError({ ...opts, description: error.message });
-
-/**
- * Adapts a TaggedError into an Err Result containing a WhisperingError.
- * Convenience wrapper that combines adaptTaggedError with Err wrapping.
- *
- * Use in query layer functions to transform service errors into user-facing errors.
- *
- * @param error - The TaggedError to adapt (from services or libraries)
- * @param opts - Display options (title, action, etc.)
- * @returns An Err Result containing the adapted WhisperingError
- *
- * @example
- * ```typescript
- * // In query layer, transform service errors
- * const { data: recordingId, error } = await services.recorder.start();
- * if (error) {
- *   return adaptTaggedErr(error, {
- *     title: '❌ Failed to start recording',
- *     action: { type: 'more-details', error }
- *   });
- * }
- * return Ok(recordingId);
- * ```
- */
-export const fromTaggedErr = (
-	error: TaggedError<string>,
-	opts: Omit<Parameters<typeof WhisperingError>[0], 'description'>,
-) => Err(fromTaggedError(error, opts));

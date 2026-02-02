@@ -4,9 +4,48 @@ on:
   push:
     tags:
       - 'v*'  # Trigger on version tags like v7.0.0
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g., v7.9.0)'
+        required: true
+        type: string
 
 jobs:
+  # Job to clean up existing release assets before building
+  cleanup-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete existing release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "Cleaning up assets for release: $TAG"
+          
+          # Get release ID
+          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG --jq '.id' 2>/dev/null || echo "")
+          
+          if [ -n "$RELEASE_ID" ]; then
+            echo "Found release ID: $RELEASE_ID"
+            
+            # Get all assets and delete them
+            ASSETS=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[].id' 2>/dev/null || echo "")
+            
+            for ASSET_ID in $ASSETS; do
+              echo "Deleting asset: $ASSET_ID"
+              gh api -X DELETE repos/${{ github.repository }}/releases/assets/$ASSET_ID || true
+            done
+            
+            echo "Cleanup complete"
+          else
+            echo "No existing release found for $TAG, skipping cleanup"
+          fi
+
   publish-tauri:
+    needs: cleanup-release
     # Required permissions to create releases and upload assets
     permissions:
       contents: write
@@ -35,6 +74,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       # macOS specific: Install create-dmg for DMG bundling
       - name: Install create-dmg (macOS only)
@@ -59,13 +100,14 @@ jobs:
           # - libxrandr-dev: X11 RandR extension for display configuration
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
 
-      # Linux Vulkan SDK installation
-      - name: Prepare Vulkan SDK for Ubuntu
+      # Linux Vulkan SDK installation (required for whisper-cpp GPU acceleration on Linux)
+      # Note: Windows whisper-cpp is disabled due to MSVC runtime conflicts, so no Vulkan needed there
+      - name: Install Vulkan SDK (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           # Add official Vulkan SDK repository
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
-          # Note: Using "jammy" for Ubuntu 22.04 (not "noble" which is for 24.04)
+          # Note: Using "jammy" for Ubuntu 22.04
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.290-jammy.list https://packages.lunarg.com/vulkan/1.3.290/lunarg-vulkan-1.3.290-jammy.list
           sudo apt update
           sudo apt install -y vulkan-sdk mesa-vulkan-drivers
@@ -74,15 +116,7 @@ jobs:
       - name: setup bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
-
-      # Windows Vulkan SDK installation
-      - name: Install Vulkan SDK
-        if: matrix.platform == 'windows-latest'
-        uses: humbletim/install-vulkan-sdk@v1.2
-        with:
-          version: 1.4.309.0
-          cache: true
+          bun-version-file: "package.json"
 
       # Setup Node.js for compatibility
       - name: setup node
@@ -111,15 +145,16 @@ jobs:
 
       # Build the frontend (SvelteKit app) before Tauri packaging
       - name: Build frontend
-        run: bun --filter @repo/whispering build  # Targets the specific workspace package
+        run: bun --filter @epicenter/whispering build  # Targets the specific workspace package
 
       # Read and process release notes from the release-notes directory
       - name: Process release notes
         id: release_notes
         shell: bash
         run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           # Look for release notes file matching the tag name (e.g., v7.0.0 -> docs/release-notes/v7.0.0.md)
-          RELEASE_FILE="docs/release-notes/${{ github.ref_name }}.md"
+          RELEASE_FILE="docs/release-notes/$TAG.md"
 
           if [ -f "$RELEASE_FILE" ]; then
             echo "Found release notes file: $RELEASE_FILE"
@@ -129,7 +164,7 @@ jobs:
           else
             echo "No release notes file found at $RELEASE_FILE, using fallback"
             # Fallback message if no release file exists
-            RELEASE_NOTES="Whispering ${{ github.ref_name }} is now available. Check GitHub for the full changelog."
+            RELEASE_NOTES="Whispering $TAG is now available. Check GitHub for the full changelog."
           fi
 
           # Save output for use in later steps
@@ -169,10 +204,10 @@ jobs:
           projectPath: 'apps/whispering'
 
           # Use the actual git tag as the release tag (e.g., v7.0.0)
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
 
           # Release title shown on GitHub
-          releaseName: 'Whispering ${{ github.ref_name }}'
+          releaseName: 'Whispering ${{ github.event.inputs.tag || github.ref_name }}'
 
           # Release description from our processed release notes
           # Full release notes for GitHub release page

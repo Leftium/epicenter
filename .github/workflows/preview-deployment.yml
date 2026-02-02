@@ -14,7 +14,6 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
-  BUN_VERSION: 'latest'
 
 jobs:
   deploy-preview:
@@ -31,7 +30,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
+          bun-version-file: "package.json"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,7 +41,7 @@ jobs:
         run: bun ci
 
       - name: Build Whispering
-        run: bun run --filter @repo/whispering build
+        run: bun run --filter @epicenter/whispering build
         env:
           NODE_ENV: production
 

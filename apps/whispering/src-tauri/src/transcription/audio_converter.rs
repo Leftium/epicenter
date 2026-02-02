@@ -2,7 +2,7 @@ use super::error::TranscriptionError;
 use hound::{SampleFormat, WavSpec, WavWriter};
 use rubato::{FftFixedInOut, Resampler};
 use std::io::{Cursor, Write};
-use tracing::{debug, info, warn};
+use log::{debug, info, warn};
 
 /// Extension trait for WavSpec to add audio format helpers
 trait WavSpecExt {

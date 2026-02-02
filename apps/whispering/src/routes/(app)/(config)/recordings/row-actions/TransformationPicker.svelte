@@ -1,18 +1,18 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { nanoid } from 'nanoid/non-secure';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
+	import { Button } from '@epicenter/ui/button';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
-	import { LayersIcon } from '@lucide/svelte';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
+	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { rpc } from '$lib/query';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	const combobox = useCombobox();
 
 	const transformRecording = createMutation(
-		rpc.transformer.transformRecording.options,
+		() => rpc.transformer.transformRecording.options,
 	);
 
 	let { recordingId }: { recordingId: string } = $props();
@@ -21,16 +21,16 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
-				tooltipContent="Run a post-processing transformation to run on your recording"
+				tooltip="Run a post-processing transformation to run on your recording"
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
 			>
 				<LayersIcon class="size-4" />
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 max-w-xl p-0">
@@ -39,7 +39,7 @@
 				combobox.closeAndFocusTrigger();
 
 				const toastId = nanoid();
-				rpc.notify.loading.execute({
+				rpc.notify.loading({
 					id: toastId,
 					title: '🔄 Running transformation...',
 					description:
@@ -49,10 +49,10 @@
 				transformRecording.mutate(
 					{ recordingId, transformation },
 					{
-						onError: (error) => rpc.notify.error.execute(error),
+						onError: (error) => rpc.notify.error(error),
 						onSuccess: (transformationRun) => {
 							if (transformationRun.status === 'failed') {
-								rpc.notify.error.execute({
+								rpc.notify.error({
 									title: '⚠️ Transformation error',
 									description: transformationRun.error,
 									action: {
@@ -63,9 +63,9 @@
 								return;
 							}
 
-							rpc.sound.playSoundIfEnabled.execute('transformationComplete');
+							rpc.sound.playSoundIfEnabled('transformationComplete');
 
-							rpc.delivery.deliverTransformationResult.execute({
+							rpc.delivery.deliverTransformationResult({
 								text: transformationRun.output,
 								toastId,
 							});

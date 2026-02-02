@@ -1,7 +1,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { on } from 'svelte/events';
 import { createSubscriber } from 'svelte/reactivity';
-import { createTaggedError } from 'wellcrafted/error';
+import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { trySync } from 'wellcrafted/result';
 
 type ParseErrorReason<TSchema extends StandardSchemaV1> =
@@ -188,11 +188,9 @@ const { ParseJsonErr } = createTaggedError('ParseJsonError');
 function parseJson(value: string) {
 	return trySync({
 		try: () => JSON.parse(value) as unknown,
-		catch: (error) =>
+		catch: (e) =>
 			ParseJsonErr({
-				message: 'Failed to parse JSON',
-				context: { value },
-				cause: error,
+				message: `Failed to parse JSON for value "${value.slice(0, 100)}...": ${extractErrorMessage(e)}`,
 			}),
 	});
 }

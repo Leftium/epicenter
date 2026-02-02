@@ -1,0 +1,19 @@
+{
+	"name": "@examples/yjs-size-benchmark",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host",
+		"build": "vite build",
+		"preview": "vite preview --host"
+	},
+	"dependencies": {
+		"yjs": "^13.6.24"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	}
+}

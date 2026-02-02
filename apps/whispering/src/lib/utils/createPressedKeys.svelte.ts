@@ -3,6 +3,7 @@ import { createSubscriber } from 'svelte/reactivity';
 import {
 	isSupportedKey,
 	type KeyboardEventPossibleKey,
+	type KeyboardEventSupportedKey,
 	normalizeOptionKeyCharacter,
 } from '$lib/constants/keyboard';
 import { IS_MACOS } from '$lib/constants/platform';
@@ -47,8 +48,9 @@ export function createPressedKeys({
 }) {
 	/**
 	 * Pressed and normalized keys, internally stored and synced via createSubscriber.
+	 * Only contains supported keys (filtered by isSupportedKey guard).
 	 */
-	let pressedKeys = $state<KeyboardEventPossibleKey[]>([]);
+	let pressedKeys = $state<KeyboardEventSupportedKey[]>([]);
 
 	/**
 	 * Creates a reactive subscription that tracks key events.

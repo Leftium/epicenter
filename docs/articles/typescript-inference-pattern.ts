@@ -142,55 +142,55 @@ const _multiResult = defineTransformMap({
 // ============================================================================
 
 // This pattern is crucial for multi-stage configurations where:
-// Stage 1 (schema) → Stage 2 (indexes) → Stage 3 (actions)
+// Stage 1 (tables) → Stage 2 (providers) → Stage 3 (actions)
 
 type WorkspaceSchema = Record<string, Record<string, unknown>>;
-type WorkspaceIndexMap = Record<string, { type: string }>;
+type WorkspaceProviderMap = Record<string, { type: string }>;
 type WorkspaceActionMap = Record<string, () => unknown>;
 
-type Db<TSchema extends WorkspaceSchema> = {
-	tables: TSchema;
+type Tables<TSchema extends WorkspaceSchema> = {
+	$schema: TSchema;
 };
 
-// ✅ Parameterize the index map and action map values
+// ✅ Parameterize the provider map and action map values
 type Workspace<
 	TSchema extends WorkspaceSchema,
-	TIndexMap extends WorkspaceIndexMap,
+	TProviderMap extends WorkspaceProviderMap,
 	TActionMap extends WorkspaceActionMap,
 > = {
-	schema: TSchema;
+	tables: TSchema;
 	// Inline function signature, parameterize return value
-	indexes: (ctx: { db: Db<TSchema> }) => TIndexMap;
-	// Use TIndexMap directly, no ReturnType needed
-	actions: (ctx: { db: Db<TSchema>; indexes: TIndexMap }) => TActionMap;
+	providers: (ctx: { tables: Tables<TSchema> }) => TProviderMap;
+	// Use TProviderMap directly, no ReturnType needed
+	actions: (ctx: { tables: Tables<TSchema>; providers: TProviderMap }) => TActionMap;
 };
 
 function defineWorkspace<
 	TSchema extends WorkspaceSchema,
-	TIndexMap extends WorkspaceIndexMap,
+	TProviderMap extends WorkspaceProviderMap,
 	TActionMap extends WorkspaceActionMap,
->(config: Workspace<TSchema, TIndexMap, TActionMap>) {
+>(config: Workspace<TSchema, TProviderMap, TActionMap>) {
 	return config;
 }
 
 const _workspace = defineWorkspace({
-	schema: {
+	tables: {
 		posts: { id: '', title: '', content: '' },
 	},
 
-	indexes: ({ db }) => ({
-		sqlite: { type: 'sqlite' as const, db },
+	providers: ({ tables }) => ({
+		sqlite: { type: 'sqlite' as const, tables },
 		markdown: { type: 'markdown' as const, path: './data' },
 	}),
 
-	actions: ({ indexes }) => ({
+	actions: ({ providers }) => ({
 		getPost: () => {
-			// indexes.sqlite is properly typed as { type: 'sqlite', db: ... } ✅
-			return indexes.sqlite.type;
+			// providers.sqlite is properly typed as { type: 'sqlite', tables: ... } ✅
+			return providers.sqlite.type;
 		},
 		searchPosts: () => {
-			// indexes.markdown is properly typed as { type: 'markdown', path: string } ✅
-			return indexes.markdown.path;
+			// providers.markdown is properly typed as { type: 'markdown', path: string } ✅
+			return providers.markdown.path;
 		},
 	}),
 });

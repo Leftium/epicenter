@@ -1,25 +1,23 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
-	import { Badge } from '@repo/ui/badge';
-	import * as Command from '@repo/ui/command';
-	import * as Popover from '@repo/ui/popover';
-	import { useCombobox } from '@repo/ui/hooks';
+	import { Button } from '@epicenter/ui/button';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Command from '@epicenter/ui/command';
+	import * as Popover from '@epicenter/ui/popover';
+	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { settings } from '$lib/stores/settings.svelte';
-	import { cn } from '@repo/ui/utils';
-	import { createTransformationViewTransitionName } from '$lib/utils/createTransformationViewTransitionName';
+	import { cn } from '@epicenter/ui/utils';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createQuery } from '@tanstack/svelte-query';
-	import {
-		CheckIcon,
-		WandIcon,
-		SparklesIcon,
-		LayersIcon,
-	} from '@lucide/svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import WandIcon from '@lucide/svelte/icons/wand';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import LayersIcon from '@lucide/svelte/icons/layers';
 
 	const transformationsQuery = createQuery(
-		rpc.db.transformations.getAll.options,
+		() => rpc.db.transformations.getAll.options,
 	);
 
 	const transformations = $derived(transformationsQuery.data ?? []);
@@ -54,31 +52,31 @@
 <Popover.Root bind:open={combobox.open}>
 	<Popover.Trigger bind:ref={combobox.triggerRef}>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
 				class={cn('relative', className)}
-				tooltipContent={selectedTransformation
+				tooltip={selectedTransformation
 					? 'Change post-processing transformation to run after your text is transcribed'
 					: 'Select a post-processing transformation to run after your text is transcribed'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
 				size="icon"
-				style="view-transition-name: {createTransformationViewTransitionName({
-					transformationId: selectedTransformation?.id ?? null,
-				})}"
+				style="view-transition-name: {viewTransition.transformation(
+					selectedTransformation?.id ?? null,
+				)}"
 			>
 				{#if selectedTransformation}
 					<SparklesIcon class="size-4 text-green-500" />
 				{:else}
-					<WandIcon class="size-4 text-amber-500" />
+					<WandIcon class="size-4 text-warning" />
 				{/if}
 				{#if !selectedTransformation}
 					<span
 						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-primary/50 before:animate-ping"
 					></span>
 				{/if}
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content class="w-80 max-w-xl p-0">

@@ -90,7 +90,7 @@ It's often unclear where exactly you should mutate the cache with the query clie
 ```typescript
 // From recordings mutations
 createRecording: defineMutation({
-  resultMutationFn: async (recording: Recording) => {
+  mutationFn: async (recording: Recording) => {
     const { data, error } = await services.db.createRecording(recording);
     if (error) return Err(error);
 
@@ -111,7 +111,7 @@ This design keeps all reactive state management isolated in the query layer, all
 
 ## Error Transformation
 
-The query layer also transforms service-specific errors into `WhisperingError` types that integrate seamlessly with the toast notification system. This happens inside `resultMutationFn` or `resultQueryFn`, creating a clean boundary between business logic errors and UI presentation:
+The query layer also transforms service-specific errors into `WhisperingError` types that integrate seamlessly with the toast notification system. This happens inside `mutationFn` or `queryFn`, creating a clean boundary between business logic errors and UI presentation:
 
 ```typescript
 // Service returns domain-specific error

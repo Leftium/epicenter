@@ -1,22 +1,27 @@
 /*
 	Installed from @ieedan/shadcn-svelte-extras
+	Modified to support injectable copy function
 */
 
-import type { WithChildren, WithoutChildren } from 'bits-ui';
 import type { Snippet } from 'svelte';
-import type { HTMLAttributes } from 'svelte/elements';
-import type { ButtonPropsWithoutHTML } from '#/button';
+import type { HTMLButtonAttributes } from 'svelte/elements';
+import type { ButtonSize, ButtonVariant } from '#/button';
 import type { UseClipboard } from '#/hooks/use-clipboard.svelte';
 
-export type CopyButtonPropsWithoutHTML = WithChildren<
-	Pick<ButtonPropsWithoutHTML, 'size' | 'variant'> & {
-		ref?: HTMLButtonElement | null;
-		text: string;
-		icon?: Snippet<[]>;
-		animationDuration?: number;
-		onCopy?: (status: UseClipboard['status']) => void;
-	}
->;
+export type CopyFn = (text: string) => Promise<void>;
+
+export type CopyButtonPropsWithoutHTML = {
+	ref?: HTMLButtonElement | null;
+	text: string;
+	icon?: Snippet<[]>;
+	animationDuration?: number;
+	onCopy?: (status: UseClipboard['status']) => void;
+	/** Custom copy function for cross-platform support. Defaults to navigator.clipboard.writeText. */
+	copyFn?: CopyFn;
+	size?: ButtonSize;
+	variant?: ButtonVariant;
+	children?: Snippet<[]>;
+};
 
 export type CopyButtonProps = CopyButtonPropsWithoutHTML &
-	WithoutChildren<HTMLAttributes<HTMLButtonElement>>;
+	Omit<HTMLButtonAttributes, 'children'>;

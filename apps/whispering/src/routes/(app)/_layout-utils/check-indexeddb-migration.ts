@@ -14,7 +14,7 @@ export async function checkIndexedDBMigration(): Promise<void> {
 	await migrationDialog.refreshCounts();
 
 	if (migrationDialog.hasIndexedDBData) {
-		rpc.notify.info.execute({
+		rpc.notify.info({
 			title: 'Database Migration Available',
 			description:
 				'You have data in IndexedDB. Click here to migrate to the faster file system storage.',

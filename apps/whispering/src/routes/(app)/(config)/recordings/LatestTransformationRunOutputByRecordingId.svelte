@@ -1,8 +1,8 @@
 <script lang="ts">
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
-	import { Skeleton } from '@repo/ui/skeleton';
+	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { rpc } from '$lib/query';
-	import { getRecordingTransitionId } from '$lib/utils/getRecordingTransitionId';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createQuery } from '@tanstack/svelte-query';
 
 	let {
@@ -12,13 +12,12 @@
 	} = $props();
 
 	const latestTransformationRunByRecordingIdQuery = createQuery(
-		rpc.db.runs.getLatestByRecordingId(() => recordingId).options,
+		() => rpc.db.runs.getLatestByRecordingId(() => recordingId).options,
 	);
 
-	const id = getRecordingTransitionId({
-		recordingId,
-		propertyName: 'latestTransformationRunOutput',
-	});
+	const id = $derived(
+		viewTransition.recording(recordingId).transformationOutput,
+	);
 </script>
 
 {#if latestTransformationRunByRecordingIdQuery.isPending}

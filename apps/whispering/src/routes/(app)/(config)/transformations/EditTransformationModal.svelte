@@ -1,28 +1,21 @@
 <script lang="ts">
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import WhisperingButton from '$lib/components/WhisperingButton.svelte';
 	import { PencilIcon as EditIcon } from '$lib/components/icons';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { Button } from '@repo/ui/button';
-	import * as Modal from '@repo/ui/modal';
-	import { Separator } from '@repo/ui/separator';
+	import { Button } from '@epicenter/ui/button';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Separator } from '@epicenter/ui/separator';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { createMutation } from '@tanstack/svelte-query';
-	import {
-		HistoryIcon,
-		Loader2Icon,
-		PlayIcon,
-		TrashIcon,
-	} from '@lucide/svelte';
+	import HistoryIcon from '@lucide/svelte/icons/history';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import PlayIcon from '@lucide/svelte/icons/play';
+	import TrashIcon from '@lucide/svelte/icons/trash';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	const updateTransformation = createMutation(
-		rpc.db.transformations.update.options,
-	);
-
-	const deleteTransformation = createMutation(
-		rpc.db.transformations.delete.options,
+		() => rpc.db.transformations.update.options,
 	);
 
 	let {
@@ -82,8 +75,8 @@
 
 		confirmationDialog.open({
 			title: 'Unsaved changes',
-			subtitle: 'You have unsaved changes. Are you sure you want to leave?',
-			confirmText: 'Leave',
+			description: 'You have unsaved changes. Are you sure you want to leave?',
+			confirm: { text: 'Leave' },
 			onConfirm: () => {
 				// Reset working copy and dirty flag
 				workingCopy = transformation;
@@ -98,16 +91,16 @@
 <Modal.Root bind:open={isDialogOpen}>
 	<Modal.Trigger>
 		{#snippet child({ props })}
-			<WhisperingButton
+			<Button
 				{...props}
-				tooltipContent="Edit transformation, test transformation, and view run history"
+				tooltip="Edit transformation, test transformation, and view run history"
 				variant="ghost"
 				class={className}
 			>
 				<EditIcon class="size-4" />
 				<PlayIcon class="size-4" />
 				<HistoryIcon class="size-4" />
-			</WhisperingButton>
+			</Button>
 		{/snippet}
 	</Modal.Trigger>
 
@@ -146,37 +139,32 @@
 				onclick={() => {
 					confirmationDialog.open({
 						title: 'Delete transformation',
-						subtitle: 'Are you sure? This action cannot be undone.',
-						confirmText: 'Delete',
-						onConfirm: () => {
-							deleteTransformation.mutate($state.snapshot(transformation), {
-								onSuccess: () => {
-									isDialogOpen = false;
-									rpc.notify.success.execute({
-										title: 'Deleted transformation!',
-										description:
-											'Your transformation has been deleted successfully.',
-									});
-								},
-								onError: (error) => {
-									rpc.notify.error.execute({
-										title: 'Failed to delete transformation!',
-										description: 'Your transformation could not be deleted.',
-										action: { type: 'more-details', error },
-									});
-								},
+						description: 'Are you sure? This action cannot be undone.',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: async () => {
+							const { error } = await rpc.db.transformations.delete(
+								$state.snapshot(transformation),
+							);
+							if (error) {
+								rpc.notify.error({
+									title: 'Failed to delete transformation!',
+									description: 'Your transformation could not be deleted.',
+									action: { type: 'more-details', error },
+								});
+								throw error;
+							}
+							isDialogOpen = false;
+							rpc.notify.success({
+								title: 'Deleted transformation!',
+								description:
+									'Your transformation has been deleted successfully.',
 							});
 						},
 					});
 				}}
 				variant="destructive"
-				disabled={deleteTransformation.isPending}
 			>
-				{#if deleteTransformation.isPending}
-					<Loader2Icon class="mr-2 size-4 animate-spin" />
-				{:else}
-					<TrashIcon class="size-4 mr-1" />
-				{/if}
+				<TrashIcon class="size-4" />
 				Delete
 			</Button>
 			<div class="flex items-center gap-2">
@@ -188,7 +176,7 @@
 					onclick={() => {
 						updateTransformation.mutate($state.snapshot(workingCopy), {
 							onSuccess: () => {
-								rpc.notify.success.execute({
+								rpc.notify.success({
 									title: 'Updated transformation!',
 									description:
 										'Your transformation has been updated successfully.',
@@ -196,7 +184,7 @@
 								isDialogOpen = false;
 							},
 							onError: (error) => {
-								rpc.notify.error.execute({
+								rpc.notify.error({
 									title: 'Failed to update transformation!',
 									description: 'Your transformation could not be updated.',
 									action: { type: 'more-details', error },
@@ -207,7 +195,7 @@
 					disabled={updateTransformation.isPending || !isWorkingCopyDirty}
 				>
 					{#if updateTransformation.isPending}
-						<Loader2Icon class="mr-2 size-4 animate-spin" />
+						<Spinner />
 					{/if}
 					Save
 				</Button>

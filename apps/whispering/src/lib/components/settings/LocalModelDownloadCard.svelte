@@ -1,27 +1,29 @@
 <script lang="ts">
-	import { Button } from '@repo/ui/button';
-	import { Badge } from '@repo/ui/badge';
-	import { Progress } from '@repo/ui/progress';
-	import { Download, CheckIcon, LoaderCircle, X } from '@lucide/svelte';
-	import { toast } from 'svelte-sonner';
+	import { PATHS } from '$lib/constants/paths';
+	import {
+		isModelFileSizeValid,
+		type LocalModelConfig,
+	} from '$lib/services/isomorphic/transcription/local/types';
+	import { settings } from '$lib/stores/settings.svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import Download from '@lucide/svelte/icons/download';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import X from '@lucide/svelte/icons/x';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
+	import { Progress } from '@epicenter/ui/progress';
 	import { join } from '@tauri-apps/api/path';
 	import {
 		exists,
 		mkdir,
-		writeFile,
 		remove,
 		stat,
+		writeFile,
 	} from '@tauri-apps/plugin-fs';
 	import { fetch } from '@tauri-apps/plugin-http';
+	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { tryAsync, Ok } from 'wellcrafted/result';
-	import { PATHS } from '$lib/constants/paths';
-	import { settings } from '$lib/stores/settings.svelte';
-	import type {
-		LocalModelConfig,
-		WhisperModelConfig,
-		ParakeetModelConfig,
-	} from '$lib/services/transcription/local/types';
+	import { Ok, tryAsync } from 'wellcrafted/result';
 
 	let {
 		model,
@@ -44,6 +46,7 @@
 	 * @returns The full path where the model should be stored:
 	 * - For Whisper models: `{appDataDir}/models/whisper/{filename}` (a single file)
 	 * - For Parakeet models: `{appDataDir}/models/parakeet/{directoryName}/` (a directory containing multiple files)
+	 * - For Moonshine models: `{appDataDir}/models/moonshine/{directoryName}/` (a directory containing multiple files)
 	 */
 	async function ensureModelDestinationPath(): Promise<string> {
 		switch (model.engine) {
@@ -64,6 +67,15 @@
 				}
 				return await join(parakeetModelsDir, model.directoryName);
 			}
+			case 'moonshine': {
+				// Moonshine models are stored in a directory
+				const moonshineModelsDir = await PATHS.MODELS.MOONSHINE();
+				// Ensure directory exists
+				if (!(await exists(moonshineModelsDir))) {
+					await mkdir(moonshineModelsDir, { recursive: true });
+				}
+				return await join(moonshineModelsDir, model.directoryName);
+			}
 		}
 	}
 
@@ -73,22 +85,47 @@
 	async function isModelValid(path: string): Promise<boolean> {
 		switch (model.engine) {
 			case 'whispercpp': {
-				// For Whisper models, file existence is sufficient
-				return await exists(path);
-			}
-			case 'parakeet': {
 				if (!(await exists(path))) return false;
-				// For Parakeet models, path must be a directory containing all files
+				// Check file size to detect corrupted/incomplete downloads
 				const { data: stats } = await tryAsync({
 					try: () => stat(path),
 					catch: () => Ok(null),
 				});
-				if (!stats?.isDirectory) return false;
+				if (!stats) return false;
+				if (!isModelFileSizeValid(stats.size, model.sizeBytes)) {
+					console.warn(
+						`Model file appears corrupted: ${Math.round(stats.size / 1_000_000)}MB, expected ~${Math.round(model.sizeBytes / 1_000_000)}MB`,
+					);
+					return false;
+				}
+				return true;
+			}
+			case 'parakeet':
+			case 'moonshine': {
+				if (!(await exists(path))) return false;
+				// For multi-file models, path must be a directory containing all files
+				const { data: dirStats } = await tryAsync({
+					try: () => stat(path),
+					catch: () => Ok(null),
+				});
+				if (!dirStats?.isDirectory) return false;
 
-				// Check that all required files exist
+				// Check that all required files exist and have valid sizes
 				for (const file of model.files) {
 					const filePath = await join(path, file.filename);
 					if (!(await exists(filePath))) return false;
+					// Check file size to detect corrupted/incomplete downloads
+					const { data: fileStats } = await tryAsync({
+						try: () => stat(filePath),
+						catch: () => Ok(null),
+					});
+					if (!fileStats) return false;
+					if (!isModelFileSizeValid(fileStats.size, file.sizeBytes)) {
+						console.warn(
+							`${model.engine} file "${file.filename}" appears corrupted: ${Math.round(fileStats.size / 1_000_000)}MB, expected ~${Math.round(file.sizeBytes / 1_000_000)}MB`,
+						);
+						return false;
+					}
 				}
 				return true;
 			}
@@ -173,6 +210,16 @@
 						const progress = Math.round((downloadedBytes / totalBytes) * 100);
 						onProgress(progress);
 					}
+
+					// Validate download completeness
+					if (downloadedBytes < totalBytes) {
+						await remove(filePath);
+						const downloadedMB = Math.round(downloadedBytes / 1_000_000);
+						const expectedMB = Math.round(totalBytes / 1_000_000);
+						throw new Error(
+							`Download incomplete: received ${downloadedMB}MB but expected ${expectedMB}MB. Please check your network connection and try again.`,
+						);
+					}
 				};
 
 				const path = await ensureModelDestinationPath();
@@ -200,8 +247,9 @@
 						);
 						break;
 					}
-					case 'parakeet': {
-						// Multiple file downloads for Parakeet
+					case 'parakeet':
+					case 'moonshine': {
+						// Multiple file downloads for multi-file models
 						const totalBytes = model.sizeBytes;
 						let downloadedBytes = 0;
 
@@ -262,7 +310,9 @@
 			try: async () => {
 				const path = await ensureModelDestinationPath();
 				if (await exists(path)) {
-					await remove(path, { recursive: model.engine === 'parakeet' });
+					const isDirectory =
+						model.engine === 'parakeet' || model.engine === 'moonshine';
+					await remove(path, { recursive: isDirectory });
 				}
 
 				// Clear settings if this was the active model
@@ -311,7 +361,7 @@
 	<div class="flex items-center gap-2">
 		{#if modelState.type === 'downloading'}
 			<div class="flex items-center gap-2 min-w-[120px]">
-				<LoaderCircle class="size-4 animate-spin" />
+				<Spinner />
 				<span class="text-sm font-medium">{modelState.progress}%</span>
 			</div>
 		{:else if modelState.type === 'ready'}
@@ -331,7 +381,7 @@
 			</Button>
 		{:else}
 			<Button size="sm" variant="outline" onclick={downloadModel}>
-				<Download class="size-4 mr-2" />
+				<Download class="size-4" />
 				Download
 			</Button>
 		{/if}

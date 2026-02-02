@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Resizable from '@repo/ui/resizable';
+	import * as Resizable from '@epicenter/ui/resizable';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/db';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { createQuery } from '@tanstack/svelte-query';
 	import Configuration from './Configuration.svelte';
 	import Runs from './Runs.svelte';
@@ -11,7 +11,7 @@
 		$props();
 
 	const transformationRunsByTransformationIdQuery = createQuery(
-		rpc.db.runs.getByTransformationId(() => transformation.id).options,
+		() => rpc.db.runs.getByTransformationId(() => transformation.id).options,
 	);
 </script>
 

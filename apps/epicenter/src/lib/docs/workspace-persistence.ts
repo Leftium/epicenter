@@ -49,12 +49,10 @@ const FILE_NAMES = {
  * **Storage Layout:**
  * ```
  * {appLocalDataDir}/workspaces/{workspaceId}/
- * ├── workspace.yjs   # Y.Doc binary (source of truth)
- * └── kv.json         # KV values mirror
+ * ├── definition.json   # Workspace definition (schema + metadata)
+ * ├── workspace.yjs     # Y.Doc binary (source of truth)
+ * └── kv.json           # KV values mirror
  * ```
- *
- * Note: Workspace definition is stored separately at the parent level
- * as `{workspaceId}.json`.
  *
  * @param ctx - The extension context
  * @param config - Optional configuration for debounce timing

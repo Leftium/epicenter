@@ -17,11 +17,11 @@ async function getWorkspacesDir(): Promise<string> {
 }
 
 /**
- * Get the path to a workspace's JSON definition file.
+ * Get the path to a workspace's definition.json file (inside the workspace folder).
  */
 async function getDefinitionPath(id: string): Promise<string> {
 	const workspacesDir = await getWorkspacesDir();
-	return join(workspacesDir, `${id}.json`);
+	return join(workspacesDir, id, 'definition.json');
 }
 
 /**
@@ -33,12 +33,12 @@ async function getDataFolderPath(id: string): Promise<string> {
 }
 
 /**
- * List all workspace definitions by reading JSON files.
+ * List all workspace definitions by reading definition.json from each workspace folder.
  */
 export async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
 	const workspacesDir = await getWorkspacesDir();
 
-	let entries;
+	let entries: Awaited<ReturnType<typeof readDir>>;
 	try {
 		entries = await readDir(workspacesDir);
 	} catch {
@@ -49,17 +49,23 @@ export async function listWorkspaces(): Promise<WorkspaceDefinition[]> {
 	const definitions: WorkspaceDefinition[] = [];
 
 	for (const entry of entries) {
-		// Only process .json files (not directories)
-		if (!entry.name.endsWith('.json')) continue;
+		// Only process directories (each workspace is a folder)
+		if (!entry.isDirectory) continue;
 
-		const filePath = await join(workspacesDir, entry.name);
+		const definitionPath = await join(
+			workspacesDir,
+			entry.name,
+			'definition.json',
+		);
 		try {
-			const content = await readTextFile(filePath);
+			const content = await readTextFile(definitionPath);
 			const definition = JSON.parse(content) as WorkspaceDefinition;
 			definitions.push(definition);
 		} catch {
-			// Skip files that can't be read or parsed
-			console.warn(`Failed to read workspace definition: ${entry.name}`);
+			// Skip folders without valid definition.json
+			console.warn(
+				`Failed to read workspace definition: ${entry.name}/definition.json`,
+			);
 		}
 	}
 
@@ -83,7 +89,7 @@ export async function getWorkspace(
 }
 
 /**
- * Create a new workspace (write JSON + create data folder).
+ * Create a new workspace (create folder + write definition.json inside).
  */
 export async function createWorkspaceDefinition(
 	input: Omit<WorkspaceDefinition, 'id'> & { id?: string },
@@ -98,21 +104,14 @@ export async function createWorkspaceDefinition(
 		kv: input.kv,
 	};
 
-	const workspacesDir = await getWorkspacesDir();
-	const definitionPath = await getDefinitionPath(id);
 	const dataFolderPath = await getDataFolderPath(id);
+	const definitionPath = await getDefinitionPath(id);
 
-	// Ensure workspaces directory exists
-	await mkdir(workspacesDir, { recursive: true });
-
-	// Write definition JSON
-	await writeTextFile(
-		definitionPath,
-		JSON.stringify(definition, null, '\t'),
-	);
-
-	// Create data folder
+	// Create workspace folder (this also ensures parent workspaces/ dir exists)
 	await mkdir(dataFolderPath, { recursive: true });
+
+	// Write definition.json inside the workspace folder
+	await writeTextFile(definitionPath, JSON.stringify(definition, null, '\t'));
 
 	return definition;
 }
@@ -140,26 +139,17 @@ export async function updateWorkspaceDefinition(
 }
 
 /**
- * Delete a workspace and all its data.
+ * Delete a workspace and all its data (definition.json is inside the folder).
  */
 export async function deleteWorkspace(id: string): Promise<boolean> {
-	const definitionPath = await getDefinitionPath(id);
 	const dataFolderPath = await getDataFolderPath(id);
 
 	try {
-		// Delete definition JSON
-		await remove(definitionPath);
+		// Delete workspace folder recursively (includes definition.json)
+		await remove(dataFolderPath, { recursive: true });
+		return true;
 	} catch {
-		// Definition doesn't exist
+		// Workspace folder doesn't exist
 		return false;
 	}
-
-	try {
-		// Delete data folder recursively
-		await remove(dataFolderPath, { recursive: true });
-	} catch {
-		// Data folder might not exist, that's okay
-	}
-
-	return true;
 }

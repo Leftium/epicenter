@@ -9,7 +9,7 @@
 
 You are implementing a simplified workspace API for the Epicenter app. The goal is to enable a **definition-first** pattern where:
 
-1. Workspace schema lives in JSON files (`{workspaceId}.json`)
+1. Workspace schema lives in JSON files (`{workspaceId}/definition.json`)
 2. `createWorkspace(definition)` takes a `WorkspaceDefinition` directly (no HeadDoc needed)
 3. Y.Doc is created with `gc: true` for efficient storage
 4. No epoch folders - flat structure
@@ -25,6 +25,7 @@ Read the full spec at `specs/20260201T120000-simple-definition-first-workspace.m
 **1.1 Update `workspace/create-workspace.ts`**
 
 Add a function overload so `createWorkspace` can accept either:
+
 - `definition` directly (simple mode, new)
 - `{ headDoc, definition }` config object (versioned mode, existing)
 
@@ -56,6 +57,7 @@ export function createWorkspace<...>(
 ```
 
 Key differences in simple mode:
+
 - `gc: true` (not `gc: false` like versioned mode)
 - `workspaceId` comes from `definition.id`
 - `epoch` is always `0`
@@ -66,13 +68,13 @@ Add `definition` to `ExtensionContext`:
 
 ```typescript
 export type ExtensionContext<TTableDefinitions, TKvFields> = {
-  ydoc: Y.Doc;
-  workspaceId: string;
-  epoch: number;
-  tables: Tables<TTableDefinitions>;
-  kv: Kv<TKvFields>;
-  extensionId: string;
-  definition: WorkspaceDefinition<TTableDefinitions, TKvFields>; // ADD THIS
+	ydoc: Y.Doc;
+	workspaceId: string;
+	epoch: number;
+	tables: Tables<TTableDefinitions>;
+	kv: Kv<TKvFields>;
+	extensionId: string;
+	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>; // ADD THIS
 };
 ```
 
@@ -91,7 +93,7 @@ Ensure `WorkspaceDefinition` type is exported from `@epicenter/hq/dynamic`.
 New service for workspace CRUD via JSON files:
 
 ```typescript
-// List all workspaces (glob *.json files)
+// List all workspaces (list directories, read definition.json from each)
 export async function listWorkspaces(): Promise<WorkspaceDefinition[]>
 
 // Get single workspace by ID
@@ -108,12 +110,13 @@ export async function deleteWorkspace(id: string): Promise<boolean>
 ```
 
 Storage layout:
+
 ```
 {appLocalDataDir}/workspaces/
-├── {id}.json           # WorkspaceDefinition
-└── {id}/               # Data folder
-    ├── workspace.yjs   # Y.Doc binary
-    └── kv.json         # KV values mirror
+└── {id}/
+    ├── definition.json   # WorkspaceDefinition
+    ├── workspace.yjs     # Y.Doc binary
+    └── kv.json           # KV values mirror
 ```
 
 **2.2 Simplify `src/lib/docs/workspace.ts`**
@@ -121,14 +124,16 @@ Storage layout:
 Replace complex HeadDoc-based creation with:
 
 ```typescript
-import { createWorkspace, type WorkspaceDefinition } from '@epicenter/hq/dynamic';
+import {
+	createWorkspace,
+	type WorkspaceDefinition,
+} from '@epicenter/hq/dynamic';
 import { workspacePersistence } from './workspace-persistence';
 
 export function createWorkspaceClient(definition: WorkspaceDefinition) {
-  return createWorkspace(definition)
-    .withExtensions({
-      persistence: (ctx) => workspacePersistence(ctx),
-    });
+	return createWorkspace(definition).withExtensions({
+		persistence: (ctx) => workspacePersistence(ctx),
+	});
 }
 ```
 
@@ -137,13 +142,13 @@ export function createWorkspaceClient(definition: WorkspaceDefinition) {
 Simplify to flat structure (no epochs):
 
 - Remove epoch folder logic
-- Remove `definition.json` mirroring (definition is in `{id}.json` now)
-- Storage paths: `{id}/workspace.yjs`, `{id}/kv.json`
+- Storage paths: `{id}/definition.json`, `{id}/workspace.yjs`, `{id}/kv.json`
 - Skip SQLite for now (placeholder or remove)
 
 **2.4 Archive old files (don't delete)**
 
 Move these to `src/lib/docs/_archive/` for future reference:
+
 - `head.ts`
 - `head-persistence.ts`
 - `registry.ts`
@@ -153,6 +158,7 @@ Move these to `src/lib/docs/_archive/` for future reference:
 **2.5 Update `src/lib/query/workspaces.ts`**
 
 Replace with calls to the new workspaces service. The TanStack Query layer should:
+
 - Use `listWorkspaces()` for queries
 - Use `createWorkspaceDefinition()`, `updateWorkspaceDefinition()`, `deleteWorkspace()` for mutations
 
@@ -166,15 +172,15 @@ import { getWorkspace } from '$lib/services/workspaces';
 import { createWorkspaceClient } from '$lib/docs/workspace';
 
 export async function load({ params }) {
-  const definition = await getWorkspace(params.id);
-  if (!definition) {
-    throw error(404, `Workspace not found`);
-  }
+	const definition = await getWorkspace(params.id);
+	if (!definition) {
+		throw error(404, `Workspace not found`);
+	}
 
-  const client = createWorkspaceClient(definition);
-  await client.whenSynced;
+	const client = createWorkspaceClient(definition);
+	await client.whenSynced;
 
-  return { definition, client };
+	return { definition, client };
 }
 ```
 
@@ -204,6 +210,7 @@ bun test
 ```
 
 The app should:
+
 1. List workspaces by reading `*.json` files
 2. Create new workspaces (writes JSON + creates folder)
 3. Open workspaces (loads definition from JSON, creates Y.Doc client)
@@ -226,10 +233,12 @@ The app should:
 ## Files Summary
 
 ### Create
+
 - `apps/epicenter/src/lib/services/workspaces.ts`
 - `apps/epicenter/src/lib/docs/_archive/` (folder)
 
 ### Modify
+
 - `packages/epicenter/src/dynamic/workspace/create-workspace.ts`
 - `packages/epicenter/src/dynamic/workspace/types.ts`
 - `apps/epicenter/src/lib/docs/workspace.ts`
@@ -240,6 +249,7 @@ The app should:
 - `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`
 
 ### Archive (move to `_archive/`)
+
 - `apps/epicenter/src/lib/docs/head.ts`
 - `apps/epicenter/src/lib/docs/head-persistence.ts`
 - `apps/epicenter/src/lib/docs/registry.ts`

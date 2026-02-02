@@ -6,30 +6,34 @@
  * Epicenter workspace.
  */
 
-import { id, select, table, text } from '@epicenter/hq';
+import { id, select, table, text, type WorkspaceDefinition } from '@epicenter/hq';
 
 export const WHISPERING_TEMPLATE = {
 	id: 'epicenter.whispering',
 	name: 'Whispering',
-	tables: {
-		recordings: table({
+	description: '',
+	icon: null,
+	tables: [
+		table({
+			id: 'recordings',
 			name: 'Recordings',
 			icon: '🎙️',
 			description: 'Voice recordings and transcriptions',
-			fields: {
-				id: id(),
-				title: text({ name: 'Title' }),
-				subtitle: text({ name: 'Subtitle' }),
-				timestamp: text({ name: 'Timestamp' }),
-				createdAt: text({ name: 'Created At' }),
-				updatedAt: text({ name: 'Updated At' }),
-				transcribedText: text({ name: 'Transcribed Text' }),
-				transcriptionStatus: select({
+			fields: [
+				id(),
+				text({ id: 'title', name: 'Title' }),
+				text({ id: 'subtitle', name: 'Subtitle' }),
+				text({ id: 'timestamp', name: 'Timestamp' }),
+				text({ id: 'createdAt', name: 'Created At' }),
+				text({ id: 'updatedAt', name: 'Updated At' }),
+				text({ id: 'transcribedText', name: 'Transcribed Text' }),
+				select({
+					id: 'transcriptionStatus',
 					name: 'Status',
 					options: ['UNPROCESSED', 'TRANSCRIBING', 'DONE', 'FAILED'],
 				}),
-			},
+			],
 		}),
-	},
-	kv: {},
-} as const;
+	],
+	kv: [],
+} as const satisfies WorkspaceDefinition;

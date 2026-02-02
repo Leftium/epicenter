@@ -6,11 +6,11 @@
  * @example
  * ```typescript
  * // Direct use (no extensions)
- * const workspace = createWorkspace({ headDoc, definition });
+ * const workspace = createWorkspace(definition);
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
  *
  * // With extensions
- * const workspace = createWorkspace({ headDoc, definition })
+ * const workspace = createWorkspace(definition)
  *   .withExtensions({ sqlite, persistence });
  *
  * await workspace.whenSynced;
@@ -21,10 +21,10 @@
 import * as Y from 'yjs';
 import { defineExports, type Lifecycle } from '../../core/lifecycle';
 import type { KvField, TableDefinition } from '../../core/schema/fields/types';
+import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
 import { createKv } from '../kv/create-kv';
 import { createTables } from '../tables/create-tables';
 import type {
-	CreateWorkspaceConfig,
 	ExtensionContext,
 	ExtensionFactoryMap,
 	InferExtensionExports,
@@ -38,19 +38,10 @@ import type {
  * Returns a client that IS directly usable AND has `.withExtensions()`
  * for adding extensions like persistence, SQLite, or sync.
  *
- * ## HeadDoc Integration
- *
- * The workspace derives its identity from the HeadDoc:
- * - `workspaceId` from `headDoc.workspaceId`
- * - `epoch` from `headDoc.getOwnEpoch()` (this client's epoch, not global max)
- *
- * Using `getOwnEpoch()` allows each client to view a different epoch. For example,
- * one client might be viewing epoch 2 while the global epoch is 3.
- *
  * ## Y.Doc Structure
  *
  * ```
- * Y.Doc (guid = `${workspaceId}-${epoch}`)
+ * Y.Doc (guid = definition.id, gc: true)
  * +-- Y.Array('table:posts')  <- Table data (LWW entries)
  * +-- Y.Array('table:users')  <- Another table
  * +-- Y.Array('kv')           <- KV settings (LWW entries)
@@ -58,46 +49,36 @@ import type {
  *
  * @example Direct use (no extensions)
  * ```typescript
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: [...], kv: [...] },
- * });
+ * const workspace = createWorkspace(definition);
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
  * ```
  *
  * @example With extensions
  * ```typescript
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition,
- * }).withExtensions({
- *   sqlite: (ctx) => sqliteExtension(ctx),
- *   persistence: (ctx) => persistenceExtension(ctx),
- * });
+ * const workspace = createWorkspace(definition)
+ *   .withExtensions({
+ *     sqlite: (ctx) => sqliteExtension(ctx),
+ *     persistence: (ctx) => persistenceExtension(ctx),
+ *   });
  *
  * await workspace.whenSynced;
  * workspace.extensions.sqlite.db.select()...;
  * ```
  *
- * @param config - Configuration with headDoc and definition
+ * @param definition - Workspace definition with id, tables, and kv
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtensions()
  */
 export function createWorkspace<
 	const TTableDefinitions extends readonly TableDefinition[],
 	const TKvFields extends readonly KvField[],
 >(
-	config: CreateWorkspaceConfig<TTableDefinitions, TKvFields>,
+	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>,
 ): WorkspaceClientBuilder<TTableDefinitions, TKvFields> {
-	const { headDoc, definition } = config;
+	const workspaceId = definition.id;
 
-	// Extract identity from HeadDoc
-	const workspaceId = headDoc.workspaceId;
-	const epoch = headDoc.getOwnEpoch();
-
-	// Create Y.Doc with guid = `${workspaceId}-${epoch}`
-	// gc: false is required for revision history snapshots
-	const docId = `${workspaceId}-${epoch}`;
-	const ydoc = new Y.Doc({ guid: docId, gc: false });
+	// Create Y.Doc with guid = definition.id
+	// gc: true enables garbage collection for efficient YKeyValueLww storage
+	const ydoc = new Y.Doc({ guid: workspaceId, gc: true });
 
 	// Create table and KV helpers bound to Y.Doc
 	const tables = createTables(ydoc, definition.tables ?? []);
@@ -115,7 +96,6 @@ export function createWorkspace<
 		Record<string, never>
 	> = {
 		workspaceId,
-		epoch,
 		ydoc,
 		tables,
 		kv,
@@ -144,7 +124,7 @@ export function createWorkspace<
 				const context: ExtensionContext<TTableDefinitions, TKvFields> = {
 					ydoc,
 					workspaceId,
-					epoch,
+					definition,
 					tables,
 					kv,
 					extensionId,
@@ -172,7 +152,6 @@ export function createWorkspace<
 
 			return {
 				workspaceId,
-				epoch,
 				ydoc,
 				tables,
 				kv,

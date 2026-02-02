@@ -31,10 +31,7 @@
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ persistence });
+ * const workspace = createWorkspace(definition).withExtensions({ persistence });
  * ```
  *
  * ## Related Modules
@@ -62,7 +59,7 @@ export {
 // Y.Map('meta') - Workspace identity (name, icon, description)
 // Y.Map('epochs') - Epoch tracking per client
 //
-// WORKSPACE DOC (per epoch)
+// WORKSPACE DOC
 // Uses YKeyValueLww for cell-level LWW conflict resolution:
 //
 // Y.Array('table:{tableName}') - Table data as LWW entries

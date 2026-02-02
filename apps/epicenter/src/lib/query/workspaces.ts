@@ -1,11 +1,14 @@
-import type { WorkspaceDefinition } from '@epicenter/hq';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
-import { createHead } from '$lib/docs/head';
-import { registry } from '$lib/docs/registry';
-import { createWorkspaceClient } from '$lib/docs/workspace';
+import {
+	createWorkspaceDefinition,
+	deleteWorkspace,
+	getWorkspace,
+	listWorkspaces,
+	updateWorkspaceDefinition,
+} from '$lib/services/workspaces';
 import type { WorkspaceTemplate } from '$lib/templates';
 import { defineMutation, defineQuery, queryClient } from './client';
 
@@ -33,95 +36,38 @@ const workspaceKeys = {
 
 export const workspaces = {
 	/**
-	 * List all workspaces from the registry with their names.
-	 *
-	 * Uses Head Doc meta for identity (name, icon). Schema is only loaded
-	 * when entering a workspace, not for the list view.
+	 * List all workspaces from JSON definition files.
 	 */
 	listWorkspaces: defineQuery({
 		queryKey: workspaceKeys.list(),
 		queryFn: async () => {
-			const guids = registry.getWorkspaceIds();
-
-			// Load workspace metadata in parallel (head docs only, no workspace clients)
-			const workspaces = await Promise.all(
-				guids.map(async (id) => {
-					try {
-						const head = createHead(id);
-						await head.whenSynced;
-						const meta = head.getMeta();
-						await head.destroy();
-
-						return {
-							id,
-							...meta,
-						};
-					} catch {
-						// Workspace exists in registry but can't be loaded
-						return {
-							id,
-							name: id,
-							icon: null,
-							description: '',
-						};
-					}
-				}),
-			);
-
-			return Ok(workspaces);
+			const definitions = await listWorkspaces();
+			return Ok(definitions);
 		},
 	}),
 
 	/**
-	 * Get a single workspace by ID.
-	 *
-	 * Uses Head Doc meta for identity and Workspace Doc for schema.
+	 * Get a single workspace definition by ID.
 	 */
 	getWorkspace: (workspaceId: string) =>
 		defineQuery({
 			queryKey: workspaceKeys.detail(workspaceId),
 			queryFn: async () => {
-				// Check if workspace exists in registry
-				if (!registry.hasWorkspace(workspaceId)) {
+				const definition = await getWorkspace(workspaceId);
+				if (!definition) {
 					return WorkspaceErr({
 						message: `Workspace "${workspaceId}" not found`,
 					});
 				}
-
-				// Get identity from Head Doc
-				const head = createHead(workspaceId);
-				await head.whenSynced;
-				const meta = head.getMeta();
-
-				// Get definition from Workspace Doc
-				const client = createWorkspaceClient(head);
-				await client.whenSynced;
-				const definition = client.definition.toJSON();
-				await client.destroy();
-				await head.destroy();
-
-				return Ok({
-					id: workspaceId,
-					name: meta.name || workspaceId,
-					...definition,
-				});
+				return Ok(definition);
 			},
 		}),
 
 	/**
 	 * Create a new workspace.
 	 *
-	 * Flow:
-	 * 1. Add workspace ID to registry
-	 * 2. Initialize head doc and set meta (name, icon, description)
-	 * 3. Create workspace client with definition (static schema mode)
-	 * 4. Persistence writes schema.json to epoch folder
-	 *
-	 * Uses `createWorkspaceClient` (static schema mode) because we're seeding
-	 * a new workspace with a known schema.
-	 *
-	 * If a template is provided, the tables and kv from the template are used
-	 * instead of starting with empty collections.
+	 * Writes the definition JSON file and creates the data folder.
+	 * If a template is provided, the tables and kv from the template are used.
 	 */
 	createWorkspace: defineMutation({
 		mutationKey: ['workspaces', 'create'],
@@ -130,78 +76,53 @@ export const workspaces = {
 			id: string;
 			template: WorkspaceTemplate | null;
 		}) => {
-			// Create definition using template if provided
-			const definition: WorkspaceDefinition = {
-				tables: input.template?.tables ?? {},
-				kv: input.template?.kv ?? {},
-			};
-
-			// Add to registry (persisted automatically via registryPersistence)
-			registry.addWorkspace(input.id);
-
-			// Initialize head doc and set workspace identity in meta map
-			const head = createHead(input.id);
-			await head.whenSynced;
-			head.setMeta({ name: input.name, icon: null, description: '' });
-
-			// Create workspace client with definition - this will:
-			// 1. Merge definition into Y.Map('definition')
-			// 2. Persist to {epoch}/definition.json via unified persistence
-			const client = createWorkspaceClient(head, definition);
-
-			// Wait for persistence to finish saving initial state to disk
-			await client.whenSynced;
-			await client.destroy();
-			await head.destroy();
-
-			console.log(`[createWorkspace] Created workspace:`, {
+			const definition = await createWorkspaceDefinition({
 				id: input.id,
 				name: input.name,
+				description: input.template?.description ?? '',
+				icon: input.template?.icon ?? null,
+				tables: [...(input.template?.tables ?? [])],
+				kv: [...(input.template?.kv ?? [])],
+			});
+
+			console.log(`[createWorkspace] Created workspace:`, {
+				id: definition.id,
+				name: definition.name,
 			});
 
 			// Invalidate list query
 			queryClient.invalidateQueries({ queryKey: workspaceKeys.list() });
 
-			return Ok({ id: input.id, name: input.name, ...definition });
+			return Ok(definition);
 		},
 	}),
 
 	/**
-	 * Update a workspace's name.
-	 *
-	 * Uses Head Doc's meta map to update workspace identity.
-	 * Persistence automatically writes to head.yjs.
-	 *
-	 * Note: The workspace ID cannot be changed after creation.
+	 * Update a workspace's metadata.
 	 */
 	updateWorkspace: defineMutation({
 		mutationKey: ['workspaces', 'update'],
-		mutationFn: async (input: { workspaceId: string; name: string }) => {
-			// Check if workspace exists
-			if (!registry.hasWorkspace(input.workspaceId)) {
+		mutationFn: async (input: {
+			workspaceId: string;
+			name?: string;
+			description?: string;
+		}) => {
+			const updated = await updateWorkspaceDefinition(input.workspaceId, {
+				...(input.name !== undefined && { name: input.name }),
+				...(input.description !== undefined && {
+					description: input.description,
+				}),
+			});
+
+			if (!updated) {
 				return WorkspaceErr({
 					message: `Workspace "${input.workspaceId}" not found`,
 				});
 			}
 
-			// Use Head Doc to update the workspace name
-			// Workspace identity (name, icon, description) lives in the Head Doc's meta map
-			const head = createHead(input.workspaceId);
-			await head.whenSynced;
-			head.setMeta({ name: input.name });
-
-			// Get the workspace definition (tables, kv) from workspace client
-			const client = createWorkspaceClient(head);
-			await client.whenSynced;
-			const definition = client.definition.toJSON();
-			await client.destroy();
-
-			// Clean up head doc (it's been modified, changes auto-persist)
-			await head.destroy();
-
 			console.log(`[updateWorkspace] Updated workspace:`, {
-				id: input.workspaceId,
-				name: input.name,
+				id: updated.id,
+				name: updated.name,
 			});
 
 			// Invalidate queries to refresh UI
@@ -210,39 +131,27 @@ export const workspaces = {
 				queryKey: workspaceKeys.detail(input.workspaceId),
 			});
 
-			return Ok({
-				id: input.workspaceId,
-				name: input.name,
-				...definition,
-			});
+			return Ok(updated);
 		},
 	}),
 
 	/**
-	 * Delete a workspace.
-	 *
-	 * Removes from registry and head doc cache. Does NOT delete files on disk.
-	 * (File cleanup can be added later if needed)
+	 * Delete a workspace and all its data.
 	 */
 	deleteWorkspace: defineMutation({
 		mutationKey: ['workspaces', 'delete'],
-		mutationFn: async (guid: string) => {
-			// Check if workspace exists
-			if (!registry.hasWorkspace(guid)) {
+		mutationFn: async (id: string) => {
+			const deleted = await deleteWorkspace(id);
+
+			if (!deleted) {
 				return WorkspaceErr({
-					message: `Workspace "${guid}" not found`,
+					message: `Workspace "${id}" not found`,
 				});
 			}
 
-			// Remove from registry
-			registry.removeWorkspace(guid);
-
-			// Note: Head doc cleanup happens automatically when navigating away
-			// since head docs are now created per-navigation, not cached
-
 			// Invalidate queries
 			queryClient.invalidateQueries({ queryKey: workspaceKeys.list() });
-			queryClient.removeQueries({ queryKey: workspaceKeys.detail(guid) });
+			queryClient.removeQueries({ queryKey: workspaceKeys.detail(id) });
 
 			return Ok(undefined);
 		},
@@ -268,16 +177,11 @@ export const workspaces = {
 	}),
 
 	// ───────────────────────────────────────────────────────────────────────────
-	// Definition Modification (Temporary stubs - will be refactored)
-	// In the new architecture, these should modify the live workspace client,
-	// not the query layer. For now, they're stubs to keep the UI working.
+	// Definition Modification (Stubs - to be implemented)
 	// ───────────────────────────────────────────────────────────────────────────
 
 	/**
 	 * Add a table to a workspace definition.
-	 *
-	 * TODO: This should modify the live workspace client's Y.Doc,
-	 * not go through the query layer.
 	 */
 	addTable: defineMutation({
 		mutationKey: ['workspaces', 'addTable'],
@@ -288,9 +192,9 @@ export const workspaces = {
 			icon?: string | null;
 			description?: string;
 		}) => {
-			// TODO: Implement via workspace client
+			// TODO: Implement via updateWorkspaceDefinition
 			return WorkspaceErr({
-				message: 'Adding tables is not yet implemented in the new architecture',
+				message: 'Adding tables is not yet implemented',
 			});
 		},
 	}),
@@ -301,10 +205,9 @@ export const workspaces = {
 	removeTable: defineMutation({
 		mutationKey: ['workspaces', 'removeTable'],
 		mutationFn: async (_input: { workspaceId: string; tableName: string }) => {
-			// TODO: Implement via workspace client
+			// TODO: Implement via updateWorkspaceDefinition
 			return WorkspaceErr({
-				message:
-					'Removing tables is not yet implemented in the new architecture',
+				message: 'Removing tables is not yet implemented',
 			});
 		},
 	}),
@@ -319,10 +222,9 @@ export const workspaces = {
 			name: string;
 			key: string;
 		}) => {
-			// TODO: Implement via workspace client
+			// TODO: Implement via updateWorkspaceDefinition
 			return WorkspaceErr({
-				message:
-					'Adding KV entries is not yet implemented in the new architecture',
+				message: 'Adding KV entries is not yet implemented',
 			});
 		},
 	}),
@@ -333,10 +235,9 @@ export const workspaces = {
 	removeKvEntry: defineMutation({
 		mutationKey: ['workspaces', 'removeKvEntry'],
 		mutationFn: async (_input: { workspaceId: string; key: string }) => {
-			// TODO: Implement via workspace client
+			// TODO: Implement via updateWorkspaceDefinition
 			return WorkspaceErr({
-				message:
-					'Removing KV entries is not yet implemented in the new architecture',
+				message: 'Removing KV entries is not yet implemented',
 			});
 		},
 	}),

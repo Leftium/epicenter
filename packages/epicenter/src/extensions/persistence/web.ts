@@ -37,10 +37,8 @@ import {
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // 'blog' becomes the IndexedDB database name
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ persistence });
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
+ *   .withExtensions({ persistence });
  * ```
  *
  * @example In a Svelte/React component
@@ -49,10 +47,8 @@ import {
  * import { persistence } from '@epicenter/hq/extensions/persistence';
  *
  * // Inside component setup/onMount:
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ persistence });
+ * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
+ *   .withExtensions({ persistence });
  *
  * // Data persists across page refreshes!
  * // Check DevTools → Application → IndexedDB to see the database
@@ -65,18 +61,12 @@ import {
  *
  * // Each workspace gets its own IndexedDB database
  * // 'blog' → IndexedDB database named 'blog'
- * const blogWorkspace = createWorkspace({
- *   id: 'blog',
- *   headDoc: blogHeadDoc,
- *   definition: { name: 'Blog', tables: [...] },
- * }).withExtensions({ persistence });
+ * const blogWorkspace = createWorkspace({ name: 'Blog', tables: [...] })
+ *   .withExtensions({ persistence });
  *
  * // 'notes' → IndexedDB database named 'notes'
- * const notesWorkspace = createWorkspace({
- *   id: 'notes',
- *   headDoc: notesHeadDoc,
- *   definition: { name: 'Notes', tables: [...] },
- * }).withExtensions({ persistence });
+ * const notesWorkspace = createWorkspace({ name: 'Notes', tables: [...] })
+ *   .withExtensions({ persistence });
  *
  * // Workspaces are isolated, each with separate IndexedDB storage
  * ```

@@ -1,5 +1,17 @@
 # Y.Doc Architecture: Three Documents, One Client
 
+> **⚠️ ARCHIVED DOCUMENTATION**
+>
+> This document describes the **three-document architecture** (Registry → HeadDoc → Workspace)
+> which is planned for future **versioned workspaces** with epoch-based versioning, snapshots,
+> and time-travel capabilities.
+>
+> **Current implementation uses the simpler definition-first pattern:**
+> - See `workspace/README.md` for the current simple API
+> - See `docs/articles/archived-head-registry-patterns.md` for preserved implementation details
+>
+> This architecture will be implemented when `versionControl: true` workspaces are added.
+
 This module provides typed wrappers for the Y.Doc types that power collaborative workspaces.
 
 ## Summary: The Three-Fetch Pattern

@@ -165,7 +165,7 @@ export type Lifecycle = {
  * The framework calls this internally to normalize all returns:
  *
  * ```typescript
- * // In contract.ts, head-doc.ts, registry-doc.ts
+ * // In contract.ts, workspace/create-workspace.ts
  * const exports = defineExports(factoryResult);
  * ```
  *

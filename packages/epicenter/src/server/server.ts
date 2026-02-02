@@ -30,10 +30,7 @@ type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({ ... });
+ * const workspace = createWorkspace(definition).withExtensions({ ... });
  *
  * const server = createServer(workspace, { port: 3913 });
  * server.start();

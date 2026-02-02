@@ -127,8 +127,6 @@ export type {
 } from './dynamic/extension';
 export { defineExports } from './dynamic/extension';
 // Y.Doc wrappers for collaborative workspace architecture
-// Y.Doc wrappers (flattened from dynamic/docs/)
-export { createHeadDoc, type HeadDoc } from './dynamic/head-doc';
 export type { Kv, KvHelper } from './dynamic/kv/create-kv';
 export { createKv } from './dynamic/kv/create-kv';
 export type {

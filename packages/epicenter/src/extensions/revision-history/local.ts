@@ -35,20 +35,9 @@ export type LocalRevisionHistoryConfig = {
 	/**
 	 * Base directory for workspace storage.
 	 *
-	 * Snapshots are saved to `{directory}/{workspaceId}/{epoch}/snapshots/`.
+	 * Snapshots are saved to `{directory}/{workspaceId}/snapshots/`.
 	 */
 	directory: string;
-
-	/**
-	 * The epoch number for this workspace.
-	 *
-	 * Snapshots are stored in the epoch folder structure:
-	 * `{directory}/{workspaceId}/{epoch}/snapshots/`
-	 *
-	 * This ensures snapshots are isolated per-epoch and can be deleted
-	 * atomically when an epoch is removed.
-	 */
-	epoch: number;
 
 	/**
 	 * Debounce interval in milliseconds for auto-saving on Y.Doc changes.
@@ -76,21 +65,17 @@ export type LocalRevisionHistoryConfig = {
  *
  * **Platform**: Node.js/Desktop (Tauri, Electron, Bun)
  *
- * **Storage**: `{directory}/{workspaceId}/{epoch}/snapshots/{timestamp}.ysnap`
+ * **Storage**: `{directory}/{workspaceId}/snapshots/{timestamp}.ysnap`
  *
  * @example Basic usage
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   persistence,
  *   revisions: (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
- *     epoch: 0,  // Snapshots saved to ./workspaces/{id}/0/snapshots/
  *     maxVersions: 50,
  *   }),
  * });
@@ -111,13 +96,9 @@ export type LocalRevisionHistoryConfig = {
  *
  * @example Custom debounce interval
  * ```typescript
- * const workspace = createWorkspace({
- *   headDoc,
- *   definition: { name: 'Blog', tables: {...} },
- * }).withExtensions({
+ * const workspace = createWorkspace(definition).withExtensions({
  *   revisions: (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
- *     epoch: 0,
  *     debounceMs: 5000,  // Save 5 seconds after last change
  *   }),
  * });
@@ -144,12 +125,7 @@ export async function localRevisionHistory<
 	TKvFields extends readonly KvField[],
 >(
 	{ ydoc, workspaceId: id }: ExtensionContext<TTableDefinitions, TKvFields>,
-	{
-		directory,
-		epoch,
-		debounceMs = 1000,
-		maxVersions,
-	}: LocalRevisionHistoryConfig,
+	{ directory, debounceMs = 1000, maxVersions }: LocalRevisionHistoryConfig,
 ) {
 	// CRITICAL: Snapshots require gc: false
 	if (ydoc.gc) {
@@ -159,8 +135,8 @@ export async function localRevisionHistory<
 		);
 	}
 
-	// Storage: {directory}/{workspaceId}/{epoch}/snapshots/
-	const snapshotDir = path.join(directory, id, String(epoch), 'snapshots');
+	// Storage: {directory}/{workspaceId}/snapshots/
+	const snapshotDir = path.join(directory, id, 'snapshots');
 
 	// Ensure directory exists
 	await mkdir(snapshotDir, { recursive: true });

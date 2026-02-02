@@ -4,11 +4,11 @@
  * A unified workspace implementation with:
  * - Row-level LWW (Last-Write-Wins) CRDT storage via YKeyValueLww
  * - External schema with validation (definition passed in)
- * - Optional HeadDoc for time travel and epochs
+ * - Extension system for persistence, sync, and SQLite
  *
  * Y.Doc structure:
  * ```
- * Y.Doc
+ * Y.Doc (guid = definition.id, gc: true)
  * +-- Y.Array('table:posts')  <- Table data (rows as LWW entries)
  * +-- Y.Array('table:users')  <- Another table
  * +-- Y.Array('kv')           <- Workspace-level key-values
@@ -22,12 +22,9 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { WorkspaceDefinition } from '../core/schema/workspace-definition';
-// HeadDoc (for time travel and epochs)
-export { createHeadDoc, type HeadDoc } from './head-doc';
-// The new builder pattern API
+// The builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {
-	CreateWorkspaceConfig,
 	ExtensionContext,
 	ExtensionFactory,
 	ExtensionFactoryMap,

@@ -120,30 +120,3 @@ function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 		typeof (value as Record<string, unknown>).id === 'string'
 	);
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DEPRECATED EXPORTS (for backwards compatibility)
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * @deprecated Use resolveWorkspace() for full resolution with ambiguity detection.
- */
-export async function findProjectDir(
-	dir: string = process.cwd(),
-): Promise<ProjectDir | null> {
-	const resolved = resolve(dir);
-	if (await Bun.file(join(resolved, CONFIG_FILENAME)).exists()) {
-		return resolved as ProjectDir;
-	}
-	return null;
-}
-
-/**
- * @deprecated Use resolveWorkspace() which combines discovery and loading.
- */
-export async function loadClient(
-	projectDir: ProjectDir,
-): Promise<AnyWorkspaceClient> {
-	const configPath = join(projectDir, CONFIG_FILENAME);
-	return loadClientFromPath(configPath);
-}

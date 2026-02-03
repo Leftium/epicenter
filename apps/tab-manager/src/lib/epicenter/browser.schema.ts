@@ -12,15 +12,8 @@
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
-import {
-	boolean,
-	id,
-	integer,
-	type Row,
-	select,
-	table,
-	text,
-} from '@epicenter/hq/dynamic';
+import { defineTable, type InferTableRow } from '@epicenter/hq/static';
+import { type } from 'arktype';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -75,7 +68,7 @@ export const TAB_GROUP_COLORS = [
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Table Definitions (Standard Array Format)
+// Table Definitions (Static API with Arktype)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -84,18 +77,14 @@ export const TAB_GROUP_COLORS = [
  * Each device generates a unique ID on first install, stored in storage.local.
  * This enables syncing tabs across multiple computers while preventing ID collisions.
  */
-export const DEVICES_TABLE = table({
-	id: 'devices',
-	name: 'Devices',
-	description: 'Browser installations for multi-device sync',
-	icon: 'emoji:💻',
-	fields: [
-		id(), // NanoID, generated once on install
-		text({ id: 'name' }), // User-editable: "Chrome on macOS", "Firefox on Windows"
-		text({ id: 'last_seen' }), // ISO timestamp, updated on each sync
-		text({ id: 'browser' }), // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
-	],
-});
+const devices = defineTable(
+	type({
+		id: 'string', // NanoID, generated once on install
+		name: 'string', // User-editable: "Chrome on macOS", "Firefox on Windows"
+		last_seen: 'string', // ISO timestamp, updated on each sync
+		browser: 'string', // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+	}),
+);
 
 /**
  * Tabs table - shadows browser tab state.
@@ -103,59 +92,51 @@ export const DEVICES_TABLE = table({
  * The `id` field is a composite key: `${deviceId}_${tabId}`.
  * This prevents collisions when syncing across multiple devices.
  */
-export const TABS_TABLE = table({
-	id: 'tabs',
-	name: 'Tabs',
-	description: 'Browser tab state',
-	icon: 'emoji:📑',
-	fields: [
-		id(), // Composite: `${deviceId}_${tabId}`
-		text({ id: 'device_id' }), // Foreign key to devices table
-		integer({ id: 'tab_id' }), // Original browser tab ID for API calls
-		text({ id: 'window_id' }), // Composite: `${deviceId}_${windowId}`
-		text({ id: 'url' }),
-		text({ id: 'title' }),
-		text({ id: 'fav_icon_url', nullable: true }),
-		integer({ id: 'index' }), // Zero-based position in tab strip
-		boolean({ id: 'pinned', default: false }),
-		boolean({ id: 'active', default: false }),
-		boolean({ id: 'highlighted', default: false }),
-		boolean({ id: 'muted', default: false }),
-		boolean({ id: 'audible', default: false }),
-		boolean({ id: 'discarded', default: false }), // Tab unloaded to save memory
-		boolean({ id: 'auto_discardable', default: true }),
-		select({ id: 'status', options: TAB_STATUS, default: 'complete' }),
-		text({ id: 'group_id', nullable: true }), // Chrome 88+, null on Firefox
-		text({ id: 'opener_tab_id', nullable: true }), // ID of tab that opened this one
-		boolean({ id: 'incognito', default: false }),
-	],
-});
+const tabs = defineTable(
+	type({
+		id: 'string', // Composite: `${deviceId}_${tabId}`
+		device_id: 'string', // Foreign key to devices table
+		tab_id: 'number', // Original browser tab ID for API calls
+		window_id: 'string', // Composite: `${deviceId}_${windowId}`
+		url: 'string',
+		title: 'string',
+		'fav_icon_url?': 'string', // Nullable
+		index: 'number', // Zero-based position in tab strip
+		pinned: 'boolean',
+		active: 'boolean',
+		highlighted: 'boolean',
+		muted: 'boolean',
+		audible: 'boolean',
+		discarded: 'boolean', // Tab unloaded to save memory
+		auto_discardable: 'boolean',
+		status: "'unloaded' | 'loading' | 'complete'",
+		'group_id?': 'string', // Chrome 88+, null on Firefox
+		'opener_tab_id?': 'string', // ID of tab that opened this one
+		incognito: 'boolean',
+	}),
+);
 
 /**
  * Windows table - shadows browser window state.
  *
  * The `id` field is a composite key: `${deviceId}_${windowId}`.
  */
-export const WINDOWS_TABLE = table({
-	id: 'windows',
-	name: 'Windows',
-	description: 'Browser window state',
-	icon: 'emoji:🪟',
-	fields: [
-		id(), // Composite: `${deviceId}_${windowId}`
-		text({ id: 'device_id' }), // Foreign key to devices table
-		integer({ id: 'window_id' }), // Original browser window ID for API calls
-		select({ id: 'state', options: WINDOW_STATES, default: 'normal' }),
-		select({ id: 'type', options: WINDOW_TYPES, default: 'normal' }),
-		boolean({ id: 'focused', default: false }),
-		boolean({ id: 'always_on_top', default: false }),
-		boolean({ id: 'incognito', default: false }),
-		integer({ id: 'top', default: 0 }),
-		integer({ id: 'left', default: 0 }),
-		integer({ id: 'width', default: 800 }),
-		integer({ id: 'height', default: 600 }),
-	],
-});
+const windows = defineTable(
+	type({
+		id: 'string', // Composite: `${deviceId}_${windowId}`
+		device_id: 'string', // Foreign key to devices table
+		window_id: 'number', // Original browser window ID for API calls
+		state: "'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
+		type: "'normal' | 'popup' | 'panel' | 'app' | 'devtools'",
+		focused: 'boolean',
+		always_on_top: 'boolean',
+		incognito: 'boolean',
+		top: 'number',
+		left: 'number',
+		width: 'number',
+		height: 'number',
+	}),
+);
 
 /**
  * Tab groups table - Chrome 88+ only, not supported on Firefox.
@@ -164,37 +145,37 @@ export const WINDOWS_TABLE = table({
  *
  * @see https://developer.chrome.com/docs/extensions/reference/api/tabGroups
  */
-export const TAB_GROUPS_TABLE = table({
-	id: 'tab_groups',
-	name: 'Tab Groups',
-	description: 'Chrome tab groups (Chrome 88+)',
-	icon: 'emoji:📁',
-	fields: [
-		id(), // Composite: `${deviceId}_${groupId}`
-		text({ id: 'device_id' }), // Foreign key to devices table
-		integer({ id: 'group_id' }), // Original browser group ID for API calls
-		text({ id: 'window_id' }), // Composite: `${deviceId}_${windowId}`
-		text({ id: 'title', nullable: true }),
-		select({ id: 'color', options: TAB_GROUP_COLORS, default: 'grey' }),
-		boolean({ id: 'collapsed', default: false }),
-	],
-});
+const tab_groups = defineTable(
+	type({
+		id: 'string', // Composite: `${deviceId}_${groupId}`
+		device_id: 'string', // Foreign key to devices table
+		group_id: 'number', // Original browser group ID for API calls
+		window_id: 'string', // Composite: `${deviceId}_${windowId}`
+		'title?': 'string', // Nullable
+		color:
+			"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
+		collapsed: 'boolean',
+	}),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exports
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const BROWSER_TABLES = {
+	devices,
+	tabs,
+	windows,
+	tab_groups,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type Exports
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type Device = Row<(typeof DEVICES_TABLE)['fields']>;
-export type Tab = Row<(typeof TABS_TABLE)['fields']>;
-export type Window = Row<(typeof WINDOWS_TABLE)['fields']>;
-export type TabGroup = Row<(typeof TAB_GROUPS_TABLE)['fields']>;
-
-// Export table definitions for workspace composition
-export const BROWSER_TABLES = [
-	DEVICES_TABLE,
-	TABS_TABLE,
-	WINDOWS_TABLE,
-	TAB_GROUPS_TABLE,
-] as const;
+export type Device = InferTableRow<typeof BROWSER_TABLES.devices>;
+export type Tab = InferTableRow<typeof BROWSER_TABLES.tabs>;
+export type Window = InferTableRow<typeof BROWSER_TABLES.windows>;
+export type TabGroup = InferTableRow<typeof BROWSER_TABLES.tab_groups>;
 
 export type BrowserTables = typeof BROWSER_TABLES;

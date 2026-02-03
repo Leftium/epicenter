@@ -1,5 +1,5 @@
-import { staticWorkspaces } from './static-workspaces';
-import { workspaces } from './workspaces';
+import { staticWorkspaces } from '$lib/workspaces/static/queries';
+import { workspaces } from '$lib/workspaces/dynamic/queries';
 
 export { queryClient } from './client';
 

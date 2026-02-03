@@ -2,7 +2,7 @@
 	import * as Y from 'yjs';
 	import * as Card from '@epicenter/ui/card';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { readKvValue } from '$lib/docs/discover';
+	import { readKvValue } from '$lib/yjs/discover';
 
 	type Props = {
 		ydoc: Y.Doc;

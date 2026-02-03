@@ -3,7 +3,7 @@
 	import * as Card from '@epicenter/ui/card';
 	import { Badge } from '@epicenter/ui/badge';
 	import TableIcon from '@lucide/svelte/icons/table-2';
-	import { readTableRows } from '$lib/docs/discover';
+	import { readTableRows } from '$lib/yjs/discover';
 
 	type Props = {
 		ydoc: Y.Doc;

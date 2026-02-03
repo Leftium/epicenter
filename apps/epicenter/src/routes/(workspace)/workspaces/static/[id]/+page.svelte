@@ -4,8 +4,10 @@
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import GenericTableViewer from './_components/GenericTableViewer.svelte';
-	import GenericKvViewer from './_components/GenericKvViewer.svelte';
+	import {
+		GenericTableViewer,
+		GenericKvViewer,
+	} from '$lib/workspaces/static/components';
 
 	let { data } = $props();
 </script>

@@ -3,7 +3,7 @@ import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import type {
 	StaticWorkspaceEntry,
 	StaticWorkspacesRegistry,
-} from '$lib/static-workspaces/types';
+} from './types';
 
 const REGISTRY_FILE = 'static-workspaces.json';
 

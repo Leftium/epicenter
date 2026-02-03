@@ -8,9 +8,9 @@ import {
 	getWorkspace,
 	listWorkspaces,
 	updateWorkspaceDefinition,
-} from '$lib/services/workspaces';
+} from './service';
 import type { WorkspaceTemplate } from '$lib/templates';
-import { defineMutation, defineQuery, queryClient } from './client';
+import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Types

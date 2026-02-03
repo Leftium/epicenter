@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 1,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -112,6 +111,7 @@
         "@lucide/svelte": "catalog:",
         "@tanstack/svelte-query": "catalog:",
         "@tanstack/svelte-query-devtools": "catalog:",
+        "@wxt-dev/storage": "^1.2.6",
         "arktype": "catalog:",
         "clsx": "catalog:",
         "tailwind-merge": "catalog:",

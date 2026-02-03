@@ -8,7 +8,7 @@
  */
 
 import type * as Y from 'yjs';
-import type { KvValue } from '../core/schema/fields/types';
+import type { KvValue } from './schema/fields/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Doc Top-Level Map Names

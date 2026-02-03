@@ -6,7 +6,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
-import type { Lifecycle } from '../core/lifecycle.js';
+import type { Lifecycle } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks

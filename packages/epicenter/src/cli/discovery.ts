@@ -1,6 +1,6 @@
 import { dirname, join, parse, resolve } from 'node:path';
-import type { ProjectDir } from '../core/types';
 import type { WorkspaceClient } from '../dynamic/workspace/types';
+import type { ProjectDir } from '../shared/types';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
 type AnyWorkspaceClient = WorkspaceClient<any, any, any>;

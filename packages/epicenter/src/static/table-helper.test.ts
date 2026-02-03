@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { defineTable } from './define-table.js';
 import { createTableHelper } from './table-helper.js';
 

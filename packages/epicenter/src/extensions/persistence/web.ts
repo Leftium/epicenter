@@ -1,10 +1,10 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
-import type { KvField, TableDefinition } from '../../core/schema';
 import {
 	defineExports,
 	type ExtensionContext,
 	type ExtensionFactory,
 } from '../../dynamic/extension';
+import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
  * YJS document persistence extension using IndexedDB.

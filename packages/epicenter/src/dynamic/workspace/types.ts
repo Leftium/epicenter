@@ -21,10 +21,10 @@
  */
 
 import type * as Y from 'yjs';
-import type { Lifecycle } from '../../core/lifecycle';
-import type { KvField, TableDefinition } from '../../core/schema/fields/types';
-import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
+import type { Lifecycle } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
+import type { KvField, TableDefinition } from '../schema/fields/types';
+import type { WorkspaceDefinition } from '../schema/workspace-definition';
 import type { Tables } from '../tables/create-tables';
 
 // ════════════════════════════════════════════════════════════════════════════

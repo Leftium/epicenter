@@ -42,14 +42,14 @@
  * @module
  */
 
-// Re-export from core for backwards compatibility
-export type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
-export { defineWorkspace } from '../../core/schema/workspace-definition';
+// Re-export from schema for backwards compatibility
+export type { WorkspaceDefinition } from '../schema/workspace-definition';
+export { defineWorkspace } from '../schema/workspace-definition';
 export {
 	validateWorkspaceDefinition,
 	WorkspaceDefinitionSchema,
 	WorkspaceDefinitionValidator,
-} from '../../core/schema/workspace-definition-validator';
+} from '../schema/workspace-definition-validator';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Y.Doc Structure: YKeyValueLww Arrays

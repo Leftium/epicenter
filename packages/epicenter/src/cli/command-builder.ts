@@ -1,7 +1,7 @@
 import type { CommandModule } from 'yargs';
-import type { Actions } from '../core/actions';
-import { iterateActions } from '../core/actions';
-import { standardSchemaToJsonSchema } from '../core/schema/standard/to-json-schema';
+import type { Actions } from '../shared/actions';
+import { iterateActions } from '../shared/actions';
+import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
 /**

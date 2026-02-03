@@ -30,7 +30,7 @@
 import type {
 	StandardSchemaV1,
 	StandardSchemaWithJSONSchema,
-} from './schema/standard/types';
+} from '../shared/standard-schema/types';
 
 type ActionConfig<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,

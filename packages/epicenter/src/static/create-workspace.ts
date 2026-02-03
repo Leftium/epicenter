@@ -20,7 +20,7 @@
  */
 
 import * as Y from 'yjs';
-import type { Lifecycle } from '../core/lifecycle.js';
+import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {

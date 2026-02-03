@@ -1,3 +1,10 @@
+export { standardSchemaToJsonSchema } from '../../shared/standard-schema/to-json-schema.js';
+export type {
+	StandardJSONSchemaV1,
+	StandardSchemaV1,
+	StandardSchemaWithJSONSchema,
+	StandardTypedV1,
+} from '../../shared/standard-schema/types.js';
 export type { FieldToArktype } from './converters/to-arktype.js';
 export {
 	fieldToArktype,
@@ -13,7 +20,6 @@ export {
 	convertTableDefinitionsToDrizzle,
 	toSqlIdentifier,
 } from './converters/to-drizzle.js';
-
 export type { FieldToTypebox } from './converters/to-typebox.js';
 export {
 	fieldsToTypebox,
@@ -79,13 +85,6 @@ export {
 	parseIcon,
 } from './fields/types.js';
 export { getTableById } from './schema-file.js';
-export { standardSchemaToJsonSchema } from './standard/to-json-schema.js';
-export type {
-	StandardJSONSchemaV1,
-	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
-	StandardTypedV1,
-} from './standard/types.js';
 export type { WorkspaceDefinition } from './workspace-definition.js';
 export { defineWorkspace } from './workspace-definition.js';
 export {

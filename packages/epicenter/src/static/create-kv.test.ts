@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
-import type { YKeyValueLwwEntry } from '../core/utils/y-keyvalue-lww.js';
+import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import { createKv } from './create-kv.js';
 import { defineKv } from './define-kv.js';
 

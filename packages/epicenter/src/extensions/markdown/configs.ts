@@ -49,8 +49,8 @@ import path from 'node:path';
 import { type } from 'arktype';
 import filenamify from 'filenamify';
 import { Ok, type Result } from 'wellcrafted/result';
-import type { Field, Row } from '../../core/schema';
-import { tableToArktype } from '../../core/schema';
+import type { Field, Row } from '../../dynamic/schema';
+import { tableToArktype } from '../../dynamic/schema';
 import { MarkdownExtensionErr, type MarkdownExtensionError } from './markdown';
 
 // ─────────────────────────────────────────────────────────────────────────────

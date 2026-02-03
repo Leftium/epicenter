@@ -76,7 +76,7 @@ export {
 	table,
 	tags,
 	text,
-} from '../../core/schema';
+} from '../schema';
 
 /**
  * Re-export types from workspace.ts for consumers of the Node entrypoint.

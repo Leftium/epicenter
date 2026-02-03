@@ -17,7 +17,7 @@
  */
 
 // Re-export lifecycle utilities for extension authors
-import { defineExports, type Lifecycle } from '../core/lifecycle';
+import { defineExports, type Lifecycle } from '../shared/lifecycle';
 export { defineExports, type Lifecycle };
 
 /**

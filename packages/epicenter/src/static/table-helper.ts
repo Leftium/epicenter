@@ -9,7 +9,7 @@ import type * as Y from 'yjs';
 import type {
 	YKeyValueLww,
 	YKeyValueLwwChange,
-} from '../core/utils/y-keyvalue-lww.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type {
 	DeleteResult,
 	GetResult,

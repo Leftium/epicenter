@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
-import { Id, tableToArktype } from '../core/schema';
+import { Id, tableToArktype } from '../dynamic/schema';
 import type { WorkspaceClient } from '../dynamic/workspace/types';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions

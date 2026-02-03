@@ -31,8 +31,8 @@ import type * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
-import { TableKey } from '../core/ydoc-keys.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { TableKey } from '../shared/ydoc-keys.js';
 import { createTableHelper } from './table-helper.js';
 import type {
 	InferTableRow,

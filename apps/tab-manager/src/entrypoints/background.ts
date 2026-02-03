@@ -22,16 +22,16 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
+import { ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 import {
 	createWorkspace,
 	defineExports,
 	defineWorkspace,
 } from '@epicenter/hq/static';
-import { ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import type { Transaction } from 'yjs';
-import { IndexeddbPersistence } from 'y-indexeddb';
 import { defineBackground } from 'wxt/utils/define-background';
+import { IndexeddbPersistence } from 'y-indexeddb';
+import type { Transaction } from 'yjs';
 import { createBrowserConverters } from '$lib/browser-helpers';
 import {
 	generateDefaultDeviceName,
@@ -370,7 +370,9 @@ export default defineBackground(() => {
 		// Then refetch to sync Y.Doc with current browser state
 		await actions.refetchAll();
 		console.log('[Background] Initial sync complete');
-	})().catch((err) => console.error('[Background] Initialization failed:', err));
+	})().catch((err) =>
+		console.error('[Background] Initialization failed:', err),
+	);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Browser Keepalive (Chrome MV3 only)

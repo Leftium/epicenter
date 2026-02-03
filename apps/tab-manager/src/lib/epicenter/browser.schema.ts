@@ -126,7 +126,8 @@ const windows = defineTable(
 		id: 'string', // Composite: `${deviceId}_${windowId}`
 		device_id: 'string', // Foreign key to devices table
 		window_id: 'number', // Original browser window ID for API calls
-		state: "'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
+		state:
+			"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
 		type: "'normal' | 'popup' | 'panel' | 'app' | 'devtools'",
 		focused: 'boolean',
 		always_on_top: 'boolean',

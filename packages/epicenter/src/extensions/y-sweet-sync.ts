@@ -180,7 +180,9 @@ function buildAuthEndpoint(
 
 		default: {
 			const _exhaustive: never = config;
-			throw new Error(`Unknown Y-Sweet sync mode: ${(_exhaustive as YSweetSyncConfig).mode}`);
+			throw new Error(
+				`Unknown Y-Sweet sync mode: ${(_exhaustive as YSweetSyncConfig).mode}`,
+			);
 		}
 	}
 }

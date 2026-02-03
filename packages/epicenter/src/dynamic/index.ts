@@ -73,7 +73,7 @@ export {
 } from './schema/fields/factories';
 // ID type and helpers (needed for type assertions with browser converters)
 export type { Id } from './schema/fields/id';
-export { Id as createId, generateId } from './schema/fields/id';
+export { generateId, Id as createId } from './schema/fields/id';
 // Row and field types
 export type {
 	CellValue,

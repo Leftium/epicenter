@@ -19,7 +19,7 @@
  */
 
 import * as Y from 'yjs';
-import { attachActions, type Actions } from '../../shared/actions';
+import { createClientWithActions } from '../../shared/actions';
 import { defineExports, type Lifecycle } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
@@ -31,7 +31,6 @@ import type {
 	InferExtensionExports,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceClientWithActions,
 } from './types';
 
 /**
@@ -115,17 +114,8 @@ export function createWorkspace<
 		 * Actions receive the client as the first parameter (ctx) and become callable
 		 * with just the input parameter after attachment.
 		 */
-		withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
-			TTableDefinitions,
-			TKvFields,
-			Record<string, never>,
-			TActions
-		> {
-			const attached = attachActions(actions as Actions, baseClient);
-			return {
-				...baseClient,
-				actions: attached as unknown as TActions,
-			};
+		withActions<TActions>(actions: TActions) {
+			return createClientWithActions(baseClient, actions);
 		},
 
 		/**
@@ -185,17 +175,8 @@ export function createWorkspace<
 			// Return client with extensions AND withActions method
 			return {
 				...clientWithExtensions,
-				withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
-					TTableDefinitions,
-					TKvFields,
-					TExtensions,
-					TActions
-				> {
-					const attached = attachActions(actions as Actions, clientWithExtensions);
-					return {
-						...clientWithExtensions,
-						actions: attached as unknown as TActions,
-					};
+				withActions<TActions>(actions: TActions) {
+					return createClientWithActions(clientWithExtensions, actions);
 				},
 			};
 		},

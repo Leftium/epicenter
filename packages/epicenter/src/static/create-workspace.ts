@@ -20,7 +20,7 @@
  */
 
 import * as Y from 'yjs';
-import { attachActions, type Actions } from '../shared/actions.js';
+import { createClientWithActions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
@@ -32,7 +32,6 @@ import type {
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
-	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './types.js';
 
@@ -80,18 +79,8 @@ export function createWorkspace<
 		 * Actions receive the client as the first parameter (ctx) and become callable
 		 * with just the input parameter after attachment.
 		 */
-		withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			Record<string, never>,
-			TActions
-		> {
-			const attached = attachActions(actions as Actions, baseClient);
-			return {
-				...baseClient,
-				actions: attached as unknown as TActions,
-			};
+		withActions<TActions>(actions: TActions) {
+			return createClientWithActions(baseClient, actions);
 		},
 
 		/**
@@ -137,18 +126,8 @@ export function createWorkspace<
 			// Return client with capabilities AND withActions method
 			return {
 				...clientWithCapabilities,
-				withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TCapabilities,
-					TActions
-				> {
-					const attached = attachActions(actions as Actions, clientWithCapabilities);
-					return {
-						...clientWithCapabilities,
-						actions: attached as unknown as TActions,
-					};
+				withActions<TActions>(actions: TActions) {
+					return createClientWithActions(clientWithCapabilities, actions);
 				},
 			};
 		},

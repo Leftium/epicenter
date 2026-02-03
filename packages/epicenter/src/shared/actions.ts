@@ -22,10 +22,11 @@
  *
  * - {@link defineQuery} - Define a read operation
  * - {@link defineMutation} - Define a write operation
- * - {@link attachActions} - Attach actions to a context
+ * - {@link attachActions} - Attach actions to a context (low-level)
+ * - {@link createClientWithActions} - Attach actions to a client and merge
  * - {@link isAction}, {@link isQuery}, {@link isMutation} - Type guards for action definitions
  * - {@link isAttachedAction} - Type guard for attached actions
- * - {@link iterateActions}, {@link iterateAttachedActions} - Traverse action trees
+ * - {@link iterateAttachedActions} - Traverse attached action trees
  *
  * @example
  * ```typescript
@@ -283,50 +284,10 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
 }
 
 /**
- * Iterate over all actions in a tree, yielding each action with its path.
+ * Iterate over attached actions, yielding each action with its path.
  *
- * Works with both action definitions and attached actions. Useful for
- * introspection, registration, or transformation of action trees.
- *
- * @param actions - The action tree to iterate over
- * @param path - Internal parameter for tracking the current path (default: [])
- * @yields Tuples of [action, path] where path is an array of keys
- *
- * @example
- * ```typescript
- * const actions = {
- *   posts: {
- *     getAll: defineQuery({ handler: (ctx) => ... }),
- *     create: defineMutation({ handler: (ctx, input) => ... }),
- *   },
- * };
- *
- * for (const [action, path] of iterateActions(actions)) {
- *   console.log(path.join('.')); // 'posts.getAll', 'posts.create'
- *   console.log(action.type);    // 'query', 'mutation'
- * }
- * ```
- */
-export function* iterateActions(
-	actions: Actions | AttachedActions,
-	path: string[] = [],
-): Generator<[Action<any, any> | AttachedAction<any, any>, string[]]> {
-	for (const [key, value] of Object.entries(actions)) {
-		const currentPath = [...path, key];
-		if (isAction(value) || isAttachedAction(value)) {
-			yield [value, currentPath];
-		} else {
-			yield* iterateActions(value as Actions | AttachedActions, currentPath);
-		}
-	}
-}
-
-/**
- * Iterate over attached actions only, yielding each action with its path.
- *
- * Unlike {@link iterateActions}, this only yields attached actions (callable
- * functions with context pre-filled). Use this for adapters (CLI, Server)
- * that need to invoke actions directly.
+ * Attached actions are callable functions with context pre-filled. Use this
+ * for adapters (CLI, Server) that need to invoke actions directly.
  *
  * @param actions - The attached action tree to iterate over
  * @param path - Internal parameter for tracking the current path (default: [])
@@ -491,4 +452,30 @@ export function attachActions<T extends Actions>(
 	}
 
 	return attached;
+}
+
+/**
+ * Create a workspace client with actions attached.
+ *
+ * This is a convenience helper that attaches actions to a client and returns
+ * the merged result. Used internally by `.withActions()` methods.
+ *
+ * @param client - The workspace client to attach actions to
+ * @param actions - The action tree to attach
+ * @returns The client with actions attached
+ *
+ * @example
+ * ```typescript
+ * // Used internally by withActions():
+ * withActions<TActions>(actions: TActions) {
+ *   return createClientWithActions(this, actions);
+ * }
+ * ```
+ */
+export function createClientWithActions<TClient extends object, TActions>(
+	client: TClient,
+	actions: TActions,
+): TClient & { actions: TActions } {
+	const attached = attachActions(actions as Actions, client);
+	return { ...client, actions: attached as unknown as TActions };
 }

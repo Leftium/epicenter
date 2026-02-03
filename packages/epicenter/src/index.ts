@@ -36,13 +36,13 @@ export type {
 } from './shared/actions';
 export {
 	attachActions,
+	createClientWithActions,
 	defineMutation,
 	defineQuery,
 	isAction,
 	isAttachedAction,
 	isMutation,
 	isQuery,
-	iterateActions,
 	iterateAttachedActions,
 } from './shared/actions';
 

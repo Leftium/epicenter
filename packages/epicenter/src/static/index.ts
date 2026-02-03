@@ -70,13 +70,13 @@ export type {
 } from '../shared/actions.js';
 export {
 	attachActions,
+	createClientWithActions,
 	defineMutation,
 	defineQuery,
 	isAction,
 	isAttachedAction,
 	isMutation,
 	isQuery,
-	iterateActions,
 	iterateAttachedActions,
 } from '../shared/actions.js';
 // Error types

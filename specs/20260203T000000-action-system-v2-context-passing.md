@@ -102,7 +102,7 @@ const client = createWorkspaceClient({ ... }).withActions(actions);
 client.actions.posts.create({ title: 'Hello' });  // Executes handler with client as ctx
 
 // client.actions is also introspectable
-for (const [action, path] of iterateActions(client.actions)) {
+for (const [action, path] of iterateAttachedActions(client.actions)) {
   console.log(path.join('.'));      // 'posts.create'
   console.log(action.type);         // 'mutation'
   console.log(action.description);  // 'Create a post'
@@ -230,7 +230,7 @@ The handler function exists but doesn't need to execute for introspection. This 
 ```typescript
 // This works WITHOUT initializing Yjs or any async setup
 const schemas = [];
-for (const [action, path] of iterateActions(client.actions)) {
+for (const [action, path] of iterateAttachedActions(client.actions)) {
   schemas.push({
     path: path.join('.'),
     type: action.type,
@@ -243,8 +243,8 @@ for (const [action, path] of iterateActions(client.actions)) {
 ### Introspection API
 
 ```typescript
-// Iterate all actions (generator)
-function* iterateActions(
+// Iterate attached actions (generator)
+function* iterateAttachedActions(
   actions: AttachedActions,
   path: string[] = []
 ): Generator<[AttachedAction, string[]]>;
@@ -374,7 +374,8 @@ Generated MCP tools:
    - Change handler signature to `(ctx, input?)` instead of `(input)`
    - Add `AttachedAction` and `AttachedActions` types
    - Add `attachActions` helper function with JSDoc explaining terminology
-   - Keep `iterateActions` working with both attached and unattached actions
+   - Add `iterateAttachedActions` for adapters (removed `iterateActions` as dead code)
+   - Add `createClientWithActions` helper to reduce duplication in `.withActions()` implementations
 
 2. **Add `.withActions()` to WorkspaceClient**
    - In `static/create-workspace.ts` and `dynamic/workspace/create-workspace.ts`
@@ -541,7 +542,9 @@ function* iterateAttachedActions(
 ): Generator<[AttachedAction, string[]]>;
 ```
 
-This is separate from the existing `iterateActions` (which works with unattached action definitions) because attached actions have a different structure - they are callable functions with metadata properties.
+**Note:** The original design included both `iterateActions` (for unattached definitions) and `iterateAttachedActions` (for attached actions). During implementation cleanup, `iterateActions` was removed as dead code since adapters only ever work with attached actions. Only `iterateAttachedActions` remains in the final implementation.
+
+A `createClientWithActions` helper was also added to reduce duplication in the `.withActions()` implementations across static and dynamic workspace APIs.
 
 **Test Pattern**
 

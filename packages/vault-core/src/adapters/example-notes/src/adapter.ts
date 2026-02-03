@@ -8,7 +8,7 @@
  * - Keeps table prefix: example_notes_items
  */
 
-import { defineAdapter } from '@repo/vault-core';
+import { defineAdapter } from '@epicenter/vault-core';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { AdapterMetadata } from '../../../core/adapter';
 import { exampleNotesTransforms } from '../migrations/transforms';

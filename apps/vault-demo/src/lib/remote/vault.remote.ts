@@ -1,5 +1,5 @@
-import { redditAdapter } from '@repo/vault-core/adapters/reddit';
-import { ZIP } from '@repo/vault-core/utils/archive/zip';
+import { redditAdapter } from '@epicenter/vault-core/adapters/reddit';
+import { ZIP } from '@epicenter/vault-core/utils/archive/zip';
 import { form, query } from '$app/server';
 import {
 	ImportBundleInputSchema,

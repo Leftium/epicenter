@@ -1,4 +1,4 @@
-import { defineAdapter } from '@repo/vault-core';
+import { defineAdapter } from '@epicenter/vault-core';
 import { redditTransforms } from '../migrations/transforms';
 import { redditVersions } from '../migrations/versions';
 import type { RedditAdapterConfig } from './config';

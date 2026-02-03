@@ -1,4 +1,4 @@
-import { ZIP } from '@repo/vault-core/utils/archive/zip';
+import { ZIP } from '@epicenter/vault-core/utils/archive/zip';
 import { getVault, jsonFormat } from '$lib/server/vaultService';
 
 export const exportZip = async () => {

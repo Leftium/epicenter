@@ -71,9 +71,9 @@ export function defaultConvention(): ConventionProfile {
 	return {
 		pathFor(adapterId, tableName, pkValues) {
 			// Merge PK values with __, sorted by key name for determinism
-			const parts = pkValues
-				.toSorted((a, b) => a.localeCompare(b))
-				.map((v) => String(v));
+			const parts = [...pkValues]
+				.sort((a: string, b: string) => a.localeCompare(b))
+				.map((v: string) => String(v));
 			const fileId = parts.length > 0 ? parts.join('__') : 'row';
 			// extension decided by mode at callsite; we return a directory path root here
 			return `vault/${adapterId}/${tableName}/${fileId}`;

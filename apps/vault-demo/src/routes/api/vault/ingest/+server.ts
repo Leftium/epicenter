@@ -1,7 +1,7 @@
-import type { Adapter } from '@repo/vault-core';
-import { entityIndexAdapter } from '@repo/vault-core/adapters/entity-index';
-import { exampleNotesAdapter } from '@repo/vault-core/adapters/example-notes';
-import { redditAdapter } from '@repo/vault-core/adapters/reddit';
+import type { Adapter } from '@epicenter/vault-core';
+import { entityIndexAdapter } from '@epicenter/vault-core/adapters/entity-index';
+import { exampleNotesAdapter } from '@epicenter/vault-core/adapters/example-notes';
+import { redditAdapter } from '@epicenter/vault-core/adapters/reddit';
 import type { RequestHandler } from '@sveltejs/kit';
 import { getTableCounts, getVault } from '$lib/server/vaultService';
 

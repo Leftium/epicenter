@@ -224,7 +224,9 @@ describe('createTableHelper', () => {
 	describe('update operations', () => {
 		test('update merges partial data correctly', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string', age: 'number' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', age: 'number' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			helper.set({ id: '1', name: 'Alice', age: 25 });
@@ -283,7 +285,9 @@ describe('createTableHelper', () => {
 
 			// TypeScript prevents passing `id` in partial due to Omit<TRow, 'id'>
 			// But we can test that even if someone bypasses TypeScript, the id is preserved
-			const result = helper.update('1', { name: 'Bob' } as Partial<Omit<{ id: string; name: string }, 'id'>>);
+			const result = helper.update('1', { name: 'Bob' } as Partial<
+				Omit<{ id: string; name: string }, 'id'>
+			>);
 
 			expect(result.status).toBe('updated');
 			if (result.status === 'updated') {

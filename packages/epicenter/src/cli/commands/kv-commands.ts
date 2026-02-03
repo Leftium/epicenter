@@ -1,7 +1,7 @@
 import type { CommandModule } from 'yargs';
 import type { AnyWorkspaceClient } from '../discovery.js';
-import { parseJsonInput, readStdinSync } from '../parse-input.js';
 import { formatYargsOptions, output, outputError } from '../format-output.js';
+import { parseJsonInput, readStdinSync } from '../parse-input.js';
 
 /**
  * Build yargs commands for KV operations.

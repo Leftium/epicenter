@@ -58,7 +58,12 @@ export type DeleteResult =
 export type UpdateResult<TRow> =
 	| { status: 'updated'; row: TRow }
 	| { status: 'not_found'; id: string }
-	| { status: 'invalid'; id: string; errors: readonly StandardSchemaV1.Issue[]; row: unknown };
+	| {
+			status: 'invalid';
+			id: string;
+			errors: readonly StandardSchemaV1.Issue[];
+			row: unknown;
+	  };
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES

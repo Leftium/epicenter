@@ -1,12 +1,14 @@
 import type { CommandModule } from 'yargs';
 import type { AnyWorkspaceClient } from '../discovery.js';
+import { formatYargsOptions, output, outputError } from '../format-output.js';
 import { parseJsonInput, readStdinSync } from '../parse-input.js';
-import { output, outputError, formatYargsOptions } from '../format-output.js';
 
 /**
  * Build yargs commands for all tables in a workspace.
  */
-export function buildTableCommands(client: AnyWorkspaceClient): CommandModule[] {
+export function buildTableCommands(
+	client: AnyWorkspaceClient,
+): CommandModule[] {
 	const commands: CommandModule[] = [];
 	const tableNames = Object.keys(client.tables);
 
@@ -100,7 +102,8 @@ function buildTableCommand(
 				})
 				.command({
 					command: 'update <id>',
-					describe: 'Partial update a row using flags (e.g., --title "New Title")',
+					describe:
+						'Partial update a row using flags (e.g., --title "New Title")',
 					builder: (y) =>
 						y
 							.positional('id', { type: 'string', demandOption: true })

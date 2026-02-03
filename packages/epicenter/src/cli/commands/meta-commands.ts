@@ -1,6 +1,6 @@
 import type { CommandModule } from 'yargs';
 import type { AnyWorkspaceClient } from '../discovery.js';
-import { output, formatYargsOptions } from '../format-output.js';
+import { formatYargsOptions, output } from '../format-output.js';
 
 /**
  * Build meta commands (tables).

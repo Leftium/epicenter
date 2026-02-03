@@ -6,8 +6,12 @@ export type FormatOptions = {
 /**
  * Format a single value as JSON
  */
-export function formatJson(value: unknown, options: FormatOptions = {}): string {
-	const shouldPretty = options.format !== 'jsonl' && (process.stdout.isTTY ?? false);
+export function formatJson(
+	value: unknown,
+	options: FormatOptions = {},
+): string {
+	const shouldPretty =
+		options.format !== 'jsonl' && (process.stdout.isTTY ?? false);
 	return JSON.stringify(value, null, shouldPretty ? 2 : undefined);
 }
 

@@ -73,7 +73,12 @@ export function createTableHelper<
 				return { status: 'not_found', id };
 			}
 			if (current.status === 'invalid') {
-				return { status: 'invalid', id, errors: current.errors, row: current.row };
+				return {
+					status: 'invalid',
+					id,
+					errors: current.errors,
+					row: current.row,
+				};
 			}
 			const merged = { ...current.row, ...partial } as TRow;
 			this.set(merged);

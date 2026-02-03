@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 /**
  * LWW entry structure used by YKeyValueLww
  */
-export type YKeyValueLwwEntry<T = unknown> = {
+type YKeyValueLwwEntry<T = unknown> = {
 	key: string;
 	val: T;
 	ts: number;
@@ -122,25 +122,4 @@ export function readAllKv(ydoc: Y.Doc): Record<string, unknown> {
 	return Object.fromEntries(
 		Object.entries(result).map(([k, v]) => [k, v.val]),
 	);
-}
-
-/**
- * Get summary statistics for a Y.Doc
- */
-export function getYDocSummary(ydoc: Y.Doc): {
-	tables: { name: string; rowCount: number }[];
-	kvKeys: string[];
-	totalEntries: number;
-} {
-	const tables = discoverTables(ydoc).map((name) => ({
-		name,
-		rowCount: readTableRows(ydoc, name).length,
-	}));
-
-	const kvKeys = discoverKvKeys(ydoc);
-
-	const totalEntries =
-		tables.reduce((sum, t) => sum + t.rowCount, 0) + kvKeys.length;
-
-	return { tables, kvKeys, totalEntries };
 }

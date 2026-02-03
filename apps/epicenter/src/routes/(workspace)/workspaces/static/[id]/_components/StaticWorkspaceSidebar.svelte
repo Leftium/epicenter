@@ -6,13 +6,12 @@
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 
 	type Props = {
-		workspaceId: string;
 		displayName: string;
 		tables: string[];
 		kvKeys: string[];
 	};
 
-	let { workspaceId, displayName, tables, kvKeys }: Props = $props();
+	let { displayName, tables, kvKeys }: Props = $props();
 </script>
 
 <Sidebar.Root>

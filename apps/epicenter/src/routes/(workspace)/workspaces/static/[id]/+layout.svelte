@@ -15,7 +15,6 @@
 
 <Sidebar.Provider>
 	<StaticWorkspaceSidebar
-		workspaceId={data.workspaceId}
 		displayName={data.displayName}
 		tables={data.tables}
 		kvKeys={data.kvKeys}

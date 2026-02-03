@@ -1,14 +1,14 @@
 import * as Y from 'yjs';
 import { createYjsProvider, type YSweetProvider } from '@y-sweet/client';
 
-export type YSweetConnectionConfig = {
+type YSweetConnectionConfig = {
 	/** Workspace ID (used as Y.Doc guid and room name) */
 	workspaceId: string;
 	/** Y-Sweet server base URL (e.g., 'http://127.0.0.1:8080') */
 	serverUrl: string;
 };
 
-export type YSweetConnection = {
+type YSweetConnection = {
 	ydoc: Y.Doc;
 	provider: YSweetProvider;
 	whenSynced: Promise<void>;

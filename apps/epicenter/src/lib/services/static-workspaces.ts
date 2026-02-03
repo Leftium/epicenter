@@ -16,10 +16,7 @@ function createEmptyRegistry(): StaticWorkspacesRegistry {
 	return { version: 1, workspaces: [] };
 }
 
-/**
- * Load the static workspaces registry
- */
-export async function loadStaticWorkspacesRegistry(): Promise<StaticWorkspacesRegistry> {
+async function loadRegistry(): Promise<StaticWorkspacesRegistry> {
 	const path = await getRegistryPath();
 	try {
 		const content = await readTextFile(path);
@@ -42,7 +39,7 @@ async function saveRegistry(registry: StaticWorkspacesRegistry): Promise<void> {
  * List all registered static workspaces
  */
 export async function listStaticWorkspaces(): Promise<StaticWorkspaceEntry[]> {
-	const registry = await loadStaticWorkspacesRegistry();
+	const registry = await loadRegistry();
 	return registry.workspaces;
 }
 
@@ -52,7 +49,7 @@ export async function listStaticWorkspaces(): Promise<StaticWorkspaceEntry[]> {
 export async function getStaticWorkspace(
 	id: string,
 ): Promise<StaticWorkspaceEntry | null> {
-	const registry = await loadStaticWorkspacesRegistry();
+	const registry = await loadRegistry();
 	return registry.workspaces.find((w) => w.id === id) ?? null;
 }
 
@@ -62,7 +59,7 @@ export async function getStaticWorkspace(
 export async function addStaticWorkspace(
 	entry: Omit<StaticWorkspaceEntry, 'addedAt'>,
 ): Promise<StaticWorkspaceEntry> {
-	const registry = await loadStaticWorkspacesRegistry();
+	const registry = await loadRegistry();
 
 	// Check for duplicate
 	if (registry.workspaces.some((w) => w.id === entry.id)) {
@@ -78,46 +75,4 @@ export async function addStaticWorkspace(
 	await saveRegistry(registry);
 
 	return newEntry;
-}
-
-/**
- * Update an existing static workspace entry
- */
-export async function updateStaticWorkspace(
-	id: string,
-	updates: Partial<Omit<StaticWorkspaceEntry, 'id' | 'addedAt'>>,
-): Promise<StaticWorkspaceEntry | null> {
-	const registry = await loadStaticWorkspacesRegistry();
-	const index = registry.workspaces.findIndex((w) => w.id === id);
-
-	if (index === -1) return null;
-
-	// Safe to assert - we just checked index !== -1
-	const existing = registry.workspaces[index]!;
-	const updated: StaticWorkspaceEntry = {
-		id: existing.id,
-		addedAt: existing.addedAt,
-		name: updates.name ?? existing.name,
-		icon: updates.icon ?? existing.icon,
-		syncUrl: updates.syncUrl ?? existing.syncUrl,
-	};
-	registry.workspaces[index] = updated;
-
-	await saveRegistry(registry);
-	return updated;
-}
-
-/**
- * Remove a static workspace from the registry
- */
-export async function removeStaticWorkspace(id: string): Promise<boolean> {
-	const registry = await loadStaticWorkspacesRegistry();
-	const index = registry.workspaces.findIndex((w) => w.id === id);
-
-	if (index === -1) return false;
-
-	registry.workspaces.splice(index, 1);
-	await saveRegistry(registry);
-
-	return true;
 }

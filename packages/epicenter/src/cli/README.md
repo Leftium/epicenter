@@ -67,6 +67,30 @@ epicenter serve --port 8080  # custom port
 
 Exposes REST API and WebSocket sync.
 
+## Working Directory
+
+By default, Epicenter looks for `epicenter.config.ts` in the current directory.
+
+Use `-C` or `--dir` to run from a different directory:
+
+```bash
+epicenter -C apps/blog posts list
+epicenter --dir apps/shop products get abc123
+```
+
+If no config is found in the current directory but configs exist in subdirectories, Epicenter shows a helpful message:
+
+```
+No epicenter.config.ts found in current directory.
+
+Found configs in subdirectories:
+  - apps/blog/epicenter.config.ts
+  - apps/shop/epicenter.config.ts
+
+Use -C <dir> to specify which project:
+  epicenter -C apps/blog <command>
+```
+
 ## Multiple Workspaces
 
 For multiple workspaces, use separate directories with their own `epicenter.config.ts` files.

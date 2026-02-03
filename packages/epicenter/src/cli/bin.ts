@@ -1,103 +1,93 @@
 #!/usr/bin/env bun
 
 import { dirname, resolve } from 'node:path';
-import { tryAsync } from 'wellcrafted/result';
 import { hideBin } from 'yargs/helpers';
 import { createCLI } from './cli';
-import { findConfigsInSubdirs, findProjectDir, loadClient } from './discovery';
+import { resolveWorkspace } from './discovery';
 
 /**
  * Parse -C/--dir flag from argv BEFORE yargs processes subcommands.
  * Returns the base directory and remaining args.
  */
-function parseDirectoryFlag(argv: string[]): { baseDir: string; remainingArgs: string[] } {
-	const args = [...argv];
+function parseDirectoryFlag(argv: string[]): {
+	baseDir: string;
+	remainingArgs: string[];
+} {
 	let baseDir = process.cwd();
+	const remainingArgs: string[] = [];
 
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i]!;
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i]!;
 
 		// Handle -C <dir> or --dir <dir>
 		if (arg === '-C' || arg === '--dir') {
-			const nextArg = args[i + 1];
+			const nextArg = argv[i + 1];
 			if (!nextArg || nextArg.startsWith('-')) {
 				console.error(`Error: ${arg} requires a directory argument`);
 				process.exit(1);
 			}
 			baseDir = resolve(nextArg);
-			args.splice(i, 2);
-			i--; // Adjust index after removal
+			i++; // Skip next arg
 			continue;
 		}
 
 		// Handle -C=<dir> or --dir=<dir>
 		if (arg.startsWith('-C=')) {
 			baseDir = resolve(arg.slice(3));
-			args.splice(i, 1);
-			i--;
 			continue;
 		}
 		if (arg.startsWith('--dir=')) {
 			baseDir = resolve(arg.slice(6));
-			args.splice(i, 1);
-			i--;
 			continue;
 		}
+
+		remainingArgs.push(arg);
 	}
 
-	return { baseDir, remainingArgs: args };
+	return { baseDir, remainingArgs };
 }
 
 async function main() {
-	await tryAsync({
-		try: async () => {
-			await enableWatchMode();
+	try {
+		await enableWatchMode();
 
-			// Parse -C/--dir before anything else
-			const { baseDir, remainingArgs } = parseDirectoryFlag(hideBin(process.argv));
+		const { baseDir, remainingArgs } = parseDirectoryFlag(
+			hideBin(process.argv),
+		);
 
-			// Try to find config in the specified directory
-			const projectDir = await findProjectDir(baseDir);
+		const result = await resolveWorkspace(baseDir);
 
-			if (!projectDir) {
-				// No config in CWD/specified dir - check for ambiguity in subdirs
-				const subdirConfigs = await findConfigsInSubdirs(baseDir);
-
-				if (subdirConfigs.length > 0) {
-					// Ambiguous: multiple configs in subdirectories
-					console.error('No epicenter.config.ts found in current directory.');
-					console.error('');
-					console.error('Found configs in subdirectories:');
-					for (const config of subdirConfigs) {
-						console.error(`  - ${config}`);
-					}
-					console.error('');
-					console.error('Use -C <dir> to specify which project:');
-					const exampleDir = dirname(subdirConfigs[0]!);
-					console.error(`  epicenter -C ${exampleDir} <command>`);
-					process.exit(1);
-				}
-
-				// No configs found anywhere
-				console.error('No epicenter.config.ts found.');
-				console.error(
-					'Create one with named exports: export const myClient = createWorkspaceClient({...})',
-				);
-				process.exit(1);
-			}
-
-			const client = await loadClient(projectDir);
-			await createCLI(client).run(remainingArgs);
-		},
-		catch: (error) => {
-			if (error instanceof Error) {
-				console.error('Error:', error.message);
-			} else {
-				console.error('Unknown error:', error);
-			}
+		if (result.status === 'not_found') {
+			console.error('No epicenter.config.ts found.');
+			console.error(
+				'Create one: export const workspace = createWorkspaceClient({...})',
+			);
 			process.exit(1);
-		},
-	});
+		}
+
+		if (result.status === 'ambiguous') {
+			console.error('No epicenter.config.ts found in current directory.');
+			console.error('');
+			console.error('Found configs in subdirectories:');
+			for (const config of result.configs) {
+				console.error(`  - ${config}`);
+			}
+			console.error('');
+			console.error('Use -C <dir> to specify which project:');
+			console.error(`  epicenter -C ${dirname(result.configs[0]!)} <command>`);
+			process.exit(1);
+		}
+
+		// result.status === 'found'
+		await createCLI(result.client).run(remainingArgs);
+	} catch (error) {
+		if (error instanceof Error) {
+			console.error('Error:', error.message);
+		} else {
+			console.error('Unknown error:', error);
+		}
+		process.exit(1);
+	}
 }
 
 async function enableWatchMode() {

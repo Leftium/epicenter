@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { Ok, tryAsync } from 'wellcrafted/result';
+import { tryAsync } from 'wellcrafted/result';
 import { hideBin } from 'yargs/helpers';
 import { createCLI } from './cli';
 import { findProjectDir, loadClients } from './discovery';
@@ -13,7 +13,9 @@ async function main() {
 			const projectDir = await findProjectDir();
 			if (!projectDir) {
 				console.error('No epicenter.config.ts found.');
-				console.error('Create one that exports an array of workspace clients.');
+				console.error(
+					'Create one with named exports: export const myClient = createWorkspaceClient({...})',
+				);
 				process.exit(1);
 			}
 
@@ -27,7 +29,6 @@ async function main() {
 				console.error('Unknown error:', error);
 			}
 			process.exit(1);
-			return Ok(undefined);
 		},
 	});
 }

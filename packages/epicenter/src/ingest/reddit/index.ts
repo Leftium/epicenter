@@ -20,24 +20,25 @@
 import { createWorkspace } from '../../static/index.js';
 import { parseRedditZip } from './parse.js';
 import {
-	transformContent,
-	transformVotes,
-	transformSaved,
-	transformMessages,
-	transformChatHistory,
-	transformSubreddits,
-	transformMultireddits,
-	transformAwards,
-	transformCommerce,
-	transformSocial,
-	transformAnnouncements,
-	transformScheduledPosts,
-	transformIpLogs,
+	type KvData,
 	transformAdsPreferences,
+	transformAnnouncements,
+	transformAwards,
+	transformChatHistory,
+	transformCommerce,
+	transformContent,
+	transformIpLogs,
 	transformKv,
+	transformMessages,
+	transformMultireddits,
+	transformSaved,
+	transformScheduledPosts,
+	transformSocial,
+	transformSubreddits,
+	transformVotes,
 } from './transform.js';
 import { validateRedditExport } from './validation.js';
-import { redditWorkspace, type RedditWorkspace } from './workspace.js';
+import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
 // Re-export workspace definition
 export { redditWorkspace, type RedditWorkspace };
@@ -296,51 +297,45 @@ export async function importRedditExport(
 	options?.onProgress?.({ phase: 'insert', current: 0, total: 1 });
 	const kvData = transformKv(data);
 	workspace.kv.batch((tx) => {
-		if (kvData.accountGender !== null) {
-			tx.set('accountGender', kvData.accountGender);
-			stats.kv++;
-		}
-		if (kvData.birthdate !== null) {
-			tx.set('birthdate', kvData.birthdate);
-			stats.kv++;
-		}
-		if (kvData.verifiedBirthdate !== null) {
-			tx.set('verifiedBirthdate', kvData.verifiedBirthdate);
-			stats.kv++;
-		}
-		if (kvData.phoneNumber !== null) {
-			tx.set('phoneNumber', kvData.phoneNumber);
-			stats.kv++;
-		}
-		if (kvData.stripeAccountId !== null) {
-			tx.set('stripeAccountId', kvData.stripeAccountId);
-			stats.kv++;
-		}
-		if (kvData.personaInquiryId !== null) {
-			tx.set('personaInquiryId', kvData.personaInquiryId);
-			stats.kv++;
-		}
-		if (kvData.twitterUsername !== null) {
-			tx.set('twitterUsername', kvData.twitterUsername);
-			stats.kv++;
-		}
-		if (kvData.statistics !== null) {
-			tx.set('statistics', kvData.statistics);
-			stats.kv++;
-		}
-		if (kvData.preferences !== null) {
-			tx.set('preferences', kvData.preferences);
-			stats.kv++;
+		for (const [key, value] of Object.entries(kvData) as [
+			keyof KvData,
+			KvData[keyof KvData],
+		][]) {
+			if (value !== null) {
+				// Type assertion needed: tx.set expects value matching key's schema,
+				// but TypeScript can't narrow KvData[keyof KvData] through the loop
+				tx.set(key, value as string & Record<string, string>);
+				stats.kv++;
+			}
 		}
 	});
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// DONE
 	// ═══════════════════════════════════════════════════════════════════════════
-	stats.totalRows = Object.values(stats.tables).reduce((a, b) => a + b, 0) + stats.kv;
+	stats.totalRows =
+		Object.values(stats.tables).reduce((a, b) => a + b, 0) + stats.kv;
 
 	return stats;
 }
+
+// Transform configurations for data-driven imports
+const tableTransforms = [
+	{ name: 'content', transform: transformContent },
+	{ name: 'votes', transform: transformVotes },
+	{ name: 'saved', transform: transformSaved },
+	{ name: 'messages', transform: transformMessages },
+	{ name: 'chatHistory', transform: transformChatHistory },
+	{ name: 'subreddits', transform: transformSubreddits },
+	{ name: 'multireddits', transform: transformMultireddits },
+	{ name: 'awards', transform: transformAwards },
+	{ name: 'commerce', transform: transformCommerce },
+	{ name: 'social', transform: transformSocial },
+	{ name: 'announcements', transform: transformAnnouncements },
+	{ name: 'scheduledPosts', transform: transformScheduledPosts },
+	{ name: 'ipLogs', transform: transformIpLogs },
+	{ name: 'adsPreferences', transform: transformAdsPreferences },
+] as const;
 
 /**
  * Preview a Reddit GDPR export without importing.
@@ -354,37 +349,18 @@ export async function previewRedditExport(input: Blob | ArrayBuffer): Promise<{
 	const rawData = await parseRedditZip(input);
 	const data = validateRedditExport(rawData);
 
-	const tables: Record<string, number> = {
-		content: data.posts.length + data.comments.length + data.drafts.length,
-		votes: data.post_votes.length + data.comment_votes.length + data.poll_votes.length,
-		saved: data.saved_posts.length + data.saved_comments.length + data.hidden_posts.length,
-		messages: (data.messages?.length ?? 0) + data.messages_archive.length,
-		chatHistory: data.chat_history.length,
-		subreddits:
-			data.subscribed_subreddits.length +
-			data.moderated_subreddits.length +
-			data.approved_submitter_subreddits.length,
-		multireddits: data.multireddits.length,
-		awards: data.gilded_content.length + data.gold_received.length,
-		commerce: data.purchases.length + data.subscriptions.length + data.payouts.length,
-		social: data.friends.length + data.linked_identities.length,
-		announcements: data.announcements.length,
-		scheduledPosts: data.scheduled_posts.length,
-		ipLogs: data.ip_logs.length,
-		adsPreferences: data.sensitive_ads_preferences.length,
-	};
+	// Compute table row counts using same transforms as import
+	const tables: Record<string, number> = {};
+	for (const { name, transform } of tableTransforms) {
+		tables[name] = transform(data).length;
+	}
 
-	const kv: Record<string, boolean> = {
-		accountGender: !!data.account_gender[0]?.account_gender,
-		birthdate: !!data.birthdate[0]?.birthdate,
-		verifiedBirthdate: !!data.birthdate[0]?.verified_birthdate,
-		phoneNumber: !!data.linked_phone_number[0]?.phone_number,
-		stripeAccountId: !!data.stripe[0]?.stripe_account_id,
-		personaInquiryId: !!data.persona[0]?.persona_inquiry_id,
-		twitterUsername: !!data.twitter[0]?.username,
-		statistics: data.statistics.length > 0,
-		preferences: data.user_preferences.length > 0,
-	};
+	// Check which KV fields have values
+	const kvData = transformKv(data);
+	const kv: Record<string, boolean> = {};
+	for (const [key, value] of Object.entries(kvData)) {
+		kv[key] = value !== null;
+	}
 
 	const totalRows = Object.values(tables).reduce((a, b) => a + b, 0);
 

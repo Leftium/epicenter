@@ -9,15 +9,21 @@
 
 // Reddit importer
 export {
+	createRedditWorkspace,
+	type ImportOptions,
+	type ImportProgress,
+	type ImportStats,
 	importRedditExport,
 	previewRedditExport,
-	redditWorkspace,
 	type RedditWorkspace,
-	type ImportStats,
-	type ImportProgress,
-	type ImportOptions,
+	type RedditWorkspaceClient,
+	redditWorkspace,
 } from './reddit/index.js';
-
 // Utilities (for custom importers)
-export { CSV, parseCsv, type CsvOptions } from './utils/index.js';
-export { ZIP, unpackZip } from './utils/index.js';
+export {
+	CSV,
+	type CsvOptions,
+	parseCsv,
+	unpackZip,
+	ZIP,
+} from './utils/index.js';

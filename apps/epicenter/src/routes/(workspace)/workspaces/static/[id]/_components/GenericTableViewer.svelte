@@ -8,13 +8,15 @@
 	type Props = {
 		ydoc: Y.Doc;
 		tableName: string;
+		initialRows: Record<string, unknown>[];
 	};
 
-	let { ydoc, tableName }: Props = $props();
+	let { ydoc, tableName, initialRows }: Props = $props();
 
-	// Reactive rows with Y.Array observation
-	let rows = $state<Record<string, unknown>[]>([]);
+	// Initialize state with initial data
+	let rows = $state(initialRows);
 
+	// Set up Y.Array observer for live updates
 	$effect(() => {
 		const array = ydoc.getArray(`table:${tableName}`);
 
@@ -22,7 +24,6 @@
 			rows = readTableRows(ydoc, tableName);
 		};
 
-		updateRows();
 		array.observe(updateRows);
 
 		return () => {

@@ -7,13 +7,15 @@
 	type Props = {
 		ydoc: Y.Doc;
 		keys: string[];
+		initialValues: Record<string, unknown>;
 	};
 
-	let { ydoc, keys }: Props = $props();
+	let { ydoc, keys, initialValues }: Props = $props();
 
-	// Reactive KV values
-	let values = $state<Record<string, unknown>>({});
+	// Initialize state with initial data
+	let values = $state(initialValues);
 
+	// Set up Y.Array observer for live updates
 	$effect(() => {
 		const kvArray = ydoc.getArray('kv');
 
@@ -25,7 +27,6 @@
 			values = newValues;
 		};
 
-		updateValues();
 		kvArray.observe(updateValues);
 
 		return () => {

@@ -4,8 +4,8 @@
 	import TableIcon from '@lucide/svelte/icons/table-2';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import GenericTableViewer from '$lib/components/GenericTableViewer.svelte';
-	import GenericKvViewer from '$lib/components/GenericKvViewer.svelte';
+	import GenericTableViewer from './_components/GenericTableViewer.svelte';
+	import GenericKvViewer from './_components/GenericKvViewer.svelte';
 
 	let { data } = $props();
 </script>
@@ -53,7 +53,11 @@
 			<section class="space-y-3">
 				<h2 class="text-muted-foreground text-sm font-medium">Tables</h2>
 				{#each data.tables as tableName (tableName)}
-					<GenericTableViewer ydoc={data.connection.ydoc} {tableName} />
+					<GenericTableViewer
+						ydoc={data.connection.ydoc}
+						{tableName}
+						initialRows={data.tableData[tableName] ?? []}
+					/>
 				{/each}
 			</section>
 		{/if}
@@ -62,7 +66,11 @@
 		{#if data.kvKeys.length > 0}
 			<section class="space-y-3">
 				<h2 class="text-muted-foreground text-sm font-medium">Settings</h2>
-				<GenericKvViewer ydoc={data.connection.ydoc} keys={data.kvKeys} />
+				<GenericKvViewer
+					ydoc={data.connection.ydoc}
+					keys={data.kvKeys}
+					initialValues={data.kvData}
+				/>
 			</section>
 		{/if}
 	{/if}

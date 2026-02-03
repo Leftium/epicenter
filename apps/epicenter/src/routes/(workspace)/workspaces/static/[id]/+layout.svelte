@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import StaticWorkspaceSidebar from '$lib/components/StaticWorkspaceSidebar.svelte';
+	import StaticWorkspaceSidebar from './_components/StaticWorkspaceSidebar.svelte';
 
 	let { data, children } = $props();
 

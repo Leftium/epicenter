@@ -89,28 +89,6 @@ export type YSweetAuthenticatedConfig = {
 export type YSweetSyncConfig = YSweetDirectConfig | YSweetAuthenticatedConfig;
 
 /**
- * Construct a ClientToken for direct mode (no auth).
- *
- * Y-Sweet URL format:
- * - WebSocket: ws://{host}/d/{docId}/ws
- * - HTTP: http://{host}/d/{docId}
- */
-function createDirectClientToken(
-	serverUrl: string,
-	docId: string,
-): ClientToken {
-	const url = new URL(serverUrl);
-	const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-
-	return {
-		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-		baseUrl: `${url.protocol}//${url.host}`,
-		docId,
-		token: undefined,
-	};
-}
-
-/**
  * Creates a Y-Sweet sync extension.
  *
  * Y-Sweet provides:
@@ -155,39 +133,10 @@ export function ySweetSync<
 	TKvFields extends readonly KvField[],
 >(config: YSweetSyncConfig): ExtensionFactory<TTableDefinitions, TKvFields> {
 	return ({ ydoc }) => {
-		// Use the workspace ID (ydoc.guid) as the document ID
-		const docId = ydoc.guid;
-
-		// Build the auth endpoint based on mode
-		const authEndpoint: AuthEndpoint =
-			config.mode === 'direct'
-				? // Direct mode: construct token from server URL
-					async () => createDirectClientToken(config.serverUrl, docId)
-				: // Authenticated mode: use provided endpoint
-					typeof config.authEndpoint === 'string'
-					? // String URL: POST to get token
-						// TODO: Full authenticated mode implementation
-						// See: specs/extension-authentication.md
-						async () => {
-							const res = await fetch(config.authEndpoint as string, {
-								method: 'POST',
-								headers: { 'Content-Type': 'application/json' },
-								body: JSON.stringify({ docId }),
-							});
-							if (!res.ok) {
-								throw new Error(
-									`Y-Sweet auth failed: ${res.status} ${res.statusText}`,
-								);
-							}
-							return res.json() as Promise<ClientToken>;
-						}
-					: // Function: call directly
-						config.authEndpoint;
-
 		const provider: YSweetProvider = createYjsProvider(
 			ydoc,
-			docId,
-			authEndpoint,
+			ydoc.guid,
+			buildAuthEndpoint(config, ydoc.guid),
 		);
 
 		// Create a promise that resolves when initially synced
@@ -207,5 +156,66 @@ export function ySweetSync<
 				provider.destroy();
 			},
 		});
+	};
+}
+
+/**
+ * Build the AuthEndpoint from config.
+ *
+ * Three cases:
+ * 1. Direct mode → construct token from server URL
+ * 2. Authenticated + string URL → POST to get token
+ * 3. Authenticated + function → use directly
+ */
+function buildAuthEndpoint(
+	config: YSweetSyncConfig,
+	docId: string,
+): AuthEndpoint {
+	// Direct mode: construct token locally
+	if (config.mode === 'direct') {
+		return async () => createDirectClientToken(config.serverUrl, docId);
+	}
+
+	// Authenticated mode with function: use directly
+	if (typeof config.authEndpoint === 'function') {
+		return config.authEndpoint;
+	}
+
+	// Authenticated mode with string URL: POST to get token
+	// TODO: Full authenticated mode implementation
+	// See: specs/extension-authentication.md
+	const authUrl = config.authEndpoint;
+	return async () => {
+		const res = await fetch(authUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ docId }),
+		});
+		if (!res.ok) {
+			throw new Error(`Y-Sweet auth failed: ${res.status} ${res.statusText}`);
+		}
+		return res.json() as Promise<ClientToken>;
+	};
+}
+
+/**
+ * Construct a ClientToken for direct mode (no auth).
+ *
+ * Y-Sweet URL format:
+ * - WebSocket: ws://{host}/d/{docId}/ws
+ * - HTTP: http://{host}/d/{docId}
+ */
+function createDirectClientToken(
+	serverUrl: string,
+	docId: string,
+): ClientToken {
+	const url = new URL(serverUrl);
+	const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+
+	return {
+		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
+		baseUrl: `${url.protocol}//${url.host}`,
+		docId,
+		token: undefined,
 	};
 }

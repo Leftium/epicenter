@@ -22,7 +22,7 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
-import { defineWorkspace, generateGuid } from '@epicenter/hq';
+import { defineWorkspace, generateGuid } from '@epicenter/hq/dynamic';
 import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -36,7 +36,7 @@ import {
 	parseWindowId,
 } from '$lib/device-id';
 import type { Tab, Window } from '$lib/epicenter/browser.schema';
-import { BROWSER_SCHEMA } from '$lib/epicenter/schema';
+import { BROWSER_TABLES } from '$lib/epicenter/schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sync Coordination
@@ -108,7 +108,7 @@ export default defineBackground(() => {
 		slug: 'browser',
 		name: 'Browser Tabs',
 		kv: {},
-		tables: BROWSER_SCHEMA,
+		tables: BROWSER_TABLES,
 		// @ts-expect-error - extensions API not yet implemented
 		extensions: {
 			/**

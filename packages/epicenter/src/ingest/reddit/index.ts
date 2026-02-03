@@ -21,21 +21,8 @@ import { createWorkspace } from '../../static/index.js';
 import { parseRedditZip } from './parse.js';
 import {
 	type KvData,
-	transformAdsPreferences,
-	transformAnnouncements,
-	transformAwards,
-	transformChatHistory,
-	transformCommerce,
-	transformContent,
-	transformIpLogs,
+	tableTransforms,
 	transformKv,
-	transformMessages,
-	transformMultireddits,
-	transformSaved,
-	transformScheduledPosts,
-	transformSocial,
-	transformSubreddits,
-	transformVotes,
 } from './transform.js';
 import { validateRedditExport } from './validation.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
@@ -124,172 +111,23 @@ export async function importRedditExport(
 	};
 
 	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: content
+	// ALL TABLES: data-driven transform + insert
 	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('content');
-	const contentRows = transformContent(data);
-	workspace.tables.content.batch((tx) => {
-		for (const row of contentRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.content = contentRows.length;
+	for (const { name, transform } of tableTransforms) {
+		reportProgress(name);
+		const rows = transform(data);
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: votes
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('votes');
-	const voteRows = transformVotes(data);
-	workspace.tables.votes.batch((tx) => {
-		for (const row of voteRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.votes = voteRows.length;
+		// Type assertion: we know table names match workspace.tables keys
+		// and transform returns rows matching that table's schema
+		const table = workspace.tables[name as keyof typeof workspace.tables] as unknown as {
+			batch: (fn: (tx: { set: (row: { id: string }) => void }) => void) => void;
+		};
+		table.batch((tx) => {
+			for (const row of rows) tx.set(row);
+		});
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: saved
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('saved');
-	const savedRows = transformSaved(data);
-	workspace.tables.saved.batch((tx) => {
-		for (const row of savedRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.saved = savedRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: messages
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('messages');
-	const messageRows = transformMessages(data);
-	workspace.tables.messages.batch((tx) => {
-		for (const row of messageRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.messages = messageRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: chatHistory
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('chatHistory');
-	const chatRows = transformChatHistory(data);
-	workspace.tables.chatHistory.batch((tx) => {
-		for (const row of chatRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.chatHistory = chatRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: subreddits
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('subreddits');
-	const subredditRows = transformSubreddits(data);
-	workspace.tables.subreddits.batch((tx) => {
-		for (const row of subredditRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.subreddits = subredditRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: multireddits
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('multireddits');
-	const multiredditRows = transformMultireddits(data);
-	workspace.tables.multireddits.batch((tx) => {
-		for (const row of multiredditRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.multireddits = multiredditRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: awards
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('awards');
-	const awardRows = transformAwards(data);
-	workspace.tables.awards.batch((tx) => {
-		for (const row of awardRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.awards = awardRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: commerce
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('commerce');
-	const commerceRows = transformCommerce(data);
-	workspace.tables.commerce.batch((tx) => {
-		for (const row of commerceRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.commerce = commerceRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: social
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('social');
-	const socialRows = transformSocial(data);
-	workspace.tables.social.batch((tx) => {
-		for (const row of socialRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.social = socialRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: announcements
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('announcements');
-	const announcementRows = transformAnnouncements(data);
-	workspace.tables.announcements.batch((tx) => {
-		for (const row of announcementRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.announcements = announcementRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: scheduledPosts
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('scheduledPosts');
-	const scheduledPostRows = transformScheduledPosts(data);
-	workspace.tables.scheduledPosts.batch((tx) => {
-		for (const row of scheduledPostRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.scheduledPosts = scheduledPostRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: ipLogs
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('ipLogs');
-	const ipLogRows = transformIpLogs(data);
-	workspace.tables.ipLogs.batch((tx) => {
-		for (const row of ipLogRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.ipLogs = ipLogRows.length;
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// TABLE: adsPreferences
-	// ─────────────────────────────────────────────────────────────────────────────
-	reportProgress('adsPreferences');
-	const adsPreferenceRows = transformAdsPreferences(data);
-	workspace.tables.adsPreferences.batch((tx) => {
-		for (const row of adsPreferenceRows) {
-			tx.set(row);
-		}
-	});
-	stats.tables.adsPreferences = adsPreferenceRows.length;
+		stats.tables[name] = rows.length;
+	}
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// KV STORE
@@ -318,24 +156,6 @@ export async function importRedditExport(
 
 	return stats;
 }
-
-// Transform configurations for data-driven imports
-const tableTransforms = [
-	{ name: 'content', transform: transformContent },
-	{ name: 'votes', transform: transformVotes },
-	{ name: 'saved', transform: transformSaved },
-	{ name: 'messages', transform: transformMessages },
-	{ name: 'chatHistory', transform: transformChatHistory },
-	{ name: 'subreddits', transform: transformSubreddits },
-	{ name: 'multireddits', transform: transformMultireddits },
-	{ name: 'awards', transform: transformAwards },
-	{ name: 'commerce', transform: transformCommerce },
-	{ name: 'social', transform: transformSocial },
-	{ name: 'announcements', transform: transformAnnouncements },
-	{ name: 'scheduledPosts', transform: transformScheduledPosts },
-	{ name: 'ipLogs', transform: transformIpLogs },
-	{ name: 'adsPreferences', transform: transformAdsPreferences },
-] as const;
 
 /**
  * Preview a Reddit GDPR export without importing.

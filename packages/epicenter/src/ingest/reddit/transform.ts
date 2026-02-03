@@ -9,7 +9,9 @@
  * - snake_case (CSV) → camelCase (table schema)
  */
 
+import type { InferTableRow } from '../../static/index.js';
 import type { ValidatedRedditExport } from './validation.js';
+import { redditWorkspace } from './workspace.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPE HELPERS
@@ -39,163 +41,25 @@ function emptyToNull(value: string | undefined | null): string | null {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ROW TYPES (matching workspace schema)
+// ROW TYPES (derived from workspace schema - single source of truth)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ContentRow = {
-	id: string;
-	type: 'post' | 'comment' | 'draft';
-	permalink: string | null;
-	date: string | null;
-	ip: string | null;
-	subreddit: string | null;
-	gildings: string | null;
-	title?: string;
-	url?: string;
-	link?: string;
-	parent?: string;
-	body?: string;
-	media?: string;
-	kind?: string;
-	spoiler?: string;
-	nsfw?: string;
-};
+type Tables = NonNullable<typeof redditWorkspace.tables>;
 
-export type VoteRow = {
-	id: string;
-	targetType: 'post' | 'comment' | 'poll';
-	targetId: string;
-	permalink: string | null;
-	direction: 'up' | 'down' | 'none' | 'removed' | null;
-	userSelection?: string;
-	text?: string;
-	isPrediction?: string;
-	stakeAmount?: string;
-};
-
-export type SavedRow = {
-	id: string;
-	action: 'save' | 'hide';
-	targetType: 'post' | 'comment';
-	targetId: string;
-	permalink: string;
-};
-
-export type MessageRow = {
-	id: string;
-	archived: boolean;
-	permalink: string | null;
-	threadId: string | null;
-	date: string | null;
-	ip: string | null;
-	from?: string;
-	to?: string;
-	subject?: string;
-	body?: string;
-};
-
-export type ChatHistoryRow = {
-	id: string;
-	createdAt: string | null;
-	updatedAt: string | null;
-	username: string | null;
-	message: string | null;
-	threadParentMessageId: string | null;
-	channelUrl: string | null;
-	subreddit: string | null;
-	channelName: string | null;
-	conversationType: string | null;
-};
-
-export type SubredditRow = {
-	id: string;
-	subreddit: string;
-	role: 'subscribed' | 'moderated' | 'approved_submitter';
-};
-
-export type MultiredditRow = {
-	id: string;
-	displayName: string | null;
-	date: string | null;
-	description: string | null;
-	privacy: string | null;
-	subreddits: string | null;
-	imageUrl: string | null;
-	isOwner: string | null;
-	favorited: string | null;
-	followers: string | null;
-};
-
-export type AwardRow = {
-	id: string;
-	direction: 'given' | 'received';
-	contentLink: string;
-	award: string | null;
-	amount: string | null;
-	date: string | null;
-	gilderUsername?: string;
-};
-
-export type CommerceRow = {
-	id: string;
-	type: 'purchase' | 'subscription' | 'payout';
-	date: string | null;
-	processor?: string;
-	transactionId?: string;
-	product?: string;
-	cost?: string;
-	currency?: string;
-	status?: string;
-	subscriptionId?: string;
-	productId?: string;
-	productName?: string;
-	startDate?: string;
-	endDate?: string;
-	payoutId?: string;
-	payoutAmountUsd?: string;
-};
-
-export type SocialRow = {
-	id: string;
-	type: 'friend' | 'linked_identity';
-	username?: string;
-	note?: string;
-	issuerId?: string;
-	subjectId?: string;
-};
-
-export type AnnouncementRow = {
-	id: string;
-	sentAt: string | null;
-	readAt: string | null;
-	fromId: string | null;
-	fromUsername: string | null;
-	subject: string | null;
-	body: string | null;
-	url: string | null;
-};
-
-export type ScheduledPostRow = {
-	id: string;
-	subreddit: string | null;
-	title: string | null;
-	body: string | null;
-	url: string | null;
-	submissionTime: string | null;
-	recurrence: string | null;
-};
-
-export type IpLogRow = {
-	id: string;
-	date: string;
-	ip: string;
-};
-
-export type AdsPreferenceRow = {
-	id: string;
-	type: string;
-	preference: string | null;
-};
+export type ContentRow = InferTableRow<Tables['content']>;
+export type VoteRow = InferTableRow<Tables['votes']>;
+export type SavedRow = InferTableRow<Tables['saved']>;
+export type MessageRow = InferTableRow<Tables['messages']>;
+export type ChatHistoryRow = InferTableRow<Tables['chatHistory']>;
+export type SubredditRow = InferTableRow<Tables['subreddits']>;
+export type MultiredditRow = InferTableRow<Tables['multireddits']>;
+export type AwardRow = InferTableRow<Tables['awards']>;
+export type CommerceRow = InferTableRow<Tables['commerce']>;
+export type SocialRow = InferTableRow<Tables['social']>;
+export type AnnouncementRow = InferTableRow<Tables['announcements']>;
+export type ScheduledPostRow = InferTableRow<Tables['scheduledPosts']>;
+export type IpLogRow = InferTableRow<Tables['ipLogs']>;
+export type AdsPreferenceRow = InferTableRow<Tables['adsPreferences']>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TRANSFORM FUNCTIONS
@@ -634,3 +498,25 @@ export function transformKv(data: ValidatedRedditExport): KvData {
 		preferences,
 	};
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TABLE TRANSFORMS REGISTRY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Transform configurations for data-driven imports */
+export const tableTransforms = [
+	{ name: 'content', transform: transformContent },
+	{ name: 'votes', transform: transformVotes },
+	{ name: 'saved', transform: transformSaved },
+	{ name: 'messages', transform: transformMessages },
+	{ name: 'chatHistory', transform: transformChatHistory },
+	{ name: 'subreddits', transform: transformSubreddits },
+	{ name: 'multireddits', transform: transformMultireddits },
+	{ name: 'awards', transform: transformAwards },
+	{ name: 'commerce', transform: transformCommerce },
+	{ name: 'social', transform: transformSocial },
+	{ name: 'announcements', transform: transformAnnouncements },
+	{ name: 'scheduledPosts', transform: transformScheduledPosts },
+	{ name: 'ipLogs', transform: transformIpLogs },
+	{ name: 'adsPreferences', transform: transformAdsPreferences },
+] as const;

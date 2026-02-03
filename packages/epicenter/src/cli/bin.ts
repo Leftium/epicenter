@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { tryAsync } from 'wellcrafted/result';
 import { hideBin } from 'yargs/helpers';
 import { createCLI } from './cli';
@@ -73,7 +73,7 @@ async function main() {
 					}
 					console.error('');
 					console.error('Use -C <dir> to specify which project:');
-					const exampleDir = subdirConfigs[0]!.replace('/epicenter.config.ts', '');
+					const exampleDir = dirname(subdirConfigs[0]!);
 					console.error(`  epicenter -C ${exampleDir} <command>`);
 					process.exit(1);
 				}

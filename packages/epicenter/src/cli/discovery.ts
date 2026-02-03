@@ -1,6 +1,6 @@
-import { join, resolve } from 'node:path';
-import type { WorkspaceClient } from '../static/types';
+import { dirname, join, resolve } from 'node:path';
 import type { ProjectDir } from '../shared/types';
+import type { WorkspaceClient } from '../static/types';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/capabilities
 export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
@@ -39,7 +39,7 @@ export async function findConfigsInSubdirs(dir: string): Promise<string[]> {
 		absolute: false,
 	})) {
 		// Get the directory containing the config (relative to search dir)
-		const configDir = path.replace(`/${CONFIG_FILENAME}`, '').replace(CONFIG_FILENAME, '.');
+		const configDir = dirname(path) || '.';
 		if (configDir !== '.') {
 			// Only include subdirectory configs, not the root
 			configs.push(path);

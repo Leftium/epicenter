@@ -67,12 +67,6 @@ epicenter serve --port 8080  # custom port
 
 Exposes REST API and WebSocket sync.
 
-## Reserved Names
-
-Table names cannot match reserved commands: `serve`, `tables`, `kv`, `help`, `version`, `init`.
-
-If a table name conflicts, the CLI will log a warning but still work.
-
 ## Multiple Workspaces
 
 For multiple workspaces, use separate directories with their own `epicenter.config.ts` files.

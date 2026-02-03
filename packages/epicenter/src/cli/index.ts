@@ -6,9 +6,4 @@ export {
 } from './discovery';
 export { buildTableCommands } from './commands/table-commands';
 export { buildKvCommands } from './commands/kv-commands';
-export {
-	buildMetaCommands,
-	RESERVED_COMMANDS,
-	type ReservedCommand,
-	isReservedCommand,
-} from './commands/meta-commands';
+export { buildMetaCommands } from './commands/meta-commands';

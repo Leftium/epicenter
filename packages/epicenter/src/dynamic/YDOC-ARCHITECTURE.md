@@ -7,6 +7,7 @@
 > and time-travel capabilities.
 >
 > **Current implementation uses the simpler definition-first pattern:**
+>
 > - See `workspace/README.md` for the current simple API
 > - See `docs/articles/archived-head-registry-patterns.md` for preserved implementation details
 >
@@ -350,7 +351,7 @@ const client = createClient(definition.id)
 
 ## Storage Key Constants
 
-Y.Doc array keys are defined in `core/ydoc-keys.ts` and exported from all public entry points:
+Y.Doc array keys are defined in `shared/ydoc-keys.ts` and exported from all public entry points:
 
 ```typescript
 import { KV_KEY, TableKey } from '@epicenter/hq';

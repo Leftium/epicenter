@@ -30,6 +30,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"fflate": "^0.8.2",
 		"tinybase": "^5.4.2",
 		"@ark/json-schema": "^0.0.4",
 		"@elysiajs/openapi": "^1.4.11",

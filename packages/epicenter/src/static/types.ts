@@ -379,7 +379,7 @@ export type CapabilityContext<
  * - `whenSynced`: Promise that resolves when the capability is ready
  * - `destroy`: Cleanup function called when the workspace is destroyed
  *
- * Use {@link defineExports} from `core/lifecycle.ts` to easily create compliant exports.
+ * Use {@link defineExports} from `shared/lifecycle.ts` to easily create compliant exports.
  *
  * @example Simple capability (works with any workspace)
  * ```typescript
@@ -416,7 +416,7 @@ export type CapabilityFactory<
  * Map of capability factories.
  *
  * Each capability must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns:
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns:
  *
  * ```typescript
  * import { defineExports } from 'epicenter';

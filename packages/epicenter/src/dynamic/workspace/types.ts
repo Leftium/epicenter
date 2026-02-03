@@ -75,7 +75,7 @@ export type ExtensionContext<
  * - `whenSynced`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when workspace is destroyed
  *
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant exports.
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant exports.
  *
  * @typeParam TTableDefinitions - Table definitions this extension accepts
  * @typeParam TKvFields - KV fields this extension accepts
@@ -104,7 +104,7 @@ export type ExtensionFactory<
  * Map of extension factory functions.
  *
  * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns.
  */
 export type ExtensionFactoryMap = Record<
 	string,

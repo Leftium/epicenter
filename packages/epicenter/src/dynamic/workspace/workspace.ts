@@ -1,8 +1,8 @@
 /**
  * Workspace definition types for YJS-first collaborative workspaces.
  *
- * This module re-exports from core/schema for backwards compatibility.
- * The canonical definitions live in core/schema/workspace-definition.ts.
+ * This module re-exports from ./schema for backwards compatibility.
+ * The canonical definitions live in ./schema/workspace-definition.ts.
  *
  * This module provides:
  * - {@link defineWorkspace} - Type inference helper for workspace definitions

@@ -17,7 +17,7 @@ Running `epicenter` without arguments starts the server on the default port (391
 ### 1. Define Your Workspace
 
 ```typescript
-import { defineWorkspace, id, text, boolean } from '@epicenter/hq';
+import { defineWorkspace, id, text, boolean } from '@epicenter/hq/dynamic';
 
 const blogWorkspace = defineWorkspace({
 	id: 'blog',
@@ -36,12 +36,10 @@ const blogWorkspace = defineWorkspace({
 In your project root, create `epicenter.config.ts`:
 
 ```typescript
-import { sqliteProvider } from '@epicenter/hq';
+import { sqlite } from '@epicenter/hq/extensions';
 import { blogWorkspace } from './workspaces/blog';
 
-const blogClient = await blogWorkspace
-	.withProviders({ sqlite: sqliteProvider })
-	.create();
+const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
 
 export default [blogClient];
 ```

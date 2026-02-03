@@ -36,9 +36,22 @@ export type {
 export { defineWorkspace } from './workspace/workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
-// LIFECYCLE & CORE UTILITIES
+// SHARED UTILITIES (also exported from root for convenience)
 // ════════════════════════════════════════════════════════════════════════════
 
+// Action system
+export type { Action, Actions, Mutation, Query } from '../shared/actions';
+export {
+	defineMutation,
+	defineQuery,
+	isAction,
+	isMutation,
+	isQuery,
+	iterateActions,
+} from '../shared/actions';
+// Error types
+export type { ExtensionError } from '../shared/errors';
+export { ExtensionErr } from '../shared/errors';
 // Lifecycle utilities (re-exported for extension authors)
 export {
 	defineExports,
@@ -58,8 +71,15 @@ export {
 	tags,
 	text,
 } from './schema/fields/factories';
-// Icon type and utilities from Core
-export type { Icon, IconType } from './schema/fields/types';
+// Row and field types
+export type {
+	CellValue,
+	Field,
+	Icon,
+	IconType,
+	PartialRow,
+	Row,
+} from './schema/fields/types';
 export {
 	createIcon,
 	isIcon,

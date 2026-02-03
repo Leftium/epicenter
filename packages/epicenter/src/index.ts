@@ -1,21 +1,76 @@
 /**
  * Epicenter: YJS-First Collaborative Workspace System
  *
- * A unified architecture for building self-contained, globally synchronizable workspaces
- * with real-time collaboration via YJS.
+ * This root export provides shared utilities used by both workspace systems.
+ * Import from subpaths to choose your workspace API:
  *
- * ## Core Concepts
+ * - `@epicenter/hq/dynamic` - Field-based schema system (Notion-like)
+ * - `@epicenter/hq/static` - Standard Schema with versioning
+ * - `@epicenter/hq/extensions` - All extensions (persistence, sqlite, etc.)
  *
- * - **YJS Document**: Source of truth (CRDT, collaborative)
- * - **Extensions**: Plugins that add persistence, sync, and materialized views
- * - **Column Schemas**: Pure JSON definitions (no Drizzle builders)
+ * @example
+ * ```typescript
+ * // Dynamic (field-based schema)
+ * import { createWorkspace, id, text, select } from '@epicenter/hq/dynamic';
+ * import { sqlite, webPersistence } from '@epicenter/hq/extensions';
  *
- * ## Data Flow
+ * // Static (Standard Schema with versioning)
+ * import { createWorkspace, defineTable } from '@epicenter/hq/static';
+ * import { type } from 'arktype';
+ * ```
  *
- * Write to YJS → Extensions auto-sync → Query materialized views
+ * @packageDocumentation
  */
 
-// Re-export commonly used Drizzle utilities for querying extensions
+// ════════════════════════════════════════════════════════════════════════════
+// ACTION SYSTEM
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { Action, Actions, Mutation, Query } from './shared/actions';
+export {
+	defineMutation,
+	defineQuery,
+	isAction,
+	isMutation,
+	isQuery,
+	iterateActions,
+} from './shared/actions';
+
+// ════════════════════════════════════════════════════════════════════════════
+// LIFECYCLE PROTOCOL
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	defineExports,
+	type Lifecycle,
+	type MaybePromise,
+} from './shared/lifecycle';
+
+// ════════════════════════════════════════════════════════════════════════════
+// ERROR TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { ExtensionError } from './shared/errors';
+export { ExtensionErr } from './shared/errors';
+
+// ════════════════════════════════════════════════════════════════════════════
+// CORE TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { AbsolutePath, ProjectDir } from './shared/types';
+
+// ════════════════════════════════════════════════════════════════════════════
+// Y.DOC STORAGE KEYS
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { KvKey, TableKey as TableKeyType } from './shared/ydoc-keys';
+export { KV_KEY, TableKey } from './shared/ydoc-keys';
+
+// ════════════════════════════════════════════════════════════════════════════
+// DRIZZLE RE-EXPORTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// Commonly used Drizzle utilities for querying extensions
 export {
 	and,
 	asc,
@@ -34,146 +89,3 @@ export {
 	or,
 	sql,
 } from 'drizzle-orm';
-// Extension system (workspace-level plugins)
-export type {
-	ExtensionContext,
-	ExtensionExports,
-	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
-} from './dynamic/extension';
-export { defineExports } from './dynamic/extension';
-// Y.Doc wrappers for collaborative workspace architecture
-export type { Kv, KvHelper } from './dynamic/kv/create-kv';
-export { createKv } from './dynamic/kv/create-kv';
-export type {
-	InferProviderExports,
-	ProviderContext,
-	ProviderExports,
-	ProviderFactory,
-	ProviderFactoryMap,
-} from './dynamic/provider-types';
-export type {
-	// Field types
-	BooleanField,
-	CellValue,
-	DateField,
-	Field,
-	FieldById,
-	FieldIds,
-	FieldMetadata,
-	FieldOptions,
-	FieldType,
-	Guid,
-	Icon,
-	IconType,
-	// Id is exported as a value (function) below, which also provides the type
-	IdField,
-	IntegerField,
-	JsonField,
-	// KV types
-	KvField,
-	KvFieldById,
-	KvFieldIds,
-	KvValue,
-	PartialRow,
-	RealField,
-	Row,
-	SelectField,
-	TableById,
-	TableDefinition,
-	TableIds,
-	TagsField,
-	TextField,
-	// Date types
-	TimezoneId,
-} from './dynamic/schema';
-// Column schema system
-export {
-	boolean,
-	createIcon,
-	DATE_TIME_STRING_REGEX,
-	DateTimeString,
-	date,
-	generateGuid,
-	generateId,
-	Id,
-	ISO_DATETIME_REGEX,
-	id,
-	integer,
-	isIcon,
-	isNullableField,
-	json,
-	normalizeIcon,
-	parseIcon,
-	real,
-	select,
-	TIMEZONE_ID_REGEX,
-	table,
-	tableToArktype,
-	tableToYjsArktype,
-	tags,
-	text,
-	toSqlIdentifier,
-} from './dynamic/schema';
-export type { TableHelper, Tables } from './dynamic/tables/create-tables';
-// Table utilities
-export { createTables } from './dynamic/tables/create-tables';
-export type {
-	DeleteManyResult,
-	DeleteResult,
-	GetResult,
-	InvalidRowResult,
-	NotFoundResult,
-	RowResult,
-	UpdateManyResult,
-	UpdateResult,
-	ValidRowResult,
-} from './dynamic/tables/table-helper';
-// Workspace client types
-export type {
-	WorkspaceClient,
-	WorkspaceClientBuilder,
-} from './dynamic/workspace/types';
-export type { WorkspaceDefinition } from './dynamic/workspace/workspace';
-export {
-	defineWorkspace,
-	validateWorkspaceDefinition,
-	WorkspaceDefinitionSchema,
-	WorkspaceDefinitionValidator,
-} from './dynamic/workspace/workspace';
-export type {
-	KvYArray,
-	TablesYMap,
-	TableYMap,
-} from './dynamic/workspace-doc';
-// Action system
-export type { Action, Actions, Mutation, Query } from './shared/actions';
-export {
-	defineMutation,
-	defineQuery,
-	isAction,
-	isMutation,
-	isQuery,
-	iterateActions,
-} from './shared/actions';
-export type { ExtensionError } from './shared/errors';
-// Error types
-export { ExtensionErr } from './shared/errors';
-// Lifecycle protocol (shared by providers and extensions)
-export type { Lifecycle, MaybePromise } from './shared/lifecycle';
-// Core types
-export type { AbsolutePath, ProjectDir } from './shared/types';
-export type { KvKey, TableKey as TableKeyType } from './shared/ydoc-keys';
-// Y.Doc storage keys (for direct Y.Doc access / custom providers)
-export { KV_KEY, TableKey } from './shared/ydoc-keys';
-
-// Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
-// Import from sub-paths:
-//   import { createTables } from '@epicenter/hq/dynamic';     // Row-level YKeyValueLww
-//   import { createWorkspace } from '@epicenter/hq/static';   // Row-level with versioning
-//
-// Extensions are also NOT re-exported here to avoid bundling Node.js-only code
-// in browser builds. Import them directly from subpaths:
-//   import { persistence } from '@epicenter/hq/extensions/persistence';
-//   import { sqlite } from '@epicenter/hq/extensions/sqlite';

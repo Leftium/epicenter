@@ -8,26 +8,16 @@
 		"./dynamic": "./src/dynamic/index.ts",
 		"./static": "./src/static/index.ts",
 		"./node": "./src/dynamic/workspace/node.ts",
+		"./extensions": {
+			"node": "./src/extensions/index.ts",
+			"default": "./src/extensions/index.ts"
+		},
 		"./extensions/persistence": {
 			"browser": "./src/extensions/persistence/index.browser.ts",
 			"node": "./src/extensions/persistence/index.node.ts",
 			"default": "./src/extensions/persistence/index.node.ts"
 		},
-		"./extensions/persistence/web": "./src/extensions/persistence/web.ts",
-		"./extensions/persistence/desktop": "./src/extensions/persistence/desktop.ts",
 		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
-		"./extensions/markdown": {
-			"node": "./src/extensions/markdown/index.ts",
-			"default": "./src/extensions/markdown/index.ts"
-		},
-		"./extensions/sqlite": {
-			"node": "./src/extensions/sqlite/index.ts",
-			"default": "./src/extensions/sqlite/index.ts"
-		},
-		"./extensions/revision-history": {
-			"node": "./src/extensions/revision-history/index.ts",
-			"default": "./src/extensions/revision-history/index.ts"
-		},
 		"./cli": "./src/cli/index.ts",
 		"./server": "./src/server/index.ts"
 	},

@@ -12,7 +12,7 @@ import {
 	table,
 	text,
 	type WorkspaceDefinition,
-} from '@epicenter/hq';
+} from '@epicenter/hq/dynamic';
 
 export const WHISPERING_TEMPLATE = {
 	id: 'epicenter.whispering',

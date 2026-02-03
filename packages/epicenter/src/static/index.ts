@@ -56,6 +56,30 @@
  */
 
 // ════════════════════════════════════════════════════════════════════════════
+// SHARED UTILITIES (also exported from root for convenience)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Action system
+export type { Action, Actions, Mutation, Query } from '../shared/actions.js';
+export {
+	defineMutation,
+	defineQuery,
+	isAction,
+	isMutation,
+	isQuery,
+	iterateActions,
+} from '../shared/actions.js';
+// Error types
+export type { ExtensionError } from '../shared/errors.js';
+export { ExtensionErr } from '../shared/errors.js';
+// Lifecycle protocol
+export {
+	defineExports,
+	type Lifecycle,
+	type MaybePromise,
+} from '../shared/lifecycle.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 

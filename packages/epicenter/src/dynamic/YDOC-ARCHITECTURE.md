@@ -308,7 +308,7 @@ const client = createClient(definition.id)
 For runtime validation of definitions loaded from external sources:
 
 ```typescript
-import { validateWorkspaceDefinition } from '@epicenter/hq';
+import { validateWorkspaceDefinition } from '@epicenter/hq/dynamic';
 
 const json = await Bun.file('definition.json').json();
 const result = validateWorkspaceDefinition(json);
@@ -351,7 +351,7 @@ const client = createClient(definition.id)
 
 ## Storage Key Constants
 
-Y.Doc array keys are defined in `shared/ydoc-keys.ts` and exported from all public entry points:
+Y.Doc array keys are defined in `shared/ydoc-keys.ts` and exported from the root entry point:
 
 ```typescript
 import { KV_KEY, TableKey } from '@epicenter/hq';
@@ -400,7 +400,12 @@ Y.Doc contains only data, stored using YKeyValueLww (Last-Write-Wins) pattern:
 ## Usage
 
 ```typescript
-import { createHeadDoc, defineWorkspace, id, text } from '@epicenter/hq';
+import {
+	createHeadDoc,
+	defineWorkspace,
+	id,
+	text,
+} from '@epicenter/hq/dynamic';
 
 // Head (epoch pointer)
 const head = createHeadDoc({ workspaceId: 'workspace456', providers: {} });

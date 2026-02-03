@@ -9,7 +9,13 @@
  * - tags: additional tagging
  */
 
-import { id, table, tags, text, type WorkspaceDefinition } from '@epicenter/hq';
+import {
+	id,
+	table,
+	tags,
+	text,
+	type WorkspaceDefinition,
+} from '@epicenter/hq/dynamic';
 
 export const ENTRIES_TEMPLATE = {
 	id: 'epicenter.entries',

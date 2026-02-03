@@ -54,6 +54,12 @@ export type DeleteResult =
 	| { status: 'deleted' }
 	| { status: 'not_found_locally' };
 
+/** Result of updating a single row */
+export type UpdateResult<TRow> =
+	| { status: 'updated'; row: TRow }
+	| { status: 'not_found'; id: string }
+	| { status: 'invalid'; id: string; errors: readonly StandardSchemaV1.Issue[]; row: unknown };
+
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -185,6 +191,13 @@ export type TableHelper<TRow extends { id: string }> = {
 
 	/** Find first row matching predicate (only valid rows). */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// UPDATE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Partial update a row by ID. Fetches current, merges partial, and saves. */
+	update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow>;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// DELETE

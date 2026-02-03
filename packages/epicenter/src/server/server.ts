@@ -96,7 +96,7 @@ function createServerInternal(
 		.use(createTablesPlugin(workspaces));
 
 	const appWithActions = actions
-		? baseApp.use(createActionsRouter({ actions }))
+		? baseApp.use(createActionsRouter({ client: firstClient, actions }))
 		: baseApp;
 
 	const app = appWithActions.get('/', () => ({

@@ -160,24 +160,13 @@ export type WorkspaceClient<
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/** Workspace client with attached actions */
-export type WorkspaceClientWithActions<
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
-	TExtensions extends ExtensionFactoryMap,
-	TActions,
-> = WorkspaceClient<TTableDefinitions, TKvFields, TExtensions> & {
-	/** Attached actions (callable with context pre-filled) */
-	actions: TActions;
-};
-
 /**
- * Builder returned by createWorkspace() that IS a client AND has .withExtensions()/.withActions().
+ * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
  * This uses Object.assign pattern to merge the base client with the builder methods,
  * allowing both direct use and chaining:
  * - Direct: `createWorkspace(...).tables.get('posts').upsert(...)`
- * - Chained: `createWorkspace(...).withExtensions({ sqlite }).withActions({ ... })`
+ * - Chained: `createWorkspace(...).withExtensions({ sqlite })`
  *
  * @typeParam TTableDefinitions - Table definitions for this workspace
  * @typeParam TKvFields - KV field definitions for this workspace
@@ -209,41 +198,5 @@ export type WorkspaceClientBuilder<
 	 */
 	withExtensions<TExtensions extends ExtensionFactoryMap>(
 		extensions: TExtensions,
-	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions> & {
-		/**
-		 * Attach actions to the workspace client.
-		 *
-		 * Actions receive the client as the first parameter (ctx) and become callable
-		 * with just the input parameter after attachment.
-		 *
-		 * @param actions - Action tree to attach
-		 * @returns Workspace client with actions accessible via `.actions`
-		 */
-		withActions<TActions>(
-			actions: TActions,
-		): WorkspaceClientWithActions<
-			TTableDefinitions,
-			TKvFields,
-			TExtensions,
-			TActions
-		>;
-	};
-
-	/**
-	 * Attach actions to the workspace client.
-	 *
-	 * Actions receive the client as the first parameter (ctx) and become callable
-	 * with just the input parameter after attachment.
-	 *
-	 * @param actions - Action tree to attach
-	 * @returns Workspace client with actions accessible via `.actions`
-	 */
-	withActions<TActions>(
-		actions: TActions,
-	): WorkspaceClientWithActions<
-		TTableDefinitions,
-		TKvFields,
-		Record<string, never>,
-		TActions
-	>;
+	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
 };

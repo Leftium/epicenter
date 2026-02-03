@@ -40,24 +40,14 @@ export { defineWorkspace } from './workspace/workspace';
 // ════════════════════════════════════════════════════════════════════════════
 
 // Action system
-export type {
-	Action,
-	Actions,
-	AttachedAction,
-	AttachedActions,
-	Mutation,
-	Query,
-} from '../shared/actions';
+export type { Action, Actions, Mutation, Query } from '../shared/actions';
 export {
-	attachActions,
-	createClientWithActions,
 	defineMutation,
 	defineQuery,
 	isAction,
-	isAttachedAction,
 	isMutation,
 	isQuery,
-	iterateAttachedActions,
+	iterateActions,
 } from '../shared/actions';
 // Error types
 export type { ExtensionError } from '../shared/errors';

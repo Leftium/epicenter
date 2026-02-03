@@ -19,7 +19,6 @@
  */
 
 import * as Y from 'yjs';
-import { createClientWithActions } from '../../shared/actions';
 import { defineExports, type Lifecycle } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
@@ -106,18 +105,8 @@ export function createWorkspace<
 		[Symbol.asyncDispose]: destroy,
 	};
 
-	// Add withExtensions and withActions methods to create builder
+	// Add withExtensions method to create builder
 	return Object.assign(baseClient, {
-		/**
-		 * Attach actions to the workspace client.
-		 *
-		 * Actions receive the client as the first parameter (ctx) and become callable
-		 * with just the input parameter after attachment.
-		 */
-		withActions<TActions>(actions: TActions) {
-			return createClientWithActions(baseClient, actions);
-		},
-
 		/**
 		 * Add extensions to the workspace client.
 		 *
@@ -172,13 +161,7 @@ export function createWorkspace<
 				[Symbol.asyncDispose]: destroyWithExtensions,
 			};
 
-			// Return client with extensions AND withActions method
-			return {
-				...clientWithExtensions,
-				withActions<TActions>(actions: TActions) {
-					return createClientWithActions(clientWithExtensions, actions);
-				},
-			};
+			return clientWithExtensions;
 		},
 	});
 }

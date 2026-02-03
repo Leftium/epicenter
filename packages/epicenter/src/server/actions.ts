@@ -1,24 +1,25 @@
 import { Elysia } from 'elysia';
-import type { AttachedActions } from '../shared/actions';
-import { iterateAttachedActions } from '../shared/actions';
+import type { Actions } from '../shared/actions';
+import { iterateActions } from '../shared/actions';
 
 type ActionsRouterOptions = {
-	actions: AttachedActions;
+	client: unknown;
+	actions: Actions;
 	basePath?: string;
 };
 
 /**
- * Create an Elysia router for attached actions.
+ * Create an Elysia router for action definitions.
  *
  * @remarks
- * Only works with attached actions (from client.actions). Attached actions are
- * callable functions that have the workspace context pre-filled.
+ * Actions are closure-based - they capture their dependencies (tables, extensions, etc.)
+ * at definition time. The router invokes handlers directly.
  */
 export function createActionsRouter(options: ActionsRouterOptions) {
 	const { actions, basePath = '/actions' } = options;
 	const router = new Elysia({ prefix: basePath });
 
-	for (const [action, path] of iterateAttachedActions(actions)) {
+	for (const [action, path] of iterateActions(actions)) {
 		const routePath = `/${path.join('/')}`;
 		const namespaceTags = path.length > 1 ? [path[0] as string] : [];
 		const tags = [...namespaceTags, action.type];
@@ -28,10 +29,6 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 			description: action.description,
 			tags,
 		};
-
-		// Attached actions are callable directly with input
-		const callAction = (input?: unknown) =>
-			(action as (input?: unknown) => unknown)(input);
 
 		const handleRequest = async (input: unknown) => {
 			let validatedInput: unknown;
@@ -43,8 +40,12 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 					};
 				}
 				validatedInput = result.value;
+				// Call handler with validated input
+				const output = await action.handler(validatedInput);
+				return { data: output };
 			}
-			const output = await callAction(validatedInput);
+			// Call handler with no arguments for actions without input
+			const output = await (action.handler as () => unknown)();
 			return { data: output };
 		};
 
@@ -64,8 +65,10 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 				);
 				break;
 			default: {
-				const _exhaustive: never = action.type as never;
-				throw new Error(`Unknown action type: ${_exhaustive}`);
+				const _exhaustive: never = action;
+				throw new Error(
+					`Unknown action type: ${(_exhaustive as { type: string }).type}`,
+				);
 			}
 		}
 	}
@@ -76,6 +79,6 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 /**
  * Collect action paths for logging/discovery.
  */
-export function collectActionPaths(actions: AttachedActions): string[] {
-	return [...iterateAttachedActions(actions)].map(([, path]) => path.join('/'));
+export function collectActionPaths(actions: Actions): string[] {
+	return [...iterateActions(actions)].map(([, path]) => path.join('/'));
 }

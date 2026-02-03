@@ -1,53 +1,62 @@
 /**
- * Action System v2: Context-passing handlers with attachment pattern.
+ * Action System v2: Closure-based handlers for Epicenter.
  *
- * This module provides the core action definition and attachment system for Epicenter.
- * Actions are typed operations (queries for reads, mutations for writes) that receive
- * the workspace client context as their first parameter.
+ * This module provides the core action definition system for Epicenter.
+ * Actions are typed operations (queries for reads, mutations for writes) that
+ * capture their dependencies via closures at definition time.
  *
- * ## Design Pattern
+ * ## Design Pattern: Closure-Based Dependency Injection
  *
- * Actions follow a two-phase lifecycle:
- * 1. **Definition**: Actions are defined with `defineQuery` or `defineMutation`, specifying
- *    a handler function with signature `(ctx, input?) => output`
- * 2. **Attachment**: Actions are attached to a client via `.withActions()`, which captures
- *    the context and returns callable functions with signature `(input?) => output`
+ * Actions close over their dependencies directly instead of receiving context as a parameter:
+ * - Define actions **after** creating the client
+ * - Handlers reference the client via closure: signature is `(input?) => output`
+ * - Adapters (Server, CLI) receive both client and actions separately: `{ client, actions }`
  *
- * This separation enables:
- * - Type-safe handler definitions with full inference
- * - Metadata introspection for adapters (CLI, Server, etc.)
- * - Testability by allowing different contexts to be provided
+ * **Key benefits:**
+ * - **Zero annotation ceremony**: TypeScript infers handler types naturally
+ * - **Type-safe**: Full type inference for client and tables, not `unknown`
+ * - **Simpler signatures**: `(input?) => output` instead of `(ctx, input?) => output`
+ * - **Natural JavaScript**: Uses standard closures, no framework magic
+ * - **Introspectable**: Plain objects with metadata for adapters
  *
  * ## Exports
  *
  * - {@link defineQuery} - Define a read operation
  * - {@link defineMutation} - Define a write operation
- * - {@link attachActions} - Attach actions to a context (low-level)
- * - {@link createClientWithActions} - Attach actions to a client and merge
  * - {@link isAction}, {@link isQuery}, {@link isMutation} - Type guards for action definitions
- * - {@link isAttachedAction} - Type guard for attached actions
- * - {@link iterateAttachedActions} - Traverse attached action trees
+ * - {@link iterateActions} - Traverse and introspect action definition trees
  *
  * @example
  * ```typescript
- * import { createWorkspaceClient, defineQuery, defineMutation } from '@epicenter/hq';
+ * import { createWorkspace, defineQuery, defineMutation } from '@epicenter/hq';
  * import { type } from 'arktype';
  *
- * export default createWorkspaceClient({ ... })
- *   .withActions({
- *     posts: {
- *       getAll: defineQuery({
- *         handler: (ctx) => ctx.tables.posts.getAllValid(),
- *       }),
- *       create: defineMutation({
- *         input: type({ title: 'string' }),
- *         handler: (ctx, { title }) => {
- *           ctx.tables.posts.upsert({ id: generateId(), title });
- *           return { id };
- *         },
- *       }),
- *     },
- *   });
+ * // Step 1: Create the client (with all tables and extensions)
+ * const client = createWorkspace({
+ *   id: 'blog',
+ *   tables: { posts: postsTable },
+ * });
+ *
+ * // Step 2: Define actions that close over the client
+ * export const actions = {
+ *   posts: {
+ *     getAll: defineQuery({
+ *       handler: () => client.tables.posts.getAllValid(),
+ *     }),
+ *     create: defineMutation({
+ *       input: type({ title: 'string' }),
+ *       handler: ({ title }) => {
+ *         const id = generateId();
+ *         client.tables.posts.upsert({ id, title });
+ *         return { id };
+ *       },
+ *     }),
+ *   },
+ * };
+ *
+ * // Step 3: Pass both to adapters
+ * createActionsRouter({ client, actions });
+ * createCLI({ client, actions });
  * ```
  *
  * @module
@@ -71,23 +80,31 @@ import type {
  * @property description - Human-readable description for introspection and documentation
  * @property input - Optional StandardSchema for validating and typing input
  * @property output - Optional StandardSchema for output (used by adapters for serialization)
- * @property handler - The action implementation with signature `(ctx, input?) => output`
+ * @property handler - The action implementation. Handlers close over their dependencies and have signature `(input?) => output`
  *
  * @remarks
- * The handler receives the workspace client as `ctx`. This parameter is captured
- * when actions are attached via `.withActions()`, so callers only provide `input`.
+ * **Closure-based design**: Handlers capture their dependencies (client, tables, extensions, etc.)
+ * via closure instead of receiving context as a parameter. This means:
+ * - Handlers should be defined after the client they depend on is created
+ * - Dependencies are accessed through closure, not as a parameter
+ * - No type annotations needed—TypeScript infers everything naturally
+ *
+ * This is standard JavaScript closure mechanics, not framework magic.
  *
  * @example
  * ```typescript
- * // Action with input
+ * // Assuming client is defined above:
+ * // const client = createWorkspace({ id: 'blog', tables: { posts: ... } });
+ *
+ * // Action with input - closes over client via closure
  * const config: ActionConfig<typeof inputSchema, Post> = {
  *   input: type({ id: 'string' }),
- *   handler: (ctx, { id }) => ctx.tables.posts.get(id),
+ *   handler: ({ id }) => client.tables.posts.get(id),  // client captured by closure
  * };
  *
  * // Action without input
  * const configNoInput: ActionConfig<undefined, Post[]> = {
- *   handler: (ctx) => ctx.tables.posts.getAllValid(),
+ *   handler: () => client.tables.posts.getAllValid(),  // client captured by closure
  * };
  * ```
  */
@@ -99,11 +116,8 @@ type ActionConfig<
 	input?: TInput;
 	output?: StandardSchemaWithJSONSchema;
 	handler: TInput extends StandardSchemaWithJSONSchema
-		? (
-				ctx: unknown,
-				input: StandardSchemaV1.InferOutput<TInput>,
-			) => TOutput | Promise<TOutput>
-		: (ctx: unknown) => TOutput | Promise<TOutput>;
+		? (input: StandardSchemaV1.InferOutput<TInput>) => TOutput | Promise<TOutput>
+		: () => TOutput | Promise<TOutput>;
 };
 
 /**
@@ -158,18 +172,30 @@ export type Action<
 /**
  * A tree of action definitions, supporting arbitrary nesting.
  *
- * Actions can be organized into namespaces for better organization:
+ * Actions can be organized into namespaces for better organization.
+ * Each handler closes over the client and dependencies from its enclosing scope.
  *
  * @example
  * ```typescript
+ * // Define after creating client: const client = createWorkspace({ ... });
+ *
  * const actions: Actions = {
  *   posts: {
- *     getAll: defineQuery({ handler: (ctx) => ... }),
- *     create: defineMutation({ handler: (ctx, input) => ... }),
+ *     getAll: defineQuery({
+ *       handler: () => client.tables.posts.getAllValid()  // closes over client
+ *     }),
+ *     create: defineMutation({
+ *       handler: ({ title }) => {
+ *         client.tables.posts.upsert({ id: generateId(), title });
+ *         return { id };
+ *       }
+ *     }),
  *   },
  *   users: {
  *     profile: {
- *       get: defineQuery({ handler: (ctx) => ... }),
+ *       get: defineQuery({
+ *         handler: () => client.tables.users.getCurrentProfile()  // closes over client
+ *       }),
  *     },
  *   },
  * };
@@ -185,15 +211,23 @@ export type Actions = {
  * The `type: 'query'` discriminator is attached automatically.
  * Queries map to HTTP GET requests when exposed via the server adapter.
  *
+ * Handlers close over their dependencies (client, tables, etc.) instead of receiving
+ * context as a parameter. Define queries after creating the client.
+ *
  * @example
  * ```typescript
+ * // Assuming client is already created:
+ * // const client = createWorkspace({ ... });
+ *
+ * // Query without input - closes over client
  * const getAllPosts = defineQuery({
- *   handler: (ctx) => ctx.tables.posts.getAllValid(),
+ *   handler: () => client.tables.posts.getAllValid(),
  * });
  *
+ * // Query with input validation - closes over client
  * const getPost = defineQuery({
  *   input: type({ id: 'string' }),
- *   handler: (ctx, { id }) => ctx.tables.posts.get(id),
+ *   handler: ({ id }) => client.tables.posts.get(id),
  * });
  * ```
  */
@@ -210,19 +244,28 @@ export function defineQuery<
  * The `type: 'mutation'` discriminator is attached automatically.
  * Mutations map to HTTP POST requests when exposed via the server adapter.
  *
+ * Handlers close over their dependencies (client, tables, extensions, etc.) instead
+ * of receiving context as a parameter. Define mutations after creating the client.
+ *
  * @example
  * ```typescript
+ * // Assuming client is already created:
+ * // const client = createWorkspace({ ... });
+ *
+ * // Mutation that creates a post - closes over client
  * const createPost = defineMutation({
  *   input: type({ title: 'string' }),
- *   handler: (ctx, { title }) => {
- *     ctx.tables.posts.upsert({ id: generateId(), title });
+ *   handler: ({ title }) => {
+ *     const id = generateId();
+ *     client.tables.posts.upsert({ id, title });
  *     return { id };
  *   },
  * });
  *
+ * // Mutation that syncs data - closes over client and extensions
  * const syncMarkdown = defineMutation({
  *   description: 'Sync markdown files to YJS',
- *   handler: (ctx) => ctx.extensions.markdown.pullFromMarkdown(),
+ *   handler: () => client.extensions.markdown.pullFromMarkdown(),
  * });
  * ```
  */
@@ -248,7 +291,7 @@ export function defineMutation<
  * if (isAction(value)) {
  *   // value is typed as Action<any, any>
  *   console.log(value.type); // 'query' | 'mutation'
- *   value.handler(ctx, input);
+ *   value.handler(input);
  * }
  * ```
  */
@@ -284,198 +327,47 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
 }
 
 /**
- * Iterate over attached actions, yielding each action with its path.
+ * Iterate over action definitions, yielding each action with its path.
  *
- * Attached actions are callable functions with context pre-filled. Use this
- * for adapters (CLI, Server) that need to invoke actions directly.
+ * Use this for adapters (CLI, Server) that need to introspect and invoke actions.
+ * Each action's handler already has access to the client via closure, so adapters
+ * just call `action.handler(input)` directly—no attachment step needed.
  *
- * @param actions - The attached action tree to iterate over
+ * @param actions - The action tree to iterate over
  * @param path - Internal parameter for tracking the current path (default: [])
- * @yields Tuples of [attachedAction, path] where path is an array of keys
+ * @yields Tuples of [action, path] where path is an array of keys
  *
  * @example
  * ```typescript
+ * // In a server adapter
+ * for (const [action, path] of iterateActions(actions)) {
+ *   const route = path.join('/');
+ *   registerRoute(route, async (input) => {
+ *     // Handler already has client via closure—just call it directly
+ *     return await action.handler(input);
+ *   });
+ * }
+ *
  * // In a CLI adapter
- * for (const [action, path] of iterateAttachedActions(client.actions)) {
- *   registerCommand(path.join('.'), async (input) => {
- *     return await action(input);
+ * for (const [action, path] of iterateActions(actions)) {
+ *   const command = path.join(':');
+ *   cli.command(command, async (input) => {
+ *     return await action.handler(input);  // Direct invocation
  *   });
  * }
  * ```
  */
-export function* iterateAttachedActions(
-	actions: AttachedActions,
+export function* iterateActions(
+	actions: Actions,
 	path: string[] = [],
-): Generator<[AttachedAction<any, any>, string[]]> {
+): Generator<[Action<any, any>, string[]]> {
 	for (const [key, value] of Object.entries(actions)) {
 		const currentPath = [...path, key];
-		if (isAttachedAction(value)) {
+		if (isAction(value)) {
 			yield [value, currentPath];
 		} else {
-			yield* iterateAttachedActions(value as AttachedActions, currentPath);
+			yield* iterateActions(value as Actions, currentPath);
 		}
 	}
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// ATTACHED ACTION TYPES
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * An action that has been attached to a workspace client.
- *
- * Attached actions are callable functions that execute the handler with the
- * client context pre-filled. They also expose metadata (type, description,
- * input/output schemas) for introspection by adapters.
- *
- * @remarks
- * We use "attached" rather than "bound" terminology because:
- * - "Attach" describes the relationship: actions are attached TO a client
- * - "Bound" has JavaScript baggage (Function.prototype.bind) that's technically
- *   accurate but less intuitive for the mental model we want
- * - Effect-TS uses "provide", Express uses "attach" - we follow the simpler term
- * - Matches our existing `.withExtensions()` pattern semantically
- *
- * @example
- * ```typescript
- * // After attachment, actions are callable with just the input
- * client.actions.posts.create({ title: 'Hello' });
- *
- * // Metadata is still accessible for introspection
- * client.actions.posts.create.type; // 'mutation'
- * client.actions.posts.create.input; // StandardSchema
- * ```
- */
-export type AttachedAction<TInput = unknown, TOutput = unknown> = {
-	type: 'query' | 'mutation';
-	description?: string;
-	input?: StandardSchemaWithJSONSchema;
-	output?: StandardSchemaWithJSONSchema;
-} & (TInput extends undefined
-	? () => TOutput | Promise<TOutput>
-	: (input: TInput) => TOutput | Promise<TOutput>);
-
-/**
- * A tree of attached actions, mirroring the original action tree structure.
- *
- * This is the return type of {@link attachActions} and the type of
- * `client.actions` after calling `.withActions()`.
- *
- * @example
- * ```typescript
- * // Attached actions are callable with just the input
- * const attached: AttachedActions = attachActions(actions, client);
- * attached.posts.create({ title: 'Hello' });
- *
- * // Metadata is preserved for introspection
- * attached.posts.create.type; // 'mutation'
- * attached.posts.create.description; // 'Create a new post'
- * ```
- */
-export type AttachedActions = {
-	[key: string]: AttachedAction<any, any> | AttachedActions;
-};
-
-/**
- * Type guard for attached actions.
- *
- * Attached actions are callable functions with action metadata properties.
- */
-export function isAttachedAction(
-	value: unknown,
-): value is AttachedAction<any, any> {
-	return (
-		typeof value === 'function' &&
-		'type' in value &&
-		(value.type === 'query' || value.type === 'mutation')
-	);
-}
-
-/**
- * Attaches action handlers to a workspace client context, enabling them to be
- * called with just the input parameter.
- *
- * @remarks
- * This performs partial application: handlers defined as `(ctx, input) => output`
- * become callable as `(input) => output` because `ctx` is captured in a closure.
- * We call this "attaching" rather than "binding" to emphasize the relationship
- * (actions belong to a client) over the mechanism (closure capture).
- *
- * @param actions - The action tree to attach
- * @param ctx - The workspace client context to capture
- * @returns A new action tree where all handlers have ctx pre-filled
- *
- * @example
- * ```typescript
- * const actions = {
- *   posts: {
- *     create: defineMutation({
- *       input: type({ title: 'string' }),
- *       handler: (ctx, { title }) => ctx.tables.posts.upsert({ ... }),
- *     }),
- *   },
- * };
- *
- * const attached = attachActions(actions, client);
- * attached.posts.create({ title: 'Hello' }); // ctx is pre-filled
- * ```
- */
-export function attachActions<T extends Actions>(
-	actions: T,
-	ctx: unknown,
-): AttachedActions {
-	const attached: AttachedActions = {};
-
-	for (const [key, value] of Object.entries(actions)) {
-		if (isAction(value)) {
-			// Create a callable function with metadata properties
-			const callable = ((input?: unknown) => {
-				if (value.input) {
-					return value.handler(ctx, input);
-				}
-				return (value.handler as (ctx: unknown) => unknown)(ctx);
-			}) as AttachedAction<any, any>;
-
-			// Copy metadata to the function
-			Object.defineProperties(callable, {
-				type: { value: value.type, enumerable: true },
-				description: { value: value.description, enumerable: true },
-				input: { value: value.input, enumerable: true },
-				output: { value: value.output, enumerable: true },
-			});
-
-			attached[key] = callable;
-		} else {
-			// Recursively attach nested action groups
-			attached[key] = attachActions(value, ctx);
-		}
-	}
-
-	return attached;
-}
-
-/**
- * Create a workspace client with actions attached.
- *
- * This is a convenience helper that attaches actions to a client and returns
- * the merged result. Used internally by `.withActions()` methods.
- *
- * @param client - The workspace client to attach actions to
- * @param actions - The action tree to attach
- * @returns The client with actions attached
- *
- * @example
- * ```typescript
- * // Used internally by withActions():
- * withActions<TActions>(actions: TActions) {
- *   return createClientWithActions(this, actions);
- * }
- * ```
- */
-export function createClientWithActions<TClient extends object, TActions>(
-	client: TClient,
-	actions: TActions,
-): TClient & { actions: TActions } {
-	const attached = attachActions(actions as Actions, client);
-	return { ...client, actions: attached as unknown as TActions };
-}

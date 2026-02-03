@@ -328,11 +328,11 @@ export type WorkspaceDefinition<
 };
 
 /**
- * Builder returned by createWorkspace() that IS a client AND has .withExtensions()/.withActions().
+ * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
  * This uses Object.assign to merge the base client with the builder methods,
  * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
- * chaining: `createWorkspace(...).withExtensions({ sqlite }).withActions({ ... })`.
+ * chaining: `createWorkspace(...).withExtensions({ sqlite })`.
  */
 export type WorkspaceClientBuilder<
 	TId extends string,
@@ -355,45 +355,7 @@ export type WorkspaceClientBuilder<
 	 */
 	withExtensions<TCapabilities extends CapabilityMap>(
 		extensions: TCapabilities,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> & {
-		/**
-		 * Attach actions to the workspace client.
-		 *
-		 * Actions receive the client as the first parameter (ctx) and become callable
-		 * with just the input parameter after attachment.
-		 *
-		 * @param actions - Action tree to attach
-		 * @returns Workspace client with actions accessible via `.actions`
-		 */
-		withActions<TActions>(
-			actions: TActions,
-		): WorkspaceClientWithActions<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TCapabilities,
-			TActions
-		>;
-	};
-
-	/**
-	 * Attach actions to the workspace client.
-	 *
-	 * Actions receive the client as the first parameter (ctx) and become callable
-	 * with just the input parameter after attachment.
-	 *
-	 * @param actions - Action tree to attach
-	 * @returns Workspace client with actions accessible via `.actions`
-	 */
-	withActions<TActions>(
-		actions: TActions,
-	): WorkspaceClientWithActions<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		Record<string, never>,
-		TActions
-	>;
+	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -525,16 +487,4 @@ export type WorkspaceClient<
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;
-};
-
-/** Workspace client with attached actions */
-export type WorkspaceClientWithActions<
-	TId extends string,
-	TTableDefinitions extends TableDefinitions,
-	TKvDefinitions extends KvDefinitions,
-	TCapabilities extends CapabilityMap,
-	TActions,
-> = WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> & {
-	/** Attached actions (callable with context pre-filled) */
-	actions: TActions;
 };

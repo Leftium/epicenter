@@ -20,7 +20,6 @@
  */
 
 import * as Y from 'yjs';
-import { createClientWithActions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
@@ -74,16 +73,6 @@ export function createWorkspace<
 		...baseClient,
 
 		/**
-		 * Attach actions to the workspace client.
-		 *
-		 * Actions receive the client as the first parameter (ctx) and become callable
-		 * with just the input parameter after attachment.
-		 */
-		withActions<TActions>(actions: TActions) {
-			return createClientWithActions(baseClient, actions);
-		},
-
-		/**
 		 * Attach capabilities (persistence, SQLite, sync, etc.) to the workspace.
 		 *
 		 * Each capability factory receives { ydoc, id, tables, kv } and
@@ -123,13 +112,7 @@ export function createWorkspace<
 				[Symbol.asyncDispose]: destroyWithCapabilities,
 			};
 
-			// Return client with capabilities AND withActions method
-			return {
-				...clientWithCapabilities,
-				withActions<TActions>(actions: TActions) {
-					return createClientWithActions(clientWithCapabilities, actions);
-				},
-			};
+			return clientWithCapabilities;
 		},
 	};
 }

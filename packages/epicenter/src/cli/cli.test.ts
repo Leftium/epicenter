@@ -1,30 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import yargs from 'yargs';
-import {
-	type Actions,
-	attachActions,
-	defineMutation,
-	defineQuery,
-} from '../shared/actions';
+import { defineMutation, defineQuery } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
-
-// Mock client for attaching actions
-const mockClient = { id: 'test' };
 
 describe('CLI command registration', () => {
 	test('registers flat action commands with yargs', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
-				handler: (_ctx) => 'pong',
+				handler: () => 'pong',
 			}),
 			sync: defineMutation({
-				handler: (_ctx) => {},
+				handler: () => {},
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		let cli = yargs().scriptName('test');
 		for (const cmd of commands) {
@@ -39,16 +30,15 @@ describe('CLI command registration', () => {
 	});
 
 	test('registers nested commands with top-level parent', () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				list: defineQuery({
-					handler: (_ctx) => [],
+					handler: () => [],
 				}),
 			},
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		let cli = yargs().scriptName('test');
 		for (const cmd of commands) {
@@ -62,14 +52,13 @@ describe('CLI command registration', () => {
 	});
 
 	test('command handlers are accessible', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
-				handler: (_ctx) => 'pong',
+				handler: () => 'pong',
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		let cli = yargs().scriptName('test');
 		for (const cmd of commands) {
@@ -86,18 +75,17 @@ describe('CLI command registration', () => {
 	test('parses flat command options correctly', async () => {
 		let capturedArgs: Record<string, unknown> | null = null;
 
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string', 'count?': 'number' }),
-				handler: (_ctx, { title, count }) => {
+				handler: ({ title, count }) => {
 					capturedArgs = { title, count };
 					return { id: '1', title };
 				},
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		let cli = yargs()
 			.scriptName('test')
@@ -114,19 +102,18 @@ describe('CLI command registration', () => {
 	});
 
 	test('buildActionCommands returns correct command paths', () => {
-		const actions: Actions = {
-			ping: defineQuery({ handler: (_ctx) => 'pong' }),
+		const actions = {
+			ping: defineQuery({ handler: () => 'pong' }),
 			posts: {
-				list: defineQuery({ handler: (_ctx) => [] }),
+				list: defineQuery({ handler: () => [] }),
 				create: defineMutation({
 					input: type({ title: 'string' }),
-					handler: (_ctx, { title }) => ({ title }),
+					handler: ({ title }) => ({ title }),
 				}),
 			},
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 		const commandPaths = commands.map((c) => c.command);
 
 		expect(commandPaths).toContain('ping');

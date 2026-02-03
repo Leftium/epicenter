@@ -1,26 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import {
-	type Actions,
-	attachActions,
-	defineMutation,
-	defineQuery,
-} from '../shared/actions';
+import { defineMutation, defineQuery } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
-
-// Mock client for attaching actions
-const mockClient = { id: 'test' };
 
 describe('buildActionCommands', () => {
 	test('builds command from simple action without input', () => {
-		const actions: Actions = {
+		const actions = {
 			getAll: defineQuery({
-				handler: (_ctx) => [],
+				handler: () => [],
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('getAll');
@@ -30,15 +21,14 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds command from action with input schema', () => {
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),
-				handler: (_ctx, { title }) => ({ id: '1', title }),
+				handler: ({ title }) => ({ id: '1', title }),
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('create');
@@ -47,20 +37,19 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds commands from nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			posts: {
 				getAll: defineQuery({
-					handler: (_ctx) => [],
+					handler: () => [],
 				}),
 				create: defineMutation({
 					input: type({ title: 'string' }),
-					handler: (_ctx, { title }) => ({ id: '1', title }),
+					handler: ({ title }) => ({ id: '1', title }),
 				}),
 			},
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands).toHaveLength(2);
 
@@ -70,52 +59,49 @@ describe('buildActionCommands', () => {
 	});
 
 	test('builds commands from deeply nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			api: {
 				v1: {
 					posts: {
 						list: defineQuery({
-							handler: (_ctx) => [],
+							handler: () => [],
 						}),
 					},
 				},
 			},
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('api v1 posts list');
 	});
 
 	test('uses description from action when provided', () => {
-		const actions: Actions = {
+		const actions = {
 			sync: defineMutation({
 				description: 'Sync data from external source',
-				handler: (_ctx) => {},
+				handler: () => {},
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands[0]?.describe).toBe('Sync data from external source');
 	});
 
 	test('builder contains yargs options for input schema', () => {
-		const actions: Actions = {
+		const actions = {
 			create: defineMutation({
 				input: type({
 					title: 'string',
 					'count?': 'number',
 				}),
-				handler: (_ctx, { title }) => ({ id: '1', title }),
+				handler: ({ title }) => ({ id: '1', title }),
 			}),
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 		const builder = commands[0]?.builder as Record<string, unknown>;
 
 		expect(builder).toHaveProperty('title');
@@ -128,19 +114,18 @@ describe('buildActionCommands', () => {
 	});
 
 	test('handles mixed flat and nested actions', () => {
-		const actions: Actions = {
+		const actions = {
 			ping: defineQuery({
-				handler: (_ctx) => 'pong',
+				handler: () => 'pong',
 			}),
 			users: {
 				list: defineQuery({
-					handler: (_ctx) => [],
+					handler: () => [],
 				}),
 			},
 		};
-		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(attached);
+		const commands = buildActionCommands(actions);
 
 		expect(commands).toHaveLength(2);
 		const commandNames = commands.map((c) => c.command);

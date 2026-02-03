@@ -1,6 +1,6 @@
 import { regex } from 'arkregex';
 import type { Brand } from 'wellcrafted/brand';
-import { Id } from '../../core/schema/fields/id.js';
+import { Id } from '../schema/fields/id.js';
 
 const KEY_SEPARATOR = ':' as const;
 

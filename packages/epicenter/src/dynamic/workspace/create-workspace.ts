@@ -19,10 +19,10 @@
  */
 
 import * as Y from 'yjs';
-import { defineExports, type Lifecycle } from '../../core/lifecycle';
-import type { KvField, TableDefinition } from '../../core/schema/fields/types';
-import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
+import { defineExports, type Lifecycle } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
+import type { KvField, TableDefinition } from '../schema/fields/types';
+import type { WorkspaceDefinition } from '../schema/workspace-definition';
 import { createTables } from '../tables/create-tables';
 import type {
 	ExtensionContext,

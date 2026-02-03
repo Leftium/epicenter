@@ -3,20 +3,20 @@ import path from 'node:path';
 import chokidar, { type FSWatcher } from 'chokidar';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync, trySync } from 'wellcrafted/result';
-import { ExtensionErr, ExtensionError } from '../../core/errors';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 import type {
 	Field,
 	Id,
 	KvField,
 	Row,
 	TableDefinition,
-} from '../../core/schema';
-import { Id as createId } from '../../core/schema';
-import type { TableById } from '../../core/schema/fields/types';
-import { getTableById } from '../../core/schema/schema-file';
-import type { AbsolutePath } from '../../core/types';
-import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+} from '../../dynamic/schema';
+import { Id as createId } from '../../dynamic/schema';
+import type { TableById } from '../../dynamic/schema/fields/types';
+import { getTableById } from '../../dynamic/schema/schema-file';
 import type { TableHelper } from '../../dynamic/tables/create-tables';
+import { ExtensionErr, ExtensionError } from '../../shared/errors';
+import type { AbsolutePath } from '../../shared/types';
 import { createIndexLogger } from '../error-logger';
 import {
 	defaultSerializer,

@@ -1,15 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import {
-	boolean,
-	Id,
-	id,
-	integer,
-	select,
-	table,
-	tags,
-	text,
-} from '../../core/schema';
+import { boolean, Id, id, integer, select, table, tags, text } from '../schema';
 import { createTables } from './create-tables';
 
 /**

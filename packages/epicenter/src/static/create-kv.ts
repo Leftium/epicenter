@@ -33,8 +33,8 @@ import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from '../core/utils/y-keyvalue-lww.js';
-import { KV_KEY } from '../core/ydoc-keys.js';
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { KV_KEY } from '../shared/ydoc-keys.js';
 import type {
 	InferKvValue,
 	KvBatchTransaction,

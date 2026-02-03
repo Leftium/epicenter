@@ -1,16 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { defineExports } from '../../core/lifecycle';
-import {
-	boolean,
-	Id,
-	id,
-	integer,
-	select,
-	table,
-	text,
-} from '../../core/schema';
-import { defineWorkspace } from '../../core/schema/workspace-definition';
+import { defineExports } from '../../shared/lifecycle';
+import { boolean, Id, id, integer, select, table, text } from '../schema';
+import { defineWorkspace } from '../schema/workspace-definition';
 import { createWorkspace } from './create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════

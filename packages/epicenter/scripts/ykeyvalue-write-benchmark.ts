@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../src/core/utils/y-keyvalue-lww';
+} from '../src/shared/y-keyvalue/y-keyvalue-lww';
 
 type Row = { id: string; name: string; value: number };
 

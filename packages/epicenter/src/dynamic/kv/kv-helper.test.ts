@@ -10,7 +10,7 @@ import {
 	select,
 	tags,
 	text,
-} from '../../core/schema';
+} from '../schema';
 import { createKv } from './create-kv';
 
 describe('KV Helpers', () => {

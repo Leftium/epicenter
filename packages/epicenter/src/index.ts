@@ -34,21 +34,25 @@ export {
 	or,
 	sql,
 } from 'drizzle-orm';
-// Action system
-export type { Action, Actions, Mutation, Query } from './core/actions';
-export {
-	defineMutation,
-	defineQuery,
-	isAction,
-	isMutation,
-	isQuery,
-	iterateActions,
-} from './core/actions';
-export type { ExtensionError } from './core/errors';
-// Error types
-export { ExtensionErr } from './core/errors';
-// Lifecycle protocol (shared by providers and extensions)
-export type { Lifecycle, MaybePromise } from './core/lifecycle';
+// Extension system (workspace-level plugins)
+export type {
+	ExtensionContext,
+	ExtensionExports,
+	ExtensionFactory,
+	ExtensionFactoryMap,
+	InferExtensionExports,
+} from './dynamic/extension';
+export { defineExports } from './dynamic/extension';
+// Y.Doc wrappers for collaborative workspace architecture
+export type { Kv, KvHelper } from './dynamic/kv/create-kv';
+export { createKv } from './dynamic/kv/create-kv';
+export type {
+	InferProviderExports,
+	ProviderContext,
+	ProviderExports,
+	ProviderFactory,
+	ProviderFactoryMap,
+} from './dynamic/provider-types';
 export type {
 	// Field types
 	BooleanField,
@@ -83,7 +87,7 @@ export type {
 	TextField,
 	// Date types
 	TimezoneId,
-} from './core/schema';
+} from './dynamic/schema';
 // Column schema system
 export {
 	boolean,
@@ -111,31 +115,7 @@ export {
 	tags,
 	text,
 	toSqlIdentifier,
-} from './core/schema';
-// Core types
-export type { AbsolutePath, ProjectDir } from './core/types';
-export type { KvKey, TableKey as TableKeyType } from './core/ydoc-keys';
-// Y.Doc storage keys (for direct Y.Doc access / custom providers)
-export { KV_KEY, TableKey } from './core/ydoc-keys';
-// Extension system (workspace-level plugins)
-export type {
-	ExtensionContext,
-	ExtensionExports,
-	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
-} from './dynamic/extension';
-export { defineExports } from './dynamic/extension';
-// Y.Doc wrappers for collaborative workspace architecture
-export type { Kv, KvHelper } from './dynamic/kv/create-kv';
-export { createKv } from './dynamic/kv/create-kv';
-export type {
-	InferProviderExports,
-	ProviderContext,
-	ProviderExports,
-	ProviderFactory,
-	ProviderFactoryMap,
-} from './dynamic/provider-types';
+} from './dynamic/schema';
 export type { TableHelper, Tables } from './dynamic/tables/create-tables';
 // Table utilities
 export { createTables } from './dynamic/tables/create-tables';
@@ -167,6 +147,26 @@ export type {
 	TablesYMap,
 	TableYMap,
 } from './dynamic/workspace-doc';
+// Action system
+export type { Action, Actions, Mutation, Query } from './shared/actions';
+export {
+	defineMutation,
+	defineQuery,
+	isAction,
+	isMutation,
+	isQuery,
+	iterateActions,
+} from './shared/actions';
+export type { ExtensionError } from './shared/errors';
+// Error types
+export { ExtensionErr } from './shared/errors';
+// Lifecycle protocol (shared by providers and extensions)
+export type { Lifecycle, MaybePromise } from './shared/lifecycle';
+// Core types
+export type { AbsolutePath, ProjectDir } from './shared/types';
+export type { KvKey, TableKey as TableKeyType } from './shared/ydoc-keys';
+// Y.Doc storage keys (for direct Y.Doc access / custom providers)
+export { KV_KEY, TableKey } from './shared/ydoc-keys';
 
 // Note: Workspace APIs are NOT re-exported from root to avoid naming conflicts.
 // Import from sub-paths:

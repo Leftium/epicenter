@@ -1,7 +1,7 @@
 import type * as Y from 'yjs';
-import type { TableDefinition } from '../../core/schema';
-import type { TableById } from '../../core/schema/fields/types';
-import { TableKey } from '../../core/ydoc-keys';
+import { TableKey } from '../../shared/ydoc-keys';
+import type { TableDefinition } from '../schema';
+import type { TableById } from '../schema/fields/types';
 import {
 	createTableHelper,
 	createUntypedTableHelper,

@@ -1,11 +1,10 @@
 import type * as Y from 'yjs';
-
-import type { KvField, KvFieldById, KvValue } from '../../core/schema';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../../core/utils/y-keyvalue-lww';
-import { KV_KEY } from '../../core/ydoc-keys';
+} from '../../shared/y-keyvalue/y-keyvalue-lww';
+import { KV_KEY } from '../../shared/ydoc-keys';
+import type { KvField, KvFieldById, KvValue } from '../schema';
 
 import {
 	createKvHelper,

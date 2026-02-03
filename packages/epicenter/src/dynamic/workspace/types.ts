@@ -21,10 +21,10 @@
  */
 
 import type * as Y from 'yjs';
-import type { Lifecycle } from '../../core/lifecycle';
-import type { KvField, TableDefinition } from '../../core/schema/fields/types';
-import type { WorkspaceDefinition } from '../../core/schema/workspace-definition';
+import type { Lifecycle } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
+import type { KvField, TableDefinition } from '../schema/fields/types';
+import type { WorkspaceDefinition } from '../schema/workspace-definition';
 import type { Tables } from '../tables/create-tables';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -75,7 +75,7 @@ export type ExtensionContext<
  * - `whenSynced`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when workspace is destroyed
  *
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant exports.
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant exports.
  *
  * @typeParam TTableDefinitions - Table definitions this extension accepts
  * @typeParam TKvFields - KV fields this extension accepts
@@ -104,7 +104,7 @@ export type ExtensionFactory<
  * Map of extension factory functions.
  *
  * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
+ * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns.
  */
 export type ExtensionFactoryMap = Record<
 	string,

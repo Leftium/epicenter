@@ -18,20 +18,15 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
-import type {
-	Field,
-	PartialRow,
-	Row,
-	TableDefinition,
-} from '../../core/schema';
-import { fieldsToTypebox } from '../../core/schema';
-import type { Id } from '../../core/schema/fields/id.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from '../../core/utils/y-keyvalue-lww';
-import { TableKey } from '../../core/ydoc-keys';
+} from '../../shared/y-keyvalue/y-keyvalue-lww';
+import { TableKey } from '../../shared/ydoc-keys';
+import type { Field, PartialRow, Row, TableDefinition } from '../schema';
+import { fieldsToTypebox } from '../schema';
+import type { Id } from '../schema/fields/id.js';
 import { CellKey, FieldId, parseCellKey, RowPrefix } from './keys';
 
 /**

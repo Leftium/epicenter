@@ -6,11 +6,11 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
-import { ExtensionErr, ExtensionError } from '../../core/errors';
-import type { Id, KvField, Row, TableDefinition } from '../../core/schema';
-import { Id as createId } from '../../core/schema';
-import { convertTableDefinitionsToDrizzle } from '../../core/schema/converters/to-drizzle';
 import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { Id, KvField, Row, TableDefinition } from '../../dynamic/schema';
+import { Id as createId } from '../../dynamic/schema';
+import { convertTableDefinitionsToDrizzle } from '../../dynamic/schema/converters/to-drizzle';
+import { ExtensionErr, ExtensionError } from '../../shared/errors';
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;

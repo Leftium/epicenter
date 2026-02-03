@@ -1,13 +1,12 @@
 import { type ArkErrors, type } from 'arktype';
 import { createTaggedError } from 'wellcrafted/error';
 import type * as Y from 'yjs';
-
-import type { KvField, KvValue } from '../../core/schema';
-import { fieldToYjsArktype, isNullableField } from '../../core/schema';
 import type {
 	YKeyValueLww,
 	YKeyValueLwwChange,
-} from '../../core/utils/y-keyvalue-lww';
+} from '../../shared/y-keyvalue/y-keyvalue-lww';
+import type { KvField, KvValue } from '../schema';
+import { fieldToYjsArktype, isNullableField } from '../schema';
 
 /**
  * Change event for a KV value.

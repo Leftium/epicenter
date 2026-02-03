@@ -66,7 +66,7 @@ await client.capabilities.persistence.whenSynced;
 client.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
-Capabilities get typed access to ydoc, tables, and kv. They must return a Lifecycle object (whenSynced and destroy). Use `defineExports()` from `core/lifecycle.ts` to easily comply.
+Capabilities get typed access to ydoc, tables, and kv. They must return a Lifecycle object (whenSynced and destroy). Use `defineExports()` from `shared/lifecycle.ts` to easily comply.
 
 ### Lower-Level APIs
 

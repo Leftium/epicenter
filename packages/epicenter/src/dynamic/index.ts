@@ -21,7 +21,7 @@
 // WORKSPACE API (builder pattern)
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { WorkspaceDefinition } from '../core/schema/workspace-definition';
+export type { WorkspaceDefinition } from './schema/workspace-definition';
 // The builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {
@@ -44,8 +44,7 @@ export {
 	defineExports,
 	type Lifecycle,
 	type MaybePromise,
-} from '../core/lifecycle';
-
+} from '../shared/lifecycle';
 // Core field factories for programmatic schema creation
 export {
 	boolean,
@@ -58,24 +57,23 @@ export {
 	table,
 	tags,
 	text,
-} from '../core/schema/fields/factories';
-
+} from './schema/fields/factories';
 // Icon type and utilities from Core
-export type { Icon, IconType } from '../core/schema/fields/types';
+export type { Icon, IconType } from './schema/fields/types';
 export {
 	createIcon,
 	isIcon,
 	normalizeIcon,
 	parseIcon,
-} from '../core/schema/fields/types';
+} from './schema/fields/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { KvKey, TableKey as TableKeyType } from '../core/ydoc-keys';
+export type { KvKey, TableKey as TableKeyType } from '../shared/ydoc-keys';
 // Y.Doc array key conventions (for direct Y.Doc access / custom providers)
-export { KV_KEY, TableKey } from '../core/ydoc-keys';
+export { KV_KEY, TableKey } from '../shared/ydoc-keys';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLES & KV

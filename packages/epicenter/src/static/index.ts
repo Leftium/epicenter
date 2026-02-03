@@ -59,9 +59,9 @@
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { KvKey, TableKey as TableKeyType } from '../core/ydoc-keys.js';
+export type { KvKey, TableKey as TableKeyType } from '../shared/ydoc-keys.js';
 // Y.Doc array key conventions (for direct Y.Doc access / custom providers)
-export { KV_KEY, TableKey } from '../core/ydoc-keys.js';
+export { KV_KEY, TableKey } from '../shared/ydoc-keys.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Schema Definitions (Pure)

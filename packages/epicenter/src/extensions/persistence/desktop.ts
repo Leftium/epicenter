@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import type { KvField, TableDefinition } from '../../core/schema';
 import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
  * Configuration for the persistence extension.

@@ -1,6 +1,6 @@
 import { Elysia } from 'elysia';
-import type { Actions } from '../core/actions';
-import { iterateActions } from '../core/actions';
+import type { Actions } from '../shared/actions';
+import { iterateActions } from '../shared/actions';
 
 type ActionsRouterOptions = {
 	actions: Actions;

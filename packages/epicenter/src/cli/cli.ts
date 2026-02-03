@@ -1,7 +1,7 @@
 import yargs from 'yargs';
-import type { Actions } from '../core/actions';
 import type { WorkspaceClient } from '../dynamic/workspace/types';
 import { createServer, DEFAULT_PORT } from '../server/server';
+import type { Actions } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions

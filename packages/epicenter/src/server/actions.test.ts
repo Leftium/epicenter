@@ -1,17 +1,26 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { type Actions, defineMutation, defineQuery } from '../shared/actions';
+import {
+	type Actions,
+	attachActions,
+	defineMutation,
+	defineQuery,
+} from '../shared/actions';
 import { collectActionPaths, createActionsRouter } from './actions';
+
+// Mock client for attaching actions
+const mockClient = { id: 'test' };
 
 describe('createActionsRouter', () => {
 	test('creates routes for flat actions', async () => {
 		const actions: Actions = {
 			ping: defineQuery({
-				handler: () => 'pong',
+				handler: (_ctx) => 'pong',
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(new Request('http://test/actions/ping'));
 		const body = await response.json();
 
@@ -23,12 +32,13 @@ describe('createActionsRouter', () => {
 		const actions: Actions = {
 			posts: {
 				list: defineQuery({
-					handler: () => ['post1', 'post2'],
+					handler: (_ctx) => ['post1', 'post2'],
 				}),
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/posts/list'),
 		);
@@ -41,11 +51,12 @@ describe('createActionsRouter', () => {
 	test('query actions respond to GET requests', async () => {
 		const actions: Actions = {
 			getStatus: defineQuery({
-				handler: () => ({ status: 'ok' }),
+				handler: (_ctx) => ({ status: 'ok' }),
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/getStatus', { method: 'GET' }),
 		);
@@ -57,14 +68,15 @@ describe('createActionsRouter', () => {
 		let called = false;
 		const actions: Actions = {
 			doSomething: defineMutation({
-				handler: () => {
+				handler: (_ctx) => {
 					called = true;
 					return { done: true };
 				},
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/doSomething', { method: 'POST' }),
 		);
@@ -80,14 +92,15 @@ describe('createActionsRouter', () => {
 		const actions: Actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),
-				handler: (input) => {
+				handler: (_ctx, input) => {
 					capturedInput = input;
 					return { id: '123', title: input.title };
 				},
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -106,11 +119,12 @@ describe('createActionsRouter', () => {
 		const actions: Actions = {
 			create: defineMutation({
 				input: type({ title: 'string', count: 'number' }),
-				handler: ({ title, count }) => ({ title, count }),
+				handler: (_ctx, { title, count }) => ({ title, count }),
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -125,14 +139,15 @@ describe('createActionsRouter', () => {
 	test('async handlers work correctly', async () => {
 		const actions: Actions = {
 			asyncQuery: defineQuery({
-				handler: async () => {
+				handler: async (_ctx) => {
 					await new Promise((resolve) => setTimeout(resolve, 10));
 					return { async: true };
 				},
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/asyncQuery'),
 		);
@@ -145,11 +160,12 @@ describe('createActionsRouter', () => {
 	test('supports custom base path', async () => {
 		const actions: Actions = {
 			test: defineQuery({
-				handler: () => 'ok',
+				handler: (_ctx) => 'ok',
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions, basePath: '/api' });
+		const app = createActionsRouter({ actions: attached, basePath: '/api' });
 		const response = await app.handle(new Request('http://test/api/test'));
 		const body = await response.json();
 
@@ -163,14 +179,15 @@ describe('createActionsRouter', () => {
 				v1: {
 					users: {
 						list: defineQuery({
-							handler: () => [],
+							handler: (_ctx) => [],
 						}),
 					},
 				},
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const app = createActionsRouter({ actions });
+		const app = createActionsRouter({ actions: attached });
 		const response = await app.handle(
 			new Request('http://test/actions/api/v1/users/list'),
 		);
@@ -184,11 +201,12 @@ describe('createActionsRouter', () => {
 describe('collectActionPaths', () => {
 	test('collects flat action paths', () => {
 		const actions: Actions = {
-			ping: defineQuery({ handler: () => 'pong' }),
-			sync: defineMutation({ handler: () => {} }),
+			ping: defineQuery({ handler: (_ctx) => 'pong' }),
+			sync: defineMutation({ handler: (_ctx) => {} }),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const paths = collectActionPaths(actions);
+		const paths = collectActionPaths(attached);
 
 		expect(paths).toContain('ping');
 		expect(paths).toContain('sync');
@@ -198,15 +216,16 @@ describe('collectActionPaths', () => {
 	test('collects nested action paths', () => {
 		const actions: Actions = {
 			posts: {
-				list: defineQuery({ handler: () => [] }),
-				create: defineMutation({ handler: () => {} }),
+				list: defineQuery({ handler: (_ctx) => [] }),
+				create: defineMutation({ handler: (_ctx) => {} }),
 			},
 			users: {
-				get: defineQuery({ handler: () => null }),
+				get: defineQuery({ handler: (_ctx) => null }),
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const paths = collectActionPaths(actions);
+		const paths = collectActionPaths(attached);
 
 		expect(paths).toContain('posts/list');
 		expect(paths).toContain('posts/create');
@@ -219,13 +238,14 @@ describe('collectActionPaths', () => {
 			api: {
 				v1: {
 					users: {
-						list: defineQuery({ handler: () => [] }),
+						list: defineQuery({ handler: (_ctx) => [] }),
 					},
 				},
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const paths = collectActionPaths(actions);
+		const paths = collectActionPaths(attached);
 
 		expect(paths).toEqual(['api/v1/users/list']);
 	});

@@ -19,6 +19,7 @@
  */
 
 import * as Y from 'yjs';
+import { attachActions, type Actions } from '../../shared/actions';
 import { defineExports, type Lifecycle } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
@@ -30,6 +31,7 @@ import type {
 	InferExtensionExports,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 } from './types';
 
 /**
@@ -105,8 +107,27 @@ export function createWorkspace<
 		[Symbol.asyncDispose]: destroy,
 	};
 
-	// Add withExtensions method to create builder
+	// Add withExtensions and withActions methods to create builder
 	return Object.assign(baseClient, {
+		/**
+		 * Attach actions to the workspace client.
+		 *
+		 * Actions receive the client as the first parameter (ctx) and become callable
+		 * with just the input parameter after attachment.
+		 */
+		withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
+			TTableDefinitions,
+			TKvFields,
+			Record<string, never>,
+			TActions
+		> {
+			const attached = attachActions(actions as Actions, baseClient);
+			return {
+				...baseClient,
+				actions: attached as unknown as TActions,
+			};
+		},
+
 		/**
 		 * Add extensions to the workspace client.
 		 *
@@ -115,7 +136,7 @@ export function createWorkspace<
 		 */
 		withExtensions<TExtensions extends ExtensionFactoryMap>(
 			extensionFactories: TExtensions,
-		): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions> {
+		) {
 			// Initialize extensions synchronously; async work is in their whenSynced
 			const extensions = {} as InferExtensionExports<TExtensions>;
 
@@ -150,7 +171,7 @@ export function createWorkspace<
 				ydoc.destroy();
 			};
 
-			return {
+			const clientWithExtensions = {
 				id,
 				ydoc,
 				tables,
@@ -159,6 +180,23 @@ export function createWorkspace<
 				whenSynced,
 				destroy: destroyWithExtensions,
 				[Symbol.asyncDispose]: destroyWithExtensions,
+			};
+
+			// Return client with extensions AND withActions method
+			return {
+				...clientWithExtensions,
+				withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
+					TTableDefinitions,
+					TKvFields,
+					TExtensions,
+					TActions
+				> {
+					const attached = attachActions(actions as Actions, clientWithExtensions);
+					return {
+						...clientWithExtensions,
+						actions: attached as unknown as TActions,
+					};
+				},
 			};
 		},
 	});

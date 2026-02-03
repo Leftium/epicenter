@@ -20,6 +20,7 @@
  */
 
 import * as Y from 'yjs';
+import { attachActions, type Actions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
@@ -31,6 +32,7 @@ import type {
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './types.js';
 
@@ -59,7 +61,7 @@ export function createWorkspace<
 		ydoc.destroy();
 	};
 
-	return {
+	const baseClient = {
 		id,
 		ydoc,
 		tables,
@@ -67,6 +69,30 @@ export function createWorkspace<
 		capabilities: {} as InferCapabilityExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
+	};
+
+	return {
+		...baseClient,
+
+		/**
+		 * Attach actions to the workspace client.
+		 *
+		 * Actions receive the client as the first parameter (ctx) and become callable
+		 * with just the input parameter after attachment.
+		 */
+		withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			Record<string, never>,
+			TActions
+		> {
+			const attached = attachActions(actions as Actions, baseClient);
+			return {
+				...baseClient,
+				actions: attached as unknown as TActions,
+			};
+		},
 
 		/**
 		 * Attach capabilities (persistence, SQLite, sync, etc.) to the workspace.
@@ -75,9 +101,7 @@ export function createWorkspace<
 		 * returns a Lifecycle object with exports. The returned client includes
 		 * all capability exports under `.capabilities`.
 		 */
-		withExtensions<TCapabilities extends CapabilityMap>(
-			capabilities: TCapabilities,
-		): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
+		withExtensions<TCapabilities extends CapabilityMap>(capabilities: TCapabilities) {
 			// Initialize each capability factory and collect their exports
 			const capabilityExports = Object.fromEntries(
 				Object.entries(capabilities).map(([name, factory]) => [
@@ -99,8 +123,7 @@ export function createWorkspace<
 				ydoc.destroy();
 			};
 
-			// Same shape as base client, but with initialized capabilities
-			return {
+			const clientWithCapabilities = {
 				id,
 				ydoc,
 				tables,
@@ -109,6 +132,24 @@ export function createWorkspace<
 					capabilityExports as InferCapabilityExports<TCapabilities>,
 				destroy: destroyWithCapabilities,
 				[Symbol.asyncDispose]: destroyWithCapabilities,
+			};
+
+			// Return client with capabilities AND withActions method
+			return {
+				...clientWithCapabilities,
+				withActions<TActions>(actions: TActions): WorkspaceClientWithActions<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TCapabilities,
+					TActions
+				> {
+					const attached = attachActions(actions as Actions, clientWithCapabilities);
+					return {
+						...clientWithCapabilities,
+						actions: attached as unknown as TActions,
+					};
+				},
 			};
 		},
 	};

@@ -1,27 +1,31 @@
 import type { CommandModule } from 'yargs';
-import type { Actions } from '../shared/actions';
-import { iterateActions } from '../shared/actions';
+import type { AttachedActions } from '../shared/actions';
+import { iterateAttachedActions } from '../shared/actions';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
 /**
- * Build yargs command configurations from an actions tree.
+ * Build yargs command configurations from an attached actions tree.
  *
- * Iterates over all actions and creates CommandModule configs that can be
+ * Iterates over all attached actions and creates CommandModule configs that can be
  * registered with yargs. Separates the concern of building command configs
  * from registering them, enabling cleaner CLI construction.
  *
+ * @remarks
+ * Only works with attached actions (from client.actions). Attached actions are
+ * callable functions that have the workspace context pre-filled.
+ *
  * @example
  * ```typescript
- * const actions = { posts: { create: defineMutation({ ... }) } };
- * const commands = buildActionCommands(actions);
+ * const client = createWorkspace({ ... }).withActions({ posts: { ... } });
+ * const commands = buildActionCommands(client.actions);
  * for (const cmd of commands) {
  *   cli = cli.command(cmd);
  * }
  * ```
  */
-export function buildActionCommands(actions: Actions): CommandModule[] {
-	return [...iterateActions(actions)].map(([action, path]) => {
+export function buildActionCommands(actions: AttachedActions): CommandModule[] {
+	return [...iterateAttachedActions(actions)].map(([action, path]) => {
 		const commandPath = path.join(' ');
 		const description =
 			action.description ??
@@ -39,6 +43,7 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			builder,
 			handler: async (argv: Record<string, unknown>) => {
 				const input = extractInputFromArgv(argv, jsonSchema);
+				let validatedInput: unknown;
 
 				if (action.input) {
 					const result = await action.input['~standard'].validate(input);
@@ -51,12 +56,13 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 						}
 						process.exit(1);
 					}
-					const output = await action.handler(result.value);
-					console.log(JSON.stringify(output, null, 2));
-				} else {
-					const output = await (action.handler as () => unknown)();
-					console.log(JSON.stringify(output, null, 2));
+					validatedInput = result.value;
 				}
+
+				const output = await (action as (input?: unknown) => unknown)(
+					validatedInput,
+				);
+				console.log(JSON.stringify(output, null, 2));
 			},
 		};
 	});

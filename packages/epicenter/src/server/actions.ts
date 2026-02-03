@@ -1,17 +1,24 @@
 import { Elysia } from 'elysia';
-import type { Actions } from '../shared/actions';
-import { iterateActions } from '../shared/actions';
+import type { AttachedActions } from '../shared/actions';
+import { iterateAttachedActions } from '../shared/actions';
 
 type ActionsRouterOptions = {
-	actions: Actions;
+	actions: AttachedActions;
 	basePath?: string;
 };
 
+/**
+ * Create an Elysia router for attached actions.
+ *
+ * @remarks
+ * Only works with attached actions (from client.actions). Attached actions are
+ * callable functions that have the workspace context pre-filled.
+ */
 export function createActionsRouter(options: ActionsRouterOptions) {
 	const { actions, basePath = '/actions' } = options;
 	const router = new Elysia({ prefix: basePath });
 
-	for (const [action, path] of iterateActions(actions)) {
+	for (const [action, path] of iterateAttachedActions(actions)) {
 		const routePath = `/${path.join('/')}`;
 		const namespaceTags = path.length > 1 ? [path[0] as string] : [];
 		const tags = [...namespaceTags, action.type];
@@ -22,55 +29,42 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 			tags,
 		};
 
+		// Attached actions are callable directly with input
+		const callAction = (input?: unknown) =>
+			(action as (input?: unknown) => unknown)(input);
+
+		const handleRequest = async (input: unknown) => {
+			let validatedInput: unknown;
+			if (action.input) {
+				const result = await action.input['~standard'].validate(input);
+				if (result.issues) {
+					return {
+						error: { message: 'Validation failed', issues: result.issues },
+					};
+				}
+				validatedInput = result.value;
+			}
+			const output = await callAction(validatedInput);
+			return { data: output };
+		};
+
 		switch (action.type) {
 			case 'query':
 				router.get(
 					routePath,
-					async ({ query }) => {
-						if (action.input) {
-							const result = await action.input['~standard'].validate(query);
-							if (result.issues) {
-								return {
-									error: {
-										message: 'Validation failed',
-										issues: result.issues,
-									},
-								};
-							}
-							const output = await action.handler(result.value);
-							return { data: output };
-						}
-						const output = await (action.handler as () => unknown)();
-						return { data: output };
-					},
+					({ query }) => handleRequest(query),
 					{ query: action.input, detail },
 				);
 				break;
 			case 'mutation':
 				router.post(
 					routePath,
-					async ({ body }) => {
-						if (action.input) {
-							const result = await action.input['~standard'].validate(body);
-							if (result.issues) {
-								return {
-									error: {
-										message: 'Validation failed',
-										issues: result.issues,
-									},
-								};
-							}
-							const output = await action.handler(result.value);
-							return { data: output };
-						}
-						const output = await (action.handler as () => unknown)();
-						return { data: output };
-					},
+					({ body }) => handleRequest(body),
 					{ body: action.input, detail },
 				);
 				break;
 			default: {
-				const _exhaustive: never = action;
+				const _exhaustive: never = action.type as never;
 				throw new Error(`Unknown action type: ${_exhaustive}`);
 			}
 		}
@@ -79,6 +73,9 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 	return router;
 }
 
-export function collectActionPaths(actions: Actions): string[] {
-	return [...iterateActions(actions)].map(([, path]) => path.join('/'));
+/**
+ * Collect action paths for logging/discovery.
+ */
+export function collectActionPaths(actions: AttachedActions): string[] {
+	return [...iterateAttachedActions(actions)].map(([, path]) => path.join('/'));
 }

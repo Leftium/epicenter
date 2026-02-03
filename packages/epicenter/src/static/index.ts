@@ -60,14 +60,24 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 // Action system
-export type { Action, Actions, Mutation, Query } from '../shared/actions.js';
+export type {
+	Action,
+	Actions,
+	AttachedAction,
+	AttachedActions,
+	Mutation,
+	Query,
+} from '../shared/actions.js';
 export {
+	attachActions,
 	defineMutation,
 	defineQuery,
 	isAction,
+	isAttachedAction,
 	isMutation,
 	isQuery,
 	iterateActions,
+	iterateAttachedActions,
 } from '../shared/actions.js';
 // Error types
 export type { ExtensionError } from '../shared/errors.js';

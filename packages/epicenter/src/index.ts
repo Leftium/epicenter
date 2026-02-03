@@ -26,14 +26,24 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Action, Actions, Mutation, Query } from './shared/actions';
+export type {
+	Action,
+	Actions,
+	AttachedAction,
+	AttachedActions,
+	Mutation,
+	Query,
+} from './shared/actions';
 export {
+	attachActions,
 	defineMutation,
 	defineQuery,
 	isAction,
+	isAttachedAction,
 	isMutation,
 	isQuery,
 	iterateActions,
+	iterateAttachedActions,
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════

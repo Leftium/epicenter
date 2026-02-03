@@ -1,17 +1,26 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import { type Actions, defineMutation, defineQuery } from '../shared/actions';
+import {
+	type Actions,
+	attachActions,
+	defineMutation,
+	defineQuery,
+} from '../shared/actions';
 import { buildActionCommands } from './command-builder';
+
+// Mock client for attaching actions
+const mockClient = { id: 'test' };
 
 describe('buildActionCommands', () => {
 	test('builds command from simple action without input', () => {
 		const actions: Actions = {
 			getAll: defineQuery({
-				handler: () => [],
+				handler: (_ctx) => [],
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('getAll');
@@ -24,11 +33,12 @@ describe('buildActionCommands', () => {
 		const actions: Actions = {
 			create: defineMutation({
 				input: type({ title: 'string' }),
-				handler: ({ title }) => ({ id: '1', title }),
+				handler: (_ctx, { title }) => ({ id: '1', title }),
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('create');
@@ -40,16 +50,17 @@ describe('buildActionCommands', () => {
 		const actions: Actions = {
 			posts: {
 				getAll: defineQuery({
-					handler: () => [],
+					handler: (_ctx) => [],
 				}),
 				create: defineMutation({
 					input: type({ title: 'string' }),
-					handler: ({ title }) => ({ id: '1', title }),
+					handler: (_ctx, { title }) => ({ id: '1', title }),
 				}),
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands).toHaveLength(2);
 
@@ -64,14 +75,15 @@ describe('buildActionCommands', () => {
 				v1: {
 					posts: {
 						list: defineQuery({
-							handler: () => [],
+							handler: (_ctx) => [],
 						}),
 					},
 				},
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands).toHaveLength(1);
 		expect(commands[0]?.command).toBe('api v1 posts list');
@@ -81,11 +93,12 @@ describe('buildActionCommands', () => {
 		const actions: Actions = {
 			sync: defineMutation({
 				description: 'Sync data from external source',
-				handler: () => {},
+				handler: (_ctx) => {},
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands[0]?.describe).toBe('Sync data from external source');
 	});
@@ -97,11 +110,12 @@ describe('buildActionCommands', () => {
 					title: 'string',
 					'count?': 'number',
 				}),
-				handler: ({ title }) => ({ id: '1', title }),
+				handler: (_ctx, { title }) => ({ id: '1', title }),
 			}),
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 		const builder = commands[0]?.builder as Record<string, unknown>;
 
 		expect(builder).toHaveProperty('title');
@@ -116,16 +130,17 @@ describe('buildActionCommands', () => {
 	test('handles mixed flat and nested actions', () => {
 		const actions: Actions = {
 			ping: defineQuery({
-				handler: () => 'pong',
+				handler: (_ctx) => 'pong',
 			}),
 			users: {
 				list: defineQuery({
-					handler: () => [],
+					handler: (_ctx) => [],
 				}),
 			},
 		};
+		const attached = attachActions(actions, mockClient);
 
-		const commands = buildActionCommands(actions);
+		const commands = buildActionCommands(attached);
 
 		expect(commands).toHaveLength(2);
 		const commandNames = commands.map((c) => c.command);

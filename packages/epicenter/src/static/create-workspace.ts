@@ -71,7 +71,7 @@ export function createWorkspace<
 		/**
 		 * Attach capabilities (persistence, SQLite, sync, etc.) to the workspace.
 		 *
-		 * Each capability factory receives { ydoc, workspaceId, tables, kv } and
+		 * Each capability factory receives { ydoc, id, tables, kv } and
 		 * returns a Lifecycle object with exports. The returned client includes
 		 * all capability exports under `.capabilities`.
 		 */
@@ -84,7 +84,7 @@ export function createWorkspace<
 					name,
 					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
 						ydoc,
-						workspaceId: id,
+						id,
 						tables,
 						kv,
 					}),

@@ -46,7 +46,7 @@ describe('createWorkspace', () => {
 			const workspace = createWorkspace(testDefinition);
 
 			// Should be usable immediately
-			expect(workspace.workspaceId).toBe('test-workspace');
+			expect(workspace.id).toBe('test-workspace');
 			expect(workspace.ydoc).toBeInstanceOf(Y.Doc);
 			expect(workspace.tables).toBeDefined();
 			expect(workspace.kv).toBeDefined();
@@ -113,9 +113,9 @@ describe('createWorkspace', () => {
 
 			// Use inline factory for better type inference
 			const workspace = baseWorkspace.withExtensions({
-				mock: ({ workspaceId }) =>
+				mock: ({ id }) =>
 					defineExports({
-						greeting: `Hello from ${workspaceId}`,
+						greeting: `Hello from ${id}`,
 					}),
 			});
 
@@ -133,7 +133,7 @@ describe('createWorkspace', () => {
 			baseWorkspace.withExtensions({
 				capture: (ctx) => {
 					receivedContext = {
-						workspaceId: ctx.workspaceId,
+						id: ctx.id,
 						extensionId: ctx.extensionId,
 						hasYdoc: ctx.ydoc instanceof Y.Doc,
 						hasTables: typeof ctx.tables.get === 'function',
@@ -145,7 +145,7 @@ describe('createWorkspace', () => {
 			});
 
 			expect(receivedContext).toBeDefined();
-			expect(receivedContext?.workspaceId).toBe('test-workspace');
+			expect(receivedContext?.id).toBe('test-workspace');
 			expect(receivedContext?.extensionId).toBe('capture');
 			expect(receivedContext?.hasYdoc).toBe(true);
 			expect(receivedContext?.hasTables).toBe(true);

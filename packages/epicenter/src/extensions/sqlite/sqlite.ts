@@ -69,7 +69,7 @@ export type SqliteConfig = {
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
  *   .withExtensions({
  *     sqlite: (ctx) => sqlite(ctx, {
- *       dbPath: join(epicenterDir, 'sqlite', `${ctx.workspaceId}.db`),
+ *       dbPath: join(epicenterDir, 'sqlite', `${ctx.id}.db`),
  *       logsDir: join(epicenterDir, 'sqlite', 'logs'),
  *     }),
  *   });
@@ -84,7 +84,7 @@ export const sqlite = async <
 	TTableDefinitions extends readonly TableDefinition[],
 	TKvFields extends readonly KvField[],
 >(
-	{ workspaceId: id, tables }: ExtensionContext<TTableDefinitions, TKvFields>,
+	{ id, tables }: ExtensionContext<TTableDefinitions, TKvFields>,
 	config: SqliteConfig,
 ) => {
 	const { dbPath, logsDir, debounceMs = DEFAULT_DEBOUNCE_MS } = config;

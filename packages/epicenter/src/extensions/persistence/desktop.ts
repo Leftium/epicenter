@@ -36,7 +36,7 @@ export type PersistenceConfig = {
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
  *   .withExtensions({
  *     persistence: (ctx) => persistence(ctx, {
- *       filePath: join(epicenterDir, 'persistence', `${ctx.workspaceId}.yjs`),
+ *       filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
  *     }),
  *   });
  * ```

@@ -66,7 +66,7 @@ function createServerInternal(
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
 
 	for (const client of clients) {
-		workspaces[client.workspaceId] = client;
+		workspaces[client.id] = client;
 	}
 
 	const actionPaths = options?.actions

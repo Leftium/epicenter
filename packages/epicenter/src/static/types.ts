@@ -378,7 +378,7 @@ export type CapabilityContext<
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Workspace identifier */
-	workspaceId: string;
+	id: string;
 	/** Typed table helpers for the workspace */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */

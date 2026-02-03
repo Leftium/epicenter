@@ -27,7 +27,7 @@ import {
 	defineExports,
 	defineWorkspace,
 } from '@epicenter/hq/static';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import type { Transaction } from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
@@ -134,10 +134,21 @@ export default defineBackground(() => {
 		},
 
 		/**
-		 * WebSocket sync for multi-device collaboration.
+		 * Y-Sweet sync for real-time collaboration.
+		 *
+		 * Y-Sweet provides:
+		 * - WebSocket-based real-time sync
+		 * - Token-based authentication (for hosted mode)
+		 * - Automatic reconnection
+		 *
+		 * Server setup: npx y-sweet@latest serve
+		 * Default: http://127.0.0.1:8080
+		 *
+		 * @see specs/y-sweet-sync-extension.md
 		 */
-		sync: websocketSync({
-			url: 'ws://localhost:3913/sync',
+		sync: ySweetSync({
+			mode: 'direct',
+			serverUrl: 'http://127.0.0.1:8080',
 		}),
 	});
 

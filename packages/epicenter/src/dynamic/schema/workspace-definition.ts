@@ -4,8 +4,6 @@
  * This module provides the core WorkspaceDefinition type that describes
  * the structure of a workspace (name, tables, kv).
  *
- * This lives in core/ so schema utilities can use it without importing from dynamic/.
- *
  * @module
  */
 

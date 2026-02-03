@@ -1,18 +1,23 @@
 #!/usr/bin/env bun
 
 import { dirname, resolve } from 'node:path';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { hideBin } from 'yargs/helpers';
 import { createCLI } from './cli';
 import { resolveWorkspace } from './discovery';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DIRECTORY FLAG PARSING
+// ═══════════════════════════════════════════════════════════════════════════
+
+type DirectoryParseResult =
+	| { ok: true; baseDir: string; remainingArgs: string[] }
+	| { ok: false; error: string };
+
 /**
  * Parse -C/--dir flag from argv BEFORE yargs processes subcommands.
- * Returns the base directory and remaining args.
  */
-function parseDirectoryFlag(argv: string[]): {
-	baseDir: string;
-	remainingArgs: string[];
-} {
+export function parseDirectoryFlag(argv: string[]): DirectoryParseResult {
 	let baseDir = process.cwd();
 	const remainingArgs: string[] = [];
 
@@ -23,11 +28,10 @@ function parseDirectoryFlag(argv: string[]): {
 		if (arg === '-C' || arg === '--dir') {
 			const nextArg = argv[i + 1];
 			if (!nextArg || nextArg.startsWith('-')) {
-				console.error(`Error: ${arg} requires a directory argument`);
-				process.exit(1);
+				return { ok: false, error: `${arg} requires a directory argument` };
 			}
 			baseDir = resolve(nextArg);
-			i++; // Skip next arg
+			i++;
 			continue;
 		}
 
@@ -44,77 +48,96 @@ function parseDirectoryFlag(argv: string[]): {
 		remainingArgs.push(arg);
 	}
 
-	return { baseDir, remainingArgs };
+	return { ok: true, baseDir, remainingArgs };
 }
 
-async function main() {
-	try {
-		await enableWatchMode();
+// ═══════════════════════════════════════════════════════════════════════════
+// ORCHESTRATION (testable)
+// ═══════════════════════════════════════════════════════════════════════════
 
-		const { baseDir, remainingArgs } = parseDirectoryFlag(
-			hideBin(process.argv),
-		);
-
-		const result = await resolveWorkspace(baseDir);
-
-		if (result.status === 'not_found') {
-			console.error('No epicenter.config.ts found.');
-			console.error(
-				'Create one: export const workspace = createWorkspaceClient({...})',
-			);
-			process.exit(1);
-		}
-
-		if (result.status === 'ambiguous') {
-			console.error('No epicenter.config.ts found in current directory.');
-			console.error('');
-			console.error('Found configs in subdirectories:');
-			for (const config of result.configs) {
-				console.error(`  - ${config}`);
-			}
-			console.error('');
-			console.error('Use -C <dir> to specify which project:');
-			console.error(`  epicenter -C ${dirname(result.configs[0]!)} <command>`);
-			process.exit(1);
-		}
-
-		// result.status === 'found'
-		await createCLI(result.client).run(remainingArgs);
-	} catch (error) {
-		if (error instanceof Error) {
-			console.error('Error:', error.message);
-		} else {
-			console.error('Unknown error:', error);
-		}
-		process.exit(1);
+/**
+ * Main orchestration logic - pure and testable.
+ */
+export async function run(argv: string[]): Promise<void> {
+	const parsed = parseDirectoryFlag(argv);
+	if (!parsed.ok) {
+		throw new Error(parsed.error);
 	}
+
+	const resolution = await resolveWorkspace(parsed.baseDir);
+
+	if (resolution.status === 'not_found') {
+		throw new Error(
+			'No epicenter.config.ts found.\n' +
+				'Create one: export default createWorkspaceClient({...})',
+		);
+	}
+
+	if (resolution.status === 'ambiguous') {
+		const lines = [
+			'No epicenter.config.ts found in current directory.',
+			'',
+			'Found configs in subdirectories:',
+			...resolution.configs.map((c) => `  - ${c}`),
+			'',
+			'Use -C <dir> to specify which project:',
+			`  epicenter -C ${dirname(resolution.configs[0]!)} <command>`,
+		];
+		throw new Error(lines.join('\n'));
+	}
+
+	await createCLI(resolution.client).run(parsed.remainingArgs);
 }
 
-async function enableWatchMode() {
-	if (process.env.EPICENTER_WATCH_MODE) {
-		return;
+// ═══════════════════════════════════════════════════════════════════════════
+// WATCH MODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Re-exec with bun --watch if not already in watch mode.
+ * Returns the exit code from the child process, or null to continue.
+ */
+async function maybeSpawnWatchMode(): Promise<number | null> {
+	if (process.env.EPICENTER_WATCH_MODE || process.env.EPICENTER_NO_WATCH) {
+		return null;
 	}
 
 	const scriptPath = process.argv[1];
 	if (!scriptPath) {
-		throw new Error(
-			'Internal error: Failed to start epicenter (missing script path)',
-		);
+		return null;
 	}
 
 	const proc = Bun.spawn(
 		['bun', '--watch', scriptPath, ...process.argv.slice(2)],
 		{
-			env: {
-				...process.env,
-				EPICENTER_WATCH_MODE: '1',
-			},
+			env: { ...process.env, EPICENTER_WATCH_MODE: '1' },
 			stdio: ['inherit', 'inherit', 'inherit'],
 		},
 	);
 
 	await proc.exited;
-	process.exit(proc.exitCode ?? 0);
+	return proc.exitCode ?? 0;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENTRYPOINT
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function main() {
+	const watchExitCode = await maybeSpawnWatchMode();
+	if (watchExitCode !== null) {
+		process.exit(watchExitCode);
+	}
+
+	const result = await tryAsync({
+		try: () => run(hideBin(process.argv)),
+		catch: (error) => Err(String(error)),
+	});
+
+	if (result.error) {
+		console.error('Error:', result.error);
+		process.exit(1);
+	}
 }
 
 main();

@@ -6,4 +6,4 @@ Field schemas are minimal objects with `type` as the discriminant (e.g., `{ type
 
 Each converter takes the same input (a field schema or table schema) and produces output tailored to a specific consumer. If you need field schemas in a new format, add a converter here.
 
-Note: For converting arbitrary StandardSchema types (like action inputs), see the `standard/` folder instead.
+Note: For converting arbitrary StandardSchema types (like action inputs), see `../../shared/standard-schema/` instead.

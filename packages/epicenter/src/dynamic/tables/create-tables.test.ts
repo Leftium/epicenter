@@ -773,7 +773,7 @@ describe('createTables', () => {
 			expect(tables.get('posts').count()).toBe(tables.get('posts').count());
 		});
 
-		test('table() returns untyped helper for undefined tables', () => {
+		test('get() throws for undefined tables', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
 				table({
@@ -783,19 +783,17 @@ describe('createTables', () => {
 				}),
 			]);
 
-			// Access a table not in definition
-			const customTable = tables.get('custom_data');
-			customTable.upsert({ id: Id('1'), foo: 'bar', count: 42 });
-
-			const result = customTable.get(Id('1'));
-			expect(result.status).toBe('valid');
-			if (result.status === 'valid') {
-				expect(result.row.foo).toBe('bar');
-				expect(result.row.count).toBe(42);
-			}
+			// Accessing a table not in definition should throw
+			// Use `as any` to bypass TypeScript - we're testing runtime error handling
+			expect(() => tables.get('custom_data' as any)).toThrow(
+				/Table 'custom_data' not found/,
+			);
+			expect(() => tables.get('custom_data' as any)).toThrow(
+				/Available tables: posts/,
+			);
 		});
 
-		test('table() creates the same helper instance on repeated calls', () => {
+		test('get() returns the same helper instance on repeated calls', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
 				table({
@@ -805,16 +803,11 @@ describe('createTables', () => {
 				}),
 			]);
 
-			// Defined table
+			// Same instance is returned for defined tables
 			expect(tables.get('posts')).toBe(tables.get('posts'));
-
-			// Dynamic table (should cache the helper)
-			const helper1 = tables.get('dynamic');
-			const helper2 = tables.get('dynamic');
-			expect(helper1).toBe(helper2);
 		});
 
-		test('has() checks existence without creating table', () => {
+		test('has() checks if defined table has data', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
 				table({
@@ -824,23 +817,23 @@ describe('createTables', () => {
 				}),
 			]);
 
-			// Initially no tables exist in YJS
+			// Initially no data in defined tables
 			expect(tables.has('posts')).toBe(false);
+
+			// Undefined tables always return false
 			expect(tables.has('custom')).toBe(false);
 
-			// After upsert, table exists
+			// After upsert, table has data
 			tables.get('posts').upsert({ id: Id('1'), title: 'Hello' });
 			expect(tables.has('posts')).toBe(true);
-			expect(tables.has('custom')).toBe(false);
 
-			// After dynamic upsert
-			tables.get('custom').upsert({ id: Id('1'), data: 'test' });
-			expect(tables.has('custom')).toBe(true);
+			// Undefined tables still return false
+			expect(tables.has('custom')).toBe(false);
 		});
 	});
 
 	describe('iteration methods', () => {
-		test('names() returns all table names in YJS', () => {
+		test('names() returns defined table names that have data', () => {
 			const ydoc = new Y.Doc({ guid: 'test-workspace' });
 			const tables = createTables(ydoc, [
 				table({
@@ -848,15 +841,23 @@ describe('createTables', () => {
 					name: 'Posts',
 					fields: [id(), text({ id: 'title' })] as const,
 				}),
+				table({
+					id: 'users',
+					name: 'Users',
+					fields: [id(), text({ id: 'name' })] as const,
+				}),
 			]);
 
+			// Initially empty
 			expect(tables.names()).toHaveLength(0);
 
+			// After adding data to one table
 			tables.get('posts').upsert({ id: Id('1'), title: 'Hello' });
-			tables.get('custom').upsert({ id: Id('1'), data: 'test' });
+			expect(tables.names()).toEqual(['posts']);
 
-			const names = tables.names().sort();
-			expect(names).toEqual(['custom', 'posts']);
+			// After adding data to another table
+			tables.get('users').upsert({ id: Id('1'), name: 'Alice' });
+			expect(tables.names().sort()).toEqual(['posts', 'users']);
 		});
 	});
 

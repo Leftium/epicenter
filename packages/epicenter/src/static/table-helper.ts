@@ -19,6 +19,7 @@ import type {
 	TableBatchTransaction,
 	TableDefinition,
 	TableHelper,
+	UpdateResult,
 } from './types.js';
 
 /**
@@ -60,6 +61,28 @@ export function createTableHelper<
 
 		set(row: TRow): void {
 			ykv.set(row.id, row);
+		},
+
+		// ═══════════════════════════════════════════════════════════════════════
+		// UPDATE
+		// ═══════════════════════════════════════════════════════════════════════
+
+		update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow> {
+			const current = this.get(id);
+			if (current.status === 'not_found') {
+				return { status: 'not_found', id };
+			}
+			if (current.status === 'invalid') {
+				return {
+					status: 'invalid',
+					id,
+					errors: current.errors,
+					row: current.row,
+				};
+			}
+			const merged = { ...current.row, ...partial } as TRow;
+			this.set(merged);
+			return { status: 'updated', row: merged };
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

@@ -82,7 +82,7 @@ Extensions receive an `ExtensionContext` with:
 ```typescript
 interface ExtensionContext {
 	ydoc: Y.Doc; // The underlying Y.Doc
-	workspaceId: string; // Workspace ID
+	id: string; // Workspace ID
 	definition: WorkspaceDefinition;
 	tables: Tables; // Table operations
 	kv: KeyValueStore; // Key-value store

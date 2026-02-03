@@ -146,6 +146,7 @@ export type {
 	// Helper types
 	TableHelper,
 	TablesHelper,
+	UpdateResult,
 	// Result types - building blocks
 	ValidRowResult,
 	WorkspaceClient,

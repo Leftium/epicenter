@@ -124,7 +124,7 @@ export async function localRevisionHistory<
 	TTableDefinitions extends readonly TableDefinition[],
 	TKvFields extends readonly KvField[],
 >(
-	{ ydoc, workspaceId: id }: ExtensionContext<TTableDefinitions, TKvFields>,
+	{ ydoc, id }: ExtensionContext<TTableDefinitions, TKvFields>,
 	{ directory, debounceMs = 1000, maxVersions }: LocalRevisionHistoryConfig,
 ) {
 	// CRITICAL: Snapshots require gc: false

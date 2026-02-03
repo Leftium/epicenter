@@ -162,29 +162,33 @@ export function ySweetSync<
 /**
  * Build the AuthEndpoint from config.
  *
- * Three cases:
- * 1. Direct mode → construct token from server URL
- * 2. Authenticated + string URL → POST to get token
- * 3. Authenticated + function → use directly
+ * - Direct mode: construct ClientToken locally (no auth)
+ * - Authenticated mode: use provided endpoint (string URL or function)
  */
 function buildAuthEndpoint(
 	config: YSweetSyncConfig,
 	docId: string,
 ): AuthEndpoint {
-	// Direct mode: construct token locally
-	if (config.mode === 'direct') {
-		return async () => createDirectClientToken(config.serverUrl, docId);
-	}
+	switch (config.mode) {
+		case 'direct':
+			return async () => createDirectClientToken(config.serverUrl, docId);
 
-	// Authenticated mode with function: use directly
-	if (typeof config.authEndpoint === 'function') {
-		return config.authEndpoint;
-	}
+		case 'authenticated':
+			return typeof config.authEndpoint === 'function'
+				? config.authEndpoint
+				: createAuthFetcher(config.authEndpoint, docId);
 
-	// Authenticated mode with string URL: POST to get token
-	// TODO: Full authenticated mode implementation
-	// See: specs/extension-authentication.md
-	const authUrl = config.authEndpoint;
+		default: {
+			const _exhaustive: never = config;
+			throw new Error(`Unknown Y-Sweet sync mode: ${(_exhaustive as YSweetSyncConfig).mode}`);
+		}
+	}
+}
+
+/**
+ * Create an auth fetcher that POSTs to the given URL to get a ClientToken.
+ */
+function createAuthFetcher(authUrl: string, docId: string): AuthEndpoint {
 	return async () => {
 		const res = await fetch(authUrl, {
 			method: 'POST',

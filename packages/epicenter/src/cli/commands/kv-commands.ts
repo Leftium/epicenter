@@ -1,31 +1,18 @@
 import type { CommandModule } from 'yargs';
-import type { AnyWorkspaceClient, CommandConfig } from '../discovery.js';
+import type { AnyWorkspaceClient } from '../discovery.js';
 import { parseJsonInput, readStdinSync } from '../parse-input.js';
 import { formatYargsOptions, output, outputError } from '../format-output.js';
 
 /**
  * Build yargs commands for KV operations.
- *
- * Single client: `kv <command>` (e.g., `kv get theme`)
- * Multiple clients: `<workspace> kv <command>` (e.g., `blog kv get theme`)
  */
-export function buildKvCommands(config: CommandConfig): CommandModule[] {
-	const commands: CommandModule[] = [];
-
-	for (const client of config.clients) {
-		const commandPath = config.mode === 'single' ? 'kv' : `${client.id} kv`;
-		commands.push(buildKvCommand(commandPath, client));
-	}
-
-	return commands;
+export function buildKvCommands(client: AnyWorkspaceClient): CommandModule[] {
+	return [buildKvCommand(client)];
 }
 
-function buildKvCommand(
-	commandPath: string,
-	client: AnyWorkspaceClient,
-): CommandModule {
+function buildKvCommand(client: AnyWorkspaceClient): CommandModule {
 	return {
-		command: `${commandPath} <action>`,
+		command: 'kv <action>',
 		describe: 'Manage key-value store',
 		builder: (yargs) => {
 			return yargs

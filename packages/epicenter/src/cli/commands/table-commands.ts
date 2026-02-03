@@ -1,42 +1,29 @@
 import type { CommandModule } from 'yargs';
-import type { CommandConfig } from '../discovery.js';
+import type { AnyWorkspaceClient } from '../discovery.js';
 import { parseJsonInput, readStdinSync } from '../parse-input.js';
 import { output, outputError, formatYargsOptions } from '../format-output.js';
 
 /**
  * Build yargs commands for all tables in a workspace.
- *
- * Single client: `<table> <command>` (e.g., `posts list`)
- * Multiple clients: `<workspace> <table> <command>` (e.g., `blog posts list`)
  */
-export function buildTableCommands(config: CommandConfig): CommandModule[] {
+export function buildTableCommands(client: AnyWorkspaceClient): CommandModule[] {
 	const commands: CommandModule[] = [];
+	const tableNames = Object.keys(client.tables);
 
-	for (const client of config.clients) {
-		const tableNames = Object.keys(client.tables);
-
-		for (const tableName of tableNames) {
-			const tableHelper = (client.tables as Record<string, unknown>)[tableName];
-
-			const commandPath =
-				config.mode === 'single'
-					? tableName
-					: `${client.id} ${tableName}`;
-
-			commands.push(buildTableCommand(commandPath, tableName, tableHelper));
-		}
+	for (const tableName of tableNames) {
+		const tableHelper = (client.tables as Record<string, unknown>)[tableName];
+		commands.push(buildTableCommand(tableName, tableHelper));
 	}
 
 	return commands;
 }
 
 function buildTableCommand(
-	commandPath: string,
 	tableName: string,
 	tableHelper: any, // TableHelper<any>
 ): CommandModule {
 	return {
-		command: `${commandPath} <action>`,
+		command: `${tableName} <action>`,
 		describe: `Manage ${tableName} table`,
 		builder: (yargs) => {
 			return yargs

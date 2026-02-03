@@ -1,67 +1,65 @@
-// biome-ignore assist/source/organizeImports: <explanation>
-import { dirname, join, parse, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { WorkspaceClient } from '../static/types';
 import type { ProjectDir } from '../shared/types';
 
 // biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/capabilities
 export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
 
-/** Single client mode - commands are top-level (e.g., `posts list`) */
-export type SingleClientConfig = {
-	mode: 'single';
-	clients: [AnyWorkspaceClient];
-};
+const CONFIG_FILENAME = 'epicenter.config.ts';
 
-/** Multi client mode - commands nested under workspace (e.g., `blog posts list`) */
-export type MultiClientConfig = {
-	mode: 'multi';
-	clients: AnyWorkspaceClient[];
-};
-
-/** Discriminated union for CLI command configuration */
-export type CommandConfig = SingleClientConfig | MultiClientConfig;
-
-/** Create a CommandConfig from an array of clients */
-export function createCommandConfig(clients: AnyWorkspaceClient[]): CommandConfig {
-	if (clients.length === 0) {
-		throw new Error('At least one client required');
-	}
-	if (clients.length === 1) {
-		return { mode: 'single', clients: [clients[0]!] as const };
-	}
-	return { mode: 'multi', clients };
-}
-
+/**
+ * Check if a config file exists in the given directory (no upward traversal).
+ */
 export async function findProjectDir(
-	startDir: string = process.cwd(),
+	dir: string = process.cwd(),
 ): Promise<ProjectDir | null> {
-	let current = resolve(startDir);
-	const root = parse(current).root;
+	const resolved = resolve(dir);
+	const configPath = join(resolved, CONFIG_FILENAME);
 
-	while (current !== root) {
-		const configPath = join(current, 'epicenter.config.ts');
-
-		if (await fileExists(configPath)) {
-			return current as ProjectDir;
-		}
-
-		current = dirname(current);
+	if (await fileExists(configPath)) {
+		return resolved as ProjectDir;
 	}
 
 	return null;
+}
+
+/**
+ * Find all epicenter.config.ts files in subdirectories of the given directory.
+ * Uses Bun.Glob for efficient filesystem traversal.
+ */
+export async function findConfigsInSubdirs(dir: string): Promise<string[]> {
+	const resolved = resolve(dir);
+	const glob = new Bun.Glob(`**/${CONFIG_FILENAME}`);
+
+	const configs: string[] = [];
+
+	for await (const path of glob.scan({
+		cwd: resolved,
+		onlyFiles: true,
+		absolute: false,
+	})) {
+		// Get the directory containing the config (relative to search dir)
+		const configDir = path.replace(`/${CONFIG_FILENAME}`, '').replace(CONFIG_FILENAME, '.');
+		if (configDir !== '.') {
+			// Only include subdirectory configs, not the root
+			configs.push(path);
+		}
+	}
+
+	return configs.sort();
 }
 
 async function fileExists(path: string): Promise<boolean> {
 	return Bun.file(path).exists();
 }
 
-export async function loadClients(
+export async function loadClient(
 	projectDir: ProjectDir,
-): Promise<AnyWorkspaceClient[]> {
-	const configPath = join(projectDir, 'epicenter.config.ts');
+): Promise<AnyWorkspaceClient> {
+	const configPath = join(projectDir, CONFIG_FILENAME);
 
 	if (!(await fileExists(configPath))) {
-		throw new Error(`No epicenter.config.ts found at ${configPath}`);
+		throw new Error(`No ${CONFIG_FILENAME} found at ${configPath}`);
 	}
 
 	const module = await import(configPath);
@@ -69,12 +67,19 @@ export async function loadClients(
 
 	if (clients.length === 0) {
 		throw new Error(
-			`No WorkspaceClient exports found in epicenter.config.ts.\n` +
-				`Export clients as named exports: export const myClient = createWorkspaceClient({...})`,
+			`No WorkspaceClient exports found in ${CONFIG_FILENAME}.\n` +
+				`Export a client as: export const workspace = createWorkspaceClient({...})`,
 		);
 	}
 
-	return clients;
+	if (clients.length > 1) {
+		throw new Error(
+			`Found ${clients.length} WorkspaceClient exports. Epicenter supports one workspace per config file.\n` +
+				`Use separate directories for multiple workspaces.`,
+		);
+	}
+
+	return clients[0]!;
 }
 
 function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {

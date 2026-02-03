@@ -1,12 +1,8 @@
 export { createCLI } from './cli';
 export {
-	createCommandConfig,
 	findProjectDir,
-	loadClients,
+	loadClient,
 	type AnyWorkspaceClient,
-	type CommandConfig,
-	type MultiClientConfig,
-	type SingleClientConfig,
 } from './discovery';
 export { buildTableCommands } from './commands/table-commands';
 export { buildKvCommands } from './commands/kv-commands';

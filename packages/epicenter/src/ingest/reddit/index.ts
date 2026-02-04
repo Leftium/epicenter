@@ -205,7 +205,7 @@ function parseDateToIso(dateStr: string | undefined | null): string | null {
 function transformKv(raw: Record<string, Record<string, string>[]>): KvData {
 	// Statistics → JSON object
 	let statistics: Record<string, string> | null = null;
-	if (raw.statistics?.length > 0) {
+	if (raw.statistics && raw.statistics.length > 0) {
 		statistics = {};
 		for (const row of raw.statistics) {
 			if (row.statistic && row.value) statistics[row.statistic] = row.value;
@@ -214,7 +214,7 @@ function transformKv(raw: Record<string, Record<string, string>[]>): KvData {
 
 	// Preferences → JSON object
 	let preferences: Record<string, string> | null = null;
-	if (raw.user_preferences?.length > 0) {
+	if (raw.user_preferences && raw.user_preferences.length > 0) {
 		preferences = {};
 		for (const row of raw.user_preferences) {
 			if (row.preference && row.value) preferences[row.preference] = row.value;

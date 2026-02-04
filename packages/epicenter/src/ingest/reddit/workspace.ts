@@ -73,7 +73,7 @@ const drafts = defineTable(
 /**
  * post_votes.csv
  */
-const post_votes = defineTable(
+const postVotes = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -84,7 +84,7 @@ const post_votes = defineTable(
 /**
  * comment_votes.csv
  */
-const comment_votes = defineTable(
+const commentVotes = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -95,7 +95,7 @@ const comment_votes = defineTable(
 /**
  * poll_votes.csv
  */
-const poll_votes = defineTable(
+const pollVotes = defineTable(
 	type({
 		id: 'string', // Composite: `${post_id}:${user_selection ?? ''}:${text ?? ''}`
 		post_id: 'string',
@@ -110,7 +110,7 @@ const poll_votes = defineTable(
 /**
  * saved_posts.csv
  */
-const saved_posts = defineTable(
+const savedPosts = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -120,7 +120,7 @@ const saved_posts = defineTable(
 /**
  * saved_comments.csv
  */
-const saved_comments = defineTable(
+const savedComments = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -130,7 +130,7 @@ const saved_comments = defineTable(
 /**
  * hidden_posts.csv
  */
-const hidden_posts = defineTable(
+const hiddenPosts = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -157,7 +157,7 @@ const messages = defineTable(
 /**
  * messages_archive.csv
  */
-const messages_archive = defineTable(
+const messagesArchive = defineTable(
 	type({
 		id: 'string',
 		permalink: 'string',
@@ -174,7 +174,7 @@ const messages_archive = defineTable(
 /**
  * chat_history.csv
  */
-const chat_history = defineTable(
+const chatHistory = defineTable(
 	type({
 		id: 'string', // message_id from CSV
 		created_at: 'string | null',
@@ -192,7 +192,7 @@ const chat_history = defineTable(
 /**
  * subscribed_subreddits.csv
  */
-const subscribed_subreddits = defineTable(
+const subscribedSubreddits = defineTable(
 	type({
 		id: 'string', // subreddit
 		subreddit: 'string',
@@ -202,7 +202,7 @@ const subscribed_subreddits = defineTable(
 /**
  * moderated_subreddits.csv
  */
-const moderated_subreddits = defineTable(
+const moderatedSubreddits = defineTable(
 	type({
 		id: 'string', // subreddit
 		subreddit: 'string',
@@ -212,7 +212,7 @@ const moderated_subreddits = defineTable(
 /**
  * approved_submitter_subreddits.csv
  */
-const approved_submitter_subreddits = defineTable(
+const approvedSubmitterSubreddits = defineTable(
 	type({
 		id: 'string', // subreddit
 		subreddit: 'string',
@@ -240,7 +240,7 @@ const multireddits = defineTable(
 /**
  * gilded_content.csv
  */
-const gilded_content = defineTable(
+const gildedContent = defineTable(
 	type({
 		id: 'string', // Composite: `${content_link}:${date ?? ''}:${award ?? ''}:${amount ?? ''}`
 		content_link: 'string',
@@ -253,7 +253,7 @@ const gilded_content = defineTable(
 /**
  * gold_received.csv
  */
-const gold_received = defineTable(
+const goldReceived = defineTable(
 	type({
 		id: 'string', // Composite: `${content_link}:${date ?? ''}:${gold_received ?? ''}:${gilder_username ?? ''}`
 		content_link: 'string',
@@ -322,7 +322,7 @@ const friends = defineTable(
 /**
  * linked_identities.csv
  */
-const linked_identities = defineTable(
+const linkedIdentities = defineTable(
 	type({
 		id: 'string', // `${issuer_id}:${subject_id}`
 		issuer_id: 'string',
@@ -350,7 +350,7 @@ const announcements = defineTable(
 /**
  * scheduled_posts.csv
  */
-const scheduled_posts = defineTable(
+const scheduledPosts = defineTable(
 	type({
 		id: 'string', // scheduled_post_id from CSV
 		scheduled_post_id: 'string',
@@ -366,7 +366,7 @@ const scheduled_posts = defineTable(
 /**
  * ip_logs.csv
  */
-const ip_logs = defineTable(
+const ipLogs = defineTable(
 	type({
 		id: 'string', // `${date}:${ip}`
 		date: 'string',
@@ -377,7 +377,7 @@ const ip_logs = defineTable(
 /**
  * sensitive_ads_preferences.csv
  */
-const sensitive_ads_preferences = defineTable(
+const sensitiveAdsPreferences = defineTable(
 	type({
 		id: 'string', // type field as ID
 		type: 'string',
@@ -396,30 +396,30 @@ export const redditWorkspace = defineWorkspace({
 		posts,
 		comments,
 		drafts,
-		post_votes,
-		comment_votes,
-		poll_votes,
-		saved_posts,
-		saved_comments,
-		hidden_posts,
+		postVotes,
+		commentVotes,
+		pollVotes,
+		savedPosts,
+		savedComments,
+		hiddenPosts,
 		messages,
-		messages_archive,
-		chat_history,
-		subscribed_subreddits,
-		moderated_subreddits,
-		approved_submitter_subreddits,
+		messagesArchive,
+		chatHistory,
+		subscribedSubreddits,
+		moderatedSubreddits,
+		approvedSubmitterSubreddits,
 		multireddits,
-		gilded_content,
-		gold_received,
+		gildedContent,
+		goldReceived,
 		purchases,
 		subscriptions,
 		payouts,
 		friends,
-		linked_identities,
+		linkedIdentities,
 		announcements,
-		scheduled_posts,
-		ip_logs,
-		sensitive_ads_preferences,
+		scheduledPosts,
+		ipLogs,
+		sensitiveAdsPreferences,
 	},
 
 	kv: {

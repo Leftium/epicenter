@@ -96,7 +96,7 @@ export async function importRedditExport(
 	// ═══════════════════════════════════════════════════════════════════════════
 	// PHASE 3 & 4: TRANSFORM + INSERT
 	// ═══════════════════════════════════════════════════════════════════════════
-	const totalTables = 14;
+	const totalTables = tableTransforms.length;
 	let tableIndex = 0;
 
 	// Helper to report progress

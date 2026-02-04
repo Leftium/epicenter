@@ -1,63 +1,78 @@
 /**
- * Reddit CSV Validation Schema
+ * Reddit CSV Schema Definitions
  *
- * Validates raw CSV data structure BEFORE transformation.
- * This layer checks that required fields exist and have the right shape.
+ * Unified ArkType schemas that handle both validation AND transformation in one pass.
+ * Each schema defines:
+ * - Input shape: What the raw CSV data looks like (strings from CSV parser)
+ * - Output shape: What the transformed data looks like (parsed dates, nulls, etc.)
  *
- * NO PARSING happens here - dates stay as strings, numbers stay as strings.
- * Parsing is handled by the transform layer using schemas from schema.ts.
+ * Types are inferred from schemas - no explicit TypeScript type definitions needed.
  *
- * Note: IP fields are often empty strings in real exports.
+ * Usage:
+ * ```typescript
+ * // Parse and transform a CSV row in one call
+ * const row = schemas.posts.item(rawCsvRow);
+ *
+ * // Type inference works automatically
+ * type PostRow = typeof schemas.posts.item.infer;
+ * ```
  */
 
-import { type } from 'arktype';
-import { voteDirection } from './morphs.js';
+import { scope } from 'arktype';
+import {
+	emptyToNull,
+	dateToIso,
+	optionalDateToIso,
+	numericParse,
+	voteDirection,
+} from './morphs.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CSV VALIDATION SCHEMA
+// SCHEMA SCOPE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Validates raw Reddit GDPR CSV data.
- *
- * This schema validates structure only - no parsing.
- * Transform layer handles date/number parsing via schema.ts.
+ * Define all schemas in a scope for better organization and cross-references.
  */
-export const csvValidationSchema = type({
+const $ = scope({
 	// ─────────────────────────────────────────────────────────────────────────────
 	// CORE CONTENT
 	// ─────────────────────────────────────────────────────────────────────────────
-	posts: type({
+
+	/** posts.csv row - transforms dates and handles empty IPs */
+	postRow: {
 		id: 'string',
-		permalink: 'string',
-		date: 'string', // Parsed to ISO in transform
-		ip: 'string', // Often empty string
+		permalink: emptyToNull,
+		date: dateToIso,
+		ip: emptyToNull,
 		subreddit: 'string',
-		gildings: 'string', // Parsed to number in transform
+		gildings: numericParse,
 		'title?': 'string',
 		'url?': 'string',
 		'body?': 'string',
-	}).array(),
+	},
 
-	comments: type({
+	/** comments.csv row */
+	commentRow: {
 		id: 'string',
-		permalink: 'string',
-		date: 'string', // Parsed to ISO in transform
-		ip: 'string', // Often empty string
+		permalink: emptyToNull,
+		date: dateToIso,
+		ip: emptyToNull,
 		subreddit: 'string',
-		gildings: 'string', // Parsed to number in transform
+		gildings: numericParse,
 		link: 'string',
 		'parent?': 'string',
 		'body?': 'string',
 		'media?': 'string',
-	}).array(),
+	},
 
-	drafts: type({
+	/** drafts.csv row */
+	draftRow: {
 		id: 'string',
 		'title?': 'string',
 		'body?': 'string',
 		'kind?': 'string',
-		'created?': 'string',
+		created: optionalDateToIso,
 		'spoiler?': 'string',
 		'nsfw?': 'string',
 		'original_content?': 'string',
@@ -67,88 +82,87 @@ export const csvValidationSchema = type({
 		'send_replies?': 'string',
 		'subreddit?': 'string',
 		'is_public_link?': 'string',
-	}).array(),
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// VOTES / SAVES / VISIBILITY
 	// ─────────────────────────────────────────────────────────────────────────────
-	post_votes: type({
+
+	/** post_votes.csv row */
+	postVoteRow: {
 		id: 'string',
 		permalink: 'string',
 		direction: voteDirection,
-	}).array(),
+	},
 
-	comment_votes: type({
+	/** comment_votes.csv row */
+	commentVoteRow: {
 		id: 'string',
 		permalink: 'string',
 		direction: voteDirection,
-	}).array(),
+	},
 
-	poll_votes: type({
+	/** poll_votes.csv row - needs computed ID */
+	pollVoteCsvRow: {
 		post_id: 'string',
 		'user_selection?': 'string',
 		'text?': 'string',
 		'image_url?': 'string',
 		'is_prediction?': 'string',
 		'stake_amount?': 'string',
-	}).array(),
+	},
 
-	saved_posts: type({ id: 'string', permalink: 'string' }).array(),
-	saved_comments: type({ id: 'string', permalink: 'string' }).array(),
-	hidden_posts: type({ id: 'string', permalink: 'string' }).array(),
+	/** saved_posts.csv / saved_comments.csv / hidden_posts.csv row */
+	permalinkRow: {
+		id: 'string',
+		permalink: 'string',
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// MESSAGING
-	// Note: messages.csv may be absent if user has no active messages
 	// ─────────────────────────────────────────────────────────────────────────────
-	'messages?': type({
+
+	/** messages.csv / messages_archive.csv row */
+	messageRow: {
 		id: 'string',
 		permalink: 'string',
-		'thread_id?': 'string',
-		'date?': 'string',
-		ip: 'string', // Often empty
+		thread_id: emptyToNull,
+		date: optionalDateToIso,
+		ip: emptyToNull,
 		'from?': 'string',
 		'to?': 'string',
 		'subject?': 'string',
 		'body?': 'string',
-	}).array(),
+	},
 
-	messages_archive: type({
-		id: 'string',
-		permalink: 'string',
-		'thread_id?': 'string',
-		'date?': 'string',
-		ip: 'string', // Often empty
-		'from?': 'string',
-		'to?': 'string',
-		'subject?': 'string',
-		'body?': 'string',
-	}).array(),
-
-	chat_history: type({
+	/** chat_history.csv row */
+	chatHistoryRow: {
 		message_id: 'string',
-		'created_at?': 'string',
-		'updated_at?': 'string',
-		'username?': 'string',
-		'message?': 'string',
-		'thread_parent_message_id?': 'string',
-		'channel_url?': 'string',
-		'subreddit?': 'string',
-		'channel_name?': 'string',
-		'conversation_type?': 'string',
-	}).array(),
+		created_at: optionalDateToIso,
+		updated_at: optionalDateToIso,
+		username: emptyToNull,
+		message: emptyToNull,
+		thread_parent_message_id: emptyToNull,
+		channel_url: emptyToNull,
+		subreddit: emptyToNull,
+		channel_name: emptyToNull,
+		conversation_type: emptyToNull,
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// SUBREDDITS
 	// ─────────────────────────────────────────────────────────────────────────────
-	subscribed_subreddits: type({ subreddit: 'string' }).array(),
-	moderated_subreddits: type({ subreddit: 'string' }).array(),
-	approved_submitter_subreddits: type({ subreddit: 'string' }).array(),
 
-	multireddits: type({
+	/** subscribed/moderated/approved_submitter subreddits row */
+	subredditRow: {
+		subreddit: 'string',
+	},
+
+	/** multireddits.csv row */
+	multiredditRow: {
 		id: 'string',
 		'display_name?': 'string',
-		'date?': 'string',
+		date: optionalDateToIso,
 		'description?': 'string',
 		'privacy?': 'string',
 		'subreddits?': 'string',
@@ -156,133 +170,150 @@ export const csvValidationSchema = type({
 		'is_owner?': 'string',
 		'favorited?': 'string',
 		'followers?': 'string',
-	}).array(),
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// AWARDS
 	// ─────────────────────────────────────────────────────────────────────────────
-	gilded_content: type({
+
+	/** gilded_content.csv row - needs computed ID */
+	gildedContentCsvRow: {
 		content_link: 'string',
 		'award?': 'string',
 		'amount?': 'string',
-		'date?': 'string',
-	}).array(),
+		date: optionalDateToIso,
+	},
 
-	gold_received: type({
+	/** gold_received.csv row - needs computed ID */
+	goldReceivedCsvRow: {
 		content_link: 'string',
 		'gold_received?': 'string',
 		'gilder_username?': 'string',
-		'date?': 'string',
-	}).array(),
+		date: optionalDateToIso,
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// COMMERCE
 	// ─────────────────────────────────────────────────────────────────────────────
-	purchases: type({
+
+	/** purchases.csv row */
+	purchaseCsvRow: {
 		'processor?': 'string',
 		transaction_id: 'string',
 		'product?': 'string',
-		'date?': 'string',
+		date: optionalDateToIso,
 		'cost?': 'string',
 		'currency?': 'string',
 		'status?': 'string',
-	}).array(),
+	},
 
-	subscriptions: type({
+	/** subscriptions.csv row */
+	subscriptionCsvRow: {
 		'processor?': 'string',
 		subscription_id: 'string',
 		'product?': 'string',
 		'product_id?': 'string',
 		'product_name?': 'string',
 		'status?': 'string',
-		'start_date?': 'string',
-		'end_date?': 'string',
-	}).array(),
+		start_date: optionalDateToIso,
+		end_date: optionalDateToIso,
+	},
 
-	payouts: type({
+	/** payouts.csv row */
+	payoutCsvRow: {
 		'payout_amount_usd?': 'string',
-		date: 'string',
+		date: 'string', // Keep as string for ID computation
 		'payout_id?': 'string',
-	}).array(),
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// SOCIAL
 	// ─────────────────────────────────────────────────────────────────────────────
-	friends: type({
+
+	/** friends.csv row */
+	friendCsvRow: {
 		username: 'string',
 		'note?': 'string',
-	}).array(),
+	},
 
-	linked_identities: type({
+	/** linked_identities.csv row */
+	linkedIdentityCsvRow: {
 		issuer_id: 'string',
 		subject_id: 'string',
-	}).array(),
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// OTHER TABLES
 	// ─────────────────────────────────────────────────────────────────────────────
-	announcements: type({
-		announcement_id: 'string',
-		'sent_at?': 'string',
-		'read_at?': 'string',
-		'from_id?': 'string',
-		'from_username?': 'string',
-		'subject?': 'string',
-		'body?': 'string',
-		'url?': 'string',
-	}).array(),
 
-	scheduled_posts: type({
+	/** announcements.csv row */
+	announcementRow: {
+		announcement_id: 'string',
+		sent_at: optionalDateToIso,
+		read_at: optionalDateToIso,
+		from_id: emptyToNull,
+		from_username: emptyToNull,
+		subject: emptyToNull,
+		body: emptyToNull,
+		url: emptyToNull,
+	},
+
+	/** scheduled_posts.csv row */
+	scheduledPostCsvRow: {
 		scheduled_post_id: 'string',
 		'subreddit?': 'string',
 		'title?': 'string',
 		'body?': 'string',
 		'url?': 'string',
-		'submission_time?': 'string',
+		submission_time: optionalDateToIso,
 		'recurrence?': 'string',
-	}).array(),
+	},
 
-	ip_logs: type({
-		date: 'string', // Can be 'registration ip' literal
+	/** ip_logs.csv row */
+	ipLogRow: {
+		date: 'string',
 		ip: 'string',
-	}).array(),
+	},
 
-	sensitive_ads_preferences: type({
+	/** sensitive_ads_preferences.csv row */
+	adsPreferenceRow: {
 		type: 'string',
 		'preference?': 'string',
-	}).array(),
+	},
 
 	// ─────────────────────────────────────────────────────────────────────────────
 	// SINGLETON / KV DATA
 	// ─────────────────────────────────────────────────────────────────────────────
-	account_gender: type({ 'account_gender?': 'string' }).array(),
 
-	birthdate: type({
+	accountGenderRow: { 'account_gender?': 'string' },
+
+	birthdateRow: {
 		'birthdate?': 'string',
 		'verified_birthdate?': 'string',
 		'verification_state?': 'string',
 		'verification_method?': 'string',
-	}).array(),
+	},
 
-	statistics: type({
+	statisticRow: {
 		statistic: 'string',
 		'value?': 'string',
-	}).array(),
+	},
 
-	user_preferences: type({
+	userPreferenceRow: {
 		preference: 'string',
 		'value?': 'string',
-	}).array(),
+	},
 
-	linked_phone_number: type({ phone_number: 'string' }).array(),
-	stripe: type({ stripe_account_id: 'string' }).array(),
-	twitter: type({ username: 'string' }).array(),
-	persona: type({ persona_inquiry_id: 'string' }).array(),
+	linkedPhoneRow: { phone_number: 'string' },
+	stripeRow: { stripe_account_id: 'string' },
+	twitterRow: { username: 'string' },
+	personaRow: { persona_inquiry_id: 'string' },
 
 	// ─────────────────────────────────────────────────────────────────────────────
-	// REDUNDANT (validated but skipped during transform)
+	// HEADER FILES (redundant but validated)
 	// ─────────────────────────────────────────────────────────────────────────────
-	post_headers: type({
+
+	postHeaderRow: {
 		id: 'string',
 		permalink: 'string',
 		date: 'string',
@@ -290,9 +321,9 @@ export const csvValidationSchema = type({
 		subreddit: 'string',
 		gildings: 'string',
 		'url?': 'string',
-	}).array(),
+	},
 
-	comment_headers: type({
+	commentHeaderRow: {
 		id: 'string',
 		permalink: 'string',
 		date: 'string',
@@ -301,10 +332,9 @@ export const csvValidationSchema = type({
 		gildings: 'string',
 		link: 'string',
 		'parent?': 'string',
-	}).array(),
+	},
 
-	// Note: message_headers.csv may be absent if messages.csv is absent
-	'message_headers?': type({
+	messageHeaderRow: {
 		id: 'string',
 		permalink: 'string',
 		'thread_id?': 'string',
@@ -312,36 +342,90 @@ export const csvValidationSchema = type({
 		ip: 'string',
 		'from?': 'string',
 		'to?': 'string',
-	}).array(),
+	},
 
-	messages_archive_headers: type({
-		id: 'string',
-		permalink: 'string',
-		'thread_id?': 'string',
-		'date?': 'string',
-		ip: 'string',
-		'from?': 'string',
-		'to?': 'string',
-	}).array(),
-
-	// ─────────────────────────────────────────────────────────────────────────────
-	// METADATA (skipped)
-	// ─────────────────────────────────────────────────────────────────────────────
-	checkfile: type({
+	checkfileRow: {
 		filename: 'string',
 		'sha256?': 'string',
-	}).array(),
+	},
 });
 
-/** Validated Reddit export data type (inferred from schema) */
-export type ValidatedRedditExport = typeof csvValidationSchema.infer;
+// Export the compiled scope
+const types = $.export();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORTED SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Validate raw parsed CSV data.
- * Throws ArkType validation error if data doesn't match expected schema.
+ * Individual row schemas for transforming CSV rows.
+ * Use `.assert()` or direct call to parse and transform a row.
  */
-export function validateRedditExport(
-	rawData: Record<string, Record<string, string>[]>,
-): ValidatedRedditExport {
-	return csvValidationSchema.assert(rawData);
-}
+export const rowSchemas = {
+	post: types.postRow,
+	comment: types.commentRow,
+	draft: types.draftRow,
+	postVote: types.postVoteRow,
+	commentVote: types.commentVoteRow,
+	pollVoteCsv: types.pollVoteCsvRow,
+	permalink: types.permalinkRow,
+	message: types.messageRow,
+	chatHistory: types.chatHistoryRow,
+	subreddit: types.subredditRow,
+	multireddit: types.multiredditRow,
+	gildedContentCsv: types.gildedContentCsvRow,
+	goldReceivedCsv: types.goldReceivedCsvRow,
+	purchaseCsv: types.purchaseCsvRow,
+	subscriptionCsv: types.subscriptionCsvRow,
+	payoutCsv: types.payoutCsvRow,
+	friendCsv: types.friendCsvRow,
+	linkedIdentityCsv: types.linkedIdentityCsvRow,
+	announcement: types.announcementRow,
+	scheduledPostCsv: types.scheduledPostCsvRow,
+	ipLog: types.ipLogRow,
+	adsPreference: types.adsPreferenceRow,
+	accountGender: types.accountGenderRow,
+	birthdate: types.birthdateRow,
+	statistic: types.statisticRow,
+	userPreference: types.userPreferenceRow,
+	linkedPhone: types.linkedPhoneRow,
+	stripe: types.stripeRow,
+	twitter: types.twitterRow,
+	persona: types.personaRow,
+	postHeader: types.postHeaderRow,
+	commentHeader: types.commentHeaderRow,
+	messageHeader: types.messageHeaderRow,
+	checkfile: types.checkfileRow,
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TYPE EXPORTS (inferred from schemas)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Row types (output of parsing)
+export type PostRow = typeof rowSchemas.post.infer;
+export type CommentRow = typeof rowSchemas.comment.infer;
+export type DraftRow = typeof rowSchemas.draft.infer;
+export type PostVoteRow = typeof rowSchemas.postVote.infer;
+export type CommentVoteRow = typeof rowSchemas.commentVote.infer;
+export type PollVoteCsvRow = typeof rowSchemas.pollVoteCsv.infer;
+export type PermalinkRow = typeof rowSchemas.permalink.infer;
+export type MessageRow = typeof rowSchemas.message.infer;
+export type ChatHistoryRow = typeof rowSchemas.chatHistory.infer;
+export type SubredditRow = typeof rowSchemas.subreddit.infer;
+export type MultiredditRow = typeof rowSchemas.multireddit.infer;
+export type GildedContentCsvRow = typeof rowSchemas.gildedContentCsv.infer;
+export type GoldReceivedCsvRow = typeof rowSchemas.goldReceivedCsv.infer;
+export type PurchaseCsvRow = typeof rowSchemas.purchaseCsv.infer;
+export type SubscriptionCsvRow = typeof rowSchemas.subscriptionCsv.infer;
+export type PayoutCsvRow = typeof rowSchemas.payoutCsv.infer;
+export type FriendCsvRow = typeof rowSchemas.friendCsv.infer;
+export type LinkedIdentityCsvRow = typeof rowSchemas.linkedIdentityCsv.infer;
+export type AnnouncementRow = typeof rowSchemas.announcement.infer;
+export type ScheduledPostCsvRow = typeof rowSchemas.scheduledPostCsv.infer;
+export type IpLogRow = typeof rowSchemas.ipLog.infer;
+export type AdsPreferenceRow = typeof rowSchemas.adsPreference.infer;
+
+// CSV input types (for validation before morphs)
+export type PostCsvInput = typeof rowSchemas.post.inferIn;
+export type CommentCsvInput = typeof rowSchemas.comment.inferIn;

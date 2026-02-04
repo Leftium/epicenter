@@ -81,26 +81,26 @@ async function main() {
 	console.log('\n--- Verification ---\n');
 
 	// Check some sample data
-	const contentCount = workspace.tables.content.count();
-	const votesCount = workspace.tables.votes.count();
-	const subredditsCount = workspace.tables.subreddits.count();
+	const postsCount = workspace.tables.posts.count();
+	const commentsCount = workspace.tables.comments.count();
+	const postVotesCount = workspace.tables.post_votes.count();
 
-	console.log(`content table count:    ${contentCount}`);
-	console.log(`votes table count:      ${votesCount}`);
-	console.log(`subreddits table count: ${subredditsCount}`);
+	console.log(`posts table count:      ${postsCount}`);
+	console.log(`comments table count:   ${commentsCount}`);
+	console.log(`post_votes table count: ${postVotesCount}`);
 
 	// Verify counts match
-	const contentMatches = contentCount === stats.tables.content;
-	const votesMatches = votesCount === stats.tables.votes;
-	const subredditsMatches = subredditsCount === stats.tables.subreddits;
+	const postsMatches = postsCount === stats.tables.posts;
+	const commentsMatches = commentsCount === stats.tables.comments;
+	const postVotesMatches = postVotesCount === stats.tables.post_votes;
 
-	if (contentMatches && votesMatches && subredditsMatches) {
+	if (postsMatches && commentsMatches && postVotesMatches) {
 		console.log('\n✓ All counts verified!\n');
 	} else {
 		console.log('\n✗ Count mismatch detected!\n');
-		if (!contentMatches) console.log(`  content: expected ${stats.tables.content}, got ${contentCount}`);
-		if (!votesMatches) console.log(`  votes: expected ${stats.tables.votes}, got ${votesCount}`);
-		if (!subredditsMatches) console.log(`  subreddits: expected ${stats.tables.subreddits}, got ${subredditsCount}`);
+		if (!postsMatches) console.log(`  posts: expected ${stats.tables.posts}, got ${postsCount}`);
+		if (!commentsMatches) console.log(`  comments: expected ${stats.tables.comments}, got ${commentsCount}`);
+		if (!postVotesMatches) console.log(`  post_votes: expected ${stats.tables.post_votes}, got ${postVotesCount}`);
 	}
 
 	// Cleanup

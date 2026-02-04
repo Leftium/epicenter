@@ -1,7 +1,8 @@
 /**
  * Reddit Workspace Definition
  *
- * Static API workspace with 14 tables + KV store for Reddit GDPR export data.
+ * Static API workspace with 1:1 CSV → table mapping for Reddit GDPR export data.
+ * (Singleton/settings-like CSVs map to the KV store instead of tables.)
  * Uses arktype schemas for type validation and inference.
  */
 
@@ -13,77 +14,137 @@ import { defineTable, defineWorkspace, defineKv } from '../../static/index.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Content: posts, comments, drafts
- * Source CSVs: posts.csv, comments.csv, drafts.csv
+ * posts.csv
  */
-const content = defineTable(
+const posts = defineTable(
 	type({
 		id: 'string',
-		type: "'post' | 'comment' | 'draft'",
 		permalink: 'string | null',
 		date: 'string | null',
 		ip: 'string | null',
-		subreddit: 'string | null',
-		gildings: 'string | null',
-		// Post-specific
+		subreddit: 'string',
+		gildings: 'number',
 		'title?': 'string',
 		'url?': 'string',
-		// Comment-specific
-		'link?': 'string',
-		'parent?': 'string',
-		// Shared
 		'body?': 'string',
-		'media?': 'string',
-		// Draft-specific
-		'kind?': 'string',
-		'spoiler?': 'string',
-		'nsfw?': 'string',
 	}),
 );
 
 /**
- * Votes: post_votes, comment_votes, poll_votes
- * Source CSVs: post_votes.csv, comment_votes.csv, poll_votes.csv
+ * comments.csv
  */
-const votes = defineTable(
+const comments = defineTable(
 	type({
 		id: 'string', // Composite: `${targetType}:${targetId}`
-		targetType: "'post' | 'comment' | 'poll'",
-		targetId: 'string',
 		permalink: 'string | null',
-		direction: "'up' | 'down' | 'none' | 'removed' | null", // Validated enum
-		// Poll-specific
-		'userSelection?': 'string',
-		'text?': 'string',
-		'isPrediction?': 'string',
-		'stakeAmount?': 'string',
+		date: 'string | null',
+		ip: 'string | null',
+		subreddit: 'string',
+		gildings: 'number',
+		link: 'string',
+		'parent?': 'string',
+		'body?': 'string',
+		'media?': 'string',
 	}),
 );
 
 /**
- * Saved: saved_posts, saved_comments, hidden_posts
- * Source CSVs: saved_posts.csv, saved_comments.csv, hidden_posts.csv
+ * drafts.csv
  */
-const saved = defineTable(
+const drafts = defineTable(
 	type({
-		id: 'string', // Composite: `${action}:${targetType}:${targetId}`
-		action: "'save' | 'hide'",
-		targetType: "'post' | 'comment'",
-		targetId: 'string',
+		id: 'string',
+		'title?': 'string',
+		'body?': 'string',
+		'kind?': 'string',
+		created: 'string | null',
+		'spoiler?': 'string',
+		'nsfw?': 'string',
+		'original_content?': 'string',
+		'content_category?': 'string',
+		'flair_id?': 'string',
+		'flair_text?': 'string',
+		'send_replies?': 'string',
+		'subreddit?': 'string',
+		'is_public_link?': 'string',
+	}),
+);
+
+/**
+ * post_votes.csv
+ */
+const post_votes = defineTable(
+	type({
+		id: 'string',
+		permalink: 'string',
+		direction: "'up' | 'down' | 'none' | 'removed'",
+	}),
+);
+
+/**
+ * comment_votes.csv
+ */
+const comment_votes = defineTable(
+	type({
+		id: 'string',
+		permalink: 'string',
+		direction: "'up' | 'down' | 'none' | 'removed'",
+	}),
+);
+
+/**
+ * poll_votes.csv
+ */
+const poll_votes = defineTable(
+	type({
+		id: 'string', // Composite: `${post_id}:${user_selection ?? ''}:${text ?? ''}`
+		post_id: 'string',
+		'user_selection?': 'string',
+		'text?': 'string',
+		'image_url?': 'string',
+		'is_prediction?': 'string',
+		'stake_amount?': 'string',
+	}),
+);
+
+/**
+ * saved_posts.csv
+ */
+const saved_posts = defineTable(
+	type({
+		id: 'string',
 		permalink: 'string',
 	}),
 );
 
 /**
- * Messages: messages, messages_archive
- * Source CSVs: messages.csv, messages_archive.csv
+ * saved_comments.csv
+ */
+const saved_comments = defineTable(
+	type({
+		id: 'string',
+		permalink: 'string',
+	}),
+);
+
+/**
+ * hidden_posts.csv
+ */
+const hidden_posts = defineTable(
+	type({
+		id: 'string',
+		permalink: 'string',
+	}),
+);
+
+/**
+ * messages.csv (optional)
  */
 const messages = defineTable(
 	type({
 		id: 'string',
-		archived: 'boolean',
-		permalink: 'string | null',
-		threadId: 'string | null',
+		permalink: 'string',
+		thread_id: 'string | null',
 		date: 'string | null',
 		ip: 'string | null',
 		'from?': 'string',
@@ -94,127 +155,192 @@ const messages = defineTable(
 );
 
 /**
- * Chat History (unique structure)
- * Source CSV: chat_history.csv
+ * messages_archive.csv
  */
-const chatHistory = defineTable(
+const messages_archive = defineTable(
+	type({
+		id: 'string',
+		permalink: 'string',
+		thread_id: 'string | null',
+		date: 'string | null',
+		ip: 'string | null',
+		'from?': 'string',
+		'to?': 'string',
+		'subject?': 'string',
+		'body?': 'string',
+	}),
+);
+
+/**
+ * chat_history.csv
+ */
+const chat_history = defineTable(
 	type({
 		id: 'string', // message_id from CSV
-		createdAt: 'string | null',
-		updatedAt: 'string | null',
+		created_at: 'string | null',
+		updated_at: 'string | null',
 		username: 'string | null',
 		message: 'string | null',
-		threadParentMessageId: 'string | null',
-		channelUrl: 'string | null',
+		thread_parent_message_id: 'string | null',
+		channel_url: 'string | null',
 		subreddit: 'string | null',
-		channelName: 'string | null',
-		conversationType: 'string | null',
+		channel_name: 'string | null',
+		conversation_type: 'string | null',
 	}),
 );
 
 /**
- * Subreddits: subscribed, moderated, approved_submitter
- * Source CSVs: subscribed_subreddits.csv, moderated_subreddits.csv, approved_submitter_subreddits.csv
+ * subscribed_subreddits.csv
  */
-const subreddits = defineTable(
+const subscribed_subreddits = defineTable(
 	type({
-		id: 'string', // Composite: `${role}:${subreddit}`
+		id: 'string', // subreddit
 		subreddit: 'string',
-		role: "'subscribed' | 'moderated' | 'approved_submitter'",
 	}),
 );
 
 /**
- * Multireddits (unique structure with subreddits array)
- * Source CSV: multireddits.csv
+ * moderated_subreddits.csv
+ */
+const moderated_subreddits = defineTable(
+	type({
+		id: 'string', // subreddit
+		subreddit: 'string',
+	}),
+);
+
+/**
+ * approved_submitter_subreddits.csv
+ */
+const approved_submitter_subreddits = defineTable(
+	type({
+		id: 'string', // subreddit
+		subreddit: 'string',
+	}),
+);
+
+/**
+ * multireddits.csv
  */
 const multireddits = defineTable(
 	type({
 		id: 'string',
-		displayName: 'string | null',
+		'display_name?': 'string',
 		date: 'string | null',
-		description: 'string | null',
-		privacy: 'string | null',
-		subreddits: 'string | null', // Comma-separated list
-		imageUrl: 'string | null',
-		isOwner: 'string | null',
-		favorited: 'string | null',
-		followers: 'string | null',
+		'description?': 'string',
+		'privacy?': 'string',
+		'subreddits?': 'string', // Comma-separated list
+		'image_url?': 'string',
+		'is_owner?': 'string',
+		'favorited?': 'string',
+		'followers?': 'string',
 	}),
 );
 
 /**
- * Awards: gilded_content, gold_received
- * Source CSVs: gilded_content.csv, gold_received.csv
+ * gilded_content.csv
  */
-const awards = defineTable(
+const gilded_content = defineTable(
 	type({
-		id: 'string', // Composite: `${direction}:${contentLink}`
-		direction: "'given' | 'received'",
-		contentLink: 'string',
-		award: 'string | null',
-		amount: 'string | null',
+		id: 'string', // Composite: `${content_link}:${date ?? ''}:${award ?? ''}:${amount ?? ''}`
+		content_link: 'string',
+		'award?': 'string',
+		'amount?': 'string',
 		date: 'string | null',
-		'gilderUsername?': 'string', // Only for received
 	}),
 );
 
 /**
- * Commerce: purchases, subscriptions, payouts
- * Source CSVs: purchases.csv, subscriptions.csv, payouts.csv
+ * gold_received.csv
  */
-const commerce = defineTable(
+const gold_received = defineTable(
 	type({
-		id: 'string',
-		type: "'purchase' | 'subscription' | 'payout'",
+		id: 'string', // Composite: `${content_link}:${date ?? ''}:${gold_received ?? ''}:${gilder_username ?? ''}`
+		content_link: 'string',
+		'gold_received?': 'string',
+		'gilder_username?': 'string',
 		date: 'string | null',
-		// Purchase-specific
+	}),
+);
+
+/**
+ * purchases.csv
+ */
+const purchases = defineTable(
+	type({
+		id: 'string', // transaction_id
 		'processor?': 'string',
-		'transactionId?': 'string',
+		transaction_id: 'string',
 		'product?': 'string',
+		date: 'string | null',
 		'cost?': 'string',
 		'currency?': 'string',
 		'status?': 'string',
-		// Subscription-specific
-		'subscriptionId?': 'string',
-		'productId?': 'string',
-		'productName?': 'string',
-		'startDate?': 'string',
-		'endDate?': 'string',
-		// Payout-specific
-		'payoutId?': 'string',
-		'payoutAmountUsd?': 'string',
 	}),
 );
 
 /**
- * Social: friends, linked_identities
- * Source CSVs: friends.csv, linked_identities.csv
+ * subscriptions.csv
  */
-const social = defineTable(
+const subscriptions = defineTable(
 	type({
-		id: 'string', // Composite: `${type}:${identifier}`
-		type: "'friend' | 'linked_identity'",
-		// Friend-specific
-		'username?': 'string',
-		'note?': 'string',
-		// Linked identity-specific
-		'issuerId?': 'string',
-		'subjectId?': 'string',
+		id: 'string', // subscription_id
+		'processor?': 'string',
+		subscription_id: 'string',
+		'product?': 'string',
+		'product_id?': 'string',
+		'product_name?': 'string',
+		'status?': 'string',
+		start_date: 'string | null',
+		end_date: 'string | null',
 	}),
 );
 
 /**
- * Announcements (unique structure)
- * Source CSV: announcements.csv
+ * payouts.csv
+ */
+const payouts = defineTable(
+	type({
+		id: 'string', // payout_id ?? date
+		'payout_amount_usd?': 'string',
+		date: 'string | null',
+		'payout_id?': 'string',
+	}),
+);
+
+/**
+ * friends.csv
+ */
+const friends = defineTable(
+	type({
+		id: 'string', // username
+		username: 'string',
+		'note?': 'string',
+	}),
+);
+
+/**
+ * linked_identities.csv
+ */
+const linked_identities = defineTable(
+	type({
+		id: 'string', // `${issuer_id}:${subject_id}`
+		issuer_id: 'string',
+		subject_id: 'string',
+	}),
+);
+
+/**
+ * announcements.csv
  */
 const announcements = defineTable(
 	type({
 		id: 'string', // announcement_id from CSV
-		sentAt: 'string | null',
-		readAt: 'string | null',
-		fromId: 'string | null',
-		fromUsername: 'string | null',
+		announcement_id: 'string',
+		sent_at: 'string | null',
+		read_at: 'string | null',
+		from_id: 'string | null',
+		from_username: 'string | null',
 		subject: 'string | null',
 		body: 'string | null',
 		url: 'string | null',
@@ -222,42 +348,40 @@ const announcements = defineTable(
 );
 
 /**
- * Scheduled Posts (unique structure)
- * Source CSV: scheduled_posts.csv
+ * scheduled_posts.csv
  */
-const scheduledPosts = defineTable(
+const scheduled_posts = defineTable(
 	type({
 		id: 'string', // scheduled_post_id from CSV
-		subreddit: 'string | null',
-		title: 'string | null',
-		body: 'string | null',
-		url: 'string | null',
-		submissionTime: 'string | null',
-		recurrence: 'string | null',
+		scheduled_post_id: 'string',
+		'subreddit?': 'string',
+		'title?': 'string',
+		'body?': 'string',
+		'url?': 'string',
+		submission_time: 'string | null',
+		'recurrence?': 'string',
 	}),
 );
 
 /**
- * IP Logs (unique structure)
- * Source CSV: ip_logs.csv
+ * ip_logs.csv
  */
-const ipLogs = defineTable(
+const ip_logs = defineTable(
 	type({
-		id: 'string', // Generated hash of date:ip
+		id: 'string', // `${date}:${ip}`
 		date: 'string',
 		ip: 'string',
 	}),
 );
 
 /**
- * Ads Preferences (unique structure)
- * Source CSV: sensitive_ads_preferences.csv
+ * sensitive_ads_preferences.csv
  */
-const adsPreferences = defineTable(
+const sensitive_ads_preferences = defineTable(
 	type({
 		id: 'string', // type field as ID
 		type: 'string',
-		preference: 'string | null',
+		'preference?': 'string',
 	}),
 );
 
@@ -269,20 +393,33 @@ export const redditWorkspace = defineWorkspace({
 	id: 'reddit',
 
 	tables: {
-		content,
-		votes,
-		saved,
+		posts,
+		comments,
+		drafts,
+		post_votes,
+		comment_votes,
+		poll_votes,
+		saved_posts,
+		saved_comments,
+		hidden_posts,
 		messages,
-		chatHistory,
-		subreddits,
+		messages_archive,
+		chat_history,
+		subscribed_subreddits,
+		moderated_subreddits,
+		approved_submitter_subreddits,
 		multireddits,
-		awards,
-		commerce,
-		social,
+		gilded_content,
+		gold_received,
+		purchases,
+		subscriptions,
+		payouts,
+		friends,
+		linked_identities,
 		announcements,
-		scheduledPosts,
-		ipLogs,
-		adsPreferences,
+		scheduled_posts,
+		ip_logs,
+		sensitive_ads_preferences,
 	},
 
 	kv: {

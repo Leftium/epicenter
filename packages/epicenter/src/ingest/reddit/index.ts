@@ -3,32 +3,55 @@
  *
  * Main API for importing Reddit GDPR exports into the workspace.
  *
+ * Architecture:
+ *   parse.ts → csv-schemas.ts → workspace
+ *
+ * The csvSchemas handle validation, parsing, and transformation in ONE pass.
+ * No separate validation or transform layers needed.
+ *
  * Usage:
  * ```typescript
  * import { importRedditExport, redditWorkspace } from './ingest/reddit';
  * import { createWorkspace } from 'epicenter/static';
  *
- * // Create workspace client
  * const client = createWorkspace(redditWorkspace);
- *
- * // Import data
  * const stats = await importRedditExport(zipFile, client);
  * console.log(`Imported ${stats.totalRows} rows`);
  * ```
  */
 
 import { createWorkspace } from '../../static/index.js';
+import { csvSchemas } from './csv-schemas.js';
 import { parseRedditZip } from './parse.js';
-import {
-	type KvData,
-	tableTransforms,
-	transformKv,
-} from './transform.js';
-import { validateRedditExport } from './validation.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
 // Re-export workspace definition
 export { redditWorkspace, type RedditWorkspace };
+
+// Re-export types from csv-schemas
+export type {
+	PostRow,
+	CommentRow,
+	DraftRow,
+	PostVoteRow,
+	CommentVoteRow,
+	PollVoteRow,
+	MessageRow,
+	ChatHistoryRow,
+	SubredditRow,
+	MultiredditRow,
+	GildedContentRow,
+	GoldReceivedRow,
+	PurchaseRow,
+	SubscriptionRow,
+	PayoutRow,
+	FriendRow,
+	LinkedIdentityRow,
+	AnnouncementRow,
+	ScheduledPostRow,
+	IpLogRow,
+	AdsPreferenceRow,
+} from './csv-schemas.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -41,7 +64,7 @@ export type ImportStats = {
 };
 
 export type ImportProgress = {
-	phase: 'parse' | 'validate' | 'transform' | 'insert';
+	phase: 'parse' | 'transform' | 'insert';
 	current: number;
 	total: number;
 	table?: string;
@@ -63,6 +86,155 @@ export function createRedditWorkspace() {
 export type RedditWorkspaceClient = ReturnType<typeof createRedditWorkspace>;
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TABLE REGISTRY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Registry mapping CSV keys to table names and schemas.
+ * Each schema handles validation + parsing + ID computation in ONE pass.
+ */
+const tableRegistry = [
+	{ csv: 'posts', table: 'posts', schema: csvSchemas.posts },
+	{ csv: 'comments', table: 'comments', schema: csvSchemas.comments },
+	{ csv: 'drafts', table: 'drafts', schema: csvSchemas.drafts },
+	{ csv: 'post_votes', table: 'post_votes', schema: csvSchemas.post_votes },
+	{
+		csv: 'comment_votes',
+		table: 'comment_votes',
+		schema: csvSchemas.comment_votes,
+	},
+	{ csv: 'poll_votes', table: 'poll_votes', schema: csvSchemas.poll_votes },
+	{ csv: 'saved_posts', table: 'saved_posts', schema: csvSchemas.saved_posts },
+	{
+		csv: 'saved_comments',
+		table: 'saved_comments',
+		schema: csvSchemas.saved_comments,
+	},
+	{ csv: 'hidden_posts', table: 'hidden_posts', schema: csvSchemas.hidden_posts },
+	{ csv: 'messages', table: 'messages', schema: csvSchemas.messages },
+	{
+		csv: 'messages_archive',
+		table: 'messages_archive',
+		schema: csvSchemas.messages_archive,
+	},
+	{ csv: 'chat_history', table: 'chat_history', schema: csvSchemas.chat_history },
+	{
+		csv: 'subscribed_subreddits',
+		table: 'subscribed_subreddits',
+		schema: csvSchemas.subscribed_subreddits,
+	},
+	{
+		csv: 'moderated_subreddits',
+		table: 'moderated_subreddits',
+		schema: csvSchemas.moderated_subreddits,
+	},
+	{
+		csv: 'approved_submitter_subreddits',
+		table: 'approved_submitter_subreddits',
+		schema: csvSchemas.approved_submitter_subreddits,
+	},
+	{ csv: 'multireddits', table: 'multireddits', schema: csvSchemas.multireddits },
+	{
+		csv: 'gilded_content',
+		table: 'gilded_content',
+		schema: csvSchemas.gilded_content,
+	},
+	{
+		csv: 'gold_received',
+		table: 'gold_received',
+		schema: csvSchemas.gold_received,
+	},
+	{ csv: 'purchases', table: 'purchases', schema: csvSchemas.purchases },
+	{
+		csv: 'subscriptions',
+		table: 'subscriptions',
+		schema: csvSchemas.subscriptions,
+	},
+	{ csv: 'payouts', table: 'payouts', schema: csvSchemas.payouts },
+	{ csv: 'friends', table: 'friends', schema: csvSchemas.friends },
+	{
+		csv: 'linked_identities',
+		table: 'linked_identities',
+		schema: csvSchemas.linked_identities,
+	},
+	{
+		csv: 'announcements',
+		table: 'announcements',
+		schema: csvSchemas.announcements,
+	},
+	{
+		csv: 'scheduled_posts',
+		table: 'scheduled_posts',
+		schema: csvSchemas.scheduled_posts,
+	},
+	{ csv: 'ip_logs', table: 'ip_logs', schema: csvSchemas.ip_logs },
+	{
+		csv: 'sensitive_ads_preferences',
+		table: 'sensitive_ads_preferences',
+		schema: csvSchemas.sensitive_ads_preferences,
+	},
+] as const;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KV TRANSFORM
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type KvData = {
+	accountGender: string | null;
+	birthdate: string | null;
+	verifiedBirthdate: string | null;
+	phoneNumber: string | null;
+	stripeAccountId: string | null;
+	personaInquiryId: string | null;
+	twitterUsername: string | null;
+	statistics: Record<string, string> | null;
+	preferences: Record<string, string> | null;
+};
+
+function emptyToNull(value: string | undefined | null): string | null {
+	if (value === undefined || value === null || value === '') return null;
+	return value;
+}
+
+function parseDateToIso(dateStr: string | undefined | null): string | null {
+	if (!dateStr || dateStr === '') return null;
+	const d = new Date(dateStr);
+	return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function transformKv(raw: Record<string, Record<string, string>[]>): KvData {
+	// Statistics → JSON object
+	let statistics: Record<string, string> | null = null;
+	if (raw.statistics?.length > 0) {
+		statistics = {};
+		for (const row of raw.statistics) {
+			if (row.statistic && row.value) statistics[row.statistic] = row.value;
+		}
+	}
+
+	// Preferences → JSON object
+	let preferences: Record<string, string> | null = null;
+	if (raw.user_preferences?.length > 0) {
+		preferences = {};
+		for (const row of raw.user_preferences) {
+			if (row.preference && row.value) preferences[row.preference] = row.value;
+		}
+	}
+
+	return {
+		accountGender: emptyToNull(raw.account_gender?.[0]?.account_gender),
+		birthdate: parseDateToIso(raw.birthdate?.[0]?.birthdate),
+		verifiedBirthdate: parseDateToIso(raw.birthdate?.[0]?.verified_birthdate),
+		phoneNumber: emptyToNull(raw.linked_phone_number?.[0]?.phone_number),
+		stripeAccountId: emptyToNull(raw.stripe?.[0]?.stripe_account_id),
+		personaInquiryId: emptyToNull(raw.persona?.[0]?.persona_inquiry_id),
+		twitterUsername: emptyToNull(raw.twitter?.[0]?.username),
+		statistics,
+		preferences,
+	};
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // IMPORT FUNCTION
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -82,66 +254,58 @@ export async function importRedditExport(
 	const stats: ImportStats = { tables: {}, kv: 0, totalRows: 0 };
 
 	// ═══════════════════════════════════════════════════════════════════════════
-	// PHASE 1: PARSE
+	// PHASE 1: PARSE ZIP → RAW CSV DATA
 	// ═══════════════════════════════════════════════════════════════════════════
 	options?.onProgress?.({ phase: 'parse', current: 0, total: 1 });
 	const rawData = await parseRedditZip(input);
 
 	// ═══════════════════════════════════════════════════════════════════════════
-	// PHASE 2: VALIDATE
+	// PHASE 2: TRANSFORM + INSERT (unified via csvSchemas)
 	// ═══════════════════════════════════════════════════════════════════════════
-	options?.onProgress?.({ phase: 'validate', current: 0, total: 1 });
-	const data = validateRedditExport(rawData);
-
-	// ═══════════════════════════════════════════════════════════════════════════
-	// PHASE 3 & 4: TRANSFORM + INSERT
-	// ═══════════════════════════════════════════════════════════════════════════
-	const totalTables = tableTransforms.length;
+	const totalTables = tableRegistry.length;
 	let tableIndex = 0;
 
-	// Helper to report progress
-	const reportProgress = (tableName: string) => {
+	for (const { csv, table, schema } of tableRegistry) {
 		options?.onProgress?.({
 			phase: 'transform',
-			current: tableIndex,
+			current: tableIndex++,
 			total: totalTables,
-			table: tableName,
+			table,
 		});
-		tableIndex++;
-	};
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// ALL TABLES: data-driven transform + insert
-	// ─────────────────────────────────────────────────────────────────────────────
-	for (const { name, transform } of tableTransforms) {
-		reportProgress(name);
-		const rows = transform(data);
+		const csvData = rawData[csv] ?? [];
+		if (csvData.length === 0) {
+			stats.tables[table] = 0;
+			continue;
+		}
 
-		// Type assertion: we know table names match workspace.tables keys
-		// and transform returns rows matching that table's schema
-		const table = workspace.tables[name as keyof typeof workspace.tables] as unknown as {
+		// Parse all rows using the schema (validates + transforms in one pass)
+		const rows = csvData.map((row) => (schema as any).assert(row));
+
+		// Insert into table
+		const tableClient = workspace.tables[
+			table as keyof typeof workspace.tables
+		] as unknown as {
 			batch: (fn: (tx: { set: (row: { id: string }) => void }) => void) => void;
 		};
-		table.batch((tx) => {
+		tableClient.batch((tx) => {
 			for (const row of rows) tx.set(row);
 		});
 
-		stats.tables[name] = rows.length;
+		stats.tables[table] = rows.length;
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────────
-	// KV STORE
-	// ─────────────────────────────────────────────────────────────────────────────
+	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 3: KV STORE
+	// ═══════════════════════════════════════════════════════════════════════════
 	options?.onProgress?.({ phase: 'insert', current: 0, total: 1 });
-	const kvData = transformKv(data);
+	const kvData = transformKv(rawData);
 	workspace.kv.batch((tx) => {
 		for (const [key, value] of Object.entries(kvData) as [
 			keyof KvData,
 			KvData[keyof KvData],
 		][]) {
 			if (value !== null) {
-				// Type assertion needed: tx.set expects value matching key's schema,
-				// but TypeScript can't narrow KvData[keyof KvData] through the loop
 				tx.set(key, value as string & Record<string, string>);
 				stats.kv++;
 			}
@@ -167,16 +331,17 @@ export async function previewRedditExport(input: Blob | ArrayBuffer): Promise<{
 	totalRows: number;
 }> {
 	const rawData = await parseRedditZip(input);
-	const data = validateRedditExport(rawData);
 
-	// Compute table row counts using same transforms as import
+	// Compute table row counts
 	const tables: Record<string, number> = {};
-	for (const { name, transform } of tableTransforms) {
-		tables[name] = transform(data).length;
+	for (const { csv, table } of tableRegistry) {
+		const csvData = rawData[csv] ?? [];
+		// Just count - the schemas will validate when actually importing
+		tables[table] = csvData.length;
 	}
 
 	// Check which KV fields have values
-	const kvData = transformKv(data);
+	const kvData = transformKv(rawData);
 	const kv: Record<string, boolean> = {};
 	for (const [key, value] of Object.entries(kvData)) {
 		kv[key] = value !== null;

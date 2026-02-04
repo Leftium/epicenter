@@ -174,37 +174,19 @@ export const messages_archive = messages;
 /** chat_history.csv → chat_history table (rename message_id → id) */
 export const chat_history = type({
 	message_id: 'string',
-	'created_at?': 'string',
-	'updated_at?': 'string',
-	'username?': 'string',
-	'message?': 'string',
-	'thread_parent_message_id?': 'string',
-	'channel_url?': 'string',
-	'subreddit?': 'string',
-	'channel_name?': 'string',
-	'conversation_type?': 'string',
-}).pipe(({ message_id, ...rest }) => {
-	// Parse dates and convert empty strings to null
-	const parseDate = (s?: string): string | null => {
-		if (!s || s === '') return null;
-		const d = new Date(s);
-		return Number.isNaN(d.getTime()) ? null : d.toISOString();
-	};
-	const toNull = (s?: string): string | null => (!s || s === '' ? null : s);
-
-	return {
-		id: message_id,
-		created_at: parseDate(rest.created_at),
-		updated_at: parseDate(rest.updated_at),
-		username: toNull(rest.username),
-		message: toNull(rest.message),
-		thread_parent_message_id: toNull(rest.thread_parent_message_id),
-		channel_url: toNull(rest.channel_url),
-		subreddit: toNull(rest.subreddit),
-		channel_name: toNull(rest.channel_name),
-		conversation_type: toNull(rest.conversation_type),
-	};
-});
+	created_at: optionalDateToIso,
+	updated_at: optionalDateToIso,
+	username: optionalToNull,
+	message: optionalToNull,
+	thread_parent_message_id: optionalToNull,
+	channel_url: optionalToNull,
+	subreddit: optionalToNull,
+	channel_name: optionalToNull,
+	conversation_type: optionalToNull,
+}).pipe(({ message_id, ...rest }) => ({
+	id: message_id,
+	...rest,
+}));
 
 /** subreddit CSVs → subreddit table (subreddit becomes ID) */
 export const subreddit = type({

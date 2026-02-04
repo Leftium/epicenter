@@ -83,16 +83,16 @@ async function main() {
 	// Check some sample data
 	const postsCount = workspace.tables.posts.count();
 	const commentsCount = workspace.tables.comments.count();
-	const postVotesCount = workspace.tables.post_votes.count();
+	const postVotesCount = workspace.tables.postVotes.count();
 
-	console.log(`posts table count:      ${postsCount}`);
-	console.log(`comments table count:   ${commentsCount}`);
-	console.log(`post_votes table count: ${postVotesCount}`);
+	console.log(`posts table count:     ${postsCount}`);
+	console.log(`comments table count:  ${commentsCount}`);
+	console.log(`postVotes table count: ${postVotesCount}`);
 
 	// Verify counts match
 	const postsMatches = postsCount === stats.tables.posts;
 	const commentsMatches = commentsCount === stats.tables.comments;
-	const postVotesMatches = postVotesCount === stats.tables.post_votes;
+	const postVotesMatches = postVotesCount === stats.tables.postVotes;
 
 	if (postsMatches && commentsMatches && postVotesMatches) {
 		console.log('\n✓ All counts verified!\n');
@@ -100,7 +100,7 @@ async function main() {
 		console.log('\n✗ Count mismatch detected!\n');
 		if (!postsMatches) console.log(`  posts: expected ${stats.tables.posts}, got ${postsCount}`);
 		if (!commentsMatches) console.log(`  comments: expected ${stats.tables.comments}, got ${commentsCount}`);
-		if (!postVotesMatches) console.log(`  post_votes: expected ${stats.tables.post_votes}, got ${postVotesCount}`);
+		if (!postVotesMatches) console.log(`  postVotes: expected ${stats.tables.postVotes}, got ${postVotesCount}`);
 	}
 
 	// Cleanup

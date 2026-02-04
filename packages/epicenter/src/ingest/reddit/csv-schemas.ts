@@ -48,9 +48,6 @@ const optionalDateToIso = type('string | undefined').pipe((s): string | null => 
 	return Number.isNaN(d.getTime()) ? null : d.toISOString();
 });
 
-/** Numeric string → number */
-const numericParse = type('string.numeric.parse');
-
 /** Vote direction */
 const voteDirection = type("'up' | 'down' | 'none' | 'removed'");
 
@@ -65,7 +62,7 @@ export const posts = type({
 	date: dateToIso,
 	ip: emptyToNull,
 	subreddit: 'string',
-	gildings: numericParse,
+	gildings: type('string.numeric.parse'),
 	'title?': 'string',
 	'url?': 'string',
 	'body?': 'string',
@@ -78,7 +75,7 @@ export const comments = type({
 	date: dateToIso,
 	ip: emptyToNull,
 	subreddit: 'string',
-	gildings: numericParse,
+	gildings: type('string.numeric.parse'),
 	link: 'string',
 	'parent?': 'string',
 	'body?': 'string',

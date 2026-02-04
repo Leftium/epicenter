@@ -101,21 +101,21 @@ export const drafts = type({
 });
 
 /** post_votes.csv → post_votes table (has natural ID) */
-export const post_votes = type({
+export const postVotes = type({
 	id: 'string',
 	permalink: 'string',
 	direction: voteDirection,
 });
 
 /** comment_votes.csv → comment_votes table (has natural ID) */
-export const comment_votes = type({
+export const commentVotes = type({
 	id: 'string',
 	permalink: 'string',
 	direction: voteDirection,
 });
 
 /** poll_votes.csv → poll_votes table (computed ID) */
-export const poll_votes = type({
+export const pollVotes = type({
 	post_id: 'string',
 	'user_selection?': 'string',
 	'text?': 'string',
@@ -135,19 +135,19 @@ export const poll_votes = type({
 }));
 
 /** saved_posts.csv → saved_posts table (has natural ID) */
-export const saved_posts = type({
+export const savedPosts = type({
 	id: 'string',
 	permalink: 'string',
 });
 
 /** saved_comments.csv → saved_comments table (has natural ID) */
-export const saved_comments = type({
+export const savedComments = type({
 	id: 'string',
 	permalink: 'string',
 });
 
 /** hidden_posts.csv → hidden_posts table (has natural ID) */
-export const hidden_posts = type({
+export const hiddenPosts = type({
 	id: 'string',
 	permalink: 'string',
 });
@@ -166,10 +166,10 @@ export const messages = type({
 });
 
 /** messages_archive.csv → messages_archive table (has natural ID) */
-export const messages_archive = messages;
+export const messagesArchive = messages;
 
 /** chat_history.csv → chat_history table (rename message_id → id) */
-export const chat_history = type({
+export const chatHistory = type({
 	message_id: 'string',
 	created_at: optionalDateToIso,
 	updated_at: optionalDateToIso,
@@ -194,9 +194,9 @@ export const subreddit = type({
 }));
 
 // Aliases for the three subreddit tables
-export const subscribed_subreddits = subreddit;
-export const moderated_subreddits = subreddit;
-export const approved_submitter_subreddits = subreddit;
+export const subscribedSubreddits = subreddit;
+export const moderatedSubreddits = subreddit;
+export const approvedSubmitterSubreddits = subreddit;
 
 /** multireddits.csv → multireddits table (has natural ID) */
 export const multireddits = type({
@@ -213,7 +213,7 @@ export const multireddits = type({
 });
 
 /** gilded_content.csv → gilded_content table (computed ID) */
-export const gilded_content = type({
+export const gildedContent = type({
 	content_link: 'string',
 	'award?': 'string',
 	'amount?': 'string',
@@ -226,7 +226,7 @@ export const gilded_content = type({
 }));
 
 /** gold_received.csv → gold_received table (computed ID) */
-export const gold_received = type({
+export const goldReceived = type({
 	content_link: 'string',
 	'gold_received?': 'string',
 	'gilder_username?': 'string',
@@ -302,7 +302,7 @@ export const friends = type({
 }));
 
 /** linked_identities.csv → linked_identities table (computed ID) */
-export const linked_identities = type({
+export const linkedIdentities = type({
 	issuer_id: 'string',
 	subject_id: 'string',
 }).pipe((row) => ({
@@ -326,7 +326,7 @@ export const announcements = type({
 }));
 
 /** scheduled_posts.csv → scheduled_posts table (scheduled_post_id becomes ID) */
-export const scheduled_posts = type({
+export const scheduledPosts = type({
 	scheduled_post_id: 'string',
 	'subreddit?': 'string',
 	'title?': 'string',
@@ -340,7 +340,7 @@ export const scheduled_posts = type({
 }));
 
 /** ip_logs.csv → ip_logs table (computed ID) */
-export const ip_logs = type({
+export const ipLogs = type({
 	date: 'string',
 	ip: 'string',
 }).pipe((row) => ({
@@ -349,7 +349,7 @@ export const ip_logs = type({
 }));
 
 /** sensitive_ads_preferences.csv → sensitive_ads_preferences table (type becomes ID) */
-export const sensitive_ads_preferences = type({
+export const sensitiveAdsPreferences = type({
 	type: 'string',
 	'preference?': 'string',
 }).pipe((row) => ({
@@ -388,30 +388,30 @@ export const csvSchemas = {
 	posts,
 	comments,
 	drafts,
-	post_votes,
-	comment_votes,
-	poll_votes,
-	saved_posts,
-	saved_comments,
-	hidden_posts,
+	postVotes,
+	commentVotes,
+	pollVotes,
+	savedPosts,
+	savedComments,
+	hiddenPosts,
 	messages,
-	messages_archive,
-	chat_history,
-	subscribed_subreddits,
-	moderated_subreddits,
-	approved_submitter_subreddits,
+	messagesArchive,
+	chatHistory,
+	subscribedSubreddits,
+	moderatedSubreddits,
+	approvedSubmitterSubreddits,
 	multireddits,
-	gilded_content,
-	gold_received,
+	gildedContent,
+	goldReceived,
 	purchases,
 	subscriptions,
 	payouts,
 	friends,
-	linked_identities,
+	linkedIdentities,
 	announcements,
-	scheduled_posts,
-	ip_logs,
-	sensitive_ads_preferences,
+	scheduledPosts,
+	ipLogs,
+	sensitiveAdsPreferences,
 } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -421,24 +421,24 @@ export const csvSchemas = {
 export type PostRow = typeof posts.infer;
 export type CommentRow = typeof comments.infer;
 export type DraftRow = typeof drafts.infer;
-export type PostVoteRow = typeof post_votes.infer;
-export type CommentVoteRow = typeof comment_votes.infer;
-export type PollVoteRow = typeof poll_votes.infer;
-export type SavedPostRow = typeof saved_posts.infer;
-export type SavedCommentRow = typeof saved_comments.infer;
-export type HiddenPostRow = typeof hidden_posts.infer;
+export type PostVoteRow = typeof postVotes.infer;
+export type CommentVoteRow = typeof commentVotes.infer;
+export type PollVoteRow = typeof pollVotes.infer;
+export type SavedPostRow = typeof savedPosts.infer;
+export type SavedCommentRow = typeof savedComments.infer;
+export type HiddenPostRow = typeof hiddenPosts.infer;
 export type MessageRow = typeof messages.infer;
-export type ChatHistoryRow = typeof chat_history.infer;
+export type ChatHistoryRow = typeof chatHistory.infer;
 export type SubredditRow = typeof subreddit.infer;
 export type MultiredditRow = typeof multireddits.infer;
-export type GildedContentRow = typeof gilded_content.infer;
-export type GoldReceivedRow = typeof gold_received.infer;
+export type GildedContentRow = typeof gildedContent.infer;
+export type GoldReceivedRow = typeof goldReceived.infer;
 export type PurchaseRow = typeof purchases.infer;
 export type SubscriptionRow = typeof subscriptions.infer;
 export type PayoutRow = typeof payouts.infer;
 export type FriendRow = typeof friends.infer;
-export type LinkedIdentityRow = typeof linked_identities.infer;
+export type LinkedIdentityRow = typeof linkedIdentities.infer;
 export type AnnouncementRow = typeof announcements.infer;
-export type ScheduledPostRow = typeof scheduled_posts.infer;
-export type IpLogRow = typeof ip_logs.infer;
-export type AdsPreferenceRow = typeof sensitive_ads_preferences.infer;
+export type ScheduledPostRow = typeof scheduledPosts.infer;
+export type IpLogRow = typeof ipLogs.infer;
+export type AdsPreferenceRow = typeof sensitiveAdsPreferences.infer;

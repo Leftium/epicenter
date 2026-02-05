@@ -45,8 +45,8 @@ import type { Tables } from '../tables/create-tables';
  * ```typescript
  * // Destructure only what you need
  * const persistence: ExtensionFactory = ({ ydoc }) => { ... };
- * const sqlite: ExtensionFactory = ({ workspaceId, tables }) => { ... };
- * const markdown: ExtensionFactory = ({ ydoc, tables, workspaceId }) => { ... };
+ * const sqlite: ExtensionFactory = ({ id, tables }) => { ... };
+ * const markdown: ExtensionFactory = ({ ydoc, tables, id }) => { ... };
  * ```
  */
 export type ExtensionContext<
@@ -57,7 +57,7 @@ export type ExtensionContext<
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Workspace identifier (from definition.id) */
-	workspaceId: string;
+	id: string;
 	/** The workspace definition with typed tables and kv fields */
 	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;
 	/** Typed table helpers */
@@ -143,7 +143,7 @@ export type WorkspaceClient<
 	TExtensions extends ExtensionFactoryMap = Record<string, never>,
 > = {
 	/** Workspace identifier */
-	workspaceId: string;
+	id: string;
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Typed table helpers */
@@ -163,7 +163,7 @@ export type WorkspaceClient<
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
- * This uses Object.assign pattern to merge the base client with the builder method,
+ * This uses Object.assign pattern to merge the base client with the builder methods,
  * allowing both direct use and chaining:
  * - Direct: `createWorkspace(...).tables.get('posts').upsert(...)`
  * - Chained: `createWorkspace(...).withExtensions({ sqlite })`

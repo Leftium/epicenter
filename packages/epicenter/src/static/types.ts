@@ -54,6 +54,17 @@ export type DeleteResult =
 	| { status: 'deleted' }
 	| { status: 'not_found_locally' };
 
+/** Result of updating a single row */
+export type UpdateResult<TRow> =
+	| { status: 'updated'; row: TRow }
+	| { status: 'not_found'; id: string }
+	| {
+			status: 'invalid';
+			id: string;
+			errors: readonly StandardSchemaV1.Issue[];
+			row: unknown;
+	  };
+
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -187,6 +198,13 @@ export type TableHelper<TRow extends { id: string }> = {
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// UPDATE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Partial update a row by ID. Fetches current, merges partial, and saves. */
+	update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow>;
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// DELETE
 	// ═══════════════════════════════════════════════════════════════════════
 
@@ -312,7 +330,7 @@ export type WorkspaceDefinition<
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
- * This uses Object.assign to merge the base client with the builder method,
+ * This uses Object.assign to merge the base client with the builder methods,
  * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
  * chaining: `createWorkspace(...).withExtensions({ sqlite })`.
  */
@@ -365,7 +383,7 @@ export type CapabilityContext<
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Workspace identifier */
-	workspaceId: string;
+	id: string;
 	/** Typed table helpers for the workspace */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */

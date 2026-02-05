@@ -59,7 +59,7 @@ export function createWorkspace<
 		ydoc.destroy();
 	};
 
-	return {
+	const baseClient = {
 		id,
 		ydoc,
 		tables,
@@ -67,24 +67,28 @@ export function createWorkspace<
 		capabilities: {} as InferCapabilityExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
+	};
+
+	return {
+		...baseClient,
 
 		/**
 		 * Attach capabilities (persistence, SQLite, sync, etc.) to the workspace.
 		 *
-		 * Each capability factory receives { ydoc, workspaceId, tables, kv } and
+		 * Each capability factory receives { ydoc, id, tables, kv } and
 		 * returns a Lifecycle object with exports. The returned client includes
 		 * all capability exports under `.capabilities`.
 		 */
 		withExtensions<TCapabilities extends CapabilityMap>(
 			capabilities: TCapabilities,
-		): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> {
+		) {
 			// Initialize each capability factory and collect their exports
 			const capabilityExports = Object.fromEntries(
 				Object.entries(capabilities).map(([name, factory]) => [
 					name,
 					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
 						ydoc,
-						workspaceId: id,
+						id,
 						tables,
 						kv,
 					}),
@@ -99,8 +103,7 @@ export function createWorkspace<
 				ydoc.destroy();
 			};
 
-			// Same shape as base client, but with initialized capabilities
-			return {
+			const clientWithCapabilities = {
 				id,
 				ydoc,
 				tables,
@@ -110,6 +113,8 @@ export function createWorkspace<
 				destroy: destroyWithCapabilities,
 				[Symbol.asyncDispose]: destroyWithCapabilities,
 			};
+
+			return clientWithCapabilities;
 		},
 	};
 }

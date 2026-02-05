@@ -74,11 +74,11 @@ export function createWorkspace<
 >(
 	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>,
 ): WorkspaceClientBuilder<TTableDefinitions, TKvFields> {
-	const workspaceId = definition.id;
+	const id = definition.id;
 
 	// Create Y.Doc with guid = definition.id
 	// gc: true enables garbage collection for efficient YKeyValueLww storage
-	const ydoc = new Y.Doc({ guid: workspaceId, gc: true });
+	const ydoc = new Y.Doc({ guid: id, gc: true });
 
 	// Create table and KV helpers bound to Y.Doc
 	const tables = createTables(ydoc, definition.tables ?? []);
@@ -95,7 +95,7 @@ export function createWorkspace<
 		TKvFields,
 		Record<string, never>
 	> = {
-		workspaceId,
+		id,
 		ydoc,
 		tables,
 		kv,
@@ -123,7 +123,7 @@ export function createWorkspace<
 				// Build context for this extension
 				const context: ExtensionContext<TTableDefinitions, TKvFields> = {
 					ydoc,
-					workspaceId,
+					id,
 					definition,
 					tables,
 					kv,
@@ -151,7 +151,7 @@ export function createWorkspace<
 			};
 
 			return {
-				workspaceId,
+				id,
 				ydoc,
 				tables,
 				kv,

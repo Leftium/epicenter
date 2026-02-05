@@ -293,7 +293,7 @@ export const markdown = async <
 	context: ExtensionContext<TTableDefinitions, TKvFields>,
 	config: MarkdownExtensionConfig<TTableDefinitions>,
 ) => {
-	const { workspaceId: id, tables, ydoc } = context;
+	const { id, tables, ydoc } = context;
 	const {
 		directory,
 		logsDir,

@@ -105,7 +105,6 @@ async function loadClientFromPath(
 	return clients[0]![1] as AnyWorkspaceClient;
 }
 
-
 function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 	return (
 		typeof value === 'object' &&

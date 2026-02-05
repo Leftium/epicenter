@@ -116,7 +116,9 @@ type ActionConfig<
 	input?: TInput;
 	output?: StandardSchemaWithJSONSchema;
 	handler: TInput extends StandardSchemaWithJSONSchema
-		? (input: StandardSchemaV1.InferOutput<TInput>) => TOutput | Promise<TOutput>
+		? (
+				input: StandardSchemaV1.InferOutput<TInput>,
+			) => TOutput | Promise<TOutput>
 		: () => TOutput | Promise<TOutput>;
 };
 
@@ -370,4 +372,3 @@ export function* iterateActions(
 		}
 	}
 }
-

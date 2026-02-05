@@ -51,18 +51,16 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 
 		switch (action.type) {
 			case 'query':
-				router.get(
-					routePath,
-					({ query }) => handleRequest(query),
-					{ query: action.input, detail },
-				);
+				router.get(routePath, ({ query }) => handleRequest(query), {
+					query: action.input,
+					detail,
+				});
 				break;
 			case 'mutation':
-				router.post(
-					routePath,
-					({ body }) => handleRequest(body),
-					{ body: action.input, detail },
-				);
+				router.post(routePath, ({ body }) => handleRequest(body), {
+					body: action.input,
+					detail,
+				});
 				break;
 			default: {
 				const _exhaustive: never = action;

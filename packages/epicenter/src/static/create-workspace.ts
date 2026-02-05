@@ -79,7 +79,9 @@ export function createWorkspace<
 		 * returns a Lifecycle object with exports. The returned client includes
 		 * all capability exports under `.capabilities`.
 		 */
-		withExtensions<TCapabilities extends CapabilityMap>(capabilities: TCapabilities) {
+		withExtensions<TCapabilities extends CapabilityMap>(
+			capabilities: TCapabilities,
+		) {
 			// Initialize each capability factory and collect their exports
 			const capabilityExports = Object.fromEntries(
 				Object.entries(capabilities).map(([name, factory]) => [

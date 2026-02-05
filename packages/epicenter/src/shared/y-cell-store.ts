@@ -169,7 +169,10 @@ function parseCellKey(key: string): { rowId: string; columnId: string } {
  * @param ydoc - The Y.Doc to store data in
  * @param arrayKey - The key name for the Y.Array (e.g., 'table:posts')
  */
-export function createCellStore<T>(ydoc: Y.Doc, arrayKey: string): CellStore<T> {
+export function createCellStore<T>(
+	ydoc: Y.Doc,
+	arrayKey: string,
+): CellStore<T> {
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<T>>(arrayKey);
 	const ykv = new YKeyValueLww<T>(yarray);
 
@@ -198,8 +201,7 @@ export function createCellStore<T>(ydoc: Y.Doc, arrayKey: string): CellStore<T> 
 				fn({
 					setCell: (rowId, columnId, value) =>
 						ykv.set(cellKey(rowId, columnId), value),
-					deleteCell: (rowId, columnId) =>
-						ykv.delete(cellKey(rowId, columnId)),
+					deleteCell: (rowId, columnId) => ykv.delete(cellKey(rowId, columnId)),
 				});
 			});
 		},

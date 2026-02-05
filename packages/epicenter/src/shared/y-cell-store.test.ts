@@ -14,7 +14,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createCellStore, type CellChange } from './y-cell-store';
+import { type CellChange, createCellStore } from './y-cell-store';
 
 describe('YCellStore', () => {
 	describe('Cell CRUD', () => {
@@ -101,7 +101,7 @@ describe('YCellStore', () => {
 			const cells = createCellStore<string>(ydoc, 'cells');
 
 			expect(() => cells.setCell('row:1', 'title', 'Hello')).toThrow(
-				"rowId cannot contain ':': \"row:1\"",
+				'rowId cannot contain \':\': "row:1"',
 			);
 		});
 
@@ -278,7 +278,12 @@ describe('YCellStore', () => {
 			cells.deleteCell('row-1', 'title');
 
 			expect(changes).toEqual([
-				{ action: 'delete', rowId: 'row-1', columnId: 'title', oldValue: 'Hello' },
+				{
+					action: 'delete',
+					rowId: 'row-1',
+					columnId: 'title',
+					oldValue: 'Hello',
+				},
 			]);
 		});
 

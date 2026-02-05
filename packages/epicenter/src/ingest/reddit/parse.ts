@@ -62,10 +62,7 @@ const REQUIRED_CSV_FILES = [
 ] as const;
 
 // Optional CSVs (may be absent based on user activity)
-const OPTIONAL_CSV_FILES = [
-	'messages.csv',
-	'message_headers.csv',
-] as const;
+const OPTIONAL_CSV_FILES = ['messages.csv', 'message_headers.csv'] as const;
 
 /**
  * Convert CSV filename to schema key.
@@ -119,7 +116,11 @@ export async function parseRedditZip(
 
 		if (!entry) {
 			// Handle optional files
-			if (OPTIONAL_CSV_FILES.includes(csvFile as typeof OPTIONAL_CSV_FILES[number])) {
+			if (
+				OPTIONAL_CSV_FILES.includes(
+					csvFile as (typeof OPTIONAL_CSV_FILES)[number],
+				)
+			) {
 				result[key] = [];
 				continue;
 			}

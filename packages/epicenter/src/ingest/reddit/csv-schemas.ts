@@ -25,13 +25,13 @@ import { type } from 'arktype';
 const REGISTRATION_IP = 'registration ip';
 
 /** Empty string → null */
-const emptyToNull = type('string').pipe(
-	(s): string | null => (s === '' ? null : s),
+const emptyToNull = type('string').pipe((s): string | null =>
+	s === '' ? null : s,
 );
 
 /** Optional string → null */
-const optionalToNull = type('string | undefined').pipe(
-	(s): string | null => (!s || s === '' ? null : s),
+const optionalToNull = type('string | undefined').pipe((s): string | null =>
+	!s || s === '' ? null : s,
 );
 
 /** Date string → ISO string | null */
@@ -42,11 +42,13 @@ const dateToIso = type('string').pipe((s): string | null => {
 });
 
 /** Optional date → ISO string | null */
-const optionalDateToIso = type('string | undefined').pipe((s): string | null => {
-	if (!s || s === '' || s === REGISTRATION_IP) return null;
-	const d = new Date(s);
-	return Number.isNaN(d.getTime()) ? null : d.toISOString();
-});
+const optionalDateToIso = type('string | undefined').pipe(
+	(s): string | null => {
+		if (!s || s === '' || s === REGISTRATION_IP) return null;
+		const d = new Date(s);
+		return Number.isNaN(d.getTime()) ? null : d.toISOString();
+	},
+);
 
 /** Vote direction */
 const voteDirection = type("'up' | 'down' | 'none' | 'removed'");
@@ -219,9 +221,12 @@ export const gildedContent = type({
 	'amount?': 'string',
 	date: optionalDateToIso,
 }).pipe((row) => ({
-	id: [row.content_link, row.date ?? '', row.award ?? '', row.amount ?? ''].join(
-		':',
-	),
+	id: [
+		row.content_link,
+		row.date ?? '',
+		row.award ?? '',
+		row.amount ?? '',
+	].join(':'),
 	...row,
 }));
 

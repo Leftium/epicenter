@@ -7,7 +7,7 @@
  */
 
 import { type } from 'arktype';
-import { defineTable, defineWorkspace, defineKv } from '../../static/index.js';
+import { defineKv, defineTable, defineWorkspace } from '../../static/index.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TABLE DEFINITIONS

@@ -38,15 +38,16 @@ const defaultOpts: Required<CsvOptions> = {
 /**
  * Parse CSV text into objects (headers=true) or raw 2D array (headers=false).
  */
-export function parseCsv<T extends Record<string, string> = Record<string, string>>(
-	input: string,
-	options?: CsvOptions & { headers?: true },
-): T[];
+export function parseCsv<
+	T extends Record<string, string> = Record<string, string>,
+>(input: string, options?: CsvOptions & { headers?: true }): T[];
 export function parseCsv(
 	input: string,
 	options: CsvOptions & { headers: false },
 ): string[][];
-export function parseCsv<T extends Record<string, string> = Record<string, string>>(
+export function parseCsv<
+	T extends Record<string, string> = Record<string, string>,
+>(
 	input: string,
 	options?: CsvOptions & { headers?: boolean },
 ): T[] | string[][] {

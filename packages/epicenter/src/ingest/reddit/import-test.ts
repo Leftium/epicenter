@@ -7,7 +7,11 @@
  * If no path provided, looks for reddit_export.zip in the project root.
  */
 
-import { createRedditWorkspace, importRedditExport, previewRedditExport } from './index.js';
+import {
+	createRedditWorkspace,
+	importRedditExport,
+	previewRedditExport,
+} from './index.js';
 
 async function main() {
 	const zipPath = process.argv[2] ?? 'reddit_export.zip';
@@ -19,7 +23,9 @@ async function main() {
 	const file = Bun.file(zipPath);
 	if (!(await file.exists())) {
 		console.error(`\nError: File not found: ${zipPath}`);
-		console.error(`\nUsage: bun run import-test.ts [path-to-reddit-export.zip]`);
+		console.error(
+			`\nUsage: bun run import-test.ts [path-to-reddit-export.zip]`,
+		);
 		process.exit(1);
 	}
 
@@ -37,7 +43,9 @@ async function main() {
 	for (const [table, count] of Object.entries(preview.tables)) {
 		console.log(`  ${table.padEnd(20)} ${count.toString().padStart(6)}`);
 	}
-	console.log(`  ${'TOTAL'.padEnd(20)} ${preview.totalRows.toString().padStart(6)}`);
+	console.log(
+		`  ${'TOTAL'.padEnd(20)} ${preview.totalRows.toString().padStart(6)}`,
+	);
 
 	console.log('\nKV fields present:');
 	for (const [key, present] of Object.entries(preview.kv)) {
@@ -59,7 +67,9 @@ async function main() {
 	const stats = await importRedditExport(file, workspace, {
 		onProgress: (progress) => {
 			const tableInfo = progress.table ? ` (${progress.table})` : '';
-			console.log(`  [${progress.phase}] ${progress.current}/${progress.total}${tableInfo}`);
+			console.log(
+				`  [${progress.phase}] ${progress.current}/${progress.total}${tableInfo}`,
+			);
 		},
 	});
 	const importTime = performance.now() - importStart;
@@ -69,8 +79,12 @@ async function main() {
 	for (const [table, count] of Object.entries(stats.tables)) {
 		console.log(`  ${table.padEnd(20)} ${count.toString().padStart(6)}`);
 	}
-	console.log(`  ${'KV entries'.padEnd(20)} ${stats.kv.toString().padStart(6)}`);
-	console.log(`  ${'TOTAL'.padEnd(20)} ${stats.totalRows.toString().padStart(6)}`);
+	console.log(
+		`  ${'KV entries'.padEnd(20)} ${stats.kv.toString().padStart(6)}`,
+	);
+	console.log(
+		`  ${'TOTAL'.padEnd(20)} ${stats.totalRows.toString().padStart(6)}`,
+	);
 
 	console.log(`\nImport time: ${importTime.toFixed(2)}ms`);
 	console.log(`Total time: ${(performance.now() - startTime).toFixed(2)}ms`);
@@ -98,9 +112,16 @@ async function main() {
 		console.log('\n✓ All counts verified!\n');
 	} else {
 		console.log('\n✗ Count mismatch detected!\n');
-		if (!postsMatches) console.log(`  posts: expected ${stats.tables.posts}, got ${postsCount}`);
-		if (!commentsMatches) console.log(`  comments: expected ${stats.tables.comments}, got ${commentsCount}`);
-		if (!postVotesMatches) console.log(`  postVotes: expected ${stats.tables.postVotes}, got ${postVotesCount}`);
+		if (!postsMatches)
+			console.log(`  posts: expected ${stats.tables.posts}, got ${postsCount}`);
+		if (!commentsMatches)
+			console.log(
+				`  comments: expected ${stats.tables.comments}, got ${commentsCount}`,
+			);
+		if (!postVotesMatches)
+			console.log(
+				`  postVotes: expected ${stats.tables.postVotes}, got ${postVotesCount}`,
+			);
 	}
 
 	// Cleanup

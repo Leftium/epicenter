@@ -42,3 +42,6 @@ yarn-error.log*
 .output
 
 .conductor/
+
+# Reddit exports (personal data)
+reddit_export.zip

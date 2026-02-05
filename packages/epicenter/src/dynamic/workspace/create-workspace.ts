@@ -115,7 +115,7 @@ export function createWorkspace<
 		 */
 		withExtensions<TExtensions extends ExtensionFactoryMap>(
 			extensionFactories: TExtensions,
-		): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions> {
+		) {
 			// Initialize extensions synchronously; async work is in their whenSynced
 			const extensions = {} as InferExtensionExports<TExtensions>;
 
@@ -150,7 +150,7 @@ export function createWorkspace<
 				ydoc.destroy();
 			};
 
-			return {
+			const clientWithExtensions = {
 				id,
 				ydoc,
 				tables,
@@ -160,6 +160,8 @@ export function createWorkspace<
 				destroy: destroyWithExtensions,
 				[Symbol.asyncDispose]: destroyWithExtensions,
 			};
+
+			return clientWithExtensions;
 		},
 	});
 }

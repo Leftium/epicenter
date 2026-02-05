@@ -40,9 +40,15 @@ export async function resolveWorkspace(
 	}
 
 	// No config in target dir - check subdirs for helpful error message
-	const subdirConfigs = await findSubdirConfigs(baseDir);
-	if (subdirConfigs.length > 0) {
-		return { status: 'ambiguous', configs: subdirConfigs };
+	const glob = new Bun.Glob(`*/**/${CONFIG_FILENAME}`);
+	const configs: string[] = [];
+	for await (const path of glob.scan({ cwd: baseDir, onlyFiles: true })) {
+		configs.push(path);
+	}
+	configs.sort();
+
+	if (configs.length > 0) {
+		return { status: 'ambiguous', configs };
 	}
 
 	return { status: 'not_found' };
@@ -97,18 +103,6 @@ async function loadClientFromPath(
 	}
 
 	return clients[0]![1] as AnyWorkspaceClient;
-}
-
-async function findSubdirConfigs(baseDir: string): Promise<string[]> {
-	// */** pattern naturally excludes root-level matches
-	const glob = new Bun.Glob(`*/**/${CONFIG_FILENAME}`);
-	const configs: string[] = [];
-
-	for await (const path of glob.scan({ cwd: baseDir, onlyFiles: true })) {
-		configs.push(path);
-	}
-
-	return configs.sort();
 }
 
 function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {

@@ -69,9 +69,11 @@ function createServerInternal(
 		workspaces[client.id] = client;
 	}
 
-	const actionPaths = options?.actions
-		? collectActionPaths(options.actions)
-		: [];
+	// Auto-discover actions from client.actions if not explicitly provided
+	const firstClient = clients[0];
+	const actions =
+		options?.actions ?? (firstClient as any)?.actions ?? undefined;
+	const actionPaths = actions ? collectActionPaths(actions) : [];
 
 	const baseApp = new Elysia()
 		.use(
@@ -93,8 +95,8 @@ function createServerInternal(
 		)
 		.use(createTablesPlugin(workspaces));
 
-	const appWithActions = options?.actions
-		? baseApp.use(createActionsRouter({ actions: options.actions }))
+	const appWithActions = actions
+		? baseApp.use(createActionsRouter({ client: firstClient, actions }))
 		: baseApp;
 
 	const app = appWithActions.get('/', () => ({

@@ -55,9 +55,10 @@ export function createCLI(client: AnyWorkspaceClient, options?: CLIOptions) {
 		cli = cli.command(cmd);
 	}
 
-	// Add action commands if provided
-	if (options?.actions) {
-		const commands = buildActionCommands(options.actions);
+	// Add action commands (from options or discovered from client.actions)
+	const actions = options?.actions ?? (client as any).actions;
+	if (actions) {
+		const commands = buildActionCommands(actions);
 		for (const cmd of commands) {
 			cli = cli.command(cmd);
 		}

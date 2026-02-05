@@ -330,7 +330,7 @@ export type WorkspaceDefinition<
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
- * This uses Object.assign to merge the base client with the builder method,
+ * This uses Object.assign to merge the base client with the builder methods,
  * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
  * chaining: `createWorkspace(...).withExtensions({ sqlite })`.
  */

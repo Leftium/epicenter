@@ -316,6 +316,107 @@ describe('YRowStore', () => {
 		});
 	});
 
+	describe('Batch Operations', () => {
+		test('batch delete removes all specified rows', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			cells.batch((tx) => {
+				tx.setCell('row-1', 'a', '1');
+				tx.setCell('row-1', 'b', '2');
+				tx.setCell('row-2', 'a', '3');
+				tx.setCell('row-3', 'a', '4');
+			});
+
+			rows.batch((tx) => {
+				tx.delete('row-1');
+				tx.delete('row-3');
+			});
+
+			expect(rows.has('row-1')).toBe(false);
+			expect(rows.has('row-2')).toBe(true);
+			expect(rows.has('row-3')).toBe(false);
+			expect(rows.count()).toBe(1);
+		});
+
+		test('batch fires single observer notification', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			cells.batch((tx) => {
+				tx.setCell('row-1', 'a', '1');
+				tx.setCell('row-2', 'a', '2');
+				tx.setCell('row-3', 'a', '3');
+			});
+
+			let callCount = 0;
+			rows.observe(() => {
+				callCount++;
+			});
+
+			rows.batch((tx) => {
+				tx.delete('row-1');
+				tx.delete('row-2');
+				tx.delete('row-3');
+			});
+
+			expect(callCount).toBe(1);
+		});
+
+		test('batch observer receives all changed row IDs', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			cells.batch((tx) => {
+				tx.setCell('row-1', 'a', '1');
+				tx.setCell('row-2', 'a', '2');
+				tx.setCell('row-3', 'a', '3');
+			});
+
+			const changedRows: string[][] = [];
+			rows.observe((rowIds) => {
+				changedRows.push(Array.from(rowIds).sort());
+			});
+
+			rows.batch((tx) => {
+				tx.delete('row-1');
+				tx.delete('row-3');
+			});
+
+			expect(changedRows).toEqual([['row-1', 'row-3']]);
+		});
+
+		test('batch delete of non-existent row is a no-op', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			cells.setCell('row-1', 'a', '1');
+
+			rows.batch((tx) => {
+				tx.delete('non-existent');
+			});
+
+			expect(rows.has('row-1')).toBe(true);
+			expect(rows.count()).toBe(1);
+		});
+
+		test('batch with empty callback is a no-op', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			cells.setCell('row-1', 'a', '1');
+
+			rows.batch(() => {});
+
+			expect(rows.has('row-1')).toBe(true);
+		});
+	});
+
 	describe('Observe', () => {
 		test('observe() fires with Set of changed row IDs', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });

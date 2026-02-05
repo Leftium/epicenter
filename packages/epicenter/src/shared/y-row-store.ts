@@ -30,6 +30,13 @@
  *
  * // Delete entire row
  * rows.delete('post-1');
+ *
+ * // Batch delete multiple rows (atomic, single observer notification)
+ * rows.batch((tx) => {
+ *   tx.delete('row-1');
+ *   tx.delete('row-2');
+ *   tx.delete('row-3');
+ * });
  * ```
  */
 import type * as Y from 'yjs';
@@ -44,6 +51,12 @@ export type RowsChangedHandler = (
 	changedRowIds: Set<string>,
 	transaction: Y.Transaction,
 ) => void;
+
+/** Operations available inside a row batch transaction. */
+export type RowStoreBatchTransaction = {
+	/** Delete all cells for a row. */
+	delete(rowId: string): void;
+};
 
 /** Row operations wrapper over CellStore. */
 export type RowStore<T> = {
@@ -80,6 +93,18 @@ export type RowStore<T> = {
 	 * O(n) scan + k deletions where k = cells in row.
 	 */
 	delete(rowId: string): boolean;
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// BATCH
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Execute multiple row operations atomically in a Y.js transaction.
+	 * - Single undo/redo step
+	 * - Observers fire once (not per-operation)
+	 * - All changes applied together
+	 */
+	batch(fn: (tx: RowStoreBatchTransaction) => void): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// OBSERVE
@@ -202,6 +227,21 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 			});
 
 			return true;
+		},
+
+		batch(fn) {
+			doc.transact(() => {
+				fn({
+					delete(rowId) {
+						const prefix = rowPrefix(rowId);
+						for (const key of ykv.map.keys()) {
+							if (key.startsWith(prefix)) {
+								ykv.delete(key);
+							}
+						}
+					},
+				});
+			});
 		},
 
 		observe(handler) {

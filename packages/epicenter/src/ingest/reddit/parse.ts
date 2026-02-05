@@ -4,8 +4,8 @@
  * Phase 1 of the import pipeline: Parse ZIP → Record<string, Record<string, string>[]>
  */
 
+import { unzipSync } from 'fflate';
 import { CSV } from '../utils/csv.js';
-import { ZIP } from '../utils/zip.js';
 
 // CSV file names that map to table data
 const TABLE_CSV_FILES = [
@@ -91,7 +91,7 @@ export async function parseRedditZip(
 	}
 
 	// Unpack ZIP
-	const files = ZIP.unpack(bytes);
+	const files = unzipSync(bytes);
 
 	// Validate required CSVs exist
 	for (const required of REQUIRED_CSV_FILES) {

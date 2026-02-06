@@ -5,14 +5,28 @@
  * - rowId MUST NOT contain ':' (validated, throws on violation)
  * - columnId MAY contain ':' (split on first colon only)
  *
+ * ## Type Encoding
+ *
+ * Template literal types encode the structure of each string shape:
+ * ```
+ * RowPrefixKey = `${string}:`               ← "row-1:"
+ * CellKey      = `${RowPrefixKey}${string}` ← "row-1:title"
+ * ```
+ *
  * @module
  */
 
 /** The separator character used in compound cell keys. */
 export const KEY_SEPARATOR = ':' as const;
 
+/** A row prefix: `rowId:`. Used for scanning all cells in a row. */
+export type RowPrefixKey = `${string}${typeof KEY_SEPARATOR}`;
+
+/** A compound cell key: `rowId:columnId`. Composed from a RowPrefixKey + columnId. */
+export type CellKey = `${RowPrefixKey}${string}`;
+
 /** Compose a cell key from rowId and columnId. Throws if rowId contains ':'. */
-export function cellKey(rowId: string, columnId: string): string {
+export function cellKey(rowId: string, columnId: string): CellKey {
 	if (rowId.includes(KEY_SEPARATOR)) {
 		throw new Error(`rowId cannot contain '${KEY_SEPARATOR}': "${rowId}"`);
 	}
@@ -27,7 +41,7 @@ export function parseCellKey(key: string): { rowId: string; columnId: string } {
 }
 
 /** Create a row prefix for scanning all cells in a row. Throws if rowId contains ':'. */
-export function rowPrefix(rowId: string): string {
+export function rowPrefix(rowId: string): RowPrefixKey {
 	if (rowId.includes(KEY_SEPARATOR)) {
 		throw new Error(`rowId cannot contain '${KEY_SEPARATOR}': "${rowId}"`);
 	}

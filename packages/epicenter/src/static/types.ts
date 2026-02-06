@@ -534,12 +534,18 @@ export type WorkspaceClient<
 	kv: KvHelper<TKvDefinitions>;
 	/** Capability exports */
 	capabilities: InferCapabilityExports<TCapabilities>;
-	/** Actions attached via `.withActions()`. Undefined if no actions were attached. */
-	actions?: Actions;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;
 
 	/** Async dispose support */
 	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * Type alias for any workspace client (used for duck-typing in CLI/server).
+ * Includes optional actions property since clients may or may not have actions attached.
+ */
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any> & {
+	actions?: Actions;
 };

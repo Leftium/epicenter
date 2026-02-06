@@ -1,6 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
 import { Elysia } from 'elysia';
-import type { WorkspaceClient } from '../dynamic/workspace/types';
+import type { AnyWorkspaceClient } from '../dynamic/workspace/types';
 import { collectActionPaths, createActionsRouter } from './actions';
 import { createSyncPlugin } from './sync';
 import { createTablesPlugin } from './tables';
@@ -10,9 +10,6 @@ export const DEFAULT_PORT = 3913;
 export type ServerOptions = {
 	port?: number;
 };
-
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
-type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
 
 /**
  * Create an HTTP server that exposes workspace clients as REST APIs and WebSocket sync.

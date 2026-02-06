@@ -2,10 +2,7 @@ import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
 import { Id, tableToArktype } from '../dynamic/schema';
-import type { WorkspaceClient } from '../dynamic/workspace/types';
-
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
-type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
+import type { AnyWorkspaceClient } from '../dynamic/workspace/types';
 
 export function createTablesPlugin(
 	workspaceClients: Record<string, AnyWorkspaceClient>,

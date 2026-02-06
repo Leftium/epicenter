@@ -23,8 +23,9 @@ export function createCLI(client: AnyWorkspaceClient) {
 					default: DEFAULT_PORT,
 				}),
 			(argv) => {
-				// Cast needed: CLI uses static WorkspaceClient type, server uses dynamic type
-				// Both are structurally compatible at runtime
+				// Type assertion needed: CLI uses static API (4 type params), server uses dynamic API (3 type params).
+				// Both are structurally compatible at runtime (same id, ydoc, tables, actions properties).
+				// Proper fix requires shared base interface - tracked in type design review.
 				createServer(client as any, {
 					port: argv.port,
 				}).start();

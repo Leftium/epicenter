@@ -153,14 +153,20 @@ export type WorkspaceClient<
 	kv: Kv<TKvFields>;
 	/** Extension exports (empty object if no extensions) */
 	extensions: InferExtensionExports<TExtensions>;
-	/** Actions attached via `.withActions()`. Undefined if no actions were attached. */
-	actions?: Actions;
 	/** Promise resolving when all extensions are synced */
 	whenSynced: Promise<void>;
 	/** Cleanup all resources */
 	destroy(): Promise<void>;
 	/** Async dispose support for `await using` */
 	[Symbol.asyncDispose](): Promise<void>;
+};
+
+/**
+ * Type alias for any workspace client (used for duck-typing in server).
+ * Includes optional actions property since clients may or may not have actions attached.
+ */
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any> & {
+	actions?: Actions;
 };
 
 /**

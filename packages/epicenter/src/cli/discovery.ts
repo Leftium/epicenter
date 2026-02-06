@@ -1,13 +1,12 @@
 import { join, resolve } from 'node:path';
 import type { ProjectDir } from '../shared/types';
-import type { WorkspaceClient } from '../static/types';
+import type { AnyWorkspaceClient } from '../static/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/capabilities
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
+export type { AnyWorkspaceClient };
 
 export type WorkspaceResolution =
 	| { status: 'found'; projectDir: ProjectDir; client: AnyWorkspaceClient }

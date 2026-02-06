@@ -119,13 +119,13 @@ export { createUnionSchema } from './schema-union.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	// Capability types
-	CapabilityContext,
-	CapabilityFactory,
-	CapabilityMap,
+	// Extension types
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionMap,
 	DeleteResult,
 	GetResult,
-	InferCapabilityExports,
+	InferExtensionExports,
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,

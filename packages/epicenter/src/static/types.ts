@@ -338,9 +338,9 @@ export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
-	TCapabilities extends CapabilityMap,
+	TExtensions extends ExtensionMap,
 	TActions extends Actions,
-> = WorkspaceClient<TId, TTableDefs, TKvDefs, TCapabilities> & {
+> = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
 	actions: TActions;
 };
 
@@ -370,9 +370,9 @@ export type WorkspaceClientBuilder<
 	 * @param extensions - Map of extension factories
 	 * @returns Workspace client with extensions accessible via `.extensions`
 	 */
-	withExtensions<TCapabilities extends CapabilityMap>(
-		extensions: TCapabilities,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> & {
+	withExtensions<TExtensions extends ExtensionMap>(
+		extensions: TExtensions,
+	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
 		/** Attach actions to the client. Terminal — no more builder methods after this. */
 		withActions<TActions extends Actions>(
 			factory: (
@@ -380,14 +380,14 @@ export type WorkspaceClientBuilder<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
-					TCapabilities
+					TExtensions
 				>,
 			) => TActions,
 		): WorkspaceClientWithActions<
 			TId,
 			TTableDefinitions,
 			TKvDefinitions,
-			TCapabilities,
+			TExtensions,
 			TActions
 		>;
 	};
@@ -412,24 +412,24 @@ export type WorkspaceClientBuilder<
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// CAPABILITY TYPES
+// EXTENSION TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to capability factory functions.
+ * Context passed to extension factory functions.
  *
- * Capabilities receive typed access to the workspace's Y.Doc and helpers,
+ * Extensions receive typed access to the workspace's Y.Doc and helpers,
  * allowing them to attach persistence, sync, or other functionality with
  * full type safety.
  *
  * The generic parameters are bound at the workspace level - when you call
- * `createWorkspace(...).withExtensions({ myCapability })`, the context is typed
+ * `createWorkspace(...).withExtensions({ myExtension })`, the context is typed
  * with the workspace's specific table and KV definitions.
  *
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
  * @typeParam TKvDefinitions - Map of KV definitions for this workspace
  */
-export type CapabilityContext<
+export type ExtensionContext<
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 > = {
@@ -444,17 +444,17 @@ export type CapabilityContext<
 };
 
 /**
- * Factory function that creates a capability with lifecycle hooks.
+ * Factory function that creates an extension with lifecycle hooks.
  *
- * All capabilities MUST return an object that satisfies the {@link Lifecycle} protocol:
- * - `whenSynced`: Promise that resolves when the capability is ready
+ * All extensions MUST return an object that satisfies the {@link Lifecycle} protocol:
+ * - `whenSynced`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when the workspace is destroyed
  *
  * Use {@link defineExports} from `shared/lifecycle.ts` to easily create compliant exports.
  *
- * @example Simple capability (works with any workspace)
+ * @example Simple extension (works with any workspace)
  * ```typescript
- * const persistence: CapabilityFactory = ({ ydoc }) => {
+ * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
  *     provider,
@@ -464,57 +464,57 @@ export type CapabilityContext<
  * };
  * ```
  *
- * @example Capability bound to specific workspace types
+ * @example Extension bound to specific workspace types
  * ```typescript
- * const logger: CapabilityFactory<MyTables, MyKv> = ({ tables }) => {
+ * const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
  *   // tables is fully typed as TablesHelper<MyTables>
  *   tables.posts.getAll(); // ← autocomplete works!
  *   return defineExports();
  * };
  * ```
  *
- * @typeParam TTableDefinitions - Table definitions this capability accepts (defaults to any)
- * @typeParam TKvDefinitions - KV definitions this capability accepts (defaults to any)
- * @typeParam TExports - The exports returned by this capability (must extend Lifecycle)
+ * @typeParam TTableDefinitions - Table definitions this extension accepts (defaults to any)
+ * @typeParam TKvDefinitions - KV definitions this extension accepts (defaults to any)
+ * @typeParam TExports - The exports returned by this extension (must extend Lifecycle)
  */
-export type CapabilityFactory<
+export type ExtensionFactory<
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 	TExports extends Lifecycle = Lifecycle,
-> = (context: CapabilityContext<TTableDefinitions, TKvDefinitions>) => TExports;
+> = (context: ExtensionContext<TTableDefinitions, TKvDefinitions>) => TExports;
 
 /**
- * Map of capability factories.
+ * Map of extension factories.
  *
- * Each capability must return a `Lifecycle` (with `whenSynced` and `destroy`).
+ * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
  * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns:
  *
  * ```typescript
  * import { defineExports } from 'epicenter';
  *
- * const myCapability = () => defineExports({
+ * const myExtension = () => defineExports({
  *   db: createDatabase(),
  *   destroy: () => db.close(),
  * });
  * // Returns: { db, whenSynced: Promise.resolve(), destroy: closeFn }
  * ```
  */
-export type CapabilityMap = Record<
+export type ExtensionMap = Record<
 	string,
-	// biome-ignore lint/suspicious/noExplicitAny: capability factories are variadic
+	// biome-ignore lint/suspicious/noExplicitAny: extension factories are variadic
 	(...args: any[]) => Lifecycle
 >;
 
 /**
- * Infer exports from a capability map.
+ * Infer exports from an extension map.
  *
- * Capabilities return `Lifecycle & CustomExports` via `defineExports()`.
- * This type extracts the full return type of each capability.
+ * Extensions return `Lifecycle & CustomExports` via `defineExports()`.
+ * This type extracts the full return type of each extension.
  *
- * @typeParam TCapabilities - The capability map to infer exports from
+ * @typeParam TExtensions - The extension map to infer exports from
  */
-export type InferCapabilityExports<TCapabilities extends CapabilityMap> = {
-	[K in keyof TCapabilities]: ReturnType<TCapabilities[K]>;
+export type InferExtensionExports<TExtensions extends ExtensionMap> = {
+	[K in keyof TExtensions]: ReturnType<TExtensions[K]>;
 };
 
 /** The workspace client returned by createWorkspace() */
@@ -522,7 +522,7 @@ export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-	TCapabilities extends CapabilityMap,
+	TExtensions extends ExtensionMap,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -532,8 +532,8 @@ export type WorkspaceClient<
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
-	/** Capability exports */
-	capabilities: InferCapabilityExports<TCapabilities>;
+	/** Extension exports */
+	extensions: InferExtensionExports<TExtensions>;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;

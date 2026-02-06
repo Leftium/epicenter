@@ -63,9 +63,9 @@ describe('defineWorkspace', () => {
 		expect(themeResult.status).toBe('valid');
 	});
 
-	test('createWorkspace().withExtensions() with capabilities', () => {
-		// Mock capability with custom exports - uses defineExports for lifecycle
-		const mockCapability = (_context: {
+	test('createWorkspace().withExtensions() adds extensions', () => {
+		// Mock extension with custom exports - uses defineExports for lifecycle
+		const mockExtension = (_context: {
 			ydoc: Y.Doc;
 			tables: unknown;
 			kv: unknown;
@@ -80,16 +80,16 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		}).withExtensions({
-			mock: mockCapability,
+			mock: mockExtension,
 		});
 
-		expect(client.capabilities.mock).toBeDefined();
-		expect(client.capabilities.mock.customMethod()).toBe('hello');
+		expect(client.extensions.mock).toBeDefined();
+		expect(client.extensions.mock.customMethod()).toBe('hello');
 	});
 
-	test('capability exports are fully typed', () => {
-		// Capability with rich exports - defineExports fills in whenSynced/destroy
-		const persistenceCapability = () =>
+	test('extension exports are fully typed', () => {
+		// Extension with rich exports - defineExports fills in whenSynced/destroy
+		const persistenceExtension = () =>
 			defineExports({
 				db: {
 					query: (sql: string) => sql.toUpperCase(),
@@ -98,8 +98,8 @@ describe('defineWorkspace', () => {
 				stats: { writes: 0, reads: 0 },
 			});
 
-		// Another capability with different exports
-		const syncCapability = () =>
+		// Another extension with different exports
+		const syncExtension = () =>
 			defineExports({
 				connect: (url: string) => `connected to ${url}`,
 				disconnect: () => 'disconnected',
@@ -112,31 +112,31 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		}).withExtensions({
-			persistence: persistenceCapability,
-			sync: syncCapability,
+			persistence: persistenceExtension,
+			sync: syncExtension,
 		});
 
-		// Test persistence capability exports are typed
-		const queryResult = client.capabilities.persistence.db.query('SELECT');
+		// Test persistence extension exports are typed
+		const queryResult = client.extensions.persistence.db.query('SELECT');
 		expect(queryResult).toBe('SELECT');
 
-		const execResult = client.capabilities.persistence.db.execute('INSERT');
+		const execResult = client.extensions.persistence.db.execute('INSERT');
 		expect(execResult.rows).toEqual(['INSERT']);
 
-		expect(client.capabilities.persistence.stats.writes).toBe(0);
+		expect(client.extensions.persistence.stats.writes).toBe(0);
 
-		// Test sync capability exports are typed
-		const connectResult = client.capabilities.sync.connect('ws://localhost');
+		// Test sync extension exports are typed
+		const connectResult = client.extensions.sync.connect('ws://localhost');
 		expect(connectResult).toBe('connected to ws://localhost');
 
-		expect(client.capabilities.sync.disconnect()).toBe('disconnected');
-		expect(client.capabilities.sync.status).toBe('idle');
+		expect(client.extensions.sync.disconnect()).toBe('disconnected');
+		expect(client.extensions.sync.status).toBe('idle');
 
 		// Type assertions (these would fail to compile if types were wrong)
 		const _queryType: string = queryResult;
 		const _connectType: string = connectResult;
 		const _statusType: 'idle' | 'syncing' | 'synced' =
-			client.capabilities.sync.status;
+			client.extensions.sync.status;
 		void _queryType;
 		void _connectType;
 		void _statusType;
@@ -144,7 +144,7 @@ describe('defineWorkspace', () => {
 
 	test('client.destroy() cleans up', async () => {
 		let destroyed = false;
-		const mockCapability = () =>
+		const mockExtension = () =>
 			defineExports({
 				destroy: async () => {
 					destroyed = true;
@@ -157,7 +157,7 @@ describe('defineWorkspace', () => {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
 		}).withExtensions({
-			mock: mockCapability,
+			mock: mockExtension,
 		});
 
 		await client.destroy();

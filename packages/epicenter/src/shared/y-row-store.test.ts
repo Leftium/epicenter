@@ -8,10 +8,13 @@
  * 4. Get all rows: getAll() reconstructs all rows
  * 5. Row count: count() matches unique row count
  * 6. Row deletion: delete() removes all cells for row
- * 7. Observe dedupe: observe() fires with Set of changed row IDs
- * 8. Underlying access: cells property gives CellStore
- * 9. Empty row: get() returns undefined, has() returns false
- * 10. Sparse rows: rows with different columns work correctly
+ * 7. Merge: merge() sets multiple cells, creates rows, preserves unmentioned columns
+ * 8. Batch operations: batch() executes merge + delete atomically
+ * 9. Atomic operations via doc.transact(): mixed cell/row ops in single transaction
+ * 10. Observe dedupe: observe() fires with Set of changed row IDs
+ * 11. Sparse rows: rows with different columns work correctly
+ * 12. Column IDs with colons
+ * 13. CRDT sync between documents
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
@@ -316,28 +319,86 @@ describe('YRowStore', () => {
 		});
 	});
 
-	describe('Batch Operations', () => {
-		test('batch delete removes all specified rows', () => {
+	describe('Merge', () => {
+		test('merge() sets multiple cells for a row', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<unknown>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			rows.merge('row-1', { title: 'Hello', views: '42' });
+
+			expect(rows.get('row-1')).toEqual({ title: 'Hello', views: '42' });
+		});
+
+		test('merge() creates a new row if it doesn\'t exist', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const cells = createCellStore<string>(ydoc, 'cells');
 			const rows = createRowStore(cells);
 
-			cells.batch((tx) => {
-				tx.setCell('row-1', 'a', '1');
-				tx.setCell('row-1', 'b', '2');
-				tx.setCell('row-2', 'a', '3');
-				tx.setCell('row-3', 'a', '4');
+			expect(rows.has('row-1')).toBe(false);
+
+			rows.merge('row-1', { title: 'Created' });
+
+			expect(rows.has('row-1')).toBe(true);
+			expect(rows.get('row-1')).toEqual({ title: 'Created' });
+		});
+
+		test('merge() preserves unmentioned columns', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			rows.merge('row-1', { a: '1', b: '2' });
+			rows.merge('row-1', { b: '3', c: '4' });
+
+			expect(rows.get('row-1')).toEqual({ a: '1', b: '3', c: '4' });
+		});
+
+		test('merge() fires single observer notification', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			let callCount = 0;
+			rows.observe(() => {
+				callCount++;
 			});
+
+			rows.merge('row-1', { a: '1', b: '2', c: '3' });
+
+			expect(callCount).toBe(1);
+		});
+
+		test('merge() with empty object is a no-op', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			let callCount = 0;
+			rows.observe(() => {
+				callCount++;
+			});
+
+			rows.merge('row-1', {});
+
+			expect(callCount).toBe(0);
+			expect(rows.has('row-1')).toBe(false);
+		});
+	});
+
+	describe('Batch Operations', () => {
+		test('batch merge sets cells atomically', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
 
 			rows.batch((tx) => {
-				tx.delete('row-1');
-				tx.delete('row-3');
+				tx.merge('row-1', { title: 'First', views: '10' });
+				tx.merge('row-2', { title: 'Second', views: '20' });
 			});
 
-			expect(rows.has('row-1')).toBe(false);
-			expect(rows.has('row-2')).toBe(true);
-			expect(rows.has('row-3')).toBe(false);
-			expect(rows.count()).toBe(1);
+			expect(rows.get('row-1')).toEqual({ title: 'First', views: '10' });
+			expect(rows.get('row-2')).toEqual({ title: 'Second', views: '20' });
 		});
 
 		test('batch fires single observer notification', () => {
@@ -345,27 +406,94 @@ describe('YRowStore', () => {
 			const cells = createCellStore<string>(ydoc, 'cells');
 			const rows = createRowStore(cells);
 
-			cells.batch((tx) => {
-				tx.setCell('row-1', 'a', '1');
-				tx.setCell('row-2', 'a', '2');
-				tx.setCell('row-3', 'a', '3');
-			});
-
 			let callCount = 0;
 			rows.observe(() => {
 				callCount++;
 			});
 
 			rows.batch((tx) => {
-				tx.delete('row-1');
-				tx.delete('row-2');
-				tx.delete('row-3');
+				tx.merge('row-1', { a: '1' });
+				tx.merge('row-2', { b: '2' });
+				tx.merge('row-3', { c: '3' });
 			});
 
 			expect(callCount).toBe(1);
 		});
 
 		test('batch observer receives all changed row IDs', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			const changedRows: string[][] = [];
+			rows.observe((rowIds) => {
+				changedRows.push(Array.from(rowIds).sort());
+			});
+
+			rows.batch((tx) => {
+				tx.merge('row-1', { a: '1' });
+				tx.merge('row-2', { b: '2' });
+			});
+
+			expect(changedRows).toHaveLength(1);
+			expect(changedRows[0]).toEqual(['row-1', 'row-2']);
+		});
+
+		test('batch merge and delete in single transaction', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			rows.merge('row-1', { title: 'Delete Me' });
+
+			const changedRows: string[][] = [];
+			rows.observe((rowIds) => {
+				changedRows.push(Array.from(rowIds).sort());
+			});
+
+			rows.batch((tx) => {
+				tx.merge('row-2', { title: 'New' });
+				tx.delete('row-1');
+			});
+
+			expect(changedRows).toHaveLength(1);
+			expect(changedRows[0]).toEqual(['row-1', 'row-2']);
+			expect(rows.has('row-1')).toBe(false);
+			expect(rows.get('row-2')).toEqual({ title: 'New' });
+		});
+
+		test('batch delete of non-existent row is a no-op', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			rows.merge('row-1', { title: 'Keep' });
+
+			rows.batch((tx) => {
+				tx.delete('non-existent');
+			});
+
+			expect(rows.get('row-1')).toEqual({ title: 'Keep' });
+		});
+
+		test('batch with empty callback is a no-op', () => {
+			const ydoc = new Y.Doc({ guid: 'test' });
+			const cells = createCellStore<string>(ydoc, 'cells');
+			const rows = createRowStore(cells);
+
+			let callCount = 0;
+			rows.observe(() => {
+				callCount++;
+			});
+
+			rows.batch(() => {});
+
+			expect(callCount).toBe(0);
+		});
+	});
+
+	describe('Atomic Operations via doc.transact()', () => {
+		test('doc.transact() groups multiple row deletes into single observer notification', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const cells = createCellStore<string>(ydoc, 'cells');
 			const rows = createRowStore(cells);
@@ -381,39 +509,38 @@ describe('YRowStore', () => {
 				changedRows.push(Array.from(rowIds).sort());
 			});
 
-			rows.batch((tx) => {
-				tx.delete('row-1');
-				tx.delete('row-3');
+			cells.doc.transact(() => {
+				rows.delete('row-1');
+				rows.delete('row-3');
 			});
 
-			expect(changedRows).toEqual([['row-1', 'row-3']]);
+			expect(changedRows).toHaveLength(1);
+			expect(changedRows[0]).toEqual(['row-1', 'row-3']);
 		});
 
-		test('batch delete of non-existent row is a no-op', () => {
+		test('doc.transact() combines cell writes and row deletes atomically', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const cells = createCellStore<string>(ydoc, 'cells');
 			const rows = createRowStore(cells);
 
-			cells.setCell('row-1', 'a', '1');
-
-			rows.batch((tx) => {
-				tx.delete('non-existent');
+			cells.batch((tx) => {
+				tx.setCell('row-1', 'title', 'First');
 			});
 
-			expect(rows.has('row-1')).toBe(true);
-			expect(rows.count()).toBe(1);
-		});
+			const changedRows: string[][] = [];
+			rows.observe((rowIds) => {
+				changedRows.push(Array.from(rowIds).sort());
+			});
 
-		test('batch with empty callback is a no-op', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const cells = createCellStore<string>(ydoc, 'cells');
-			const rows = createRowStore(cells);
+			cells.doc.transact(() => {
+				cells.setCell('row-2', 'title', 'Second');
+				rows.delete('row-1');
+			});
 
-			cells.setCell('row-1', 'a', '1');
-
-			rows.batch(() => {});
-
-			expect(rows.has('row-1')).toBe(true);
+			expect(changedRows).toHaveLength(1);
+			expect(changedRows[0]).toEqual(['row-1', 'row-2']);
+			expect(rows.has('row-1')).toBe(false);
+			expect(rows.get('row-2')).toEqual({ title: 'Second' });
 		});
 	});
 
@@ -474,34 +601,6 @@ describe('YRowStore', () => {
 
 			cells.setCell('row-1', 'title', 'World');
 			expect(callCount).toBe(1); // Still 1
-		});
-	});
-
-	describe('Underlying Store Access', () => {
-		test('cells property gives access to CellStore', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const cells = createCellStore<string>(ydoc, 'cells');
-			const rows = createRowStore(cells);
-
-			expect(rows.cells).toBe(cells);
-		});
-
-		test('can use cells for writes and rows for reads', () => {
-			const ydoc = new Y.Doc({ guid: 'test' });
-			const cells = createCellStore<unknown>(ydoc, 'cells');
-			const rows = createRowStore(cells);
-
-			// Write via cells
-			rows.cells.batch((tx) => {
-				tx.setCell('post-1', 'title', 'Hello World');
-				tx.setCell('post-1', 'views', 0);
-			});
-
-			// Read via rows
-			expect(rows.get('post-1')).toEqual({
-				title: 'Hello World',
-				views: 0,
-			});
 		});
 	});
 

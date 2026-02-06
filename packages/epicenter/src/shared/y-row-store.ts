@@ -1,13 +1,15 @@
 /**
  * # YRowStore - Row Operations Wrapper over CellStore
  *
- * Provides row reconstruction, row deletion, and row-level observation.
+ * Provides row reconstruction, row-level writes (merge), batch operations,
+ * row deletion, and row-level observation.
  * Does NOT store anything itself - delegates to the underlying CellStore.
  *
  * ## Design Principles
  *
  * - Composition over features: Takes a CellStore as its only argument
- * - No setRow(): Write semantics are ambiguous (merge vs replace), use cells.batch()
+ * - No setCell/deleteCell: Cell writes go through CellStore directly
+ * - merge() for row-level writes: Clear semantics — merges fields, creates if missing
  * - Row operations use prefix scanning on the underlying ykv.map
  *
  * @example
@@ -18,24 +20,31 @@
  * const cells = createCellStore<unknown>(ydoc, 'table:posts');
  * const rows = createRowStore(cells);
  *
- * // Write via cells (cell-level granularity)
- * cells.batch((tx) => {
- *   tx.setCell('post-1', 'title', 'Hello World');
- *   tx.setCell('post-1', 'views', 0);
+ * // Merge fields into a row (creates if missing, updates if present)
+ * rows.merge('post-1', { title: 'Hello World', views: 0 });
+ *
+ * // Batch row operations (atomic, single observer notification)
+ * rows.batch((tx) => {
+ *   tx.merge('post-1', { title: 'Updated', views: 1 });
+ *   tx.merge('post-2', { title: 'New Post' });
+ *   tx.delete('post-3');
  * });
  *
  * // Read via rows (reconstructed)
  * const post = rows.get('post-1');
- * // { title: 'Hello World', views: 0 }
+ * // { title: 'Updated', views: 1 }
  *
  * // Delete entire row
  * rows.delete('post-1');
  *
- * // Batch delete multiple rows (atomic, single observer notification)
- * rows.batch((tx) => {
- *   tx.delete('row-1');
- *   tx.delete('row-2');
- *   tx.delete('row-3');
+ * // Cell-level writes still go through CellStore
+ * cells.setCell('post-2', 'draft', true);
+ *
+ * // Atomic mixed operations (Yjs transactions nest safely)
+ * cells.doc.transact(() => {
+ *   rows.merge('post-2', { title: 'Atomic' });
+ *   cells.deleteCell('post-1', 'draft');
+ *   rows.delete('post-3');
  * });
  * ```
  */
@@ -53,7 +62,9 @@ export type RowsChangedHandler = (
 ) => void;
 
 /** Operations available inside a row batch transaction. */
-export type RowStoreBatchTransaction = {
+export type RowStoreBatchTransaction<T> = {
+	/** Merge fields into a row. Only touches columns present in data. */
+	merge(rowId: string, data: Record<string, T>): void;
 	/** Delete all cells for a row. */
 	delete(rowId: string): void;
 };
@@ -84,6 +95,17 @@ export type RowStore<T> = {
 	count(): number;
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// ROW WRITE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/**
+	 * Merge fields into a row. Only sets columns present in data.
+	 * Creates the row if it doesn't exist.
+	 * Leaves unmentioned columns untouched.
+	 */
+	merge(rowId: string, data: Record<string, T>): void;
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// ROW DELETE
 	// ═══════════════════════════════════════════════════════════════════════
 
@@ -102,9 +124,9 @@ export type RowStore<T> = {
 	 * Execute multiple row operations atomically in a Y.js transaction.
 	 * - Single undo/redo step
 	 * - Observers fire once (not per-operation)
-	 * - All changes applied together
+	 * - Transaction has { merge, delete } — row-level operations only
 	 */
-	batch(fn: (tx: RowStoreBatchTransaction) => void): void;
+	batch(fn: (tx: RowStoreBatchTransaction<T>) => void): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// OBSERVE
@@ -117,12 +139,6 @@ export type RowStore<T> = {
 	 */
 	observe(handler: RowsChangedHandler): () => void;
 
-	// ═══════════════════════════════════════════════════════════════════════
-	// UNDERLYING STORE
-	// ═══════════════════════════════════════════════════════════════════════
-
-	/** The underlying CellStore for cell-level operations. */
-	readonly cells: CellStore<T>;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -208,6 +224,14 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 			return seen.size;
 		},
 
+		merge(rowId, data) {
+			doc.transact(() => {
+				for (const [columnId, value] of Object.entries(data)) {
+					cellStore.setCell(rowId, columnId, value);
+				}
+			});
+		},
+
 		delete(rowId) {
 			const prefix = rowPrefix(rowId);
 			const keysToDelete: string[] = [];
@@ -232,6 +256,11 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 		batch(fn) {
 			doc.transact(() => {
 				fn({
+					merge(rowId, data) {
+						for (const [columnId, value] of Object.entries(data)) {
+							cellStore.setCell(rowId, columnId, value);
+						}
+					},
 					delete(rowId) {
 						const prefix = rowPrefix(rowId);
 						for (const key of ykv.map.keys()) {
@@ -252,7 +281,5 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 				}
 			});
 		},
-
-		cells: cellStore,
 	};
 }

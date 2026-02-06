@@ -191,7 +191,6 @@ export type RowStore<T> = {
 	 * Returns unsubscribe function.
 	 */
 	observe(handler: RowsChangedHandler): () => void;
-
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -19,6 +19,12 @@ import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
 import {
+	CellKey,
+	extractRowId,
+	parseCellKey,
+	RowPrefix,
+} from '../../shared/cell-keys.js';
+import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
@@ -27,7 +33,6 @@ import { TableKey } from '../../shared/ydoc-keys';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
 import { Id } from '../schema/fields/id.js';
-import { CellKey, extractRowId, parseCellKey, RowPrefix } from '../../shared/cell-keys.js';
 
 /**
  * A single validation error from TypeBox schema validation.

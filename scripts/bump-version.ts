@@ -78,7 +78,10 @@ for (const { path, type } of files) {
 			if (match && !oldVersion) {
 				oldVersion = match[0].match(/"([\d.]+)"/)?.[1] ?? null;
 			}
-			const updated = content.replace(versionRegex, `version = "${newVersion}"`);
+			const updated = content.replace(
+				versionRegex,
+				`version = "${newVersion}"`,
+			);
 			await Bun.write(fullPath, updated);
 			break;
 		}

@@ -21,7 +21,7 @@ describe('cell-keys', () => {
 
 		test('throws if rowId contains colon', () => {
 			expect(() => CellKey('row:1', 'title')).toThrow(
-				"rowId cannot contain ':': \"row:1\"",
+				'rowId cannot contain \':\': "row:1"',
 			);
 		});
 	});
@@ -55,7 +55,7 @@ describe('cell-keys', () => {
 
 		test('throws if rowId contains colon', () => {
 			expect(() => RowPrefix('row:1')).toThrow(
-				"rowId cannot contain ':': \"row:1\"",
+				'rowId cannot contain \':\': "row:1"',
 			);
 		});
 	});

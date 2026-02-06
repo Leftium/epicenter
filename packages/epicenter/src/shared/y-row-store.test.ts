@@ -330,7 +330,7 @@ describe('YRowStore', () => {
 			expect(rows.get('row-1')).toEqual({ title: 'Hello', views: '42' });
 		});
 
-		test('merge() creates a new row if it doesn\'t exist', () => {
+		test("merge() creates a new row if it doesn't exist", () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const cells = createCellStore<string>(ydoc, 'cells');
 			const rows = createRowStore(cells);

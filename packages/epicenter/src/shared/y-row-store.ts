@@ -250,18 +250,24 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 	// sync, and deletes. Empty rows are removed to keep count()/has() accurate.
 	cellStore.observe((changes) => {
 		for (const change of changes) {
-			if (change.action === 'add' || change.action === 'update') {
-				let row = rowIndex.get(change.rowId);
-				if (!row) {
-					row = new Map();
-					rowIndex.set(change.rowId, row);
+			switch (change.action) {
+				case 'add':
+				case 'update': {
+					let row = rowIndex.get(change.rowId);
+					if (!row) {
+						row = new Map();
+						rowIndex.set(change.rowId, row);
+					}
+					row.set(change.columnId, change.value);
+					break;
 				}
-				row.set(change.columnId, change.value);
-			} else if (change.action === 'delete') {
-				const row = rowIndex.get(change.rowId);
-				if (row) {
-					row.delete(change.columnId);
-					if (row.size === 0) rowIndex.delete(change.rowId);
+				case 'delete': {
+					const row = rowIndex.get(change.rowId);
+					if (row) {
+						row.delete(change.columnId);
+						if (row.size === 0) rowIndex.delete(change.rowId);
+					}
+					break;
 				}
 			}
 		}

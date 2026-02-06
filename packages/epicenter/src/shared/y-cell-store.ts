@@ -271,28 +271,32 @@ export function createCellStore<T>(
 				for (const [key, change] of changes) {
 					const { rowId, columnId } = parseCellKey(key);
 
-					if (change.action === 'add') {
-						cellChanges.push({
-							action: 'add',
-							rowId,
-							columnId,
-							value: change.newValue,
-						});
-					} else if (change.action === 'update') {
-						cellChanges.push({
-							action: 'update',
-							rowId,
-							columnId,
-							oldValue: change.oldValue,
-							value: change.newValue,
-						});
-					} else if (change.action === 'delete') {
-						cellChanges.push({
-							action: 'delete',
-							rowId,
-							columnId,
-							oldValue: change.oldValue,
-						});
+					switch (change.action) {
+						case 'add':
+							cellChanges.push({
+								action: 'add',
+								rowId,
+								columnId,
+								value: change.newValue,
+							});
+							break;
+						case 'update':
+							cellChanges.push({
+								action: 'update',
+								rowId,
+								columnId,
+								oldValue: change.oldValue,
+								value: change.newValue,
+							});
+							break;
+						case 'delete':
+							cellChanges.push({
+								action: 'delete',
+								rowId,
+								columnId,
+								oldValue: change.oldValue,
+							});
+							break;
 					}
 				}
 

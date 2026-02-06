@@ -35,7 +35,7 @@
  * ```
  */
 import type * as Y from 'yjs';
-import { cellKey, parseCellKey } from './cell-keys.js';
+import { CellKey, parseCellKey } from './cell-keys.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -213,19 +213,19 @@ export function createCellStore<T>(
 
 	return {
 		setCell(rowId, columnId, value) {
-			ykv.set(cellKey(rowId, columnId), value);
+			ykv.set(CellKey(rowId, columnId), value);
 		},
 
 		getCell(rowId, columnId) {
-			return ykv.get(cellKey(rowId, columnId));
+			return ykv.get(CellKey(rowId, columnId));
 		},
 
 		hasCell(rowId, columnId) {
-			return ykv.has(cellKey(rowId, columnId));
+			return ykv.has(CellKey(rowId, columnId));
 		},
 
 		deleteCell(rowId, columnId) {
-			const key = cellKey(rowId, columnId);
+			const key = CellKey(rowId, columnId);
 			if (!ykv.has(key)) return false;
 			ykv.delete(key);
 			return true;
@@ -235,8 +235,8 @@ export function createCellStore<T>(
 			ydoc.transact(() => {
 				fn({
 					setCell: (rowId, columnId, value) =>
-						ykv.set(cellKey(rowId, columnId), value),
-					deleteCell: (rowId, columnId) => ykv.delete(cellKey(rowId, columnId)),
+						ykv.set(CellKey(rowId, columnId), value),
+					deleteCell: (rowId, columnId) => ykv.delete(CellKey(rowId, columnId)),
 				});
 			});
 		},

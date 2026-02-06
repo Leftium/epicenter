@@ -9,9 +9,15 @@
  *
  * Template literal types encode the structure of each string shape:
  * ```
- * RowPrefixKey = `${string}:`               ← "row-1:"
- * CellKey      = `${RowPrefixKey}${string}` ← "row-1:title"
+ * RowPrefix = `${string}:`              ← "row-1:"
+ * CellKey   = `${RowPrefix}${string}`   ← "row-1:title"
  * ```
+ *
+ * ## Naming Convention
+ *
+ * PascalCase functions (`CellKey`, `RowPrefix`) are constructors that return
+ * typed values. camelCase functions (`parseCellKey`, `extractRowId`) are
+ * utilities that return plain strings.
  *
  * @module
  */
@@ -20,13 +26,13 @@
 export const KEY_SEPARATOR = ':' as const;
 
 /** A row prefix: `rowId:`. Used for scanning all cells in a row. */
-export type RowPrefixKey = `${string}${typeof KEY_SEPARATOR}`;
+export type RowPrefix = `${string}${typeof KEY_SEPARATOR}`;
 
-/** A compound cell key: `rowId:columnId`. Composed from a RowPrefixKey + columnId. */
-export type CellKey = `${RowPrefixKey}${string}`;
+/** A compound cell key: `rowId:columnId`. Composed from a RowPrefix + columnId. */
+export type CellKey = `${RowPrefix}${string}`;
 
 /** Compose a cell key from rowId and columnId. Throws if rowId contains ':'. */
-export function cellKey(rowId: string, columnId: string): CellKey {
+export function CellKey(rowId: string, columnId: string): CellKey {
 	if (rowId.includes(KEY_SEPARATOR)) {
 		throw new Error(`rowId cannot contain '${KEY_SEPARATOR}': "${rowId}"`);
 	}
@@ -41,7 +47,7 @@ export function parseCellKey(key: string): { rowId: string; columnId: string } {
 }
 
 /** Create a row prefix for scanning all cells in a row. Throws if rowId contains ':'. */
-export function rowPrefix(rowId: string): RowPrefixKey {
+export function RowPrefix(rowId: string): RowPrefix {
 	if (rowId.includes(KEY_SEPARATOR)) {
 		throw new Error(`rowId cannot contain '${KEY_SEPARATOR}': "${rowId}"`);
 	}

@@ -27,7 +27,7 @@ import { TableKey } from '../../shared/ydoc-keys';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
 import { Id } from '../schema/fields/id.js';
-import { cellKey, extractRowId, parseCellKey, rowPrefix } from '../../shared/cell-keys.js';
+import { CellKey, extractRowId, parseCellKey, RowPrefix } from '../../shared/cell-keys.js';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -197,7 +197,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	};
 
 	function reconstructRow(rowId: Id): Record<string, unknown> | undefined {
-		const prefix = rowPrefix(rowId);
+		const prefix = RowPrefix(rowId);
 		const cells: Record<string, unknown> = {};
 		let found = false;
 		for (const [key, entry] of ykv.map) {
@@ -224,12 +224,12 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 
 	function setRowCells(rowData: { id: Id } & Record<string, unknown>): void {
 		for (const [fieldId, value] of Object.entries(rowData)) {
-			ykv.set(cellKey(rowData.id, fieldId), value);
+			ykv.set(CellKey(rowData.id, fieldId), value);
 		}
 	}
 
 	function deleteRowCells(rowId: Id): boolean {
-		const prefix = rowPrefix(rowId);
+		const prefix = RowPrefix(rowId);
 		const keys = Array.from(ykv.map.keys());
 		const keysToDelete = keys.filter((key) => key.startsWith(prefix));
 		for (const key of keysToDelete) {
@@ -325,7 +325,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		has(id: Id): boolean {
-			const prefix = rowPrefix(id);
+			const prefix = RowPrefix(id);
 			for (const key of ykv.map.keys()) {
 				if (key.startsWith(prefix)) return true;
 			}

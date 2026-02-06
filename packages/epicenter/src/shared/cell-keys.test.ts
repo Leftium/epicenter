@@ -1,26 +1,26 @@
 import { describe, expect, test } from 'bun:test';
-import { cellKey, extractRowId, parseCellKey, rowPrefix } from './cell-keys';
+import { CellKey, extractRowId, parseCellKey, RowPrefix } from './cell-keys';
 
 describe('cell-keys', () => {
-	describe('cellKey', () => {
+	describe('CellKey', () => {
 		test('composes rowId and columnId', () => {
-			expect(cellKey('row-1', 'title')).toBe('row-1:title');
+			expect(CellKey('row-1', 'title')).toBe('row-1:title');
 		});
 
 		test('roundtrips with parseCellKey', () => {
-			const key = cellKey('row-1', 'col-a');
+			const key = CellKey('row-1', 'col-a');
 			const parsed = parseCellKey(key);
 			expect(parsed).toEqual({ rowId: 'row-1', columnId: 'col-a' });
 		});
 
 		test('allows colon in columnId', () => {
-			expect(cellKey('row-1', 'nested:column:id')).toBe(
+			expect(CellKey('row-1', 'nested:column:id')).toBe(
 				'row-1:nested:column:id',
 			);
 		});
 
 		test('throws if rowId contains colon', () => {
-			expect(() => cellKey('row:1', 'title')).toThrow(
+			expect(() => CellKey('row:1', 'title')).toThrow(
 				"rowId cannot contain ':': \"row:1\"",
 			);
 		});
@@ -48,13 +48,13 @@ describe('cell-keys', () => {
 		});
 	});
 
-	describe('rowPrefix', () => {
+	describe('RowPrefix', () => {
 		test('appends separator', () => {
-			expect(rowPrefix('row-1')).toBe('row-1:');
+			expect(RowPrefix('row-1')).toBe('row-1:');
 		});
 
 		test('throws if rowId contains colon', () => {
-			expect(() => rowPrefix('row:1')).toThrow(
+			expect(() => RowPrefix('row:1')).toThrow(
 				"rowId cannot contain ':': \"row:1\"",
 			);
 		});

@@ -151,6 +151,7 @@ export type {
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 	// Workspace types
 	WorkspaceDefinition,
 } from './types.js';

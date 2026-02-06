@@ -21,6 +21,7 @@
  */
 
 import type * as Y from 'yjs';
+import type { Actions } from '../../shared/actions';
 import type { Lifecycle } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
@@ -152,6 +153,8 @@ export type WorkspaceClient<
 	kv: Kv<TKvFields>;
 	/** Extension exports (empty object if no extensions) */
 	extensions: InferExtensionExports<TExtensions>;
+	/** Actions attached via `.withActions()`. Undefined if no actions were attached. */
+	actions?: Actions;
 	/** Promise resolving when all extensions are synced */
 	whenSynced: Promise<void>;
 	/** Cleanup all resources */

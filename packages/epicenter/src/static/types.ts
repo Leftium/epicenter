@@ -6,6 +6,7 @@
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
+import type { Actions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -328,7 +329,23 @@ export type WorkspaceDefinition<
 };
 
 /**
- * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
+ * A workspace client with actions attached via `.withActions()`.
+ *
+ * This is an intersection of the base `WorkspaceClient` and `{ actions: TActions }`.
+ * It is terminal — no more builder methods are available after `.withActions()`.
+ */
+export type WorkspaceClientWithActions<
+	TId extends string,
+	TTableDefs extends TableDefinitions,
+	TKvDefs extends KvDefinitions,
+	TCapabilities extends CapabilityMap,
+	TActions extends Actions,
+> = WorkspaceClient<TId, TTableDefs, TKvDefs, TCapabilities> & {
+	actions: TActions;
+};
+
+/**
+ * Builder returned by createWorkspace() that IS a client AND has .withExtensions() and .withActions().
  *
  * This uses Object.assign to merge the base client with the builder methods,
  * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
@@ -355,7 +372,43 @@ export type WorkspaceClientBuilder<
 	 */
 	withExtensions<TCapabilities extends CapabilityMap>(
 		extensions: TCapabilities,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities>;
+	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TCapabilities> & {
+		/** Attach actions to the client. Terminal — no more builder methods after this. */
+		withActions<TActions extends Actions>(
+			factory: (
+				client: WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TCapabilities
+				>,
+			) => TActions,
+		): WorkspaceClientWithActions<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			TCapabilities,
+			TActions
+		>;
+	};
+
+	/** Attach actions to the client. Terminal — no more builder methods after this. */
+	withActions<TActions extends Actions>(
+		factory: (
+			client: WorkspaceClient<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				Record<string, never>
+			>,
+		) => TActions,
+	): WorkspaceClientWithActions<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		Record<string, never>,
+		TActions
+	>;
 };
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -481,6 +534,8 @@ export type WorkspaceClient<
 	kv: KvHelper<TKvDefinitions>;
 	/** Capability exports */
 	capabilities: InferCapabilityExports<TCapabilities>;
+	/** Actions attached via `.withActions()`. Undefined if no actions were attached. */
+	actions?: Actions;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;

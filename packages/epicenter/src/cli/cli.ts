@@ -1,17 +1,12 @@
 import yargs from 'yargs';
 import { createServer, DEFAULT_PORT } from '../server/server';
-import type { Actions } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
 import { buildKvCommands } from './commands/kv-commands';
 import { buildMetaCommands } from './commands/meta-commands';
 import { buildTableCommands } from './commands/table-commands';
 import type { AnyWorkspaceClient } from './discovery';
 
-type CLIOptions = {
-	actions?: Actions;
-};
-
-export function createCLI(client: AnyWorkspaceClient, options?: CLIOptions) {
+export function createCLI(client: AnyWorkspaceClient) {
 	let cli = yargs()
 		.scriptName('epicenter')
 		.usage('Usage: $0 <command> [options]')
@@ -32,7 +27,6 @@ export function createCLI(client: AnyWorkspaceClient, options?: CLIOptions) {
 				// Both are structurally compatible at runtime
 				createServer(client as any, {
 					port: argv.port,
-					actions: options?.actions,
 				}).start();
 			},
 		);
@@ -55,10 +49,9 @@ export function createCLI(client: AnyWorkspaceClient, options?: CLIOptions) {
 		cli = cli.command(cmd);
 	}
 
-	// Add action commands (from options or discovered from client.actions)
-	const actions = options?.actions ?? (client as any).actions;
-	if (actions) {
-		const commands = buildActionCommands(actions);
+	// Add action commands from client.actions
+	if (client.actions) {
+		const commands = buildActionCommands(client.actions);
 		for (const cmd of commands) {
 			cli = cli.command(cmd);
 		}

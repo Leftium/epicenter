@@ -23,6 +23,7 @@ import * as Y from 'yjs';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
+import type { Actions } from '../shared/actions.js';
 import type {
 	CapabilityFactory,
 	CapabilityMap,
@@ -31,6 +32,7 @@ import type {
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './types.js';
 
@@ -114,7 +116,81 @@ export function createWorkspace<
 				[Symbol.asyncDispose]: destroyWithCapabilities,
 			};
 
-			return clientWithCapabilities;
+			return {
+				...clientWithCapabilities,
+
+				withActions<TActions extends Actions>(
+					factory: (
+						client: WorkspaceClient<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							TCapabilities
+						>,
+					) => TActions,
+				): WorkspaceClientWithActions<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TCapabilities,
+					TActions
+				> {
+					const actions = factory(
+						clientWithCapabilities as WorkspaceClient<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							TCapabilities
+						>,
+					);
+					return { ...clientWithCapabilities, actions } as WorkspaceClientWithActions<
+						TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						TCapabilities,
+						TActions
+					>;
+				},
+			};
+		},
+
+		/**
+		 * Attach actions directly to the workspace client (without extensions).
+		 *
+		 * The factory receives the base client and returns an actions tree.
+		 * Terminal — no more builder methods after this.
+		 */
+		withActions<TActions extends Actions>(
+			factory: (
+				client: WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					Record<string, never>
+				>,
+			) => TActions,
+		): WorkspaceClientWithActions<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			Record<string, never>,
+			TActions
+		> {
+			const actions = factory(
+				baseClient as WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					Record<string, never>
+				>,
+			);
+			return { ...baseClient, actions } as WorkspaceClientWithActions<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				Record<string, never>,
+				TActions
+			>;
 		},
 	};
 }

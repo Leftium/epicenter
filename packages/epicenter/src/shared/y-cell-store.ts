@@ -35,6 +35,7 @@
  * ```
  */
 import type * as Y from 'yjs';
+import { cellKey, parseCellKey } from './cell-keys.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -192,28 +193,6 @@ export type CellStore<T> = {
 	/** The Y.Doc for transaction control. */
 	readonly doc: Y.Doc;
 };
-
-// ═══════════════════════════════════════════════════════════════════════════
-// KEY UTILITIES (Private)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const SEPARATOR = ':';
-
-function cellKey(rowId: string, columnId: string): string {
-	if (rowId.includes(SEPARATOR)) {
-		throw new Error(`rowId cannot contain '${SEPARATOR}': "${rowId}"`);
-	}
-	return `${rowId}${SEPARATOR}${columnId}`;
-}
-
-function parseCellKey(key: string): { rowId: string; columnId: string } {
-	const idx = key.indexOf(SEPARATOR);
-	if (idx === -1) throw new Error(`Invalid cell key: "${key}"`);
-	return {
-		rowId: key.slice(0, idx),
-		columnId: key.slice(idx + 1),
-	};
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FACTORY FUNCTION

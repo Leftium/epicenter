@@ -10,7 +10,7 @@
  * - Composition over features: Takes a CellStore as its only argument
  * - No setCell/deleteCell: Cell writes go through CellStore directly
  * - merge() for row-level writes: Clear semantics — merges fields, creates if missing
- * - Row operations use prefix scanning on the underlying ykv.map
+ * - Row operations use an in-memory row index kept in sync via cellStore.observe()
  *
  * @example
  * ```typescript
@@ -78,20 +78,20 @@ export type RowStore<T> = {
 	/**
 	 * Reconstruct a row from its cells.
 	 * Returns undefined if no cells exist for this row.
-	 * O(n) where n = total cells in store.
+	 * O(k) where k = cells in the row.
 	 */
 	get(rowId: string): Record<string, T> | undefined;
 
-	/** Check if any cells exist for a row. O(n) worst case, early-exits. */
+	/** Check if any cells exist for a row. O(1). */
 	has(rowId: string): boolean;
 
-	/** Get all row IDs that have at least one cell. O(n) with deduplication. */
+	/** Get all row IDs that have at least one cell. O(r) where r = number of rows. */
 	ids(): string[];
 
 	/** Get all rows reconstructed from cells. O(n) single pass. */
 	getAll(): Map<string, Record<string, T>>;
 
-	/** Number of unique rows. */
+	/** Number of unique rows. O(1). */
 	count(): number;
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -112,7 +112,7 @@ export type RowStore<T> = {
 	/**
 	 * Delete all cells for a row.
 	 * Returns true if any cells existed.
-	 * O(n) scan + k deletions where k = cells in row.
+	 * O(k) where k = cells in the row.
 	 *
 	 * **Note**: When called inside a `batch()`, the deletion is applied immediately
 	 * but reads (`has`, `get`) will still see the old row until the batch completes.
@@ -195,86 +195,111 @@ export type RowStore<T> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ROW UTILITIES (Private)
-// ═══════════════════════════════════════════════════════════════════════════
-
-const SEPARATOR = ':';
-
-function rowPrefix(rowId: string): string {
-	return `${rowId}${SEPARATOR}`;
-}
-
-function extractRowId(key: string): string {
-	const idx = key.indexOf(SEPARATOR);
-	return key.slice(0, idx);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // FACTORY FUNCTION
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Create a row operations wrapper over an existing CellStore.
  *
+ * ## In-Memory Row Index
+ *
+ * CellStore stores cells as flat compound keys (`rowId:columnId`) in a YKeyValueLww.
+ * Without an index, every row operation requires an O(n) scan of all cells with
+ * prefix matching. The row index groups cells by rowId for fast lookups:
+ *
+ * ```
+ * CellStore (flat):                    Row Index (grouped):
+ * ┌──────────────────────────┐         ┌─────────┬──────────────────┐
+ * │ "post-1:title" → "Hello" │         │ "post-1"│ title → "Hello"  │
+ * │ "post-1:views" → 42      │   ───►  │         │ views → 42       │
+ * │ "post-2:title" → "World" │         ├─────────┼──────────────────┤
+ * └──────────────────────────┘         │ "post-2"│ title → "World"  │
+ *                                      └─────────┴──────────────────┘
+ *
+ * get("post-1"): O(n) scan  ───►  O(1) Map lookup
+ * has("post-1"): O(n) scan  ───►  O(1) Map.has()
+ * count():       O(n) dedup ───►  O(1) Map.size
+ * ```
+ *
+ * The index follows the same "single-writer" architecture as YKeyValueLww's `map`:
+ * - **Built once** at construction from `cellStore.cells()` (single pass)
+ * - **Kept in sync** by an internal `cellStore.observe()` handler
+ * - **Never written to directly** by methods — the observer is the sole writer
+ * - **Lifetime** is tied to the CellStore (observer is never unsubscribed,
+ *   matching how YKeyValueLww's observer lives as long as its Y.Array)
+ *
  * @param cellStore - The CellStore to wrap
  */
 export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
-	const { ykv, doc } = cellStore;
+	const { doc } = cellStore;
+
+	// Row index: Map<rowId, Map<columnId, value>>
+	// Built from cellStore.cells(), kept in sync by observer below.
+	const rowIndex = new Map<string, Map<string, T>>();
+
+	for (const { rowId, columnId, value } of cellStore.cells()) {
+		let row = rowIndex.get(rowId);
+		if (!row) {
+			row = new Map();
+			rowIndex.set(rowId, row);
+		}
+		row.set(columnId, value);
+	}
+
+	// Observer: sole writer to rowIndex. Handles local writes, remote CRDT
+	// sync, and deletes. Empty rows are removed to keep count()/has() accurate.
+	cellStore.observe((changes) => {
+		for (const change of changes) {
+			if (change.action === 'add' || change.action === 'update') {
+				let row = rowIndex.get(change.rowId);
+				if (!row) {
+					row = new Map();
+					rowIndex.set(change.rowId, row);
+				}
+				row.set(change.columnId, change.value);
+			} else if (change.action === 'delete') {
+				const row = rowIndex.get(change.rowId);
+				if (row) {
+					row.delete(change.columnId);
+					if (row.size === 0) rowIndex.delete(change.rowId);
+				}
+			}
+		}
+	});
 
 	return {
 		get(rowId) {
-			const prefix = rowPrefix(rowId);
+			const row = rowIndex.get(rowId);
+			if (!row) return undefined;
 			const cells: Record<string, T> = {};
-			let found = false;
-
-			for (const [key, entry] of ykv.map) {
-				if (key.startsWith(prefix)) {
-					const columnId = key.slice(prefix.length);
-					cells[columnId] = entry.val;
-					found = true;
-				}
+			for (const [columnId, value] of row) {
+				cells[columnId] = value;
 			}
-
-			return found ? cells : undefined;
+			return cells;
 		},
 
 		has(rowId) {
-			const prefix = rowPrefix(rowId);
-			for (const key of ykv.map.keys()) {
-				if (key.startsWith(prefix)) return true;
-			}
-			return false;
+			return rowIndex.has(rowId);
 		},
 
 		ids() {
-			const seen = new Set<string>();
-			for (const key of ykv.map.keys()) {
-				seen.add(extractRowId(key));
-			}
-			return Array.from(seen);
+			return Array.from(rowIndex.keys());
 		},
 
 		getAll() {
 			const rows = new Map<string, Record<string, T>>();
-
-			for (const [key, entry] of ykv.map) {
-				const rowId = extractRowId(key);
-				const columnId = key.slice(rowId.length + 1); // +1 for separator
-
-				const existing = rows.get(rowId) ?? {};
-				existing[columnId] = entry.val;
-				rows.set(rowId, existing);
+			for (const [rowId, columnMap] of rowIndex) {
+				const cells: Record<string, T> = {};
+				for (const [columnId, value] of columnMap) {
+					cells[columnId] = value;
+				}
+				rows.set(rowId, cells);
 			}
-
 			return rows;
 		},
 
 		count() {
-			const seen = new Set<string>();
-			for (const key of ykv.map.keys()) {
-				seen.add(extractRowId(key));
-			}
-			return seen.size;
+			return rowIndex.size;
 		},
 
 		merge(rowId, data) {
@@ -286,20 +311,13 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 		},
 
 		delete(rowId) {
-			const prefix = rowPrefix(rowId);
-			const keysToDelete: string[] = [];
+			const row = rowIndex.get(rowId);
+			if (!row) return false;
 
-			for (const key of ykv.map.keys()) {
-				if (key.startsWith(prefix)) {
-					keysToDelete.push(key);
-				}
-			}
-
-			if (keysToDelete.length === 0) return false;
-
+			const columnIds = Array.from(row.keys());
 			doc.transact(() => {
-				for (const key of keysToDelete) {
-					ykv.delete(key);
+				for (const columnId of columnIds) {
+					cellStore.deleteCell(rowId, columnId);
 				}
 			});
 
@@ -315,10 +333,11 @@ export function createRowStore<T>(cellStore: CellStore<T>): RowStore<T> {
 						}
 					},
 					delete(rowId) {
-						const prefix = rowPrefix(rowId);
-						for (const key of ykv.map.keys()) {
-							if (key.startsWith(prefix)) {
-								ykv.delete(key);
+						// Scan cellStore.cells() (includes pending writes from this batch)
+						// so merge-then-delete in the same batch correctly removes new columns
+						for (const cell of cellStore.cells()) {
+							if (cell.rowId === rowId) {
+								cellStore.deleteCell(rowId, cell.columnId);
 							}
 						}
 					},

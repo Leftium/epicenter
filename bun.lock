@@ -283,6 +283,7 @@
         "chokidar": "^5.0.0",
         "drizzle-orm": "catalog:",
         "elysia": "^1.2.25",
+        "fflate": "^0.8.2",
         "lib0": "^0.2.99",
         "mime": "catalog:",
         "nanoid": "catalog:",

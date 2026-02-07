@@ -532,6 +532,8 @@ export type WorkspaceClient<
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
+	/** Workspace definitions for introspection */
+	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
 	/** Extension exports */
 	extensions: InferExtensionExports<TExtensions>;
 

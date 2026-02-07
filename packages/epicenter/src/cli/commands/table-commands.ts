@@ -10,7 +10,7 @@ export function buildTableCommands(
 	client: AnyWorkspaceClient,
 ): CommandModule[] {
 	const commands: CommandModule[] = [];
-	const tableNames = Object.keys(client.tables);
+	const tableNames = Object.keys(client.definitions.tables);
 
 	for (const tableName of tableNames) {
 		const tableHelper = (client.tables as Record<string, unknown>)[tableName];

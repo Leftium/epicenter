@@ -66,6 +66,10 @@ export function createWorkspace<
 		ydoc,
 		tables,
 		kv,
+		definitions: {
+			tables: (config.tables ?? {}) as TTableDefinitions,
+			kv: (config.kv ?? {}) as TKvDefinitions,
+		},
 		extensions: {} as InferExtensionExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
@@ -110,6 +114,10 @@ export function createWorkspace<
 				ydoc,
 				tables,
 				kv,
+				definitions: {
+					tables: (config.tables ?? {}) as TTableDefinitions,
+					kv: (config.kv ?? {}) as TKvDefinitions,
+				},
 				extensions:
 					extensionExports as InferExtensionExports<TExtensions>,
 				destroy: destroyWithExtensions,

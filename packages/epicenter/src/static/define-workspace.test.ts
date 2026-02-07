@@ -172,7 +172,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace(workspace);
 
 		expect(client.id).toBe('empty-app');
-		expect(Object.keys(client.tables)).toHaveLength(0);
+		expect(Object.keys(client.definitions.tables)).toHaveLength(0);
 		// KV always has methods (get, set, delete, observe), but no keys are defined
 		expect(client.kv.get).toBeDefined();
 	});

@@ -1,6 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
 import { Elysia } from 'elysia';
-import type { AnyWorkspaceClient } from '../dynamic/workspace/types';
+import type { AnyWorkspaceClient } from '../static/types';
 import { collectActionPaths, createActionsRouter } from './actions';
 import { createSyncPlugin } from './sync';
 import { createTablesPlugin } from './tables';
@@ -23,7 +23,7 @@ export type ServerOptions = {
  *
  * @example
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { createWorkspace } from '@epicenter/hq/static';
  *
  * const workspace = createWorkspace(definition).withExtensions({ ... });
  *
@@ -125,7 +125,7 @@ function createServerInternal(
 			console.log('Available Workspaces:\n');
 			for (const [workspaceId, client] of Object.entries(workspaces)) {
 				console.log(`  ${workspaceId}`);
-				for (const tableName of Object.keys(client.tables.definitions)) {
+				for (const tableName of Object.keys(client.definitions.tables)) {
 					console.log(`    tables/${tableName}`);
 				}
 				console.log(`    sync (WebSocket)`);

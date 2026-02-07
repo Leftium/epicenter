@@ -1,8 +1,6 @@
-import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { Ok } from 'wellcrafted/result';
-import { Id, tableToArktype } from '../dynamic/schema';
-import type { AnyWorkspaceClient } from '../dynamic/workspace/types';
+import type { AnyWorkspaceClient, TableHelper } from '../static/types';
 
 export function createTablesPlugin(
 	workspaceClients: Record<string, AnyWorkspaceClient>,
@@ -10,9 +8,14 @@ export function createTablesPlugin(
 	const app = new Elysia();
 
 	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-		for (const tableName of Object.keys(workspace.tables.definitions)) {
-			const tableHelper = workspace.tables.get(tableName);
-			const fields = workspace.tables.definitions[tableName]!.fields;
+		const tableDefinitions = workspace.definitions.tables;
+
+		for (const [tableName, value] of Object.entries(workspace.tables)) {
+			const tableDef = tableDefinitions[tableName];
+			if (!tableDef) continue;
+
+			const tableHelper = value as TableHelper<{ id: string }>;
+
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
 
@@ -23,7 +26,7 @@ export function createTablesPlugin(
 			app.get(
 				`${basePath}/:id`,
 				({ params, status }) => {
-					const result = tableHelper.get(Id(params.id));
+					const result = tableHelper.get(params.id);
 
 					switch (result.status) {
 						case 'valid':
@@ -41,12 +44,25 @@ export function createTablesPlugin(
 
 			app.post(
 				basePath,
-				({ body }) => {
-					tableHelper.upsert(body as { id: Id });
-					return Ok({ id: (body as { id: string }).id });
+				({ body, status }) => {
+					const input = body as Record<string, unknown>;
+					const result = tableDef.schema['~standard'].validate(input);
+					if (result instanceof Promise) {
+						return status(500, {
+							error: 'Async schema validation not supported',
+						});
+					}
+					if (result.issues) {
+						return status(422, { errors: result.issues });
+					}
+
+					const row = tableDef.migrate(result.value) as {
+						id: string;
+					};
+					tableHelper.set(row);
+					return Ok({ id: row.id });
 				},
 				{
-					body: tableToArktype(fields),
 					detail: { description: `Create or update ${tableName}`, tags },
 				},
 			);
@@ -54,14 +70,11 @@ export function createTablesPlugin(
 			app.put(
 				`${basePath}/:id`,
 				({ params, body }) => {
-					const result = tableHelper.update({
-						id: Id(params.id),
-						...(body as Record<string, unknown>),
-					});
+					const partial = body as Record<string, unknown>;
+					const result = tableHelper.update(params.id, partial);
 					return Ok(result);
 				},
 				{
-					body: tableToArktype(fields).partial().merge({ id: type.string }),
 					detail: { description: `Update ${tableName} by ID`, tags },
 				},
 			);
@@ -69,7 +82,7 @@ export function createTablesPlugin(
 			app.delete(
 				`${basePath}/:id`,
 				({ params }) => {
-					const result = tableHelper.delete(Id(params.id));
+					const result = tableHelper.delete(params.id);
 					return Ok(result);
 				},
 				{

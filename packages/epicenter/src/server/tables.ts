@@ -32,7 +32,7 @@ export function createTablesPlugin(
 						case 'valid':
 							return result.row;
 						case 'invalid':
-							return status(422, { errors: result.errors });
+							return status('Unprocessable Content', { errors: result.errors });
 						case 'not_found':
 							return status(404, { error: 'Not found' });
 					}
@@ -53,12 +53,10 @@ export function createTablesPlugin(
 						});
 					}
 					if (result.issues) {
-						return status(422, { errors: result.issues });
+						return status('Unprocessable Content', { errors: result.issues });
 					}
 
-					const row = tableDef.migrate(result.value) as {
-						id: string;
-					};
+					const row = tableDef.migrate(result.value);
 					tableHelper.set(row);
 					return Ok({ id: row.id });
 				},
@@ -69,10 +67,31 @@ export function createTablesPlugin(
 
 			app.put(
 				`${basePath}/:id`,
-				({ params, body }) => {
+				({ params, body, status }) => {
 					const partial = body as Record<string, unknown>;
-					const result = tableHelper.update(params.id, partial);
-					return Ok(result);
+
+					const current = tableHelper.get(params.id);
+					if (current.status === 'not_found') {
+						return status(404, { error: 'Not found' });
+					}
+					if (current.status === 'invalid') {
+						return status('Unprocessable Content', { errors: current.errors });
+					}
+
+					const merged = { ...current.row, ...partial, id: params.id };
+					const result = tableDef.schema['~standard'].validate(merged);
+					if (result instanceof Promise) {
+						return status(500, {
+							error: 'Async schema validation not supported',
+						});
+					}
+					if (result.issues) {
+						return status('Unprocessable Content', { errors: result.issues });
+					}
+
+					const row = tableDef.migrate(result.value);
+					tableHelper.set(row);
+					return Ok({ id: row.id });
 				},
 				{
 					detail: { description: `Update ${tableName} by ID`, tags },

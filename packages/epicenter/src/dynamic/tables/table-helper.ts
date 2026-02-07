@@ -19,6 +19,12 @@ import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
 import {
+	CellKey,
+	extractRowId,
+	parseCellKey,
+	RowPrefix,
+} from '../../shared/cell-keys.js';
+import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
@@ -26,8 +32,7 @@ import {
 import { TableKey } from '../../shared/ydoc-keys';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
-import type { Id } from '../schema/fields/id.js';
-import { CellKey, FieldId, parseCellKey, RowPrefix } from './keys';
+import { Id } from '../schema/fields/id.js';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -202,8 +207,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		let found = false;
 		for (const [key, entry] of ykv.map) {
 			if (key.startsWith(prefix)) {
-				const { fieldId } = parseCellKey(key);
-				cells[fieldId] = entry.val;
+				const { columnId } = parseCellKey(key);
+				cells[columnId] = entry.val;
 				found = true;
 			}
 		}
@@ -213,19 +218,18 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 	function collectRows(): Map<Id, Record<string, unknown>> {
 		const rows = new Map<Id, Record<string, unknown>>();
 		for (const [key, entry] of ykv.map) {
-			const { rowId, fieldId } = parseCellKey(key);
-			const existing = rows.get(rowId) ?? {};
-			existing[fieldId] = entry.val;
-			rows.set(rowId, existing);
+			const { rowId, columnId } = parseCellKey(key);
+			const id = Id(rowId);
+			const existing = rows.get(id) ?? {};
+			existing[columnId] = entry.val;
+			rows.set(id, existing);
 		}
 		return rows;
 	}
 
 	function setRowCells(rowData: { id: Id } & Record<string, unknown>): void {
-		// Id is already validated at construction time
 		for (const [fieldId, value] of Object.entries(rowData)) {
-			const cellKey = CellKey(rowData.id, FieldId(fieldId));
-			ykv.set(cellKey, value);
+			ykv.set(CellKey(rowData.id, fieldId), value);
 		}
 	}
 
@@ -461,8 +465,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 			) => {
 				const changedIds = new Set<Id>();
 				for (const key of changes.keys()) {
-					const { rowId } = parseCellKey(key);
-					changedIds.add(rowId);
+					changedIds.add(Id(extractRowId(key)));
 				}
 				if (changedIds.size > 0) {
 					callback(changedIds, transaction);

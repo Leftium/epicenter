@@ -517,10 +517,11 @@ export class YKeyValueLww<T> {
 	 * ```
 	 */
 	delete(key: string): void {
-		// Remove from pending if present
-		this.pending.delete(key);
+		// Remove from pending if present. If it was pending, the entry is in the
+		// Y.Array (set() pushes immediately) but not yet in map (observer deferred).
+		const wasPending = this.pending.delete(key);
 
-		if (!this.map.has(key)) return;
+		if (!this.map.has(key) && !wasPending) return;
 
 		this.deleteEntryByKey(key);
 		// DO NOT update this.map here - observer is the sole writer to map

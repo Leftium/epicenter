@@ -35,11 +35,12 @@ export function createTableHelper<
 	/**
 	 * Parse and migrate a raw row value.
 	 */
-	function parseRow(row: unknown): RowResult<TRow> {
+	function parseRow(id: string, row: unknown): RowResult<TRow> {
 		const result = definition.schema['~standard'].validate(row);
 		if (result instanceof Promise)
 			throw new TypeError('Async schemas not supported');
-		if (result.issues) return { status: 'invalid', errors: result.issues, row };
+		if (result.issues)
+			return { status: 'invalid', id, errors: result.issues, row };
 		// Migrate to latest version
 		const migrated = definition.migrate(result.value);
 		return { status: 'valid', row: migrated };
@@ -60,20 +61,14 @@ export function createTableHelper<
 
 		update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow> {
 			const current = this.get(id);
-			if (current.status === 'not_found') {
-				return { status: 'not_found', id };
-			}
-			if (current.status === 'invalid') {
-				return {
-					status: 'invalid',
-					id,
-					errors: current.errors,
-					row: current.row,
-				};
-			}
-			const merged = { ...current.row, ...partial } as TRow;
-			this.set(merged);
-			return { status: 'updated', row: merged };
+			if (current.status !== 'valid') return current;
+
+			const merged = { ...current.row, ...partial, id };
+			const result = parseRow(id, merged);
+			if (result.status === 'invalid') return result;
+
+			this.set(result.row);
+			return { status: 'updated', row: result.row };
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

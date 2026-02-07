@@ -87,9 +87,7 @@ export function createTableHelper<
 			const results: RowResult<TRow>[] = [];
 			for (const [key, entry] of ykv.map) {
 				const result = parseRow(key, entry.val);
-				if (result.status !== 'not_found') {
-					results.push(result);
-				}
+				results.push(result);
 			}
 			return results;
 		},

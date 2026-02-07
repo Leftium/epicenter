@@ -110,6 +110,7 @@ function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 		value !== null &&
 		'id' in value &&
 		'tables' in value &&
+		'definitions' in value &&
 		typeof (value as Record<string, unknown>).id === 'string'
 	);
 }

@@ -21,7 +21,6 @@
  */
 
 import type * as Y from 'yjs';
-import type { Actions } from '../../shared/actions';
 import type { Lifecycle } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
@@ -161,13 +160,6 @@ export type WorkspaceClient<
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-/**
- * Type alias for any workspace client (used for duck-typing in server).
- * Includes optional actions property since clients may or may not have actions attached.
- */
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any> & {
-	actions?: Actions;
-};
 
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().

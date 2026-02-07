@@ -35,20 +35,11 @@ export function createTableHelper<
 	/**
 	 * Parse and migrate a raw row value.
 	 */
-	function parseRow(id: string, row: unknown): GetResult<TRow> {
+	function parseRow(row: unknown): RowResult<TRow> {
 		const result = definition.schema['~standard'].validate(row);
 		if (result instanceof Promise)
 			throw new TypeError('Async schemas not supported');
-
-		if (result.issues) {
-			return {
-				status: 'invalid',
-				id,
-				errors: result.issues,
-				row,
-			};
-		}
-
+		if (result.issues) return { status: 'invalid', errors: result.issues, row };
 		// Migrate to latest version
 		const migrated = definition.migrate(result.value);
 		return { status: 'valid', row: migrated };

@@ -54,8 +54,11 @@ export function createWorkspace<
 ): WorkspaceClientBuilder<TId, TTableDefinitions, TKvDefinitions> {
 	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
-	const tables = createTables(ydoc, (config.tables ?? {}) as TTableDefinitions);
-	const kv = createKv(ydoc, (config.kv ?? {}) as TKvDefinitions);
+	const tableDefs = (config.tables ?? {}) as TTableDefinitions;
+	const kvDefs = (config.kv ?? {}) as TKvDefinitions;
+	const tables = createTables(ydoc, tableDefs);
+	const kv = createKv(ydoc, kvDefs);
+	const definitions = { tables: tableDefs, kv: kvDefs };
 
 	const destroy = async (): Promise<void> => {
 		ydoc.destroy();
@@ -66,10 +69,7 @@ export function createWorkspace<
 		ydoc,
 		tables,
 		kv,
-		definitions: {
-			tables: (config.tables ?? {}) as TTableDefinitions,
-			kv: (config.kv ?? {}) as TKvDefinitions,
-		},
+		definitions,
 		extensions: {} as InferExtensionExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
@@ -114,10 +114,7 @@ export function createWorkspace<
 				ydoc,
 				tables,
 				kv,
-				definitions: {
-					tables: (config.tables ?? {}) as TTableDefinitions,
-					kv: (config.kv ?? {}) as TKvDefinitions,
-				},
+				definitions,
 				extensions:
 					extensionExports as InferExtensionExports<TExtensions>,
 				destroy: destroyWithExtensions,

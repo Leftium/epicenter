@@ -81,6 +81,56 @@ description: TypeScript code style, type co-location, naming conventions (includ
   }
   ```
 
+## Switch Over If/Else for Value Comparison
+
+When multiple `if`/`else if` branches compare the same variable against string literals (or other constant values), always use a `switch` statement instead. This applies to action types, status fields, file types, strategy names, or any discriminated value.
+
+```typescript
+// Bad - if/else chain comparing the same variable
+if (change.action === 'add') {
+	handleAdd(change);
+} else if (change.action === 'update') {
+	handleUpdate(change);
+} else if (change.action === 'delete') {
+	handleDelete(change);
+}
+
+// Good - switch statement
+switch (change.action) {
+	case 'add':
+		handleAdd(change);
+		break;
+	case 'update':
+		handleUpdate(change);
+		break;
+	case 'delete':
+		handleDelete(change);
+		break;
+}
+```
+
+Use fall-through for cases that share logic:
+
+```typescript
+switch (change.action) {
+	case 'add':
+	case 'update': {
+		applyChange(change);
+		break;
+	}
+	case 'delete': {
+		removeChange(change);
+		break;
+	}
+}
+```
+
+Use block scoping (`{ }`) when a case declares variables with `let` or `const`.
+
+When NOT to use switch: early returns for type narrowing are fine as sequential `if` statements. If each branch returns immediately and the checks are narrowing a union type for subsequent code, keep them as `if` guards.
+
+See `docs/articles/switch-over-if-else-for-value-comparison.md` for rationale.
+
 # Type Co-location Principles
 
 ## Never Use Generic Type Buckets

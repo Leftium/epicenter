@@ -134,20 +134,25 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				const change = changes.get(key);
 				if (!change) return;
 
-				if (change.action === 'delete') {
-					callback({ type: 'delete' }, transaction);
-				} else {
-					// For add or update, parse and migrate the new value
-					const parsed = parseValue(change.newValue, definition);
-					if (parsed.status === 'valid') {
-						callback(
-							{ type: 'set', value: parsed.value } as Parameters<
-								typeof callback
-							>[0],
-							transaction,
-						);
+				switch (change.action) {
+					case 'delete':
+						callback({ type: 'delete' }, transaction);
+						break;
+					case 'add':
+					case 'update': {
+						// Parse and migrate the new value
+						const parsed = parseValue(change.newValue, definition);
+						if (parsed.status === 'valid') {
+							callback(
+								{ type: 'set', value: parsed.value } as Parameters<
+									typeof callback
+								>[0],
+								transaction,
+							);
+						}
+						// Skip callback for invalid values (could add an error callback if needed)
+						break;
 					}
-					// Skip callback for invalid values (could add an error callback if needed)
 				}
 			};
 

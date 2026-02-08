@@ -691,136 +691,140 @@ export default defineBackground(() => {
 		const transaction = txn as Transaction;
 		for (const id of changedIds) {
 			const result = client.tables.tabs.get(id);
-			if (result.status === 'not_found') {
-				// Deleted
-				void (async () => {
-					await initPromise;
+			switch (result.status) {
+				case 'not_found':
+					// Deleted
+					void (async () => {
+						await initPromise;
 
-					console.log('[Background] tabs.onDelete fired:', {
-						id,
-						origin: transaction.origin,
-						isRemote: transaction.origin !== null,
-					});
+						console.log('[Background] tabs.onDelete fired:', {
+							id,
+							origin: transaction.origin,
+							isRemote: transaction.origin !== null,
+						});
 
-					if (transaction.origin === null) {
-						console.log(
-							'[Background] tabs.onDelete SKIPPED: local origin (our own change)',
-						);
-						return;
-					}
-
-					const deviceId = await deviceIdPromise;
-					const parsed = parseTabId(id);
-
-					if (!parsed || parsed.deviceId !== deviceId) {
-						console.log(
-							'[Background] tabs.onDelete SKIPPED: different device or invalid ID',
-						);
-						return;
-					}
-
-					console.log(
-						'[Background] tabs.onDelete REMOVING Browser tab:',
-						parsed.tabId,
-					);
-					syncCoordination.yDocChangeCount++;
-					await tryAsync({
-						try: async () => {
-							await browser.tabs.remove(parsed.tabId);
+						if (transaction.origin === null) {
 							console.log(
-								'[Background] tabs.onDelete SUCCESS: removed tab',
-								parsed.tabId,
+								'[Background] tabs.onDelete SKIPPED: local origin (our own change)',
 							);
-						},
-						catch: (error) => {
-							console.log(`[Background] Failed to close tab ${id}:`, error);
-							return Ok(undefined);
-						},
-					});
-					syncCoordination.yDocChangeCount--;
-				})();
-			} else if (result.status === 'valid') {
-				// Added or updated
-				const row = result.row;
-				void (async () => {
-					await initPromise;
+							return;
+						}
 
-					console.log('[Background] tabs.onAdd fired:', {
-						origin: transaction.origin,
-						isRemote: transaction.origin !== null,
-						row,
-					});
+						const deviceId = await deviceIdPromise;
+						const parsed = parseTabId(id);
 
-					if (transaction.origin === null) {
-						console.log(
-							'[Background] tabs.onAdd SKIPPED: local origin (our own change)',
-						);
-						return;
-					}
-
-					const deviceId = await deviceIdPromise;
-
-					if (row.device_id !== deviceId) {
-						console.log(
-							'[Background] tabs.onAdd SKIPPED: different device',
-							row.device_id,
-						);
-						return;
-					}
-
-					if (!row.url) {
-						console.log('[Background] tabs.onAdd SKIPPED: no URL in row');
-						return;
-					}
-
-					if (syncCoordination.recentlyAddedTabIds.has(row.tab_id)) {
-						console.log(
-							'[Background] tabs.onAdd SKIPPED: tab was recently added locally (echo)',
-							row.tab_id,
-						);
-						return;
-					}
-
-					const existingTab = await tryAsync({
-						try: () => browser.tabs.get(row.tab_id),
-						catch: () => Ok(undefined),
-					});
-
-					if (existingTab.data) {
-						console.log(
-							'[Background] tabs.onAdd SKIPPED: tab already exists in browser',
-							row.tab_id,
-						);
-						return;
-					}
-
-					console.log(
-						'[Background] tabs.onAdd CREATING tab with URL:',
-						row.url,
-					);
-					syncCoordination.yDocChangeCount++;
-					await tryAsync({
-						try: async () => {
-							await browser.tabs.create({ url: row.url });
+						if (!parsed || parsed.deviceId !== deviceId) {
 							console.log(
-								'[Background] tabs.onAdd tab created, now refetching...',
+								'[Background] tabs.onDelete SKIPPED: different device or invalid ID',
 							);
+							return;
+						}
 
-							syncCoordination.refetchCount++;
-							await actions.refetchTabs();
-							syncCoordination.refetchCount--;
-							console.log('[Background] tabs.onAdd refetch complete');
-						},
-						catch: (error) => {
+						console.log(
+							'[Background] tabs.onDelete REMOVING Browser tab:',
+							parsed.tabId,
+						);
+						syncCoordination.yDocChangeCount++;
+						await tryAsync({
+							try: async () => {
+								await browser.tabs.remove(parsed.tabId);
+								console.log(
+									'[Background] tabs.onDelete SUCCESS: removed tab',
+									parsed.tabId,
+								);
+							},
+							catch: (error) => {
+								console.log(`[Background] Failed to close tab ${id}:`, error);
+								return Ok(undefined);
+							},
+						});
+						syncCoordination.yDocChangeCount--;
+					})();
+					break;
+				case 'valid': {
+					// Added or updated
+					const row = result.row;
+					void (async () => {
+						await initPromise;
+
+						console.log('[Background] tabs.onAdd fired:', {
+							origin: transaction.origin,
+							isRemote: transaction.origin !== null,
+							row,
+						});
+
+						if (transaction.origin === null) {
 							console.log(
-								`[Background] Failed to create tab from ${row.id}:`,
-								error,
+								'[Background] tabs.onAdd SKIPPED: local origin (our own change)',
 							);
-							return Ok(undefined);
-						},
-					});
-					syncCoordination.yDocChangeCount--;
-				})();
+							return;
+						}
+
+						const deviceId = await deviceIdPromise;
+
+						if (row.device_id !== deviceId) {
+							console.log(
+								'[Background] tabs.onAdd SKIPPED: different device',
+								row.device_id,
+							);
+							return;
+						}
+
+						if (!row.url) {
+							console.log('[Background] tabs.onAdd SKIPPED: no URL in row');
+							return;
+						}
+
+						if (syncCoordination.recentlyAddedTabIds.has(row.tab_id)) {
+							console.log(
+								'[Background] tabs.onAdd SKIPPED: tab was recently added locally (echo)',
+								row.tab_id,
+							);
+							return;
+						}
+
+						const existingTab = await tryAsync({
+							try: () => browser.tabs.get(row.tab_id),
+							catch: () => Ok(undefined),
+						});
+
+						if (existingTab.data) {
+							console.log(
+								'[Background] tabs.onAdd SKIPPED: tab already exists in browser',
+								row.tab_id,
+							);
+							return;
+						}
+
+						console.log(
+							'[Background] tabs.onAdd CREATING tab with URL:',
+							row.url,
+						);
+						syncCoordination.yDocChangeCount++;
+						await tryAsync({
+							try: async () => {
+								await browser.tabs.create({ url: row.url });
+								console.log(
+									'[Background] tabs.onAdd tab created, now refetching...',
+								);
+
+								syncCoordination.refetchCount++;
+								await actions.refetchTabs();
+								syncCoordination.refetchCount--;
+								console.log('[Background] tabs.onAdd refetch complete');
+							},
+							catch: (error) => {
+								console.log(
+									`[Background] Failed to create tab from ${row.id}:`,
+									error,
+								);
+								return Ok(undefined);
+							},
+						});
+						syncCoordination.yDocChangeCount--;
+					})();
+					break;
+				}
 			}
 		}
 	});
@@ -829,61 +833,68 @@ export default defineBackground(() => {
 		const transaction = txn as Transaction;
 		for (const id of changedIds) {
 			const result = client.tables.windows.get(id);
-			if (result.status === 'not_found') {
-				// Deleted
-				void (async () => {
-					await initPromise;
+			switch (result.status) {
+				case 'not_found':
+					// Deleted
+					void (async () => {
+						await initPromise;
 
-					if (transaction.origin === null) return;
+						if (transaction.origin === null) return;
 
-					const deviceId = await deviceIdPromise;
-					const parsed = parseWindowId(id);
+						const deviceId = await deviceIdPromise;
+						const parsed = parseWindowId(id);
 
-					if (!parsed || parsed.deviceId !== deviceId) return;
+						if (!parsed || parsed.deviceId !== deviceId) return;
 
-					syncCoordination.yDocChangeCount++;
-					await tryAsync({
-						try: async () => {
-							await browser.windows.remove(parsed.windowId);
-						},
-						catch: (error) => {
-							console.log(`[Background] Failed to close window ${id}:`, error);
-							return Ok(undefined);
-						},
-					});
-					syncCoordination.yDocChangeCount--;
-				})();
-			} else if (result.status === 'valid') {
-				// Added or updated
-				const row = result.row;
-				void (async () => {
-					await initPromise;
+						syncCoordination.yDocChangeCount++;
+						await tryAsync({
+							try: async () => {
+								await browser.windows.remove(parsed.windowId);
+							},
+							catch: (error) => {
+								console.log(
+									`[Background] Failed to close window ${id}:`,
+									error,
+								);
+								return Ok(undefined);
+							},
+						});
+						syncCoordination.yDocChangeCount--;
+					})();
+					break;
+				case 'valid': {
+					// Added or updated
+					const row = result.row;
+					void (async () => {
+						await initPromise;
 
-					if (transaction.origin === null) return;
+						if (transaction.origin === null) return;
 
-					const deviceId = await deviceIdPromise;
+						const deviceId = await deviceIdPromise;
 
-					if (row.device_id !== deviceId) return;
+						if (row.device_id !== deviceId) return;
 
-					syncCoordination.yDocChangeCount++;
-					await tryAsync({
-						try: async () => {
-							await browser.windows.create({});
+						syncCoordination.yDocChangeCount++;
+						await tryAsync({
+							try: async () => {
+								await browser.windows.create({});
 
-							syncCoordination.refetchCount++;
-							await actions.refetchWindows();
-							syncCoordination.refetchCount--;
-						},
-						catch: (error) => {
-							console.log(
-								`[Background] Failed to create window from ${row.id}:`,
-								error,
-							);
-							return Ok(undefined);
-						},
-					});
-					syncCoordination.yDocChangeCount--;
-				})();
+								syncCoordination.refetchCount++;
+								await actions.refetchWindows();
+								syncCoordination.refetchCount--;
+							},
+							catch: (error) => {
+								console.log(
+									`[Background] Failed to create window from ${row.id}:`,
+									error,
+								);
+								return Ok(undefined);
+							},
+						});
+						syncCoordination.yDocChangeCount--;
+					})();
+					break;
+				}
 			}
 		}
 	});

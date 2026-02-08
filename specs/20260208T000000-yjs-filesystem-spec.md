@@ -75,7 +75,7 @@ const workspace = defineWorkspace({
 | Field | Needed for | Notes |
 |-------|-----------|-------|
 | `id` | Everything | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID — no composite key needed. |
-| `name` | `readdir()`, path resolution | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). |
+| `name` | `readdir()`, path resolution | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). Unique per `(parentId, name)` among active files — enforced with `EEXIST` on write, disambiguated at read layer for CRDT conflicts. See [Name uniqueness](#name-uniqueness-eexist-on-write--display-disambiguation-for-crdt-conflicts). |
 | `parentId` | `readdir()`, tree traversal | null = root. ID-based = O(1) move, no cascading updates |
 | `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory` |
 | `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
@@ -173,11 +173,15 @@ class FileSystemIndex {
   private rebuild() {
     // Walk all rows, compute paths, build children index
     const rows = this.filesTable.getAllValid();
-    // ... build path tree from parentId chains
+    // Build path tree from parentId chains
+    // For each directory, run disambiguateNames() on active children
+    // to detect CRDT-concurrent duplicate names and assign display suffixes.
+    // Index both clean and suffixed paths in pathToId/idToPath.
   }
 
   private update(changedIds: Set<string>) {
     // Incrementally update affected paths and children
+    // Re-disambiguate siblings in affected parents (duplicate detection)
     // Invalidate plaintext cache for changed files
   }
 }
@@ -222,26 +226,29 @@ class YjsFileSystem implements IFileSystem {
     const id = this.index.pathToId.get(path);
     if (!id) throw fsError('ENOENT', path);
     const childIds = this.index.childrenOf.get(id) ?? [];
-    return childIds
-      .filter(cid => this.filesTable.get(cid).row!.trashedAt === null)
-      .map(cid => this.filesTable.get(cid).row!.name);
+    const activeChildren = childIds
+      .map(cid => this.filesTable.get(cid).row!)
+      .filter(row => row.trashedAt === null);
+    // Display names handle CRDT duplicate disambiguation (see disambiguateNames)
+    const displayNames = disambiguateNames(activeChildren);
+    return activeChildren.map(row => displayNames.get(row.id)!);
   }
 
   async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
     const id = this.index.pathToId.get(path);
     if (!id) throw fsError('ENOENT', path);
     const childIds = this.index.childrenOf.get(id) ?? [];
-    return childIds
-      .filter(cid => this.filesTable.get(cid).row!.trashedAt === null)
-      .map(cid => {
-        const row = this.filesTable.get(cid).row!;
-        return {
-          name: row.name,
-          isFile: row.type === 'file',
-          isDirectory: row.type === 'folder',
-          isSymbolicLink: false,
-        };
-      });
+    const activeChildren = childIds
+      .map(cid => this.filesTable.get(cid).row!)
+      .filter(row => row.trashedAt === null);
+    // Display names handle CRDT duplicate disambiguation (see disambiguateNames)
+    const displayNames = disambiguateNames(activeChildren);
+    return activeChildren.map(row => ({
+      name: displayNames.get(row.id)!,
+      isFile: row.type === 'file',
+      isDirectory: row.type === 'folder',
+      isSymbolicLink: false,
+    }));
   }
 
   async stat(path: string): Promise<FsStat> {
@@ -292,6 +299,7 @@ class YjsFileSystem implements IFileSystem {
       // Create file: parse path into parentId + name, insert row
       const { parentId, name } = this.parsePath(path);
       validateName(name);
+      assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
       id = generateId();
       this.filesTable.set({
         id, name, parentId, type: 'file',
@@ -360,6 +368,7 @@ class YjsFileSystem implements IFileSystem {
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     const { parentId, name } = this.parsePath(path);
     validateName(name);
+    assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
     this.filesTable.set({
       id: generateId(), name, parentId, type: 'folder',
       size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
@@ -549,30 +558,104 @@ function validateName(name: string): void {
 }
 ```
 
+### Name uniqueness (EEXIST on write + display disambiguation for CRDT conflicts)
+
+**Decision: Enforce unique `(parentId, name)` on local writes. Disambiguate at the IFileSystem read layer for concurrent CRDT conflicts.**
+
+Real filesystems (ext4, APFS, NTFS) enforce unique filenames per directory at the kernel level. Google Drive does not — it allows multiple files with the same name in the same folder because Drive never exposes path-based access (everything is by ID). We need both: ID-based storage (like Drive) and path-based access (IFileSystem for bash). So uniqueness is enforced at two layers:
+
+**Layer 1: EEXIST check on local writes.** All operations that create or rename a file (`writeFile` creating new, `mkdir`, rename, move) check if an active (non-trashed) file with the same `(parentId, name)` already exists. If so, reject with `EEXIST`. This prevents 99% of duplicates — the single-user and non-concurrent cases.
+
+```typescript
+function assertUniqueName(
+  filesTable: TableHelper<FileRow>,
+  childrenOf: Map<string, string[]>,
+  parentId: string | null,
+  name: string,
+  excludeId?: string, // for rename/move: exclude the file being operated on
+): void {
+  const siblingIds = childrenOf.get(parentId ?? 'ROOT') ?? [];
+  const duplicate = siblingIds.find(id => {
+    if (id === excludeId) return false;
+    const row = filesTable.get(id).row;
+    return row && row.name === name && row.trashedAt === null;
+  });
+  if (duplicate) {
+    throw fsError('EEXIST', `${name} already exists in parent`);
+  }
+}
+```
+
+**Layer 2: Display disambiguation for CRDT conflicts.** Two users can simultaneously create files with the same name — each generates a unique Guid, inserts a row with the same `(parentId, name)`. Both writes succeed independently via LWW (different IDs). The stored `name` is NOT mutated. Instead:
+
+- The IFileSystem layer detects duplicate names at read time (`readdir`, `readdirWithFileTypes`, path index rebuild)
+- Assigns display suffixes: `foo.txt` stays for the earliest-created file, `foo (1).txt` for the next, `foo (2).txt` for subsequent duplicates
+- Ordering by `createdAt` is deterministic and stable across all peers
+- `pathToId` indexes both the clean path and suffixed paths, so `cat /docs/foo (1).txt` resolves correctly
+- The UI can surface name conflicts and let users rename manually
+
+```typescript
+function disambiguateNames(rows: FileRow[]): Map<string, string> {
+  // Returns fileId → displayName
+  const result = new Map<string, string>();
+  const byName = new Map<string, FileRow[]>();
+
+  for (const row of rows) {
+    const group = byName.get(row.name) ?? [];
+    group.push(row);
+    byName.set(row.name, group);
+  }
+
+  for (const [name, group] of byName) {
+    if (group.length === 1) {
+      result.set(group[0].id, name);
+      continue;
+    }
+    // Sort by createdAt — earliest keeps clean name
+    group.sort((a, b) => a.createdAt - b.createdAt);
+    result.set(group[0].id, name);
+    for (let i = 1; i < group.length; i++) {
+      const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+      const base = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
+      result.set(group[i].id, `${base} (${i})${ext}`);
+    }
+  }
+  return result;
+}
+```
+
+**Why not auto-rename in metadata:** Auto-renaming writes back to the CRDT, which can itself conflict with other concurrent operations. Clock skew across peers makes "later" ambiguous. Silently renaming a file someone just created is surprising. Display-only disambiguation avoids all write-back issues — it's purely a read-layer concern.
+
+**Why not reject on observe:** The CRDT has already accepted both writes. Deleting one would lose data. The correct CRDT philosophy: accept all data, present it coherently.
+
 ---
 
 ## Operations
 
 ### Create File
 1. Validate name (no `/`, `\`, null bytes, empty, `.`, `..`)
-2. Generate ID
-3. `files.set({ id, name, parentId, type: 'file', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
-4. Content Y.Doc created lazily when first opened
+2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
+3. Generate ID
+4. `files.set({ id, name, parentId, type: 'file', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
+5. Content Y.Doc created lazily when first opened
 
 ### Create Folder
 1. Validate name
-2. Generate ID
-3. `files.set({ id, name, parentId, type: 'folder', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
+2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
+3. Generate ID
+4. `files.set({ id, name, parentId, type: 'folder', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
 
 ### Move File/Folder
-1. `files.update(id, { parentId: newParentId, updatedAt: Date.now() })`
-2. Runtime indexes update reactively via `files.observe()`
-3. No cascading updates — children still reference this node by ID
+1. Assert unique name in new parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
+2. `files.update(id, { parentId: newParentId, updatedAt: Date.now() })`
+3. Runtime indexes update reactively via `files.observe()`
+4. No cascading updates — children still reference this node by ID
 
 ### Rename
 1. Validate new name
-2. `files.update(id, { name: newName, updatedAt: Date.now() })`
-3. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
+2. Assert unique name in parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
+3. `files.update(id, { name: newName, updatedAt: Date.now() })`
+4. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
    a. Load content doc
    b. Serialize from old active type → populate new active type (convert-on-switch)
    c. Invalidate plaintext cache
@@ -609,7 +692,8 @@ function validateName(name: string): void {
 ### List Children
 1. `childrenOf.get(folderId)` for child IDs
 2. Filter out rows where `trashedAt !== null`
-3. Map to rows (sort applied at the application layer — `ls` sorts by name, time, size, etc.)
+3. Run `disambiguateNames()` to assign display names (handles CRDT duplicate conflicts)
+4. Map to rows using display names (sort applied at the application layer — `ls` sorts by name, time, size, etc.)
 
 ### Resolve Path
 1. Look up in `pathToId` index (O(1))
@@ -626,6 +710,16 @@ All operations that set a filename (`writeFile`, `mkdir`, rename) must validate 
 - Must not contain `/`, `\`, or `\0` (path separator ambiguity, null byte safety)
 - Must not be empty, `.`, or `..` (reserved POSIX names)
 - All other characters are allowed (spaces, dots, unicode, emoji, special characters)
+
+### Duplicate name detection
+
+Duplicate `(parentId, name)` pairs among active files can arise from concurrent CRDT writes that bypass the local `EEXIST` check. Detection and disambiguation happen at two points:
+
+**On index rebuild/update (`files.observe()`):** When building the `pathToId` and `idToPath` indexes, group active children by `(parentId, name)`. For groups with >1 entry, assign display suffixes using `disambiguateNames()` — earliest `createdAt` keeps the clean path, later entries get suffixed paths. Both clean and suffixed paths are indexed in `pathToId`.
+
+**On `readdir()` / `readdirWithFileTypes()`:** Return display names (with suffixes) instead of raw stored names when duplicates exist within the listed directory.
+
+The UI layer can detect duplicates via the same grouping logic and surface a "name conflict" indicator, prompting users to rename one of the files. Once renamed, the disambiguation suffix disappears automatically on the next index rebuild.
 
 ### Circular reference detection
 

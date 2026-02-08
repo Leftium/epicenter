@@ -85,99 +85,12 @@ export function createRedditWorkspace() {
 /** Type of workspace client created from redditWorkspace */
 export type RedditWorkspaceClient = ReturnType<typeof createRedditWorkspace>;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TABLE REGISTRY
-// ═══════════════════════════════════════════════════════════════════════════════
+/** Convert camelCase to snake_case (e.g., 'postVotes' → 'post_votes') */
+function camelToSnake(str: string): string {
+	return str.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+}
 
-/**
- * Registry mapping CSV keys to table names and schemas.
- * Each schema handles validation + parsing + ID computation in ONE pass.
- */
-const tableRegistry = [
-	{ csv: 'posts', table: 'posts', schema: csvSchemas.posts },
-	{ csv: 'comments', table: 'comments', schema: csvSchemas.comments },
-	{ csv: 'drafts', table: 'drafts', schema: csvSchemas.drafts },
-	{ csv: 'post_votes', table: 'postVotes', schema: csvSchemas.postVotes },
-	{
-		csv: 'comment_votes',
-		table: 'commentVotes',
-		schema: csvSchemas.commentVotes,
-	},
-	{ csv: 'poll_votes', table: 'pollVotes', schema: csvSchemas.pollVotes },
-	{ csv: 'saved_posts', table: 'savedPosts', schema: csvSchemas.savedPosts },
-	{
-		csv: 'saved_comments',
-		table: 'savedComments',
-		schema: csvSchemas.savedComments,
-	},
-	{ csv: 'hidden_posts', table: 'hiddenPosts', schema: csvSchemas.hiddenPosts },
-	{ csv: 'messages', table: 'messages', schema: csvSchemas.messages },
-	{
-		csv: 'messages_archive',
-		table: 'messagesArchive',
-		schema: csvSchemas.messagesArchive,
-	},
-	{ csv: 'chat_history', table: 'chatHistory', schema: csvSchemas.chatHistory },
-	{
-		csv: 'subscribed_subreddits',
-		table: 'subscribedSubreddits',
-		schema: csvSchemas.subscribedSubreddits,
-	},
-	{
-		csv: 'moderated_subreddits',
-		table: 'moderatedSubreddits',
-		schema: csvSchemas.moderatedSubreddits,
-	},
-	{
-		csv: 'approved_submitter_subreddits',
-		table: 'approvedSubmitterSubreddits',
-		schema: csvSchemas.approvedSubmitterSubreddits,
-	},
-	{
-		csv: 'multireddits',
-		table: 'multireddits',
-		schema: csvSchemas.multireddits,
-	},
-	{
-		csv: 'gilded_content',
-		table: 'gildedContent',
-		schema: csvSchemas.gildedContent,
-	},
-	{
-		csv: 'gold_received',
-		table: 'goldReceived',
-		schema: csvSchemas.goldReceived,
-	},
-	{ csv: 'purchases', table: 'purchases', schema: csvSchemas.purchases },
-	{
-		csv: 'subscriptions',
-		table: 'subscriptions',
-		schema: csvSchemas.subscriptions,
-	},
-	{ csv: 'payouts', table: 'payouts', schema: csvSchemas.payouts },
-	{ csv: 'friends', table: 'friends', schema: csvSchemas.friends },
-	{
-		csv: 'linked_identities',
-		table: 'linkedIdentities',
-		schema: csvSchemas.linkedIdentities,
-	},
-	{
-		csv: 'announcements',
-		table: 'announcements',
-		schema: csvSchemas.announcements,
-	},
-	{
-		csv: 'scheduled_posts',
-		table: 'scheduledPosts',
-		schema: csvSchemas.scheduledPosts,
-	},
-	{ csv: 'ip_logs', table: 'ipLogs', schema: csvSchemas.ipLogs },
-	{
-		csv: 'sensitive_ads_preferences',
-		table: 'sensitiveAdsPreferences',
-		schema: csvSchemas.sensitiveAdsPreferences,
-	},
-] as const;
+const schemaEntries = Object.entries(csvSchemas);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // KV TRANSFORM
@@ -266,17 +179,17 @@ export async function importRedditExport(
 	// ═══════════════════════════════════════════════════════════════════════════
 	// PHASE 2: TRANSFORM + INSERT (unified via csvSchemas)
 	// ═══════════════════════════════════════════════════════════════════════════
-	const totalTables = tableRegistry.length;
 	let tableIndex = 0;
 
-	for (const { csv, table, schema } of tableRegistry) {
+	for (const [table, schema] of schemaEntries) {
 		options?.onProgress?.({
 			phase: 'transform',
 			current: tableIndex++,
-			total: totalTables,
+			total: schemaEntries.length,
 			table,
 		});
 
+		const csv = camelToSnake(table);
 		const csvData = rawData[csv] ?? [];
 		if (csvData.length === 0) {
 			stats.tables[table] = 0;
@@ -338,9 +251,9 @@ export async function previewRedditExport(input: Blob | ArrayBuffer): Promise<{
 
 	// Compute table row counts
 	const tables: Record<string, number> = {};
-	for (const { csv, table } of tableRegistry) {
+	for (const [table] of schemaEntries) {
+		const csv = camelToSnake(table);
 		const csvData = rawData[csv] ?? [];
-		// Just count - the schemas will validate when actually importing
 		tables[table] = csvData.length;
 	}
 

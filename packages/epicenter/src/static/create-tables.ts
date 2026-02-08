@@ -15,7 +15,7 @@
  *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
+ *     if (row._v === '1') return { ...row, views: 0, _v: '2' };
  *     return row;
  *   });
  *

@@ -41,7 +41,7 @@ const posts = defineTable()
   .version(type({ id: 'string', title: 'string' }))
   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
   .migrate((row) => {
-    if (!('_v' in row)) return { ...row, views: 0, _v: '2' as const };
+    if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
     return row;
   });
 ```
@@ -63,7 +63,7 @@ const posts = defineTable()
   .version(type({ id: 'string', title: 'string' }))                             // v1: original, no _v
   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' })) // v2+: adds _v
   .migrate((row) => {
-    if (!('_v' in row)) return { ...row, views: 0, _v: '2' as const };
+    if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
     return row;
   });
 
@@ -73,8 +73,8 @@ const posts = defineTable()
   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
   .version(type({ id: 'string', title: 'string', views: 'number', tags: 'string[]', _v: '"3"' }))
   .migrate((row) => {
-    if (!('_v' in row)) return { ...row, views: 0, tags: [], _v: '3' as const };
-    if (row._v === '2') return { ...row, tags: [], _v: '3' as const };
+    if (!('_v' in row)) return { ...row, views: 0, tags: [], _v: '3' };
+    if (row._v === '2') return { ...row, tags: [], _v: '3' };
     return row;
   });
 ```
@@ -93,7 +93,7 @@ const posts = defineTable()
   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
   .migrate((row) => {
     switch (row._v) {
-      case '1': return { ...row, views: 0, _v: '2' as const };
+      case '1': return { ...row, views: 0, _v: '2' };
       case '2': return row;
     }
   });
@@ -105,8 +105,8 @@ const posts = defineTable()
   .version(type({ id: 'string', title: 'string', views: 'number', tags: 'string[]', _v: '"3"' }))
   .migrate((row) => {
     switch (row._v) {
-      case '1': return { ...row, views: 0, tags: [], _v: '3' as const };
-      case '2': return { ...row, tags: [], _v: '3' as const };
+      case '1': return { ...row, views: 0, tags: [], _v: '3' };
+      case '2': return { ...row, tags: [], _v: '3' };
       case '3': return row;
     }
   });
@@ -114,14 +114,14 @@ const posts = defineTable()
 
 ### Tradeoff Summary
 
-| | Option A (no `_v` on v1) | Option B (`_v` from start) |
-|---|---|---|
-| Shorthand | `defineTable(type({ id: 'string' }))` | `defineTable(type({ id: 'string', _v: '"1"' }))` |
-| `set()` calls | No `_v` needed | Must include `_v: '1'` |
-| Migration checks | Asymmetric: `!('_v' in row)` then `===` | Symmetric: `switch(row._v)` |
-| Best for | Tables that may never version | Tables you know will evolve |
+| | Field Presence | Asymmetric `_v` | Symmetric `_v` |
+|---|---|---|---|
+| Shorthand | ✅ `defineTable(schema)` | ✅ `defineTable(schema)` | ❌ Must use builder + `_v: '"1"'` |
+| Write calls | Clean | Clean | Must include `_v: '1'` |
+| Migration checks | `if (!('field' in row))` | `if (!('_v' in row))` then `===` | `switch (row._v)` |
+| Best for | Two versions only | Tables that may never version | Tables you know will evolve |
 
-Choose whichever fits the table. Most tables never version, so Option A is the common default.
+Choose whichever fits the table. Most tables never version, so asymmetric `_v` is the common default.
 
 **Important:** If you started with Option A (no `_v` on v1), do NOT retroactively add `_v: '"1"'` to the first `.version()` schema — existing data in the wild won't have it and will fail validation. Stick with `!('_v' in row)` for the v1 check.
 
@@ -133,7 +133,7 @@ const theme = defineKv()
   .version(type({ mode: "'light' | 'dark'" }))
   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
   .migrate((v) => {
-    if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' as const };
+    if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' };
     return v;
   });
 
@@ -143,7 +143,7 @@ const theme = defineKv()
   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
   .migrate((v) => {
     switch (v._v) {
-      case '1': return { ...v, fontSize: 14, _v: '2' as const };
+      case '1': return { ...v, fontSize: 14, _v: '2' };
       case '2': return v;
     }
   });
@@ -154,7 +154,7 @@ const theme = defineKv()
 - `_v` is a **string literal** discriminant field (`'"2"'` in arktype = the literal string `"2"`)
 - `_v` on v1 is **optional**. If omitted, the absence of `_v` is the v1 discriminant.
 - v2 onward always has `_v`. Values are `"1"`, `"2"`, `"3"`, etc.
-- In `as const` assertions: `_v: '2' as const`
+- In migration returns: `_v: '2'` (TypeScript narrows automatically, `as const` is optional)
 - In arktype schemas: `_v: '"2"'`
 
 ## Migration Function Rules
@@ -179,15 +179,19 @@ If you started without `_v` on v1, don't add it later:
 
 Use `!('_v' in row)` in the migration instead.
 
-### Forgetting `as const`
+### Note: `as const` is optional
+
+TypeScript's contextual typing automatically narrows `_v: '2'` to the literal type `"2"` based on the return type constraint from the migration function. Both of these work:
 
 ```typescript
-// BAD: TypeScript infers _v as string, not "2"
+// Works: TypeScript infers _v as "2" from context
 return { ...row, views: 0, _v: '2' };
 
-// GOOD: Narrow to literal type
-return { ...row, views: 0, _v: '2' as const };
+// Also works: Explicit narrowing with as const (optional)
+return { ...row, views: 0, _v: '2' };
 ```
+
+The `as const` is NOT required but can make the type narrowing more explicit if you prefer.
 
 ## Field Presence as Alternative
 

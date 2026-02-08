@@ -22,9 +22,10 @@ Implement a collaborative file system on top of the static API that supports:
 Main Y.Doc (gc: true, always loaded)
   └── Y.Array('table:files')  →  file metadata rows (YKeyValueLww)
 
-Per-File Y.Docs (gc: false, loaded on demand)
-  ├── {fileId}  →  Y.XmlFragment('content')  [.md files]       (fileId IS the Y.Doc GUID)
-  └── {fileId}  →  Y.Text('content')          [all other text files]
+Per-File Y.Docs (gc: false, loaded on demand)       (fileId IS the Y.Doc GUID)
+  Each doc has two root-level keys; only one is "active" based on file extension:
+  ├── Y.XmlFragment('richtext')  →  ProseMirror tree  [active for .md files]
+  └── Y.Text('text')             →  raw text           [active for all other text files]
 
 Runtime Indexes (ephemeral JS Maps, not in Yjs)
   ├── pathToId:    Map<string, string>      "/docs/api.md" → "abc-123"
@@ -130,9 +131,9 @@ function openDocument(fileId: Guid, fileName: string): DocumentHandle {
   const ydoc = new Y.Doc({ guid: fileId, gc: false }); // fileId IS the GUID; gc: false for snapshots/versioning
 
   if (fileName.endsWith('.md')) {
-    return { kind: 'richtext', fileId, ydoc, content: ydoc.getXmlFragment('content') };
+    return { kind: 'richtext', fileId, ydoc, content: ydoc.getXmlFragment('richtext') };
   }
-  return { kind: 'text', fileId, ydoc, content: ydoc.getText('content') };
+  return { kind: 'text', fileId, ydoc, content: ydoc.getText('text') };
 }
 ```
 
@@ -406,12 +407,38 @@ const result4 = await bash.exec('ls -la /src/');
 
 ### File-type-driven Yjs backing
 
-**Decision: Y.XmlFragment for `.md`, Y.Text for everything else.**
+**Decision: Y.XmlFragment for `.md`, Y.Text for everything else. Separate root-level keys (`'text'` / `'richtext'`) so both types can coexist on the same doc.**
 
 - y-prosemirror requires Y.XmlFragment (ProseMirror needs a tree structure)
 - y-codemirror.next requires Y.Text (1:1 character mapping)
 - No production system successfully syncs both representations bidirectionally
-- File extension is a stable discriminator — it doesn't change during editing
+- File extension determines the active type — it rarely changes, but when it does (rename), convert-on-switch migrates content between types
+
+### Dual keys with convert-on-switch (content type switching)
+
+**Decision: Each content doc uses two root-level keys — `'text'` (Y.Text) and `'richtext'` (Y.XmlFragment). Only one is "active" at a time, determined by file extension.**
+
+**Why separate keys, not a shared `'content'` key**: Yjs permanently locks a root-level key to whichever shared type is accessed first. If a doc calls `getText('content')`, that key is bound to Y.Text forever — calling `getXmlFragment('content')` on the same doc throws. Separate keys allow both types to coexist, enabling type switching without destroying the document.
+
+**Key names**: `'text'` and `'richtext'` mirror the `kind` discriminator in `DocumentHandle`. They describe what the data represents (content format), not the Yjs type that stores it.
+
+**Convert-on-switch flow:**
+
+Rename `.txt` → `.md`:
+1. Read current text: `ydoc.getText('text').toString()`
+2. Parse markdown → ProseMirror nodes → apply to `ydoc.getXmlFragment('richtext')`
+3. Active content is now `getXmlFragment('richtext')`
+
+Rename `.md` → `.txt`:
+1. Serialize: `remarkSerialize(ydoc.getXmlFragment('richtext'))` → markdown string
+2. Replace `ydoc.getText('text')` with the serialized string
+3. Active content is now `getText('text')`
+
+**Properties:**
+- Rename remains a metadata operation (files table) + content migration — same Y.Doc, same GUID, no orphaned docs
+- The inactive type sits with stale data (negligible overhead vs content size)
+- Round-trip is inherently lossy (markdown ↔ structured tree) — this matches reality of format conversion
+- No bidirectional sync — only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
 
 ### File IDs are Guids (not table-scoped Ids)
 
@@ -468,6 +495,10 @@ const result4 = await bash.exec('ls -la /src/');
 
 ### Rename
 1. `files.update(id, { name: newName, updatedAt: Date.now() })`
+2. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
+   a. Load content doc
+   b. Serialize from old active type → populate new active type (convert-on-switch)
+   c. Invalidate plaintext cache
 
 ### Delete
 1. `files.delete(id)`
@@ -530,7 +561,7 @@ The testing approach: populate a `YjsFileSystem` with known files/folders, pass 
 
 ## Open Questions
 
-1. **Markdown source view**: Convert-on-switch (Gravity UI pattern) or side-by-side with one-way sync? Product decision.
+1. **Markdown source view**: Convert-on-switch is the strategy for file type changes (rename). Remaining question: should the editor offer a source-view toggle within a `.md` file (show raw markdown in CodeMirror alongside or instead of the rich editor)?
 2. **Binary files**: Store blob references in files table metadata? Separate blob storage system?
 3. **File size limits**: Large files (>1MB) as Y.Text are expensive. Read-only mode above a threshold?
 4. **Trash/recycle bin**: Soft-delete with a `trashedAt` field, or hard delete?

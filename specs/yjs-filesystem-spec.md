@@ -78,7 +78,7 @@ const workspace = defineWorkspace({
 | `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
 | `createdAt` | UI display, future `btime` | Immutable after creation. Not surfaced by just-bash's `FsStat` (which only has `mtime`), but useful for UI ("created 3 days ago") and maps to birthtime if `FsStat` is extended later. |
 | `updatedAt` | `stat()` mtime, `find -newer`, `utimes()` | Updated on content OR metadata change. Writable via `utimes()`. |
-| `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. Permanent delete = `files.delete(id)`. |
+| `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. IFileSystem `rm` sets this (soft delete). Permanent delete = `files.delete(id)` via "empty trash" UI only. |
 
 ### What's NOT stored
 
@@ -371,17 +371,13 @@ class YjsFileSystem implements IFileSystem {
     }
     const row = this.filesTable.get(id).row!;
 
-    if (row.type === 'folder' && options?.recursive) {
-      const childIds = this.index.childrenOf.get(id) ?? [];
-      for (const childId of childIds) {
-        const childPath = this.index.idToPath.get(childId)!;
-        await this.rm(childPath, { recursive: true });
-      }
+    if (row.type === 'folder' && !options?.recursive) {
+      throw fsError('EISDIR', path);
     }
 
-    // Hard delete through IFileSystem (bash `rm` means delete, not trash).
-    // Soft delete (trash) is a UI-layer operation, not exposed via IFileSystem.
-    this.filesTable.delete(id);
+    // Soft delete: set trashedAt. Children of trashed folders are implicitly
+    // trashed (unreachable via path resolution). No recursive walk needed.
+    this.filesTable.update(id, { trashedAt: Date.now() });
     this.index.plaintext.delete(id);
   }
 
@@ -528,7 +524,7 @@ Rename `.md` → `.txt`:
 - `readdir()` and `readdirWithFileTypes()` filter out trashed files — trashed files are invisible to IFileSystem/bash operations
 - Permanent delete = `files.delete(id)`, same as before
 - LWW conflict with concurrent metadata edits is the same risk as any other field — if someone trashes a file while someone else renames it, one wins. In practice this is rare and the consequence is mild (trash it again)
-- `rm` via IFileSystem is hard delete (bash `rm` means remove). Soft delete is a UI-layer operation exposed through a separate API, not through IFileSystem
+- `rm` via IFileSystem soft-deletes (sets `trashedAt`). In a collaborative system, an agent's `rm` shouldn't permanently destroy data that other users may need. Permanent delete is an explicit "empty trash" UI operation
 
 ### Name validation
 
@@ -578,18 +574,18 @@ function validateName(name: string): void {
    b. Serialize from old active type → populate new active type (convert-on-switch)
    c. Invalidate plaintext cache
 
-### Trash (UI-layer, not IFileSystem)
+### Trash (IFileSystem `rm` and UI)
 1. `files.update(id, { trashedAt: Date.now() })`
-2. File becomes invisible to `readdir()` and path resolution
+2. File/folder becomes invisible to `readdir()` and path resolution
 3. Content Y.Doc remains loaded if open — editor can show "this file was trashed" state
-4. Children of trashed folders are implicitly trashed (parent is invisible, so children are unreachable)
+4. Children of trashed folders are implicitly trashed (parent is invisible, so children are unreachable) — no recursive walk needed, O(1)
 
 ### Restore from Trash (UI-layer)
 1. `files.update(id, { trashedAt: null })`
 2. If original parent was permanently deleted, reset `parentId` to `null` (restore to root)
 3. File reappears in `readdir()` and path resolution
 
-### Delete (permanent, via IFileSystem `rm` or "empty trash" UI)
+### Delete (permanent, "empty trash" UI only)
 1. `files.delete(id)`
 2. Recursively delete children via `childrenOf` index
 3. Content Y.Docs become orphaned (provider garbage-collects)

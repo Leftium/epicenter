@@ -1,11 +1,5 @@
-import { type } from 'arktype';
 import { Elysia } from 'elysia';
-import { Ok } from 'wellcrafted/result';
-import { Id, tableToArktype } from '../dynamic/schema';
-import type { WorkspaceClient } from '../dynamic/workspace/types';
-
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
-type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
+import type { AnyWorkspaceClient, TableHelper } from '../static/types';
 
 export function createTablesPlugin(
 	workspaceClients: Record<string, AnyWorkspaceClient>,
@@ -13,9 +7,9 @@ export function createTablesPlugin(
 	const app = new Elysia();
 
 	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-		for (const tableName of Object.keys(workspace.tables.definitions)) {
-			const tableHelper = workspace.tables.get(tableName);
-			const fields = workspace.tables.definitions[tableName]!.fields;
+		for (const [tableName, value] of Object.entries(workspace.tables)) {
+			const tableHelper = value as TableHelper<{ id: string }>;
+
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
 
@@ -26,55 +20,52 @@ export function createTablesPlugin(
 			app.get(
 				`${basePath}/:id`,
 				({ params, status }) => {
-					const result = tableHelper.get(Id(params.id));
-
-					switch (result.status) {
-						case 'valid':
-							return result.row;
-						case 'invalid':
-							return status(422, { errors: result.errors });
-						case 'not_found':
-							return status(404, { error: 'Not found' });
-					}
+					const result = tableHelper.get(params.id);
+					if (result.status === 'not_found')
+						return status('Internal Server Error', result);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', result);
+					return result;
 				},
 				{
 					detail: { description: `Get ${tableName} by ID`, tags },
 				},
 			);
 
-			app.post(
-				basePath,
-				({ body }) => {
-					tableHelper.upsert(body as { id: Id });
-					return Ok({ id: (body as { id: string }).id });
+			app.put(
+				`${basePath}/:id`,
+				({ params, body, status }) => {
+					const result = tableHelper.parse(params.id, body);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', result);
+					tableHelper.set(result.row);
+					return result;
 				},
 				{
-					body: tableToArktype(fields),
-					detail: { description: `Create or update ${tableName}`, tags },
+					detail: { description: `Create or replace ${tableName} by ID`, tags },
 				},
 			);
 
-			app.put(
+			app.patch(
 				`${basePath}/:id`,
-				({ params, body }) => {
-					const result = tableHelper.update({
-						id: Id(params.id),
-						...(body as Record<string, unknown>),
-					});
-					return Ok(result);
+				({ params, body, status }) => {
+					const result = tableHelper.update(
+						params.id,
+						body as Record<string, unknown>,
+					);
+					if (result.status === 'not_found') return status(404, result);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', result);
+					return result;
 				},
 				{
-					body: tableToArktype(fields).partial().merge({ id: type.string }),
-					detail: { description: `Update ${tableName} by ID`, tags },
+					detail: { description: `Partial update ${tableName} by ID`, tags },
 				},
 			);
 
 			app.delete(
 				`${basePath}/:id`,
-				({ params }) => {
-					const result = tableHelper.delete(Id(params.id));
-					return Ok(result);
-				},
+				({ params }) => tableHelper.delete(params.id),
 				{
 					detail: { description: `Delete ${tableName} by ID`, tags },
 				},

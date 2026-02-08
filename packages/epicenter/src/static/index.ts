@@ -119,13 +119,13 @@ export { createUnionSchema } from './schema-union.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	// Capability types
-	CapabilityContext,
-	CapabilityFactory,
-	CapabilityMap,
 	DeleteResult,
+	// Extension types
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionMap,
 	GetResult,
-	InferCapabilityExports,
+	InferExtensionExports,
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
@@ -151,6 +151,7 @@ export type {
 	ValidRowResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 	// Workspace types
 	WorkspaceDefinition,
 } from './types.js';

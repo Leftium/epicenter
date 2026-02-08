@@ -364,7 +364,7 @@ export default defineBackground(() => {
 
 	const initPromise = (async () => {
 		// Wait for IndexedDB to load existing state (critical for service worker restarts)
-		await client.capabilities.persistence.whenSynced;
+		await client.extensions.persistence.whenSynced;
 		console.log('[Background] IndexedDB persistence synced');
 
 		// Then refetch to sync Y.Doc with current browser state

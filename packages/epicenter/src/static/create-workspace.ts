@@ -20,17 +20,19 @@
  */
 
 import * as Y from 'yjs';
+import type { Actions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
-	CapabilityFactory,
-	CapabilityMap,
-	InferCapabilityExports,
+	ExtensionFactory,
+	ExtensionMap,
+	InferExtensionExports,
 	KvDefinitions,
 	TableDefinitions,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
+	WorkspaceClientWithActions,
 	WorkspaceDefinition,
 } from './types.js';
 
@@ -52,8 +54,11 @@ export function createWorkspace<
 ): WorkspaceClientBuilder<TId, TTableDefinitions, TKvDefinitions> {
 	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
-	const tables = createTables(ydoc, (config.tables ?? {}) as TTableDefinitions);
-	const kv = createKv(ydoc, (config.kv ?? {}) as TKvDefinitions);
+	const tableDefs = (config.tables ?? {}) as TTableDefinitions;
+	const kvDefs = (config.kv ?? {}) as TKvDefinitions;
+	const tables = createTables(ydoc, tableDefs);
+	const kv = createKv(ydoc, kvDefs);
+	const definitions = { tables: tableDefs, kv: kvDefs };
 
 	const destroy = async (): Promise<void> => {
 		ydoc.destroy();
@@ -64,7 +69,8 @@ export function createWorkspace<
 		ydoc,
 		tables,
 		kv,
-		capabilities: {} as InferCapabilityExports<Record<string, never>>,
+		definitions,
+		extensions: {} as InferExtensionExports<Record<string, never>>,
 		destroy,
 		[Symbol.asyncDispose]: destroy,
 	};
@@ -73,20 +79,18 @@ export function createWorkspace<
 		...baseClient,
 
 		/**
-		 * Attach capabilities (persistence, SQLite, sync, etc.) to the workspace.
+		 * Attach extensions (persistence, SQLite, sync, etc.) to the workspace.
 		 *
-		 * Each capability factory receives { ydoc, id, tables, kv } and
+		 * Each extension factory receives { ydoc, id, tables, kv } and
 		 * returns a Lifecycle object with exports. The returned client includes
-		 * all capability exports under `.capabilities`.
+		 * all extension exports under `.extensions`.
 		 */
-		withExtensions<TCapabilities extends CapabilityMap>(
-			capabilities: TCapabilities,
-		) {
-			// Initialize each capability factory and collect their exports
-			const capabilityExports = Object.fromEntries(
-				Object.entries(capabilities).map(([name, factory]) => [
+		withExtensions<TExtensions extends ExtensionMap>(extensions: TExtensions) {
+			// Initialize each extension factory and collect their exports
+			const extensionExports = Object.fromEntries(
+				Object.entries(extensions).map(([name, factory]) => [
 					name,
-					(factory as CapabilityFactory<TTableDefinitions, TKvDefinitions>)({
+					(factory as ExtensionFactory<TTableDefinitions, TKvDefinitions>)({
 						ydoc,
 						id,
 						tables,
@@ -95,26 +99,103 @@ export function createWorkspace<
 				]),
 			) as Record<string, Lifecycle>;
 
-			// Cleanup must destroy capabilities first, then the Y.Doc
-			const destroyWithCapabilities = async (): Promise<void> => {
+			// Cleanup must destroy extensions first, then the Y.Doc
+			const destroyWithExtensions = async (): Promise<void> => {
 				await Promise.all(
-					Object.values(capabilityExports).map((c) => c.destroy()),
+					Object.values(extensionExports).map((c) => c.destroy()),
 				);
 				ydoc.destroy();
 			};
 
-			const clientWithCapabilities = {
+			const clientWithExtensions = {
 				id,
 				ydoc,
 				tables,
 				kv,
-				capabilities:
-					capabilityExports as InferCapabilityExports<TCapabilities>,
-				destroy: destroyWithCapabilities,
-				[Symbol.asyncDispose]: destroyWithCapabilities,
+				definitions,
+				extensions: extensionExports as InferExtensionExports<TExtensions>,
+				destroy: destroyWithExtensions,
+				[Symbol.asyncDispose]: destroyWithExtensions,
 			};
 
-			return clientWithCapabilities;
+			return {
+				...clientWithExtensions,
+
+				withActions<TActions extends Actions>(
+					factory: (
+						client: WorkspaceClient<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							TExtensions
+						>,
+					) => TActions,
+				): WorkspaceClientWithActions<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TExtensions,
+					TActions
+				> {
+					const actions = factory(
+						clientWithExtensions as WorkspaceClient<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							TExtensions
+						>,
+					);
+					return {
+						...clientWithExtensions,
+						actions,
+					} as WorkspaceClientWithActions<
+						TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						TExtensions,
+						TActions
+					>;
+				},
+			};
+		},
+
+		/**
+		 * Attach actions directly to the workspace client (without extensions).
+		 *
+		 * The factory receives the base client and returns an actions tree.
+		 * Terminal — no more builder methods after this.
+		 */
+		withActions<TActions extends Actions>(
+			factory: (
+				client: WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					Record<string, never>
+				>,
+			) => TActions,
+		): WorkspaceClientWithActions<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			Record<string, never>,
+			TActions
+		> {
+			const actions = factory(
+				baseClient as WorkspaceClient<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					Record<string, never>
+				>,
+			);
+			return { ...baseClient, actions } as WorkspaceClientWithActions<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				Record<string, never>,
+				TActions
+			>;
 		},
 	};
 }

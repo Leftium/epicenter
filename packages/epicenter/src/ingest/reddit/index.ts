@@ -20,6 +20,7 @@
  * ```
  */
 
+import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../static/index.js';
 import { csvSchemas } from './csv-schemas.js';
 import { parseRedditZip } from './parse.js';
@@ -84,11 +85,6 @@ export function createRedditWorkspace() {
 
 /** Type of workspace client created from redditWorkspace */
 export type RedditWorkspaceClient = ReturnType<typeof createRedditWorkspace>;
-
-/** Convert camelCase to snake_case (e.g., 'postVotes' → 'post_votes') */
-function camelToSnake(str: string): string {
-	return str.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
-}
 
 const schemaEntries = Object.entries(csvSchemas);
 
@@ -189,7 +185,7 @@ export async function importRedditExport(
 			table,
 		});
 
-		const csv = camelToSnake(table);
+		const csv = snakify(table);
 		const csvData = rawData[csv] ?? [];
 		if (csvData.length === 0) {
 			stats.tables[table] = 0;
@@ -252,7 +248,7 @@ export async function previewRedditExport(input: Blob | ArrayBuffer): Promise<{
 	// Compute table row counts
 	const tables: Record<string, number> = {};
 	for (const [table] of schemaEntries) {
-		const csv = camelToSnake(table);
+		const csv = snakify(table);
 		const csvData = rawData[csv] ?? [];
 		tables[table] = csvData.length;
 	}

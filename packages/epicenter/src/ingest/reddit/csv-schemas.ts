@@ -419,6 +419,9 @@ export const csvSchemas = {
 	sensitiveAdsPreferences,
 } as const;
 
+/** Union of all table schema names */
+export type TableName = keyof typeof csvSchemas;
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPE EXPORTS (inferred from schemas)
 // ═══════════════════════════════════════════════════════════════════════════════

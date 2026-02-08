@@ -1,7 +1,7 @@
 /**
  * Reddit ZIP Parsing
  *
- * Phase 1 of the import pipeline: Parse ZIP → Record<string, Record<string, string>[]>
+ * Phase 1 of the import pipeline: Parse ZIP → ParsedRedditData
  */
 
 import { unzipSync } from 'fflate';
@@ -50,6 +50,13 @@ const TABLE_CSV_FILES = [
 	// - checkfile.csv: ZIP integrity checksums, not user data
 ] as const;
 
+/** CSV key derived from filename (e.g., 'posts.csv' → 'posts') */
+type CsvFileName = (typeof TABLE_CSV_FILES)[number];
+export type CsvKey = CsvFileName extends `${infer Name}.csv` ? Name : never;
+
+/** Typed parse output — keys are the known CSV file stems */
+export type ParsedRedditData = Record<CsvKey, Record<string, string>[]>;
+
 // Required CSVs that must be present
 const REQUIRED_CSV_FILES = [
 	'posts.csv',
@@ -65,8 +72,8 @@ const OPTIONAL_CSV_FILES = ['messages.csv'] as const;
  * Convert CSV filename to schema key.
  * E.g., 'post_votes.csv' → 'post_votes'
  */
-function csvNameToKey(filename: string): string {
-	return filename.replace('.csv', '');
+function csvNameToKey(filename: CsvFileName): CsvKey {
+	return filename.replace('.csv', '') as CsvKey;
 }
 
 /**
@@ -77,7 +84,7 @@ function csvNameToKey(filename: string): string {
  */
 export async function parseRedditZip(
 	input: Blob | ArrayBuffer,
-): Promise<Record<string, Record<string, string>[]>> {
+): Promise<ParsedRedditData> {
 	// Convert input to Uint8Array
 	let bytes: Uint8Array;
 	if (input instanceof Blob) {
@@ -101,7 +108,7 @@ export async function parseRedditZip(
 	}
 
 	// Parse each CSV
-	const result: Record<string, Record<string, string>[]> = {};
+	const result: ParsedRedditData = {} as ParsedRedditData;
 
 	for (const csvFile of TABLE_CSV_FILES) {
 		const key = csvNameToKey(csvFile);

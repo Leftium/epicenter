@@ -22,8 +22,8 @@
 
 import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../static/index.js';
-import { csvSchemas } from './csv-schemas.js';
-import { parseRedditZip } from './parse.js';
+import { type TableName, csvSchemas } from './csv-schemas.js';
+import { type ParsedRedditData, parseRedditZip } from './parse.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
 // Re-export workspace definition
@@ -86,7 +86,23 @@ export function createRedditWorkspace() {
 /** Type of workspace client created from redditWorkspace */
 export type RedditWorkspaceClient = ReturnType<typeof createRedditWorkspace>;
 
-const schemaEntries = Object.entries(csvSchemas);
+/** Import rows for a single table — typed to avoid `as any` casts */
+function importTableRows(
+	csvData: Record<string, string>[],
+	schema: { assert(data: unknown): { id: string } },
+	tableClient: {
+		batch(fn: (tx: { set(row: { id: string }): void }) => void): void;
+	},
+): number {
+	if (csvData.length === 0) return 0;
+	const rows = csvData.map((row) => schema.assert(row));
+	tableClient.batch((tx) => {
+		for (const row of rows) tx.set(row);
+	});
+	return rows.length;
+}
+
+const tableNames = Object.keys(csvSchemas) as TableName[];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // KV TRANSFORM
@@ -115,7 +131,7 @@ function parseDateToIso(dateStr: string | undefined | null): string | null {
 	return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-function transformKv(raw: Record<string, Record<string, string>[]>): KvData {
+function transformKv(raw: ParsedRedditData): KvData {
 	// Statistics → JSON object
 	let statistics: Record<string, string> | null = null;
 	if (raw.statistics && raw.statistics.length > 0) {
@@ -130,7 +146,8 @@ function transformKv(raw: Record<string, Record<string, string>[]>): KvData {
 	if (raw.user_preferences && raw.user_preferences.length > 0) {
 		preferences = {};
 		for (const row of raw.user_preferences) {
-			if (row.preference && row.value) preferences[row.preference] = row.value;
+			if (row.preference && row.value)
+				preferences[row.preference] = row.value;
 		}
 	}
 
@@ -177,35 +194,22 @@ export async function importRedditExport(
 	// ═══════════════════════════════════════════════════════════════════════════
 	let tableIndex = 0;
 
-	for (const [table, schema] of schemaEntries) {
+	for (const table of tableNames) {
 		options?.onProgress?.({
 			phase: 'transform',
 			current: tableIndex++,
-			total: schemaEntries.length,
+			total: tableNames.length,
 			table,
 		});
 
 		const csv = snakify(table);
-		const csvData = rawData[csv] ?? [];
-		if (csvData.length === 0) {
-			stats.tables[table] = 0;
-			continue;
-		}
+		const csvData = rawData[csv as keyof ParsedRedditData] ?? [];
 
-		// Parse all rows using the schema (validates + transforms in one pass)
-		const rows = csvData.map((row) => (schema as any).assert(row));
-
-		// Insert into table
-		const tableClient = workspace.tables[
-			table as keyof typeof workspace.tables
-		] as unknown as {
-			batch: (fn: (tx: { set: (row: { id: string }) => void }) => void) => void;
-		};
-		tableClient.batch((tx) => {
-			for (const row of rows) tx.set(row);
-		});
-
-		stats.tables[table] = rows.length;
+		stats.tables[table] = importTableRows(
+			csvData,
+			csvSchemas[table],
+			workspace.tables[table as keyof typeof workspace.tables],
+		);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -247,9 +251,9 @@ export async function previewRedditExport(input: Blob | ArrayBuffer): Promise<{
 
 	// Compute table row counts
 	const tables: Record<string, number> = {};
-	for (const [table] of schemaEntries) {
+	for (const table of tableNames) {
 		const csv = snakify(table);
-		const csvData = rawData[csv] ?? [];
+		const csvData = rawData[csv as keyof ParsedRedditData] ?? [];
 		tables[table] = csvData.length;
 	}
 

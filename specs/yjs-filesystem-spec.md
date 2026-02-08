@@ -55,10 +55,10 @@ const files = defineTable(type({
   name: 'string',                   // filename: "api.md", "src", "index.ts"
   parentId: 'string | null',        // null = root level
   type: "'file' | 'folder'",        // discriminator
-  sortOrder: 'number',              // fractional indexing for sibling order
   size: 'number',                   // content byte length (updated on content change)
   createdAt: 'number',              // Date.now() ms
   updatedAt: 'number',              // Date.now() ms (content or metadata change)
+  trashedAt: 'number | null',       // null = active, timestamp = soft-deleted
 }));
 
 const workspace = defineWorkspace({
@@ -72,13 +72,13 @@ const workspace = defineWorkspace({
 | Field | Needed for | Notes |
 |-------|-----------|-------|
 | `id` | Everything | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID — no composite key needed. |
-| `name` | `readdir()`, path resolution | Just the filename, not the full path |
+| `name` | `readdir()`, path resolution | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). |
 | `parentId` | `readdir()`, tree traversal | null = root. ID-based = O(1) move, no cascading updates |
-| `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile()`, `isDirectory()` |
-| `sortOrder` | `readdir()` ordering | Fractional indexing for insert-between without renumbering |
+| `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory` |
 | `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
-| `createdAt` | `stat()` ctime | Immutable after creation |
-| `updatedAt` | `stat()` mtime, `find -newer` | Updated on content OR metadata change |
+| `createdAt` | UI display, future `btime` | Immutable after creation. Not surfaced by just-bash's `FsStat` (which only has `mtime`), but useful for UI ("created 3 days ago") and maps to birthtime if `FsStat` is extended later. |
+| `updatedAt` | `stat()` mtime, `find -newer`, `utimes()` | Updated on content OR metadata change. Writable via `utimes()`. |
+| `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. Permanent delete = `files.delete(id)`. |
 
 ### What's NOT stored
 
@@ -86,6 +86,8 @@ const workspace = defineWorkspace({
 - **Content / plaintext**: Content belongs in content Y.Docs. Mixing it into metadata violates the two-layer separation and bloats the always-loaded main doc.
 - **Unix mode/permissions**: Always derived (0o644 for files, 0o755 for folders). Collaborative system — unix permissions don't apply.
 - **MIME type**: Derived from file extension at runtime.
+- **File extension**: Stored as part of `name` (single field). Extensions are a convention, not a structural element — files without extensions (`Makefile`, `.gitignore`) and files with multiple dots (`file.test.ts`, `archive.tar.gz`) make splitting ambiguous. Every real filesystem and API (ext4, APFS, Google Drive, Dropbox) stores a single name.
+- **Sort order**: No filesystem or file API (Google Drive included) supports user-defined sibling ordering. `ls` and `readdir` sort at the application layer. If a UI file tree with drag-and-drop reordering is needed later, add a nullable `sortOrder` field — it's a non-breaking additive change.
 
 ---
 
@@ -201,6 +203,8 @@ By implementing `IFileSystem` backed by the Yjs filesystem, agents get all 83 co
 
 ### Interface mapping
 
+just-bash's `IFileSystem` uses plain booleans (not methods) for `FsStat` and `DirentEntry`, and `readFile` returns `FileContent` (`string | Uint8Array`). The interface requires `appendFile` and `copyFile` in addition to the standard CRUD operations.
+
 ```typescript
 class YjsFileSystem implements IFileSystem {
   constructor(
@@ -215,17 +219,26 @@ class YjsFileSystem implements IFileSystem {
     const id = this.index.pathToId.get(path);
     if (!id) throw fsError('ENOENT', path);
     const childIds = this.index.childrenOf.get(id) ?? [];
-    return childIds.map(cid => this.filesTable.get(cid).row!.name);
+    return childIds
+      .filter(cid => this.filesTable.get(cid).row!.trashedAt === null)
+      .map(cid => this.filesTable.get(cid).row!.name);
   }
 
   async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
     const id = this.index.pathToId.get(path);
     if (!id) throw fsError('ENOENT', path);
     const childIds = this.index.childrenOf.get(id) ?? [];
-    return childIds.map(cid => {
-      const row = this.filesTable.get(cid).row!;
-      return { name: row.name, isFile: () => row.type === 'file', isDirectory: () => row.type === 'folder' };
-    });
+    return childIds
+      .filter(cid => this.filesTable.get(cid).row!.trashedAt === null)
+      .map(cid => {
+        const row = this.filesTable.get(cid).row!;
+        return {
+          name: row.name,
+          isFile: row.type === 'file',
+          isDirectory: row.type === 'folder',
+          isSymbolicLink: false,
+        };
+      });
   }
 
   async stat(path: string): Promise<FsStat> {
@@ -233,13 +246,11 @@ class YjsFileSystem implements IFileSystem {
     if (!id) throw fsError('ENOENT', path);
     const row = this.filesTable.get(id).row!;
     return {
-      isFile: () => row.type === 'file',
-      isDirectory: () => row.type === 'folder',
-      isSymbolicLink: () => false,
+      isFile: row.type === 'file',
+      isDirectory: row.type === 'folder',
+      isSymbolicLink: false,
       size: row.size,
       mtime: new Date(row.updatedAt),
-      atime: new Date(row.updatedAt),
-      ctime: new Date(row.createdAt),
       mode: row.type === 'folder' ? 0o755 : 0o644,
     };
   }
@@ -250,7 +261,7 @@ class YjsFileSystem implements IFileSystem {
 
   // --- Reads (content, may load content doc) ---
 
-  async readFile(path: string): Promise<string> {
+  async readFile(path: string, options?: ReadFileOptions): Promise<FileContent> {
     const id = this.index.pathToId.get(path);
     if (!id) throw fsError('ENOENT', path);
 
@@ -270,17 +281,19 @@ class YjsFileSystem implements IFileSystem {
 
   // --- Writes (always through content doc for CRDT semantics) ---
 
-  async writeFile(path: string, content: string): Promise<void> {
+  async writeFile(path: string, data: FileContent, options?: WriteFileOptions): Promise<void> {
+    const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
     let id = this.index.pathToId.get(path);
 
     if (!id) {
       // Create file: parse path into parentId + name, insert row
       const { parentId, name } = this.parsePath(path);
+      validateName(name);
       id = generateId();
       this.filesTable.set({
-        id, name, parentId, type: 'file', sortOrder: Date.now(),
+        id, name, parentId, type: 'file',
         size: new TextEncoder().encode(content).length,
-        createdAt: Date.now(), updatedAt: Date.now(),
+        createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
       });
     }
 
@@ -304,31 +317,61 @@ class YjsFileSystem implements IFileSystem {
     this.index.plaintext.set(id, content);
   }
 
+  async appendFile(path: string, data: FileContent, options?: WriteFileOptions): Promise<void> {
+    const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
+    const id = this.index.pathToId.get(path);
+    if (!id) {
+      // appendFile to nonexistent file creates it (matches Node.js behavior)
+      return this.writeFile(path, data, options);
+    }
+
+    const row = this.filesTable.get(id).row!;
+    const handle = this.openContentDoc(id, row.name);
+    if (handle.kind === 'text') {
+      handle.ydoc.transact(() => {
+        handle.content.insert(handle.content.length, content);
+      });
+    } else {
+      // For .md: read current, append, rewrite
+      const current = serializeXmlFragmentToMarkdown(handle.content);
+      applyMarkdownToXmlFragment(handle.content, current + content);
+    }
+
+    const newText = handle.kind === 'text'
+      ? handle.content.toString()
+      : serializeXmlFragmentToMarkdown(handle.content);
+    this.filesTable.update(id, {
+      size: new TextEncoder().encode(newText).length,
+      updatedAt: Date.now(),
+    });
+    this.index.plaintext.set(id, newText);
+  }
+
+  async copyFile(src: string, dest: string, options?: CpOptions): Promise<void> {
+    const content = await this.readFile(src);
+    await this.writeFile(dest, content);
+  }
+
   // --- Structure (metadata only) ---
 
-  async mkdir(path: string): Promise<void> {
+  async mkdir(path: string, options?: MkdirOptions): Promise<void> {
     const { parentId, name } = this.parsePath(path);
+    validateName(name);
     this.filesTable.set({
       id: generateId(), name, parentId, type: 'folder',
-      sortOrder: Date.now(), size: 0,
-      createdAt: Date.now(), updatedAt: Date.now(),
+      size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
     });
   }
 
-  async rename(oldPath: string, newPath: string): Promise<void> {
-    const id = this.index.pathToId.get(oldPath);
-    if (!id) throw fsError('ENOENT', oldPath);
-    const { parentId: newParentId, name: newName } = this.parsePath(newPath);
-    this.filesTable.update(id, { parentId: newParentId, name: newName, updatedAt: Date.now() });
-  }
-
-  async rm(path: string, options?: { recursive?: boolean }): Promise<void> {
+  async rm(path: string, options?: RmOptions): Promise<void> {
     const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
+    if (!id) {
+      if (options?.force) return;
+      throw fsError('ENOENT', path);
+    }
     const row = this.filesTable.get(id).row!;
 
     if (row.type === 'folder' && options?.recursive) {
-      // Recursively delete children
       const childIds = this.index.childrenOf.get(id) ?? [];
       for (const childId of childIds) {
         const childPath = this.index.idToPath.get(childId)!;
@@ -336,19 +379,28 @@ class YjsFileSystem implements IFileSystem {
       }
     }
 
+    // Hard delete through IFileSystem (bash `rm` means delete, not trash).
+    // Soft delete (trash) is a UI-layer operation, not exposed via IFileSystem.
     this.filesTable.delete(id);
     this.index.plaintext.delete(id);
-    // Content Y.Doc becomes orphaned. Provider can garbage-collect it.
   }
 
-  // --- Not supported (no-ops or errors) ---
+  // --- Timestamps ---
+
+  async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
+    const id = this.index.pathToId.get(path);
+    if (!id) throw fsError('ENOENT', path);
+    this.filesTable.update(id, { updatedAt: mtime.getTime() });
+    // atime is silently ignored — no stored field, FsStat doesn't surface it.
+  }
+
+  // --- Not supported ---
 
   async symlink(): Promise<void> { throw fsError('ENOSYS', 'symlinks not supported'); }
   async link(): Promise<void> { throw fsError('ENOSYS', 'hard links not supported'); }
   async readlink(): Promise<string> { throw fsError('ENOSYS', 'symlinks not supported'); }
 
   resolvePath(...paths: string[]): string {
-    // Standard POSIX path resolution
     return posixResolve(...paths);
   }
 }
@@ -467,40 +519,77 @@ Rename `.md` → `.txt`:
 - Per-file snapshots via Yjs (content docs use `gc: false`) match Google's per-file revision model
 - Main doc uses `gc: true` for efficient LWW
 
-### Fractional sort ordering
+### Soft delete (co-located `trashedAt`)
 
-**Decision: Fractional indexing for `sortOrder`.**
+**Decision: `trashedAt: number | null` field on the file row. `null` = active, timestamp = when trashed.**
 
-- Insert between two siblings without renumbering all siblings
-- Standard approach (used by Figma, Linear, Notion)
-- Implementation: use a fractional indexing library or generate midpoint strings
+- Soft delete prevents accidental data loss in a collaborative system where one user's `rm` affects everyone
+- Co-located on the row (not a separate trash table) for simplicity — one lookup, one table, restore preserves the entire row (parentId, name, everything)
+- `readdir()` and `readdirWithFileTypes()` filter out trashed files — trashed files are invisible to IFileSystem/bash operations
+- Permanent delete = `files.delete(id)`, same as before
+- LWW conflict with concurrent metadata edits is the same risk as any other field — if someone trashes a file while someone else renames it, one wins. In practice this is rare and the consequence is mild (trash it again)
+- `rm` via IFileSystem is hard delete (bash `rm` means remove). Soft delete is a UI-layer operation exposed through a separate API, not through IFileSystem
+
+### Name validation
+
+**Decision: `name` must not contain `/`, `\`, or null bytes (`\0`). All other characters are allowed.**
+
+- Path resolution joins names with `/` to build paths like `/docs/api.md`. A file named `foo/bar` in `/docs/` produces the path `/docs/foo/bar`, which is ambiguous with a file named `bar` in `/docs/foo/`
+- Every real filesystem enforces this — ext4 and APFS forbid `/` in filenames at the kernel level, NTFS forbids `\ / : * ? " < > |`
+- We only enforce the minimum: path separators and null bytes. Spaces, dots, unicode, emoji, special characters are all allowed
+- Validation happens on write (`writeFile`, `mkdir`, rename operations) — reject with `EINVAL` before touching Yjs
+
+```typescript
+function validateName(name: string): void {
+  if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
+    throw fsError('EINVAL', `invalid filename: ${name}`);
+  }
+  if (name === '' || name === '.' || name === '..') {
+    throw fsError('EINVAL', `reserved filename: ${name}`);
+  }
+}
+```
 
 ---
 
 ## Operations
 
 ### Create File
-1. Generate ID
-2. `files.set({ id, name, parentId, type: 'file', sortOrder, size: 0, createdAt: Date.now(), updatedAt: Date.now() })`
-3. Content Y.Doc created lazily when first opened
+1. Validate name (no `/`, `\`, null bytes, empty, `.`, `..`)
+2. Generate ID
+3. `files.set({ id, name, parentId, type: 'file', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
+4. Content Y.Doc created lazily when first opened
 
 ### Create Folder
-1. Generate ID
-2. `files.set({ id, name, parentId, type: 'folder', sortOrder, size: 0, createdAt: Date.now(), updatedAt: Date.now() })`
+1. Validate name
+2. Generate ID
+3. `files.set({ id, name, parentId, type: 'folder', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
 
 ### Move File/Folder
-1. `files.update(id, { parentId: newParentId, sortOrder: newOrder, updatedAt: Date.now() })`
+1. `files.update(id, { parentId: newParentId, updatedAt: Date.now() })`
 2. Runtime indexes update reactively via `files.observe()`
 3. No cascading updates — children still reference this node by ID
 
 ### Rename
-1. `files.update(id, { name: newName, updatedAt: Date.now() })`
-2. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
+1. Validate new name
+2. `files.update(id, { name: newName, updatedAt: Date.now() })`
+3. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
    a. Load content doc
    b. Serialize from old active type → populate new active type (convert-on-switch)
    c. Invalidate plaintext cache
 
-### Delete
+### Trash (UI-layer, not IFileSystem)
+1. `files.update(id, { trashedAt: Date.now() })`
+2. File becomes invisible to `readdir()` and path resolution
+3. Content Y.Doc remains loaded if open — editor can show "this file was trashed" state
+4. Children of trashed folders are implicitly trashed (parent is invisible, so children are unreachable)
+
+### Restore from Trash (UI-layer)
+1. `files.update(id, { trashedAt: null })`
+2. If original parent was permanently deleted, reset `parentId` to `null` (restore to root)
+3. File reappears in `readdir()` and path resolution
+
+### Delete (permanent, via IFileSystem `rm` or "empty trash" UI)
 1. `files.delete(id)`
 2. Recursively delete children via `childrenOf` index
 3. Content Y.Docs become orphaned (provider garbage-collects)
@@ -520,7 +609,8 @@ Rename `.md` → `.txt`:
 
 ### List Children
 1. `childrenOf.get(folderId)` for child IDs
-2. Map to rows, sort by `sortOrder`
+2. Filter out rows where `trashedAt !== null`
+3. Map to rows (sort applied at the application layer — `ls` sorts by name, time, size, etc.)
 
 ### Resolve Path
 1. Look up in `pathToId` index (O(1))
@@ -530,6 +620,14 @@ Rename `.md` → `.txt`:
 
 ## Validation
 
+### Name validation
+
+All operations that set a filename (`writeFile`, `mkdir`, rename) must validate the name before writing to Yjs:
+
+- Must not contain `/`, `\`, or `\0` (path separator ambiguity, null byte safety)
+- Must not be empty, `.`, or `..` (reserved POSIX names)
+- All other characters are allowed (spaces, dots, unicode, emoji, special characters)
+
 ### Circular reference detection
 
 Concurrent moves can create cycles (user A moves folder X into folder Y while user B moves folder Y into folder X). Since Yjs resolves each move independently via LWW, both moves can succeed, creating a cycle.
@@ -538,9 +636,9 @@ Detection: after any `parentId` change observed via `files.observe()`, walk the 
 
 ### Orphan detection
 
-If a file's `parentId` references a deleted folder, the file is orphaned. On index rebuild, detect orphans and either:
-- Surface them at root level (safe default)
-- Move to a "lost+found" virtual folder
+If a file's `parentId` references a permanently deleted folder, the file is orphaned. On index rebuild, detect orphans and surface them at root level (`parentId = null`) as the safe default.
+
+Note: trashed folders don't create orphans — their children are implicitly unreachable via `readdir()` (which filters by `trashedAt`). Orphans only occur from permanent deletes, which remove the row entirely.
 
 ---
 
@@ -564,5 +662,4 @@ The testing approach: populate a `YjsFileSystem` with known files/folders, pass 
 1. **Markdown source view**: Convert-on-switch is the strategy for file type changes (rename). Remaining question: should the editor offer a source-view toggle within a `.md` file (show raw markdown in CodeMirror alongside or instead of the rich editor)?
 2. **Binary files**: Store blob references in files table metadata? Separate blob storage system?
 3. **File size limits**: Large files (>1MB) as Y.Text are expensive. Read-only mode above a threshold?
-4. **Trash/recycle bin**: Soft-delete with a `trashedAt` field, or hard delete?
-5. **Plaintext cache warming**: Should the server eagerly cache all content for fast first-grep? Or always lazy?
+4. **Plaintext cache warming**: Should the server eagerly cache all content for fast first-grep? Or always lazy?

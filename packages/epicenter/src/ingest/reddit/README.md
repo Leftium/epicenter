@@ -78,16 +78,9 @@ These files are present in Reddit exports but are **not parsed or stored** becau
 
 Reddit includes the `*_headers.csv` variants so users can review metadata (dates, subreddits, permalinks) without loading full post/comment/message bodies. Since we import the full files, the headers add zero value.
 
-## Required vs Optional Files
+## All Files Are Optional
 
-The importer requires these 4 files to be present in the ZIP (throws if missing):
-
-- `posts.csv`
-- `comments.csv`
-- `post_votes.csv`
-- `comment_votes.csv`
-
-`messages.csv` is explicitly optional (some exports use `messages_archive.csv` instead). All other files silently default to empty if absent.
+The importer is best-effort: it parses every known CSV it finds and defaults missing ones to empty. No files are required. The returned `ImportStats` tell the caller exactly what was found.
 
 ## References
 

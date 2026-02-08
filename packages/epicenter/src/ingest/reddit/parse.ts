@@ -57,17 +57,6 @@ export type CsvKey = CsvFileName extends `${infer Name}.csv` ? Name : never;
 /** Typed parse output — keys are the known CSV file stems */
 export type ParsedRedditData = Record<CsvKey, Record<string, string>[]>;
 
-// Required CSVs that must be present
-const REQUIRED_CSV_FILES = [
-	'posts.csv',
-	'comments.csv',
-	'post_votes.csv',
-	'comment_votes.csv',
-] as const;
-
-// Optional CSVs (may be absent based on user activity)
-const OPTIONAL_CSV_FILES = ['messages.csv'] as const;
-
 /**
  * Convert CSV filename to schema key.
  * E.g., 'post_votes.csv' → 'post_votes'
@@ -97,17 +86,7 @@ export async function parseRedditZip(
 	// Unpack ZIP
 	const files = unzipSync(bytes);
 
-	// Validate required CSVs exist
-	for (const required of REQUIRED_CSV_FILES) {
-		const found = Object.keys(files).some(
-			(name) => name === required || name.endsWith('/' + required),
-		);
-		if (!found) {
-			throw new Error(`Missing required CSV file: ${required}`);
-		}
-	}
-
-	// Parse each CSV
+	// Parse each known CSV, defaulting to empty if absent
 	const result: ParsedRedditData = {} as ParsedRedditData;
 
 	for (const csvFile of TABLE_CSV_FILES) {
@@ -119,16 +98,6 @@ export async function parseRedditZip(
 		);
 
 		if (!entry) {
-			// Handle optional files
-			if (
-				OPTIONAL_CSV_FILES.includes(
-					csvFile as (typeof OPTIONAL_CSV_FILES)[number],
-				)
-			) {
-				result[key] = [];
-				continue;
-			}
-			// Non-optional files default to empty array
 			result[key] = [];
 			continue;
 		}

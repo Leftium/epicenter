@@ -26,12 +26,6 @@ import {
 // MORPHS (arktype wrappers around shared plain functions)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Reddit exports sometimes have 'registration ip' in date columns
- * (likely a CSV column misalignment). Treat it as a missing date.
- */
-const REGISTRATION_IP = 'registration ip';
-
 /** Empty string → null */
 const emptyToNull = type('string').pipe(_emptyToNull);
 
@@ -39,15 +33,10 @@ const emptyToNull = type('string').pipe(_emptyToNull);
 const optionalToNull = type('string | undefined').pipe(_emptyToNull);
 
 /** Date string → ISO string | null */
-const dateToIso = type('string').pipe((s): string | null =>
-	s === REGISTRATION_IP ? null : parseDateToIso(s),
-);
+const dateToIso = type('string').pipe(parseDateToIso);
 
 /** Optional date → ISO string | null */
-const optionalDateToIso = type('string | undefined').pipe(
-	(s): string | null =>
-		s === REGISTRATION_IP ? null : parseDateToIso(s),
-);
+const optionalDateToIso = type('string | undefined').pipe(parseDateToIso);
 
 /** Vote direction */
 const voteDirection = type("'up' | 'down' | 'none' | 'removed'");

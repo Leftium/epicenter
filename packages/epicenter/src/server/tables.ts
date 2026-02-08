@@ -1,5 +1,4 @@
 import { Elysia } from 'elysia';
-import { Ok } from 'wellcrafted/result';
 import type { AnyWorkspaceClient, TableHelper } from '../static/types';
 
 export function createTablesPlugin(
@@ -22,15 +21,11 @@ export function createTablesPlugin(
 				`${basePath}/:id`,
 				({ params, status }) => {
 					const result = tableHelper.get(params.id);
-
-					switch (result.status) {
-						case 'valid':
-							return result.row;
-						case 'invalid':
-							return status('Unprocessable Content', { errors: result.errors });
-						case 'not_found':
-							return status(404, { error: 'Not found' });
-					}
+					if (result.status === 'not_found')
+						return status('Internal Server Error', result);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', result);
+					return result;
 				},
 				{
 					detail: { description: `Get ${tableName} by ID`, tags },
@@ -42,9 +37,9 @@ export function createTablesPlugin(
 				({ params, body, status }) => {
 					const result = tableHelper.parse(params.id, body);
 					if (result.status === 'invalid')
-						return status('Unprocessable Content', { errors: result.errors });
+						return status('Unprocessable Content', result);
 					tableHelper.set(result.row);
-					return Ok({ id: params.id });
+					return result;
 				},
 				{
 					detail: { description: `Create or replace ${tableName} by ID`, tags },
@@ -58,14 +53,10 @@ export function createTablesPlugin(
 						params.id,
 						body as Record<string, unknown>,
 					);
-					switch (result.status) {
-						case 'updated':
-							return Ok({ id: result.row.id });
-						case 'not_found':
-							return status(404, { error: 'Not found' });
-						case 'invalid':
-							return status('Unprocessable Content', { errors: result.errors });
-					}
+					if (result.status === 'not_found') return status(404, result);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', result);
+					return result;
 				},
 				{
 					detail: { description: `Partial update ${tableName} by ID`, tags },
@@ -74,10 +65,7 @@ export function createTablesPlugin(
 
 			app.delete(
 				`${basePath}/:id`,
-				({ params }) => {
-					const result = tableHelper.delete(params.id);
-					return Ok(result);
-				},
+				({ params }) => tableHelper.delete(params.id),
 				{
 					detail: { description: `Delete ${tableName} by ID`, tags },
 				},

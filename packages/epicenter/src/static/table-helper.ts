@@ -33,28 +33,29 @@ export function createTableHelper<
 ): TableHelper<InferTableRow<TableDefinition<TVersions>>> {
 	type TRow = InferTableRow<TableDefinition<TVersions>>;
 	/**
-	 * Parse and migrate a raw row value.
+	 * Parse and migrate a raw row value. Injects `id` into the input before validation.
 	 */
-	function parseRow(id: string, row: unknown): GetResult<TRow> {
+	function parseRow(id: string, input: unknown): RowResult<TRow> {
+		const row = { ...(input as Record<string, unknown>), id };
 		const result = definition.schema['~standard'].validate(row);
 		if (result instanceof Promise)
 			throw new TypeError('Async schemas not supported');
-
-		if (result.issues) {
-			return {
-				status: 'invalid',
-				id,
-				errors: result.issues,
-				row,
-			};
-		}
-
+		if (result.issues)
+			return { status: 'invalid', id, errors: result.issues, row };
 		// Migrate to latest version
 		const migrated = definition.migrate(result.value);
 		return { status: 'valid', row: migrated };
 	}
 
 	return {
+		// ═══════════════════════════════════════════════════════════════════════
+		// PARSE
+		// ═══════════════════════════════════════════════════════════════════════
+
+		parse(id: string, input: unknown): RowResult<TRow> {
+			return parseRow(id, input);
+		},
+
 		// ═══════════════════════════════════════════════════════════════════════
 		// WRITE
 		// ═══════════════════════════════════════════════════════════════════════
@@ -69,20 +70,14 @@ export function createTableHelper<
 
 		update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow> {
 			const current = this.get(id);
-			if (current.status === 'not_found') {
-				return { status: 'not_found', id };
-			}
-			if (current.status === 'invalid') {
-				return {
-					status: 'invalid',
-					id,
-					errors: current.errors,
-					row: current.row,
-				};
-			}
-			const merged = { ...current.row, ...partial } as TRow;
-			this.set(merged);
-			return { status: 'updated', row: merged };
+			if (current.status !== 'valid') return current;
+
+			const merged = { ...current.row, ...partial, id };
+			const result = parseRow(id, merged);
+			if (result.status === 'invalid') return result;
+
+			this.set(result.row);
+			return { status: 'updated', row: result.row };
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
@@ -101,9 +96,7 @@ export function createTableHelper<
 			const results: RowResult<TRow>[] = [];
 			for (const [key, entry] of ykv.map) {
 				const result = parseRow(key, entry.val);
-				if (result.status !== 'not_found') {
-					results.push(result);
-				}
+				results.push(result);
 			}
 			return results;
 		},

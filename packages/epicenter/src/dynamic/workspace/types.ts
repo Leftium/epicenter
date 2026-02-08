@@ -163,7 +163,7 @@ export type WorkspaceClient<
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *
- * This uses Object.assign pattern to merge the base client with the builder method,
+ * This uses Object.assign pattern to merge the base client with the builder methods,
  * allowing both direct use and chaining:
  * - Direct: `createWorkspace(...).tables.get('posts').upsert(...)`
  * - Chained: `createWorkspace(...).withExtensions({ sqlite })`

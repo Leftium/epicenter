@@ -20,7 +20,9 @@
 		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
 		"./extensions/y-sweet-sync": "./src/extensions/y-sweet-sync.ts",
 		"./cli": "./src/cli/index.ts",
-		"./server": "./src/server/index.ts"
+		"./server": "./src/server/index.ts",
+		"./ingest": "./src/ingest/index.ts",
+		"./ingest/reddit": "./src/ingest/reddit/index.ts"
 	},
 	"bin": {
 		"epicenter": "./src/cli/bin.ts"
@@ -33,6 +35,7 @@
 	"dependencies": {
 		"@y-sweet/client": "^0.6.3",
 		"@y-sweet/sdk": "^0.6.3",
+		"fflate": "^0.8.2",
 		"tinybase": "^5.4.2",
 		"@ark/json-schema": "^0.0.4",
 		"@elysiajs/openapi": "^1.4.11",

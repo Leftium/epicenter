@@ -12,7 +12,7 @@ export function buildMetaCommands(client: AnyWorkspaceClient): CommandModule[] {
 			describe: 'List all table names',
 			builder: (yargs) => yargs.options(formatYargsOptions()),
 			handler: (argv) => {
-				const tableNames = Object.keys(client.tables);
+				const tableNames = Object.keys(client.definitions.tables);
 				output(tableNames, { format: argv.format as any });
 			},
 		},

@@ -1,7 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
 import { Elysia } from 'elysia';
-import type { WorkspaceClient } from '../dynamic/workspace/types';
-import type { Actions } from '../shared/actions';
+import type { AnyWorkspaceClient } from '../static/types';
 import { collectActionPaths, createActionsRouter } from './actions';
 import { createSyncPlugin } from './sync';
 import { createTablesPlugin } from './tables';
@@ -10,11 +9,7 @@ export const DEFAULT_PORT = 3913;
 
 export type ServerOptions = {
 	port?: number;
-	actions?: Actions;
 };
-
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/extensions
-type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
 
 /**
  * Create an HTTP server that exposes workspace clients as REST APIs and WebSocket sync.
@@ -28,7 +23,7 @@ type AnyWorkspaceClient = WorkspaceClient<any, any, any>;
  *
  * @example
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/dynamic';
+ * import { createWorkspace } from '@epicenter/hq/static';
  *
  * const workspace = createWorkspace(definition).withExtensions({ ... });
  *
@@ -69,9 +64,10 @@ function createServerInternal(
 		workspaces[client.id] = client;
 	}
 
-	const actionPaths = options?.actions
-		? collectActionPaths(options.actions)
-		: [];
+	// Read actions from the first client
+	const firstClient = clients[0];
+	const actions = firstClient?.actions;
+	const actionPaths = actions ? collectActionPaths(actions) : [];
 
 	const baseApp = new Elysia()
 		.use(
@@ -93,8 +89,8 @@ function createServerInternal(
 		)
 		.use(createTablesPlugin(workspaces));
 
-	const appWithActions = options?.actions
-		? baseApp.use(createActionsRouter({ actions: options.actions }))
+	const appWithActions = actions
+		? baseApp.use(createActionsRouter({ client: firstClient, actions }))
 		: baseApp;
 
 	const app = appWithActions.get('/', () => ({
@@ -129,7 +125,7 @@ function createServerInternal(
 			console.log('Available Workspaces:\n');
 			for (const [workspaceId, client] of Object.entries(workspaces)) {
 				console.log(`  ${workspaceId}`);
-				for (const tableName of Object.keys(client.tables.definitions)) {
+				for (const tableName of Object.keys(client.definitions.tables)) {
 					console.log(`    tables/${tableName}`);
 				}
 				console.log(`    sync (WebSocket)`);

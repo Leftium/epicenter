@@ -339,10 +339,9 @@ describe('YKeyValueLww', () => {
 				// During batch: pending was cleared by delete(), map doesn't have it yet
 				expect(hasAfterDelete).toBe(false);
 
-				// After batch: observer processes the add, but entry should still be deleted
-				// Note: Current implementation may have entry in yarray but not in pending/map
-				// This documents actual behavior
-				expect(kv.has('foo')).toBe(true); // Entry was added to yarray, observer processed it
+				// After batch: delete() now correctly removes the yarray entry even for
+				// keys that were set (pending-only) in the same transaction
+				expect(kv.has('foo')).toBe(false);
 			});
 
 			test('set() after delete() in same batch restores key', () => {

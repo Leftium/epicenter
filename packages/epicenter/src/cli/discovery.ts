@@ -1,13 +1,12 @@
 import { join, resolve } from 'node:path';
 import type { ProjectDir } from '../shared/types';
-import type { WorkspaceClient } from '../static/types';
+import type { AnyWorkspaceClient } from '../static/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES
 // ═══════════════════════════════════════════════════════════════════════════
 
-// biome-ignore lint/suspicious/noExplicitAny: WorkspaceClient is generic over tables/kv/capabilities
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
+export type { AnyWorkspaceClient };
 
 export type WorkspaceResolution =
 	| { status: 'found'; projectDir: ProjectDir; client: AnyWorkspaceClient }
@@ -40,9 +39,15 @@ export async function resolveWorkspace(
 	}
 
 	// No config in target dir - check subdirs for helpful error message
-	const subdirConfigs = await findSubdirConfigs(baseDir);
-	if (subdirConfigs.length > 0) {
-		return { status: 'ambiguous', configs: subdirConfigs };
+	const glob = new Bun.Glob(`*/**/${CONFIG_FILENAME}`);
+	const configs: string[] = [];
+	for await (const path of glob.scan({ cwd: baseDir, onlyFiles: true })) {
+		configs.push(path);
+	}
+	configs.sort();
+
+	if (configs.length > 0) {
+		return { status: 'ambiguous', configs };
 	}
 
 	return { status: 'not_found' };
@@ -99,24 +104,13 @@ async function loadClientFromPath(
 	return clients[0]![1] as AnyWorkspaceClient;
 }
 
-async function findSubdirConfigs(baseDir: string): Promise<string[]> {
-	// */** pattern naturally excludes root-level matches
-	const glob = new Bun.Glob(`*/**/${CONFIG_FILENAME}`);
-	const configs: string[] = [];
-
-	for await (const path of glob.scan({ cwd: baseDir, onlyFiles: true })) {
-		configs.push(path);
-	}
-
-	return configs.sort();
-}
-
 function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
 	return (
 		typeof value === 'object' &&
 		value !== null &&
 		'id' in value &&
 		'tables' in value &&
+		'definitions' in value &&
 		typeof (value as Record<string, unknown>).id === 'string'
 	);
 }

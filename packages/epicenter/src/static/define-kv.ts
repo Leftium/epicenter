@@ -9,13 +9,24 @@
  * // Shorthand for single version
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  *
- * // Builder pattern for multiple versions
+ * // Builder pattern for multiple versions (without _v on v1)
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+ *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' as const };
  *     return v;
+ *   });
+ *
+ * // Or with _v from the start (symmetric switch)
+ * const theme = defineKv()
+ *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .migrate((v) => {
+ *     switch (v._v) {
+ *       case '1': return { mode: v.mode, fontSize: 14, _v: '2' as const };
+ *       case '2': return v;
+ *     }
  *   });
  * ```
  */
@@ -81,12 +92,24 @@ export function defineKv<TSchema extends StandardSchemaV1>(
  *
  * @example
  * ```typescript
+ * // Without _v on v1 (common — add _v only when you need a second version)
+ * const theme = defineKv()
+ *   .version(type({ mode: "'light' | 'dark'" }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .migrate((v) => {
+ *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' as const };
+ *     return v;
+ *   });
+ *
+ * // With _v from the start (symmetric switch)
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
  *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' as const };
- *     return v;
+ *     switch (v._v) {
+ *       case '1': return { mode: v.mode, fontSize: 14, _v: '2' as const };
+ *       case '2': return v;
+ *     }
  *   });
  * ```
  */

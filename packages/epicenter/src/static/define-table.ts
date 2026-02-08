@@ -9,13 +9,24 @@
  * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string' }));
  *
- * // Builder pattern for multiple versions
+ * // Builder pattern for multiple versions (without _v on v1)
+ * const posts = defineTable()
+ *   .version(type({ id: 'string', title: 'string' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' as const };
+ *     return row;
+ *   });
+ *
+ * // Or with _v from the start (symmetric switch)
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
- *     return row;
+ *     switch (row._v) {
+ *       case '1': return { ...row, views: 0, _v: '2' as const };
+ *       case '2': return row;
+ *     }
  *   });
  * ```
  */
@@ -86,12 +97,24 @@ export function defineTable<TSchema extends StandardSchemaV1>(
  *
  * @example
  * ```typescript
+ * // Without _v on v1 (common — add _v only when you need a second version)
+ * const posts = defineTable()
+ *   .version(type({ id: 'string', title: 'string' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .migrate((row) => {
+ *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' as const };
+ *     return row;
+ *   });
+ *
+ * // With _v from the start (symmetric switch)
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
- *     return row;
+ *     switch (row._v) {
+ *       case '1': return { ...row, views: 0, _v: '2' as const };
+ *       case '2': return row;
+ *     }
  *   });
  * ```
  */

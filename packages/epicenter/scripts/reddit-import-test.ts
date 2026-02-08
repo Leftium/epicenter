@@ -7,10 +7,11 @@
  * If no path provided, looks for reddit_export.zip in the project root.
  */
 
+import { createWorkspace } from '../src/static/index.js';
 import {
-	createRedditWorkspace,
 	importRedditExport,
 	previewRedditExport,
+	redditWorkspace,
 } from '../src/ingest/reddit/index.js';
 
 async function main() {
@@ -60,7 +61,7 @@ async function main() {
 	console.log('\n--- Import ---\n');
 
 	// Create workspace client
-	const workspace = createRedditWorkspace();
+	const workspace = createWorkspace(redditWorkspace);
 
 	// Import with progress reporting
 	const importStart = performance.now();

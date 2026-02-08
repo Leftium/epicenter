@@ -2,7 +2,38 @@
 
 > A reusable data import library for multiple platforms (Reddit, Twitter, Google Takeout, etc.) using the **Static API** with Y.Doc as the single source of truth.
 
-## Status: Implemented (v5 - MVP Complete)
+## Status: Implemented (v6 - API Simplified)
+
+### What's New in v6
+
+**API Cleanup and Simplification**:
+
+Following the refactoring work documented in `20260203T000000-ingest-simplification.md`, the public API has been significantly simplified:
+
+1. **Removed exports**:
+   - `createRedditWorkspace()` function (users now call `createWorkspace(redditWorkspace)` directly)
+   - `RedditWorkspaceClient` type (not needed in public API)
+   - `ImportOptions` type (inlined into function parameter)
+   - 24 dead row type exports from csv-schemas.ts (PostRow, CommentRow, VoteRow, etc.)
+
+2. **Public API reduced from 31 exports to 6**:
+   - `redditWorkspace` (workspace definition)
+   - `RedditWorkspace` (type)
+   - `ImportStats` (type)
+   - `ImportProgress` (type)
+   - `importRedditExport` (function)
+   - `previewRedditExport` (function)
+
+3. **Updated usage pattern**:
+   ```typescript
+   import { redditWorkspace, importRedditExport } from '@epicenter/hq/ingest/reddit';
+   import { createWorkspace } from '@epicenter/hq/static';
+
+   // Before: const workspace = createRedditWorkspace();
+   // After:
+   const workspace = createWorkspace(redditWorkspace);
+   const stats = await importRedditExport(zipFile, workspace);
+   ```
 
 ### What's New in v5
 
@@ -18,7 +49,7 @@
    │   ├── csv.ts                    # CSV parser (ported from vault-core)
    │   └── zip.ts                    # ZIP unpacker (uses fflate)
    └── reddit/
-       ├── index.ts                  # Main API: importRedditExport, previewRedditExport, createRedditWorkspace
+       ├── index.ts                  # Main API: importRedditExport, previewRedditExport, redditWorkspace
        ├── workspace.ts              # Reddit workspace definition (14 tables + 9 KV)
        ├── validation.ts             # CSV validation schema (arktype)
        ├── parse.ts                  # ZIP unpacking + CSV parsing
@@ -28,11 +59,20 @@
 3. **Performance**: Real reddit_export.zip (~5.8K rows) imports in ~86ms
 4. **API**:
    ```typescript
-   import { createRedditWorkspace, importRedditExport, previewRedditExport } from '@epicenter/hq/ingest/reddit';
+   import { redditWorkspace, importRedditExport, previewRedditExport } from '@epicenter/hq/ingest/reddit';
+   import { createWorkspace } from '@epicenter/hq/static';
 
-   const workspace = createRedditWorkspace();
+   const workspace = createWorkspace(redditWorkspace);
    const stats = await importRedditExport(zipFile, workspace);
    ```
+
+   **Public API (6 exports)**:
+   - `redditWorkspace` (workspace definition)
+   - `RedditWorkspace` (type)
+   - `ImportStats` (type)
+   - `ImportProgress` (type)
+   - `importRedditExport` (function)
+   - `previewRedditExport` (function)
 
 ---
 
@@ -87,7 +127,7 @@ Based on thorough agent review:
 │                    packages/epicenter/src/ingest/                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  • Platform importers (reddit implemented, twitter future)                  │
-│  • Functional API: createRedditWorkspace, importRedditExport                │
+│  • Functional API: redditWorkspace, importRedditExport, previewRedditExport │
 │  • Static API with ArkType schemas                                          │
 │  • 14 consolidated tables + 9 KV entries                                    │
 │  • Y.Doc as source of truth                                                 │

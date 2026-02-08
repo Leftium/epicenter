@@ -9,14 +9,11 @@
 
 // Reddit importer
 export {
-	createRedditWorkspace,
-	type ImportOptions,
 	type ImportProgress,
 	type ImportStats,
 	importRedditExport,
 	previewRedditExport,
 	type RedditWorkspace,
-	type RedditWorkspaceClient,
 	redditWorkspace,
 } from './reddit/index.js';
 // Utilities (for custom importers)

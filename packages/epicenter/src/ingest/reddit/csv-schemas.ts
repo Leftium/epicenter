@@ -422,31 +422,3 @@ export const csvSchemas = {
 /** Union of all table schema names */
 export type TableName = keyof typeof csvSchemas;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPE EXPORTS (inferred from schemas)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export type PostRow = typeof posts.infer;
-export type CommentRow = typeof comments.infer;
-export type DraftRow = typeof drafts.infer;
-export type PostVoteRow = typeof postVotes.infer;
-export type CommentVoteRow = typeof commentVotes.infer;
-export type PollVoteRow = typeof pollVotes.infer;
-export type SavedPostRow = typeof savedPosts.infer;
-export type SavedCommentRow = typeof savedComments.infer;
-export type HiddenPostRow = typeof hiddenPosts.infer;
-export type MessageRow = typeof messages.infer;
-export type ChatHistoryRow = typeof chatHistory.infer;
-export type SubredditRow = typeof subreddit.infer;
-export type MultiredditRow = typeof multireddits.infer;
-export type GildedContentRow = typeof gildedContent.infer;
-export type GoldReceivedRow = typeof goldReceived.infer;
-export type PurchaseRow = typeof purchases.infer;
-export type SubscriptionRow = typeof subscriptions.infer;
-export type PayoutRow = typeof payouts.infer;
-export type FriendRow = typeof friends.infer;
-export type LinkedIdentityRow = typeof linkedIdentities.infer;
-export type AnnouncementRow = typeof announcements.infer;
-export type ScheduledPostRow = typeof scheduledPosts.infer;
-export type IpLogRow = typeof ipLogs.infer;
-export type AdsPreferenceRow = typeof sensitiveAdsPreferences.infer;

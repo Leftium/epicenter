@@ -22,37 +22,11 @@
 
 import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../static/index.js';
-import { type TableName, csvSchemas } from './csv-schemas.js';
+import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
-// Re-export workspace definition
 export { redditWorkspace, type RedditWorkspace };
-
-// Re-export types from csv-schemas
-export type {
-	AdsPreferenceRow,
-	AnnouncementRow,
-	ChatHistoryRow,
-	CommentRow,
-	CommentVoteRow,
-	DraftRow,
-	FriendRow,
-	GildedContentRow,
-	GoldReceivedRow,
-	IpLogRow,
-	LinkedIdentityRow,
-	MessageRow,
-	MultiredditRow,
-	PayoutRow,
-	PollVoteRow,
-	PostRow,
-	PostVoteRow,
-	PurchaseRow,
-	ScheduledPostRow,
-	SubredditRow,
-	SubscriptionRow,
-} from './csv-schemas.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -71,20 +45,9 @@ export type ImportProgress = {
 	table?: string;
 };
 
-export type ImportOptions = {
-	onProgress?: (progress: ImportProgress) => void;
-};
-
-/**
- * Create a Reddit workspace client.
- * Helper function to ensure proper typing.
- */
-export function createRedditWorkspace() {
-	return createWorkspace(redditWorkspace);
-}
-
-/** Type of workspace client created from redditWorkspace */
-export type RedditWorkspaceClient = ReturnType<typeof createRedditWorkspace>;
+// Derive workspace client type (not exported — callers use createWorkspace(redditWorkspace) directly)
+const _createRedditWorkspace = () => createWorkspace(redditWorkspace);
+type RedditWorkspaceClient = ReturnType<typeof _createRedditWorkspace>;
 
 /** Import rows for a single table — typed to avoid `as any` casts */
 function importTableRows(
@@ -146,8 +109,7 @@ function transformKv(raw: ParsedRedditData): KvData {
 	if (raw.user_preferences && raw.user_preferences.length > 0) {
 		preferences = {};
 		for (const row of raw.user_preferences) {
-			if (row.preference && row.value)
-				preferences[row.preference] = row.value;
+			if (row.preference && row.value) preferences[row.preference] = row.value;
 		}
 	}
 
@@ -179,7 +141,7 @@ function transformKv(raw: ParsedRedditData): KvData {
 export async function importRedditExport(
 	input: Blob | ArrayBuffer,
 	workspace: RedditWorkspaceClient,
-	options?: ImportOptions,
+	options?: { onProgress?: (progress: ImportProgress) => void },
 ): Promise<ImportStats> {
 	const stats: ImportStats = { tables: {}, kv: 0, totalRows: 0 };
 

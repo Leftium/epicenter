@@ -161,6 +161,13 @@ export type TableBatchTransaction<TRow extends { id: string }> = {
 /** Helper for a single table */
 export type TableHelper<TRow extends { id: string }> = {
 	// ═══════════════════════════════════════════════════════════════════════
+	// PARSE
+	// ═══════════════════════════════════════════════════════════════════════
+
+	/** Parse unknown input against the table schema and migrate to latest version. Injects `id` into the input. Does not write. */
+	parse(id: string, input: unknown): RowResult<TRow>;
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// WRITE (always writes latest schema shape)
 	// ═══════════════════════════════════════════════════════════════════════
 
@@ -180,7 +187,7 @@ export type TableHelper<TRow extends { id: string }> = {
 	/** Get all valid rows (skips invalid). */
 	getAllValid(): TRow[];
 
-	/** Get all invalid rows (for debugging/repair). */
+	/** Get all invalid rows with storage keys (for debugging/repair). */
 	getAllInvalid(): InvalidRowResult[];
 
 	// ═══════════════════════════════════════════════════════════════════════

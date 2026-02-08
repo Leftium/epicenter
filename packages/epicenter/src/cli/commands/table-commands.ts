@@ -64,10 +64,11 @@ function buildTableCommand(
 					},
 				})
 				.command({
-					command: 'set [json]',
-					describe: 'Create or replace a row (requires full row with id)',
+					command: 'set <id> [json]',
+					describe: 'Create or replace a row by ID',
 					builder: (y) =>
 						y
+							.positional('id', { type: 'string', demandOption: true })
 							.positional('json', {
 								type: 'string',
 								description: 'JSON row data or @file',
@@ -75,10 +76,11 @@ function buildTableCommand(
 							.option('file', { type: 'string', description: 'Read from file' })
 							.options(formatYargsOptions()),
 					handler: (argv) => {
+						const id = argv.id;
 						const stdinContent = readStdinSync();
 						const result = parseJsonInput({
-							positional: argv.json as string | undefined,
-							file: argv.file as string | undefined,
+							positional: argv.json,
+							file: argv.file,
 							hasStdin: stdinContent !== undefined,
 							stdinContent,
 						});
@@ -89,15 +91,16 @@ function buildTableCommand(
 							return;
 						}
 
-						const row = result.data as { id: string };
-						if (!row.id) {
-							outputError('Row must have an id field');
+						const parsed = tableHelper.parse(id, result.data);
+						if (parsed.status === 'invalid') {
+							outputError('Invalid row data');
+							output(parsed.errors, { format: argv.format as any });
 							process.exitCode = 1;
 							return;
 						}
 
-						tableHelper.set(row);
-						output(row, { format: argv.format as any });
+						tableHelper.set(parsed.row);
+						output(parsed.row, { format: argv.format as any });
 					},
 				})
 				.command({

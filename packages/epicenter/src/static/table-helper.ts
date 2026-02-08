@@ -33,9 +33,10 @@ export function createTableHelper<
 ): TableHelper<InferTableRow<TableDefinition<TVersions>>> {
 	type TRow = InferTableRow<TableDefinition<TVersions>>;
 	/**
-	 * Parse and migrate a raw row value.
+	 * Parse and migrate a raw row value. Injects `id` into the input before validation.
 	 */
-	function parseRow(id: string, row: unknown): RowResult<TRow> {
+	function parseRow(id: string, input: unknown): RowResult<TRow> {
+		const row = { ...(input as Record<string, unknown>), id };
 		const result = definition.schema['~standard'].validate(row);
 		if (result instanceof Promise)
 			throw new TypeError('Async schemas not supported');
@@ -47,6 +48,14 @@ export function createTableHelper<
 	}
 
 	return {
+		// ═══════════════════════════════════════════════════════════════════════
+		// PARSE
+		// ═══════════════════════════════════════════════════════════════════════
+
+		parse(id: string, input: unknown): RowResult<TRow> {
+			return parseRow(id, input);
+		},
+
 		// ═══════════════════════════════════════════════════════════════════════
 		// WRITE
 		// ═══════════════════════════════════════════════════════════════════════

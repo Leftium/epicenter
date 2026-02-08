@@ -86,6 +86,7 @@ WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> = {
   ydoc: Y.Doc;
   tables: TablesHelper<TTableDefs>;  // Mapped type!
   kv: KvHelper<TKvDefs>;
+  definitions: { tables: TTableDefs; kv: TKvDefs };  // For server/CLI introspection
   extensions: InferExtensionExports<TExtensions>;
   actions?: Actions;  // Optional, only if .withActions() was called
   destroy(): Promise<void>;
@@ -124,63 +125,39 @@ import { ExtensionFactory } from '../../static/types';
 
 ## Implementation Plan
 
-### Phase 1: Add Metadata to Static TablesHelper
+### Phase 1: Add Definitions to WorkspaceClient
+
+**Status:** ✅ Implemented
 
 **Problem:** Server needs table definitions for:
 1. Iterating table names for route generation
 2. Accessing field schemas for validation
 
-**Solution:** Add metadata property to `TablesHelper`
+**Solution:** Add `definitions` property directly on `WorkspaceClient` (not on `TablesHelper`).
 
-**File:** `packages/epicenter/src/static/create-tables.ts`
+**File:** `packages/epicenter/src/static/create-workspace.ts`
 
-**Changes:**
+**Implementation in `createWorkspace()`:**
 
 ```typescript
-// Current return type
-export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
-  [K in keyof TTableDefinitions]: TableHelper<InferTableRow<TTableDefinitions[K]>>;
+const definitions = {
+  tables: (config.tables ?? {}) as TTableDefinitions,
+  kv: (config.kv ?? {}) as TKvDefinitions,
 };
 
-// Add metadata
-export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
-  [K in keyof TTableDefinitions]: TableHelper<InferTableRow<TTableDefinitions[K]>>;
-} & {
-  /** Internal metadata for server/CLI introspection */
-  readonly $meta: {
-    definitions: TTableDefinitions;
-  };
+const baseClient = {
+  id,
+  ydoc,
+  tables,
+  kv,
+  definitions,  // ← available for server/CLI introspection
+  extensions: {} as InferExtensionExports<Record<string, never>>,
+  destroy,
+  [Symbol.asyncDispose]: destroy,
 };
 ```
 
-**Implementation in `createTables()`:**
-
-```typescript
-export function createTables<TTableDefinitions extends TableDefinitions>(
-  ydoc: Y.Doc,
-  definitions: TTableDefinitions,
-): TablesHelper<TTableDefinitions> {
-  const helpers = {} as Record<string, TableHelper<any>>;
-
-  for (const [tableName, tableDef] of Object.entries(definitions)) {
-    helpers[tableName] = createTableHelper({
-      ydoc,
-      tableName,
-      definition: tableDef,
-    });
-  }
-
-  // Add metadata
-  const tablesWithMeta = {
-    ...helpers,
-    $meta: {
-      definitions,
-    },
-  };
-
-  return tablesWithMeta as TablesHelper<TTableDefinitions>;
-}
-```
+This avoids polluting `TablesHelper` with metadata and keeps the definitions at the workspace level where they belong.
 
 ### Phase 2: Rewrite Server to Use Static API
 
@@ -255,53 +232,39 @@ export function createTablesPlugin(
   const app = new Elysia();
 
   for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-    // Access metadata for table definitions
-    const tableDefinitions = workspace.tables.$meta.definitions;
+    // Access definitions from the workspace client
+    const tableDefinitions = workspace.definitions.tables;
 
-    // Iterate over table entries directly
-    for (const [tableName, tableHelper] of Object.entries(workspace.tables)) {
-      // Skip metadata property
-      if (tableName === '$meta') continue;
-
-      // Get definition from metadata
+    for (const [tableName, value] of Object.entries(workspace.tables)) {
       const tableDef = tableDefinitions[tableName];
       if (!tableDef) continue;
 
+      const tableHelper = value as TableHelper<{ id: string }>;
       const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
       const tags = [workspaceId, 'tables'];
 
-      // GET /workspaces/{id}/tables/{table}
-      app.get(
-        basePath,
-        async () => {
-          const result = tableHelper.getAllValid();
-          return Ok(result);
-        },
-        {
-          detail: { summary: `List ${tableName}`, tags },
-        },
-      );
+      // GET - list all rows
+      app.get(basePath, () => tableHelper.getAllValid(), {
+        detail: { description: `List all ${tableName}`, tags },
+      });
 
-      // POST /workspaces/{id}/tables/{table}
-      app.post(
-        basePath,
-        async ({ body }) => {
-          // Validate against table definition
-          const validation = tableDef.schema(body);
-          if (!validation.valid) {
-            return Err({ code: 'invalid_input', errors: validation.errors });
-          }
+      // POST - validate with Standard Schema, migrate, then set
+      app.post(basePath, ({ body, status }) => {
+        const result = tableDef.schema['~standard'].validate(body);
+        if (result instanceof Promise) {
+          return status(500, { error: 'Async schema validation not supported' });
+        }
+        if (result.issues) {
+          return status(422, { errors: result.issues });
+        }
+        const row = tableDef.migrate(result.value);
+        tableHelper.set(row);
+        return Ok({ id: row.id });
+      }, {
+        detail: { description: `Create or update ${tableName}`, tags },
+      });
 
-          const result = tableHelper.upsert(validation.data);
-          return Ok(result);
-        },
-        {
-          body: 'any',  // Or generate schema from tableDef
-          detail: { summary: `Create/update ${tableName}`, tags },
-        },
-      );
-
-      // ... other CRUD endpoints
+      // ... other CRUD endpoints (GET /:id, PUT /:id, DELETE /:id)
     }
   }
 
@@ -310,10 +273,10 @@ export function createTablesPlugin(
 ```
 
 **Key changes:**
-1. Access `workspace.tables.$meta.definitions` for metadata
-2. Iterate `Object.entries(workspace.tables)` instead of using `.get()`
-3. Skip the `$meta` property when iterating
-4. Use `tableDef.schema` for validation (Standard Schema pattern)
+1. Access `workspace.definitions.tables` for table definitions (no `$meta` indirection)
+2. Iterate `Object.entries(workspace.tables)` directly — no metadata properties to skip
+3. Use `tableDef.schema['~standard'].validate()` for Standard Schema validation
+4. Use `tableDef.migrate()` for version migration
 
 ### Phase 4: Remove Type Cast from CLI
 
@@ -404,7 +367,7 @@ export const myExtension: ExtensionFactory<any, any, MyExports> = (context) => {
 
 ### What We ARE Doing
 
-- ✅ Add `$meta` property to static `TablesHelper` for server introspection
+- ✅ Add `definitions` property to `WorkspaceClient` for server introspection
 - ✅ Change server imports to use static `AnyWorkspaceClient`
 - ✅ Rewrite tables plugin to work with static API structure
 - ✅ Remove `as any` cast in CLI serve command
@@ -412,7 +375,7 @@ export const myExtension: ExtensionFactory<any, any, MyExports> = (context) => {
 
 ### Testing Strategy
 
-1. **Unit tests:** Verify `TablesHelper.$meta` contains correct definitions
+1. **Unit tests:** Verify `WorkspaceClient.definitions` contains correct table/kv definitions
 2. **Integration tests:** Test server with static workspace clients
 3. **Manual testing:**
    - Create workspace with static API
@@ -425,7 +388,7 @@ export const myExtension: ExtensionFactory<any, any, MyExports> = (context) => {
 
 If issues arise:
 1. Revert server imports back to dynamic
-2. Keep `$meta` property (doesn't break anything)
+2. Keep `definitions` property (doesn't break anything)
 3. Restore `as any` cast in CLI
 4. File issue with detailed error logs
 
@@ -443,10 +406,8 @@ If issues arise:
    - ✅ **RESOLVED:** Addressed in spec `20260205T110000-unify-extension-naming.md`
    - This spec assumes that naming unification has been completed first
 
-2. **Should `$meta` be exposed on the public API?**
-   - Pro: Users can introspect table definitions
-   - Con: Feels internal, might confuse users
-   - Recommendation: Prefix with `$` to indicate "internal but accessible"
+2. ~~**Should `$meta` be exposed on the public API?**~~
+   - ✅ **RESOLVED:** Implemented as `client.definitions` — a clean, public property on `WorkspaceClient` that exposes `{ tables, kv }` for server/CLI introspection. No `$` prefix needed since it's a first-class property.
 
 3. **Should server validate against schemas at HTTP layer?**
    - Pro: Better error messages before Y.js
@@ -455,10 +416,10 @@ If issues arise:
 
 ## Implementation Checklist
 
-### Phase 1: Metadata
-- [ ] Add `$meta` property to `TablesHelper` type definition
-- [ ] Implement `$meta` in `createTables()` function
-- [ ] Add tests for metadata access
+### Phase 1: Definitions on WorkspaceClient
+- [x] Add `definitions` property to `WorkspaceClient` type
+- [x] Implement `definitions` in `createWorkspace()` (shared between base and extension clients)
+- [ ] Add tests for definitions access
 - [ ] Update type exports if needed
 
 ### Phase 2: Server Imports
@@ -469,8 +430,7 @@ If issues arise:
 
 ### Phase 3: Tables Plugin
 - [ ] Rewrite `createTablesPlugin()` to iterate `Object.entries()`
-- [ ] Access definitions via `$meta.definitions`
-- [ ] Skip `$meta` property when iterating tables
+- [x] Access definitions via `workspace.definitions.tables`
 - [ ] Use `tableDef.schema` for validation
 - [ ] Test all CRUD endpoints
 
@@ -493,7 +453,7 @@ If issues arise:
 - [ ] Update server README with static API examples
 - [ ] Update CLI README
 - [ ] Add migration guide for extension authors
-- [ ] Document `$meta` property in API reference
+- [ ] Document `definitions` property in API reference
 
 ## Success Criteria
 

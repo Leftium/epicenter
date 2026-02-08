@@ -8,12 +8,7 @@ export function createTablesPlugin(
 	const app = new Elysia();
 
 	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-		const tableDefinitions = workspace.definitions.tables;
-
 		for (const [tableName, value] of Object.entries(workspace.tables)) {
-			const tableDef = tableDefinitions[tableName];
-			if (!tableDef) continue;
-
 			const tableHelper = value as TableHelper<{ id: string }>;
 
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
@@ -42,59 +37,38 @@ export function createTablesPlugin(
 				},
 			);
 
-			app.post(
-				basePath,
-				({ body, status }) => {
-					const input = body as Record<string, unknown>;
-					const result = tableDef.schema['~standard'].validate(input);
-					if (result instanceof Promise) {
-						return status(500, {
-							error: 'Async schema validation not supported',
-						});
-					}
-					if (result.issues) {
-						return status('Unprocessable Content', { errors: result.issues });
-					}
-
-					const row = tableDef.migrate(result.value);
-					tableHelper.set(row);
-					return Ok({ id: row.id });
-				},
-				{
-					detail: { description: `Create or update ${tableName}`, tags },
-				},
-			);
-
 			app.put(
 				`${basePath}/:id`,
 				({ params, body, status }) => {
-					const partial = body as Record<string, unknown>;
-
-					const current = tableHelper.get(params.id);
-					if (current.status === 'not_found') {
-						return status(404, { error: 'Not found' });
-					}
-					if (current.status === 'invalid') {
-						return status('Unprocessable Content', { errors: current.errors });
-					}
-
-					const merged = { ...current.row, ...partial, id: params.id };
-					const result = tableDef.schema['~standard'].validate(merged);
-					if (result instanceof Promise) {
-						return status(500, {
-							error: 'Async schema validation not supported',
-						});
-					}
-					if (result.issues) {
-						return status('Unprocessable Content', { errors: result.issues });
-					}
-
-					const row = tableDef.migrate(result.value);
-					tableHelper.set(row);
-					return Ok({ id: row.id });
+					const result = tableHelper.parse(params.id, body);
+					if (result.status === 'invalid')
+						return status('Unprocessable Content', { errors: result.errors });
+					tableHelper.set(result.row);
+					return Ok({ id: params.id });
 				},
 				{
-					detail: { description: `Update ${tableName} by ID`, tags },
+					detail: { description: `Create or replace ${tableName} by ID`, tags },
+				},
+			);
+
+			app.patch(
+				`${basePath}/:id`,
+				({ params, body, status }) => {
+					const result = tableHelper.update(
+						params.id,
+						body as Record<string, unknown>,
+					);
+					switch (result.status) {
+						case 'updated':
+							return Ok({ id: result.row.id });
+						case 'not_found':
+							return status(404, { error: 'Not found' });
+						case 'invalid':
+							return status('Unprocessable Content', { errors: result.errors });
+					}
+				},
+				{
+					detail: { description: `Partial update ${tableName} by ID`, tags },
 				},
 			);
 

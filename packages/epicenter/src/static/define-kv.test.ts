@@ -101,7 +101,7 @@ describe('defineKv', () => {
 				)
 				.migrate((v) => {
 					if (!('_v' in v))
-						return { mode: v.mode, fontSize: 14, _v: '2' as const };
+						return { mode: v.mode, fontSize: 14, _v: '2' };
 					return v;
 				});
 
@@ -164,7 +164,7 @@ describe('defineKv', () => {
 				.migrate((v) => {
 					switch (v._v) {
 						case '1':
-							return { mode: v.mode, fontSize: 14, _v: '2' as const };
+							return { mode: v.mode, fontSize: 14, _v: '2' };
 						case '2':
 							return v;
 					}

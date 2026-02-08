@@ -123,7 +123,7 @@ describe('defineTable', () => {
 					type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }),
 				)
 				.migrate((row) => {
-					if (!('_v' in row)) return { ...row, views: 0, _v: '2' as const };
+					if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
 					return row;
 				});
 
@@ -164,7 +164,7 @@ describe('defineTable', () => {
 				.migrate((row) => {
 					switch (row._v) {
 						case '1':
-							return { ...row, views: 0, _v: '2' as const };
+							return { ...row, views: 0, _v: '2' };
 						case '2':
 							return row;
 					}

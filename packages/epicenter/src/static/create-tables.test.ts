@@ -183,10 +183,10 @@ describe('migration scenarios', () => {
 				)
 				.migrate((row) => {
 					if (row._v === '1') {
-						return { ...row, views: 0, author: null, _v: '3' as const };
+						return { ...row, views: 0, author: null, _v: '3' };
 					}
 					if (row._v === '2') {
-						return { ...row, author: null, _v: '3' as const };
+						return { ...row, author: null, _v: '3' };
 					}
 					return row;
 				}),

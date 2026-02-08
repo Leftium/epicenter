@@ -166,10 +166,7 @@
 				>
 					Cancel
 				</Button>
-				<Button
-					type="submit"
-					disabled={!addStaticWorkspaceDialog.canConfirm}
-				>
+				<Button type="submit" disabled={!addStaticWorkspaceDialog.canConfirm}>
 					{addStaticWorkspaceDialog.isPending ? 'Adding...' : 'Add Workspace'}
 				</Button>
 			</Dialog.Footer>

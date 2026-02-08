@@ -1,9 +1,6 @@
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import type {
-	StaticWorkspaceEntry,
-	StaticWorkspacesRegistry,
-} from './types';
+import type { StaticWorkspaceEntry, StaticWorkspacesRegistry } from './types';
 
 const REGISTRY_FILE = 'static-workspaces.json';
 

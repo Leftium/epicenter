@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
-import { createWorkspaceClient } from '$lib/yjs/workspace';
 import { getWorkspace } from '$lib/workspaces/dynamic/service';
+import { createWorkspaceClient } from '$lib/yjs/workspace';
 import type { LayoutLoad } from './$types';
 
 /**

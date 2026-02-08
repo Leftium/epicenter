@@ -1,5 +1,5 @@
-import * as Y from 'yjs';
 import { createYjsProvider, type YSweetProvider } from '@y-sweet/client';
+import * as Y from 'yjs';
 
 type YSweetConnectionConfig = {
 	/** Workspace ID (used as Y.Doc guid and room name) */

@@ -1,11 +1,8 @@
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
-import {
-	addStaticWorkspace,
-	listStaticWorkspaces,
-} from './service';
-import type { StaticWorkspaceEntry } from './types';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
+import { addStaticWorkspace, listStaticWorkspaces } from './service';
+import type { StaticWorkspaceEntry } from './types';
 
 const { StaticWorkspaceErr } = createTaggedError('StaticWorkspaceError');
 

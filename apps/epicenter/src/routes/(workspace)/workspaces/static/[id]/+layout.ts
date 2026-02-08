@@ -1,15 +1,15 @@
-import type { LayoutLoad } from './$types';
 import { getStaticWorkspace } from '$lib/workspaces/static/service';
-import {
-	createYSweetConnection,
-	getDefaultSyncUrl,
-} from '$lib/yjs/y-sweet-connection';
 import {
 	discoverKvKeys,
 	discoverTables,
 	readAllKv,
 	readTableRows,
 } from '$lib/yjs/discover';
+import {
+	createYSweetConnection,
+	getDefaultSyncUrl,
+} from '$lib/yjs/y-sweet-connection';
+import type { LayoutLoad } from './$types';
 
 /**
  * Load a static workspace by ID.

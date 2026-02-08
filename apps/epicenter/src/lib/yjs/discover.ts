@@ -119,7 +119,5 @@ export function readAllKv(ydoc: Y.Doc): Record<string, unknown> {
 		}
 	}
 
-	return Object.fromEntries(
-		Object.entries(result).map(([k, v]) => [k, v.val]),
-	);
+	return Object.fromEntries(Object.entries(result).map(([k, v]) => [k, v.val]));
 }

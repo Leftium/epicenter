@@ -6,9 +6,7 @@
 	let { data, children } = $props();
 
 	onDestroy(() => {
-		console.log(
-			`[StaticLayout] Destroying connection for ${data.workspaceId}`,
-		);
+		console.log(`[StaticLayout] Destroying connection for ${data.workspaceId}`);
 		data.connection.destroy();
 	});
 </script>

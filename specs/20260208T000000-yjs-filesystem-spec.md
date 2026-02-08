@@ -1,5 +1,8 @@
 # Yjs Filesystem Spec
 
+**Date**: 2026-02-08T00:00:00
+**Status**: Planning
+
 ## Problem
 
 Implement a collaborative file system on top of the static API that supports:

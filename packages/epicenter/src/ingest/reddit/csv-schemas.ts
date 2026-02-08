@@ -328,17 +328,11 @@ export const scheduledPosts = type({
 // KV SCHEMAS (singleton CSVs)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const account_gender = type({ 'account_gender?': 'string' });
-export const birthdate = type({
-	'birthdate?': 'string',
-	'verified_birthdate?': 'string',
-});
 export const statistics = type({ statistic: 'string', 'value?': 'string' });
 export const user_preferences = type({
 	preference: 'string',
 	'value?': 'string',
 });
-export const twitter = type({ username: 'string' });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEMA REGISTRY (for data-driven processing)

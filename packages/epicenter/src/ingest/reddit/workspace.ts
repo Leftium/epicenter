@@ -384,11 +384,6 @@ export const redditWorkspace = defineWorkspace({
 
 	kv: {
 		// Singleton values from CSV files
-		accountGender: defineKv(type('string | null')),
-		birthdate: defineKv(type('string | null')),
-		verifiedBirthdate: defineKv(type('string | null')),
-		twitterUsername: defineKv(type('string | null')),
-		// Key-value pairs stored as JSON
 		statistics: defineKv(type('Record<string, string> | null')),
 		preferences: defineKv(type('Record<string, string> | null')),
 	},

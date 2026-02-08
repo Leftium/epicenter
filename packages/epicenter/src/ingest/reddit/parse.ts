@@ -33,11 +33,8 @@ const TABLE_CSV_FILES = [
 	'friends.csv',
 	'announcements.csv',
 	'scheduled_posts.csv',
-	'account_gender.csv',
-	'birthdate.csv',
 	'statistics.csv',
 	'user_preferences.csv',
-	'twitter.csv',
 	// Intentionally excluded (see README.md):
 	// - post_headers.csv, comment_headers.csv, message_headers.csv,
 	//   messages_archive_headers.csv: strict subsets of their full counterparts (same rows, minus body)
@@ -47,6 +44,8 @@ const TABLE_CSV_FILES = [
 	// - linked_identities.csv: opaque OAuth issuer/subject ID pairs. Internal identity metadata.
 	// - linked_phone_number.csv, stripe.csv, persona.csv: opaque account identifiers (phone, Stripe, KYC).
 	//   PII or internal IDs with no meaning outside Reddit.
+	// - account_gender.csv, birthdate.csv, twitter.csv: profile metadata (gender, birthday, linked Twitter).
+	//   Not essential to workspace — users already know these about themselves.
 ] as const;
 
 /** CSV key derived from filename (e.g., 'posts.csv' → 'posts') */

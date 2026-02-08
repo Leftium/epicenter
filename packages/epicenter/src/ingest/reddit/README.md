@@ -48,19 +48,16 @@ Some exports include `messages.csv` + `message_headers.csv` instead of `messages
 
 The `ip` column present in `posts.csv`, `comments.csv`, `messages.csv`, and `messages_archive.csv` is intentionally stripped during ingestion (PII with no workspace value).
 
-### KV Store (5 CSV files → 6 KV entries)
+### KV Store (2 CSV files → 2 KV entries)
 
 Singleton data (one value per account) goes into the KV store instead of tables.
 
-| CSV File | KV Key(s) | Description |
+| CSV File | KV Key | Description |
 |---|---|---|
-| `account_gender.csv` | `accountGender` | Gender on your profile |
-| `birthdate.csv` | `birthdate`, `verifiedBirthdate` | Your birthday (2 KV entries from 1 file) |
-| `statistics.csv` | `statistics` | Account stats as key-value pairs (email, signup date, etc.) |
-| `twitter.csv` | `twitterUsername` | Connected Twitter/X handle |
-| `user_preferences.csv` | `preferences` | Account settings as key-value pairs |
+| `statistics.csv` | `statistics` | Account stats as key-value pairs (email, signup date, karma breakdown, etc.) |
+| `user_preferences.csv` | `preferences` | Account settings as key-value pairs (language, theme, notification opts, etc.) |
 
-### Excluded Files (12 CSV files, intentionally not stored)
+### Excluded Files (16 CSV files, intentionally not stored)
 
 These files are present in Reddit exports but are **not parsed or stored**.
 
@@ -86,6 +83,9 @@ Reddit includes the `*_headers.csv` variants so users can review metadata (dates
 | `linked_phone_number.csv` | Phone number linked to the account. PII with no workspace value — the user already knows their phone number. |
 | `stripe.csv` | Opaque Stripe account ID. An internal payment identifier meaningless to the user. |
 | `persona.csv` | Opaque Persona KYC verification ID. An internal identity-verification identifier meaningless to the user. |
+| `account_gender.csv` | Gender from your profile. Not essential to workspace — you already know your gender. |
+| `birthdate.csv` | Birthday and verified birthday status. Not essential to workspace — you already know your birthday. |
+| `twitter.csv` | Connected Twitter/X handle. Linked identity metadata with no workspace relevance. |
 
 ## All Files Are Optional
 

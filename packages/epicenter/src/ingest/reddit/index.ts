@@ -73,10 +73,6 @@ const tableNames = Object.keys(csvSchemas) as TableName[];
 // ═══════════════════════════════════════════════════════════════════════════════
 
 type KvData = {
-	accountGender: string | null;
-	birthdate: string | null;
-	verifiedBirthdate: string | null;
-	twitterUsername: string | null;
 	statistics: Record<string, string> | null;
 	preferences: Record<string, string> | null;
 };
@@ -101,10 +97,6 @@ function transformKv(raw: ParsedRedditData): KvData {
 	}
 
 	return {
-		accountGender: emptyToNull(raw.account_gender?.[0]?.account_gender),
-		birthdate: parseDateToIso(raw.birthdate?.[0]?.birthdate),
-		verifiedBirthdate: parseDateToIso(raw.birthdate?.[0]?.verified_birthdate),
-		twitterUsername: emptyToNull(raw.twitter?.[0]?.username),
 		statistics,
 		preferences,
 	};

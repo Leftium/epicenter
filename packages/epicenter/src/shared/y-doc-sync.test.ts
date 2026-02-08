@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { updateYTextFromString, updateYXmlFragmentFromString } from './y-doc-sync';
+import {
+	updateYTextFromString,
+	updateYXmlFragmentFromString,
+} from './y-doc-sync';
 
 describe('updateYTextFromString', () => {
 	test('no-op when content is identical', () => {

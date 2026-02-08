@@ -20,10 +20,10 @@
  */
 
 import * as Y from 'yjs';
+import type { Actions } from '../shared/actions.js';
 import type { Lifecycle } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
-import type { Actions } from '../shared/actions.js';
 import type {
 	ExtensionFactory,
 	ExtensionMap,
@@ -85,9 +85,7 @@ export function createWorkspace<
 		 * returns a Lifecycle object with exports. The returned client includes
 		 * all extension exports under `.extensions`.
 		 */
-		withExtensions<TExtensions extends ExtensionMap>(
-			extensions: TExtensions,
-		) {
+		withExtensions<TExtensions extends ExtensionMap>(extensions: TExtensions) {
 			// Initialize each extension factory and collect their exports
 			const extensionExports = Object.fromEntries(
 				Object.entries(extensions).map(([name, factory]) => [
@@ -115,8 +113,7 @@ export function createWorkspace<
 				tables,
 				kv,
 				definitions,
-				extensions:
-					extensionExports as InferExtensionExports<TExtensions>,
+				extensions: extensionExports as InferExtensionExports<TExtensions>,
 				destroy: destroyWithExtensions,
 				[Symbol.asyncDispose]: destroyWithExtensions,
 			};
@@ -148,7 +145,10 @@ export function createWorkspace<
 							TExtensions
 						>,
 					);
-					return { ...clientWithExtensions, actions } as WorkspaceClientWithActions<
+					return {
+						...clientWithExtensions,
+						actions,
+					} as WorkspaceClientWithActions<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,

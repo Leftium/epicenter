@@ -160,7 +160,6 @@ export type WorkspaceClient<
 	[Symbol.asyncDispose](): Promise<void>;
 };
 
-
 /**
  * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
  *

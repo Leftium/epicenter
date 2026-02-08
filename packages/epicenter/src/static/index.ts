@@ -119,11 +119,11 @@ export { createUnionSchema } from './schema-union.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
+	DeleteResult,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
 	ExtensionMap,
-	DeleteResult,
 	GetResult,
 	InferExtensionExports,
 	InferKvValue,

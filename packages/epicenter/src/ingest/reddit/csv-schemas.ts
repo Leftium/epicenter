@@ -61,7 +61,6 @@ export const posts = type({
 	id: 'string',
 	permalink: emptyToNull,
 	date: dateToIso,
-	ip: emptyToNull,
 	subreddit: 'string',
 	gildings: type('string.numeric.parse'),
 	'title?': 'string',
@@ -74,7 +73,6 @@ export const comments = type({
 	id: 'string',
 	permalink: emptyToNull,
 	date: dateToIso,
-	ip: emptyToNull,
 	subreddit: 'string',
 	gildings: type('string.numeric.parse'),
 	link: 'string',
@@ -159,7 +157,6 @@ export const messages = type({
 	permalink: 'string',
 	thread_id: optionalToNull,
 	date: optionalDateToIso,
-	ip: emptyToNull,
 	'from?': 'string',
 	'to?': 'string',
 	'subject?': 'string',
@@ -298,15 +295,6 @@ export const friends = type({
 	...row,
 }));
 
-/** linked_identities.csv → linked_identities table (computed ID) */
-export const linkedIdentities = type({
-	issuer_id: 'string',
-	subject_id: 'string',
-}).pipe((row) => ({
-	id: `${row.issuer_id}:${row.subject_id}`,
-	...row,
-}));
-
 /** announcements.csv → announcements table (announcement_id becomes ID) */
 export const announcements = type({
 	announcement_id: 'string',
@@ -336,24 +324,6 @@ export const scheduledPosts = type({
 	...row,
 }));
 
-/** ip_logs.csv → ip_logs table (computed ID) */
-export const ipLogs = type({
-	date: 'string',
-	ip: 'string',
-}).pipe((row) => ({
-	id: `${row.date}:${row.ip}`,
-	...row,
-}));
-
-/** sensitive_ads_preferences.csv → sensitive_ads_preferences table (type becomes ID) */
-export const sensitiveAdsPreferences = type({
-	type: 'string',
-	'preference?': 'string',
-}).pipe((row) => ({
-	id: row.type,
-	...row,
-}));
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // KV SCHEMAS (singleton CSVs)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -368,10 +338,7 @@ export const user_preferences = type({
 	preference: 'string',
 	'value?': 'string',
 });
-export const linked_phone_number = type({ phone_number: 'string' });
-export const stripe = type({ stripe_account_id: 'string' });
 export const twitter = type({ username: 'string' });
-export const persona = type({ persona_inquiry_id: 'string' });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEMA REGISTRY (for data-driven processing)
@@ -404,11 +371,8 @@ export const csvSchemas = {
 	subscriptions,
 	payouts,
 	friends,
-	linkedIdentities,
 	announcements,
 	scheduledPosts,
-	ipLogs,
-	sensitiveAdsPreferences,
 } as const;
 
 /** Union of all table schema names */

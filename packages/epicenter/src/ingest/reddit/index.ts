@@ -76,9 +76,6 @@ type KvData = {
 	accountGender: string | null;
 	birthdate: string | null;
 	verifiedBirthdate: string | null;
-	phoneNumber: string | null;
-	stripeAccountId: string | null;
-	personaInquiryId: string | null;
 	twitterUsername: string | null;
 	statistics: Record<string, string> | null;
 	preferences: Record<string, string> | null;
@@ -107,9 +104,6 @@ function transformKv(raw: ParsedRedditData): KvData {
 		accountGender: emptyToNull(raw.account_gender?.[0]?.account_gender),
 		birthdate: parseDateToIso(raw.birthdate?.[0]?.birthdate),
 		verifiedBirthdate: parseDateToIso(raw.birthdate?.[0]?.verified_birthdate),
-		phoneNumber: emptyToNull(raw.linked_phone_number?.[0]?.phone_number),
-		stripeAccountId: emptyToNull(raw.stripe?.[0]?.stripe_account_id),
-		personaInquiryId: emptyToNull(raw.persona?.[0]?.persona_inquiry_id),
 		twitterUsername: emptyToNull(raw.twitter?.[0]?.username),
 		statistics,
 		preferences,

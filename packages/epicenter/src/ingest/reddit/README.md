@@ -17,7 +17,7 @@ A typical Reddit export contains **38 CSV files** (flat, no subdirectories). Eve
 
 Some exports include `messages.csv` + `message_headers.csv` instead of `messages_archive.csv` + `messages_archive_headers.csv`. The importer handles both variants.
 
-### Tables (27 CSV files → 27 tables)
+### Tables (24 CSV files → 24 tables)
 
 | CSV File | Table | ID Strategy | Description |
 |---|---|---|---|
@@ -31,8 +31,6 @@ Some exports include `messages.csv` + `message_headers.csv` instead of `messages
 | `gilded_content.csv` | `gildedContent` | Composite: `link:date:award:amount` | Awards you gave to others |
 | `gold_received.csv` | `goldReceived` | Composite: `link:date:gold:gilder` | Awards your content received |
 | `hidden_posts.csv` | `hiddenPosts` | Natural `id` | Posts you hid from your feed |
-| `ip_logs.csv` | `ipLogs` | Composite: `date:ip` | IP addresses you accessed Reddit from |
-| `linked_identities.csv` | `linkedIdentities` | Composite: `issuer:subject` | Google/Apple sign-in connections |
 | `messages.csv` | `messages` | Natural `id` | DMs sent/received (some exports use this) |
 | `messages_archive.csv` | `messagesArchive` | Natural `id` | DMs sent/received (some exports use this instead) |
 | `moderated_subreddits.csv` | `moderatedSubreddits` | `subreddit` value | Subreddits you moderate |
@@ -45,11 +43,12 @@ Some exports include `messages.csv` + `message_headers.csv` instead of `messages
 | `saved_comments.csv` | `savedComments` | Natural `id` | Comments you bookmarked |
 | `saved_posts.csv` | `savedPosts` | Natural `id` | Posts you bookmarked |
 | `scheduled_posts.csv` | `scheduledPosts` | `scheduled_post_id` | Queued future posts (moderator feature) |
-| `sensitive_ads_preferences.csv` | `sensitiveAdsPreferences` | `type` value | Ad topic preferences |
 | `subscribed_subreddits.csv` | `subscribedSubreddits` | `subreddit` value | Subreddits you're subscribed to |
 | `subscriptions.csv` | `subscriptions` | `subscription_id` | Recurring Reddit payment subscriptions |
 
-### KV Store (8 CSV files → 9 KV entries)
+The `ip` column present in `posts.csv`, `comments.csv`, `messages.csv`, and `messages_archive.csv` is intentionally stripped during ingestion (PII with no workspace value).
+
+### KV Store (5 CSV files → 6 KV entries)
 
 Singleton data (one value per account) goes into the KV store instead of tables.
 
@@ -57,16 +56,15 @@ Singleton data (one value per account) goes into the KV store instead of tables.
 |---|---|---|
 | `account_gender.csv` | `accountGender` | Gender on your profile |
 | `birthdate.csv` | `birthdate`, `verifiedBirthdate` | Your birthday (2 KV entries from 1 file) |
-| `linked_phone_number.csv` | `phoneNumber` | Phone number linked to account |
-| `persona.csv` | `personaInquiryId` | Identity verification request ID |
 | `statistics.csv` | `statistics` | Account stats as key-value pairs (email, signup date, etc.) |
-| `stripe.csv` | `stripeAccountId` | Connected Stripe payment account |
 | `twitter.csv` | `twitterUsername` | Connected Twitter/X handle |
 | `user_preferences.csv` | `preferences` | Account settings as key-value pairs |
 
-### Excluded Files (5 CSV files, intentionally not stored)
+### Excluded Files (12 CSV files, intentionally not stored)
 
-These files are present in Reddit exports but are **not parsed or stored** because they contain no unique data.
+These files are present in Reddit exports but are **not parsed or stored**.
+
+#### Redundant data (no unique content)
 
 | CSV File | Why Excluded |
 |---|---|
@@ -77,6 +75,17 @@ These files are present in Reddit exports but are **not parsed or stored** becau
 | `post_headers.csv` | Strict subset of `posts.csv` (same rows, without the `body` column). 100% redundant. |
 
 Reddit includes the `*_headers.csv` variants so users can review metadata (dates, subreddits, permalinks) without loading full post/comment/message bodies. Since we import the full files, the headers add zero value.
+
+#### PII and Reddit internals (no workspace value)
+
+| CSV File | Why Excluded |
+|---|---|
+| `ip_logs.csv` | Login IP history. Purely admin/security data — no one imports a Reddit export to browse their IP log. Reddit retains the registration IP indefinitely (even after account deletion) and other IPs for ~100 days. |
+| `sensitive_ads_preferences.csv` | Reddit's internal ad targeting categories. Ad machinery metadata, not user content. |
+| `linked_identities.csv` | Opaque OAuth issuer/subject ID pairs from Google/Apple sign-in. Internal identity-linking metadata with no meaning outside Reddit. |
+| `linked_phone_number.csv` | Phone number linked to the account. PII with no workspace value — the user already knows their phone number. |
+| `stripe.csv` | Opaque Stripe account ID. An internal payment identifier meaningless to the user. |
+| `persona.csv` | Opaque Persona KYC verification ID. An internal identity-verification identifier meaningless to the user. |
 
 ## All Files Are Optional
 

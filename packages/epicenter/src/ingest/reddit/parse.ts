@@ -74,14 +74,8 @@ function csvNameToKey(filename: CsvFileName): CsvKey {
 export async function parseRedditZip(
 	input: Blob | ArrayBuffer,
 ): Promise<ParsedRedditData> {
-	// Convert input to Uint8Array
-	let bytes: Uint8Array;
-	if (input instanceof Blob) {
-		const buffer = await input.arrayBuffer();
-		bytes = new Uint8Array(buffer);
-	} else {
-		bytes = new Uint8Array(input);
-	}
+	const bytes =
+		input instanceof Blob ? await input.bytes() : new Uint8Array(input);
 
 	// Unpack ZIP
 	const files = unzipSync(bytes);

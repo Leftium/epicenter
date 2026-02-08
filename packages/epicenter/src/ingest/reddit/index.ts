@@ -24,6 +24,7 @@ import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../static/index.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
+import { emptyToNull, parseDateToIso } from './transforms.js';
 import { type RedditWorkspace, redditWorkspace } from './workspace.js';
 
 export { redditWorkspace, type RedditWorkspace };
@@ -82,17 +83,6 @@ type KvData = {
 	statistics: Record<string, string> | null;
 	preferences: Record<string, string> | null;
 };
-
-function emptyToNull(value: string | undefined | null): string | null {
-	if (value === undefined || value === null || value === '') return null;
-	return value;
-}
-
-function parseDateToIso(dateStr: string | undefined | null): string | null {
-	if (!dateStr || dateStr === '') return null;
-	const d = new Date(dateStr);
-	return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
 
 function transformKv(raw: ParsedRedditData): KvData {
 	// Statistics → JSON object

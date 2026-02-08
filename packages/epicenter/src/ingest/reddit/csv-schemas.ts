@@ -17,37 +17,36 @@
  */
 
 import { type } from 'arktype';
+import {
+	emptyToNull as _emptyToNull,
+	parseDateToIso,
+} from './transforms.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MORPHS (inline for clarity)
+// MORPHS (arktype wrappers around shared plain functions)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Reddit exports sometimes have 'registration ip' in date columns
+ * (likely a CSV column misalignment). Treat it as a missing date.
+ */
 const REGISTRATION_IP = 'registration ip';
 
 /** Empty string → null */
-const emptyToNull = type('string').pipe((s): string | null =>
-	s === '' ? null : s,
-);
+const emptyToNull = type('string').pipe(_emptyToNull);
 
 /** Optional string → null */
-const optionalToNull = type('string | undefined').pipe((s): string | null =>
-	!s || s === '' ? null : s,
-);
+const optionalToNull = type('string | undefined').pipe(_emptyToNull);
 
 /** Date string → ISO string | null */
-const dateToIso = type('string').pipe((s): string | null => {
-	if (!s || s === '' || s === REGISTRATION_IP) return null;
-	const d = new Date(s);
-	return Number.isNaN(d.getTime()) ? null : d.toISOString();
-});
+const dateToIso = type('string').pipe((s): string | null =>
+	s === REGISTRATION_IP ? null : parseDateToIso(s),
+);
 
 /** Optional date → ISO string | null */
 const optionalDateToIso = type('string | undefined').pipe(
-	(s): string | null => {
-		if (!s || s === '' || s === REGISTRATION_IP) return null;
-		const d = new Date(s);
-		return Number.isNaN(d.getTime()) ? null : d.toISOString();
-	},
+	(s): string | null =>
+		s === REGISTRATION_IP ? null : parseDateToIso(s),
 );
 
 /** Vote direction */
@@ -281,14 +280,7 @@ export const payouts = type({
 	date: 'string',
 	'payout_id?': 'string',
 }).pipe((row) => {
-	// Parse date for both ID fallback and output
-	const dateIso =
-		!row.date || row.date === ''
-			? null
-			: (() => {
-					const d = new Date(row.date);
-					return Number.isNaN(d.getTime()) ? null : d.toISOString();
-				})();
+	const dateIso = parseDateToIso(row.date);
 	return {
 		id: row.payout_id ?? dateIso ?? row.date,
 		date: dateIso,

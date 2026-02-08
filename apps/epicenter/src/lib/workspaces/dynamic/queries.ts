@@ -2,15 +2,15 @@ import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
+import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
+import type { WorkspaceTemplate } from '$lib/templates';
 import {
 	createWorkspaceDefinition,
 	deleteWorkspace,
 	getWorkspace,
 	listWorkspaces,
 	updateWorkspaceDefinition,
-} from '$lib/services/workspaces';
-import type { WorkspaceTemplate } from '$lib/templates';
-import { defineMutation, defineQuery, queryClient } from './client';
+} from './service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Types

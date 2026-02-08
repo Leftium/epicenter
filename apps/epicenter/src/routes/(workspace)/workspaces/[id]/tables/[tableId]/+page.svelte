@@ -6,7 +6,7 @@
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { Button } from '@epicenter/ui/button';
 	import { Badge } from '@epicenter/ui/badge';
-	import { isNullableField, type Field } from '@epicenter/hq';
+	import { isNullableField, type Field } from '@epicenter/hq/dynamic';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';

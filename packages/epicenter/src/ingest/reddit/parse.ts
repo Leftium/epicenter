@@ -44,13 +44,10 @@ const TABLE_CSV_FILES = [
 	'stripe.csv',
 	'twitter.csv',
 	'persona.csv',
-	// Redundant but validate
-	'post_headers.csv',
-	'comment_headers.csv',
-	'message_headers.csv',
-	'messages_archive_headers.csv',
-	// Metadata
-	'checkfile.csv',
+	// Intentionally excluded (see README.md):
+	// - post_headers.csv, comment_headers.csv, message_headers.csv,
+	//   messages_archive_headers.csv: strict subsets of their full counterparts (same rows, minus body)
+	// - checkfile.csv: ZIP integrity checksums, not user data
 ] as const;
 
 // Required CSVs that must be present
@@ -62,7 +59,7 @@ const REQUIRED_CSV_FILES = [
 ] as const;
 
 // Optional CSVs (may be absent based on user activity)
-const OPTIONAL_CSV_FILES = ['messages.csv', 'message_headers.csv'] as const;
+const OPTIONAL_CSV_FILES = ['messages.csv'] as const;
 
 /**
  * Convert CSV filename to schema key.

@@ -991,6 +991,101 @@ The testing approach: populate a `YjsFileSystem` with known files/folders, pass 
 
 ---
 
+## Implementation Phases
+
+### Existing foundation
+
+The static API is production-ready and provides the core building blocks:
+
+| What | Location | Use |
+|------|----------|-----|
+| `defineTable()` | `packages/epicenter/src/static/define-table.ts` | Define the `files` table schema |
+| `defineWorkspace()` | `packages/epicenter/src/static/define-workspace.ts` | Define the filesystem workspace |
+| `createWorkspace()` | `packages/epicenter/src/static/create-workspace.ts` | Instantiate the workspace (sync, returns table helpers) |
+| `TableHelper` | `packages/epicenter/src/static/table-helper.ts` | CRUD on files table: `set()`, `get()`, `update()`, `delete()`, `observe()`, `filter()`, `find()` |
+| `Guid` / `generateGuid()` | `packages/epicenter/src/dynamic/schema/fields/id.ts` | File IDs (15-char nanoid, globally unique, doubles as Y.Doc GUID) |
+| YKeyValueLww | `packages/epicenter/src/shared/y-keyvalue/y-keyvalue-lww.ts` | Row-level LWW storage backing the files table |
+| Extensions | `packages/epicenter/src/extensions/` | Pluggable persistence (IndexedDB/SQLite) and sync (y-sweet, WebSocket) |
+
+**Already installed**: `yjs@^13.6.27`, `y-indexeddb`, `y-websocket`, `@y-sweet/client`, `nanoid`, `arktype`
+
+**Not installed (add as needed per phase)**: `just-bash`, `y-codemirror.next`, `milkdown`, `y-prosemirror`, `@milkdown/plugin-collab`
+
+### Phase 1: Files table + runtime indexes
+
+**Goal**: Define the files table, build runtime indexes, implement `createFileSystemIndex()`.
+
+**Deliverables**:
+1. Files table definition using `defineTable()` with the schema from Layer 1
+2. `createFileSystemIndex()` — builds `pathToId`, `idToPath`, `childrenOf`, `plaintext` Maps from the files table
+3. Incremental index updates via `filesTable.observe()`
+4. `validateName()`, `assertUniqueName()`, `disambiguateNames()` helper functions
+5. Circular reference detection and orphan detection in index rebuild
+
+**Tests**: Unit tests for index building, path resolution, name validation, disambiguation, circular reference breaking.
+
+**No dependencies to add.** Everything needed is in the static API.
+
+### Phase 2: IFileSystem + just-bash integration
+
+**Goal**: Implement `YjsFileSystem` class with all IFileSystem methods. Text-only files (Y.Text) first.
+
+**Deliverables**:
+1. Install `just-bash`
+2. `YjsFileSystem` class implementing `IFileSystem`: `readdir()`, `readdirWithFileTypes()`, `stat()`, `exists()`, `readFile()`, `writeFile()`, `appendFile()`, `copyFile()`, `mkdir()`, `rm()`, `utimes()`, `rename()` (for `mv`)
+3. Content Y.Doc factory: `openDocument(fileId, fileName)` — creates Y.Doc with `guid: fileId`, `gc: false`, returns `DocumentHandle`
+4. Content doc lifecycle: load on open, unload on close (reference counting or explicit dispose)
+5. Plaintext cache population on `readFile()`, invalidation on write
+
+**Scope limitation**: All files use `Y.Text` in this phase. No markdown/XmlFragment support yet. Treat `.md` files as plain text temporarily.
+
+**Tests**: Populate `YjsFileSystem`, pass to `new Bash({ fs: yjsFs })`, run just-bash test scripts against it. Target: `ls`, `cat`, `find`, `grep`, `mkdir`, `rm`, `mv`, `cp` all passing.
+
+### Phase 3: Markdown support (Y.XmlFragment + Y.Map)
+
+**Goal**: Add `.md` file support with Y.XmlFragment for body and Y.Map for frontmatter.
+
+**Deliverables**:
+1. Install `milkdown`, `y-prosemirror` (or determine the minimal ProseMirror packages needed for headless serialization)
+2. `parseFrontmatter(content)` — split `---` delimited YAML from body
+3. `serializeMarkdownWithFrontmatter(frontmatter, body)` — combine YAML + body
+4. `updateYMapFromRecord(ymap, target)` — diff-update Y.Map from plain object
+5. `yMapToRecord(ymap)` — Y.Map to plain object
+6. `serializeXmlFragmentToMarkdown(fragment)` — ProseMirror tree → markdown string (requires a ProseMirror schema + serializer, e.g. `prosemirror-markdown` or remark)
+7. `updateYXmlFragmentFromString(fragment, markdownBody)` — parse markdown → ProseMirror nodes → clear-and-rebuild XmlFragment (requires headless ProseMirror schema matching the editor's schema)
+8. Update `openDocument()` to return `RichTextDocumentHandle` for `.md` files
+9. Update `readFile()` and `writeFile()` to handle the richtext path
+
+**Key decision needed**: Which ProseMirror schema to use for headless serialization. If using Milkdown, the schema comes from `@milkdown/preset-commonmark`. The same schema must be used in the editor (Phase 5) and in headless serialization (this phase).
+
+**Tests**: Round-trip tests: write markdown string → readFile → compare. Frontmatter parsing/serialization. Y.Map diff-update correctness.
+
+### Phase 4: Convert-on-switch
+
+**Goal**: Implement content migration when file extension category changes on rename.
+
+**Deliverables**:
+1. Extension category detection: `getExtensionCategory(name)` → `'text' | 'richtext'`
+2. Convert-on-switch in rename operation: read from old active type, write to new active type
+3. Self-healing in `openDocument()`: detect mismatched extension vs. content, trigger migration if needed
+4. Observer-side editor swap: `files.observe()` handler that detects category-changing renames and triggers editor teardown/rebind
+
+**Tests**: Rename `.txt` → `.md` and verify content migrated correctly. Rename `.md` → `.ts` and verify serialization. Round-trip rename and verify content integrity. Self-healing: create a doc with wrong-category content, open it, verify migration runs.
+
+### Phase 5: Editor bindings (UI layer)
+
+**Goal**: Wire up collaborative editors in the Tauri app.
+
+**Deliverables**:
+1. Install `y-codemirror.next`, `@milkdown/plugin-collab`
+2. CodeMirror 6 component bound to `Y.Text` via `yCollab()`
+3. Milkdown editor bound to `Y.XmlFragment` via `@milkdown/plugin-collab`
+4. Frontmatter UI bound to `Y.Map` entries (structured form, not ProseMirror)
+5. Editor swap on type-changing rename: dispose current editor, create new one
+6. Transition state UI: loading indicator between rename detection and migration arrival
+
+**This phase is UI-only.** All data-layer logic is complete by Phase 4.
+
 ## Open Questions
 
 1. **Markdown source view**: Convert-on-switch is the strategy for file type changes (rename). Remaining question: should the editor offer a source-view toggle within a `.md` file (show raw markdown in CodeMirror alongside or instead of the rich editor)?

@@ -502,6 +502,8 @@ const result4 = await bash.exec('ls -la /src/');
 
 **Key names**: `'text'` and `'richtext'` mirror the `type` discriminator in `DocumentHandle`. `'frontmatter'` stores structured YAML metadata for `.md` files. They describe what the data represents (content format), not the Yjs type that stores it.
 
+**Lazy key creation:** Keys are created in Yjs only when first accessed via `getXmlFragment()`, `getText()`, or `getMap()`. The `openDocument()` function only accesses the active keys for the current file type. A `.ts` file that was never renamed has exactly one key (`Y.Text('text')`) in its doc state — the `richtext` and `frontmatter` keys don't exist at all until a conversion happens. There is zero overhead for the common case (files that never change type).
+
 **Convert-on-switch flow:**
 
 Rename `.txt` → `.md`:
@@ -518,12 +520,80 @@ Rename `.md` → `.txt`:
 4. Replace `ydoc.getText('text')` with the combined string via `updateYTextFromString()`
 5. Active key is now `getText('text')`
 
+**State progression across renames:**
+
+```
+Y.Doc(guid: "bbb-222")
+
+  ── Phase 1: created as api.md ─────────────────────────────────────
+  │ Y.XmlFragment('richtext')  → <p>Hello world</p>     │ ACTIVE
+  │ Y.Map('frontmatter')       → { title: "API Ref" }   │ ACTIVE
+  │ Y.Text('text')             →  (does not exist yet)   │ never accessed
+  └──────────────────────────────────────────────────────┘
+  Only 2 keys in doc state. Y.Text('text') was never called,
+  so it doesn't exist in the Yjs internal structures at all.
+
+  ── Phase 2: renamed to api.ts (convert richtext→text) ────────────
+  │ Y.Text('text')             → "---\ntitle: API Ref   │ ACTIVE
+  │                               \n---\nHello world"    │
+  │ Y.XmlFragment('richtext')  → <p>Hello world</p>     │ stale
+  │ Y.Map('frontmatter')       → { title: "API Ref" }   │ stale
+  └──────────────────────────────────────────────────────┘
+  Y.Text created during conversion. Old keys remain but are
+  never read — the file extension determines which keys are active.
+
+  ── Phase 3: edited as .ts in CodeMirror ───────────────────────────
+  │ Y.Text('text')             → "export const x = 42;" │ ACTIVE (edited)
+  │ Y.XmlFragment('richtext')  → <p>Hello world</p>     │ stale (now WRONG)
+  │ Y.Map('frontmatter')       → { title: "API Ref" }   │ stale (now WRONG)
+  └──────────────────────────────────────────────────────┘
+  Stale keys diverge from reality. This is fine — they are never
+  read while the file is .ts. Correctness depends only on the
+  active key, never on stale keys.
+
+  ── Phase 4: renamed back to api.md (convert text→richtext) ───────
+  │ Y.XmlFragment('richtext')  → <p>export const x …</p>│ ACTIVE (fresh)
+  │ Y.Map('frontmatter')       → {}                     │ ACTIVE (fresh)
+  │ Y.Text('text')             → "export const x = 42;" │ stale
+  └──────────────────────────────────────────────────────┘
+  Conversion reads from Y.Text (the truth), parses, and OVERWRITES
+  the stale richtext/frontmatter. The old stale data is gone.
+  Stale data never causes correctness issues because conversions
+  always read from the active type and overwrite the target type.
+```
+
+**Comparison: file that never changes type (common case):**
+
+```
+  Y.Doc(guid: "ccc-333")     ← index.ts, never renamed
+  ┌──────────────────────────────────────────────────────┐
+  │ Y.Text('text')  → "export function main() { … }"    │ ACTIVE
+  └──────────────────────────────────────────────────────┘
+  One key. No richtext, no frontmatter. Zero overhead.
+
+  Y.Doc(guid: "ddd-444")     ← notes.md, never renamed
+  ┌──────────────────────────────────────────────────────┐
+  │ Y.XmlFragment('richtext')  → <p>Meeting notes…</p>  │ ACTIVE
+  │ Y.Map('frontmatter')       → { date: "2026-02-09" } │ ACTIVE
+  └──────────────────────────────────────────────────────┘
+  Two keys. No text. Zero overhead.
+```
+
 **Properties:**
 - Rename remains a metadata operation (files table) + content migration — same Y.Doc, same GUID, no orphaned docs
-- The inactive types sit with stale data (negligible overhead vs content size)
+- Inactive keys only exist after a conversion has occurred — the common case (no type change) has exactly the keys it needs, nothing more
+- Stale data is never read and is always overwritten on the next conversion — correctness depends only on the active keys
 - Front matter survives format conversion: `.txt` → `.md` extracts front matter from text into structured Y.Map fields; `.md` → `.txt` serializes Y.Map fields back into YAML text
 - Round-trip is inherently lossy (markdown ↔ structured tree) — this matches reality of format conversion
 - No bidirectional sync — only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
+
+### Alternatives considered for content type storage
+
+**New doc per type change:** On rename, create a new Y.Doc with a new GUID, migrate content, update a `contentDocGuid` field on the file row. Each doc is "clean" (no stale keys). But this breaks the `fileId = docGuid` invariant — every file row now needs a separate `contentDocGuid` field. Version history is split across multiple doc GUIDs (no continuity). Orphaned docs need provider-level garbage collection. The clean 1:1 mapping between file IDs and doc GUIDs is too valuable to sacrifice for cosmetic key cleanliness.
+
+**Always Y.Text, derive rich editing:** Store everything as Y.Text regardless of type. For `.md` files, parse into ProseMirror on open, sync edits back to Y.Text via serialize → diff → apply. One key, one type, no conversion on rename. But this is bidirectional sync: ProseMirror edit → serialize to markdown → diff against Y.Text → apply Yjs ops. The round-trip normalizes whitespace, emphasis style, list markers. Two concurrent editors get normalization loops where each peer's serialization "corrects" the other's formatting. No production system has solved this.
+
+**Versioned key names:** Use `'text:1'`, `'richtext:2'`, `'frontmatter:2'` with a `contentVersion` counter. Every conversion creates fresh keys, so no stale data confusion. But keys accumulate forever (10 renames = 10 sets of keys), requires a version counter in metadata, and gains nothing over triple-key — stale keys in the triple-key approach are equally harmless and get overwritten on the next conversion instead of accumulating indefinitely.
 
 ### Front matter as Y.Map (structured metadata for .md files)
 

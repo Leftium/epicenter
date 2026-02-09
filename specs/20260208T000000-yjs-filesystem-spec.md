@@ -621,6 +621,10 @@ Peer A (renaming peer)             Peer B (observing peer)
 
 **No incremental migration on the observing side.** The renaming peer writes to the new active keys. Observing peers just rebind. Editor state (cursor position, scroll, selection, undo history) is lost on swap — acceptable for the rare event of a type-changing rename.
 
+**Cross-doc timing.** The rename (main doc) and content migration (content doc) propagate through independent sync channels. An observing peer may receive the rename before the migration arrives. This resolves naturally — y-prosemirror and y-codemirror handle external mutations to the shared types they're bound to. If the target type is empty (first-ever conversion) or contains stale data (re-conversion), the editor binds to that state and then updates when the migration arrives. Worst case: a brief flash of empty or stale content, comparable to VS Code reloading a file after an external change.
+
+**Self-healing.** If the renaming peer crashes between rename and migration, the file has a new extension but the target content type is empty or stale. Any peer opening the file can detect this: the extension says `.md` but `Y.XmlFragment('richtext')` is empty while `Y.Text('text')` has content (or vice versa). That peer runs the migration itself — read from the populated type, write to the empty type. `openDocument()` is the natural place for this check. No stuck states.
+
 ### Alternatives considered for content type storage
 
 **New doc per type change:** On rename, create a new Y.Doc with a new GUID, migrate content, update a `contentDocGuid` field on the file row. Each doc is "clean" (no stale keys). But this breaks the `fileId = docGuid` invariant — every file row now needs a separate `contentDocGuid` field. Version history is split across multiple doc GUIDs (no continuity). Orphaned docs need provider-level garbage collection. The clean 1:1 mapping between file IDs and doc GUIDs is too valuable to sacrifice for cosmetic key cleanliness.
@@ -886,6 +890,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
    a. Load content doc
    b. Serialize from old active type → populate new active type (convert-on-switch, including front matter migration)
    c. Invalidate plaintext cache
+   d. Tear down current editor binding, rebind to new active keys
 
 **Observing peers (via `files.observe()`):**
 1. Detect `name` field changed on the file row

@@ -6,7 +6,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { rpc } from '$lib/query';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { isNullableField, type KvField } from '@epicenter/hq';
+	import { isNullableField, type KvField } from '@epicenter/hq/dynamic';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import SearchXIcon from '@lucide/svelte/icons/search-x';
 

@@ -89,8 +89,8 @@ Y.Array('kv');
 ### Loading a Workspace
 
 ```typescript
-import { getWorkspace } from '$lib/services/workspaces';
-import { createWorkspaceClient } from '$lib/docs/workspace';
+import { getWorkspace } from '$lib/workspaces/dynamic/service';
+import { createWorkspaceClient } from '$lib/yjs/workspace';
 
 // 1. Load definition from JSON file
 const definition = await getWorkspace(workspaceId);
@@ -109,7 +109,7 @@ client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 ### Creating a Workspace
 
 ```typescript
-import { createWorkspaceDefinition } from '$lib/services/workspaces';
+import { createWorkspaceDefinition } from '$lib/workspaces/dynamic/service';
 
 const definition = await createWorkspaceDefinition({
 	id: 'my-workspace',
@@ -124,7 +124,7 @@ const definition = await createWorkspaceDefinition({
 ### Listing Workspaces
 
 ```typescript
-import { listWorkspaces } from '$lib/services/workspaces';
+import { listWorkspaces } from '$lib/workspaces/dynamic/service';
 
 const workspaces = await listWorkspaces();
 // Returns all WorkspaceDefinition objects from definition.json files
@@ -134,12 +134,18 @@ const workspaces = await listWorkspaces();
 
 ```
 $lib/
-├── docs/
+├── yjs/
 │   ├── README.md                    # This file
 │   ├── workspace.ts                 # Creates workspace client from definition
 │   └── workspace-persistence.ts     # Y.Doc + KV persistence extension
-└── services/
-    └── workspaces.ts                # CRUD operations for definition JSON files
+└── workspaces/
+    ├── dynamic/
+    │   ├── service.ts               # CRUD operations for definition JSON files
+    │   └── queries.ts               # TanStack Query wrappers
+    └── static/
+        ├── service.ts               # Static workspace registry operations
+        ├── queries.ts               # TanStack Query wrappers
+        └── types.ts                 # Static workspace type definitions
 ```
 
 ## Key Decisions

@@ -15,7 +15,7 @@
  *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
  *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' as const };
+ *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' };
  *     return v;
  *   });
  *

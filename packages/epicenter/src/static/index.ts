@@ -4,6 +4,10 @@
  * A composable, type-safe API for defining and creating workspaces
  * with versioned tables and KV stores.
  *
+ * **Versioning**: Supports field presence detection, asymmetric `_v` (recommended default),
+ * and symmetric `_v` patterns. See `.agents/skills/static-workspace-api/SKILL.md` for
+ * detailed comparison and best practices.
+ *
  * @example
  * ```typescript
  * import { createWorkspace, defineTable, defineKv } from 'epicenter/static';
@@ -14,10 +18,10 @@
  *
  * // Tables: builder pattern for multiple versions with migration
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
+ *   .version(type({ id: 'string', title: 'string' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
+ *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
  *     return row;
  *   });
  *
@@ -26,10 +30,10 @@
  *
  * // KV: builder pattern for multiple versions with migration (use _v discriminant)
  * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+ *   .version(type({ mode: "'light' | 'dark'" }))
  *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
  *   .migrate((v) => {
- *     if (v._v === '1') return { ...v, fontSize: 14, _v: '2' as const };
+ *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' };
  *     return v;
  *   });
  *

@@ -71,6 +71,7 @@ export {
 	tags,
 	text,
 } from './schema/fields/factories';
+export { isNullableField } from './schema/fields/helpers';
 // ID type and helpers (needed for type assertions with browser converters)
 export type { Id } from './schema/fields/id';
 export { generateId, Id as createId } from './schema/fields/id';
@@ -80,6 +81,8 @@ export type {
 	Field,
 	Icon,
 	IconType,
+	KvField,
+	KvValue,
 	PartialRow,
 	Row,
 } from './schema/fields/types';

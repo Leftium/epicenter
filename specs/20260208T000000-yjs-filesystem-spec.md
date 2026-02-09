@@ -588,6 +588,39 @@ Y.Doc(guid: "bbb-222")
 - Round-trip is inherently lossy (markdown ↔ structured tree) — this matches reality of format conversion
 - No bidirectional sync — only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
 
+### Observer-side editor swap on type-changing rename
+
+**Decision: Observing peers tear down and rebind their editor when they detect a type-changing rename — same as any editor reloading a buffer after an external change.**
+
+The renaming peer performs the convert-on-switch data migration (reads old active keys, writes new active keys). Observing peers don't need to migrate anything — they detect the type change via `files.observe()` and rebind their editor to the already-migrated content. This mirrors standard editor behavior: Neovim, VS Code, and every file editor reload the buffer when the file type changes externally.
+
+**Observer-side flow:**
+
+```
+Peer A (renaming peer)             Peer B (observing peer)
+──────────────────────             ─────────────────────────
+1. files.update(name: "api.md")
+2. Read Y.Text('text')
+3. Parse frontmatter
+4. Write Y.XmlFragment + Y.Map
+                              ──→  1. files.observe() fires
+                                   2. Detect extension change (.txt → .md)
+                                   3. Tear down CodeMirror (unbind from Y.Text)
+                                   4. Read from Y.XmlFragment + Y.Map
+                                      (already populated by Peer A)
+                                   5. Bind ProseMirror to Y.XmlFragment
+```
+
+**Extension change categories:**
+
+| Change | Action |
+|--------|--------|
+| Category change (`.txt` → `.md`, `.md` → `.ts`) | Tear down editor, rebind to new active keys |
+| Same category (`.ts` → `.js`, `.py` → `.rs`) | No editor swap — update syntax highlighting only |
+| No extension change (rename `foo.md` → `bar.md`) | No editor swap — same active keys |
+
+**No incremental migration on the observing side.** The renaming peer writes to the new active keys. Observing peers just rebind. Editor state (cursor position, scroll, selection, undo history) is lost on swap — acceptable for the rare event of a type-changing rename.
+
 ### Alternatives considered for content type storage
 
 **New doc per type change:** On rename, create a new Y.Doc with a new GUID, migrate content, update a `contentDocGuid` field on the file row. Each doc is "clean" (no stale keys). But this breaks the `fileId = docGuid` invariant — every file row now needs a separate `contentDocGuid` field. Version history is split across multiple doc GUIDs (no continuity). Orphaned docs need provider-level garbage collection. The clean 1:1 mapping between file IDs and doc GUIDs is too valuable to sacrifice for cosmetic key cleanliness.
@@ -845,13 +878,23 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 4. No cascading updates — children still reference this node by ID
 
 ### Rename
+**Renaming peer:**
 1. Validate new name
 2. Assert unique name in parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
 3. `files.update(id, { name: newName, updatedAt: Date.now() })`
-4. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
+4. If file extension category changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
    a. Load content doc
    b. Serialize from old active type → populate new active type (convert-on-switch, including front matter migration)
    c. Invalidate plaintext cache
+
+**Observing peers (via `files.observe()`):**
+1. Detect `name` field changed on the file row
+2. If extension category unchanged: update syntax highlighting, rebuild path indexes. Done.
+3. If extension category changed (code/txt ↔ .md):
+   a. Tear down current editor binding (unbind y-codemirror or y-prosemirror)
+   b. Read from new active keys (already migrated by renaming peer)
+   c. Bind new editor to the new active keys
+   d. Invalidate plaintext cache
 
 ### Trash (IFileSystem `rm` and UI)
 1. `files.update(id, { trashedAt: Date.now() })`

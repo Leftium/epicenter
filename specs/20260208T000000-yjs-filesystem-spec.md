@@ -26,9 +26,10 @@ Main Y.Doc (gc: true, always loaded)
   └── Y.Array('table:files')  →  file metadata rows (YKeyValueLww)
 
 Per-File Y.Docs (gc: false, loaded on demand)       (fileId IS the Y.Doc GUID)
-  Each doc has two root-level keys; only one is "active" based on file extension:
-  ├── Y.XmlFragment('richtext')  →  ProseMirror tree  [active for .md files]
-  └── Y.Text('text')             →  raw text           [active for all other text files]
+  Each doc has three root-level keys; active keys depend on file extension:
+  ├── Y.XmlFragment('richtext')  →  ProseMirror tree (body only, no front matter)  [active for .md]
+  ├── Y.Text('text')             →  raw text           [active for code/txt files]
+  └── Y.Map('frontmatter')       →  { title: "Hello", date: "2026-02-09", ... }   [active for .md]
 
 Runtime Indexes (ephemeral JS Maps, not in Yjs)
   ├── pathToId:    Map<string, string>      "/docs/api.md" → "abc-123"
@@ -102,7 +103,7 @@ The Yjs backing type depends on the file extension:
 
 | File type | Yjs type | Editor binding | Serialization |
 |-----------|----------|---------------|---------------|
-| `.md` | Y.XmlFragment | Milkdown (ProseMirror + remark + y-prosemirror) | remark serialize -> markdown string |
+| `.md` | Y.XmlFragment('richtext') + Y.Map('frontmatter') | Milkdown (ProseMirror + y-prosemirror) for body; Y.Map for metadata | Y.Map → YAML + remark serialize → markdown body, combined with `---` delimiters |
 | `.txt`, `.ts`, `.js`, `.rs`, `.py`, `.svelte`, `.json`, `.yaml`, `.toml`, etc. | Y.Text | CodeMirror (y-codemirror.next) | `Y.Text.toString()` (lossless, 1:1) |
 | Binary (images, PDFs) | None | N/A | Blob references in files table, not Yjs documents |
 
@@ -117,17 +118,18 @@ No production system maintains both Y.Text and Y.XmlFragment on the same documen
 
 ```typescript
 type TextDocumentHandle = {
-  kind: 'text';
+  type: 'text';
   fileId: string;
   ydoc: Y.Doc;
   content: Y.Text;
 };
 
 type RichTextDocumentHandle = {
-  kind: 'richtext';
+  type: 'richtext';
   fileId: string;
   ydoc: Y.Doc;
   content: Y.XmlFragment;
+  frontmatter: Y.Map<unknown>;  // YAML front matter fields (per-field LWW)
 };
 
 type DocumentHandle = TextDocumentHandle | RichTextDocumentHandle;
@@ -136,9 +138,15 @@ function openDocument(fileId: Guid, fileName: string): DocumentHandle {
   const ydoc = new Y.Doc({ guid: fileId, gc: false }); // fileId IS the GUID; gc: false for snapshots/versioning
 
   if (fileName.endsWith('.md')) {
-    return { kind: 'richtext', fileId, ydoc, content: ydoc.getXmlFragment('richtext') };
+    return {
+      type: 'richtext',
+      fileId,
+      ydoc,
+      content: ydoc.getXmlFragment('richtext'),
+      frontmatter: ydoc.getMap('frontmatter'),
+    };
   }
-  return { kind: 'text', fileId, ydoc, content: ydoc.getText('text') };
+  return { type: 'text', fileId, ydoc, content: ydoc.getText('text') };
 }
 ```
 
@@ -154,37 +162,39 @@ function openDocument(fileId: Guid, fileName: string): DocumentHandle {
 The files table is always in memory (it's on the main Y.Doc). Runtime indexes provide O(1) lookups for IFileSystem operations. They're ephemeral JS Maps — not stored in Yjs — rebuilt on load and updated incrementally via `files.observe()`.
 
 ```typescript
-class FileSystemIndex {
+function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
   // Path resolution
-  private pathToId = new Map<string, string>();       // "/docs/api.md" → "abc-123"
-  private idToPath = new Map<string, string>();        // "abc-123" → "/docs/api.md"
+  const pathToId = new Map<string, string>();       // "/docs/api.md" → "abc-123"
+  const idToPath = new Map<string, string>();        // "abc-123" → "/docs/api.md"
 
   // Tree traversal
-  private childrenOf = new Map<string, string[]>();    // parentId → [childId, ...]
+  const childrenOf = new Map<string, string[]>();    // parentId → [childId, ...]
 
   // Content cache (for grep/search without loading content docs)
-  private plaintext = new Map<string, string>();       // fileId → content string
+  const plaintext = new Map<string, string>();       // fileId → content string
 
-  constructor(private filesTable: TableHelper<FileRow>) {
-    this.rebuild();
-    this.filesTable.observe((changedIds) => this.update(changedIds));
-  }
+  rebuild();
+  filesTable.observe((changedIds) => update(changedIds));
 
-  private rebuild() {
+  function rebuild() {
     // Walk all rows, compute paths, build children index
-    const rows = this.filesTable.getAllValid();
+    const rows = filesTable.getAllValid();
     // Build path tree from parentId chains
     // For each directory, run disambiguateNames() on active children
     // to detect CRDT-concurrent duplicate names and assign display suffixes.
     // Index both clean and suffixed paths in pathToId/idToPath.
   }
 
-  private update(changedIds: Set<string>) {
+  function update(changedIds: Set<string>) {
     // Incrementally update affected paths and children
     // Re-disambiguate siblings in affected parents (duplicate detection)
     // Invalidate plaintext cache for changed files
   }
+
+  return { pathToId, idToPath, childrenOf, plaintext };
 }
+
+type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
 ```
 
 ### Path resolution: O(depth) build, O(1) lookup
@@ -282,9 +292,15 @@ class YjsFileSystem implements IFileSystem {
     // Slow path: load content doc
     const row = this.filesTable.get(id).row!;
     const handle = this.openContentDoc(id, row.name);
-    const text = handle.kind === 'text'
-      ? handle.content.toString()
-      : serializeXmlFragmentToMarkdown(handle.content); // remark serialize
+    let text: string;
+    if (handle.type === 'text') {
+      text = handle.content.toString();
+    } else {
+      // Serialize front matter + body for .md files
+      const body = serializeXmlFragmentToMarkdown(handle.content);
+      const fm = yMapToRecord(handle.frontmatter);
+      text = serializeMarkdownWithFrontmatter(fm, body);
+    }
     this.index.plaintext.set(id, text);
     return text;
   }
@@ -311,14 +327,16 @@ class YjsFileSystem implements IFileSystem {
     // Write content through Yjs
     const row = this.filesTable.get(id).row!;
     const handle = this.openContentDoc(id, row.name);
-    if (handle.kind === 'text') {
+    if (handle.type === 'text') {
       handle.ydoc.transact(() => {
         handle.content.delete(0, handle.content.length);
         handle.content.insert(0, content);
       });
     } else {
-      // For .md: parse markdown -> ProseMirror node -> apply to XmlFragment
-      applyMarkdownToXmlFragment(handle.content, content);
+      // For .md: extract front matter, update Y.Map, apply body to XmlFragment
+      const { frontmatter, body } = parseFrontmatter(content);
+      updateYMapFromRecord(handle.frontmatter, frontmatter);
+      updateYXmlFragmentFromString(handle.content, body, serialize, apply); // clear-and-rebuild
     }
 
     this.filesTable.update(id, {
@@ -338,19 +356,19 @@ class YjsFileSystem implements IFileSystem {
 
     const row = this.filesTable.get(id).row!;
     const handle = this.openContentDoc(id, row.name);
-    if (handle.kind === 'text') {
+    if (handle.type === 'text') {
       handle.ydoc.transact(() => {
         handle.content.insert(handle.content.length, content);
       });
     } else {
-      // For .md: read current, append, rewrite
-      const current = serializeXmlFragmentToMarkdown(handle.content);
-      applyMarkdownToXmlFragment(handle.content, current + content);
+      // For .md: append to body only (front matter unchanged)
+      const currentBody = serializeXmlFragmentToMarkdown(handle.content);
+      updateYXmlFragmentFromString(handle.content, currentBody + content, serialize, apply);
     }
 
-    const newText = handle.kind === 'text'
+    const newText = handle.type === 'text'
       ? handle.content.toString()
-      : serializeXmlFragmentToMarkdown(handle.content);
+      : serializeMarkdownWithFrontmatter(yMapToRecord(handle.frontmatter), serializeXmlFragmentToMarkdown(handle.content));
     this.filesTable.update(id, {
       size: new TextEncoder().encode(newText).length,
       updatedAt: Date.now(),
@@ -419,6 +437,7 @@ class YjsFileSystem implements IFileSystem {
 ```typescript
 import { Bash } from 'just-bash';
 
+const index = createFileSystemIndex(client.tables.files);
 const yjsFs = new YjsFileSystem(client.tables.files, index, openContentDoc);
 const bash = new Bash({ fs: yjsFs, cwd: '/' });
 
@@ -467,38 +486,137 @@ const result4 = await bash.exec('ls -la /src/');
 
 ### File-type-driven Yjs backing
 
-**Decision: Y.XmlFragment for `.md`, Y.Text for everything else. Separate root-level keys (`'text'` / `'richtext'`) so both types can coexist on the same doc.**
+**Decision: Y.XmlFragment + Y.Map for `.md`, Y.Text for everything else. Three root-level keys (`'text'`, `'richtext'`, `'frontmatter'`) so all types can coexist on the same doc.**
 
 - y-prosemirror requires Y.XmlFragment (ProseMirror needs a tree structure)
 - y-codemirror.next requires Y.Text (1:1 character mapping)
+- Y.Map is the natural CRDT type for front matter — per-field last-writer-wins, concurrent edits to different metadata fields merge cleanly
 - No production system successfully syncs both representations bidirectionally
-- File extension determines the active type — it rarely changes, but when it does (rename), convert-on-switch migrates content between types
+- File extension determines the active types — it rarely changes, but when it does (rename), convert-on-switch migrates content between types
 
-### Dual keys with convert-on-switch (content type switching)
+### Triple keys with convert-on-switch (content type switching)
 
-**Decision: Each content doc uses two root-level keys — `'text'` (Y.Text) and `'richtext'` (Y.XmlFragment). Only one is "active" at a time, determined by file extension.**
+**Decision: Each content doc uses three root-level keys — `'text'` (Y.Text), `'richtext'` (Y.XmlFragment), and `'frontmatter'` (Y.Map). Active keys depend on file extension: `.md` uses `'richtext'` + `'frontmatter'`; code/txt files use `'text'` only.**
 
 **Why separate keys, not a shared `'content'` key**: Yjs permanently locks a root-level key to whichever shared type is accessed first. If a doc calls `getText('content')`, that key is bound to Y.Text forever — calling `getXmlFragment('content')` on the same doc throws. Separate keys allow both types to coexist, enabling type switching without destroying the document.
 
-**Key names**: `'text'` and `'richtext'` mirror the `kind` discriminator in `DocumentHandle`. They describe what the data represents (content format), not the Yjs type that stores it.
+**Key names**: `'text'` and `'richtext'` mirror the `type` discriminator in `DocumentHandle`. `'frontmatter'` stores structured YAML metadata for `.md` files. They describe what the data represents (content format), not the Yjs type that stores it.
 
 **Convert-on-switch flow:**
 
 Rename `.txt` → `.md`:
 1. Read current text: `ydoc.getText('text').toString()`
-2. Parse markdown → ProseMirror nodes → apply to `ydoc.getXmlFragment('richtext')`
-3. Active content is now `getXmlFragment('richtext')`
+2. Parse front matter: extract `---` delimited YAML and body via `parseFrontmatter()`
+3. Store front matter fields in `ydoc.getMap('frontmatter')` via `updateYMapFromRecord()`
+4. Apply body to `ydoc.getXmlFragment('richtext')` via `updateYXmlFragmentFromString()` (clear-and-rebuild)
+5. Active keys are now `getXmlFragment('richtext')` + `getMap('frontmatter')`
 
 Rename `.md` → `.txt`:
-1. Serialize: `remarkSerialize(ydoc.getXmlFragment('richtext'))` → markdown string
-2. Replace `ydoc.getText('text')` with the serialized string
-3. Active content is now `getText('text')`
+1. Serialize front matter: `yMapToRecord(ydoc.getMap('frontmatter'))` → YAML string
+2. Serialize body: `remarkSerialize(ydoc.getXmlFragment('richtext'))` → markdown string
+3. Combine: `serializeMarkdownWithFrontmatter(frontmatter, body)` — prepends `---\n{yaml}\n---\n` if front matter is non-empty
+4. Replace `ydoc.getText('text')` with the combined string via `updateYTextFromString()`
+5. Active key is now `getText('text')`
 
 **Properties:**
 - Rename remains a metadata operation (files table) + content migration — same Y.Doc, same GUID, no orphaned docs
-- The inactive type sits with stale data (negligible overhead vs content size)
+- The inactive types sit with stale data (negligible overhead vs content size)
+- Front matter survives format conversion: `.txt` → `.md` extracts front matter from text into structured Y.Map fields; `.md` → `.txt` serializes Y.Map fields back into YAML text
 - Round-trip is inherently lossy (markdown ↔ structured tree) — this matches reality of format conversion
 - No bidirectional sync — only one type is active at a time, avoiding the normalization loops that plague dual-representation systems
+
+### Front matter as Y.Map (structured metadata for .md files)
+
+**Decision: Store front matter in `Y.Map('frontmatter')` with top-level YAML keys as map entries.**
+
+Front matter is YAML metadata at the top of markdown files:
+
+```markdown
+---
+title: Hello World
+date: 2026-02-09
+tags: [tutorial, getting-started]
+---
+
+Body content here.
+```
+
+**Y.Map properties:**
+- **Per-field LWW**: Each top-level YAML key is a Y.Map entry. Concurrent edits to different fields merge cleanly (user A changes `title`, user B changes `tags` — both apply).
+- **JSON-compatible values**: Y.Map entries store strings, numbers, booleans, arrays, and nested objects — matching YAML's value space. Nested structures are stored as opaque JSON values (LWW at the top-level key, not deep-merged).
+- **Separate from body**: ProseMirror's document tree represents body content only. Front matter is not rendered as ProseMirror nodes. This avoids schema complexity and keeps the XmlFragment clean.
+
+**Why not store front matter in the Y.XmlFragment:**
+- ProseMirror schemas are designed for document content. Front matter is metadata, not content.
+- Agents editing front matter would need to understand the ProseMirror tree structure rather than simple key-value writes.
+- Mixing metadata into the document tree couples the serializer to a YAML library.
+
+**Why not store front matter in Y.Text:**
+- Y.Text is a flat character sequence. Concurrent edits to different YAML keys could interleave characters, producing invalid YAML.
+- Y.Map gives per-field conflict resolution — the correct granularity for structured metadata.
+
+**Read path**: `Y.Map.forEach()` → `Record<string, unknown>` → `yamlStringify()` → prepend to body with `---` delimiters.
+
+**Write path**: Parse `---` delimiters → `yamlParse()` → `Record<string, unknown>` → `updateYMapFromRecord()` (diff-updates the Y.Map: add new keys, update changed keys, delete missing keys).
+
+**Editor integration**: The UI renders front matter as a structured form (text fields, tag editors) bound directly to Y.Map entries. Changes propagate via Y.Map observers, not ProseMirror transactions. Independent of the rich text editor.
+
+**Helper functions:**
+
+```typescript
+/** Parse a markdown string into front matter record + body string */
+function parseFrontmatter(content: string): {
+  frontmatter: Record<string, unknown>;
+  body: string;
+} {
+  if (!content.startsWith('---\n')) return { frontmatter: {}, body: content };
+  const endIndex = content.indexOf('\n---\n', 4);
+  if (endIndex === -1) return { frontmatter: {}, body: content };
+  const yaml = content.slice(4, endIndex);
+  const body = content.slice(endIndex + 5);
+  return { frontmatter: yamlParse(yaml), body };
+}
+
+/** Diff-update a Y.Map to match a target record. Per-field LWW. */
+function updateYMapFromRecord(ymap: Y.Map<unknown>, target: Record<string, unknown>): void {
+  const doc = ymap.doc!;
+  doc.transact(() => {
+    // Delete keys not in target
+    ymap.forEach((_, key) => {
+      if (!(key in target)) ymap.delete(key);
+    });
+    // Set/update keys from target
+    for (const [key, value] of Object.entries(target)) {
+      const current = ymap.get(key);
+      if (!deepEqual(current, value)) ymap.set(key, value);
+    }
+  });
+}
+
+/** Combine front matter and body into a markdown string with --- delimiters */
+function serializeMarkdownWithFrontmatter(
+  frontmatter: Record<string, unknown>,
+  body: string,
+): string {
+  if (Object.keys(frontmatter).length === 0) return body;
+  return `---\n${yamlStringify(frontmatter)}---\n${body}`;
+}
+
+/** Convert Y.Map to a plain Record */
+function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  ymap.forEach((value, key) => { result[key] = value; });
+  return result;
+}
+```
+
+### Future optimization: updateYFragment for agent writes
+
+**Current approach**: Agent `writeFile` on `.md` files uses clear-and-rebuild via `updateYXmlFragmentFromString()`. This is correct but destroys all CRDT identity — every character loses its Yjs item ID on every write. Snapshot diffs show "everything deleted, everything re-inserted."
+
+**Future upgrade**: Replace clear-and-rebuild internals with y-prosemirror's `updateYFragment()`. This function diffs a ProseMirror node tree against the existing Y.XmlFragment, preserving unchanged paragraphs and applying character-level diffs within modified text nodes. Requires a headless ProseMirror schema matching Milkdown's schema plus a `markdownToProseMirrorNode()` parse function.
+
+**When to adopt**: When concurrent human + agent editing on `.md` files is a real workflow, or when revision history granularity on markdown files matters. The architectural change is contained to a single function's internals — no API changes needed.
 
 ### File IDs are Guids (not table-scoped Ids)
 
@@ -657,7 +775,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 3. `files.update(id, { name: newName, updatedAt: Date.now() })`
 4. If file extension changed (e.g., `.txt` → `.md` or `.md` → `.txt`):
    a. Load content doc
-   b. Serialize from old active type → populate new active type (convert-on-switch)
+   b. Serialize from old active type → populate new active type (convert-on-switch, including front matter migration)
    c. Invalidate plaintext cache
 
 ### Trash (IFileSystem `rm` and UI)
@@ -680,12 +798,12 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ### Read File Content
 1. Resolve path to ID via `pathToId` index
 2. Check plaintext cache — return if cached
-3. Load content Y.Doc, extract text, cache, return
+3. Load content Y.Doc. For code files: `Y.Text.toString()`. For `.md` files: serialize `Y.Map('frontmatter')` → YAML + serialize `Y.XmlFragment('richtext')` → markdown body + combine with `---` delimiters. Cache and return.
 
 ### Write File Content
 1. Resolve path to ID (or create file if new)
 2. Load content Y.Doc
-3. Apply changes via Yjs transaction (Y.Text or Y.XmlFragment)
+3. For code files: apply changes via Yjs transaction on Y.Text. For `.md` files: extract front matter → `updateYMapFromRecord()` on Y.Map, apply body via `updateYXmlFragmentFromString()` on Y.XmlFragment (clear-and-rebuild).
 4. Update `size` and `updatedAt` on files table row
 5. Update plaintext cache
 
@@ -756,3 +874,4 @@ The testing approach: populate a `YjsFileSystem` with known files/folders, pass 
 2. **Binary files**: Store blob references in files table metadata? Separate blob storage system?
 3. **File size limits**: Large files (>1MB) as Y.Text are expensive. Read-only mode above a threshold?
 4. **Plaintext cache warming**: Should the server eagerly cache all content for fast first-grep? Or always lazy?
+5. **Front matter deep merge**: Y.Map stores top-level YAML keys with LWW semantics. Nested objects (e.g., `metadata: { author: "...", version: "..." }`) are stored as opaque JSON — concurrent edits to different nested keys within the same top-level key will be LWW (one wins). Is this sufficient, or should deeply nested front matter use nested Y.Maps? Recommendation: start with flat LWW. Deep merge adds complexity and front matter is rarely deeply nested in practice.

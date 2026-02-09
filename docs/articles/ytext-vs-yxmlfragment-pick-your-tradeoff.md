@@ -35,7 +35,7 @@ With Y.XmlFragment + clear-and-rebuild, the agent's write destroys CRDT identity
 | Agent write CRDT identity | ✅ character-level preserved | ❌ destroyed | ⚠️ paragraph-level |
 | Concurrent edit safety | ✅ non-overlapping survives | ❌ all lost | ⚠️ paragraph matching can be wrong |
 | Overlapping format safety | ⚠️ markers can interleave | ✅ tree-level marks merge | ✅ same |
-| Revision history | ✅ character-level diffs | ❌ "everything changed" | ⚠️ paragraph-level |
+| Revision history diffs | ✅ character-level diffs | ⚠️ coarse diffs (rollback still works via snapshots) | ⚠️ paragraph-level |
 | Storage efficiency | ✅ proportional to changes | ❌ full tombstones every write | ⚠️ better |
 | Cursor/presence | ⚠️ custom mapping needed | ✅ native y-prosemirror | ✅ same |
 | Undo/redo | ⚠️ captureTimeout tuning | ✅ native yUndoPlugin | ✅ same |
@@ -84,7 +84,7 @@ Tree-level formatting merges correctly. If two writers apply bold and italic to 
 
 The cost: agent writes destroy CRDT identity. The clear-and-rebuild pattern deletes everything and inserts everything. Yjs sees every character as deleted and re-inserted. All concurrent human edits are lost.
 
-Revision history shows "everything changed" for every agent write. You can't see granular diffs.
+Revision history diffs show "everything changed" for every agent write — you can't see granular diffs between versions. However, snapshots with `gc: false` still capture complete document state. Rollback and version browsing work perfectly; only the diff granularity is coarse.
 
 Storage is inefficient. Every agent write creates tombstones for every character, even if only one line changed.
 

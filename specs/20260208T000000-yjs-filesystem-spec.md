@@ -153,7 +153,8 @@ function openDocument(fileId: Guid, fileName: string): DocumentHandle {
 ### Content doc GC strategy
 
 - **Main doc** (files table): `gc: true`. LWW doesn't need CRDT history. Efficient.
-- **Content docs**: `gc: false`. Enables Yjs snapshots for per-file version history. Matches Google Drive's per-file revision model — no workspace-wide rollback, just individual file history.
+- **Content docs**: `gc: false`. Retains tombstones for all deleted items, enabling Yjs snapshots for per-file version history. A snapshot is a state vector (`{ clientId → clock }`) that captures the document state at a point in time. Since tombstones are retained, any previous snapshot can be fully reconstructed — rollback to any version, play through the full history. Snapshots can be taken on every transaction for fine-grained history. Matches Google Drive's per-file revision model — no workspace-wide rollback, just individual file history.
+- **Clear-and-rebuild writes (agent `writeFile` on `.md`)**: Each agent write tombstones all existing characters and inserts new ones. Snapshots still capture complete document state — rollback works perfectly. The only cost is storage growth (tombstones accumulate) and coarser diffs between snapshots (shows "everything deleted, everything re-inserted" instead of character-level changes). This does not affect rollback or version browsing — each snapshot is a complete, exact document state.
 
 ---
 
@@ -680,13 +681,17 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 }
 ```
 
-### Future optimization: updateYFragment for agent writes
+### Agent writes on .md files: clear-and-rebuild
 
-**Current approach**: Agent `writeFile` on `.md` files uses clear-and-rebuild via `updateYXmlFragmentFromString()`. This is correct but destroys all CRDT identity — every character loses its Yjs item ID on every write. Snapshot diffs show "everything deleted, everything re-inserted."
+**Approach**: Agent `writeFile` on `.md` files uses clear-and-rebuild via `updateYXmlFragmentFromString()`. This deletes all XmlFragment nodes and rebuilds from the parsed markdown in a single Yjs transaction. Every character loses its Yjs item ID on each write.
 
-**Future upgrade**: Replace clear-and-rebuild internals with y-prosemirror's `updateYFragment()`. This function diffs a ProseMirror node tree against the existing Y.XmlFragment, preserving unchanged paragraphs and applying character-level diffs within modified text nodes. Requires a headless ProseMirror schema matching Milkdown's schema plus a `markdownToProseMirrorNode()` parse function.
+**Revision history is fully functional.** Content docs use `gc: false`, so tombstones from clear-and-rebuild are retained. Snapshots taken before and after an agent write capture complete document states. Rollback to any snapshot reconstructs the exact document. The only difference from character-level diffs: the diff *between* two snapshots shows "everything deleted, everything re-inserted" rather than highlighting the specific changes. The snapshots themselves are perfect — browsing history and restoring versions works identically to code files with character-level diffs.
 
-**When to adopt**: When concurrent human + agent editing on `.md` files is a real workflow, or when revision history granularity on markdown files matters. The architectural change is contained to a single function's internals — no API changes needed.
+**Concurrent editing limitation.** If a human is editing in ProseMirror while an agent calls `writeFile`, the agent's clear-and-rebuild destroys the human's in-flight CRDT operations. Non-overlapping edits are lost because every character is deleted and re-inserted with new IDs. This is the primary cost of clear-and-rebuild — not revision history, but concurrent writer safety.
+
+**Storage cost.** Each agent write creates tombstones for every existing character plus new items for every inserted character. A 5KB markdown file with 20 agent writes accumulates ~200KB of Yjs state. Manageable for local-first storage, and compaction (snapshot → fresh doc) can reclaim space if needed.
+
+**Future optimization: `updateYFragment`.** Replace clear-and-rebuild internals with y-prosemirror's `updateYFragment()`. This diffs a ProseMirror node tree against the existing Y.XmlFragment, preserving unchanged paragraphs and applying character-level diffs within modified text nodes. Requires a headless ProseMirror schema matching Milkdown's schema plus a `markdownToProseMirrorNode()` parse function. Adopt when concurrent human + agent editing on `.md` files is a real workflow. The architectural change is contained to a single function's internals — no API changes needed.
 
 ### File IDs are Guids (not table-scoped Ids)
 
@@ -712,7 +717,7 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 - Google Drive has no version history for metadata (renames, moves are not versioned)
 - Rolling back the filesystem means undoing renames that other users already see — semantically wrong
-- Per-file snapshots via Yjs (content docs use `gc: false`) match Google's per-file revision model
+- Per-file snapshots via Yjs (content docs use `gc: false`) provide complete version history per file. Snapshots can be taken on every transaction. Each snapshot reconstructs the exact document state at that point — rollback and history playback work for all file types, including `.md` files with clear-and-rebuild agent writes
 - Main doc uses `gc: true` for efficient LWW
 
 ### Soft delete (co-located `trashedAt`)

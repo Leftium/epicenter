@@ -62,8 +62,8 @@ export type FileRow = {
 export type FileSystemIndex = {
 	pathToId: Map<string, FileId>;
 	childrenOf: Map<FileId | null, FileId[]>;
-	plaintext: Map<FileId, string>;
 };
+// Note: plaintext cache was subsequently removed — see specs/20260209T000000-simplify-content-doc-lifecycle.md
 ```
 
 No sentinel. No coalescing. `null` means root in both the data layer and index layer.
@@ -110,7 +110,6 @@ FileRow.parentId: FileId | null    →    childrenOf: Map<FileId | null, FileId[
                                          (null key = root children)
 
 FileRow.id: FileId                 →    pathToId: Map<string, FileId>
-                                         plaintext: Map<FileId, string>
 ```
 
 ```

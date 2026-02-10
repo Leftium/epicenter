@@ -1,17 +1,20 @@
 import { describe, expect, test } from 'bun:test';
 import { Bash } from 'just-bash';
 import { createWorkspace } from '../static/create-workspace.js';
+import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
 import { createFileSystemIndex } from './file-system-index.js';
 import { createContentDocPool } from './content-doc-pool.js';
 import { YjsFileSystem } from './yjs-file-system.js';
+import type { FileRow } from './types.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const index = createFileSystemIndex(ws.tables.files);
+	const files = ws.tables.files as unknown as TableHelper<FileRow>;
+	const index = createFileSystemIndex(files);
 	const pool = createContentDocPool();
-	const fs = new YjsFileSystem(ws.tables.files, index, pool);
-	return { ws, index, pool, fs };
+	const fs = new YjsFileSystem(files, index, pool);
+	return { ws, files, index, pool, fs };
 }
 
 describe('YjsFileSystem', () => {

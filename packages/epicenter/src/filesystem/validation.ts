@@ -1,5 +1,5 @@
 import type { TableHelper } from '../static/types.js';
-import type { FileRow } from './types.js';
+import type { FileId, FileRow } from './types.js';
 
 type FsErrorCode =
 	| 'ENOENT'
@@ -33,13 +33,12 @@ export function validateName(name: string): void {
  */
 export function assertUniqueName(
 	filesTable: TableHelper<FileRow>,
-	childrenOf: Map<string, string[]>,
-	parentId: string | null,
+	childrenOf: Map<FileId | null, FileId[]>,
+	parentId: FileId | null,
 	name: string,
-	excludeId?: string,
+	excludeId?: FileId,
 ): void {
-	const parentKey = parentId ?? '__ROOT__';
-	const siblingIds = childrenOf.get(parentKey) ?? [];
+	const siblingIds = childrenOf.get(parentId) ?? [];
 	const duplicate = siblingIds.find((id) => {
 		if (id === excludeId) return false;
 		const result = filesTable.get(id);

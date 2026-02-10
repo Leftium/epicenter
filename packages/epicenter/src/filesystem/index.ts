@@ -2,12 +2,13 @@
 export type {
 	ContentDocPool,
 	DocumentHandle,
+	FileId,
 	FileRow,
 	FileSystemIndex,
 	RichTextDocumentHandle,
 	TextDocumentHandle,
 } from './types.js';
-export { ROOT_ID } from './types.js';
+export { generateFileId } from './types.js';
 
 // File table definition
 export { filesTable } from './file-table.js';

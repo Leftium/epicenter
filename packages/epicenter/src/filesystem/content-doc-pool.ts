@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import type { ContentDocPool, DocumentHandle } from './types.js';
+import type { ContentDocPool, DocumentHandle, FileId } from './types.js';
 import {
 	serializeMarkdownWithFrontmatter,
 	serializeXmlFragmentToMarkdown,
@@ -18,7 +18,7 @@ type PoolEntry = {
  * .md files use Y.XmlFragment('richtext') + Y.Map('frontmatter').
  * All other files use Y.Text('text').
  */
-export function openDocument(fileId: string, fileName: string, ydoc: Y.Doc): DocumentHandle {
+export function openDocument(fileId: FileId, fileName: string, ydoc: Y.Doc): DocumentHandle {
 	if (getExtensionCategory(fileName) === 'richtext') {
 		return {
 			type: 'richtext',
@@ -53,10 +53,10 @@ export function documentHandleToString(handle: DocumentHandle): string {
 export function createContentDocPool(
 	connectProvider?: (ydoc: Y.Doc) => { destroy(): void },
 ): ContentDocPool {
-	const docs = new Map<string, PoolEntry>();
+	const docs = new Map<FileId, PoolEntry>();
 
 	return {
-		acquire(fileId: string, fileName: string): DocumentHandle {
+		acquire(fileId: FileId, fileName: string): DocumentHandle {
 			const existing = docs.get(fileId);
 			if (existing) {
 				existing.refcount++;
@@ -71,7 +71,7 @@ export function createContentDocPool(
 			return handle;
 		},
 
-		release(fileId: string): void {
+		release(fileId: FileId): void {
 			const entry = docs.get(fileId);
 			if (!entry) return;
 			entry.refcount--;
@@ -82,11 +82,11 @@ export function createContentDocPool(
 			}
 		},
 
-		peek(fileId: string): DocumentHandle | undefined {
+		peek(fileId: FileId): DocumentHandle | undefined {
 			return docs.get(fileId)?.handle;
 		},
 
-		loadAndCache(fileId: string, fileName: string): string {
+		loadAndCache(fileId: FileId, fileName: string): string {
 			const handle = this.acquire(fileId, fileName);
 			const text = documentHandleToString(handle);
 			this.release(fileId);

@@ -1,5 +1,5 @@
 import type { TableHelper } from '../static/types.js';
-import { ROOT_ID, type FileRow, type FileSystemIndex } from './types.js';
+import type { FileId, FileRow, FileSystemIndex } from './types.js';
 import { disambiguateNames } from './validation.js';
 
 const MAX_DEPTH = 50;
@@ -11,10 +11,10 @@ const MAX_DEPTH = 50;
 export function createFileSystemIndex(
 	filesTable: TableHelper<FileRow>,
 ): FileSystemIndex & { destroy(): void } {
-	const pathToId = new Map<string, string>();
-	const idToPath = new Map<string, string>();
-	const childrenOf = new Map<string, string[]>();
-	const plaintext = new Map<string, string>();
+	const pathToId = new Map<string, FileId>();
+	const idToPath = new Map<FileId, string>();
+	const childrenOf = new Map<FileId | null, FileId[]>();
+	const plaintext = new Map<FileId, string>();
 
 	rebuild();
 
@@ -28,19 +28,14 @@ export function createFileSystemIndex(
 		childrenOf.clear();
 		// Don't clear plaintext — it's a cache that survives rebuilds
 
-		// Root virtual entry
-		pathToId.set('/', ROOT_ID);
-		idToPath.set(ROOT_ID, '/');
-
 		const rows = filesTable.getAllValid();
 		const activeRows = rows.filter((r) => r.trashedAt === null);
 
 		// Build childrenOf index
 		for (const row of activeRows) {
-			const parentKey = row.parentId ?? ROOT_ID;
-			const children = childrenOf.get(parentKey) ?? [];
+			const children = childrenOf.get(row.parentId) ?? [];
 			children.push(row.id);
-			childrenOf.set(parentKey, children);
+			childrenOf.set(row.parentId, children);
 		}
 
 		// Detect and fix circular references
@@ -73,12 +68,12 @@ export function createFileSystemIndex(
 
 /** Walk parentId chain to compute a file's path */
 function computePath(
-	id: string,
+	id: FileId,
 	filesTable: TableHelper<FileRow>,
 	displayNames: Map<string, string>,
 ): string | null {
 	const parts: string[] = [];
-	let currentId: string | null = id;
+	let currentId: FileId | null = id;
 	let depth = 0;
 
 	while (currentId !== null && depth < MAX_DEPTH) {
@@ -98,9 +93,9 @@ function computePath(
 /** Build path indexes for all active rows */
 function buildPaths(
 	filesTable: TableHelper<FileRow>,
-	childrenOf: Map<string, string[]>,
-	pathToId: Map<string, string>,
-	idToPath: Map<string, string>,
+	childrenOf: Map<FileId | null, FileId[]>,
+	pathToId: Map<string, FileId>,
+	idToPath: Map<FileId, string>,
 ) {
 	// Compute display names per parent (handles CRDT duplicate names)
 	const allDisplayNames = new Map<string, string>();
@@ -139,8 +134,8 @@ function fixCircularReferences(
 	filesTable: TableHelper<FileRow>,
 	activeRows: FileRow[],
 ) {
-	const visited = new Set<string>();
-	const inStack = new Set<string>();
+	const visited = new Set<FileId>();
+	const inStack = new Set<FileId>();
 
 	for (const row of activeRows) {
 		if (visited.has(row.id)) continue;
@@ -149,13 +144,13 @@ function fixCircularReferences(
 }
 
 function detectCycle(
-	startId: string,
+	startId: FileId,
 	filesTable: TableHelper<FileRow>,
-	visited: Set<string>,
-	inStack: Set<string>,
+	visited: Set<FileId>,
+	inStack: Set<FileId>,
 ) {
-	const path: string[] = [];
-	let currentId: string | null = startId;
+	const path: FileId[] = [];
+	let currentId: FileId | null = startId;
 
 	while (currentId !== null) {
 		if (visited.has(currentId)) break; // Known safe — clean up and return
@@ -203,7 +198,7 @@ function detectCycle(
 function fixOrphans(
 	filesTable: TableHelper<FileRow>,
 	activeRows: FileRow[],
-	childrenOf: Map<string, string[]>,
+	childrenOf: Map<FileId | null, FileId[]>,
 ) {
 	const activeIds = new Set(activeRows.map((r) => r.id));
 
@@ -220,8 +215,8 @@ function fixOrphans(
 			row.parentId,
 			oldChildren.filter((id) => id !== row.id),
 		);
-		const rootChildren = childrenOf.get(ROOT_ID) ?? [];
+		const rootChildren = childrenOf.get(null) ?? [];
 		rootChildren.push(row.id);
-		childrenOf.set(ROOT_ID, rootChildren);
+		childrenOf.set(null, rootChildren);
 	}
 }

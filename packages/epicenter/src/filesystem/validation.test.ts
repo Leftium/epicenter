@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '../static/create-workspace.js';
+import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
-import { ROOT_ID } from './types.js';
+import type { FileId, FileRow } from './types.js';
 import {
 	assertUniqueName,
 	disambiguateNames,
@@ -9,16 +10,20 @@ import {
 	validateName,
 } from './validation.js';
 
+const fid = (s: string) => s as FileId;
+
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return ws;
+	// Arktype schema uses plain strings; cast to branded FileRow for filesystem functions
+	const files = ws.tables.files as unknown as TableHelper<FileRow>;
+	return { files };
 }
 
 function makeRow(id: string, name: string, parentId: string | null = null, createdAt = Date.now()) {
 	return {
-		id,
+		id: fid(id),
 		name,
-		parentId,
+		parentId: parentId === null ? null : fid(parentId),
 		type: 'file' as const,
 		size: 0,
 		createdAt,
@@ -72,42 +77,42 @@ describe('validateName', () => {
 
 describe('assertUniqueName', () => {
 	test('allows unique name', () => {
-		const ws = setup();
-		ws.tables.files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map([[ROOT_ID, ['a']]]);
+		const { files } = setup();
+		files.set(makeRow('a', 'hello.txt'));
+		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(ws.tables.files, childrenOf, null, 'world.txt'),
+			assertUniqueName(files, childrenOf, null, 'world.txt'),
 		).not.toThrow();
 	});
 
 	test('throws EEXIST on duplicate', () => {
-		const ws = setup();
-		ws.tables.files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map([[ROOT_ID, ['a']]]);
+		const { files } = setup();
+		files.set(makeRow('a', 'hello.txt'));
+		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(ws.tables.files, childrenOf, null, 'hello.txt'),
+			assertUniqueName(files, childrenOf, null, 'hello.txt'),
 		).toThrow('EEXIST');
 	});
 
 	test('ignores trashed files', () => {
-		const ws = setup();
-		ws.tables.files.set({ ...makeRow('a', 'hello.txt'), trashedAt: Date.now() });
-		const childrenOf = new Map([[ROOT_ID, ['a']]]);
+		const { files } = setup();
+		files.set({ ...makeRow('a', 'hello.txt'), trashedAt: Date.now() });
+		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(ws.tables.files, childrenOf, null, 'hello.txt'),
+			assertUniqueName(files, childrenOf, null, 'hello.txt'),
 		).not.toThrow();
 	});
 
 	test('excludes self on rename', () => {
-		const ws = setup();
-		ws.tables.files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map([[ROOT_ID, ['a']]]);
+		const { files } = setup();
+		files.set(makeRow('a', 'hello.txt'));
+		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(ws.tables.files, childrenOf, null, 'hello.txt', 'a'),
+			assertUniqueName(files, childrenOf, null, 'hello.txt', fid('a')),
 		).not.toThrow();
 	});
 });

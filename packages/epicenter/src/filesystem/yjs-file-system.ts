@@ -1,8 +1,7 @@
 import type { IFileSystem, FsStat, CpOptions, MkdirOptions, RmOptions, FileContent } from 'just-bash';
 import type { TableHelper } from '../static/types.js';
-import { generateGuid } from '../dynamic/schema/fields/id.js';
-import type { ContentDocPool, FileRow, FileSystemIndex } from './types.js';
-import { ROOT_ID } from './types.js';
+import type { ContentDocPool, FileId, FileRow, FileSystemIndex } from './types.js';
+import { generateFileId } from './types.js';
 import {
 	parseFrontmatter,
 	updateYMapFromRecord,
@@ -88,6 +87,7 @@ export class YjsFileSystem implements IFileSystem {
 			};
 		}
 		const id = this.resolveId(resolved);
+		if (id === null) throw fsError('EISDIR', resolved);
 		const row = this.getRow(id, resolved);
 		return {
 			isFile: row.type === 'file',
@@ -116,6 +116,7 @@ export class YjsFileSystem implements IFileSystem {
 	async readFile(path: string, _options?: { encoding?: string | null } | string): Promise<string> {
 		const resolved = posixResolve(this.cwd, path);
 		const id = this.resolveId(resolved);
+		if (id === null) throw fsError('EISDIR', resolved);
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
@@ -148,7 +149,7 @@ export class YjsFileSystem implements IFileSystem {
 			const { parentId, name } = this.parsePath(resolved);
 			validateName(name);
 			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
-			id = generateGuid();
+			id = generateFileId();
 			this.filesTable.set({
 				id,
 				name,
@@ -217,7 +218,7 @@ export class YjsFileSystem implements IFileSystem {
 				const { parentId } = this.parsePath(currentPath);
 				assertUniqueName(this.filesTable, this.index.childrenOf, parentId, part);
 				this.filesTable.set({
-					id: generateGuid(),
+					id: generateFileId(),
 					name: part,
 					parentId,
 					type: 'folder',
@@ -232,7 +233,7 @@ export class YjsFileSystem implements IFileSystem {
 			validateName(name);
 			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
 			this.filesTable.set({
-				id: generateGuid(),
+				id: generateFileId(),
 				name,
 				parentId,
 				type: 'folder',
@@ -273,6 +274,7 @@ export class YjsFileSystem implements IFileSystem {
 		const resolvedSrc = posixResolve(this.cwd, src);
 		const resolvedDest = posixResolve(this.cwd, dest);
 		const srcId = this.resolveId(resolvedSrc);
+		if (srcId === null) throw fsError('EISDIR', resolvedSrc);
 		const srcRow = this.getRow(srcId, resolvedSrc);
 
 		if (srcRow.type === 'folder') {
@@ -292,6 +294,7 @@ export class YjsFileSystem implements IFileSystem {
 		const resolvedSrc = posixResolve(this.cwd, src);
 		const resolvedDest = posixResolve(this.cwd, dest);
 		const id = this.resolveId(resolvedSrc);
+		if (id === null) throw fsError('EISDIR', resolvedSrc);
 		const row = this.getRow(id, resolvedSrc);
 		const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
 		validateName(newName);
@@ -336,6 +339,7 @@ export class YjsFileSystem implements IFileSystem {
 	async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
 		const resolved = posixResolve(this.cwd, path);
 		const id = this.resolveId(resolved);
+		if (id === null) return; // root has no metadata to update
 		this.filesTable.update(id, { updatedAt: mtime.getTime() });
 	}
 
@@ -370,33 +374,33 @@ export class YjsFileSystem implements IFileSystem {
 	}
 
 	getAllPaths(): string[] {
-		return Array.from(this.index.pathToId.keys()).filter((p) => p !== '/');
+		return Array.from(this.index.pathToId.keys());
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PRIVATE HELPERS
 	// ═══════════════════════════════════════════════════════════════════════
 
-	private resolveId(path: string): string {
-		if (path === '/') return ROOT_ID;
+	private resolveId(path: string): FileId | null {
+		if (path === '/') return null;
 		const id = this.index.pathToId.get(path);
 		if (!id) throw fsError('ENOENT', path);
 		return id;
 	}
 
-	private getRow(id: string, path: string): FileRow {
+	private getRow(id: FileId, path: string): FileRow {
 		const result = this.filesTable.get(id);
 		if (result.status !== 'valid') throw fsError('ENOENT', path);
 		return result.row;
 	}
 
-	private assertDirectory(id: string, path: string): void {
-		if (id === ROOT_ID) return;
+	private assertDirectory(id: FileId | null, path: string): void {
+		if (id === null) return;
 		const row = this.getRow(id, path);
 		if (row.type !== 'folder') throw fsError('ENOTDIR', path);
 	}
 
-	private getActiveChildren(childIds: string[]): FileRow[] {
+	private getActiveChildren(childIds: FileId[]): FileRow[] {
 		const rows: FileRow[] = [];
 		for (const cid of childIds) {
 			const result = this.filesTable.get(cid);
@@ -407,7 +411,7 @@ export class YjsFileSystem implements IFileSystem {
 		return rows;
 	}
 
-	private parsePath(path: string): { parentId: string | null; name: string } {
+	private parsePath(path: string): { parentId: FileId | null; name: string } {
 		const normalized = posixResolve(this.cwd, path);
 		const lastSlash = normalized.lastIndexOf('/');
 		const name = normalized.substring(lastSlash + 1);
@@ -418,7 +422,7 @@ export class YjsFileSystem implements IFileSystem {
 		return { parentId, name };
 	}
 
-	private softDeleteDescendants(parentId: string): void {
+	private softDeleteDescendants(parentId: FileId): void {
 		const children = this.index.childrenOf.get(parentId) ?? [];
 		for (const cid of children) {
 			const result = this.filesTable.get(cid);

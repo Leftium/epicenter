@@ -80,15 +80,15 @@ const workspace = defineWorkspace({
 | `parentId` | `readdir()`, tree traversal | null = root. ID-based = O(1) move, no cascading updates |
 | `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory` |
 | `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
-| `createdAt` | UI display, future `btime` | Immutable after creation. Not surfaced by just-bash's `FsStat` (which only has `mtime`), but useful for UI ("created 3 days ago") and maps to birthtime if `FsStat` is extended later. |
-| `updatedAt` | `stat()` mtime, `find -newer`, `utimes()` | Updated on content OR metadata change. Writable via `utimes()`. |
+| `createdAt` | `stat()` birthtime, UI display | Immutable after creation. Surfaced as `FsStat.birthtime`. Used by UI ("created 3 days ago"). |
+| `updatedAt` | `stat()` mtime, `find -newer` | Updated on content OR metadata change. |
 | `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. IFileSystem `rm` sets this (soft delete). Permanent delete = `files.delete(id)` via "empty trash" UI only. |
 
 ### What's NOT stored
 
 - **Full path**: Derived at runtime. Storing it means cascade-updating every descendant on rename/move — O(n) Yjs writes vs O(1).
 - **Content / plaintext**: Content belongs in content Y.Docs. Mixing it into metadata violates the two-layer separation and bloats the always-loaded main doc.
-- **Unix mode/permissions**: Always derived (0o644 for files, 0o755 for folders). Collaborative system — unix permissions don't apply.
+- **Unix mode/permissions**: Always derived (0o644 for files, 0o755 for folders). `chmod()` is a no-op (silently succeeds to satisfy just-bash). Collaborative system — unix permissions don't apply.
 - **MIME type**: Derived from file extension at runtime.
 - **File extension**: Stored as part of `name` (single field). Extensions are a convention, not a structural element — files without extensions (`Makefile`, `.gitignore`) and files with multiple dots (`file.test.ts`, `archive.tar.gz`) make splitting ambiguous. Every real filesystem and API (ext4, APFS, Google Drive, Dropbox) stores a single name.
 - **Sort order**: No filesystem or file API (Google Drive included) supports user-defined sibling ordering. `ls` and `readdir` sort at the application layer. If a UI file tree with drag-and-drop reordering is needed later, add a nullable `sortOrder` field — it's a non-breaking additive change.
@@ -219,52 +219,171 @@ On a server (where agents run), the server has all content docs available and ca
 
 By implementing `IFileSystem` backed by the Yjs filesystem, agents get all 83 commands for free with pipe composition, redirections, and shell scripting.
 
-### Interface mapping
+### IFileSystem interface (exact just-bash contract)
 
-just-bash's `IFileSystem` uses plain booleans (not methods) for `FsStat` and `DirentEntry`, and `readFile` returns `FileContent` (`string | Uint8Array`). The interface requires `appendFile` and `copyFile` in addition to the standard CRUD operations.
+just-bash's `IFileSystem` requires 17 methods. The exact interface (from `just-bash/src/fs/interface.ts`):
+
+```typescript
+interface IFileSystem {
+  readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string>;
+  readFileBuffer(path: string): Promise<Uint8Array>;
+  writeFile(path: string, content: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void>;
+  appendFile(path: string, content: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  stat(path: string): Promise<FsStat>;
+  mkdir(path: string, options?: MkdirOptions): Promise<void>;
+  readdir(path: string): Promise<string[]>;
+  readdirWithFileTypes(path: string): Promise<DirentEntry[]>;
+  rm(path: string, options?: RmOptions): Promise<void>;
+  cp(source: string, destination: string, options?: CpOptions): Promise<void>;
+  rename(oldPath: string, newPath: string): Promise<void>;
+  symlink(target: string, path: string): Promise<void>;
+  readlink(path: string): Promise<string>;
+  chmod(path: string, mode: number): Promise<void>;
+  resolvePath(path: string): string;  // synchronous, single argument
+  realpath(path: string): Promise<string>;
+  watch(filename: PathLike, listener: (eventType: 'rename' | 'change', filename: string) => void): Disposable;
+}
+
+interface FsStat {
+  isFile: boolean;
+  isDirectory: boolean;
+  isSymbolicLink: boolean;
+  size: number;
+  mode: number;
+  mtime: Date;
+  birthtime: Date;  // maps to createdAt
+}
+```
+
+**Key differences from what you might expect:**
+- `readFile` returns `string`, NOT `FileContent`. Binary reads use the separate `readFileBuffer`.
+- `rename(oldPath, newPath)`, NOT `mv()`. This handles both moves and renames.
+- `cp(source, dest, options?)`, NOT `copyFile`. Supports `{ recursive: true }` for directory copies.
+- `resolvePath(path)` takes a single argument, NOT variadic.
+- `FsStat.birthtime` is required — maps to `createdAt`.
+- `watch()` returns a `Disposable` for file watching.
+- **NOT in IFileSystem**: `utimes`, `link`, `lstat`, `getAllPaths`.
+
+### Root directory
+
+The root directory (`/`) is a virtual entry — no row in the files table. Special-cased in all path operations:
+
+```typescript
+const ROOT_ID = '__ROOT__';  // sentinel, never stored in files table
+
+// stat('/') returns a synthetic directory entry
+// readdir('/') returns childrenOf.get(ROOT_ID) — children with parentId === null
+// exists('/') returns true
+// pathToId.set('/', ROOT_ID) during index build
+```
+
+Files with `parentId: null` are root-level children. The `childrenOf` index maps `ROOT_ID → [ids of files with parentId === null]`.
+
+### Content doc pool
+
+Content Y.Docs are managed by a pool with reference counting and on-demand loading:
+
+```typescript
+type ContentDocPool = {
+  /** Get or create a content doc. Increments refcount. */
+  acquire(fileId: string, fileName: string): DocumentHandle;
+  /** Decrement refcount. Doc destroyed when refcount hits 0. */
+  release(fileId: string): void;
+  /** Get without incrementing refcount (for cache reads). Returns undefined if not loaded. */
+  peek(fileId: string): DocumentHandle | undefined;
+  /** Load a doc, populate plaintext cache, release immediately. For grep/search. */
+  loadAndCache(fileId: string, fileName: string): string;
+};
+
+function createContentDocPool(
+  connectProvider?: (ydoc: Y.Doc) => { destroy(): void },
+): ContentDocPool {
+  const docs = new Map<string, { handle: DocumentHandle; refcount: number; provider?: { destroy(): void } }>();
+
+  return {
+    acquire(fileId, fileName) {
+      const existing = docs.get(fileId);
+      if (existing) { existing.refcount++; return existing.handle; }
+
+      const ydoc = new Y.Doc({ guid: fileId, gc: false });
+      const provider = connectProvider?.(ydoc);
+      const handle = openDocument(fileId, fileName);
+      docs.set(fileId, { handle, refcount: 1, provider });
+      return handle;
+    },
+    release(fileId) {
+      const entry = docs.get(fileId);
+      if (!entry) return;
+      entry.refcount--;
+      if (entry.refcount <= 0) {
+        entry.provider?.destroy();
+        entry.handle.ydoc.destroy();
+        docs.delete(fileId);
+      }
+    },
+    peek(fileId) {
+      return docs.get(fileId)?.handle;
+    },
+    loadAndCache(fileId, fileName) {
+      const handle = this.acquire(fileId, fileName);
+      const text = documentHandleToString(handle);
+      this.release(fileId);
+      return text;
+    },
+  };
+}
+```
+
+**Why reference counting**: Editors hold a reference while open. `grep -r` acquires, reads, releases. In the browser, only actively viewed files stay loaded (10-20 at a time). On the server, all docs can stay loaded (the server has memory for the full workspace).
+
+**Provider connection model**: y-websocket uses one WebSocket per Y.Doc (no multiplexing). For the browser with 500 files, only the main doc + actively open content docs are connected (not all 500). The pool's `connectProvider` callback handles this — pass it for networked environments, omit it for in-memory testing.
+
+### YjsFileSystem implementation
 
 ```typescript
 class YjsFileSystem implements IFileSystem {
+  private watchers = new Map<string, Set<(eventType: 'rename' | 'change', filename: string) => void>>();
+
   constructor(
     private filesTable: TableHelper<FileRow>,
     private index: FileSystemIndex,
-    private openContentDoc: (fileId: string, name: string) => DocumentHandle,
+    private pool: ContentDocPool,
   ) {}
 
   // --- Reads (metadata only, always fast) ---
 
   async readdir(path: string): Promise<string[]> {
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
+    const id = this.resolveId(path);
     const childIds = this.index.childrenOf.get(id) ?? [];
     const activeChildren = childIds
       .map(cid => this.filesTable.get(cid).row!)
       .filter(row => row.trashedAt === null);
-    // Display names handle CRDT duplicate disambiguation (see disambiguateNames)
     const displayNames = disambiguateNames(activeChildren);
-    return activeChildren.map(row => displayNames.get(row.id)!);
+    return activeChildren.map(row => displayNames.get(row.id)!).sort();
   }
 
   async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
+    const id = this.resolveId(path);
     const childIds = this.index.childrenOf.get(id) ?? [];
     const activeChildren = childIds
       .map(cid => this.filesTable.get(cid).row!)
       .filter(row => row.trashedAt === null);
-    // Display names handle CRDT duplicate disambiguation (see disambiguateNames)
     const displayNames = disambiguateNames(activeChildren);
     return activeChildren.map(row => ({
       name: displayNames.get(row.id)!,
       isFile: row.type === 'file',
       isDirectory: row.type === 'folder',
       isSymbolicLink: false,
-    }));
+    })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   }
 
   async stat(path: string): Promise<FsStat> {
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
+    if (path === '/') {
+      return { isFile: false, isDirectory: true, isSymbolicLink: false,
+        size: 0, mtime: new Date(0), birthtime: new Date(0), mode: 0o755 };
+    }
+    const id = this.resolveId(path);
     const row = this.filesTable.get(id).row!;
     return {
       isFile: row.type === 'file',
@@ -272,72 +391,75 @@ class YjsFileSystem implements IFileSystem {
       isSymbolicLink: false,
       size: row.size,
       mtime: new Date(row.updatedAt),
+      birthtime: new Date(row.createdAt),
       mode: row.type === 'folder' ? 0o755 : 0o644,
     };
   }
 
   async exists(path: string): Promise<boolean> {
-    return this.index.pathToId.has(path);
+    return path === '/' || this.index.pathToId.has(path);
   }
 
   // --- Reads (content, may load content doc) ---
 
-  async readFile(path: string, options?: ReadFileOptions): Promise<FileContent> {
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
+  async readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string> {
+    const id = this.resolveId(path);
+    const row = this.filesTable.get(id).row!;
+    if (row.type === 'folder') throw fsError('EISDIR', path);
 
     // Fast path: plaintext cache
     const cached = this.index.plaintext.get(id);
     if (cached !== undefined) return cached;
 
     // Slow path: load content doc
-    const row = this.filesTable.get(id).row!;
-    const handle = this.openContentDoc(id, row.name);
-    let text: string;
-    if (handle.type === 'text') {
-      text = handle.content.toString();
-    } else {
-      // Serialize front matter + body for .md files
-      const body = serializeXmlFragmentToMarkdown(handle.content);
-      const fm = yMapToRecord(handle.frontmatter);
-      text = serializeMarkdownWithFrontmatter(fm, body);
-    }
+    const text = this.pool.loadAndCache(id, row.name);
     this.index.plaintext.set(id, text);
     return text;
   }
 
+  async readFileBuffer(path: string): Promise<Uint8Array> {
+    const text = await this.readFile(path);
+    return new TextEncoder().encode(text);
+  }
+
   // --- Writes (always through content doc for CRDT semantics) ---
 
-  async writeFile(path: string, data: FileContent, options?: WriteFileOptions): Promise<void> {
+  async writeFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
     const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
     let id = this.index.pathToId.get(path);
 
     if (!id) {
-      // Create file: parse path into parentId + name, insert row
+      // Create file: parse path into parentId + name, ensure parent exists
       const { parentId, name } = this.parsePath(path);
       validateName(name);
       assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
-      id = generateId();
+      id = generateGuid();
       this.filesTable.set({
         id, name, parentId, type: 'file',
         size: new TextEncoder().encode(content).length,
         createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
       });
+      this.notifyWatchers(path, 'rename');
+    } else {
+      this.notifyWatchers(path, 'change');
     }
 
     // Write content through Yjs
     const row = this.filesTable.get(id).row!;
-    const handle = this.openContentDoc(id, row.name);
-    if (handle.type === 'text') {
-      handle.ydoc.transact(() => {
-        handle.content.delete(0, handle.content.length);
-        handle.content.insert(0, content);
-      });
-    } else {
-      // For .md: extract front matter, update Y.Map, apply body to XmlFragment
-      const { frontmatter, body } = parseFrontmatter(content);
-      updateYMapFromRecord(handle.frontmatter, frontmatter);
-      updateYXmlFragmentFromString(handle.content, body, serialize, apply); // clear-and-rebuild
+    const handle = this.pool.acquire(id, row.name);
+    try {
+      if (handle.type === 'text') {
+        handle.ydoc.transact(() => {
+          handle.content.delete(0, handle.content.length);
+          handle.content.insert(0, content);
+        });
+      } else {
+        const { frontmatter, body } = parseFrontmatter(content);
+        updateYMapFromRecord(handle.frontmatter, frontmatter);
+        updateYXmlFragmentFromString(handle.content, body);
+      }
+    } finally {
+      this.pool.release(id);
     }
 
     this.filesTable.update(id, {
@@ -347,51 +469,110 @@ class YjsFileSystem implements IFileSystem {
     this.index.plaintext.set(id, content);
   }
 
-  async appendFile(path: string, data: FileContent, options?: WriteFileOptions): Promise<void> {
+  async appendFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
     const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
     const id = this.index.pathToId.get(path);
-    if (!id) {
-      // appendFile to nonexistent file creates it (matches Node.js behavior)
-      return this.writeFile(path, data, options);
-    }
+    if (!id) return this.writeFile(path, data, options);
 
     const row = this.filesTable.get(id).row!;
-    const handle = this.openContentDoc(id, row.name);
-    if (handle.type === 'text') {
-      handle.ydoc.transact(() => {
-        handle.content.insert(handle.content.length, content);
-      });
-    } else {
-      // For .md: append to body only (front matter unchanged)
-      const currentBody = serializeXmlFragmentToMarkdown(handle.content);
-      updateYXmlFragmentFromString(handle.content, currentBody + content, serialize, apply);
+    const handle = this.pool.acquire(id, row.name);
+    try {
+      if (handle.type === 'text') {
+        handle.ydoc.transact(() => {
+          handle.content.insert(handle.content.length, content);
+        });
+      } else {
+        const currentBody = serializeXmlFragmentToMarkdown(handle.content);
+        updateYXmlFragmentFromString(handle.content, currentBody + content);
+      }
+    } finally {
+      this.pool.release(id);
     }
 
-    const newText = handle.type === 'text'
-      ? handle.content.toString()
-      : serializeMarkdownWithFrontmatter(yMapToRecord(handle.frontmatter), serializeXmlFragmentToMarkdown(handle.content));
+    // Re-read full content for size calculation
+    const fullText = this.pool.loadAndCache(id, row.name);
     this.filesTable.update(id, {
-      size: new TextEncoder().encode(newText).length,
+      size: new TextEncoder().encode(fullText).length,
       updatedAt: Date.now(),
     });
-    this.index.plaintext.set(id, newText);
+    this.index.plaintext.set(id, fullText);
+    this.notifyWatchers(path, 'change');
   }
 
-  async copyFile(src: string, dest: string, options?: CpOptions): Promise<void> {
-    const content = await this.readFile(src);
-    await this.writeFile(dest, content);
+  // --- Structure ---
+
+  async cp(source: string, destination: string, options?: CpOptions): Promise<void> {
+    const srcId = this.resolveId(source);
+    const srcRow = this.filesTable.get(srcId).row!;
+
+    if (srcRow.type === 'folder') {
+      if (!options?.recursive) throw fsError('EISDIR', source);
+      // Recursive directory copy
+      await this.mkdir(destination, { recursive: true });
+      const children = await this.readdir(source);
+      for (const child of children) {
+        await this.cp(`${source}/${child}`, `${destination}/${child}`, options);
+      }
+    } else {
+      const content = await this.readFile(source);
+      await this.writeFile(destination, content);
+    }
   }
 
-  // --- Structure (metadata only) ---
+  async rename(oldPath: string, newPath: string): Promise<void> {
+    const id = this.resolveId(oldPath);
+    const row = this.filesTable.get(id).row!;
+    const { parentId: newParentId, name: newName } = this.parsePath(newPath);
+    validateName(newName);
+    assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
+
+    // Check for type-changing rename (extension category change)
+    const oldCategory = getExtensionCategory(row.name);
+    const newCategory = getExtensionCategory(newName);
+
+    this.filesTable.update(id, {
+      name: newName,
+      parentId: newParentId,
+      updatedAt: Date.now(),
+    });
+
+    // Content migration if extension category changed
+    if (row.type === 'file' && oldCategory !== newCategory) {
+      const handle = this.pool.acquire(id, row.name); // old name to read old active type
+      try {
+        convertContentType(handle, oldCategory, newCategory);
+      } finally {
+        this.pool.release(id);
+      }
+      this.index.plaintext.delete(id);
+    }
+
+    this.notifyWatchers(oldPath, 'rename');
+    this.notifyWatchers(newPath, 'rename');
+  }
 
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
+    if (await this.exists(path)) return; // mkdir on existing dir is a no-op
+
     const { parentId, name } = this.parsePath(path);
     validateName(name);
-    assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
+
+    // Recursive: create parent directories if they don't exist
+    if (options?.recursive && parentId !== null) {
+      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+      if (!(await this.exists(parentPath))) {
+        await this.mkdir(parentPath, { recursive: true });
+      }
+    }
+
+    // Re-resolve parentId after potential recursive creation
+    const { parentId: resolvedParentId } = this.parsePath(path);
+    assertUniqueName(this.filesTable, this.index.childrenOf, resolvedParentId, name);
     this.filesTable.set({
-      id: generateId(), name, parentId, type: 'folder',
+      id: generateGuid(), name, parentId: resolvedParentId, type: 'folder',
       size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
     });
+    this.notifyWatchers(path, 'rename');
   }
 
   async rm(path: string, options?: RmOptions): Promise<void> {
@@ -403,32 +584,93 @@ class YjsFileSystem implements IFileSystem {
     const row = this.filesTable.get(id).row!;
 
     if (row.type === 'folder' && !options?.recursive) {
-      throw fsError('EISDIR', path);
+      const children = this.index.childrenOf.get(id) ?? [];
+      const activeChildren = children.filter(cid => {
+        const r = this.filesTable.get(cid).row;
+        return r && r.trashedAt === null;
+      });
+      if (activeChildren.length > 0) throw fsError('ENOTEMPTY', path);
     }
 
-    // Soft delete: set trashedAt. Children of trashed folders are implicitly
-    // trashed (unreachable via path resolution). No recursive walk needed.
+    // Soft delete
     this.filesTable.update(id, { trashedAt: Date.now() });
     this.index.plaintext.delete(id);
+    this.notifyWatchers(path, 'rename');
   }
 
-  // --- Timestamps ---
+  // --- Permissions (no-op in collaborative system) ---
 
-  async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
-    this.filesTable.update(id, { updatedAt: mtime.getTime() });
-    // atime is silently ignored — no stored field, FsStat doesn't surface it.
+  async chmod(_path: string, _mode: number): Promise<void> {
+    // No-op. Permissions are derived (0o644 files, 0o755 dirs).
+    // Silently succeed to satisfy just-bash commands that call chmod.
+    const id = this.resolveId(_path); // throws ENOENT if path doesn't exist
   }
 
-  // --- Not supported ---
+  // --- Symlinks (not supported) ---
 
   async symlink(): Promise<void> { throw fsError('ENOSYS', 'symlinks not supported'); }
-  async link(): Promise<void> { throw fsError('ENOSYS', 'hard links not supported'); }
   async readlink(): Promise<string> { throw fsError('ENOSYS', 'symlinks not supported'); }
 
-  resolvePath(...paths: string[]): string {
-    return posixResolve(...paths);
+  // --- Path resolution ---
+
+  resolvePath(path: string): string {
+    return posixResolve(path);
+  }
+
+  async realpath(path: string): Promise<string> {
+    // No symlinks, so realpath is just path normalization + existence check
+    const resolved = this.resolvePath(path);
+    if (!(await this.exists(resolved))) throw fsError('ENOENT', path);
+    return resolved;
+  }
+
+  // --- File watching ---
+
+  watch(
+    filename: string,
+    listener: (eventType: 'rename' | 'change', filename: string) => void,
+  ): { dispose(): void } {
+    const path = this.resolvePath(String(filename));
+    const listeners = this.watchers.get(path) ?? new Set();
+    listeners.add(listener);
+    this.watchers.set(path, listeners);
+    return {
+      dispose: () => { listeners.delete(listener); },
+    };
+  }
+
+  // --- Private helpers ---
+
+  private resolveId(path: string): string {
+    if (path === '/') return ROOT_ID;
+    const id = this.index.pathToId.get(path);
+    if (!id) throw fsError('ENOENT', path);
+    return id;
+  }
+
+  private parsePath(path: string): { parentId: string | null; name: string } {
+    const normalized = posixResolve(path);
+    const lastSlash = normalized.lastIndexOf('/');
+    const name = normalized.substring(lastSlash + 1);
+    const parentPath = normalized.substring(0, lastSlash) || '/';
+    if (parentPath === '/') return { parentId: null, name };
+    const parentId = this.index.pathToId.get(parentPath);
+    if (!parentId) throw fsError('ENOENT', parentPath);
+    return { parentId, name };
+  }
+
+  private notifyWatchers(path: string, eventType: 'rename' | 'change'): void {
+    const listeners = this.watchers.get(path);
+    if (listeners) {
+      for (const listener of listeners) listener(eventType, path);
+    }
+    // Also notify parent directory watchers
+    const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+    const parentListeners = this.watchers.get(parentPath);
+    if (parentListeners) {
+      const filename = path.substring(path.lastIndexOf('/') + 1);
+      for (const listener of parentListeners) listener(eventType, filename);
+    }
   }
 }
 ```
@@ -457,7 +699,7 @@ const result4 = await bash.exec('ls -la /src/');
 | `find / -name "*.md"` | Files table (in-memory), full scan | O(n) rows, fast |
 | `cat /docs/api.md` | Path index + plaintext cache (or content doc load) | O(1) cached, O(load) first time |
 | `grep -r "TODO" /` | Path index + plaintext cache for all files | O(n * content) first time, O(n * search) cached |
-| `mv /old /new` | 1 row update in files table | O(1) |
+| `mv /old /new` | `rename()` → 1 row update in files table | O(1) |
 | `mkdir /new-dir` | 1 row insert | O(1) |
 | `echo "x" > /file.txt` | Content doc load + Yjs transaction + row update | O(1) |
 
@@ -1028,37 +1270,55 @@ The static API is production-ready and provides the core building blocks:
 
 ### Phase 2: IFileSystem + just-bash integration
 
-**Goal**: Implement `YjsFileSystem` class with all IFileSystem methods. Text-only files (Y.Text) first.
+**Goal**: Implement `YjsFileSystem` class with all 17 IFileSystem methods. Text-only files (Y.Text) first.
 
 **Deliverables**:
 1. Install `just-bash`
-2. `YjsFileSystem` class implementing `IFileSystem`: `readdir()`, `readdirWithFileTypes()`, `stat()`, `exists()`, `readFile()`, `writeFile()`, `appendFile()`, `copyFile()`, `mkdir()`, `rm()`, `utimes()`, `rename()` (for `mv`)
-3. Content Y.Doc factory: `openDocument(fileId, fileName)` — creates Y.Doc with `guid: fileId`, `gc: false`, returns `DocumentHandle`
-4. Content doc lifecycle: load on open, unload on close (reference counting or explicit dispose)
+2. `YjsFileSystem` class implementing the full `IFileSystem` contract:
+   - Reads: `readFile()`, `readFileBuffer()`, `readdir()`, `readdirWithFileTypes()`, `stat()`, `exists()`
+   - Writes: `writeFile()`, `appendFile()`
+   - Structure: `mkdir()` (with `recursive`), `rm()`, `cp()` (with `recursive`), `rename()`
+   - Path: `resolvePath()`, `realpath()`
+   - Other: `chmod()` (no-op), `symlink()`/`readlink()` (ENOSYS), `watch()`
+3. `createContentDocPool()` — reference-counted content doc lifecycle with optional provider connection
+4. Root directory handling (`/` as virtual entry, `ROOT_ID` sentinel)
 5. Plaintext cache population on `readFile()`, invalidation on write
 
 **Scope limitation**: All files use `Y.Text` in this phase. No markdown/XmlFragment support yet. Treat `.md` files as plain text temporarily.
 
-**Tests**: Populate `YjsFileSystem`, pass to `new Bash({ fs: yjsFs })`, run just-bash test scripts against it. Target: `ls`, `cat`, `find`, `grep`, `mkdir`, `rm`, `mv`, `cp` all passing.
+**Tests**: Populate `YjsFileSystem`, pass to `new Bash({ fs: yjsFs })`, run just-bash test scripts against it. Target: `ls`, `cat`, `find`, `grep`, `mkdir -p`, `rm -rf`, `mv`, `cp -r` all passing.
 
 ### Phase 3: Markdown support (Y.XmlFragment + Y.Map)
 
 **Goal**: Add `.md` file support with Y.XmlFragment for body and Y.Map for frontmatter.
 
+**Headless serialization decision (resolved)**: Use `prosemirror-markdown` + `y-prosemirror` for headless serialization. Both are DOM-free and work in Node.js without jsdom.
+
+- `y-prosemirror`'s `yXmlFragmentToProsemirrorJSON()` converts Y.XmlFragment → ProseMirror JSON (zero DOM calls)
+- `prosemirror-model`'s `Node.fromJSON(schema, json)` creates ProseMirror nodes from JSON (platform-agnostic)
+- `prosemirror-markdown`'s `defaultMarkdownSerializer.serialize(doc)` converts ProseMirror → markdown string (no DOM)
+- `prosemirror-markdown`'s `defaultMarkdownParser.parse(markdown)` converts markdown → ProseMirror (uses markdown-it internally, 30x faster than remark)
+
+The same ProseMirror schema must be shared between the headless pipeline (this phase) and the editor (Phase 5). Use `prosemirror-markdown`'s CommonMark schema as the source of truth.
+
+**Dependencies to add**: `y-prosemirror`, `prosemirror-model`, `prosemirror-markdown`, `prosemirror-schema-basic`
+
 **Deliverables**:
-1. Install `milkdown`, `y-prosemirror` (or determine the minimal ProseMirror packages needed for headless serialization)
-2. `parseFrontmatter(content)` — split `---` delimited YAML from body
-3. `serializeMarkdownWithFrontmatter(frontmatter, body)` — combine YAML + body
-4. `updateYMapFromRecord(ymap, target)` — diff-update Y.Map from plain object
-5. `yMapToRecord(ymap)` — Y.Map to plain object
-6. `serializeXmlFragmentToMarkdown(fragment)` — ProseMirror tree → markdown string (requires a ProseMirror schema + serializer, e.g. `prosemirror-markdown` or remark)
-7. `updateYXmlFragmentFromString(fragment, markdownBody)` — parse markdown → ProseMirror nodes → clear-and-rebuild XmlFragment (requires headless ProseMirror schema matching the editor's schema)
-8. Update `openDocument()` to return `RichTextDocumentHandle` for `.md` files
-9. Update `readFile()` and `writeFile()` to handle the richtext path
+1. `parseFrontmatter(content)` — split `---` delimited YAML from body
+2. `serializeMarkdownWithFrontmatter(frontmatter, body)` — combine YAML + body
+3. `updateYMapFromRecord(ymap, target)` — diff-update Y.Map from plain object
+4. `yMapToRecord(ymap)` — Y.Map to plain object
+5. `serializeXmlFragmentToMarkdown(fragment)` — headless pipeline:
+   - `yXmlFragmentToProsemirrorJSON(fragment)` → ProseMirror JSON
+   - `Node.fromJSON(schema, json)` → ProseMirror doc
+   - `defaultMarkdownSerializer.serialize(doc)` → markdown string
+6. `updateYXmlFragmentFromString(fragment, markdownBody)` — headless pipeline:
+   - `defaultMarkdownParser.parse(markdown)` → ProseMirror doc
+   - `prosemirrorJSONToYXmlFragment(schema, doc.toJSON(), fragment)` → updates Y.XmlFragment (clear-and-rebuild)
+7. Update `openDocument()` to return `RichTextDocumentHandle` for `.md` files
+8. Update `readFile()` and `writeFile()` to handle the richtext path
 
-**Key decision needed**: Which ProseMirror schema to use for headless serialization. If using Milkdown, the schema comes from `@milkdown/preset-commonmark`. The same schema must be used in the editor (Phase 5) and in headless serialization (this phase).
-
-**Tests**: Round-trip tests: write markdown string → readFile → compare. Frontmatter parsing/serialization. Y.Map diff-update correctness.
+**Tests**: Round-trip tests: write markdown string → readFile → compare. Frontmatter parsing/serialization. Y.Map diff-update correctness. Headless XmlFragment ↔ markdown serialization in Node.js (no DOM).
 
 ### Phase 4: Convert-on-switch
 
@@ -1085,6 +1345,144 @@ The static API is production-ready and provides the core building blocks:
 6. Transition state UI: loading indicator between rename detection and migration arrival
 
 **This phase is UI-only.** All data-layer logic is complete by Phase 4.
+
+---
+
+## Integration Demo: Browser + Filesystem Sync
+
+### Architecture
+
+End-to-end demo that proves the isomorphic claim: a Svelte app views/edits files in the browser, a Node process syncs the same Yjs state to real files on disk, both connected through y-websocket.
+
+```
+┌─────────────────────┐     y-websocket      ┌────────────────────────┐
+│   Browser (Svelte)  │◄───────server────────►│  Node Process (bun)    │
+│                     │    (localhost:PORT)    │                        │
+│  Main Y.Doc         │                       │  Main Y.Doc            │
+│   └─ files table    │                       │   └─ files table       │
+│                     │                       │                        │
+│  Content Y.Docs     │                       │  Content Y.Docs        │
+│   └─ on-demand      │                       │   └─ all loaded        │
+│                     │                       │                        │
+│  File tree UI       │                       │  Chokidar watcher      │
+│  Code editor        │                       │  Real filesystem sync  │
+│  Markdown editor    │                       │  Bidirectional:        │
+│                     │                       │   YDoc → disk writes   │
+│                     │                       │   disk → YDoc updates  │
+└─────────────────────┘                       └────────────────────────┘
+```
+
+### Components
+
+**1. y-websocket server** (process 1):
+```bash
+HOST=localhost PORT=0 npx y-websocket  # random open port
+```
+One WebSocket connection per Y.Doc. Main doc always connected. Content docs connected on demand.
+
+**2. Node sync process** (`epicenter-sync.ts`, process 2):
+```typescript
+import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/static';
+import { WebsocketProvider } from 'y-websocket';
+import * as chokidar from 'chokidar';
+
+// Create workspace with files table
+const workspace = createWorkspace(filesystemDefinition);
+const filesTable = workspace.tables.files;
+const index = createFileSystemIndex(filesTable);
+const pool = createContentDocPool((ydoc) => {
+  // Connect each content doc to y-websocket
+  return new WebsocketProvider(`ws://localhost:${PORT}`, ydoc.guid, ydoc);
+});
+
+// Connect main doc to y-websocket
+const mainProvider = new WebsocketProvider(`ws://localhost:${PORT}`, 'filesystem-main', workspace.ydoc);
+
+// Ingest real directory → Yjs filesystem
+await ingestDirectory('/path/to/target/folder', filesTable, pool);
+
+// Bidirectional sync (adapted from markdown provider patterns)
+const syncCoordination = { yjsWriteCount: 0, diskChangeCount: 0 };
+
+// YDoc → disk: observe content doc changes, write to real files
+filesTable.observe((changedIds) => {
+  if (syncCoordination.diskChangeCount > 0) return;
+  syncCoordination.yjsWriteCount++;
+  // ... write changed files to disk
+  syncCoordination.yjsWriteCount--;
+});
+
+// Disk → YDoc: chokidar watches real files, updates content docs
+const watcher = chokidar.watch(targetDir, {
+  ignoreInitial: true,
+  awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+});
+watcher.on('change', async (filePath) => {
+  if (syncCoordination.yjsWriteCount > 0) return;
+  syncCoordination.diskChangeCount++;
+  // ... read file, update Yjs content doc
+  syncCoordination.diskChangeCount--;
+});
+```
+
+**3. Browser app** (Svelte, process 3):
+- Connects to same y-websocket server
+- File tree component reads from `files` table via `readdir()`/`readdirWithFileTypes()`
+- Click file → `pool.acquire(fileId)` → bind editor to content Y.Doc
+- CodeMirror for code files, Milkdown for `.md` files
+- Edits propagate through Yjs → y-websocket → Node process → real filesystem
+
+### Ingestion
+
+```typescript
+async function ingestDirectory(
+  realPath: string,
+  filesTable: TableHelper<FileRow>,
+  pool: ContentDocPool,
+  parentId: string | null = null,
+): Promise<void> {
+  const entries = await fs.readdir(realPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(realPath, entry.name);
+    const id = generateGuid();
+
+    if (entry.isDirectory()) {
+      filesTable.set({
+        id, name: entry.name, parentId, type: 'folder',
+        size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
+      });
+      await ingestDirectory(fullPath, filesTable, pool, id);
+    } else {
+      const content = await fs.readFile(fullPath, 'utf-8');
+      filesTable.set({
+        id, name: entry.name, parentId, type: 'file',
+        size: Buffer.byteLength(content), createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
+      });
+      // Write content to Yjs content doc
+      const handle = pool.acquire(id, entry.name);
+      if (handle.type === 'text') {
+        handle.content.insert(0, content);
+      } else {
+        const { frontmatter, body } = parseFrontmatter(content);
+        updateYMapFromRecord(handle.frontmatter, frontmatter);
+        updateYXmlFragmentFromString(handle.content, body);
+      }
+      pool.release(id);
+    }
+  }
+}
+```
+
+### Why this demo
+
+- **Proves isomorphic claim**: Same `YjsFileSystem` class works in browser (via just-bash) and in Node (direct table/index access)
+- **Proves real-world sync**: Edit in browser → appears on disk. Edit on disk → appears in browser.
+- **Proves lazy loading**: Browser only loads content docs for open files. Node process loads all (server has memory).
+- **Proves provider model**: y-websocket relays both main doc and content docs between peers.
+- **Exercises the full stack**: files table, runtime indexes, content doc pool, IFileSystem, just-bash integration, serialization pipeline.
+- **Uses existing patterns**: Sync coordination (counter-based, from markdown provider), chokidar (from markdown provider), y-websocket (already installed).
+
+---
 
 ## Open Questions
 

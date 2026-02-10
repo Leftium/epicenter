@@ -22,3 +22,13 @@ export {
 
 // Runtime indexes
 export { createFileSystemIndex } from './file-system-index.js';
+
+// Content doc pool
+export {
+	createContentDocPool,
+	documentHandleToString,
+	openDocument,
+} from './content-doc-pool.js';
+
+// IFileSystem implementation
+export { YjsFileSystem } from './yjs-file-system.js';

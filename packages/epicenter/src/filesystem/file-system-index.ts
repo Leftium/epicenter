@@ -53,16 +53,13 @@ export function createFileSystemIndex(
 		buildPaths(filesTable, childrenOf, pathToId, idToPath);
 	}
 
-	function update(changedIds: Set<string>) {
-		// For simplicity and correctness, do a full rebuild on changes.
-		// The files table is always in memory so this is fast (O(n) where n = total files).
-		// Incremental updates are an optimization for later if profiling shows need.
+	function update(_changedIds: Set<string>) {
+		// Full rebuild on changes. The files table is always in memory
+		// so this is fast (O(n) where n = total files).
 		rebuild();
-
-		// Invalidate plaintext cache for changed files
-		for (const id of changedIds) {
-			plaintext.delete(id);
-		}
+		// Plaintext cache is NOT invalidated here — it's managed by
+		// YjsFileSystem (writeFile, appendFile, rm) which knows when content changes.
+		// Metadata-only changes (rename, move, trash) don't affect file content.
 	}
 
 	return {

@@ -49,6 +49,7 @@
 		"drizzle-orm": "catalog:",
 		"elysia": "^1.2.25",
 		"fflate": "^0.8.2",
+		"just-bash": "^2.9.7",
 		"lib0": "^0.2.99",
 		"mime": "catalog:",
 		"nanoid": "catalog:",

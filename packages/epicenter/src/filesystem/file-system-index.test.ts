@@ -160,19 +160,19 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('plaintext cache invalidation on update', () => {
+	test('plaintext cache survives metadata-only updates', () => {
 		const ws = setup();
 		ws.tables.files.set(makeRow('f1', 'hello.txt'));
 		const index = createFileSystemIndex(ws.tables.files);
 
 		// Manually populate plaintext cache
-		index.plaintext.set('f1', 'old content');
+		index.plaintext.set('f1', 'cached content');
 
-		// Trigger an update
+		// Metadata-only update should NOT invalidate plaintext cache
 		ws.tables.files.update('f1', { updatedAt: Date.now() });
 
-		// Cache should be invalidated
-		expect(index.plaintext.has('f1')).toBe(false);
+		expect(index.plaintext.has('f1')).toBe(true);
+		expect(index.plaintext.get('f1')).toBe('cached content');
 
 		index.destroy();
 	});

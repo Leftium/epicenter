@@ -1,0 +1,350 @@
+import { describe, expect, test } from 'bun:test';
+import { Bash } from 'just-bash';
+import { createWorkspace } from '../static/create-workspace.js';
+import { filesTable } from './file-table.js';
+import { createFileSystemIndex } from './file-system-index.js';
+import { createContentDocPool } from './content-doc-pool.js';
+import { YjsFileSystem } from './yjs-file-system.js';
+
+function setup() {
+	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
+	const index = createFileSystemIndex(ws.tables.files);
+	const pool = createContentDocPool();
+	const fs = new YjsFileSystem(ws.tables.files, index, pool);
+	return { ws, index, pool, fs };
+}
+
+describe('YjsFileSystem', () => {
+	describe('exists', () => {
+		test('root always exists', async () => {
+			const { fs } = setup();
+			expect(await fs.exists('/')).toBe(true);
+		});
+
+		test('nonexistent path', async () => {
+			const { fs } = setup();
+			expect(await fs.exists('/nope')).toBe(false);
+		});
+	});
+
+	describe('writeFile + readFile', () => {
+		test('create and read a file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/hello.txt', 'Hello World');
+			const content = await fs.readFile('/hello.txt');
+			expect(content).toBe('Hello World');
+		});
+
+		test('overwrite existing file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'first');
+			await fs.writeFile('/file.txt', 'second');
+			expect(await fs.readFile('/file.txt')).toBe('second');
+		});
+
+		test('readFile on nonexistent throws ENOENT', async () => {
+			const { fs } = setup();
+			await expect(fs.readFile('/nope')).rejects.toThrow('ENOENT');
+		});
+
+		test('readFile on directory throws EISDIR', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await expect(fs.readFile('/dir')).rejects.toThrow('EISDIR');
+		});
+	});
+
+	describe('appendFile', () => {
+		test('append to existing file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'Hello');
+			await fs.appendFile('/file.txt', ' World');
+			expect(await fs.readFile('/file.txt')).toBe('Hello World');
+		});
+
+		test('append creates file if not exists', async () => {
+			const { fs } = setup();
+			await fs.appendFile('/new.txt', 'content');
+			expect(await fs.readFile('/new.txt')).toBe('content');
+		});
+	});
+
+	describe('stat', () => {
+		test('stat root', async () => {
+			const { fs } = setup();
+			const s = await fs.stat('/');
+			expect(s.isDirectory).toBe(true);
+			expect(s.isFile).toBe(false);
+		});
+
+		test('stat file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/hello.txt', 'Hi');
+			const s = await fs.stat('/hello.txt');
+			expect(s.isFile).toBe(true);
+			expect(s.isDirectory).toBe(false);
+			expect(s.size).toBe(2);
+			expect(s.mode).toBe(0o644);
+		});
+
+		test('stat directory', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			const s = await fs.stat('/dir');
+			expect(s.isDirectory).toBe(true);
+			expect(s.mode).toBe(0o755);
+		});
+
+		test('stat nonexistent throws ENOENT', async () => {
+			const { fs } = setup();
+			await expect(fs.stat('/nope')).rejects.toThrow('ENOENT');
+		});
+	});
+
+	describe('mkdir', () => {
+		test('create directory', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/docs');
+			expect(await fs.exists('/docs')).toBe(true);
+			const s = await fs.stat('/docs');
+			expect(s.isDirectory).toBe(true);
+		});
+
+		test('mkdir -p (recursive)', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/a/b/c', { recursive: true });
+			expect(await fs.exists('/a')).toBe(true);
+			expect(await fs.exists('/a/b')).toBe(true);
+			expect(await fs.exists('/a/b/c')).toBe(true);
+		});
+
+		test('mkdir on existing dir is no-op', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await fs.mkdir('/dir'); // should not throw
+			expect(await fs.exists('/dir')).toBe(true);
+		});
+	});
+
+	describe('readdir', () => {
+		test('readdir root', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/a.txt', 'a');
+			await fs.writeFile('/b.txt', 'b');
+			const entries = await fs.readdir('/');
+			expect(entries).toEqual(['a.txt', 'b.txt']);
+		});
+
+		test('readdir nested', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/docs');
+			await fs.writeFile('/docs/api.md', '# API');
+			await fs.writeFile('/docs/readme.md', '# README');
+			const entries = await fs.readdir('/docs');
+			expect(entries).toEqual(['api.md', 'readme.md']);
+		});
+
+		test('readdir on file throws ENOTDIR', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'content');
+			await expect(fs.readdir('/file.txt')).rejects.toThrow('ENOTDIR');
+		});
+	});
+
+	describe('rm', () => {
+		test('rm file (soft delete)', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'content');
+			await fs.rm('/file.txt');
+			expect(await fs.exists('/file.txt')).toBe(false);
+		});
+
+		test('rm -rf directory', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await fs.writeFile('/dir/file.txt', 'content');
+			await fs.rm('/dir', { recursive: true });
+			expect(await fs.exists('/dir')).toBe(false);
+			expect(await fs.exists('/dir/file.txt')).toBe(false);
+		});
+
+		test('rm nonexistent throws ENOENT', async () => {
+			const { fs } = setup();
+			await expect(fs.rm('/nope')).rejects.toThrow('ENOENT');
+		});
+
+		test('rm --force nonexistent is no-op', async () => {
+			const { fs } = setup();
+			await fs.rm('/nope', { force: true }); // should not throw
+		});
+
+		test('rm non-empty dir without recursive throws ENOTEMPTY', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await fs.writeFile('/dir/file.txt', 'content');
+			await expect(fs.rm('/dir')).rejects.toThrow('ENOTEMPTY');
+		});
+	});
+
+	describe('mv', () => {
+		test('rename file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/old.txt', 'content');
+			await fs.mv('/old.txt', '/new.txt');
+			expect(await fs.exists('/old.txt')).toBe(false);
+			expect(await fs.exists('/new.txt')).toBe(true);
+		});
+
+		test('move file to directory', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await fs.writeFile('/file.txt', 'content');
+			await fs.mv('/file.txt', '/dir/file.txt');
+			expect(await fs.exists('/file.txt')).toBe(false);
+			expect(await fs.exists('/dir/file.txt')).toBe(true);
+			expect(await fs.readFile('/dir/file.txt')).toBe('content');
+		});
+	});
+
+	describe('cp', () => {
+		test('copy file', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/src.txt', 'content');
+			await fs.cp('/src.txt', '/dest.txt');
+			expect(await fs.readFile('/dest.txt')).toBe('content');
+			expect(await fs.readFile('/src.txt')).toBe('content');
+		});
+
+		test('copy directory recursively', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/src');
+			await fs.writeFile('/src/a.txt', 'aaa');
+			await fs.writeFile('/src/b.txt', 'bbb');
+			await fs.cp('/src', '/dest', { recursive: true });
+			expect(await fs.readFile('/dest/a.txt')).toBe('aaa');
+			expect(await fs.readFile('/dest/b.txt')).toBe('bbb');
+		});
+	});
+
+	describe('resolvePath', () => {
+		test('resolves relative paths', () => {
+			const { fs } = setup();
+			expect(fs.resolvePath('/docs', 'api.md')).toBe('/docs/api.md');
+			expect(fs.resolvePath('/docs', '../src/index.ts')).toBe('/src/index.ts');
+			expect(fs.resolvePath('/docs', '/absolute')).toBe('/absolute');
+		});
+	});
+
+	describe('getAllPaths', () => {
+		test('returns all paths except root', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/docs');
+			await fs.writeFile('/docs/api.md', '# API');
+			const paths = fs.getAllPaths();
+			expect(paths).toContain('/docs');
+			expect(paths).toContain('/docs/api.md');
+			expect(paths).not.toContain('/');
+		});
+	});
+
+	describe('chmod', () => {
+		test('no-op but verifies file exists', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'content');
+			await fs.chmod('/file.txt', 0o755); // should not throw
+		});
+
+		test('chmod on nonexistent throws ENOENT', async () => {
+			const { fs } = setup();
+			await expect(fs.chmod('/nope', 0o755)).rejects.toThrow('ENOENT');
+		});
+	});
+
+	describe('symlink / link / readlink', () => {
+		test('symlink throws ENOSYS', async () => {
+			const { fs } = setup();
+			await expect((fs as any).symlink('/target', '/link')).rejects.toThrow('ENOSYS');
+		});
+
+		test('link throws ENOSYS', async () => {
+			const { fs } = setup();
+			await expect((fs as any).link('/existing', '/new')).rejects.toThrow('ENOSYS');
+		});
+
+		test('readlink throws ENOSYS', async () => {
+			const { fs } = setup();
+			await expect((fs as any).readlink('/link')).rejects.toThrow('ENOSYS');
+		});
+	});
+});
+
+describe('just-bash integration', () => {
+	function setupBash() {
+		const { fs } = setup();
+		return new Bash({ fs, cwd: '/' });
+	}
+
+	test('echo + cat', async () => {
+		const bash = setupBash();
+		await bash.exec('echo "hello world" > /greeting.txt');
+		const result = await bash.exec('cat /greeting.txt');
+		expect(result.stdout.trim()).toBe('hello world');
+	});
+
+	test('mkdir -p + ls', async () => {
+		const bash = setupBash();
+		await bash.exec('mkdir -p /docs/nested');
+		const result = await bash.exec('ls /docs');
+		expect(result.stdout.trim()).toBe('nested');
+	});
+
+	test('find', async () => {
+		const bash = setupBash();
+		await bash.exec('mkdir -p /src');
+		await bash.exec('echo "ts" > /src/index.ts');
+		await bash.exec('echo "md" > /src/readme.md');
+		const result = await bash.exec('find / -name "*.ts"');
+		expect(result.stdout.trim()).toContain('/src/index.ts');
+	});
+
+	test('grep', async () => {
+		const bash = setupBash();
+		await bash.exec('echo "TODO: fix this" > /file.txt');
+		await bash.exec('echo "all good" > /other.txt');
+		const result = await bash.exec('grep -r "TODO" /');
+		expect(result.stdout).toContain('TODO');
+		expect(result.stdout).toContain('/file.txt');
+	});
+
+	test('rm -rf', async () => {
+		const bash = setupBash();
+		await bash.exec('mkdir -p /dir/sub');
+		await bash.exec('echo "x" > /dir/sub/file.txt');
+		await bash.exec('rm -rf /dir');
+		const result = await bash.exec('ls /');
+		expect(result.stdout.trim()).toBe('');
+	});
+
+	test('mv (rename)', async () => {
+		const bash = setupBash();
+		await bash.exec('echo "content" > /old.txt');
+		await bash.exec('mv /old.txt /new.txt');
+		const result = await bash.exec('cat /new.txt');
+		expect(result.stdout.trim()).toBe('content');
+	});
+
+	test('cp', async () => {
+		const bash = setupBash();
+		await bash.exec('echo "content" > /src.txt');
+		await bash.exec('cp /src.txt /dest.txt');
+		const result = await bash.exec('cat /dest.txt');
+		expect(result.stdout.trim()).toBe('content');
+	});
+
+	test('wc -l', async () => {
+		const bash = setupBash();
+		await bash.exec('printf "line1\\nline2\\nline3\\n" > /file.txt');
+		const result = await bash.exec('wc -l /file.txt');
+		expect(result.stdout.trim()).toContain('3');
+	});
+});

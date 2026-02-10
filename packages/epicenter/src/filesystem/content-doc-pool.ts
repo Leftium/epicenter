@@ -5,7 +5,7 @@ import {
 	serializeXmlFragmentToMarkdown,
 	yMapToRecord,
 } from './markdown-helpers.js';
-import { healContentType } from './convert-on-switch.js';
+import { getExtensionCategory, healContentType } from './convert-on-switch.js';
 
 type PoolEntry = {
 	handle: DocumentHandle;
@@ -19,7 +19,7 @@ type PoolEntry = {
  * All other files use Y.Text('text').
  */
 export function openDocument(fileId: string, fileName: string, ydoc: Y.Doc): DocumentHandle {
-	if (fileName.endsWith('.md')) {
+	if (getExtensionCategory(fileName) === 'richtext') {
 		return {
 			type: 'richtext',
 			fileId,

@@ -11,7 +11,7 @@ All articles must follow [writing-voice](../writing-voice/SKILL.md) rules.
 
 Title should BE the takeaway, not a topic. "Write Context to a File, Not a Prompt" not "Context Management in Agent Workflows".
 
-Lead with a TL;DR (one sentence, bold the key insight) and a blockquote with the core principle. Reader should get it in 5 seconds.
+Lead with a strong opening paragraph that states the key insight in plain language, followed by a blockquote with the core principle. Reader should get it in 5 seconds.
 
 Code speaks louder than prose. Show real examples from actual codebases, not abstract `foo`/`bar` illustrations. If the code is self-explanatory, don't over-explain.
 
@@ -43,7 +43,7 @@ Bullet lists and numbered lists: max 1-2 of each per article. If you need more, 
 
 Section headings: use sparingly. Not every paragraph needs a heading. Let content flow.
 
-Bold text: reserve for TL;DR only. Never bold in body content.
+Bold text: avoid in body content. Use sparingly if needed for emphasis.
 
 No space-dash-space: use colons, semicolons, or em dashes per writing-voice.
 

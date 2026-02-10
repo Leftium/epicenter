@@ -1,5 +1,10 @@
 import * as Y from 'yjs';
 import type { ContentDocPool, DocumentHandle } from './types.js';
+import {
+	serializeMarkdownWithFrontmatter,
+	serializeXmlFragmentToMarkdown,
+	yMapToRecord,
+} from './markdown-helpers.js';
 
 type PoolEntry = {
 	handle: DocumentHandle;
@@ -9,10 +14,19 @@ type PoolEntry = {
 
 /**
  * Open a Y.Doc and return the appropriate handle based on file extension.
- * Phase 2: all files use Y.Text('text'). Phase 3 adds richtext support.
+ * .md files use Y.XmlFragment('richtext') + Y.Map('frontmatter').
+ * All other files use Y.Text('text').
  */
-export function openDocument(fileId: string, _fileName: string, ydoc: Y.Doc): DocumentHandle {
-	// Phase 2: everything is text
+export function openDocument(fileId: string, fileName: string, ydoc: Y.Doc): DocumentHandle {
+	if (fileName.endsWith('.md')) {
+		return {
+			type: 'richtext',
+			fileId,
+			ydoc,
+			content: ydoc.getXmlFragment('richtext'),
+			frontmatter: ydoc.getMap('frontmatter'),
+		};
+	}
 	return {
 		type: 'text',
 		fileId,
@@ -26,8 +40,9 @@ export function documentHandleToString(handle: DocumentHandle): string {
 	if (handle.type === 'text') {
 		return handle.content.toString();
 	}
-	// Phase 3 will add richtext serialization
-	throw new Error(`Unsupported document type: ${handle.type}`);
+	const frontmatter = yMapToRecord(handle.frontmatter);
+	const body = serializeXmlFragmentToMarkdown(handle.content);
+	return serializeMarkdownWithFrontmatter(frontmatter, body);
 }
 
 /**

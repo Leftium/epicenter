@@ -4,6 +4,11 @@ import { generateGuid } from '../dynamic/schema/fields/id.js';
 import type { ContentDocPool, FileRow, FileSystemIndex } from './types.js';
 import { ROOT_ID } from './types.js';
 import { documentHandleToString } from './content-doc-pool.js';
+import {
+	parseFrontmatter,
+	updateYMapFromRecord,
+	updateYXmlFragmentFromString,
+} from './markdown-helpers.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
 
 type DirentEntry = {
@@ -165,8 +170,11 @@ export class YjsFileSystem implements IFileSystem {
 					handle.content.delete(0, handle.content.length);
 					handle.content.insert(0, content);
 				});
+			} else {
+				const { frontmatter, body } = parseFrontmatter(content);
+				updateYMapFromRecord(handle.frontmatter, frontmatter);
+				updateYXmlFragmentFromString(handle.content, body);
 			}
-			// Phase 3 will add richtext handling
 		} finally {
 			this.pool.release(id);
 		}

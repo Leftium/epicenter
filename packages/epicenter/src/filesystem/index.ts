@@ -30,5 +30,16 @@ export {
 	openDocument,
 } from './content-doc-pool.js';
 
+// Markdown helpers
+export {
+	markdownSchema,
+	parseFrontmatter,
+	serializeMarkdownWithFrontmatter,
+	serializeXmlFragmentToMarkdown,
+	updateYMapFromRecord,
+	updateYXmlFragmentFromString,
+	yMapToRecord,
+} from './markdown-helpers.js';
+
 // IFileSystem implementation
 export { YjsFileSystem } from './yjs-file-system.js';

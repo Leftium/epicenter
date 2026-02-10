@@ -12,7 +12,6 @@ export function createFileSystemIndex(
 	filesTable: TableHelper<FileRow>,
 ): FileSystemIndex & { destroy(): void } {
 	const pathToId = new Map<string, FileId>();
-	const idToPath = new Map<FileId, string>();
 	const childrenOf = new Map<FileId | null, FileId[]>();
 
 	rebuild();
@@ -23,7 +22,6 @@ export function createFileSystemIndex(
 
 	function rebuild() {
 		pathToId.clear();
-		idToPath.clear();
 		childrenOf.clear();
 
 		const rows = filesTable.getAllValid();
@@ -43,7 +41,7 @@ export function createFileSystemIndex(
 		fixOrphans(filesTable, activeRows, childrenOf);
 
 		// Build path indexes with disambiguation
-		buildPaths(filesTable, childrenOf, pathToId, idToPath);
+		buildPaths(filesTable, childrenOf, pathToId);
 	}
 
 	function update(_changedIds: Set<string>) {
@@ -54,7 +52,6 @@ export function createFileSystemIndex(
 
 	return {
 		pathToId,
-		idToPath,
 		childrenOf,
 		destroy: unobserve,
 	};
@@ -89,7 +86,6 @@ function buildPaths(
 	filesTable: TableHelper<FileRow>,
 	childrenOf: Map<FileId | null, FileId[]>,
 	pathToId: Map<string, FileId>,
-	idToPath: Map<FileId, string>,
 ) {
 	// Compute display names per parent (handles CRDT duplicate names)
 	const allDisplayNames = new Map<string, string>();
@@ -115,7 +111,6 @@ function buildPaths(
 		const path = computePath(row.id, filesTable, allDisplayNames);
 		if (path) {
 			pathToId.set(path, row.id);
-			idToPath.set(row.id, path);
 		}
 	}
 }

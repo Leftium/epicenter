@@ -1,5 +1,5 @@
-import type * as Y from 'yjs';
 import type { Brand } from 'wellcrafted/brand';
+import type * as Y from 'yjs';
 import { type Guid, generateGuid } from '../dynamic/schema/fields/id.js';
 
 /** Branded file identifier — a Guid that is specifically a file ID */
@@ -26,8 +26,6 @@ export type FileRow = {
 export type FileSystemIndex = {
 	/** "/docs/api.md" → FileId */
 	pathToId: Map<string, FileId>;
-	/** FileId → "/docs/api.md" */
-	idToPath: Map<FileId, string>;
 	/** parentId (null = root) → [childId, ...] */
 	childrenOf: Map<FileId | null, FileId[]>;
 };

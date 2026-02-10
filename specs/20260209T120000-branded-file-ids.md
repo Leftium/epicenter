@@ -17,16 +17,15 @@ Every file identifier in the filesystem is typed as `string`:
 ```typescript
 // types.ts
 export type FileRow = {
-    id: string;
-    parentId: string | null;
-    // ...
+	id: string;
+	parentId: string | null;
+	// ...
 };
 
 export type FileSystemIndex = {
-    pathToId: Map<string, string>;
-    idToPath: Map<string, string>;
-    childrenOf: Map<string, string[]>;
-    plaintext: Map<string, string>;
+	pathToId: Map<string, string>;
+	childrenOf: Map<string, string[]>;
+	plaintext: Map<string, string>;
 };
 ```
 
@@ -55,16 +54,15 @@ This creates problems:
 export type FileId = Guid & Brand<'FileId'>;
 
 export type FileRow = {
-    id: FileId;
-    parentId: FileId | null;
-    // ...
+	id: FileId;
+	parentId: FileId | null;
+	// ...
 };
 
 export type FileSystemIndex = {
-    pathToId: Map<string, FileId>;
-    idToPath: Map<FileId, string>;
-    childrenOf: Map<FileId | null, FileId[]>;
-    plaintext: Map<FileId, string>;
+	pathToId: Map<string, FileId>;
+	childrenOf: Map<FileId | null, FileId[]>;
+	plaintext: Map<FileId, string>;
 };
 ```
 
@@ -76,12 +74,12 @@ No sentinel. No coalescing. `null` means root in both the data layer and index l
 
 Verified empirically — `null & Brand<T>` resolves to `never` for any `T`. TypeScript treats `null` as a primitive that cannot carry object properties, so the intersection is uninhabitable. This applies to all branding approaches:
 
-| Type expression | Result |
-|---|---|
-| `null & Brand<'RootId'>` | `never` |
+| Type expression                       | Result  |
+| ------------------------------------- | ------- |
+| `null & Brand<'RootId'>`              | `never` |
 | `null & { readonly __tag: 'RootId' }` | `never` |
-| `null & { readonly [symbol]: true }` | `never` |
-| `string & Brand<'RootId'>` | OK |
+| `null & { readonly [symbol]: true }`  | `never` |
+| `string & Brand<'RootId'>`            | OK      |
 
 **Implication**: There's no way to create a branded null type. The choice is between a branded string sentinel (`RootId`) or unbranded `null`.
 
@@ -93,15 +91,15 @@ Yes. `Map` supports any value as a key, including `null`, `undefined`, `NaN`, an
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|---|---|---|
-| File ID type | `FileId = Guid & Brand<'FileId'>` | Semantically distinct from other GUIDs. Prevents mixing file IDs with workspace IDs or doc IDs. `generateFileId()` wraps `generateGuid()` with a cast. Note: `FileId` carries two brands (`Brand<'Guid'>` from `Guid` and `Brand<'FileId'>`), which is intentional — it's a `Guid` that is also specifically a file ID. |
-| Root representation | `null` (no sentinel) | Data layer already uses `null`. Eliminates impedance mismatch, coalescing logic, and the hardcoded `'__ROOT__'` bug. Null-as-Map-key works fine in JS. |
-| `ROOT_ID` constant | Remove entirely | No longer needed. `resolveId('/')` returns `null`. Root checks become `=== null`. |
-| Arktype schema | Keep as `id: 'string'` | Runtime validation doesn't need brands. `FileId extends string` satisfies the schema. |
-| `TableHelper` compatibility | No changes needed | `FileId extends Guid extends string`. `TableHelper.get(id: string)` accepts `FileId` via widening. |
-| Content doc pool IDs | `FileId` | `fileId` params in `ContentDocPool`, `openDocument`, and `DocumentHandle` all become `FileId`. |
-| `Y.Doc` guid param | Accept `FileId` | `new Y.Doc({ guid: fileId })` works because `FileId extends string`. |
+| Decision                    | Choice                            | Rationale                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| File ID type                | `FileId = Guid & Brand<'FileId'>` | Semantically distinct from other GUIDs. Prevents mixing file IDs with workspace IDs or doc IDs. `generateFileId()` wraps `generateGuid()` with a cast. Note: `FileId` carries two brands (`Brand<'Guid'>` from `Guid` and `Brand<'FileId'>`), which is intentional — it's a `Guid` that is also specifically a file ID. |
+| Root representation         | `null` (no sentinel)              | Data layer already uses `null`. Eliminates impedance mismatch, coalescing logic, and the hardcoded `'__ROOT__'` bug. Null-as-Map-key works fine in JS.                                                                                                                                                                  |
+| `ROOT_ID` constant          | Remove entirely                   | No longer needed. `resolveId('/')` returns `null`. Root checks become `=== null`.                                                                                                                                                                                                                                       |
+| Arktype schema              | Keep as `id: 'string'`            | Runtime validation doesn't need brands. `FileId extends string` satisfies the schema.                                                                                                                                                                                                                                   |
+| `TableHelper` compatibility | No changes needed                 | `FileId extends Guid extends string`. `TableHelper.get(id: string)` accepts `FileId` via widening.                                                                                                                                                                                                                      |
+| Content doc pool IDs        | `FileId`                          | `fileId` params in `ContentDocPool`, `openDocument`, and `DocumentHandle` all become `FileId`.                                                                                                                                                                                                                          |
+| `Y.Doc` guid param          | Accept `FileId`                   | `new Y.Doc({ guid: fileId })` works because `FileId extends string`.                                                                                                                                                                                                                                                    |
 
 ## Architecture
 
@@ -109,11 +107,10 @@ Yes. `Map` supports any value as a key, including `null`, `undefined`, `NaN`, an
 DATA LAYER (Yjs/TableHelper)           INDEX LAYER (FileSystemIndex)
 ─────────────────────────────           ────────────────────────────
 FileRow.parentId: FileId | null    →    childrenOf: Map<FileId | null, FileId[]>
-                                        (null key = root children)
+                                         (null key = root children)
 
 FileRow.id: FileId                 →    pathToId: Map<string, FileId>
-                                        idToPath: Map<FileId, string>
-                                        plaintext: Map<FileId, string>
+                                         plaintext: Map<FileId, string>
 ```
 
 ```
@@ -138,7 +135,6 @@ parsePath("/a.md")      → { parentId: null,   name: "a.md" }
 - [ ] **1.4** Update `FileRow.id` to `FileId`, `FileRow.parentId` to `FileId | null`
 - [ ] **1.5** Update `FileSystemIndex` map types:
   - `pathToId: Map<string, FileId>`
-  - `idToPath: Map<FileId, string>`
   - `childrenOf: Map<FileId | null, FileId[]>`
   - `plaintext: Map<FileId, string>`
 - [ ] **1.6** Update `TextDocumentHandle.fileId` and `RichTextDocumentHandle.fileId` to `FileId`
@@ -153,7 +149,7 @@ parsePath("/a.md")      → { parentId: null,   name: "a.md" }
 
 - [ ] **3.1** Import `FileId` from types
 - [ ] **3.2** Update map instantiation generics to match new `FileSystemIndex` types
-- [ ] **3.3** Remove `pathToId.set('/', ROOT_ID)` and `idToPath.set(ROOT_ID, '/')` — root no longer lives in path/id maps
+- [ ] **3.3** Remove `pathToId.set('/', ROOT_ID)` — root no longer lives in path/id maps
 - [ ] **3.4** Change `row.parentId ?? ROOT_ID` → just `row.parentId` (already `FileId | null`, use directly as map key)
 - [ ] **3.5** Change `childrenOf.get(ROOT_ID)` → `childrenOf.get(null)` in `fixOrphans`
 - [ ] **3.6** Update all internal function signatures to use `FileId` where appropriate
@@ -173,7 +169,7 @@ parsePath("/a.md")      → { parentId: null,   name: "a.md" }
 - [ ] **4.10** `stat()`: handle `resolved === '/'` before calling `resolveId` (already does this)
 - [ ] **4.11** Callers of `resolveId` that pass result to `getRow` need a null guard — `resolveId` can now return `null` for root, but `getRow` expects a real ID. Audit each callsite:
   - `readdir`/`readdirWithFileTypes`: use `resolveId` result for `childrenOf.get()` (null OK) and `assertDirectory` (null OK — early-returns on null before calling `getRow` internally) ✓
-  - `readFile`: calls `getRow(id)` — must guard `id === null` *before* `getRow`. Throw EISDIR (can't read root). The guard also protects downstream `plaintext.get(id)` and `pool.loadAndCache(id)` which expect `FileId` ✓
+  - `readFile`: calls `getRow(id)` — must guard `id === null` _before_ `getRow`. Throw EISDIR (can't read root). The guard also protects downstream `plaintext.get(id)` and `pool.loadAndCache(id)` which expect `FileId` ✓
   - `stat`: already special-cases `/` before `resolveId` ✓
   - `writeFile`: uses `pathToId.get()` not `resolveId` ✓
   - `rm`: uses `pathToId.get()` not `resolveId` ✓

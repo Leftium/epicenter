@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '../static/create-workspace.js';
 import type { TableHelper } from '../static/types.js';
-import { filesTable } from './file-table.js';
 import { createFileSystemIndex } from './file-system-index.js';
+import { filesTable } from './file-table.js';
 import type { FileId, FileRow } from './types.js';
 
 const fid = (s: string) => s as FileId;
@@ -14,7 +14,12 @@ function setup() {
 	return { files };
 }
 
-function makeRow(id: string, name: string, parentId: string | null = null, type: 'file' | 'folder' = 'file') {
+function makeRow(
+	id: string,
+	name: string,
+	parentId: string | null = null,
+	type: 'file' | 'folder' = 'file',
+) {
 	return {
 		id: fid(id),
 		name,
@@ -33,7 +38,6 @@ describe('createFileSystemIndex', () => {
 		const index = createFileSystemIndex(files);
 
 		expect(index.pathToId.size).toBe(0);
-		expect(index.idToPath.size).toBe(0);
 		expect(index.childrenOf.size).toBe(0);
 
 		index.destroy();
@@ -45,7 +49,6 @@ describe('createFileSystemIndex', () => {
 		const index = createFileSystemIndex(files);
 
 		expect(index.pathToId.get('/hello.txt')).toBe(fid('f1'));
-		expect(index.idToPath.get(fid('f1'))).toBe('/hello.txt');
 		expect(index.childrenOf.get(null)).toContain(fid('f1'));
 
 		index.destroy();
@@ -61,7 +64,9 @@ describe('createFileSystemIndex', () => {
 		expect(index.pathToId.get('/docs')).toBe(fid('d1'));
 		expect(index.pathToId.get('/docs/api.md')).toBe(fid('f1'));
 		expect(index.pathToId.get('/docs/readme.md')).toBe(fid('f2'));
-		expect(index.childrenOf.get(fid('d1'))).toEqual(expect.arrayContaining([fid('f1'), fid('f2')]));
+		expect(index.childrenOf.get(fid('d1'))).toEqual(
+			expect.arrayContaining([fid('f1'), fid('f2')]),
+		);
 
 		index.destroy();
 	});
@@ -75,7 +80,6 @@ describe('createFileSystemIndex', () => {
 		const index = createFileSystemIndex(files);
 
 		expect(index.pathToId.get('/a/b/c/file.txt')).toBe(fid('f1'));
-		expect(index.idToPath.get(fid('f1'))).toBe('/a/b/c/file.txt');
 
 		index.destroy();
 	});
@@ -164,5 +168,4 @@ describe('createFileSystemIndex', () => {
 
 		index.destroy();
 	});
-
 });

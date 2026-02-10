@@ -15,6 +15,7 @@ The current content doc system has two mechanisms that add complexity without pr
 ### Why the cache is fundamentally broken
 
 The cache is updated in exactly 5 places, all inside `YjsFileSystem`:
+
 - `readFile()` populates it after serializing
 - `writeFile()` updates it after writing
 - `rm()` deletes it
@@ -26,9 +27,14 @@ Any write that bypasses `YjsFileSystem` — a provider sync, an editor writing d
 ### Why acquire/release adds ceremony without value
 
 Every filesystem operation follows the same pattern:
+
 ```typescript
 const handle = this.pool.acquire(id, row.name);
-try { /* use handle */ } finally { this.pool.release(id); }
+try {
+	/* use handle */
+} finally {
+	this.pool.release(id);
+}
 ```
 
 The pool creates a Y.Doc on acquire and destroys it on release. For `writeFile`, this means every single write creates and destroys a Y.Doc. There is no cross-operation reuse.
@@ -48,12 +54,12 @@ import type * as Y from 'yjs';
 import type { FileId } from './types.js';
 
 export type ContentDocStore = {
-  /** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
-  ensure(fileId: FileId): Y.Doc;
-  /** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
-  destroy(fileId: FileId): void;
-  /** Destroy all Y.Docs. Called on filesystem/workspace shutdown. */
-  destroyAll(): void;
+	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
+	ensure(fileId: FileId): Y.Doc;
+	/** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
+	destroy(fileId: FileId): void;
+	/** Destroy all Y.Docs. Called on filesystem/workspace shutdown. */
+	destroyAll(): void;
 };
 ```
 
@@ -63,32 +69,32 @@ Three methods. No `fileName`, no `DocumentHandle`, no `peek`, no refcount.
 
 ```typescript
 export function createContentDocStore(): ContentDocStore {
-  const docs = new Map<FileId, Y.Doc>();
+	const docs = new Map<FileId, Y.Doc>();
 
-  return {
-    ensure(fileId: FileId): Y.Doc {
-      const existing = docs.get(fileId);
-      if (existing) return existing;
+	return {
+		ensure(fileId: FileId): Y.Doc {
+			const existing = docs.get(fileId);
+			if (existing) return existing;
 
-      const ydoc = new Y.Doc({ guid: fileId, gc: false });
-      docs.set(fileId, ydoc);
-      return ydoc;
-    },
+			const ydoc = new Y.Doc({ guid: fileId, gc: false });
+			docs.set(fileId, ydoc);
+			return ydoc;
+		},
 
-    destroy(fileId: FileId): void {
-      const ydoc = docs.get(fileId);
-      if (!ydoc) return;
-      ydoc.destroy();
-      docs.delete(fileId);
-    },
+		destroy(fileId: FileId): void {
+			const ydoc = docs.get(fileId);
+			if (!ydoc) return;
+			ydoc.destroy();
+			docs.delete(fileId);
+		},
 
-    destroyAll(): void {
-      for (const ydoc of docs.values()) {
-        ydoc.destroy();
-      }
-      docs.clear();
-    },
-  };
+		destroyAll(): void {
+			for (const ydoc of docs.values()) {
+				ydoc.destroy();
+			}
+			docs.clear();
+		},
+	};
 }
 ```
 
@@ -155,7 +161,7 @@ const persistence = new IndexeddbPersistence(fileId, ydoc);
 const provider = new WebsocketProvider(url, fileId, ydoc);
 
 // Editor binds to the shared types directly
-const content = ydoc.getXmlFragment('richtext');  // same instance filesystem uses
+const content = ydoc.getXmlFragment('richtext'); // same instance filesystem uses
 const frontmatter = ydoc.getMap('frontmatter');
 
 // Any edits propagate through the live Y.Doc
@@ -192,7 +198,6 @@ ContentDocStore (pure Y.Doc lifecycle manager)
 
 Runtime Indexes (ephemeral JS Maps, rebuilt from files table)
   ├── pathToId:    Map<string, FileId>
-  ├── idToPath:    Map<FileId, string>
   └── childrenOf:  Map<FileId | null, FileId[]>
   (no plaintext cache)
 ```
@@ -201,14 +206,14 @@ Runtime Indexes (ephemeral JS Maps, rebuilt from files table)
 
 ## Responsibility layers (clean separation)
 
-| Concern | Owner | Knows about |
-|---------|-------|-------------|
-| Y.Doc lifecycle (create, hold, destroy) | `ContentDocStore` | FileId, Y.Doc. Nothing else. |
-| File type discrimination (richtext vs text) | `openDocument()` utility | fileName extension |
-| Content type healing | `healContentType()` utility | fileName extension, Y.Doc keys |
-| Serialization (Y.Doc → string) | `documentHandleToString()` utility | DocumentHandle |
-| POSIX API + metadata | `YjsFileSystem` | Everything above, orchestrates calls |
-| Provider attachment (IndexedDB, WebSocket) | App/editor layer | Y.Doc instance from store |
+| Concern                                     | Owner                              | Knows about                          |
+| ------------------------------------------- | ---------------------------------- | ------------------------------------ |
+| Y.Doc lifecycle (create, hold, destroy)     | `ContentDocStore`                  | FileId, Y.Doc. Nothing else.         |
+| File type discrimination (richtext vs text) | `openDocument()` utility           | fileName extension                   |
+| Content type healing                        | `healContentType()` utility        | fileName extension, Y.Doc keys       |
+| Serialization (Y.Doc → string)              | `documentHandleToString()` utility | DocumentHandle                       |
+| POSIX API + metadata                        | `YjsFileSystem`                    | Everything above, orchestrates calls |
+| Provider attachment (IndexedDB, WebSocket)  | App/editor layer                   | Y.Doc instance from store            |
 
 ---
 
@@ -216,15 +221,15 @@ Runtime Indexes (ephemeral JS Maps, rebuilt from files table)
 
 ### Files modified
 
-| File | Change |
-|------|--------|
-| `content-doc-pool.ts` → `content-doc-store.ts` | Replace entire `createContentDocPool` with `createContentDocStore` (~25 lines). Remove `PoolEntry` type. Keep `openDocument`, `documentHandleToString` as standalone utility exports. |
-| `types.ts` | Replace `ContentDocPool` type with `ContentDocStore` (3 methods instead of 4). Remove `plaintext` from `FileSystemIndex`. |
-| `yjs-file-system.ts` | Replace `pool: ContentDocPool` with `store: ContentDocStore`. Replace `pool.acquire`/`pool.release` pattern with `store.ensure` + `openDocument`. Remove all `index.plaintext` references (8 occurrences). Remove try/finally release blocks. Add `store.destroy(id)` in `rm`/`softDeleteDescendants`. |
-| `file-system-index.ts` | Remove `plaintext` map creation (line 17), return (line 69), and comment (line 29). |
-| `content-doc-pool.test.ts` → `content-doc-store.test.ts` | Rewrite: test ensure idempotency, destroy cleanup, destroyAll. Remove refcount/release/loadAndCache tests. |
-| `yjs-file-system.test.ts` | No changes expected — tests use readFile/writeFile which behave the same. |
-| `index.ts` | Update re-exports for renamed file. |
+| File                                                     | Change                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `content-doc-pool.ts` → `content-doc-store.ts`           | Replace entire `createContentDocPool` with `createContentDocStore` (~25 lines). Remove `PoolEntry` type. Keep `openDocument`, `documentHandleToString` as standalone utility exports.                                                                                                                  |
+| `types.ts`                                               | Replace `ContentDocPool` type with `ContentDocStore` (3 methods instead of 4). Remove `plaintext` from `FileSystemIndex`.                                                                                                                                                                              |
+| `yjs-file-system.ts`                                     | Replace `pool: ContentDocPool` with `store: ContentDocStore`. Replace `pool.acquire`/`pool.release` pattern with `store.ensure` + `openDocument`. Remove all `index.plaintext` references (8 occurrences). Remove try/finally release blocks. Add `store.destroy(id)` in `rm`/`softDeleteDescendants`. |
+| `file-system-index.ts`                                   | Remove `plaintext` map creation (line 17), return (line 69), and comment (line 29).                                                                                                                                                                                                                    |
+| `content-doc-pool.test.ts` → `content-doc-store.test.ts` | Rewrite: test ensure idempotency, destroy cleanup, destroyAll. Remove refcount/release/loadAndCache tests.                                                                                                                                                                                             |
+| `yjs-file-system.test.ts`                                | No changes expected — tests use readFile/writeFile which behave the same.                                                                                                                                                                                                                              |
+| `index.ts`                                               | Update re-exports for renamed file.                                                                                                                                                                                                                                                                    |
 
 ### What gets deleted
 
@@ -250,21 +255,21 @@ Runtime Indexes (ephemeral JS Maps, rebuilt from files table)
 
 ### Read performance
 
-| Scenario | Current (cache) | Proposed (serialize on demand) |
-|----------|:---:|:---:|
-| readFile (warm, same file) | ~0.001ms (Map lookup) | ~0.05-0.1ms (serialize from Y.Doc) |
-| grep 100 files (all warm) | ~0.1ms total | ~5-10ms total |
-| readFile after remote edit | **returns stale data** | always correct |
+| Scenario                   |    Current (cache)     |   Proposed (serialize on demand)   |
+| -------------------------- | :--------------------: | :--------------------------------: |
+| readFile (warm, same file) | ~0.001ms (Map lookup)  | ~0.05-0.1ms (serialize from Y.Doc) |
+| grep 100 files (all warm)  |      ~0.1ms total      |           ~5-10ms total            |
+| readFile after remote edit | **returns stale data** |           always correct           |
 
 In absolute terms: grep 100 files goes from 0.1ms to 10ms. Both are imperceptible.
 
 ### Write performance (improves)
 
-| Scenario | Current (pool) | Proposed (store) |
-|----------|:---:|:---:|
-| writeFile (cold) | create Y.Doc + write + destroy | create Y.Doc + write (kept alive) |
-| writeFile (warm) | create Y.Doc + write + destroy | reuse Y.Doc + write |
-| 10 sequential writes to same file | 10 create/destroy cycles | 1 create + 10 writes |
+| Scenario                          |         Current (pool)         |         Proposed (store)          |
+| --------------------------------- | :----------------------------: | :-------------------------------: |
+| writeFile (cold)                  | create Y.Doc + write + destroy | create Y.Doc + write (kept alive) |
+| writeFile (warm)                  | create Y.Doc + write + destroy |        reuse Y.Doc + write        |
+| 10 sequential writes to same file |    10 create/destroy cycles    |       1 create + 10 writes        |
 
 ### Memory
 
@@ -276,11 +281,11 @@ In absolute terms: grep 100 files goes from 0.1ms to 10ms. Both are imperceptibl
 
 ## Provider separation
 
-| Concern | Owner | When |
-|---------|-------|------|
-| Y.Doc creation/destruction | ContentDocStore | `.ensure()` / `.destroy()` |
-| IndexedDB persistence | App/editor layer | When file is opened in UI |
-| WebSocket sync | App/editor layer | When collaborative editing starts |
+| Concern                    | Owner            | When                              |
+| -------------------------- | ---------------- | --------------------------------- |
+| Y.Doc creation/destruction | ContentDocStore  | `.ensure()` / `.destroy()`        |
+| IndexedDB persistence      | App/editor layer | When file is opened in UI         |
+| WebSocket sync             | App/editor layer | When collaborative editing starts |
 
 The store doesn't know about providers. The filesystem doesn't know about providers. The editor attaches them to the Y.Doc it gets from the store.
 

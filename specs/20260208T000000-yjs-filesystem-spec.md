@@ -1,11 +1,12 @@
 # Yjs Filesystem Spec
 
 **Date**: 2026-02-08T00:00:00
-**Status**: Planning
+**Status**: Done (Phases 1-4), Phase 5 deferred
 
 ## Problem
 
 Implement a collaborative file system on top of the static API that supports:
+
 - Hierarchical file/folder organization (Google Drive-like)
 - Real-time collaborative editing via Yjs CRDTs
 - An `IFileSystem` interface compatible with [just-bash](https://github.com/vercel-labs/just-bash), enabling agents to use grep, find, cat, ls, and 80+ bash commands against the CRDT filesystem
@@ -32,10 +33,8 @@ Per-File Y.Docs (gc: false, loaded on demand)       (fileId IS the Y.Doc GUID)
   └── Y.Map('frontmatter')       →  { title: "Hello", date: "2026-02-09", ... }   [active for .md]
 
 Runtime Indexes (ephemeral JS Maps, not in Yjs)
-  ├── pathToId:    Map<string, string>      "/docs/api.md" → "abc-123"
-  ├── idToPath:    Map<string, string>      "abc-123" → "/docs/api.md"
-  ├── childrenOf:  Map<string, string[]>    "parent-id" → ["child-1", "child-2"]
-  └── plaintext:   Map<string, string>      "abc-123" → "file content..." (lazy cache)
+   ├── pathToId:    Map<string, FileId>      "/docs/api.md" → FileId("abc-123")
+   └── childrenOf:  Map<FileId | null, FileId[]>    FileId | null → [FileId, ...]
 ```
 
 ### Why this architecture
@@ -54,35 +53,37 @@ Runtime Indexes (ephemeral JS Maps, not in Yjs)
 import { defineTable, defineWorkspace } from './static';
 import { type } from 'arktype';
 
-const files = defineTable(type({
-  id: 'string',                       // Guid — globally unique, doubles as Y.Doc GUID for content
-  name: 'string',                   // filename: "api.md", "src", "index.ts"
-  parentId: 'string | null',        // null = root level
-  type: "'file' | 'folder'",        // discriminator
-  size: 'number',                   // content byte length (updated on content change)
-  createdAt: 'number',              // Date.now() ms
-  updatedAt: 'number',              // Date.now() ms (content or metadata change)
-  trashedAt: 'number | null',       // null = active, timestamp = soft-deleted
-}));
+const files = defineTable(
+	type({
+		id: 'string', // Guid — globally unique, doubles as Y.Doc GUID for content
+		name: 'string', // filename: "api.md", "src", "index.ts"
+		parentId: 'string | null', // null = root level
+		type: "'file' | 'folder'", // discriminator
+		size: 'number', // content byte length (updated on content change)
+		createdAt: 'number', // Date.now() ms
+		updatedAt: 'number', // Date.now() ms (content or metadata change)
+		trashedAt: 'number | null', // null = active, timestamp = soft-deleted
+	}),
+);
 
 const workspace = defineWorkspace({
-  id: 'filesystem',
-  tables: { files },
+	id: 'filesystem',
+	tables: { files },
 });
 ```
 
 ### Why these fields
 
-| Field | Needed for | Notes |
-|-------|-----------|-------|
-| `id` | Everything | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID — no composite key needed. |
-| `name` | `readdir()`, path resolution | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). Unique per `(parentId, name)` among active files — enforced with `EEXIST` on write, disambiguated at read layer for CRDT conflicts. See [Name uniqueness](#name-uniqueness-eexist-on-write--display-disambiguation-for-crdt-conflicts). |
-| `parentId` | `readdir()`, tree traversal | null = root. ID-based = O(1) move, no cascading updates |
-| `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory` |
-| `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
-| `createdAt` | UI display | Immutable after creation. Used by UI ("created 3 days ago"). Not surfaced in `FsStat` (just-bash has no `birthtime`). |
-| `updatedAt` | `stat()` mtime, `find -newer` | Updated on content OR metadata change. |
-| `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. IFileSystem `rm` sets this (soft delete). Permanent delete = `files.delete(id)` via "empty trash" UI only. |
+| Field       | Needed for                         | Notes                                                                                                                                                                                                                                                                                                                                                             |
+| ----------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`        | Everything                         | `Guid` (15-char nanoid). Globally unique. Stable across renames/moves. Doubles as the content Y.Doc GUID — no composite key needed.                                                                                                                                                                                                                               |
+| `name`      | `readdir()`, path resolution       | Just the filename, not the full path. Must not contain `/`, `\`, or null bytes — see [Name validation](#name-validation). Unique per `(parentId, name)` among active files — enforced with `EEXIST` on write, disambiguated at read layer for CRDT conflicts. See [Name uniqueness](#name-uniqueness-eexist-on-write--display-disambiguation-for-crdt-conflicts). |
+| `parentId`  | `readdir()`, tree traversal        | null = root. ID-based = O(1) move, no cascading updates                                                                                                                                                                                                                                                                                                           |
+| `type`      | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory`                                                                                                                                                                                                                                                                                                                                   |
+| `size`      | `stat()`, `ls -l`, `find -size`    | Updated by content doc observer. Avoids loading content for stat                                                                                                                                                                                                                                                                                                  |
+| `createdAt` | UI display                         | Immutable after creation. Used by UI ("created 3 days ago"). Not surfaced in `FsStat` (just-bash has no `birthtime`).                                                                                                                                                                                                                                             |
+| `updatedAt` | `stat()` mtime, `find -newer`      | Updated on content OR metadata change.                                                                                                                                                                                                                                                                                                                            |
+| `trashedAt` | Soft delete / trash                | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. IFileSystem `rm` sets this (soft delete). Permanent delete = `files.delete(id)` via "empty trash" UI only.                                                                                                                                                                 |
 
 ### What's NOT stored
 
@@ -101,11 +102,11 @@ Each text file gets its own Y.Doc. The file's `id` (a `Guid`) is used directly a
 
 The Yjs backing type depends on the file extension:
 
-| File type | Yjs type | Editor binding | Serialization |
-|-----------|----------|---------------|---------------|
-| `.md` | Y.XmlFragment('richtext') + Y.Map('frontmatter') | Milkdown (ProseMirror + y-prosemirror) for body; Y.Map for metadata | Y.Map → YAML + remark serialize → markdown body, combined with `---` delimiters |
-| `.txt`, `.ts`, `.js`, `.rs`, `.py`, `.svelte`, `.json`, `.yaml`, `.toml`, etc. | Y.Text | CodeMirror (y-codemirror.next) | `Y.Text.toString()` (lossless, 1:1) |
-| Binary (images, PDFs) | None | N/A | Blob references in files table, not Yjs documents |
+| File type                                                                      | Yjs type                                         | Editor binding                                                      | Serialization                                                                   |
+| ------------------------------------------------------------------------------ | ------------------------------------------------ | ------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `.md`                                                                          | Y.XmlFragment('richtext') + Y.Map('frontmatter') | Milkdown (ProseMirror + y-prosemirror) for body; Y.Map for metadata | Y.Map → YAML + remark serialize → markdown body, combined with `---` delimiters |
+| `.txt`, `.ts`, `.js`, `.rs`, `.py`, `.svelte`, `.json`, `.yaml`, `.toml`, etc. | Y.Text                                           | CodeMirror (y-codemirror.next)                                      | `Y.Text.toString()` (lossless, 1:1)                                             |
+| Binary (images, PDFs)                                                          | None                                             | N/A                                                                 | Blob references in files table, not Yjs documents                               |
 
 ### Why file-type-driven backing
 
@@ -117,36 +118,41 @@ No production system maintains both Y.Text and Y.XmlFragment on the same documen
 ### Content access
 
 ```typescript
+type FileId = Guid & Brand<'FileId'>; // branded file identifier
+
 type TextDocumentHandle = {
-  type: 'text';
-  fileId: string;
-  ydoc: Y.Doc;
-  content: Y.Text;
+	type: 'text';
+	fileId: FileId;
+	ydoc: Y.Doc;
+	content: Y.Text;
 };
 
 type RichTextDocumentHandle = {
-  type: 'richtext';
-  fileId: string;
-  ydoc: Y.Doc;
-  content: Y.XmlFragment;
-  frontmatter: Y.Map<unknown>;  // YAML front matter fields (per-field LWW)
+	type: 'richtext';
+	fileId: FileId;
+	ydoc: Y.Doc;
+	content: Y.XmlFragment;
+	frontmatter: Y.Map<unknown>; // YAML front matter fields (per-field LWW)
 };
 
 type DocumentHandle = TextDocumentHandle | RichTextDocumentHandle;
 
-function openDocument(fileId: Guid, fileName: string): DocumentHandle {
-  const ydoc = new Y.Doc({ guid: fileId, gc: false }); // fileId IS the GUID; gc: false for snapshots/versioning
-
-  if (fileName.endsWith('.md')) {
-    return {
-      type: 'richtext',
-      fileId,
-      ydoc,
-      content: ydoc.getXmlFragment('richtext'),
-      frontmatter: ydoc.getMap('frontmatter'),
-    };
-  }
-  return { type: 'text', fileId, ydoc, content: ydoc.getText('text') };
+// Y.Doc lifecycle is owned by ContentDocStore — openDocument receives an existing ydoc
+function openDocument(
+	fileId: FileId,
+	fileName: string,
+	ydoc: Y.Doc,
+): DocumentHandle {
+	if (getExtensionCategory(fileName) === 'richtext') {
+		return {
+			type: 'richtext',
+			fileId,
+			ydoc,
+			content: ydoc.getXmlFragment('richtext'),
+			frontmatter: ydoc.getMap('frontmatter'),
+		};
+	}
+	return { type: 'text', fileId, ydoc, content: ydoc.getText('text') };
 }
 ```
 
@@ -160,56 +166,55 @@ function openDocument(fileId: Guid, fileName: string): DocumentHandle {
 
 ## Runtime Indexes
 
-The files table is always in memory (it's on the main Y.Doc). Runtime indexes provide O(1) lookups for IFileSystem operations. They're ephemeral JS Maps — not stored in Yjs — rebuilt on load and updated incrementally via `files.observe()`.
+The files table is always in memory (it's on the main Y.Doc). Runtime indexes provide O(1) lookups for IFileSystem operations. They're ephemeral JS Maps — not stored in Yjs — rebuilt on load and updated via full rebuild on `files.observe()`.
 
 ```typescript
-function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
-  // Path resolution
-  const pathToId = new Map<string, string>();       // "/docs/api.md" → "abc-123"
-  const idToPath = new Map<string, string>();        // "abc-123" → "/docs/api.md"
+function createFileSystemIndex(
+	filesTable: TableHelper<FileRow>,
+): FileSystemIndex & { destroy(): void } {
+	const pathToId = new Map<string, FileId>();
+	const childrenOf = new Map<FileId | null, FileId[]>();
 
-  // Tree traversal
-  const childrenOf = new Map<string, string[]>();    // parentId → [childId, ...]
+	rebuild();
+	const unobserve = filesTable.observe((changedIds) => update(changedIds));
 
-  // Content cache (for grep/search without loading content docs)
-  const plaintext = new Map<string, string>();       // fileId → content string
+	function rebuild() {
+		pathToId.clear();
+		childrenOf.clear();
 
-  rebuild();
-  filesTable.observe((changedIds) => update(changedIds));
+		const rows = filesTable.getAllValid();
+		const activeRows = rows.filter((r) => r.trashedAt === null);
 
-  function rebuild() {
-    // Walk all rows, compute paths, build children index
-    const rows = filesTable.getAllValid();
-    // Build path tree from parentId chains
-    // For each directory, run disambiguateNames() on active children
-    // to detect CRDT-concurrent duplicate names and assign display suffixes.
-    // Index both clean and suffixed paths in pathToId/idToPath.
-  }
+		// Build childrenOf index (null key = root children)
+		for (const row of activeRows) {
+			const children = childrenOf.get(row.parentId) ?? [];
+			children.push(row.id);
+			childrenOf.set(row.parentId, children);
+		}
 
-  function update(changedIds: Set<string>) {
-    // Incrementally update affected paths and children
-    // Re-disambiguate siblings in affected parents (duplicate detection)
-    // Invalidate plaintext cache for changed files
-  }
+		// Detect and fix circular references, then orphans
+		fixCircularReferences(filesTable, activeRows);
+		fixOrphans(filesTable, activeRows, childrenOf);
 
-  return { pathToId, idToPath, childrenOf, plaintext };
+		// Build path indexes with per-parent disambiguation
+		buildPaths(filesTable, childrenOf, pathToId);
+	}
+
+	function update(_changedIds: Set<string>) {
+		// Full rebuild on changes. The files table is always in memory
+		// so this is fast (O(n) where n = total files).
+		rebuild();
+	}
+
+	return { pathToId, childrenOf, destroy: unobserve };
 }
-
-type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
 ```
+
+**Why two maps, not three.** `pathToId` provides full-path → FileId resolution (the table stores `name` + `parentId`, not computed paths). `childrenOf` provides parent → children reverse lookup (the table only stores child → parent via `parentId`). An `idToPath` reverse map was initially included for symmetry but had zero consumers in production code — removed per `specs/20260209T120000-branded-file-ids.md`. A `plaintext` cache was initially included but was fundamentally broken (no Y.Doc observers, stale on any write that bypasses `YjsFileSystem`) — removed per `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
 
 ### Path resolution: O(depth) build, O(1) lookup
 
 Path computation walks the `parentId` chain: `file → parent → grandparent → ... → null (root)`. This is O(depth) per file, but depth is typically 3-5 levels and the data is in-memory. After initial build, all lookups are O(1) via the Maps.
-
-### Plaintext cache: lazy, reactive
-
-The plaintext cache is populated lazily:
-- **Single file read** (`cat`): loads content doc, caches plaintext
-- **Recursive search** (`grep -r`): batch-loads uncached content docs, caches all
-- **Content changes**: content doc observers update the cache entry
-
-On a server (where agents run), the server has all content docs available and can maintain the full cache eagerly. On clients, the cache populates on demand.
 
 ---
 
@@ -225,40 +230,52 @@ just-bash's `IFileSystem` requires 21 methods (20 required + `readdirWithFileTyp
 
 ```typescript
 interface IFileSystem {
-  readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string>;
-  readFileBuffer(path: string): Promise<Uint8Array>;
-  writeFile(path: string, content: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void>;
-  appendFile(path: string, content: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void>;
-  exists(path: string): Promise<boolean>;
-  stat(path: string): Promise<FsStat>;
-  mkdir(path: string, options?: MkdirOptions): Promise<void>;
-  readdir(path: string): Promise<string[]>;
-  readdirWithFileTypes?(path: string): Promise<DirentEntry[]>;  // optional
-  rm(path: string, options?: RmOptions): Promise<void>;
-  cp(src: string, dest: string, options?: CpOptions): Promise<void>;
-  mv(src: string, dest: string): Promise<void>;
-  symlink(target: string, linkPath: string): Promise<void>;
-  link(existingPath: string, newPath: string): Promise<void>;
-  readlink(path: string): Promise<string>;
-  lstat(path: string): Promise<FsStat>;
-  chmod(path: string, mode: number): Promise<void>;
-  resolvePath(base: string, path: string): string;  // synchronous, two arguments
-  realpath(path: string): Promise<string>;
-  utimes(path: string, atime: Date, mtime: Date): Promise<void>;
-  getAllPaths(): string[];  // for glob matching
+	readFile(
+		path: string,
+		options?: ReadFileOptions | BufferEncoding,
+	): Promise<string>;
+	readFileBuffer(path: string): Promise<Uint8Array>;
+	writeFile(
+		path: string,
+		content: FileContent,
+		options?: WriteFileOptions | BufferEncoding,
+	): Promise<void>;
+	appendFile(
+		path: string,
+		content: FileContent,
+		options?: WriteFileOptions | BufferEncoding,
+	): Promise<void>;
+	exists(path: string): Promise<boolean>;
+	stat(path: string): Promise<FsStat>;
+	mkdir(path: string, options?: MkdirOptions): Promise<void>;
+	readdir(path: string): Promise<string[]>;
+	readdirWithFileTypes?(path: string): Promise<DirentEntry[]>; // optional
+	rm(path: string, options?: RmOptions): Promise<void>;
+	cp(src: string, dest: string, options?: CpOptions): Promise<void>;
+	mv(src: string, dest: string): Promise<void>;
+	symlink(target: string, linkPath: string): Promise<void>;
+	link(existingPath: string, newPath: string): Promise<void>;
+	readlink(path: string): Promise<string>;
+	lstat(path: string): Promise<FsStat>;
+	chmod(path: string, mode: number): Promise<void>;
+	resolvePath(base: string, path: string): string; // synchronous, two arguments
+	realpath(path: string): Promise<string>;
+	utimes(path: string, atime: Date, mtime: Date): Promise<void>;
+	getAllPaths(): string[]; // for glob matching
 }
 
 interface FsStat {
-  isFile: boolean;
-  isDirectory: boolean;
-  isSymbolicLink: boolean;
-  size: number;
-  mode: number;
-  mtime: Date;
+	isFile: boolean;
+	isDirectory: boolean;
+	isSymbolicLink: boolean;
+	size: number;
+	mode: number;
+	mtime: Date;
 }
 ```
 
 **Key differences from what you might expect:**
+
 - `readFile` returns `string`, NOT `FileContent`. Binary reads use the separate `readFileBuffer`.
 - `mv(src, dest)`, NOT `rename()`. This handles both moves and renames.
 - `cp(src, dest, options?)`, NOT `copyFile`. Supports `{ recursive: true }` for directory copies.
@@ -272,376 +289,421 @@ interface FsStat {
 The root directory (`/`) is a virtual entry — no row in the files table. Special-cased in all path operations:
 
 ```typescript
-const ROOT_ID = '__ROOT__';  // sentinel, never stored in files table
-
+// No sentinel constant — null represents root everywhere.
+// resolveId('/') returns null
 // stat('/') returns a synthetic directory entry
-// readdir('/') returns childrenOf.get(ROOT_ID) — children with parentId === null
-// exists('/') returns true
-// pathToId.set('/', ROOT_ID) during index build
+// readdir('/') returns childrenOf.get(null) — children with parentId === null
+// exists('/') checks resolved === '/' short-circuit (root is not in pathToId)
 ```
 
-Files with `parentId: null` are root-level children. The `childrenOf` index maps `ROOT_ID → [ids of files with parentId === null]`.
+Files with `parentId: null` are root-level children. The `childrenOf` index uses `null` as a Map key: `childrenOf.get(null)` returns root-level file IDs. JavaScript `Map` supports `null` keys natively.
 
-### Content doc pool
+### Content doc store
 
-Content Y.Docs are managed by a pool with reference counting and on-demand loading:
+Content Y.Docs are managed by a `ContentDocStore` — a simple lifecycle manager that holds live Y.Doc instances keyed by `FileId`. It has zero domain knowledge: no file names, no document types, no serialization.
 
 ```typescript
-type ContentDocPool = {
-  /** Get or create a content doc. Increments refcount. */
-  acquire(fileId: string, fileName: string): DocumentHandle;
-  /** Decrement refcount. Doc destroyed when refcount hits 0. */
-  release(fileId: string): void;
-  /** Get without incrementing refcount (for cache reads). Returns undefined if not loaded. */
-  peek(fileId: string): DocumentHandle | undefined;
-  /** Load a doc, populate plaintext cache, release immediately. For grep/search. */
-  loadAndCache(fileId: string, fileName: string): string;
+type ContentDocStore = {
+	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
+	ensure(fileId: FileId): Y.Doc;
+	/** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
+	destroy(fileId: FileId): void;
+	/** Destroy all Y.Docs. Called on filesystem/workspace shutdown. */
+	destroyAll(): void;
 };
 
-function createContentDocPool(
-  connectProvider?: (ydoc: Y.Doc) => { destroy(): void },
-): ContentDocPool {
-  const docs = new Map<string, { handle: DocumentHandle; refcount: number; provider?: { destroy(): void } }>();
+function createContentDocStore(): ContentDocStore {
+	const docs = new Map<FileId, Y.Doc>();
 
-  return {
-    acquire(fileId, fileName) {
-      const existing = docs.get(fileId);
-      if (existing) { existing.refcount++; return existing.handle; }
+	return {
+		ensure(fileId: FileId): Y.Doc {
+			const existing = docs.get(fileId);
+			if (existing) return existing;
 
-      const ydoc = new Y.Doc({ guid: fileId, gc: false });
-      const provider = connectProvider?.(ydoc);
-      const handle = openDocument(fileId, fileName);
-      docs.set(fileId, { handle, refcount: 1, provider });
-      return handle;
-    },
-    release(fileId) {
-      const entry = docs.get(fileId);
-      if (!entry) return;
-      entry.refcount--;
-      if (entry.refcount <= 0) {
-        entry.provider?.destroy();
-        entry.handle.ydoc.destroy();
-        docs.delete(fileId);
-      }
-    },
-    peek(fileId) {
-      return docs.get(fileId)?.handle;
-    },
-    loadAndCache(fileId, fileName) {
-      const handle = this.acquire(fileId, fileName);
-      const text = documentHandleToString(handle);
-      this.release(fileId);
-      return text;
-    },
-  };
+			const ydoc = new Y.Doc({ guid: fileId, gc: false });
+			docs.set(fileId, ydoc);
+			return ydoc;
+		},
+		destroy(fileId: FileId): void {
+			const ydoc = docs.get(fileId);
+			if (!ydoc) return;
+			ydoc.destroy();
+			docs.delete(fileId);
+		},
+		destroyAll(): void {
+			for (const ydoc of docs.values()) ydoc.destroy();
+			docs.clear();
+		},
+	};
 }
 ```
 
-**Why reference counting**: Editors hold a reference while open. `grep -r` acquires, reads, releases. In the browser, only actively viewed files stay loaded (10-20 at a time). On the server, all docs can stay loaded (the server has memory for the full workspace).
+**Why not a pool with reference counting**: The original design used acquire/release with refcounts. In practice, every filesystem operation (readFile, writeFile) acquired and released in the same scope — the refcount never exceeded 1 in headless usage. The store keeps Y.Docs alive until explicitly destroyed, which is both simpler and better for performance (no create/destroy churn on repeated reads of the same file). See `specs/20260209T000000-simplify-content-doc-lifecycle.md` for the full analysis.
 
-**Provider connection model**: y-websocket uses one WebSocket per Y.Doc (no multiplexing). For the browser with 500 files, only the main doc + actively open content docs are connected (not all 500). The pool's `connectProvider` callback handles this — pass it for networked environments, omit it for in-memory testing.
+**Why no plaintext cache**: The original design cached serialized strings in `index.plaintext`. This cache had no Y.Doc observers — any write that bypassed `YjsFileSystem` (provider sync, editor writes, remote collaborators) left it stale silently. Serializing from a live Y.Doc on every read is ~0.05-0.1ms per file — imperceptible even for `grep -r` on 100 files. Always-correct beats sometimes-fast. See `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
+
+**Provider separation**: The store doesn't know about providers. The filesystem doesn't know about providers. The editor/app layer attaches providers (IndexedDB, WebSocket) to the Y.Doc it gets from `store.ensure()`. This clean separation means the same store works in tests (no providers), headless servers (persistence only), and browsers (full sync).
 
 ### YjsFileSystem implementation
 
 ```typescript
 class YjsFileSystem implements IFileSystem {
-  constructor(
-    private filesTable: TableHelper<FileRow>,
-    private index: FileSystemIndex,
-    private pool: ContentDocPool,
-    private cwd: string = '/',
-  ) {}
+	constructor(
+		private filesTable: TableHelper<FileRow>,
+		private index: FileSystemIndex,
+		private pool: ContentDocPool,
+		private cwd: string = '/',
+	) {}
 
-  // --- Reads (metadata only, always fast) ---
+	// --- Reads (metadata only, always fast) ---
 
-  async readdir(path: string): Promise<string[]> {
-    const resolved = posixResolve(this.cwd, path);
-    const id = this.resolveId(resolved);
-    const childIds = this.index.childrenOf.get(id) ?? [];
-    const activeChildren = childIds
-      .map(cid => this.filesTable.get(cid).row!)
-      .filter(row => row.trashedAt === null);
-    const displayNames = disambiguateNames(activeChildren);
-    return activeChildren.map(row => displayNames.get(row.id)!).sort();
-  }
+	async readdir(path: string): Promise<string[]> {
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.resolveId(resolved);
+		const childIds = this.index.childrenOf.get(id) ?? [];
+		const activeChildren = childIds
+			.map((cid) => this.filesTable.get(cid).row!)
+			.filter((row) => row.trashedAt === null);
+		const displayNames = disambiguateNames(activeChildren);
+		return activeChildren.map((row) => displayNames.get(row.id)!).sort();
+	}
 
-  async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
-    const resolved = posixResolve(this.cwd, path);
-    const id = this.resolveId(resolved);
-    const childIds = this.index.childrenOf.get(id) ?? [];
-    const activeChildren = childIds
-      .map(cid => this.filesTable.get(cid).row!)
-      .filter(row => row.trashedAt === null);
-    const displayNames = disambiguateNames(activeChildren);
-    return activeChildren.map(row => ({
-      name: displayNames.get(row.id)!,
-      isFile: row.type === 'file',
-      isDirectory: row.type === 'folder',
-      isSymbolicLink: false,
-    })).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-  }
+	async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.resolveId(resolved);
+		const childIds = this.index.childrenOf.get(id) ?? [];
+		const activeChildren = childIds
+			.map((cid) => this.filesTable.get(cid).row!)
+			.filter((row) => row.trashedAt === null);
+		const displayNames = disambiguateNames(activeChildren);
+		return activeChildren
+			.map((row) => ({
+				name: displayNames.get(row.id)!,
+				isFile: row.type === 'file',
+				isDirectory: row.type === 'folder',
+				isSymbolicLink: false,
+			}))
+			.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+	}
 
-  async stat(path: string): Promise<FsStat> {
-    const resolved = posixResolve(this.cwd, path);
-    if (resolved === '/') {
-      return { isFile: false, isDirectory: true, isSymbolicLink: false,
-        size: 0, mtime: new Date(0), mode: 0o755 };
-    }
-    const id = this.resolveId(resolved);
-    const row = this.filesTable.get(id).row!;
-    return {
-      isFile: row.type === 'file',
-      isDirectory: row.type === 'folder',
-      isSymbolicLink: false,
-      size: row.size,
-      mtime: new Date(row.updatedAt),
-      mode: row.type === 'folder' ? 0o755 : 0o644,
-    };
-  }
+	async stat(path: string): Promise<FsStat> {
+		const resolved = posixResolve(this.cwd, path);
+		if (resolved === '/') {
+			return {
+				isFile: false,
+				isDirectory: true,
+				isSymbolicLink: false,
+				size: 0,
+				mtime: new Date(0),
+				mode: 0o755,
+			};
+		}
+		const id = this.resolveId(resolved);
+		const row = this.filesTable.get(id).row!;
+		return {
+			isFile: row.type === 'file',
+			isDirectory: row.type === 'folder',
+			isSymbolicLink: false,
+			size: row.size,
+			mtime: new Date(row.updatedAt),
+			mode: row.type === 'folder' ? 0o755 : 0o644,
+		};
+	}
 
-  async lstat(path: string): Promise<FsStat> {
-    // No symlinks — lstat is identical to stat
-    return this.stat(path);
-  }
+	async lstat(path: string): Promise<FsStat> {
+		// No symlinks — lstat is identical to stat
+		return this.stat(path);
+	}
 
-  async exists(path: string): Promise<boolean> {
-    const resolved = posixResolve(this.cwd, path);
-    return resolved === '/' || this.index.pathToId.has(resolved);
-  }
+	async exists(path: string): Promise<boolean> {
+		const resolved = posixResolve(this.cwd, path);
+		return resolved === '/' || this.index.pathToId.has(resolved);
+	}
 
-  // --- Reads (content, may load content doc) ---
+	// --- Reads (content, may load content doc) ---
 
-  async readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string> {
-    const resolved = posixResolve(this.cwd, path);
-    const id = this.resolveId(resolved);
-    const row = this.filesTable.get(id).row!;
-    if (row.type === 'folder') throw fsError('EISDIR', resolved);
+	async readFile(
+		path: string,
+		options?: ReadFileOptions | BufferEncoding,
+	): Promise<string> {
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.resolveId(resolved);
+		const row = this.filesTable.get(id).row!;
+		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-    // Fast path: plaintext cache
-    const cached = this.index.plaintext.get(id);
-    if (cached !== undefined) return cached;
+		// Fast path: plaintext cache
+		const cached = this.index.plaintext.get(id);
+		if (cached !== undefined) return cached;
 
-    // Slow path: load content doc
-    const text = this.pool.loadAndCache(id, row.name);
-    this.index.plaintext.set(id, text);
-    return text;
-  }
+		// Slow path: load content doc
+		const text = this.pool.loadAndCache(id, row.name);
+		this.index.plaintext.set(id, text);
+		return text;
+	}
 
-  async readFileBuffer(path: string): Promise<Uint8Array> {
-    const text = await this.readFile(path);
-    return new TextEncoder().encode(text);
-  }
+	async readFileBuffer(path: string): Promise<Uint8Array> {
+		const text = await this.readFile(path);
+		return new TextEncoder().encode(text);
+	}
 
-  // --- Writes (always through content doc for CRDT semantics) ---
+	// --- Writes (always through content doc for CRDT semantics) ---
 
-  async writeFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
-    const resolved = posixResolve(this.cwd, path);
-    const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    let id = this.index.pathToId.get(resolved);
+	async writeFile(
+		path: string,
+		data: FileContent,
+		options?: WriteFileOptions | BufferEncoding,
+	): Promise<void> {
+		const resolved = posixResolve(this.cwd, path);
+		const content =
+			typeof data === 'string' ? data : new TextDecoder().decode(data);
+		let id = this.index.pathToId.get(resolved);
 
-    if (!id) {
-      // Create file: parse path into parentId + name, ensure parent exists
-      const { parentId, name } = this.parsePath(resolved);
-      validateName(name);
-      assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
-      id = generateGuid();
-      this.filesTable.set({
-        id, name, parentId, type: 'file',
-        size: new TextEncoder().encode(content).byteLength,
-        createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
-      });
-    }
+		if (!id) {
+			// Create file: parse path into parentId + name, ensure parent exists
+			const { parentId, name } = this.parsePath(resolved);
+			validateName(name);
+			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
+			id = generateGuid();
+			this.filesTable.set({
+				id,
+				name,
+				parentId,
+				type: 'file',
+				size: new TextEncoder().encode(content).byteLength,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				trashedAt: null,
+			});
+		}
 
-    // Write content through Yjs
-    const row = this.filesTable.get(id).row!;
-    const handle = this.pool.acquire(id, row.name);
-    try {
-      if (handle.type === 'text') {
-        handle.ydoc.transact(() => {
-          handle.content.delete(0, handle.content.length);
-          handle.content.insert(0, content);
-        });
-      } else {
-        const { frontmatter, body } = parseFrontmatter(content);
-        updateYMapFromRecord(handle.frontmatter, frontmatter);
-        updateYXmlFragmentFromString(handle.content, body);
-      }
-    } finally {
-      this.pool.release(id);
-    }
+		// Write content through Yjs
+		const row = this.filesTable.get(id).row!;
+		const handle = this.pool.acquire(id, row.name);
+		try {
+			if (handle.type === 'text') {
+				handle.ydoc.transact(() => {
+					handle.content.delete(0, handle.content.length);
+					handle.content.insert(0, content);
+				});
+			} else {
+				const { frontmatter, body } = parseFrontmatter(content);
+				updateYMapFromRecord(handle.frontmatter, frontmatter);
+				updateYXmlFragmentFromString(handle.content, body);
+			}
+		} finally {
+			this.pool.release(id);
+		}
 
-    this.filesTable.update(id, {
-      size: new TextEncoder().encode(content).byteLength,
-      updatedAt: Date.now(),
-    });
-    this.index.plaintext.set(id, content);
-  }
+		this.filesTable.update(id, {
+			size: new TextEncoder().encode(content).byteLength,
+			updatedAt: Date.now(),
+		});
+		this.index.plaintext.set(id, content);
+	}
 
-  async appendFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
-    const resolved = posixResolve(this.cwd, path);
-    const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    const id = this.index.pathToId.get(resolved);
-    if (!id) return this.writeFile(resolved, data, options);
+	async appendFile(
+		path: string,
+		data: FileContent,
+		options?: WriteFileOptions | BufferEncoding,
+	): Promise<void> {
+		const resolved = posixResolve(this.cwd, path);
+		const content =
+			typeof data === 'string' ? data : new TextDecoder().decode(data);
+		const id = this.index.pathToId.get(resolved);
+		if (!id) return this.writeFile(resolved, data, options);
 
-    // Read existing content, append, and do a full write
-    const existing = await this.readFile(resolved);
-    await this.writeFile(resolved, existing + content);
-  }
+		// Read existing content, append, and do a full write
+		const existing = await this.readFile(resolved);
+		await this.writeFile(resolved, existing + content);
+	}
 
-  // --- Structure ---
+	// --- Structure ---
 
-  async cp(src: string, dest: string, options?: CpOptions): Promise<void> {
-    const resolvedSrc = posixResolve(this.cwd, src);
-    const resolvedDest = posixResolve(this.cwd, dest);
-    const srcId = this.resolveId(resolvedSrc);
-    const srcRow = this.filesTable.get(srcId).row!;
+	async cp(src: string, dest: string, options?: CpOptions): Promise<void> {
+		const resolvedSrc = posixResolve(this.cwd, src);
+		const resolvedDest = posixResolve(this.cwd, dest);
+		const srcId = this.resolveId(resolvedSrc);
+		const srcRow = this.filesTable.get(srcId).row!;
 
-    if (srcRow.type === 'folder') {
-      if (!options?.recursive) throw fsError('EISDIR', resolvedSrc);
-      await this.mkdir(resolvedDest, { recursive: true });
-      const children = await this.readdir(resolvedSrc);
-      for (const child of children) {
-        await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, options);
-      }
-    } else {
-      const content = await this.readFile(resolvedSrc);
-      await this.writeFile(resolvedDest, content);
-    }
-  }
+		if (srcRow.type === 'folder') {
+			if (!options?.recursive) throw fsError('EISDIR', resolvedSrc);
+			await this.mkdir(resolvedDest, { recursive: true });
+			const children = await this.readdir(resolvedSrc);
+			for (const child of children) {
+				await this.cp(
+					`${resolvedSrc}/${child}`,
+					`${resolvedDest}/${child}`,
+					options,
+				);
+			}
+		} else {
+			const content = await this.readFile(resolvedSrc);
+			await this.writeFile(resolvedDest, content);
+		}
+	}
 
-  async mv(src: string, dest: string): Promise<void> {
-    const resolvedSrc = posixResolve(this.cwd, src);
-    const resolvedDest = posixResolve(this.cwd, dest);
-    const id = this.resolveId(resolvedSrc);
-    const row = this.filesTable.get(id).row!;
-    const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
-    validateName(newName);
-    assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
+	async mv(src: string, dest: string): Promise<void> {
+		const resolvedSrc = posixResolve(this.cwd, src);
+		const resolvedDest = posixResolve(this.cwd, dest);
+		const id = this.resolveId(resolvedSrc);
+		const row = this.filesTable.get(id).row!;
+		const { parentId: newParentId, name: newName } =
+			this.parsePath(resolvedDest);
+		validateName(newName);
+		assertUniqueName(
+			this.filesTable,
+			this.index.childrenOf,
+			newParentId,
+			newName,
+			id,
+		);
 
-    // Detect extension category change and re-write content through new type
-    if (row.type === 'file') {
-      const fromCategory = getExtensionCategory(row.name);
-      const toCategory = getExtensionCategory(newName);
-      if (fromCategory !== toCategory) {
-        const content = await this.readFile(resolvedSrc);
-        this.index.plaintext.delete(id);
-        this.filesTable.update(id, {
-          name: newName, parentId: newParentId, updatedAt: Date.now(),
-        });
-        await this.writeFile(resolvedDest, content);
-        return;
-      }
-    }
+		// Detect extension category change and re-write content through new type
+		if (row.type === 'file') {
+			const fromCategory = getExtensionCategory(row.name);
+			const toCategory = getExtensionCategory(newName);
+			if (fromCategory !== toCategory) {
+				const content = await this.readFile(resolvedSrc);
+				this.index.plaintext.delete(id);
+				this.filesTable.update(id, {
+					name: newName,
+					parentId: newParentId,
+					updatedAt: Date.now(),
+				});
+				await this.writeFile(resolvedDest, content);
+				return;
+			}
+		}
 
-    this.filesTable.update(id, {
-      name: newName, parentId: newParentId, updatedAt: Date.now(),
-    });
-  }
+		this.filesTable.update(id, {
+			name: newName,
+			parentId: newParentId,
+			updatedAt: Date.now(),
+		});
+	}
 
-  async mkdir(path: string, options?: MkdirOptions): Promise<void> {
-    const resolved = posixResolve(this.cwd, path);
-    if (await this.exists(resolved)) return; // mkdir on existing dir is a no-op
+	async mkdir(path: string, options?: MkdirOptions): Promise<void> {
+		const resolved = posixResolve(this.cwd, path);
+		if (await this.exists(resolved)) return; // mkdir on existing dir is a no-op
 
-    const { parentId, name } = this.parsePath(resolved);
-    validateName(name);
+		const { parentId, name } = this.parsePath(resolved);
+		validateName(name);
 
-    // Recursive: create parent directories if they don't exist
-    if (options?.recursive && parentId !== null) {
-      const parentPath = resolved.substring(0, resolved.lastIndexOf('/')) || '/';
-      if (!(await this.exists(parentPath))) {
-        await this.mkdir(parentPath, { recursive: true });
-      }
-    }
+		// Recursive: create parent directories if they don't exist
+		if (options?.recursive && parentId !== null) {
+			const parentPath =
+				resolved.substring(0, resolved.lastIndexOf('/')) || '/';
+			if (!(await this.exists(parentPath))) {
+				await this.mkdir(parentPath, { recursive: true });
+			}
+		}
 
-    // Re-resolve parentId after potential recursive creation
-    const { parentId: resolvedParentId } = this.parsePath(resolved);
-    assertUniqueName(this.filesTable, this.index.childrenOf, resolvedParentId, name);
-    this.filesTable.set({
-      id: generateGuid(), name, parentId: resolvedParentId, type: 'folder',
-      size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
-    });
-  }
+		// Re-resolve parentId after potential recursive creation
+		const { parentId: resolvedParentId } = this.parsePath(resolved);
+		assertUniqueName(
+			this.filesTable,
+			this.index.childrenOf,
+			resolvedParentId,
+			name,
+		);
+		this.filesTable.set({
+			id: generateGuid(),
+			name,
+			parentId: resolvedParentId,
+			type: 'folder',
+			size: 0,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			trashedAt: null,
+		});
+	}
 
-  async rm(path: string, options?: RmOptions): Promise<void> {
-    const resolved = posixResolve(this.cwd, path);
-    const id = this.index.pathToId.get(resolved);
-    if (!id) {
-      if (options?.force) return;
-      throw fsError('ENOENT', resolved);
-    }
-    const row = this.filesTable.get(id).row!;
+	async rm(path: string, options?: RmOptions): Promise<void> {
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.index.pathToId.get(resolved);
+		if (!id) {
+			if (options?.force) return;
+			throw fsError('ENOENT', resolved);
+		}
+		const row = this.filesTable.get(id).row!;
 
-    if (row.type === 'folder' && !options?.recursive) {
-      const children = this.index.childrenOf.get(id) ?? [];
-      const activeChildren = children.filter(cid => {
-        const r = this.filesTable.get(cid).row;
-        return r && r.trashedAt === null;
-      });
-      if (activeChildren.length > 0) throw fsError('ENOTEMPTY', resolved);
-    }
+		if (row.type === 'folder' && !options?.recursive) {
+			const children = this.index.childrenOf.get(id) ?? [];
+			const activeChildren = children.filter((cid) => {
+				const r = this.filesTable.get(cid).row;
+				return r && r.trashedAt === null;
+			});
+			if (activeChildren.length > 0) throw fsError('ENOTEMPTY', resolved);
+		}
 
-    // Soft delete
-    this.filesTable.update(id, { trashedAt: Date.now() });
-    this.index.plaintext.delete(id);
-  }
+		// Soft delete
+		this.filesTable.update(id, { trashedAt: Date.now() });
+		this.index.plaintext.delete(id);
+	}
 
-  // --- Permissions (no-op in collaborative system) ---
+	// --- Permissions (no-op in collaborative system) ---
 
-  async chmod(path: string, _mode: number): Promise<void> {
-    // No-op. Permissions are derived (0o644 files, 0o755 dirs).
-    // Silently succeed to satisfy just-bash commands that call chmod.
-    const resolved = posixResolve(this.cwd, path);
-    this.resolveId(resolved); // throws ENOENT if path doesn't exist
-  }
+	async chmod(path: string, _mode: number): Promise<void> {
+		// No-op. Permissions are derived (0o644 files, 0o755 dirs).
+		// Silently succeed to satisfy just-bash commands that call chmod.
+		const resolved = posixResolve(this.cwd, path);
+		this.resolveId(resolved); // throws ENOENT if path doesn't exist
+	}
 
-  async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
-    const resolved = posixResolve(this.cwd, path);
-    const id = this.resolveId(resolved);
-    this.filesTable.update(id, { updatedAt: mtime.getTime() });
-  }
+	async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.resolveId(resolved);
+		this.filesTable.update(id, { updatedAt: mtime.getTime() });
+	}
 
-  // --- Symlinks / Links (not supported) ---
+	// --- Symlinks / Links (not supported) ---
 
-  async symlink(): Promise<void> { throw fsError('ENOSYS', 'symlinks not supported'); }
-  async link(): Promise<void> { throw fsError('ENOSYS', 'hard links not supported'); }
-  async readlink(): Promise<string> { throw fsError('ENOSYS', 'symlinks not supported'); }
+	async symlink(): Promise<void> {
+		throw fsError('ENOSYS', 'symlinks not supported');
+	}
+	async link(): Promise<void> {
+		throw fsError('ENOSYS', 'hard links not supported');
+	}
+	async readlink(): Promise<string> {
+		throw fsError('ENOSYS', 'symlinks not supported');
+	}
 
-  // --- Path resolution ---
+	// --- Path resolution ---
 
-  resolvePath(base: string, path: string): string {
-    return posixResolve(base, path);
-  }
+	resolvePath(base: string, path: string): string {
+		return posixResolve(base, path);
+	}
 
-  async realpath(path: string): Promise<string> {
-    // No symlinks, so realpath is just path normalization + existence check
-    const resolved = posixResolve(this.cwd, path);
-    if (!(await this.exists(resolved))) throw fsError('ENOENT', path);
-    return resolved;
-  }
+	async realpath(path: string): Promise<string> {
+		// No symlinks, so realpath is just path normalization + existence check
+		const resolved = posixResolve(this.cwd, path);
+		if (!(await this.exists(resolved))) throw fsError('ENOENT', path);
+		return resolved;
+	}
 
-  getAllPaths(): string[] {
-    return Array.from(this.index.pathToId.keys()).filter(p => p !== '/');
-  }
+	getAllPaths(): string[] {
+		return Array.from(this.index.pathToId.keys()).filter((p) => p !== '/');
+	}
 
-  // --- Private helpers ---
+	// --- Private helpers ---
 
-  private resolveId(path: string): string {
-    if (path === '/') return ROOT_ID;
-    const id = this.index.pathToId.get(path);
-    if (!id) throw fsError('ENOENT', path);
-    return id;
-  }
+	private resolveId(path: string): string {
+		if (path === '/') return ROOT_ID;
+		const id = this.index.pathToId.get(path);
+		if (!id) throw fsError('ENOENT', path);
+		return id;
+	}
 
-  private parsePath(path: string): { parentId: string | null; name: string } {
-    const normalized = posixResolve(this.cwd, path);
-    const lastSlash = normalized.lastIndexOf('/');
-    const name = normalized.substring(lastSlash + 1);
-    const parentPath = normalized.substring(0, lastSlash) || '/';
-    if (parentPath === '/') return { parentId: null, name };
-    const parentId = this.index.pathToId.get(parentPath);
-    if (!parentId) throw fsError('ENOENT', parentPath);
-    return { parentId, name };
-  }
+	private parsePath(path: string): { parentId: string | null; name: string } {
+		const normalized = posixResolve(this.cwd, path);
+		const lastSlash = normalized.lastIndexOf('/');
+		const name = normalized.substring(lastSlash + 1);
+		const parentPath = normalized.substring(0, lastSlash) || '/';
+		if (parentPath === '/') return { parentId: null, name };
+		const parentId = this.index.pathToId.get(parentPath);
+		if (!parentId) throw fsError('ENOENT', parentPath);
+		return { parentId, name };
+	}
 }
 ```
 
@@ -655,7 +717,9 @@ const yjsFs = new YjsFileSystem(client.tables.files, index, openContentDoc);
 const bash = new Bash({ fs: yjsFs, cwd: '/' });
 
 // Single tool exposed to AI agents
-const result = await bash.exec('grep -rn "TODO" / --include="*.md" | sort | head -20');
+const result = await bash.exec(
+	'grep -rn "TODO" / --include="*.md" | sort | head -20',
+);
 const result2 = await bash.exec('find / -name "*.ts" -newer /CHANGELOG.md');
 const result3 = await bash.exec('cat /docs/api.md | wc -l');
 const result4 = await bash.exec('ls -la /src/');
@@ -663,15 +727,15 @@ const result4 = await bash.exec('ls -la /src/');
 
 ### Performance characteristics
 
-| Operation | What it touches | Cost |
-|-----------|----------------|------|
-| `ls /docs/` | Files table (in-memory) + childrenOf index | O(children), fast |
-| `find / -name "*.md"` | Files table (in-memory), full scan | O(n) rows, fast |
-| `cat /docs/api.md` | Path index + plaintext cache (or content doc load) | O(1) cached, O(load) first time |
-| `grep -r "TODO" /` | Path index + plaintext cache for all files | O(n * content) first time, O(n * search) cached |
-| `mv /old /new` | `mv()` → 1 row update in files table | O(1) |
-| `mkdir /new-dir` | 1 row insert | O(1) |
-| `echo "x" > /file.txt` | Content doc load + Yjs transaction + row update | O(1) |
+| Operation              | What it touches                                    | Cost                                            |
+| ---------------------- | -------------------------------------------------- | ----------------------------------------------- |
+| `ls /docs/`            | Files table (in-memory) + childrenOf index         | O(children), fast                               |
+| `find / -name "*.md"`  | Files table (in-memory), full scan                 | O(n) rows, fast                                 |
+| `cat /docs/api.md`     | Path index + plaintext cache (or content doc load) | O(1) cached, O(load) first time                 |
+| `grep -r "TODO" /`     | Path index + plaintext cache for all files         | O(n _ content) first time, O(n _ search) cached |
+| `mv /old /new`         | `mv()` → 1 row update in files table               | O(1)                                            |
+| `mkdir /new-dir`       | 1 row insert                                       | O(1)                                            |
+| `echo "x" > /file.txt` | Content doc load + Yjs transaction + row update    | O(1)                                            |
 
 `grep -r` is the expensive case. First invocation loads all content docs into the plaintext cache. Subsequent greps search the cache without any doc loading. just-bash processes files in batches of 50 with `Promise.all()`, so the batch-loading parallelizes well.
 
@@ -720,6 +784,7 @@ const result4 = await bash.exec('ls -la /src/');
 **Convert-on-switch flow:**
 
 Rename `.txt` → `.md`:
+
 1. Read current text: `ydoc.getText('text').toString()`
 2. Parse front matter: extract `---` delimited YAML and body via `parseFrontmatter()`
 3. Store front matter fields in `ydoc.getMap('frontmatter')` via `updateYMapFromRecord()`
@@ -727,6 +792,7 @@ Rename `.txt` → `.md`:
 5. Active keys are now `getXmlFragment('richtext')` + `getMap('frontmatter')`
 
 Rename `.md` → `.txt`:
+
 1. Serialize front matter: `yMapToRecord(ydoc.getMap('frontmatter'))` → YAML string
 2. Serialize body: `remarkSerialize(ydoc.getXmlFragment('richtext'))` → markdown string
 3. Combine: `serializeMarkdownWithFrontmatter(frontmatter, body)` — prepends `---\n{yaml}\n---\n` if front matter is non-empty
@@ -793,6 +859,7 @@ Y.Doc(guid: "bbb-222")
 ```
 
 **Properties:**
+
 - Rename remains a metadata operation (files table) + content migration — same Y.Doc, same GUID, no orphaned docs
 - Inactive keys only exist after a conversion has occurred — the common case (no type change) has exactly the keys it needs, nothing more
 - Stale data is never read and is always overwritten on the next conversion — correctness depends only on the active keys
@@ -825,11 +892,11 @@ Peer A (renaming peer)             Peer B (observing peer)
 
 **Extension change categories:**
 
-| Change | Action |
-|--------|--------|
-| Category change (`.txt` → `.md`, `.md` → `.ts`) | Tear down editor, rebind to new active keys |
-| Same category (`.ts` → `.js`, `.py` → `.rs`) | No editor swap — update syntax highlighting only |
-| No extension change (rename `foo.md` → `bar.md`) | No editor swap — same active keys |
+| Change                                           | Action                                           |
+| ------------------------------------------------ | ------------------------------------------------ |
+| Category change (`.txt` → `.md`, `.md` → `.ts`)  | Tear down editor, rebind to new active keys      |
+| Same category (`.ts` → `.js`, `.py` → `.rs`)     | No editor swap — update syntax highlighting only |
+| No extension change (rename `foo.md` → `bar.md`) | No editor swap — same active keys                |
 
 **No incremental migration on the observing side.** The renaming peer writes to the new active keys. Observing peers just rebind. Editor state (cursor position, scroll, selection, undo history) is lost on swap — acceptable for the rare event of a type-changing rename.
 
@@ -862,16 +929,19 @@ Body content here.
 ```
 
 **Y.Map properties:**
+
 - **Per-field LWW**: Each top-level YAML key is a Y.Map entry. Concurrent edits to different fields merge cleanly (user A changes `title`, user B changes `tags` — both apply).
 - **JSON-compatible values**: Y.Map entries store strings, numbers, booleans, arrays, and nested objects — matching YAML's value space. Nested structures are stored as opaque JSON values (LWW at the top-level key, not deep-merged).
 - **Separate from body**: ProseMirror's document tree represents body content only. Front matter is not rendered as ProseMirror nodes. This avoids schema complexity and keeps the XmlFragment clean.
 
 **Why not store front matter in the Y.XmlFragment:**
+
 - ProseMirror schemas are designed for document content. Front matter is metadata, not content.
 - Agents editing front matter would need to understand the ProseMirror tree structure rather than simple key-value writes.
 - Mixing metadata into the document tree couples the serializer to a YAML library.
 
 **Why not store front matter in Y.Text:**
+
 - Y.Text is a flat character sequence. Concurrent edits to different YAML keys could interleave characters, producing invalid YAML.
 - Y.Map gives per-field conflict resolution — the correct granularity for structured metadata.
 
@@ -886,47 +956,52 @@ Body content here.
 ```typescript
 /** Parse a markdown string into front matter record + body string */
 function parseFrontmatter(content: string): {
-  frontmatter: Record<string, unknown>;
-  body: string;
+	frontmatter: Record<string, unknown>;
+	body: string;
 } {
-  if (!content.startsWith('---\n')) return { frontmatter: {}, body: content };
-  const endIndex = content.indexOf('\n---\n', 4);
-  if (endIndex === -1) return { frontmatter: {}, body: content };
-  const yaml = content.slice(4, endIndex);
-  const body = content.slice(endIndex + 5);
-  return { frontmatter: yamlParse(yaml), body };
+	if (!content.startsWith('---\n')) return { frontmatter: {}, body: content };
+	const endIndex = content.indexOf('\n---\n', 4);
+	if (endIndex === -1) return { frontmatter: {}, body: content };
+	const yaml = content.slice(4, endIndex);
+	const body = content.slice(endIndex + 5);
+	return { frontmatter: yamlParse(yaml), body };
 }
 
 /** Diff-update a Y.Map to match a target record. Per-field LWW. */
-function updateYMapFromRecord(ymap: Y.Map<unknown>, target: Record<string, unknown>): void {
-  const doc = ymap.doc!;
-  doc.transact(() => {
-    // Delete keys not in target
-    ymap.forEach((_, key) => {
-      if (!(key in target)) ymap.delete(key);
-    });
-    // Set/update keys from target
-    for (const [key, value] of Object.entries(target)) {
-      const current = ymap.get(key);
-      if (!deepEqual(current, value)) ymap.set(key, value);
-    }
-  });
+function updateYMapFromRecord(
+	ymap: Y.Map<unknown>,
+	target: Record<string, unknown>,
+): void {
+	const doc = ymap.doc!;
+	doc.transact(() => {
+		// Delete keys not in target
+		ymap.forEach((_, key) => {
+			if (!(key in target)) ymap.delete(key);
+		});
+		// Set/update keys from target
+		for (const [key, value] of Object.entries(target)) {
+			const current = ymap.get(key);
+			if (!deepEqual(current, value)) ymap.set(key, value);
+		}
+	});
 }
 
 /** Combine front matter and body into a markdown string with --- delimiters */
 function serializeMarkdownWithFrontmatter(
-  frontmatter: Record<string, unknown>,
-  body: string,
+	frontmatter: Record<string, unknown>,
+	body: string,
 ): string {
-  if (Object.keys(frontmatter).length === 0) return body;
-  return `---\n${yamlStringify(frontmatter)}---\n${body}`;
+	if (Object.keys(frontmatter).length === 0) return body;
+	return `---\n${yamlStringify(frontmatter)}---\n${body}`;
 }
 
 /** Convert Y.Map to a plain Record */
 function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  ymap.forEach((value, key) => { result[key] = value; });
-  return result;
+	const result: Record<string, unknown> = {};
+	ymap.forEach((value, key) => {
+		result[key] = value;
+	});
+	return result;
 }
 ```
 
@@ -934,7 +1009,7 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 **Approach**: Agent `writeFile` on `.md` files uses clear-and-rebuild via `updateYXmlFragmentFromString()`. This deletes all XmlFragment nodes and rebuilds from the parsed markdown in a single Yjs transaction. Every character loses its Yjs item ID on each write.
 
-**Revision history is fully functional.** Content docs use `gc: false`, so tombstones from clear-and-rebuild are retained. Snapshots taken before and after an agent write capture complete document states. Rollback to any snapshot reconstructs the exact document. The only difference from character-level diffs: the diff *between* two snapshots shows "everything deleted, everything re-inserted" rather than highlighting the specific changes. The snapshots themselves are perfect — browsing history and restoring versions works identically to code files with character-level diffs.
+**Revision history is fully functional.** Content docs use `gc: false`, so tombstones from clear-and-rebuild are retained. Snapshots taken before and after an agent write capture complete document states. Rollback to any snapshot reconstructs the exact document. The only difference from character-level diffs: the diff _between_ two snapshots shows "everything deleted, everything re-inserted" rather than highlighting the specific changes. The snapshots themselves are perfect — browsing history and restoring versions works identically to code files with character-level diffs.
 
 **Concurrent editing limitation.** If a human is editing in ProseMirror while an agent calls `writeFile`, the agent's clear-and-rebuild destroys the human's in-flight CRDT operations. Non-overlapping edits are lost because every character is deleted and re-inserted with new IDs. This is the primary cost of clear-and-rebuild — not revision history, but concurrent writer safety.
 
@@ -956,7 +1031,7 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 **Decision: Each file content gets its own independent Y.Doc.**
 
-- One big doc: 500 files * 10KB = 5MB loaded eagerly. Can't lazy-load. No per-file GC control.
+- One big doc: 500 files \* 10KB = 5MB loaded eagerly. Can't lazy-load. No per-file GC control.
 - Subdocs: correct semantically but no provider support (y-websocket, y-indexeddb, y-sweet, Hocuspocus all don't support them)
 - Top-level docs: lazy-load for free (create Y.Doc on open, destroy on close). Standard provider support. The file's `Guid` is used directly as the Y.Doc GUID — 1:1 mapping, no composite key.
 
@@ -991,12 +1066,12 @@ function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
 
 ```typescript
 function validateName(name: string): void {
-  if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
-    throw fsError('EINVAL', `invalid filename: ${name}`);
-  }
-  if (name === '' || name === '.' || name === '..') {
-    throw fsError('EINVAL', `reserved filename: ${name}`);
-  }
+	if (name.includes('/') || name.includes('\\') || name.includes('\0')) {
+		throw fsError('EINVAL', `invalid filename: ${name}`);
+	}
+	if (name === '' || name === '.' || name === '..') {
+		throw fsError('EINVAL', `reserved filename: ${name}`);
+	}
 }
 ```
 
@@ -1010,21 +1085,21 @@ Real filesystems (ext4, APFS, NTFS) enforce unique filenames per directory at th
 
 ```typescript
 function assertUniqueName(
-  filesTable: TableHelper<FileRow>,
-  childrenOf: Map<string, string[]>,
-  parentId: string | null,
-  name: string,
-  excludeId?: string, // for rename/move: exclude the file being operated on
+	filesTable: TableHelper<FileRow>,
+	childrenOf: Map<string, string[]>,
+	parentId: string | null,
+	name: string,
+	excludeId?: string, // for rename/move: exclude the file being operated on
 ): void {
-  const siblingIds = childrenOf.get(parentId ?? 'ROOT') ?? [];
-  const duplicate = siblingIds.find(id => {
-    if (id === excludeId) return false;
-    const row = filesTable.get(id).row;
-    return row && row.name === name && row.trashedAt === null;
-  });
-  if (duplicate) {
-    throw fsError('EEXIST', `${name} already exists in parent`);
-  }
+	const siblingIds = childrenOf.get(parentId ?? 'ROOT') ?? [];
+	const duplicate = siblingIds.find((id) => {
+		if (id === excludeId) return false;
+		const row = filesTable.get(id).row;
+		return row && row.name === name && row.trashedAt === null;
+	});
+	if (duplicate) {
+		throw fsError('EEXIST', `${name} already exists in parent`);
+	}
 }
 ```
 
@@ -1038,31 +1113,33 @@ function assertUniqueName(
 
 ```typescript
 function disambiguateNames(rows: FileRow[]): Map<string, string> {
-  // Returns fileId → displayName
-  const result = new Map<string, string>();
-  const byName = new Map<string, FileRow[]>();
+	// Returns fileId → displayName
+	const result = new Map<string, string>();
+	const byName = new Map<string, FileRow[]>();
 
-  for (const row of rows) {
-    const group = byName.get(row.name) ?? [];
-    group.push(row);
-    byName.set(row.name, group);
-  }
+	for (const row of rows) {
+		const group = byName.get(row.name) ?? [];
+		group.push(row);
+		byName.set(row.name, group);
+	}
 
-  for (const [name, group] of byName) {
-    if (group.length === 1) {
-      result.set(group[0].id, name);
-      continue;
-    }
-    // Sort by createdAt — earliest keeps clean name
-    group.sort((a, b) => a.createdAt - b.createdAt);
-    result.set(group[0].id, name);
-    for (let i = 1; i < group.length; i++) {
-      const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
-      const base = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
-      result.set(group[i].id, `${base} (${i})${ext}`);
-    }
-  }
-  return result;
+	for (const [name, group] of byName) {
+		if (group.length === 1) {
+			result.set(group[0].id, name);
+			continue;
+		}
+		// Sort by createdAt — earliest keeps clean name
+		group.sort((a, b) => a.createdAt - b.createdAt);
+		result.set(group[0].id, name);
+		for (let i = 1; i < group.length; i++) {
+			const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
+			const base = name.includes('.')
+				? name.slice(0, name.lastIndexOf('.'))
+				: name;
+			result.set(group[i].id, `${base} (${i})${ext}`);
+		}
+	}
+	return result;
 }
 ```
 
@@ -1075,6 +1152,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 ## Operations
 
 ### Create File
+
 1. Validate name (no `/`, `\`, null bytes, empty, `.`, `..`)
 2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
 3. Generate ID
@@ -1082,19 +1160,23 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 5. Content Y.Doc created lazily when first opened
 
 ### Create Folder
+
 1. Validate name
 2. Assert unique name in parent (`assertUniqueName` — reject with `EEXIST` if duplicate)
 3. Generate ID
 4. `files.set({ id, name, parentId, type: 'folder', size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null })`
 
 ### Move File/Folder
+
 1. Assert unique name in new parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
 2. `files.update(id, { parentId: newParentId, updatedAt: Date.now() })`
 3. Runtime indexes update reactively via `files.observe()`
 4. No cascading updates — children still reference this node by ID
 
 ### Rename
+
 **Renaming peer:**
+
 1. Validate new name
 2. Assert unique name in parent (`assertUniqueName` with `excludeId` — reject with `EEXIST` if duplicate)
 3. `files.update(id, { name: newName, updatedAt: Date.now() })`
@@ -1105,6 +1187,7 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
    d. Tear down current editor binding, rebind to new active keys
 
 **Observing peers (via `files.observe()`):**
+
 1. Detect `name` field changed on the file row
 2. If extension category unchanged: update syntax highlighting, rebuild path indexes. Done.
 3. If extension category changed (code/txt ↔ .md):
@@ -1114,28 +1197,33 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
    d. Invalidate plaintext cache
 
 ### Trash (IFileSystem `rm` and UI)
+
 1. `files.update(id, { trashedAt: Date.now() })`
 2. File/folder becomes invisible to `readdir()` and path resolution
 3. Content Y.Doc remains loaded if open — editor can show "this file was trashed" state
 4. Children of trashed folders are implicitly trashed (parent is invisible, so children are unreachable) — no recursive walk needed, O(1)
 
 ### Restore from Trash (UI-layer)
+
 1. `files.update(id, { trashedAt: null })`
 2. If original parent was permanently deleted, reset `parentId` to `null` (restore to root)
 3. File reappears in `readdir()` and path resolution
 
 ### Delete (permanent, "empty trash" UI only)
+
 1. `files.delete(id)`
 2. Recursively delete children via `childrenOf` index
 3. Content Y.Docs become orphaned (provider garbage-collects)
 4. Plaintext cache entries evicted
 
 ### Read File Content
+
 1. Resolve path to ID via `pathToId` index
 2. Check plaintext cache — return if cached
 3. Load content Y.Doc. For code files: `Y.Text.toString()`. For `.md` files: serialize `Y.Map('frontmatter')` → YAML + serialize `Y.XmlFragment('richtext')` → markdown body + combine with `---` delimiters. Cache and return.
 
 ### Write File Content
+
 1. Resolve path to ID (or create file if new)
 2. Load content Y.Doc
 3. For code files: apply changes via Yjs transaction on Y.Text. For `.md` files: extract front matter → `updateYMapFromRecord()` on Y.Map, apply body via `updateYXmlFragmentFromString()` on Y.XmlFragment (clear-and-rebuild).
@@ -1143,12 +1231,14 @@ function disambiguateNames(rows: FileRow[]): Map<string, string> {
 5. Update plaintext cache
 
 ### List Children
+
 1. `childrenOf.get(folderId)` for child IDs
 2. Filter out rows where `trashedAt !== null`
 3. Run `disambiguateNames()` to assign display names (handles CRDT duplicate conflicts)
 4. Map to rows using display names (sort applied at the application layer — `ls` sorts by name, time, size, etc.)
 
 ### Resolve Path
+
 1. Look up in `pathToId` index (O(1))
 2. On cache miss: walk `parentId` chain from target to root, build path
 
@@ -1168,7 +1258,7 @@ All operations that set a filename (`writeFile`, `mkdir`, rename) must validate 
 
 Duplicate `(parentId, name)` pairs among active files can arise from concurrent CRDT writes that bypass the local `EEXIST` check. Detection and disambiguation happen at two points:
 
-**On index rebuild/update (`files.observe()`):** When building the `pathToId` and `idToPath` indexes, group active children by `(parentId, name)`. For groups with >1 entry, assign display suffixes using `disambiguateNames()` — earliest `createdAt` keeps the clean path, later entries get suffixed paths. Both clean and suffixed paths are indexed in `pathToId`.
+**On index rebuild/update (`files.observe()`):** When building the `pathToId` index, group active children by `(parentId, name)`. For groups with >1 entry, assign display suffixes using `disambiguateNames()` — earliest `createdAt` keeps the clean path, later entries get suffixed paths. Both clean and suffixed paths are indexed in `pathToId`.
 
 **On `readdir()` / `readdirWithFileTypes()`:** Return display names (with suffixes) instead of raw stored names when duplicates exist within the listed directory.
 
@@ -1209,15 +1299,15 @@ The testing approach: populate a `YjsFileSystem` with known files/folders, pass 
 
 The static API is production-ready and provides the core building blocks:
 
-| What | Location | Use |
-|------|----------|-----|
-| `defineTable()` | `packages/epicenter/src/static/define-table.ts` | Define the `files` table schema |
-| `defineWorkspace()` | `packages/epicenter/src/static/define-workspace.ts` | Define the filesystem workspace |
-| `createWorkspace()` | `packages/epicenter/src/static/create-workspace.ts` | Instantiate the workspace (sync, returns table helpers) |
-| `TableHelper` | `packages/epicenter/src/static/table-helper.ts` | CRUD on files table: `set()`, `get()`, `update()`, `delete()`, `observe()`, `filter()`, `find()` |
-| `Guid` / `generateGuid()` | `packages/epicenter/src/dynamic/schema/fields/id.ts` | File IDs (15-char nanoid, globally unique, doubles as Y.Doc GUID) |
-| YKeyValueLww | `packages/epicenter/src/shared/y-keyvalue/y-keyvalue-lww.ts` | Row-level LWW storage backing the files table |
-| Extensions | `packages/epicenter/src/extensions/` | Pluggable persistence (IndexedDB/SQLite) and sync (y-sweet, WebSocket) |
+| What                      | Location                                                     | Use                                                                                              |
+| ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `defineTable()`           | `packages/epicenter/src/static/define-table.ts`              | Define the `files` table schema                                                                  |
+| `defineWorkspace()`       | `packages/epicenter/src/static/define-workspace.ts`          | Define the filesystem workspace                                                                  |
+| `createWorkspace()`       | `packages/epicenter/src/static/create-workspace.ts`          | Instantiate the workspace (sync, returns table helpers)                                          |
+| `TableHelper`             | `packages/epicenter/src/static/table-helper.ts`              | CRUD on files table: `set()`, `get()`, `update()`, `delete()`, `observe()`, `filter()`, `find()` |
+| `Guid` / `generateGuid()` | `packages/epicenter/src/dynamic/schema/fields/id.ts`         | File IDs (15-char nanoid, globally unique, doubles as Y.Doc GUID)                                |
+| YKeyValueLww              | `packages/epicenter/src/shared/y-keyvalue/y-keyvalue-lww.ts` | Row-level LWW storage backing the files table                                                    |
+| Extensions                | `packages/epicenter/src/extensions/`                         | Pluggable persistence (IndexedDB/SQLite) and sync (y-sweet, WebSocket)                           |
 
 **Already installed**: `yjs@^13.6.27`, `y-indexeddb`, `y-websocket`, `@y-sweet/client`, `nanoid`, `arktype`
 
@@ -1228,8 +1318,9 @@ The static API is production-ready and provides the core building blocks:
 **Goal**: Define the files table, build runtime indexes, implement `createFileSystemIndex()`.
 
 **Deliverables**:
+
 1. Files table definition using `defineTable()` with the schema from Layer 1
-2. `createFileSystemIndex()` — builds `pathToId`, `idToPath`, `childrenOf`, `plaintext` Maps from the files table
+2. `createFileSystemIndex()` — builds `pathToId`, `childrenOf` Maps from the files table
 3. Incremental index updates via `filesTable.observe()`
 4. `validateName()`, `assertUniqueName()`, `disambiguateNames()` helper functions
 5. Circular reference detection and orphan detection in index rebuild
@@ -1243,6 +1334,7 @@ The static API is production-ready and provides the core building blocks:
 **Goal**: Implement `YjsFileSystem` class with all 17 IFileSystem methods. Text-only files (Y.Text) first.
 
 **Deliverables**:
+
 1. Install `just-bash`
 2. `YjsFileSystem` class implementing the full `IFileSystem` contract:
    - Reads: `readFile()`, `readFileBuffer()`, `readdir()`, `readdirWithFileTypes()`, `stat()`, `exists()`
@@ -1274,6 +1366,7 @@ The same ProseMirror schema must be shared between the headless pipeline (this p
 **Dependencies to add**: `y-prosemirror`, `prosemirror-model`, `prosemirror-markdown`, `prosemirror-schema-basic`
 
 **Deliverables**:
+
 1. `parseFrontmatter(content)` — split `---` delimited YAML from body
 2. `serializeMarkdownWithFrontmatter(frontmatter, body)` — combine YAML + body
 3. `updateYMapFromRecord(ymap, target)` — diff-update Y.Map from plain object
@@ -1295,6 +1388,7 @@ The same ProseMirror schema must be shared between the headless pipeline (this p
 **Goal**: Implement content migration when file extension category changes on rename.
 
 **Deliverables**:
+
 1. Extension category detection: `getExtensionCategory(name)` → `'text' | 'richtext'`
 2. Convert-on-switch in rename operation: read from old active type, write to new active type
 3. Self-healing in `openDocument()`: detect mismatched extension vs. content, trigger migration if needed
@@ -1307,6 +1401,7 @@ The same ProseMirror schema must be shared between the headless pipeline (this p
 **Goal**: Wire up collaborative editors in the Tauri app.
 
 **Deliverables**:
+
 1. Install `y-codemirror.next`, `@milkdown/plugin-collab`
 2. CodeMirror 6 component bound to `Y.Text` via `yCollab()`
 3. Milkdown editor bound to `Y.XmlFragment` via `@milkdown/plugin-collab`
@@ -1345,14 +1440,21 @@ End-to-end demo that proves the isomorphic claim: a Svelte app views/edits files
 ### Components
 
 **1. y-websocket server** (process 1):
+
 ```bash
 HOST=localhost PORT=0 npx y-websocket  # random open port
 ```
+
 One WebSocket connection per Y.Doc. Main doc always connected. Content docs connected on demand.
 
 **2. Node sync process** (`epicenter-sync.ts`, process 2):
+
 ```typescript
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/static';
+import {
+	createWorkspace,
+	defineTable,
+	defineWorkspace,
+} from '@epicenter/static';
 import { WebsocketProvider } from 'y-websocket';
 import * as chokidar from 'chokidar';
 
@@ -1361,12 +1463,16 @@ const workspace = createWorkspace(filesystemDefinition);
 const filesTable = workspace.tables.files;
 const index = createFileSystemIndex(filesTable);
 const pool = createContentDocPool((ydoc) => {
-  // Connect each content doc to y-websocket
-  return new WebsocketProvider(`ws://localhost:${PORT}`, ydoc.guid, ydoc);
+	// Connect each content doc to y-websocket
+	return new WebsocketProvider(`ws://localhost:${PORT}`, ydoc.guid, ydoc);
 });
 
 // Connect main doc to y-websocket
-const mainProvider = new WebsocketProvider(`ws://localhost:${PORT}`, 'filesystem-main', workspace.ydoc);
+const mainProvider = new WebsocketProvider(
+	`ws://localhost:${PORT}`,
+	'filesystem-main',
+	workspace.ydoc,
+);
 
 // Ingest real directory → Yjs filesystem
 await ingestDirectory('/path/to/target/folder', filesTable, pool);
@@ -1376,26 +1482,27 @@ const syncCoordination = { yjsWriteCount: 0, diskChangeCount: 0 };
 
 // YDoc → disk: observe content doc changes, write to real files
 filesTable.observe((changedIds) => {
-  if (syncCoordination.diskChangeCount > 0) return;
-  syncCoordination.yjsWriteCount++;
-  // ... write changed files to disk
-  syncCoordination.yjsWriteCount--;
+	if (syncCoordination.diskChangeCount > 0) return;
+	syncCoordination.yjsWriteCount++;
+	// ... write changed files to disk
+	syncCoordination.yjsWriteCount--;
 });
 
 // Disk → YDoc: chokidar watches real files, updates content docs
 const watcher = chokidar.watch(targetDir, {
-  ignoreInitial: true,
-  awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
+	ignoreInitial: true,
+	awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
 });
 watcher.on('change', async (filePath) => {
-  if (syncCoordination.yjsWriteCount > 0) return;
-  syncCoordination.diskChangeCount++;
-  // ... read file, update Yjs content doc
-  syncCoordination.diskChangeCount--;
+	if (syncCoordination.yjsWriteCount > 0) return;
+	syncCoordination.diskChangeCount++;
+	// ... read file, update Yjs content doc
+	syncCoordination.diskChangeCount--;
 });
 ```
 
 **3. Browser app** (Svelte, process 3):
+
 - Connects to same y-websocket server
 - File tree component reads from `files` table via `readdir()`/`readdirWithFileTypes()`
 - Click file → `pool.acquire(fileId)` → bind editor to content Y.Doc
@@ -1406,40 +1513,52 @@ watcher.on('change', async (filePath) => {
 
 ```typescript
 async function ingestDirectory(
-  realPath: string,
-  filesTable: TableHelper<FileRow>,
-  pool: ContentDocPool,
-  parentId: string | null = null,
+	realPath: string,
+	filesTable: TableHelper<FileRow>,
+	pool: ContentDocPool,
+	parentId: string | null = null,
 ): Promise<void> {
-  const entries = await fs.readdir(realPath, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(realPath, entry.name);
-    const id = generateGuid();
+	const entries = await fs.readdir(realPath, { withFileTypes: true });
+	for (const entry of entries) {
+		const fullPath = path.join(realPath, entry.name);
+		const id = generateGuid();
 
-    if (entry.isDirectory()) {
-      filesTable.set({
-        id, name: entry.name, parentId, type: 'folder',
-        size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
-      });
-      await ingestDirectory(fullPath, filesTable, pool, id);
-    } else {
-      const content = await fs.readFile(fullPath, 'utf-8');
-      filesTable.set({
-        id, name: entry.name, parentId, type: 'file',
-        size: Buffer.byteLength(content), createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
-      });
-      // Write content to Yjs content doc
-      const handle = pool.acquire(id, entry.name);
-      if (handle.type === 'text') {
-        handle.content.insert(0, content);
-      } else {
-        const { frontmatter, body } = parseFrontmatter(content);
-        updateYMapFromRecord(handle.frontmatter, frontmatter);
-        updateYXmlFragmentFromString(handle.content, body);
-      }
-      pool.release(id);
-    }
-  }
+		if (entry.isDirectory()) {
+			filesTable.set({
+				id,
+				name: entry.name,
+				parentId,
+				type: 'folder',
+				size: 0,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				trashedAt: null,
+			});
+			await ingestDirectory(fullPath, filesTable, pool, id);
+		} else {
+			const content = await fs.readFile(fullPath, 'utf-8');
+			filesTable.set({
+				id,
+				name: entry.name,
+				parentId,
+				type: 'file',
+				size: Buffer.byteLength(content),
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				trashedAt: null,
+			});
+			// Write content to Yjs content doc
+			const handle = pool.acquire(id, entry.name);
+			if (handle.type === 'text') {
+				handle.content.insert(0, content);
+			} else {
+				const { frontmatter, body } = parseFrontmatter(content);
+				updateYMapFromRecord(handle.frontmatter, frontmatter);
+				updateYXmlFragmentFromString(handle.content, body);
+			}
+			pool.release(id);
+		}
+	}
 }
 ```
 

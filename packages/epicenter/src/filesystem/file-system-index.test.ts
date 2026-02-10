@@ -165,20 +165,4 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('plaintext cache survives metadata-only updates', () => {
-		const { files } = setup();
-		files.set(makeRow('f1', 'hello.txt'));
-		const index = createFileSystemIndex(files);
-
-		// Manually populate plaintext cache
-		index.plaintext.set(fid('f1'), 'cached content');
-
-		// Metadata-only update should NOT invalidate plaintext cache
-		files.update('f1', { updatedAt: Date.now() });
-
-		expect(index.plaintext.has(fid('f1'))).toBe(true);
-		expect(index.plaintext.get(fid('f1'))).toBe('cached content');
-
-		index.destroy();
-	});
 });

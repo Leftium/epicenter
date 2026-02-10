@@ -1,6 +1,6 @@
 import type { IFileSystem, FsStat, CpOptions, MkdirOptions, RmOptions, FileContent } from 'just-bash';
 import type { TableHelper } from '../static/types.js';
-import type { ContentDocPool, FileId, FileRow, FileSystemIndex } from './types.js';
+import type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
 import { generateFileId } from './types.js';
 import {
 	parseFrontmatter,
@@ -8,7 +8,8 @@ import {
 	updateYXmlFragmentFromString,
 } from './markdown-helpers.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
-import { getExtensionCategory } from './convert-on-switch.js';
+import { getExtensionCategory, healContentType } from './convert-on-switch.js';
+import { documentHandleToString, openDocument } from './content-doc-store.js';
 
 type DirentEntry = {
 	name: string;
@@ -39,7 +40,7 @@ export class YjsFileSystem implements IFileSystem {
 	constructor(
 		private filesTable: TableHelper<FileRow>,
 		private index: FileSystemIndex,
-		private pool: ContentDocPool,
+		private store: ContentDocStore,
 		private cwd: string = '/',
 	) {}
 
@@ -120,14 +121,10 @@ export class YjsFileSystem implements IFileSystem {
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-		// Fast path: plaintext cache
-		const cached = this.index.plaintext.get(id);
-		if (cached !== undefined) return cached;
-
-		// Slow path: load content doc
-		const text = this.pool.loadAndCache(id, row.name);
-		this.index.plaintext.set(id, text);
-		return text;
+		const ydoc = this.store.ensure(id);
+		healContentType(ydoc, row.name);
+		const handle = openDocument(id, row.name, ydoc);
+		return documentHandleToString(handle);
 	}
 
 	async readFileBuffer(path: string): Promise<Uint8Array> {
@@ -164,27 +161,24 @@ export class YjsFileSystem implements IFileSystem {
 
 		// Write content through Yjs
 		const row = this.getRow(id, resolved);
-		const handle = this.pool.acquire(id, row.name);
-		try {
-			if (handle.type === 'text') {
-				handle.ydoc.transact(() => {
-					handle.content.delete(0, handle.content.length);
-					handle.content.insert(0, content);
-				});
-			} else {
-				const { frontmatter, body } = parseFrontmatter(content);
-				updateYMapFromRecord(handle.frontmatter, frontmatter);
-				updateYXmlFragmentFromString(handle.content, body);
-			}
-		} finally {
-			this.pool.release(id);
+		const ydoc = this.store.ensure(id);
+		healContentType(ydoc, row.name);
+		const handle = openDocument(id, row.name, ydoc);
+		if (handle.type === 'text') {
+			handle.ydoc.transact(() => {
+				handle.content.delete(0, handle.content.length);
+				handle.content.insert(0, content);
+			});
+		} else {
+			const { frontmatter, body } = parseFrontmatter(content);
+			updateYMapFromRecord(handle.frontmatter, frontmatter);
+			updateYXmlFragmentFromString(handle.content, body);
 		}
 
 		this.filesTable.update(id, {
 			size: new TextEncoder().encode(content).byteLength,
 			updatedAt: Date.now(),
 		});
-		this.index.plaintext.set(id, content);
 	}
 
 	async appendFile(path: string, data: FileContent, _options?: { encoding?: string } | string): Promise<void> {
@@ -262,7 +256,7 @@ export class YjsFileSystem implements IFileSystem {
 
 		// Soft delete
 		this.filesTable.update(id, { trashedAt: Date.now() });
-		this.index.plaintext.delete(id);
+		this.store.destroy(id);
 
 		// If recursive, soft-delete children too
 		if (row.type === 'folder' && options?.recursive) {
@@ -307,7 +301,7 @@ export class YjsFileSystem implements IFileSystem {
 			if (fromCategory !== toCategory) {
 				// Read existing content before any changes
 				const content = await this.readFile(resolvedSrc);
-				this.index.plaintext.delete(id);
+				this.store.destroy(id);
 				// Update metadata first (triggers index rebuild, new path resolves)
 				this.filesTable.update(id, {
 					name: newName,
@@ -428,7 +422,7 @@ export class YjsFileSystem implements IFileSystem {
 			const result = this.filesTable.get(cid);
 			if (result.status !== 'valid' || result.row.trashedAt !== null) continue;
 			this.filesTable.update(cid, { trashedAt: Date.now() });
-			this.index.plaintext.delete(cid);
+			this.store.destroy(cid);
 			if (result.row.type === 'folder') {
 				this.softDeleteDescendants(cid);
 			}

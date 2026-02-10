@@ -30,8 +30,6 @@ export type FileSystemIndex = {
 	idToPath: Map<FileId, string>;
 	/** parentId (null = root) → [childId, ...] */
 	childrenOf: Map<FileId | null, FileId[]>;
-	/** fileId → content string (lazy cache) */
-	plaintext: Map<FileId, string>;
 };
 
 export type TextDocumentHandle = {
@@ -51,13 +49,11 @@ export type RichTextDocumentHandle = {
 
 export type DocumentHandle = TextDocumentHandle | RichTextDocumentHandle;
 
-export type ContentDocPool = {
-	/** Get or create a content doc. Increments refcount. */
-	acquire(fileId: FileId, fileName: string): DocumentHandle;
-	/** Decrement refcount. Doc destroyed when refcount hits 0. */
-	release(fileId: FileId): void;
-	/** Get without incrementing refcount. Returns undefined if not loaded. */
-	peek(fileId: FileId): DocumentHandle | undefined;
-	/** Load a doc, read plaintext, release immediately. For grep/search. */
-	loadAndCache(fileId: FileId, fileName: string): string;
+export type ContentDocStore = {
+	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
+	ensure(fileId: FileId): Y.Doc;
+	/** Destroy a specific file's Y.Doc. Called when a file is deleted. No-op if not created. */
+	destroy(fileId: FileId): void;
+	/** Destroy all Y.Docs. Called on filesystem/workspace shutdown. */
+	destroyAll(): void;
 };

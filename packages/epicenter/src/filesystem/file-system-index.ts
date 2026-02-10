@@ -14,7 +14,6 @@ export function createFileSystemIndex(
 	const pathToId = new Map<string, FileId>();
 	const idToPath = new Map<FileId, string>();
 	const childrenOf = new Map<FileId | null, FileId[]>();
-	const plaintext = new Map<FileId, string>();
 
 	rebuild();
 
@@ -26,7 +25,6 @@ export function createFileSystemIndex(
 		pathToId.clear();
 		idToPath.clear();
 		childrenOf.clear();
-		// Don't clear plaintext — it's a cache that survives rebuilds
 
 		const rows = filesTable.getAllValid();
 		const activeRows = rows.filter((r) => r.trashedAt === null);
@@ -52,16 +50,12 @@ export function createFileSystemIndex(
 		// Full rebuild on changes. The files table is always in memory
 		// so this is fast (O(n) where n = total files).
 		rebuild();
-		// Plaintext cache is NOT invalidated here — it's managed by
-		// YjsFileSystem (writeFile, appendFile, rm) which knows when content changes.
-		// Metadata-only changes (rename, move, trash) don't affect file content.
 	}
 
 	return {
 		pathToId,
 		idToPath,
 		childrenOf,
-		plaintext,
 		destroy: unobserve,
 	};
 }

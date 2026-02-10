@@ -1,6 +1,6 @@
 // Types
 export type {
-	ContentDocPool,
+	ContentDocStore,
 	DocumentHandle,
 	FileId,
 	FileRow,
@@ -24,12 +24,12 @@ export {
 // Runtime indexes
 export { createFileSystemIndex } from './file-system-index.js';
 
-// Content doc pool
+// Content doc store
 export {
-	createContentDocPool,
+	createContentDocStore,
 	documentHandleToString,
 	openDocument,
-} from './content-doc-pool.js';
+} from './content-doc-store.js';
 
 // Markdown helpers
 export {

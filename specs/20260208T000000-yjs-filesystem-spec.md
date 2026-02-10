@@ -80,7 +80,7 @@ const workspace = defineWorkspace({
 | `parentId` | `readdir()`, tree traversal | null = root. ID-based = O(1) move, no cascading updates |
 | `type` | `stat()`, `readdirWithFileTypes()` | Derives `isFile`, `isDirectory` |
 | `size` | `stat()`, `ls -l`, `find -size` | Updated by content doc observer. Avoids loading content for stat |
-| `createdAt` | `stat()` birthtime, UI display | Immutable after creation. Surfaced as `FsStat.birthtime`. Used by UI ("created 3 days ago"). |
+| `createdAt` | UI display | Immutable after creation. Used by UI ("created 3 days ago"). Not surfaced in `FsStat` (just-bash has no `birthtime`). |
 | `updatedAt` | `stat()` mtime, `find -newer` | Updated on content OR metadata change. |
 | `trashedAt` | Soft delete / trash | `null` = active file. Timestamp = when trashed. `readdir()` filters out trashed files. IFileSystem `rm` sets this (soft delete). Permanent delete = `files.delete(id)` via "empty trash" UI only. |
 
@@ -221,7 +221,7 @@ By implementing `IFileSystem` backed by the Yjs filesystem, agents get all 83 co
 
 ### IFileSystem interface (exact just-bash contract)
 
-just-bash's `IFileSystem` requires 17 methods. The exact interface (from `just-bash/src/fs/interface.ts`):
+just-bash's `IFileSystem` requires 21 methods (20 required + `readdirWithFileTypes` optional). The exact interface (from `just-bash@2.9.7/dist/fs/interface.d.ts`):
 
 ```typescript
 interface IFileSystem {
@@ -233,16 +233,19 @@ interface IFileSystem {
   stat(path: string): Promise<FsStat>;
   mkdir(path: string, options?: MkdirOptions): Promise<void>;
   readdir(path: string): Promise<string[]>;
-  readdirWithFileTypes(path: string): Promise<DirentEntry[]>;
+  readdirWithFileTypes?(path: string): Promise<DirentEntry[]>;  // optional
   rm(path: string, options?: RmOptions): Promise<void>;
-  cp(source: string, destination: string, options?: CpOptions): Promise<void>;
-  rename(oldPath: string, newPath: string): Promise<void>;
-  symlink(target: string, path: string): Promise<void>;
+  cp(src: string, dest: string, options?: CpOptions): Promise<void>;
+  mv(src: string, dest: string): Promise<void>;
+  symlink(target: string, linkPath: string): Promise<void>;
+  link(existingPath: string, newPath: string): Promise<void>;
   readlink(path: string): Promise<string>;
+  lstat(path: string): Promise<FsStat>;
   chmod(path: string, mode: number): Promise<void>;
-  resolvePath(path: string): string;  // synchronous, single argument
+  resolvePath(base: string, path: string): string;  // synchronous, two arguments
   realpath(path: string): Promise<string>;
-  watch(filename: PathLike, listener: (eventType: 'rename' | 'change', filename: string) => void): Disposable;
+  utimes(path: string, atime: Date, mtime: Date): Promise<void>;
+  getAllPaths(): string[];  // for glob matching
 }
 
 interface FsStat {
@@ -252,18 +255,17 @@ interface FsStat {
   size: number;
   mode: number;
   mtime: Date;
-  birthtime: Date;  // maps to createdAt
 }
 ```
 
 **Key differences from what you might expect:**
 - `readFile` returns `string`, NOT `FileContent`. Binary reads use the separate `readFileBuffer`.
-- `rename(oldPath, newPath)`, NOT `mv()`. This handles both moves and renames.
-- `cp(source, dest, options?)`, NOT `copyFile`. Supports `{ recursive: true }` for directory copies.
-- `resolvePath(path)` takes a single argument, NOT variadic.
-- `FsStat.birthtime` is required — maps to `createdAt`.
-- `watch()` returns a `Disposable` for file watching.
-- **NOT in IFileSystem**: `utimes`, `link`, `lstat`, `getAllPaths`.
+- `mv(src, dest)`, NOT `rename()`. This handles both moves and renames.
+- `cp(src, dest, options?)`, NOT `copyFile`. Supports `{ recursive: true }` for directory copies.
+- `resolvePath(base, path)` takes two arguments: a base path and a relative path.
+- `readdirWithFileTypes` is optional (`?`) — implementations may omit it.
+- `FsStat` has NO `birthtime` field — only `mtime`.
+- No `watch()` method — just-bash does not require file watching.
 
 ### Root directory
 
@@ -343,18 +345,18 @@ function createContentDocPool(
 
 ```typescript
 class YjsFileSystem implements IFileSystem {
-  private watchers = new Map<string, Set<(eventType: 'rename' | 'change', filename: string) => void>>();
-
   constructor(
     private filesTable: TableHelper<FileRow>,
     private index: FileSystemIndex,
     private pool: ContentDocPool,
+    private cwd: string = '/',
   ) {}
 
   // --- Reads (metadata only, always fast) ---
 
   async readdir(path: string): Promise<string[]> {
-    const id = this.resolveId(path);
+    const resolved = posixResolve(this.cwd, path);
+    const id = this.resolveId(resolved);
     const childIds = this.index.childrenOf.get(id) ?? [];
     const activeChildren = childIds
       .map(cid => this.filesTable.get(cid).row!)
@@ -364,7 +366,8 @@ class YjsFileSystem implements IFileSystem {
   }
 
   async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
-    const id = this.resolveId(path);
+    const resolved = posixResolve(this.cwd, path);
+    const id = this.resolveId(resolved);
     const childIds = this.index.childrenOf.get(id) ?? [];
     const activeChildren = childIds
       .map(cid => this.filesTable.get(cid).row!)
@@ -379,11 +382,12 @@ class YjsFileSystem implements IFileSystem {
   }
 
   async stat(path: string): Promise<FsStat> {
-    if (path === '/') {
+    const resolved = posixResolve(this.cwd, path);
+    if (resolved === '/') {
       return { isFile: false, isDirectory: true, isSymbolicLink: false,
-        size: 0, mtime: new Date(0), birthtime: new Date(0), mode: 0o755 };
+        size: 0, mtime: new Date(0), mode: 0o755 };
     }
-    const id = this.resolveId(path);
+    const id = this.resolveId(resolved);
     const row = this.filesTable.get(id).row!;
     return {
       isFile: row.type === 'file',
@@ -391,21 +395,27 @@ class YjsFileSystem implements IFileSystem {
       isSymbolicLink: false,
       size: row.size,
       mtime: new Date(row.updatedAt),
-      birthtime: new Date(row.createdAt),
       mode: row.type === 'folder' ? 0o755 : 0o644,
     };
   }
 
+  async lstat(path: string): Promise<FsStat> {
+    // No symlinks — lstat is identical to stat
+    return this.stat(path);
+  }
+
   async exists(path: string): Promise<boolean> {
-    return path === '/' || this.index.pathToId.has(path);
+    const resolved = posixResolve(this.cwd, path);
+    return resolved === '/' || this.index.pathToId.has(resolved);
   }
 
   // --- Reads (content, may load content doc) ---
 
   async readFile(path: string, options?: ReadFileOptions | BufferEncoding): Promise<string> {
-    const id = this.resolveId(path);
+    const resolved = posixResolve(this.cwd, path);
+    const id = this.resolveId(resolved);
     const row = this.filesTable.get(id).row!;
-    if (row.type === 'folder') throw fsError('EISDIR', path);
+    if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
     // Fast path: plaintext cache
     const cached = this.index.plaintext.get(id);
@@ -425,23 +435,21 @@ class YjsFileSystem implements IFileSystem {
   // --- Writes (always through content doc for CRDT semantics) ---
 
   async writeFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
+    const resolved = posixResolve(this.cwd, path);
     const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    let id = this.index.pathToId.get(path);
+    let id = this.index.pathToId.get(resolved);
 
     if (!id) {
       // Create file: parse path into parentId + name, ensure parent exists
-      const { parentId, name } = this.parsePath(path);
+      const { parentId, name } = this.parsePath(resolved);
       validateName(name);
       assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
       id = generateGuid();
       this.filesTable.set({
         id, name, parentId, type: 'file',
-        size: new TextEncoder().encode(content).length,
+        size: new TextEncoder().encode(content).byteLength,
         createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
       });
-      this.notifyWatchers(path, 'rename');
-    } else {
-      this.notifyWatchers(path, 'change');
     }
 
     // Write content through Yjs
@@ -463,123 +471,103 @@ class YjsFileSystem implements IFileSystem {
     }
 
     this.filesTable.update(id, {
-      size: new TextEncoder().encode(content).length,
+      size: new TextEncoder().encode(content).byteLength,
       updatedAt: Date.now(),
     });
     this.index.plaintext.set(id, content);
   }
 
   async appendFile(path: string, data: FileContent, options?: WriteFileOptions | BufferEncoding): Promise<void> {
+    const resolved = posixResolve(this.cwd, path);
     const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    const id = this.index.pathToId.get(path);
-    if (!id) return this.writeFile(path, data, options);
+    const id = this.index.pathToId.get(resolved);
+    if (!id) return this.writeFile(resolved, data, options);
 
-    const row = this.filesTable.get(id).row!;
-    const handle = this.pool.acquire(id, row.name);
-    try {
-      if (handle.type === 'text') {
-        handle.ydoc.transact(() => {
-          handle.content.insert(handle.content.length, content);
-        });
-      } else {
-        const currentBody = serializeXmlFragmentToMarkdown(handle.content);
-        updateYXmlFragmentFromString(handle.content, currentBody + content);
-      }
-    } finally {
-      this.pool.release(id);
-    }
-
-    // Re-read full content for size calculation
-    const fullText = this.pool.loadAndCache(id, row.name);
-    this.filesTable.update(id, {
-      size: new TextEncoder().encode(fullText).length,
-      updatedAt: Date.now(),
-    });
-    this.index.plaintext.set(id, fullText);
-    this.notifyWatchers(path, 'change');
+    // Read existing content, append, and do a full write
+    const existing = await this.readFile(resolved);
+    await this.writeFile(resolved, existing + content);
   }
 
   // --- Structure ---
 
-  async cp(source: string, destination: string, options?: CpOptions): Promise<void> {
-    const srcId = this.resolveId(source);
+  async cp(src: string, dest: string, options?: CpOptions): Promise<void> {
+    const resolvedSrc = posixResolve(this.cwd, src);
+    const resolvedDest = posixResolve(this.cwd, dest);
+    const srcId = this.resolveId(resolvedSrc);
     const srcRow = this.filesTable.get(srcId).row!;
 
     if (srcRow.type === 'folder') {
-      if (!options?.recursive) throw fsError('EISDIR', source);
-      // Recursive directory copy
-      await this.mkdir(destination, { recursive: true });
-      const children = await this.readdir(source);
+      if (!options?.recursive) throw fsError('EISDIR', resolvedSrc);
+      await this.mkdir(resolvedDest, { recursive: true });
+      const children = await this.readdir(resolvedSrc);
       for (const child of children) {
-        await this.cp(`${source}/${child}`, `${destination}/${child}`, options);
+        await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, options);
       }
     } else {
-      const content = await this.readFile(source);
-      await this.writeFile(destination, content);
+      const content = await this.readFile(resolvedSrc);
+      await this.writeFile(resolvedDest, content);
     }
   }
 
-  async rename(oldPath: string, newPath: string): Promise<void> {
-    const id = this.resolveId(oldPath);
+  async mv(src: string, dest: string): Promise<void> {
+    const resolvedSrc = posixResolve(this.cwd, src);
+    const resolvedDest = posixResolve(this.cwd, dest);
+    const id = this.resolveId(resolvedSrc);
     const row = this.filesTable.get(id).row!;
-    const { parentId: newParentId, name: newName } = this.parsePath(newPath);
+    const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
     validateName(newName);
     assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
 
-    // Check for type-changing rename (extension category change)
-    const oldCategory = getExtensionCategory(row.name);
-    const newCategory = getExtensionCategory(newName);
-
-    this.filesTable.update(id, {
-      name: newName,
-      parentId: newParentId,
-      updatedAt: Date.now(),
-    });
-
-    // Content migration if extension category changed
-    if (row.type === 'file' && oldCategory !== newCategory) {
-      const handle = this.pool.acquire(id, row.name); // old name to read old active type
-      try {
-        convertContentType(handle, oldCategory, newCategory);
-      } finally {
-        this.pool.release(id);
+    // Detect extension category change and re-write content through new type
+    if (row.type === 'file') {
+      const fromCategory = getExtensionCategory(row.name);
+      const toCategory = getExtensionCategory(newName);
+      if (fromCategory !== toCategory) {
+        const content = await this.readFile(resolvedSrc);
+        this.index.plaintext.delete(id);
+        this.filesTable.update(id, {
+          name: newName, parentId: newParentId, updatedAt: Date.now(),
+        });
+        await this.writeFile(resolvedDest, content);
+        return;
       }
-      this.index.plaintext.delete(id);
     }
 
-    this.notifyWatchers(oldPath, 'rename');
-    this.notifyWatchers(newPath, 'rename');
+    this.filesTable.update(id, {
+      name: newName, parentId: newParentId, updatedAt: Date.now(),
+    });
   }
 
   async mkdir(path: string, options?: MkdirOptions): Promise<void> {
-    if (await this.exists(path)) return; // mkdir on existing dir is a no-op
+    const resolved = posixResolve(this.cwd, path);
+    if (await this.exists(resolved)) return; // mkdir on existing dir is a no-op
 
-    const { parentId, name } = this.parsePath(path);
+    const { parentId, name } = this.parsePath(resolved);
     validateName(name);
 
     // Recursive: create parent directories if they don't exist
     if (options?.recursive && parentId !== null) {
-      const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
+      const parentPath = resolved.substring(0, resolved.lastIndexOf('/')) || '/';
       if (!(await this.exists(parentPath))) {
         await this.mkdir(parentPath, { recursive: true });
       }
     }
 
     // Re-resolve parentId after potential recursive creation
-    const { parentId: resolvedParentId } = this.parsePath(path);
+    const { parentId: resolvedParentId } = this.parsePath(resolved);
     assertUniqueName(this.filesTable, this.index.childrenOf, resolvedParentId, name);
     this.filesTable.set({
       id: generateGuid(), name, parentId: resolvedParentId, type: 'folder',
       size: 0, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
     });
-    this.notifyWatchers(path, 'rename');
   }
 
   async rm(path: string, options?: RmOptions): Promise<void> {
-    const id = this.index.pathToId.get(path);
+    const resolved = posixResolve(this.cwd, path);
+    const id = this.index.pathToId.get(resolved);
     if (!id) {
       if (options?.force) return;
-      throw fsError('ENOENT', path);
+      throw fsError('ENOENT', resolved);
     }
     const row = this.filesTable.get(id).row!;
 
@@ -589,54 +577,50 @@ class YjsFileSystem implements IFileSystem {
         const r = this.filesTable.get(cid).row;
         return r && r.trashedAt === null;
       });
-      if (activeChildren.length > 0) throw fsError('ENOTEMPTY', path);
+      if (activeChildren.length > 0) throw fsError('ENOTEMPTY', resolved);
     }
 
     // Soft delete
     this.filesTable.update(id, { trashedAt: Date.now() });
     this.index.plaintext.delete(id);
-    this.notifyWatchers(path, 'rename');
   }
 
   // --- Permissions (no-op in collaborative system) ---
 
-  async chmod(_path: string, _mode: number): Promise<void> {
+  async chmod(path: string, _mode: number): Promise<void> {
     // No-op. Permissions are derived (0o644 files, 0o755 dirs).
     // Silently succeed to satisfy just-bash commands that call chmod.
-    const id = this.resolveId(_path); // throws ENOENT if path doesn't exist
+    const resolved = posixResolve(this.cwd, path);
+    this.resolveId(resolved); // throws ENOENT if path doesn't exist
   }
 
-  // --- Symlinks (not supported) ---
+  async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
+    const resolved = posixResolve(this.cwd, path);
+    const id = this.resolveId(resolved);
+    this.filesTable.update(id, { updatedAt: mtime.getTime() });
+  }
+
+  // --- Symlinks / Links (not supported) ---
 
   async symlink(): Promise<void> { throw fsError('ENOSYS', 'symlinks not supported'); }
+  async link(): Promise<void> { throw fsError('ENOSYS', 'hard links not supported'); }
   async readlink(): Promise<string> { throw fsError('ENOSYS', 'symlinks not supported'); }
 
   // --- Path resolution ---
 
-  resolvePath(path: string): string {
-    return posixResolve(path);
+  resolvePath(base: string, path: string): string {
+    return posixResolve(base, path);
   }
 
   async realpath(path: string): Promise<string> {
     // No symlinks, so realpath is just path normalization + existence check
-    const resolved = this.resolvePath(path);
+    const resolved = posixResolve(this.cwd, path);
     if (!(await this.exists(resolved))) throw fsError('ENOENT', path);
     return resolved;
   }
 
-  // --- File watching ---
-
-  watch(
-    filename: string,
-    listener: (eventType: 'rename' | 'change', filename: string) => void,
-  ): { dispose(): void } {
-    const path = this.resolvePath(String(filename));
-    const listeners = this.watchers.get(path) ?? new Set();
-    listeners.add(listener);
-    this.watchers.set(path, listeners);
-    return {
-      dispose: () => { listeners.delete(listener); },
-    };
+  getAllPaths(): string[] {
+    return Array.from(this.index.pathToId.keys()).filter(p => p !== '/');
   }
 
   // --- Private helpers ---
@@ -649,7 +633,7 @@ class YjsFileSystem implements IFileSystem {
   }
 
   private parsePath(path: string): { parentId: string | null; name: string } {
-    const normalized = posixResolve(path);
+    const normalized = posixResolve(this.cwd, path);
     const lastSlash = normalized.lastIndexOf('/');
     const name = normalized.substring(lastSlash + 1);
     const parentPath = normalized.substring(0, lastSlash) || '/';
@@ -657,20 +641,6 @@ class YjsFileSystem implements IFileSystem {
     const parentId = this.index.pathToId.get(parentPath);
     if (!parentId) throw fsError('ENOENT', parentPath);
     return { parentId, name };
-  }
-
-  private notifyWatchers(path: string, eventType: 'rename' | 'change'): void {
-    const listeners = this.watchers.get(path);
-    if (listeners) {
-      for (const listener of listeners) listener(eventType, path);
-    }
-    // Also notify parent directory watchers
-    const parentPath = path.substring(0, path.lastIndexOf('/')) || '/';
-    const parentListeners = this.watchers.get(parentPath);
-    if (parentListeners) {
-      const filename = path.substring(path.lastIndexOf('/') + 1);
-      for (const listener of parentListeners) listener(eventType, filename);
-    }
   }
 }
 ```
@@ -699,7 +669,7 @@ const result4 = await bash.exec('ls -la /src/');
 | `find / -name "*.md"` | Files table (in-memory), full scan | O(n) rows, fast |
 | `cat /docs/api.md` | Path index + plaintext cache (or content doc load) | O(1) cached, O(load) first time |
 | `grep -r "TODO" /` | Path index + plaintext cache for all files | O(n * content) first time, O(n * search) cached |
-| `mv /old /new` | `rename()` → 1 row update in files table | O(1) |
+| `mv /old /new` | `mv()` → 1 row update in files table | O(1) |
 | `mkdir /new-dir` | 1 row insert | O(1) |
 | `echo "x" > /file.txt` | Content doc load + Yjs transaction + row update | O(1) |
 
@@ -1277,9 +1247,9 @@ The static API is production-ready and provides the core building blocks:
 2. `YjsFileSystem` class implementing the full `IFileSystem` contract:
    - Reads: `readFile()`, `readFileBuffer()`, `readdir()`, `readdirWithFileTypes()`, `stat()`, `exists()`
    - Writes: `writeFile()`, `appendFile()`
-   - Structure: `mkdir()` (with `recursive`), `rm()`, `cp()` (with `recursive`), `rename()`
+   - Structure: `mkdir()` (with `recursive`), `rm()`, `cp()` (with `recursive`), `mv()`
    - Path: `resolvePath()`, `realpath()`
-   - Other: `chmod()` (no-op), `symlink()`/`readlink()` (ENOSYS), `watch()`
+   - Other: `chmod()` (no-op), `symlink()`/`link()`/`readlink()` (ENOSYS), `lstat()`, `utimes()`, `getAllPaths()`
 3. `createContentDocPool()` — reference-counted content doc lifecycle with optional provider connection
 4. Root directory handling (`/` as virtual entry, `ROOT_ID` sentinel)
 5. Plaintext cache population on `readFile()`, invalidation on write

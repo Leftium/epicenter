@@ -41,5 +41,13 @@ export {
 	yMapToRecord,
 } from './markdown-helpers.js';
 
+// Convert-on-switch
+export {
+	convertContentType,
+	getExtensionCategory,
+	healContentType,
+} from './convert-on-switch.js';
+export type { ExtensionCategory } from './convert-on-switch.js';
+
 // IFileSystem implementation
 export { YjsFileSystem } from './yjs-file-system.js';

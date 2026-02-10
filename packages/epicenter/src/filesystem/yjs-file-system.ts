@@ -3,13 +3,13 @@ import type { TableHelper } from '../static/types.js';
 import { generateGuid } from '../dynamic/schema/fields/id.js';
 import type { ContentDocPool, FileRow, FileSystemIndex } from './types.js';
 import { ROOT_ID } from './types.js';
-import { documentHandleToString } from './content-doc-pool.js';
 import {
 	parseFrontmatter,
 	updateYMapFromRecord,
 	updateYXmlFragmentFromString,
 } from './markdown-helpers.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
+import { getExtensionCategory } from './convert-on-switch.js';
 
 type DirentEntry = {
 	name: string;
@@ -292,9 +292,30 @@ export class YjsFileSystem implements IFileSystem {
 		const resolvedSrc = posixResolve(this.cwd, src);
 		const resolvedDest = posixResolve(this.cwd, dest);
 		const id = this.resolveId(resolvedSrc);
+		const row = this.getRow(id, resolvedSrc);
 		const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
 		validateName(newName);
 		assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
+
+		// Detect extension category change and re-write content through new type
+		if (row.type === 'file') {
+			const fromCategory = getExtensionCategory(row.name);
+			const toCategory = getExtensionCategory(newName);
+			if (fromCategory !== toCategory) {
+				// Read existing content before any changes
+				const content = await this.readFile(resolvedSrc);
+				this.index.plaintext.delete(id);
+				// Update metadata first (triggers index rebuild, new path resolves)
+				this.filesTable.update(id, {
+					name: newName,
+					parentId: newParentId,
+					updatedAt: Date.now(),
+				});
+				// Re-write content through the new type handler
+				await this.writeFile(resolvedDest, content);
+				return;
+			}
+		}
 
 		this.filesTable.update(id, {
 			name: newName,

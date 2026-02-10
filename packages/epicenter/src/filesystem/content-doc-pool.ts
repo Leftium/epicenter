@@ -5,6 +5,7 @@ import {
 	serializeXmlFragmentToMarkdown,
 	yMapToRecord,
 } from './markdown-helpers.js';
+import { healContentType } from './convert-on-switch.js';
 
 type PoolEntry = {
 	handle: DocumentHandle;
@@ -64,6 +65,7 @@ export function createContentDocPool(
 
 			const ydoc = new Y.Doc({ guid: fileId, gc: false });
 			const provider = connectProvider?.(ydoc);
+			healContentType(ydoc, fileName);
 			const handle = openDocument(fileId, fileName, ydoc);
 			docs.set(fileId, { handle, refcount: 1, provider });
 			return handle;

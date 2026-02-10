@@ -3,6 +3,8 @@
 **Date**: 2026-02-08T00:00:00
 **Status**: Done (Phases 1-4), Phase 5 deferred
 
+> **Note (2026-02-10)**: The `mv()` destroy-and-recreate pattern for type-changing renames is superseded by `specs/20260210T000000-mv-in-place-migration.md`. The new approach uses in-place `convertContentType()` without destroying the Y.Doc, which preserves CRDT history and makes `healContentType()` actually functional for cross-doc timing recovery.
+
 ## Problem
 
 Implement a collaborative file system on top of the static API that supports:

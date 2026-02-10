@@ -4,6 +4,8 @@
 **Status**: Planning
 **Parent**: `specs/20260208T000000-yjs-filesystem-spec.md`
 
+> **Note (2026-02-10)**: The `store.destroy()` call in `mv()` for type-changing renames is removed by `specs/20260210T000000-mv-in-place-migration.md`. `destroy()` remains for file deletion but is no longer used during renames. The ensure/heal/open pipeline documented here is unchanged.
+
 ## Problem
 
 The current content doc system has two mechanisms that add complexity without proportional benefit:

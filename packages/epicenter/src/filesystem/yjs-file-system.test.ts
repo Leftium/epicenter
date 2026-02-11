@@ -55,6 +55,12 @@ describe('YjsFileSystem', () => {
 			await fs.mkdir('/dir');
 			await expect(fs.readFile('/dir')).rejects.toThrow('EISDIR');
 		});
+
+		test('writeFile on existing directory throws EISDIR', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await expect(fs.writeFile('/dir', 'content')).rejects.toThrow('EISDIR');
+		});
 	});
 
 	describe('appendFile', () => {
@@ -69,6 +75,20 @@ describe('YjsFileSystem', () => {
 			const { fs } = setup();
 			await fs.appendFile('/new.txt', 'content');
 			expect(await fs.readFile('/new.txt')).toBe('content');
+		});
+
+		test('append to directory throws EISDIR', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/dir');
+			await expect(fs.appendFile('/dir', 'data')).rejects.toThrow('EISDIR');
+		});
+
+		test('multiple appends accumulate content', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/log.txt', 'line1\n');
+			await fs.appendFile('/log.txt', 'line2\n');
+			await fs.appendFile('/log.txt', 'line3\n');
+			expect(await fs.readFile('/log.txt')).toBe('line1\nline2\nline3\n');
 		});
 	});
 
@@ -126,6 +146,25 @@ describe('YjsFileSystem', () => {
 			await fs.mkdir('/dir');
 			await fs.mkdir('/dir'); // should not throw
 			expect(await fs.exists('/dir')).toBe(true);
+		});
+
+		test('mkdir on existing file throws EEXIST', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'content');
+			await expect(fs.mkdir('/file.txt')).rejects.toThrow('EEXIST');
+		});
+
+		test('mkdir -p through existing file throws ENOTDIR', async () => {
+			const { fs } = setup();
+			await fs.writeFile('/file.txt', 'content');
+			await expect(fs.mkdir('/file.txt/sub', { recursive: true })).rejects.toThrow('ENOTDIR');
+		});
+
+		test('mkdir -p through existing directories is no-op for existing', async () => {
+			const { fs } = setup();
+			await fs.mkdir('/a', { recursive: true });
+			await fs.mkdir('/a/b/c', { recursive: true });
+			expect(await fs.exists('/a/b/c')).toBe(true);
 		});
 	});
 

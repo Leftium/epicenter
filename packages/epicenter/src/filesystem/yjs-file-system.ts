@@ -82,8 +82,7 @@ export class YjsFileSystem implements IFileSystem {
 				mode: 0o755,
 			};
 		}
-		const id = this.resolveId(resolved);
-		if (id === null) throw fsError('EISDIR', resolved);
+		const id = this.resolveId(resolved)!;
 		const row = this.getRow(id, resolved);
 		return {
 			isFile: row.type === 'file',
@@ -111,8 +110,7 @@ export class YjsFileSystem implements IFileSystem {
 
 	async readFile(path: string, _options?: { encoding?: string | null } | string): Promise<string> {
 		const resolved = posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved);
-		if (id === null) throw fsError('EISDIR', resolved);
+		const id = this.resolveId(resolved)!;
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
@@ -126,8 +124,7 @@ export class YjsFileSystem implements IFileSystem {
 
 	async readFileBuffer(path: string): Promise<Uint8Array> {
 		const resolved = posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved);
-		if (id === null) throw fsError('EISDIR', resolved);
+		const id = this.resolveId(resolved)!;
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
@@ -150,6 +147,11 @@ export class YjsFileSystem implements IFileSystem {
 			? new TextEncoder().encode(data).byteLength
 			: data.byteLength;
 		let id = this.index.pathToId.get(resolved);
+
+		if (id) {
+			const row = this.getRow(id, resolved);
+			if (row.type === 'folder') throw fsError('EISDIR', resolved);
+		}
 
 		if (!id) {
 			const { parentId, name } = this.parsePath(resolved);
@@ -185,10 +187,26 @@ export class YjsFileSystem implements IFileSystem {
 		const id = this.index.pathToId.get(resolved);
 		if (!id) return this.writeFile(resolved, data, _options);
 
-		// Read existing content, append, and do a full write
-		const existing = await this.readFile(resolved);
-		const fullText = existing + content;
-		await this.writeFile(resolved, fullText);
+		const row = this.getRow(id, resolved);
+		if (row.type === 'folder') throw fsError('EISDIR', resolved);
+
+		// Binary file: read-concat-rewrite (binary can't do incremental append)
+		const binary = this.binaryStore.get(id);
+		if (binary) {
+			const existingText = new TextDecoder().decode(binary);
+			await this.writeFile(resolved, existingText + content);
+			return;
+		}
+
+		// Y.Text path: incremental insert at end (O(append) not O(file))
+		const ydoc = this.store.ensure(id);
+		const ytext = ydoc.getText('content');
+		ydoc.transact(() => {
+			ytext.insert(ytext.length, content);
+		});
+
+		const newSize = new TextEncoder().encode(ytext.toString()).byteLength;
+		this.filesTable.update(id, { size: newSize, updatedAt: Date.now() });
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -197,7 +215,14 @@ export class YjsFileSystem implements IFileSystem {
 
 	async mkdir(path: string, options?: MkdirOptions): Promise<void> {
 		const resolved = posixResolve(this.cwd, path);
-		if (await this.exists(resolved)) return; // mkdir on existing dir is a no-op
+		if (await this.exists(resolved)) {
+			const existingId = this.index.pathToId.get(resolved);
+			if (existingId) {
+				const row = this.getRow(existingId, resolved);
+				if (row.type === 'file') throw fsError('EEXIST', resolved);
+			}
+			return; // existing directory — no-op
+		}
 
 		if (options?.recursive) {
 			// Create all missing ancestors from root down
@@ -205,7 +230,14 @@ export class YjsFileSystem implements IFileSystem {
 			let currentPath = '';
 			for (const part of parts) {
 				currentPath += '/' + part;
-				if (await this.exists(currentPath)) continue;
+				if (await this.exists(currentPath)) {
+					const existingId = this.index.pathToId.get(currentPath);
+					if (existingId) {
+						const existingRow = this.getRow(existingId, currentPath);
+						if (existingRow.type === 'file') throw fsError('ENOTDIR', currentPath);
+					}
+					continue;
+				}
 				validateName(part);
 				const { parentId } = this.parsePath(currentPath);
 				assertUniqueName(this.filesTable, this.index.childrenOf, parentId, part);

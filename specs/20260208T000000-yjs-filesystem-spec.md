@@ -1547,7 +1547,7 @@ async function ingestDirectory(
 ## Open Questions
 
 1. **Markdown source view**: Convert-on-switch is the strategy for file type changes (rename). Remaining question: should the editor offer a source-view toggle within a `.md` file (show raw markdown in CodeMirror alongside or instead of the rich editor)?
-2. **Binary files**: Store blob references in files table metadata? Separate blob storage system?
+2. ~~**Binary files**~~: **Resolved.** Ephemeral `Map<FileId, Uint8Array>` for binary data, Y.Text for text. Mutually exclusive per file. Matches InMemoryFs semantics. See `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` for the full options analysis and decision.
 3. **File size limits**: Large files (>1MB) as Y.Text are expensive. Read-only mode above a threshold?
 4. ~~**Plaintext cache warming**~~: **Resolved.** The plaintext cache was removed entirely. `readFile()` always serializes from the live Y.Doc (~0.05-0.1ms per file). No caching strategy needed. See `specs/20260209T000000-simplify-content-doc-lifecycle.md`.
 5. **Front matter deep merge**: Y.Map stores top-level YAML keys with LWW semantics. Nested objects (e.g., `metadata: { author: "...", version: "..." }`) are stored as opaque JSON — concurrent edits to different nested keys within the same top-level key will be LWW (one wins). Is this sufficient, or should deeply nested front matter use nested Y.Maps? Recommendation: start with flat LWW. Deep merge adds complexity and front matter is rarely deeply nested in practice.
@@ -1558,3 +1558,4 @@ async function ingestDirectory(
 - `specs/20260209T120000-branded-file-ids.md` — FileId branding and null-for-root (Done)
 - `specs/20260209T000000-simplify-content-doc-lifecycle.md` — ContentDocStore replacing ContentDocPool (Done)
 - `specs/20260210T000000-remove-idtopath-from-index.md` — Remove unused idToPath map (Draft)
+- `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` — IFileSystem behavioral fixes: mkdir EEXIST, writeFile EISDIR, appendFile incremental insert, dead code cleanup (Done)

@@ -1,10 +1,11 @@
 # Simplify Content Doc Lifecycle: Drop Pool + Cache, Serialize on Demand
 
 **Date**: 2026-02-09T00:00:00
-**Status**: Planning
+**Status**: Implemented
 **Parent**: `specs/20260208T000000-yjs-filesystem-spec.md`
+**Implemented by**: `specs/20260211T100000-simplified-ytext-content-store.md` — the simplification went further than this spec planned. Pool and cache were dropped. `openDocument()`/`documentHandleToString()` were removed entirely. `ContentDocStore` kept as `ensure`/`destroy`/`destroyAll`. The ensure/heal/open pipeline was simplified to just `ensure` — no healing, no document handles.
 
-> **Note (2026-02-10)**: The `store.destroy()` call in `mv()` for type-changing renames is removed by `specs/20260210T000000-mv-in-place-migration.md`. `destroy()` remains for file deletion but is no longer used during renames. The ensure/heal/open pipeline documented here is unchanged.
+> **Note (2026-02-11)**: The `mv()` type-changing rename concept is eliminated entirely — all files use `Y.Text('content')`, so `mv()` is always metadata-only. No `store.destroy()` in `mv()`, no healing, no conversion.
 
 ## Problem
 

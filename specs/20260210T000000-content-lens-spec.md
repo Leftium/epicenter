@@ -1,7 +1,8 @@
 # Content Lens Specification
 
 **Date**: 2026-02-10
-**Status**: Design
+**Status**: Superseded
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` — lens architecture deferred. Single `Y.Text('content')` per file replaces all format-specific CRDT structures.
 **Supersedes**: Triple-key architecture in `specs/20260208T000000-yjs-filesystem-spec.md` (lines 31-36, 766-862), `convert-on-switch.ts`
 
 ---

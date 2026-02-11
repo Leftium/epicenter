@@ -1,7 +1,8 @@
 # In-Place Content Migration for Type-Changing Renames
 
 **Date**: 2026-02-10
-**Status**: Draft
+**Status**: Superseded
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` — `mv()` is now always metadata-only. No content migration at all (no extension categories, no format conversion). This spec's in-place migration is unnecessary because all files use `Y.Text('content')`.
 **Author**: AI-assisted
 **Supersedes**: The `mv` type-changing rename section of `specs/20260208T000000-yjs-filesystem-spec.md` (lines 517-545)
 

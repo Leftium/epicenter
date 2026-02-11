@@ -288,9 +288,10 @@ type MissingPrimaryKeyTables<S extends Record<string, SQLiteTable>> = {
 type EnsureAllTablesArePrefixedWith<
 	TID extends string,
 	TSchema extends Record<string, SQLiteTable>,
-> = Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
-	? TSchema
-	: never;
+> =
+	Exclude<SchemaTableNames<TSchema>, `${TID}_${string}`> extends never
+		? TSchema
+		: never;
 type SchemaTableNames<TSchema extends Record<string, SQLiteTable>> = Extract<
 	keyof TSchema,
 	string

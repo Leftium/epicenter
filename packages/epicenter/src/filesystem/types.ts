@@ -30,23 +30,6 @@ export type FileSystemIndex = {
 	childrenOf: Map<FileId | null, FileId[]>;
 };
 
-export type TextDocumentHandle = {
-	type: 'text';
-	fileId: FileId;
-	ydoc: Y.Doc;
-	content: Y.Text;
-};
-
-export type RichTextDocumentHandle = {
-	type: 'richtext';
-	fileId: FileId;
-	ydoc: Y.Doc;
-	content: Y.XmlFragment;
-	frontmatter: Y.Map<unknown>;
-};
-
-export type DocumentHandle = TextDocumentHandle | RichTextDocumentHandle;
-
 export type ContentDocStore = {
 	/** Get or create a Y.Doc for a file. Idempotent — returns existing if already created. */
 	ensure(fileId: FileId): Y.Doc;

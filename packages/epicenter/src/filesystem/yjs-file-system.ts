@@ -1,15 +1,8 @@
-import type { IFileSystem, FsStat, CpOptions, MkdirOptions, RmOptions, FileContent } from 'just-bash';
+import type { CpOptions, FileContent, FsStat, IFileSystem, MkdirOptions, RmOptions } from 'just-bash';
 import type { TableHelper } from '../static/types.js';
 import type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
 import { generateFileId } from './types.js';
-import {
-	parseFrontmatter,
-	updateYMapFromRecord,
-	updateYXmlFragmentFromString,
-} from './markdown-helpers.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
-import { getExtensionCategory, healContentType } from './convert-on-switch.js';
-import { documentHandleToString, openDocument } from './content-doc-store.js';
 
 type DirentEntry = {
 	name: string;
@@ -37,6 +30,8 @@ function posixResolve(base: string, path: string): string {
 }
 
 export class YjsFileSystem implements IFileSystem {
+	private binaryStore = new Map<FileId, Uint8Array>();
+
 	constructor(
 		private filesTable: TableHelper<FileRow>,
 		private index: FileSystemIndex,
@@ -121,15 +116,28 @@ export class YjsFileSystem implements IFileSystem {
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
+		// Check binary store first
+		const binary = this.binaryStore.get(id);
+		if (binary) return new TextDecoder().decode(binary);
+
 		const ydoc = this.store.ensure(id);
-		healContentType(ydoc, row.name);
-		const handle = openDocument(id, row.name, ydoc);
-		return documentHandleToString(handle);
+		return ydoc.getText('content').toString();
 	}
 
 	async readFileBuffer(path: string): Promise<Uint8Array> {
-		const text = await this.readFile(path);
-		return new TextEncoder().encode(text);
+		const resolved = posixResolve(this.cwd, path);
+		const id = this.resolveId(resolved);
+		if (id === null) throw fsError('EISDIR', resolved);
+		const row = this.getRow(id, resolved);
+		if (row.type === 'folder') throw fsError('EISDIR', resolved);
+
+		// Check binary store first (zero-copy for binary files)
+		const binary = this.binaryStore.get(id);
+		if (binary) return binary;
+
+		// Text path: encode Y.Text content
+		const ydoc = this.store.ensure(id);
+		return new TextEncoder().encode(ydoc.getText('content').toString());
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -138,47 +146,37 @@ export class YjsFileSystem implements IFileSystem {
 
 	async writeFile(path: string, data: FileContent, _options?: { encoding?: string } | string): Promise<void> {
 		const resolved = posixResolve(this.cwd, path);
-		const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
+		const size = typeof data === 'string'
+			? new TextEncoder().encode(data).byteLength
+			: data.byteLength;
 		let id = this.index.pathToId.get(resolved);
 
 		if (!id) {
-			// Create file: parse path into parentId + name, ensure parent exists
 			const { parentId, name } = this.parsePath(resolved);
 			validateName(name);
 			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
 			id = generateFileId();
 			this.filesTable.set({
-				id,
-				name,
-				parentId,
-				type: 'file',
-				size: new TextEncoder().encode(content).byteLength,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				trashedAt: null,
+				id, name, parentId, type: 'file',
+				size, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
 			});
 		}
 
-		// Write content through Yjs
-		const row = this.getRow(id, resolved);
-		const ydoc = this.store.ensure(id);
-		healContentType(ydoc, row.name);
-		const handle = openDocument(id, row.name, ydoc);
-		if (handle.type === 'text') {
-			handle.ydoc.transact(() => {
-				handle.content.delete(0, handle.content.length);
-				handle.content.insert(0, content);
+		if (typeof data === 'string') {
+			// Text path: Y.Text('content')
+			const ydoc = this.store.ensure(id);
+			const ytext = ydoc.getText('content');
+			ydoc.transact(() => {
+				ytext.delete(0, ytext.length);
+				ytext.insert(0, data);
 			});
+			this.binaryStore.delete(id);
 		} else {
-			const { frontmatter, body } = parseFrontmatter(content);
-			updateYMapFromRecord(handle.frontmatter, frontmatter);
-			updateYXmlFragmentFromString(handle.content, body);
+			// Binary path: ephemeral in-memory store
+			this.binaryStore.set(id, data);
 		}
 
-		this.filesTable.update(id, {
-			size: new TextEncoder().encode(content).byteLength,
-			updatedAt: Date.now(),
-		});
+		this.filesTable.update(id, { size, updatedAt: Date.now() });
 	}
 
 	async appendFile(path: string, data: FileContent, _options?: { encoding?: string } | string): Promise<void> {
@@ -257,6 +255,7 @@ export class YjsFileSystem implements IFileSystem {
 		// Soft delete
 		this.filesTable.update(id, { trashedAt: Date.now() });
 		this.store.destroy(id);
+		this.binaryStore.delete(id);
 
 		// If recursive, soft-delete children too
 		if (row.type === 'folder' && options?.recursive) {
@@ -279,8 +278,14 @@ export class YjsFileSystem implements IFileSystem {
 				await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, options);
 			}
 		} else {
-			const content = await this.readFile(resolvedSrc);
-			await this.writeFile(resolvedDest, content);
+			// Copy binary data if it exists
+			const binary = this.binaryStore.get(srcId);
+			if (binary) {
+				await this.writeFile(resolvedDest, new Uint8Array(binary));
+			} else {
+				const content = await this.readFile(resolvedSrc);
+				await this.writeFile(resolvedDest, content);
+			}
 		}
 	}
 
@@ -289,30 +294,10 @@ export class YjsFileSystem implements IFileSystem {
 		const resolvedDest = posixResolve(this.cwd, dest);
 		const id = this.resolveId(resolvedSrc);
 		if (id === null) throw fsError('EISDIR', resolvedSrc);
-		const row = this.getRow(id, resolvedSrc);
+		this.getRow(id, resolvedSrc); // validate exists
 		const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
 		validateName(newName);
 		assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
-
-		// Detect extension category change and re-write content through new type
-		if (row.type === 'file') {
-			const fromCategory = getExtensionCategory(row.name);
-			const toCategory = getExtensionCategory(newName);
-			if (fromCategory !== toCategory) {
-				// Read existing content before any changes
-				const content = await this.readFile(resolvedSrc);
-				this.store.destroy(id);
-				// Update metadata first (triggers index rebuild, new path resolves)
-				this.filesTable.update(id, {
-					name: newName,
-					parentId: newParentId,
-					updatedAt: Date.now(),
-				});
-				// Re-write content through the new type handler
-				await this.writeFile(resolvedDest, content);
-				return;
-			}
-		}
 
 		this.filesTable.update(id, {
 			name: newName,
@@ -423,6 +408,7 @@ export class YjsFileSystem implements IFileSystem {
 			if (result.status !== 'valid' || result.row.trashedAt !== null) continue;
 			this.filesTable.update(cid, { trashedAt: Date.now() });
 			this.store.destroy(cid);
+			this.binaryStore.delete(cid);
 			if (result.row.type === 'folder') {
 				this.softDeleteDescendants(cid);
 			}

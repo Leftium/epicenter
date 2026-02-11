@@ -1,13 +1,5 @@
 // Types
-export type {
-	ContentDocStore,
-	DocumentHandle,
-	FileId,
-	FileRow,
-	FileSystemIndex,
-	RichTextDocumentHandle,
-	TextDocumentHandle,
-} from './types.js';
+export type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
 export { generateFileId } from './types.js';
 
 // File table definition
@@ -25,11 +17,7 @@ export {
 export { createFileSystemIndex } from './file-system-index.js';
 
 // Content doc store
-export {
-	createContentDocStore,
-	documentHandleToString,
-	openDocument,
-} from './content-doc-store.js';
+export { createContentDocStore } from './content-doc-store.js';
 
 // Markdown helpers
 export {
@@ -41,14 +29,6 @@ export {
 	updateYXmlFragmentFromString,
 	yMapToRecord,
 } from './markdown-helpers.js';
-
-// Convert-on-switch
-export {
-	convertContentType,
-	getExtensionCategory,
-	healContentType,
-} from './convert-on-switch.js';
-export type { ExtensionCategory } from './convert-on-switch.js';
 
 // IFileSystem implementation
 export { YjsFileSystem } from './yjs-file-system.js';

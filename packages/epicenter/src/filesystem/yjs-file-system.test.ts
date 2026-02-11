@@ -281,6 +281,64 @@ describe('YjsFileSystem', () => {
 	});
 });
 
+describe('binary file support', () => {
+	test('writeFile with Uint8Array, readFileBuffer returns same bytes', async () => {
+		const { fs } = setup();
+		const data = new Uint8Array([0x53, 0x51, 0x4c, 0x69, 0x74, 0x65]); // "SQLite"
+		await fs.writeFile('/db.sqlite', data);
+		const result = await fs.readFileBuffer('/db.sqlite');
+		expect(result).toEqual(data);
+	});
+
+	test('readFile on binary file returns decoded string', async () => {
+		const { fs } = setup();
+		const data = new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f]); // "Hello"
+		await fs.writeFile('/file.bin', data);
+		expect(await fs.readFile('/file.bin')).toBe('Hello');
+	});
+
+	test('text writeFile clears binary data', async () => {
+		const { fs } = setup();
+		const data = new Uint8Array([1, 2, 3]);
+		await fs.writeFile('/file.txt', data);
+		// Now overwrite with text
+		await fs.writeFile('/file.txt', 'text content');
+		expect(await fs.readFile('/file.txt')).toBe('text content');
+	});
+
+	test('cp copies binary file', async () => {
+		const { fs } = setup();
+		const data = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
+		await fs.writeFile('/src.bin', data);
+		await fs.cp('/src.bin', '/dest.bin');
+		expect(await fs.readFileBuffer('/dest.bin')).toEqual(data);
+	});
+
+	test('rm cleans up binary data', async () => {
+		const { fs } = setup();
+		const data = new Uint8Array([1, 2, 3]);
+		await fs.writeFile('/file.bin', data);
+		await fs.rm('/file.bin');
+		expect(await fs.exists('/file.bin')).toBe(false);
+	});
+});
+
+describe('mv preserves content (no conversion)', () => {
+	test('mv .txt -> .md preserves content exactly', async () => {
+		const { fs } = setup();
+		await fs.writeFile('/notes.txt', '---\ntitle: Hello\n---\n# Content\n');
+		await fs.mv('/notes.txt', '/notes.md');
+		expect(await fs.readFile('/notes.md')).toBe('---\ntitle: Hello\n---\n# Content\n');
+	});
+
+	test('mv .md -> .txt preserves content exactly', async () => {
+		const { fs } = setup();
+		await fs.writeFile('/doc.md', '# Hello World\n');
+		await fs.mv('/doc.md', '/doc.txt');
+		expect(await fs.readFile('/doc.txt')).toBe('# Hello World\n');
+	});
+});
+
 describe('just-bash integration', () => {
 	function setupBash() {
 		const { fs } = setup();

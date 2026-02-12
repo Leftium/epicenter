@@ -371,9 +371,9 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
-function getTimelineLength(fs: YjsFileSystem, path: string): number {
+async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<number> {
 	const id = (fs as any).index.pathToId.get(path);
-	const ydoc = (fs as any).store.ensure(id);
+	const ydoc = await (fs as any).store.ensure(id);
 	return getTimeline(ydoc).length;
 }
 
@@ -413,7 +413,7 @@ describe('timeline content storage', () => {
 		await fs.appendFile('/log.txt', 'line2\n');
 		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
 		// Append to text should not grow timeline
-		expect(getTimelineLength(fs, '/log.txt')).toBe(1);
+		expect(await getTimelineLength(fs, '/log.txt')).toBe(1);
 	});
 
 	test('binary append (appendFile on binary entry becomes text)', async () => {
@@ -423,22 +423,22 @@ describe('timeline content storage', () => {
 		await fs.appendFile('/file.bin', ' there');
 		expect(await fs.readFile('/file.bin')).toBe('Hi there');
 		// Binary append pushes a new text entry
-		expect(getTimelineLength(fs, '/file.bin')).toBe(2);
+		expect(await getTimelineLength(fs, '/file.bin')).toBe(2);
 	});
 
 	test('timeline inspection: entry count after mode switches', async () => {
 		const fs = setup();
 		// First write: text entry [0]
 		await fs.writeFile('/file.dat', 'text v1');
-		expect(getTimelineLength(fs, '/file.dat')).toBe(1);
+		expect(await getTimelineLength(fs, '/file.dat')).toBe(1);
 
 		// Binary write: new entry [1]
 		await fs.writeFile('/file.dat', new Uint8Array([1, 2, 3]));
-		expect(getTimelineLength(fs, '/file.dat')).toBe(2);
+		expect(await getTimelineLength(fs, '/file.dat')).toBe(2);
 
 		// Back to text: new entry [2]
 		await fs.writeFile('/file.dat', 'text v2');
-		expect(getTimelineLength(fs, '/file.dat')).toBe(3);
+		expect(await getTimelineLength(fs, '/file.dat')).toBe(3);
 	});
 
 	test('same-mode text overwrite does NOT grow timeline', async () => {
@@ -447,7 +447,7 @@ describe('timeline content storage', () => {
 		await fs.writeFile('/file.txt', 'second');
 		await fs.writeFile('/file.txt', 'third');
 		expect(await fs.readFile('/file.txt')).toBe('third');
-		expect(getTimelineLength(fs, '/file.txt')).toBe(1);
+		expect(await getTimelineLength(fs, '/file.txt')).toBe(1);
 	});
 
 	test('same-mode binary overwrite DOES grow timeline', async () => {
@@ -456,7 +456,7 @@ describe('timeline content storage', () => {
 		await fs.writeFile('/file.bin', new Uint8Array([2]));
 		await fs.writeFile('/file.bin', new Uint8Array([3]));
 		expect(await fs.readFileBuffer('/file.bin')).toEqual(new Uint8Array([3]));
-		expect(getTimelineLength(fs, '/file.bin')).toBe(3);
+		expect(await getTimelineLength(fs, '/file.bin')).toBe(3);
 	});
 
 	test('readFileBuffer returns correct bytes for text entry', async () => {

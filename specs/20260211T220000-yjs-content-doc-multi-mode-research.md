@@ -163,6 +163,40 @@ The honest counterargument: Options A and D are simpler. If you never need to in
 
 4. **Binary overwrites within binary mode.** Each binary write appends a new entry (unlike text, where edits are CRDT ops on the nested `Y.Text`). 10 writes of 1MB = 10 entries = 10MB. Same cost as Y.Map tombstones in other options, but semantically "version history" rather than "dead data."
 
+### v14 Migration Path: Y.Type Structural Mapping
+
+The timeline structure is orthogonal to Yjs version. When Yjs v14 ships (`Y.Type` replaces `Y.Map`, `Y.Text`, `Y.XmlFragment`, `Y.Array`), each timeline entry's internal types change but the **structure is identical**:
+
+```
+v13 (current)                        v14 (future)
+─────────────────────────────        ─────────────────────────────
+Y.Array('timeline')                  Y.Type('timeline')  [array-like]
+└── Y.Map entry                      └── Y.Type entry
+    ├── .get('type') → string            ├── .getAttr('type') → string
+    ├── .get('content') → Y.Text         ├── .getAttr('content') → Y.Type
+    ├── .get('body') → Y.XmlFragment     ├── .getAttr('body') → Y.Type
+    ├── .get('frontmatter') → Y.Map      ├── .getAttr('frontmatter') → Y.Type
+    └── .get('data') → Uint8Array        └── .getAttr('data') → Uint8Array
+```
+
+**Design decisions for v14 migration** (evaluated during Option F research):
+
+1. **Content stays as a nested type, not promoted to entry's children.** v14 `Y.Type` can hold both attrs (metadata) and children (text content) on the same instance — meaning the entry itself could BE the text, eliminating the nested `content`/`body` type. This was rejected because:
+   - Mixed observation: text edits and attr changes would fire on the same target, requiring event filtering to distinguish "user typed a character" from "mode switched"
+   - Inconsistent access: some data via `getAttr()`, content via the entry directly
+   - Uniform `entry.getAttr(key)` access for all fields is cleaner and matches v13's `entry.get(key)`
+
+2. **Frontmatter stays as a nested type, not flat `fm:` prefixed attrs.** v14 supports storing frontmatter fields as prefixed attrs directly on the entry (`entry.setAttr('fm:title', ...)`, `entry.setAttr('fm:tags', ...)`). This was rejected because:
+   - Requires manual filtering/iteration of `fm:*` attrs to extract frontmatter as an object
+   - A nested Y.Type for frontmatter provides a clean API boundary: `entry.getAttr('frontmatter')` returns the whole thing
+   - Per-key LWW is preserved either way (nested Y.Type attrs are independently LWW)
+
+3. **Y.Type unifies text and richtext types.** In v14, the separate `Y.Text` vs `Y.XmlFragment` distinction collapses — a single `Y.Type` handles both plain text and formatted text (via `format()` for inline marks). The `type` discriminant and distinct `content` vs `body` keys remain for semantic clarity, but both resolve to the same underlying `Y.Type`.
+
+4. **Attribution comes free.** v14's attribution system tracks who made what changes at the CRDT level. No changes to the timeline structure needed — attribution applies to any `Y.Type` content. This enables "AI wrote this paragraph" annotations, diff-based accept/reject, and contribution heatmaps without structural changes.
+
+**Migration surface**: Swap type constructors in `timeline-helpers.ts` (`new Y.Map()` → `new Y.Type()`, `new Y.Text()` → `new Y.Type()`) and change `.get()` to `.getAttr()` in entry access. The helper API (`getCurrentEntry`, `readEntryAsString`, `pushTextEntry`, etc.) insulates all consumers from the change.
+
 ---
 
 ## Key Research Findings
@@ -409,7 +443,7 @@ Option F touches a chain of prior specs about content storage format. This secti
 | Spec | Current Status | How Option F relates |
 |------|---------------|---------------------|
 | `specs/20260210T150000-content-storage-format-debate.md` | Acknowledged | Recommended markdown-as-text (Option A). Option F makes the debate moot — it supports text (`Y.Text`), richtext (`Y.XmlFragment`), AND binary (`Uint8Array`) in the same timeline. You can have both the Obsidian model and the Google Docs model, per-file, switching at runtime. |
-| `specs/20260210T220000-v14-content-storage-spec.md` | Deferred | Designed for Yjs v14 (`Y.Type`, `fm:` attrs, attribution). Option F is v13-compatible. The timeline structure is orthogonal to Yjs version — when v14 arrives, timeline entries could use `Y.Type` instead of separate `Y.Text`/`Y.XmlFragment`. |
+| `specs/20260210T220000-v14-content-storage-spec.md` | Deferred | Designed for Yjs v14 (`Y.Type`, `fm:` attrs, attribution). Option F is v13-compatible with a 1:1 structural mapping to v14 (see [v14 Migration Path](#v14-migration-path-ytype-structural-mapping)). The v14 spec's flat `fm:` attr approach for frontmatter was evaluated and rejected in favor of a nested frontmatter type for cleaner API boundaries. The v14 spec's single-key `Y.Type('content')` approach doesn't support the timeline's lifecycle history — Option F's timeline structure is preserved under v14, with `Y.Type` replacing each `Y.Map`/`Y.Text`/`Y.XmlFragment` instance. |
 | `specs/20260210T000000-mv-in-place-migration.md` | Superseded (by simplified spec) | Already superseded. Under Option F, `mv()` remains metadata-only (same as the simplified spec). No content migration on rename. |
 
 ### Specs that remain valid under Option F

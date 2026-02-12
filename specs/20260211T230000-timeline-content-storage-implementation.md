@@ -13,6 +13,8 @@ This spec replaces the single `Y.Text('content')` content storage with a `Y.Arra
 
 This eliminates the ephemeral `Map<FileId, Uint8Array>` binary store from `YjsFileSystem`. Binary data now lives inside the Y.Doc timeline, giving it persistence, sync, and revision history for free. The `ContentDocStore` interface is unchanged -- only the internal structure of each Y.Doc changes.
 
+The v13 implementation has a 1:1 structural mapping to Yjs v14's `Y.Type` (see section 11). Migration is confined to `timeline-helpers.ts` -- all consumers are insulated by the helper API.
+
 ---
 
 ## 2. TypeScript Types
@@ -354,12 +356,55 @@ Checklist:
 
 ---
 
-## 11. Spec Lineage
+## 11. v14 Forward Compatibility
+
+The v13 implementation is designed for a clean v14 migration. The timeline structure is preserved -- only the internal types change. See the [decision record's v14 Migration Path](specs/20260211T220000-yjs-content-doc-multi-mode-research.md#v14-migration-path-ytype-structural-mapping) for full rationale.
+
+### Structural mapping (v13 -> v14)
+
+```
+v13 (this spec)                      v14 (future)
+─────────────────────────────        ─────────────────────────────
+Y.Array('timeline')                  Y.Type('timeline')
+└── Y.Map entry                      └── Y.Type entry
+    ├── .get('type')      → string       ├── .getAttr('type')      → string
+    ├── .get('content')   → Y.Text       ├── .getAttr('content')   → Y.Type
+    ├── .get('body')      → Y.XmlFrag    ├── .getAttr('body')      → Y.Type
+    ├── .get('frontmatter') → Y.Map      ├── .getAttr('frontmatter') → Y.Type
+    └── .get('data')      → Uint8Array   └── .getAttr('data')      → Uint8Array
+```
+
+### What changes at migration time
+
+Only `timeline-helpers.ts` changes:
+- `new Y.Map()` -> `new Y.Type()`
+- `new Y.Text()` -> `new Y.Type()`
+- `new Y.XmlFragment()` -> `new Y.Type()`
+- `entry.get(key)` -> `entry.getAttr(key)`
+- `entry.set(key, value)` -> `entry.setAttr(key, value)`
+
+### What does NOT change
+
+- Timeline structure (array of entries, last index = current)
+- Entry schema (discriminated union on `type` field)
+- Helper API (`getCurrentEntry`, `readEntryAsString`, `pushTextEntry`, etc.)
+- All consumer code (YjsFileSystem, tests)
+- Frontmatter as nested type (not flat `fm:` prefixed attrs -- see decision record)
+- Content as nested type (not promoted to entry's children -- see decision record)
+
+### v14 bonus: attribution
+
+v14's attribution system tracks who made what changes at the CRDT level. No structural changes needed -- attribution applies to any nested `Y.Type` content in the timeline entries. This enables AI vs human edit tracking, diff-based accept/reject, and contribution heatmaps.
+
+---
+
+## 12. Spec Lineage
 
 | Spec | Relationship |
 |------|-------------|
 | `specs/20260211T100000-simplified-ytext-content-store.md` | **Superseded** by this spec |
 | `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` | Decision record with full rationale. This spec implements Option F. |
+| `specs/20260210T220000-v14-content-storage-spec.md` | **Deferred**. v14 `Y.Type` concepts are forward-compatible with this spec's timeline structure (see v14 section above). |
 | `specs/20260208T000000-yjs-filesystem-spec.md` | **Still valid** -- two-layer architecture unchanged |
 | `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` | **Still valid** -- behavioral fixes orthogonal |
 | `specs/20260209T000000-simplify-content-doc-lifecycle.md` | **Still valid** -- ContentDocStore interface unchanged |

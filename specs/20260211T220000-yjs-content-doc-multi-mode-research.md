@@ -41,12 +41,12 @@ Y.Doc (guid = fileId, gc: false)
     │
     ├── [1] Y.Map                              ← v1: markdown
     │   ├── 'type'        → 'richtext'
-    │   ├── 'body'        → Y.XmlFragment(...)  ← nested CRDT, bind to ProseMirror
+    │   ├── 'content'     → Y.XmlFragment(...)  ← nested CRDT, bind to ProseMirror
     │   └── 'frontmatter' → Y.Map({ title: 'My Post', tags: [...] })
     │
     ├── [2] Y.Map                              ← v2: binary
-    │   ├── 'type' → 'binary'
-    │   └── 'data' → Uint8Array([0x89, 0x50, ...])  ← atomic
+    │   ├── 'type'    → 'binary'
+    │   └── 'content' → Uint8Array([0x89, 0x50, ...])  ← atomic
     │
     └── [3] Y.Map                              ← v3: back to text (CURRENT = last index)
         ├── 'type' → 'text'
@@ -60,14 +60,12 @@ All entries share one common key:
 
 > **Note**: The `ts` field was originally proposed for MAX-timestamp current-version resolution but has been [superseded](#superseded-ts-field-is-unnecessary--last-index-is-sufficient). Current version is determined by last index position, which is O(1) and equally convergent.
 
-Type-specific keys:
+All entries share a uniform `'content'` key for their primary payload (the type varies per mode). Variant-specific fields are named for their domain:
 
 | Key | `text` | `richtext` | `binary` | Value Type |
 |-----|--------|------------|----------|------------|
-| `'content'` | Y.Text | — | — | nested shared type |
-| `'body'` | — | Y.XmlFragment | — | nested shared type |
+| `'content'` | Y.Text | Y.XmlFragment | Uint8Array | primary payload (type varies) |
 | `'frontmatter'` | — | Y.Map | — | nested shared type |
-| `'data'` | — | — | Uint8Array | atomic bytes |
 
 ### How reading works
 
@@ -81,8 +79,8 @@ function readFile(timeline): string | Uint8Array {
   const entry = getCurrentEntry(timeline)
   switch (entry.get('type')) {
     case 'text':     return entry.get('content').toString()
-    case 'richtext': return serializeMarkdown(entry.get('body'), entry.get('frontmatter'))
-    case 'binary':   return entry.get('data')
+    case 'richtext': return serializeMarkdown(entry.get('content'), entry.get('frontmatter'))
+    case 'binary':   return entry.get('content')
   }
 }
 ```
@@ -100,7 +98,7 @@ MODE SWITCH (rare — appends new entry):
   doc.transact(() => {
     const entry = new Y.Map()
     entry.set('type', 'binary')
-    entry.set('data', compressedBytes)
+    entry.set('content', compressedBytes)
     timeline.push([entry])
   })
 ```
@@ -173,15 +171,15 @@ v13 (current)                        v14 (future)
 Y.Array('timeline')                  Y.Type('timeline')  [array-like]
 └── Y.Map entry                      └── Y.Type entry
     ├── .get('type') → string            ├── .getAttr('type') → string
-    ├── .get('content') → Y.Text         ├── .getAttr('content') → Y.Type
-    ├── .get('body') → Y.XmlFragment     ├── .getAttr('body') → Y.Type
-    ├── .get('frontmatter') → Y.Map      ├── .getAttr('frontmatter') → Y.Type
-    └── .get('data') → Uint8Array        └── .getAttr('data') → Uint8Array
+    ├── .get('content') → Y.Text /       ├── .getAttr('content') → Y.Type /
+    │                    Y.XmlFrag /     │                        Uint8Array
+    │                    Uint8Array      │
+    └── .get('frontmatter') → Y.Map     └── .getAttr('frontmatter') → Y.Type
 ```
 
 **Design decisions for v14 migration** (evaluated during Option F research):
 
-1. **Content stays as a nested type, not promoted to entry's children.** v14 `Y.Type` can hold both attrs (metadata) and children (text content) on the same instance — meaning the entry itself could BE the text, eliminating the nested `content`/`body` type. This was rejected because:
+1. **Content stays as a nested type, not promoted to entry's children.** v14 `Y.Type` can hold both attrs (metadata) and children (text content) on the same instance — meaning the entry itself could BE the text, eliminating the nested `content` type. This was rejected because:
    - Mixed observation: text edits and attr changes would fire on the same target, requiring event filtering to distinguish "user typed a character" from "mode switched"
    - Inconsistent access: some data via `getAttr()`, content via the entry directly
    - Uniform `entry.getAttr(key)` access for all fields is cleaner and matches v13's `entry.get(key)`
@@ -191,7 +189,7 @@ Y.Array('timeline')                  Y.Type('timeline')  [array-like]
    - A nested Y.Type for frontmatter provides a clean API boundary: `entry.getAttr('frontmatter')` returns the whole thing
    - Per-key LWW is preserved either way (nested Y.Type attrs are independently LWW)
 
-3. **Y.Type unifies text and richtext types.** In v14, the separate `Y.Text` vs `Y.XmlFragment` distinction collapses — a single `Y.Type` handles both plain text and formatted text (via `format()` for inline marks). The `type` discriminant and distinct `content` vs `body` keys remain for semantic clarity, but both resolve to the same underlying `Y.Type`.
+3. **Y.Type unifies text and richtext types.** In v14, the separate `Y.Text` vs `Y.XmlFragment` distinction collapses — a single `Y.Type` handles both plain text and formatted text (via `format()` for inline marks). The `type` discriminant distinguishes modes, but both use the uniform `content` key and resolve to the same underlying `Y.Type`.
 
 4. **Attribution comes free.** v14's attribution system tracks who made what changes at the CRDT level. No changes to the timeline structure needed — attribution applies to any `Y.Type` content. This enables "AI wrote this paragraph" annotations, diff-based accept/reject, and contribution heatmaps without structural changes.
 

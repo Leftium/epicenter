@@ -31,8 +31,8 @@ export type ContentMode = 'text' | 'richtext' | 'binary';
  * instances accessed via .get('type'), .get('content'), etc.
  */
 export type TextEntry = { type: 'text'; content: Y.Text };
-export type RichTextEntry = { type: 'richtext'; body: Y.XmlFragment; frontmatter: Y.Map<unknown> };
-export type BinaryEntry = { type: 'binary'; data: Uint8Array };
+export type RichTextEntry = { type: 'richtext'; content: Y.XmlFragment; frontmatter: Y.Map<unknown> };
+export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
 ```
 
@@ -79,7 +79,7 @@ export function pushTextEntry(timeline: Y.Array<Y.Map<any>>, content: string): Y
 export function pushBinaryEntry(timeline: Y.Array<Y.Map<any>>, data: Uint8Array): Y.Map<any> {
   const entry = new Y.Map();
   entry.set('type', 'binary');
-  entry.set('data', data);
+  entry.set('content', data);
   timeline.push([entry]);
   return entry;
 }
@@ -89,11 +89,11 @@ export function pushRichTextEntry(timeline: Y.Array<Y.Map<any>>, markdown: strin
   // Uses markdown-helpers.ts for parsing -- wired in Phase 4
   const entry = new Y.Map();
   entry.set('type', 'richtext');
-  entry.set('body', new Y.XmlFragment());
+  entry.set('content', new Y.XmlFragment());
   entry.set('frontmatter', new Y.Map());
   timeline.push([entry]);
   // After push, populate the now-integrated shared types:
-  // updateYXmlFragmentFromString(entry.get('body'), body);
+  // updateYXmlFragmentFromString(entry.get('content'), body);
   // updateYMapFromRecord(entry.get('frontmatter'), frontmatter);
   return entry;
 }
@@ -107,7 +107,7 @@ export function readEntryAsString(entry: Y.Map<any>): string {
       // Phase 4: serializeXmlFragmentToMarkdown + serializeMarkdownWithFrontmatter
       return '';
     case 'binary':
-      return new TextDecoder().decode(entry.get('data') as Uint8Array);
+      return new TextDecoder().decode(entry.get('content') as Uint8Array);
   }
 }
 
@@ -120,7 +120,7 @@ export function readEntryAsBuffer(entry: Y.Map<any>): Uint8Array {
       // Phase 4: serialize markdown then encode
       return new Uint8Array();
     case 'binary':
-      return entry.get('data') as Uint8Array;
+      return entry.get('content') as Uint8Array;
   }
 }
 ```
@@ -202,7 +202,7 @@ if (current && getEntryMode(current) === 'text') {
   ydoc.transact(() => ytext.insert(ytext.length, content));
 } else if (current && getEntryMode(current) === 'binary') {
   // Binary entry: decode existing, concat, push new text entry
-  const existing = new TextDecoder().decode(current.get('data') as Uint8Array);
+  const existing = new TextDecoder().decode(current.get('content') as Uint8Array);
   ydoc.transact(() => pushTextEntry(timeline, existing + content));
 } else {
   // No current entry: same as writeFile
@@ -224,7 +224,7 @@ const entry = getCurrentEntry(getTimeline(srcDoc));
 if (!entry) {
   await this.writeFile(destPath, '');
 } else if (getEntryMode(entry) === 'binary') {
-  await this.writeFile(destPath, entry.get('data') as Uint8Array);
+  await this.writeFile(destPath, entry.get('content') as Uint8Array);
 } else {
   await this.writeFile(destPath, readEntryAsString(entry));
 }
@@ -320,7 +320,7 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 
 5. **Extension-based vs explicit mode detection** -- For Phases 1-3, `writeFile` uses `string` -> text, `Uint8Array` -> binary. Extension detection is not needed. Richtext mode is UI-initiated only (Phase 4).
 
-6. **readFileBuffer serialization path** -- For text: `TextEncoder.encode(ytext.toString())`. For binary: zero-copy from entry's `data`. For richtext (Phase 4): serialize markdown then encode.
+6. **readFileBuffer serialization path** -- For text: `TextEncoder.encode(ytext.toString())`. For binary: zero-copy from entry's `content`. For richtext (Phase 4): serialize markdown then encode.
 
 7. **Binary overwrite: new entry** -- Each binary write appends a new entry. This gives explicit version history. The array grows, but so would `Y.Map` tombstones in any alternative.
 
@@ -363,15 +363,15 @@ The v13 implementation is designed for a clean v14 migration. The timeline struc
 ### Structural mapping (v13 -> v14)
 
 ```
-v13 (this spec)                      v14 (future)
-─────────────────────────────        ─────────────────────────────
-Y.Array('timeline')                  Y.Type('timeline')
-└── Y.Map entry                      └── Y.Type entry
-    ├── .get('type')      → string       ├── .getAttr('type')      → string
-    ├── .get('content')   → Y.Text       ├── .getAttr('content')   → Y.Type
-    ├── .get('body')      → Y.XmlFrag    ├── .getAttr('body')      → Y.Type
-    ├── .get('frontmatter') → Y.Map      ├── .getAttr('frontmatter') → Y.Type
-    └── .get('data')      → Uint8Array   └── .getAttr('data')      → Uint8Array
+v13 (this spec)                            v14 (future)
+──────────────────────────────────         ──────────────────────────────────
+Y.Array('timeline')                        Y.Type('timeline')
+└── Y.Map entry                            └── Y.Type entry
+    ├── .get('type')        → string           ├── .getAttr('type')        → string
+    ├── .get('content')     → Y.Text /         ├── .getAttr('content')     → Y.Type /
+    │                         Y.XmlFrag /      │                             Uint8Array
+    │                         Uint8Array       │
+    └── .get('frontmatter') → Y.Map           └── .getAttr('frontmatter') → Y.Type
 ```
 
 ### What changes at migration time

@@ -1,6 +1,6 @@
 # Simplify Sleeper Class to Function
 
-## Status: In Progress
+## Status: Complete
 
 ## Problem
 
@@ -52,6 +52,6 @@ Export the return type as `Sleeper` for use in the provider's type annotation.
 
 ## Tasks
 
-- [ ] Rewrite `sleeper.ts` — replace class with `createSleeper` function
-- [ ] Update `provider.ts` — swap to new API
-- [ ] Verify build passes
+- [x] Rewrite `sleeper.ts` — replace class with `createSleeper` function
+- [x] Update `provider.ts` — swap to new API
+- [x] Verify build passes

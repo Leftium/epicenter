@@ -4,7 +4,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { createIndexedDBProvider, type IndexedDBProvider } from './indexeddb';
-import { Sleeper } from './sleeper';
+import { createSleeper, type Sleeper } from './sleeper';
 import type { ClientToken } from './types';
 
 const MESSAGE_SYNC = 0;
@@ -342,8 +342,8 @@ export class YSweetProvider {
 						Math.pow(BACKOFF_BASE, this.retries),
 					);
 				this.retries += 1;
-				this.reconnectSleeper = new Sleeper(timeout);
-				await this.reconnectSleeper.sleep();
+				this.reconnectSleeper = createSleeper(timeout);
+				await this.reconnectSleeper.promise;
 				continue;
 			}
 
@@ -360,8 +360,8 @@ export class YSweetProvider {
 						Math.pow(BACKOFF_BASE, this.retries),
 					);
 				this.retries += 1;
-				this.reconnectSleeper = new Sleeper(timeout);
-				await this.reconnectSleeper.sleep();
+				this.reconnectSleeper = createSleeper(timeout);
+				await this.reconnectSleeper.promise;
 			}
 
 			// Delete the current client token to force a token refresh on the next attempt.

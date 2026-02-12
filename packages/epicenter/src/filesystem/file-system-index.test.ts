@@ -1,16 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '../static/create-workspace.js';
-import type { TableHelper } from '../static/types.js';
 import { createFileSystemIndex } from './file-system-index.js';
 import { filesTable } from './file-table.js';
-import type { FileId, FileRow } from './types.js';
+import type { FileId } from './types.js';
 
 const fid = (s: string) => s as FileId;
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	const files = ws.tables.files as unknown as TableHelper<FileRow>;
-	return { files };
+	return { files: ws.tables.files };
 }
 
 function makeRow(

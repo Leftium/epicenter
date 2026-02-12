@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '../static/create-workspace.js';
-import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
-import type { FileId, FileRow } from './types.js';
+import type { FileId } from './types.js';
 import {
 	assertUniqueName,
 	disambiguateNames,
@@ -14,9 +13,7 @@ const fid = (s: string) => s as FileId;
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	// Arktype schema uses plain strings; cast to branded FileRow for filesystem functions
-	const files = ws.tables.files as unknown as TableHelper<FileRow>;
-	return { files };
+	return { files: ws.tables.files };
 }
 
 function makeRow(

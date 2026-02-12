@@ -1,9 +1,11 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
+import type * as Y from 'yjs';
 import {
 	defineExports,
 	type ExtensionContext,
 	type ExtensionFactory,
 } from '../../dynamic/extension';
+import type { Lifecycle } from '../../shared/lifecycle';
 import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
@@ -103,3 +105,34 @@ export const persistence = (<
 		destroy: () => persistence.destroy(),
 	});
 }) satisfies ExtensionFactory<readonly TableDefinition[], readonly KvField[]>;
+
+/**
+ * IndexedDB persistence factory for use with `ySweetSync`.
+ *
+ * Returns a function `(ydoc: Y.Doc) => Lifecycle` that wraps `y-indexeddb`.
+ * Handles loading, auto-saving, and compaction internally.
+ *
+ * @example
+ * ```typescript
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
+ * import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+ *
+ * sync: ySweetSync({
+ *   auth: directAuth('http://localhost:8080'),
+ *   persistence: indexeddbPersistence(),
+ * })
+ * ```
+ *
+ * @param options.dbName - IndexedDB database name. Defaults to `ydoc.guid`.
+ */
+export function indexeddbPersistence(
+	options?: { dbName?: string },
+): (ydoc: Y.Doc) => Lifecycle {
+	return (ydoc: Y.Doc): Lifecycle => {
+		const idb = new IndexeddbPersistence(options?.dbName ?? ydoc.guid, ydoc);
+		return {
+			whenSynced: idb.whenSynced.then(() => {}),
+			destroy: () => idb.destroy(),
+		};
+	};
+}

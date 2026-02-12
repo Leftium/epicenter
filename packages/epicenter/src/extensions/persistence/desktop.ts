@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { Lifecycle } from '../../shared/lifecycle';
 import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
@@ -77,3 +78,59 @@ export const persistence = <
 
 	return defineExports({ whenSynced });
 };
+
+/**
+ * Filesystem persistence factory for use with `ySweetSync`.
+ *
+ * Returns a function `(ydoc: Y.Doc) => Lifecycle` that reads/writes a `.yjs` binary file.
+ * Uses `Bun.file()` for read, debounced `writeFileSync` for write.
+ *
+ * @example
+ * ```typescript
+ * import { filesystemPersistence } from '@epicenter/hq/extensions/persistence/desktop';
+ * import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+ *
+ * sync: ySweetSync({
+ *   auth: directAuth('http://localhost:8080'),
+ *   persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
+ * })
+ * ```
+ */
+export function filesystemPersistence(
+	options: { filePath: string },
+): (ydoc: Y.Doc) => Lifecycle {
+	return (ydoc: Y.Doc): Lifecycle => {
+		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+		const { filePath } = options;
+
+		const updateHandler = () => {
+			if (saveTimeout) clearTimeout(saveTimeout);
+			saveTimeout = setTimeout(() => {
+				const state = Y.encodeStateAsUpdate(ydoc);
+				writeFileSync(filePath, state);
+			}, 500);
+		};
+
+		const whenSynced = (async () => {
+			await mkdir(path.dirname(filePath), { recursive: true });
+
+			const file = Bun.file(filePath);
+			try {
+				const savedState = await file.arrayBuffer();
+				Y.applyUpdate(ydoc, new Uint8Array(savedState));
+			} catch {
+				// File doesn't exist — will be created on first update
+			}
+
+			ydoc.on('update', updateHandler);
+		})();
+
+		return {
+			whenSynced,
+			destroy: () => {
+				if (saveTimeout) clearTimeout(saveTimeout);
+				ydoc.off('update', updateHandler);
+			},
+		};
+	};
+}

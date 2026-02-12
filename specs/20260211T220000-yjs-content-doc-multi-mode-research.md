@@ -535,12 +535,38 @@ The Y.Array timeline makes this implicit. The history is in the doc itself, not 
 
 ---
 
-## Related Documents
+## Spec Lineage and Cross-References
 
-- `specs/20260208T000000-yjs-filesystem-spec.md` — Current filesystem spec
-- `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` — Recent conformance fixes
-- `specs/20260210T120000-content-format-spec.md` — Superseded content format spec (Option A pattern)
-- `docs/articles/archived-head-registry-patterns.md` — HeadDoc per-client MAX pattern
+Option F, if adopted, touches a chain of prior specs about content storage format. This section maps the full lineage so an implementing agent can navigate the history.
+
+### Specs that Option F would supersede
+
+| Spec | Current Status | How Option F changes it |
+|------|---------------|------------------------|
+| `specs/20260211T100000-simplified-ytext-content-store.md` | **Implemented** | The most important one. Option F replaces the single `Y.Text('content')` key with a timeline array of nested shared types. The ephemeral `Map<FileId, Uint8Array>` binary store is replaced by persistent binary entries in the timeline. The "Future Evolution" section of that spec anticipated lenses, persistent binary, and content metadata — Option F addresses all three via the timeline approach. |
+| `specs/20260210T120000-content-format-spec.md` | Superseded (by simplified spec) | Already superseded, but Option F provides an alternative path. The format-as-metadata colocation idea survives — each timeline entry's `type` field IS the format, embedded inside the content Y.Doc. But no `FormatRegistry`, no healing, no stale keys. |
+| `specs/20260210T000000-content-lens-spec.md` | Superseded (by simplified spec) | The lens concept (bidirectional converters, registry, namespaced keys) is unnecessary under Option F. Each timeline entry is self-contained with its own typed content. Type dispatch is a simple `switch` on the entry's `type` field, not a registry lookup. |
+
+### Specs that Option F sidesteps or makes moot
+
+| Spec | Current Status | How Option F relates |
+|------|---------------|---------------------|
+| `specs/20260210T150000-content-storage-format-debate.md` | Acknowledged | Recommended markdown-as-text (Option A). Option F makes the debate moot — it supports text (`Y.Text`), richtext (`Y.XmlFragment`), AND binary (`Uint8Array`) in the same timeline. You can have both the Obsidian model and the Google Docs model, per-file, switching at runtime. |
+| `specs/20260210T220000-v14-content-storage-spec.md` | Deferred | Designed for Yjs v14 (`Y.Type`, `fm:` attrs, attribution). Option F is v13-compatible. The timeline structure is orthogonal to Yjs version — when v14 arrives, timeline entries could use `Y.Type` instead of separate `Y.Text`/`Y.XmlFragment`. |
+| `specs/20260210T000000-mv-in-place-migration.md` | Superseded (by simplified spec) | Already superseded. Under Option F, `mv()` remains metadata-only (same as the simplified spec). No content migration on rename. |
+
+### Specs that remain valid under Option F
+
+| Spec | Why it's unaffected |
+|------|-------------------|
+| `specs/20260208T000000-yjs-filesystem-spec.md` | Two-layer architecture (flat metadata table + per-file content docs), files table schema, runtime indexes, `IFileSystem` interface — all unchanged. Only the content doc internal structure changes. |
+| `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` | `IFileSystem` behavioral fixes. Orthogonal to content storage format. |
+| `specs/20260209T000000-simplify-content-doc-lifecycle.md` | `ContentDocStore` (`ensure`/`destroy`/`destroyAll`) is unchanged. Option F changes what's inside the Y.Doc, not how the Y.Doc lifecycle is managed. |
+| `specs/20260209T120000-branded-file-ids.md` | `FileId` branding is unchanged. |
+
+### Reference documents (not specs)
+
+- `docs/articles/archived-head-registry-patterns.md` — HeadDoc per-client MAX pattern (inspiration for Option E)
 - `docs/articles/y-array-tombstones-are-tiny.md` — Y.Array tombstone analysis
 - `docs/articles/ykeyvalue-gc-the-hidden-variable.md` — gc:false storage implications
 

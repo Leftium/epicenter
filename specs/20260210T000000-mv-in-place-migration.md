@@ -5,6 +5,7 @@
 **Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` — `mv()` is now always metadata-only. No content migration at all (no extension categories, no format conversion). This spec's in-place migration is unnecessary because all files use `Y.Text('content')`.
 **Author**: AI-assisted
 **Supersedes**: The `mv` type-changing rename section of `specs/20260208T000000-yjs-filesystem-spec.md` (lines 517-545)
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Under Option F, `mv()` remains metadata-only (same as simplified spec). Mode switches happen via timeline entry appends, not renames.
 
 ## Overview
 

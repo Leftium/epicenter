@@ -4,6 +4,7 @@
 **Status**: Implemented
 **Supersedes**: `specs/20260210T120000-content-format-spec.md` (lens architecture), `specs/20260210T220000-v14-content-storage-spec.md` (v14 content handler)
 **Updates**: `specs/20260210T150000-content-storage-format-debate.md` (implements the direction, but with v13 Yjs, not v14)
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Research into multi-mode content storage (text, markdown, binary) via a Y.Array timeline with nested shared types (Option F). If adopted, would supersede this spec's single `Y.Text('content')` approach and replace the ephemeral binary store with persistent timeline entries. Addresses several items from this spec's "Future Evolution" section.
 
 ---
 

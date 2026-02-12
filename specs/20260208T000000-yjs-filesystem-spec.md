@@ -4,6 +4,8 @@
 **Status**: Done (Phases 1-4), Phase 5 deferred
 
 > **Note (2026-02-11)**: The content format sections of this spec (Y.XmlFragment for .md, Y.Text for code, Y.Map for frontmatter, extension-based format detection, healing, content migration on rename) are **superseded** by `specs/20260211T100000-simplified-ytext-content-store.md`. All files now use a single `Y.Text('content')`. The two-layer architecture (flat metadata table + per-file content docs), files table schema, runtime indexes, and `IFileSystem` interface remain valid.
+>
+> **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Research into multi-mode content storage (text, markdown, binary) via a Y.Array timeline with nested shared types (Option F). If adopted, would change the per-file Y.Doc internal structure while preserving the two-layer architecture, files table, and `IFileSystem` interface.
 
 ## Problem
 

@@ -3,6 +3,7 @@
 **Date**: 2026-02-10
 **Status**: Superseded
 **Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` — Y.Text('content') per document, lens architecture deferred to future.
+**See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F achieves this spec's format-as-metadata colocation goal differently: the `type` field in each timeline entry IS the format, embedded inside the content Y.Doc. No `FormatRegistry` needed.
 ---
 
 ## Problem

@@ -109,7 +109,10 @@ export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
 					await p.whenSynced;
 					// Kick off WebSocket in background — don't await it.
 					// Consumers subscribe to provider events for connection status.
-					provider.connect();
+					provider.connect().catch(() => {
+						// Suppress unhandled rejection. Connection errors
+						// are surfaced reactively via provider status events.
+					});
 				})()
 			: waitForFirstSync(provider);
 

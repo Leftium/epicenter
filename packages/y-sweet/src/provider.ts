@@ -526,9 +526,7 @@ export class YSweetProvider {
 	}
 
 	public destroy() {
-		if (this.websocket) {
-			this.websocket.close();
-		}
+		this.disconnect();
 
 		awarenessProtocol.removeAwarenessStates(
 			this.awareness,

@@ -1,130 +1,40 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
-import {
-	defineExports,
-	type ExtensionContext,
-	type ExtensionFactory,
-} from '../../dynamic/extension';
-import type { KvField, TableDefinition } from '../../dynamic/schema';
+import { defineExports } from '../../dynamic/extension';
 
 /**
- * YJS document persistence extension using IndexedDB.
- * Stores the YDoc in the browser's IndexedDB storage.
+ * IndexedDB persistence for a Yjs document.
  *
- * **Platform**: Web/Browser
+ * Stores the document in the browser's IndexedDB using `ydoc.guid` as the
+ * database name. Loads existing state on creation and auto-saves on every
+ * Yjs update (both handled internally by `y-indexeddb`).
  *
- * **How it works**:
- * 1. Creates an IndexedDB database named after the workspace ID
- * 2. Loads existing state from IndexedDB on startup (automatic via y-indexeddb)
- * 3. Auto-saves to IndexedDB on every YJS update (automatic via y-indexeddb)
- * 4. Uses the YDoc's guid as the database name (workspace ID)
+ * Works directly as an extension factory (destructures `ydoc` from context)
+ * and as a persistence option for `ySweetSync`.
  *
- * **Storage location**: Browser's IndexedDB (inspect via DevTools)
- * - Chrome: DevTools → Application → IndexedDB
- * - Firefox: DevTools → Storage → IndexedDB
- * - Each workspace gets its own database
- *
- * **Multi-workspace support**: Multiple workspaces create separate IndexedDB databases,
- * each named after its workspace ID.
- *
- * **Dependencies**: Requires `y-indexeddb` package
- * ```bash
- * bun add y-indexeddb yjs
- * ```
- *
- * @example Basic usage in a browser app
+ * @example As a workspace extension
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/dynamic';
- * import { persistence } from '@epicenter/hq/extensions/persistence';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
  *
- * // 'blog' becomes the IndexedDB database name
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
- *   .withExtensions({ persistence });
+ *   .withExtensions({ persistence: indexeddbPersistence });
  * ```
  *
- * @example In a Svelte/React component
+ * @example With Y-Sweet sync
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/dynamic';
- * import { persistence } from '@epicenter/hq/extensions/persistence';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
  *
- * // Inside component setup/onMount:
- * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
- *   .withExtensions({ persistence });
- *
- * // Data persists across page refreshes!
- * // Check DevTools → Application → IndexedDB to see the database
+ * sync: ySweetSync({
+ *   auth: directAuth('http://localhost:8080'),
+ *   persistence: indexeddbPersistence,
+ * })
  * ```
- *
- * @example Multi-workspace setup
- * ```typescript
- * import { createWorkspace } from '@epicenter/hq/dynamic';
- * import { persistence } from '@epicenter/hq/extensions/persistence';
- *
- * // Each workspace gets its own IndexedDB database
- * // 'blog' → IndexedDB database named 'blog'
- * const blogWorkspace = createWorkspace({ name: 'Blog', tables: [...] })
- *   .withExtensions({ persistence });
- *
- * // 'notes' → IndexedDB database named 'notes'
- * const notesWorkspace = createWorkspace({ name: 'Notes', tables: [...] })
- *   .withExtensions({ persistence });
- *
- * // Workspaces are isolated, each with separate IndexedDB storage
- * ```
- *
- * @example Inspecting IndexedDB in browser
- * ```
- * 1. Open DevTools (F12)
- * 2. Go to Application tab (Chrome) or Storage tab (Firefox)
- * 3. Expand IndexedDB in the sidebar
- * 4. You'll see databases named after your workspace IDs
- * 5. Click to inspect the stored YJS document
- * ```
- *
- * @see {@link persistence} from `@epicenter/hq/extensions/persistence/desktop` for Node.js/filesystem version
  */
-export const persistence = (<
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
->({
-	ydoc,
-}: ExtensionContext<TTableDefinitions, TKvFields>) => {
-	// Return exports with whenSynced for the y-indexeddb pattern
-	// This allows the workspace to know when data has been loaded from IndexedDB
+export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-
 	return defineExports({
 		whenSynced: idb.whenSynced,
 		destroy: () => idb.destroy(),
 		clearData: () => idb.clearData(),
 	});
-}) satisfies ExtensionFactory<readonly TableDefinition[], readonly KvField[]>;
-
-/**
- * IndexedDB persistence factory for use with `ySweetSync`.
- *
- * Returns a function `(ydoc: Y.Doc) => Lifecycle` that wraps `y-indexeddb`.
- * Handles loading, auto-saving, and compaction internally.
- *
- * @example
- * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
- * import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
- *
- * sync: ySweetSync({
- *   auth: directAuth('http://localhost:8080'),
- *   persistence: indexeddbPersistence(),
- * })
- * ```
- *
- */
-export function indexeddbPersistence() {
-	return (ydoc: Y.Doc) => {
-		const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-		return defineExports({
-			whenSynced: idb.whenSynced,
-			destroy: () => idb.destroy(),
-			clearData: () => idb.clearData(),
-		});
-	};
 }

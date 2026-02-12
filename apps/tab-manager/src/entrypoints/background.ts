@@ -130,7 +130,7 @@ export default defineBackground(() => {
 		 */
 		sync: ySweetSync({
 			auth: directAuth('http://127.0.0.1:8080'),
-			persistence: indexeddbPersistence(),
+			persistence: indexeddbPersistence,
 		}),
 	});
 

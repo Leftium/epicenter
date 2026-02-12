@@ -5,4 +5,4 @@
  * This file is selected by bundlers when the "browser" condition is matched
  * in package.json exports.
  */
-export { indexeddbPersistence, persistence } from './web.js';
+export { indexeddbPersistence } from './web.js';

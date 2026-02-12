@@ -2,9 +2,11 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import {
+	defineExports,
+	type ExtensionContext,
+} from '../../dynamic/extension';
 import type { Lifecycle } from '../../shared/lifecycle';
-import type { KvField, TableDefinition } from '../../dynamic/schema';
 
 /**
  * Configuration for the persistence extension.
@@ -42,11 +44,8 @@ export type PersistenceConfig = {
  *   });
  * ```
  */
-export const persistence = <
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
->(
-	{ ydoc }: ExtensionContext<TTableDefinitions, TKvFields>,
+export const persistence = (
+	{ ydoc }: ExtensionContext,
 	{ filePath }: PersistenceConfig,
 ) => {
 	// Track async initialization via whenSynced
@@ -98,8 +97,8 @@ export const persistence = <
  */
 export function filesystemPersistence(
 	options: { filePath: string },
-): (ydoc: Y.Doc) => Lifecycle {
-	return (ydoc: Y.Doc): Lifecycle => {
+): (context: { ydoc: Y.Doc }) => Lifecycle {
+	return ({ ydoc }): Lifecycle => {
 		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 		const { filePath } = options;
 

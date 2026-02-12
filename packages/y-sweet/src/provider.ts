@@ -3,16 +3,9 @@ import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
-import { encodeClientToken } from './encoding';
-import { createIndexedDBProvider, IndexedDBProvider } from './indexeddb';
+import { createIndexedDBProvider, type IndexedDBProvider } from './indexeddb';
 import { Sleeper } from './sleeper';
 import type { ClientToken } from './types';
-import {
-	EVENT_CONNECTION_CLOSE,
-	EVENT_CONNECTION_ERROR,
-	WebSocketCompatLayer,
-	type YWebsocketEvent,
-} from './ws-status';
 
 const MESSAGE_SYNC = 0;
 const MESSAGE_QUERY_AWARENESS = 3;
@@ -35,7 +28,6 @@ const MAX_TIMEOUT_BETWEEN_HEARTBEATS = 2_000;
  **/
 const MAX_TIMEOUT_WITHOUT_RECEIVING_HEARTBEAT = 3_000;
 
-// Note: These should not conflict with y-websocket's events, defined in `ws-status.ts`.
 export const EVENT_LOCAL_CHANGES = 'local-changes';
 export const EVENT_CONNECTION_STATUS = 'connection-status';
 
@@ -78,9 +70,6 @@ export type YSweetProviderParams = {
 	/** Whether to connect to the websocket on creation (otherwise use `connect()`) */
 	connect?: boolean;
 
-	/** Awareness protocol instance */
-	awareness?: awarenessProtocol.Awareness;
-
 	/** WebSocket constructor to use (defaults to `WebSocket`) */
 	WebSocketPolyfill?: WebSocketPolyfillType;
 
@@ -92,12 +81,6 @@ export type YSweetProviderParams = {
 	 * Defaults to `false`; set to `true` to enable.
 	 */
 	offlineSupport?: boolean;
-
-	/** Whether to show the debugger link. Defaults to true. */
-	showDebuggerLink?: boolean;
-
-	/** Whether to warn when closing tab with unsynchronized changes. Defaults to false. */
-	warnOnClose?: boolean;
 };
 
 function validateClientToken(clientToken: ClientToken, docId: string) {
@@ -149,8 +132,7 @@ export class YSweetProvider {
 
 	private websocket: WebSocket | null = null;
 	private WebSocketPolyfill: WebSocketPolyfillType;
-	private listeners: Map<YSweetEvent | YWebsocketEvent, Set<EventListener>> =
-		new Map();
+	private listeners: Map<YSweetEvent, Set<EventListener>> = new Map();
 
 	private localVersion: number = 0;
 	private ackedVersion: number = -1;
@@ -162,30 +144,10 @@ export class YSweetProvider {
 	private connectionTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
 	private reconnectSleeper: Sleeper | null = null;
-	private showDebuggerLink = true;
 
 	private indexedDBProvider: IndexedDBProvider | null = null;
 
 	private retries: number = 0;
-
-	/**
-	 * Older versions of the Y-Sweet server did not support the sync message, and would ignore it.
-	 * This may lead to the client thinking the server is offline, when really it just doesn't
-	 * know how to return a heartbeat.
-	 *
-	 * Eventually, we will build protocol version negotiation into the handshake. Until then, we
-	 * use a simple approach: until we receive the first sync message back, we assume the server
-	 * is an older version for the purpose of the heartbeat logic.
-	 */
-	private receivedAtLeastOneSyncResponse: boolean = false;
-
-	/** @deprecated */
-	get debugUrl() {
-		if (!this.clientToken) return null;
-
-		const payload = encodeClientToken(this.clientToken);
-		return `https://debugger.y-sweet.dev/?payload=${payload}`;
-	}
 
 	constructor(
 		private authEndpoint: AuthEndpoint,
@@ -198,25 +160,15 @@ export class YSweetProvider {
 			validateClientToken(this.clientToken, this.docId);
 		}
 
-		this.showDebuggerLink = extraOptions.showDebuggerLink !== false;
-
-		// Sets up some event handlers for y-websocket compatibility.
-		new WebSocketCompatLayer(this);
-
-		this.awareness =
-			extraOptions.awareness ?? new awarenessProtocol.Awareness(doc);
+		this.awareness = new awarenessProtocol.Awareness(doc);
 		this.awareness.on('update', this.handleAwarenessUpdate.bind(this));
 		this.WebSocketPolyfill = extraOptions.WebSocketPolyfill || WebSocket;
 
-		this.handleBeforeUnload = this.handleBeforeUnload.bind(this);
 		this.online = this.online.bind(this);
 		this.offline = this.offline.bind(this);
 		if (typeof window !== 'undefined') {
 			window.addEventListener('offline', this.offline);
 			window.addEventListener('online', this.online);
-			if (extraOptions.warnOnClose) {
-				window.addEventListener('beforeunload', this.handleBeforeUnload);
-			}
 		}
 
 		if (
@@ -277,12 +229,6 @@ export class YSweetProvider {
 			return;
 		}
 
-		if (!this.receivedAtLeastOneSyncResponse) {
-			// Until we receive the first sync response on the connection, we assume
-			// the server is an older version.
-			return;
-		}
-
 		this.connectionTimeoutHandle = setTimeout(() => {
 			if (this.websocket) {
 				this.websocket.close();
@@ -322,8 +268,6 @@ export class YSweetProvider {
 		if (emit) {
 			this.emit(EVENT_LOCAL_CHANGES, false);
 		}
-
-		this.receivedAtLeastOneSyncResponse = true;
 	}
 
 	private setStatus(status: YSweetStatus) {
@@ -422,8 +366,6 @@ export class YSweetProvider {
 		this.isConnecting = true;
 		this.setStatus(STATUS_CONNECTING);
 
-		const lastDebugUrl = this.debugUrl;
-
 		connecting: while (
 			![STATUS_OFFLINE, STATUS_CONNECTED].includes(this.status)
 		) {
@@ -468,17 +410,6 @@ export class YSweetProvider {
 		}
 
 		this.isConnecting = false;
-
-		if (this.showDebuggerLink && lastDebugUrl !== this.debugUrl) {
-			console.log(
-				`%cOpen this in Y-Sweet Debugger ⮕ ${this.debugUrl}`,
-				'font-size: 1.5em; display: block; padding: 10px;',
-			);
-			console.log(
-				'%cTo hide the debugger link, set the showDebuggerLink option to false when creating the provider',
-				'font-style: italic;',
-			);
-		}
 	}
 
 	public disconnect() {
@@ -583,8 +514,6 @@ export class YSweetProvider {
 		this.checkSync();
 		this.broadcastAwareness();
 		this.resetHeartbeat();
-
-		this.receivedAtLeastOneSyncResponse = false;
 	}
 
 	private receiveMessage(event: MessageEvent) {
@@ -615,8 +544,7 @@ export class YSweetProvider {
 		}
 	}
 
-	private websocketClose(event: CloseEvent) {
-		this.emit(EVENT_CONNECTION_CLOSE, event);
+	private websocketClose(_event: CloseEvent) {
 		this.setStatus(STATUS_ERROR);
 		this.clearHeartbeat();
 		this.clearConnectionTimeout();
@@ -632,8 +560,7 @@ export class YSweetProvider {
 		);
 	}
 
-	private websocketError(event: Event) {
-		this.emit(EVENT_CONNECTION_ERROR, event);
+	private websocketError(_event: Event) {
 		this.setStatus(STATUS_ERROR);
 		this.clearHeartbeat();
 		this.clearConnectionTimeout();
@@ -642,7 +569,7 @@ export class YSweetProvider {
 	}
 
 	public emit(
-		eventName: YSweetEvent | YWebsocketEvent,
+		eventName: YSweetEvent,
 		data: any = null,
 	): void {
 		const listeners = this.listeners.get(eventName) || new Set();
@@ -688,12 +615,11 @@ export class YSweetProvider {
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('offline', this.offline);
 			window.removeEventListener('online', this.online);
-			window.removeEventListener('beforeunload', this.handleBeforeUnload);
 		}
 	}
 
 	private _on(
-		type: YSweetEvent | YWebsocketEvent,
+		type: YSweetEvent,
 		listener: (d: any) => void,
 		once?: boolean,
 	): void {
@@ -712,21 +638,21 @@ export class YSweetProvider {
 	}
 
 	public on(
-		type: YSweetEvent | YWebsocketEvent,
+		type: YSweetEvent,
 		listener: (d: any) => void,
 	): void {
 		this._on(type, listener);
 	}
 
 	public once(
-		type: YSweetEvent | YWebsocketEvent,
+		type: YSweetEvent,
 		listener: (d: any) => void,
 	): void {
 		this._on(type, listener, true);
 	}
 
 	public off(
-		type: YSweetEvent | YWebsocketEvent,
+		type: YSweetEvent,
 		listener: (d: any) => void,
 	): void {
 		const listeners = this.listeners.get(type);
@@ -742,47 +668,4 @@ export class YSweetProvider {
 		return this.ackedVersion !== this.localVersion;
 	}
 
-	private handleBeforeUnload(event: BeforeUnloadEvent) {
-		if (this.hasLocalChanges) {
-			event.preventDefault();
-		}
-	}
-
-	/**
-	 * Whether the provider should attempt to connect.
-	 *
-	 * @deprecated use provider.status !== 'offline' instead, or call `provider.connect()` / `provider.disconnect()` to set.
-	 */
-	get shouldConnect(): boolean {
-		return this.status !== STATUS_OFFLINE;
-	}
-
-	/**
-	 * Whether the underlying websocket is connected.
-	 *
-	 * @deprecated use provider.status === 'connected' || provider.status === 'handshaking' instead.
-	 */
-	get wsconnected() {
-		return (
-			this.status === STATUS_CONNECTED || this.status === STATUS_HANDSHAKING
-		);
-	}
-
-	/**
-	 * Whether the underlying websocket is connecting.
-	 *
-	 * @deprecated use provider.status === 'connecting' instead.
-	 */
-	get wsconnecting() {
-		return this.status === STATUS_CONNECTING;
-	}
-
-	/**
-	 * Whether the document is synced. (For compatibility with y-websocket.)
-	 *
-	 * @deprecated use provider.status === 'connected' instead.
-	 * */
-	get synced() {
-		return this.status === STATUS_CONNECTED;
-	}
 }

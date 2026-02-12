@@ -153,17 +153,17 @@ Two production files used the deprecated `'sync'` event. **Both have been migrat
 
 - [x] Update `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — replace `'sync'` event with `'connection-status'` event
 - [x] Update `packages/epicenter/src/extensions/y-sweet-sync.ts` — replace `'sync'` event with `'connection-status'` event
-- [ ] Remove `receivedAtLeastOneSyncResponse` field and all 4 references in `provider.ts`
-- [ ] Delete `packages/y-sweet/src/ws-status.ts`
-- [ ] Remove all ws-status imports, `WebSocketCompatLayer` instantiation, `EVENT_CONNECTION_CLOSE`/`EVENT_CONNECTION_ERROR` emits, and `YWebsocketEvent` type references from `provider.ts`
-- [ ] Remove deprecated getters (`shouldConnect`, `wsconnected`, `wsconnecting`, `synced`) from `provider.ts`
-- [ ] Remove `debugUrl` getter, `showDebuggerLink` field/option/assignment/logging from `provider.ts`
-- [ ] Delete `packages/y-sweet/src/encoding.ts`
-- [ ] Remove `encodeClientToken`/`decodeClientToken` exports from `main.ts`
-- [ ] Remove `awareness` option from `YSweetProviderParams` and constructor logic — always create `new Awareness(doc)` internally
-- [ ] Remove `warnOnClose` option from `YSweetProviderParams`, the `handleBeforeUnload` method, and `beforeunload` listener logic
-- [ ] Run `bun run check` to verify no type errors
-- [ ] Run `bun test` in `packages/y-sweet` if tests exist
+- [x] Remove `receivedAtLeastOneSyncResponse` field and all 4 references in `provider.ts`
+- [x] Delete `packages/y-sweet/src/ws-status.ts`
+- [x] Remove all ws-status imports, `WebSocketCompatLayer` instantiation, `EVENT_CONNECTION_CLOSE`/`EVENT_CONNECTION_ERROR` emits, and `YWebsocketEvent` type references from `provider.ts`
+- [x] Remove deprecated getters (`shouldConnect`, `wsconnected`, `wsconnecting`, `synced`) from `provider.ts`
+- [x] Remove `debugUrl` getter, `showDebuggerLink` field/option/assignment/logging from `provider.ts`
+- [x] Delete `packages/y-sweet/src/encoding.ts`
+- [x] Remove `encodeClientToken`/`decodeClientToken` exports from `main.ts`
+- [x] Remove `awareness` option from `YSweetProviderParams` and constructor logic — always create `new Awareness(doc)` internally
+- [x] Remove `warnOnClose` option from `YSweetProviderParams`, the `handleBeforeUnload` method, and `beforeunload` listener logic
+- [x] Run `bun run check` to verify no type errors (y-sweet package passes `tsc --noEmit`; unrelated `@epicenter/config` failure pre-exists)
+- [x] Run `bun test` in `packages/y-sweet` — no test files exist
 
 ## File summary
 

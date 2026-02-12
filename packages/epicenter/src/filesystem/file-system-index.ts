@@ -51,7 +51,30 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 		buildPaths(filesTable, childrenOf, pathToId);
 	}
 
-	return { pathToId, childrenOf, destroy: unobserve };
+	return {
+		/** Look up the FileId for a resolved absolute path. */
+		getIdByPath(path: string): FileId | undefined {
+			return pathToId.get(path);
+		},
+		/** Check whether a path exists in the index. */
+		hasPath(path: string): boolean {
+			return pathToId.has(path);
+		},
+		/** Get all indexed paths. */
+		allPaths(): string[] {
+			return Array.from(pathToId.keys());
+		},
+		/** Number of indexed paths. */
+		get pathCount(): number {
+			return pathToId.size;
+		},
+		/** Get child IDs of a parent (null = root). Returns [] if none. */
+		getChildIds(parentId: FileId | null): FileId[] {
+			return childrenOf.get(parentId) ?? [];
+		},
+		/** Stop observing the files table. */
+		destroy: unobserve,
+	};
 }
 
 /** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */

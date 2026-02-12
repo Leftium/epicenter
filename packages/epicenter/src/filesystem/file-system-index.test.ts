@@ -38,8 +38,8 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.size).toBe(0);
-		expect(index.childrenOf.size).toBe(0);
+		expect(index.pathCount).toBe(0);
+		expect(index.getChildIds(null)).toEqual([]);
 
 		index.destroy();
 	});
@@ -49,8 +49,8 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'hello.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/hello.txt')).toBe(fid('f1'));
-		expect(index.childrenOf.get(null)).toContain(fid('f1'));
+		expect(index.getIdByPath('/hello.txt')).toBe(fid('f1'));
+		expect(index.getChildIds(null)).toContain(fid('f1'));
 
 		index.destroy();
 	});
@@ -62,11 +62,11 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f3', 'c.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.size).toBe(3);
-		expect(index.pathToId.get('/a.txt')).toBe(fid('f1'));
-		expect(index.pathToId.get('/b.txt')).toBe(fid('f2'));
-		expect(index.pathToId.get('/c.txt')).toBe(fid('f3'));
-		expect(index.childrenOf.get(null)).toHaveLength(3);
+		expect(index.pathCount).toBe(3);
+		expect(index.getIdByPath('/a.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/b.txt')).toBe(fid('f2'));
+		expect(index.getIdByPath('/c.txt')).toBe(fid('f3'));
+		expect(index.getChildIds(null)).toHaveLength(3);
 
 		index.destroy();
 	});
@@ -78,10 +78,10 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f2', 'readme.md', 'd1'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/docs')).toBe(fid('d1'));
-		expect(index.pathToId.get('/docs/api.md')).toBe(fid('f1'));
-		expect(index.pathToId.get('/docs/readme.md')).toBe(fid('f2'));
-		expect(index.childrenOf.get(fid('d1'))).toEqual(
+		expect(index.getIdByPath('/docs')).toBe(fid('d1'));
+		expect(index.getIdByPath('/docs/api.md')).toBe(fid('f1'));
+		expect(index.getIdByPath('/docs/readme.md')).toBe(fid('f2'));
+		expect(index.getChildIds(fid('d1'))).toEqual(
 			expect.arrayContaining([fid('f1'), fid('f2')]),
 		);
 
@@ -96,9 +96,9 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'file.txt', 'd3'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/a/b/c/file.txt')).toBe(fid('f1'));
-		expect(index.childrenOf.get(fid('d2'))).toEqual([fid('d3')]);
-		expect(index.childrenOf.get(fid('d3'))).toEqual([fid('f1')]);
+		expect(index.getIdByPath('/a/b/c/file.txt')).toBe(fid('f1'));
+		expect(index.getChildIds(fid('d2'))).toEqual([fid('d3')]);
+		expect(index.getChildIds(fid('d3'))).toEqual([fid('f1')]);
 
 		index.destroy();
 	});
@@ -108,8 +108,8 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('d1', 'empty', null, 'folder'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/empty')).toBe(fid('d1'));
-		expect(index.childrenOf.get(fid('d1'))).toBeUndefined();
+		expect(index.getIdByPath('/empty')).toBe(fid('d1'));
+		expect(index.getChildIds(fid('d1'))).toEqual([]);
 
 		index.destroy();
 	});
@@ -124,9 +124,9 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('f2', 'trashed.txt'), trashedAt: Date.now() });
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/active.txt')).toBe(fid('f1'));
-		expect(index.pathToId.has('/trashed.txt')).toBe(false);
-		expect(index.pathToId.size).toBe(1);
+		expect(index.getIdByPath('/active.txt')).toBe(fid('f1'));
+		expect(index.hasPath('/trashed.txt')).toBe(false);
+		expect(index.pathCount).toBe(1);
 
 		index.destroy();
 	});
@@ -137,9 +137,9 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'readme.md', 'd1'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.has('/docs')).toBe(false);
+		expect(index.hasPath('/docs')).toBe(false);
 		// Child's parent is trashed → orphan → moved to root
-		expect(index.pathToId.get('/readme.md')).toBe(fid('f1'));
+		expect(index.getIdByPath('/readme.md')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -150,8 +150,8 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f2', 'report.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/report.txt')).toBe(fid('f2'));
-		expect(index.pathToId.size).toBe(1);
+		expect(index.getIdByPath('/report.txt')).toBe(fid('f2'));
+		expect(index.pathCount).toBe(1);
 
 		index.destroy();
 	});
@@ -164,11 +164,11 @@ describe('createFileSystemIndex', () => {
 		const { files } = setup();
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.has('/new.txt')).toBe(false);
+		expect(index.hasPath('/new.txt')).toBe(false);
 
 		files.set(makeRow('f1', 'new.txt'));
 
-		expect(index.pathToId.get('/new.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/new.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -178,11 +178,11 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'hello.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/hello.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/hello.txt')).toBe(fid('f1'));
 
 		files.update('f1', { trashedAt: Date.now() });
 
-		expect(index.pathToId.has('/hello.txt')).toBe(false);
+		expect(index.hasPath('/hello.txt')).toBe(false);
 
 		index.destroy();
 	});
@@ -194,8 +194,8 @@ describe('createFileSystemIndex', () => {
 
 		files.update('f1', { name: 'new.txt' });
 
-		expect(index.pathToId.has('/old.txt')).toBe(false);
-		expect(index.pathToId.get('/new.txt')).toBe(fid('f1'));
+		expect(index.hasPath('/old.txt')).toBe(false);
+		expect(index.getIdByPath('/new.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -207,14 +207,14 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'util.ts', 'd1'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/src/util.ts')).toBe(fid('f1'));
+		expect(index.getIdByPath('/src/util.ts')).toBe(fid('f1'));
 
 		files.update('f1', { parentId: fid('d2') });
 
-		expect(index.pathToId.has('/src/util.ts')).toBe(false);
-		expect(index.pathToId.get('/lib/util.ts')).toBe(fid('f1'));
-		expect(index.childrenOf.has(fid('d1'))).toBe(false);
-		expect(index.childrenOf.get(fid('d2'))).toContain(fid('f1'));
+		expect(index.hasPath('/src/util.ts')).toBe(false);
+		expect(index.getIdByPath('/lib/util.ts')).toBe(fid('f1'));
+		expect(index.getChildIds(fid('d1'))).toEqual([]);
+		expect(index.getChildIds(fid('d2'))).toContain(fid('f1'));
 
 		index.destroy();
 	});
@@ -225,12 +225,12 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'file.txt', 'd1'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/folder/file.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/folder/file.txt')).toBe(fid('f1'));
 
 		files.update('f1', { parentId: null });
 
-		expect(index.pathToId.has('/folder/file.txt')).toBe(false);
-		expect(index.pathToId.get('/file.txt')).toBe(fid('f1'));
+		expect(index.hasPath('/folder/file.txt')).toBe(false);
+		expect(index.getIdByPath('/file.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -242,8 +242,8 @@ describe('createFileSystemIndex', () => {
 
 		files.delete('f1');
 
-		expect(index.pathToId.has('/doomed.txt')).toBe(false);
-		expect(index.pathToId.size).toBe(0);
+		expect(index.hasPath('/doomed.txt')).toBe(false);
+		expect(index.pathCount).toBe(0);
 
 		index.destroy();
 	});
@@ -256,10 +256,10 @@ describe('createFileSystemIndex', () => {
 
 		files.update('d1', { name: 'new-name' });
 
-		expect(index.pathToId.has('/old-name')).toBe(false);
-		expect(index.pathToId.has('/old-name/child.txt')).toBe(false);
-		expect(index.pathToId.get('/new-name')).toBe(fid('d1'));
-		expect(index.pathToId.get('/new-name/child.txt')).toBe(fid('f1'));
+		expect(index.hasPath('/old-name')).toBe(false);
+		expect(index.hasPath('/old-name/child.txt')).toBe(false);
+		expect(index.getIdByPath('/new-name')).toBe(fid('d1'));
+		expect(index.getIdByPath('/new-name/child.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -273,16 +273,16 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f1', 'before.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/before.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/before.txt')).toBe(fid('f1'));
 
 		index.destroy();
 
 		files.set(makeRow('f2', 'after.txt'));
-		expect(index.pathToId.has('/after.txt')).toBe(false);
+		expect(index.hasPath('/after.txt')).toBe(false);
 
 		files.update('f1', { name: 'renamed.txt' });
 		// Still has old path since no rebuild happened
-		expect(index.pathToId.get('/before.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/before.txt')).toBe(fid('f1'));
 	});
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -299,7 +299,7 @@ describe('createFileSystemIndex', () => {
 		if (result.status === 'valid') {
 			expect(result.row.parentId).toBeNull();
 		}
-		expect(index.pathToId.get('/self-loop.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/self-loop.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -320,8 +320,8 @@ describe('createFileSystemIndex', () => {
 		}
 
 		// B is at root, A is child of B
-		expect(index.pathToId.get('/beta')).toBe(fid('b'));
-		expect(index.pathToId.get('/beta/alpha')).toBe(fid('a'));
+		expect(index.getIdByPath('/beta')).toBe(fid('b'));
+		expect(index.getIdByPath('/beta/alpha')).toBe(fid('a'));
 
 		index.destroy();
 	});
@@ -344,7 +344,7 @@ describe('createFileSystemIndex', () => {
 		}
 
 		// All three should be reachable
-		expect(index.pathToId.size).toBe(3);
+		expect(index.pathCount).toBe(3);
 
 		index.destroy();
 	});
@@ -357,8 +357,8 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('y', 'y-file', 'x', 'folder'), updatedAt: 2000 });
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/clean.txt')).toBe(fid('clean'));
-		expect(index.pathToId.size).toBe(3);
+		expect(index.getIdByPath('/clean.txt')).toBe(fid('clean'));
+		expect(index.pathCount).toBe(3);
 
 		index.destroy();
 	});
@@ -377,7 +377,7 @@ describe('createFileSystemIndex', () => {
 		if (result.status === 'valid') {
 			expect(result.row.parentId).toBeNull();
 		}
-		expect(index.pathToId.get('/orphan.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/orphan.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -393,7 +393,7 @@ describe('createFileSystemIndex', () => {
 		if (result.status === 'valid') {
 			expect(result.row.parentId).toBeNull();
 		}
-		expect(index.pathToId.get('/child.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/child.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -409,9 +409,9 @@ describe('createFileSystemIndex', () => {
 		if (r1.status === 'valid') expect(r1.row.parentId).toBeNull();
 		if (r2.status === 'valid') expect(r2.row.parentId).toBeNull();
 
-		expect(index.pathToId.get('/orphan-a.txt')).toBe(fid('f1'));
-		expect(index.pathToId.get('/orphan-b.txt')).toBe(fid('f2'));
-		expect(index.childrenOf.get(null)).toEqual(
+		expect(index.getIdByPath('/orphan-a.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/orphan-b.txt')).toBe(fid('f2'));
+		expect(index.getChildIds(null)).toEqual(
 			expect.arrayContaining([fid('f1'), fid('f2')]),
 		);
 
@@ -431,8 +431,8 @@ describe('createFileSystemIndex', () => {
 		}
 
 		// f1 stays under d1 since d1 is now at root
-		expect(index.pathToId.get('/lost-folder')).toBe(fid('d1'));
-		expect(index.pathToId.get('/lost-folder/deep-orphan.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/lost-folder')).toBe(fid('d1'));
+		expect(index.getIdByPath('/lost-folder/deep-orphan.txt')).toBe(fid('f1'));
 
 		index.destroy();
 	});
@@ -447,8 +447,8 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000, updatedAt: 2000 });
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/foo.txt')).toBe(fid('a'));
-		expect(index.pathToId.get('/foo (1).txt')).toBe(fid('b'));
+		expect(index.getIdByPath('/foo.txt')).toBe(fid('a'));
+		expect(index.getIdByPath('/foo (1).txt')).toBe(fid('b'));
 
 		index.destroy();
 	});
@@ -460,9 +460,9 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('c', 'doc.md'), createdAt: 3000 });
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/doc.md')).toBe(fid('a'));
-		expect(index.pathToId.get('/doc (1).md')).toBe(fid('b'));
-		expect(index.pathToId.get('/doc (2).md')).toBe(fid('c'));
+		expect(index.getIdByPath('/doc.md')).toBe(fid('a'));
+		expect(index.getIdByPath('/doc (1).md')).toBe(fid('b'));
+		expect(index.getIdByPath('/doc (2).md')).toBe(fid('c'));
 
 		index.destroy();
 	});
@@ -473,8 +473,8 @@ describe('createFileSystemIndex', () => {
 		files.set({ ...makeRow('b', 'Makefile'), createdAt: 2000 });
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/Makefile')).toBe(fid('a'));
-		expect(index.pathToId.get('/Makefile (1)')).toBe(fid('b'));
+		expect(index.getIdByPath('/Makefile')).toBe(fid('a'));
+		expect(index.getIdByPath('/Makefile (1)')).toBe(fid('b'));
 
 		index.destroy();
 	});
@@ -487,10 +487,10 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f2', 'index.ts', 'd2'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/src')).toBe(fid('d1'));
-		expect(index.pathToId.get('/src (1)')).toBe(fid('d2'));
-		expect(index.pathToId.get('/src/index.ts')).toBe(fid('f1'));
-		expect(index.pathToId.get('/src (1)/index.ts')).toBe(fid('f2'));
+		expect(index.getIdByPath('/src')).toBe(fid('d1'));
+		expect(index.getIdByPath('/src (1)')).toBe(fid('d2'));
+		expect(index.getIdByPath('/src/index.ts')).toBe(fid('f1'));
+		expect(index.getIdByPath('/src (1)/index.ts')).toBe(fid('f2'));
 
 		index.destroy();
 	});
@@ -503,8 +503,8 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f2', 'same.txt', 'd2'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.get('/a/same.txt')).toBe(fid('f1'));
-		expect(index.pathToId.get('/b/same.txt')).toBe(fid('f2'));
+		expect(index.getIdByPath('/a/same.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/b/same.txt')).toBe(fid('f2'));
 
 		index.destroy();
 	});
@@ -528,10 +528,9 @@ describe('createFileSystemIndex', () => {
 		const index = createFileSystemIndex(files);
 
 		// Depth 52 file should NOT have a path
-		const hasDeepFile = Array.from(index.pathToId.values()).includes(fid('deep-file'));
-		expect(hasDeepFile).toBe(false);
+		expect(index.allPaths().some((p) => p.endsWith('/bottom.txt'))).toBe(false);
 		// Shallow files still work
-		expect(index.pathToId.get('/level-0')).toBe(fid('d0'));
+		expect(index.getIdByPath('/level-0')).toBe(fid('d0'));
 
 		index.destroy();
 	});
@@ -550,8 +549,7 @@ describe('createFileSystemIndex', () => {
 
 		const index = createFileSystemIndex(files);
 
-		const hasLeaf = Array.from(index.pathToId.values()).includes(fid('leaf'));
-		expect(hasLeaf).toBe(true);
+		expect(index.allPaths().some((p) => p.endsWith('/file.txt'))).toBe(true);
 
 		index.destroy();
 	});
@@ -570,10 +568,10 @@ describe('createFileSystemIndex', () => {
 			tx.set(makeRow('f2', 'root.txt'));
 		});
 
-		expect(index.pathToId.get('/folder')).toBe(fid('d1'));
-		expect(index.pathToId.get('/folder/inside.txt')).toBe(fid('f1'));
-		expect(index.pathToId.get('/root.txt')).toBe(fid('f2'));
-		expect(index.pathToId.size).toBe(3);
+		expect(index.getIdByPath('/folder')).toBe(fid('d1'));
+		expect(index.getIdByPath('/folder/inside.txt')).toBe(fid('f1'));
+		expect(index.getIdByPath('/root.txt')).toBe(fid('f2'));
+		expect(index.pathCount).toBe(3);
 
 		index.destroy();
 	});
@@ -590,7 +588,7 @@ describe('createFileSystemIndex', () => {
 		}
 
 		// Both reachable with unique paths
-		expect(index.pathToId.size).toBe(2);
+		expect(index.pathCount).toBe(2);
 
 		index.destroy();
 	});
@@ -601,13 +599,13 @@ describe('createFileSystemIndex', () => {
 		files.set(makeRow('f2', 'second.txt'));
 		const index = createFileSystemIndex(files);
 
-		expect(index.pathToId.size).toBe(2);
+		expect(index.pathCount).toBe(2);
 
 		files.delete('f1');
 		files.delete('f2');
 
-		expect(index.pathToId.size).toBe(0);
-		expect(index.childrenOf.size).toBe(0);
+		expect(index.pathCount).toBe(0);
+		expect(index.getChildIds(null)).toEqual([]);
 
 		index.destroy();
 	});

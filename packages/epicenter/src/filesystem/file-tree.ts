@@ -30,7 +30,7 @@ export class FileTree {
 	 */
 	resolveId(path: string): FileId | null {
 		if (path === '/') return null;
-		const id = this.index.pathToId.get(path);
+		const id = this.index.getIdByPath(path);
 		if (!id) throw fsError('ENOENT', path);
 		return id;
 	}
@@ -40,7 +40,7 @@ export class FileTree {
 	 * Returns `undefined` if the path doesn't exist.
 	 */
 	lookupId(path: string): FileId | undefined {
-		return this.index.pathToId.get(path);
+		return this.index.getIdByPath(path);
 	}
 
 	/**
@@ -63,7 +63,7 @@ export class FileTree {
 		const name = normalized.substring(lastSlash + 1);
 		const parentPath = normalized.substring(0, lastSlash) || '/';
 		if (parentPath === '/') return { parentId: null, name };
-		const parentId = this.index.pathToId.get(parentPath);
+		const parentId = this.index.getIdByPath(parentPath);
 		if (!parentId) throw fsError('ENOENT', parentPath);
 		return { parentId, name };
 	}
@@ -81,12 +81,12 @@ export class FileTree {
 
 	/** Get the child IDs of a parent (null = root). */
 	childIds(parentId: FileId | null): FileId[] {
-		return this.index.childrenOf.get(parentId) ?? [];
+		return this.index.getChildIds(parentId);
 	}
 
 	/** Filter child IDs down to non-trashed, valid rows. */
 	activeChildren(parentId: FileId | null): FileRow[] {
-		const ids = this.index.childrenOf.get(parentId) ?? [];
+		const ids = this.index.getChildIds(parentId);
 		const rows: FileRow[] = [];
 		for (const cid of ids) {
 			const result = this.filesTable.get(cid);
@@ -103,7 +103,7 @@ export class FileTree {
 	 */
 	descendantIds(parentId: FileId): FileId[] {
 		const result: FileId[] = [];
-		const children = this.index.childrenOf.get(parentId) ?? [];
+		const children = this.index.getChildIds(parentId);
 		for (const cid of children) {
 			const row = this.filesTable.get(cid);
 			if (row.status !== 'valid' || row.row.trashedAt !== null) continue;
@@ -116,11 +116,11 @@ export class FileTree {
 	}
 
 	exists(path: string): boolean {
-		return path === '/' || this.index.pathToId.has(path);
+		return path === '/' || this.index.hasPath(path);
 	}
 
 	allPaths(): string[] {
-		return Array.from(this.index.pathToId.keys());
+		return this.index.allPaths();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -137,8 +137,7 @@ export class FileTree {
 		validateName(opts.name);
 		assertUniqueName(
 			this.filesTable,
-			this.index.childrenOf,
-			opts.parentId,
+			this.index.getChildIds(opts.parentId),
 			opts.name,
 		);
 		const id = generateFileId();
@@ -165,8 +164,7 @@ export class FileTree {
 		validateName(newName);
 		assertUniqueName(
 			this.filesTable,
-			this.index.childrenOf,
-			newParentId,
+			this.index.getChildIds(newParentId),
 			newName,
 			id,
 		);

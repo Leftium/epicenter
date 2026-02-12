@@ -64,7 +64,7 @@ type WebSocketPolyfillType = {
 	readonly OPEN: number;
 };
 
-export type AuthEndpoint = string | (() => Promise<ClientToken>);
+export type AuthEndpoint = () => Promise<ClientToken>;
 
 export type YSweetProviderParams = {
 	/** Whether to connect to the websocket on creation (otherwise use `connect()`) */
@@ -95,28 +95,8 @@ async function getClientToken(
 	authEndpoint: AuthEndpoint,
 	docId: string,
 ): Promise<ClientToken> {
-	if (typeof authEndpoint === 'function') {
-		const clientToken = await authEndpoint();
-		validateClientToken(clientToken, docId);
-		return clientToken;
-	}
-
-	const body = JSON.stringify({ docId: docId });
-	const res = await fetch(authEndpoint, {
-		method: 'POST',
-		body,
-		headers: { 'Content-Type': 'application/json' },
-	});
-
-	if (!res.ok) {
-		throw new Error(
-			`Failed to get client token: ${res.status} ${res.statusText}`,
-		);
-	}
-
-	const clientToken = await res.json();
+	const clientToken = await authEndpoint();
 	validateClientToken(clientToken, docId);
-
 	return clientToken;
 }
 

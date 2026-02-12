@@ -11,7 +11,10 @@ type FsErrorCode =
 	| 'ENOTDIR';
 
 /** Create an errno-style error with code property */
-export function fsError(code: FsErrorCode, message: string): Error & { code: string } {
+export function fsError(
+	code: FsErrorCode,
+	message: string,
+): Error & { code: string } {
 	const err = new Error(`${code}: ${message}`) as Error & { code: string };
 	err.code = code;
 	return err;

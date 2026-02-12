@@ -150,7 +150,9 @@ describe('YjsFileSystem', () => {
 		test('mkdir -p through existing file throws ENOTDIR', async () => {
 			const fs = setup();
 			await fs.writeFile('/file.txt', 'content');
-			await expect(fs.mkdir('/file.txt/sub', { recursive: true })).rejects.toThrow('ENOTDIR');
+			await expect(
+				fs.mkdir('/file.txt/sub', { recursive: true }),
+			).rejects.toThrow('ENOTDIR');
 		});
 
 		test('mkdir -p through existing directories is no-op for existing', async () => {
@@ -298,12 +300,16 @@ describe('YjsFileSystem', () => {
 	describe('symlink / link / readlink', () => {
 		test('symlink throws ENOSYS', async () => {
 			const fs = setup();
-			await expect((fs as any).symlink('/target', '/link')).rejects.toThrow('ENOSYS');
+			await expect((fs as any).symlink('/target', '/link')).rejects.toThrow(
+				'ENOSYS',
+			);
 		});
 
 		test('link throws ENOSYS', async () => {
 			const fs = setup();
-			await expect((fs as any).link('/existing', '/new')).rejects.toThrow('ENOSYS');
+			await expect((fs as any).link('/existing', '/new')).rejects.toThrow(
+				'ENOSYS',
+			);
 		});
 
 		test('readlink throws ENOSYS', async () => {
@@ -360,7 +366,9 @@ describe('mv preserves content (no conversion)', () => {
 		const fs = setup();
 		await fs.writeFile('/notes.txt', '---\ntitle: Hello\n---\n# Content\n');
 		await fs.mv('/notes.txt', '/notes.md');
-		expect(await fs.readFile('/notes.md')).toBe('---\ntitle: Hello\n---\n# Content\n');
+		expect(await fs.readFile('/notes.md')).toBe(
+			'---\ntitle: Hello\n---\n# Content\n',
+		);
 	});
 
 	test('mv .md -> .txt preserves content exactly', async () => {
@@ -371,7 +379,10 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
-async function getTimelineLength(fs: YjsFileSystem, path: string): Promise<number> {
+async function getTimelineLength(
+	fs: YjsFileSystem,
+	path: string,
+): Promise<number> {
 	const id = (fs as any).index.pathToId.get(path);
 	const ydoc = await (fs as any).store.ensure(id);
 	return getTimeline(ydoc).length;
@@ -383,7 +394,9 @@ describe('timeline content storage', () => {
 		const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG header
 		await fs.writeFile('/image.png', data);
 		expect(await fs.readFileBuffer('/image.png')).toEqual(data);
-		expect(await fs.readFile('/image.png')).toBe(new TextDecoder().decode(data));
+		expect(await fs.readFile('/image.png')).toBe(
+			new TextDecoder().decode(data),
+		);
 	});
 
 	test('mode switching: text → binary → text', async () => {

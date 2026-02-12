@@ -1,6 +1,13 @@
+import {
+	defaultMarkdownParser,
+	defaultMarkdownSerializer,
+	schema as markdownSchema,
+} from 'prosemirror-markdown';
+import {
+	prosemirrorToYXmlFragment,
+	yXmlFragmentToProseMirrorRootNode,
+} from 'y-prosemirror';
 import * as Y from 'yjs';
-import { defaultMarkdownParser, defaultMarkdownSerializer, schema as markdownSchema } from 'prosemirror-markdown';
-import { yXmlFragmentToProseMirrorRootNode, prosemirrorToYXmlFragment } from 'y-prosemirror';
 
 export { markdownSchema };
 
@@ -31,12 +38,17 @@ export function serializeMarkdownWithFrontmatter(
 ): string {
 	const keys = Object.keys(frontmatter);
 	if (keys.length === 0) return body;
-	const yaml = keys.map((key) => `${key}: ${stringifyYamlValue(frontmatter[key])}`).join('\n');
+	const yaml = keys
+		.map((key) => `${key}: ${stringifyYamlValue(frontmatter[key])}`)
+		.join('\n');
 	return `---\n${yaml}\n---\n${body}`;
 }
 
 /** Diff-update a Y.Map to match a target record. Per-field LWW. */
-export function updateYMapFromRecord(ymap: Y.Map<unknown>, target: Record<string, unknown>): void {
+export function updateYMapFromRecord(
+	ymap: Y.Map<unknown>,
+	target: Record<string, unknown>,
+): void {
 	const doc = ymap.doc;
 	const apply = () => {
 		// Delete keys not in target
@@ -73,7 +85,9 @@ export function yMapToRecord(ymap: Y.Map<unknown>): Record<string, unknown> {
  * Serialize a Y.XmlFragment to a markdown string.
  * Headless pipeline — no DOM needed.
  */
-export function serializeXmlFragmentToMarkdown(fragment: Y.XmlFragment): string {
+export function serializeXmlFragmentToMarkdown(
+	fragment: Y.XmlFragment,
+): string {
 	const node = yXmlFragmentToProseMirrorRootNode(fragment, markdownSchema);
 	return defaultMarkdownSerializer.serialize(node);
 }
@@ -82,7 +96,10 @@ export function serializeXmlFragmentToMarkdown(fragment: Y.XmlFragment): string 
  * Update a Y.XmlFragment from a markdown string.
  * Uses prosemirrorToYXmlFragment which diffs against existing content.
  */
-export function updateYXmlFragmentFromString(fragment: Y.XmlFragment, markdown: string): void {
+export function updateYXmlFragmentFromString(
+	fragment: Y.XmlFragment,
+	markdown: string,
+): void {
 	const doc = defaultMarkdownParser.parse(markdown);
 	if (!doc) return;
 	prosemirrorToYXmlFragment(doc, fragment);
@@ -124,7 +141,10 @@ function parseYamlValue(raw: string): unknown {
 	}
 
 	// Quoted string
-	if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+	if (
+		(raw.startsWith('"') && raw.endsWith('"')) ||
+		(raw.startsWith("'") && raw.endsWith("'"))
+	) {
 		return raw.slice(1, -1);
 	}
 
@@ -136,10 +156,16 @@ function stringifyYamlValue(value: unknown): string {
 	if (value === null || value === undefined) return 'null';
 	if (typeof value === 'boolean') return String(value);
 	if (typeof value === 'number') return String(value);
-	if (Array.isArray(value)) return `[${value.map(stringifyYamlValue).join(', ')}]`;
+	if (Array.isArray(value))
+		return `[${value.map(stringifyYamlValue).join(', ')}]`;
 	if (typeof value === 'string') {
 		// Quote strings that contain special characters
-		if (value.includes(':') || value.includes('#') || value.includes('\n') || value === '') {
+		if (
+			value.includes(':') ||
+			value.includes('#') ||
+			value.includes('\n') ||
+			value === ''
+		) {
 			return `"${value.replace(/"/g, '\\"')}"`;
 		}
 		return value;

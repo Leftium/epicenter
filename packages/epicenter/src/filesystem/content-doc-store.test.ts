@@ -84,7 +84,9 @@ describe('with providers', () => {
 	test('ensure runs provider factories and awaits whenSynced', async () => {
 		let factoryCallCount = 0;
 		let resolveSync!: () => void;
-		const syncPromise = new Promise<void>((r) => { resolveSync = r; });
+		const syncPromise = new Promise<void>((r) => {
+			resolveSync = r;
+		});
 
 		const mockProvider: ProviderFactory = () => {
 			factoryCallCount++;
@@ -99,7 +101,9 @@ describe('with providers', () => {
 
 		// Not yet resolved
 		let resolved = false;
-		ensurePromise.then(() => { resolved = true; });
+		ensurePromise.then(() => {
+			resolved = true;
+		});
 		await Promise.resolve(); // flush microtasks
 		expect(resolved).toBe(false);
 
@@ -134,7 +138,11 @@ describe('with providers', () => {
 	test('destroy calls provider destroy', async () => {
 		let destroyed = false;
 		const mockProvider: ProviderFactory = () => {
-			return defineExports({ destroy: () => { destroyed = true; } });
+			return defineExports({
+				destroy: () => {
+					destroyed = true;
+				},
+			});
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -147,7 +155,11 @@ describe('with providers', () => {
 	test('destroyAll calls all provider destroys', async () => {
 		const destroyCalls: string[] = [];
 		const mockProvider: ProviderFactory = ({ ydoc }) => {
-			return defineExports({ destroy: () => { destroyCalls.push(ydoc.guid); } });
+			return defineExports({
+				destroy: () => {
+					destroyCalls.push(ydoc.guid);
+				},
+			});
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -162,7 +174,11 @@ describe('with providers', () => {
 	test('factory error cleans up partially-created providers', () => {
 		let firstDestroyed = false;
 		const goodProvider: ProviderFactory = () => {
-			return defineExports({ destroy: () => { firstDestroyed = true; } });
+			return defineExports({
+				destroy: () => {
+					firstDestroyed = true;
+				},
+			});
 		};
 		const badProvider: ProviderFactory = () => {
 			throw new Error('factory failed');

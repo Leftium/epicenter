@@ -1,19 +1,19 @@
 import { describe, expect, test } from 'bun:test';
-import * as Y from 'yjs';
 import { Bash } from 'just-bash';
+import * as Y from 'yjs';
 import { createWorkspace } from '../static/create-workspace.js';
 import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
-import { YjsFileSystem } from './yjs-file-system.js';
-import type { FileRow } from './types.js';
 import {
 	parseFrontmatter,
 	serializeMarkdownWithFrontmatter,
+	serializeXmlFragmentToMarkdown,
 	updateYMapFromRecord,
 	updateYXmlFragmentFromString,
 	yMapToRecord,
-	serializeXmlFragmentToMarkdown,
 } from './markdown-helpers.js';
+import type { FileRow } from './types.js';
+import { YjsFileSystem } from './yjs-file-system.js';
 
 describe('parseFrontmatter', () => {
 	test('no front matter', () => {
@@ -52,7 +52,10 @@ describe('serializeMarkdownWithFrontmatter', () => {
 	});
 
 	test('with frontmatter', () => {
-		const result = serializeMarkdownWithFrontmatter({ title: 'Test' }, '# Hello');
+		const result = serializeMarkdownWithFrontmatter(
+			{ title: 'Test' },
+			'# Hello',
+		);
 		expect(result).toBe('---\ntitle: Test\n---\n# Hello');
 	});
 });
@@ -142,7 +145,9 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return new YjsFileSystem(ws.tables.files as unknown as TableHelper<FileRow>);
+		return new YjsFileSystem(
+			ws.tables.files as unknown as TableHelper<FileRow>,
+		);
 	}
 
 	test('write and read .md file with front matter', async () => {

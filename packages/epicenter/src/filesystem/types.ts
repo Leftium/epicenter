@@ -12,9 +12,14 @@ export type ContentMode = 'text' | 'richtext' | 'binary';
  * instances accessed via .get('type'), .get('content'), etc.
  */
 export type TextEntry = { type: 'text'; content: Y.Text };
-export type RichTextEntry = { type: 'richtext'; content: Y.XmlFragment; frontmatter: Y.Map<unknown> };
+export type RichTextEntry = {
+	type: 'richtext';
+	content: Y.XmlFragment;
+	frontmatter: Y.Map<unknown>;
+};
 export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
+
 import type { InferTableRow } from '../static/types.js';
 import type { filesTable } from './file-table.js';
 

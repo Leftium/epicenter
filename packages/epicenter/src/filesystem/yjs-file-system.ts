@@ -1,4 +1,11 @@
-import type { CpOptions, FileContent, FsStat, IFileSystem, MkdirOptions, RmOptions } from 'just-bash';
+import type {
+	CpOptions,
+	FileContent,
+	FsStat,
+	IFileSystem,
+	MkdirOptions,
+	RmOptions,
+} from 'just-bash';
 import type { ProviderFactory } from '../dynamic/provider-types.js';
 import type { TableHelper } from '../static/types.js';
 
@@ -9,12 +16,31 @@ type DirentEntry = {
 	isDirectory: boolean;
 	isSymbolicLink: boolean;
 };
+
 import { createContentDocStore } from './content-doc-store.js';
 import { createFileSystemIndex } from './file-system-index.js';
-import { getCurrentEntry, getEntryMode, getTimeline, pushBinaryEntry, pushTextEntry, readEntryAsBuffer, readEntryAsString } from './timeline-helpers.js';
-import type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
+import {
+	getCurrentEntry,
+	getEntryMode,
+	getTimeline,
+	pushBinaryEntry,
+	pushTextEntry,
+	readEntryAsBuffer,
+	readEntryAsString,
+} from './timeline-helpers.js';
+import type {
+	ContentDocStore,
+	FileId,
+	FileRow,
+	FileSystemIndex,
+} from './types.js';
 import { generateFileId } from './types.js';
-import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
+import {
+	assertUniqueName,
+	disambiguateNames,
+	fsError,
+	validateName,
+} from './validation.js';
 
 /**
  * POSIX-like virtual filesystem backed by Yjs CRDTs.
@@ -120,7 +146,10 @@ export class YjsFileSystem implements IFileSystem {
 	// READS — content (may load a per-file content doc)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	async readFile(path: string, _options?: { encoding?: string | null } | string): Promise<string> {
+	async readFile(
+		path: string,
+		_options?: { encoding?: string | null } | string,
+	): Promise<string> {
 		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
 		const id = this.resolveId(resolved)!;
 		const row = this.getRow(id, resolved);
@@ -148,11 +177,16 @@ export class YjsFileSystem implements IFileSystem {
 	// WRITES
 	// ═══════════════════════════════════════════════════════════════════════
 
-	async writeFile(path: string, data: FileContent, _options?: { encoding?: string } | string): Promise<void> {
+	async writeFile(
+		path: string,
+		data: FileContent,
+		_options?: { encoding?: string } | string,
+	): Promise<void> {
 		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const size = typeof data === 'string'
-			? new TextEncoder().encode(data).byteLength
-			: data.byteLength;
+		const size =
+			typeof data === 'string'
+				? new TextEncoder().encode(data).byteLength
+				: data.byteLength;
 		let id = this.index.pathToId.get(resolved);
 
 		if (id) {
@@ -166,8 +200,14 @@ export class YjsFileSystem implements IFileSystem {
 			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
 			id = generateFileId();
 			this.filesTable.set({
-				id, name, parentId, type: 'file',
-				size, createdAt: Date.now(), updatedAt: Date.now(), trashedAt: null,
+				id,
+				name,
+				parentId,
+				type: 'file',
+				size,
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				trashedAt: null,
 			});
 		}
 
@@ -195,9 +235,14 @@ export class YjsFileSystem implements IFileSystem {
 		this.filesTable.update(id, { size, updatedAt: Date.now() });
 	}
 
-	async appendFile(path: string, data: FileContent, _options?: { encoding?: string } | string): Promise<void> {
+	async appendFile(
+		path: string,
+		data: FileContent,
+		_options?: { encoding?: string } | string,
+	): Promise<void> {
 		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
+		const content =
+			typeof data === 'string' ? data : new TextDecoder().decode(data);
 		const id = this.index.pathToId.get(resolved);
 		if (!id) return this.writeFile(resolved, data, _options);
 
@@ -214,7 +259,9 @@ export class YjsFileSystem implements IFileSystem {
 			ydoc.transact(() => ytext.insert(ytext.length, content));
 		} else if (current && getEntryMode(current) === 'binary') {
 			// Binary entry: decode existing, concat, push new text entry
-			const existing = new TextDecoder().decode(current.get('content') as Uint8Array);
+			const existing = new TextDecoder().decode(
+				current.get('content') as Uint8Array,
+			);
 			ydoc.transact(() => pushTextEntry(timeline, existing + content));
 		} else {
 			// No current entry: same as writeFile
@@ -224,9 +271,12 @@ export class YjsFileSystem implements IFileSystem {
 
 		// Size from current entry's full content
 		const updatedEntry = getCurrentEntry(timeline)!;
-		const newSize = getEntryMode(updatedEntry) === 'text'
-			? new TextEncoder().encode((updatedEntry.get('content') as import('yjs').Text).toString()).byteLength
-			: (updatedEntry.get('content') as Uint8Array).byteLength;
+		const newSize =
+			getEntryMode(updatedEntry) === 'text'
+				? new TextEncoder().encode(
+						(updatedEntry.get('content') as import('yjs').Text).toString(),
+					).byteLength
+				: (updatedEntry.get('content') as Uint8Array).byteLength;
 		this.filesTable.update(id, { size: newSize, updatedAt: Date.now() });
 	}
 
@@ -255,13 +305,19 @@ export class YjsFileSystem implements IFileSystem {
 					const existingId = this.index.pathToId.get(currentPath);
 					if (existingId) {
 						const existingRow = this.getRow(existingId, currentPath);
-						if (existingRow.type === 'file') throw fsError('ENOTDIR', currentPath);
+						if (existingRow.type === 'file')
+							throw fsError('ENOTDIR', currentPath);
 					}
 					continue;
 				}
 				validateName(part);
 				const { parentId } = this.parsePath(currentPath);
-				assertUniqueName(this.filesTable, this.index.childrenOf, parentId, part);
+				assertUniqueName(
+					this.filesTable,
+					this.index.childrenOf,
+					parentId,
+					part,
+				);
 				this.filesTable.set({
 					id: generateFileId(),
 					name: part,
@@ -327,7 +383,11 @@ export class YjsFileSystem implements IFileSystem {
 			await this.mkdir(resolvedDest, { recursive: true });
 			const children = await this.readdir(resolvedSrc);
 			for (const child of children) {
-				await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, options);
+				await this.cp(
+					`${resolvedSrc}/${child}`,
+					`${resolvedDest}/${child}`,
+					options,
+				);
 			}
 		} else {
 			// Read from source timeline entry, write via writeFile
@@ -349,9 +409,16 @@ export class YjsFileSystem implements IFileSystem {
 		const id = this.resolveId(resolvedSrc);
 		if (id === null) throw fsError('EISDIR', resolvedSrc);
 		this.getRow(id, resolvedSrc); // validate exists
-		const { parentId: newParentId, name: newName } = this.parsePath(resolvedDest);
+		const { parentId: newParentId, name: newName } =
+			this.parsePath(resolvedDest);
 		validateName(newName);
-		assertUniqueName(this.filesTable, this.index.childrenOf, newParentId, newName, id);
+		assertUniqueName(
+			this.filesTable,
+			this.index.childrenOf,
+			newParentId,
+			newName,
+			id,
+		);
 
 		this.filesTable.update(id, {
 			name: newName,
@@ -420,7 +487,9 @@ export class YjsFileSystem implements IFileSystem {
 	 * and `.` / `..` segments are normalized away.
 	 */
 	private static posixResolve(base: string, path: string): string {
-		const resolved = path.startsWith('/') ? path : base.replace(/\/$/, '') + '/' + path;
+		const resolved = path.startsWith('/')
+			? path
+			: base.replace(/\/$/, '') + '/' + path;
 		const parts = resolved.split('/');
 		const stack: string[] = [];
 		for (const part of parts) {

@@ -19,7 +19,12 @@ function setup() {
 	return { files };
 }
 
-function makeRow(id: string, name: string, parentId: string | null = null, createdAt = Date.now()) {
+function makeRow(
+	id: string,
+	name: string,
+	parentId: string | null = null,
+	createdAt = Date.now(),
+) {
 	return {
 		id: fid(id),
 		name,

@@ -524,10 +524,7 @@ export class YSweetProvider {
 		this.connect();
 	}
 
-	public emit(
-		eventName: YSweetEvent,
-		data: any = null,
-	): void {
+	public emit(eventName: YSweetEvent, data: any = null): void {
 		const listeners = this.listeners.get(eventName) || new Set();
 		for (const listener of listeners) {
 			listener(data);
@@ -593,24 +590,15 @@ export class YSweetProvider {
 		}
 	}
 
-	public on(
-		type: YSweetEvent,
-		listener: (d: any) => void,
-	): void {
+	public on(type: YSweetEvent, listener: (d: any) => void): void {
 		this._on(type, listener);
 	}
 
-	public once(
-		type: YSweetEvent,
-		listener: (d: any) => void,
-	): void {
+	public once(type: YSweetEvent, listener: (d: any) => void): void {
 		this._on(type, listener, true);
 	}
 
-	public off(
-		type: YSweetEvent,
-		listener: (d: any) => void,
-	): void {
+	public off(type: YSweetEvent, listener: (d: any) => void): void {
 		const listeners = this.listeners.get(type);
 		if (listeners) {
 			listeners.delete(listener);
@@ -623,5 +611,4 @@ export class YSweetProvider {
 	get hasLocalChanges() {
 		return this.ackedVersion !== this.localVersion;
 	}
-
 }

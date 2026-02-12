@@ -45,19 +45,6 @@ export function pushBinaryEntry(
 	return entry;
 }
 
-/** Create and append a new richtext entry. Returns the new Y.Map. */
-export function pushRichTextEntry(
-	timeline: Y.Array<Y.Map<any>>,
-	_markdown: string,
-): Y.Map<any> {
-	const entry = new Y.Map();
-	entry.set('type', 'richtext');
-	entry.set('content', new Y.XmlFragment());
-	entry.set('frontmatter', new Y.Map());
-	timeline.push([entry]);
-	return entry;
-}
-
 /** Read an entry's content as a string (for readFile). */
 export function readEntryAsString(entry: Y.Map<any>): string {
 	switch (getEntryMode(entry)) {

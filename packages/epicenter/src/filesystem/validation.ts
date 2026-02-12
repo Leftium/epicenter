@@ -36,12 +36,10 @@ export function validateName(name: string): void {
  */
 export function assertUniqueName(
 	filesTable: TableHelper<FileRow>,
-	childrenOf: Map<FileId | null, FileId[]>,
-	parentId: FileId | null,
+	siblingIds: FileId[],
 	name: string,
 	excludeId?: FileId,
 ): void {
-	const siblingIds = childrenOf.get(parentId) ?? [];
 	const duplicate = siblingIds.find((id) => {
 		if (id === excludeId) return false;
 		const result = filesTable.get(id);

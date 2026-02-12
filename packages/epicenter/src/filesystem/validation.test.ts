@@ -81,40 +81,36 @@ describe('assertUniqueName', () => {
 	test('allows unique name', () => {
 		const { files } = setup();
 		files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(files, childrenOf, null, 'world.txt'),
+			assertUniqueName(files, [fid('a')], 'world.txt'),
 		).not.toThrow();
 	});
 
 	test('throws EEXIST on duplicate', () => {
 		const { files } = setup();
 		files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(files, childrenOf, null, 'hello.txt'),
+			assertUniqueName(files, [fid('a')], 'hello.txt'),
 		).toThrow('EEXIST');
 	});
 
 	test('ignores trashed files', () => {
 		const { files } = setup();
 		files.set({ ...makeRow('a', 'hello.txt'), trashedAt: Date.now() });
-		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(files, childrenOf, null, 'hello.txt'),
+			assertUniqueName(files, [fid('a')], 'hello.txt'),
 		).not.toThrow();
 	});
 
 	test('excludes self on rename', () => {
 		const { files } = setup();
 		files.set(makeRow('a', 'hello.txt'));
-		const childrenOf = new Map<FileId | null, FileId[]>([[null, [fid('a')]]]);
 
 		expect(() =>
-			assertUniqueName(files, childrenOf, null, 'hello.txt', fid('a')),
+			assertUniqueName(files, [fid('a')], 'hello.txt', fid('a')),
 		).not.toThrow();
 	});
 });

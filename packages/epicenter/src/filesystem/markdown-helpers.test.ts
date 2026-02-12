@@ -142,13 +142,11 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		const files = ws.tables.files as unknown as TableHelper<FileRow>;
-		const fs = new YjsFileSystem(files);
-		return { ws, files, fs };
+		return new YjsFileSystem(ws.tables.files as unknown as TableHelper<FileRow>);
 	}
 
 	test('write and read .md file with front matter', async () => {
-		const { fs } = setup();
+		const fs = setup();
 		const content = '---\ntitle: Test\n---\n# Hello World\n';
 		await fs.writeFile('/doc.md', content);
 
@@ -158,7 +156,7 @@ describe('markdown integration with YjsFileSystem', () => {
 	});
 
 	test('write and read .md file without front matter', async () => {
-		const { fs } = setup();
+		const fs = setup();
 		await fs.writeFile('/doc.md', '# Just a heading\n');
 
 		const read = await fs.readFile('/doc.md');
@@ -166,19 +164,19 @@ describe('markdown integration with YjsFileSystem', () => {
 	});
 
 	test('.txt file is still plain text', async () => {
-		const { fs } = setup();
+		const fs = setup();
 		await fs.writeFile('/file.txt', 'plain text content');
 		expect(await fs.readFile('/file.txt')).toBe('plain text content');
 	});
 
 	test('.ts file is plain text', async () => {
-		const { fs } = setup();
+		const fs = setup();
 		await fs.writeFile('/index.ts', 'export const x = 42;');
 		expect(await fs.readFile('/index.ts')).toBe('export const x = 42;');
 	});
 
 	test('just-bash cat on .md file', async () => {
-		const { fs } = setup();
+		const fs = setup();
 		const bash = new Bash({ fs, cwd: '/' });
 		await bash.exec('echo "# Hello" > /test.md');
 		const result = await bash.exec('cat /test.md');

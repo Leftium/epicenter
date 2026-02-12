@@ -1,7 +1,7 @@
 import type { TableHelper } from '../static/types.js';
-import { createFileSystemIndex } from './file-system-index.js';
+import { createFileSystemIndex, type FileSystemIndex } from './file-system-index.js';
 import { posixResolve } from './path-utils.js';
-import type { FileId, FileRow, FileSystemIndex } from './types.js';
+import type { FileId, FileRow } from './types.js';
 import { generateFileId } from './types.js';
 import { assertUniqueName, fsError, validateName } from './validation.js';
 

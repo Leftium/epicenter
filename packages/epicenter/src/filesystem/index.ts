@@ -5,7 +5,7 @@ export { createContentDocStore } from './content-doc-store.js';
 // Content I/O operations
 export { ContentOps } from './content-ops.js';
 // Runtime indexes
-export { createFileSystemIndex } from './file-system-index.js';
+export { createFileSystemIndex, type FileSystemIndex } from './file-system-index.js';
 
 // File table definition
 export { filesTable } from './file-table.js';
@@ -27,7 +27,6 @@ export type {
 	ContentDocStore,
 	FileId,
 	FileRow,
-	FileSystemIndex,
 } from './types.js';
 export { generateFileId } from './types.js';
 // Validation

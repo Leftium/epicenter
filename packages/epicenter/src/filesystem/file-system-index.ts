@@ -1,5 +1,5 @@
 import type { TableHelper } from '../static/types.js';
-import type { FileId, FileRow, FileSystemIndex } from './types.js';
+import type { FileId, FileRow } from './types.js';
 import { disambiguateNames } from './validation.js';
 
 const MAX_DEPTH = 50;
@@ -8,10 +8,10 @@ const MAX_DEPTH = 50;
  * Create runtime indexes for O(1) path lookups from a files table.
  * Subscribes to filesTable.observe() for incremental updates.
  */
-export function createFileSystemIndex(
-	filesTable: TableHelper<FileRow>,
-): FileSystemIndex {
+export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
+	/** "/docs/api.md" → FileId */
 	const pathToId = new Map<string, FileId>();
+	/** parentId (null = root) → [childId, ...] */
 	const childrenOf = new Map<FileId | null, FileId[]>();
 
 	rebuild();
@@ -53,6 +53,9 @@ export function createFileSystemIndex(
 
 	return { pathToId, childrenOf, destroy: unobserve };
 }
+
+/** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */
+export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
 
 /** Walk parentId chain to compute a file's path */
 function computePath(

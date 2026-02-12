@@ -74,7 +74,6 @@ export type YSweetProviderParams = {
 
 	/** An initial client token to use (skips the first auth request if provided.) */
 	initialClientToken?: ClientToken;
-
 };
 
 async function getClientToken(

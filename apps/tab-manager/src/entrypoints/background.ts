@@ -23,10 +23,7 @@
  */
 
 import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import {
-	directAuth,
-	ySweetSync,
-} from '@epicenter/hq/extensions/y-sweet-sync';
+import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';

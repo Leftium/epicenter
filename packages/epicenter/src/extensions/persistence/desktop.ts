@@ -2,10 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import {
-	defineExports,
-	type ExtensionContext,
-} from '../../dynamic/extension';
+import { defineExports, type ExtensionContext } from '../../dynamic/extension';
 import type { Lifecycle } from '../../shared/lifecycle';
 
 /**
@@ -95,9 +92,9 @@ export const persistence = (
  * })
  * ```
  */
-export function filesystemPersistence(
-	options: { filePath: string },
-): (context: { ydoc: Y.Doc }) => Lifecycle {
+export function filesystemPersistence(options: {
+	filePath: string;
+}): (context: { ydoc: Y.Doc }) => Lifecycle {
 	return ({ ydoc }): Lifecycle => {
 		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 		const { filePath } = options;

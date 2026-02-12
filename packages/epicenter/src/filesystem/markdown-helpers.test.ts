@@ -145,7 +145,7 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return new YjsFileSystem(
+		return YjsFileSystem.create(
 			ws.tables.files as unknown as TableHelper<FileRow>,
 		);
 	}

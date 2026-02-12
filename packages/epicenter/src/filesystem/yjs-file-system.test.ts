@@ -7,7 +7,7 @@ import { YjsFileSystem } from './yjs-file-system.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return new YjsFileSystem(ws.tables.files);
+	return YjsFileSystem.create(ws.tables.files);
 }
 
 describe('YjsFileSystem', () => {
@@ -383,8 +383,10 @@ async function getTimelineLength(
 	fs: YjsFileSystem,
 	path: string,
 ): Promise<number> {
-	const id = (fs as any).index.pathToId.get(path);
-	const ydoc = await (fs as any).store.ensure(id);
+	const tree = (fs as any).tree;
+	const content = (fs as any).content;
+	const id = tree.lookupId(path);
+	const ydoc = await content.store.ensure(id);
 	return getTimeline(ydoc).length;
 }
 

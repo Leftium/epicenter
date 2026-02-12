@@ -8,6 +8,11 @@ import type {
 } from 'just-bash';
 import type { ProviderFactory } from '../dynamic/provider-types.js';
 import type { TableHelper } from '../static/types.js';
+import { ContentOps } from './content-ops.js';
+import { FileTree } from './file-tree.js';
+import { posixResolve } from './path-utils.js';
+import type { FileRow } from './types.js';
+import { disambiguateNames, fsError } from './validation.js';
 
 /** Directory entry with type information, mirroring `DirentEntry` from `just-bash` (not re-exported from package root). */
 type DirentEntry = {
@@ -17,39 +22,12 @@ type DirentEntry = {
 	isSymbolicLink: boolean;
 };
 
-import { createContentDocStore } from './content-doc-store.js';
-import { createFileSystemIndex } from './file-system-index.js';
-import {
-	getCurrentEntry,
-	getEntryMode,
-	getTimeline,
-	pushBinaryEntry,
-	pushTextEntry,
-	readEntryAsBuffer,
-	readEntryAsString,
-} from './timeline-helpers.js';
-import type {
-	ContentDocStore,
-	FileId,
-	FileRow,
-	FileSystemIndex,
-} from './types.js';
-import { generateFileId } from './types.js';
-import {
-	assertUniqueName,
-	disambiguateNames,
-	fsError,
-	validateName,
-} from './validation.js';
-
 /**
  * POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
- * File metadata (name, parent, size, timestamps) lives in a `TableHelper<FileRow>`,
- * which is a Y.Map inside the workspace's main Y.Doc. File content lives in
- * per-file Y.Docs managed by a `ContentDocStore`, using a timeline-based storage
- * model (Y.Array of entries) that supports both text (collaborative Y.Text) and
- * binary (atomic Uint8Array) content.
+ * Thin orchestrator that delegates metadata operations to {@link FileTree}
+ * and content I/O to {@link ContentOps}. Every method applies `cwd` via
+ * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * Implements the `IFileSystem` interface from `just-bash`, which allows this
  * virtual filesystem to be used as a drop-in backend for shell emulation.
@@ -59,22 +37,27 @@ import {
  * **No real permissions** — `chmod` is a validated no-op.
  */
 export class YjsFileSystem implements IFileSystem {
-	private index: FileSystemIndex & { destroy(): void };
-	private store: ContentDocStore;
-
 	constructor(
-		private filesTable: TableHelper<FileRow>,
+		private tree: FileTree,
+		private content: ContentOps,
 		private cwd: string = '/',
+	) {}
+
+	/** Convenience factory for backward-compatible construction. */
+	static create(
+		filesTable: TableHelper<FileRow>,
+		cwd?: string,
 		options?: { providers?: ProviderFactory[] },
-	) {
-		this.index = createFileSystemIndex(filesTable);
-		this.store = createContentDocStore(options?.providers);
+	): YjsFileSystem {
+		const tree = new FileTree(filesTable);
+		const content = new ContentOps(options?.providers);
+		return new YjsFileSystem(tree, content, cwd);
 	}
 
 	/** Tear down reactive indexes and release all content docs. */
 	async destroy(): Promise<void> {
-		this.index.destroy();
-		await this.store.destroyAll();
+		this.tree.destroy();
+		await this.content.destroyAll();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -82,21 +65,19 @@ export class YjsFileSystem implements IFileSystem {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	async readdir(path: string): Promise<string[]> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved);
-		this.assertDirectory(id, resolved);
-		const childIds = this.index.childrenOf.get(id) ?? [];
-		const activeChildren = this.getActiveChildren(childIds);
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.resolveId(abs);
+		this.tree.assertDirectory(id, abs);
+		const activeChildren = this.tree.activeChildren(id);
 		const displayNames = disambiguateNames(activeChildren);
 		return activeChildren.map((row) => displayNames.get(row.id)!).sort();
 	}
 
 	async readdirWithFileTypes(path: string): Promise<DirentEntry[]> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved);
-		this.assertDirectory(id, resolved);
-		const childIds = this.index.childrenOf.get(id) ?? [];
-		const activeChildren = this.getActiveChildren(childIds);
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.resolveId(abs);
+		this.tree.assertDirectory(id, abs);
+		const activeChildren = this.tree.activeChildren(id);
 		const displayNames = disambiguateNames(activeChildren);
 		return activeChildren
 			.map((row) => ({
@@ -109,8 +90,8 @@ export class YjsFileSystem implements IFileSystem {
 	}
 
 	async stat(path: string): Promise<FsStat> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		if (resolved === '/') {
+		const abs = posixResolve(this.cwd, path);
+		if (abs === '/') {
 			return {
 				isFile: false,
 				isDirectory: true,
@@ -120,8 +101,8 @@ export class YjsFileSystem implements IFileSystem {
 				mode: 0o755,
 			};
 		}
-		const id = this.resolveId(resolved)!;
-		const row = this.getRow(id, resolved);
+		const id = this.tree.resolveId(abs)!;
+		const row = this.tree.getRow(id, abs);
 		return {
 			isFile: row.type === 'file',
 			isDirectory: row.type === 'folder',
@@ -133,13 +114,12 @@ export class YjsFileSystem implements IFileSystem {
 	}
 
 	async lstat(path: string): Promise<FsStat> {
-		// No symlinks — lstat is identical to stat
 		return this.stat(path);
 	}
 
 	async exists(path: string): Promise<boolean> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		return resolved === '/' || this.index.pathToId.has(resolved);
+		const abs = posixResolve(this.cwd, path);
+		return this.tree.exists(abs);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -150,27 +130,19 @@ export class YjsFileSystem implements IFileSystem {
 		path: string,
 		_options?: { encoding?: string | null } | string,
 	): Promise<string> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved)!;
-		const row = this.getRow(id, resolved);
-		if (row.type === 'folder') throw fsError('EISDIR', resolved);
-
-		const ydoc = await this.store.ensure(id);
-		const entry = getCurrentEntry(getTimeline(ydoc));
-		if (!entry) return '';
-		return readEntryAsString(entry);
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.resolveId(abs)!;
+		const row = this.tree.getRow(id, abs);
+		if (row.type === 'folder') throw fsError('EISDIR', abs);
+		return this.content.read(id);
 	}
 
 	async readFileBuffer(path: string): Promise<Uint8Array> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved)!;
-		const row = this.getRow(id, resolved);
-		if (row.type === 'folder') throw fsError('EISDIR', resolved);
-
-		const ydoc = await this.store.ensure(id);
-		const entry = getCurrentEntry(getTimeline(ydoc));
-		if (!entry) return new Uint8Array();
-		return readEntryAsBuffer(entry);
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.resolveId(abs)!;
+		const row = this.tree.getRow(id, abs);
+		if (row.type === 'folder') throw fsError('EISDIR', abs);
+		return this.content.readBuffer(id);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -182,57 +154,25 @@ export class YjsFileSystem implements IFileSystem {
 		data: FileContent,
 		_options?: { encoding?: string } | string,
 	): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const size =
-			typeof data === 'string'
-				? new TextEncoder().encode(data).byteLength
-				: data.byteLength;
-		let id = this.index.pathToId.get(resolved);
+		const abs = posixResolve(this.cwd, path);
+		let id = this.tree.lookupId(abs);
 
 		if (id) {
-			const row = this.getRow(id, resolved);
-			if (row.type === 'folder') throw fsError('EISDIR', resolved);
+			const row = this.tree.getRow(id, abs);
+			if (row.type === 'folder') throw fsError('EISDIR', abs);
 		}
 
 		if (!id) {
-			const { parentId, name } = this.parsePath(resolved);
-			validateName(name);
-			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
-			id = generateFileId();
-			this.filesTable.set({
-				id,
-				name,
-				parentId,
-				type: 'file',
-				size,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				trashedAt: null,
-			});
+			const { parentId, name } = this.tree.parsePath(abs);
+			const size =
+				typeof data === 'string'
+					? new TextEncoder().encode(data).byteLength
+					: data.byteLength;
+			id = this.tree.create({ name, parentId, type: 'file', size });
 		}
 
-		const ydoc = await this.store.ensure(id);
-		const timeline = getTimeline(ydoc);
-		const current = getCurrentEntry(timeline);
-
-		if (typeof data === 'string') {
-			if (current && getEntryMode(current) === 'text') {
-				// Same-mode text: edit existing Y.Text in place (timeline doesn't grow)
-				const ytext = current.get('content') as import('yjs').Text;
-				ydoc.transact(() => {
-					ytext.delete(0, ytext.length);
-					ytext.insert(0, data);
-				});
-			} else {
-				// Mode switch or first write: push new text entry
-				ydoc.transact(() => pushTextEntry(timeline, data));
-			}
-		} else {
-			// Binary: always push new entry (atomic, no CRDT merge)
-			ydoc.transact(() => pushBinaryEntry(timeline, data));
-		}
-
-		this.filesTable.update(id, { size, updatedAt: Date.now() });
+		const size = await this.content.write(id, data);
+		this.tree.touch(id, size);
 	}
 
 	async appendFile(
@@ -240,44 +180,21 @@ export class YjsFileSystem implements IFileSystem {
 		data: FileContent,
 		_options?: { encoding?: string } | string,
 	): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
+		const abs = posixResolve(this.cwd, path);
 		const content =
 			typeof data === 'string' ? data : new TextDecoder().decode(data);
-		const id = this.index.pathToId.get(resolved);
-		if (!id) return this.writeFile(resolved, data, _options);
+		const id = this.tree.lookupId(abs);
+		if (!id) return this.writeFile(abs, data, _options);
 
-		const row = this.getRow(id, resolved);
-		if (row.type === 'folder') throw fsError('EISDIR', resolved);
+		const row = this.tree.getRow(id, abs);
+		if (row.type === 'folder') throw fsError('EISDIR', abs);
 
-		const ydoc = await this.store.ensure(id);
-		const timeline = getTimeline(ydoc);
-		const current = getCurrentEntry(timeline);
-
-		if (current && getEntryMode(current) === 'text') {
-			// Incremental append to existing Y.Text
-			const ytext = current.get('content') as import('yjs').Text;
-			ydoc.transact(() => ytext.insert(ytext.length, content));
-		} else if (current && getEntryMode(current) === 'binary') {
-			// Binary entry: decode existing, concat, push new text entry
-			const existing = new TextDecoder().decode(
-				current.get('content') as Uint8Array,
-			);
-			ydoc.transact(() => pushTextEntry(timeline, existing + content));
-		} else {
-			// No current entry: same as writeFile
+		const newSize = await this.content.append(id, content);
+		if (newSize === null) {
 			await this.writeFile(path, data);
 			return;
 		}
-
-		// Size from current entry's full content
-		const updatedEntry = getCurrentEntry(timeline)!;
-		const newSize =
-			getEntryMode(updatedEntry) === 'text'
-				? new TextEncoder().encode(
-						(updatedEntry.get('content') as import('yjs').Text).toString(),
-					).byteLength
-				: (updatedEntry.get('content') as Uint8Array).byteLength;
-		this.filesTable.update(id, { size: newSize, updatedAt: Date.now() });
+		this.tree.touch(id, newSize);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -285,98 +202,75 @@ export class YjsFileSystem implements IFileSystem {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	async mkdir(path: string, options?: MkdirOptions): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		if (await this.exists(resolved)) {
-			const existingId = this.index.pathToId.get(resolved);
+		const abs = posixResolve(this.cwd, path);
+		if (this.tree.exists(abs)) {
+			const existingId = this.tree.lookupId(abs);
 			if (existingId) {
-				const row = this.getRow(existingId, resolved);
-				if (row.type === 'file') throw fsError('EEXIST', resolved);
+				const row = this.tree.getRow(existingId, abs);
+				if (row.type === 'file') throw fsError('EEXIST', abs);
 			}
-			return; // existing directory — no-op
+			return;
 		}
 
 		if (options?.recursive) {
-			// Create all missing ancestors from root down
-			const parts = resolved.split('/').filter(Boolean);
+			const parts = abs.split('/').filter(Boolean);
 			let currentPath = '';
 			for (const part of parts) {
 				currentPath += '/' + part;
-				if (await this.exists(currentPath)) {
-					const existingId = this.index.pathToId.get(currentPath);
+				if (this.tree.exists(currentPath)) {
+					const existingId = this.tree.lookupId(currentPath);
 					if (existingId) {
-						const existingRow = this.getRow(existingId, currentPath);
+						const existingRow = this.tree.getRow(existingId, currentPath);
 						if (existingRow.type === 'file')
 							throw fsError('ENOTDIR', currentPath);
 					}
 					continue;
 				}
-				validateName(part);
-				const { parentId } = this.parsePath(currentPath);
-				assertUniqueName(
-					this.filesTable,
-					this.index.childrenOf,
-					parentId,
-					part,
-				);
-				this.filesTable.set({
-					id: generateFileId(),
+				const { parentId } = this.tree.parsePath(currentPath);
+				this.tree.create({
 					name: part,
 					parentId,
 					type: 'folder',
 					size: 0,
-					createdAt: Date.now(),
-					updatedAt: Date.now(),
-					trashedAt: null,
 				});
 			}
 		} else {
-			const { parentId, name } = this.parsePath(resolved);
-			validateName(name);
-			assertUniqueName(this.filesTable, this.index.childrenOf, parentId, name);
-			this.filesTable.set({
-				id: generateFileId(),
-				name,
-				parentId,
-				type: 'folder',
-				size: 0,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				trashedAt: null,
-			});
+			const { parentId, name } = this.tree.parsePath(abs);
+			this.tree.create({ name, parentId, type: 'folder', size: 0 });
 		}
 	}
 
 	async rm(path: string, options?: RmOptions): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.index.pathToId.get(resolved);
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.lookupId(abs);
 		if (!id) {
 			if (options?.force) return;
-			throw fsError('ENOENT', resolved);
+			throw fsError('ENOENT', abs);
 		}
-		const row = this.getRow(id, resolved);
+		const row = this.tree.getRow(id, abs);
 
 		if (row.type === 'folder' && !options?.recursive) {
-			const children = this.index.childrenOf.get(id) ?? [];
-			const activeChildren = this.getActiveChildren(children);
-			if (activeChildren.length > 0) throw fsError('ENOTEMPTY', resolved);
+			if (this.tree.activeChildren(id).length > 0)
+				throw fsError('ENOTEMPTY', abs);
 		}
 
-		// Soft delete
-		this.filesTable.update(id, { trashedAt: Date.now() });
-		await this.store.destroy(id);
+		this.tree.softDelete(id);
+		await this.content.destroy(id);
 
-		// If recursive, soft-delete children too
 		if (row.type === 'folder' && options?.recursive) {
-			await this.softDeleteDescendants(id);
+			for (const did of this.tree.descendantIds(id)) {
+				this.tree.softDelete(did);
+				await this.content.destroy(did);
+			}
 		}
 	}
 
 	async cp(src: string, dest: string, options?: CpOptions): Promise<void> {
-		const resolvedSrc = YjsFileSystem.posixResolve(this.cwd, src);
-		const resolvedDest = YjsFileSystem.posixResolve(this.cwd, dest);
-		const srcId = this.resolveId(resolvedSrc);
+		const resolvedSrc = posixResolve(this.cwd, src);
+		const resolvedDest = posixResolve(this.cwd, dest);
+		const srcId = this.tree.resolveId(resolvedSrc);
 		if (srcId === null) throw fsError('EISDIR', resolvedSrc);
-		const srcRow = this.getRow(srcId, resolvedSrc);
+		const srcRow = this.tree.getRow(srcId, resolvedSrc);
 
 		if (srcRow.type === 'folder') {
 			if (!options?.recursive) throw fsError('EISDIR', resolvedSrc);
@@ -390,41 +284,35 @@ export class YjsFileSystem implements IFileSystem {
 				);
 			}
 		} else {
-			// Read from source timeline entry, write via writeFile
-			const srcDoc = await this.store.ensure(srcId);
-			const entry = getCurrentEntry(getTimeline(srcDoc));
-			if (!entry) {
+			const srcBuffer = await this.content.readBuffer(srcId);
+			const srcText = await this.content.read(srcId);
+			if (srcText === '' && srcBuffer.length === 0) {
 				await this.writeFile(resolvedDest, '');
-			} else if (getEntryMode(entry) === 'binary') {
-				await this.writeFile(resolvedDest, entry.get('content') as Uint8Array);
 			} else {
-				await this.writeFile(resolvedDest, readEntryAsString(entry));
+				// Check if content is binary by comparing text encoding roundtrip
+				const textBytes = new TextEncoder().encode(srcText);
+				const isBinary =
+					srcBuffer.length > 0 &&
+					(srcBuffer.length !== textBytes.length ||
+						!srcBuffer.every((b, i) => b === textBytes[i]));
+				if (isBinary) {
+					await this.writeFile(resolvedDest, srcBuffer);
+				} else {
+					await this.writeFile(resolvedDest, srcText);
+				}
 			}
 		}
 	}
 
 	async mv(src: string, dest: string): Promise<void> {
-		const resolvedSrc = YjsFileSystem.posixResolve(this.cwd, src);
-		const resolvedDest = YjsFileSystem.posixResolve(this.cwd, dest);
-		const id = this.resolveId(resolvedSrc);
+		const resolvedSrc = posixResolve(this.cwd, src);
+		const resolvedDest = posixResolve(this.cwd, dest);
+		const id = this.tree.resolveId(resolvedSrc);
 		if (id === null) throw fsError('EISDIR', resolvedSrc);
-		this.getRow(id, resolvedSrc); // validate exists
+		this.tree.getRow(id, resolvedSrc);
 		const { parentId: newParentId, name: newName } =
-			this.parsePath(resolvedDest);
-		validateName(newName);
-		assertUniqueName(
-			this.filesTable,
-			this.index.childrenOf,
-			newParentId,
-			newName,
-			id,
-		);
-
-		this.filesTable.update(id, {
-			name: newName,
-			parentId: newParentId,
-			updatedAt: Date.now(),
-		});
+			this.tree.parsePath(resolvedDest);
+		this.tree.move(id, newParentId, newName);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -432,17 +320,17 @@ export class YjsFileSystem implements IFileSystem {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	resolvePath(base: string, path: string): string {
-		return YjsFileSystem.posixResolve(base, path);
+		return posixResolve(base, path);
 	}
 
 	async realpath(path: string): Promise<string> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		if (!(await this.exists(resolved))) throw fsError('ENOENT', resolved);
-		return resolved;
+		const abs = posixResolve(this.cwd, path);
+		if (!(await this.exists(abs))) throw fsError('ENOENT', abs);
+		return abs;
 	}
 
 	getAllPaths(): string[] {
-		return Array.from(this.index.pathToId.keys());
+		return this.tree.allPaths();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -450,15 +338,15 @@ export class YjsFileSystem implements IFileSystem {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	async chmod(path: string, _mode: number): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		this.resolveId(resolved); // throws ENOENT if doesn't exist
+		const abs = posixResolve(this.cwd, path);
+		this.tree.resolveId(abs);
 	}
 
 	async utimes(path: string, _atime: Date, mtime: Date): Promise<void> {
-		const resolved = YjsFileSystem.posixResolve(this.cwd, path);
-		const id = this.resolveId(resolved);
-		if (id === null) return; // root has no metadata to update
-		this.filesTable.update(id, { updatedAt: mtime.getTime() });
+		const abs = posixResolve(this.cwd, path);
+		const id = this.tree.resolveId(abs);
+		if (id === null) return;
+		this.tree.setMtime(id, mtime);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -475,105 +363,5 @@ export class YjsFileSystem implements IFileSystem {
 
 	async readlink(): Promise<string> {
 		throw fsError('ENOSYS', 'symlinks not supported');
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PRIVATE — path & ID resolution
-	// ═══════════════════════════════════════════════════════════════════════
-
-	/**
-	 * Resolve a POSIX-style path the same way `path.resolve` does in Node:
-	 * absolute paths are used as-is, relative paths are joined onto `base`,
-	 * and `.` / `..` segments are normalized away.
-	 */
-	private static posixResolve(base: string, path: string): string {
-		const resolved = path.startsWith('/')
-			? path
-			: base.replace(/\/$/, '') + '/' + path;
-		const parts = resolved.split('/');
-		const stack: string[] = [];
-		for (const part of parts) {
-			if (part === '' || part === '.') continue;
-			if (part === '..') {
-				stack.pop();
-			} else {
-				stack.push(part);
-			}
-		}
-		return '/' + stack.join('/');
-	}
-
-	/**
-	 * Look up the `FileId` for a resolved absolute path.
-	 * Returns `null` for the root path `/` (which has no table row).
-	 * @throws ENOENT if the path doesn't exist in the index.
-	 */
-	private resolveId(path: string): FileId | null {
-		if (path === '/') return null;
-		const id = this.index.pathToId.get(path);
-		if (!id) throw fsError('ENOENT', path);
-		return id;
-	}
-
-	/**
-	 * Fetch the `FileRow` for a given ID, throwing ENOENT if it's been
-	 * deleted or is otherwise invalid.
-	 */
-	private getRow(id: FileId, path: string): FileRow {
-		const result = this.filesTable.get(id);
-		if (result.status !== 'valid') throw fsError('ENOENT', path);
-		return result.row;
-	}
-
-	/**
-	 * Split an absolute path into its parent ID and base name.
-	 * @throws ENOENT if the parent directory doesn't exist.
-	 */
-	private parsePath(path: string): { parentId: FileId | null; name: string } {
-		const normalized = YjsFileSystem.posixResolve(this.cwd, path);
-		const lastSlash = normalized.lastIndexOf('/');
-		const name = normalized.substring(lastSlash + 1);
-		const parentPath = normalized.substring(0, lastSlash) || '/';
-		if (parentPath === '/') return { parentId: null, name };
-		const parentId = this.index.pathToId.get(parentPath);
-		if (!parentId) throw fsError('ENOENT', parentPath);
-		return { parentId, name };
-	}
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// PRIVATE — tree queries
-	// ═══════════════════════════════════════════════════════════════════════
-
-	/** Assert that a resolved ID points to a directory (root `/` always passes). */
-	private assertDirectory(id: FileId | null, path: string): void {
-		if (id === null) return;
-		const row = this.getRow(id, path);
-		if (row.type !== 'folder') throw fsError('ENOTDIR', path);
-	}
-
-	/** Filter a list of child IDs down to non-trashed, valid rows. */
-	private getActiveChildren(childIds: FileId[]): FileRow[] {
-		const rows: FileRow[] = [];
-		for (const cid of childIds) {
-			const result = this.filesTable.get(cid);
-			if (result.status === 'valid' && result.row.trashedAt === null) {
-				rows.push(result.row);
-			}
-		}
-		return rows;
-	}
-
-	/** Recursively soft-delete all descendants of a folder. */
-	private async softDeleteDescendants(parentId: FileId): Promise<void> {
-		const children = this.index.childrenOf.get(parentId) ?? [];
-		for (const cid of children) {
-			const result = this.filesTable.get(cid);
-			if (result.status !== 'valid' || result.row.trashedAt !== null) continue;
-			this.filesTable.update(cid, { trashedAt: Date.now() });
-			await this.store.destroy(cid);
-			if (result.row.type === 'folder') {
-				await this.softDeleteDescendants(cid);
-			}
-		}
 	}
 }

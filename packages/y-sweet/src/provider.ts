@@ -64,7 +64,7 @@ type WebSocketPolyfillType = {
 	readonly OPEN: number;
 };
 
-export type AuthEndpoint = string | (() => Promise<ClientToken>);
+export type AuthEndpoint = () => Promise<ClientToken>;
 
 export type YSweetProviderParams = {
 	/** Whether to connect to the websocket on creation (otherwise use `connect()`) */
@@ -83,41 +83,10 @@ export type YSweetProviderParams = {
 	offlineSupport?: boolean;
 };
 
-function validateClientToken(clientToken: ClientToken, docId: string) {
-	if (clientToken.docId !== docId) {
-		throw new Error(
-			`ClientToken docId does not match YSweetProvider docId: ${clientToken.docId} !== ${docId}`,
-		);
-	}
-}
-
 async function getClientToken(
 	authEndpoint: AuthEndpoint,
-	docId: string,
 ): Promise<ClientToken> {
-	if (typeof authEndpoint === 'function') {
-		const clientToken = await authEndpoint();
-		validateClientToken(clientToken, docId);
-		return clientToken;
-	}
-
-	const body = JSON.stringify({ docId: docId });
-	const res = await fetch(authEndpoint, {
-		method: 'POST',
-		body,
-		headers: { 'Content-Type': 'application/json' },
-	});
-
-	if (!res.ok) {
-		throw new Error(
-			`Failed to get client token: ${res.status} ${res.statusText}`,
-		);
-	}
-
-	const clientToken = await res.json();
-	validateClientToken(clientToken, docId);
-
-	return clientToken;
+	return authEndpoint();
 }
 
 export class YSweetProvider {
@@ -151,13 +120,12 @@ export class YSweetProvider {
 
 	constructor(
 		private authEndpoint: AuthEndpoint,
-		private docId: string,
+		docId: string,
 		private doc: Y.Doc,
 		extraOptions: Partial<YSweetProviderParams> = {},
 	) {
 		if (extraOptions.initialClientToken) {
 			this.clientToken = extraOptions.initialClientToken;
-			validateClientToken(this.clientToken, this.docId);
 		}
 
 		this.awareness = new awarenessProtocol.Awareness(doc);
@@ -293,15 +261,6 @@ export class YSweetProvider {
 			return;
 		}
 
-		// If we made it here, the update came from local changes.
-		// Warn if the client holds a read-only token.
-		const authorization = this.clientToken?.authorization;
-		if (authorization === 'read-only') {
-			console.warn(
-				'Client with read-only authorization attempted to write to the Yjs document. These changes may appear locally, but they will not be applied to the shared document.',
-			);
-		}
-
 		const encoder = encoding.createEncoder();
 		encoding.writeVarUint(encoder, MESSAGE_SYNC);
 		syncProtocol.writeUpdate(encoder, update);
@@ -325,7 +284,7 @@ export class YSweetProvider {
 
 	private async ensureClientToken(): Promise<ClientToken> {
 		if (this.clientToken === null) {
-			this.clientToken = await getClientToken(this.authEndpoint, this.docId);
+			this.clientToken = await getClientToken(this.authEndpoint);
 		}
 		return this.clientToken;
 	}
@@ -437,13 +396,10 @@ export class YSweetProvider {
 		this.websocket.onerror = this.websocketError.bind(this);
 	}
 
-	generateUrl(clientToken: ClientToken) {
+	private generateUrl(clientToken: ClientToken): string {
+		if (!clientToken.token) return clientToken.url;
 		const url = new URL(clientToken.url);
-		if (!url.pathname.endsWith('/')) url.pathname += '/';
-		url.pathname += clientToken.docId;
-		if (clientToken.token) {
-			url.searchParams.set('token', clientToken.token);
-		}
+		url.searchParams.set('token', clientToken.token);
 		return url.toString();
 	}
 

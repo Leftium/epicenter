@@ -24,7 +24,7 @@ export {
 };
 export type { AuthEndpoint, YSweetProviderParams, YSweetStatus };
 
-export type { AuthDocRequest, Authorization, ClientToken } from './types';
+export type { ClientToken } from './types';
 
 /**
  * Given a docId and {@link AuthEndpoint}, create a {@link YSweetProvider} for it.

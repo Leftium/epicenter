@@ -60,14 +60,9 @@ export type YSweetDirectConfig = {
 export type YSweetAuthenticatedConfig = {
 	mode: 'authenticated';
 	/**
-	 * Auth endpoint that returns a ClientToken.
+	 * Auth endpoint function that returns a ClientToken.
 	 *
-	 * @example String URL (extension POSTs to get token)
-	 * ```typescript
-	 * authEndpoint: 'https://api.epicenter.app/y-sweet/auth'
-	 * ```
-	 *
-	 * @example Async function (custom auth logic)
+	 * @example
 	 * ```typescript
 	 * authEndpoint: async () => {
 	 *   const token = await getStoredAuthToken();
@@ -80,7 +75,7 @@ export type YSweetAuthenticatedConfig = {
 	 * }
 	 * ```
 	 */
-	authEndpoint: string | (() => Promise<ClientToken>);
+	authEndpoint: () => Promise<ClientToken>;
 };
 
 /**
@@ -179,9 +174,7 @@ function buildAuthEndpoint(
 			return async () => createDirectClientToken(config.serverUrl, docId);
 
 		case 'authenticated':
-			return typeof config.authEndpoint === 'function'
-				? config.authEndpoint
-				: createAuthFetcher(config.authEndpoint, docId);
+			return config.authEndpoint;
 
 		default: {
 			const _exhaustive: never = config;
@@ -190,23 +183,6 @@ function buildAuthEndpoint(
 			);
 		}
 	}
-}
-
-/**
- * Create an auth fetcher that POSTs to the given URL to get a ClientToken.
- */
-function createAuthFetcher(authUrl: string, docId: string): AuthEndpoint {
-	return async () => {
-		const res = await fetch(authUrl, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ docId }),
-		});
-		if (!res.ok) {
-			throw new Error(`Y-Sweet auth failed: ${res.status} ${res.statusText}`);
-		}
-		return res.json() as Promise<ClientToken>;
-	};
 }
 
 /**
@@ -225,8 +201,6 @@ function createDirectClientToken(
 
 	return {
 		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-		baseUrl: `${url.protocol}//${url.host}`,
-		docId,
 		token: undefined,
 	};
 }

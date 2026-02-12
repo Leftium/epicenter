@@ -30,9 +30,7 @@ export function createYSweetConnection(
 	// Create provider with direct connection info
 	const provider = createYjsProvider(ydoc, workspaceId, async () => ({
 		url: `${serverUrl.replace('http', 'ws')}/d/${workspaceId}/ws`,
-		baseUrl: serverUrl,
-		docId: workspaceId,
-		token: undefined, // No auth in direct mode
+		token: undefined,
 	}));
 
 	// Create sync promise

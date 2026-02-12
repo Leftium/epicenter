@@ -83,14 +83,11 @@ describe('createContentDocStore', () => {
 describe('with providers', () => {
 	test('ensure runs provider factories and awaits whenSynced', async () => {
 		let factoryCallCount = 0;
-		let resolveSync!: () => void;
-		const syncPromise = new Promise<void>((r) => {
-			resolveSync = r;
-		});
+		const { promise: whenSynced, resolve } = Promise.withResolvers<void>();
 
 		const mockProvider: ProviderFactory = () => {
 			factoryCallCount++;
-			return defineExports({ whenSynced: syncPromise });
+			return defineExports({ whenSynced });
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -108,7 +105,7 @@ describe('with providers', () => {
 		expect(resolved).toBe(false);
 
 		// Resolve sync
-		resolveSync();
+		resolve();
 		const ydoc = await ensurePromise;
 		expect(ydoc).toBeInstanceOf(Y.Doc);
 		expect(ydoc.guid).toBe('file-1');

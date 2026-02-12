@@ -61,7 +61,7 @@ export type YSweetSyncConfig = {
 	 *
 	 * @example
 	 * ```typescript
-	 * persistence: indexeddbPersistence({ dbName: 'my-app' })
+	 * persistence: indexeddbPersistence()
 	 * persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' })
 	 * persistence: (ydoc) => ({ whenSynced: Promise.resolve(), destroy: () => {} })
 	 * ```
@@ -142,17 +142,17 @@ export function directAuth(
 }
 
 function waitForConnected(provider: YSweetProvider): Promise<void> {
-	return new Promise<void>((resolve) => {
-		if (provider.status === STATUS_CONNECTED) {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	if (provider.status === STATUS_CONNECTED) {
+		resolve();
+		return promise;
+	}
+	const handleStatus = (status: string) => {
+		if (status === STATUS_CONNECTED) {
+			provider.off('connection-status', handleStatus);
 			resolve();
-			return;
 		}
-		const handleStatus = (status: string) => {
-			if (status === STATUS_CONNECTED) {
-				provider.off('connection-status', handleStatus);
-				resolve();
-			}
-		};
-		provider.on('connection-status', handleStatus);
-	});
+	};
+	provider.on('connection-status', handleStatus);
+	return promise;
 }

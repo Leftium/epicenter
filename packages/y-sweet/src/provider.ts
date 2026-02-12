@@ -269,21 +269,19 @@ export class YSweetProvider {
 	 * Returns a promise that resolves to true if the connection was successful, or false if the connection failed.
 	 */
 	private attemptToConnect(clientToken: ClientToken): Promise<boolean> {
-		let promise = new Promise<boolean>((resolve) => {
-			let statusListener = (event: YSweetStatus) => {
-				if (event === STATUS_CONNECTED) {
-					this.off(EVENT_CONNECTION_STATUS, statusListener);
-					resolve(true);
-				} else if (event === STATUS_ERROR) {
-					this.off(EVENT_CONNECTION_STATUS, statusListener);
-					resolve(false);
-				}
-			};
+		const { promise, resolve } = Promise.withResolvers<boolean>();
+		const statusListener = (event: YSweetStatus) => {
+			if (event === STATUS_CONNECTED) {
+				this.off(EVENT_CONNECTION_STATUS, statusListener);
+				resolve(true);
+			} else if (event === STATUS_ERROR) {
+				this.off(EVENT_CONNECTION_STATUS, statusListener);
+				resolve(false);
+			}
+		};
+		this.on(EVENT_CONNECTION_STATUS, statusListener);
 
-			this.on(EVENT_CONNECTION_STATUS, statusListener);
-		});
-
-		let url = this.generateUrl(clientToken);
+		const url = this.generateUrl(clientToken);
 		this.setStatus(STATUS_CONNECTING);
 		const websocket = new (this.WebSocketPolyfill || WebSocket)(url);
 		this.bindWebsocket(websocket);

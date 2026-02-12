@@ -34,19 +34,18 @@ export function createYSweetConnection(
 	}));
 
 	// Create sync promise
-	const whenSynced = new Promise<void>((resolve) => {
-		if (provider.status === 'connected') {
-			resolve();
-		} else {
-			const handleStatus = (status: string) => {
-				if (status === 'connected') {
-					provider.off('connection-status', handleStatus);
-					resolve();
-				}
-			};
-			provider.on('connection-status', handleStatus);
-		}
-	});
+	const { promise: whenSynced, resolve } = Promise.withResolvers<void>();
+	if (provider.status === 'connected') {
+		resolve();
+	} else {
+		const handleStatus = (status: string) => {
+			if (status === 'connected') {
+				provider.off('connection-status', handleStatus);
+				resolve();
+			}
+		};
+		provider.on('connection-status', handleStatus);
+	}
 
 	const destroy = () => {
 		provider.destroy();

@@ -201,8 +201,6 @@ function createDirectClientToken(
 
 	return {
 		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-		baseUrl: `${url.protocol}//${url.host}`,
-		docId,
 		token: undefined,
 	};
 }

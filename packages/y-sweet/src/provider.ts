@@ -83,21 +83,10 @@ export type YSweetProviderParams = {
 	offlineSupport?: boolean;
 };
 
-function validateClientToken(clientToken: ClientToken, docId: string) {
-	if (clientToken.docId !== docId) {
-		throw new Error(
-			`ClientToken docId does not match YSweetProvider docId: ${clientToken.docId} !== ${docId}`,
-		);
-	}
-}
-
 async function getClientToken(
 	authEndpoint: AuthEndpoint,
-	docId: string,
 ): Promise<ClientToken> {
-	const clientToken = await authEndpoint();
-	validateClientToken(clientToken, docId);
-	return clientToken;
+	return authEndpoint();
 }
 
 export class YSweetProvider {
@@ -131,13 +120,12 @@ export class YSweetProvider {
 
 	constructor(
 		private authEndpoint: AuthEndpoint,
-		private docId: string,
+		docId: string,
 		private doc: Y.Doc,
 		extraOptions: Partial<YSweetProviderParams> = {},
 	) {
 		if (extraOptions.initialClientToken) {
 			this.clientToken = extraOptions.initialClientToken;
-			validateClientToken(this.clientToken, this.docId);
 		}
 
 		this.awareness = new awarenessProtocol.Awareness(doc);
@@ -296,7 +284,7 @@ export class YSweetProvider {
 
 	private async ensureClientToken(): Promise<ClientToken> {
 		if (this.clientToken === null) {
-			this.clientToken = await getClientToken(this.authEndpoint, this.docId);
+			this.clientToken = await getClientToken(this.authEndpoint);
 		}
 		return this.clientToken;
 	}
@@ -408,13 +396,10 @@ export class YSweetProvider {
 		this.websocket.onerror = this.websocketError.bind(this);
 	}
 
-	generateUrl(clientToken: ClientToken) {
+	private generateUrl(clientToken: ClientToken): string {
+		if (!clientToken.token) return clientToken.url;
 		const url = new URL(clientToken.url);
-		if (!url.pathname.endsWith('/')) url.pathname += '/';
-		url.pathname += clientToken.docId;
-		if (clientToken.token) {
-			url.searchParams.set('token', clientToken.token);
-		}
+		url.searchParams.set('token', clientToken.token);
 		return url.toString();
 	}
 

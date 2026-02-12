@@ -1,36 +1,13 @@
 /**
- * An object containing information needed for the client connect to a document.
+ * An object containing information needed for the client to connect to a document.
  *
- * This value is expected to be passed from your server to your client. Your server
- * should obtain this value by calling {@link DocumentManager.getClientToken},
- * and then pass it to the client.
+ * The `url` field is the **fully-formed** WebSocket URL with the docId already
+ * in the path. The provider does not append anything to it.
  */
 export type ClientToken = {
-	/** The bare URL of the WebSocket endpoint to connect to. The `doc` string will be appended to this. */
+	/** Fully-formed WebSocket URL (docId already in path). */
 	url: string;
 
-	/** The base URL for document-level endpoints. */
-	baseUrl: string;
-
-	/** A unique identifier for the document that the token connects to. */
-	docId: string;
-
-	/** A string that grants the bearer access to the document. By default, the development server does not require a token. */
+	/** Optional auth token (appended as ?token=xxx). */
 	token?: string;
-
-	/** The authorization level of the client. */
-	authorization?: Authorization;
-};
-
-export type Authorization = 'full' | 'read-only';
-
-export type AuthDocRequest = {
-	/** The authorization level to use for the document. Defaults to 'full'. */
-	authorization?: Authorization;
-
-	/** A user ID to associate with the token. Not currently used. */
-	userId?: string;
-
-	/** The number of seconds the token should be valid for. */
-	validForSeconds?: number;
 };

@@ -6,4 +6,4 @@
  * in package.json exports. Despite the filename, this targets Bun runtime
  * specifically (uses Bun.file API for reading).
  */
-export { type PersistenceConfig, persistence } from './desktop.js';
+export { filesystemPersistence, type PersistenceConfig, persistence } from './desktop.js';

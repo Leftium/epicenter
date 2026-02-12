@@ -40,13 +40,13 @@ export function createYSweetConnection(
 		if (provider.status === 'connected') {
 			resolve();
 		} else {
-			const handleSync = (synced: boolean) => {
-				if (synced) {
-					provider.off('sync', handleSync);
+			const handleStatus = (status: string) => {
+				if (status === 'connected') {
+					provider.off('connection-status', handleStatus);
 					resolve();
 				}
 			};
-			provider.on('sync', handleSync);
+			provider.on('connection-status', handleStatus);
 		}
 	});
 

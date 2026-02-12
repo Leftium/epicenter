@@ -293,15 +293,6 @@ export class YSweetProvider {
 			return;
 		}
 
-		// If we made it here, the update came from local changes.
-		// Warn if the client holds a read-only token.
-		const authorization = this.clientToken?.authorization;
-		if (authorization === 'read-only') {
-			console.warn(
-				'Client with read-only authorization attempted to write to the Yjs document. These changes may appear locally, but they will not be applied to the shared document.',
-			);
-		}
-
 		const encoder = encoding.createEncoder();
 		encoding.writeVarUint(encoder, MESSAGE_SYNC);
 		syncProtocol.writeUpdate(encoder, update);

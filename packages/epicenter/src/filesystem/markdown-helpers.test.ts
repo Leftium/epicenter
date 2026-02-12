@@ -4,8 +4,6 @@ import { Bash } from 'just-bash';
 import { createWorkspace } from '../static/create-workspace.js';
 import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
-import { createFileSystemIndex } from './file-system-index.js';
-import { createContentDocStore } from './content-doc-store.js';
 import { YjsFileSystem } from './yjs-file-system.js';
 import type { FileRow } from './types.js';
 import {
@@ -145,10 +143,8 @@ describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
 		const files = ws.tables.files as unknown as TableHelper<FileRow>;
-		const index = createFileSystemIndex(files);
-		const store = createContentDocStore();
-		const fs = new YjsFileSystem(files, index, store);
-		return { ws, files, index, store, fs };
+		const fs = new YjsFileSystem(files);
+		return { ws, files, fs };
 	}
 
 	test('write and read .md file with front matter', async () => {

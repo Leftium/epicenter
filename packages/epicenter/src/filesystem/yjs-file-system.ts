@@ -1,5 +1,7 @@
 import type { CpOptions, FileContent, FsStat, IFileSystem, MkdirOptions, RmOptions } from 'just-bash';
 import type { TableHelper } from '../static/types.js';
+import { createContentDocStore } from './content-doc-store.js';
+import { createFileSystemIndex } from './file-system-index.js';
 import type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
 import { generateFileId } from './types.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
@@ -31,13 +33,21 @@ function posixResolve(base: string, path: string): string {
 
 export class YjsFileSystem implements IFileSystem {
 	private binaryStore = new Map<FileId, Uint8Array>();
+	private index: FileSystemIndex & { destroy(): void };
+	private store: ContentDocStore;
 
 	constructor(
 		private filesTable: TableHelper<FileRow>,
-		private index: FileSystemIndex,
-		private store: ContentDocStore,
 		private cwd: string = '/',
-	) {}
+	) {
+		this.index = createFileSystemIndex(filesTable);
+		this.store = createContentDocStore();
+	}
+
+	destroy(): void {
+		this.index.destroy();
+		this.store.destroyAll();
+	}
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// READS (metadata only — fast)

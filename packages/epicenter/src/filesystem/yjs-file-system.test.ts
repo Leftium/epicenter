@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Bash } from 'just-bash';
 import { createWorkspace } from '../static/create-workspace.js';
 import { filesTable } from './file-table.js';
+import { getTimeline } from './timeline-helpers.js';
 import { YjsFileSystem } from './yjs-file-system.js';
 
 function setup() {
@@ -367,6 +368,109 @@ describe('mv preserves content (no conversion)', () => {
 		await fs.writeFile('/doc.md', '# Hello World\n');
 		await fs.mv('/doc.md', '/doc.txt');
 		expect(await fs.readFile('/doc.txt')).toBe('# Hello World\n');
+	});
+});
+
+function getTimelineLength(fs: YjsFileSystem, path: string): number {
+	const id = (fs as any).index.pathToId.get(path);
+	const ydoc = (fs as any).store.ensure(id);
+	return getTimeline(ydoc).length;
+}
+
+describe('timeline content storage', () => {
+	test('binary file persistence (write binary, read back)', async () => {
+		const fs = setup();
+		const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG header
+		await fs.writeFile('/image.png', data);
+		expect(await fs.readFileBuffer('/image.png')).toEqual(data);
+		expect(await fs.readFile('/image.png')).toBe(new TextDecoder().decode(data));
+	});
+
+	test('mode switching: text → binary → text', async () => {
+		const fs = setup();
+		await fs.writeFile('/file.dat', 'hello text');
+		expect(await fs.readFile('/file.dat')).toBe('hello text');
+
+		const binary = new Uint8Array([0xde, 0xad]);
+		await fs.writeFile('/file.dat', binary);
+		expect(await fs.readFileBuffer('/file.dat')).toEqual(binary);
+
+		await fs.writeFile('/file.dat', 'back to text');
+		expect(await fs.readFile('/file.dat')).toBe('back to text');
+	});
+
+	test('mode switching: binary → text', async () => {
+		const fs = setup();
+		const binary = new Uint8Array([0x01, 0x02, 0x03]);
+		await fs.writeFile('/file.bin', binary);
+		await fs.writeFile('/file.bin', 'now text');
+		expect(await fs.readFile('/file.bin')).toBe('now text');
+	});
+
+	test('text append (appendFile on text entry)', async () => {
+		const fs = setup();
+		await fs.writeFile('/log.txt', 'line1\n');
+		await fs.appendFile('/log.txt', 'line2\n');
+		expect(await fs.readFile('/log.txt')).toBe('line1\nline2\n');
+		// Append to text should not grow timeline
+		expect(getTimelineLength(fs, '/log.txt')).toBe(1);
+	});
+
+	test('binary append (appendFile on binary entry becomes text)', async () => {
+		const fs = setup();
+		const binary = new Uint8Array([0x48, 0x69]); // "Hi"
+		await fs.writeFile('/file.bin', binary);
+		await fs.appendFile('/file.bin', ' there');
+		expect(await fs.readFile('/file.bin')).toBe('Hi there');
+		// Binary append pushes a new text entry
+		expect(getTimelineLength(fs, '/file.bin')).toBe(2);
+	});
+
+	test('timeline inspection: entry count after mode switches', async () => {
+		const fs = setup();
+		// First write: text entry [0]
+		await fs.writeFile('/file.dat', 'text v1');
+		expect(getTimelineLength(fs, '/file.dat')).toBe(1);
+
+		// Binary write: new entry [1]
+		await fs.writeFile('/file.dat', new Uint8Array([1, 2, 3]));
+		expect(getTimelineLength(fs, '/file.dat')).toBe(2);
+
+		// Back to text: new entry [2]
+		await fs.writeFile('/file.dat', 'text v2');
+		expect(getTimelineLength(fs, '/file.dat')).toBe(3);
+	});
+
+	test('same-mode text overwrite does NOT grow timeline', async () => {
+		const fs = setup();
+		await fs.writeFile('/file.txt', 'first');
+		await fs.writeFile('/file.txt', 'second');
+		await fs.writeFile('/file.txt', 'third');
+		expect(await fs.readFile('/file.txt')).toBe('third');
+		expect(getTimelineLength(fs, '/file.txt')).toBe(1);
+	});
+
+	test('same-mode binary overwrite DOES grow timeline', async () => {
+		const fs = setup();
+		await fs.writeFile('/file.bin', new Uint8Array([1]));
+		await fs.writeFile('/file.bin', new Uint8Array([2]));
+		await fs.writeFile('/file.bin', new Uint8Array([3]));
+		expect(await fs.readFileBuffer('/file.bin')).toEqual(new Uint8Array([3]));
+		expect(getTimelineLength(fs, '/file.bin')).toBe(3);
+	});
+
+	test('readFileBuffer returns correct bytes for text entry', async () => {
+		const fs = setup();
+		await fs.writeFile('/file.txt', 'hello');
+		const buf = await fs.readFileBuffer('/file.txt');
+		expect(buf).toEqual(new TextEncoder().encode('hello'));
+	});
+
+	test('readFileBuffer returns correct bytes for binary entry', async () => {
+		const fs = setup();
+		const data = new Uint8Array([0xff, 0xfe, 0xfd]);
+		await fs.writeFile('/file.bin', data);
+		expect(await fs.readFileBuffer('/file.bin')).toEqual(data);
 	});
 });
 

@@ -24,7 +24,6 @@ export {
 };
 export type { AuthEndpoint, YSweetProviderParams, YSweetStatus };
 
-export { decodeClientToken, encodeClientToken } from './encoding';
 export type { AuthDocRequest, Authorization, ClientToken } from './types';
 
 /**

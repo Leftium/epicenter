@@ -140,12 +140,17 @@ export function ySweetSync<
 		);
 
 		// Create a promise that resolves when initially synced
-		// Use status check instead of deprecated 'synced' property
 		const whenSynced = new Promise<void>((resolve) => {
 			if (provider.status === 'connected') {
 				resolve();
 			} else {
-				provider.on('sync', () => resolve());
+				const handleStatus = (status: string) => {
+					if (status === 'connected') {
+						provider.off('connection-status', handleStatus);
+						resolve();
+					}
+				};
+				provider.on('connection-status', handleStatus);
 			}
 		});
 

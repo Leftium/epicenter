@@ -85,7 +85,7 @@ From [learn.yjs.dev](https://learn.yjs.dev):
 **Lesson 2 — Don't have two clients write to the same key for additive values:**
 - `read → modify → write` on a shared `Y.Map` key is broken under latency (classic lost-update problem)
 - Solution: per-client key partitioning (G-Counter pattern). Each client writes to its own key, aggregate by iterating all values.
-- Applies to our design: the `ts` field in timeline entries is set once by one client at push time — no read-modify-write race.
+- Applies to our design: timeline entries are set once by one client at push time — no read-modify-write race. (Note: the `ts` field originally proposed for entries has been [superseded](#superseded-ts-field-is-unnecessary--last-index-is-sufficient) — last index is sufficient.)
 
 **Lesson 3 — Shared types can NEVER be moved:**
 - "Move" in `Y.Array` = delete + insert. Yjs sees these as unrelated operations.
@@ -98,27 +98,45 @@ From [learn.yjs.dev](https://learn.yjs.dev):
 - Ordering is deterministic (by `clientID` — lower goes left, higher goes right)
 - But **clientID is random**, so ordering is arbitrary from the application's perspective
 - **"Last entry" ≠ "latest operation"** — array position reflects clientID ordering, not wall-clock time
-- Implication: must use application-level timestamps (`ts` field) to determine "current", not array index position
+- ~~Implication: must use application-level timestamps (`ts` field) to determine "current", not array index position~~ **Superseded:** Timestamps are equally arbitrary (clock skew). Last index gives convergence, which is what matters. See [below](#superseded-ts-field-is-unnecessary--last-index-is-sufficient).
 
 ### Y.Array Concurrent Push: The "Last Entry" Problem
 
 This is the critical gotcha for any append-only log design:
 
 ```
-Client A (clientID = 5, ts = 100): pushes {type:'binary'}
-Client B (clientID = 12, ts = 95):  pushes {type:'text'}
+Client A (clientID = 5):  pushes {type:'binary'}
+Client B (clientID = 12): pushes {type:'text'}
 
 After sync, Y.Array order: [entryA, entryB]
   entryB is "last" because clientID 12 > 5
-  But entryA has the HIGHER timestamp (100 > 95)
+  Both entries survive. "Last" is determined by clientID, not wall-clock time.
 
-array.get(array.length - 1) → entryB (WRONG — older operation)
-MAX(ts) scan               → entryA (CORRECT — latest operation)
+array.get(array.length - 1) → entryB (deterministic, all clients agree)
 ```
 
-**When does this happen?** Only when two clients push within the same sync cycle (milliseconds on LAN, seconds on bad connection). For file mode switches (triggered by explicit user actions or bash commands), concurrent pushes are astronomically rare. But the `ts` field costs one number per entry — cheap insurance.
+> **Superseded analysis**: The original version of this example included timestamps and labeled last-index as "WRONG" and MAX(ts) as "CORRECT." This was misleading — timestamps are equally arbitrary due to clock skew. Both approaches give convergence; neither gives a truly "correct" winner. See [below](#superseded-ts-field-is-unnecessary--last-index-is-sufficient).
 
-**Resolution**: Always determine "current" by scanning tail entries for MAX `ts`, never by array index. In practice, only the last 2-3 entries need checking (concurrent pushes cluster at the tail).
+**When does this happen?** Only when two clients push within the same sync cycle (milliseconds on LAN, seconds on bad connection). For file mode switches (triggered by explicit user actions or bash commands), concurrent pushes are astronomically rare.
+
+### Superseded: `ts` Field Is Unnecessary — Last Index Is Sufficient
+
+The original analysis recommended a `ts` (timestamp) field as "cheap insurance" for resolving concurrent push ordering. On further examination, this recommendation is superseded. **Last index is the correct approach.**
+
+The key insight: **timestamps don't actually give you a "correct" winner either.** Clock skew between machines is real — one device's clock could be seconds or minutes ahead. So a timestamp-based tiebreaker is just as arbitrary as Yjs's clientID-based array ordering. You're trading one form of arbitrary for another, while adding complexity.
+
+| Approach | Convergence | "Correct" winner in concurrent case | Retrieval complexity |
+|---|---|---|---|
+| Last index | All clients agree | Arbitrary (clientID ordering) | `arr[arr.length - 1]` — O(1) |
+| Max timestamp | All clients agree | Arbitrary (clock skew) | O(n) sweep through array |
+
+Both approaches guarantee **convergence** — after sync, every client sees the exact same array in the exact same order, so every client picks the same winner. The only question is which tiebreaker resolves the astronomically rare concurrent push: clientID ordering (deterministic, free) or wall-clock timestamps (subject to clock skew, requires a sweep).
+
+For this use case — mode switches triggered by explicit user actions or bash commands — the concurrent case requires two humans to independently switch the same file's content mode within the same sync window. This doesn't happen in practice. And even if it did, the "wrong" winner via clientID ordering is no more wrong than the "wrong" winner via a skewed clock.
+
+**Decision**: Drop the `ts` field from timeline entries. Use `timeline.get(timeline.length - 1)` for current version. This simplifies the entry schema, eliminates the O(n) scan, and removes open question #8 (wall-clock vs logical clock) entirely.
+
+See also: [Y.Array Append-Only Logs: Last Index vs Max Timestamp](../docs/articles/yarray-last-index-vs-max-timestamp.md)
 
 ---
 
@@ -282,31 +300,28 @@ Y.Doc (guid = fileId, gc: false)
     │
     ├── [0] Y.Map                              ← v0: plain text
     │   ├── 'type' → 'text'
-    │   ├── 'ts'   → 1707000000
     │   └── 'content' → Y.Text("hello world")  ← nested CRDT, bind to CodeMirror
     │
     ├── [1] Y.Map                              ← v1: markdown
     │   ├── 'type'        → 'richtext'
-    │   ├── 'ts'          → 1707001000
     │   ├── 'body'        → Y.XmlFragment(...)  ← nested CRDT, bind to ProseMirror
     │   └── 'frontmatter' → Y.Map({ title: 'My Post', tags: [...] })
     │
     ├── [2] Y.Map                              ← v2: binary
     │   ├── 'type' → 'binary'
-    │   ├── 'ts'   → 1707002000
     │   └── 'data' → Uint8Array([0x89, 0x50, ...])  ← atomic
     │
-    └── [3] Y.Map                              ← v3: back to text (CURRENT)
+    └── [3] Y.Map                              ← v3: back to text (CURRENT = last index)
         ├── 'type' → 'text'
-        ├── 'ts'   → 1707003000
         └── 'content' → Y.Text("updated")      ← BRAND NEW Y.Text, isolated history
 ```
 
 **Entry structure (discriminated union):**
 
-All entries share common keys:
+All entries share one common key:
 - `'type'`: `'text' | 'richtext' | 'binary'` — the discriminant
-- `'ts'`: `number` (`Date.now()` at creation) — for MAX-ts current-version resolution
+
+> **Note**: The `ts` field was originally proposed for MAX-timestamp current-version resolution but has been [superseded](#superseded-ts-field-is-unnecessary--last-index-is-sufficient). Current version is determined by last index position, which is O(1) and equally convergent.
 
 Type-specific keys:
 
@@ -321,15 +336,9 @@ Type-specific keys:
 
 ```ts
 function getCurrentEntry(timeline: Y.Array<Y.Map<any>>): Y.Map<any> {
-  if (timeline.length === 1) return timeline.get(0)
-  // Scan from end — concurrent pushes cluster at tail
-  let best = timeline.get(timeline.length - 1)
-  for (let i = timeline.length - 2; i >= 0; i--) {
-    const entry = timeline.get(i)
-    if (entry.get('ts') > best.get('ts')) best = entry
-    else break // past the concurrent zone
-  }
-  return best
+  // Last index = current version. O(1), convergent across all clients.
+  // See "Superseded: ts Field Is Unnecessary" for why this is sufficient.
+  return timeline.get(timeline.length - 1)
 }
 
 function readFile(timeline): string | Uint8Array {
@@ -355,7 +364,6 @@ MODE SWITCH (rare — appends new entry):
   doc.transact(() => {
     const entry = new Y.Map()
     entry.set('type', 'binary')
-    entry.set('ts', Date.now())
     entry.set('data', compressedBytes)
     timeline.push([entry])
   })
@@ -366,10 +374,10 @@ MODE SWITCH (rare — appends new entry):
 | Text write (same mode) | Edit nested `Y.Text` directly. No array entry. Full CRDT. |
 | Binary write (same mode) | **Append new entry** (binary is atomic — each write is a new version) |
 | Mode switch | Append new `Y.Map` entry with fresh nested shared types |
-| Current version | `MAX(ts)` scan of tail entries |
+| Current version | `timeline.get(timeline.length - 1)` — O(1) |
 | Concurrent same-mode edit | Standard Yjs CRDT merge on the nested shared type |
-| Concurrent mode switch | Both entries appear in array. `MAX(ts)` picks the winner deterministically. |
-| Snapshot reconstruction | `Y.createDocFromSnapshot()` restores entire array. Scan for `MAX(ts)` at that point. |
+| Concurrent mode switch | Both entries appear in array. Last index picks winner (clientID ordering). All clients converge. |
+| Snapshot reconstruction | `Y.createDocFromSnapshot()` restores entire array. Last index at that point. |
 
 **Why this avoids tombstones on mode switch (key advantage over Options A–E):**
 
@@ -399,7 +407,7 @@ With `gc:false`, you're keeping everything anyway. But there's a meaningful sema
 
 1. **Slightly more complex access pattern.** `doc.getArray('timeline').get(n).get('content')` instead of `doc.getText('content')`. More indirection, but encapsulated in a helper.
 
-2. **Must use MAX-ts, not array index, for current version.** Array position is determined by `clientID` on concurrent pushes, not by wall-clock time. In practice only the last 2-3 entries need checking, and concurrent mode switches are astronomically rare.
+2. ~~**Must use MAX-ts, not array index, for current version.**~~ **Superseded.** Last index is sufficient — see [above](#superseded-ts-field-is-unnecessary--last-index-is-sufficient). Both approaches converge; timestamps add O(n) complexity for an equally arbitrary tiebreaker.
 
 3. **Editing wrong version after concurrent push.** If Client A is editing entry [2]'s `Y.Text` when Client B pushes entry [3], A's edits land in the stale version. Not lost — preserved in [2]'s history — but orphaned from "current." UI must observe the array and rebind. Window for this is network latency.
 
@@ -459,7 +467,7 @@ Storage costs are equivalent across all viable options. The real decision axes a
 | Question | Options That Solve It |
 |----------|----------------------|
 | Explicit, queryable transition history? | B, D, **F** (Y.Array log) |
-| Conflict-safe concurrent type switching? | E (per-client proposals), B/**F** (MAX-ts on array) |
+| Conflict-safe concurrent type switching? | E (per-client proposals), B (MAX-ts on array), **F** (last-index — equally convergent, simpler) |
 | Maximum simplicity? | A (single meta key) |
 | No tombstones on mode switch? | **F only** (fresh nested types per version) |
 | Minimal top-level key pollution? | **F** (single key: `'timeline'`) |
@@ -495,7 +503,7 @@ Snapshots capture the entire doc state at a point in time. But:
 - Reconstructing a snapshot requires the original doc with `gc:false`
 - There's no way to list "all the modes this file has been in" from snapshots alone
 
-The Y.Array timeline makes this implicit. The history is in the doc itself, not in external snapshot blobs. The array's length tells you how many versions exist. Each entry's `type` and `ts` fields give you the full transition timeline without any external bookkeeping.
+The Y.Array timeline makes this implicit. The history is in the doc itself, not in external snapshot blobs. The array's length tells you how many versions exist. Each entry's `type` field and array position give you the full transition timeline without any external bookkeeping.
 
 ---
 
@@ -507,7 +515,7 @@ The Y.Array timeline makes this implicit. The history is in the doc itself, not 
 
 2. ~~**Should stale keys be cleared on type switch?**~~ Option F doesn't have stale keys. Each version is self-contained. Old entries just sit in the array as history. **Resolved: not applicable.**
 
-3. ~~**Is Y.Array the right CRDT type for the log?**~~ Yes. The "last entry" ambiguity from concurrent pushes is resolved by MAX-ts scanning of tail entries. In practice, concurrent mode switches on the same file are astronomically rare. **Resolved: Y.Array with MAX-ts.**
+3. ~~**Is Y.Array the right CRDT type for the log?**~~ Yes. Concurrent pushes are resolved by last-index (all clients converge to the same array order). In practice, concurrent mode switches on the same file are astronomically rare. **Resolved: Y.Array with last-index.**
 
 4. ~~**Can options be combined?**~~ Option F subsumes the useful properties of B (explicit history), D (lightweight log), and E (MAX-ts resolution) into a single structure. **Resolved: Option F is the combined approach.**
 
@@ -519,9 +527,9 @@ The Y.Array timeline makes this implicit. The history is in the doc itself, not 
 
 7. **Binary overwrite: new entry or mutate existing?** When a file stays in binary mode and gets overwritten, should we: (a) append a new array entry (full version history, array grows), or (b) update the existing entry's `data` field (in-place overwrite, previous value becomes a Y.Map tombstone within the entry)? Option (a) gives explicit binary version history. Option (b) keeps the array shorter but loses the "each entry is a version" property for binary-only overwrites. Leaning toward (a) for consistency.
 
-8. **Should the `ts` field use wall-clock time or a logical clock?** `Date.now()` is simple but can be wrong (clock skew, NTP jumps). A Lamport timestamp or hybrid logical clock (HLC) would be more correct but adds complexity. For the MAX-ts resolution of concurrent pushes, clock skew of a few seconds is tolerable — the operation that "wins" being off by a few seconds doesn't matter in practice.
+8. ~~**Should the `ts` field use wall-clock time or a logical clock?**~~ **Resolved: moot.** The `ts` field has been dropped entirely. Last index is sufficient for current-version resolution — both approaches (timestamp vs array position) are equally arbitrary tiebreakers in the concurrent case, and the concurrent case is essentially impossible for user-initiated mode switches. See [Superseded: ts Field Is Unnecessary](#superseded-ts-field-is-unnecessary--last-index-is-sufficient).
 
-9. **How does the UI observe mode changes?** When a new entry is pushed to the timeline (mode switch), the editor needs to: detect the change (observe the array), determine the new current entry (MAX-ts), unbind from the old shared type, and bind to the new one. What's the observation pattern? `timeline.observe(event => { ... })` watching for insert events at the tail.
+9. **How does the UI observe mode changes?** When a new entry is pushed to the timeline (mode switch), the editor needs to: detect the change (observe the array), get the new current entry (last index), unbind from the old shared type, and bind to the new one. What's the observation pattern? `timeline.observe(event => { ... })` watching for insert events at the tail.
 
 10. **What about very large binary files?** A 100MB binary file overwritten 10 times = 1GB in the Y.Doc. With `gc:false`, this is unavoidable in any option. Should there be a size threshold where binary content is stored outside the Y.Doc (e.g., in a separate blob store with only a hash/reference in the entry)?
 

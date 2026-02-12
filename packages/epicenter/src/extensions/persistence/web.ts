@@ -123,13 +123,10 @@ export const persistence = (<
  * })
  * ```
  *
- * @param options.dbName - IndexedDB database name. Defaults to `ydoc.guid`.
  */
-export function indexeddbPersistence(
-	options?: { dbName?: string },
-): (ydoc: Y.Doc) => Lifecycle {
+export function indexeddbPersistence(): (ydoc: Y.Doc) => Lifecycle {
 	return (ydoc: Y.Doc): Lifecycle => {
-		const idb = new IndexeddbPersistence(options?.dbName ?? ydoc.guid, ydoc);
+		const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
 		return {
 			whenSynced: idb.whenSynced.then(() => {}),
 			destroy: () => idb.destroy(),

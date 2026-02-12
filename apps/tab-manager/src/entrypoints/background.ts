@@ -22,15 +22,11 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
-import { ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
-import {
-	createWorkspace,
-	defineExports,
-	defineWorkspace,
-} from '@epicenter/hq/static';
+import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
+import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
-import { IndexeddbPersistence } from 'y-indexeddb';
 import type { Transaction } from 'yjs';
 import { createBrowserConverters } from '$lib/browser-helpers';
 import {
@@ -120,35 +116,18 @@ export default defineBackground(() => {
 
 	const client = createWorkspace(definition).withExtensions({
 		/**
-		 * IndexedDB persistence for service worker restarts.
-		 * Chrome MV3 service workers terminate after ~30 seconds of inactivity.
-		 * Without persistence, Y.Doc state would be lost on every restart.
-		 */
-		persistence: ({ ydoc }) => {
-			const provider = new IndexeddbPersistence('tab-manager', ydoc);
-			return defineExports({
-				provider,
-				whenSynced: provider.whenSynced,
-				destroy: () => provider.destroy(),
-			});
-		},
-
-		/**
-		 * Y-Sweet sync for real-time collaboration.
+		 * Y-Sweet sync with IndexedDB persistence.
 		 *
-		 * Y-Sweet provides:
-		 * - WebSocket-based real-time sync
-		 * - Token-based authentication (for hosted mode)
-		 * - Automatic reconnection
+		 * Persistence loads first (critical for service worker restarts —
+		 * Chrome MV3 terminates after ~30s of inactivity), then WebSocket
+		 * connects with an accurate state vector.
 		 *
 		 * Server setup: npx y-sweet@latest serve
 		 * Default: http://127.0.0.1:8080
-		 *
-		 * @see specs/y-sweet-sync-extension.md
 		 */
 		sync: ySweetSync({
-			mode: 'direct',
-			serverUrl: 'http://127.0.0.1:8080',
+			auth: directAuth('http://127.0.0.1:8080'),
+			persistence: indexeddbPersistence,
 		}),
 	});
 
@@ -363,9 +342,9 @@ export default defineBackground(() => {
 	// ─────────────────────────────────────────────────────────────────────────
 
 	const initPromise = (async () => {
-		// Wait for IndexedDB to load existing state (critical for service worker restarts)
-		await client.extensions.persistence.whenSynced;
-		console.log('[Background] IndexedDB persistence synced');
+		// Wait for local data to load (WebSocket connects in background)
+		await client.extensions.sync.whenSynced;
+		console.log('[Background] Persistence loaded');
 
 		// Then refetch to sync Y.Doc with current browser state
 		await actions.refetchAll();

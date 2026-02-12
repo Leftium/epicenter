@@ -3,7 +3,6 @@ import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
-import { createIndexedDBProvider, type IndexedDBProvider } from './indexeddb';
 import { createSleeper, type Sleeper } from './sleeper';
 import type { ClientToken } from './types';
 
@@ -75,12 +74,6 @@ export type YSweetProviderParams = {
 
 	/** An initial client token to use (skips the first auth request if provided.) */
 	initialClientToken?: ClientToken;
-
-	/**
-	 * If set, document state is stored locally for offline use and faster re-opens.
-	 * Defaults to `false`; set to `true` to enable.
-	 */
-	offlineSupport?: boolean;
 };
 
 async function getClientToken(
@@ -114,13 +107,11 @@ export class YSweetProvider {
 
 	private reconnectSleeper: Sleeper | null = null;
 
-	private indexedDBProvider: IndexedDBProvider | null = null;
-
 	private retries: number = 0;
 
 	constructor(
 		private authEndpoint: AuthEndpoint,
-		docId: string,
+		_docId: string,
 		private doc: Y.Doc,
 		extraOptions: Partial<YSweetProviderParams> = {},
 	) {
@@ -137,15 +128,6 @@ export class YSweetProvider {
 		if (typeof window !== 'undefined') {
 			window.addEventListener('offline', this.offline);
 			window.addEventListener('online', this.online);
-		}
-
-		if (
-			extraOptions.offlineSupport === true &&
-			typeof indexedDB !== 'undefined'
-		) {
-			(async () => {
-				this.indexedDBProvider = await createIndexedDBProvider(doc, docId);
-			})();
 		}
 
 		doc.on('update', this.update.bind(this));
@@ -247,17 +229,9 @@ export class YSweetProvider {
 		this.emit(EVENT_CONNECTION_STATUS, status);
 	}
 
-	private update(
-		update: Uint8Array,
-		origin: YSweetProvider | IndexedDBProvider,
-	) {
+	private update(update: Uint8Array, origin: unknown) {
 		if (origin === this) {
 			// Ignore updates that came through the Y-Sweet Provider (i.e. not local changes)
-			return;
-		}
-
-		if (this.indexedDBProvider && origin === this.indexedDBProvider) {
-			// Ignore updates from our own IndexedDB provider.
 			return;
 		}
 
@@ -294,21 +268,19 @@ export class YSweetProvider {
 	 * Returns a promise that resolves to true if the connection was successful, or false if the connection failed.
 	 */
 	private attemptToConnect(clientToken: ClientToken): Promise<boolean> {
-		let promise = new Promise<boolean>((resolve) => {
-			let statusListener = (event: YSweetStatus) => {
-				if (event === STATUS_CONNECTED) {
-					this.off(EVENT_CONNECTION_STATUS, statusListener);
-					resolve(true);
-				} else if (event === STATUS_ERROR) {
-					this.off(EVENT_CONNECTION_STATUS, statusListener);
-					resolve(false);
-				}
-			};
+		const { promise, resolve } = Promise.withResolvers<boolean>();
+		const statusListener = (event: YSweetStatus) => {
+			if (event === STATUS_CONNECTED) {
+				this.off(EVENT_CONNECTION_STATUS, statusListener);
+				resolve(true);
+			} else if (event === STATUS_ERROR) {
+				this.off(EVENT_CONNECTION_STATUS, statusListener);
+				resolve(false);
+			}
+		};
+		this.on(EVENT_CONNECTION_STATUS, statusListener);
 
-			this.on(EVENT_CONNECTION_STATUS, statusListener);
-		});
-
-		let url = this.generateUrl(clientToken);
+		const url = this.generateUrl(clientToken);
 		this.setStatus(STATUS_CONNECTING);
 		const websocket = new (this.WebSocketPolyfill || WebSocket)(url);
 		this.bindWebsocket(websocket);
@@ -551,13 +523,7 @@ export class YSweetProvider {
 	}
 
 	public destroy() {
-		if (this.websocket) {
-			this.websocket.close();
-		}
-
-		if (this.indexedDBProvider) {
-			this.indexedDBProvider.destroy();
-		}
+		this.disconnect();
 
 		awarenessProtocol.removeAwarenessStates(
 			this.awareness,

@@ -1,158 +1,126 @@
 import type { ClientToken } from '@epicenter/y-sweet';
 import {
-	type AuthEndpoint,
 	createYjsProvider,
+	STATUS_CONNECTED,
+	STATUS_OFFLINE,
 	type YSweetProvider,
 } from '@epicenter/y-sweet';
+import type * as Y from 'yjs';
 import { defineExports, type ExtensionFactory } from '../dynamic/extension';
-import type { KvField, TableDefinition } from '../dynamic/schema';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Y-SWEET SYNC EXTENSION
-// ═══════════════════════════════════════════════════════════════════════════════
-//
-// Y-Sweet is a hosted/self-hosted Yjs sync and persistence service by Jamsocket.
-//
-// Two modes:
-// - Direct: Connect to Y-Sweet server without auth (local dev, Tailscale)
-// - Authenticated: Connect via backend auth endpoint (hosted infrastructure)
-//
-// Server setup (local development):
-//   npx y-sweet@latest serve           # In-memory storage
-//   npx y-sweet@latest serve ./data    # Persisted to disk
-//
-// Server runs at http://127.0.0.1:8080 by default.
-// WebSocket URL format: ws://{host}/d/{docId}/ws
-//
-// Spec: specs/y-sweet-sync-extension.md
-//
-// ═══════════════════════════════════════════════════════════════════════════════
+import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
 
 // Re-export the ClientToken type for consumers
 export type { ClientToken as YSweetClientToken };
 
 /**
- * Direct mode configuration.
+ * Y-Sweet sync configuration.
  *
- * Connect directly to a Y-Sweet server without authentication.
- * Use for local development or private networks (Tailscale).
+ * Mirrors the provider's API: `auth` produces a {@link ClientToken},
+ * `persistence` optionally loads local state before connecting.
+ *
+ * @example Direct mode (local dev)
+ * ```typescript
+ * sync: ySweetSync({
+ *   auth: directAuth('http://localhost:8080'),
+ * })
+ * ```
+ *
+ * @example Authenticated mode (hosted infrastructure)
+ * ```typescript
+ * sync: ySweetSync({
+ *   auth: (docId) => fetch(`/api/token/${docId}`).then(r => r.json()),
+ * })
+ * ```
+ *
+ * @example With persistence
+ * ```typescript
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
+ *
+ * sync: ySweetSync({
+ *   auth: directAuth('http://localhost:8080'),
+ *   persistence: indexeddbPersistence,
+ * })
+ * ```
  */
-export type YSweetDirectConfig = {
-	mode: 'direct';
+export type YSweetSyncConfig = {
 	/**
-	 * Y-Sweet server URL.
+	 * Auth callback that returns a {@link ClientToken} for the given doc ID.
 	 *
-	 * @example 'http://localhost:8080'
-	 * @example 'http://my-server.tailnet:8080'
+	 * For direct connections (local dev, Tailscale), use {@link directAuth}.
+	 * For authenticated connections, return a token from your backend.
 	 */
-	serverUrl: string;
-};
+	auth: (docId: string) => Promise<ClientToken>;
 
-/**
- * Authenticated mode configuration.
- *
- * Connect via your backend's auth endpoint to get a ClientToken.
- * The backend validates the user and namespaces the doc ID.
- *
- * Auth flow: specs/y-sweet-sync-extension.md
- * Implementation: specs/extension-authentication.md (TODO)
- */
-export type YSweetAuthenticatedConfig = {
-	mode: 'authenticated';
 	/**
-	 * Auth endpoint function that returns a ClientToken.
+	 * Optional persistence factory.
+	 *
+	 * When provided, `whenSynced` resolves after local state loads — the
+	 * WebSocket connects in the background. This is the local-first pattern:
+	 * render from local state immediately, sync in the background.
+	 *
+	 * Must return a {@link Lifecycle}: `{ whenSynced, destroy }`.
 	 *
 	 * @example
 	 * ```typescript
-	 * authEndpoint: async () => {
-	 *   const token = await getStoredAuthToken();
-	 *   const res = await fetch('https://api.epicenter.app/y-sweet/auth', {
-	 *     method: 'POST',
-	 *     headers: { Authorization: `Bearer ${token}` },
-	 *     body: JSON.stringify({ docId: 'tab-manager' }),
-	 *   });
-	 *   return res.json();
-	 * }
+	 * persistence: indexeddbPersistence
+	 * persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' })
+	 * persistence: ({ ydoc }) => ({ whenSynced: Promise.resolve(), destroy: () => {} })
 	 * ```
 	 */
-	authEndpoint: () => Promise<ClientToken>;
+	persistence?: (context: { ydoc: Y.Doc }) => Lifecycle;
 };
-
-/**
- * Y-Sweet sync configuration.
- */
-export type YSweetSyncConfig = YSweetDirectConfig | YSweetAuthenticatedConfig;
 
 /**
  * Creates a Y-Sweet sync extension.
  *
- * Y-Sweet provides:
- * - WebSocket-based real-time sync
- * - Token-based authentication
- * - Automatic reconnection
+ * Orchestrates the lifecycle:
+ * - **With persistence**: `whenSynced` resolves when local state loads.
+ *   WebSocket connects in the background (non-blocking). The UI renders
+ *   from local state immediately — connection status is reactive via `provider`.
+ * - **Without persistence**: `whenSynced` resolves on first WebSocket sync
+ *   (rejects if disconnected before sync completes).
  *
- * Note: For offline persistence, use y-indexeddb alongside this extension.
- *
- * ## Direct Mode (local dev, Tailscale)
- *
- * ```typescript
- * sync: ySweetSync({
- *   mode: 'direct',
- *   serverUrl: 'http://localhost:8080',
- * })
- * ```
- *
- * Start local server: `npx y-sweet@latest serve`
- *
- * ## Authenticated Mode (hosted infrastructure)
- *
- * ```typescript
- * sync: ySweetSync({
- *   mode: 'authenticated',
- *   authEndpoint: async () => {
- *     const token = await getStoredAuthToken();
- *     const res = await fetch('https://api.epicenter.app/y-sweet/auth', {
- *       method: 'POST',
- *       headers: { Authorization: `Bearer ${token}` },
- *       body: JSON.stringify({ docId: 'tab-manager' }),
- *     });
- *     return res.json();
- *   },
- * })
- * ```
- *
- * @see specs/y-sweet-sync-extension.md
+ * @see specs/20260212T190000-y-sweet-persistence-architecture.md
  */
-export function ySweetSync<
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
->(config: YSweetSyncConfig): ExtensionFactory<TTableDefinitions, TKvFields> {
+export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
 	return ({ ydoc }) => {
+		const authEndpoint = () => config.auth(ydoc.guid);
+		const hasPersistence = !!config.persistence;
+
+		// Create provider — defer connection if persistence needs to load first
 		const provider: YSweetProvider = createYjsProvider(
 			ydoc,
 			ydoc.guid,
-			buildAuthEndpoint(config, ydoc.guid),
+			authEndpoint,
+			{ connect: !hasPersistence },
 		);
 
-		// Create a promise that resolves when initially synced
-		const whenSynced = new Promise<void>((resolve) => {
-			if (provider.status === 'connected') {
-				resolve();
-			} else {
-				const handleStatus = (status: string) => {
-					if (status === 'connected') {
-						provider.off('connection-status', handleStatus);
-						resolve();
-					}
-				};
-				provider.on('connection-status', handleStatus);
-			}
-		});
+		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
+
+		// With persistence: whenSynced = local data loaded (fast, reliable).
+		// WebSocket connects in background — don't block on it.
+		//
+		// Without persistence: whenSynced = first WebSocket sync (needs network).
+		// Rejects on disconnect so callers can handle failure.
+		const whenSynced = hasPersistence
+			? (async () => {
+					const p = config.persistence!({ ydoc });
+					persistenceCleanup = p.destroy;
+					await p.whenSynced;
+					// Kick off WebSocket in background — don't await it.
+					// Consumers subscribe to provider events for connection status.
+					provider.connect().catch(() => {
+						// Suppress unhandled rejection. Connection errors
+						// are surfaced reactively via provider status events.
+					});
+				})()
+			: waitForFirstSync(provider);
 
 		return defineExports({
 			provider,
 			whenSynced,
 			destroy: () => {
+				persistenceCleanup?.();
 				provider.destroy();
 			},
 		});
@@ -160,47 +128,58 @@ export function ySweetSync<
 }
 
 /**
- * Build the AuthEndpoint from config.
+ * Direct auth helper for local development.
  *
- * - Direct mode: construct ClientToken locally (no auth)
- * - Authenticated mode: use provided endpoint (string URL or function)
+ * Constructs a {@link ClientToken} by converting the server URL to a WebSocket URL.
+ * No authentication — use for local dev or private networks (Tailscale).
+ *
+ * Y-Sweet WebSocket URL format: `ws://{host}/d/{docId}/ws`
+ *
+ * @example
+ * ```typescript
+ * ySweetSync({ auth: directAuth('http://localhost:8080') })
+ * ```
  */
-function buildAuthEndpoint(
-	config: YSweetSyncConfig,
-	docId: string,
-): AuthEndpoint {
-	switch (config.mode) {
-		case 'direct':
-			return async () => createDirectClientToken(config.serverUrl, docId);
-
-		case 'authenticated':
-			return config.authEndpoint;
-
-		default: {
-			const _exhaustive: never = config;
-			throw new Error(
-				`Unknown Y-Sweet sync mode: ${(_exhaustive as YSweetSyncConfig).mode}`,
-			);
-		}
-	}
+export function directAuth(
+	serverUrl: string,
+): (docId: string) => Promise<ClientToken> {
+	return (docId: string) => {
+		const url = new URL(serverUrl);
+		const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+		return Promise.resolve({
+			url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
+		});
+	};
 }
 
 /**
- * Construct a ClientToken for direct mode (no auth).
+ * Waits for the provider's first successful sync.
  *
- * Y-Sweet URL format:
- * - WebSocket: ws://{host}/d/{docId}/ws
- * - HTTP: http://{host}/d/{docId}
+ * Used when there's no local persistence — the network is the only data source.
+ * Rejects if the provider transitions to OFFLINE (via disconnect/destroy)
+ * before sync completes, so callers aren't left hanging forever.
  */
-function createDirectClientToken(
-	serverUrl: string,
-	docId: string,
-): ClientToken {
-	const url = new URL(serverUrl);
-	const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+function waitForFirstSync(provider: YSweetProvider): Promise<void> {
+	const { promise, resolve, reject } = Promise.withResolvers<void>();
 
-	return {
-		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-		token: undefined,
+	if (provider.status === STATUS_CONNECTED) {
+		resolve();
+		return promise;
+	}
+
+	const handleStatus = (status: string) => {
+		if (status === STATUS_CONNECTED) {
+			cleanup();
+			resolve();
+		}
+		if (status === STATUS_OFFLINE) {
+			cleanup();
+			reject(new Error('Provider disconnected before sync completed'));
+		}
 	};
+
+	const cleanup = () => provider.off('connection-status', handleStatus);
+	provider.on('connection-status', handleStatus);
+
+	return promise;
 }

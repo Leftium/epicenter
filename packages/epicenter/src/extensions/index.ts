@@ -21,7 +21,7 @@
  * @example Browser usage (use conditional export)
  * ```typescript
  * // Browser: auto-selects IndexedDB persistence
- * import { persistence } from '@epicenter/hq/extensions/persistence';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
  * ```
  *
  * @packageDocumentation
@@ -35,7 +35,7 @@ export {
 	type PersistenceConfig,
 	persistence,
 } from './persistence/desktop.js';
-export { persistence as webPersistence } from './persistence/web.js';
+export { indexeddbPersistence as webPersistence } from './persistence/web.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SQLITE

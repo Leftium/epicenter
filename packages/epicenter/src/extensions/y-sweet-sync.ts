@@ -1,9 +1,9 @@
+import type { ClientToken } from '@epicenter/y-sweet';
 import {
 	type AuthEndpoint,
 	createYjsProvider,
 	type YSweetProvider,
-} from '@y-sweet/client';
-import type { ClientToken } from '@y-sweet/sdk';
+} from '@epicenter/y-sweet';
 import { defineExports, type ExtensionFactory } from '../dynamic/extension';
 import type { KvField, TableDefinition } from '../dynamic/schema';
 

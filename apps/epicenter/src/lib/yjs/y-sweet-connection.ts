@@ -1,4 +1,4 @@
-import { createYjsProvider, type YSweetProvider } from '@y-sweet/client';
+import { createYjsProvider, type YSweetProvider } from '@epicenter/y-sweet';
 import * as Y from 'yjs';
 
 type YSweetConnectionConfig = {

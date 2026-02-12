@@ -13,7 +13,7 @@ import { assertUniqueName, fsError, validateName } from './validation.js';
  * Has no knowledge of file content — only structure and metadata.
  */
 export class FileTree {
-	private index: FileSystemIndex & { destroy(): void };
+	private index: FileSystemIndex;
 
 	constructor(private filesTable: TableHelper<FileRow>) {
 		this.index = createFileSystemIndex(filesTable);

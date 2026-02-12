@@ -41,6 +41,8 @@ export type FileSystemIndex = {
 	pathToId: Map<string, FileId>;
 	/** parentId (null = root) → [childId, ...] */
 	childrenOf: Map<FileId | null, FileId[]>;
+	/** Unsubscribe from the underlying table observer. */
+	destroy(): void;
 };
 
 export type ContentDocStore = {

@@ -10,16 +10,23 @@ const MAX_DEPTH = 50;
  */
 export function createFileSystemIndex(
 	filesTable: TableHelper<FileRow>,
-): FileSystemIndex & { destroy(): void } {
+): FileSystemIndex {
 	const pathToId = new Map<string, FileId>();
 	const childrenOf = new Map<FileId | null, FileId[]>();
 
 	rebuild();
 
-	const unobserve = filesTable.observe((changedIds) => {
-		update(changedIds);
+	// Any row change (create, move, rename, trash) can invalidate paths or
+	// parent-child edges, so we do a full rebuild on every table mutation.
+	// The files table is always in memory so this is fast — O(n) where n = total files.
+	const unobserve = filesTable.observe(() => {
+		rebuild();
 	});
 
+	/**
+	 * Recompute all indexes from scratch: childrenOf, path mappings,
+	 * and self-healing fixes for circular refs and orphans.
+	 */
 	function rebuild() {
 		pathToId.clear();
 		childrenOf.clear();
@@ -44,17 +51,7 @@ export function createFileSystemIndex(
 		buildPaths(filesTable, childrenOf, pathToId);
 	}
 
-	function update(_changedIds: Set<string>) {
-		// Full rebuild on changes. The files table is always in memory
-		// so this is fast (O(n) where n = total files).
-		rebuild();
-	}
-
-	return {
-		pathToId,
-		childrenOf,
-		destroy: unobserve,
-	};
+	return { pathToId, childrenOf, destroy: unobserve };
 }
 
 /** Walk parentId chain to compute a file's path */

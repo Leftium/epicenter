@@ -1,7 +1,5 @@
 import { Doc } from 'yjs'
 import * as Y from 'yjs'
-import { getOrCreateKey } from './keystore'
-import { decryptData, encryptData } from './encryption'
 
 const DB_PREFIX = 'y-sweet-'
 const OBJECT_STORE_NAME = 'updates'
@@ -12,7 +10,7 @@ const OBJECT_STORE_NAME = 'updates'
  */
 const MAX_UPDATES_IN_STORE = 50
 
-/** Pair of key and value, used both for the encrypted entry and decrypted entry. */
+/** Pair of key and value stored in IndexedDB. */
 interface BytesWithKey {
   key: number
   value: Uint8Array
@@ -32,10 +30,7 @@ function openIndexedDB(name: string): Promise<IDBDatabase> {
 
 export async function createIndexedDBProvider(doc: Doc, docId: string): Promise<IndexedDBProvider> {
   const db = await openIndexedDB(DB_PREFIX + docId)
-  const encryptionKey = await getOrCreateKey()
-
-  let provider = new IndexedDBProvider(doc, docId, db, encryptionKey)
-  return provider
+  return new IndexedDBProvider(doc, docId, db)
 }
 
 export class IndexedDBProvider {
@@ -46,7 +41,6 @@ export class IndexedDBProvider {
     private doc: Doc,
     docId: string,
     private db: IDBDatabase,
-    private encryptionKey: CryptoKey,
   ) {
     this.handleUpdate = this.handleUpdate.bind(this)
     doc.on('update', this.handleUpdate)
@@ -121,28 +115,16 @@ export class IndexedDBProvider {
     let objectStore = transaction.objectStore(OBJECT_STORE_NAME)
     const request = objectStore.getAll(range)
 
-    let result = await new Promise<Array<BytesWithKey>>((resolve, reject) => {
+    return await new Promise<Array<BytesWithKey>>((resolve, reject) => {
       request.onsuccess = () => {
         resolve(request.result)
       }
       request.onerror = reject
     })
-
-    return await Promise.all(
-      result.map(async (data) => {
-        let value = await decryptData(data.value, this.encryptionKey)
-
-        return {
-          key: data.key,
-          value,
-        }
-      }),
-    )
   }
 
   async saveWholeState(key: number): Promise<boolean> {
     const update = Y.encodeStateAsUpdate(this.doc)
-    const encryptedUpdate = await encryptData(update, this.encryptionKey)
     let transaction = this.db.transaction(OBJECT_STORE_NAME, 'readwrite')
     let objectStore = transaction.objectStore(OBJECT_STORE_NAME)
 
@@ -155,7 +137,7 @@ export class IndexedDBProvider {
 
     objectStore.add({
       key,
-      value: encryptedUpdate,
+      value: update,
     })
 
     return true
@@ -176,7 +158,6 @@ export class IndexedDBProvider {
    * or null if the desired key already exists.
    **/
   async insertValue(key: number, value: Uint8Array): Promise<number | null> {
-    const encryptedValue = await encryptData(value, this.encryptionKey)
     let objectStore = this.db
       .transaction(OBJECT_STORE_NAME, 'readwrite')
       .objectStore(OBJECT_STORE_NAME)
@@ -187,7 +168,7 @@ export class IndexedDBProvider {
 
     const request = objectStore.put({
       key,
-      value: encryptedValue,
+      value,
     })
 
     await new Promise<void>((resolve, reject) => {

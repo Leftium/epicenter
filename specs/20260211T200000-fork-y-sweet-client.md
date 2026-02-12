@@ -5,8 +5,7 @@
 Y-Sweet is an excellent Yjs sync client built by Jamsocket (Drifting in Space Corp.). After conversations with the maintainer, Y-Sweet is entering maintenance mode and the hosted Jamsocket service is shutting down. However, the client library contains sophisticated engineering that we want to preserve and build upon:
 
 - WebSocket provider with Yjs sync protocol, awareness, and heartbeat
-- Encrypted IndexedDB offline persistence with compaction
-- AES-GCM encryption via Web Crypto API
+- IndexedDB offline persistence with compaction
 - Exponential backoff reconnection with token refresh
 - y-websocket compatibility layer
 
@@ -39,9 +38,9 @@ A separate package is the right call because:
 | File | Lines | Purpose | Fork as-is? |
 |------|-------|---------|-------------|
 | `provider.ts` | ~738 | WebSocket provider, sync protocol, reconnection, heartbeat | Yes |
-| `indexeddb.ts` | ~170 | IndexedDB persistence with encryption + compaction | Yes |
-| `encryption.ts` | ~65 | AES-GCM encrypt/decrypt via Web Crypto | Yes |
-| `keystore.ts` | ~30 | Cookie-based encryption key management | Yes |
+| `indexeddb.ts` | ~170 | IndexedDB persistence with compaction | Yes (encryption removed) |
+| `encryption.ts` | ~65 | ~~AES-GCM encrypt/decrypt via Web Crypto~~ | **Deleted** (see Decision: Remove IndexedDB Encryption) |
+| `keystore.ts` | ~30 | ~~Cookie-based encryption key management~~ | **Deleted** (see Decision: Remove IndexedDB Encryption) |
 | `ws-status.ts` | ~80 | y-websocket event compatibility layer | Yes |
 | `sleeper.ts` | ~35 | Interruptible timeout utility | Yes |
 | `main.ts` | ~40 | Re-exports + `createYjsProvider` factory | Yes |
@@ -74,9 +73,7 @@ packages/y-sweet/
 └── src/
     ├── main.ts                # Re-exports + createYjsProvider factory
     ├── provider.ts            # Core WebSocket provider
-    ├── indexeddb.ts            # Encrypted IndexedDB persistence
-    ├── encryption.ts           # AES-GCM encryption utilities
-    ├── keystore.ts             # Cookie-based key management
+    ├── indexeddb.ts            # IndexedDB persistence (unencrypted)
     ├── ws-status.ts            # y-websocket compatibility layer
     ├── sleeper.ts              # Interruptible timeout utility
     ├── types.ts                # ClientToken, Authorization (inlined from @y-sweet/sdk)
@@ -123,6 +120,37 @@ Key decisions:
 }
 ```
 
+## Decision: Remove IndexedDB Encryption
+
+### Problem
+
+The original Y-Sweet client encrypts IndexedDB data using AES-GCM with a key stored in `document.cookie`. This is security theater:
+
+| Threat | Does cookie-key encryption help? | Why? |
+|--------|----------------------------------|------|
+| Stolen laptop (powered off) | No | Full-disk encryption (FileVault/BitLocker) already handles this |
+| Stolen laptop (powered on, logged in) | No | Attacker can read cookies AND IndexedDB |
+| XSS / malicious script on origin | No | JS can read `document.cookie` and IndexedDB through the same APIs |
+| Another app on the machine | No | Both cookie jar and IndexedDB live in the same browser profile directory |
+| Server operator reading data | No | This encryption never touches the wire |
+
+The encryption key and the encrypted data live in the same security context. Any attack that can read one can read the other.
+
+In Tauri specifically, `document.cookie` may not persist across webview restarts, meaning the encryption key gets lost and **old IndexedDB data becomes permanently undecryptable**. This makes the encryption actively harmful — it's a data loss risk.
+
+### Decision
+
+Remove `encryption.ts` and `keystore.ts` entirely. Simplify `indexeddb.ts` to store raw Yjs updates without encryption. IndexedDB is already origin-scoped in browsers, and sandboxed per-app in Tauri.
+
+If we ever need real encryption (server can't read data), that's end-to-end encryption applied before data leaves the client — a fundamentally different architecture (see secsync, Matrix-CRDT). Cookie-key IndexedDB encryption would still not be part of that solution.
+
+### Files removed
+- `src/encryption.ts` — AES-GCM encrypt/decrypt via Web Crypto API
+- `src/keystore.ts` — Cookie-based encryption key management
+
+### Files modified
+- `src/indexeddb.ts` — Removed all encrypt/decrypt calls; stores raw `Uint8Array` values directly
+
 ## Modifications to Forked Code
 
 ### Phase 1: Exact copy (this spec)
@@ -160,12 +188,19 @@ Update `packages/epicenter/` to consume the fork:
    + import type { ClientToken } from '@epicenter/y-sweet'
    ```
 
+### Phase 2.5: Remove IndexedDB encryption (this PR)
+
+Remove the cookie-based AES-GCM encryption from IndexedDB persistence. See "Decision: Remove IndexedDB Encryption" above.
+
+1. **Delete `encryption.ts` and `keystore.ts`**
+2. **Simplify `indexeddb.ts`**: remove all encrypt/decrypt calls, remove `encryptionKey` constructor param
+3. **No changes to `provider.ts`**: `createIndexedDBProvider(doc, docId)` signature unchanged
+
 ### Phase 3: Iteration (future)
 
 Once the fork is in place, potential improvements:
 
 - Remove deprecated `debugUrl` getter and `encodeClientToken` dependency
-- Replace cookie-based keystore with a more flexible key storage (e.g., configurable callback)
 - Adapt the provider to support our Lifecycle protocol (`whenSynced`/`destroy`)
 - Add TypeScript strict mode improvements (the original uses `any` in several places)
 - Consider removing the y-websocket compat layer if we don't need it
@@ -262,8 +297,8 @@ Source: https://github.com/jamsocket/y-sweet/tree/main/js-pkg/client
 - [ ] Add `tsconfig.json`
 - [ ] Copy `src/provider.ts` verbatim
 - [ ] Copy `src/indexeddb.ts` verbatim
-- [ ] Copy `src/encryption.ts` verbatim
-- [ ] Copy `src/keystore.ts` verbatim
+- [ ] ~~Copy `src/encryption.ts` verbatim~~ (deleted — see encryption removal decision)
+- [ ] ~~Copy `src/keystore.ts` verbatim~~ (deleted — see encryption removal decision)
 - [ ] Copy `src/ws-status.ts` verbatim
 - [ ] Copy `src/sleeper.ts` verbatim
 - [ ] Copy `src/main.ts` verbatim
@@ -306,5 +341,5 @@ Source: https://github.com/jamsocket/y-sweet/tree/main/js-pkg/client
 |------|-----------|
 | Import path changes break something | Phase 1 is copy-only; Phase 2 is a separate PR with import swaps |
 | Missing transitive dependency | Explicitly declare `lib0` which the original relied on transitively |
-| Cookie-based keystore doesn't work in Tauri | Future Phase 3 concern; existing behavior is preserved as-is |
+| Cookie-based keystore doesn't work in Tauri | **Resolved**: encryption removed entirely (see Decision section) |
 | `any` types in original code | Accept for now; improve incrementally in Phase 3 |

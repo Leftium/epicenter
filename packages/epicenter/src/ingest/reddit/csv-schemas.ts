@@ -17,38 +17,23 @@
  */
 
 import { type } from 'arktype';
+import { emptyToNull as _emptyToNull, parseDateToIso } from './transforms.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MORPHS (inline for clarity)
+// MORPHS (arktype wrappers around shared plain functions)
 // ═══════════════════════════════════════════════════════════════════════════════
-
-const REGISTRATION_IP = 'registration ip';
 
 /** Empty string → null */
-const emptyToNull = type('string').pipe((s): string | null =>
-	s === '' ? null : s,
-);
+const emptyToNull = type('string').pipe(_emptyToNull);
 
 /** Optional string → null */
-const optionalToNull = type('string | undefined').pipe((s): string | null =>
-	!s || s === '' ? null : s,
-);
+const optionalToNull = type('string | undefined').pipe(_emptyToNull);
 
 /** Date string → ISO string | null */
-const dateToIso = type('string').pipe((s): string | null => {
-	if (!s || s === '' || s === REGISTRATION_IP) return null;
-	const d = new Date(s);
-	return Number.isNaN(d.getTime()) ? null : d.toISOString();
-});
+const dateToIso = type('string').pipe(parseDateToIso);
 
 /** Optional date → ISO string | null */
-const optionalDateToIso = type('string | undefined').pipe(
-	(s): string | null => {
-		if (!s || s === '' || s === REGISTRATION_IP) return null;
-		const d = new Date(s);
-		return Number.isNaN(d.getTime()) ? null : d.toISOString();
-	},
-);
+const optionalDateToIso = type('string | undefined').pipe(parseDateToIso);
 
 /** Vote direction */
 const voteDirection = type("'up' | 'down' | 'none' | 'removed'");
@@ -62,7 +47,6 @@ export const posts = type({
 	id: 'string',
 	permalink: emptyToNull,
 	date: dateToIso,
-	ip: emptyToNull,
 	subreddit: 'string',
 	gildings: type('string.numeric.parse'),
 	'title?': 'string',
@@ -75,7 +59,6 @@ export const comments = type({
 	id: 'string',
 	permalink: emptyToNull,
 	date: dateToIso,
-	ip: emptyToNull,
 	subreddit: 'string',
 	gildings: type('string.numeric.parse'),
 	link: 'string',
@@ -160,7 +143,6 @@ export const messages = type({
 	permalink: 'string',
 	thread_id: optionalToNull,
 	date: optionalDateToIso,
-	ip: emptyToNull,
 	'from?': 'string',
 	'to?': 'string',
 	'subject?': 'string',
@@ -281,14 +263,7 @@ export const payouts = type({
 	date: 'string',
 	'payout_id?': 'string',
 }).pipe((row) => {
-	// Parse date for both ID fallback and output
-	const dateIso =
-		!row.date || row.date === ''
-			? null
-			: (() => {
-					const d = new Date(row.date);
-					return Number.isNaN(d.getTime()) ? null : d.toISOString();
-				})();
+	const dateIso = parseDateToIso(row.date);
 	return {
 		id: row.payout_id ?? dateIso ?? row.date,
 		date: dateIso,
@@ -303,15 +278,6 @@ export const friends = type({
 	'note?': 'string',
 }).pipe((row) => ({
 	id: row.username,
-	...row,
-}));
-
-/** linked_identities.csv → linked_identities table (computed ID) */
-export const linkedIdentities = type({
-	issuer_id: 'string',
-	subject_id: 'string',
-}).pipe((row) => ({
-	id: `${row.issuer_id}:${row.subject_id}`,
 	...row,
 }));
 
@@ -344,42 +310,15 @@ export const scheduledPosts = type({
 	...row,
 }));
 
-/** ip_logs.csv → ip_logs table (computed ID) */
-export const ipLogs = type({
-	date: 'string',
-	ip: 'string',
-}).pipe((row) => ({
-	id: `${row.date}:${row.ip}`,
-	...row,
-}));
-
-/** sensitive_ads_preferences.csv → sensitive_ads_preferences table (type becomes ID) */
-export const sensitiveAdsPreferences = type({
-	type: 'string',
-	'preference?': 'string',
-}).pipe((row) => ({
-	id: row.type,
-	...row,
-}));
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // KV SCHEMAS (singleton CSVs)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const account_gender = type({ 'account_gender?': 'string' });
-export const birthdate = type({
-	'birthdate?': 'string',
-	'verified_birthdate?': 'string',
-});
 export const statistics = type({ statistic: 'string', 'value?': 'string' });
 export const user_preferences = type({
 	preference: 'string',
 	'value?': 'string',
 });
-export const linked_phone_number = type({ phone_number: 'string' });
-export const stripe = type({ stripe_account_id: 'string' });
-export const twitter = type({ username: 'string' });
-export const persona = type({ persona_inquiry_id: 'string' });
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCHEMA REGISTRY (for data-driven processing)
@@ -412,38 +351,9 @@ export const csvSchemas = {
 	subscriptions,
 	payouts,
 	friends,
-	linkedIdentities,
 	announcements,
 	scheduledPosts,
-	ipLogs,
-	sensitiveAdsPreferences,
 } as const;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// TYPE EXPORTS (inferred from schemas)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export type PostRow = typeof posts.infer;
-export type CommentRow = typeof comments.infer;
-export type DraftRow = typeof drafts.infer;
-export type PostVoteRow = typeof postVotes.infer;
-export type CommentVoteRow = typeof commentVotes.infer;
-export type PollVoteRow = typeof pollVotes.infer;
-export type SavedPostRow = typeof savedPosts.infer;
-export type SavedCommentRow = typeof savedComments.infer;
-export type HiddenPostRow = typeof hiddenPosts.infer;
-export type MessageRow = typeof messages.infer;
-export type ChatHistoryRow = typeof chatHistory.infer;
-export type SubredditRow = typeof subreddit.infer;
-export type MultiredditRow = typeof multireddits.infer;
-export type GildedContentRow = typeof gildedContent.infer;
-export type GoldReceivedRow = typeof goldReceived.infer;
-export type PurchaseRow = typeof purchases.infer;
-export type SubscriptionRow = typeof subscriptions.infer;
-export type PayoutRow = typeof payouts.infer;
-export type FriendRow = typeof friends.infer;
-export type LinkedIdentityRow = typeof linkedIdentities.infer;
-export type AnnouncementRow = typeof announcements.infer;
-export type ScheduledPostRow = typeof scheduledPosts.infer;
-export type IpLogRow = typeof ipLogs.infer;
-export type AdsPreferenceRow = typeof sensitiveAdsPreferences.infer;
+/** Union of all table schema names */
+export type TableName = keyof typeof csvSchemas;

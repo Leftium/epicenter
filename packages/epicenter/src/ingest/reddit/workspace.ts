@@ -21,7 +21,6 @@ const posts = defineTable(
 		id: 'string',
 		permalink: 'string | null',
 		date: 'string | null',
-		ip: 'string | null',
 		subreddit: 'string',
 		gildings: 'number',
 		'title?': 'string',
@@ -38,7 +37,6 @@ const comments = defineTable(
 		id: 'string', // Composite: `${targetType}:${targetId}`
 		permalink: 'string | null',
 		date: 'string | null',
-		ip: 'string | null',
 		subreddit: 'string',
 		gildings: 'number',
 		link: 'string',
@@ -146,7 +144,6 @@ const messages = defineTable(
 		permalink: 'string',
 		thread_id: 'string | null',
 		date: 'string | null',
-		ip: 'string | null',
 		'from?': 'string',
 		'to?': 'string',
 		'subject?': 'string',
@@ -163,7 +160,6 @@ const messagesArchive = defineTable(
 		permalink: 'string',
 		thread_id: 'string | null',
 		date: 'string | null',
-		ip: 'string | null',
 		'from?': 'string',
 		'to?': 'string',
 		'subject?': 'string',
@@ -320,17 +316,6 @@ const friends = defineTable(
 );
 
 /**
- * linked_identities.csv
- */
-const linkedIdentities = defineTable(
-	type({
-		id: 'string', // `${issuer_id}:${subject_id}`
-		issuer_id: 'string',
-		subject_id: 'string',
-	}),
-);
-
-/**
  * announcements.csv
  */
 const announcements = defineTable(
@@ -360,28 +345,6 @@ const scheduledPosts = defineTable(
 		'url?': 'string',
 		submission_time: 'string | null',
 		'recurrence?': 'string',
-	}),
-);
-
-/**
- * ip_logs.csv
- */
-const ipLogs = defineTable(
-	type({
-		id: 'string', // `${date}:${ip}`
-		date: 'string',
-		ip: 'string',
-	}),
-);
-
-/**
- * sensitive_ads_preferences.csv
- */
-const sensitiveAdsPreferences = defineTable(
-	type({
-		id: 'string', // type field as ID
-		type: 'string',
-		'preference?': 'string',
 	}),
 );
 
@@ -415,23 +378,12 @@ export const redditWorkspace = defineWorkspace({
 		subscriptions,
 		payouts,
 		friends,
-		linkedIdentities,
 		announcements,
 		scheduledPosts,
-		ipLogs,
-		sensitiveAdsPreferences,
 	},
 
 	kv: {
 		// Singleton values from CSV files
-		accountGender: defineKv(type('string | null')),
-		birthdate: defineKv(type('string | null')),
-		verifiedBirthdate: defineKv(type('string | null')),
-		phoneNumber: defineKv(type('string | null')),
-		stripeAccountId: defineKv(type('string | null')),
-		personaInquiryId: defineKv(type('string | null')),
-		twitterUsername: defineKv(type('string | null')),
-		// Key-value pairs stored as JSON
 		statistics: defineKv(type('Record<string, string> | null')),
 		preferences: defineKv(type('Record<string, string> | null')),
 	},

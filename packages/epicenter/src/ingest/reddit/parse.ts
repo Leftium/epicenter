@@ -1,7 +1,7 @@
 /**
  * Reddit ZIP Parsing
  *
- * Phase 1 of the import pipeline: Parse ZIP → Record<string, Record<string, string>[]>
+ * Phase 1 of the import pipeline: Parse ZIP → ParsedRedditData
  */
 
 import { unzipSync } from 'fflate';
@@ -31,45 +31,36 @@ const TABLE_CSV_FILES = [
 	'subscriptions.csv',
 	'payouts.csv',
 	'friends.csv',
-	'linked_identities.csv',
 	'announcements.csv',
 	'scheduled_posts.csv',
-	'ip_logs.csv',
-	'sensitive_ads_preferences.csv',
-	'account_gender.csv',
-	'birthdate.csv',
 	'statistics.csv',
 	'user_preferences.csv',
-	'linked_phone_number.csv',
-	'stripe.csv',
-	'twitter.csv',
-	'persona.csv',
-	// Redundant but validate
-	'post_headers.csv',
-	'comment_headers.csv',
-	'message_headers.csv',
-	'messages_archive_headers.csv',
-	// Metadata
-	'checkfile.csv',
+	// Intentionally excluded (see README.md):
+	// - post_headers.csv, comment_headers.csv, message_headers.csv,
+	//   messages_archive_headers.csv: strict subsets of their full counterparts (same rows, minus body)
+	// - checkfile.csv: ZIP integrity checksums, not user data
+	// - ip_logs.csv: login IP history. PII with no workspace value — purely admin/security data.
+	// - sensitive_ads_preferences.csv: Reddit ad targeting categories. Internal ad machinery, not user content.
+	// - linked_identities.csv: opaque OAuth issuer/subject ID pairs. Internal identity metadata.
+	// - linked_phone_number.csv, stripe.csv, persona.csv: opaque account identifiers (phone, Stripe, KYC).
+	//   PII or internal IDs with no meaning outside Reddit.
+	// - account_gender.csv, birthdate.csv, twitter.csv: profile metadata (gender, birthday, linked Twitter).
+	//   Not essential to workspace — users already know these about themselves.
 ] as const;
 
-// Required CSVs that must be present
-const REQUIRED_CSV_FILES = [
-	'posts.csv',
-	'comments.csv',
-	'post_votes.csv',
-	'comment_votes.csv',
-] as const;
+/** CSV key derived from filename (e.g., 'posts.csv' → 'posts') */
+type CsvFileName = (typeof TABLE_CSV_FILES)[number];
+export type CsvKey = CsvFileName extends `${infer Name}.csv` ? Name : never;
 
-// Optional CSVs (may be absent based on user activity)
-const OPTIONAL_CSV_FILES = ['messages.csv', 'message_headers.csv'] as const;
+/** Typed parse output — keys are the known CSV file stems */
+export type ParsedRedditData = Record<CsvKey, Record<string, string>[]>;
 
 /**
  * Convert CSV filename to schema key.
  * E.g., 'post_votes.csv' → 'post_votes'
  */
-function csvNameToKey(filename: string): string {
-	return filename.replace('.csv', '');
+function csvNameToKey(filename: CsvFileName): CsvKey {
+	return filename.replace('.csv', '') as CsvKey;
 }
 
 /**
@@ -80,31 +71,15 @@ function csvNameToKey(filename: string): string {
  */
 export async function parseRedditZip(
 	input: Blob | ArrayBuffer,
-): Promise<Record<string, Record<string, string>[]>> {
-	// Convert input to Uint8Array
-	let bytes: Uint8Array;
-	if (input instanceof Blob) {
-		const buffer = await input.arrayBuffer();
-		bytes = new Uint8Array(buffer);
-	} else {
-		bytes = new Uint8Array(input);
-	}
+): Promise<ParsedRedditData> {
+	const bytes =
+		input instanceof Blob ? await input.bytes() : new Uint8Array(input);
 
 	// Unpack ZIP
 	const files = unzipSync(bytes);
 
-	// Validate required CSVs exist
-	for (const required of REQUIRED_CSV_FILES) {
-		const found = Object.keys(files).some(
-			(name) => name === required || name.endsWith('/' + required),
-		);
-		if (!found) {
-			throw new Error(`Missing required CSV file: ${required}`);
-		}
-	}
-
-	// Parse each CSV
-	const result: Record<string, Record<string, string>[]> = {};
+	// Parse each known CSV, defaulting to empty if absent
+	const result: ParsedRedditData = {} as ParsedRedditData;
 
 	for (const csvFile of TABLE_CSV_FILES) {
 		const key = csvNameToKey(csvFile);
@@ -115,16 +90,6 @@ export async function parseRedditZip(
 		);
 
 		if (!entry) {
-			// Handle optional files
-			if (
-				OPTIONAL_CSV_FILES.includes(
-					csvFile as (typeof OPTIONAL_CSV_FILES)[number],
-				)
-			) {
-				result[key] = [];
-				continue;
-			}
-			// Non-optional files default to empty array
 			result[key] = [];
 			continue;
 		}

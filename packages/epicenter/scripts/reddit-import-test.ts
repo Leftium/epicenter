@@ -1,17 +1,19 @@
 #!/usr/bin/env bun
+
 /**
  * Reddit Import Test Script
  *
- * Run with: bun run packages/epicenter/src/ingest/reddit/import-test.ts [path-to-zip]
+ * Run with: bun packages/epicenter/scripts/reddit-import-test.ts [path-to-zip]
  *
  * If no path provided, looks for reddit_export.zip in the project root.
  */
 
 import {
-	createRedditWorkspace,
 	importRedditExport,
 	previewRedditExport,
-} from './index.js';
+	redditWorkspace,
+} from '../src/ingest/reddit/index.js';
+import { createWorkspace } from '../src/static/index.js';
 
 async function main() {
 	const zipPath = process.argv[2] ?? 'reddit_export.zip';
@@ -24,7 +26,7 @@ async function main() {
 	if (!(await file.exists())) {
 		console.error(`\nError: File not found: ${zipPath}`);
 		console.error(
-			`\nUsage: bun run import-test.ts [path-to-reddit-export.zip]`,
+			`\nUsage: bun run reddit-import-test.ts [path-to-reddit-export.zip]`,
 		);
 		process.exit(1);
 	}
@@ -60,7 +62,7 @@ async function main() {
 	console.log('\n--- Import ---\n');
 
 	// Create workspace client
-	const workspace = createRedditWorkspace();
+	const workspace = createWorkspace(redditWorkspace);
 
 	// Import with progress reporting
 	const importStart = performance.now();

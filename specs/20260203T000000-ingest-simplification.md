@@ -2,7 +2,7 @@
 
 > Refactor the Reddit ingest implementation to reduce code duplication and improve maintainability.
 
-## Status: Phase 2 Complete
+## Status: Phase 3 Complete (API Simplified)
 
 ## Background
 
@@ -22,7 +22,7 @@ The MVP implementation in `packages/epicenter/src/ingest/reddit/` is functional 
 
 ## Non-Goals
 
-1. Change the public API (`importRedditExport`, `previewRedditExport`, `createRedditWorkspace`)
+1. Change the core functionality (import/preview behavior)
 2. Change the workspace schema structure
 3. Add new features
 
@@ -231,7 +231,21 @@ Create a single source of truth for CSV→table mappings that both parse.ts and 
      - index.ts: 370 → 188 lines (-182)
      - transform.ts: 637 → 522 lines (-115)
 
-3. **Phase 3** (Optional)
+3. **Phase 3** (API Cleanup) ✅ COMPLETE
+   - ✅ Deleted 24 dead row type exports from csv-schemas.ts (PostRow, CommentRow, etc.)
+   - ✅ Removed `createRedditWorkspace()` from public API (now private type helper)
+   - ✅ Removed `RedditWorkspaceClient` type from public API
+   - ✅ Inlined `ImportOptions` type into function parameter
+   - ✅ Updated test script to use `createWorkspace(redditWorkspace)` directly
+   - **Result**: Public API reduced from 31 exports to 6:
+     - `redditWorkspace` (workspace definition)
+     - `RedditWorkspace` (type)
+     - `ImportStats` (type)
+     - `ImportProgress` (type)
+     - `importRedditExport` (function)
+     - `previewRedditExport` (function)
+
+4. **Phase 4** (Future - Optional)
    - Consolidate CSV config
    - Consider pipeline architecture for future importers
 

@@ -22,6 +22,17 @@ slugify('BAR and baz', { separator: '' });
 //=> 'barandbaz'
 ```
 
+We wrapped this pattern into a shared utility called `snakify`:
+
+```typescript
+import slugify from '@sindresorhus/slugify';
+
+/** Convert any string to snake_case using slugify. */
+export function snakify(str: string): string {
+	return slugify(str, { separator: '_' });
+}
+```
+
 ## Real Use Case: SQL Column Names
 
 I needed to convert display names to SQL-safe column identifiers. Rolling your own regex is tempting but fragile:
@@ -44,7 +55,7 @@ With slugify:
 import slugify from '@sindresorhus/slugify';
 
 function toSqlIdentifier(displayName: string): string {
-	return slugify(displayName, { separator: '_' });
+	return slugify(displayName, { separator: '_' }); // or return snakify(displayName);
 }
 
 toSqlIdentifier('Blog Posts'); // => 'blog_posts'

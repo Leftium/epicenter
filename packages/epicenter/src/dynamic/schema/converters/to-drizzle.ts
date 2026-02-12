@@ -1,4 +1,3 @@
-import slugify from '@sindresorhus/slugify';
 import type { $Type, IsPrimaryKey, NotNull } from 'drizzle-orm';
 import {
 	integer,
@@ -14,6 +13,7 @@ import {
 } from 'drizzle-orm/sqlite-core';
 import type { Static, TSchema } from 'typebox';
 import { date, json, tags } from '../../../extensions/sqlite/builders';
+import { snakify } from '../../../shared/snakify';
 import type { DateTimeString } from '../fields/datetime';
 import { isNullableField } from '../fields/helpers';
 import type {
@@ -32,7 +32,7 @@ import type {
 } from '../fields/types';
 
 export function toSqlIdentifier(displayName: string): string {
-	return slugify(displayName, { separator: '_' });
+	return snakify(displayName);
 }
 
 /**

@@ -69,9 +69,7 @@ describe('FileTree', () => {
 
 		test('throws ENOENT for invalid id', () => {
 			const tree = setup();
-			expect(() => tree.getRow('bogus' as FileId, '/bogus')).toThrow(
-				'ENOENT',
-			);
+			expect(() => tree.getRow('bogus' as FileId, '/bogus')).toThrow('ENOENT');
 		});
 	});
 

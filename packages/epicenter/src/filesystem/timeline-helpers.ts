@@ -69,9 +69,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				case 'richtext':
 					return '';
 				case 'binary':
-					return new TextDecoder().decode(
-						entry.get('content') as Uint8Array,
-					);
+					return new TextDecoder().decode(entry.get('content') as Uint8Array);
 			}
 		},
 

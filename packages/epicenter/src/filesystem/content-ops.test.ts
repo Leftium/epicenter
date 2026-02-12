@@ -156,9 +156,7 @@ describe('ContentOps', () => {
 			await content.write(id, new Uint8Array([0x48, 0x69])); // "Hi"
 			const size = await content.append(id, ' there');
 			expect(await content.read(id)).toBe('Hi there');
-			expect(size).toBe(
-				new TextEncoder().encode('Hi there').byteLength,
-			);
+			expect(size).toBe(new TextEncoder().encode('Hi there').byteLength);
 
 			// Binary append pushes a new text entry
 			const ydoc = await (content as any).store.ensure(id);

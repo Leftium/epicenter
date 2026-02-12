@@ -33,10 +33,7 @@ export class ContentOps {
 	 * Write data to a file, handling mode switching.
 	 * Returns the byte size of the written data.
 	 */
-	async write(
-		fileId: FileId,
-		data: string | Uint8Array,
-	): Promise<number> {
+	async write(fileId: FileId, data: string | Uint8Array): Promise<number> {
 		const ydoc = await this.store.ensure(fileId);
 		const tl = createTimeline(ydoc);
 
@@ -65,10 +62,7 @@ export class ContentOps {
 	 * - Binary entry: decode + concat + push new text entry
 	 * - No entry: returns null (caller should use write instead)
 	 */
-	async append(
-		fileId: FileId,
-		data: string,
-	): Promise<number | null> {
+	async append(fileId: FileId, data: string): Promise<number | null> {
 		const ydoc = await this.store.ensure(fileId);
 		const tl = createTimeline(ydoc);
 

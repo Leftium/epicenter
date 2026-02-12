@@ -91,9 +91,9 @@ describe('assertUniqueName', () => {
 		const { files } = setup();
 		files.set(makeRow('a', 'hello.txt'));
 
-		expect(() =>
-			assertUniqueName(files, [fid('a')], 'hello.txt'),
-		).toThrow('EEXIST');
+		expect(() => assertUniqueName(files, [fid('a')], 'hello.txt')).toThrow(
+			'EEXIST',
+		);
 	});
 
 	test('ignores trashed files', () => {

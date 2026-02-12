@@ -133,7 +133,10 @@ describe('createFileSystemIndex', () => {
 
 	test('children of a trashed folder become orphans and move to root', () => {
 		const { files } = setup();
-		files.set({ ...makeRow('d1', 'docs', null, 'folder'), trashedAt: Date.now() });
+		files.set({
+			...makeRow('d1', 'docs', null, 'folder'),
+			trashedAt: Date.now(),
+		});
 		files.set(makeRow('f1', 'readme.md', 'd1'));
 		const index = createFileSystemIndex(files);
 
@@ -384,7 +387,10 @@ describe('createFileSystemIndex', () => {
 
 	test('orphan — parent is trashed, child moved to root', () => {
 		const { files } = setup();
-		files.set({ ...makeRow('d1', 'trashed-folder', null, 'folder'), trashedAt: Date.now() });
+		files.set({
+			...makeRow('d1', 'trashed-folder', null, 'folder'),
+			trashedAt: Date.now(),
+		});
 		files.set(makeRow('f1', 'child.txt', 'd1'));
 		const index = createFileSystemIndex(files);
 

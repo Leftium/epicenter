@@ -37,7 +37,7 @@ export function createYSweetConnection(
 
 	// Create sync promise
 	const whenSynced = new Promise<void>((resolve) => {
-		if (provider.synced) {
+		if (provider.status === 'connected') {
 			resolve();
 		} else {
 			const handleSync = (synced: boolean) => {

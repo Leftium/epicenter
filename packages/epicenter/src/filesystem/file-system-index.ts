@@ -1,5 +1,5 @@
 import type { TableHelper } from '../static/types.js';
-import type { FileId, FileRow, FileSystemIndex } from './types.js';
+import type { FileId, FileRow } from './types.js';
 import { disambiguateNames } from './validation.js';
 
 const MAX_DEPTH = 50;
@@ -8,18 +8,25 @@ const MAX_DEPTH = 50;
  * Create runtime indexes for O(1) path lookups from a files table.
  * Subscribes to filesTable.observe() for incremental updates.
  */
-export function createFileSystemIndex(
-	filesTable: TableHelper<FileRow>,
-): FileSystemIndex & { destroy(): void } {
+export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
+	/** "/docs/api.md" → FileId */
 	const pathToId = new Map<string, FileId>();
+	/** parentId (null = root) → [childId, ...] */
 	const childrenOf = new Map<FileId | null, FileId[]>();
 
 	rebuild();
 
-	const unobserve = filesTable.observe((changedIds) => {
-		update(changedIds);
+	// Any row change (create, move, rename, trash) can invalidate paths or
+	// parent-child edges, so we do a full rebuild on every table mutation.
+	// The files table is always in memory so this is fast — O(n) where n = total files.
+	const unobserve = filesTable.observe(() => {
+		rebuild();
 	});
 
+	/**
+	 * Recompute all indexes from scratch: childrenOf, path mappings,
+	 * and self-healing fixes for circular refs and orphans.
+	 */
 	function rebuild() {
 		pathToId.clear();
 		childrenOf.clear();
@@ -44,18 +51,34 @@ export function createFileSystemIndex(
 		buildPaths(filesTable, childrenOf, pathToId);
 	}
 
-	function update(_changedIds: Set<string>) {
-		// Full rebuild on changes. The files table is always in memory
-		// so this is fast (O(n) where n = total files).
-		rebuild();
-	}
-
 	return {
-		pathToId,
-		childrenOf,
+		/** Look up the FileId for a resolved absolute path. */
+		getIdByPath(path: string): FileId | undefined {
+			return pathToId.get(path);
+		},
+		/** Check whether a path exists in the index. */
+		hasPath(path: string): boolean {
+			return pathToId.has(path);
+		},
+		/** Get all indexed paths. */
+		allPaths(): string[] {
+			return Array.from(pathToId.keys());
+		},
+		/** Number of indexed paths. */
+		get pathCount(): number {
+			return pathToId.size;
+		},
+		/** Get child IDs of a parent (null = root). Returns [] if none. */
+		getChildIds(parentId: FileId | null): FileId[] {
+			return childrenOf.get(parentId) ?? [];
+		},
+		/** Stop observing the files table. */
 		destroy: unobserve,
 	};
 }
+
+/** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */
+export type FileSystemIndex = ReturnType<typeof createFileSystemIndex>;
 
 /** Walk parentId chain to compute a file's path */
 function computePath(

@@ -3,9 +3,6 @@ import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
 import { type Guid, generateGuid } from '../dynamic/schema/fields/id.js';
 
-/** Content modes supported by timeline entries */
-export type ContentMode = 'text' | 'richtext' | 'binary';
-
 /**
  * Timeline entry shapes — a discriminated union on 'type'.
  * These describe the SHAPE of what's stored. At runtime, entries are Y.Map
@@ -19,6 +16,9 @@ export type RichTextEntry = {
 };
 export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
+
+/** Content modes supported by timeline entries */
+export type ContentMode = TimelineEntry['type'];
 
 import type { InferTableRow } from '../static/types.js';
 import type { filesTable } from './file-table.js';
@@ -34,14 +34,6 @@ export function generateFileId(): FileId {
 
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;
-
-/** Runtime indexes for O(1) path lookups (ephemeral, not stored in Yjs) */
-export type FileSystemIndex = {
-	/** "/docs/api.md" → FileId */
-	pathToId: Map<string, FileId>;
-	/** parentId (null = root) → [childId, ...] */
-	childrenOf: Map<FileId | null, FileId[]>;
-};
 
 export type ContentDocStore = {
 	/** Get or create a Y.Doc for a file. Awaits provider readiness (e.g. IndexedDB sync). Idempotent. */

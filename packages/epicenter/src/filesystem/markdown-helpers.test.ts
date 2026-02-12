@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
 import { createWorkspace } from '../static/create-workspace.js';
-import type { TableHelper } from '../static/types.js';
 import { filesTable } from './file-table.js';
 import {
 	parseFrontmatter,
@@ -12,7 +11,6 @@ import {
 	updateYXmlFragmentFromString,
 	yMapToRecord,
 } from './markdown-helpers.js';
-import type { FileRow } from './types.js';
 import { YjsFileSystem } from './yjs-file-system.js';
 
 describe('parseFrontmatter', () => {
@@ -145,9 +143,7 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return new YjsFileSystem(
-			ws.tables.files as unknown as TableHelper<FileRow>,
-		);
+		return YjsFileSystem.create(ws.tables.files);
 	}
 
 	test('write and read .md file with front matter', async () => {

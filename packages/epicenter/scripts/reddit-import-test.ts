@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+
 /**
  * Reddit Import Test Script
  *
@@ -7,12 +8,12 @@
  * If no path provided, looks for reddit_export.zip in the project root.
  */
 
-import { createWorkspace } from '../src/static/index.js';
 import {
 	importRedditExport,
 	previewRedditExport,
 	redditWorkspace,
 } from '../src/ingest/reddit/index.js';
+import { createWorkspace } from '../src/static/index.js';
 
 async function main() {
 	const zipPath = process.argv[2] ?? 'reddit_export.zip';

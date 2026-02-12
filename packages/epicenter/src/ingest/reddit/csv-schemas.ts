@@ -17,10 +17,7 @@
  */
 
 import { type } from 'arktype';
-import {
-	emptyToNull as _emptyToNull,
-	parseDateToIso,
-} from './transforms.js';
+import { emptyToNull as _emptyToNull, parseDateToIso } from './transforms.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MORPHS (arktype wrappers around shared plain functions)
@@ -360,4 +357,3 @@ export const csvSchemas = {
 
 /** Union of all table schema names */
 export type TableName = keyof typeof csvSchemas;
-

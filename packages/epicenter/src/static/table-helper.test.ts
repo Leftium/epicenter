@@ -13,7 +13,7 @@ function setup() {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
 	const ykv = new YKeyValueLww(yarray);
-	return { ydoc, yarray, ykv };
+	return { yarray, ykv };
 }
 
 describe('createTableHelper', () => {

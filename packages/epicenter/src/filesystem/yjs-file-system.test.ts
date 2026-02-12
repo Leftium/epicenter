@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Bash } from 'just-bash';
 import { createWorkspace } from '../static/create-workspace.js';
 import { filesTable } from './file-table.js';
-import { getTimeline } from './timeline-helpers.js';
+import { createTimeline } from './timeline-helpers.js';
 import { YjsFileSystem } from './yjs-file-system.js';
 
 function setup() {
@@ -387,7 +387,7 @@ async function getTimelineLength(
 	const content = (fs as any).content;
 	const id = tree.lookupId(path);
 	const ydoc = await content.store.ensure(id);
-	return getTimeline(ydoc).length;
+	return createTimeline(ydoc).length;
 }
 
 describe('timeline content storage', () => {

@@ -1,14 +1,6 @@
 import type { ProviderFactory } from '../dynamic/provider-types.js';
 import { createContentDocStore } from './content-doc-store.js';
-import {
-	getCurrentEntry,
-	getEntryMode,
-	getTimeline,
-	pushBinaryEntry,
-	pushTextEntry,
-	readEntryAsBuffer,
-	readEntryAsString,
-} from './timeline-helpers.js';
+import { createTimeline } from './timeline-helpers.js';
 import type { ContentDocStore, FileId } from './types.js';
 
 /**
@@ -28,17 +20,13 @@ export class ContentOps {
 	/** Read file content as a string. Returns empty string for empty files. */
 	async read(fileId: FileId): Promise<string> {
 		const ydoc = await this.store.ensure(fileId);
-		const entry = getCurrentEntry(getTimeline(ydoc));
-		if (!entry) return '';
-		return readEntryAsString(entry);
+		return createTimeline(ydoc).readAsString();
 	}
 
 	/** Read file content as a Uint8Array. Returns empty array for empty files. */
 	async readBuffer(fileId: FileId): Promise<Uint8Array> {
 		const ydoc = await this.store.ensure(fileId);
-		const entry = getCurrentEntry(getTimeline(ydoc));
-		if (!entry) return new Uint8Array();
-		return readEntryAsBuffer(entry);
+		return createTimeline(ydoc).readAsBuffer();
 	}
 
 	/**
@@ -50,22 +38,21 @@ export class ContentOps {
 		data: string | Uint8Array,
 	): Promise<number> {
 		const ydoc = await this.store.ensure(fileId);
-		const timeline = getTimeline(ydoc);
-		const current = getCurrentEntry(timeline);
+		const tl = createTimeline(ydoc);
 
 		if (typeof data === 'string') {
-			if (current && getEntryMode(current) === 'text') {
-				const ytext = current.get('content') as import('yjs').Text;
+			if (tl.currentMode === 'text') {
+				const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
 				ydoc.transact(() => {
 					ytext.delete(0, ytext.length);
 					ytext.insert(0, data);
 				});
 			} else {
-				ydoc.transact(() => pushTextEntry(timeline, data));
+				ydoc.transact(() => tl.pushText(data));
 			}
 			return new TextEncoder().encode(data).byteLength;
 		} else {
-			ydoc.transact(() => pushBinaryEntry(timeline, data));
+			ydoc.transact(() => tl.pushBinary(data));
 			return data.byteLength;
 		}
 	}
@@ -83,28 +70,28 @@ export class ContentOps {
 		data: string,
 	): Promise<number | null> {
 		const ydoc = await this.store.ensure(fileId);
-		const timeline = getTimeline(ydoc);
-		const current = getCurrentEntry(timeline);
+		const tl = createTimeline(ydoc);
 
-		if (current && getEntryMode(current) === 'text') {
-			const ytext = current.get('content') as import('yjs').Text;
+		if (tl.currentMode === 'text') {
+			const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
 			ydoc.transact(() => ytext.insert(ytext.length, data));
-		} else if (current && getEntryMode(current) === 'binary') {
+		} else if (tl.currentMode === 'binary') {
 			const existing = new TextDecoder().decode(
-				current.get('content') as Uint8Array,
+				tl.currentEntry!.get('content') as Uint8Array,
 			);
-			ydoc.transact(() => pushTextEntry(timeline, existing + data));
+			ydoc.transact(() => tl.pushText(existing + data));
 		} else {
 			return null;
 		}
 
-		const updatedEntry = getCurrentEntry(timeline)!;
-		if (getEntryMode(updatedEntry) === 'text') {
+		// Re-read after mutation
+		const updated = createTimeline(ydoc);
+		if (updated.currentMode === 'text') {
 			return new TextEncoder().encode(
-				(updatedEntry.get('content') as import('yjs').Text).toString(),
+				(updated.currentEntry!.get('content') as import('yjs').Text).toString(),
 			).byteLength;
 		}
-		return (updatedEntry.get('content') as Uint8Array).byteLength;
+		return (updated.currentEntry!.get('content') as Uint8Array).byteLength;
 	}
 
 	/** Destroy a specific file's content doc. */

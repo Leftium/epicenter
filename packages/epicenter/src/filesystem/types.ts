@@ -3,9 +3,6 @@ import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
 import { type Guid, generateGuid } from '../dynamic/schema/fields/id.js';
 
-/** Content modes supported by timeline entries */
-export type ContentMode = 'text' | 'richtext' | 'binary';
-
 /**
  * Timeline entry shapes — a discriminated union on 'type'.
  * These describe the SHAPE of what's stored. At runtime, entries are Y.Map
@@ -19,6 +16,9 @@ export type RichTextEntry = {
 };
 export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
+
+/** Content modes supported by timeline entries */
+export type ContentMode = TimelineEntry['type'];
 
 import type { InferTableRow } from '../static/types.js';
 import type { filesTable } from './file-table.js';

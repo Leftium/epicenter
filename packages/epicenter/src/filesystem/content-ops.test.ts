@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ContentOps } from './content-ops.js';
-import { getTimeline } from './timeline-helpers.js';
+import { createTimeline } from './timeline-helpers.js';
 import { generateFileId } from './types.js';
 
 function setup() {
@@ -89,7 +89,7 @@ describe('ContentOps', () => {
 
 			// Verify timeline didn't grow
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(1);
+			expect(createTimeline(ydoc).length).toBe(1);
 		});
 
 		test('binary write always pushes new entry', async () => {
@@ -100,7 +100,7 @@ describe('ContentOps', () => {
 			await content.write(id, new Uint8Array([3]));
 
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(3);
+			expect(createTimeline(ydoc).length).toBe(3);
 		});
 	});
 
@@ -121,7 +121,7 @@ describe('ContentOps', () => {
 
 			// Should have 3 timeline entries
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(3);
+			expect(createTimeline(ydoc).length).toBe(3);
 		});
 
 		test('binary → text pushes new entry', async () => {
@@ -132,7 +132,7 @@ describe('ContentOps', () => {
 			expect(await content.read(id)).toBe('now text');
 
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(2);
+			expect(createTimeline(ydoc).length).toBe(2);
 		});
 	});
 
@@ -147,7 +147,7 @@ describe('ContentOps', () => {
 
 			// Should not grow timeline
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(1);
+			expect(createTimeline(ydoc).length).toBe(1);
 		});
 
 		test('append to binary entry decodes and pushes text', async () => {
@@ -162,7 +162,7 @@ describe('ContentOps', () => {
 
 			// Binary append pushes a new text entry
 			const ydoc = await (content as any).store.ensure(id);
-			expect(getTimeline(ydoc).length).toBe(2);
+			expect(createTimeline(ydoc).length).toBe(2);
 		});
 
 		test('append on empty file returns null', async () => {

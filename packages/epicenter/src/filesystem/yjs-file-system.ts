@@ -2,6 +2,7 @@ import type { CpOptions, FileContent, FsStat, IFileSystem, MkdirOptions, RmOptio
 import type { TableHelper } from '../static/types.js';
 import { createContentDocStore } from './content-doc-store.js';
 import { createFileSystemIndex } from './file-system-index.js';
+import { getCurrentEntry, getEntryMode, getTimeline, pushBinaryEntry, pushTextEntry, readEntryAsBuffer, readEntryAsString } from './timeline-helpers.js';
 import type { ContentDocStore, FileId, FileRow, FileSystemIndex } from './types.js';
 import { generateFileId } from './types.js';
 import { assertUniqueName, disambiguateNames, fsError, validateName } from './validation.js';
@@ -32,7 +33,6 @@ function posixResolve(base: string, path: string): string {
 }
 
 export class YjsFileSystem implements IFileSystem {
-	private binaryStore = new Map<FileId, Uint8Array>();
 	private index: FileSystemIndex & { destroy(): void };
 	private store: ContentDocStore;
 
@@ -124,12 +124,10 @@ export class YjsFileSystem implements IFileSystem {
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-		// Check binary store first
-		const binary = this.binaryStore.get(id);
-		if (binary) return new TextDecoder().decode(binary);
-
 		const ydoc = this.store.ensure(id);
-		return ydoc.getText('content').toString();
+		const entry = getCurrentEntry(getTimeline(ydoc));
+		if (!entry) return '';
+		return readEntryAsString(entry);
 	}
 
 	async readFileBuffer(path: string): Promise<Uint8Array> {
@@ -138,13 +136,10 @@ export class YjsFileSystem implements IFileSystem {
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-		// Check binary store first (zero-copy for binary files)
-		const binary = this.binaryStore.get(id);
-		if (binary) return binary;
-
-		// Text path: encode Y.Text content
 		const ydoc = this.store.ensure(id);
-		return new TextEncoder().encode(ydoc.getText('content').toString());
+		const entry = getCurrentEntry(getTimeline(ydoc));
+		if (!entry) return new Uint8Array();
+		return readEntryAsBuffer(entry);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -174,18 +169,25 @@ export class YjsFileSystem implements IFileSystem {
 			});
 		}
 
+		const ydoc = this.store.ensure(id);
+		const timeline = getTimeline(ydoc);
+		const current = getCurrentEntry(timeline);
+
 		if (typeof data === 'string') {
-			// Text path: Y.Text('content')
-			const ydoc = this.store.ensure(id);
-			const ytext = ydoc.getText('content');
-			ydoc.transact(() => {
-				ytext.delete(0, ytext.length);
-				ytext.insert(0, data);
-			});
-			this.binaryStore.delete(id);
+			if (current && getEntryMode(current) === 'text') {
+				// Same-mode text: edit existing Y.Text in place (timeline doesn't grow)
+				const ytext = current.get('content') as import('yjs').Text;
+				ydoc.transact(() => {
+					ytext.delete(0, ytext.length);
+					ytext.insert(0, data);
+				});
+			} else {
+				// Mode switch or first write: push new text entry
+				ydoc.transact(() => pushTextEntry(timeline, data));
+			}
 		} else {
-			// Binary path: ephemeral in-memory store
-			this.binaryStore.set(id, data);
+			// Binary: always push new entry (atomic, no CRDT merge)
+			ydoc.transact(() => pushBinaryEntry(timeline, data));
 		}
 
 		this.filesTable.update(id, { size, updatedAt: Date.now() });
@@ -200,22 +202,29 @@ export class YjsFileSystem implements IFileSystem {
 		const row = this.getRow(id, resolved);
 		if (row.type === 'folder') throw fsError('EISDIR', resolved);
 
-		// Binary file: read-concat-rewrite (binary can't do incremental append)
-		const binary = this.binaryStore.get(id);
-		if (binary) {
-			const existingText = new TextDecoder().decode(binary);
-			await this.writeFile(resolved, existingText + content);
+		const ydoc = this.store.ensure(id);
+		const timeline = getTimeline(ydoc);
+		const current = getCurrentEntry(timeline);
+
+		if (current && getEntryMode(current) === 'text') {
+			// Incremental append to existing Y.Text
+			const ytext = current.get('content') as import('yjs').Text;
+			ydoc.transact(() => ytext.insert(ytext.length, content));
+		} else if (current && getEntryMode(current) === 'binary') {
+			// Binary entry: decode existing, concat, push new text entry
+			const existing = new TextDecoder().decode(current.get('content') as Uint8Array);
+			ydoc.transact(() => pushTextEntry(timeline, existing + content));
+		} else {
+			// No current entry: same as writeFile
+			await this.writeFile(path, data);
 			return;
 		}
 
-		// Y.Text path: incremental insert at end (O(append) not O(file))
-		const ydoc = this.store.ensure(id);
-		const ytext = ydoc.getText('content');
-		ydoc.transact(() => {
-			ytext.insert(ytext.length, content);
-		});
-
-		const newSize = new TextEncoder().encode(ytext.toString()).byteLength;
+		// Size from current entry's full content
+		const updatedEntry = getCurrentEntry(timeline)!;
+		const newSize = getEntryMode(updatedEntry) === 'text'
+			? new TextEncoder().encode((updatedEntry.get('content') as import('yjs').Text).toString()).byteLength
+			: (updatedEntry.get('content') as Uint8Array).byteLength;
 		this.filesTable.update(id, { size: newSize, updatedAt: Date.now() });
 	}
 
@@ -297,7 +306,6 @@ export class YjsFileSystem implements IFileSystem {
 		// Soft delete
 		this.filesTable.update(id, { trashedAt: Date.now() });
 		this.store.destroy(id);
-		this.binaryStore.delete(id);
 
 		// If recursive, soft-delete children too
 		if (row.type === 'folder' && options?.recursive) {
@@ -320,13 +328,15 @@ export class YjsFileSystem implements IFileSystem {
 				await this.cp(`${resolvedSrc}/${child}`, `${resolvedDest}/${child}`, options);
 			}
 		} else {
-			// Copy binary data if it exists
-			const binary = this.binaryStore.get(srcId);
-			if (binary) {
-				await this.writeFile(resolvedDest, new Uint8Array(binary));
+			// Read from source timeline entry, write via writeFile
+			const srcDoc = this.store.ensure(srcId);
+			const entry = getCurrentEntry(getTimeline(srcDoc));
+			if (!entry) {
+				await this.writeFile(resolvedDest, '');
+			} else if (getEntryMode(entry) === 'binary') {
+				await this.writeFile(resolvedDest, entry.get('content') as Uint8Array);
 			} else {
-				const content = await this.readFile(resolvedSrc);
-				await this.writeFile(resolvedDest, content);
+				await this.writeFile(resolvedDest, readEntryAsString(entry));
 			}
 		}
 	}
@@ -450,7 +460,6 @@ export class YjsFileSystem implements IFileSystem {
 			if (result.status !== 'valid' || result.row.trashedAt !== null) continue;
 			this.filesTable.update(cid, { trashedAt: Date.now() });
 			this.store.destroy(cid);
-			this.binaryStore.delete(cid);
 			if (result.row.type === 'folder') {
 				this.softDeleteDescendants(cid);
 			}

@@ -1,18 +1,18 @@
 {
-  "name": "@epicenter/y-sweet",
-  "version": "0.1.0",
-  "description": "Yjs WebSocket sync provider. Forked from @y-sweet/client by Jamsocket (MIT).",
-  "license": "MIT",
-  "main": "./src/main.ts",
-  "types": "./src/main.ts",
-  "exports": {
-    ".": "./src/main.ts"
-  },
-  "dependencies": {
-    "lib0": "^0.2.99",
-    "y-protocols": "^1.0.6"
-  },
-  "peerDependencies": {
-    "yjs": "^13.0.0"
-  }
+	"name": "@epicenter/y-sweet",
+	"version": "0.1.0",
+	"description": "Yjs WebSocket sync provider. Forked from @y-sweet/client by Jamsocket (MIT).",
+	"license": "MIT",
+	"main": "./src/main.ts",
+	"types": "./src/main.ts",
+	"exports": {
+		".": "./src/main.ts"
+	},
+	"dependencies": {
+		"lib0": "^0.2.99",
+		"y-protocols": "^1.0.6"
+	},
+	"peerDependencies": {
+		"yjs": "^13.0.0"
+	}
 }

@@ -6,31 +6,31 @@
  * and then pass it to the client.
  */
 export type ClientToken = {
-  /** The bare URL of the WebSocket endpoint to connect to. The `doc` string will be appended to this. */
-  url: string
+	/** The bare URL of the WebSocket endpoint to connect to. The `doc` string will be appended to this. */
+	url: string;
 
-  /** The base URL for document-level endpoints. */
-  baseUrl: string
+	/** The base URL for document-level endpoints. */
+	baseUrl: string;
 
-  /** A unique identifier for the document that the token connects to. */
-  docId: string
+	/** A unique identifier for the document that the token connects to. */
+	docId: string;
 
-  /** A string that grants the bearer access to the document. By default, the development server does not require a token. */
-  token?: string
+	/** A string that grants the bearer access to the document. By default, the development server does not require a token. */
+	token?: string;
 
-  /** The authorization level of the client. */
-  authorization?: Authorization
-}
+	/** The authorization level of the client. */
+	authorization?: Authorization;
+};
 
-export type Authorization = 'full' | 'read-only'
+export type Authorization = 'full' | 'read-only';
 
 export type AuthDocRequest = {
-  /** The authorization level to use for the document. Defaults to 'full'. */
-  authorization?: Authorization
+	/** The authorization level to use for the document. Defaults to 'full'. */
+	authorization?: Authorization;
 
-  /** A user ID to associate with the token. Not currently used. */
-  userId?: string
+	/** A user ID to associate with the token. Not currently used. */
+	userId?: string;
 
-  /** The number of seconds the token should be valid for. */
-  validForSeconds?: number
-}
+	/** The number of seconds the token should be valid for. */
+	validForSeconds?: number;
+};

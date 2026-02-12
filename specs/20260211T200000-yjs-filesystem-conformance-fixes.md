@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-11
 **Status**: Implemented
-**Related**: `specs/20260208T000000-yjs-filesystem-spec.md`, `specs/20260211T100000-simplified-ytext-content-store.md`
+**Related**: `specs/20260208T000000-yjs-filesystem-spec.md`, `specs/20260211T100000-simplified-ytext-content-store.md` (superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`)
 
 ---
 

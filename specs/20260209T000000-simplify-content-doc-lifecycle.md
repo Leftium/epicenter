@@ -3,7 +3,7 @@
 **Date**: 2026-02-09T00:00:00
 **Status**: Implemented
 **Parent**: `specs/20260208T000000-yjs-filesystem-spec.md`
-**Implemented by**: `specs/20260211T100000-simplified-ytext-content-store.md` — the simplification went further than this spec planned. Pool and cache were dropped. `openDocument()`/`documentHandleToString()` were removed entirely. `ContentDocStore` kept as `ensure`/`destroy`/`destroyAll`. The ensure/heal/open pipeline was simplified to just `ensure` — no healing, no document handles.
+**Implemented by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — the simplification went further than this spec planned. Pool and cache were dropped. `openDocument()`/`documentHandleToString()` were removed entirely. `ContentDocStore` kept as `ensure`/`destroy`/`destroyAll`. The ensure/heal/open pipeline was simplified to just `ensure` — no healing, no document handles.
 **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — `ContentDocStore` remains unchanged under Option F. The timeline changes what's inside each Y.Doc, not how Y.Doc lifecycle is managed.
 
 > **Note (2026-02-11)**: The `mv()` type-changing rename concept is eliminated entirely — all files use `Y.Text('content')`, so `mv()` is always metadata-only. No `store.destroy()` in `mv()`, no healing, no conversion.

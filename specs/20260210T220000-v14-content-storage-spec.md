@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-10
 **Status**: Deferred
-**Deferred by**: `specs/20260211T100000-simplified-ytext-content-store.md` — v14 migration is a separate project. Core idea (markdown-as-text, single Y.Text per file) implemented with v13 Yjs.
+**Deferred by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — v14 migration is a separate project. Core idea (markdown-as-text, single Y.Text per file) implemented with v13 Yjs.
 **Supersedes**: `specs/20260210T120000-content-format-spec.md` (the v13 lens architecture), `specs/20260210T150000-content-storage-format-debate.md` (implements its recommendation)
 **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F addresses similar goals (multi-mode content, persistent binary, format metadata) on v13. The timeline structure is orthogonal to Yjs version — when v14 arrives, timeline entries could use `Y.Type` instead of `Y.Text`/`Y.XmlFragment`.
 

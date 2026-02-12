@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-10
 **Status**: Superseded
-**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` — lens architecture deferred. Single `Y.Text('content')` per file replaces all format-specific CRDT structures.
+**Superseded by**: `specs/20260211T100000-simplified-ytext-content-store.md` (further superseded by `specs/20260211T230000-timeline-content-storage-implementation.md`) — lens architecture deferred. Single `Y.Text('content')` replaced all format-specific CRDT structures; timeline approach now uses `Y.Array('timeline')` with nested shared types.
 **Supersedes**: Triple-key architecture in `specs/20260208T000000-yjs-filesystem-spec.md` (lines 31-36, 766-862), `convert-on-switch.ts`
 **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` — Option F (Y.Array timeline with nested shared types) eliminates the need for lenses entirely. Each timeline entry is self-contained with its own typed content — no registry, no healing, no stale keys.
 

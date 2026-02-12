@@ -1,0 +1,50 @@
+import * as Y from 'yjs'
+import {
+  type AuthEndpoint,
+  EVENT_CONNECTION_STATUS,
+  EVENT_LOCAL_CHANGES,
+  STATUS_CONNECTED,
+  STATUS_CONNECTING,
+  STATUS_ERROR,
+  STATUS_HANDSHAKING,
+  STATUS_OFFLINE,
+  YSweetProvider,
+  type YSweetProviderParams,
+  type YSweetStatus,
+} from './provider'
+export {
+  EVENT_CONNECTION_STATUS,
+  EVENT_LOCAL_CHANGES,
+  STATUS_CONNECTED,
+  STATUS_CONNECTING,
+  STATUS_ERROR,
+  STATUS_HANDSHAKING,
+  STATUS_OFFLINE,
+  YSweetProvider,
+}
+export type {
+  AuthEndpoint,
+  YSweetProviderParams,
+  YSweetStatus,
+}
+
+export type { ClientToken, Authorization, AuthDocRequest } from './types'
+export { encodeClientToken, decodeClientToken } from './encoding'
+
+/**
+ * Given a docId and {@link AuthEndpoint}, create a {@link YSweetProvider} for it.
+ *
+ * @param doc
+ * @param docId
+ * @param authEndpoint
+ * @param extraOptions
+ * @returns
+ */
+export function createYjsProvider(
+  doc: Y.Doc,
+  docId: string,
+  authEndpoint: AuthEndpoint,
+  extraOptions: Partial<YSweetProviderParams> = {},
+): YSweetProvider {
+  return new YSweetProvider(authEndpoint, docId, doc, extraOptions)
+}

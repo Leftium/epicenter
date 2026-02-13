@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
-import { type Guid, generateGuid } from '../dynamic/schema/fields/id.js';
+import { type Guid, generateGuid } from '../shared/id.js';
 
 /**
  * Timeline entry shapes — a discriminated union on 'type'.

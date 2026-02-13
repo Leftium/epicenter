@@ -12,6 +12,9 @@ import type { Brand } from 'wellcrafted/brand';
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
+const nanoid10 = customAlphabet(ALPHABET, 10);
+const nanoid15 = customAlphabet(ALPHABET, 15);
+
 /**
  * ID type - branded string for table row identifiers.
  *
@@ -58,8 +61,7 @@ export function Id(value: string): Id {
  * ```
  */
 export function generateId(): Id {
-	const nanoid = customAlphabet(ALPHABET, 10);
-	return nanoid() as Id;
+	return nanoid10() as Id;
 }
 
 /**
@@ -85,6 +87,5 @@ export type Guid = string & Brand<'Guid'>;
  * ```
  */
 export function generateGuid(): Guid {
-	const nanoid = customAlphabet(ALPHABET, 15);
-	return nanoid() as Guid;
+	return nanoid15() as Guid;
 }

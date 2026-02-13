@@ -52,6 +52,9 @@ export {
 // Error types
 export type { ExtensionError } from '../shared/errors';
 export { ExtensionErr } from '../shared/errors';
+// ID type and helpers (needed for type assertions with browser converters)
+export type { Id } from '../shared/id';
+export { generateId, Id as createId } from '../shared/id';
 // Lifecycle utilities (re-exported for extension authors)
 export {
 	defineExports,
@@ -72,9 +75,6 @@ export {
 	text,
 } from './schema/fields/factories';
 export { isNullableField } from './schema/fields/helpers';
-// ID type and helpers (needed for type assertions with browser converters)
-export type { Id } from './schema/fields/id';
-export { generateId, Id as createId } from './schema/fields/id';
 // Row and field types
 export type {
 	CellValue,

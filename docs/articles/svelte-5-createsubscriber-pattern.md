@@ -159,3 +159,7 @@ Svelte re-renders components reading `rows`
 ---
 
 This pattern has been solid for syncing Yjs CRDTs in a local-first app. Works great for any external store with an observe/subscribe API.
+
+## Further Reading
+
+For a consumer-focused guide with more examples (BroadcastChannel, IntersectionObserver, and more), see [Using createSubscriber](./using-createsubscriber.md). For the version signal, reference counting, and `render_effect` internals, see [How createSubscriber Works](./how-createsubscriber-works.md). For choosing between `$state` and `createSubscriber`, see [`$state` vs `createSubscriber`: Who Owns the Reactivity?](./state-vs-createsubscriber-who-owns-reactivity.md).

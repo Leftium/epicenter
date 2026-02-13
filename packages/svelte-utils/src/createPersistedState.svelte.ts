@@ -1,6 +1,4 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { on } from 'svelte/events';
-import { createSubscriber } from 'svelte/reactivity';
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { trySync } from 'wellcrafted/result';
 
@@ -144,29 +142,17 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 
 	let value = $state(parseValueFromStorage(window.localStorage.getItem(key)));
 
-	const subscribe = createSubscriber((update) => {
-		const storage = on(window, 'storage', (e) => {
-			if (e.key !== key) return;
-			value = parseValueFromStorage(e.newValue);
-			update(); // Notify reactive contexts of state change
-		});
-
-		const focus = on(window, 'focus', () => {
-			value = parseValueFromStorage(window.localStorage.getItem(key));
-			update(); // Notify reactive contexts of state change
-		});
-
-		return () => {
-			storage();
-			focus();
-		};
+	window.addEventListener('storage', (e) => {
+		if (e.key !== key) return;
+		value = parseValueFromStorage(e.newValue);
 	});
 
-	// No need for initial load in $effect since value is set synchronously above
+	window.addEventListener('focus', () => {
+		value = parseValueFromStorage(window.localStorage.getItem(key));
+	});
 
 	return {
 		get value() {
-			subscribe();
 			return value;
 		},
 		set value(newValue: StandardSchemaV1.InferOutput<TSchema>) {

@@ -116,6 +116,12 @@ export class YSweetProvider {
 
 	private retries: number = 0;
 
+	private boundUpdate: (update: Uint8Array, origin: unknown) => void;
+	private boundAwarenessUpdate: (
+		changes: { added: Array<any>; updated: Array<any>; removed: Array<any> },
+		origin: any,
+	) => void;
+
 	constructor(
 		private authEndpoint: AuthEndpoint,
 		_docId: string,
@@ -127,7 +133,8 @@ export class YSweetProvider {
 		}
 
 		this.awareness = new awarenessProtocol.Awareness(doc);
-		this.awareness.on('update', this.handleAwarenessUpdate.bind(this));
+		this.boundAwarenessUpdate = this.handleAwarenessUpdate.bind(this);
+		this.awareness.on('update', this.boundAwarenessUpdate);
 		this.WebSocketPolyfill = extraOptions.WebSocketPolyfill || WebSocket;
 
 		this.online = this.online.bind(this);
@@ -137,7 +144,8 @@ export class YSweetProvider {
 			window.addEventListener('online', this.online);
 		}
 
-		doc.on('update', this.update.bind(this));
+		this.boundUpdate = this.update.bind(this);
+		doc.on('update', this.boundUpdate);
 
 		if (extraOptions.connect !== false) {
 			this.connect();
@@ -542,6 +550,9 @@ export class YSweetProvider {
 
 	public destroy() {
 		this.disconnect();
+
+		this.doc.off('update', this.boundUpdate);
+		this.awareness.off('update', this.boundAwarenessUpdate);
 
 		awarenessProtocol.removeAwarenessStates(
 			this.awareness,

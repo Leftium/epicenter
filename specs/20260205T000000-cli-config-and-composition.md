@@ -18,63 +18,62 @@ Actions use closure-based dependency injection — they close over the client va
 
 The original approach proposed a `defineConfig` wrapper that bundles `{ client, actions }` into a config object. This works but introduces unnecessary indirection:
 
-- **New concept**: `defineConfig` is an identity function that exists solely for TypeScript. The codebase already has a builder pattern (`.withExtensions()`) that solves the same coupling problem.
+- **New concept**: `defineConfig` is an identity function that exists solely for TypeScript. The codebase already has a builder pattern (`.withExtension()`) that solves the same coupling problem.
 - **Two objects**: The "config" is a bag containing a client. The client should BE the config — it already carries tables, kv, and capabilities.
 - **Discovery complexity**: Duck-typing three shapes (raw client, config object, composed config) creates three code paths.
 - **The code already wants this**: `cli.ts:59` has `options?.actions ?? (client as any).actions` — it tries to read actions from the client.
 
-Actions have the same relationship to the client that extensions do: they depend on it, travel with it, share its lifecycle. Extensions are coupled via `.withExtensions()`. Actions should be coupled the same way.
+Actions have the same relationship to the client that extensions do: they depend on it, travel with it, share its lifecycle. Extensions are coupled via `.withExtension()`. Actions should be coupled the same way.
 
 ## Solution: `.withActions()` Builder
 
 ### API Design
 
-`.withActions()` chains after `createWorkspace()` or after `.withExtensions()`. It receives a factory function that gets the current client and returns an actions tree. The result is the same client with an `actions` property.
+`.withActions()` chains after `createWorkspace()` or after `.withExtension()`. It receives a factory function that gets the current client and returns an actions tree. The result is the same client with an `actions` property.
 
 ```typescript
 // Without extensions — actions get base client
 export default createWorkspace({
-  id: 'blog',
-  tables: { posts },
-})
-  .withActions((client) => ({
-    getAll: defineQuery({
-      handler: () => client.tables.posts.getAllValid(),
-    }),
-  }))
+	id: 'blog',
+	tables: { posts },
+}).withActions((client) => ({
+	getAll: defineQuery({
+		handler: () => client.tables.posts.getAllValid(),
+	}),
+}));
 
-// With extensions — actions get client WITH capabilities
+// With extensions — actions get client WITH extensions
 export default createWorkspace(redditWorkspace)
-  .withExtensions({ persistence })
-  .withActions((client) => ({
-    import: defineMutation({
-      description: 'Import Reddit GDPR export',
-      input: type({ file: 'string' }),
-      handler: async ({ file }) => {
-        const data = await Bun.file(file).arrayBuffer();
-        return importRedditExport(data, client);
-      },
-    }),
-    preview: defineQuery({
-      description: 'Preview export without importing',
-      input: type({ file: 'string' }),
-      handler: async ({ file }) => {
-        const data = await Bun.file(file).arrayBuffer();
-        return previewRedditExport(data);
-      },
-    }),
-  }))
+	.withExtension('persistence', persistence)
+	.withActions((client) => ({
+		import: defineMutation({
+			description: 'Import Reddit GDPR export',
+			input: type({ file: 'string' }),
+			handler: async ({ file }) => {
+				const data = await Bun.file(file).arrayBuffer();
+				return importRedditExport(data, client);
+			},
+		}),
+		preview: defineQuery({
+			description: 'Preview export without importing',
+			input: type({ file: 'string' }),
+			handler: async ({ file }) => {
+				const data = await Bun.file(file).arrayBuffer();
+				return previewRedditExport(data);
+			},
+		}),
+	}));
 ```
 
 **Calling actions programmatically:**
 
 ```typescript
 const reddit = createWorkspace(redditWorkspace)
-  .withExtensions({ persistence })
-  .withActions((client) => ({
-    import: defineMutation({ ... }),
-    preview: defineQuery({ ... }),
-  }))
+   .withExtension('persistence', persistence)
+   .withActions((client) => ({
+     import: defineMutation({ ... }),
+     preview: defineQuery({ ... }),
+   }))
 
 // Programmatic use — fully typed
 await reddit.actions.import.handler({ file: './export.zip' })
@@ -104,14 +103,14 @@ const preview = await reddit.actions.preview.handler({ file: './export.zip' })
 
 ```
 createWorkspace(def)                    → WorkspaceClientBuilder
-  ├── .withExtensions({...})            → WorkspaceClientWithExtensions
-  │     └── .withActions((client) => …) → WorkspaceClient & { actions }  (terminal)
-  └── .withActions((client) => …)       → WorkspaceClient & { actions }  (terminal)
+   ├── .withExtension(key, factory)      → WorkspaceClientWithExtension
+   │     └── .withActions((client) => …) → WorkspaceClient & { actions }  (terminal)
+   └── .withActions((client) => …)       → WorkspaceClient & { actions }  (terminal)
 ```
 
-- `.withActions()` is available on both `WorkspaceClientBuilder` and the return of `.withExtensions()`.
+- `.withActions()` is available on both `WorkspaceClientBuilder` and the return of `.withExtension()`.
 - `.withActions()` is terminal — no more builder methods after it.
-- The factory receives the client at that point in the chain (with or without capabilities).
+- The factory receives the client at that point in the chain (with or without extensions).
 - Without `.withActions()`, the client works exactly as before (backwards compatible).
 
 ### Type Design
@@ -140,21 +139,22 @@ type WorkspaceClientWithActions<
 
 // Updated: WorkspaceClientBuilder now has .withActions()
 type WorkspaceClientBuilder<TId, TTableDefs, TKvDefs> =
-  WorkspaceClient<TId, TTableDefs, TKvDefs, Record<string, never>> & {
-    withExtensions<TCap extends CapabilityMap>(
-      extensions: TCap,
-    ): WorkspaceClient<TId, TTableDefs, TKvDefs, TCap> & {
-      withActions<TActions extends Actions>(
-        factory: (client: WorkspaceClient<TId, TTableDefs, TKvDefs, TCap>) => TActions,
-      ): WorkspaceClientWithActions<TId, TTableDefs, TKvDefs, TCap, TActions>;
-    };
+   WorkspaceClient<TId, TTableDefs, TKvDefs, Record<string, never>> & {
+     withExtension<TKey extends string, TExports extends Lifecycle>(
+       key: TKey,
+       factory: (context: ExtensionContext) => TExports,
+     ): WorkspaceClient<TId, TTableDefs, TKvDefs, Record<TKey, TExports>> & {
+       withActions<TActions extends Actions>(
+         factory: (client: WorkspaceClient<TId, TTableDefs, TKvDefs, Record<TKey, TExports>>) => TActions,
+       ): WorkspaceClientWithActions<TId, TTableDefs, TKvDefs, Record<TKey, TExports>, TActions>;
+     };
 
-    withActions<TActions extends Actions>(
-      factory: (
-        client: WorkspaceClient<TId, TTableDefs, TKvDefs, Record<string, never>>,
-      ) => TActions,
-    ): WorkspaceClientWithActions<TId, TTableDefs, TKvDefs, Record<string, never>, TActions>;
-  };
+     withActions<TActions extends Actions>(
+       factory: (
+         client: WorkspaceClient<TId, TTableDefs, TKvDefs, Record<string, never>>,
+       ) => TActions,
+     ): WorkspaceClientWithActions<TId, TTableDefs, TKvDefs, Record<string, never>, TActions>;
+   };
 
 // AnyWorkspaceClient no longer needs intersection — actions are on the base type
 type AnyWorkspaceClient = WorkspaceClient<any, any, any, any>;
@@ -194,13 +194,13 @@ export function createCLI(client: AnyWorkspaceClient) {
 ```typescript
 // Before
 export type ServerOptions = {
-  port?: number;
-  actions?: Actions;
+	port?: number;
+	actions?: Actions;
 };
 
 // After
 export type ServerOptions = {
-  port?: number;
+	port?: number;
 };
 // Server reads client.actions directly
 ```
@@ -254,32 +254,33 @@ The input to `composeWorkspaces` is workspace clients (which carry their actions
 
 ```typescript
 function composeWorkspaces(
-  workspaces: Record<string, AnyWorkspaceClient>,
+	workspaces: Record<string, AnyWorkspaceClient>,
 ): ComposedWorkspace;
 
 type ComposedWorkspace = {
-  workspaces: Record<string, AnyWorkspaceClient>;
+	workspaces: Record<string, AnyWorkspaceClient>;
 };
 ```
 
 Discovery detects the shape:
+
 - Has `id` + `tables` → single workspace client
 - Has `workspaces` record → composed workspace
 
 ## Design Decisions
 
-| Decision | Rationale |
-|----------|-----------|
-| `.withActions()` builder over `defineConfig` wrapper | Consistent with existing `.withExtensions()` pattern. One coupling mechanism, not two. |
-| Factory function `(client) => actions` | Explicit DI. Client is a parameter, not an implicit closure. Works with chaining. |
-| `.withActions()` is terminal | Prevents confusion about ordering. Extensions must come before actions. |
-| Actions on `client.actions` | Optional property on the base `WorkspaceClient` type, narrowed to required by `WorkspaceClientWithActions`. Same pattern as `client.capabilities`. Namespace separation, no collision with client methods. |
-| `AnyWorkspaceClient` includes `actions?` | Discovery doesn't need to change its detection logic. |
-| No backwards compatibility shims | Clean break. Existing configs just add `.withActions()` if they have actions. Configs without actions work unchanged. |
-| Flat namespace for single workspace | Minimal ceremony for the common case. |
-| Auto-namespace for multi-workspace | Collision-free by construction. |
-| No `actions` command prefix | Actions are first-class, not second-class citizens behind a prefix. |
-| Collision detection at startup | Fail fast, clear error. |
+| Decision                                             | Rationale                                                                                                                                                                                                  |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.withActions()` builder over `defineConfig` wrapper | Consistent with existing `.withExtension()` pattern. One coupling mechanism, not two.                                                                                                                      |
+| Factory function `(client) => actions`               | Explicit DI. Client is a parameter, not an implicit closure. Works with chaining.                                                                                                                          |
+| `.withActions()` is terminal                         | Prevents confusion about ordering. Extensions must come before actions.                                                                                                                                    |
+| Actions on `client.actions`                          | Optional property on the base `WorkspaceClient` type, narrowed to required by `WorkspaceClientWithActions`. Same pattern as `client.capabilities`. Namespace separation, no collision with client methods. |
+| `AnyWorkspaceClient` includes `actions?`             | Discovery doesn't need to change its detection logic.                                                                                                                                                      |
+| No backwards compatibility shims                     | Clean break. Existing configs just add `.withActions()` if they have actions. Configs without actions work unchanged.                                                                                      |
+| Flat namespace for single workspace                  | Minimal ceremony for the common case.                                                                                                                                                                      |
+| Auto-namespace for multi-workspace                   | Collision-free by construction.                                                                                                                                                                            |
+| No `actions` command prefix                          | Actions are first-class, not second-class citizens behind a prefix.                                                                                                                                        |
+| Collision detection at startup                       | Fail fast, clear error.                                                                                                                                                                                    |
 
 ## Implementation Order
 
@@ -292,7 +293,7 @@ Discovery detects the shape:
 
 2. **Builder** (`packages/epicenter/src/static/create-workspace.ts`)
    - Add `.withActions()` method to the object returned by `createWorkspace()`
-   - Add `.withActions()` method to the object returned by `.withExtensions()`
+   - Add `.withActions()` method to the object returned by `.withExtension()`
    - Implementation: call factory with current client, spread client + `{ actions }` into new object
 
 3. **Discovery** (`packages/epicenter/src/cli/discovery.ts`)

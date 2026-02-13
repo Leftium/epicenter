@@ -10,6 +10,7 @@
 The examples and scripts used a completely non-existent API pattern. Rather than rewriting everything, the broken code was deleted.
 
 ### Deleted
+
 - `examples/basic-workspace/` - Entire directory
 - `examples/content-hub/` - Entire directory
 - `examples/stress-test/` - Entire directory
@@ -18,6 +19,7 @@ The examples and scripts used a completely non-existent API pattern. Rather than
 - `packages/epicenter/scripts/yjs-vs-sqlite-comparison.ts`
 
 ### Kept
+
 - `examples/yjs-size-benchmark/` - Pure Yjs benchmark, no `@epicenter/hq` dependencies
 - `packages/epicenter/scripts/yjs-data-structure-benchmark.ts` - Pure Yjs benchmark
 - `packages/epicenter/scripts/demo-yjs-nested-map-lww.ts` - Pure Yjs demonstration
@@ -26,7 +28,9 @@ The examples and scripts used a completely non-existent API pattern. Rather than
 - `packages/epicenter/scripts/ykeyvalue-write-benchmark.ts` - Uses internal `y-keyvalue-lww` utility
 
 ### Public API Status
+
 The following types were already exported from `@epicenter/hq`:
+
 - `DateTimeString` (with companion object methods `.parse()`, `.stringify()`, `.now()`)
 - `ExtensionContext`
 - `ProviderContext`
@@ -52,20 +56,33 @@ Neither the **static API** (`@epicenter/hq/static`) nor the **dynamic API** (`@e
 ### Actual Available APIs
 
 **Dynamic API** (`@epicenter/hq/dynamic`):
+
 ```typescript
 const definition = defineWorkspace({
-  id: 'my-app',
-  name: 'My App',
-  tables: [table({ id: 'posts', name: 'Posts', fields: [id(), text({ id: 'title' })] })],
-  kv: [],
+	id: 'my-app',
+	name: 'My App',
+	tables: [
+		table({
+			id: 'posts',
+			name: 'Posts',
+			fields: [id(), text({ id: 'title' })],
+		}),
+	],
+	kv: [],
 });
-const client = createWorkspace({ headDoc, definition }).withExtensions({ sqlite, persistence });
+const client = createWorkspace({ headDoc, definition })
+	.withExtension('sqlite', sqlite)
+	.withExtension('persistence', persistence);
 ```
 
 **Static API** (`@epicenter/hq/static`):
+
 ```typescript
 const posts = defineTable(type({ id: 'string', title: 'string' }));
-const client = createWorkspace({ id: 'my-app', tables: { posts } }).withExtensions({ sqlite });
+const client = createWorkspace({
+	id: 'my-app',
+	tables: { posts },
+}).withExtension('sqlite', sqlite);
 ```
 
 ### Additional Issues
@@ -78,42 +95,42 @@ const client = createWorkspace({ id: 'my-app', tables: { posts } }).withExtensio
 
 ### examples/content-hub/.epicenter/workspaces/
 
-| File | Severity | Issues |
-|------|----------|--------|
-| `browser.workspace.ts` | Medium | Outdated import paths, renamed functions |
-| `clippings.workspace.ts` | High | Removed exports (`DateWithTimezone*`), import paths, renamed functions |
-| `epicenter.workspace.ts` | Medium | Outdated import paths, renamed functions |
-| `gmail.workspace.ts` | High | Root-level imports of non-exported items, missing `type` import |
-| `journal.workspace.ts` | Medium | Outdated import paths, renamed functions |
-| `pages.workspace.ts` | High | Removed export (`DateWithTimezone`), import paths |
-| `posts.workspace.ts` | Medium | Outdated import paths, renamed functions |
-| `whispering.workspace.ts` | High | Removed export (`DateWithTimezone`), import paths |
-| `wiki.workspace.ts` | High | Removed exports (`DateWithTimezone*`, `SerializedRow`), import paths |
+| File                      | Severity | Issues                                                                 |
+| ------------------------- | -------- | ---------------------------------------------------------------------- |
+| `browser.workspace.ts`    | Medium   | Outdated import paths, renamed functions                               |
+| `clippings.workspace.ts`  | High     | Removed exports (`DateWithTimezone*`), import paths, renamed functions |
+| `epicenter.workspace.ts`  | Medium   | Outdated import paths, renamed functions                               |
+| `gmail.workspace.ts`      | High     | Root-level imports of non-exported items, missing `type` import        |
+| `journal.workspace.ts`    | Medium   | Outdated import paths, renamed functions                               |
+| `pages.workspace.ts`      | High     | Removed export (`DateWithTimezone`), import paths                      |
+| `posts.workspace.ts`      | Medium   | Outdated import paths, renamed functions                               |
+| `whispering.workspace.ts` | High     | Removed export (`DateWithTimezone`), import paths                      |
+| `wiki.workspace.ts`       | High     | Removed exports (`DateWithTimezone*`, `SerializedRow`), import paths   |
 
 ### examples/basic-workspace/.epicenter/workspaces/
 
-| File | Severity | Issues |
-|------|----------|--------|
+| File                | Severity | Issues                                                                                                                               |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `blog.workspace.ts` | Critical | Uses non-existent `/capabilities/` path, old builder pattern (`.withCapabilities()`, `.withActions()`), removed `SerializedRow` type |
 
 ### examples/stress-test/.epicenter/workspaces/
 
-| File | Severity | Issues |
-|------|----------|--------|
-| `stress.workspace.ts` | Medium | Outdated import paths |
+| File                  | Severity | Issues                |
+| --------------------- | -------- | --------------------- |
+| `stress.workspace.ts` | Medium   | Outdated import paths |
 
 ### packages/epicenter/scripts/
 
-| File | Severity | Issues |
-|------|----------|--------|
-| `email-storage-simulation.ts` | Critical | Old workspace API (array tables with `id` in field options), old `createClient` builder pattern |
-| `email-minimal-simulation.ts` | Critical | Same as above |
-| `yjs-vs-sqlite-comparison.ts` | Critical | Same as above |
-| `ymap-vs-ykeyvalue-benchmark.ts` | Low | Uses internal `y-keyvalue` utility (may be fine) |
-| `yjs-data-structure-benchmark.ts` | None | Pure Yjs benchmark, no @epicenter/hq imports |
-| `demo-yjs-nested-map-lww.ts` | Unknown | Needs review |
-| `yjs-gc-benchmark.ts` | Unknown | Needs review |
-| `ykeyvalue-write-benchmark.ts` | Unknown | Needs review |
+| File                              | Severity | Issues                                                                                          |
+| --------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+| `email-storage-simulation.ts`     | Critical | Old workspace API (array tables with `id` in field options), old `createClient` builder pattern |
+| `email-minimal-simulation.ts`     | Critical | Same as above                                                                                   |
+| `yjs-vs-sqlite-comparison.ts`     | Critical | Same as above                                                                                   |
+| `ymap-vs-ykeyvalue-benchmark.ts`  | Low      | Uses internal `y-keyvalue` utility (may be fine)                                                |
+| `yjs-data-structure-benchmark.ts` | None     | Pure Yjs benchmark, no @epicenter/hq imports                                                    |
+| `demo-yjs-nested-map-lww.ts`      | Unknown  | Needs review                                                                                    |
+| `yjs-gc-benchmark.ts`             | Unknown  | Needs review                                                                                    |
+| `ykeyvalue-write-benchmark.ts`    | Unknown  | Needs review                                                                                    |
 
 ## Error Categories
 
@@ -122,15 +139,17 @@ const client = createWorkspace({ id: 'my-app', tables: { posts } }).withExtensio
 **Problem**: Import paths use old `/providers/` or `/capabilities/` subdirectories.
 
 **Current package.json exports**:
+
 ```json
 {
-  "./extensions/persistence": "...",
-  "./extensions/markdown": "...",
-  "./extensions/sqlite": "..."
+	"./extensions/persistence": "...",
+	"./extensions/markdown": "...",
+	"./extensions/sqlite": "..."
 }
 ```
 
 **Affected patterns**:
+
 ```typescript
 // OLD (broken)
 import { ... } from '@epicenter/hq/providers/markdown';
@@ -150,12 +169,12 @@ import { ... } from '@epicenter/hq/extensions/sqlite';
 
 **Problem**: Extension factory functions were renamed for consistency.
 
-| Old Name | New Name | Export Path |
-|----------|----------|-------------|
-| `markdownProvider` | `markdown` | `@epicenter/hq/extensions/markdown` |
-| `sqliteProvider` | `sqlite` | `@epicenter/hq/extensions/sqlite` |
-| `setupPersistence` | `persistence` | `@epicenter/hq/extensions/persistence` |
-| `MarkdownProviderErr` | `MarkdownExtensionErr` | `@epicenter/hq/extensions/markdown` |
+| Old Name              | New Name               | Export Path                            |
+| --------------------- | ---------------------- | -------------------------------------- |
+| `markdownProvider`    | `markdown`             | `@epicenter/hq/extensions/markdown`    |
+| `sqliteProvider`      | `sqlite`               | `@epicenter/hq/extensions/sqlite`      |
+| `setupPersistence`    | `persistence`          | `@epicenter/hq/extensions/persistence` |
+| `MarkdownProviderErr` | `MarkdownExtensionErr` | `@epicenter/hq/extensions/markdown`    |
 
 **Files affected**: 11 files
 
@@ -163,14 +182,14 @@ import { ... } from '@epicenter/hq/extensions/sqlite';
 
 **Problem**: Certain types/utilities are no longer exported from `@epicenter/hq` root.
 
-| Missing Export | Status | Recommendation |
-|----------------|--------|----------------|
-| `DateWithTimezone` | Not exported | Use `Temporal.ZonedDateTime` or ISO strings with manual timezone handling |
-| `DateWithTimezoneFromString` | Not exported | Parse manually or add back as utility |
-| `DateWithTimezoneString` | Not exported (type) | Define locally or use string type |
-| `SerializedRow` | Not exported | Import from internal path or use `Row<T>` type |
-| `WorkspaceSchema` | Not exported | Use `WorkspaceDefinition` type |
-| `ProviderContext` | Not exported | Import from `@epicenter/hq/dynamic` subpath |
+| Missing Export               | Status              | Recommendation                                                            |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------------- |
+| `DateWithTimezone`           | Not exported        | Use `Temporal.ZonedDateTime` or ISO strings with manual timezone handling |
+| `DateWithTimezoneFromString` | Not exported        | Parse manually or add back as utility                                     |
+| `DateWithTimezoneString`     | Not exported (type) | Define locally or use string type                                         |
+| `SerializedRow`              | Not exported        | Import from internal path or use `Row<T>` type                            |
+| `WorkspaceSchema`            | Not exported        | Use `WorkspaceDefinition` type                                            |
+| `ProviderContext`            | Not exported        | Import from `@epicenter/hq/dynamic` subpath                               |
 
 **Files affected**: 6 files
 
@@ -179,6 +198,7 @@ import { ... } from '@epicenter/hq/extensions/sqlite';
 **Problem**: The `basic-workspace/blog.workspace.ts` uses a completely different API pattern that no longer exists.
 
 **Old API (broken)**:
+
 ```typescript
 defineWorkspace({
   id: generateGuid(),
@@ -199,6 +219,7 @@ defineWorkspace({
 ```
 
 **Current API**:
+
 ```typescript
 defineWorkspace({
   id: 'blog',
@@ -217,6 +238,7 @@ defineWorkspace({
 ```
 
 **Note**: The current API uses:
+
 - Array-based `tables` with `table()` factory
 - Array-based `kv`
 - `id` option in field factories: `text({ id: 'title' })`
@@ -226,16 +248,17 @@ defineWorkspace({
 
 ### Category 5: Old Scripts API (createClient Builder Pattern)
 
-**Problem**: Scripts use `createClient(head).withDefinition().withExtensions()` builder pattern.
+**Problem**: Scripts use `createClient(head).withDefinition().withExtension()` builder pattern.
 
 **Old API (broken)**:
+
 ```typescript
 const head = createHeadDoc({ workspaceId: 'emails', providers: {} });
 await using client = await createClient(head)
-  .withDefinition(emailDefinition)
-  .withExtensions({
-    persistence: (ctx) => persistence(ctx, { filePath: YJS_PATH }),
-  });
+	.withDefinition(emailDefinition)
+	.withExtension('persistence', (ctx) =>
+		persistence(ctx, { filePath: YJS_PATH }),
+	);
 
 // Access via:
 client.tables.get('emails').upsertMany(emails);
@@ -248,6 +271,7 @@ client.tables.get('emails').upsertMany(emails);
 ### Option A: Delete Outdated Examples/Scripts
 
 **Candidates for deletion**:
+
 - `examples/basic-workspace/` - Uses completely different API, would require full rewrite
 - `packages/epicenter/scripts/email-*.ts` - Simulation scripts likely not actively used
 - `packages/epicenter/scripts/yjs-vs-sqlite-comparison.ts` - Benchmark script
@@ -268,16 +292,19 @@ For files that can be updated with find-and-replace style fixes:
 ### Option C: Hybrid Approach (Recommended)
 
 **Delete**:
+
 - `examples/basic-workspace/` - Fundamentally incompatible API
 - `packages/epicenter/scripts/email-storage-simulation.ts`
 - `packages/epicenter/scripts/email-minimal-simulation.ts`
 - `packages/epicenter/scripts/yjs-vs-sqlite-comparison.ts`
 
 **Update**:
+
 - All `examples/content-hub/` workspaces - Import paths and function names only
 - `examples/stress-test/` - Import paths only
 
 **Requires deeper analysis**:
+
 - Files using `DateWithTimezone` utilities - Decide if these should be re-exported
 - `packages/epicenter/scripts/ymap-vs-ykeyvalue-benchmark.ts` - Uses internal utility
 - Other benchmark scripts
@@ -298,11 +325,11 @@ Files: All 12 workspace files in examples/
 
 Rename function calls:
 
-| Find | Replace |
-|------|---------|
-| `markdownProvider` | `markdown` |
-| `sqliteProvider` | `sqlite` |
-| `setupPersistence` | `persistence` |
+| Find                  | Replace                |
+| --------------------- | ---------------------- |
+| `markdownProvider`    | `markdown`             |
+| `sqliteProvider`      | `sqlite`               |
+| `setupPersistence`    | `persistence`          |
 | `MarkdownProviderErr` | `MarkdownExtensionErr` |
 
 Files: Same 12 workspace files
@@ -321,12 +348,13 @@ Delete files that require complete rewrites:
 **Option 4A**: Re-export `DateWithTimezone` utilities from `@epicenter/hq`
 
 **Option 4B**: Replace with inline implementations:
+
 ```typescript
 // Instead of:
-DateWithTimezone({ date: new Date(), timezone: 'UTC' }).toJSON()
+DateWithTimezone({ date: new Date(), timezone: 'UTC' }).toJSON();
 
 // Use:
-new Date().toISOString() // For UTC
+new Date().toISOString(); // For UTC
 // Or define local helper
 ```
 
@@ -337,16 +365,18 @@ Files needing this: 5 workspace files
 ### Phase 5: gmail.workspace.ts Special Handling
 
 This file imports non-exported items from root:
+
 ```typescript
 import {
-  markdownProvider,      // Should come from extensions/markdown
-  sqliteProvider,        // Should come from extensions/sqlite
-  type ProviderContext,  // Not publicly exported
-  type WorkspaceSchema,  // Not publicly exported
+	markdownProvider, // Should come from extensions/markdown
+	sqliteProvider, // Should come from extensions/sqlite
+	type ProviderContext, // Not publicly exported
+	type WorkspaceSchema, // Not publicly exported
 } from '@epicenter/hq';
 ```
 
 Options:
+
 1. Export `ProviderContext` and `WorkspaceSchema` from public API
 2. Remove/rewrite the custom `gmailAuthProvider` that uses these types
 3. Import from internal subpaths (not recommended for examples)
@@ -377,19 +407,21 @@ After fixes are applied:
 ### examples/content-hub/.epicenter/workspaces/browser.workspace.ts
 
 **Lines 34-36**:
+
 ```typescript
 import {
-  domainTitleFilenameSerializer,
-  markdownProvider,
+	domainTitleFilenameSerializer,
+	markdownProvider,
 } from '@epicenter/hq/providers/markdown';
 import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
 ```
 
 **Fix**:
+
 ```typescript
 import {
-  domainTitleFilenameSerializer,
-  markdown,
+	domainTitleFilenameSerializer,
+	markdown,
 } from '@epicenter/hq/extensions/markdown';
 import { sqlite } from '@epicenter/hq/extensions/sqlite';
 ```
@@ -401,19 +433,25 @@ Also update usages: `markdownProvider` → `markdown`, `sqliteProvider` → `sql
 ### examples/content-hub/.epicenter/workspaces/clippings.workspace.ts
 
 **Lines 3-21**:
+
 ```typescript
 import {
-  DateWithTimezone,
-  DateWithTimezoneFromString,
-  DateWithTimezoneString,
-  // ... other imports
+	DateWithTimezone,
+	DateWithTimezoneFromString,
+	DateWithTimezoneString,
+	// ... other imports
 } from '@epicenter/hq';
-import { bodyFieldSerializer, MarkdownProviderErr, markdownProvider } from '@epicenter/hq/providers/markdown';
+import {
+	bodyFieldSerializer,
+	MarkdownProviderErr,
+	markdownProvider,
+} from '@epicenter/hq/providers/markdown';
 import { setupPersistence } from '@epicenter/hq/providers/persistence';
 import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
 ```
 
 **Issues**:
+
 - `DateWithTimezone`, `DateWithTimezoneFromString`, `DateWithTimezoneString` not exported
 - Wrong import paths
 - Wrong function names
@@ -433,21 +471,23 @@ import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
 ### packages/epicenter/scripts/email-storage-simulation.ts
 
 **Lines 18-28**:
+
 ```typescript
 import { persistence } from '../src/extensions/persistence/desktop';
 import {
-  createClient,
-  createHeadDoc,
-  defineWorkspace,
-  generateId,
-  id,
-  integer,
-  table,
-  text,
+	createClient,
+	createHeadDoc,
+	defineWorkspace,
+	generateId,
+	id,
+	integer,
+	table,
+	text,
 } from '../src/index';
 ```
 
 **Lines 188-226** use old API:
+
 ```typescript
 const emailDefinition = defineWorkspace({
   name: 'Email Storage Simulation',
@@ -468,7 +508,7 @@ const emailDefinition = defineWorkspace({
 const head = createHeadDoc({ workspaceId: 'emails', providers: {} });
 await using client = await createClient(head)
   .withDefinition(emailDefinition)
-  .withExtensions({...});
+  .withExtension(...);
 ```
 
 **Recommendation**: DELETE - Uses non-existent builder pattern
@@ -484,6 +524,7 @@ await using client = await createClient(head)
 ### packages/epicenter/scripts/ymap-vs-ykeyvalue-benchmark.ts
 
 **Line 13**:
+
 ```typescript
 import { YKeyValue } from '../src/core/utils/y-keyvalue';
 ```

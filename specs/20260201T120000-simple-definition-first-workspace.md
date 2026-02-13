@@ -58,10 +58,9 @@ For these simple cases, the HeadDoc is overhead. The `WorkspaceDefinition` alrea
 ```typescript
 import { createWorkspace } from '@epicenter/hq/dynamic';
 
-const workspace = createWorkspace(definition).withExtensions({
-	persistence,
-	sqlite,
-});
+const workspace = createWorkspace(definition)
+	.withExtension('persistence', (ctx) => workspacePersistence(ctx))
+	.withExtension('sqlite', sqlite);
 
 await workspace.whenSynced;
 ```
@@ -202,7 +201,7 @@ Add new overload that takes definition directly:
  * @example
  * ```typescript
  * const workspace = createWorkspace(definition)
- *   .withExtensions({ persistence });
+ *   .withExtension('persistence', persistence);
  *
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
  * ```
@@ -323,9 +322,9 @@ import { workspacePersistence } from './workspace-persistence';
  * Loads definition from JSON file if not provided.
  */
 export function createWorkspaceClient(definition: WorkspaceDefinition) {
-	return createWorkspace(definition).withExtensions({
-		persistence: (ctx) => workspacePersistence(ctx),
-	});
+	return createWorkspace(definition).withExtension('persistence', (ctx) =>
+		workspacePersistence(ctx),
+	);
 }
 ```
 

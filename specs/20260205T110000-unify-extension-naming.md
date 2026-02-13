@@ -9,6 +9,7 @@
 The static and dynamic APIs use different terminology for the same concept:
 
 **Static API:**
+
 - Type: `CapabilityFactory`
 - Map type: `CapabilityMap`
 - Context: `CapabilityContext`
@@ -16,6 +17,7 @@ The static and dynamic APIs use different terminology for the same concept:
 - Client property: `client.capabilities`
 
 **Dynamic API:**
+
 - Type: `ExtensionFactory`
 - Map type: `ExtensionFactoryMap`
 - Context: `ExtensionContext`
@@ -23,6 +25,7 @@ The static and dynamic APIs use different terminology for the same concept:
 - Client property: `client.extensions`
 
 **The Inconsistency:**
+
 - The method is called `.withExtensions()` in BOTH APIs
 - But static stores them as "capabilities" while dynamic stores them as "extensions"
 - Users are confused: "Am I adding extensions or capabilities?"
@@ -32,6 +35,7 @@ The static and dynamic APIs use different terminology for the same concept:
 **Standardize on "extensions" terminology across the entire static API.**
 
 This aligns with:
+
 1. The method name `.withExtensions()`
 2. Common terminology (VSCode extensions, Chrome extensions)
 3. The dynamic API (for consistency if we ever need to reference both)
@@ -40,6 +44,7 @@ This aligns with:
 ## Scope
 
 **Files to change:**
+
 - `packages/epicenter/src/static/types.ts` - Type definitions
 - `packages/epicenter/src/static/create-workspace.ts` - Implementation
 - `packages/epicenter/src/static/index.ts` - Exports
@@ -55,64 +60,62 @@ This aligns with:
 
 **Find and replace (case-sensitive):**
 
-| Old Name | New Name | Occurrences |
-|----------|----------|-------------|
-| `CapabilityFactory` | `ExtensionFactory` | ~10 |
-| `CapabilityMap` | `ExtensionMap` | ~8 |
-| `CapabilityContext` | `ExtensionContext` | ~5 |
-| `InferCapabilityExports` | `InferExtensionExports` | ~6 |
+| Old Name                 | New Name                | Occurrences |
+| ------------------------ | ----------------------- | ----------- |
+| `CapabilityFactory`      | `ExtensionFactory`      | ~10         |
+| `CapabilityMap`          | `ExtensionMap`          | ~8          |
+| `CapabilityContext`      | `ExtensionContext`      | ~5          |
+| `InferCapabilityExports` | `InferExtensionExports` | ~6          |
 
 **Before:**
+
 ```typescript
 export type CapabilityFactory<
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
-  TExports extends Lifecycle,
-> = (
-  context: CapabilityContext<TTableDefinitions, TKvDefinitions>,
-) => TExports;
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TExports extends Lifecycle,
+> = (context: CapabilityContext<TTableDefinitions, TKvDefinitions>) => TExports;
 
 export type CapabilityMap = Record<string, CapabilityFactory<any, any, any>>;
 
 export type CapabilityContext<
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
 > = {
-  id: string;
-  ydoc: Y.Doc;
-  tables: TablesHelper<TTableDefinitions>;
-  kv: KvHelper<TKvDefinitions>;
+	id: string;
+	ydoc: Y.Doc;
+	tables: TablesHelper<TTableDefinitions>;
+	kv: KvHelper<TKvDefinitions>;
 };
 
 export type InferCapabilityExports<TCapabilities extends CapabilityMap> = {
-  [K in keyof TCapabilities]: ReturnType<TCapabilities[K]>;
+	[K in keyof TCapabilities]: ReturnType<TCapabilities[K]>;
 };
 ```
 
 **After:**
+
 ```typescript
 export type ExtensionFactory<
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
-  TExports extends Lifecycle,
-> = (
-  context: ExtensionContext<TTableDefinitions, TKvDefinitions>,
-) => TExports;
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TExports extends Lifecycle,
+> = (context: ExtensionContext<TTableDefinitions, TKvDefinitions>) => TExports;
 
 export type ExtensionMap = Record<string, ExtensionFactory<any, any, any>>;
 
 export type ExtensionContext<
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
 > = {
-  id: string;
-  ydoc: Y.Doc;
-  tables: TablesHelper<TTableDefinitions>;
-  kv: KvHelper<TKvDefinitions>;
+	id: string;
+	ydoc: Y.Doc;
+	tables: TablesHelper<TTableDefinitions>;
+	kv: KvHelper<TKvDefinitions>;
 };
 
 export type InferExtensionExports<TExtensions extends ExtensionMap> = {
-  [K in keyof TExtensions]: ReturnType<TExtensions[K]>;
+	[K in keyof TExtensions]: ReturnType<TExtensions[K]>;
 };
 ```
 
@@ -121,40 +124,42 @@ export type InferExtensionExports<TExtensions extends ExtensionMap> = {
 **File:** `packages/epicenter/src/static/types.ts`
 
 **Before:**
+
 ```typescript
 export type WorkspaceClient<
-  TId extends string,
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
-  TCapabilities extends CapabilityMap,
+	TId extends string,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TCapabilities extends CapabilityMap,
 > = {
-  id: TId;
-  ydoc: Y.Doc;
-  tables: TablesHelper<TTableDefinitions>;
-  kv: KvHelper<TKvDefinitions>;
-  capabilities: InferCapabilityExports<TCapabilities>;  // ← RENAME
+	id: TId;
+	ydoc: Y.Doc;
+	tables: TablesHelper<TTableDefinitions>;
+	kv: KvHelper<TKvDefinitions>;
+	capabilities: InferCapabilityExports<TCapabilities>; // ← RENAME
 
-  destroy(): Promise<void>;
-  [Symbol.asyncDispose](): Promise<void>;
+	destroy(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 ```
 
 **After:**
+
 ```typescript
 export type WorkspaceClient<
-  TId extends string,
-  TTableDefinitions extends TableDefinitions,
-  TKvDefinitions extends KvDefinitions,
-  TExtensions extends ExtensionMap,  // ← Rename type param
+	TId extends string,
+	TTableDefinitions extends TableDefinitions,
+	TKvDefinitions extends KvDefinitions,
+	TExtensions extends ExtensionMap, // ← Rename type param
 > = {
-  id: TId;
-  ydoc: Y.Doc;
-  tables: TablesHelper<TTableDefinitions>;
-  kv: KvHelper<TKvDefinitions>;
-  extensions: InferExtensionExports<TExtensions>;  // ← RENAMED
+	id: TId;
+	ydoc: Y.Doc;
+	tables: TablesHelper<TTableDefinitions>;
+	kv: KvHelper<TKvDefinitions>;
+	extensions: InferExtensionExports<TExtensions>; // ← RENAMED
 
-  destroy(): Promise<void>;
-  [Symbol.asyncDispose](): Promise<void>;
+	destroy(): Promise<void>;
+	[Symbol.asyncDispose](): Promise<void>;
 };
 ```
 
@@ -163,10 +168,12 @@ export type WorkspaceClient<
 Throughout `types.ts`, rename the 4th type parameter from `TCapabilities` to `TExtensions`:
 
 **Find and replace:**
+
 - `TCapabilities extends CapabilityMap` → `TExtensions extends ExtensionMap`
 - References to `TCapabilities` → `TExtensions`
 
 **Affected types:**
+
 - `WorkspaceClient<TId, TTableDefs, TKvDefs, TCapabilities>` → `WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions>`
 - `WorkspaceClientBuilder<TId, TTableDefs, TKvDefs>` → (no change, it doesn't have extensions yet)
 - `WorkspaceClientWithActions<..., TCapabilities, ...>` → `WorkspaceClientWithActions<..., TExtensions, ...>`
@@ -179,6 +186,7 @@ Throughout `types.ts`, rename the 4th type parameter from `TCapabilities` to `TE
 **Changes:**
 
 1. Rename `.withExtensions()` parameter type:
+
 ```typescript
 // Before
 withExtensions<TCapabilities extends CapabilityMap>(
@@ -192,38 +200,34 @@ withExtensions<TExtensions extends ExtensionMap>(
 ```
 
 2. Rename internal variable:
+
 ```typescript
 // Before
 const capabilities = Object.fromEntries(
-  Object.entries(extensions).map(([key, factory]) => [
-    key,
-    factory(context),
-  ])
+	Object.entries(extensions).map(([key, factory]) => [key, factory(context)]),
 ) as InferCapabilityExports<TCapabilities>;
 
 // After
 const extensionExports = Object.fromEntries(
-  Object.entries(extensions).map(([key, factory]) => [
-    key,
-    factory(context),
-  ])
+	Object.entries(extensions).map(([key, factory]) => [key, factory(context)]),
 ) as InferExtensionExports<TExtensions>;
 ```
 
 3. Update return object:
+
 ```typescript
 // Before
 return {
-  ...baseClient,
-  capabilities,
-  // ...
+	...baseClient,
+	capabilities,
+	// ...
 };
 
 // After
 return {
-  ...baseClient,
-  extensions: extensionExports,
-  // ...
+	...baseClient,
+	extensions: extensionExports,
+	// ...
 };
 ```
 
@@ -236,22 +240,22 @@ return {
 ```typescript
 // Before
 export type {
-  // ...
-  CapabilityContext,
-  CapabilityFactory,
-  CapabilityMap,
-  InferCapabilityExports,
-  // ...
+	// ...
+	CapabilityContext,
+	CapabilityFactory,
+	CapabilityMap,
+	InferCapabilityExports,
+	// ...
 } from './types.js';
 
 // After
 export type {
-  // ...
-  ExtensionContext,
-  ExtensionFactory,
-  ExtensionMap,
-  InferExtensionExports,
-  // ...
+	// ...
+	ExtensionContext,
+	ExtensionFactory,
+	ExtensionMap,
+	InferExtensionExports,
+	// ...
 } from './types.js';
 ```
 
@@ -260,11 +264,13 @@ export type {
 **Files:** `/packages/epicenter/src/extensions/**/*.ts`
 
 These files currently import from dynamic:
+
 ```typescript
 import { ExtensionFactory } from '../../dynamic';
 ```
 
 After this refactor, they can import from static:
+
 ```typescript
 import { ExtensionFactory } from '../../static/types';
 ```
@@ -289,6 +295,7 @@ Search for mentions of "capability" in comments and documentation, update to "ex
 If you're using the static API, you'll need to update your code:
 
 ### Type Imports
+
 ```typescript
 // Before
 import type { CapabilityFactory, CapabilityMap } from '@epicenter/hq/static';
@@ -298,9 +305,9 @@ import type { ExtensionFactory, ExtensionMap } from '@epicenter/hq/static';
 ```
 
 ### Client Property Access
+
 ```typescript
-const client = createWorkspace(def)
-  .withExtensions({ persistence });
+const client = createWorkspace(def).withExtension('persistence', persistence);
 
 // Before
 client.capabilities.persistence.save();
@@ -310,6 +317,7 @@ client.extensions.persistence.save();
 ```
 
 ### Extension Definitions
+
 ```typescript
 // Before
 export const myExtension: CapabilityFactory<TTableDefs, TKvDefs, MyExports> = (context) => {
@@ -323,6 +331,7 @@ export const myExtension: ExtensionFactory<TTableDefs, TKvDefs, MyExports> = (co
 ```
 
 ### Generic Type Parameters
+
 ```typescript
 // Before
 function useWorkspace<TCapabilities extends CapabilityMap>(
@@ -338,21 +347,25 @@ function useWorkspace<TExtensions extends ExtensionMap>(
 ## Testing Strategy
 
 ### 1. Type Tests
+
 - Verify all type exports are renamed correctly
 - Check that `WorkspaceClient` type has `extensions` property
 - Ensure generic type parameters work with new names
 
 ### 2. Runtime Tests
+
 - Run existing test suite - should pass with no changes
 - Add test that accesses `client.extensions` property
 - Verify `.withExtensions()` method still works
 
 ### 3. Integration Tests
+
 - Build a workspace with extensions
 - Access extension exports via `client.extensions`
 - Verify `whenSynced` and `destroy` work on extensions
 
 ### 4. Example Apps
+
 - Update tab-manager app if it uses static API with extensions
 - Test that apps compile and run
 - Verify no runtime errors
@@ -394,6 +407,7 @@ function useWorkspace<TExtensions extends ExtensionMap>(
 ## Rollback Plan
 
 If this breaks too much:
+
 1. Revert all commits from this change
 2. Consider adding type aliases for backwards compatibility:
    ```typescript
@@ -425,15 +439,17 @@ If this breaks too much:
 **Consistency:** Method is `.withExtensions()` but you access `.capabilities`? Confusing!
 
 **Before:**
+
 ```typescript
-.withExtensions({ persistence })  // Adding extensions...
-client.capabilities.persistence   // ...but they're called capabilities?
+.withExtension('persistence', persistence)  // Adding extensions...
+client.capabilities.persistence             // ...but they're called capabilities?
 ```
 
 **After:**
+
 ```typescript
-.withExtensions({ persistence })  // Adding extensions...
-client.extensions.persistence     // ...and they're called extensions! ✓
+.withExtension('persistence', persistence)  // Adding extensions...
+client.extensions.persistence               // ...and they're called extensions! ✓
 ```
 
 **User Experience:** Reduces cognitive load, aligns with ecosystem norms, makes API more intuitive.

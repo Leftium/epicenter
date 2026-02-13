@@ -59,9 +59,7 @@ const definition = defineWorkspace({
 	id: 'tab-manager',
 	tables: BROWSER_TABLES,
 });
-export const popupWorkspace = createWorkspace(definition).withExtensions({
-	/* ... */
-});
+export const popupWorkspace = createWorkspace(definition);
 ```
 
 And `background.ts` had its own `defineWorkspace({ id: 'tab-manager', tables: BROWSER_TABLES })` call. Same definition, duplicated because the "schema" was in one place and the "workspace" was in another.

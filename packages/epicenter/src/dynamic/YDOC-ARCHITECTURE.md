@@ -227,7 +227,8 @@ const definition = defineWorkspace({
 
 const client = createClient(definition.id, { epoch })
 	.withDefinition(definition)
-	.withExtensions({ sqlite, persistence });
+	.withExtension('sqlite', sqlite)
+	.withExtension('persistence', persistence);
 
 // Now you have a fully typed client
 await client.whenSynced;
@@ -246,7 +247,7 @@ They're different Y.Docs with different GUIDs. You can't "upgrade" a Y.Doc in pl
 
 The Head Doc is the **stable pointer**. Its GUID never changes (`abc123`), but its `epoch` value can change. When you bump epochs:
 
-1. Create new client at epoch 3: `createClient(definition.id, { epoch: 3 }).withDefinition(definition).withExtensions({})`
+1. Create new client at epoch 3: `createClient(definition.id, { epoch: 3 }).withDefinition(definition)`
 2. Migrate data from old client to new client
 3. Bump Head Doc: `head.bumpEpoch()`
 4. All clients observing Head reconnect to the new Workspace Doc
@@ -293,9 +294,7 @@ const definition = defineWorkspace({
 });
 
 // createClient() uses definition for type safety but doesn't store it in Y.Doc
-const client = createClient(definition.id)
-	.withDefinition(definition)
-	.withExtensions({});
+const client = createClient(definition.id).withDefinition(definition);
 ```
 
 **Why static definitions?**
@@ -336,7 +335,7 @@ const definition = defineWorkspace({
 // Epoch defaults to 0
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({ sqlite });
+	.withExtension('sqlite', sqlite);
 ```
 
 ## Files
@@ -421,9 +420,9 @@ const definition = defineWorkspace({
 	kv: {},
 });
 
-const client = createClient(definition.id, { epoch })
-	.withDefinition(definition)
-	.withExtensions({});
+const client = createClient(definition.id, { epoch }).withDefinition(
+	definition,
+);
 // client.ydoc is the Workspace Doc at guid "workspace456-0"
 ```
 

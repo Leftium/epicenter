@@ -52,16 +52,16 @@ For most apps, just call `workspace.create()` and you're done. It's synchronous,
 When you need extensibility (persistence, sync, databases) without baking it into the core:
 
 ```typescript
-const client = createWorkspace({ id: 'my-app', tables: { posts } })
-	.withExtensions({
-		persistence: ({ ydoc }) => {
-			const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-			return defineExports({
-				provider,
-				destroy: () => provider.destroy(),
-			});
-		},
+const client = createWorkspace({
+	id: 'my-app',
+	tables: { posts },
+}).withExtension('persistence', ({ ydoc }) => {
+	const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
+	return defineExports({
+		provider,
+		destroy: () => provider.destroy(),
 	});
+});
 
 await client.extensions.persistence.whenSynced;
 client.tables.posts.set({ id: '1', title: 'Hello' });

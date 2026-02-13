@@ -28,9 +28,10 @@ const definition = defineWorkspace({
 	kv: [],
 });
 
-const workspace = createWorkspace(definition).withExtensions({
-	persistence: (ctx) => myPersistence(ctx),
-});
+const workspace = createWorkspace(definition).withExtension(
+	'persistence',
+	(ctx) => myPersistence(ctx),
+);
 
 await workspace.whenSynced;
 workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
@@ -64,10 +65,9 @@ const definition = defineWorkspace({
 Creates a workspace from a definition. Returns a builder for adding extensions.
 
 ```typescript
-const workspace = createWorkspace(definition).withExtensions({
-	sqlite: (ctx) => sqliteExtension(ctx),
-	persistence: (ctx) => persistenceExtension(ctx),
-});
+const workspace = createWorkspace(definition)
+	.withExtension('sqlite', (ctx) => sqliteExtension(ctx))
+	.withExtension('persistence', (ctx) => persistenceExtension(ctx));
 ```
 
 **Key details:**
@@ -110,7 +110,7 @@ await using workspace = ...;      // Auto-cleanup with dispose
 ### Basic CRUD
 
 ```typescript
-const workspace = createWorkspace(definition).withExtensions({});
+const workspace = createWorkspace(definition);
 
 // Create
 workspace.tables
@@ -132,11 +132,9 @@ workspace.tables.get('posts').delete({ id: '1' });
 
 ```typescript
 const workspace = createWorkspace(definition)
-  .withExtensions({
-    persistence: (ctx) => {
-      // Load from storage, sync changes back
-      return { save: () => {...}, load: () => {...} };
-    },
+  .withExtension('persistence', (ctx) => {
+    // Load from storage, sync changes back
+    return { save: () => {...}, load: () => {...} };
   });
 
 await workspace.whenSynced;
@@ -146,17 +144,19 @@ await workspace.whenSynced;
 
 ```typescript
 {
-	await using workspace = createWorkspace(definition).withExtensions({
+	await using workspace = createWorkspace(definition).withExtension(
+		'persistence',
 		persistence,
-	});
+	);
 	workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 	// Auto-disposed when block exits
 }
 
 {
-	await using workspace = createWorkspace(definition).withExtensions({
+	await using workspace = createWorkspace(definition).withExtension(
+		'persistence',
 		persistence,
-	});
+	);
 	const posts = workspace.tables.get('posts').getAllValid();
 	// Auto-disposed when block exits
 }

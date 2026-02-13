@@ -22,7 +22,7 @@
 	import { PARAKEET_MODELS } from '$lib/services/isomorphic/transcription/local/parakeet';
 	import { WHISPER_MODELS } from '$lib/services/isomorphic/transcription/local/whispercpp';
 	import { TRANSCRIPTION_SERVICE_CAPABILITIES } from '$lib/services/isomorphic/transcription/registry';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Badge } from '@epicenter/ui/badge';

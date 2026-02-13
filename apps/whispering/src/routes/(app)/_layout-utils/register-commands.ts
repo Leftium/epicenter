@@ -6,7 +6,7 @@ import {
 	type CommandId,
 	shortcutStringToArray,
 } from '$lib/services/isomorphic/local-shortcut-manager';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 /**
  * Synchronizes local keyboard shortcuts with the current settings.

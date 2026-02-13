@@ -8,7 +8,7 @@
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/services/desktop/recorder/ffmpeg';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { cn } from '@epicenter/ui/utils';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';

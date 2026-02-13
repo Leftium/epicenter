@@ -4,7 +4,7 @@
 	import { Label } from '@epicenter/ui/label';
 	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 </script>
 
 <div class="space-y-8">

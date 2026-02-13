@@ -4,7 +4,7 @@
 		isModelFileSizeValid,
 		type LocalModelConfig,
 	} from '$lib/services/isomorphic/transcription/local/types';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import { Spinner } from '@epicenter/ui/spinner';

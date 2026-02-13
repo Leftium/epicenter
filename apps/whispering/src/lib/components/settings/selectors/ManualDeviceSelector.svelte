@@ -4,7 +4,7 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { cn } from '@epicenter/ui/utils';
 	import { createQuery } from '@tanstack/svelte-query';
 	import CheckIcon from '@lucide/svelte/icons/check';

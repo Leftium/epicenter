@@ -9,7 +9,7 @@
 		LAYOUT_MODE_OPTIONS,
 	} from '$lib/constants/ui';
 	import { desktopRpc, rpc } from '$lib/query';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },

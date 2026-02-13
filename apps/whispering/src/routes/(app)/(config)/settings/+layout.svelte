@@ -6,7 +6,7 @@
 	import { rpc } from '$lib/query';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import SidebarNav from './SidebarNav.svelte';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 
 	let { children } = $props();
 

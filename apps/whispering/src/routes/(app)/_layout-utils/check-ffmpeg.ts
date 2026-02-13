@@ -1,7 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { desktopRpc } from '$lib/query';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 export const COMPRESSION_RECOMMENDED_MESSAGE =
 	"Since you're using CPAL recording with cloud transcription, we recommend enabling audio compression to reduce file sizes and upload times.";

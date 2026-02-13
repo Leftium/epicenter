@@ -10,7 +10,7 @@ import {
 	parseStoredSettings,
 	Settings,
 } from '$lib/settings/settings';
-import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import {
 	syncGlobalShortcutsWithSettings,
 	syncLocalShortcutsWithSettings,

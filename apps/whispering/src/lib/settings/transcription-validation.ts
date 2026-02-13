@@ -2,7 +2,7 @@ import {
 	TRANSCRIPTION_SERVICES,
 	type TranscriptionService,
 } from '$lib/services/isomorphic/transcription/registry';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 /**
  * Gets the currently selected transcription service.

@@ -881,7 +881,7 @@ const startManualRecording = defineMutation({
 });
 ```
 
-Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib/commands.ts`), components, stores, etc. Since they're the end of the operation chain, errors flow sideways through notifications rather than up the call stack.
+Actions are UI-boundary mutations invoked from anywhere: command registry (`/lib/commands.ts`), components, state modules, etc. Since they're the end of the operation chain, errors flow sideways through notifications rather than up the call stack.
 
 ## Best Practices
 
@@ -1094,11 +1094,11 @@ When you need to add new functionality:
 
 This keeps everything organized and testable while giving you a unified way to access all app functionality.
 
-## Query Layer vs Stores
+## Query Layer vs State
 
-The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/stores/` instead.
+The query layer follows the **stale-while-revalidate** pattern: data is cached and refreshed in the background. For **live reactive state** that must update immediately (like hardware state or user preferences), use `$lib/state/` instead.
 
-| Aspect             | `$lib/query/`                           | `$lib/stores/`                                |
+| Aspect             | `$lib/query/`                           | `$lib/state/`                                |
 | ------------------ | --------------------------------------- | --------------------------------------------- |
 | **Pattern**        | Stale-while-revalidate (TanStack Query) | Singleton reactive state                      |
 | **State Location** | TanStack Query cache                    | Module-level `$state` runes                   |
@@ -1108,8 +1108,8 @@ The query layer follows the **stale-while-revalidate** pattern: data is cached a
 **Examples:**
 
 - Recording state from API → Query layer (`rpc.recorder.getRecorderState`)
-- VAD hardware state (IDLE/LISTENING/SPEECH_DETECTED) → Store (`vadRecorder.state`)
-- User settings → Store (`settings.value`)
+- VAD hardware state (IDLE/LISTENING/SPEECH_DETECTED) → State (`vadRecorder.state`)
+- User settings → State (`settings.value`)
 - Database recordings → Query layer (`rpc.db.recordings.getAll`)
 
-See `$lib/stores/README.md` for the stores documentation.
+See `$lib/state/README.md` for the state documentation.

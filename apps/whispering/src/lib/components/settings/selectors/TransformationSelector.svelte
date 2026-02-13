@@ -7,7 +7,7 @@
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/isomorphic/db';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { cn } from '@epicenter/ui/utils';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { createQuery } from '@tanstack/svelte-query';

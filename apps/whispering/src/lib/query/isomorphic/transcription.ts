@@ -3,7 +3,7 @@ import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
 import type { Recording } from '$lib/services/isomorphic/db';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 import { rpc } from '..';
 import { db } from './db';
 import { notify } from './notify';

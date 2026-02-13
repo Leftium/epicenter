@@ -6,7 +6,7 @@
 		type CommandId,
 		arrayToShortcutString,
 	} from '$lib/services/isomorphic/local-shortcut-manager';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';

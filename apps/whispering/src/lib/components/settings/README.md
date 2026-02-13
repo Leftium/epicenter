@@ -1,12 +1,12 @@
 # Settings Components
 
-This folder contains all components that are directly bound to the global settings store. These components encapsulate settings management logic and provide reusable UI elements for configuring various aspects of the application.
+This folder contains all components that are directly bound to the global settings state. These components encapsulate settings management logic and provide reusable UI elements for configuring various aspects of the application.
 
 ## Purpose
 
 Components in this directory:
 
-- Import and use the global `settings` store from `$lib/stores/settings.svelte`
+- Import and use the global `settings` state from `$lib/state/settings.svelte`
 - Either take **no props** or only take **minimal configuration props** (like `mode` or `settingsKey`) to determine which setting to bind to
 - Update settings directly using `settings.updateKey()` or `settings.update()` methods
 - Are self-contained and can be used globally throughout the application
@@ -15,9 +15,9 @@ Components in this directory:
 
 A component belongs here if it meets ALL of the following criteria:
 
-1. **Directly bound to settings**: The component imports and uses `settings` from `$lib/stores/settings.svelte`
+1. **Directly bound to settings**: The component imports and uses `settings` from `$lib/state/settings.svelte`
 2. **Minimal props**: Takes either no props OR only minimal configuration props like `mode` or `settingsKey` (no value/onChange props)
-3. **Self-contained**: All state management is handled internally via the settings store
+3. **Self-contained**: All state management is handled internally via the settings state
 4. **Reusable**: Can be dropped into any part of the app without additional setup
 
 ## Component Organization
@@ -68,11 +68,11 @@ settings/
 
 When creating a new settings component for this folder:
 
-1. **Import the settings store**:
+1. **Import the settings state**:
 
    ```svelte
    <script lang="ts">
-   	import { settings } from '$lib/stores/settings.svelte';
+   	import { settings } from '$lib/state/settings.svelte';
    </script>
    ```
 
@@ -117,14 +117,14 @@ Do not add components that:
 - Take `value` and `onChange` props (these belong in regular components)
 - Require complex external state management
 - Are page-specific and not reusable
-- Don't interact with the settings store
+- Don't interact with the settings state
 
 ## Migration Guide
 
 If you're moving an existing component to this folder:
 
 1. Remove any `value` and `onChange` props
-2. Import the `settings` store
+2. Import the `settings` state
 3. Update bindings to use `settings.value` directly
 4. Test that the component still works in all its current usages
 5. Update import paths throughout the codebase

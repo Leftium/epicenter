@@ -5,7 +5,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
 	import { useCombobox } from '@epicenter/ui/hooks';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { cn } from '@epicenter/ui/utils';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import PackageIcon from '@lucide/svelte/icons/package';

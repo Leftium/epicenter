@@ -10,9 +10,9 @@
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { services } from '$lib/services';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,

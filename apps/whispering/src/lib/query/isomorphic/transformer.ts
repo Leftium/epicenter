@@ -15,7 +15,7 @@ import type {
 	TransformationRunRunning,
 	TransformationStep,
 } from '$lib/services/isomorphic/db';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
 

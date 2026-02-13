@@ -16,9 +16,9 @@
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { desktopServices, services } from '$lib/services';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import { Button } from '@epicenter/ui/button';
 	import {

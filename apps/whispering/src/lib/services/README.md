@@ -40,7 +40,7 @@ async function transcribeBlob(
 **Notice how services are:**
 
 - **Pure**: Accept explicit parameters, no hidden dependencies
-- **Isolated**: No knowledge of UI state, settings, or reactive stores
+- **Isolated**: No knowledge of UI state, settings, or reactive state
 - **Testable**: Easy to unit test with mock parameters
 - **Consistent**: All return `Result<T, E>` types for uniform error handling
 - **Platform-agnostic**: Same interface works on desktop and web
@@ -85,7 +85,7 @@ Services are collections of pure functions that:
 
 - Accept explicit parameters (no hidden dependencies)
 - Return `Result<T, E>` types for consistent error handling
-- Have no knowledge of UI state, settings, or reactive stores
+- Have no knowledge of UI state, settings, or reactive state
 - Provide identical APIs across platforms (Desktop via Tauri, Web via browser APIs)
 
 ### Platform Detection
@@ -449,7 +449,7 @@ export { MyServiceLive as myService } from './my-service';
 | Aspect             | Services              | Query Layer            |
 | ------------------ | --------------------- | ---------------------- |
 | **State**          | Stateless             | Stateful (cache)       |
-| **Dependencies**   | Explicit parameters   | Settings, stores       |
+| **Dependencies**   | Explicit parameters   | Settings, state        |
 | **Error Handling** | Result types          | Result + UI toasts     |
 | **Usage**          | Direct function calls | TanStack Query         |
 | **Reactivity**     | None                  | Reactive subscriptions |

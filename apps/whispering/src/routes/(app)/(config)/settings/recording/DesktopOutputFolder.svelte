@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';

@@ -293,9 +293,7 @@ export function defineQuery({
 	handler,
 	...rest
 }: ActionConfig<any, any>): Query<any, any> {
-	const fn = (...args: unknown[]) =>
-		(handler as (...args: unknown[]) => unknown)(...args);
-	return Object.assign(fn, {
+	return Object.assign(handler, {
 		type: 'query' as const,
 		...rest,
 	}) as unknown as Query<any, any>;
@@ -345,9 +343,7 @@ export function defineMutation({
 	handler,
 	...rest
 }: ActionConfig<any, any>): Mutation<any, any> {
-	const fn = (...args: unknown[]) =>
-		(handler as (...args: unknown[]) => unknown)(...args);
-	return Object.assign(fn, {
+	return Object.assign(handler, {
 		type: 'mutation' as const,
 		...rest,
 	}) as unknown as Mutation<any, any>;

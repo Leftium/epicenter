@@ -1,49 +1,12 @@
 <script lang="ts">
-	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { queryClient } from '$lib/query';
-	import { suspendedTabs, suspendedTabsKeys } from '$lib/query/suspended-tabs';
-	import { tabsKeys } from '$lib/query/tabs';
+	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
 	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import { Ok, trySync } from 'wellcrafted/result';
-	import type { SuspendedTab } from '$lib/epicenter';
-
-	const query = createQuery(() => suspendedTabs.getAll.options);
-
-	const restoreMutation = createMutation(() => ({
-		...suspendedTabs.restore.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
-		},
-	}));
-
-	const removeMutation = createMutation(() => ({
-		...suspendedTabs.remove.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-		},
-	}));
-
-	const restoreAllMutation = createMutation(() => ({
-		...suspendedTabs.restoreAll.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
-		},
-	}));
-
-	const removeAllMutation = createMutation(() => ({
-		...suspendedTabs.removeAll.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-		},
-	}));
 
 	function getRelativeTime(timestamp: number) {
 		const now = Date.now();
@@ -72,25 +35,17 @@
 	<header class="flex items-center justify-between">
 		<h2 class="text-sm font-semibold text-muted-foreground">
 			Suspended Tabs
-			{#if query.data?.length}
+			{#if suspendedTabState.tabs.length}
 				<span
 					class="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground"
 				>
-					{query.data.length}
+					{suspendedTabState.tabs.length}
 				</span>
 			{/if}
 		</h2>
 	</header>
 
-	{#if query.isLoading}
-		<div class="flex justify-center p-4">
-			<Spinner />
-		</div>
-	{:else if query.isError}
-		<div class="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-			Error loading suspended tabs
-		</div>
-	{:else if !query.data?.length}
+	{#if !suspendedTabState.tabs.length}
 		<div
 			class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center text-muted-foreground"
 		>
@@ -100,7 +55,7 @@
 		</div>
 	{:else}
 		<div class="flex flex-col gap-1">
-			{#each query.data as tab (tab.id)}
+			{#each suspendedTabState.tabs as tab (tab.id)}
 				<div
 					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
 				>
@@ -129,22 +84,18 @@
 							variant="ghost"
 							size="icon-xs"
 							tooltip="Restore"
-							disabled={restoreMutation.isPending}
-							onclick={() => restoreMutation.mutate(tab)}
+							onclick={() => suspendedTabState.actions.restore(tab)}
 						>
-							{#if restoreMutation.isPending}<Spinner />{:else}<RotateCcwIcon
-								/>{/if}
+							<RotateCcwIcon />
 						</Button>
 						<Button
 							variant="ghost"
 							size="icon-xs"
 							class="text-destructive hover:text-destructive"
 							tooltip="Delete"
-							disabled={removeMutation.isPending}
-							onclick={() => removeMutation.mutate(tab.id)}
+							onclick={() => suspendedTabState.actions.remove(tab.id)}
 						>
-							{#if removeMutation.isPending}<Spinner />{:else}<Trash2Icon
-								/>{/if}
+							<Trash2Icon />
 						</Button>
 					</div>
 				</div>
@@ -155,19 +106,15 @@
 			<Button
 				variant="outline"
 				size="sm"
-				disabled={restoreAllMutation.isPending}
-				onclick={() => restoreAllMutation.mutate()}
+				onclick={() => suspendedTabState.actions.restoreAll()}
 			>
-				{#if restoreAllMutation.isPending}<Spinner class="mr-2" />{/if}
 				Restore All
 			</Button>
 			<Button
 				variant="destructive"
 				size="sm"
-				disabled={removeAllMutation.isPending}
-				onclick={() => removeAllMutation.mutate()}
+				onclick={() => suspendedTabState.actions.removeAll()}
 			>
-				{#if removeAllMutation.isPending}<Spinner class="mr-2" />{/if}
 				Delete All
 			</Button>
 		</div>

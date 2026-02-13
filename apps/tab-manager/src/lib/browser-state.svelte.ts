@@ -32,201 +32,103 @@ import {
 	windowToRow,
 } from '$lib/epicenter/browser.schema';
 
-class BrowserState {
-	#tabs = $state<Tab[]>([]);
-	#windows = $state<Window[]>([]);
-	#ready = $state(false);
-	/** nativeTabId → index in #tabs. Rebuilt on structural changes (add/remove). */
-	#tabIndex = new Map<number, number>();
-	#deviceId: string | null = null;
+function createBrowserState() {
+	let tabs = $state<Tab[]>([]);
+	let windows = $state<Window[]>([]);
+	let ready = $state(false);
+	/** nativeTabId → index in tabs. Rebuilt on structural changes (add/remove). */
+	const tabIndex = new Map<number, number>();
+	let deviceId: string | null = null;
 
-	constructor() {
-		this.#seed();
-		this.#registerListeners();
+	function rebuildIndex() {
+		tabIndex.clear();
+		for (let i = 0; i < tabs.length; i++) {
+			tabIndex.set(tabs[i].tabId, i);
+		}
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Public Getters
-	// ─────────────────────────────────────────────────────────────────────────
-
-	/** Whether the initial seed has completed. */
-	get seeded(): boolean {
-		return this.#ready;
+	async function resolveDeviceId(): Promise<string> {
+		if (deviceId) return deviceId;
+		deviceId = await getDeviceId();
+		return deviceId;
 	}
 
-	/** All tabs across all windows. */
-	get tabs(): Tab[] {
-		return this.#tabs;
-	}
+	// ── Seed — single IPC call gets windows + tabs ────────────────────────
 
-	/** All browser windows. */
-	get windows(): Window[] {
-		return this.#windows;
-	}
-
-	/**
-	 * Get tabs for a specific window, sorted by tab strip index.
-	 *
-	 * @example
-	 * ```svelte
-	 * {#each browserState.tabsByWindow(window.id) as tab (tab.id)}
-	 *   <TabItem {tab} />
-	 * {/each}
-	 * ```
-	 */
-	tabsByWindow(windowId: WindowCompositeId): Tab[] {
-		return this.#tabs
-			.filter((t) => t.windowId === windowId)
-			.sort((a, b) => a.index - b.index);
-	}
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Actions — direct browser API calls
-	// Browser events update $state reactively. No mutation wrappers needed.
-	// ─────────────────────────────────────────────────────────────────────────
-
-	readonly actions = {
-		/** Close a tab. Browser onRemoved event updates state. */
-		async close(tabId: number) {
-			await browser.tabs.remove(tabId);
-		},
-
-		/** Activate a tab and focus its window. */
-		async activate(tabId: number) {
-			const tab = await browser.tabs.update(tabId, { active: true });
-			if (tab?.windowId) {
-				await browser.windows.update(tab.windowId, { focused: true });
-			}
-		},
-
-		/** Pin a tab. */
-		async pin(tabId: number) {
-			await browser.tabs.update(tabId, { pinned: true });
-		},
-
-		/** Unpin a tab. */
-		async unpin(tabId: number) {
-			await browser.tabs.update(tabId, { pinned: false });
-		},
-
-		/** Mute a tab. */
-		async mute(tabId: number) {
-			await browser.tabs.update(tabId, { muted: true });
-		},
-
-		/** Unmute a tab. */
-		async unmute(tabId: number) {
-			await browser.tabs.update(tabId, { muted: false });
-		},
-
-		/** Reload a tab. */
-		async reload(tabId: number) {
-			await browser.tabs.reload(tabId);
-		},
-
-		/** Duplicate a tab. */
-		async duplicate(tabId: number) {
-			await browser.tabs.duplicate(tabId);
-		},
-	};
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Seed — single IPC call gets windows + tabs
-	// ─────────────────────────────────────────────────────────────────────────
-
-	async #seed() {
-		this.#deviceId = await getDeviceId();
+	async function seed() {
+		deviceId = await getDeviceId();
 		const browserWindows = await browser.windows.getAll({ populate: true });
 
-		const windows: Window[] = [];
-		const tabs: Tab[] = [];
+		const seedWindows: Window[] = [];
+		const seedTabs: Tab[] = [];
 
 		for (const win of browserWindows) {
-			const windowRow = windowToRow(this.#deviceId, win);
-			if (windowRow) windows.push(windowRow);
+			const windowRow = windowToRow(deviceId, win);
+			if (windowRow) seedWindows.push(windowRow);
 
 			if (win.tabs) {
 				for (const tab of win.tabs) {
-					const tabRow = tabToRow(this.#deviceId, tab);
-					if (tabRow) tabs.push(tabRow);
+					const tabRow = tabToRow(deviceId, tab);
+					if (tabRow) seedTabs.push(tabRow);
 				}
 			}
 		}
 
-		tabs.sort((a, b) => a.index - b.index);
+		seedTabs.sort((a, b) => a.index - b.index);
 
-		this.#windows = windows;
-		this.#tabs = tabs;
-		this.#rebuildIndex();
-		this.#ready = true;
+		windows = seedWindows;
+		tabs = seedTabs;
+		rebuildIndex();
+		ready = true;
 	}
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// Index Management
-	// ─────────────────────────────────────────────────────────────────────────
+	// ── Browser Event Listeners — surgical $state mutations ───────────────
 
-	#rebuildIndex() {
-		this.#tabIndex.clear();
-		for (let i = 0; i < this.#tabs.length; i++) {
-			this.#tabIndex.set(this.#tabs[i].tabId, i);
-		}
-	}
-
-	async #getDeviceId(): Promise<string> {
-		if (this.#deviceId) return this.#deviceId;
-		this.#deviceId = await getDeviceId();
-		return this.#deviceId;
-	}
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Browser Event Listeners — surgical $state mutations
-	// ─────────────────────────────────────────────────────────────────────────
-
-	#registerListeners() {
-		// ── Tab Events ───────────────────────────────────────────────────────
+	function registerListeners() {
+		// ── Tab Events ────────────────────────────────────────────────────
 
 		// onCreated: Full Tab object provided
 		browser.tabs.onCreated.addListener(async (tab) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
-			const row = tabToRow(deviceId, tab);
+			if (!ready) return;
+			const id = await resolveDeviceId();
+			const row = tabToRow(id, tab);
 			if (!row) return;
-			this.#tabs.push(row);
-			this.#tabIndex.set(row.tabId, this.#tabs.length - 1);
+			tabs.push(row);
+			tabIndex.set(row.tabId, tabs.length - 1);
 		});
 
 		// onRemoved: Only tabId provided — splice from array
 		browser.tabs.onRemoved.addListener(async (tabId) => {
-			if (!this.#ready) return;
-			const idx = this.#tabIndex.get(tabId);
+			if (!ready) return;
+			const idx = tabIndex.get(tabId);
 			if (idx === undefined) return;
-			this.#tabs.splice(idx, 1);
-			this.#rebuildIndex();
+			tabs.splice(idx, 1);
+			rebuildIndex();
 		});
 
 		// onUpdated: Full Tab in 3rd arg — replace element at index
 		browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
-			const row = tabToRow(deviceId, tab);
+			if (!ready) return;
+			const id = await resolveDeviceId();
+			const row = tabToRow(id, tab);
 			if (!row) return;
-			const idx = this.#tabIndex.get(row.tabId);
+			const idx = tabIndex.get(row.tabId);
 			if (idx !== undefined) {
-				this.#tabs[idx] = row;
+				tabs[idx] = row;
 			}
 		});
 
 		// onMoved: Re-query tab to get updated index
 		browser.tabs.onMoved.addListener(async (tabId) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
+			if (!ready) return;
+			const id = await resolveDeviceId();
 			try {
 				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(deviceId, tab);
+				const row = tabToRow(id, tab);
 				if (!row) return;
-				const idx = this.#tabIndex.get(row.tabId);
+				const idx = tabIndex.get(row.tabId);
 				if (idx !== undefined) {
-					this.#tabs[idx] = row;
+					tabs[idx] = row;
 				}
 			} catch {
 				// Tab may have been closed during move
@@ -235,38 +137,38 @@ class BrowserState {
 
 		// onActivated: Update active flags on old and new tab
 		browser.tabs.onActivated.addListener(async (activeInfo) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
-			const windowId = createWindowCompositeId(deviceId, activeInfo.windowId);
+			if (!ready) return;
+			const id = await resolveDeviceId();
+			const windowId = createWindowCompositeId(id, activeInfo.windowId);
 
 			// Deactivate previous active tab(s) in this window
-			for (let i = 0; i < this.#tabs.length; i++) {
-				if (this.#tabs[i].windowId === windowId && this.#tabs[i].active) {
-					this.#tabs[i] = { ...this.#tabs[i], active: false };
+			for (let i = 0; i < tabs.length; i++) {
+				if (tabs[i].windowId === windowId && tabs[i].active) {
+					tabs[i] = { ...tabs[i], active: false };
 				}
 			}
 
 			// Activate the new tab
-			const idx = this.#tabIndex.get(activeInfo.tabId);
+			const idx = tabIndex.get(activeInfo.tabId);
 			if (idx !== undefined) {
-				this.#tabs[idx] = { ...this.#tabs[idx], active: true };
+				tabs[idx] = { ...tabs[idx], active: true };
 			}
 		});
 
 		// onAttached: Tab moved between windows — re-query
 		browser.tabs.onAttached.addListener(async (tabId) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
+			if (!ready) return;
+			const id = await resolveDeviceId();
 			try {
 				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(deviceId, tab);
+				const row = tabToRow(id, tab);
 				if (!row) return;
-				const idx = this.#tabIndex.get(row.tabId);
+				const idx = tabIndex.get(row.tabId);
 				if (idx !== undefined) {
-					this.#tabs[idx] = row;
+					tabs[idx] = row;
 				} else {
-					this.#tabs.push(row);
-					this.#tabIndex.set(row.tabId, this.#tabs.length - 1);
+					tabs.push(row);
+					tabIndex.set(row.tabId, tabs.length - 1);
 				}
 			} catch {
 				// Tab may have been closed
@@ -275,77 +177,152 @@ class BrowserState {
 
 		// onDetached: Tab detached from window — re-query
 		browser.tabs.onDetached.addListener(async (tabId) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
+			if (!ready) return;
+			const id = await resolveDeviceId();
 			try {
 				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(deviceId, tab);
+				const row = tabToRow(id, tab);
 				if (!row) return;
-				const idx = this.#tabIndex.get(row.tabId);
+				const idx = tabIndex.get(row.tabId);
 				if (idx !== undefined) {
-					this.#tabs[idx] = row;
+					tabs[idx] = row;
 				}
 			} catch {
 				// Tab may have been closed during detach
 			}
 		});
 
-		// ── Window Events ────────────────────────────────────────────────────
+		// ── Window Events ─────────────────────────────────────────────────
 
 		// onCreated: Full Window object provided
 		browser.windows.onCreated.addListener(async (window) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
-			const row = windowToRow(deviceId, window);
+			if (!ready) return;
+			const id = await resolveDeviceId();
+			const row = windowToRow(id, window);
 			if (!row) return;
-			this.#windows.push(row);
+			windows.push(row);
 		});
 
 		// onRemoved: Remove window and all its tabs
 		browser.windows.onRemoved.addListener(async (windowId) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
-			const compositeId = createWindowCompositeId(deviceId, windowId);
+			if (!ready) return;
+			const id = await resolveDeviceId();
+			const compositeId = createWindowCompositeId(id, windowId);
 
 			// Remove window
-			const winIdx = this.#windows.findIndex((w) => w.id === compositeId);
+			const winIdx = windows.findIndex((w) => w.id === compositeId);
 			if (winIdx !== -1) {
-				this.#windows.splice(winIdx, 1);
+				windows.splice(winIdx, 1);
 			}
 
 			// Remove all tabs in that window
-			this.#tabs = this.#tabs.filter((t) => t.windowId !== compositeId);
-			this.#rebuildIndex();
+			tabs = tabs.filter((t) => t.windowId !== compositeId);
+			rebuildIndex();
 		});
 
 		// onFocusChanged: Update focused flags
 		browser.windows.onFocusChanged.addListener(async (windowId) => {
-			if (!this.#ready) return;
-			const deviceId = await this.#getDeviceId();
+			if (!ready) return;
+			const id = await resolveDeviceId();
 
 			// Unfocus all windows
-			for (let i = 0; i < this.#windows.length; i++) {
-				if (this.#windows[i].focused) {
-					this.#windows[i] = {
-						...this.#windows[i],
-						focused: false,
-					};
+			for (let i = 0; i < windows.length; i++) {
+				if (windows[i].focused) {
+					windows[i] = { ...windows[i], focused: false };
 				}
 			}
 
 			// Focus the new window (WINDOW_ID_NONE means all lost focus)
 			if (windowId !== browser.windows.WINDOW_ID_NONE) {
-				const compositeId = createWindowCompositeId(deviceId, windowId);
-				const winIdx = this.#windows.findIndex((w) => w.id === compositeId);
+				const compositeId = createWindowCompositeId(id, windowId);
+				const winIdx = windows.findIndex((w) => w.id === compositeId);
 				if (winIdx !== -1) {
-					this.#windows[winIdx] = {
-						...this.#windows[winIdx],
-						focused: true,
-					};
+					windows[winIdx] = { ...windows[winIdx], focused: true };
 				}
 			}
 		});
 	}
+
+	seed();
+	registerListeners();
+
+	return {
+		/** Whether the initial seed has completed. */
+		get seeded() {
+			return ready;
+		},
+
+		/** All tabs across all windows. */
+		get tabs() {
+			return tabs;
+		},
+
+		/** All browser windows. */
+		get windows() {
+			return windows;
+		},
+
+		/**
+		 * Get tabs for a specific window, sorted by tab strip index.
+		 *
+		 * @example
+		 * ```svelte
+		 * {#each browserState.tabsByWindow(window.id) as tab (tab.id)}
+		 *   <TabItem {tab} />
+		 * {/each}
+		 * ```
+		 */
+		tabsByWindow(windowId: WindowCompositeId): Tab[] {
+			return tabs
+				.filter((t) => t.windowId === windowId)
+				.sort((a, b) => a.index - b.index);
+		},
+
+		actions: {
+			/** Close a tab. Browser onRemoved event updates state. */
+			async close(tabId: number) {
+				await browser.tabs.remove(tabId);
+			},
+
+			/** Activate a tab and focus its window. */
+			async activate(tabId: number) {
+				const tab = await browser.tabs.update(tabId, { active: true });
+				if (tab?.windowId) {
+					await browser.windows.update(tab.windowId, { focused: true });
+				}
+			},
+
+			/** Pin a tab. */
+			async pin(tabId: number) {
+				await browser.tabs.update(tabId, { pinned: true });
+			},
+
+			/** Unpin a tab. */
+			async unpin(tabId: number) {
+				await browser.tabs.update(tabId, { pinned: false });
+			},
+
+			/** Mute a tab. */
+			async mute(tabId: number) {
+				await browser.tabs.update(tabId, { muted: true });
+			},
+
+			/** Unmute a tab. */
+			async unmute(tabId: number) {
+				await browser.tabs.update(tabId, { muted: false });
+			},
+
+			/** Reload a tab. */
+			async reload(tabId: number) {
+				await browser.tabs.reload(tabId);
+			},
+
+			/** Duplicate a tab. */
+			async duplicate(tabId: number) {
+				await browser.tabs.duplicate(tabId);
+			},
+		},
+	};
 }
 
-export const browserState = new BrowserState();
+export const browserState = createBrowserState();

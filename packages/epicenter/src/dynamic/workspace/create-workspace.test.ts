@@ -51,7 +51,7 @@ describe('createWorkspace', () => {
 			expect(workspace.tables).toBeDefined();
 			expect(workspace.kv).toBeDefined();
 			expect(workspace.extensions).toEqual({});
-			expect(workspace.whenSynced).toBeInstanceOf(Promise);
+			expect(workspace.whenReady).toBeInstanceOf(Promise);
 			expect(typeof workspace.destroy).toBe('function');
 		});
 
@@ -99,11 +99,11 @@ describe('createWorkspace', () => {
 			}
 		});
 
-		test('whenSynced resolves immediately without extensions', async () => {
+		test('whenReady resolves immediately without extensions', async () => {
 			const workspace = createWorkspace(testDefinition);
 
 			// Should resolve immediately since there are no extensions
-			await expect(workspace.whenSynced).resolves.toBeUndefined();
+			await expect(workspace.whenReady).resolves.toBeUndefined();
 		});
 	});
 
@@ -146,7 +146,7 @@ describe('createWorkspace', () => {
 			expect(receivedContext?.hasKv).toBe(true);
 		});
 
-		test('whenSynced aggregates all extension promises', async () => {
+		test('whenReady aggregates all extension promises', async () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
 			let resolved1 = false;
@@ -155,7 +155,7 @@ describe('createWorkspace', () => {
 			const workspace = baseWorkspace
 				.withExtension('ext1', () =>
 					defineExports({
-						whenSynced: new Promise<void>((resolve) => {
+						whenReady: new Promise<void>((resolve) => {
 							setTimeout(() => {
 								resolved1 = true;
 								resolve();
@@ -165,7 +165,7 @@ describe('createWorkspace', () => {
 				)
 				.withExtension('ext2', () =>
 					defineExports({
-						whenSynced: new Promise<void>((resolve) => {
+						whenReady: new Promise<void>((resolve) => {
 							setTimeout(() => {
 								resolved2 = true;
 								resolve();
@@ -179,7 +179,7 @@ describe('createWorkspace', () => {
 			expect(resolved2).toBe(false);
 
 			// After awaiting, both should be resolved
-			await workspace.whenSynced;
+			await workspace.whenReady;
 			expect(resolved1).toBe(true);
 			expect(resolved2).toBe(true);
 		});

@@ -24,7 +24,7 @@ export const load: LayoutLoad = async ({ params }) => {
 
 	// Create workspace client with persistence
 	const client = createWorkspaceClient(definition);
-	await client.whenSynced;
+	await client.whenReady;
 
 	console.log(
 		`[Layout] Loaded workspace: ${definition.name} (${definition.id})`,

@@ -11,7 +11,7 @@ type YSweetConnectionConfig = {
 type YSweetConnection = {
 	ydoc: Y.Doc;
 	provider: YSweetProvider;
-	whenSynced: Promise<void>;
+	whenReady: Promise<void>;
 	destroy: () => void;
 };
 
@@ -34,7 +34,7 @@ export function createYSweetConnection(
 	}));
 
 	// Create sync promise
-	const { promise: whenSynced, resolve } = Promise.withResolvers<void>();
+	const { promise: whenReady, resolve } = Promise.withResolvers<void>();
 	if (provider.status === 'connected') {
 		resolve();
 	} else {
@@ -52,7 +52,7 @@ export function createYSweetConnection(
 		ydoc.destroy();
 	};
 
-	return { ydoc, provider, whenSynced, destroy };
+	return { ydoc, provider, whenReady, destroy };
 }
 
 /**

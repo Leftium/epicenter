@@ -100,7 +100,7 @@ if (!definition) {
 
 // 2. Create workspace client with persistence
 const client = createWorkspaceClient(definition);
-await client.whenSynced;
+await client.whenReady;
 
 // 3. Use the client
 client.tables.get('posts').upsert({ id: '1', title: 'Hello' });

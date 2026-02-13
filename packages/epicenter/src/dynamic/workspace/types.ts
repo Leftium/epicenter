@@ -86,7 +86,7 @@ export type ExtensionContext<
  * Factory function that creates an extension with lifecycle hooks.
  *
  * All extensions MUST return an object satisfying the Lifecycle protocol:
- * - `whenSynced`: Promise that resolves when the extension is ready
+ * - `whenReady`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when workspace is destroyed
  *
  * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant exports.
@@ -99,7 +99,7 @@ export type ExtensionContext<
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
  *     provider,
- *     whenSynced: provider.whenSynced,
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   });
  * };
@@ -137,8 +137,8 @@ export type WorkspaceClient<
 	kv: Kv<TKvFields>;
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
-	/** Promise resolving when all extensions are synced */
-	whenSynced: Promise<void>;
+	/** Promise resolving when all extensions are ready */
+	whenReady: Promise<void>;
 	/** Cleanup all resources */
 	destroy(): Promise<void>;
 	/** Async dispose support for `await using` */

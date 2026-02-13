@@ -88,7 +88,7 @@ const setupWebPersistence: Provider = ({ ydoc }) => {
 	const persistence = new IndexeddbPersistence(ydoc.guid, ydoc);
 
 	return {
-		whenSynced: persistence.whenSynced,
+		whenReady: persistence.whenSynced, // y-indexeddb's whenSynced = "data loaded from IndexedDB"
 		destroy: () => persistence.destroy(),
 	};
 };
@@ -138,7 +138,7 @@ export const setupPersistence: Provider = ({ ydoc }) => {
 	const persistence = new IndexeddbPersistence(ydoc.guid, ydoc);
 
 	return {
-		whenSynced: persistence.whenSynced,
+		whenReady: persistence.whenSynced, // y-indexeddb's whenSynced = "data loaded from IndexedDB"
 		destroy: () => persistence.destroy(),
 	};
 };
@@ -175,7 +175,7 @@ export const setupPersistence: Provider = ({ ydoc }) => {
 	const persistence = new IndexeddbPersistence(ydoc.guid, ydoc);
 
 	return {
-		whenSynced: persistence.whenSynced,
+		whenReady: persistence.whenSynced, // y-indexeddb's whenSynced = "data loaded from IndexedDB"
 		destroy: () => persistence.destroy(),
 	};
 };

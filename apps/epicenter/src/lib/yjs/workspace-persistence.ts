@@ -56,7 +56,7 @@ const FILE_NAMES = {
  *
  * @param ctx - The extension context
  * @param config - Optional configuration for debounce timing
- * @returns Lifecycle with `whenSynced` promise and `destroy` cleanup
+ * @returns Lifecycle with `whenReady` promise and `destroy` cleanup
  *
  * @example
  * ```typescript
@@ -142,7 +142,7 @@ export function workspacePersistence(
 	// =========================================================================
 
 	return defineExports({
-		whenSynced: (async () => {
+		whenReady: (async () => {
 			const { workspaceDir, workspaceYjsPath } = await pathsPromise;
 
 			// Ensure workspace directory exists

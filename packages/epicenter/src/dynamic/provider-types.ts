@@ -31,7 +31,7 @@ export type ProviderContext = {
  * Provider exports - returned values accessible via `doc.providers.{name}`.
  *
  * This type combines the lifecycle protocol with custom exports.
- * The framework guarantees `whenSynced` and `destroy` exist on all providers.
+ * The framework guarantees `whenReady` and `destroy` exist on all providers.
  *
  * @typeParam T - Additional exports beyond lifecycle fields
  *
@@ -39,11 +39,11 @@ export type ProviderContext = {
  * ```typescript
  * // Type for a provider that exports a connection
  * type SyncProviderExports = ProviderExports<{ connection: WebSocket }>;
- * // → { whenSynced, destroy, connection }
+ * // → { whenReady, destroy, connection }
  *
  * // Type for a provider with no custom exports
  * type SimpleProviderExports = ProviderExports;
- * // → { whenSynced, destroy }
+ * // → { whenReady, destroy }
  * ```
  */
 export type ProviderExports<T extends Record<string, unknown> = {}> =
@@ -53,11 +53,11 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * A doc-level provider factory function.
  *
  * Factories are **always synchronous**. Async initialization is tracked via
- * the returned `whenSynced` promise, not the factory itself.
+ * the returned `whenReady` promise, not the factory itself.
  *
  * Use `defineExports()` to wrap your return for explicit type safety and
  * lifecycle normalization. The framework fills in defaults for missing fields:
- * - `whenSynced`: defaults to `Promise.resolve()`
+ * - `whenReady`: defaults to `Promise.resolve()`
  * - `destroy`: defaults to no-op `() => {}`
  *
  * @example Persistence provider
@@ -65,7 +65,7 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * const persistence: ProviderFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
- *     whenSynced: provider.whenSynced,
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   });
  * };
@@ -77,7 +77,7 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  *   const ws = new WebsocketProvider(url, ydoc.guid, ydoc);
  *   return defineExports({
  *     ws,
- *     whenSynced: new Promise(r => ws.on('sync', r)),
+ *     whenReady: new Promise(r => ws.on('sync', r)),
  *     destroy: () => ws.destroy(),
  *   });
  * };

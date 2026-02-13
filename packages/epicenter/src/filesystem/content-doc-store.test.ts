@@ -81,13 +81,13 @@ describe('createContentDocStore', () => {
 });
 
 describe('with providers', () => {
-	test('ensure runs provider factories and awaits whenSynced', async () => {
+	test('ensure runs provider factories and awaits whenReady', async () => {
 		let factoryCallCount = 0;
-		const { promise: whenSynced, resolve } = Promise.withResolvers<void>();
+		const { promise: whenReady, resolve } = Promise.withResolvers<void>();
 
 		const mockProvider: ProviderFactory = () => {
 			factoryCallCount++;
-			return defineExports({ whenSynced });
+			return defineExports({ whenReady });
 		};
 
 		const store = createContentDocStore([mockProvider]);

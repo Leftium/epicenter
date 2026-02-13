@@ -4,7 +4,7 @@
  * This module defines the shared lifecycle contract that all providers (doc-level)
  * and extensions (workspace-level) must satisfy. The protocol enables:
  *
- * - **Async initialization tracking**: `whenSynced` lets UI render gates wait for readiness
+ * - **Async initialization tracking**: `whenReady` lets UI render gates wait for readiness
  * - **Resource cleanup**: `destroy` ensures connections, observers, and handles are released
  *
  * ## Architecture
@@ -12,7 +12,7 @@
  * ```
  * ┌─────────────────────────────────────────────────────────────────┐
  * │  Lifecycle (base protocol)                                      │
- * │    { whenSynced, destroy }                                      │
+ * │    { whenReady, destroy }                                       │
  * └─────────────────────────────────────────────────────────────────┘
  *                    │                              │
  *                    ▼                              ▼
@@ -26,7 +26,7 @@
  * ## Usage
  *
  * Factory functions are **always synchronous**. Async initialization is tracked
- * via the returned `whenSynced` promise, not the factory itself.
+ * via the returned `whenReady` promise, not the factory itself.
  *
  * Use `defineExports()` for explicit type safety and lifecycle normalization:
  *
@@ -34,7 +34,7 @@
  * // Simple extension - explicit lifecycle with defaults
  * const simple: ExtensionFactory = ({ tables }) => {
  *   tables.get('posts').observe({ onAdd: console.log });
- *   return defineExports(); // Framework fills in whenSynced and destroy
+ *   return defineExports(); // Framework fills in whenReady and destroy
  * };
  *
  * // Extension with cleanup
@@ -50,7 +50,7 @@
  * const persistence: ProviderFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
- *     whenSynced: provider.whenSynced,
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   });
  * };
@@ -68,33 +68,33 @@ export type MaybePromise<T> = T | Promise<T>;
  * This is the base contract that all providers and extensions satisfy.
  * It defines two required lifecycle methods:
  *
- * - `whenSynced`: A promise that resolves when initialization is complete
+ * - `whenReady`: A promise that resolves when initialization is complete
  * - `destroy`: A cleanup function called when the parent is destroyed
  *
  * ## When to use each field
  *
  * | Field | Purpose | Example |
  * |-------|---------|---------|
- * | `whenSynced` | Track async initialization | Database indexing, initial sync |
+ * | `whenReady` | Track async initialization | Database indexing, initial sync |
  * | `destroy` | Clean up resources | Close connections, unsubscribe observers |
  *
  * ## Framework guarantees
  *
- * - `destroy()` will be called even if `whenSynced` rejects
- * - `destroy()` may be called while `whenSynced` is still pending
+ * - `destroy()` will be called even if `whenReady` rejects
+ * - `destroy()` may be called while `whenReady` is still pending
  * - Multiple `destroy()` calls should be safe (idempotent)
  *
  * @example
  * ```typescript
  * // Lifecycle with async init and cleanup
  * const lifecycle: Lifecycle = {
- *   whenSynced: database.initialize(),
+ *   whenReady: database.initialize(),
  *   destroy: () => database.close(),
  * };
  *
  * // Lifecycle with no async init
  * const simpleLifecycle: Lifecycle = {
- *   whenSynced: Promise.resolve(),
+ *   whenReady: Promise.resolve(),
  *   destroy: () => observer.unsubscribe(),
  * };
  * ```
@@ -106,7 +106,7 @@ export type Lifecycle = {
 	 * Use this as a render gate in UI frameworks:
 	 *
 	 * ```svelte
-	 * {#await client.whenSynced}
+	 * {#await client.whenReady}
 	 *   <Loading />
 	 * {:then}
 	 *   <App />
@@ -118,7 +118,7 @@ export type Lifecycle = {
 	 * - Sync providers: Initial server sync complete
 	 * - SQLite: Database ready and indexed
 	 */
-	whenSynced: Promise<unknown>;
+	whenReady: Promise<unknown>;
 
 	/**
 	 * Clean up resources.
@@ -129,7 +129,7 @@ export type Lifecycle = {
 	 * - Disconnect network providers
 	 * - Release file handles
 	 *
-	 * **Important**: This may be called while `whenSynced` is still pending.
+	 * **Important**: This may be called while `whenReady` is still pending.
 	 * Implementations should handle graceful cancellation.
 	 */
 	destroy: () => MaybePromise<void>;
@@ -141,7 +141,7 @@ export type Lifecycle = {
  * This is the shared helper for both providers and extensions.
  * It fills in defaults for missing lifecycle fields:
  *
- * - `whenSynced`: defaults to `Promise.resolve()`
+ * - `whenReady`: defaults to `Promise.resolve()`
  * - `destroy`: defaults to no-op `() => {}`
  *
  * ## When to use
@@ -170,21 +170,21 @@ export type Lifecycle = {
  * ```
  *
  * @param exports - Optional exports object (may include lifecycle fields)
- * @returns Normalized object with guaranteed `whenSynced` and `destroy`
+ * @returns Normalized object with guaranteed `whenReady` and `destroy`
  *
  * @example Simple extension (no async, no cleanup)
  * ```typescript
  * return defineExports({ helper: myHelper });
- * // → { helper, whenSynced: Promise.resolve(), destroy: () => {} }
+ * // → { helper, whenReady: Promise.resolve(), destroy: () => {} }
  * ```
  *
  * @example With async initialization
  * ```typescript
  * return defineExports({
  *   db: sqliteDb,
- *   whenSynced: db.initialize(),
+ *   whenReady: db.initialize(),
  * });
- * // → { db, whenSynced: initPromise, destroy: () => {} }
+ * // → { db, whenReady: initPromise, destroy: () => {} }
  * ```
  *
  * @example With cleanup
@@ -193,14 +193,14 @@ export type Lifecycle = {
  *   db: sqliteDb,
  *   destroy: () => db.close(),
  * });
- * // → { db, whenSynced: Promise.resolve(), destroy: closeDb }
+ * // → { db, whenReady: Promise.resolve(), destroy: closeDb }
  * ```
  *
  * @example Full lifecycle
  * ```typescript
  * return defineExports({
  *   provider,
- *   whenSynced: provider.connected,
+ *   whenReady: provider.connected,
  *   destroy: () => provider.disconnect(),
  * });
  * ```
@@ -210,16 +210,16 @@ export function defineExports<T extends Record<string, unknown> = {}>(
 ): Lifecycle & T {
 	if (!exports) {
 		return {
-			whenSynced: Promise.resolve(),
+			whenReady: Promise.resolve(),
 			destroy: () => {},
 		} as Lifecycle & T;
 	}
 
-	const { whenSynced, destroy, ...rest } = exports as T & Partial<Lifecycle>;
+	const { whenReady, destroy, ...rest } = exports as T & Partial<Lifecycle>;
 
 	return {
 		...rest,
-		whenSynced: whenSynced ?? Promise.resolve(),
+		whenReady: whenReady ?? Promise.resolve(),
 		destroy: destroy ?? (() => {}),
 	} as Lifecycle & T;
 }

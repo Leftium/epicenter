@@ -103,15 +103,15 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
     providerExports[id] = factory({ ydoc });
   }
 
-  const whenSynced = Promise.all(
-    Object.values(providerExports).map((p) => p.whenSynced)
+  const whenReady = Promise.all(
+    Object.values(providerExports).map((p) => p.whenReady)
   ).then(() => {});
 
   return {
     ydoc,
     workspaceId,
     providers: providerExports,
-    whenSynced,
+    whenReady,
 
     /**
      * Get current epoch (MAX of all client proposals).
@@ -263,7 +263,7 @@ export function headPersistence(
   ydoc.on('update', handleUpdate);
 
   return defineExports({
-    whenSynced: (async () => {
+    whenReady: (async () => {
       const { workspaceDir, binaryPath } = await pathsPromise;
       await mkdir(workspaceDir, { recursive: true }).catch(() => {});
 

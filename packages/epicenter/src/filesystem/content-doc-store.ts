@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
 import type { ProviderFactory } from '../dynamic/provider-types.js';
-import { defineExports, type Lifecycle } from '../shared/lifecycle.js';
+import type { Lifecycle } from '../shared/lifecycle.js';
 import type { ContentDocStore, FileId } from './types.js';
 
 type DocEntry = {
@@ -13,7 +13,7 @@ type DocEntry = {
  * Create a content doc store with optional provider factories for persistence/sync.
  *
  * Provider factories run synchronously when a doc is first ensured. Async initialization
- * (e.g. IndexedDB load) is tracked via each provider's `whenSynced` promise — `ensure()`
+ * (e.g. IndexedDB load) is tracked via each provider's `whenReady` promise — `ensure()`
  * awaits all of them before returning the hydrated doc.
  *
  * No providers = instant resolution (tests, headless).
@@ -30,7 +30,7 @@ export function createContentDocStore(
 
 			const ydoc = new Y.Doc({ guid: fileId, gc: false });
 
-			// Factories are synchronous; async init tracked via whenSynced
+			// Factories are synchronous; async init tracked via whenReady
 			const providers: Lifecycle[] = [];
 			try {
 				for (const factory of providerFactories) {
@@ -46,7 +46,7 @@ export function createContentDocStore(
 			const whenReady =
 				providers.length === 0
 					? Promise.resolve(ydoc)
-					: Promise.all(providers.map((p) => p.whenSynced)).then(() => ydoc);
+					: Promise.all(providers.map((p) => p.whenReady)).then(() => ydoc);
 
 			docs.set(fileId, { ydoc, providers, whenReady });
 			return whenReady;

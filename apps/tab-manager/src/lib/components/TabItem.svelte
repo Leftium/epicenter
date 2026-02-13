@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
-	import type { Tab } from '$lib/schema';
+	import type { Tab } from '$lib/workspace';
 	import { getDomain } from '$lib/utils/format';
 	import XIcon from '@lucide/svelte/icons/x';
 	import PinIcon from '@lucide/svelte/icons/pin';

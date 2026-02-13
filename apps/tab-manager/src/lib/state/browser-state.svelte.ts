@@ -28,8 +28,8 @@ import {
 	type WindowCompositeId,
 } from '$lib/device/composite-id';
 import { getDeviceId } from '$lib/device/device-id';
-import type { Tab, Window } from '$lib/schema';
-import { tabToRow, windowToRow } from '$lib/schema/row-converters';
+import { tabToRow, windowToRow } from '$lib/sync/row-converters';
+import type { Tab, Window } from '$lib/workspace';
 
 /**
  * A window and all the tabs it owns, stored together.

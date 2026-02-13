@@ -24,7 +24,7 @@
 
 import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
 import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
-import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
+import { createWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
@@ -44,12 +44,8 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import { BROWSER_TABLES, type Tab, type Window } from '$lib/schema';
-import {
-	tabGroupToRow,
-	tabToRow,
-	windowToRow,
-} from '$lib/schema/row-converters';
+import { tabGroupToRow, tabToRow, windowToRow } from '$lib/sync/row-converters';
+import { definition, type Tab, type Window } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sync Coordination
@@ -111,15 +107,6 @@ export default defineBackground(() => {
 
 	// Get device ID early (cached after first call)
 	const deviceIdPromise = getDeviceId();
-
-	// ─────────────────────────────────────────────────────────────────────────
-	// Workspace Definition (pure schema, no runtime)
-	// ─────────────────────────────────────────────────────────────────────────
-
-	const definition = defineWorkspace({
-		id: 'tab-manager', // Stable ID for persistence
-		tables: BROWSER_TABLES,
-	});
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Create Workspace Client with Extensions

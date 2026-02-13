@@ -1,35 +1,195 @@
 /**
- * Popup-side workspace client for accessing Y.Doc data.
+ * Workspace definition — the single source of truth for the tab manager schema.
  *
- * The popup needs direct access to the Y.Doc for the `suspendedTabs` table,
- * which is shared across devices via Yjs (not available through Chrome APIs).
+ * Contains table definitions, the workspace definition, and all inferred types.
+ * Both background and popup import from here; neither defines their own schema.
  *
- * This creates a lightweight workspace client with IndexedDB persistence
- * and Y-Sweet sync — the same Y.Doc as the background service worker.
- * Both share the same workspace ID (`tab-manager`), so IndexedDB and
- * Y-Sweet will converge on the same document.
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
+ * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
-import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
-import { BROWSER_TABLES } from '$lib/schema';
+import {
+	defineTable,
+	defineWorkspace,
+	type InferTableRow,
+} from '@epicenter/hq/static';
+import { type } from 'arktype';
+import {
+	GroupCompositeId,
+	TabCompositeId,
+	WindowCompositeId,
+} from '$lib/device/composite-id';
 
-const definition = defineWorkspace({
+// ─────────────────────────────────────────────────────────────────────────────
+// Table Definitions (Static API with Arktype)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Devices table - tracks browser installations for multi-device sync.
+ *
+ * Each device generates a unique ID on first install, stored in storage.local.
+ * This enables syncing tabs across multiple computers while preventing ID collisions.
+ */
+const devices = defineTable(
+	type({
+		id: 'string', // NanoID, generated once on install
+		name: 'string', // User-editable: "Chrome on macOS", "Firefox on Windows"
+		lastSeen: 'string', // ISO timestamp, updated on each sync
+		browser: 'string', // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+	}),
+);
+
+/**
+ * Tabs table - shadows browser tab state.
+ *
+ * Near 1:1 mapping with `chrome.tabs.Tab`. Optional fields match Chrome's optionality.
+ * The `id` field is a composite key: `${deviceId}_${tabId}`.
+ * This prevents collisions when syncing across multiple devices.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
+ */
+const tabs = defineTable(
+	type({
+		id: TabCompositeId, // Composite: `${deviceId}_${tabId}`
+		deviceId: 'string', // Foreign key to devices table
+		tabId: 'number', // Original chrome.tabs.Tab.id for API calls
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		index: 'number', // Zero-based position in tab strip
+		pinned: 'boolean',
+		active: 'boolean',
+		highlighted: 'boolean',
+		incognito: 'boolean',
+		discarded: 'boolean', // Tab unloaded to save memory
+		autoDiscardable: 'boolean',
+		frozen: 'boolean', // Chrome 132+, tab cannot execute tasks
+		// Optional fields — matching chrome.tabs.Tab optionality
+		'url?': 'string',
+		'title?': 'string',
+		'favIconUrl?': 'string',
+		'pendingUrl?': 'string', // Chrome 79+, URL before commit
+		'status?': "'unloaded' | 'loading' | 'complete'",
+		'audible?': 'boolean', // Chrome 45+
+		/** @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-MutedInfo */
+		'mutedInfo?': type({
+			/** Whether the tab is muted (prevented from playing sound). The tab may be muted even if it has not played or is not currently playing sound. Equivalent to whether the 'muted' audio indicator is showing. */
+			muted: 'boolean',
+			/** The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed. */
+			'reason?': "'user' | 'capture' | 'extension'",
+			/** The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed. */
+			'extensionId?': 'string',
+		}),
+		'groupId?': GroupCompositeId, // Composite: `${deviceId}_${groupId}`, Chrome 88+
+		'openerTabId?': TabCompositeId, // Composite: `${deviceId}_${openerTabId}`
+		'lastAccessed?': 'number', // Chrome 121+, ms since epoch
+		'height?': 'number',
+		'width?': 'number',
+		'sessionId?': 'string', // From chrome.sessions API
+	}),
+);
+
+/**
+ * Windows table - shadows browser window state.
+ *
+ * Near 1:1 mapping with `chrome.windows.Window`. Optional fields match Chrome's optionality.
+ * The `id` field is a composite key: `${deviceId}_${windowId}`.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
+ */
+const windows = defineTable(
+	type({
+		id: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		deviceId: 'string', // Foreign key to devices table
+		windowId: 'number', // Original browser window ID for API calls
+		focused: 'boolean',
+		alwaysOnTop: 'boolean',
+		incognito: 'boolean',
+		// Optional fields — matching chrome.windows.Window optionality
+		'state?':
+			"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
+		'type?': "'normal' | 'popup' | 'panel' | 'app' | 'devtools'",
+		'top?': 'number',
+		'left?': 'number',
+		'width?': 'number',
+		'height?': 'number',
+		'sessionId?': 'string', // From chrome.sessions API
+	}),
+);
+
+/**
+ * Tab groups table - Chrome 88+ only, not supported on Firefox.
+ *
+ * The `id` field is a composite key: `${deviceId}_${groupId}`.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabGroups
+ */
+const tabGroups = defineTable(
+	type({
+		id: GroupCompositeId, // Composite: `${deviceId}_${groupId}`
+		deviceId: 'string', // Foreign key to devices table
+		groupId: 'number', // Original browser group ID for API calls
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		collapsed: 'boolean',
+		color:
+			"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
+		shared: 'boolean', // Chrome 137+
+		// Optional fields — matching chrome.tabGroups.TabGroup optionality
+		'title?': 'string',
+	}),
+);
+
+/**
+ * Suspended tabs table — explicitly saved tabs that can be restored later.
+ *
+ * Unlike the `tabs` table (which mirrors live browser state and is device-owned),
+ * suspended tabs are shared across all devices. Any device can read, edit, or
+ * restore a suspended tab.
+ *
+ * Created when a user explicitly "suspends" a tab (close + save).
+ * Deleted when a user restores the tab (opens URL locally + deletes row).
+ */
+const suspendedTabs = defineTable(
+	type({
+		id: 'string', // nanoid, generated on suspend
+		url: 'string', // The tab URL
+		title: 'string', // Tab title at time of suspend
+		'favIconUrl?': 'string', // Favicon URL (nullable)
+		pinned: 'boolean', // Whether tab was pinned
+		sourceDeviceId: 'string', // Device that suspended this tab
+		suspendedAt: 'number', // Timestamp (ms since epoch)
+	}),
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tables & Workspace Definition
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const BROWSER_TABLES = {
+	devices,
+	tabs,
+	windows,
+	tabGroups,
+	suspendedTabs,
+};
+
+export type BrowserTables = typeof BROWSER_TABLES;
+
+/**
+ * The workspace definition — shared by background and popup.
+ *
+ * Both call `createWorkspace(definition)` independently (each needs its own
+ * Y.Doc instance), but the schema is defined exactly once here.
+ */
+export const definition = defineWorkspace({
 	id: 'tab-manager',
 	tables: BROWSER_TABLES,
 });
 
-/**
- * Popup workspace client.
- *
- * Provides typed access to all browser tables including `suspendedTabs`.
- * Shares the same Y.Doc as the background service worker via IndexedDB
- * persistence and Y-Sweet sync.
- */
-export const popupWorkspace = createWorkspace(definition).withExtensions({
-	sync: ySweetSync({
-		auth: directAuth('http://127.0.0.1:8080'),
-		persistence: indexeddbPersistence,
-	}),
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// Type Exports
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type Device = InferTableRow<typeof BROWSER_TABLES.devices>;
+export type Tab = InferTableRow<typeof BROWSER_TABLES.tabs>;
+export type Window = InferTableRow<typeof BROWSER_TABLES.windows>;
+export type TabGroup = InferTableRow<typeof BROWSER_TABLES.tabGroups>;
+export type SuspendedTab = InferTableRow<typeof BROWSER_TABLES.suspendedTabs>;

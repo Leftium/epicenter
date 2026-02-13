@@ -1,7 +1,7 @@
 # Chainable Extension API
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Implemented
 
 ## Overview
 
@@ -715,42 +715,42 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 
 ### Phase 1: Type changes
 
-- [ ] Update `WorkspaceClient` type to use `TExtensions extends Record<string, Lifecycle>` in both APIs
-- [ ] Replace `WorkspaceClientBuilder` type with `withExtension(key, factory)` signature in both APIs
-- [ ] Simplify `ExtensionContext` to client-so-far shape in both APIs
-- [ ] Remove `ExtensionMap`, `ExtensionFactoryMap`, `InferExtensionExports` types
-- [ ] Update `ExtensionFactory` type or remove it (check if extension authors import it)
+- [x] Update `WorkspaceClient` type to use `TExtensions extends Record<string, Lifecycle>` in both APIs
+- [x] Replace `WorkspaceClientBuilder` type with `withExtension(key, factory)` signature in both APIs
+- [x] Simplify `ExtensionContext` to client-so-far shape in both APIs
+- [x] Remove `ExtensionMap`, `ExtensionFactoryMap`, `InferExtensionExports` types
+- [x] Update `ExtensionFactory` type or remove it (check if extension authors import it)
 
 ### Phase 2: Implementation — Static API
 
-- [ ] Rewrite `createWorkspace()` in `packages/epicenter/src/static/create-workspace.ts` with the recursive `buildClient` pattern
-- [ ] Ensure `withActions()` is available on every builder step
-- [ ] Ensure `destroy()` runs cleanups in reverse order
+- [x] Rewrite `createWorkspace()` in `packages/epicenter/src/static/create-workspace.ts` with the recursive `buildClient` pattern
+- [x] Ensure `withActions()` is available on every builder step
+- [x] Ensure `destroy()` runs cleanups in reverse order
 
 ### Phase 3: Implementation — Dynamic API
 
-- [ ] Rewrite `createWorkspace()` in `packages/epicenter/src/dynamic/workspace/create-workspace.ts` with the recursive `buildClient` pattern
-- [ ] Ensure `whenSynced` is correctly aggregated across the chain
-- [ ] Ensure `destroy()` runs cleanups in reverse order
+- [x] Rewrite `createWorkspace()` in `packages/epicenter/src/dynamic/workspace/create-workspace.ts` with the recursive `buildClient` pattern
+- [x] Ensure `whenSynced` is correctly aggregated across the chain
+- [x] Ensure `destroy()` runs cleanups in reverse order
 
 ### Phase 4: Update extension re-exports
 
-- [ ] Update `packages/epicenter/src/dynamic/extension.ts` — remove/update re-exported types
-- [ ] Update `packages/epicenter/src/static/index.ts` — update exports
-- [ ] Update any barrel files that re-export `ExtensionMap`, `ExtensionFactoryMap`, etc.
+- [x] Update `packages/epicenter/src/dynamic/extension.ts` — remove/update re-exported types
+- [x] Update `packages/epicenter/src/static/index.ts` — update exports
+- [x] Update any barrel files that re-export `ExtensionMap`, `ExtensionFactoryMap`, etc.
 
 ### Phase 5: Migrate call sites
 
-- [ ] `apps/tab-manager/src/lib/workspace.ts`
-- [ ] `apps/tab-manager/src/entrypoints/background.ts`
-- [ ] `apps/epicenter/src/lib/yjs/workspace.ts`
-- [ ] Fix `apps/epicenter/src/lib/yjs/workspace-persistence.ts` — `workspaceId` to `id` (pre-existing bug)
+- [x] `apps/tab-manager/src/lib/workspace.ts`
+- [x] `apps/tab-manager/src/entrypoints/background.ts`
+- [x] `apps/epicenter/src/lib/yjs/workspace.ts`
+- [x] Fix `apps/epicenter/src/lib/yjs/workspace-persistence.ts` — `workspaceId` to `id` (pre-existing bug)
 
 ### Phase 6: Migrate tests
 
-- [ ] `packages/epicenter/src/static/define-workspace.test.ts` — update all `.withExtensions()` calls
-- [ ] `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts` — update all `.withExtensions()` calls
-- [ ] `packages/epicenter/src/extensions/y-sweet-sync.test.ts` — verify factory still works with new context shape
+- [x] `packages/epicenter/src/static/define-workspace.test.ts` — update all `.withExtensions()` calls
+- [x] `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts` — update all `.withExtensions()` calls
+- [x] `packages/epicenter/src/extensions/y-sweet-sync.test.ts` — verify factory still works with new context shape
 - [ ] Add new test: progressive type access (extension N+1 can access extension N's exports)
 - [ ] Add new test: `.withActions()` works after `.withExtension()` chain (static API)
 - [ ] Add new test: destroy runs in reverse order
@@ -759,7 +759,7 @@ Additionally, `persistence` being optional in `YSweetSyncConfig` is questionable
 
 - [ ] Run `bun test` across affected packages
 - [ ] Run `bun run typecheck` to verify no type errors
-- [ ] Grep for any remaining `.withExtensions(` references and update them
+- [x] Grep for any remaining `.withExtensions(` references and update them
 
 ## Files Changed
 

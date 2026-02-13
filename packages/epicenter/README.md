@@ -309,7 +309,7 @@ const queryPosts = defineQuery({
 });
 ```
 
-Extension factory functions receive a context object with `{ id, extensionId, ydoc, tables, kv }` and can return exports. For example, sync extensions:
+Extension factory functions receive a context object with `{ id, ydoc, tables, kv, extensions }` (the "client-so-far") and can return exports. Each factory receives typed access to all previously added extensions. For example, sync extensions:
 
 ```typescript
 const client = createClient(definition.id)

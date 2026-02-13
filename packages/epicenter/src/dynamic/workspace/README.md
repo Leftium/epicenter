@@ -77,16 +77,15 @@ const workspace = createWorkspace(definition)
 
 ### Extension Context
 
-Extensions receive an `ExtensionContext` with:
+Extensions receive an `ExtensionContext` — the "client-so-far":
 
 ```typescript
 interface ExtensionContext {
 	ydoc: Y.Doc; // The underlying Y.Doc
 	id: string; // Workspace ID
-	definition: WorkspaceDefinition;
 	tables: Tables; // Table operations
 	kv: KeyValueStore; // Key-value store
-	extensionId: string; // The extension's key name
+	extensions: Record<string, Lifecycle>; // Previously added extensions (typed)
 }
 ```
 

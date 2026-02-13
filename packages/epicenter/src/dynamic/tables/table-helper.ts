@@ -1,7 +1,7 @@
 /**
- * Table Helper - YKeyValueLww-based Implementation
+ * Table Helper - CellStore + RowStore Composition
  *
- * Provides type-safe CRUD operations for tables stored in Y.Doc using YKeyValueLww.
+ * Provides type-safe CRUD operations for tables stored in Y.Doc using CellStore + RowStore.
  * Each table is stored as a Y.Array with LWW (Last-Write-Wins) conflict resolution per cell.
  *
  * Storage format:
@@ -12,27 +12,31 @@
  *     └── { key: 'row-123:views', val: 100, ts: 1706200001 }
  * ```
  *
+ * ## Architecture
+ *
+ * Composes three layers:
+ * - **YKeyValueLww**: Generic key-value with LWW conflict resolution (CRDT primitive)
+ * - **CellStore**: Cell semantics (rowId:columnId key parsing, typed change events)
+ * - **RowStore**: In-memory row index (O(1) has/count, O(m) get/delete)
+ * - **TableHelper** (this): Schema validation, typed CRUD, branded Id types
+ *
+ * The RowStore maintains a `Map<rowId, Map<columnId, value>>` index that is
+ * updated reactively via CellStore observers. This gives O(1) row existence
+ * checks and O(m) row reconstruction (where m = fields per row), eliminating
+ * the O(n) full-table scans that were previously required.
+ *
  * @packageDocumentation
  */
 
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
-import {
-	CellKey,
-	extractRowId,
-	parseCellKey,
-	RowPrefix,
-} from '../../shared/cell-keys.js';
-import {
-	YKeyValueLww,
-	type YKeyValueLwwChange,
-	type YKeyValueLwwEntry,
-} from '../../shared/y-keyvalue/y-keyvalue-lww';
 import { TableKey } from '../../shared/ydoc-keys';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
 import { Id } from '../schema/fields/id.js';
+import { createCellStore } from './y-cell-store.js';
+import { createRowStore } from './y-row-store.js';
 
 /**
  * A single validation error from TypeBox schema validation.
@@ -157,7 +161,7 @@ export type ChangedRowIds = Set<Id>;
 /**
  * Creates a single table helper with type-safe CRUD operations.
  *
- * ## Storage Architecture (YKeyValueLww Cell-Level Storage)
+ * ## Storage Architecture (CellStore + RowStore Composition)
  *
  * Each table is a Y.Array storing individual cells as
  * `{ key: 'rowId:fieldId', val: value, ts: timestamp }`.
@@ -168,7 +172,9 @@ export type ChangedRowIds = Set<Id>;
  * User A edits title at t=100, User B edits views at t=200 → After sync: both fields are present
  * ```
  *
- * This keeps offline-first semantics without row-wide overwrites.
+ * RowStore maintains an in-memory index for O(1) row existence checks and
+ * O(m) row reconstruction. This keeps offline-first semantics without
+ * row-wide overwrites while avoiding O(n) full-table scans.
  */
 export function createTableHelper<TTableDef extends TableDefinition>({
 	ydoc,
@@ -179,9 +185,9 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 }) {
 	type TRow = Row<TTableDef['fields']> & { id: Id };
 
-	// Get or create the Y.Array for this table using the table: prefix convention
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(tableId));
-	const ykv = new YKeyValueLww<unknown>(yarray);
+	// Compose storage layers: YKeyValueLww → CellStore → RowStore
+	const cellStore = createCellStore<unknown>(ydoc, TableKey(tableId));
+	const rowStore = createRowStore(cellStore);
 
 	const typeboxSchema = fieldsToTypebox(fields);
 	const rowValidator = Compile(typeboxSchema);
@@ -201,73 +207,29 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		};
 	};
 
-	function reconstructRow(rowId: Id): Record<string, unknown> | undefined {
-		const prefix = RowPrefix(rowId);
-		const cells: Record<string, unknown> = {};
-		let found = false;
-		for (const [key, entry] of ykv.map) {
-			if (key.startsWith(prefix)) {
-				const { columnId } = parseCellKey(key);
-				cells[columnId] = entry.val;
-				found = true;
-			}
-		}
-		return found ? cells : undefined;
-	}
-
-	function collectRows(): Map<Id, Record<string, unknown>> {
-		const rows = new Map<Id, Record<string, unknown>>();
-		for (const [key, entry] of ykv.map) {
-			const { rowId, columnId } = parseCellKey(key);
-			const id = Id(rowId);
-			const existing = rows.get(id) ?? {};
-			existing[columnId] = entry.val;
-			rows.set(id, existing);
-		}
-		return rows;
-	}
-
-	function setRowCells(rowData: { id: Id } & Record<string, unknown>): void {
-		for (const [fieldId, value] of Object.entries(rowData)) {
-			ykv.set(CellKey(rowData.id, fieldId), value);
-		}
-	}
-
-	function deleteRowCells(rowId: Id): boolean {
-		const prefix = RowPrefix(rowId);
-		const keys = Array.from(ykv.map.keys());
-		const keysToDelete = keys.filter((key) => key.startsWith(prefix));
-		for (const key of keysToDelete) {
-			ykv.delete(key);
-		}
-		return keysToDelete.length > 0;
-	}
-
 	return {
 		/** The table's unique identifier */
 		id: tableId,
 
 		update(partialRow: PartialRow<TTableDef['fields']>): UpdateResult {
-			if (reconstructRow(partialRow.id) === undefined) {
+			if (!rowStore.has(partialRow.id)) {
 				return { status: 'not_found_locally' };
 			}
 
 			ydoc.transact(() => {
-				setRowCells(partialRow);
+				rowStore.merge(partialRow.id, partialRow);
 			});
 			return { status: 'applied' };
 		},
 
 		upsert(rowData: TRow): void {
-			ydoc.transact(() => {
-				setRowCells(rowData);
-			});
+			rowStore.merge(rowData.id, rowData);
 		},
 
 		upsertMany(rows: TRow[]): void {
 			ydoc.transact(() => {
 				for (const rowData of rows) {
-					setRowCells(rowData);
+					rowStore.merge(rowData.id, rowData);
 				}
 			});
 		},
@@ -278,11 +240,11 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 
 			ydoc.transact(() => {
 				for (const partialRow of rows) {
-					if (reconstructRow(partialRow.id) === undefined) {
+					if (!rowStore.has(partialRow.id)) {
 						notFoundLocally.push(partialRow.id);
 						continue;
 					}
-					setRowCells(partialRow);
+					rowStore.merge(partialRow.id, partialRow);
 					applied.push(partialRow.id);
 				}
 			});
@@ -295,22 +257,22 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		get(id: Id): GetResult<TRow> {
-			const row = reconstructRow(id);
+			const row = rowStore.get(id);
 			if (row === undefined) return { status: 'not_found', id, row: undefined };
 			return validateRow(id, row);
 		},
 
 		getAll(): RowResult<TRow>[] {
 			const results: RowResult<TRow>[] = [];
-			for (const [rowId, row] of collectRows()) {
-				results.push(validateRow(rowId, row));
+			for (const [rowId, row] of rowStore.getAll()) {
+				results.push(validateRow(Id(rowId), row));
 			}
 			return results;
 		},
 
 		getAllValid(): TRow[] {
 			const result: TRow[] = [];
-			for (const [_rowId, row] of collectRows()) {
+			for (const [_rowId, row] of rowStore.getAll()) {
 				if (rowValidator.Check(row)) {
 					result.push(row as TRow);
 				}
@@ -320,8 +282,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 
 		getAllInvalid(): InvalidRowResult[] {
 			const result: InvalidRowResult[] = [];
-			for (const [rowId, row] of collectRows()) {
-				const validated = validateRow(rowId, row);
+			for (const [rowId, row] of rowStore.getAll()) {
+				const validated = validateRow(Id(rowId), row);
 				if (validated.status === 'invalid') {
 					result.push(validated);
 				}
@@ -330,15 +292,11 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		has(id: Id): boolean {
-			const prefix = RowPrefix(id);
-			for (const key of ykv.map.keys()) {
-				if (key.startsWith(prefix)) return true;
-			}
-			return false;
+			return rowStore.has(id);
 		},
 
 		delete(id: Id): DeleteResult {
-			if (!deleteRowCells(id)) return { status: 'not_found_locally' };
+			if (!rowStore.delete(id)) return { status: 'not_found_locally' };
 			return { status: 'deleted' };
 		},
 
@@ -348,7 +306,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 
 			ydoc.transact(() => {
 				for (const id of ids) {
-					if (deleteRowCells(id)) {
+					if (rowStore.delete(id)) {
 						deleted.push(id);
 						continue;
 					}
@@ -381,21 +339,16 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		 * persists, ready for new rows.
 		 */
 		clear(): void {
-			ydoc.transact(() => {
-				const keys = Array.from(ykv.map.keys());
-				for (const key of keys) {
-					ykv.delete(key);
-				}
-			});
+			cellStore.clear();
 		},
 
 		count(): number {
-			return collectRows().size;
+			return rowStore.count();
 		},
 
 		filter(predicate: (row: TRow) => boolean): TRow[] {
 			const result: TRow[] = [];
-			for (const [_rowId, row] of collectRows()) {
+			for (const [_rowId, row] of rowStore.getAll()) {
 				if (rowValidator.Check(row)) {
 					const validRow = row as TRow;
 					if (predicate(validRow)) {
@@ -407,7 +360,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		},
 
 		find(predicate: (row: TRow) => boolean): TRow | null {
-			for (const [_rowId, row] of collectRows()) {
+			for (const [_rowId, row] of rowStore.getAll()) {
 				if (rowValidator.Check(row)) {
 					const validRow = row as TRow;
 					if (predicate(validRow)) {
@@ -459,21 +412,15 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 		observe(
 			callback: (changedIds: ChangedRowIds, transaction: Y.Transaction) => void,
 		): () => void {
-			const handler = (
-				changes: Map<string, YKeyValueLwwChange<unknown>>,
-				transaction: Y.Transaction,
-			) => {
+			return rowStore.observe((changedRowIds, transaction) => {
 				const changedIds = new Set<Id>();
-				for (const key of changes.keys()) {
-					changedIds.add(Id(extractRowId(key)));
+				for (const rowId of changedRowIds) {
+					changedIds.add(Id(rowId));
 				}
 				if (changedIds.size > 0) {
 					callback(changedIds, transaction);
 				}
-			};
-
-			ykv.observe(handler);
-			return () => ykv.unobserve(handler);
+			});
 		},
 
 		/**

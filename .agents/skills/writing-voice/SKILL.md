@@ -26,7 +26,7 @@ Patterns that scream "AI wrote this":
 - **Structured sections**: "Key Features:", "Benefits:", "Why This Matters:"
 - **Vague superlatives**: "incredibly powerful", "seamlessly integrates"
 - **Dramatic hyperbole**: "feels like an eternity", "pain point", "excruciating" — use facts instead
-- **AI adjectives**: "perfectly", "effortlessly", "beautifully", "elegantly"
+- **AI adjectives**: "perfectly", "effortlessly", "beautifully"
 - **Space-hyphen-space**: "The code works - the tests pass"
 - **Overusing fragments**: "Every. Single. Time." (once is emphasis, twice is a pattern)
 - **Staccato buildup**: Setup. Fragment. Fragment. Fragment. Punchline. This "dramatic reveal" pattern feels manufactured. Combine into one flowing sentence with em dashes or semicolons instead.

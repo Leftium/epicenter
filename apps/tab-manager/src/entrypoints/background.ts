@@ -28,7 +28,6 @@ import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
-import { createBrowserConverters } from '$lib/browser-helpers';
 import {
 	generateDefaultDeviceName,
 	getBrowserName,
@@ -37,7 +36,19 @@ import {
 	parseTabId,
 	parseWindowId,
 } from '$lib/device-id';
-import type { Tab, Window } from '$lib/epicenter/browser.schema';
+import {
+	createGroupCompositeId,
+	createTabCompositeId,
+	createWindowCompositeId,
+	type GroupCompositeId,
+	type Tab,
+	type TabCompositeId,
+	tabGroupToRow,
+	tabToRow,
+	type Window,
+	type WindowCompositeId,
+	windowToRow,
+} from '$lib/epicenter/browser.schema';
 import { BROWSER_TABLES } from '$lib/epicenter/schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,20 +175,18 @@ export default defineBackground(() => {
 		 */
 		async refetchTabs() {
 			const deviceId = await deviceIdPromise;
-			const { tabToRow, TabId } = createBrowserConverters(deviceId);
 			const browserTabs = await browser.tabs.query({});
-			const tabIds = new Set(
-				browserTabs
-					.filter((t): t is typeof t & { id: number } => t.id !== undefined)
-					.map((t) => t.id),
-			);
+			const rows = browserTabs.flatMap((tab) => {
+				const row = tabToRow(deviceId, tab);
+				return row ? [row] : [];
+			});
+			const tabIds = new Set(rows.map((r) => r.tabId));
 			const existingYDocTabs = tables.tabs.getAllValid();
 
 			ydoc.transact(() => {
 				// Set all browser tabs (with device-scoped IDs)
-				for (const tab of browserTabs) {
-					if (tab.id === undefined) continue;
-					tables.tabs.set(tabToRow(tab));
+				for (const row of rows) {
+					tables.tabs.set(row);
 				}
 
 				// Delete only THIS device's tabs that aren't in browser OR have malformed IDs
@@ -192,7 +201,7 @@ export default defineBackground(() => {
 
 					// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
 					// Expected: "${deviceId}_${tabId}", but copied files may have " copy 2" suffix
-					const expectedId = TabId(existing.tabId);
+					const expectedId = createTabCompositeId(deviceId, existing.tabId);
 					if (existing.id !== expectedId) {
 						tables.tabs.delete(existing.id);
 					}
@@ -206,20 +215,18 @@ export default defineBackground(() => {
 		 */
 		async refetchWindows() {
 			const deviceId = await deviceIdPromise;
-			const { windowToRow, WindowId } = createBrowserConverters(deviceId);
 			const browserWindows = await browser.windows.getAll();
-			const windowIds = new Set(
-				browserWindows
-					.filter((w): w is typeof w & { id: number } => w.id !== undefined)
-					.map((w) => w.id),
-			);
+			const rows = browserWindows.flatMap((win) => {
+				const row = windowToRow(deviceId, win);
+				return row ? [row] : [];
+			});
+			const windowIds = new Set(rows.map((r) => r.windowId));
 			const existingYDocWindows = tables.windows.getAllValid();
 
 			ydoc.transact(() => {
 				// Set all browser windows (with device-scoped IDs)
-				for (const win of browserWindows) {
-					if (win.id === undefined) continue;
-					tables.windows.set(windowToRow(win));
+				for (const row of rows) {
+					tables.windows.set(row);
 				}
 
 				// Delete only THIS device's windows that aren't in browser OR have malformed IDs
@@ -233,7 +240,10 @@ export default defineBackground(() => {
 					}
 
 					// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
-					const expectedId = WindowId(existing.windowId);
+					const expectedId = createWindowCompositeId(
+						deviceId,
+						existing.windowId,
+					);
 					if (existing.id !== expectedId) {
 						tables.windows.delete(existing.id);
 					}
@@ -249,7 +259,6 @@ export default defineBackground(() => {
 			if (!browser.tabGroups) return;
 
 			const deviceId = await deviceIdPromise;
-			const { tabGroupToRow, GroupId } = createBrowserConverters(deviceId);
 			const browserGroups = await browser.tabGroups.query({});
 			const groupIds = new Set(browserGroups.map((g) => g.id));
 			const existingYDocGroups = tables.tabGroups.getAllValid();
@@ -257,7 +266,7 @@ export default defineBackground(() => {
 			ydoc.transact(() => {
 				// Set all browser groups (with device-scoped IDs)
 				for (const group of browserGroups) {
-					tables.tabGroups.set(tabGroupToRow(group));
+					tables.tabGroups.set(tabGroupToRow(deviceId, group));
 				}
 
 				// Delete only THIS device's groups that aren't in browser OR have malformed IDs
@@ -271,7 +280,7 @@ export default defineBackground(() => {
 					}
 
 					// Check 2: ID doesn't match expected pattern (e.g., from copied markdown files)
-					const expectedId = GroupId(existing.groupId);
+					const expectedId = createGroupCompositeId(deviceId, existing.groupId);
 					if (existing.id !== expectedId) {
 						tables.tabGroups.delete(existing.id);
 					}
@@ -305,7 +314,7 @@ export default defineBackground(() => {
 			return tables.windows.getAllValid();
 		},
 
-		getTabsByWindow(windowId: string): Tab[] {
+		getTabsByWindow(windowId: WindowCompositeId): Tab[] {
 			return tables.tabs
 				.filter((t) => t.windowId === windowId)
 				.sort((a, b) => a.index - b.index);
@@ -418,11 +427,11 @@ export default defineBackground(() => {
 	// Helper: Set a single tab by querying Browser (for events that don't provide full tab)
 	const setTabById = async (tabId: number) => {
 		const deviceId = await deviceIdPromise;
-		const { tabToRow } = createBrowserConverters(deviceId);
 		await tryAsync({
 			try: async () => {
 				const tab = await browser.tabs.get(tabId);
-				tables.tabs.set(tabToRow(tab));
+				const row = tabToRow(deviceId, tab);
+				if (row) tables.tabs.set(row);
 			},
 			catch: (error) => {
 				// Tab may have been closed already
@@ -435,11 +444,11 @@ export default defineBackground(() => {
 	// Helper: Set a single window by querying Browser
 	const setWindowById = async (windowId: number) => {
 		const deviceId = await deviceIdPromise;
-		const { windowToRow } = createBrowserConverters(deviceId);
 		await tryAsync({
 			try: async () => {
-				const window = await browser.windows.get(windowId);
-				tables.windows.set(windowToRow(window));
+				const win = await browser.windows.get(windowId);
+				const row = windowToRow(deviceId, win);
+				if (row) tables.windows.set(row);
 			},
 			catch: (error) => {
 				// Window may have been closed already
@@ -457,21 +466,20 @@ export default defineBackground(() => {
 	browser.tabs.onCreated.addListener(async (tab) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		const tabId = tab.id;
-		if (tabId === undefined) return;
 
 		const deviceId = await deviceIdPromise;
-		const { tabToRow } = createBrowserConverters(deviceId);
+		const row = tabToRow(deviceId, tab);
+		if (!row) return;
 
 		// Track this tab as recently added to detect echoes in onAdd observer
-		syncCoordination.recentlyAddedTabIds.add(tabId);
+		syncCoordination.recentlyAddedTabIds.add(row.tabId);
 		// Remove after 5 seconds to prevent memory leaks
 		setTimeout(() => {
-			syncCoordination.recentlyAddedTabIds.delete(tabId);
+			syncCoordination.recentlyAddedTabIds.delete(row.tabId);
 		}, 5000);
 
 		syncCoordination.refetchCount++;
-		tables.tabs.set(tabToRow(tab));
+		tables.tabs.set(row);
 		syncCoordination.refetchCount--;
 	});
 
@@ -481,9 +489,8 @@ export default defineBackground(() => {
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		const deviceId = await deviceIdPromise;
-		const { TabId } = createBrowserConverters(deviceId);
 		syncCoordination.refetchCount++;
-		tables.tabs.delete(TabId(tabId));
+		tables.tabs.delete(createTabCompositeId(deviceId, tabId));
 		syncCoordination.refetchCount--;
 	});
 
@@ -491,12 +498,13 @@ export default defineBackground(() => {
 	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		if (tab.id === undefined) return;
 
 		const deviceId = await deviceIdPromise;
-		const { tabToRow } = createBrowserConverters(deviceId);
+		const row = tabToRow(deviceId, tab);
+		if (!row) return;
+
 		syncCoordination.refetchCount++;
-		tables.tabs.set(tabToRow(tab));
+		tables.tabs.set(row);
 		syncCoordination.refetchCount--;
 	});
 
@@ -518,11 +526,13 @@ export default defineBackground(() => {
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		const deviceId = await deviceIdPromise;
-		const { TabId, WindowId } = createBrowserConverters(deviceId);
 		syncCoordination.refetchCount++;
 
-		const deviceWindowId = WindowId(activeInfo.windowId);
-		const deviceTabId = TabId(activeInfo.tabId);
+		const deviceWindowId = createWindowCompositeId(
+			deviceId,
+			activeInfo.windowId,
+		);
+		const deviceTabId = createTabCompositeId(deviceId, activeInfo.tabId);
 
 		// Find and update the previously active tab in this window (set active: false)
 		const previouslyActiveTabs = tables.tabs
@@ -567,12 +577,13 @@ export default defineBackground(() => {
 	browser.windows.onCreated.addListener(async (window) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		if (window.id === undefined) return;
 
 		const deviceId = await deviceIdPromise;
-		const { windowToRow } = createBrowserConverters(deviceId);
+		const row = windowToRow(deviceId, window);
+		if (!row) return;
+
 		syncCoordination.refetchCount++;
-		tables.windows.set(windowToRow(window));
+		tables.windows.set(row);
 		syncCoordination.refetchCount--;
 	});
 
@@ -582,9 +593,8 @@ export default defineBackground(() => {
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		const deviceId = await deviceIdPromise;
-		const { WindowId } = createBrowserConverters(deviceId);
 		syncCoordination.refetchCount++;
-		tables.windows.delete(WindowId(windowId));
+		tables.windows.delete(createWindowCompositeId(deviceId, windowId));
 		syncCoordination.refetchCount--;
 	});
 
@@ -596,10 +606,9 @@ export default defineBackground(() => {
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		const deviceId = await deviceIdPromise;
-		const { WindowId } = createBrowserConverters(deviceId);
 		syncCoordination.refetchCount++;
 
-		const deviceWindowId = WindowId(windowId);
+		const deviceWindowId = createWindowCompositeId(deviceId, windowId);
 
 		// Find and update previously focused windows (set focused: false)
 		const previouslyFocusedWindows = tables.windows
@@ -629,9 +638,8 @@ export default defineBackground(() => {
 			if (syncCoordination.yDocChangeCount > 0) return;
 
 			const deviceId = await deviceIdPromise;
-			const { tabGroupToRow } = createBrowserConverters(deviceId);
 			syncCoordination.refetchCount++;
-			tables.tabGroups.set(tabGroupToRow(group));
+			tables.tabGroups.set(tabGroupToRow(deviceId, group));
 			syncCoordination.refetchCount--;
 		});
 
@@ -641,9 +649,8 @@ export default defineBackground(() => {
 			if (syncCoordination.yDocChangeCount > 0) return;
 
 			const deviceId = await deviceIdPromise;
-			const { GroupId } = createBrowserConverters(deviceId);
 			syncCoordination.refetchCount++;
-			tables.tabGroups.delete(GroupId(group.id));
+			tables.tabGroups.delete(createGroupCompositeId(deviceId, group.id));
 			syncCoordination.refetchCount--;
 		});
 
@@ -653,9 +660,8 @@ export default defineBackground(() => {
 			if (syncCoordination.yDocChangeCount > 0) return;
 
 			const deviceId = await deviceIdPromise;
-			const { tabGroupToRow } = createBrowserConverters(deviceId);
 			syncCoordination.refetchCount++;
-			tables.tabGroups.set(tabGroupToRow(group));
+			tables.tabGroups.set(tabGroupToRow(deviceId, group));
 			syncCoordination.refetchCount--;
 		});
 	}
@@ -690,7 +696,7 @@ export default defineBackground(() => {
 						}
 
 						const deviceId = await deviceIdPromise;
-						const parsed = parseTabId(id);
+						const parsed = parseTabId(id as TabCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) {
 							console.log(
@@ -821,7 +827,7 @@ export default defineBackground(() => {
 						if (transaction.origin === null) return;
 
 						const deviceId = await deviceIdPromise;
-						const parsed = parseWindowId(id);
+						const parsed = parseWindowId(id as WindowCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) return;
 
@@ -891,7 +897,7 @@ export default defineBackground(() => {
 						if (transaction.origin === null) return;
 
 						const deviceId = await deviceIdPromise;
-						const parsed = parseGroupId(id);
+						const parsed = parseGroupId(id as GroupCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) return;
 

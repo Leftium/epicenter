@@ -81,10 +81,10 @@
 			{#if tab.pinned}
 				<PinIcon class="size-3 shrink-0 text-muted-foreground" />
 			{/if}
-			{#if tab.audible && !tab.muted}
+			{#if tab.audible && !tab.mutedInfo?.muted}
 				<Volume2Icon class="size-3 shrink-0 text-muted-foreground" />
 			{/if}
-			{#if tab.muted}
+			{#if tab.mutedInfo?.muted}
 				<VolumeXIcon class="size-3 shrink-0 text-muted-foreground" />
 			{/if}
 			<span class="truncate text-sm font-medium">
@@ -123,15 +123,15 @@
 			{/if}
 		</Button>
 
-		{#if tab.audible || tab.muted}
+		{#if tab.audible || tab.mutedInfo?.muted}
 			<Button
 				variant="ghost"
 				size="icon-xs"
 				disabled={isMutePending}
-				tooltip={tab.muted ? 'Unmute' : 'Mute'}
+				tooltip={tab.mutedInfo?.muted ? 'Unmute' : 'Mute'}
 				onclick={(e: MouseEvent) => {
 					e.stopPropagation();
-					if (tab.muted) {
+					if (tab.mutedInfo?.muted) {
 						unmuteMutation.mutate(tabId);
 					} else {
 						muteMutation.mutate(tabId);
@@ -140,7 +140,7 @@
 			>
 				{#if isMutePending}
 					<Spinner />
-				{:else if tab.muted}
+				{:else if tab.mutedInfo?.muted}
 					<Volume2Icon />
 				{:else}
 					<VolumeXIcon />

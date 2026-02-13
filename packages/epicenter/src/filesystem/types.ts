@@ -25,7 +25,7 @@ import type { filesTable } from './file-table.js';
 
 /** Branded file identifier — a Guid that is specifically a file ID */
 export type FileId = Guid & Brand<'FileId'>;
-export const fileIdSchema = type('string').pipe((s): FileId => s as FileId);
+export const FileId = type('string').pipe((s): FileId => s as FileId);
 
 /** Generate a new unique file identifier */
 export function generateFileId(): FileId {

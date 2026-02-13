@@ -1,12 +1,12 @@
 import { type } from 'arktype';
 import { defineTable } from '../static/define-table.js';
-import { fileIdSchema } from './types.js';
+import { FileId } from './types.js';
 
 export const filesTable = defineTable(
 	type({
-		id: fileIdSchema,
+		id: FileId,
 		name: 'string',
-		parentId: fileIdSchema.or(type.null),
+		parentId: FileId.or(type.null),
 		type: "'file' | 'folder'",
 		size: 'number',
 		createdAt: 'number',

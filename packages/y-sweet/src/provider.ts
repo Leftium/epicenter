@@ -2,7 +2,7 @@ import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import { createSleeper, type Sleeper } from './sleeper';
 import type { ClientToken } from './types';
 
@@ -102,6 +102,13 @@ export class YSweetProvider {
 	/** Whether we are currently in the process of connecting. */
 	private isConnecting: boolean = false;
 
+	/**
+	 * Monotonic counter bumped by disconnect(). The connect loop captures this
+	 * at entry and exits when its snapshot no longer matches, which cancels
+	 * stale reconnection attempts after an explicit disconnect.
+	 */
+	private connectGeneration: number = 0;
+
 	private heartbeatHandle: ReturnType<typeof setTimeout> | null = null;
 	private connectionTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -198,7 +205,7 @@ export class YSweetProvider {
 	private incrementLocalVersion() {
 		// We need to increment the local version before we emit, so that event
 		// listeners see the right hasLocalChanges value.
-		let emit = !this.hasLocalChanges;
+		const emit = !this.hasLocalChanges;
 		this.localVersion += 1;
 
 		if (emit) {
@@ -212,7 +219,7 @@ export class YSweetProvider {
 
 		// We need to increment the local version before we emit, so that event
 		// listeners see the right hasLocalChanges value.
-		let emit = this.hasLocalChanges && version === this.localVersion;
+		const emit = this.hasLocalChanges && version === this.localVersion;
 		this.ackedVersion = version;
 
 		if (emit) {
@@ -295,9 +302,11 @@ export class YSweetProvider {
 		}
 
 		this.isConnecting = true;
+		const myGeneration = this.connectGeneration;
 		this.setStatus(STATUS_CONNECTING);
 
 		connecting: while (
+			myGeneration === this.connectGeneration &&
 			![STATUS_OFFLINE, STATUS_CONNECTED].includes(this.status)
 		) {
 			this.setStatus(STATUS_CONNECTING);
@@ -307,30 +316,28 @@ export class YSweetProvider {
 			} catch (e) {
 				console.warn('Failed to get client token', e);
 				this.setStatus(STATUS_ERROR);
-				let timeout =
+				const timeout =
 					DELAY_MS_BEFORE_RETRY_TOKEN_REFRESH *
-					Math.min(
-						MAX_BACKOFF_COEFFICIENT,
-						Math.pow(BACKOFF_BASE, this.retries),
-					);
+					Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** this.retries);
 				this.retries += 1;
 				this.reconnectSleeper = createSleeper(timeout);
 				await this.reconnectSleeper.promise;
 				continue;
 			}
 
+			if (myGeneration !== this.connectGeneration) break;
+
 			for (let i = 0; i < RETRIES_BEFORE_TOKEN_REFRESH; i++) {
+				if (myGeneration !== this.connectGeneration) break connecting;
+
 				if (await this.attemptToConnect(clientToken)) {
 					this.retries = 0;
 					break connecting;
 				}
 
-				let timeout =
+				const timeout =
 					DELAY_MS_BEFORE_RECONNECT *
-					Math.min(
-						MAX_BACKOFF_COEFFICIENT,
-						Math.pow(BACKOFF_BASE, this.retries),
-					);
+					Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** this.retries);
 				this.retries += 1;
 				this.reconnectSleeper = createSleeper(timeout);
 				await this.reconnectSleeper.promise;
@@ -344,7 +351,12 @@ export class YSweetProvider {
 	}
 
 	public disconnect() {
+		this.connectGeneration++;
 		this.setStatus(STATUS_OFFLINE);
+
+		if (this.reconnectSleeper) {
+			this.reconnectSleeper.wake();
+		}
 
 		if (this.websocket) {
 			this.websocket.close();
@@ -448,7 +460,7 @@ export class YSweetProvider {
 		this.clearConnectionTimeout();
 		this.resetHeartbeat();
 
-		let message: Uint8Array = new Uint8Array(event.data);
+		const message: Uint8Array = new Uint8Array(event.data);
 		const decoder = decoding.createDecoder(message);
 		const messageType = decoding.readVarUint(decoder);
 		switch (messageType) {
@@ -461,22 +473,26 @@ export class YSweetProvider {
 			case MESSAGE_QUERY_AWARENESS:
 				this.queryAwareness();
 				break;
-			case MESSAGE_SYNC_STATUS:
-				let lastSyncBytes = decoding.readVarUint8Array(decoder);
-				let d2 = decoding.createDecoder(lastSyncBytes);
-				let ackedVersion = decoding.readVarUint(d2);
+			case MESSAGE_SYNC_STATUS: {
+				const lastSyncBytes = decoding.readVarUint8Array(decoder);
+				const d2 = decoding.createDecoder(lastSyncBytes);
+				const ackedVersion = decoding.readVarUint(d2);
 				this.updateAckedVersion(ackedVersion);
 				break;
+			}
 			default:
 				break;
 		}
 	}
 
 	private websocketClose(_event: CloseEvent) {
-		this.setStatus(STATUS_ERROR);
 		this.clearHeartbeat();
 		this.clearConnectionTimeout();
-		this.connect();
+
+		if (this.status !== STATUS_OFFLINE) {
+			this.setStatus(STATUS_ERROR);
+			this.connect();
+		}
 
 		// Remove all awareness states except for our own.
 		awarenessProtocol.removeAwarenessStates(
@@ -489,11 +505,13 @@ export class YSweetProvider {
 	}
 
 	private websocketError(_event: Event) {
-		this.setStatus(STATUS_ERROR);
 		this.clearHeartbeat();
 		this.clearConnectionTimeout();
 
-		this.connect();
+		if (this.status !== STATUS_OFFLINE) {
+			this.setStatus(STATUS_ERROR);
+			this.connect();
+		}
 	}
 
 	public emit(eventName: YSweetEvent, data: any = null): void {
@@ -546,7 +564,7 @@ export class YSweetProvider {
 			this.listeners.set(type, new Set());
 		}
 		if (once) {
-			let listenerOnce = (d: any) => {
+			const listenerOnce = (d: any) => {
 				listener(d);
 				this.listeners.get(type)?.delete(listenerOnce);
 			};

@@ -1,17 +1,13 @@
 /**
- * Device ID utilities for multi-device tab sync.
+ * Device identity for multi-device tab sync.
  *
- * Provides stable device identification and composite ID helpers
- * for scoping browser tab/window/group IDs to specific devices.
+ * Provides stable device identification using browser storage.
+ * Each browser installation gets a unique NanoID on first access,
+ * persisted in storage.local across sessions.
  */
 
 import { generateId } from '@epicenter/hq/dynamic';
 import { storage } from '@wxt-dev/storage';
-import type {
-	GroupCompositeId,
-	TabCompositeId,
-	WindowCompositeId,
-} from './epicenter/browser.schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Device ID Storage
@@ -75,61 +71,4 @@ export async function generateDefaultDeviceName(): Promise<string> {
 		} satisfies Record<Browser.runtime.PlatformInfo['os'], string>
 	)[platformInfo.os];
 	return `${browserName} on ${osName}`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Composite ID Parsers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Internal helper to parse a composite ID.
- */
-function parseCompositeIdInternal(
-	compositeId: string,
-): { deviceId: string; nativeId: number } | null {
-	const idx = compositeId.indexOf('_');
-	if (idx === -1) return null;
-
-	const deviceId = compositeId.slice(0, idx);
-	const nativeId = Number.parseInt(compositeId.slice(idx + 1), 10);
-
-	if (Number.isNaN(nativeId)) return null;
-
-	return { deviceId, nativeId };
-}
-
-/**
- * Parse a composite tab ID into its parts.
- * @example parseTabId('abc123_456') // { deviceId: 'abc123', tabId: 456 }
- */
-export function parseTabId(
-	compositeId: TabCompositeId,
-): { deviceId: string; tabId: number } | null {
-	const result = parseCompositeIdInternal(compositeId);
-	if (!result) return null;
-	return { deviceId: result.deviceId, tabId: result.nativeId };
-}
-
-/**
- * Parse a composite window ID into its parts.
- * @example parseWindowId('abc123_456') // { deviceId: 'abc123', windowId: 456 }
- */
-export function parseWindowId(
-	compositeId: WindowCompositeId,
-): { deviceId: string; windowId: number } | null {
-	const result = parseCompositeIdInternal(compositeId);
-	if (!result) return null;
-	return { deviceId: result.deviceId, windowId: result.nativeId };
-}
-
-/**
- * Parse a composite group ID into its parts.
- * @example parseGroupId('abc123_456') // { deviceId: 'abc123', groupId: 456 }
- */
-export function parseGroupId(
-	compositeId: GroupCompositeId,
-): { deviceId: string; groupId: number } | null {
-	const result = parseCompositeIdInternal(compositeId);
-	if (!result) return null;
-	return { deviceId: result.deviceId, groupId: result.nativeId };
 }

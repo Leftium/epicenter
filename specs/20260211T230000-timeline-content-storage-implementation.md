@@ -1,7 +1,8 @@
 # Timeline Content Storage Implementation
 
 **Date**: 2026-02-11
-**Status**: Planning
+**Status**: Implemented
+**Implementation notes**: Phases 1-3 completed. `timeline-helpers.ts` created with `createTimeline()` factory API (slightly different from spec's standalone functions — uses object with methods instead). `binaryStore` removed from YjsFileSystem. Tests exist in `yjs-file-system.test.ts` covering timeline length, mode switching, and binary persistence. Phase 4 (richtext) remains deferred.
 **Supersedes**: `specs/20260211T100000-simplified-ytext-content-store.md`
 **See also**: `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` (decision record with full rationale)
 
@@ -31,7 +32,11 @@ export type ContentMode = 'text' | 'richtext' | 'binary';
  * instances accessed via .get('type'), .get('content'), etc.
  */
 export type TextEntry = { type: 'text'; content: Y.Text };
-export type RichTextEntry = { type: 'richtext'; content: Y.XmlFragment; frontmatter: Y.Map<unknown> };
+export type RichTextEntry = {
+	type: 'richtext';
+	content: Y.XmlFragment;
+	frontmatter: Y.Map<unknown>;
+};
 export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
 ```
@@ -50,78 +55,91 @@ import type { ContentMode } from './types.js';
 
 /** Get the timeline array from a content doc. */
 export function getTimeline(ydoc: Y.Doc): Y.Array<Y.Map<any>> {
-  return ydoc.getArray('timeline');
+	return ydoc.getArray('timeline');
 }
 
 /** Get the current (last) entry from a timeline. O(1). */
-export function getCurrentEntry(timeline: Y.Array<Y.Map<any>>): Y.Map<any> | undefined {
-  if (timeline.length === 0) return undefined;
-  return timeline.get(timeline.length - 1);
+export function getCurrentEntry(
+	timeline: Y.Array<Y.Map<any>>,
+): Y.Map<any> | undefined {
+	if (timeline.length === 0) return undefined;
+	return timeline.get(timeline.length - 1);
 }
 
 /** Get the content mode of an entry. */
 export function getEntryMode(entry: Y.Map<any>): ContentMode {
-  return entry.get('type') as ContentMode;
+	return entry.get('type') as ContentMode;
 }
 
 /** Create and append a new text entry. Returns the new Y.Map. */
-export function pushTextEntry(timeline: Y.Array<Y.Map<any>>, content: string): Y.Map<any> {
-  const entry = new Y.Map();
-  entry.set('type', 'text');
-  const ytext = new Y.Text();
-  ytext.insert(0, content);
-  entry.set('content', ytext);
-  timeline.push([entry]);
-  return entry;
+export function pushTextEntry(
+	timeline: Y.Array<Y.Map<any>>,
+	content: string,
+): Y.Map<any> {
+	const entry = new Y.Map();
+	entry.set('type', 'text');
+	const ytext = new Y.Text();
+	ytext.insert(0, content);
+	entry.set('content', ytext);
+	timeline.push([entry]);
+	return entry;
 }
 
 /** Create and append a new binary entry. Returns the new Y.Map. */
-export function pushBinaryEntry(timeline: Y.Array<Y.Map<any>>, data: Uint8Array): Y.Map<any> {
-  const entry = new Y.Map();
-  entry.set('type', 'binary');
-  entry.set('content', data);
-  timeline.push([entry]);
-  return entry;
+export function pushBinaryEntry(
+	timeline: Y.Array<Y.Map<any>>,
+	data: Uint8Array,
+): Y.Map<any> {
+	const entry = new Y.Map();
+	entry.set('type', 'binary');
+	entry.set('content', data);
+	timeline.push([entry]);
+	return entry;
 }
 
 /** Create and append a new richtext entry from markdown. Returns the new Y.Map. */
-export function pushRichTextEntry(timeline: Y.Array<Y.Map<any>>, markdown: string): Y.Map<any> {
-  // Uses markdown-helpers.ts for parsing -- wired in Phase 4
-  const entry = new Y.Map();
-  entry.set('type', 'richtext');
-  entry.set('content', new Y.XmlFragment());
-  entry.set('frontmatter', new Y.Map());
-  timeline.push([entry]);
-  // After push, populate the now-integrated shared types:
-  // updateYXmlFragmentFromString(entry.get('content'), body);
-  // updateYMapFromRecord(entry.get('frontmatter'), frontmatter);
-  return entry;
+export function pushRichTextEntry(
+	timeline: Y.Array<Y.Map<any>>,
+	markdown: string,
+): Y.Map<any> {
+	// Uses markdown-helpers.ts for parsing -- wired in Phase 4
+	const entry = new Y.Map();
+	entry.set('type', 'richtext');
+	entry.set('content', new Y.XmlFragment());
+	entry.set('frontmatter', new Y.Map());
+	timeline.push([entry]);
+	// After push, populate the now-integrated shared types:
+	// updateYXmlFragmentFromString(entry.get('content'), body);
+	// updateYMapFromRecord(entry.get('frontmatter'), frontmatter);
+	return entry;
 }
 
 /** Read an entry's content as a string (for readFile). */
 export function readEntryAsString(entry: Y.Map<any>): string {
-  switch (getEntryMode(entry)) {
-    case 'text':
-      return (entry.get('content') as Y.Text).toString();
-    case 'richtext':
-      // Phase 4: serializeXmlFragmentToMarkdown + serializeMarkdownWithFrontmatter
-      return '';
-    case 'binary':
-      return new TextDecoder().decode(entry.get('content') as Uint8Array);
-  }
+	switch (getEntryMode(entry)) {
+		case 'text':
+			return (entry.get('content') as Y.Text).toString();
+		case 'richtext':
+			// Phase 4: serializeXmlFragmentToMarkdown + serializeMarkdownWithFrontmatter
+			return '';
+		case 'binary':
+			return new TextDecoder().decode(entry.get('content') as Uint8Array);
+	}
 }
 
 /** Read an entry's content as Uint8Array (for readFileBuffer). */
 export function readEntryAsBuffer(entry: Y.Map<any>): Uint8Array {
-  switch (getEntryMode(entry)) {
-    case 'text':
-      return new TextEncoder().encode((entry.get('content') as Y.Text).toString());
-    case 'richtext':
-      // Phase 4: serialize markdown then encode
-      return new Uint8Array();
-    case 'binary':
-      return entry.get('content') as Uint8Array;
-  }
+	switch (getEntryMode(entry)) {
+		case 'text':
+			return new TextEncoder().encode(
+				(entry.get('content') as Y.Text).toString(),
+			);
+		case 'richtext':
+			// Phase 4: serialize markdown then encode
+			return new Uint8Array();
+		case 'binary':
+			return entry.get('content') as Uint8Array;
+	}
 }
 ```
 
@@ -171,20 +189,20 @@ const timeline = getTimeline(ydoc);
 const current = getCurrentEntry(timeline);
 
 if (typeof data === 'string') {
-  if (current && getEntryMode(current) === 'text') {
-    // Same-mode text: edit existing Y.Text in place (timeline doesn't grow)
-    const ytext = current.get('content') as Y.Text;
-    ydoc.transact(() => {
-      ytext.delete(0, ytext.length);
-      ytext.insert(0, data);
-    });
-  } else {
-    // Mode switch or first write: push new text entry
-    ydoc.transact(() => pushTextEntry(timeline, data));
-  }
+	if (current && getEntryMode(current) === 'text') {
+		// Same-mode text: edit existing Y.Text in place (timeline doesn't grow)
+		const ytext = current.get('content') as Y.Text;
+		ydoc.transact(() => {
+			ytext.delete(0, ytext.length);
+			ytext.insert(0, data);
+		});
+	} else {
+		// Mode switch or first write: push new text entry
+		ydoc.transact(() => pushTextEntry(timeline, data));
+	}
 } else {
-  // Binary: always push new entry (atomic, no CRDT merge)
-  ydoc.transact(() => pushBinaryEntry(timeline, data));
+	// Binary: always push new entry (atomic, no CRDT merge)
+	ydoc.transact(() => pushBinaryEntry(timeline, data));
 }
 ```
 
@@ -194,19 +212,22 @@ if (typeof data === 'string') {
 const ydoc = this.store.ensure(id);
 const timeline = getTimeline(ydoc);
 const current = getCurrentEntry(timeline);
-const content = typeof data === 'string' ? data : new TextDecoder().decode(data);
+const content =
+	typeof data === 'string' ? data : new TextDecoder().decode(data);
 
 if (current && getEntryMode(current) === 'text') {
-  // Incremental append to existing Y.Text
-  const ytext = current.get('content') as Y.Text;
-  ydoc.transact(() => ytext.insert(ytext.length, content));
+	// Incremental append to existing Y.Text
+	const ytext = current.get('content') as Y.Text;
+	ydoc.transact(() => ytext.insert(ytext.length, content));
 } else if (current && getEntryMode(current) === 'binary') {
-  // Binary entry: decode existing, concat, push new text entry
-  const existing = new TextDecoder().decode(current.get('content') as Uint8Array);
-  ydoc.transact(() => pushTextEntry(timeline, existing + content));
+	// Binary entry: decode existing, concat, push new text entry
+	const existing = new TextDecoder().decode(
+		current.get('content') as Uint8Array,
+	);
+	ydoc.transact(() => pushTextEntry(timeline, existing + content));
 } else {
-  // No current entry: same as writeFile
-  await this.writeFile(path, data);
+	// No current entry: same as writeFile
+	await this.writeFile(path, data);
 }
 ```
 
@@ -222,11 +243,11 @@ Read from source entry, write to dest via `writeFile` (which creates the appropr
 const srcDoc = this.store.ensure(srcId);
 const entry = getCurrentEntry(getTimeline(srcDoc));
 if (!entry) {
-  await this.writeFile(destPath, '');
+	await this.writeFile(destPath, '');
 } else if (getEntryMode(entry) === 'binary') {
-  await this.writeFile(destPath, entry.get('content') as Uint8Array);
+	await this.writeFile(destPath, entry.get('content') as Uint8Array);
 } else {
-  await this.writeFile(destPath, readEntryAsString(entry));
+	await this.writeFile(destPath, readEntryAsString(entry));
 }
 ```
 
@@ -246,19 +267,19 @@ No production data exists to migrate (development only). Migration pattern for r
 
 ```typescript
 function migrateContentDoc(ydoc: Y.Doc): void {
-  const oldText = ydoc.getText('content');
-  const timeline = ydoc.getArray('timeline');
+	const oldText = ydoc.getText('content');
+	const timeline = ydoc.getArray('timeline');
 
-  if (oldText.length > 0 && timeline.length === 0) {
-    ydoc.transact(() => {
-      const entry = new Y.Map();
-      entry.set('type', 'text');
-      const ytext = new Y.Text();
-      ytext.insert(0, oldText.toString());
-      entry.set('content', ytext);
-      timeline.push([entry]);
-    });
-  }
+	if (oldText.length > 0 && timeline.length === 0) {
+		ydoc.transact(() => {
+			const entry = new Y.Map();
+			entry.set('type', 'text');
+			const ytext = new Y.Text();
+			ytext.insert(0, oldText.toString());
+			entry.set('content', ytext);
+			timeline.push([entry]);
+		});
+	}
 }
 ```
 
@@ -266,29 +287,31 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 
 ## 7. What Changes from the Simplified Spec
 
-| Concept | Simplified Spec | This Spec |
-|---------|----------------|-----------|
-| Content storage | `Y.Text('content')` single key | `Y.Array('timeline')` with nested entries |
-| Binary storage | Ephemeral `Map<FileId, Uint8Array>` | Persistent in Y.Doc timeline entries |
-| Content mode | Implicit (string vs Uint8Array at call site) | Explicit `type` field in timeline entry |
-| Binary persistence | Lost on restart | Syncs and persists via Y.Doc |
-| Mode history | None | Implicit in timeline (array of entries) |
-| readFile | `ydoc.getText('content').toString()` | `readEntryAsString(getCurrentEntry(timeline))` |
-| writeFile string | `ytext.delete + insert` | Same-mode: edit Y.Text. Switch: push new entry |
-| writeFile binary | `binaryStore.set(id, data)` | `pushBinaryEntry(timeline, data)` |
-| ContentDocStore | Unchanged | Unchanged (Y.Doc lifecycle is the same) |
-| binaryStore field | `Map<FileId, Uint8Array>` on YjsFileSystem | **Removed** |
+| Concept            | Simplified Spec                              | This Spec                                      |
+| ------------------ | -------------------------------------------- | ---------------------------------------------- |
+| Content storage    | `Y.Text('content')` single key               | `Y.Array('timeline')` with nested entries      |
+| Binary storage     | Ephemeral `Map<FileId, Uint8Array>`          | Persistent in Y.Doc timeline entries           |
+| Content mode       | Implicit (string vs Uint8Array at call site) | Explicit `type` field in timeline entry        |
+| Binary persistence | Lost on restart                              | Syncs and persists via Y.Doc                   |
+| Mode history       | None                                         | Implicit in timeline (array of entries)        |
+| readFile           | `ydoc.getText('content').toString()`         | `readEntryAsString(getCurrentEntry(timeline))` |
+| writeFile string   | `ytext.delete + insert`                      | Same-mode: edit Y.Text. Switch: push new entry |
+| writeFile binary   | `binaryStore.set(id, data)`                  | `pushBinaryEntry(timeline, data)`              |
+| ContentDocStore    | Unchanged                                    | Unchanged (Y.Doc lifecycle is the same)        |
+| binaryStore field  | `Map<FileId, Uint8Array>` on YjsFileSystem   | **Removed**                                    |
 
 ---
 
 ## 8. Implementation Phases
 
 **Phase 1: Types and Helpers** (`types.ts` + `timeline-helpers.ts`)
+
 - Add `ContentMode`, `TextEntry`, `RichTextEntry`, `BinaryEntry`, `TimelineEntry` types
 - Create `timeline-helpers.ts` with all helper functions
 - No behavioral changes yet
 
 **Phase 2: YjsFileSystem Core** (`yjs-file-system.ts`)
+
 - Replace `readFile` to use timeline dispatch
 - Replace `writeFile` to use timeline entries
 - Replace `readFileBuffer` to use timeline dispatch
@@ -299,6 +322,7 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 - `mv` unchanged
 
 **Phase 3: Tests** (`yjs-file-system.test.ts`)
+
 - All existing text file tests pass unchanged (behavioral compatibility)
 - Add: binary file persistence (write binary, read back)
 - Add: mode switching (text -> binary -> text)
@@ -310,6 +334,7 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 - Add: same-mode binary overwrite DOES grow timeline
 
 **Phase 4: Richtext Support** (deferred)
+
 - Wire `markdown-helpers.ts` into `readEntryAsString`/`pushRichTextEntry`
 - Add UI observation pattern for timeline changes
 - Not in initial implementation scope
@@ -324,9 +349,9 @@ function migrateContentDoc(ydoc: Y.Doc): void {
 
 7. **Binary overwrite: new entry** -- Each binary write appends a new entry. This gives explicit version history. The array grows, but so would `Y.Map` tombstones in any alternative.
 
-9. **UI observation for mode changes** -- Deferred to Phase 4. Phases 1-3 are bash-agent focused (no UI binding).
+8. **UI observation for mode changes** -- Deferred to Phase 4. Phases 1-3 are bash-agent focused (no UI binding).
 
-10. **Large binary files** -- No size threshold in Phases 1-3. Acknowledged as a future concern.
+9. **Large binary files** -- No size threshold in Phases 1-3. Acknowledged as a future concern.
 
 ---
 
@@ -337,6 +362,7 @@ bun test packages/epicenter/src/filesystem/
 ```
 
 Checklist:
+
 - [ ] `readFile()` returns correct content for text entries
 - [ ] `readFile()` returns decoded content for binary entries
 - [ ] `readFileBuffer()` returns `Uint8Array` for all entry types
@@ -377,6 +403,7 @@ Y.Array('timeline')                        Y.Type('timeline')
 ### What changes at migration time
 
 Only `timeline-helpers.ts` changes:
+
 - `new Y.Map()` -> `new Y.Type()`
 - `new Y.Text()` -> `new Y.Type()`
 - `new Y.XmlFragment()` -> `new Y.Type()`
@@ -400,11 +427,11 @@ v14's attribution system tracks who made what changes at the CRDT level. No stru
 
 ## 12. Spec Lineage
 
-| Spec | Relationship |
-|------|-------------|
-| `specs/20260211T100000-simplified-ytext-content-store.md` | **Superseded** by this spec |
-| `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` | Decision record with full rationale. This spec implements Option F. |
-| `specs/20260210T220000-v14-content-storage-spec.md` | **Deferred**. v14 `Y.Type` concepts are forward-compatible with this spec's timeline structure (see v14 section above). |
-| `specs/20260208T000000-yjs-filesystem-spec.md` | **Still valid** -- two-layer architecture unchanged |
-| `specs/20260211T200000-yjs-filesystem-conformance-fixes.md` | **Still valid** -- behavioral fixes orthogonal |
-| `specs/20260209T000000-simplify-content-doc-lifecycle.md` | **Still valid** -- ContentDocStore interface unchanged |
+| Spec                                                           | Relationship                                                                                                            |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `specs/20260211T100000-simplified-ytext-content-store.md`      | **Superseded** by this spec                                                                                             |
+| `specs/20260211T220000-yjs-content-doc-multi-mode-research.md` | Decision record with full rationale. This spec implements Option F.                                                     |
+| `specs/20260210T220000-v14-content-storage-spec.md`            | **Deferred**. v14 `Y.Type` concepts are forward-compatible with this spec's timeline structure (see v14 section above). |
+| `specs/20260208T000000-yjs-filesystem-spec.md`                 | **Still valid** -- two-layer architecture unchanged                                                                     |
+| `specs/20260211T200000-yjs-filesystem-conformance-fixes.md`    | **Still valid** -- behavioral fixes orthogonal                                                                          |
+| `specs/20260209T000000-simplify-content-doc-lifecycle.md`      | **Still valid** -- ContentDocStore interface unchanged                                                                  |

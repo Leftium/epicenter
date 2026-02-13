@@ -1,5 +1,8 @@
 # Y-Sweet Persistence Architecture
 
+**Status**: Implemented
+**Implementation notes**: All 5 steps completed. `indexeddb.ts` deleted from y-sweet package. `ySweetSync` extension rewritten with `auth` callback API, `persistence` factory option, `directAuth` helper, and `connect: false` orchestration. Factory functions (`indexeddbPersistence`, `filesystemPersistence`) exported from persistence modules. See `packages/epicenter/src/extensions/y-sweet-sync.ts`.
+
 Specification for how persistence and sync compose in the Y-Sweet extension.
 
 ## Decision
@@ -13,12 +16,14 @@ The provider becomes a pure WebSocket sync machine. The extension orchestrates t
 Yjs CRDTs don't care about order — merging is commutative. But load order matters for **efficiency**:
 
 **IndexedDB loads first, then WebSocket connects:**
+
 1. Doc starts empty
 2. IndexedDB loads → doc has all persisted state (e.g. 500KB of workspace history)
 3. WebSocket connects → sync step 1 sends state vector reflecting that 500KB
 4. Server compares → sends only the delta since last session (e.g. 2KB)
 
 **WebSocket connects first, IndexedDB loads later:**
+
 1. Doc starts empty
 2. WebSocket connects → sync step 1 sends empty state vector
 3. Server sees empty state → sends everything (500KB)
@@ -41,14 +46,14 @@ Even if it were activated, it's broken. The constructor fires off IndexedDB crea
 ```typescript
 // provider.ts constructor — race condition
 (async () => {
-    this.indexedDBProvider = await createIndexedDBProvider(doc, docId);
+	this.indexedDBProvider = await createIndexedDBProvider(doc, docId);
 })();
 // ↑ Not awaited. this.indexedDBProvider is null during sync handshake.
 
 doc.on('update', this.update.bind(this));
 
 if (extraOptions.connect !== false) {
-    this.connect();  // ← WebSocket connects before IndexedDB loads
+	this.connect(); // ← WebSocket connects before IndexedDB loads
 }
 ```
 
@@ -57,6 +62,7 @@ The echo-loop filter (`origin === this.indexedDBProvider`) is also broken during
 ### 2. Epicenter's standalone persistence extensions
 
 `packages/epicenter/src/extensions/persistence/`:
+
 - **Web** (`web.ts`): Wraps `y-indexeddb`. Uses `ydoc.guid` as DB name. Works correctly.
 - **Desktop** (`desktop.ts`): `Bun.file()` read + `writeFileSync` on every update. Works but no debouncing.
 
@@ -71,6 +77,7 @@ The echo-loop filter (`origin === this.indexedDBProvider`) is also broken during
 `packages/y-sweet/src/provider.ts` — no persistence knowledge.
 
 Remove from the provider:
+
 - `indexeddb.ts` (190 lines) — delete entirely
 - `offlineSupport` option from `YSweetProviderParams`
 - `indexedDBProvider` field from `YSweetProvider`
@@ -96,46 +103,46 @@ import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
 import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 
 createWorkspace(def).withExtensions({
-    sync: ySweetSync({
-        auth: directAuth('http://localhost:8080'),
-        persistence: indexeddbPersistence(),
-    }),
+	sync: ySweetSync({
+		auth: directAuth('http://localhost:8080'),
+		persistence: indexeddbPersistence(),
+	}),
 });
 
 // Desktop — filesystem persistence + sync:
 import { filesystemPersistence } from '@epicenter/hq/extensions/persistence/desktop';
 
 createWorkspace(def).withExtensions({
-    sync: ySweetSync({
-        auth: directAuth('http://localhost:8080'),
-        persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
-    }),
+	sync: ySweetSync({
+		auth: directAuth('http://localhost:8080'),
+		persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
+	}),
 });
 
 // Authenticated — hosted server:
 createWorkspace(def).withExtensions({
-    sync: ySweetSync({
-        auth: (docId) => fetch(`/api/token/${docId}`).then(r => r.json()),
-        persistence: indexeddbPersistence({ dbName: 'my-app' }),
-    }),
+	sync: ySweetSync({
+		auth: (docId) => fetch(`/api/token/${docId}`).then((r) => r.json()),
+		persistence: indexeddbPersistence({ dbName: 'my-app' }),
+	}),
 });
 
 // Sync only (no local persistence):
 createWorkspace(def).withExtensions({
-    sync: ySweetSync({
-        auth: directAuth('http://localhost:8080'),
-    }),
+	sync: ySweetSync({
+		auth: directAuth('http://localhost:8080'),
+	}),
 });
 
 // Custom persistence — bring your own:
 createWorkspace(def).withExtensions({
-    sync: ySweetSync({
-        auth: directAuth('http://localhost:8080'),
-        persistence: (ydoc) => {
-            const opfs = new OPFSProvider(ydoc);
-            return { whenSynced: opfs.ready, destroy: () => opfs.close() };
-        },
-    }),
+	sync: ySweetSync({
+		auth: directAuth('http://localhost:8080'),
+		persistence: (ydoc) => {
+			const opfs = new OPFSProvider(ydoc);
+			return { whenSynced: opfs.ready, destroy: () => opfs.close() };
+		},
+	}),
 });
 ```
 
@@ -143,34 +150,34 @@ Internal orchestration:
 
 ```typescript
 return ({ ydoc }) => {
-    const authEndpoint = () => config.auth(ydoc.guid);
-    const hasPersistence = !!config.persistence;
+	const authEndpoint = () => config.auth(ydoc.guid);
+	const hasPersistence = !!config.persistence;
 
-    // 1. Create provider — defer connection if persistence needs to load first
-    const provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint, {
-        connect: !hasPersistence,
-    });
+	// 1. Create provider — defer connection if persistence needs to load first
+	const provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint, {
+		connect: !hasPersistence,
+	});
 
-    let persistenceCleanup: (() => MaybePromise<void>) | undefined;
+	let persistenceCleanup: (() => MaybePromise<void>) | undefined;
 
-    const whenSynced = hasPersistence
-        ? (async () => {
-            const p = config.persistence!(ydoc);
-            persistenceCleanup = p.destroy;
-            await p.whenSynced;          // 2. Load persisted state
-            provider.connect();           // 3. Connect with accurate state vector
-            await waitForConnected(provider); // 4. Wait for handshake
-        })()
-        : waitForConnected(provider);
+	const whenSynced = hasPersistence
+		? (async () => {
+				const p = config.persistence!(ydoc);
+				persistenceCleanup = p.destroy;
+				await p.whenSynced; // 2. Load persisted state
+				provider.connect(); // 3. Connect with accurate state vector
+				await waitForConnected(provider); // 4. Wait for handshake
+			})()
+		: waitForConnected(provider);
 
-    return defineExports({
-        provider,
-        whenSynced,
-        destroy: () => {
-            persistenceCleanup?.();
-            provider.destroy();
-        },
-    });
+	return defineExports({
+		provider,
+		whenSynced,
+		destroy: () => {
+			persistenceCleanup?.();
+			provider.destroy();
+		},
+	});
 };
 ```
 
@@ -182,8 +189,8 @@ Persistence is a function, not a discriminated union. The return type is `Lifecy
 
 ```typescript
 type Lifecycle = {
-    whenSynced: Promise<unknown>;  // resolves when initial load is complete
-    destroy: () => MaybePromise<void>;  // cleanup observers, close connections
+	whenSynced: Promise<unknown>; // resolves when initial load is complete
+	destroy: () => MaybePromise<void>; // cleanup observers, close connections
 };
 ```
 
@@ -193,13 +200,13 @@ Factory functions for common backends:
 
 ```typescript
 export function indexeddbPersistence(options?: { dbName?: string }) {
-    return (ydoc: Y.Doc): Lifecycle => {
-        const idb = new IndexeddbPersistence(options?.dbName ?? ydoc.guid, ydoc);
-        return {
-            whenSynced: idb.whenSynced.then(() => {}),
-            destroy: () => idb.destroy(),
-        };
-    };
+	return (ydoc: Y.Doc): Lifecycle => {
+		const idb = new IndexeddbPersistence(options?.dbName ?? ydoc.guid, ydoc);
+		return {
+			whenSynced: idb.whenSynced.then(() => {}),
+			destroy: () => idb.destroy(),
+		};
+	};
 }
 ```
 
@@ -207,9 +214,9 @@ export function indexeddbPersistence(options?: { dbName?: string }) {
 
 ```typescript
 export function filesystemPersistence(options: { filePath: string }) {
-    return (ydoc: Y.Doc): Lifecycle => {
-        // load, observe with debounced writes, return { whenSynced, destroy }
-    };
+	return (ydoc: Y.Doc): Lifecycle => {
+		// load, observe with debounced writes, return { whenSynced, destroy }
+	};
 }
 ```
 
@@ -223,20 +230,20 @@ Instead of a `mode` discriminant, auth is a single callback. The extension calls
 
 ```typescript
 export function directAuth(serverUrl: string) {
-    return (docId: string): Promise<ClientToken> => {
-        const url = new URL(serverUrl);
-        const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-        return Promise.resolve({
-            url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-        });
-    };
+	return (docId: string): Promise<ClientToken> => {
+		const url = new URL(serverUrl);
+		const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+		return Promise.resolve({
+			url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
+		});
+	};
 }
 ```
 
 For authenticated mode, pass a function that fetches a token:
 
 ```typescript
-auth: (docId) => fetch(`/api/token/${docId}`).then(r => r.json())
+auth: (docId) => fetch(`/api/token/${docId}`).then((r) => r.json());
 ```
 
 ### Standalone persistence extensions (kept)

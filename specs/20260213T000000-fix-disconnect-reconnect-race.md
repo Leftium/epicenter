@@ -1,7 +1,8 @@
 # Disconnect/Reconnect Race: First-Principles Redesign
 
 **Date**: 2026-02-13
-**Status**: Analysis
+**Status**: Partially implemented / Superseded
+**Implementation notes**: Option A (surgical fix with generation counter) was kept — it's live in `provider.ts`. Option B (supervisor loop redesign) was NOT implemented and is deferred indefinitely. From Part 5 remaining issues: the listener leak fix (item 2) was completed as part of the reconnect spec. Items 1, 3, 4, 5 remain unaddressed but are low priority.
 
 ## What This Document Is
 

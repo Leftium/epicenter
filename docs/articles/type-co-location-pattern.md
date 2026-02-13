@@ -236,3 +236,5 @@ Turns out, it didn't. The types were documentation for specific implementations,
 Now when I'm organizing TypeScript code, I ask: "If I'm trying to understand this module, what do I need to see?" Types usually make that list. So they get co-located.
 
 The result is code that's easier to navigate, easier to understand, and easier to modify. No more jumping between files. No more 750-line type dumps. Just coherent modules that tell complete stories.
+
+There's an even stronger version of this argument: most types shouldn't be manually declared at all. See [Types Should Be Computed, Not Declared](./types-should-be-computed-not-declared.md).

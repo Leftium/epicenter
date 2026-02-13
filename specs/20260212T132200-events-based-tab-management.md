@@ -1,7 +1,7 @@
 # Events-Based Tab Management
 
 **Date**: 2026-02-12
-**Status**: Superseded by `20260213T003200-suspended-tabs.md`
+**Status**: Superseded by `20260213T003200-suspended-tabs.md` (suspend/restore) and `20260213T103000-request-dispatch.md` (cross-runtime dispatch)
 **Author**: AI-assisted
 
 ## Overview

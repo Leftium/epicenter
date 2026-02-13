@@ -24,6 +24,7 @@ I just moved `LocalModelConfig` from `$lib/types/models.ts` to `$lib/services/tr
 That's it. One type. One move.
 
 But look what happened:
+
 - The transcription service now owns its type
 - Components importing it know exactly where it comes from
 - When I delete the transcription service, the type goes with it
@@ -32,6 +33,7 @@ But look what happened:
 ## The Pattern I Follow Now
 
 **Service types live with services:**
+
 ```typescript
 // $lib/services/transcription/local/types.ts
 export type LocalModelConfig = { ... };
@@ -41,17 +43,19 @@ import type { LocalModelConfig } from './types';
 ```
 
 **Component types live in components:**
+
 ```svelte
 <!-- Button.svelte -->
 <script lang="ts">
-  type ButtonProps = {
-    variant: 'primary' | 'secondary';
-    size: 'sm' | 'md' | 'lg';
-  };
+	type ButtonProps = {
+		variant: 'primary' | 'secondary';
+		size: 'sm' | 'md' | 'lg';
+	};
 </script>
 ```
 
 **Domain types live in domain folders:**
+
 ```typescript
 // $lib/services/user/types.ts
 export type User = { ... };
@@ -83,4 +87,6 @@ The answer is always: with the code that uses it.
 
 ---
 
-*Note: This pattern applies to any codebase, not just TypeScript. Constants, types, utilities—they all benefit from living close to the code that depends on them.*
+_Note: This pattern applies to any codebase, not just TypeScript. Constants, types, utilities—they all benefit from living close to the code that depends on them._
+
+See also: [The Case Against catch-all `types.ts`](./type-co-location-pattern.md) for a deeper look at discoverability, and [Types Should Be Computed, Not Declared](./types-should-be-computed-not-declared.md) for why most types shouldn't be manually declared at all.

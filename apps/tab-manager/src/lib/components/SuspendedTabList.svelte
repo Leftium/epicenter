@@ -1,106 +1,39 @@
 <script lang="ts">
-	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { queryClient } from '$lib/query';
-	import { suspendedTabs, suspendedTabsKeys } from '$lib/query/suspended-tabs';
-	import { tabsKeys } from '$lib/query/tabs';
+	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
+	import { getDomain, getRelativeTime } from '$lib/utils/format';
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Avatar from '@epicenter/ui/avatar';
+	import * as Empty from '@epicenter/ui/empty';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import PauseIcon from '@lucide/svelte/icons/pause';
-	import { Ok, trySync } from 'wellcrafted/result';
-	import type { SuspendedTab } from '$lib/epicenter';
-
-	const query = createQuery(() => suspendedTabs.getAll.options);
-
-	const restoreMutation = createMutation(() => ({
-		...suspendedTabs.restore.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
-		},
-	}));
-
-	const removeMutation = createMutation(() => ({
-		...suspendedTabs.remove.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-		},
-	}));
-
-	const restoreAllMutation = createMutation(() => ({
-		...suspendedTabs.restoreAll.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
-		},
-	}));
-
-	const removeAllMutation = createMutation(() => ({
-		...suspendedTabs.removeAll.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-		},
-	}));
-
-	function getRelativeTime(timestamp: number) {
-		const now = Date.now();
-		const diff = now - timestamp;
-		const seconds = Math.floor(diff / 1000);
-		const minutes = Math.floor(seconds / 60);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `${days}d ago`;
-		if (hours > 0) return `${hours}h ago`;
-		if (minutes > 0) return `${minutes}m ago`;
-		return 'Just now';
-	}
-
-	function getDomain(url: string) {
-		const { data } = trySync({
-			try: () => new URL(url).hostname,
-			catch: () => Ok(url),
-		});
-		return data;
-	}
 </script>
 
 <section class="flex flex-col gap-2 p-4 pt-0">
 	<header class="flex items-center justify-between">
 		<h2 class="text-sm font-semibold text-muted-foreground">
 			Suspended Tabs
-			{#if query.data?.length}
-				<span
-					class="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground"
-				>
-					{query.data.length}
-				</span>
+			{#if suspendedTabState.tabs.length}
+				<Badge variant="secondary" class="ml-1">
+					{suspendedTabState.tabs.length}
+				</Badge>
 			{/if}
 		</h2>
 	</header>
 
-	{#if query.isLoading}
-		<div class="flex justify-center p-4">
-			<Spinner />
-		</div>
-	{:else if query.isError}
-		<div class="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-			Error loading suspended tabs
-		</div>
-	{:else if !query.data?.length}
-		<div
-			class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center text-muted-foreground"
-		>
-			<PauseIcon class="size-8 opacity-50" />
-			<p class="text-sm font-medium">No suspended tabs</p>
-			<p class="text-xs">Suspend tabs to save them for later</p>
-		</div>
+	{#if !suspendedTabState.tabs.length}
+		<Empty.Root class="py-8">
+			<Empty.Media>
+				<PauseIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>No suspended tabs</Empty.Title>
+			<Empty.Description>Suspend tabs to save them for later</Empty.Description>
+		</Empty.Root>
 	{:else}
 		<div class="flex flex-col gap-1">
-			{#each query.data as tab (tab.id)}
+			{#each suspendedTabState.tabs as tab (tab.id)}
 				<div
 					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
 				>
@@ -129,22 +62,18 @@
 							variant="ghost"
 							size="icon-xs"
 							tooltip="Restore"
-							disabled={restoreMutation.isPending}
-							onclick={() => restoreMutation.mutate(tab)}
+							onclick={() => suspendedTabState.actions.restore(tab)}
 						>
-							{#if restoreMutation.isPending}<Spinner />{:else}<RotateCcwIcon
-								/>{/if}
+							<RotateCcwIcon />
 						</Button>
 						<Button
 							variant="ghost"
 							size="icon-xs"
-							class="text-destructive hover:text-destructive"
+							class="text-destructive"
 							tooltip="Delete"
-							disabled={removeMutation.isPending}
-							onclick={() => removeMutation.mutate(tab.id)}
+							onclick={() => suspendedTabState.actions.remove(tab.id)}
 						>
-							{#if removeMutation.isPending}<Spinner />{:else}<Trash2Icon
-								/>{/if}
+							<Trash2Icon />
 						</Button>
 					</div>
 				</div>
@@ -155,19 +84,15 @@
 			<Button
 				variant="outline"
 				size="sm"
-				disabled={restoreAllMutation.isPending}
-				onclick={() => restoreAllMutation.mutate()}
+				onclick={() => suspendedTabState.actions.restoreAll()}
 			>
-				{#if restoreAllMutation.isPending}<Spinner class="mr-2" />{/if}
 				Restore All
 			</Button>
 			<Button
 				variant="destructive"
 				size="sm"
-				disabled={removeAllMutation.isPending}
-				onclick={() => removeAllMutation.mutate()}
+				onclick={() => suspendedTabState.actions.removeAll()}
 			>
-				{#if removeAllMutation.isPending}<Spinner class="mr-2" />{/if}
 				Delete All
 			</Button>
 		</div>

@@ -247,3 +247,9 @@ Every dev server you run is trusting every website you visit. That's the deal we
 - [Jupyter Notebook Security Advisory](https://blog.jupyter.org/jupyter-notebook-security-fixes-released-4a9d4d9ecdd7)
 - [DNS Rebinding Attacks Explained](https://github.com/nccgroup/singularity)
 - [Attacking Local Network Applications from the Browser](https://www.forcepoint.com/blog/x-labs/attacking-internal-network-browser)
+
+---
+
+## Update: It Happened
+
+In January 2026, OpenCode got [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh)—CVSS 8.8, exactly the attack described above. The JavaScript in "The Attack" section wasn't hypothetical; it was a working exploit. OpenCode has since added `OPENCODE_SERVER_PASSWORD` (HTTP Basic Auth) and made the server opt-in. Full writeup: [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).

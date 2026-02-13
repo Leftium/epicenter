@@ -12,13 +12,8 @@
 
 import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
 import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
-import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
-import { BROWSER_TABLES } from './schema';
-
-const definition = defineWorkspace({
-	id: 'tab-manager',
-	tables: BROWSER_TABLES,
-});
+import { createWorkspace } from '@epicenter/hq/static';
+import { definition } from '$lib/workspace';
 
 /**
  * Popup workspace client.

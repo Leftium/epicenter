@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { createMutation } from '@tanstack/svelte-query';
-	import { Ok, trySync } from 'wellcrafted/result';
-	import { rpc, queryClient } from '$lib/query';
-	import { suspendedTabs, suspendedTabsKeys } from '$lib/query/suspended-tabs';
-	import { tabsKeys } from '$lib/query/tabs';
+	import { browserState } from '$lib/state/browser-state.svelte';
+	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
+	import type { Tab } from '$lib/workspace';
+	import { getDomain } from '$lib/utils/format';
 	import XIcon from '@lucide/svelte/icons/x';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
@@ -14,49 +13,16 @@
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import PauseIcon from '@lucide/svelte/icons/pause';
 	import { Button } from '@epicenter/ui/button';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import { cn } from '@epicenter/ui/utils';
-	import type { Tab } from '$lib/epicenter';
 
 	let { tab }: { tab: Tab } = $props();
 
 	// Use tabId for browser API calls (native browser tab ID)
 	const tabId = $derived(tab.tabId);
 
-	const closeMutation = createMutation(() => rpc.tabs.close.options);
-	const activateMutation = createMutation(() => rpc.tabs.activate.options);
-	const pinMutation = createMutation(() => rpc.tabs.pin.options);
-	const unpinMutation = createMutation(() => rpc.tabs.unpin.options);
-	const muteMutation = createMutation(() => rpc.tabs.mute.options);
-	const unmuteMutation = createMutation(() => rpc.tabs.unmute.options);
-	const reloadMutation = createMutation(() => rpc.tabs.reload.options);
-	const duplicateMutation = createMutation(() => rpc.tabs.duplicate.options);
-
-	const suspendMutation = createMutation(() => ({
-		...suspendedTabs.suspend.options,
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
-			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
-		},
-	}));
-
-	const isPinPending = $derived(
-		pinMutation.isPending || unpinMutation.isPending,
-	);
-	const isMutePending = $derived(
-		muteMutation.isPending || unmuteMutation.isPending,
-	);
-
 	// Extract domain from URL for display
-	const domain = $derived.by(() => {
-		if (!tab.url) return '';
-		const { data } = trySync({
-			try: () => new URL(tab.url).hostname,
-			catch: () => Ok(tab.url),
-		});
-		return data;
-	});
+	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 </script>
 
 <button
@@ -65,7 +31,7 @@
 		'group flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent',
 		tab.active && 'bg-accent/50',
 	)}
-	onclick={() => activateMutation.mutate(tabId)}
+	onclick={() => browserState.actions.activate(tabId)}
 >
 	<!-- Favicon -->
 	<Avatar.Root class="size-4 shrink-0 rounded-sm">
@@ -103,20 +69,17 @@
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			disabled={isPinPending}
 			tooltip={tab.pinned ? 'Unpin' : 'Pin'}
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
 				if (tab.pinned) {
-					unpinMutation.mutate(tabId);
+					browserState.actions.unpin(tabId);
 				} else {
-					pinMutation.mutate(tabId);
+					browserState.actions.pin(tabId);
 				}
 			}}
 		>
-			{#if isPinPending}
-				<Spinner />
-			{:else if tab.pinned}
+			{#if tab.pinned}
 				<PinOffIcon />
 			{:else}
 				<PinIcon />
@@ -127,20 +90,17 @@
 			<Button
 				variant="ghost"
 				size="icon-xs"
-				disabled={isMutePending}
 				tooltip={tab.mutedInfo?.muted ? 'Unmute' : 'Mute'}
 				onclick={(e: MouseEvent) => {
 					e.stopPropagation();
 					if (tab.mutedInfo?.muted) {
-						unmuteMutation.mutate(tabId);
+						browserState.actions.unmute(tabId);
 					} else {
-						muteMutation.mutate(tabId);
+						browserState.actions.mute(tabId);
 					}
 				}}
 			>
-				{#if isMutePending}
-					<Spinner />
-				{:else if tab.mutedInfo?.muted}
+				{#if tab.mutedInfo?.muted}
 					<Volume2Icon />
 				{:else}
 					<VolumeXIcon />
@@ -151,70 +111,50 @@
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			disabled={reloadMutation.isPending}
 			tooltip="Reload"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
-				reloadMutation.mutate(tabId);
+				browserState.actions.reload(tabId);
 			}}
 		>
-			{#if reloadMutation.isPending}
-				<Spinner />
-			{:else}
-				<RefreshCwIcon />
-			{/if}
+			<RefreshCwIcon />
 		</Button>
 
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			disabled={duplicateMutation.isPending}
 			tooltip="Duplicate"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
-				duplicateMutation.mutate(tabId);
+				browserState.actions.duplicate(tabId);
 			}}
 		>
-			{#if duplicateMutation.isPending}
-				<Spinner />
-			{:else}
-				<CopyIcon />
-			{/if}
+			<CopyIcon />
 		</Button>
 
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			disabled={suspendMutation.isPending}
 			tooltip="Suspend"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
-				suspendMutation.mutate(tab);
+				suspendedTabState.actions.suspend(tab);
 			}}
 		>
-			{#if suspendMutation.isPending}
-				<Spinner />
-			{:else}
-				<PauseIcon />
-			{/if}
+			<PauseIcon />
 		</Button>
 
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			class="text-destructive hover:text-destructive"
-			disabled={closeMutation.isPending}
+			class="text-destructive"
 			tooltip="Close"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
-				closeMutation.mutate(tabId);
+				browserState.actions.close(tabId);
 			}}
 		>
-			{#if closeMutation.isPending}
-				<Spinner />
-			{:else}
-				<XIcon />
-			{/if}
+			<XIcon />
 		</Button>
 	</div>
 </button>

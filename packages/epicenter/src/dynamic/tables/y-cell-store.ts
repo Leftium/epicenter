@@ -35,12 +35,12 @@
  * ```
  */
 import type * as Y from 'yjs';
-import { CellKey, parseCellKey } from './cell-keys.js';
+import { CellKey, parseCellKey } from '../../shared/cell-keys.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from './y-keyvalue/y-keyvalue-lww.js';
+} from '../../shared/y-keyvalue/y-keyvalue-lww.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES

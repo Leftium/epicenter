@@ -11,7 +11,7 @@ All articles must follow [writing-voice](../writing-voice/SKILL.md) rules.
 
 Title should BE the takeaway, not a topic. "Write Context to a File, Not a Prompt" not "Context Management in Agent Workflows".
 
-Lead with a strong opening paragraph that states the key insight in plain language, followed by a blockquote with the core principle. Reader should get it in 5 seconds.
+Lead with a strong opening paragraph that states the key insight in plain language. Reader should get it in 5 seconds. Then go straight into code. Don't force a blockquote or pull-quote after the opening; if the insight needs a quotable summary, the opening paragraph already is one.
 
 Code speaks louder than prose. Show real examples from actual codebases, not abstract `foo`/`bar` illustrations. If the code is self-explanatory, don't over-explain.
 
@@ -55,7 +55,7 @@ No rigid template: structure should fit the content, not the other way around. S
 - ASCII diagrams that clarify architecture or data flow
 - One table that summarizes the key comparison
 - Tight prose that explains WHY, not WHAT (code shows WHAT)
-- 30-80 lines for most articles; longer only if content demands it
+- 30-80 lines for focused insight articles; comparison or analysis articles naturally run 80-150+ when showing code from multiple libraries
 
 ## What Makes Articles Bad
 
@@ -71,3 +71,7 @@ No rigid template: structure should fit the content, not the other way around. S
 Most "journey to an insight" articles still work better as punchy. Use narrative only when the discovery process itself is the insight and can't be compressed.
 
 When narrative fits: specific details ("750 lines", not "a large file"), direct statements over manufactured drama, build to an insight rather than starting with it.
+
+## Closings
+
+End with a plain statement of the implication. Don't reach for a grand summary or a clever sign-off. If the article showed that X solves Y, just say what that means for the reader in one or two sentences. Avoid closing with superlatives ("the most elegant", "truly powerful") or calls to action ("try it today!").

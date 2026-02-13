@@ -1,2 +1,10 @@
-export type { SuspendedTab, Tab, TabGroup, Window } from './browser.schema';
+export type {
+	GroupCompositeId,
+	SuspendedTab,
+	Tab,
+	TabCompositeId,
+	TabGroup,
+	Window,
+	WindowCompositeId,
+} from './browser.schema';
 export { default as EpicenterProvider } from './EpicenterProvider.svelte';

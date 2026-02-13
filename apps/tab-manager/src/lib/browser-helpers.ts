@@ -7,41 +7,67 @@
  * All IDs are device-scoped to prevent collisions during multi-device sync.
  *
  * @example
- * const { TabId, tabToRow } = createBrowserConverters(deviceId);
- * tables.tabs.upsert(tabToRow(tab));
- * tables.tabs.delete({ id: TabId(123) });
+ * const { toTabId, tabToRow } = createBrowserConverters(deviceId);
+ * tables.tabs.set(tabToRow(tab));
+ * tables.tabs.delete(toTabId(123));
  */
 
-import type { Tab, TabGroup, Window } from './epicenter/browser.schema';
+import type {
+	GroupCompositeId,
+	Tab,
+	TabCompositeId,
+	TabGroup,
+	Window,
+	WindowCompositeId,
+} from './epicenter/browser.schema';
 
 /**
  * Create deviceId-bound converters and ID constructors.
  *
- * Returns both ID constructors (TabId, WindowId, GroupId) and row converters
+ * Returns both ID constructors (toTabId, toWindowId, toGroupId) and row converters
  * (tabToRow, windowToRow, tabGroupToRow) all bound to the provided deviceId.
  *
  * @example
  * const deviceId = await getDeviceId();
- * const { TabId, WindowId, tabToRow, windowToRow } = createBrowserConverters(deviceId);
+ * const { toTabId, toWindowId, tabToRow, windowToRow } = createBrowserConverters(deviceId);
  *
  * // Convert browser objects to rows
- * tables.tabs.upsert(tabToRow(tab));
- * tables.windows.upsert(windowToRow(window));
+ * tables.tabs.set(tabToRow(tab));
+ * tables.windows.set(windowToRow(window));
  *
  * // Create composite IDs for lookups/deletes
- * tables.tabs.delete({ id: TabId(123) });
+ * tables.tabs.delete(toTabId(123));
  */
 export function createBrowserConverters(deviceId: string) {
-	// ID constructors (static API uses plain strings for IDs)
-	const TabId = (tabId: number): string => `${deviceId}_${tabId}`;
-	const WindowId = (windowId: number): string => `${deviceId}_${windowId}`;
-	const GroupId = (groupId: number): string => `${deviceId}_${groupId}`;
+	/**
+	 * Create a device-scoped composite tab ID.
+	 *
+	 * @example toTabId(123) // "deviceId_123" as TabCompositeId
+	 */
+	const toTabId = (tabId: number): TabCompositeId =>
+		`${deviceId}_${tabId}` as TabCompositeId;
+
+	/**
+	 * Create a device-scoped composite window ID.
+	 *
+	 * @example toWindowId(456) // "deviceId_456" as WindowCompositeId
+	 */
+	const toWindowId = (windowId: number): WindowCompositeId =>
+		`${deviceId}_${windowId}` as WindowCompositeId;
+
+	/**
+	 * Create a device-scoped composite group ID.
+	 *
+	 * @example toGroupId(789) // "deviceId_789" as GroupCompositeId
+	 */
+	const toGroupId = (groupId: number): GroupCompositeId =>
+		`${deviceId}_${groupId}` as GroupCompositeId;
 
 	return {
 		// ID constructors
-		TabId,
-		WindowId,
-		GroupId,
+		toTabId,
+		toWindowId,
+		toGroupId,
 
 		/**
 		 * Convert a browser tab to a schema row.
@@ -55,12 +81,13 @@ export function createBrowserConverters(deviceId: string) {
 			const { id, windowId, groupId, openerTabId, selected, ...rest } = tab;
 			return {
 				...rest,
-				id: TabId(id),
+				id: toTabId(id),
 				deviceId,
 				tabId: id,
-				windowId: WindowId(windowId),
-				groupId: GroupId(groupId),
-				openerTabId: openerTabId !== undefined ? TabId(openerTabId) : undefined,
+				windowId: toWindowId(windowId),
+				groupId: toGroupId(groupId),
+				openerTabId:
+					openerTabId !== undefined ? toTabId(openerTabId) : undefined,
 			};
 		},
 
@@ -75,7 +102,7 @@ export function createBrowserConverters(deviceId: string) {
 			const { id, tabs: _tabs, ...rest } = window;
 			return {
 				...rest,
-				id: WindowId(id),
+				id: toWindowId(id),
 				deviceId,
 				windowId: id,
 			};
@@ -85,10 +112,10 @@ export function createBrowserConverters(deviceId: string) {
 			const { id, windowId, ...rest } = group;
 			return {
 				...rest,
-				id: GroupId(id),
+				id: toGroupId(id),
 				deviceId,
 				groupId: id,
-				windowId: WindowId(windowId),
+				windowId: toWindowId(windowId),
 			};
 		},
 	};

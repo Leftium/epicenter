@@ -7,6 +7,11 @@
 
 import { generateId } from '@epicenter/hq/dynamic';
 import { storage } from '@wxt-dev/storage';
+import type {
+	GroupCompositeId,
+	TabCompositeId,
+	WindowCompositeId,
+} from './epicenter/browser.schema';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Device ID Storage
@@ -98,7 +103,7 @@ function parseCompositeIdInternal(
  * @example parseTabId('abc123_456') // { deviceId: 'abc123', tabId: 456 }
  */
 export function parseTabId(
-	compositeId: string,
+	compositeId: TabCompositeId,
 ): { deviceId: string; tabId: number } | null {
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;
@@ -110,7 +115,7 @@ export function parseTabId(
  * @example parseWindowId('abc123_456') // { deviceId: 'abc123', windowId: 456 }
  */
 export function parseWindowId(
-	compositeId: string,
+	compositeId: WindowCompositeId,
 ): { deviceId: string; windowId: number } | null {
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;
@@ -122,7 +127,7 @@ export function parseWindowId(
  * @example parseGroupId('abc123_456') // { deviceId: 'abc123', groupId: 456 }
  */
 export function parseGroupId(
-	compositeId: string,
+	compositeId: GroupCompositeId,
 ): { deviceId: string; groupId: number } | null {
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;

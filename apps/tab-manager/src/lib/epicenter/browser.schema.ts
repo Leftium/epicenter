@@ -14,6 +14,44 @@
 
 import { defineTable, type InferTableRow } from '@epicenter/hq/static';
 import { type } from 'arktype';
+import type { Brand } from 'wellcrafted/brand';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Branded Composite ID Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Device-scoped composite tab ID: `${deviceId}_${tabId}`.
+ *
+ * Prevents accidental mixing with plain strings, window IDs, or group IDs.
+ * Construct via `createBrowserConverters(deviceId).toTabId(tabId)`.
+ */
+export type TabCompositeId = string & Brand<'TabCompositeId'>;
+export const TabCompositeId = type('string').pipe(
+	(s): TabCompositeId => s as TabCompositeId,
+);
+
+/**
+ * Device-scoped composite window ID: `${deviceId}_${windowId}`.
+ *
+ * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
+ * Construct via `createBrowserConverters(deviceId).toWindowId(windowId)`.
+ */
+export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
+export const WindowCompositeId = type('string').pipe(
+	(s): WindowCompositeId => s as WindowCompositeId,
+);
+
+/**
+ * Device-scoped composite group ID: `${deviceId}_${groupId}`.
+ *
+ * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
+ * Construct via `createBrowserConverters(deviceId).toGroupId(groupId)`.
+ */
+export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
+export const GroupCompositeId = type('string').pipe(
+	(s): GroupCompositeId => s as GroupCompositeId,
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions (Static API with Arktype)
@@ -45,10 +83,10 @@ const devices = defineTable(
  */
 const tabs = defineTable(
 	type({
-		id: 'string', // Composite: `${deviceId}_${tabId}`
+		id: TabCompositeId, // Composite: `${deviceId}_${tabId}`
 		deviceId: 'string', // Foreign key to devices table
 		tabId: 'number', // Original chrome.tabs.Tab.id for API calls
-		windowId: 'string', // Composite: `${deviceId}_${windowId}`
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
 		index: 'number', // Zero-based position in tab strip
 		pinned: 'boolean',
 		active: 'boolean',
@@ -65,16 +103,16 @@ const tabs = defineTable(
 		'status?': "'unloaded' | 'loading' | 'complete'",
 		'audible?': 'boolean', // Chrome 45+
 		/** @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-MutedInfo */
-		'mutedInfo?': {
+		'mutedInfo?': type({
 			/** Whether the tab is muted (prevented from playing sound). The tab may be muted even if it has not played or is not currently playing sound. Equivalent to whether the 'muted' audio indicator is showing. */
 			muted: 'boolean',
 			/** The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed. */
 			'reason?': "'user' | 'capture' | 'extension'",
 			/** The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed. */
 			'extensionId?': 'string',
-		},
-		'groupId?': 'string', // Composite: `${deviceId}_${groupId}`, Chrome 88+
-		'openerTabId?': 'string', // Composite: `${deviceId}_${openerTabId}`
+		}),
+		'groupId?': GroupCompositeId, // Composite: `${deviceId}_${groupId}`, Chrome 88+
+		'openerTabId?': TabCompositeId, // Composite: `${deviceId}_${openerTabId}`
 		'lastAccessed?': 'number', // Chrome 121+, ms since epoch
 		'height?': 'number',
 		'width?': 'number',
@@ -92,7 +130,7 @@ const tabs = defineTable(
  */
 const windows = defineTable(
 	type({
-		id: 'string', // Composite: `${deviceId}_${windowId}`
+		id: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
 		deviceId: 'string', // Foreign key to devices table
 		windowId: 'number', // Original browser window ID for API calls
 		focused: 'boolean',
@@ -119,10 +157,10 @@ const windows = defineTable(
  */
 const tabGroups = defineTable(
 	type({
-		id: 'string', // Composite: `${deviceId}_${groupId}`
+		id: GroupCompositeId, // Composite: `${deviceId}_${groupId}`
 		deviceId: 'string', // Foreign key to devices table
 		groupId: 'number', // Original browser group ID for API calls
-		windowId: 'string', // Composite: `${deviceId}_${windowId}`
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
 		collapsed: 'boolean',
 		color:
 			"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",

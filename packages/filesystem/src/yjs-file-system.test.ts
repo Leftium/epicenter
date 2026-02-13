@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { Bash } from 'just-bash';
 import { createWorkspace } from '@epicenter/hq/static';
+import { Bash } from 'just-bash';
 import { filesTable } from './file-table.js';
 import { createTimeline } from './timeline-helpers.js';
 import { YjsFileSystem } from './yjs-file-system.js';

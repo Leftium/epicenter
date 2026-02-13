@@ -1,7 +1,7 @@
+import { type Guid, generateGuid } from '@epicenter/hq';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
-import { type Guid, generateGuid } from '@epicenter/hq';
 
 /**
  * Timeline entry shapes — a discriminated union on 'type'.

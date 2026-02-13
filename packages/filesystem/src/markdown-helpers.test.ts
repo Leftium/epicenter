@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { createWorkspace } from '@epicenter/hq/static';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { createWorkspace } from '@epicenter/hq/static';
 import { filesTable } from './file-table.js';
 import {
 	parseFrontmatter,

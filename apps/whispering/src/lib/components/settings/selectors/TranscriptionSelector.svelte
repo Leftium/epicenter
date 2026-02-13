@@ -13,7 +13,7 @@
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,
 	} from '$lib/settings/transcription-validation';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import MicIcon from '@lucide/svelte/icons/mic';

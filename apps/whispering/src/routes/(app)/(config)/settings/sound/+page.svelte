@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 </script>
 
 <svelte:head>

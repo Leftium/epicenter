@@ -875,7 +875,7 @@ Adding a new transcription service involves four main steps:
    <script lang="ts">
    	import { LabeledInput } from '$lib/components/labeled/index.js';
    	import { Button } from '$lib/components/ui/button/index.js';
-   	import { settings } from '$lib/stores/settings.svelte';
+   	import { settings } from '$lib/state/settings.svelte';
    </script>
 
    <LabeledInput

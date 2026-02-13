@@ -11,7 +11,7 @@
 		RECORDING_MODE_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 	import {

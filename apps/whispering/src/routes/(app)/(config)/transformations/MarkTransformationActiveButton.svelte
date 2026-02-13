@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import type { Transformation } from '$lib/services/isomorphic/db';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
 	import CircleIcon from '@lucide/svelte/icons/circle';
 

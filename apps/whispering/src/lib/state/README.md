@@ -1,10 +1,10 @@
-# Stores
+# State
 
-Singleton reactive state that stays in sync with the application. Unlike the query layer which uses stale-while-revalidate caching, stores maintain live state that updates immediately and persists across the application lifecycle.
+Singleton reactive state that stays in sync with the application. Unlike the query layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
 
-## When to Use Stores vs Query Layer
+## When to Use State vs Query Layer
 
-| Aspect | `$lib/stores/` | `$lib/query/` |
+| Aspect | `$lib/state/` | `$lib/query/` |
 |--------|----------------|---------------|
 | **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
 | **State Location** | Module-level `$state` runes | TanStack Query cache |
@@ -12,14 +12,14 @@ Singleton reactive state that stays in sync with the application. Unlike the que
 | **Use Case** | Hardware state, user preferences, live status | Data fetching, mutations, cached data |
 | **Lifecycle** | Application lifetime | Managed by TanStack Query |
 
-## Current Stores
+## Current State Modules
 
 ### `settings.svelte.ts`
 
 Persistent user settings using `createPersistedState`. Automatically syncs to localStorage and provides reactive access to all app configuration.
 
 ```typescript
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 // Read settings reactively
 const mode = settings.value['recording.mode'];
@@ -33,7 +33,7 @@ settings.set('recording.mode', 'vad');
 Voice Activity Detection (VAD) recorder singleton. Manages the VAD hardware state and provides reactive access to detection status.
 
 ```typescript
-import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
 // Reactive state access (triggers $effect when changed)
 $effect(() => {
@@ -66,9 +66,9 @@ Compare this to the query layer which:
 - Doesn't track hardware state
 - Uses TanStack Query's lifecycle management
 
-## Adding New Stores
+## Adding New State Modules
 
-Create a new store when you need:
+Create a new state module when you need:
 
 1. **Live reactive state** that must update immediately (not stale-while-revalidate)
 2. **Singleton behavior** where only one instance should exist

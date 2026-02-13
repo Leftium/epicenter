@@ -4,7 +4,7 @@
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import AppLayout from './_components/AppLayout.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';

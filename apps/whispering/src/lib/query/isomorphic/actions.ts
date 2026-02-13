@@ -3,8 +3,8 @@ import { Ok } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { DbServiceErr } from '$lib/services/isomorphic/db';
-import { settings } from '$lib/stores/settings.svelte';
-import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+import { settings } from '$lib/state/settings.svelte';
+import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 import { rpc } from '..';
 import { db } from './db';
@@ -18,7 +18,7 @@ import { transformer } from './transformer';
 
 /**
  * Application actions. These are mutations at the UI boundary that can be invoked
- * from anywhere: command registry, components, stores, etc.
+ * from anywhere: command registry, components, state modules, etc.
  *
  * They always return Ok() because there's nowhere left to propagate errors—errors flow
  * sideways through notify.error() instead of up the call stack. Actions are

@@ -5,7 +5,7 @@
 	import { SAMPLE_RATE_OPTIONS } from '$lib/constants/audio';
 	import { PATHS } from '$lib/constants/paths';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
-	import { settings } from '$lib/stores/settings.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { rpc } from '$lib/query';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { join } from '@tauri-apps/api/path';

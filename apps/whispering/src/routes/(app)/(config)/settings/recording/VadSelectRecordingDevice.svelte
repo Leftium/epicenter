@@ -2,7 +2,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/stores/vad-recorder.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import type { DeviceIdentifier } from '$lib/services/types';
 	import { asDeviceIdentifier } from '$lib/services/types';
 	import { createQuery } from '@tanstack/svelte-query';

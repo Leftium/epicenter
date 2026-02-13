@@ -9,7 +9,7 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/isomorphic/device-stream';
-import { settings } from '$lib/stores/settings.svelte';
+import { settings } from '$lib/state/settings.svelte';
 
 /**
  * Creates a Voice Activity Detection (VAD) recorder with reactive state.

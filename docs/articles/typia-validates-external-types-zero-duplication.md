@@ -82,6 +82,8 @@ Typia feels like magic, but it has specific constraints you need to know:
 
 If you can live with the build step, Typia removes an entire class of busywork. You stop maintaining two parallel definitions of the same shape. The types you already have—the ones the library author already wrote and tested—just work as validators. That's a genuinely different thing from everything else out there.
 
+For a broader look at how Typia's TS→JS approach compares to schema-first libraries, see [Typia Goes From TypeScript to JavaScript, Not the Other Way Around](./typia-typescript-to-javascript-validation.md).
+
 ## References
 
 - [Typia GitHub](https://github.com/samchon/typia)

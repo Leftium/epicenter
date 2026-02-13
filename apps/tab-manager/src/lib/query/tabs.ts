@@ -52,8 +52,10 @@ export const tabs = {
 			const { tabToRow } = createBrowserConverters(deviceId);
 			const browserTabs = await browser.tabs.query({});
 			const rows = browserTabs
-				.filter((t) => t.id !== undefined)
-				.map((tab) => tabToRow(tab))
+				.flatMap((tab) => {
+					const row = tabToRow(tab);
+					return row ? [row] : [];
+				})
 				.sort((a, b) => a.index - b.index);
 			return Ok(rows);
 		},
@@ -68,9 +70,10 @@ export const tabs = {
 			const deviceId = await getDeviceId();
 			const { windowToRow } = createBrowserConverters(deviceId);
 			const browserWindows = await browser.windows.getAll();
-			const rows = browserWindows
-				.filter((w) => w.id !== undefined)
-				.map((window) => windowToRow(window));
+			const rows = browserWindows.flatMap((window) => {
+				const row = windowToRow(window);
+				return row ? [row] : [];
+			});
 			return Ok(rows);
 		},
 		staleTime: Infinity,

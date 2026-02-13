@@ -166,18 +166,17 @@ export default defineBackground(() => {
 			const deviceId = await deviceIdPromise;
 			const { tabToRow, TabId } = createBrowserConverters(deviceId);
 			const browserTabs = await browser.tabs.query({});
-			const tabIds = new Set(
-				browserTabs
-					.filter((t): t is typeof t & { id: number } => t.id !== undefined)
-					.map((t) => t.id),
-			);
+			const rows = browserTabs.flatMap((tab) => {
+				const row = tabToRow(tab);
+				return row ? [row] : [];
+			});
+			const tabIds = new Set(rows.map((r) => r.tabId));
 			const existingYDocTabs = tables.tabs.getAllValid();
 
 			ydoc.transact(() => {
 				// Set all browser tabs (with device-scoped IDs)
-				for (const tab of browserTabs) {
-					if (tab.id === undefined) continue;
-					tables.tabs.set(tabToRow(tab));
+				for (const row of rows) {
+					tables.tabs.set(row);
 				}
 
 				// Delete only THIS device's tabs that aren't in browser OR have malformed IDs
@@ -208,18 +207,17 @@ export default defineBackground(() => {
 			const deviceId = await deviceIdPromise;
 			const { windowToRow, WindowId } = createBrowserConverters(deviceId);
 			const browserWindows = await browser.windows.getAll();
-			const windowIds = new Set(
-				browserWindows
-					.filter((w): w is typeof w & { id: number } => w.id !== undefined)
-					.map((w) => w.id),
-			);
+			const rows = browserWindows.flatMap((win) => {
+				const row = windowToRow(win);
+				return row ? [row] : [];
+			});
+			const windowIds = new Set(rows.map((r) => r.windowId));
 			const existingYDocWindows = tables.windows.getAllValid();
 
 			ydoc.transact(() => {
 				// Set all browser windows (with device-scoped IDs)
-				for (const win of browserWindows) {
-					if (win.id === undefined) continue;
-					tables.windows.set(windowToRow(win));
+				for (const row of rows) {
+					tables.windows.set(row);
 				}
 
 				// Delete only THIS device's windows that aren't in browser OR have malformed IDs
@@ -422,7 +420,8 @@ export default defineBackground(() => {
 		await tryAsync({
 			try: async () => {
 				const tab = await browser.tabs.get(tabId);
-				tables.tabs.set(tabToRow(tab));
+				const row = tabToRow(tab);
+				if (row) tables.tabs.set(row);
 			},
 			catch: (error) => {
 				// Tab may have been closed already
@@ -439,7 +438,8 @@ export default defineBackground(() => {
 		await tryAsync({
 			try: async () => {
 				const window = await browser.windows.get(windowId);
-				tables.windows.set(windowToRow(window));
+				const row = windowToRow(window);
+				if (row) tables.windows.set(row);
 			},
 			catch: (error) => {
 				// Window may have been closed already
@@ -457,21 +457,21 @@ export default defineBackground(() => {
 	browser.tabs.onCreated.addListener(async (tab) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		const tabId = tab.id;
-		if (tabId === undefined) return;
 
 		const deviceId = await deviceIdPromise;
 		const { tabToRow } = createBrowserConverters(deviceId);
+		const row = tabToRow(tab);
+		if (!row) return;
 
 		// Track this tab as recently added to detect echoes in onAdd observer
-		syncCoordination.recentlyAddedTabIds.add(tabId);
+		syncCoordination.recentlyAddedTabIds.add(row.tabId);
 		// Remove after 5 seconds to prevent memory leaks
 		setTimeout(() => {
-			syncCoordination.recentlyAddedTabIds.delete(tabId);
+			syncCoordination.recentlyAddedTabIds.delete(row.tabId);
 		}, 5000);
 
 		syncCoordination.refetchCount++;
-		tables.tabs.set(tabToRow(tab));
+		tables.tabs.set(row);
 		syncCoordination.refetchCount--;
 	});
 
@@ -491,12 +491,14 @@ export default defineBackground(() => {
 	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		if (tab.id === undefined) return;
 
 		const deviceId = await deviceIdPromise;
 		const { tabToRow } = createBrowserConverters(deviceId);
+		const row = tabToRow(tab);
+		if (!row) return;
+
 		syncCoordination.refetchCount++;
-		tables.tabs.set(tabToRow(tab));
+		tables.tabs.set(row);
 		syncCoordination.refetchCount--;
 	});
 
@@ -567,12 +569,14 @@ export default defineBackground(() => {
 	browser.windows.onCreated.addListener(async (window) => {
 		await initPromise;
 		if (syncCoordination.yDocChangeCount > 0) return;
-		if (window.id === undefined) return;
 
 		const deviceId = await deviceIdPromise;
 		const { windowToRow } = createBrowserConverters(deviceId);
+		const row = windowToRow(window);
+		if (!row) return;
+
 		syncCoordination.refetchCount++;
-		tables.windows.set(windowToRow(window));
+		tables.windows.set(row);
 		syncCoordination.refetchCount--;
 	});
 

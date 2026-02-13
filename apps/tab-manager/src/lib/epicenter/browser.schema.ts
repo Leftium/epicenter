@@ -64,7 +64,15 @@ const tabs = defineTable(
 		'pendingUrl?': 'string', // Chrome 79+, URL before commit
 		'status?': "'unloaded' | 'loading' | 'complete'",
 		'audible?': 'boolean', // Chrome 45+
-		'muted?': 'boolean', // Flattened from chrome.tabs.MutedInfo.muted
+		/** @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-MutedInfo */
+		'mutedInfo?': {
+			/** Whether the tab is muted (prevented from playing sound). The tab may be muted even if it has not played or is not currently playing sound. Equivalent to whether the 'muted' audio indicator is showing. */
+			muted: 'boolean',
+			/** The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed. */
+			'reason?': "'user' | 'capture' | 'extension'",
+			/** The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed. */
+			'extensionId?': 'string',
+		},
 		'groupId?': 'string', // Composite: `${deviceId}_${groupId}`, Chrome 88+
 		'openerTabId?': 'string', // Composite: `${deviceId}_${openerTabId}`
 		'lastAccessed?': 'number', // Chrome 121+, ms since epoch

@@ -41,7 +41,6 @@ type Assert<T extends true> = T;
  * - `windowId`: Browser uses `number`, we use composite `string`
  * - `groupId`: Browser uses `number`, we use composite `string?`
  * - `openerTabId`: Browser uses `number?`, we use composite `string?`
- * - `mutedInfo`: Browser uses `MutedInfo?` object, we flatten to `muted?: boolean`
  * - `selected`: Browser has it (deprecated), we intentionally omit
  * - `deviceId`, `tabId`: Our multi-device additions (not in Browser)
  */
@@ -50,14 +49,12 @@ type TabBrowserExclude =
 	| 'windowId'
 	| 'groupId'
 	| 'openerTabId'
-	| 'mutedInfo'
 	| 'selected';
 type TabSchemaExclude =
 	| 'id'
 	| 'windowId'
 	| 'groupId'
 	| 'openerTabId'
-	| 'muted'
 	| 'deviceId'
 	| 'tabId';
 

@@ -43,33 +43,35 @@ export function createBrowserConverters(deviceId: string) {
 		WindowId,
 		GroupId,
 
-		// Row converters — spread Browser objects, only override transformed fields
-		tabToRow(tab: Browser.tabs.Tab & { id: number }): Tab {
-			const {
-				id,
-				windowId,
-				groupId,
-				openerTabId,
-				mutedInfo,
-				selected,
-				...rest
-			} = tab;
+		/**
+		 * Convert a browser tab to a schema row.
+		 *
+		 * Returns `null` if the tab has no ID (e.g. foreign tabs from the sessions API).
+		 * Tabs without IDs can't be activated, closed, or stored with a composite key.
+		 */
+		tabToRow(tab: Browser.tabs.Tab): Tab | null {
+			if (tab.id === undefined) return null;
+
+			const { id, windowId, groupId, openerTabId, selected, ...rest } = tab;
 			return {
 				...rest,
 				id: TabId(id),
 				deviceId,
 				tabId: id,
 				windowId: WindowId(windowId),
-				muted: mutedInfo?.muted,
-				groupId:
-					groupId !== undefined && groupId !== -1
-						? GroupId(groupId)
-						: undefined,
+				groupId: GroupId(groupId),
 				openerTabId: openerTabId !== undefined ? TabId(openerTabId) : undefined,
 			};
 		},
 
-		windowToRow(window: Browser.windows.Window & { id: number }): Window {
+		/**
+		 * Convert a browser window to a schema row.
+		 *
+		 * Returns `null` if the window has no ID.
+		 */
+		windowToRow(window: Browser.windows.Window): Window | null {
+			if (window.id === undefined) return null;
+
 			const { id, tabs: _tabs, ...rest } = window;
 			return {
 				...rest,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { browserState } from '$lib/browser-state.svelte';
+	import { browserState } from '$lib/state/browser-state.svelte';
 	import TabItem from './TabItem.svelte';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Accordion from '@epicenter/ui/accordion';

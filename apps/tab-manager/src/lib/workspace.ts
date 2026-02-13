@@ -13,7 +13,7 @@
 import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
 import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
-import { BROWSER_TABLES } from './schema';
+import { BROWSER_TABLES } from '$lib/schema';
 
 const definition = defineWorkspace({
 	id: 'tab-manager',

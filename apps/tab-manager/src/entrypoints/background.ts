@@ -29,27 +29,27 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
 import {
-	generateDefaultDeviceName,
-	getBrowserName,
-	getDeviceId,
-	parseGroupId,
-	parseTabId,
-	parseWindowId,
-} from '$lib/device-id';
-import {
 	createGroupCompositeId,
 	createTabCompositeId,
 	createWindowCompositeId,
 	type GroupCompositeId,
-	type Tab,
+	parseGroupId,
+	parseTabId,
+	parseWindowId,
 	type TabCompositeId,
+	type WindowCompositeId,
+} from '$lib/device/composite-id';
+import {
+	generateDefaultDeviceName,
+	getBrowserName,
+	getDeviceId,
+} from '$lib/device/device-id';
+import { BROWSER_TABLES, type Tab, type Window } from '$lib/schema';
+import {
 	tabGroupToRow,
 	tabToRow,
-	type Window,
-	type WindowCompositeId,
 	windowToRow,
-} from '$lib/epicenter/browser.schema';
-import { BROWSER_TABLES } from '$lib/epicenter/schema';
+} from '$lib/schema/row-converters';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sync Coordination

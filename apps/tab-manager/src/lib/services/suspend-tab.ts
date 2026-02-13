@@ -9,8 +9,7 @@
  */
 
 import { generateId } from '@epicenter/hq/dynamic';
-import type { SuspendedTab, Tab } from './browser.schema';
-import type { BrowserDb } from './schema';
+import type { BrowserDb, SuspendedTab, Tab } from '$lib/schema';
 
 /**
  * Suspend a browser tab — save it to the `suspendedTabs` table and close it.

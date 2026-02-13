@@ -11,7 +11,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { browserState } from '$lib/browser-state.svelte';
+ *   import { browserState } from '$lib/state/browser-state.svelte';
  * </script>
  *
  * {#each browserState.windows as window (window.id)}
@@ -23,15 +23,13 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import { getDeviceId } from '$lib/device-id';
 import {
 	createWindowCompositeId,
-	type Tab,
-	tabToRow,
-	type Window,
 	type WindowCompositeId,
-	windowToRow,
-} from '$lib/epicenter/browser.schema';
+} from '$lib/device/composite-id';
+import { getDeviceId } from '$lib/device/device-id';
+import type { Tab, Window } from '$lib/schema';
+import { tabToRow, windowToRow } from '$lib/schema/row-converters';
 
 /**
  * A window and all the tabs it owns, stored together.

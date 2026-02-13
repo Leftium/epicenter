@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
+	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Avatar from '@epicenter/ui/avatar';
@@ -8,29 +9,6 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import PauseIcon from '@lucide/svelte/icons/pause';
-	import { Ok, trySync } from 'wellcrafted/result';
-
-	function getRelativeTime(timestamp: number) {
-		const now = Date.now();
-		const diff = now - timestamp;
-		const seconds = Math.floor(diff / 1000);
-		const minutes = Math.floor(seconds / 60);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `${days}d ago`;
-		if (hours > 0) return `${hours}h ago`;
-		if (minutes > 0) return `${minutes}m ago`;
-		return 'Just now';
-	}
-
-	function getDomain(url: string) {
-		const { data } = trySync({
-			try: () => new URL(url).hostname,
-			catch: () => Ok(url),
-		});
-		return data;
-	}
 </script>
 
 <section class="flex flex-col gap-2 p-4 pt-0">

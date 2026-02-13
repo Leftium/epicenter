@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Ok, trySync } from 'wellcrafted/result';
-	import { browserState } from '$lib/browser-state.svelte';
-	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+	import { browserState } from '$lib/state/browser-state.svelte';
+	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
+	import type { Tab } from '$lib/schema';
+	import { getDomain } from '$lib/utils/format';
 	import XIcon from '@lucide/svelte/icons/x';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
@@ -14,7 +15,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import { cn } from '@epicenter/ui/utils';
-	import type { Tab } from '$lib/epicenter';
 
 	let { tab }: { tab: Tab } = $props();
 
@@ -22,15 +22,7 @@
 	const tabId = $derived(tab.tabId);
 
 	// Extract domain from URL for display
-	const domain = $derived.by(() => {
-		const url = tab.url;
-		if (!url) return '';
-		const { data } = trySync({
-			try: () => new URL(url).hostname,
-			catch: () => Ok(url),
-		});
-		return data;
-	});
+	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 </script>
 
 <button

@@ -10,7 +10,7 @@
  * @example
  * ```svelte
  * <script>
- *   import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+ *   import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
  * </script>
  *
  * {#each suspendedTabState.tabs as tab (tab.id)}
@@ -19,15 +19,15 @@
  * ```
  */
 
-import { getDeviceId } from '$lib/device-id';
-import type { SuspendedTab, Tab } from '$lib/epicenter/browser.schema';
+import { getDeviceId } from '$lib/device/device-id';
+import type { SuspendedTab, Tab } from '$lib/schema';
 import {
 	deleteSuspendedTab,
 	restoreTab,
 	suspendTab,
 	updateSuspendedTab,
-} from '$lib/epicenter/suspend-tab';
-import { popupWorkspace } from '$lib/epicenter/workspace';
+} from '$lib/services/suspend-tab';
+import { popupWorkspace } from '$lib/workspace';
 
 function createSuspendedTabState() {
 	const readAll = () =>

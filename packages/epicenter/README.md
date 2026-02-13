@@ -105,7 +105,7 @@ Yjs supports multiple providers simultaneously. Phone can connect to desktop, la
 1. **Define workspace** with `defineWorkspace({ id, tables, kv })`
 2. **Create client builder** with `createClient(workspace.id)`
 3. **Chain definition** with `.withDefinition(workspace)`
-4. **Attach extensions** with `.withExtensions({ persistence, sqlite })`
+4. **Attach extensions** with `.withExtension('persistence', setupPersistence).withExtension('sqlite', sqliteProvider)`
 5. **Y.Doc created** with workspace ID + epoch as GUID
 6. **Extensions initialize** in parallel (persistence, SQLite, markdown, sync)
 7. **Tables API** wraps Y.Doc with type-safe CRUD
@@ -174,14 +174,9 @@ const blogWorkspace = defineWorkspace({
 // 2. Initialize the workspace client
 const client = createClient(blogWorkspace.id)
 	.withDefinition(blogWorkspace)
-	.withExtensions({
-		// Optional: Add YJS persistence (IndexedDB in browser, filesystem in Node.js)
-		persistence: setupPersistence,
-		// Optional: Add SQLite for SQL queries
-		sqlite: (c) => sqliteProvider(c),
-		// Optional: Add markdown for file-based persistence
-		markdown: (c) => markdownProvider(c),
-	});
+	.withExtension('persistence', setupPersistence)
+	.withExtension('sqlite', (c) => sqliteProvider(c))
+	.withExtension('markdown', (c) => markdownProvider(c));
 
 // 3. Define actions (exposed via REST/MCP)
 const blogActions = {
@@ -291,11 +286,9 @@ Extensions add capabilities to your workspace, such as persistence, sync, and ma
 ```typescript
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		persistence: setupPersistence, // YJS persistence
-		sqlite: (c) => sqliteProvider(c), // SQL queries via Drizzle ORM
-		markdown: (c) => markdownProvider(c), // File-based persistence
-	});
+	.withExtension('persistence', setupPersistence) // YJS persistence
+	.withExtension('sqlite', (c) => sqliteProvider(c)) // SQL queries via Drizzle ORM
+	.withExtension('markdown', (c) => markdownProvider(c)); // File-based persistence
 ```
 
 Materializer extensions (sqlite, markdown) automatically sync with YJS:
@@ -316,20 +309,19 @@ const queryPosts = defineQuery({
 });
 ```
 
-Extension factory functions receive a context object with `{ id, extensionId, ydoc, tables, kv }` and can return exports. For example, sync extensions:
+Extension factory functions receive a context object with `{ id, ydoc, tables, kv, extensions }` (the "client-so-far") and can return exports. Each factory receives typed access to all previously added extensions. For example, sync extensions:
 
 ```typescript
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		persistence: setupPersistence,
-		sqlite: (c) => sqliteProvider(c),
-
-		// WebSocket sync (y-websocket protocol)
-		sync: createWebsocketSyncProvider({
+	.withExtension('persistence', setupPersistence)
+	.withExtension('sqlite', (c) => sqliteProvider(c))
+	.withExtension(
+		'sync',
+		createWebsocketSyncProvider({
 			url: 'ws://localhost:3913/sync',
 		}),
-	});
+	);
 ```
 
 ### Actions
@@ -725,9 +717,7 @@ import { createClient, sqliteProvider } from '@epicenter/hq';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		sqlite: (c) => sqliteProvider(c),
-	});
+	.withExtension('sqlite', (c) => sqliteProvider(c));
 ```
 
 **Storage:**
@@ -803,26 +793,25 @@ import { createClient, markdownProvider } from '@epicenter/hq';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		markdown: (c) =>
-			markdownProvider(c, {
-				directory: './data', // Optional: workspace-level directory
-				tableConfigs: {
-					posts: {
-						directory: './posts', // Optional: per-table directory
-						serialize: ({ row }) => ({
-							frontmatter: { title: row.title, published: row.published },
-							body: row.content,
-							filename: `${row.id}.md`,
-						}),
-						deserialize: ({ frontmatter, body, filename }) => {
-							const id = basename(filename, '.md');
-							return Ok({ id, content: body, ...frontmatter });
-						},
+	.withExtension('markdown', (c) =>
+		markdownProvider(c, {
+			directory: './data', // Optional: workspace-level directory
+			tableConfigs: {
+				posts: {
+					directory: './posts', // Optional: per-table directory
+					serialize: ({ row }) => ({
+						frontmatter: { title: row.title, published: row.published },
+						body: row.content,
+						filename: `${row.id}.md`,
+					}),
+					deserialize: ({ frontmatter, body, filename }) => {
+						const id = basename(filename, '.md');
+						return Ok({ id, content: body, ...frontmatter });
 					},
 				},
-			}),
-	});
+			},
+		}),
+	);
 ```
 
 **Storage:**
@@ -903,11 +892,12 @@ import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		sync: createWebsocketSyncProvider({
+	.withExtension(
+		'sync',
+		createWebsocketSyncProvider({
 			url: 'ws://localhost:3913/sync',
 		}),
-	});
+	);
 ```
 
 **Server-side sync endpoint:**
@@ -974,11 +964,18 @@ export const SYNC_NODES = {
 // Phone connects to ALL available sync nodes
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		syncDesktop: createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
-		syncLaptop: createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
-		syncCloud: createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
-	});
+	.withExtension(
+		'syncDesktop',
+		createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
+	)
+	.withExtension(
+		'syncLaptop',
+		createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
+	)
+	.withExtension(
+		'syncCloud',
+		createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+	);
 ```
 
 **Server-to-server sync:**
@@ -987,10 +984,14 @@ const client = createClient(definition.id)
 // Desktop server connects to OTHER servers (not itself!)
 const client = createClient(definition.id)
 	.withDefinition(definition)
-	.withExtensions({
-		syncToLaptop: createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
-		syncToCloud: createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
-	});
+	.withExtension(
+		'syncToLaptop',
+		createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
+	)
+	.withExtension(
+		'syncToCloud',
+		createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+	);
 ```
 
 Yjs supports multiple providers simultaneously. Changes merge automatically via CRDTs regardless of which provider delivers them first.
@@ -1253,7 +1254,7 @@ Create a workspace client using the builder pattern:
 // Create a client with extensions
 const blogClient = createClient(blogWorkspace.id)
 	.withDefinition(blogWorkspace)
-	.withExtensions({ sqlite: sqliteProvider });
+	.withExtension('sqlite', sqliteProvider);
 
 // Direct table access
 const posts = blogClient.tables.get('posts').getAllValid();
@@ -1265,7 +1266,7 @@ await blogClient.destroy();
 {
 	await using client = createClient(blogWorkspace.id)
 		.withDefinition(blogWorkspace)
-		.withExtensions({ sqlite: sqliteProvider });
+		.withExtension('sqlite', sqliteProvider);
 
 	client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 }
@@ -1277,7 +1278,7 @@ await blogClient.destroy();
 
 ### Client Initialization Lifecycle
 
-When you call `.withExtensions()`, here's what happens:
+When you call `.withExtension()`, here's what happens:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -1405,7 +1406,7 @@ Create a client directly for standalone scripts. Use `await using` for automatic
 {
 	await using client = createClient(blogWorkspace.id)
 		.withDefinition(blogWorkspace)
-		.withExtensions({ sqlite: sqliteProvider });
+		.withExtension('sqlite', sqliteProvider);
 
 	client.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 	// Automatic cleanup when block exits
@@ -1423,7 +1424,7 @@ import { createClient, createServer } from '@epicenter/hq';
 
 const client = createClient(blogWorkspace.id)
   .withDefinition(blogWorkspace)
-  .withExtensions({ sqlite: sqliteProvider });
+  .withExtension('sqlite', sqliteProvider);
 
 // Expose the client and custom actions via HTTP
 const server = createServer(client, {
@@ -1471,7 +1472,7 @@ const blogWorkspace = defineWorkspace({
 // Create client with extensions
 const client = createClient(blogWorkspace.id)
 	.withDefinition(blogWorkspace)
-	.withExtensions({ sqlite: sqliteProvider });
+	.withExtension('sqlite', sqliteProvider);
 
 // Use tables directly
 const id = generateId();
@@ -1780,11 +1781,11 @@ import { createClient, createServer } from '@epicenter/hq';
 // Create clients with extensions
 const blogClient = createClient(blogWorkspace.id)
 	.withDefinition(blogWorkspace)
-	.withExtensions({ sqlite: sqliteProvider });
+	.withExtension('sqlite', sqliteProvider);
 
 const authClient = createClient(authWorkspace.id)
 	.withDefinition(authWorkspace)
-	.withExtensions({ sqlite: sqliteProvider });
+	.withExtension('sqlite', sqliteProvider);
 
 // Create and start server
 const server = createServer([blogClient, authClient], { port: 3913 });

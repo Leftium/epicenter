@@ -45,14 +45,12 @@ export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
 }
 ```
 
-And `withExtensions()` runs factories once at construction with no re-registration path:
+And `.withExtension()` runs factories once at construction with no re-registration path:
 
 ```typescript
 // packages/epicenter/src/dynamic/workspace/create-workspace.ts (line 122)
-for (const [extensionId, factory] of Object.entries(extensionFactories)) {
-	const result = factory(context);
-	extensions[extensionId] = defineExports(result); // written once, never reassigned
-}
+// Each .withExtension() call creates a new client with the extension added
+// The extension is written once, never reassigned
 ```
 
 This creates two problems:
@@ -84,12 +82,13 @@ If the provider is destroyed but the Y.Doc lives on (which is exactly what `reco
 ### Desired State
 
 ```typescript
-const workspace = createWorkspace(definition).withExtensions({
-	sync: ySweetSync({
+const workspace = createWorkspace(definition).withExtension(
+	'sync',
+	ySweetSync({
 		auth: directAuth('http://localhost:8080'),
 		persistence: indexeddbPersistence,
 	}),
-});
+);
 
 await workspace.whenSynced;
 

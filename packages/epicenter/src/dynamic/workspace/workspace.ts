@@ -31,7 +31,8 @@
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  *
- * const workspace = createWorkspace(definition).withExtensions({ persistence });
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('persistence', (ctx) => persistence(ctx));
  * ```
  *
  * ## Related Modules

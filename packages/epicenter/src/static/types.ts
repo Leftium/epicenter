@@ -340,75 +340,114 @@ export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
-	TExtensions extends ExtensionMap,
+	TExtensions extends Record<string, Lifecycle>,
 	TActions extends Actions,
 > = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
 	actions: TActions;
 };
 
 /**
- * Builder returned by createWorkspace() that IS a client AND has .withExtensions() and .withActions().
+ * Builder returned by `createWorkspace()` and by each `.withExtension()` call.
  *
- * This uses Object.assign to merge the base client with the builder methods,
- * allowing direct use: `createWorkspace(...).tables.posts.set(...)` or
- * chaining: `createWorkspace(...).withExtensions({ sqlite })`.
+ * IS a usable client AND has `.withExtension()` + `.withActions()`.
+ *
+ * ## Why `.withExtension()` is chainable (not a map)
+ *
+ * Extensions use chainable `.withExtension(key, factory)` calls instead of a single
+ * `.withActions({...})` map for a key reason: **extensions build on each other progressively**.
+ *
+ * Each `.withExtension()` call returns a new builder where the next extension's factory
+ * receives the accumulated extensions-so-far as typed context. This means extension N+1
+ * can access extension N's exports. You may also be importing extensions you don't fully
+ * control, and chaining lets you compose on top of them without modifying their source.
+ *
+ * Actions, by contrast, use a single `.withActions(factory)` call because:
+ * - Actions are always defined by the app author (not imported from external packages)
+ * - Actions don't build on each other — they all receive the same finalized client
+ * - The ergonomic benefit of declaring all actions in one place outweighs chaining
+ *
+ * @example
+ * ```typescript
+ * const client = createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }))
+ *   .withActions((client) => ({
+ *     createPost: defineMutation({ ... }),
+ *   }));
+ * ```
  */
 export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-> = WorkspaceClient<
-	TId,
-	TTableDefinitions,
-	TKvDefinitions,
-	Record<string, never>
-> & {
+	TExtensions extends Record<string, Lifecycle> = Record<string, never>,
+> = WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
 	/**
-	 * Add extensions to the workspace client.
+	 * Add a single extension. Returns a new builder with the extension's
+	 * exports accumulated into the extensions type.
 	 *
-	 * Extensions receive typed access to ydoc, tables, and kv.
-	 * They must return a Lifecycle object (via defineExports).
+	 * Extensions are chained because they can build on each other progressively —
+	 * each factory receives the client-so-far (including all previously added extensions)
+	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
-	 * @param extensions - Map of extension factories
-	 * @returns Workspace client with extensions accessible via `.extensions`
+	 * @param key - Unique name for this extension (used as the key in `.extensions`)
+	 * @param factory - Factory function receiving the client-so-far context, returns exports
+	 * @returns A new builder with the extension added to the type
+	 *
+	 * @example
+	 * ```typescript
+	 * const client = createWorkspace(definition)
+	 *   .withExtension('persistence', ({ ydoc }) => {
+	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+	 *     return defineExports({ whenSynced: idb.whenSynced, destroy: () => idb.destroy() });
+	 *   })
+	 *   .withExtension('sync', ({ extensions }) => {
+	 *     // extensions.persistence is fully typed here!
+	 *     return defineExports({ ... });
+	 *   });
+	 * ```
 	 */
-	withExtensions<TExtensions extends ExtensionMap>(
-		extensions: TExtensions,
-	): WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
-		/** Attach actions to the client. Terminal — no more builder methods after this. */
-		withActions<TActions extends Actions>(
-			factory: (
-				client: WorkspaceClient<
-					TId,
-					TTableDefinitions,
-					TKvDefinitions,
-					TExtensions
-				>,
-			) => TActions,
-		): WorkspaceClientWithActions<
-			TId,
-			TTableDefinitions,
-			TKvDefinitions,
-			TExtensions,
-			TActions
-		>;
-	};
+	withExtension<TKey extends string, TExports extends Lifecycle>(
+		key: TKey,
+		factory: (
+			context: ExtensionContext<
+				TId,
+				TTableDefinitions,
+				TKvDefinitions,
+				TExtensions
+			>,
+		) => TExports,
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TExtensions & Record<TKey, TExports>
+	>;
 
-	/** Attach actions to the client. Terminal — no more builder methods after this. */
+	/**
+	 * Attach actions to the workspace client. Terminal — no more chaining after this.
+	 *
+	 * Actions use a single map (not chaining) because they don't build on each other
+	 * and are always defined by the app author. The ergonomic benefit of declaring
+	 * all actions in one place outweighs the progressive composition that extensions need.
+	 *
+	 * @param factory - Receives the finalized client, returns an actions map
+	 * @returns Client with actions attached (no more builder methods)
+	 */
 	withActions<TActions extends Actions>(
 		factory: (
 			client: WorkspaceClient<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
-				Record<string, never>
+				TExtensions
 			>,
 		) => TActions,
 	): WorkspaceClientWithActions<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
-		Record<string, never>,
+		TExtensions,
 		TActions
 	>;
 };
@@ -418,31 +457,45 @@ export type WorkspaceClientBuilder<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to extension factory functions.
+ * Context passed to extension factories — the "client-so-far".
  *
- * Extensions receive typed access to the workspace's Y.Doc and helpers,
- * allowing them to attach persistence, sync, or other functionality with
- * full type safety.
+ * Each `.withExtension()` call passes this context to the factory function.
+ * The `extensions` field contains all previously added extensions, fully typed.
+ * This enables progressive composition: extension N+1 can access extension N's exports.
  *
- * The generic parameters are bound at the workspace level - when you call
- * `createWorkspace(...).withExtensions({ myExtension })`, the context is typed
- * with the workspace's specific table and KV definitions.
+ * Omits lifecycle methods (`destroy`, `Symbol.asyncDispose`) since extensions
+ * shouldn't control the workspace's lifecycle — only their own.
  *
+ * @typeParam TId - Workspace identifier type
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
  * @typeParam TKvDefinitions - Map of KV definitions for this workspace
+ * @typeParam TExtensions - Accumulated extension exports from previous `.withExtension()` calls
+ *
+ * @example
+ * ```typescript
+ * .withExtension('sync', ({ ydoc, extensions }) => {
+ *   // extensions.persistence is typed if persistence was added before this
+ *   const provider = createProvider(ydoc);
+ *   return defineExports({ provider, destroy: () => provider.destroy() });
+ * })
+ * ```
  */
 export type ExtensionContext<
+	TId extends string = string,
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TExtensions extends Record<string, Lifecycle> = Record<string, Lifecycle>,
 > = {
+	/** Workspace identifier */
+	id: TId;
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
-	/** Workspace identifier */
-	id: string;
 	/** Typed table helpers for the workspace */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */
 	kv: KvHelper<TKvDefinitions>;
+	/** Accumulated extension exports from previous `.withExtension()` calls */
+	extensions: TExtensions;
 };
 
 /**
@@ -466,65 +519,18 @@ export type ExtensionContext<
  * };
  * ```
  *
- * @example Extension bound to specific workspace types
- * ```typescript
- * const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
- *   // tables is fully typed as TablesHelper<MyTables>
- *   tables.posts.getAll(); // ← autocomplete works!
- *   return defineExports();
- * };
- * ```
- *
- * @typeParam TTableDefinitions - Table definitions this extension accepts (defaults to any)
- * @typeParam TKvDefinitions - KV definitions this extension accepts (defaults to any)
  * @typeParam TExports - The exports returned by this extension (must extend Lifecycle)
  */
-export type ExtensionFactory<
-	TTableDefinitions extends TableDefinitions = TableDefinitions,
-	TKvDefinitions extends KvDefinitions = KvDefinitions,
-	TExports extends Lifecycle = Lifecycle,
-> = (context: ExtensionContext<TTableDefinitions, TKvDefinitions>) => TExports;
-
-/**
- * Map of extension factories.
- *
- * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns:
- *
- * ```typescript
- * import { defineExports } from 'epicenter';
- *
- * const myExtension = () => defineExports({
- *   db: createDatabase(),
- *   destroy: () => db.close(),
- * });
- * // Returns: { db, whenSynced: Promise.resolve(), destroy: closeFn }
- * ```
- */
-export type ExtensionMap = Record<
-	string,
-	// biome-ignore lint/suspicious/noExplicitAny: extension factories are variadic
-	(...args: any[]) => Lifecycle
->;
-
-/**
- * Infer exports from an extension map.
- *
- * Extensions return `Lifecycle & CustomExports` via `defineExports()`.
- * This type extracts the full return type of each extension.
- *
- * @typeParam TExtensions - The extension map to infer exports from
- */
-export type InferExtensionExports<TExtensions extends ExtensionMap> = {
-	[K in keyof TExtensions]: ReturnType<TExtensions[K]>;
-};
+export type ExtensionFactory<TExports extends Lifecycle = Lifecycle> = (
+	context: ExtensionContext,
+) => TExports;
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-	TExtensions extends ExtensionMap,
+	TExtensions extends Record<string, Lifecycle>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -536,8 +542,8 @@ export type WorkspaceClient<
 	kv: KvHelper<TKvDefinitions>;
 	/** Workspace definitions for introspection */
 	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
-	/** Extension exports */
-	extensions: InferExtensionExports<TExtensions>;
+	/** Extension exports (accumulated via `.withExtension()` calls) */
+	extensions: TExtensions;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;
@@ -550,6 +556,7 @@ export type WorkspaceClient<
  * Type alias for any workspace client (used for duck-typing in CLI/server).
  * Includes optional actions property since clients may or may not have actions attached.
  */
+// biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
 export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any> & {
 	actions?: Actions;
 };

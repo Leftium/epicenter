@@ -51,8 +51,8 @@ server.ts - createServer(client) [WRONG - uses dynamic types]
 import type { AnyWorkspaceClient } from '../dynamic/workspace/types';
 
 // tables.ts:13-14 - PROBLEM
-workspace.tables.definitions  // ❌ Doesn't exist on static TablesHelper
-workspace.tables.get(tableName)  // ❌ Doesn't exist on static TablesHelper
+workspace.tables.definitions; // ❌ Doesn't exist on static TablesHelper
+workspace.tables.get(tableName); // ❌ Doesn't exist on static TablesHelper
 ```
 
 ## Target Architecture
@@ -63,12 +63,12 @@ workspace.tables.get(tableName)  // ❌ Doesn't exist on static TablesHelper
 WorkspaceDefinition
   ↓ defineWorkspace()
   ↓
-WorkspaceClientBuilder [IS a client + has .withExtensions() + .withActions()]
-  ├── Directly usable: client.tables.posts.upsert(...)
-  ├── .withExtensions({ persistence, sync })
-  │     ↓ returns WorkspaceClient with capabilities
-  └── .withActions((client) => ({ ... }))
-        ↓ returns WorkspaceClientWithActions (terminal)
+WorkspaceClientBuilder [IS a client + has .withExtension() + .withActions()]
+   ├── Directly usable: client.tables.posts.upsert(...)
+   ├── .withExtension('persistence', ...).withExtension('sync', ...)
+   │     ↓ returns WorkspaceClient with extensions
+   └── .withActions((client) => ({ ... }))
+         ↓ returns WorkspaceClientWithActions (terminal)
 
 Type parameters:
 - TId extends string
@@ -112,6 +112,7 @@ Object.keys(client.tables)     // tableName[]
 ### Extension System
 
 **Note:** This spec assumes the extension naming unification (spec `20260205T110000-unify-extension-naming.md`) has already been completed, so static API now uses:
+
 - `ExtensionFactory` (not `CapabilityFactory`)
 - `ExtensionMap` (not `CapabilityMap`)
 - `client.extensions` property (not `client.capabilities`)
@@ -130,6 +131,7 @@ import { ExtensionFactory } from '../../static/types';
 **Status:** ✅ Implemented
 
 **Problem:** Server needs table definitions for:
+
 1. Iterating table names for route generation
 2. Accessing field schemas for validation
 
@@ -141,19 +143,19 @@ import { ExtensionFactory } from '../../static/types';
 
 ```typescript
 const definitions = {
-  tables: (config.tables ?? {}) as TTableDefinitions,
-  kv: (config.kv ?? {}) as TKvDefinitions,
+	tables: (config.tables ?? {}) as TTableDefinitions,
+	kv: (config.kv ?? {}) as TKvDefinitions,
 };
 
 const baseClient = {
-  id,
-  ydoc,
-  tables,
-  kv,
-  definitions,  // ← available for server/CLI introspection
-  extensions: {} as InferExtensionExports<Record<string, never>>,
-  destroy,
-  [Symbol.asyncDispose]: destroy,
+	id,
+	ydoc,
+	tables,
+	kv,
+	definitions, // ← available for server/CLI introspection
+	extensions: {} as InferExtensionExports<Record<string, never>>,
+	destroy,
+	[Symbol.asyncDispose]: destroy,
 };
 ```
 
@@ -179,13 +181,13 @@ import type { AnyWorkspaceClient } from '../static/types';
 
 ```typescript
 function createServer(
-  client: AnyWorkspaceClient,
-  options?: ServerOptions,
+	client: AnyWorkspaceClient,
+	options?: ServerOptions,
 ): ReturnType<typeof createServerInternal>;
 
 function createServer(
-  clients: AnyWorkspaceClient[],
-  options?: ServerOptions,
+	clients: AnyWorkspaceClient[],
+	options?: ServerOptions,
 ): ReturnType<typeof createServerInternal>;
 ```
 
@@ -194,6 +196,7 @@ These signatures work because `AnyWorkspaceClient` is just `WorkspaceClient<any,
 3. **Update internal implementation (minimal changes):**
 
 The server currently accesses:
+
 - `client.id` ✅ (exists on static)
 - `client.ydoc` ✅ (exists on static)
 - `client.actions` ✅ (optional on static)
@@ -209,15 +212,16 @@ All of these work as-is! The only issue is in the tables plugin.
 
 ```typescript
 export function createTablesPlugin(
-  workspaceClients: Record<string, AnyWorkspaceClient>,
+	workspaceClients: Record<string, AnyWorkspaceClient>,
 ) {
-  for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-    for (const tableName of Object.keys(workspace.tables.definitions)) {  // ❌
-      const tableHelper = workspace.tables.get(tableName);  // ❌
-      const fields = workspace.tables.definitions[tableName]!.fields;  // ❌
-      // ...
-    }
-  }
+	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
+		for (const tableName of Object.keys(workspace.tables.definitions)) {
+			// ❌
+			const tableHelper = workspace.tables.get(tableName); // ❌
+			const fields = workspace.tables.definitions[tableName]!.fields; // ❌
+			// ...
+		}
+	}
 }
 ```
 
@@ -227,52 +231,59 @@ export function createTablesPlugin(
 import type { AnyWorkspaceClient } from '../static/types';
 
 export function createTablesPlugin(
-  workspaceClients: Record<string, AnyWorkspaceClient>,
+	workspaceClients: Record<string, AnyWorkspaceClient>,
 ) {
-  const app = new Elysia();
+	const app = new Elysia();
 
-  for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
-    // Access definitions from the workspace client
-    const tableDefinitions = workspace.definitions.tables;
+	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
+		// Access definitions from the workspace client
+		const tableDefinitions = workspace.definitions.tables;
 
-    for (const [tableName, value] of Object.entries(workspace.tables)) {
-      const tableDef = tableDefinitions[tableName];
-      if (!tableDef) continue;
+		for (const [tableName, value] of Object.entries(workspace.tables)) {
+			const tableDef = tableDefinitions[tableName];
+			if (!tableDef) continue;
 
-      const tableHelper = value as TableHelper<{ id: string }>;
-      const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
-      const tags = [workspaceId, 'tables'];
+			const tableHelper = value as TableHelper<{ id: string }>;
+			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
+			const tags = [workspaceId, 'tables'];
 
-      // GET - list all rows
-      app.get(basePath, () => tableHelper.getAllValid(), {
-        detail: { description: `List all ${tableName}`, tags },
-      });
+			// GET - list all rows
+			app.get(basePath, () => tableHelper.getAllValid(), {
+				detail: { description: `List all ${tableName}`, tags },
+			});
 
-      // POST - validate with Standard Schema, migrate, then set
-      app.post(basePath, ({ body, status }) => {
-        const result = tableDef.schema['~standard'].validate(body);
-        if (result instanceof Promise) {
-          return status(500, { error: 'Async schema validation not supported' });
-        }
-        if (result.issues) {
-          return status(422, { errors: result.issues });
-        }
-        const row = tableDef.migrate(result.value);
-        tableHelper.set(row);
-        return Ok({ id: row.id });
-      }, {
-        detail: { description: `Create or update ${tableName}`, tags },
-      });
+			// POST - validate with Standard Schema, migrate, then set
+			app.post(
+				basePath,
+				({ body, status }) => {
+					const result = tableDef.schema['~standard'].validate(body);
+					if (result instanceof Promise) {
+						return status(500, {
+							error: 'Async schema validation not supported',
+						});
+					}
+					if (result.issues) {
+						return status(422, { errors: result.issues });
+					}
+					const row = tableDef.migrate(result.value);
+					tableHelper.set(row);
+					return Ok({ id: row.id });
+				},
+				{
+					detail: { description: `Create or update ${tableName}`, tags },
+				},
+			);
 
-      // ... other CRUD endpoints (GET /:id, PUT /:id, DELETE /:id)
-    }
-  }
+			// ... other CRUD endpoints (GET /:id, PUT /:id, DELETE /:id)
+		}
+	}
 
-  return app;
+	return app;
 }
 ```
 
 **Key changes:**
+
 1. Access `workspace.definitions.tables` for table definitions (no `$meta` indirection)
 2. Iterate `Object.entries(workspace.tables)` directly — no metadata properties to skip
 3. Use `tableDef.schema['~standard'].validate()` for Standard Schema validation
@@ -347,6 +358,7 @@ export const myExtension: ExtensionFactory<any, any, MyExports> = (context) => {
 ```
 
 **Changes:**
+
 1. Import `ExtensionFactory` from static instead of dynamic
 2. Type parameters are the same: `<TTableDefs, TKvDefs, TExports>`
 3. Context shape is identical (has `id`, `ydoc`, `tables`, `kv`)
@@ -387,6 +399,7 @@ export const myExtension: ExtensionFactory<any, any, MyExports> = (context) => {
 ### Rollback Plan
 
 If issues arise:
+
 1. Revert server imports back to dynamic
 2. Keep `definitions` property (doesn't break anything)
 3. Restore `as any` cast in CLI
@@ -417,30 +430,35 @@ If issues arise:
 ## Implementation Checklist
 
 ### Phase 1: Definitions on WorkspaceClient
+
 - [x] Add `definitions` property to `WorkspaceClient` type
 - [x] Implement `definitions` in `createWorkspace()` (shared between base and extension clients)
 - [ ] Add tests for definitions access
 - [ ] Update type exports if needed
 
 ### Phase 2: Server Imports
+
 - [ ] Change `server.ts` import from dynamic to static
 - [ ] Change `tables.ts` import from dynamic to static
 - [ ] Verify no type errors
 - [ ] Update any other server files importing dynamic types
 
 ### Phase 3: Tables Plugin
+
 - [ ] Rewrite `createTablesPlugin()` to iterate `Object.entries()`
 - [x] Access definitions via `workspace.definitions.tables`
 - [ ] Use `tableDef.schema` for validation
 - [ ] Test all CRUD endpoints
 
 ### Phase 4: CLI Cleanup
+
 - [ ] Remove `as any` cast from `cli.ts` serve command
 - [ ] Remove outdated comments about type mismatch
 - [ ] Verify CLI serve command works
 - [ ] Test end-to-end: discovery → CLI → server
 
 ### Phase 5: Extensions (Optional)
+
 - [ ] Update `websocket-sync.ts` to import `ExtensionFactory` from static
 - [ ] Update `persistence/desktop.ts`
 - [ ] Update `persistence/web.ts`
@@ -450,6 +468,7 @@ If issues arise:
 - [ ] Test each extension with static API
 
 ### Phase 6: Documentation
+
 - [ ] Update server README with static API examples
 - [ ] Update CLI README
 - [ ] Add migration guide for extension authors

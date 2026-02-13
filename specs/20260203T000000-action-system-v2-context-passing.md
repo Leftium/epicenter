@@ -38,6 +38,7 @@ export { actions };  // Feels disconnected
 ```
 
 **Problems:**
+
 1. Two exports feel disjointed
 2. Discovery code must look for both `default` and `actions` exports
 3. Actions aren't introspectable from the client object
@@ -49,43 +50,46 @@ export { actions };  // Feels disconnected
 
 ```typescript
 // epicenter.config.ts
-import { createWorkspaceClient, defineQuery, defineMutation } from '@epicenter/hq';
+import {
+	createWorkspaceClient,
+	defineQuery,
+	defineMutation,
+} from '@epicenter/hq';
 import { type } from 'arktype';
 
 export default createWorkspaceClient({
-  id: 'blog',
-  tables: {
-    posts: { id: id(), title: text(), content: text() },
-  },
-})
-.withActions({
-  posts: {
-    getAll: defineQuery({
-      description: 'Get all posts',
-      handler: (ctx) => ctx.tables.posts.getAllValid(),
-    }),
+	id: 'blog',
+	tables: {
+		posts: { id: id(), title: text(), content: text() },
+	},
+}).withActions({
+	posts: {
+		getAll: defineQuery({
+			description: 'Get all posts',
+			handler: (ctx) => ctx.tables.posts.getAllValid(),
+		}),
 
-    get: defineQuery({
-      input: type({ id: 'string' }),
-      handler: (ctx, { id }) => ctx.tables.posts.get(id),
-    }),
+		get: defineQuery({
+			input: type({ id: 'string' }),
+			handler: (ctx, { id }) => ctx.tables.posts.get(id),
+		}),
 
-    create: defineMutation({
-      input: type({ title: 'string', content: 'string' }),
-      handler: (ctx, { title, content }) => {
-        const id = generateId();
-        ctx.tables.posts.upsert({ id, title, content });
-        return { id };
-      },
-    }),
-  },
+		create: defineMutation({
+			input: type({ title: 'string', content: 'string' }),
+			handler: (ctx, { title, content }) => {
+				const id = generateId();
+				ctx.tables.posts.upsert({ id, title, content });
+				return { id };
+			},
+		}),
+	},
 
-  sync: {
-    markdown: defineMutation({
-      description: 'Pull changes from markdown files',
-      handler: (ctx) => ctx.extensions.markdown.pullFromMarkdown(),
-    }),
-  },
+	sync: {
+		markdown: defineMutation({
+			description: 'Pull changes from markdown files',
+			handler: (ctx) => ctx.extensions.markdown.pullFromMarkdown(),
+		}),
+	},
 });
 ```
 
@@ -116,16 +120,17 @@ CLI, Server, and MCP adapters receive the client and read `client.actions`:
 
 ```typescript
 // CLI automatically uses client.actions
-const cli = createCLI(client);  // No second argument needed
+const cli = createCLI(client); // No second argument needed
 
 // Server automatically uses client.actions
-const server = createServer(client);  // No second argument needed
+const server = createServer(client); // No second argument needed
 
 // Both can still accept explicit actions for override/extension
 const cli = createCLI(client, { actions: customActions });
 ```
 
 **Discovery priority:**
+
 1. Explicit `options.actions` if provided
 2. `client.actions` if available
 3. No actions (built-in commands only)
@@ -136,19 +141,24 @@ const cli = createCLI(client, { actions: customActions });
 
 ```typescript
 type ActionConfig<
-  TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
-  TOutput = unknown,
+	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TOutput = unknown,
 > = {
-  description?: string;
-  input?: TInput;
-  output?: StandardSchemaWithJSONSchema;
-  handler: TInput extends StandardSchemaWithJSONSchema
-    ? (ctx: WorkspaceClient, input: InferOutput<TInput>) => TOutput | Promise<TOutput>
-    : (ctx: WorkspaceClient) => TOutput | Promise<TOutput>;
+	description?: string;
+	input?: TInput;
+	output?: StandardSchemaWithJSONSchema;
+	handler: TInput extends StandardSchemaWithJSONSchema
+		? (
+				ctx: WorkspaceClient,
+				input: InferOutput<TInput>,
+			) => TOutput | Promise<TOutput>
+		: (ctx: WorkspaceClient) => TOutput | Promise<TOutput>;
 };
 
 type Query<TInput, TOutput> = ActionConfig<TInput, TOutput> & { type: 'query' };
-type Mutation<TInput, TOutput> = ActionConfig<TInput, TOutput> & { type: 'mutation' };
+type Mutation<TInput, TOutput> = ActionConfig<TInput, TOutput> & {
+	type: 'mutation';
+};
 type Action = Query | Mutation;
 type Actions = { [key: string]: Action | Actions };
 ```
@@ -157,7 +167,7 @@ type Actions = { [key: string]: Action | Actions };
 
 After `.withActions()`, actions are "attached" - calling them executes the handler with the client context:
 
-```typescript
+````typescript
 /**
  * An action that has been attached to a workspace client.
  *
@@ -171,7 +181,7 @@ After `.withActions()`, actions are "attached" - calling them executes the handl
  * - "Bound" has JavaScript baggage (Function.prototype.bind) that's technically
  *   accurate but less intuitive for the mental model we want
  * - Effect-TS uses "provide", Express uses "attach" - we follow the simpler term
- * - Matches our existing `.withExtensions()` pattern semantically
+ * - Matches our existing `.withExtension()` pattern semantically
  *
  * @example
  * ```typescript
@@ -184,34 +194,36 @@ After `.withActions()`, actions are "attached" - calling them executes the handl
  * ```
  */
 type AttachedAction<TInput, TOutput> = {
-  type: 'query' | 'mutation';
-  description?: string;
-  input?: StandardSchemaWithJSONSchema;
-  output?: StandardSchemaWithJSONSchema;
-  /** Executes the handler with the attached client context */
-  (input?: TInput): TOutput | Promise<TOutput>;
+	type: 'query' | 'mutation';
+	description?: string;
+	input?: StandardSchemaWithJSONSchema;
+	output?: StandardSchemaWithJSONSchema;
+	/** Executes the handler with the attached client context */
+	(input?: TInput): TOutput | Promise<TOutput>;
 };
 
 type AttachedActions = { [key: string]: AttachedAction | AttachedActions };
-```
+````
 
 ### WorkspaceClient Type Extension
 
 ```typescript
 interface WorkspaceClient<TTables, TKV, TExtensions> {
-  id: string;
-  tables: TableAccessors<TTables>;
-  kv: KVAccessors<TKV>;
-  extensions: TExtensions;
-  ydoc: Y.Doc;
+	id: string;
+	tables: TableAccessors<TTables>;
+	kv: KVAccessors<TKV>;
+	extensions: TExtensions;
+	ydoc: Y.Doc;
 
-  // New: Actions attached via .withActions()
-  actions?: AttachedActions;
+	// New: Actions attached via .withActions()
+	actions?: AttachedActions;
 
-  // New: Method to attach actions
-  withActions<TActions extends Actions>(
-    actions: TActions
-  ): WorkspaceClient<TTables, TKV, TExtensions> & { actions: Attached<TActions> };
+	// New: Method to attach actions
+	withActions<TActions extends Actions>(
+		actions: TActions,
+	): WorkspaceClient<TTables, TKV, TExtensions> & {
+		actions: Attached<TActions>;
+	};
 }
 ```
 
@@ -220,6 +232,7 @@ interface WorkspaceClient<TTables, TKV, TExtensions> {
 ### Why Introspection Doesn't Need Yjs
 
 Action metadata is **static data** attached to the action object:
+
 - `type`: 'query' | 'mutation'
 - `description`: string (optional)
 - `input`: StandardSchema (converts to JSON Schema)
@@ -231,12 +244,12 @@ The handler function exists but doesn't need to execute for introspection. This 
 // This works WITHOUT initializing Yjs or any async setup
 const schemas = [];
 for (const [action, path] of iterateAttachedActions(client.actions)) {
-  schemas.push({
-    path: path.join('.'),
-    type: action.type,
-    description: action.description,
-    inputSchema: action.input ? toJSONSchema(action.input) : undefined,
-  });
+	schemas.push({
+		path: path.join('.'),
+		type: action.type,
+		description: action.description,
+		inputSchema: action.input ? toJSONSchema(action.input) : undefined,
+	});
 }
 ```
 
@@ -266,20 +279,19 @@ function toMCPTools(actions: AttachedActions): MCPTool[];
 ```typescript
 // packages/epicenter/src/cli/cli.ts
 export function createCLI(client: AnyWorkspaceClient, options?: CLIOptions) {
-  const actions = options?.actions ?? client.actions;
+	const actions = options?.actions ?? client.actions;
 
-  let cli = yargs()
-    .scriptName('epicenter')
-    // ... built-in commands ...
+	let cli = yargs().scriptName('epicenter');
+	// ... built-in commands ...
 
-  if (actions) {
-    const commands = buildActionCommands(actions);
-    for (const cmd of commands) {
-      cli = cli.command(cmd);
-    }
-  }
+	if (actions) {
+		const commands = buildActionCommands(actions);
+		for (const cmd of commands) {
+			cli = cli.command(cmd);
+		}
+	}
 
-  return { run: (argv) => cli.parse(argv) };
+	return { run: (argv) => cli.parse(argv) };
 }
 ```
 
@@ -333,19 +345,19 @@ POST /actions/sync/markdown       → sync.markdown handler
 ```typescript
 // packages/epicenter/src/mcp/mcp.ts
 export function createMCPServer(client: AnyWorkspaceClient) {
-  const actions = client.actions;
-  if (!actions) return null;
+	const actions = client.actions;
+	if (!actions) return null;
 
-  const tools = toMCPTools(actions);
+	const tools = toMCPTools(actions);
 
-  return new MCPServer({
-    tools,
-    handleToolCall: async (name, args) => {
-      const [action, path] = findActionByPath(actions, name.split('_'));
-      if (!action) throw new Error(`Unknown tool: ${name}`);
-      return action(args);
-    },
-  });
+	return new MCPServer({
+		tools,
+		handleToolCall: async (name, args) => {
+			const [action, path] = findActionByPath(actions, name.split('_'));
+			if (!action) throw new Error(`Unknown tool: ${name}`);
+			return action(args);
+		},
+	});
 }
 ```
 
@@ -353,16 +365,16 @@ Generated MCP tools:
 
 ```json
 {
-  "name": "posts_create",
-  "description": "Create a post",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "title": { "type": "string" },
-      "content": { "type": "string" }
-    },
-    "required": ["title", "content"]
-  }
+	"name": "posts_create",
+	"description": "Create a post",
+	"inputSchema": {
+		"type": "object",
+		"properties": {
+			"title": { "type": "string" },
+			"content": { "type": "string" }
+		},
+		"required": ["title", "content"]
+	}
 }
 ```
 
@@ -412,16 +424,16 @@ Generated MCP tools:
 
 ## Files to Change
 
-| File | Changes |
-|------|---------|
-| `packages/epicenter/src/shared/actions.ts` | Handler signature, AttachedAction types, attachActions helper |
-| `packages/epicenter/src/static/create-workspace.ts` | Add `.withActions()` method |
-| `packages/epicenter/src/dynamic/workspace/create-workspace.ts` | Add `.withActions()` method |
-| `packages/epicenter/src/cli/cli.ts` | Check `client.actions` |
-| `packages/epicenter/src/server/server.ts` | Check `client.actions` |
-| `packages/epicenter/src/cli/discovery.ts` | Simplify (no separate actions export) |
-| `packages/epicenter/src/cli/command-builder.ts` | Work with AttachedActions |
-| `packages/epicenter/src/server/actions.ts` | Work with AttachedActions |
+| File                                                           | Changes                                                       |
+| -------------------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/epicenter/src/shared/actions.ts`                     | Handler signature, AttachedAction types, attachActions helper |
+| `packages/epicenter/src/static/create-workspace.ts`            | Add `.withActions()` method                                   |
+| `packages/epicenter/src/dynamic/workspace/create-workspace.ts` | Add `.withActions()` method                                   |
+| `packages/epicenter/src/cli/cli.ts`                            | Check `client.actions`                                        |
+| `packages/epicenter/src/server/server.ts`                      | Check `client.actions`                                        |
+| `packages/epicenter/src/cli/discovery.ts`                      | Simplify (no separate actions export)                         |
+| `packages/epicenter/src/cli/command-builder.ts`                | Work with AttachedActions                                     |
+| `packages/epicenter/src/server/actions.ts`                     | Work with AttachedActions                                     |
 
 ## Design Decisions
 
@@ -455,22 +467,22 @@ Generated MCP tools:
 
 We considered several alternatives for naming the operation that captures client context into action handlers:
 
-| Term | Pros | Cons |
-|------|------|------|
-| **bind** | Technically precise (matches `Function.prototype.bind`) | JavaScript baggage; many devs don't use bind in modern code |
-| **attach** | Clear physical metaphor; no framework conflicts | Less precise about the transformation |
-| **provide** | Effect-TS precedent; mature DI terminology | Foreign to non-Effect users |
-| **connect** | React-Redux precedent | Deprecated pattern; network connotations |
-| **wire** | Spring Framework precedent | Less common in JS ecosystem |
+| Term        | Pros                                                    | Cons                                                        |
+| ----------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| **bind**    | Technically precise (matches `Function.prototype.bind`) | JavaScript baggage; many devs don't use bind in modern code |
+| **attach**  | Clear physical metaphor; no framework conflicts         | Less precise about the transformation                       |
+| **provide** | Effect-TS precedent; mature DI terminology              | Foreign to non-Effect users                                 |
+| **connect** | React-Redux precedent                                   | Deprecated pattern; network connotations                    |
+| **wire**    | Spring Framework precedent                              | Less common in JS ecosystem                                 |
 
 **We chose "attach" because:**
 
 1. **Intuitive mental model** - Actions are "attached to" a client. You can visualize it.
-2. **Matches existing patterns** - Our `.withExtensions()` semantically "attaches" extensions to the client
+2. **Matches existing patterns** - Our `.withExtension()` semantically "attaches" extensions to the client
 3. **No baggage** - Unlike "bind" (JS method), "hydrate" (React SSR), or "connect" (deprecated Redux)
 4. **Framework research** - Express uses "attach" for middleware context (`req.context`), which is familiar
 
-**The transformation is still partial application** - we're capturing the `ctx` parameter. But "attached" describes the *relationship* (actions belong to a client) rather than the *mechanism* (closure capture). Users care about the relationship; implementers care about the mechanism.
+**The transformation is still partial application** - we're capturing the `ctx` parameter. But "attached" describes the _relationship_ (actions belong to a client) rather than the _mechanism_ (closure capture). Users care about the relationship; implementers care about the mechanism.
 
 **JSDoc will explain both:**
 
@@ -486,8 +498,8 @@ We considered several alternatives for naming the operation that captures client
  * (actions belong to a client) over the mechanism (closure capture).
  */
 function attachActions<T extends Actions>(
-  actions: T,
-  client: WorkspaceClient
+	actions: T,
+	client: WorkspaceClient,
 ): Attached<T>;
 ```
 
@@ -506,15 +518,15 @@ All handlers must use the new signature: `(ctx, input?) => output`
 
 This redesign keeps the core action concepts (queries, mutations, schemas, introspection) while fixing the ergonomic issues:
 
-| Aspect | v1 (Current) | v2 (Proposed) |
-|--------|--------------|---------------|
-| Export pattern | Two exports | Single export |
-| Handler dependency | Implicit (closure) | Explicit (parameter) |
-| Adapter discovery | Manual lookup | `client.actions` |
-| Introspection source | Separate `actions` object | `client.actions` |
-| Handler signature | `(input) => output` | `(ctx, input) => output` |
-| Action state | Raw definitions | `AttachedAction` (callable with context captured) |
-| Transformation function | N/A | `attachActions(actions, client)` |
+| Aspect                  | v1 (Current)              | v2 (Proposed)                                     |
+| ----------------------- | ------------------------- | ------------------------------------------------- |
+| Export pattern          | Two exports               | Single export                                     |
+| Handler dependency      | Implicit (closure)        | Explicit (parameter)                              |
+| Adapter discovery       | Manual lookup             | `client.actions`                                  |
+| Introspection source    | Separate `actions` object | `client.actions`                                  |
+| Handler signature       | `(input) => output`       | `(ctx, input) => output`                          |
+| Action state            | Raw definitions           | `AttachedAction` (callable with context captured) |
+| Transformation function | N/A                       | `attachActions(actions, client)`                  |
 
 ## Implementation Notes
 
@@ -522,12 +534,12 @@ This section documents the actual implementation details.
 
 ### Files Changed
 
-| File | Changes |
-|------|---------|
-| `packages/epicenter/src/shared/actions.ts` | Handler signature changed to `(ctx, input?)`. Added `AttachedAction` types. Added `attachActions` helper. Added `iterateAttachedActions` for adapters. |
-| `packages/epicenter/src/static/create-workspace.ts` | Added `.withActions()` method to the workspace client. |
-| `packages/epicenter/src/dynamic/workspace/create-workspace.ts` | Added `.withActions()` method to the workspace client. |
-| `packages/epicenter/src/shared/actions.test.ts` | New test file for action system using minimal mock clients. |
+| File                                                           | Changes                                                                                                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/epicenter/src/shared/actions.ts`                     | Handler signature changed to `(ctx, input?)`. Added `AttachedAction` types. Added `attachActions` helper. Added `iterateAttachedActions` for adapters. |
+| `packages/epicenter/src/static/create-workspace.ts`            | Added `.withActions()` method to the workspace client.                                                                                                 |
+| `packages/epicenter/src/dynamic/workspace/create-workspace.ts` | Added `.withActions()` method to the workspace client.                                                                                                 |
+| `packages/epicenter/src/shared/actions.test.ts`                | New test file for action system using minimal mock clients.                                                                                            |
 
 ### Key Implementation Details
 
@@ -552,7 +564,7 @@ Tests use minimal mock clients that only implement the interface needed by the a
 
 ```typescript
 const mockClient = {
-  tables: { posts: { getAllValid: () => mockPosts } },
+	tables: { posts: { getAllValid: () => mockPosts } },
 } as unknown as AnyWorkspaceClient;
 ```
 

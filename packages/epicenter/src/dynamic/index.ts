@@ -27,8 +27,6 @@ export { createWorkspace } from './workspace/create-workspace';
 export type {
 	ExtensionContext,
 	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 } from './workspace/types';

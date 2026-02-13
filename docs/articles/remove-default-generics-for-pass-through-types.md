@@ -121,11 +121,9 @@ const workspace = defineWorkspace({
 });
 
 // Extension receives context with those schemas
-createWorkspace(workspace).withExtensions({
-	// The extension MUST receive the full schema types
-	// Defaults would silently lose type information
-	sqlite: (ctx) => sqlite(ctx, config),
-});
+createWorkspace(workspace).withExtension('sqlite', (ctx) =>
+	sqlite(ctx, config),
+);
 ```
 
 Without defaults on `ExtensionContext`, TypeScript ensures every extension properly declares and passes through both `TTableDefinitionMap` and `TKvSchema`.

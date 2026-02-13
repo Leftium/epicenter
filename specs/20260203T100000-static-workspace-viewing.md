@@ -31,14 +31,14 @@ const ydoc = new Y.Doc({ guid: workspaceId });
 // Discover all tables
 const tables: string[] = [];
 ydoc.share.forEach((type, key) => {
-  if (key.startsWith('table:') && type instanceof Y.Array) {
-    tables.push(key.slice(7)); // Remove 'table:' prefix
-  }
+	if (key.startsWith('table:') && type instanceof Y.Array) {
+		tables.push(key.slice(7)); // Remove 'table:' prefix
+	}
 });
 
 // Discover all KV keys
 const kvArray = ydoc.getArray<YKeyValueLwwEntry>('kv');
-const kvKeys = [...new Set(kvArray.toArray().map(entry => entry.key))];
+const kvKeys = [...new Set(kvArray.toArray().map((entry) => entry.key))];
 
 console.log({ tables, kvKeys });
 // { tables: ['posts', 'users'], kvKeys: ['theme', 'settings'] }
@@ -46,22 +46,22 @@ console.log({ tables, kvKeys });
 
 ### Storage Format (from `ydoc-keys.ts`)
 
-| Key Pattern | Type | Contents |
-|-------------|------|----------|
-| `table:{name}` | `Y.Array` | LWW entries: `{ key: id, val: row, ts: timestamp }` |
-| `kv` | `Y.Array` | LWW entries: `{ key: name, val: value, ts: timestamp }` |
+| Key Pattern    | Type      | Contents                                                |
+| -------------- | --------- | ------------------------------------------------------- |
+| `table:{name}` | `Y.Array` | LWW entries: `{ key: id, val: row, ts: timestamp }`     |
+| `kv`           | `Y.Array` | LWW entries: `{ key: name, val: value, ts: timestamp }` |
 
 ### What You Get Without TypeScript Runtime
 
-| Feature | Works? | Notes |
-|---------|--------|-------|
-| Read all rows | ✅ | Just iterate the Y.Array |
-| Read all KV values | ✅ | Filter by key in 'kv' array |
-| Observe changes | ✅ | `array.observe()` works |
-| Write raw data | ✅ | No validation, but works |
-| Schema validation | ❌ | Requires runtime |
-| Migrations | ❌ | Requires runtime |
-| Type inference | ❌ | Data is `unknown` |
+| Feature            | Works? | Notes                       |
+| ------------------ | ------ | --------------------------- |
+| Read all rows      | ✅     | Just iterate the Y.Array    |
+| Read all KV values | ✅     | Filter by key in 'kv' array |
+| Observe changes    | ✅     | `array.observe()` works     |
+| Write raw data     | ✅     | No validation, but works    |
+| Schema validation  | ❌     | Requires runtime            |
+| Migrations         | ❌     | Requires runtime            |
+| Type inference     | ❌     | Data is `unknown`           |
 
 ---
 
@@ -78,22 +78,23 @@ const ydoc = new Y.Doc({ guid: workspaceId });
 
 // Connect to local y-sweet server
 const provider = createYjsProvider(ydoc, workspaceId, async () => ({
-  url: `ws://127.0.0.1:8080/d/${workspaceId}/ws`,
-  baseUrl: 'http://127.0.0.1:8080',
-  docId: workspaceId,
-  token: undefined,
+	url: `ws://127.0.0.1:8080/d/${workspaceId}/ws`,
+	baseUrl: 'http://127.0.0.1:8080',
+	docId: workspaceId,
+	token: undefined,
 }));
 
 // Wait for initial sync
-await new Promise<void>(resolve => {
-  if (provider.status === 'connected') resolve();
-  else provider.on('sync', () => resolve());
+await new Promise<void>((resolve) => {
+	if (provider.status === 'connected') resolve();
+	else provider.on('sync', () => resolve());
 });
 
 // Now ydoc.share is populated with remote data
 ```
 
 **Start y-sweet locally:**
+
 ```bash
 npx y-sweet@latest serve        # In-memory
 npx y-sweet@latest serve ./data # Persisted to disk
@@ -108,9 +109,9 @@ import { WebsocketProvider } from 'y-websocket';
 
 const ydoc = new Y.Doc({ guid: workspaceId });
 const provider = new WebsocketProvider(
-  'ws://localhost:3913/sync',
-  workspaceId,
-  ydoc
+	'ws://localhost:3913/sync',
+	workspaceId,
+	ydoc,
 );
 
 await provider.synced;
@@ -134,34 +135,35 @@ await provider.synced;
    - Renders tables and KV in generic viewer
 
 2. **Generic table viewer component**
+
    ```svelte
    <script lang="ts">
-     import * as Y from 'yjs';
+   	import * as Y from 'yjs';
 
-     export let ydoc: Y.Doc;
-     export let tableName: string;
+   	export let ydoc: Y.Doc;
+   	export let tableName: string;
 
-     const array = ydoc.getArray(`table:${tableName}`);
+   	const array = ydoc.getArray(`table:${tableName}`);
 
-     // Reactive rows from Y.Array
-     let rows: unknown[] = [];
-     $: {
-       rows = array.toArray().map(entry => entry.val);
-     }
+   	// Reactive rows from Y.Array
+   	let rows: unknown[] = [];
+   	$: {
+   		rows = array.toArray().map((entry) => entry.val);
+   	}
 
-     array.observe(() => {
-       rows = array.toArray().map(entry => entry.val);
-     });
+   	array.observe(() => {
+   		rows = array.toArray().map((entry) => entry.val);
+   	});
    </script>
 
    <table>
-     <tbody>
-       {#each rows as row}
-         <tr>
-           <td><pre>{JSON.stringify(row, null, 2)}</pre></td>
-         </tr>
-       {/each}
-     </tbody>
+   	<tbody>
+   		{#each rows as row}
+   			<tr>
+   				<td><pre>{JSON.stringify(row, null, 2)}</pre></td>
+   			</tr>
+   		{/each}
+   	</tbody>
    </table>
    ```
 
@@ -185,47 +187,52 @@ await provider.synced;
 ```
 
 **Bun side** (runs TypeScript):
+
 ```typescript
 // packages/epicenter/examples/static-workspace-server.ts
 import { createWorkspace } from 'epicenter/static';
 import { ySweetSync } from 'epicenter/extensions';
 import { type } from 'arktype';
 
-const posts = defineTable(type({ id: 'string', title: 'string', views: 'number' }));
+const posts = defineTable(
+	type({ id: 'string', title: 'string', views: 'number' }),
+);
 
 const workspace = createWorkspace({
-  id: 'my-static-workspace',
-  tables: { posts },
-}).withExtensions({
-  sync: ySweetSync({ mode: 'direct', serverUrl: 'http://localhost:8080' }),
-});
+	id: 'my-static-workspace',
+	tables: { posts },
+}).withExtension(
+	'sync',
+	ySweetSync({ mode: 'direct', serverUrl: 'http://localhost:8080' }),
+);
 
-await workspace.capabilities.sync.whenSynced;
+await workspace.extensions.sync.whenSynced;
 
 // Now any changes sync to y-sweet
 workspace.tables.posts.set({ id: '1', title: 'Hello', views: 0 });
 ```
 
 **Tauri side** (no TypeScript runtime):
+
 ```typescript
 // apps/epicenter/src/routes/workspaces/static/[id]/+page.ts
 export async function load({ params }) {
-  const ydoc = new Y.Doc({ guid: params.id });
+	const ydoc = new Y.Doc({ guid: params.id });
 
-  // Connect to same y-sweet server
-  const provider = createYjsProvider(ydoc, params.id, async () => ({
-    url: `ws://127.0.0.1:8080/d/${params.id}/ws`,
-    baseUrl: 'http://127.0.0.1:8080',
-    docId: params.id,
-  }));
+	// Connect to same y-sweet server
+	const provider = createYjsProvider(ydoc, params.id, async () => ({
+		url: `ws://127.0.0.1:8080/d/${params.id}/ws`,
+		baseUrl: 'http://127.0.0.1:8080',
+		docId: params.id,
+	}));
 
-  await whenSynced(provider);
+	await whenSynced(provider);
 
-  // Discover structure
-  const tables = discoverTables(ydoc);
-  const kvKeys = discoverKvKeys(ydoc);
+	// Discover structure
+	const tables = discoverTables(ydoc);
+	const kvKeys = discoverKvKeys(ydoc);
 
-  return { ydoc, tables, kvKeys };
+	return { ydoc, tables, kvKeys };
 }
 ```
 
@@ -239,18 +246,18 @@ Create a registry file that lists known static workspaces:
 // apps/epicenter/src/lib/static-workspaces.ts
 
 export const STATIC_WORKSPACES = [
-  {
-    id: 'tab-manager',
-    name: 'Tab Manager',
-    description: 'Browser tab sync workspace',
-    icon: 'lucide:layout-grid',
-  },
-  {
-    id: 'whispering',
-    name: 'Whispering',
-    description: 'Voice transcription workspace',
-    icon: 'lucide:mic',
-  },
+	{
+		id: 'tab-manager',
+		name: 'Tab Manager',
+		description: 'Browser tab sync workspace',
+		icon: 'lucide:layout-grid',
+	},
+	{
+		id: 'whispering',
+		name: 'Whispering',
+		description: 'Voice transcription workspace',
+		icon: 'lucide:mic',
+	},
 ] as const;
 ```
 
@@ -262,21 +269,21 @@ This gives the UI friendly names and icons without needing TypeScript runtime.
 
 ### New Files
 
-| Path | Purpose |
-|------|---------|
-| `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+page.svelte` | Static workspace viewer page |
-| `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+layout.ts` | Load Y.Doc and discover structure |
-| `apps/epicenter/src/lib/static-workspaces.ts` | Registry of known static workspaces |
-| `apps/epicenter/src/lib/components/GenericTableViewer.svelte` | Render any Y.Array as a table |
-| `apps/epicenter/src/lib/components/GenericKvViewer.svelte` | Render KV entries |
-| `apps/epicenter/src/lib/docs/discover.ts` | `discoverTables()`, `discoverKvKeys()` utilities |
+| Path                                                                        | Purpose                                          |
+| --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+page.svelte` | Static workspace viewer page                     |
+| `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+layout.ts`   | Load Y.Doc and discover structure                |
+| `apps/epicenter/src/lib/static-workspaces.ts`                               | Registry of known static workspaces              |
+| `apps/epicenter/src/lib/components/GenericTableViewer.svelte`               | Render any Y.Array as a table                    |
+| `apps/epicenter/src/lib/components/GenericKvViewer.svelte`                  | Render KV entries                                |
+| `apps/epicenter/src/lib/docs/discover.ts`                                   | `discoverTables()`, `discoverKvKeys()` utilities |
 
 ### Modified Files
 
-| Path | Change |
-|------|--------|
-| `apps/epicenter/src/routes/(home)/+page.svelte` | Add "Static Workspaces" section |
-| `apps/epicenter/src/lib/components/WorkspaceSidebar.svelte` | Show static workspaces |
+| Path                                                        | Change                          |
+| ----------------------------------------------------------- | ------------------------------- |
+| `apps/epicenter/src/routes/(home)/+page.svelte`             | Add "Static Workspaces" section |
+| `apps/epicenter/src/lib/components/WorkspaceSidebar.svelte` | Show static workspaces          |
 
 ---
 
@@ -291,59 +298,59 @@ import * as Y from 'yjs';
  * Discover all table names from a Y.Doc by scanning ydoc.share
  */
 export function discoverTables(ydoc: Y.Doc): string[] {
-  const tables: string[] = [];
+	const tables: string[] = [];
 
-  ydoc.share.forEach((type, key) => {
-    if (key.startsWith('table:') && type instanceof Y.Array) {
-      tables.push(key.slice(7)); // Remove 'table:' prefix
-    }
-  });
+	ydoc.share.forEach((type, key) => {
+		if (key.startsWith('table:') && type instanceof Y.Array) {
+			tables.push(key.slice(7)); // Remove 'table:' prefix
+		}
+	});
 
-  return tables.sort();
+	return tables.sort();
 }
 
 /**
  * Discover all KV keys from a Y.Doc
  */
 export function discoverKvKeys(ydoc: Y.Doc): string[] {
-  const kvArray = ydoc.getArray('kv');
-  const keys = new Set<string>();
+	const kvArray = ydoc.getArray('kv');
+	const keys = new Set<string>();
 
-  for (const entry of kvArray.toArray()) {
-    if (entry && typeof entry === 'object' && 'key' in entry) {
-      keys.add(entry.key as string);
-    }
-  }
+	for (const entry of kvArray.toArray()) {
+		if (entry && typeof entry === 'object' && 'key' in entry) {
+			keys.add(entry.key as string);
+		}
+	}
 
-  return [...keys].sort();
+	return [...keys].sort();
 }
 
 /**
  * Read all rows from a table (untyped)
  */
 export function readTableRows(ydoc: Y.Doc, tableName: string): unknown[] {
-  const array = ydoc.getArray(`table:${tableName}`);
-  return array.toArray().map((entry: any) => entry.val);
+	const array = ydoc.getArray(`table:${tableName}`);
+	return array.toArray().map((entry: any) => entry.val);
 }
 
 /**
  * Read a KV value by key (untyped)
  */
 export function readKvValue(ydoc: Y.Doc, key: string): unknown | undefined {
-  const kvArray = ydoc.getArray('kv');
+	const kvArray = ydoc.getArray('kv');
 
-  // Find entry with highest timestamp (LWW)
-  let latest: { val: unknown; ts: number } | undefined;
+	// Find entry with highest timestamp (LWW)
+	let latest: { val: unknown; ts: number } | undefined;
 
-  for (const entry of kvArray.toArray()) {
-    if (entry?.key === key) {
-      if (!latest || entry.ts > latest.ts) {
-        latest = entry;
-      }
-    }
-  }
+	for (const entry of kvArray.toArray()) {
+		if (entry?.key === key) {
+			if (!latest || entry.ts > latest.ts) {
+				latest = entry;
+			}
+		}
+	}
 
-  return latest?.val;
+	return latest?.val;
 }
 ```
 
@@ -430,7 +437,7 @@ Store in app settings (already exists):
 
 ```typescript
 // In settings store
-syncServerUrl: 'http://127.0.0.1:8080'
+syncServerUrl: 'http://127.0.0.1:8080';
 ```
 
 ### Local Development
@@ -453,6 +460,7 @@ bun run --filter @epicenter/app dev
 ### Empty Y.Doc (No Data Yet)
 
 If the static workspace hasn't synced any data:
+
 - `ydoc.share` will be empty
 - Show "No tables found" message
 - Keep connection open for real-time updates
@@ -460,12 +468,14 @@ If the static workspace hasn't synced any data:
 ### Workspace ID Doesn't Exist
 
 Y-Sweet will create a new empty document:
+
 - This is fine for development
 - For production, validate against registry first
 
 ### Offline Mode
 
 If y-sweet server is unreachable:
+
 - Show connection error
 - Retry with exponential backoff
 - Allow viewing cached data if using IndexedDB persistence
@@ -484,12 +494,12 @@ If y-sweet server is unreachable:
 
 ## Summary
 
-| What | How |
-|------|-----|
-| Minimum to view | Workspace ID only |
-| Structure discovery | `ydoc.share` Map |
-| Table names | Keys starting with `table:` |
-| KV keys | Entries in `'kv'` array |
-| Sync | Y-Sweet direct mode |
-| TypeScript runtime | Not needed |
-| Migrations | Not supported (view only) |
+| What                | How                         |
+| ------------------- | --------------------------- |
+| Minimum to view     | Workspace ID only           |
+| Structure discovery | `ydoc.share` Map            |
+| Table names         | Keys starting with `table:` |
+| KV keys             | Entries in `'kv'` array     |
+| Sync                | Y-Sweet direct mode         |
+| TypeScript runtime  | Not needed                  |
+| Migrations          | Not supported (view only)   |

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { defineQuery } from '../shared/actions.js';
 import { defineExports } from '../shared/lifecycle.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
@@ -63,7 +64,7 @@ describe('defineWorkspace', () => {
 		expect(themeResult.status).toBe('valid');
 	});
 
-	test('createWorkspace().withExtensions() adds extensions', () => {
+	test('createWorkspace().withExtension() adds extensions', () => {
 		// Mock extension with custom exports - uses defineExports for lifecycle
 		const mockExtension = (_context: {
 			ydoc: Y.Doc;
@@ -79,9 +80,7 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			mock: mockExtension,
-		});
+		}).withExtension('mock', mockExtension);
 
 		expect(client.extensions.mock).toBeDefined();
 		expect(client.extensions.mock.customMethod()).toBe('hello');
@@ -111,10 +110,9 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			persistence: persistenceExtension,
-			sync: syncExtension,
-		});
+		})
+			.withExtension('persistence', persistenceExtension)
+			.withExtension('sync', syncExtension);
 
 		// Test persistence extension exports are typed
 		const queryResult = client.extensions.persistence.db.query('SELECT');
@@ -156,9 +154,7 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			mock: mockExtension,
-		});
+		}).withExtension('mock', mockExtension);
 
 		await client.destroy();
 		expect(destroyed).toBe(true);
@@ -193,7 +189,7 @@ describe('defineWorkspace', () => {
 		expect(result.status).toBe('valid');
 	});
 
-	test('createWorkspace client is usable before withExtensions', () => {
+	test('createWorkspace client is usable before withExtension', () => {
 		const client = createWorkspace({
 			id: 'builder-app',
 			tables: {
@@ -204,10 +200,10 @@ describe('defineWorkspace', () => {
 		client.tables.posts.set({ id: '1', title: 'Before Extensions' });
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
-		expect(typeof client.withExtensions).toBe('function');
+		expect(typeof client.withExtension).toBe('function');
 	});
 
-	test('withExtensions shares same ydoc', () => {
+	test('withExtension shares same ydoc', () => {
 		const baseClient = createWorkspace({
 			id: 'shared-doc-app',
 			tables: {
@@ -216,7 +212,7 @@ describe('defineWorkspace', () => {
 		});
 
 		baseClient.tables.posts.set({ id: '1', title: 'Original' });
-		const clientWithExt = baseClient.withExtensions({});
+		const clientWithExt = baseClient;
 
 		expect(clientWithExt.ydoc).toBe(baseClient.ydoc);
 
@@ -225,5 +221,117 @@ describe('defineWorkspace', () => {
 		if (result.status === 'valid') {
 			expect(result.row.title).toBe('Original');
 		}
+	});
+
+	test('extension N+1 can access extension N exports via context (progressive type safety)', () => {
+		const client = createWorkspace({
+			id: 'chain-test',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		})
+			.withExtension('first', () =>
+				defineExports({
+					value: 42,
+					helper: () => 'from-first',
+				}),
+			)
+			.withExtension('second', ({ extensions }) => {
+				// extensions.first is fully typed here — no casts needed
+				const doubled = extensions.first.value * 2;
+				const msg = extensions.first.helper();
+				return defineExports({ doubled, msg });
+			})
+			.withExtension('third', ({ extensions }) => {
+				// extensions.first AND extensions.second are both fully typed
+				const tripled = extensions.first.value * 3;
+				const fromSecond = extensions.second.doubled;
+				return defineExports({ tripled, fromSecond });
+			});
+
+		// All extensions accessible and typed on the final client
+		expect(client.extensions.first.value).toBe(42);
+		expect(client.extensions.first.helper()).toBe('from-first');
+		expect(client.extensions.second.doubled).toBe(84);
+		expect(client.extensions.second.msg).toBe('from-first');
+		expect(client.extensions.third.tripled).toBe(126);
+		expect(client.extensions.third.fromSecond).toBe(84);
+
+		// Type-level assertions: these assignments would fail to compile if types were wrong
+		const _num: number = client.extensions.first.value;
+		const _str: string = client.extensions.first.helper();
+		const _doubled: number = client.extensions.second.doubled;
+		const _msg: string = client.extensions.second.msg;
+		const _tripled: number = client.extensions.third.tripled;
+		const _fromSecond: number = client.extensions.third.fromSecond;
+		void [_num, _str, _doubled, _msg, _tripled, _fromSecond];
+	});
+
+	test('.withActions() works after .withExtension() chain', () => {
+		const client = createWorkspace({
+			id: 'actions-after-ext',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		})
+			.withExtension('analytics', () =>
+				defineExports({
+					getCount: () => 5,
+				}),
+			)
+			.withActions((c) => ({
+				getAnalyticsCount: defineQuery({
+					handler: () => c.extensions.analytics.getCount(),
+				}),
+				addPost: defineQuery({
+					input: type({ title: 'string' }),
+					handler: ({ title }) => {
+						c.tables.posts.set({ id: '1', title });
+					},
+				}),
+			}));
+
+		// Actions are callable directly
+		expect(client.actions.getAnalyticsCount()).toBe(5);
+		client.actions.addPost({ title: 'Hello' });
+
+		// Extensions still accessible
+		expect(client.extensions.analytics.getCount()).toBe(5);
+
+		// Tables still accessible
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+	});
+
+	test('destroy runs in reverse order (LIFO)', async () => {
+		const order: string[] = [];
+
+		const client = createWorkspace({
+			id: 'destroy-order',
+		})
+			.withExtension('a', () =>
+				defineExports({
+					destroy: () => {
+						order.push('a');
+					},
+				}),
+			)
+			.withExtension('b', () =>
+				defineExports({
+					destroy: () => {
+						order.push('b');
+					},
+				}),
+			)
+			.withExtension('c', () =>
+				defineExports({
+					destroy: () => {
+						order.push('c');
+					},
+				}),
+			);
+
+		await client.destroy();
+		expect(order).toEqual(['c', 'b', 'a']);
 	});
 });

@@ -115,7 +115,8 @@ export default defineBackground(() => {
 	// Create Workspace Client with Extensions
 	// ─────────────────────────────────────────────────────────────────────────
 
-	const client = createWorkspace(definition).withExtensions({
+	const client = createWorkspace(definition).withExtension(
+		'sync',
 		/**
 		 * Y-Sweet sync with IndexedDB persistence.
 		 *
@@ -126,11 +127,11 @@ export default defineBackground(() => {
 		 * Server setup: npx y-sweet@latest serve
 		 * Default: http://127.0.0.1:8080
 		 */
-		sync: ySweetPersistSync({
+		ySweetPersistSync({
 			auth: directAuth('http://127.0.0.1:8080'),
 			persistence: indexeddbPersistence,
 		}),
-	});
+	);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Action Helpers (extracted from workspace definition)

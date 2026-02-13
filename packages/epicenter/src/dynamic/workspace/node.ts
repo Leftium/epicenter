@@ -18,7 +18,8 @@
  * });
  *
  * // Use createWorkspace to create workspace clients
- * const workspace = createWorkspace(definition).withExtensions({ persistence });
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('persistence', (ctx) => persistence(ctx));
  * ```
  *
  * @module

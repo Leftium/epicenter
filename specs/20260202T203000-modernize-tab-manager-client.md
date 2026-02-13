@@ -123,7 +123,7 @@ const indexedDbPersistence = (ctx: CapabilityContext) => {
 - [ ] Remove `extensions` field from `defineWorkspace`
 - [ ] Remove `actions` field from `defineWorkspace`
 - [ ] Use stable workspace ID: `'tab-manager'` instead of `generateGuid()`
-- [ ] Replace broken `createWorkspaceClient()` with `createWorkspace().withExtensions()`
+- [ ] Replace broken `createWorkspaceClient()` with `createWorkspace().withExtension()`
 
 **Before** (broken):
 
@@ -156,21 +156,21 @@ const definition = defineWorkspace({
 	tables: BROWSER_TABLES,
 });
 
-// 2. Create client with capabilities
-const client = createWorkspace(definition).withExtensions({
-	persistence: (ctx) => {
+// 2. Create client with extensions
+const client = createWorkspace(definition)
+	.withExtension('persistence', (ctx) => {
 		const provider = new IndexeddbPersistence('tab-manager', ctx.ydoc);
 		return {
 			whenSynced: provider.whenSynced,
 			destroy: () => provider.destroy(),
 		};
-	},
-	sync: (ctx) =>
+	})
+	.withExtension('sync', (ctx) =>
 		websocketSync({
 			url: 'ws://localhost:3913/sync',
 			ydoc: ctx.ydoc,
 		}),
-});
+	);
 ```
 
 ### Phase 3: Extract Actions to Helper Functions
@@ -269,18 +269,19 @@ export default defineBackground(() => {
 	const deviceIdPromise = getDeviceId();
 
 	// ─────────────────────────────────────────────────────────────
-	// Create Workspace Client with Capabilities
+	// Create Workspace Client with Extensions
 	// ─────────────────────────────────────────────────────────────
-	const client = createWorkspace(definition).withExtensions({
-		persistence: (ctx) => {
+	const client = createWorkspace(definition)
+		.withExtension('persistence', (ctx) => {
 			const provider = new IndexeddbPersistence('tab-manager', ctx.ydoc);
 			return {
 				whenSynced: provider.whenSynced,
 				destroy: () => provider.destroy(),
 			};
-		},
-		sync: (ctx) => websocketSync({ url: 'ws://localhost:3913/sync' }),
-	});
+		})
+		.withExtension('sync', (ctx) =>
+			websocketSync({ url: 'ws://localhost:3913/sync' }),
+		);
 
 	// ─────────────────────────────────────────────────────────────
 	// Action Helpers
@@ -291,7 +292,7 @@ export default defineBackground(() => {
 	// Initialization
 	// ─────────────────────────────────────────────────────────────
 	const initPromise = (async () => {
-		await client.capabilities.persistence.whenSynced;
+		await client.extensions.persistence.whenSynced;
 		await actions.refetchAll();
 		console.log('[Background] Initial sync complete');
 	})();
@@ -333,7 +334,7 @@ export default defineBackground(() => {
   - [ ] Change import to `@epicenter/hq/static`
   - [ ] Use stable workspace ID `'tab-manager'`
   - [ ] Remove `extensions` and `actions` from `defineWorkspace`
-  - [ ] Use `createWorkspace().withExtensions()`
+  - [ ] Use `createWorkspace().withExtension()`
 - [ ] **Phase 3: Extract Actions**
   - [ ] Create `createTabManagerActions()` factory
   - [ ] Update all action call sites
@@ -368,11 +369,10 @@ The CLI connects to the same sync server and manipulates the Y.Doc. The browser 
 If you want git-friendly tab history, you could add the markdown provider:
 
 ```typescript
-const client = createWorkspace(definition).withExtensions({
-	persistence: indexedDbPersistence,
-	sync: websocketSync({ url: '...' }),
-	markdown: markdownProvider({ directory: './tabs' }), // Tabs as markdown files
-});
+const client = createWorkspace(definition)
+	.withExtension('persistence', indexedDbPersistence)
+	.withExtension('sync', websocketSync({ url: '...' }))
+	.withExtension('markdown', markdownProvider({ directory: './tabs' })); // Tabs as markdown files
 ```
 
 This would create markdown files for each tab, enabling version control of tab sessions.

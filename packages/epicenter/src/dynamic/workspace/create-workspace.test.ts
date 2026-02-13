@@ -107,17 +107,16 @@ describe('createWorkspace', () => {
 		});
 	});
 
-	describe('.withExtensions()', () => {
+	describe('.withExtension()', () => {
 		test('returns a new client with extensions', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
 			// Use inline factory for better type inference
-			const workspace = baseWorkspace.withExtensions({
-				mock: ({ id }) =>
-					defineExports({
-						greeting: `Hello from ${id}`,
-					}),
-			});
+			const workspace = baseWorkspace.withExtension('mock', ({ id }) =>
+				defineExports({
+					greeting: `Hello from ${id}`,
+				}),
+			);
 
 			// Should have extension exports
 			expect(workspace.extensions.mock).toBeDefined();
@@ -130,27 +129,21 @@ describe('createWorkspace', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
 			let receivedContext: Record<string, unknown> | undefined;
-			baseWorkspace.withExtensions({
-				capture: (ctx) => {
-					receivedContext = {
-						id: ctx.id,
-						extensionId: ctx.extensionId,
-						hasYdoc: ctx.ydoc instanceof Y.Doc,
-						hasTables: typeof ctx.tables.get === 'function',
-						hasKv: typeof ctx.kv.get === 'function',
-						hasDefinition: ctx.definition !== undefined,
-					};
-					return defineExports();
-				},
+			baseWorkspace.withExtension('capture', (ctx) => {
+				receivedContext = {
+					id: ctx.id,
+					hasYdoc: ctx.ydoc instanceof Y.Doc,
+					hasTables: typeof ctx.tables.get === 'function',
+					hasKv: typeof ctx.kv.get === 'function',
+				};
+				return defineExports();
 			});
 
 			expect(receivedContext).toBeDefined();
 			expect(receivedContext?.id).toBe('test-workspace');
-			expect(receivedContext?.extensionId).toBe('capture');
 			expect(receivedContext?.hasYdoc).toBe(true);
 			expect(receivedContext?.hasTables).toBe(true);
 			expect(receivedContext?.hasKv).toBe(true);
-			expect(receivedContext?.hasDefinition).toBe(true);
 		});
 
 		test('whenSynced aggregates all extension promises', async () => {
@@ -159,8 +152,8 @@ describe('createWorkspace', () => {
 			let resolved1 = false;
 			let resolved2 = false;
 
-			const workspace = baseWorkspace.withExtensions({
-				ext1: () =>
+			const workspace = baseWorkspace
+				.withExtension('ext1', () =>
 					defineExports({
 						whenSynced: new Promise<void>((resolve) => {
 							setTimeout(() => {
@@ -169,7 +162,8 @@ describe('createWorkspace', () => {
 							}, 10);
 						}),
 					}),
-				ext2: () =>
+				)
+				.withExtension('ext2', () =>
 					defineExports({
 						whenSynced: new Promise<void>((resolve) => {
 							setTimeout(() => {
@@ -178,7 +172,7 @@ describe('createWorkspace', () => {
 							}, 20);
 						}),
 					}),
-			});
+				);
 
 			// Before awaiting, neither should be resolved
 			expect(resolved1).toBe(false);
@@ -193,9 +187,9 @@ describe('createWorkspace', () => {
 		test('base client extensions remains empty after chaining', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
-			const chainedWorkspace = baseWorkspace.withExtensions({
-				mock: () => defineExports({ data: 'test' }),
-			});
+			const chainedWorkspace = baseWorkspace.withExtension('mock', () =>
+				defineExports({ data: 'test' }),
+			);
 
 			// Base should still have empty extensions
 			expect(baseWorkspace.extensions).toEqual({});
@@ -228,20 +222,21 @@ describe('createWorkspace', () => {
 			let destroyed1 = false;
 			let destroyed2 = false;
 
-			const workspace = baseWorkspace.withExtensions({
-				ext1: () =>
+			const workspace = baseWorkspace
+				.withExtension('ext1', () =>
 					defineExports({
 						destroy: () => {
 							destroyed1 = true;
 						},
 					}),
-				ext2: () =>
+				)
+				.withExtension('ext2', () =>
 					defineExports({
 						destroy: () => {
 							destroyed2 = true;
 						},
 					}),
-			});
+				);
 
 			// Before destroy
 			expect(destroyed1).toBe(false);
@@ -256,14 +251,15 @@ describe('createWorkspace', () => {
 		test('Symbol.asyncDispose works for await using', async () => {
 			let destroyed = false;
 
-			const workspace = createWorkspace(testDefinition).withExtensions({
-				tracker: () =>
+			const workspace = createWorkspace(testDefinition).withExtension(
+				'tracker',
+				() =>
 					defineExports({
 						destroy: () => {
 							destroyed = true;
 						},
 					}),
-			});
+			);
 
 			// Manually call asyncDispose (simulate await using)
 			await workspace[Symbol.asyncDispose]();
@@ -294,17 +290,89 @@ describe('createWorkspace', () => {
 		});
 
 		test('extension types are inferred correctly', () => {
-			const workspace = createWorkspace(testDefinition).withExtensions({
-				myExt: () =>
+			const workspace = createWorkspace(testDefinition).withExtension(
+				'myExt',
+				() =>
 					defineExports({
 						version: 1,
 						getName: () => 'my-extension',
 					}),
-			});
+			);
 
 			// These should be correctly typed via inference
 			expect(workspace.extensions.myExt.version).toBe(1);
 			expect(workspace.extensions.myExt.getName()).toBe('my-extension');
+		});
+	});
+
+	describe('progressive type safety', () => {
+		test('extension N+1 can access extension N exports via context', () => {
+			const workspace = createWorkspace(testDefinition)
+				.withExtension('first', () =>
+					defineExports({
+						value: 42,
+						helper: () => 'from-first',
+					}),
+				)
+				.withExtension('second', ({ extensions }) => {
+					// extensions.first is fully typed — no casts needed
+					const doubled = extensions.first.value * 2;
+					const msg = extensions.first.helper();
+					return defineExports({ doubled, msg });
+				})
+				.withExtension('third', ({ extensions }) => {
+					// extensions.first AND extensions.second are both fully typed
+					const tripled = extensions.first.value * 3;
+					const fromSecond = extensions.second.doubled;
+					return defineExports({ tripled, fromSecond });
+				});
+
+			// All extensions accessible and typed on the final client
+			expect(workspace.extensions.first.value).toBe(42);
+			expect(workspace.extensions.first.helper()).toBe('from-first');
+			expect(workspace.extensions.second.doubled).toBe(84);
+			expect(workspace.extensions.second.msg).toBe('from-first');
+			expect(workspace.extensions.third.tripled).toBe(126);
+			expect(workspace.extensions.third.fromSecond).toBe(84);
+
+			// Type-level assertions: these assignments would fail to compile if types were wrong
+			const _num: number = workspace.extensions.first.value;
+			const _str: string = workspace.extensions.first.helper();
+			const _doubled: number = workspace.extensions.second.doubled;
+			const _msg: string = workspace.extensions.second.msg;
+			const _tripled: number = workspace.extensions.third.tripled;
+			const _fromSecond: number = workspace.extensions.third.fromSecond;
+			void [_num, _str, _doubled, _msg, _tripled, _fromSecond];
+		});
+
+		test('destroy runs in reverse order (LIFO)', async () => {
+			const order: string[] = [];
+
+			const workspace = createWorkspace(testDefinition)
+				.withExtension('a', () =>
+					defineExports({
+						destroy: () => {
+							order.push('a');
+						},
+					}),
+				)
+				.withExtension('b', () =>
+					defineExports({
+						destroy: () => {
+							order.push('b');
+						},
+					}),
+				)
+				.withExtension('c', () =>
+					defineExports({
+						destroy: () => {
+							order.push('c');
+						},
+					}),
+				);
+
+			await workspace.destroy();
+			expect(order).toEqual(['c', 'b', 'a']);
 		});
 	});
 });

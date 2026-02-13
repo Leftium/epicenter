@@ -17,7 +17,7 @@
  * - **Type-safe**: Full type inference for client and tables, not `unknown`
  * - **Simpler signatures**: `(input?) => output` instead of `(ctx, input?) => output`
  * - **Natural JavaScript**: Uses standard closures, no framework magic
- * - **Introspectable**: Plain objects with metadata for adapters
+ * - **Introspectable**: Callable functions with metadata properties for adapters
  *
  * ## Exports
  *
@@ -72,6 +72,26 @@ import type {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
+ * The handler function type, conditional on whether input is provided.
+ *
+ * Uses variadic tuple args instead of conditional function signatures so that
+ * when the type flows through `Action<any, any>` (via the `Actions` constraint),
+ * `any` distributes over both branches giving `[input: any] | []` — which
+ * correctly allows calling with 0 arguments for no-input actions.
+ *
+ * When `TInput` extends `StandardSchemaWithJSONSchema`, the handler takes validated input.
+ * When `TInput` is `undefined`, the handler takes no arguments.
+ */
+type ActionHandler<
+	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TOutput = unknown,
+> = (
+	...args: TInput extends StandardSchemaWithJSONSchema
+		? [input: StandardSchemaV1.InferOutput<TInput>]
+		: []
+) => TOutput | Promise<TOutput>;
+
+/**
  * Configuration for defining an action (query or mutation).
  *
  * @typeParam TInput - The input schema type (StandardSchema), or undefined for no input
@@ -115,48 +135,76 @@ type ActionConfig<
 	description?: string;
 	input?: TInput;
 	output?: StandardSchemaWithJSONSchema;
-	handler: TInput extends StandardSchemaWithJSONSchema
-		? (
-				input: StandardSchemaV1.InferOutput<TInput>,
-			) => TOutput | Promise<TOutput>
-		: () => TOutput | Promise<TOutput>;
+	handler: ActionHandler<TInput, TOutput>;
+};
+
+/**
+ * Metadata properties attached to a callable action.
+ *
+ * These are the introspection properties available on the action function itself
+ * (via `Object.assign`). The handler is NOT included — the action function IS
+ * the handler. Call the action directly instead of accessing `.handler`.
+ */
+type ActionMeta<
+	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+> = {
+	type: 'query' | 'mutation';
+	description?: string;
+	input?: TInput;
+	output?: StandardSchemaWithJSONSchema;
 };
 
 /**
  * A query action definition (read operation).
  *
- * Queries are idempotent operations that read data without side effects.
+ * Queries are callable functions with metadata properties attached.
+ * They are idempotent operations that read data without side effects.
  * When exposed via the server adapter, queries map to HTTP GET requests.
  *
  * @typeParam TInput - The input schema type, or undefined for no input
  * @typeParam TOutput - The return type of the handler
+ *
+ * @example
+ * ```typescript
+ * const getAll = defineQuery({ handler: () => client.tables.posts.getAllValid() });
+ * const posts = getAll();      // call directly
+ * getAll.type;                  // 'query'
+ * getAll.input;                 // schema or undefined
+ * ```
  *
  * @see {@link defineQuery} for creating query definitions
  */
 export type Query<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
 	TOutput = unknown,
-> = ActionConfig<TInput, TOutput> & {
-	type: 'query';
-};
+> = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'query' };
 
 /**
  * A mutation action definition (write operation).
  *
- * Mutations are operations that modify state or have side effects.
+ * Mutations are callable functions with metadata properties attached.
+ * They are operations that modify state or have side effects.
  * When exposed via the server adapter, mutations map to HTTP POST requests.
  *
  * @typeParam TInput - The input schema type, or undefined for no input
  * @typeParam TOutput - The return type of the handler
+ *
+ * @example
+ * ```typescript
+ * const createPost = defineMutation({
+ *   input: type({ title: 'string' }),
+ *   handler: ({ title }) => { client.tables.posts.upsert({ id: generateId(), title }); },
+ * });
+ * createPost({ title: 'Hello' }); // call directly
+ * createPost.type;                 // 'mutation'
+ * ```
  *
  * @see {@link defineMutation} for creating mutation definitions
  */
 export type Mutation<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
 	TOutput = unknown,
-> = ActionConfig<TInput, TOutput> & {
-	type: 'mutation';
-};
+> = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'mutation' };
 
 /**
  * Union type of Query and Mutation action definitions.
@@ -210,34 +258,45 @@ export type Actions = {
 /**
  * Define a query (read operation) with full type inference.
  *
+ * Returns a callable function with metadata properties (`type`, `input`, `description`).
  * The `type: 'query'` discriminator is attached automatically.
  * Queries map to HTTP GET requests when exposed via the server adapter.
  *
- * Handlers close over their dependencies (client, tables, etc.) instead of receiving
- * context as a parameter. Define queries after creating the client.
+ * The returned action IS the function — call it directly. There is no `.handler` property.
+ * Pass `handler` in the config; it gets promoted to the callable root.
  *
  * @example
  * ```typescript
- * // Assuming client is already created:
- * // const client = createWorkspace({ ... });
- *
- * // Query without input - closes over client
  * const getAllPosts = defineQuery({
  *   handler: () => client.tables.posts.getAllValid(),
  * });
+ * getAllPosts();       // call directly
+ * getAllPosts.type;    // 'query'
  *
- * // Query with input validation - closes over client
  * const getPost = defineQuery({
  *   input: type({ id: 'string' }),
  *   handler: ({ id }) => client.tables.posts.get(id),
  * });
+ * getPost({ id: '1' }); // call directly with typed input
  * ```
  */
+/** No input — `TInput` is explicitly `undefined`. */
+export function defineQuery<TOutput = unknown>(
+	config: ActionConfig<undefined, TOutput>,
+): Query<undefined, TOutput>;
+/** With input — `TInput` inferred from the schema. */
 export function defineQuery<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput> {
-	return { type: 'query' as const, ...config };
+>(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput>;
+export function defineQuery({
+	handler,
+	...rest
+}: ActionConfig<any, any>): Query<any, any> {
+	return Object.assign(handler, {
+		type: 'query' as const,
+		...rest,
+	}) as unknown as Query<any, any>;
 }
 
 /**
@@ -271,19 +330,30 @@ export function defineQuery<
  * });
  * ```
  */
+/** No input — `TInput` is explicitly `undefined`. */
+export function defineMutation<TOutput = unknown>(
+	config: ActionConfig<undefined, TOutput>,
+): Mutation<undefined, TOutput>;
+/** With input — `TInput` inferred from the schema. */
 export function defineMutation<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput> {
-	return { type: 'mutation' as const, ...config };
+>(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput>;
+export function defineMutation({
+	handler,
+	...rest
+}: ActionConfig<any, any>): Mutation<any, any> {
+	return Object.assign(handler, {
+		type: 'mutation' as const,
+		...rest,
+	}) as unknown as Mutation<any, any>;
 }
 
 /**
  * Type guard to check if a value is an action definition.
  *
- * Returns true if the value is an object with:
- * - A `type` property of 'query' or 'mutation'
- * - A `handler` function
+ * Actions are callable functions with a `type` property of 'query' or 'mutation'.
+ * Call the action directly — there is no `.handler` property.
  *
  * @param value - The value to check
  * @returns True if the value is an Action definition
@@ -291,20 +361,16 @@ export function defineMutation<
  * @example
  * ```typescript
  * if (isAction(value)) {
- *   // value is typed as Action<any, any>
  *   console.log(value.type); // 'query' | 'mutation'
- *   value.handler(input);
+ *   value(input);            // call directly
  * }
  * ```
  */
 export function isAction(value: unknown): value is Action<any, any> {
 	return (
-		typeof value === 'object' &&
-		value !== null &&
+		typeof value === 'function' &&
 		'type' in value &&
-		(value.type === 'query' || value.type === 'mutation') &&
-		'handler' in value &&
-		typeof value.handler === 'function'
+		(value.type === 'query' || value.type === 'mutation')
 	);
 }
 
@@ -332,8 +398,7 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
  * Iterate over action definitions, yielding each action with its path.
  *
  * Use this for adapters (CLI, Server) that need to introspect and invoke actions.
- * Each action's handler already has access to the client via closure, so adapters
- * just call `action.handler(input)` directly—no attachment step needed.
+ * Each action is callable directly — just call `action(input)`.
  *
  * @param actions - The action tree to iterate over
  * @param path - Internal parameter for tracking the current path (default: [])
@@ -344,18 +409,13 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
  * // In a server adapter
  * for (const [action, path] of iterateActions(actions)) {
  *   const route = path.join('/');
- *   registerRoute(route, async (input) => {
- *     // Handler already has client via closure—just call it directly
- *     return await action.handler(input);
- *   });
+ *   registerRoute(route, async (input) => action(input));
  * }
  *
  * // In a CLI adapter
  * for (const [action, path] of iterateActions(actions)) {
  *   const command = path.join(':');
- *   cli.command(command, async (input) => {
- *     return await action.handler(input);  // Direct invocation
- *   });
+ *   cli.command(command, async (input) => action(input));
  * }
  * ```
  */

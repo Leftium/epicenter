@@ -11,7 +11,7 @@ import { workspacePersistence } from './workspace-persistence';
  * @returns A workspace client with persistence pre-configured
  */
 export function createWorkspaceClient(definition: WorkspaceDefinition) {
-	return createWorkspace(definition).withExtensions({
-		persistence: (ctx) => workspacePersistence(ctx),
-	});
+	return createWorkspace(definition).withExtension('persistence', (ctx) =>
+		workspacePersistence(ctx),
+	);
 }

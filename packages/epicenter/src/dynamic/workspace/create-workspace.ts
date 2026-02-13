@@ -1,7 +1,13 @@
 /**
  * createWorkspace() - Instantiate a dynamic workspace client.
  *
- * Returns a client that IS usable directly AND has `.withExtensions()`.
+ * Returns a client that IS usable directly AND has `.withExtension()` for chaining.
+ *
+ * ## Extension chaining vs action maps
+ *
+ * Extensions use chainable `.withExtension(key, factory)` because they build on each
+ * other progressively — each factory receives previously added extensions as typed context.
+ * You may be importing extensions you don't control and want to compose on top of them.
  *
  * @example
  * ```typescript
@@ -9,34 +15,38 @@
  * const workspace = createWorkspace(definition);
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
  *
- * // With extensions
+ * // With extensions (chained)
  * const workspace = createWorkspace(definition)
- *   .withExtensions({ sqlite, persistence });
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
  *
  * await workspace.whenSynced;
- * workspace.extensions.sqlite.db.select()...;
+ * workspace.extensions.persistence.clearData();
  * ```
  */
 
 import * as Y from 'yjs';
-import { defineExports, type Lifecycle } from '../../shared/lifecycle';
+import {
+	defineExports,
+	type Lifecycle,
+	type MaybePromise,
+} from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
 import type { WorkspaceDefinition } from '../schema/workspace-definition';
 import { createTables } from '../tables/create-tables';
 import type {
 	ExtensionContext,
-	ExtensionFactoryMap,
-	InferExtensionExports,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 } from './types';
 
 /**
- * Create a workspace client with optional extension chaining.
+ * Create a workspace client with chainable extension support.
  *
- * Returns a client that IS directly usable AND has `.withExtensions()`
- * for adding extensions like persistence, SQLite, or sync.
+ * The returned client IS directly usable (no extensions required) AND supports
+ * chaining `.withExtension()` calls to progressively add extensions, each with
+ * typed access to all previously added extensions.
  *
  * ## Y.Doc Structure
  *
@@ -53,20 +63,17 @@ import type {
  * workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
  * ```
  *
- * @example With extensions
+ * @example With extensions (chained)
  * ```typescript
  * const workspace = createWorkspace(definition)
- *   .withExtensions({
- *     sqlite: (ctx) => sqliteExtension(ctx),
- *     persistence: (ctx) => persistenceExtension(ctx),
- *   });
+ *   .withExtension('persistence', ({ ydoc }) => persistenceExtension({ ydoc }))
+ *   .withExtension('sync', ({ ydoc }) => syncExtension({ ydoc }));
  *
  * await workspace.whenSynced;
- * workspace.extensions.sqlite.db.select()...;
  * ```
  *
  * @param definition - Workspace definition with id, tables, and kv
- * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtensions()
+ * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtension()
  */
 export function createWorkspace<
 	const TTableDefinitions extends readonly TableDefinition[],
@@ -84,86 +91,60 @@ export function createWorkspace<
 	const tables = createTables(ydoc, definition.tables ?? []);
 	const kv = createKv(ydoc, definition.kv ?? []);
 
-	// Base destroy (no extensions)
-	const destroy = async (): Promise<void> => {
-		ydoc.destroy();
-	};
+	// Internal state: accumulated cleanup functions and whenSynced promises.
+	// Shared across the builder chain (same ydoc).
+	const extensionCleanups: (() => MaybePromise<void>)[] = [];
+	const whenSyncedPromises: Promise<unknown>[] = [];
 
-	// Build the base client (no extensions)
-	const baseClient: WorkspaceClient<
-		TTableDefinitions,
-		TKvFields,
-		Record<string, never>
-	> = {
-		id,
-		ydoc,
-		tables,
-		kv,
-		extensions: {} as InferExtensionExports<Record<string, never>>,
-		whenSynced: Promise.resolve(), // No extensions = already synced
-		destroy,
-		[Symbol.asyncDispose]: destroy,
-	};
+	function buildClient<TExtensions extends Record<string, Lifecycle>>(
+		extensions: TExtensions,
+	): WorkspaceClientBuilder<TTableDefinitions, TKvFields, TExtensions> {
+		const whenSynced = Promise.all(whenSyncedPromises).then(() => {});
 
-	// Add withExtensions method to create builder
-	return Object.assign(baseClient, {
-		/**
-		 * Add extensions to the workspace client.
-		 *
-		 * Each extension factory receives context and returns a Lifecycle object.
-		 * The returned client has typed access to all extension exports.
-		 */
-		withExtensions<TExtensions extends ExtensionFactoryMap>(
-			extensionFactories: TExtensions,
-		) {
-			// Initialize extensions synchronously; async work is in their whenSynced
-			const extensions = {} as InferExtensionExports<TExtensions>;
-
-			for (const [extensionId, factory] of Object.entries(extensionFactories)) {
-				// Build context for this extension
-				const context: ExtensionContext<TTableDefinitions, TKvFields> = {
-					ydoc,
-					id,
-					definition,
-					tables,
-					kv,
-					extensionId,
-				};
-
-				// Factory is sync; normalize exports at boundary
-				const result = factory(context);
-				const exports = defineExports(result as Record<string, unknown>);
-				(extensions as Record<string, unknown>)[extensionId] = exports;
+		const destroy = async (): Promise<void> => {
+			// Destroy extensions in reverse order (last added = first destroyed)
+			for (let i = extensionCleanups.length - 1; i >= 0; i--) {
+				await extensionCleanups[i]!();
 			}
+			ydoc.destroy();
+		};
 
-			// Aggregate all extension whenSynced promises
-			// Fail-fast: any rejection rejects the whole thing
-			const whenSynced = Promise.all(
-				Object.values(extensions).map((e) => (e as Lifecycle).whenSynced),
-			).then(() => {});
+		const client = {
+			id,
+			ydoc,
+			tables,
+			kv,
+			extensions,
+			whenSynced,
+			destroy,
+			[Symbol.asyncDispose]: destroy,
+		};
 
-			// Cleanup must destroy extensions first, then Y.Doc
-			const destroyWithExtensions = async (): Promise<void> => {
-				await Promise.allSettled(
-					Object.values(extensions).map((e) => (e as Lifecycle).destroy()),
-				);
-				ydoc.destroy();
-			};
+		return Object.assign(client, {
+			withExtension<TKey extends string, TExports extends Lifecycle>(
+				key: TKey,
+				factory: (
+					context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
+				) => TExports,
+			) {
+				const result = factory({ id, ydoc, tables, kv, extensions });
+				const exports = defineExports(
+					result as Record<string, unknown>,
+				) as unknown as TExports;
+				extensionCleanups.push(() => exports.destroy());
+				whenSyncedPromises.push(exports.whenSynced);
 
-			const clientWithExtensions = {
-				id,
-				ydoc,
-				tables,
-				kv,
-				extensions,
-				whenSynced,
-				destroy: destroyWithExtensions,
-				[Symbol.asyncDispose]: destroyWithExtensions,
-			};
+				const newExtensions = {
+					...extensions,
+					[key]: exports,
+				} as TExtensions & Record<TKey, TExports>;
 
-			return clientWithExtensions;
-		},
-	});
+				return buildClient(newExtensions);
+			},
+		});
+	}
+
+	return buildClient({} as Record<string, never>);
 }
 
 export type { WorkspaceClient, WorkspaceClientBuilder };

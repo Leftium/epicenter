@@ -72,13 +72,12 @@ export type LocalRevisionHistoryConfig = {
  * import { createWorkspace } from '@epicenter/hq/dynamic';
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
- * const workspace = createWorkspace(definition).withExtensions({
- *   persistence,
- *   revisions: (ctx) => localRevisionHistory(ctx, {
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('persistence', () => persistence)
+ *   .withExtension('revisions', (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
  *     maxVersions: 50,
- *   }),
- * });
+ *   }));
  *
  * // Save a version manually (bypasses debounce)
  * workspace.extensions.revisions.save('Before refactor');
@@ -96,12 +95,11 @@ export type LocalRevisionHistoryConfig = {
  *
  * @example Custom debounce interval
  * ```typescript
- * const workspace = createWorkspace(definition).withExtensions({
- *   revisions: (ctx) => localRevisionHistory(ctx, {
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('revisions', (ctx) => localRevisionHistory(ctx, {
  *     directory: './workspaces',
  *     debounceMs: 5000,  // Save 5 seconds after last change
- *   }),
- * });
+ *   }));
  * ```
  *
  * @example Google Docs-style slider UI

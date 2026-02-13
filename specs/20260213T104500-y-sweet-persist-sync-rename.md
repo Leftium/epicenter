@@ -101,12 +101,13 @@ import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 ### Current Usage
 
 ```typescript
-createWorkspace(definition).withExtensions({
-	sync: ySweetSync({
+createWorkspace(definition).withExtension(
+	'sync',
+	ySweetSync({
 		auth: directAuth('http://127.0.0.1:8080'),
 		persistence: indexeddbPersistence,
 	}),
-});
+);
 ```
 
 ## New State
@@ -391,54 +392,13 @@ export { indexeddbPersistence as webPersistence } from './y-sweet-persist-sync/w
 import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
 import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
 
-export const popupWorkspace = createWorkspace(definition).withExtensions({
-	sync: ySweetSync({
+export const popupWorkspace = createWorkspace(definition).withExtension(
+	'sync',
+	ySweetSync({
 		auth: directAuth('http://127.0.0.1:8080'),
 		persistence: indexeddbPersistence,
 	}),
-});
-
-// After
-import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
-import {
-	directAuth,
-	ySweetPersistSync,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
-
-export const popupWorkspace = createWorkspace(definition).withExtensions({
-	sync: ySweetPersistSync({
-		auth: directAuth('http://127.0.0.1:8080'),
-		persistence: indexeddbPersistence,
-	}),
-});
-```
-
-### `apps/tab-manager/src/entrypoints/background.ts`
-
-Same pattern as above — update imports and rename `ySweetSync` to `ySweetPersistSync`.
-
-### `packages/epicenter/src/extensions/y-sweet-sync.test.ts`
-
-Rename file to `y-sweet-persist-sync.test.ts`. Update:
-
-```typescript
-// Before
-import { ySweetSync } from './y-sweet-sync';
-
-// After
-import { ySweetPersistSync } from './y-sweet-persist-sync';
-```
-
-All test cases already use `persistence` in their config (it was always provided in tests). Just rename the function calls.
-
-### `apps/epicenter/src/lib/yjs/workspace.ts` — OUT OF SCOPE
-
-This file uses custom `workspacePersistence` with no sync:
-
-```typescript
-return createWorkspace(definition).withExtensions({
-	persistence: (ctx) => workspacePersistence(ctx),
-});
+);
 ```
 
 This is a different pattern — standalone persistence, no Y-Sweet. It does NOT use `ySweetSync` or `indexeddbPersistence`. Leave it as-is. The `workspacePersistence` function is app-specific and imports `ExtensionContext` from `@epicenter/hq/dynamic`, not from `extensions/persistence`.

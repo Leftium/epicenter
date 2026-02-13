@@ -3,12 +3,14 @@
 ## Overview
 
 Replace the existing `websocketSync` extension with a Y-Sweet-based sync extension that supports two modes:
+
 - **Direct mode**: Connect directly to a Y-Sweet server (local dev, Tailscale)
 - **Authenticated mode**: Connect via backend auth endpoint (hosted infrastructure)
 
 ## Background
 
 Y-Sweet is a Yjs sync and persistence service by Jamsocket that provides:
+
 - WebSocket-based real-time sync
 - Built-in IndexedDB persistence for offline support
 - Token-based authentication
@@ -16,32 +18,32 @@ Y-Sweet is a Yjs sync and persistence service by Jamsocket that provides:
 
 ### Why Y-Sweet over y-websocket?
 
-| Feature | y-websocket | Y-Sweet |
-|---------|-------------|---------|
-| Real-time sync | ✓ | ✓ |
-| Offline support | Requires y-indexeddb | Built-in |
-| Authentication | Manual | Built-in tokens |
-| Reconnection | Manual | Automatic |
-| Hosted option | No | Yes (Jamsocket) |
+| Feature         | y-websocket          | Y-Sweet         |
+| --------------- | -------------------- | --------------- |
+| Real-time sync  | ✓                    | ✓               |
+| Offline support | Requires y-indexeddb | Built-in        |
+| Authentication  | Manual               | Built-in tokens |
+| Reconnection    | Manual               | Automatic       |
+| Hosted option   | No                   | Yes (Jamsocket) |
 
 ## API Design
 
 ```typescript
 type YSweetSyncConfig =
-  | {
-      mode: 'direct';
-      /** Y-Sweet server URL (e.g., 'http://localhost:8080') */
-      serverUrl: string;
-    }
-  | {
-      mode: 'authenticated';
-      /**
-       * Auth endpoint that returns a ClientToken.
-       * - String URL: Extension POSTs to get token
-       * - Async function: Custom auth logic
-       */
-      authEndpoint: string | (() => Promise<YSweetClientToken>);
-    };
+	| {
+			mode: 'direct';
+			/** Y-Sweet server URL (e.g., 'http://localhost:8080') */
+			serverUrl: string;
+	  }
+	| {
+			mode: 'authenticated';
+			/**
+			 * Auth endpoint that returns a ClientToken.
+			 * - String URL: Extension POSTs to get token
+			 * - Async function: Custom auth logic
+			 */
+			authEndpoint: string | (() => Promise<YSweetClientToken>);
+	  };
 ```
 
 The document ID is automatically derived from the workspace ID (`ydoc.guid`).
@@ -51,19 +53,19 @@ For offline persistence, use `y-indexeddb` alongside this extension.
 
 ```typescript
 // Direct mode - local development
-sync: ySweetSync({
+.withExtension('sync', ySweetSync({
   mode: 'direct',
   serverUrl: 'http://localhost:8080',
-})
+}))
 
 // Direct mode - Tailscale network
-sync: ySweetSync({
+.withExtension('sync', ySweetSync({
   mode: 'direct',
   serverUrl: 'http://my-server.tailnet:8080',
-})
+}))
 
 // Authenticated mode - hosted infrastructure
-sync: ySweetSync({
+.withExtension('sync', ySweetSync({
   mode: 'authenticated',
   authEndpoint: async () => {
     const token = await getStoredAuthToken();
@@ -73,7 +75,7 @@ sync: ySweetSync({
     });
     return res.json(); // Backend returns ClientToken with namespaced docId
   },
-})
+}))
 ```
 
 ## Implementation
@@ -83,16 +85,19 @@ sync: ySweetSync({
 Constructs a ClientToken from the server URL:
 
 ```typescript
-function createDirectClientToken(serverUrl: string, docId: string): YSweetClientToken {
-  const url = new URL(serverUrl);
-  const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+function createDirectClientToken(
+	serverUrl: string,
+	docId: string,
+): YSweetClientToken {
+	const url = new URL(serverUrl);
+	const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
 
-  return {
-    url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-    baseUrl: `${url.protocol}//${url.host}`,
-    docId,
-    token: undefined, // No auth for direct mode
-  };
+	return {
+		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
+		baseUrl: `${url.protocol}//${url.host}`,
+		docId,
+		token: undefined, // No auth for direct mode
+	};
 }
 ```
 
@@ -189,18 +194,20 @@ The Y-Sweet client (`@y-sweet/client` v0.6.4) does not include built-in IndexedD
 For offline support, use `y-indexeddb` alongside the Y-Sweet sync extension.
 
 ```typescript
-const client = createWorkspace(definition).withExtensions({
-  persistence: ({ ydoc }) => {
-    const provider = new IndexeddbPersistence('my-doc', ydoc);
-    return defineExports({
-      provider,
-      whenSynced: provider.whenSynced,
-      destroy: () => provider.destroy(),
-    });
-  },
-  sync: ySweetSync({
-    mode: 'direct',
-    serverUrl: 'http://localhost:8080',
-  }),
-});
+const client = createWorkspace(definition)
+	.withExtension('persistence', ({ ydoc }) => {
+		const provider = new IndexeddbPersistence('my-doc', ydoc);
+		return defineExports({
+			provider,
+			whenSynced: provider.whenSynced,
+			destroy: () => provider.destroy(),
+		});
+	})
+	.withExtension(
+		'sync',
+		ySweetSync({
+			mode: 'direct',
+			serverUrl: 'http://localhost:8080',
+		}),
+	);
 ```

@@ -22,9 +22,7 @@
 
 		const grouped = new Map<string, Tab[]>();
 		for (const window of windowsQuery.data) {
-			const windowTabs = tabsQuery.data.filter(
-				(t) => t.window_id === window.id,
-			);
+			const windowTabs = tabsQuery.data.filter((t) => t.windowId === window.id);
 			// Already sorted by index from query
 			grouped.set(window.id, windowTabs);
 		}

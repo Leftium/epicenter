@@ -1,7 +1,7 @@
 /**
  * Suspend and restore tab helpers.
  *
- * These operate on the shared `suspended_tabs` table and the browser tabs API.
+ * These operate on the shared `suspendedTabs` table and the browser tabs API.
  * Suspending saves a tab's essential data to Yjs and closes the browser tab.
  * Restoring opens the URL locally and removes the row from Yjs.
  *
@@ -13,10 +13,10 @@ import type { SuspendedTab, Tab } from './browser.schema';
 import type { BrowserDb } from './schema';
 
 /**
- * Suspend a browser tab — save it to the `suspended_tabs` table and close it.
+ * Suspend a browser tab — save it to the `suspendedTabs` table and close it.
  *
  * Reads the tab's essential data (url, title, favicon, pinned state),
- * writes a row to `suspended_tabs`, then closes the browser tab.
+ * writes a row to `suspendedTabs`, then closes the browser tab.
  * The existing `onRemoved` handler in background.ts handles cleanup
  * of the live `tabs` table row automatically.
  *
@@ -30,24 +30,24 @@ export async function suspendTab(
 	deviceId: string,
 	tab: Tab,
 ): Promise<void> {
-	tables.suspended_tabs.set({
+	tables.suspendedTabs.set({
 		id: generateId(),
 		url: tab.url,
 		title: tab.title || 'Untitled',
-		fav_icon_url: tab.fav_icon_url,
+		favIconUrl: tab.favIconUrl,
 		pinned: tab.pinned,
-		source_device_id: deviceId,
-		suspended_at: Date.now(),
+		sourceDeviceId: deviceId,
+		suspendedAt: Date.now(),
 	});
 
-	await browser.tabs.remove(tab.tab_id);
+	await browser.tabs.remove(tab.tabId);
 }
 
 /**
  * Restore a suspended tab — open it in the browser and delete the saved row.
  *
  * Creates a new browser tab with the suspended tab's URL and pinned state,
- * then removes the row from `suspended_tabs`. The existing `onCreated`
+ * then removes the row from `suspendedTabs`. The existing `onCreated`
  * handler in background.ts adds the new tab to the live `tabs` table
  * automatically.
  *
@@ -65,13 +65,13 @@ export async function restoreTab(
 		pinned: suspendedTab.pinned,
 	});
 
-	tables.suspended_tabs.delete(suspendedTab.id);
+	tables.suspendedTabs.delete(suspendedTab.id);
 }
 
 /**
  * Delete a suspended tab without restoring it.
  *
- * Simply removes the row from the `suspended_tabs` table.
+ * Simply removes the row from the `suspendedTabs` table.
  * The tab is permanently discarded.
  *
  * @example
@@ -80,7 +80,7 @@ export async function restoreTab(
  * ```
  */
 export function deleteSuspendedTab(tables: BrowserDb, id: string): void {
-	tables.suspended_tabs.delete(id);
+	tables.suspendedTabs.delete(id);
 }
 
 /**
@@ -98,5 +98,5 @@ export function updateSuspendedTab(
 	tables: BrowserDb,
 	suspendedTab: SuspendedTab,
 ): void {
-	tables.suspended_tabs.set(suspendedTab);
+	tables.suspendedTabs.set(suspendedTab);
 }

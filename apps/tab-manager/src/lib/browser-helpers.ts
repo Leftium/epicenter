@@ -47,12 +47,12 @@ export function createBrowserConverters(deviceId: string) {
 		tabToRow(tab: Browser.tabs.Tab & { id: number; windowId: number }): Tab {
 			return {
 				id: TabId(tab.id),
-				device_id: deviceId,
-				tab_id: tab.id,
-				window_id: WindowId(tab.windowId),
+				deviceId: deviceId,
+				tabId: tab.id,
+				windowId: WindowId(tab.windowId),
 				url: tab.url ?? '',
 				title: tab.title ?? '',
-				fav_icon_url: tab.favIconUrl ?? undefined,
+				favIconUrl: tab.favIconUrl ?? undefined,
 				index: tab.index,
 				pinned: tab.pinned,
 				active: tab.active,
@@ -60,13 +60,13 @@ export function createBrowserConverters(deviceId: string) {
 				muted: tab.mutedInfo?.muted ?? false,
 				audible: tab.audible ?? false,
 				discarded: tab.discarded,
-				auto_discardable: tab.autoDiscardable ?? true,
+				autoDiscardable: tab.autoDiscardable ?? true,
 				status: tab.status ?? 'complete',
-				group_id:
+				groupId:
 					tab.groupId !== undefined && tab.groupId !== -1
 						? GroupId(tab.groupId)
 						: undefined,
-				opener_tab_id:
+				openerTabId:
 					tab.openerTabId !== undefined ? TabId(tab.openerTabId) : undefined,
 				incognito: tab.incognito ?? false,
 			};
@@ -75,12 +75,12 @@ export function createBrowserConverters(deviceId: string) {
 		windowToRow(window: Browser.windows.Window & { id: number }): Window {
 			return {
 				id: WindowId(window.id),
-				device_id: deviceId,
-				window_id: window.id,
+				deviceId: deviceId,
+				windowId: window.id,
 				state: window.state ?? 'normal',
 				type: window.type ?? 'normal',
 				focused: window.focused ?? false,
-				always_on_top: window.alwaysOnTop ?? false,
+				alwaysOnTop: window.alwaysOnTop ?? false,
 				incognito: window.incognito ?? false,
 				top: window.top ?? 0,
 				left: window.left ?? 0,
@@ -92,9 +92,9 @@ export function createBrowserConverters(deviceId: string) {
 		tabGroupToRow(group: Browser.tabGroups.TabGroup): TabGroup {
 			return {
 				id: GroupId(group.id),
-				device_id: deviceId,
-				group_id: group.id,
-				window_id: WindowId(group.windowId),
+				deviceId: deviceId,
+				groupId: group.id,
+				windowId: WindowId(group.windowId),
 				title: group.title ?? undefined,
 				color: group.color ?? 'grey',
 				collapsed: group.collapsed ?? false,

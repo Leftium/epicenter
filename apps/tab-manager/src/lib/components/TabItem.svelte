@@ -21,8 +21,8 @@
 
 	let { tab }: { tab: Tab } = $props();
 
-	// Use tab_id for browser API calls (native browser tab ID)
-	const tabId = $derived(tab.tab_id);
+	// Use tabId for browser API calls (native browser tab ID)
+	const tabId = $derived(tab.tabId);
 
 	const closeMutation = createMutation(() => rpc.tabs.close.options);
 	const activateMutation = createMutation(() => rpc.tabs.activate.options);
@@ -69,7 +69,7 @@
 >
 	<!-- Favicon -->
 	<Avatar.Root class="size-4 shrink-0 rounded-sm">
-		<Avatar.Image src={tab.fav_icon_url} alt="" />
+		<Avatar.Image src={tab.favIconUrl} alt="" />
 		<Avatar.Fallback class="rounded-sm">
 			<GlobeIcon class="size-3 text-muted-foreground" />
 		</Avatar.Fallback>

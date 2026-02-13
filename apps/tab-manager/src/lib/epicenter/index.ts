@@ -7,4 +7,3 @@ export type {
 	Window,
 	WindowCompositeId,
 } from './browser.schema';
-export { default as EpicenterProvider } from './EpicenterProvider.svelte';

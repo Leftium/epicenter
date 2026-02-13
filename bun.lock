@@ -111,8 +111,6 @@
         "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
-        "@tanstack/svelte-query": "catalog:",
-        "@tanstack/svelte-query-devtools": "catalog:",
         "@wxt-dev/storage": "^1.2.6",
         "arktype": "catalog:",
         "clsx": "catalog:",

@@ -55,7 +55,7 @@ function createBrowserState() {
 
 	// ── Seed — single IPC call gets windows + tabs ────────────────────────
 
-	async function seed() {
+	(async () => {
 		deviceId = await getDeviceId();
 		const browserWindows = await browser.windows.getAll({ populate: true });
 
@@ -80,171 +80,164 @@ function createBrowserState() {
 		tabs = seedTabs;
 		rebuildIndex();
 		ready = true;
-	}
+	})();
 
-	// ── Browser Event Listeners — surgical $state mutations ───────────────
+	// ── Tab Event Listeners ───────────────────────────────────────────────
 
-	function registerListeners() {
-		// ── Tab Events ────────────────────────────────────────────────────
+	// onCreated: Full Tab object provided
+	browser.tabs.onCreated.addListener(async (tab) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		const row = tabToRow(id, tab);
+		if (!row) return;
+		tabs.push(row);
+		tabIndex.set(row.tabId, tabs.length - 1);
+	});
 
-		// onCreated: Full Tab object provided
-		browser.tabs.onCreated.addListener(async (tab) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			const row = tabToRow(id, tab);
-			if (!row) return;
-			tabs.push(row);
-			tabIndex.set(row.tabId, tabs.length - 1);
-		});
+	// onRemoved: Only tabId provided — splice from array
+	browser.tabs.onRemoved.addListener(async (tabId) => {
+		if (!ready) return;
+		const idx = tabIndex.get(tabId);
+		if (idx === undefined) return;
+		tabs.splice(idx, 1);
+		rebuildIndex();
+	});
 
-		// onRemoved: Only tabId provided — splice from array
-		browser.tabs.onRemoved.addListener(async (tabId) => {
-			if (!ready) return;
-			const idx = tabIndex.get(tabId);
-			if (idx === undefined) return;
-			tabs.splice(idx, 1);
-			rebuildIndex();
-		});
+	// onUpdated: Full Tab in 3rd arg — replace element at index
+	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		const row = tabToRow(id, tab);
+		if (!row) return;
+		const idx = tabIndex.get(row.tabId);
+		if (idx !== undefined) {
+			tabs[idx] = row;
+		}
+	});
 
-		// onUpdated: Full Tab in 3rd arg — replace element at index
-		browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
+	// onMoved: Re-query tab to get updated index
+	browser.tabs.onMoved.addListener(async (tabId) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		try {
+			const tab = await browser.tabs.get(tabId);
 			const row = tabToRow(id, tab);
 			if (!row) return;
 			const idx = tabIndex.get(row.tabId);
 			if (idx !== undefined) {
 				tabs[idx] = row;
 			}
-		});
+		} catch {
+			// Tab may have been closed during move
+		}
+	});
 
-		// onMoved: Re-query tab to get updated index
-		browser.tabs.onMoved.addListener(async (tabId) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			try {
-				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(id, tab);
-				if (!row) return;
-				const idx = tabIndex.get(row.tabId);
-				if (idx !== undefined) {
-					tabs[idx] = row;
-				}
-			} catch {
-				// Tab may have been closed during move
+	// onActivated: Update active flags on old and new tab
+	browser.tabs.onActivated.addListener(async (activeInfo) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		const windowId = createWindowCompositeId(id, activeInfo.windowId);
+
+		// Deactivate previous active tab(s) in this window
+		for (let i = 0; i < tabs.length; i++) {
+			if (tabs[i].windowId === windowId && tabs[i].active) {
+				tabs[i] = { ...tabs[i], active: false };
 			}
-		});
+		}
 
-		// onActivated: Update active flags on old and new tab
-		browser.tabs.onActivated.addListener(async (activeInfo) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			const windowId = createWindowCompositeId(id, activeInfo.windowId);
+		// Activate the new tab
+		const idx = tabIndex.get(activeInfo.tabId);
+		if (idx !== undefined) {
+			tabs[idx] = { ...tabs[idx], active: true };
+		}
+	});
 
-			// Deactivate previous active tab(s) in this window
-			for (let i = 0; i < tabs.length; i++) {
-				if (tabs[i].windowId === windowId && tabs[i].active) {
-					tabs[i] = { ...tabs[i], active: false };
-				}
-			}
-
-			// Activate the new tab
-			const idx = tabIndex.get(activeInfo.tabId);
-			if (idx !== undefined) {
-				tabs[idx] = { ...tabs[idx], active: true };
-			}
-		});
-
-		// onAttached: Tab moved between windows — re-query
-		browser.tabs.onAttached.addListener(async (tabId) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			try {
-				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(id, tab);
-				if (!row) return;
-				const idx = tabIndex.get(row.tabId);
-				if (idx !== undefined) {
-					tabs[idx] = row;
-				} else {
-					tabs.push(row);
-					tabIndex.set(row.tabId, tabs.length - 1);
-				}
-			} catch {
-				// Tab may have been closed
-			}
-		});
-
-		// onDetached: Tab detached from window — re-query
-		browser.tabs.onDetached.addListener(async (tabId) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			try {
-				const tab = await browser.tabs.get(tabId);
-				const row = tabToRow(id, tab);
-				if (!row) return;
-				const idx = tabIndex.get(row.tabId);
-				if (idx !== undefined) {
-					tabs[idx] = row;
-				}
-			} catch {
-				// Tab may have been closed during detach
-			}
-		});
-
-		// ── Window Events ─────────────────────────────────────────────────
-
-		// onCreated: Full Window object provided
-		browser.windows.onCreated.addListener(async (window) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-			const row = windowToRow(id, window);
+	// onAttached: Tab moved between windows — re-query
+	browser.tabs.onAttached.addListener(async (tabId) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		try {
+			const tab = await browser.tabs.get(tabId);
+			const row = tabToRow(id, tab);
 			if (!row) return;
-			windows.push(row);
-		});
+			const idx = tabIndex.get(row.tabId);
+			if (idx !== undefined) {
+				tabs[idx] = row;
+			} else {
+				tabs.push(row);
+				tabIndex.set(row.tabId, tabs.length - 1);
+			}
+		} catch {
+			// Tab may have been closed
+		}
+	});
 
-		// onRemoved: Remove window and all its tabs
-		browser.windows.onRemoved.addListener(async (windowId) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
+	// onDetached: Tab detached from window — re-query
+	browser.tabs.onDetached.addListener(async (tabId) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		try {
+			const tab = await browser.tabs.get(tabId);
+			const row = tabToRow(id, tab);
+			if (!row) return;
+			const idx = tabIndex.get(row.tabId);
+			if (idx !== undefined) {
+				tabs[idx] = row;
+			}
+		} catch {
+			// Tab may have been closed during detach
+		}
+	});
+
+	// ── Window Event Listeners ────────────────────────────────────────────
+
+	// onCreated: Full Window object provided
+	browser.windows.onCreated.addListener(async (window) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		const row = windowToRow(id, window);
+		if (!row) return;
+		windows.push(row);
+	});
+
+	// onRemoved: Remove window and all its tabs
+	browser.windows.onRemoved.addListener(async (windowId) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+		const compositeId = createWindowCompositeId(id, windowId);
+
+		// Remove window
+		const winIdx = windows.findIndex((w) => w.id === compositeId);
+		if (winIdx !== -1) {
+			windows.splice(winIdx, 1);
+		}
+
+		// Remove all tabs in that window
+		tabs = tabs.filter((t) => t.windowId !== compositeId);
+		rebuildIndex();
+	});
+
+	// onFocusChanged: Update focused flags
+	browser.windows.onFocusChanged.addListener(async (windowId) => {
+		if (!ready) return;
+		const id = await resolveDeviceId();
+
+		// Unfocus all windows
+		for (let i = 0; i < windows.length; i++) {
+			if (windows[i].focused) {
+				windows[i] = { ...windows[i], focused: false };
+			}
+		}
+
+		// Focus the new window (WINDOW_ID_NONE means all lost focus)
+		if (windowId !== browser.windows.WINDOW_ID_NONE) {
 			const compositeId = createWindowCompositeId(id, windowId);
-
-			// Remove window
 			const winIdx = windows.findIndex((w) => w.id === compositeId);
 			if (winIdx !== -1) {
-				windows.splice(winIdx, 1);
+				windows[winIdx] = { ...windows[winIdx], focused: true };
 			}
-
-			// Remove all tabs in that window
-			tabs = tabs.filter((t) => t.windowId !== compositeId);
-			rebuildIndex();
-		});
-
-		// onFocusChanged: Update focused flags
-		browser.windows.onFocusChanged.addListener(async (windowId) => {
-			if (!ready) return;
-			const id = await resolveDeviceId();
-
-			// Unfocus all windows
-			for (let i = 0; i < windows.length; i++) {
-				if (windows[i].focused) {
-					windows[i] = { ...windows[i], focused: false };
-				}
-			}
-
-			// Focus the new window (WINDOW_ID_NONE means all lost focus)
-			if (windowId !== browser.windows.WINDOW_ID_NONE) {
-				const compositeId = createWindowCompositeId(id, windowId);
-				const winIdx = windows.findIndex((w) => w.id === compositeId);
-				if (winIdx !== -1) {
-					windows[winIdx] = { ...windows[winIdx], focused: true };
-				}
-			}
-		});
-	}
-
-	seed();
-	registerListeners();
+		}
+	});
 
 	return {
 		/** Whether the initial seed has completed. */

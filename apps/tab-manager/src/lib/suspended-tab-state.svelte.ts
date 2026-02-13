@@ -1,16 +1,46 @@
-function readAllSuspendedTabs(): SuspendedTab[] {
-	return popupWorkspace.tables.suspendedTabs
-		.getAllValid()
-		.sort((a, b) => b.suspendedAt - a.suspendedAt);
-}
+/**
+ * Reactive suspended tab state for the popup.
+ *
+ * Reads from the Y.Doc `suspendedTabs` table via the popup workspace client.
+ * Observes Y.Doc changes for reactive updates when background or remote
+ * devices modify suspended tabs.
+ *
+ * Actions reuse existing suspend-tab.ts helpers.
+ *
+ * @example
+ * ```svelte
+ * <script>
+ *   import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+ * </script>
+ *
+ * {#each suspendedTabState.tabs as tab (tab.id)}
+ *   <div>{tab.title}</div>
+ * {/each}
+ * ```
+ */
+
+import { getDeviceId } from '$lib/device-id';
+import type { SuspendedTab, Tab } from '$lib/epicenter/browser.schema';
+import {
+	deleteSuspendedTab,
+	restoreTab,
+	suspendTab,
+	updateSuspendedTab,
+} from '$lib/epicenter/suspend-tab';
+import { popupWorkspace } from '$lib/epicenter/workspace';
 
 function createSuspendedTabState() {
-	let tabs = $state<SuspendedTab[]>(readAllSuspendedTabs());
+	const readAll = () =>
+		popupWorkspace.tables.suspendedTabs
+			.getAllValid()
+			.sort((a, b) => b.suspendedAt - a.suspendedAt);
+
+	let tabs = $state<SuspendedTab[]>(readAll());
 
 	// Re-read on every Y.Doc change — observer fires when persistence
 	// loads and on any subsequent remote/local modification
 	popupWorkspace.tables.suspendedTabs.observe(() => {
-		tabs = readAllSuspendedTabs();
+		tabs = readAll();
 	});
 
 	return {

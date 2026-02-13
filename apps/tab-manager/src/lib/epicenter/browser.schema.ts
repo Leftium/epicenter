@@ -37,53 +37,68 @@ const devices = defineTable(
 /**
  * Tabs table - shadows browser tab state.
  *
+ * Near 1:1 mapping with `chrome.tabs.Tab`. Optional fields match Chrome's optionality.
  * The `id` field is a composite key: `${deviceId}_${tabId}`.
  * This prevents collisions when syncing across multiple devices.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
  */
 const tabs = defineTable(
 	type({
 		id: 'string', // Composite: `${deviceId}_${tabId}`
 		deviceId: 'string', // Foreign key to devices table
-		tabId: 'number', // Original browser tab ID for API calls
+		tabId: 'number', // Original chrome.tabs.Tab.id for API calls
 		windowId: 'string', // Composite: `${deviceId}_${windowId}`
-		url: 'string',
-		title: 'string',
-		'favIconUrl?': 'string', // Nullable
 		index: 'number', // Zero-based position in tab strip
 		pinned: 'boolean',
 		active: 'boolean',
 		highlighted: 'boolean',
-		muted: 'boolean',
-		audible: 'boolean',
+		incognito: 'boolean',
 		discarded: 'boolean', // Tab unloaded to save memory
 		autoDiscardable: 'boolean',
-		status: "'unloaded' | 'loading' | 'complete'",
-		'groupId?': 'string', // Chrome 88+, null on Firefox
-		'openerTabId?': 'string', // ID of tab that opened this one
-		incognito: 'boolean',
+		frozen: 'boolean', // Chrome 132+, tab cannot execute tasks
+		// Optional fields — matching chrome.tabs.Tab optionality
+		'url?': 'string',
+		'title?': 'string',
+		'favIconUrl?': 'string',
+		'pendingUrl?': 'string', // Chrome 79+, URL before commit
+		'status?': "'unloaded' | 'loading' | 'complete'",
+		'audible?': 'boolean', // Chrome 45+
+		'muted?': 'boolean', // Flattened from chrome.tabs.MutedInfo.muted
+		'groupId?': 'string', // Composite: `${deviceId}_${groupId}`, Chrome 88+
+		'openerTabId?': 'string', // Composite: `${deviceId}_${openerTabId}`
+		'lastAccessed?': 'number', // Chrome 121+, ms since epoch
+		'height?': 'number',
+		'width?': 'number',
+		'sessionId?': 'string', // From chrome.sessions API
 	}),
 );
 
 /**
  * Windows table - shadows browser window state.
  *
+ * Near 1:1 mapping with `chrome.windows.Window`. Optional fields match Chrome's optionality.
  * The `id` field is a composite key: `${deviceId}_${windowId}`.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 const windows = defineTable(
 	type({
 		id: 'string', // Composite: `${deviceId}_${windowId}`
 		deviceId: 'string', // Foreign key to devices table
 		windowId: 'number', // Original browser window ID for API calls
-		state:
-			"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
-		type: "'normal' | 'popup' | 'panel' | 'app' | 'devtools'",
 		focused: 'boolean',
 		alwaysOnTop: 'boolean',
 		incognito: 'boolean',
-		top: 'number',
-		left: 'number',
-		width: 'number',
-		height: 'number',
+		// Optional fields — matching chrome.windows.Window optionality
+		'state?':
+			"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen'",
+		'type?': "'normal' | 'popup' | 'panel' | 'app' | 'devtools'",
+		'top?': 'number',
+		'left?': 'number',
+		'width?': 'number',
+		'height?': 'number',
+		'sessionId?': 'string', // From chrome.sessions API
 	}),
 );
 
@@ -100,10 +115,12 @@ const tabGroups = defineTable(
 		deviceId: 'string', // Foreign key to devices table
 		groupId: 'number', // Original browser group ID for API calls
 		windowId: 'string', // Composite: `${deviceId}_${windowId}`
-		'title?': 'string', // Nullable
+		collapsed: 'boolean',
 		color:
 			"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
-		collapsed: 'boolean',
+		shared: 'boolean', // Chrome 137+
+		// Optional fields — matching chrome.tabGroups.TabGroup optionality
+		'title?': 'string',
 	}),
 );
 

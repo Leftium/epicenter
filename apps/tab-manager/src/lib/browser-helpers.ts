@@ -50,25 +50,32 @@ export function createBrowserConverters(deviceId: string) {
 				deviceId: deviceId,
 				tabId: tab.id,
 				windowId: WindowId(tab.windowId),
-				url: tab.url ?? '',
-				title: tab.title ?? '',
-				favIconUrl: tab.favIconUrl ?? undefined,
 				index: tab.index,
 				pinned: tab.pinned,
 				active: tab.active,
 				highlighted: tab.highlighted,
-				muted: tab.mutedInfo?.muted ?? false,
-				audible: tab.audible ?? false,
+				incognito: tab.incognito,
 				discarded: tab.discarded,
-				autoDiscardable: tab.autoDiscardable ?? true,
-				status: tab.status ?? 'complete',
+				autoDiscardable: tab.autoDiscardable,
+				frozen: tab.frozen,
+				// Optional fields — pass through as-is, no fake defaults
+				url: tab.url,
+				title: tab.title,
+				favIconUrl: tab.favIconUrl,
+				pendingUrl: tab.pendingUrl,
+				status: tab.status as Tab['status'],
+				audible: tab.audible,
+				muted: tab.mutedInfo?.muted,
 				groupId:
 					tab.groupId !== undefined && tab.groupId !== -1
 						? GroupId(tab.groupId)
 						: undefined,
 				openerTabId:
 					tab.openerTabId !== undefined ? TabId(tab.openerTabId) : undefined,
-				incognito: tab.incognito ?? false,
+				lastAccessed: tab.lastAccessed,
+				height: tab.height,
+				width: tab.width,
+				sessionId: tab.sessionId,
 			};
 		},
 
@@ -77,15 +84,17 @@ export function createBrowserConverters(deviceId: string) {
 				id: WindowId(window.id),
 				deviceId: deviceId,
 				windowId: window.id,
-				state: window.state ?? 'normal',
-				type: window.type ?? 'normal',
-				focused: window.focused ?? false,
-				alwaysOnTop: window.alwaysOnTop ?? false,
-				incognito: window.incognito ?? false,
-				top: window.top ?? 0,
-				left: window.left ?? 0,
-				width: window.width ?? 800,
-				height: window.height ?? 600,
+				focused: window.focused,
+				alwaysOnTop: window.alwaysOnTop,
+				incognito: window.incognito,
+				// Optional fields — pass through as-is, no fake defaults
+				state: window.state as Window['state'],
+				type: window.type as Window['type'],
+				top: window.top,
+				left: window.left,
+				width: window.width,
+				height: window.height,
+				sessionId: window.sessionId,
 			};
 		},
 
@@ -95,9 +104,11 @@ export function createBrowserConverters(deviceId: string) {
 				deviceId: deviceId,
 				groupId: group.id,
 				windowId: WindowId(group.windowId),
-				title: group.title ?? undefined,
-				color: group.color ?? 'grey',
-				collapsed: group.collapsed ?? false,
+				collapsed: group.collapsed,
+				color: group.color as TabGroup['color'],
+				shared: group.shared,
+				// Optional fields
+				title: group.title,
 			};
 		},
 	};

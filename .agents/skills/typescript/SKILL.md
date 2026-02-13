@@ -163,12 +163,25 @@ export type UserModel = { ... };
 3. **Shared domain types**: Place in the domain folder's `types.ts`
 4. **Cross-domain types**: Only if truly shared across multiple domains, place in `$lib/types/[specific-name].ts`
 
-## Benefits
+## `types.ts` Is A Code Smell (Prefer Computed Types Over Manual Declarations)
 
-- Clear ownership and dependencies
-- Easier refactoring and deletion
-- Better code organization
-- Reduces coupling between unrelated features
+When a type can be derived from a runtime value, derive it. Don't declare it manually in a separate file.
+
+```typescript
+// Good — type is computed from the runtime definition
+export const BROWSER_TABLES = { devices, tabs, windows };
+export type Tab = InferTableRow<typeof BROWSER_TABLES.tabs>;
+
+// Good — type is derived from schema
+const userSchema = z.object({ id: z.string(), email: z.string() });
+type User = z.infer<typeof userSchema>;
+
+// Bad — manually declaring what already exists as a runtime value
+// types.ts
+export type Tab = { id: string; deviceId: string /* ... */ };
+```
+
+If every type in a `types.ts` can be derived with `typeof`, `z.infer`, `InferTableRow`, `ReturnType`, etc., the file is redundant. Put each type next to the runtime value it's computed from.
 
 # Constant Array Naming Conventions
 

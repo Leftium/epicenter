@@ -3,6 +3,7 @@
 	import { queryClient } from '$lib/query/_client';
 	import EpicenterProvider from '$lib/epicenter/EpicenterProvider.svelte';
 	import TabList from '$lib/components/TabList.svelte';
+	import SuspendedTabList from '$lib/components/SuspendedTabList.svelte';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import * as Tooltip from '@epicenter/ui/tooltip';
@@ -21,6 +22,8 @@
 				</header>
 				<ScrollArea class="h-[calc(600px-60px)]">
 					<TabList />
+					<div class="my-2 border-t" />
+					<SuspendedTabList />
 				</ScrollArea>
 			</main>
 		</EpicenterProvider>

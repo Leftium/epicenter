@@ -1,6 +1,6 @@
 import { WebsocketProvider } from 'y-websocket';
-import type { ExtensionContext } from '../dynamic/extension';
-import { defineExports } from '../dynamic/extension';
+import { defineExports } from '../shared/lifecycle';
+import type { ExtensionContext } from '../static/types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MULTI-DEVICE SYNC ARCHITECTURE

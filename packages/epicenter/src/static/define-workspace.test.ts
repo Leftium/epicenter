@@ -295,10 +295,6 @@ describe('defineWorkspace', () => {
 		expect(client.actions.getAnalyticsCount()).toBe(5);
 		client.actions.addPost({ title: 'Hello' });
 
-		// .handler still works for backwards compatibility
-		expect(client.actions.getAnalyticsCount.handler()).toBe(5);
-		client.actions.addPost.handler({ title: 'Hello' });
-
 		// Extensions still accessible
 		expect(client.extensions.analytics.getCount()).toBe(5);
 

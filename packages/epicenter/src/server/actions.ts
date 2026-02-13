@@ -31,7 +31,6 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 		};
 
 		const handleRequest = async (input: unknown) => {
-			let validatedInput: unknown;
 			if (action.input) {
 				const result = await action.input['~standard'].validate(input);
 				if (result.issues) {
@@ -39,13 +38,10 @@ export function createActionsRouter(options: ActionsRouterOptions) {
 						error: { message: 'Validation failed', issues: result.issues },
 					};
 				}
-				validatedInput = result.value;
-				// Call handler with validated input
-				const output = await action.handler(validatedInput);
+				const output = await action(result.value);
 				return { data: output };
 			}
-			// Call handler with no arguments for actions without input
-			const output = await (action.handler as () => unknown)();
+			const output = await action();
 			return { data: output };
 		};
 

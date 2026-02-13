@@ -17,7 +17,7 @@
  * - **Type-safe**: Full type inference for client and tables, not `unknown`
  * - **Simpler signatures**: `(input?) => output` instead of `(ctx, input?) => output`
  * - **Natural JavaScript**: Uses standard closures, no framework magic
- * - **Introspectable**: Plain objects with metadata for adapters
+ * - **Introspectable**: Callable functions with metadata properties for adapters
  *
  * ## Exports
  *
@@ -141,23 +141,23 @@ type ActionConfig<
 /**
  * Metadata properties attached to a callable action.
  *
- * These properties are available on the action function itself (via `Object.assign`).
+ * These are the introspection properties available on the action function itself
+ * (via `Object.assign`). The handler is NOT included — the action function IS
+ * the handler. Call the action directly instead of accessing `.handler`.
  */
 type ActionMeta<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
-	TOutput = unknown,
 > = {
 	type: 'query' | 'mutation';
 	description?: string;
 	input?: TInput;
 	output?: StandardSchemaWithJSONSchema;
-	handler: ActionHandler<TInput, TOutput>;
 };
 
 /**
  * A query action definition (read operation).
  *
- * Queries are callable functions — invoke them directly or via `.handler()`.
+ * Queries are callable functions with metadata properties attached.
  * They are idempotent operations that read data without side effects.
  * When exposed via the server adapter, queries map to HTTP GET requests.
  *
@@ -167,12 +167,9 @@ type ActionMeta<
  * @example
  * ```typescript
  * const getAll = defineQuery({ handler: () => client.tables.posts.getAllValid() });
- *
- * // Call directly (preferred)
- * const posts = getAll();
- *
- * // Or via .handler (still works)
- * const posts = getAll.handler();
+ * const posts = getAll();      // call directly
+ * getAll.type;                  // 'query'
+ * getAll.input;                 // schema or undefined
  * ```
  *
  * @see {@link defineQuery} for creating query definitions
@@ -180,13 +177,12 @@ type ActionMeta<
 export type Query<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
 	TOutput = unknown,
-> = ActionHandler<TInput, TOutput> &
-	ActionMeta<TInput, TOutput> & { type: 'query' };
+> = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'query' };
 
 /**
  * A mutation action definition (write operation).
  *
- * Mutations are callable functions — invoke them directly or via `.handler()`.
+ * Mutations are callable functions with metadata properties attached.
  * They are operations that modify state or have side effects.
  * When exposed via the server adapter, mutations map to HTTP POST requests.
  *
@@ -199,12 +195,8 @@ export type Query<
  *   input: type({ title: 'string' }),
  *   handler: ({ title }) => { client.tables.posts.upsert({ id: generateId(), title }); },
  * });
- *
- * // Call directly (preferred)
- * createPost({ title: 'Hello' });
- *
- * // Or via .handler (still works)
- * createPost.handler({ title: 'Hello' });
+ * createPost({ title: 'Hello' }); // call directly
+ * createPost.type;                 // 'mutation'
  * ```
  *
  * @see {@link defineMutation} for creating mutation definitions
@@ -212,8 +204,7 @@ export type Query<
 export type Mutation<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
 	TOutput = unknown,
-> = ActionHandler<TInput, TOutput> &
-	ActionMeta<TInput, TOutput> & { type: 'mutation' };
+> = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'mutation' };
 
 /**
  * Union type of Query and Mutation action definitions.
@@ -267,30 +258,26 @@ export type Actions = {
 /**
  * Define a query (read operation) with full type inference.
  *
- * Returns a callable function with metadata properties attached.
+ * Returns a callable function with metadata properties (`type`, `input`, `description`).
  * The `type: 'query'` discriminator is attached automatically.
  * Queries map to HTTP GET requests when exposed via the server adapter.
  *
- * Handlers close over their dependencies (client, tables, etc.) instead of receiving
- * context as a parameter. Define queries after creating the client.
+ * The returned action IS the function — call it directly. There is no `.handler` property.
+ * Pass `handler` in the config; it gets promoted to the callable root.
  *
  * @example
  * ```typescript
- * // Assuming client is already created:
- * // const client = createWorkspace({ ... });
- *
- * // Query without input - closes over client
  * const getAllPosts = defineQuery({
  *   handler: () => client.tables.posts.getAllValid(),
  * });
- * getAllPosts(); // call directly
+ * getAllPosts();       // call directly
+ * getAllPosts.type;    // 'query'
  *
- * // Query with input validation - closes over client
  * const getPost = defineQuery({
  *   input: type({ id: 'string' }),
  *   handler: ({ id }) => client.tables.posts.get(id),
  * });
- * getPost({ id: '1' }); // call directly
+ * getPost({ id: '1' }); // call directly with typed input
  * ```
  */
 /** No input — `TInput` is explicitly `undefined`. */
@@ -307,7 +294,9 @@ export function defineQuery(config: ActionConfig<any, any>): Query<any, any> {
 		(config.handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'query' as const,
-		...config,
+		description: config.description,
+		input: config.input,
+		output: config.output,
 	}) as unknown as Query<any, any>;
 }
 
@@ -358,15 +347,17 @@ export function defineMutation(
 		(config.handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'mutation' as const,
-		...config,
+		description: config.description,
+		input: config.input,
+		output: config.output,
 	}) as unknown as Mutation<any, any>;
 }
 
 /**
  * Type guard to check if a value is an action definition.
  *
- * Actions are callable functions with a `type` property of 'query' or 'mutation'
- * and a `handler` function.
+ * Actions are callable functions with a `type` property of 'query' or 'mutation'.
+ * Call the action directly — there is no `.handler` property.
  *
  * @param value - The value to check
  * @returns True if the value is an Action definition
@@ -374,10 +365,8 @@ export function defineMutation(
  * @example
  * ```typescript
  * if (isAction(value)) {
- *   // value is typed as Action<any, any>
  *   console.log(value.type); // 'query' | 'mutation'
  *   value(input);            // call directly
- *   value.handler(input);    // or via .handler
  * }
  * ```
  */
@@ -385,9 +374,7 @@ export function isAction(value: unknown): value is Action<any, any> {
 	return (
 		typeof value === 'function' &&
 		'type' in value &&
-		(value.type === 'query' || value.type === 'mutation') &&
-		'handler' in value &&
-		typeof value.handler === 'function'
+		(value.type === 'query' || value.type === 'mutation')
 	);
 }
 
@@ -415,8 +402,7 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
  * Iterate over action definitions, yielding each action with its path.
  *
  * Use this for adapters (CLI, Server) that need to introspect and invoke actions.
- * Each action's handler already has access to the client via closure, so adapters
- * just call `action.handler(input)` directly—no attachment step needed.
+ * Each action is callable directly — just call `action(input)`.
  *
  * @param actions - The action tree to iterate over
  * @param path - Internal parameter for tracking the current path (default: [])
@@ -427,18 +413,13 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
  * // In a server adapter
  * for (const [action, path] of iterateActions(actions)) {
  *   const route = path.join('/');
- *   registerRoute(route, async (input) => {
- *     // Handler already has client via closure—just call it directly
- *     return await action.handler(input);
- *   });
+ *   registerRoute(route, async (input) => action(input));
  * }
  *
  * // In a CLI adapter
  * for (const [action, path] of iterateActions(actions)) {
  *   const command = path.join(':');
- *   cli.command(command, async (input) => {
- *     return await action.handler(input);  // Direct invocation
- *   });
+ *   cli.command(command, async (input) => action(input));
  * }
  * ```
  */

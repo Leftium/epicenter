@@ -49,7 +49,6 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			builder,
 			handler: async (argv: Record<string, unknown>) => {
 				const input = extractInputFromArgv(argv, jsonSchema);
-				let validatedInput: unknown;
 
 				if (action.input) {
 					const result = await action.input['~standard'].validate(input);
@@ -62,13 +61,12 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 						}
 						process.exit(1);
 					}
-					validatedInput = result.value;
+					const output = await action(result.value);
+					console.log(JSON.stringify(output, null, 2));
+				} else {
+					const output = await action();
+					console.log(JSON.stringify(output, null, 2));
 				}
-
-				const output = action.input
-					? await action.handler(validatedInput)
-					: await (action.handler as () => unknown)();
-				console.log(JSON.stringify(output, null, 2));
 			},
 		};
 	});

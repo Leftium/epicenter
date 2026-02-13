@@ -152,3 +152,9 @@ Within a single server, you can also run multiple AI sessions in parallel on the
 OpenCode's web UI is a real terminal emulator (ghostty-web/WASM) connected to a real PTY (on the Bun backend) over WebSocket. Every keystroke travels to the server; every byte of output travels back. Multiple servers can run on different ports, and multiple clients can connect to each server.
 
 It's not a chat interface with terminal styling. It's an actual terminal, streamed to your browser.
+
+---
+
+## Security Note
+
+This architecture—an HTTP server with REST and WebSocket endpoints, no authentication, binding to a predictable port—turned out to be a serious attack surface. In January 2026, OpenCode received [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh) for exactly this: any website could hit the server and execute shell commands. The server is now opt-in with optional password auth. See [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).

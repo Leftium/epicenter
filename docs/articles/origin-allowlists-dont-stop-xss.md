@@ -222,3 +222,9 @@ For anything that matters, require a secret that JavaScript can't access.
 | Server-side secret only     | ✅                 | ✅        |
 
 The origin check is redundant once you have server-side secrets. Keep it for defense-in-depth and audit logging, but don't trust it as your security boundary.
+
+---
+
+## Update: OpenCode Learned This the Hard Way
+
+After [CVE-2026-22812](https://github.com/anomalyco/opencode/security/advisories/GHSA-vxw4-wv6m-9hhh), OpenCode moved from `CORS: *` to an origin allowlist (`localhost`, `*.opencode.ai`). They also added a server-side secret (`OPENCODE_SERVER_PASSWORD`) for HTTP Basic Auth—exactly the pattern this article recommends. The wildcard `*.opencode.ai` in their allowlist is still a risk if any subdomain gets XSS'd, but the server-side secret is the real security boundary now. Full story: [OpenCode Got an RCE and I Already Wrote the Exploit](./opencode-rce-called-it.md).

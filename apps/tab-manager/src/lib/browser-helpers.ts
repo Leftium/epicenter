@@ -43,72 +43,54 @@ export function createBrowserConverters(deviceId: string) {
 		WindowId,
 		GroupId,
 
-		// Row converters
+		// Row converters — spread Browser objects, only override transformed fields
 		tabToRow(tab: Browser.tabs.Tab & { id: number; windowId: number }): Tab {
+			const {
+				id,
+				windowId,
+				groupId,
+				openerTabId,
+				mutedInfo,
+				selected,
+				...rest
+			} = tab;
 			return {
-				id: TabId(tab.id),
-				deviceId: deviceId,
-				tabId: tab.id,
-				windowId: WindowId(tab.windowId),
-				index: tab.index,
-				pinned: tab.pinned,
-				active: tab.active,
-				highlighted: tab.highlighted,
-				incognito: tab.incognito,
-				discarded: tab.discarded,
-				autoDiscardable: tab.autoDiscardable,
-				frozen: tab.frozen,
-				// Optional fields — pass through as-is, no fake defaults
-				url: tab.url,
-				title: tab.title,
-				favIconUrl: tab.favIconUrl,
-				pendingUrl: tab.pendingUrl,
-				status: tab.status as Tab['status'],
-				audible: tab.audible,
-				muted: tab.mutedInfo?.muted,
+				...rest,
+				id: TabId(id),
+				deviceId,
+				tabId: id,
+				windowId: WindowId(windowId),
+				status: rest.status as Tab['status'],
+				muted: mutedInfo?.muted,
 				groupId:
-					tab.groupId !== undefined && tab.groupId !== -1
-						? GroupId(tab.groupId)
+					groupId !== undefined && groupId !== -1
+						? GroupId(groupId)
 						: undefined,
-				openerTabId:
-					tab.openerTabId !== undefined ? TabId(tab.openerTabId) : undefined,
-				lastAccessed: tab.lastAccessed,
-				height: tab.height,
-				width: tab.width,
-				sessionId: tab.sessionId,
+				openerTabId: openerTabId !== undefined ? TabId(openerTabId) : undefined,
 			};
 		},
 
 		windowToRow(window: Browser.windows.Window & { id: number }): Window {
+			const { id, tabs: _tabs, ...rest } = window;
 			return {
-				id: WindowId(window.id),
-				deviceId: deviceId,
-				windowId: window.id,
-				focused: window.focused,
-				alwaysOnTop: window.alwaysOnTop,
-				incognito: window.incognito,
-				// Optional fields — pass through as-is, no fake defaults
-				state: window.state as Window['state'],
-				type: window.type as Window['type'],
-				top: window.top,
-				left: window.left,
-				width: window.width,
-				height: window.height,
-				sessionId: window.sessionId,
+				...rest,
+				id: WindowId(id),
+				deviceId,
+				windowId: id,
+				state: rest.state as Window['state'],
+				type: rest.type as Window['type'],
 			};
 		},
 
 		tabGroupToRow(group: Browser.tabGroups.TabGroup): TabGroup {
+			const { id, windowId, ...rest } = group;
 			return {
-				id: GroupId(group.id),
-				deviceId: deviceId,
-				groupId: group.id,
-				windowId: WindowId(group.windowId),
-				collapsed: group.collapsed,
-				color: group.color as TabGroup['color'],
-				shared: group.shared,
-				// Optional fields
-				title: group.title,
+				...rest,
+				id: GroupId(id),
+				deviceId,
+				groupId: id,
+				windowId: WindowId(windowId),
+				color: rest.color as TabGroup['color'],
 			};
 		},
 	};

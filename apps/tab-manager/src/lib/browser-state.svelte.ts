@@ -2,8 +2,8 @@
  * Reactive browser state for the popup.
  *
  * Seeds from `browser.windows.getAll({ populate: true })` and receives
- * surgical updates via browser event listeners. Replaces TanStack Query
- * for live tab/window data.
+ * surgical updates via browser event listeners. Uses a single coupled
+ * `SvelteMap<WindowCompositeId, WindowState>` where each window owns its tabs.
  *
  * Lifecycle: Created when popup opens. All listeners die when popup closes.
  * Next open → fresh seed + fresh listeners. No cleanup needed.
@@ -33,182 +33,179 @@ import {
 	windowToRow,
 } from '$lib/epicenter/browser.schema';
 
+type WindowState = {
+	window: Window;
+	tabs: SvelteMap<number, Tab>;
+};
+
 function createBrowserState() {
-	const tabs = new SvelteMap<number, Tab>();
-	let windows = $state<Window[]>([]);
-	let ready = $state(false);
+	const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
 	let deviceId: string | null = null;
 
 	// ── Seed — single IPC call gets windows + tabs ────────────────────────
 
 	(async () => {
-		deviceId = await getDeviceId();
 		const browserWindows = await browser.windows.getAll({ populate: true });
-
-		const seedWindows: Window[] = [];
+		const id = await getDeviceId();
 
 		for (const win of browserWindows) {
-			const windowRow = windowToRow(deviceId, win);
-			if (windowRow) seedWindows.push(windowRow);
+			const windowRow = windowToRow(id, win);
+			if (!windowRow) continue;
 
+			const tabsMap = new SvelteMap<number, Tab>();
 			if (win.tabs) {
 				for (const tab of win.tabs) {
-					const tabRow = tabToRow(deviceId, tab);
-					if (tabRow) tabs.set(tabRow.tabId, tabRow);
+					const tabRow = tabToRow(id, tab);
+					if (tabRow) tabsMap.set(tabRow.tabId, tabRow);
 				}
 			}
+
+			windowStates.set(windowRow.id, { window: windowRow, tabs: tabsMap });
 		}
 
-		windows = seedWindows;
-		ready = true;
+		// Set deviceId LAST — it's the readiness signal for event handlers
+		deviceId = id;
 	})();
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 
 	// onCreated: Full Tab object provided
 	browser.tabs.onCreated.addListener((tab) => {
-		if (!ready) return;
-		const row = tabToRow(deviceId!, tab);
+		if (!deviceId) return;
+		const row = tabToRow(deviceId, tab);
 		if (!row) return;
-		tabs.set(row.tabId, row);
+		const state = windowStates.get(row.windowId);
+		if (!state) return;
+		state.tabs.set(row.tabId, row);
 	});
 
-	// onRemoved: Only tabId provided — delete from map
-	browser.tabs.onRemoved.addListener((tabId) => {
-		if (!ready) return;
-		tabs.delete(tabId);
+	// onRemoved: tabId + removeInfo with windowId
+	browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
+		if (!deviceId) return;
+		if (removeInfo.isWindowClosing) return;
+		const compositeId = createWindowCompositeId(deviceId, removeInfo.windowId);
+		windowStates.get(compositeId)?.tabs.delete(tabId);
 	});
 
-	// onUpdated: Full Tab in 3rd arg — update in map
+	// onUpdated: Full Tab in 3rd arg — route to correct window
 	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
-		if (!ready) return;
-		const row = tabToRow(deviceId!, tab);
+		if (!deviceId) return;
+		const row = tabToRow(deviceId, tab);
 		if (!row) return;
-		tabs.set(row.tabId, row);
+		const state = windowStates.get(row.windowId);
+		if (!state) return;
+		state.tabs.set(row.tabId, row);
 	});
 
 	// onMoved: Re-query tab to get updated index
 	browser.tabs.onMoved.addListener(async (tabId) => {
-		if (!ready) return;
+		if (!deviceId) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(deviceId!, tab);
+			const row = tabToRow(deviceId, tab);
 			if (!row) return;
-			tabs.set(row.tabId, row);
+			const state = windowStates.get(row.windowId);
+			if (!state) return;
+			state.tabs.set(row.tabId, row);
 		} catch {
 			// Tab may have been closed during move
 		}
 	});
 
-	// onActivated: Update active flags on old and new tab
+	// onActivated: Update active flags — scoped to one window
 	browser.tabs.onActivated.addListener((activeInfo) => {
-		if (!ready) return;
-		const windowId = createWindowCompositeId(deviceId!, activeInfo.windowId);
+		if (!deviceId) return;
+		const compositeId = createWindowCompositeId(deviceId, activeInfo.windowId);
+		const state = windowStates.get(compositeId);
+		if (!state) return;
 
-		// Deactivate previous active tab(s) in this window
-		for (const [tabId, tab] of tabs) {
-			if (tab.windowId === windowId && tab.active) {
-				tabs.set(tabId, { ...tab, active: false });
+		// Deactivate previous active tab(s) in this window only
+		for (const [tabId, tab] of state.tabs) {
+			if (tab.active) {
+				state.tabs.set(tabId, { ...tab, active: false });
 			}
 		}
 
 		// Activate the new tab
-		const tab = tabs.get(activeInfo.tabId);
+		const tab = state.tabs.get(activeInfo.tabId);
 		if (tab) {
-			tabs.set(activeInfo.tabId, { ...tab, active: true });
+			state.tabs.set(activeInfo.tabId, { ...tab, active: true });
 		}
 	});
 
-	// onAttached: Tab moved between windows — re-query
+	// onAttached: Tab moved to a new window — add to new window's map
 	browser.tabs.onAttached.addListener(async (tabId) => {
-		if (!ready) return;
+		if (!deviceId) return;
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(deviceId!, tab);
+			const row = tabToRow(deviceId, tab);
 			if (!row) return;
-			tabs.set(row.tabId, row);
+			const state = windowStates.get(row.windowId);
+			if (!state) return;
+			state.tabs.set(row.tabId, row);
 		} catch {
 			// Tab may have been closed
 		}
 	});
 
-	// onDetached: Tab detached from window — re-query
-	browser.tabs.onDetached.addListener(async (tabId) => {
-		if (!ready) return;
-		try {
-			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(deviceId!, tab);
-			if (!row) return;
-			tabs.set(row.tabId, row);
-		} catch {
-			// Tab may have been closed during detach
-		}
+	// onDetached: Tab leaving a window — remove from old window's map
+	browser.tabs.onDetached.addListener((tabId, detachInfo) => {
+		if (!deviceId) return;
+		const compositeId = createWindowCompositeId(
+			deviceId,
+			detachInfo.oldWindowId,
+		);
+		windowStates.get(compositeId)?.tabs.delete(tabId);
 	});
 
 	// ── Window Event Listeners ────────────────────────────────────────────
 
 	// onCreated: Full Window object provided
 	browser.windows.onCreated.addListener((window) => {
-		if (!ready) return;
-		const row = windowToRow(deviceId!, window);
+		if (!deviceId) return;
+		const row = windowToRow(deviceId, window);
 		if (!row) return;
-		windows.push(row);
+		windowStates.set(row.id, { window: row, tabs: new SvelteMap() });
 	});
 
-	// onRemoved: Remove window and all its tabs
+	// onRemoved: Delete window entry — its tabs vanish with it
 	browser.windows.onRemoved.addListener((windowId) => {
-		if (!ready) return;
-		const compositeId = createWindowCompositeId(deviceId!, windowId);
-
-		// Remove window
-		const winIdx = windows.findIndex((w) => w.id === compositeId);
-		if (winIdx !== -1) {
-			windows.splice(winIdx, 1);
-		}
-
-		// Remove all tabs in that window
-		for (const [tabId, tab] of tabs) {
-			if (tab.windowId === compositeId) {
-				tabs.delete(tabId);
-			}
-		}
+		if (!deviceId) return;
+		const compositeId = createWindowCompositeId(deviceId, windowId);
+		windowStates.delete(compositeId);
 	});
 
 	// onFocusChanged: Update focused flags
 	browser.windows.onFocusChanged.addListener((windowId) => {
-		if (!ready) return;
+		if (!deviceId) return;
 
 		// Unfocus all windows
-		for (let i = 0; i < windows.length; i++) {
-			if (windows[i].focused) {
-				windows[i] = { ...windows[i], focused: false };
+		for (const [id, state] of windowStates) {
+			if (state.window.focused) {
+				windowStates.set(id, {
+					...state,
+					window: { ...state.window, focused: false },
+				});
 			}
 		}
 
 		// Focus the new window (WINDOW_ID_NONE means all lost focus)
 		if (windowId !== browser.windows.WINDOW_ID_NONE) {
-			const compositeId = createWindowCompositeId(deviceId!, windowId);
-			const winIdx = windows.findIndex((w) => w.id === compositeId);
-			if (winIdx !== -1) {
-				windows[winIdx] = { ...windows[winIdx], focused: true };
+			const compositeId = createWindowCompositeId(deviceId, windowId);
+			const state = windowStates.get(compositeId);
+			if (state) {
+				windowStates.set(compositeId, {
+					...state,
+					window: { ...state.window, focused: true },
+				});
 			}
 		}
 	});
 
 	return {
-		/** Whether the initial seed has completed. */
-		get seeded() {
-			return ready;
-		},
-
-		/** All tabs across all windows. */
-		get tabs() {
-			return [...tabs.values()];
-		},
-
 		/** All browser windows. */
 		get windows() {
-			return windows;
+			return [...windowStates.values()].map((s) => s.window);
 		},
 
 		/**
@@ -222,9 +219,9 @@ function createBrowserState() {
 		 * ```
 		 */
 		tabsByWindow(windowId: WindowCompositeId): Tab[] {
-			return [...tabs.values()]
-				.filter((t) => t.windowId === windowId)
-				.sort((a, b) => a.index - b.index);
+			const state = windowStates.get(windowId);
+			if (!state) return [];
+			return [...state.tabs.values()].sort((a, b) => a.index - b.index);
 		},
 
 		actions: {

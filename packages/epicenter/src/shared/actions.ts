@@ -99,7 +99,6 @@ type ActionHandler<
  *
  * @property description - Human-readable description for introspection and documentation
  * @property input - Optional StandardSchema for validating and typing input
- * @property output - Optional StandardSchema for output (used by adapters for serialization)
  * @property handler - The action implementation. Handlers close over their dependencies and have signature `(input?) => output`
  *
  * @remarks
@@ -134,7 +133,6 @@ type ActionConfig<
 > = {
 	description?: string;
 	input?: TInput;
-	output?: StandardSchemaWithJSONSchema;
 	handler: ActionHandler<TInput, TOutput>;
 };
 
@@ -151,7 +149,6 @@ type ActionMeta<
 	type: 'query' | 'mutation';
 	description?: string;
 	input?: TInput;
-	output?: StandardSchemaWithJSONSchema;
 };
 
 /**

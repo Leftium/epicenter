@@ -102,13 +102,13 @@ export type TableDefinition<TVersions extends readonly StandardSchemaV1[]> = {
 	>;
 	migrate: (
 		row: StandardSchemaV1.InferOutput<TVersions[number]>,
-	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>> & { id: string };
+	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
 };
 
 /** Extract the row type from a TableDefinition */
 export type InferTableRow<T> =
 	T extends TableDefinition<infer V extends readonly StandardSchemaV1[]>
-		? StandardSchemaV1.InferOutput<LastSchema<V>> & { id: string }
+		? StandardSchemaV1.InferOutput<LastSchema<V>>
 		: never;
 
 /** Extract the version union type from a TableDefinition */

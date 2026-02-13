@@ -33,16 +33,51 @@ import {
 	windowToRow,
 } from '$lib/epicenter/browser.schema';
 
+/**
+ * A window and all the tabs it owns, stored together.
+ *
+ * Browser state is inherently hierarchical — tabs belong to windows. Storing
+ * them as a coupled unit means every access pattern (render a window's tabs,
+ * remove a window and its tabs, switch active tab within a window) is a direct
+ * lookup instead of a filter-all-tabs scan.
+ *
+ * Each window gets its own inner `SvelteMap` for tabs. Svelte 5's reactivity
+ * tracks each SvelteMap independently, so mutating one window's tabs only
+ * re-renders that window's `{#each}` block — not every window.
+ */
 type WindowState = {
 	window: Window;
 	tabs: SvelteMap<number, Tab>;
 };
 
 function createBrowserState() {
+	/**
+	 * Single source of truth for all browser windows and tabs.
+	 *
+	 * Keyed by composite window ID so every lookup (by window, by tab's parent
+	 * window) is O(1). The outer SvelteMap triggers reactivity when windows are
+	 * added/removed; each inner SvelteMap triggers reactivity when that window's
+	 * tabs change. This gives per-window reactive granularity for free.
+	 */
 	const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
+
+	/**
+	 * Doubles as the readiness signal for event handlers.
+	 *
+	 * Set to a real value only AFTER the seed populates `windowStates`.
+	 * Every event handler guards with `if (!deviceId) return`, which means
+	 * events that arrive before the seed completes are silently dropped
+	 * (they'd be stale anyway — the seed is the authoritative snapshot).
+	 */
 	let deviceId: string | null = null;
 
-	// ── Seed — single IPC call gets windows + tabs ────────────────────────
+	// ── Seed ─────────────────────────────────────────────────────────────
+	// Single IPC call via `getAll({ populate: true })` returns windows with
+	// their tabs already nested — a natural fit for our WindowState shape.
+	//
+	// deviceId is assigned LAST so that event handlers (which guard on
+	// `!deviceId`) ignore any events that fire during this async window.
+	// Those events would be redundant anyway — the seed is a complete snapshot.
 
 	(async () => {
 		const browserWindows = await browser.windows.getAll({ populate: true });
@@ -63,7 +98,6 @@ function createBrowserState() {
 			windowStates.set(windowRow.id, { window: windowRow, tabs: tabsMap });
 		}
 
-		// Set deviceId LAST — it's the readiness signal for event handlers
 		deviceId = id;
 	})();
 
@@ -79,7 +113,10 @@ function createBrowserState() {
 		state.tabs.set(row.tabId, row);
 	});
 
-	// onRemoved: tabId + removeInfo with windowId
+	// onRemoved: Use removeInfo.windowId for a direct window lookup instead
+	// of scanning all tabs. When isWindowClosing is true, the window's
+	// onRemoved handler will delete the entire WindowState (and all its tabs
+	// with it), so per-tab cleanup is unnecessary.
 	browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
 		if (!deviceId) return;
 		if (removeInfo.isWindowClosing) return;
@@ -112,7 +149,10 @@ function createBrowserState() {
 		}
 	});
 
-	// onActivated: Update active flags — scoped to one window
+	// onActivated: Only scans the affected window's tabs (not all tabs across
+	// all windows) to flip the active flag. This is the main perf win of the
+	// coupled structure — a 50-tab window with 5 other windows only iterates 50
+	// tabs, not 300.
 	browser.tabs.onActivated.addListener((activeInfo) => {
 		if (!deviceId) return;
 		const compositeId = createWindowCompositeId(deviceId, activeInfo.windowId);
@@ -133,7 +173,15 @@ function createBrowserState() {
 		}
 	});
 
-	// onAttached: Tab moved to a new window — add to new window's map
+	// ── Attach / Detach ──────────────────────────────────────────────────
+	// Moving a tab between windows fires two events in order:
+	//   1. onDetached (old window) — we remove the tab from the old window's map
+	//   2. onAttached (new window) — we re-query the tab and add it to the new
+	//      window's map (re-query is needed to get the updated windowId + index)
+	//
+	// Between detach and attach, the tab exists in neither window. This is fine
+	// because the popup doesn't render mid-event-dispatch.
+
 	browser.tabs.onAttached.addListener(async (tabId) => {
 		if (!deviceId) return;
 		try {
@@ -148,7 +196,6 @@ function createBrowserState() {
 		}
 	});
 
-	// onDetached: Tab leaving a window — remove from old window's map
 	browser.tabs.onDetached.addListener((tabId, detachInfo) => {
 		if (!deviceId) return;
 		const compositeId = createWindowCompositeId(
@@ -168,18 +215,21 @@ function createBrowserState() {
 		windowStates.set(row.id, { window: row, tabs: new SvelteMap() });
 	});
 
-	// onRemoved: Delete window entry — its tabs vanish with it
+	// onRemoved: Deleting the WindowState entry removes the window AND all its
+	// tabs in one operation — no orphan cleanup needed.
 	browser.windows.onRemoved.addListener((windowId) => {
 		if (!deviceId) return;
 		const compositeId = createWindowCompositeId(deviceId, windowId);
 		windowStates.delete(compositeId);
 	});
 
-	// onFocusChanged: Update focused flags
+	// onFocusChanged: We call `windowStates.set()` (not just mutate the
+	// window object in place) because the `window` property is a plain object,
+	// not wrapped in $state. Calling `.set()` on the outer SvelteMap bumps its
+	// version signal, which notifies the `windows` getter's consumers.
 	browser.windows.onFocusChanged.addListener((windowId) => {
 		if (!deviceId) return;
 
-		// Unfocus all windows
 		for (const [id, state] of windowStates) {
 			if (state.window.focused) {
 				windowStates.set(id, {
@@ -189,7 +239,7 @@ function createBrowserState() {
 			}
 		}
 
-		// Focus the new window (WINDOW_ID_NONE means all lost focus)
+		// WINDOW_ID_NONE means all windows lost focus (e.g. user clicked desktop)
 		if (windowId !== browser.windows.WINDOW_ID_NONE) {
 			const compositeId = createWindowCompositeId(deviceId, windowId);
 			const state = windowStates.get(compositeId);
@@ -224,6 +274,15 @@ function createBrowserState() {
 			return [...state.tabs.values()].sort((a, b) => a.index - b.index);
 		},
 
+		/**
+		 * Browser API calls that trigger state changes indirectly.
+		 *
+		 * None of these mutate `windowStates` directly — they call the browser
+		 * API, which fires an event (e.g. `onRemoved`, `onUpdated`), and the
+		 * event listener above handles the state update. This keeps mutation
+		 * in one place (the listeners) and makes actions safe to call from
+		 * any component without worrying about state consistency.
+		 */
 		actions: {
 			/** Close a tab. Browser onRemoved event updates state. */
 			async close(tabId: number) {

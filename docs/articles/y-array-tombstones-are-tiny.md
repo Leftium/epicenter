@@ -15,17 +15,19 @@ const ydoc = new Y.Doc();
 const yarray = ydoc.getArray('data');
 
 for (let cycle = 0; cycle < 5; cycle++) {
-  // Add 1,000 items
-  for (let i = 0; i < 1_000; i++) {
-    yarray.push([{ id: `id-${i}`, title: `Post ${i}`, views: i }]);
-  }
+	// Add 1,000 items
+	for (let i = 0; i < 1_000; i++) {
+		yarray.push([{ id: `id-${i}`, title: `Post ${i}`, views: i }]);
+	}
 
-  // Delete all 1,000 items (from end to avoid index shifting)
-  for (let i = 999; i >= 0; i--) {
-    yarray.delete(i);
-  }
+	// Delete all 1,000 items (from end to avoid index shifting)
+	for (let i = 999; i >= 0; i--) {
+		yarray.delete(i);
+	}
 
-  console.log(`Cycle ${cycle + 1}: ${Y.encodeStateAsUpdate(ydoc).byteLength} bytes`);
+	console.log(
+		`Cycle ${cycle + 1}: ${Y.encodeStateAsUpdate(ydoc).byteLength} bytes`,
+	);
 }
 ```
 
@@ -70,13 +72,13 @@ Y.Map retains historical values because it needs them for CRDT conflict resoluti
 
 ## The Numbers
 
-| Scenario | Y.Doc Size |
-|----------|------------|
-| Empty Y.Array | 2 bytes |
-| 1,000 items | ~72 KB |
-| 1,000 items added then deleted | 2 bytes |
-| 5 cycles of 1,000 add/delete | 2 bytes |
-| 10,000 items retained | ~733 KB |
+| Scenario                       | Y.Doc Size |
+| ------------------------------ | ---------- |
+| Empty Y.Array                  | 2 bytes    |
+| 1,000 items                    | ~72 KB     |
+| 1,000 items added then deleted | 2 bytes    |
+| 5 cycles of 1,000 add/delete   | 2 bytes    |
+| 10,000 items retained          | ~733 KB    |
 
 The pattern holds: live data determines size, not operation history.
 
@@ -91,3 +93,48 @@ Traditional databases worry about transaction logs and vacuum operations. With Y
 The 2-byte floor is just the minimal Y.Doc structure metadata. Your actual data lives and dies cleanly.
 
 This property makes Y.Array the ideal foundation for building key-value stores on top of Yjs. See [YKeyValue: A Space-Efficient Key-Value Store on Yjs](./ykeyvalue-space-efficient-kv-store.md) for how to exploit this for table-like data patterns.
+
+## Verify It Yourself with the Static Workspace API
+
+The raw Y.Array benchmark above is convincing, but you might wonder if the abstraction layers on top add hidden overhead. They don't. Here's the same test using Epicenter's Static Workspace API, which wraps Y.Array with YKeyValueLww under the hood:
+
+```typescript
+import { type } from 'arktype';
+import * as Y from 'yjs';
+import { createTables, defineTable } from 'epicenter/static';
+
+const events = defineTable(
+	type({
+		id: 'string',
+		name: 'string',
+		payload: 'string',
+		timestamp: 'number',
+	}),
+);
+
+const ydoc = new Y.Doc();
+const tables = createTables(ydoc, { events });
+
+for (let cycle = 0; cycle < 5; cycle++) {
+	for (let i = 0; i < 1_000; i++) {
+		tables.events.set({
+			id: `evt-${i}`,
+			name: `action_${i}`,
+			payload: '{}',
+			timestamp: Date.now(),
+		});
+	}
+	for (let i = 0; i < 1_000; i++) {
+		tables.events.delete(`evt-${i}`);
+	}
+	const size = Y.encodeStateAsUpdate(ydoc).byteLength;
+	console.log(
+		`Cycle ${cycle + 1}: ${size} bytes, ${tables.events.count()} rows`,
+	);
+}
+// Cycle 1: 35 bytes, 0 rows
+// Cycle 2: 35 bytes, 0 rows
+// ...same through cycle 5
+```
+
+35 bytes instead of 2 because YKeyValueLww stores a small amount of LWW metadata (timestamps for conflict resolution). The point stands: five thousand inserts, five thousand deletes, through the full typed API with schema validation and migration support, and the doc is still practically empty.

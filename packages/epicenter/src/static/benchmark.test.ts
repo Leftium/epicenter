@@ -444,6 +444,100 @@ describe('stress tests: repeated add/remove cycles', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Event Log Stress Test
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('event log stress test', () => {
+	const eventDefinition = defineTable(
+		type({
+			id: 'string',
+			type: "'command' | 'event'",
+			name: 'string',
+			payload: 'string',
+			timestamp: 'number',
+		}),
+	);
+
+	const samplePayload = JSON.stringify({
+		userId: 'usr-001',
+		action: 'click',
+		target: 'button.submit',
+		metadata: { page: '/dashboard', sessionId: 'sess-abc123' },
+	});
+
+	test('1,000 events: add, delete, measure binary size over 5 cycles', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, { events: eventDefinition });
+
+		const sizes: number[] = [];
+
+		for (let cycle = 0; cycle < 5; cycle++) {
+			for (let i = 0; i < 1_000; i++) {
+				tables.events.set({
+					id: generateId(i),
+					type: i % 2 === 0 ? 'command' : 'event',
+					name: `action_${i}`,
+					payload: samplePayload,
+					timestamp: Date.now(),
+				});
+			}
+
+			for (let i = 0; i < 1_000; i++) {
+				tables.events.delete(generateId(i));
+			}
+
+			sizes.push(Y.encodeStateAsUpdate(ydoc).byteLength);
+		}
+
+		console.log('\n=== Event Log: Binary Size After Add/Delete Cycles ===');
+		for (let i = 0; i < sizes.length; i++) {
+			console.log(
+				`  Cycle ${i + 1}: ${sizes[i]} bytes (${tables.events.count()} rows)`,
+			);
+		}
+
+		// After full add/delete cycles, doc should be tiny (just LWW metadata)
+		const finalSize = sizes.at(-1) ?? 0;
+		expect(finalSize).toBeLessThan(100);
+		expect(tables.events.count()).toBe(0);
+	});
+
+	test('binary size: 1,000 events retained vs after deletion', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, { events: eventDefinition });
+
+		for (let i = 0; i < 1_000; i++) {
+			tables.events.set({
+				id: generateId(i),
+				type: 'event',
+				name: `action_${i}`,
+				payload: samplePayload,
+				timestamp: Date.now(),
+			});
+		}
+
+		const retainedSize = Y.encodeStateAsUpdate(ydoc).byteLength;
+
+		for (let i = 0; i < 1_000; i++) {
+			tables.events.delete(generateId(i));
+		}
+
+		const afterDeleteSize = Y.encodeStateAsUpdate(ydoc).byteLength;
+
+		console.log('\n=== Event Log: Retained vs Deleted ===');
+		console.log(
+			`  1,000 events retained: ${(retainedSize / 1024).toFixed(2)} KB`,
+		);
+		console.log(`  After deleting all:    ${afterDeleteSize} bytes`);
+		console.log(
+			`  Reduction:             ${((1 - afterDeleteSize / retainedSize) * 100).toFixed(1)}%`,
+		);
+
+		expect(afterDeleteSize).toBeLessThan(100);
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Memory & Storage Benchmarks
 // ═══════════════════════════════════════════════════════════════════════════════
 

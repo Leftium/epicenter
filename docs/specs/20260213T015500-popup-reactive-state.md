@@ -1,8 +1,9 @@
 # Popup Reactive State: Replace TanStack Query with Svelte 5 `$state`
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
+**Implementation notes**: All 5 phases completed. `browser-state.svelte.ts` created with `$state` reactive class, surgical browser event handlers, and direct action methods. Components (`TabList.svelte`, `TabItem.svelte`, `SuspendedTabList.svelte`) rewritten to use `browserState`. TanStack Query fully removed — `query/` directory deleted, `EpicenterProvider.svelte` deleted, no `@tanstack/svelte-query` imports remain.
 
 ## Overview
 

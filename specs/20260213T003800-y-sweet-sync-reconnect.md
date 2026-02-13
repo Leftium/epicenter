@@ -1,7 +1,8 @@
 # ySweetSync Reconnect + Provider Listener Leak Fix
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Implemented
+**Implementation notes**: Both phases completed. Phase 1 (listener leak fix): `boundUpdate` and `boundAwarenessUpdate` stored in provider constructor, properly removed in `destroy()` via `doc.off()` and `awareness.off()`. Phase 2 (reconnect): `reconnect(newAuth)` method added to `ySweetSync` extension exports with provider getter for stale-reference safety. Tests in `y-sweet-sync.test.ts` cover reconnect, provider getter, and destroy-after-reconnect.
 **References**: `specs/20260213T000000-fix-disconnect-reconnect-race.md`, `specs/20260212T190000-y-sweet-persistence-architecture.md`
 
 ## Overview

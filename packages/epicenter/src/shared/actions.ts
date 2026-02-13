@@ -74,15 +74,22 @@ import type {
 /**
  * The handler function type, conditional on whether input is provided.
  *
+ * Uses variadic tuple args instead of conditional function signatures so that
+ * when the type flows through `Action<any, any>` (via the `Actions` constraint),
+ * `any` distributes over both branches giving `[input: any] | []` — which
+ * correctly allows calling with 0 arguments for no-input actions.
+ *
  * When `TInput` extends `StandardSchemaWithJSONSchema`, the handler takes validated input.
  * When `TInput` is `undefined`, the handler takes no arguments.
  */
 type ActionHandler<
 	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
 	TOutput = unknown,
-> = TInput extends StandardSchemaWithJSONSchema
-	? (input: StandardSchemaV1.InferOutput<TInput>) => TOutput | Promise<TOutput>
-	: () => TOutput | Promise<TOutput>;
+> = (
+	...args: TInput extends StandardSchemaWithJSONSchema
+		? [input: StandardSchemaV1.InferOutput<TInput>]
+		: []
+) => TOutput | Promise<TOutput>;
 
 /**
  * Configuration for defining an action (query or mutation).

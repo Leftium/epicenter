@@ -6,7 +6,7 @@ import {
 	type YSweetProvider,
 } from '@epicenter/y-sweet';
 import type * as Y from 'yjs';
-import { defineExports, type ExtensionFactory } from '../dynamic/extension';
+import type { ExtensionFactory } from '../dynamic/extension';
 import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
 
 // Re-export the ClientToken type for consumers
@@ -84,11 +84,12 @@ export type YSweetSyncConfig = {
  */
 export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
 	return ({ ydoc }) => {
-		const authEndpoint = () => config.auth(ydoc.guid);
+		let currentAuth = config.auth;
+		const authEndpoint = () => currentAuth(ydoc.guid);
 		const hasPersistence = !!config.persistence;
 
 		// Create provider — defer connection if persistence needs to load first
-		const provider: YSweetProvider = createYjsProvider(
+		let provider: YSweetProvider = createYjsProvider(
 			ydoc,
 			ydoc.guid,
 			authEndpoint,
@@ -116,14 +117,37 @@ export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
 				})()
 			: waitForFirstSync(provider);
 
-		return defineExports({
-			provider,
+		// Build exports manually instead of using defineExports() because
+		// defineExports() destructures + spreads, which strips the provider getter.
+		// The getter ensures consumers always see the current provider after reconnect.
+		return {
+			get provider() {
+				return provider;
+			},
 			whenSynced,
-			destroy: () => {
+			/**
+			 * Swap the sync rail (WebSocket target) without reinitializing persistence.
+			 *
+			 * Destroys the current provider, updates the auth callback, creates a new
+			 * `YSweetProvider` on the same `Y.Doc`, and connects it. Persistence
+			 * (IndexedDB/filesystem) is untouched — only the sync provider changes.
+			 *
+			 * @example
+			 * ```typescript
+			 * workspace.extensions.sync.reconnect(directAuth('https://cloud.example.com'));
+			 * ```
+			 */
+			reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
+				provider.destroy();
+				currentAuth = newAuth;
+				provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint);
+				provider.connect();
+			},
+			destroy() {
 				persistenceCleanup?.();
 				provider.destroy();
 			},
-		});
+		};
 	};
 }
 

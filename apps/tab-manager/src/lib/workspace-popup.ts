@@ -10,8 +10,11 @@
  * Y-Sweet will converge on the same document.
  */
 
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import {
+	directAuth,
+	ySweetPersistSync,
+} from '@epicenter/hq/extensions/y-sweet-persist-sync';
+import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
 import { createWorkspace } from '@epicenter/hq/static';
 import { definition } from '$lib/workspace';
 
@@ -23,7 +26,7 @@ import { definition } from '$lib/workspace';
  * persistence and Y-Sweet sync.
  */
 export const popupWorkspace = createWorkspace(definition).withExtensions({
-	sync: ySweetSync({
+	sync: ySweetPersistSync({
 		auth: directAuth('http://127.0.0.1:8080'),
 		persistence: indexeddbPersistence,
 	}),

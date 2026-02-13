@@ -152,6 +152,35 @@ const server = createServer(client, { actions });
 
 The first version lets reviewers understand the API at a glance. The second forces them to dig through the code to understand the call sites.
 
+### Before/After Code Snippets for Refactors
+
+Code examples aren't just for API changes. For internal refactors that change how code is structured without changing the public API, before/after code snippets show reviewers the improvement concretely:
+
+```typescript
+// BEFORE: direct YKeyValueLww usage with manual scanning
+const ykv = new YKeyValueLww<unknown>(yarray);
+
+function reconstructRow(rowId) {           // O(n) - scan every cell
+  for (const [key, entry] of ykv.map) {
+    if (key.startsWith(prefix)) { ... }
+  }
+}
+
+// AFTER: composed storage layers
+const cellStore = createCellStore<unknown>(ydoc, TableKey(tableId));
+const rowStore = createRowStore(cellStore);
+
+rowStore.has(id)           // O(1)
+rowStore.get(id)           // O(m) where m = fields per row
+rowStore.count()           // O(1)
+```
+
+Use before/after snippets when:
+
+- Internal implementation changes significantly even though external API is unchanged
+- Performance characteristics change and the code shows why
+- Complexity is being moved/decomposed (show what was inlined vs what's now delegated)
+
 ### Visual Communication with ASCII Art
 
 Use ASCII diagrams liberally to communicate complex ideas. They're more scannable than prose and show relationships at a glance.
@@ -241,10 +270,66 @@ For showing data/control flow:
 └────────────────────────────────────────────────────────────────┘
 ```
 
+#### Composition Tree Diagrams
+
+For refactors that change how modules compose, use lightweight indented tree notation instead of heavy box-drawing. This shows the dependency/composition hierarchy at a glance:
+
+**Before** — one module doing everything:
+
+```
+TableHelper (schema + CRUD + row reconstruction + observers)
+  └── YKeyValueLww  ←  Map<"rowId:colId", entry>
+        ├── reconstructRow()   O(n) scan all keys for prefix
+        ├── collectRows()      O(n) group all cells by rowId
+        └── deleteRowCells()   O(n) filter + delete
+```
+
+**After** — each layer has a single responsibility:
+
+```
+TableHelper (schema validation, typed CRUD, branded Id types)
+  └── RowStore (in-memory row index → O(1) has/count, O(m) get/delete)
+      └── CellStore (cell semantics: key parsing, typed change events)
+          └── YKeyValueLww (generic LWW conflict resolution primitive)
+```
+
+Key properties of composition trees:
+
+- Use `└──` for single children, `├──` when siblings exist
+- Annotate each node with its responsibility in parentheses
+- Show performance characteristics when the refactor changes them
+- Before/after pair makes the improvement immediately visible
+
+#### File Relocation Trees
+
+When a refactor physically moves files and that relocation IS the architectural statement, show the move pattern as a tree. This is not "listing files changed" (which the skill forbids) — it's showing the structural reorganization:
+
+```
+packages/epicenter/src/
+├── shared/
+│   ├── y-cell-store.ts      →  dynamic/tables/y-cell-store.ts
+│   └── y-row-store.ts       →  dynamic/tables/y-row-store.ts
+└── dynamic/tables/
+    └── table-helper.ts         (refactored to compose over the above)
+```
+
+Use file relocation trees when:
+
+- Files moved between directories as part of a module boundary change
+- The new location communicates architectural intent (e.g., "these belong to the tables subsystem, not shared")
+- There are 2-6 files moved; more than that, describe the pattern instead
+
+Do NOT use when:
+
+- Files were renamed but stayed in the same directory
+- The move is incidental to the real change
+
 #### When to Use Diagrams
 
 - **Journey diagrams**: PR iterates on previous work or fixes a past decision
 - **Layer diagrams**: PR introduces or changes architecture with distinct levels
+- **Composition trees**: PR refactors how modules compose or delegate to each other
+- **File relocation trees**: PR moves files between directories as an architectural statement
 - **Comparison tables**: PR introduces alternatives or explains trade-offs
 - **Flow diagrams**: PR changes how data or control moves between components
 

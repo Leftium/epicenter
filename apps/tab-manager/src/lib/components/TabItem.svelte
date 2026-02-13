@@ -155,7 +155,7 @@
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			class="text-destructive hover:text-destructive"
+			class="text-destructive"
 			tooltip="Close"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();

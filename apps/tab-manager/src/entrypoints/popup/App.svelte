@@ -2,6 +2,7 @@
 	import TabList from '$lib/components/TabList.svelte';
 	import SuspendedTabList from '$lib/components/SuspendedTabList.svelte';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
+	import { Separator } from '@epicenter/ui/separator';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 </script>
 
@@ -16,7 +17,7 @@
 		</header>
 		<ScrollArea class="h-[calc(600px-60px)]">
 			<TabList />
-			<div class="my-2 border-t" />
+			<Separator class="my-2" />
 			<SuspendedTabList />
 		</ScrollArea>
 	</main>

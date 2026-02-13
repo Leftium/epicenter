@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Avatar from '@epicenter/ui/avatar';
+	import * as Empty from '@epicenter/ui/empty';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
@@ -36,23 +38,21 @@
 		<h2 class="text-sm font-semibold text-muted-foreground">
 			Suspended Tabs
 			{#if suspendedTabState.tabs.length}
-				<span
-					class="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs text-foreground"
-				>
+				<Badge variant="secondary" class="ml-1">
 					{suspendedTabState.tabs.length}
-				</span>
+				</Badge>
 			{/if}
 		</h2>
 	</header>
 
 	{#if !suspendedTabState.tabs.length}
-		<div
-			class="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center text-muted-foreground"
-		>
-			<PauseIcon class="size-8 opacity-50" />
-			<p class="text-sm font-medium">No suspended tabs</p>
-			<p class="text-xs">Suspend tabs to save them for later</p>
-		</div>
+		<Empty.Root class="py-8">
+			<Empty.Media>
+				<PauseIcon class="size-8 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>No suspended tabs</Empty.Title>
+			<Empty.Description>Suspend tabs to save them for later</Empty.Description>
+		</Empty.Root>
 	{:else}
 		<div class="flex flex-col gap-1">
 			{#each suspendedTabState.tabs as tab (tab.id)}
@@ -91,7 +91,7 @@
 						<Button
 							variant="ghost"
 							size="icon-xs"
-							class="text-destructive hover:text-destructive"
+							class="text-destructive"
 							tooltip="Delete"
 							onclick={() => suspendedTabState.actions.remove(tab.id)}
 						>

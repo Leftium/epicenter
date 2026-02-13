@@ -84,6 +84,10 @@ Concrete examples of things that already have their own change notification:
 | Svelte 4 stores         | `.subscribe()`                         |
 | IndexedDB (via wrapper) | transaction callbacks                  |
 | `navigator.connection`  | `change` event on `NetworkInformation` |
+| `navigator.onLine`      | `online` / `offline` events            |
+| `ResizeObserver`        | callback on observe                    |
+| `document.hidden`       | `visibilitychange` event               |
+| RxJS Observable         | `.subscribe()` callback                |
 
 All of these already know when their data changes. They just don't speak Svelte. `createSubscriber` is the translator.
 
@@ -163,6 +167,176 @@ export function trackVisibility(element: Element) {
 ```
 
 Same recipe. Plain `let` for the value, `createSubscriber` for the bridge, getter that calls `subscribe()`.
+
+## Tracking Network Status
+
+`navigator.onLine` is a boolean the browser already maintains. The `online` and `offline` events tell you when it changes. This is about as simple as `createSubscriber` gets:
+
+```typescript
+// network.svelte.ts
+import { createSubscriber } from 'svelte/reactivity';
+
+export function networkStatus() {
+	const subscribe = createSubscriber((update) => {
+		window.addEventListener('online', update);
+		window.addEventListener('offline', update);
+		return () => {
+			window.removeEventListener('online', update);
+			window.removeEventListener('offline', update);
+		};
+	});
+
+	return {
+		get online() {
+			subscribe();
+			return navigator.onLine;
+		},
+	};
+}
+```
+
+No local variable at all. The getter reads `navigator.onLine` directly from the browser every time Svelte asks. The events just tell Svelte when to ask again.
+
+## Wrapping a ResizeObserver
+
+A `ResizeObserver` fires continuously as an element's dimensions change. Unlike `IntersectionObserver` which gives you a boolean, this gives you measurements:
+
+```typescript
+// size.svelte.ts
+import { createSubscriber } from 'svelte/reactivity';
+
+export function trackSize(element: Element) {
+	let width = 0;
+	let height = 0;
+
+	const subscribe = createSubscriber((update) => {
+		const observer = new ResizeObserver(([entry]) => {
+			width = entry.contentRect.width;
+			height = entry.contentRect.height;
+			update();
+		});
+		observer.observe(element);
+		return () => observer.disconnect();
+	});
+
+	return {
+		get width() {
+			subscribe();
+			return width;
+		},
+		get height() {
+			subscribe();
+			return height;
+		},
+	};
+}
+```
+
+Two getters, one `subscribe` call in each. Both share the same observer. When the element resizes, both `width` and `height` update, and any component reading either getter re-renders.
+
+## Tracking Page Visibility
+
+`document.hidden` and `document.visibilityState` are browser-managed values. The `visibilitychange` event fires when the user switches tabs or minimizes the window. Useful for pausing animations, polling, or expensive work:
+
+```typescript
+// visibility.svelte.ts
+import { createSubscriber } from 'svelte/reactivity';
+
+export function pageVisibility() {
+	const subscribe = createSubscriber((update) => {
+		document.addEventListener('visibilitychange', update);
+		return () => document.removeEventListener('visibilitychange', update);
+	});
+
+	return {
+		get hidden() {
+			subscribe();
+			return document.hidden;
+		},
+		get state() {
+			subscribe();
+			return document.visibilityState;
+		},
+	};
+}
+```
+
+Same shape as `networkStatus`. The browser owns the state, the event tells Svelte when to re-read. No local copy needed.
+
+## Wrapping an EventSource (Server-Sent Events)
+
+An `EventSource` opens an HTTP connection that streams events from a server. The connection is expensive—you don't want it open if nobody's reading the data. This is where `createSubscriber`'s lazy lifecycle matters most:
+
+```typescript
+// sse.svelte.ts
+import { createSubscriber } from 'svelte/reactivity';
+
+export function sseStream<T>(url: string) {
+	let latest: T | undefined;
+
+	const subscribe = createSubscriber((update) => {
+		const source = new EventSource(url);
+		source.onmessage = (e) => {
+			latest = JSON.parse(e.data) as T;
+			update();
+		};
+		// Connection closes when no component reads .value
+		return () => source.close();
+	});
+
+	return {
+		get value() {
+			subscribe();
+			return latest;
+		},
+	};
+}
+```
+
+The HTTP connection only opens when a component reads `.value` in a reactive context. If that component is conditionally rendered and disappears, the connection closes. When it reappears, the connection reopens. You get resource management for free from `createSubscriber`'s start/cleanup lifecycle.
+
+## Bridging an RxJS Observable
+
+If you're working in a codebase that uses RxJS, `createSubscriber` turns any `Observable` into a reactive Svelte value:
+
+```typescript
+// from-observable.svelte.ts
+import { createSubscriber } from 'svelte/reactivity';
+import type { Observable } from 'rxjs';
+
+export function fromObservable<T>(observable: Observable<T>, initial: T) {
+	let latest = initial;
+
+	const subscribe = createSubscriber((update) => {
+		const sub = observable.subscribe((value) => {
+			latest = value;
+			update();
+		});
+		return () => sub.unsubscribe();
+	});
+
+	return {
+		get current() {
+			subscribe();
+			return latest;
+		},
+	};
+}
+```
+
+```svelte
+<script>
+	import { fromObservable } from './from-observable.svelte';
+	import { interval } from 'rxjs';
+	import { map } from 'rxjs/operators';
+
+	const elapsed = fromObservable(interval(1000).pipe(map((n) => n + 1)), 0);
+</script>
+
+<p>Seconds: {elapsed.current}</p>
+```
+
+The RxJS subscription starts when a component reads `.current` and unsubscribes when no consumers remain. This works for any observable—WebSocket streams, HTTP polling, state management libraries that expose observables.
 
 ## The Getter Is Everything
 

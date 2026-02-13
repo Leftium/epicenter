@@ -175,6 +175,8 @@ Register on construction. Let popup destruction handle cleanup. `$state` handles
 
 `$state` answers "this value changed." `createSubscriber` answers "is anyone listening, and should I bother subscribing?" Most of the time you need one or the other. When you need both, they serve distinct roles that don't overlap.
 
+For more worked examples—ResizeObserver, network status, SSE, RxJS, page visibility, and others—see [Using createSubscriber](./using-createsubscriber.md).
+
 ## Further Reading
 
 For a practical guide on using `createSubscriber` with real browser APIs, see [Using createSubscriber](./using-createsubscriber.md). For the version signal, reference counting, and `render_effect` internals, see [How createSubscriber Works](./how-createsubscriber-works.md). For a Yjs-specific example with shadow state and bidirectional sync, see [Syncing External State with createSubscriber](./svelte-5-createsubscriber-pattern.md).

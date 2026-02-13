@@ -44,7 +44,7 @@ export function createBrowserConverters(deviceId: string) {
 		GroupId,
 
 		// Row converters — spread Browser objects, only override transformed fields
-		tabToRow(tab: Browser.tabs.Tab & { id: number; windowId: number }): Tab {
+		tabToRow(tab: Browser.tabs.Tab & { id: number }): Tab {
 			const {
 				id,
 				windowId,
@@ -60,7 +60,6 @@ export function createBrowserConverters(deviceId: string) {
 				deviceId,
 				tabId: id,
 				windowId: WindowId(windowId),
-				status: rest.status as Tab['status'],
 				muted: mutedInfo?.muted,
 				groupId:
 					groupId !== undefined && groupId !== -1
@@ -77,8 +76,6 @@ export function createBrowserConverters(deviceId: string) {
 				id: WindowId(id),
 				deviceId,
 				windowId: id,
-				state: rest.state as Window['state'],
-				type: rest.type as Window['type'],
 			};
 		},
 
@@ -90,7 +87,6 @@ export function createBrowserConverters(deviceId: string) {
 				deviceId,
 				groupId: id,
 				windowId: WindowId(windowId),
-				color: rest.color as TabGroup['color'],
 			};
 		},
 	};

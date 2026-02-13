@@ -22,6 +22,7 @@
  * ```
  */
 
+import { SvelteMap } from 'svelte/reactivity';
 import { getDeviceId } from '$lib/device-id';
 import {
 	createWindowCompositeId,
@@ -33,25 +34,10 @@ import {
 } from '$lib/epicenter/browser.schema';
 
 function createBrowserState() {
-	let tabs = $state<Tab[]>([]);
+	const tabs = new SvelteMap<number, Tab>();
 	let windows = $state<Window[]>([]);
 	let ready = $state(false);
-	/** nativeTabId → index in tabs. Rebuilt on structural changes (add/remove). */
-	const tabIndex = new Map<number, number>();
 	let deviceId: string | null = null;
-
-	function rebuildIndex() {
-		tabIndex.clear();
-		for (let i = 0; i < tabs.length; i++) {
-			tabIndex.set(tabs[i].tabId, i);
-		}
-	}
-
-	async function resolveDeviceId(): Promise<string> {
-		if (deviceId) return deviceId;
-		deviceId = await getDeviceId();
-		return deviceId;
-	}
 
 	// ── Seed — single IPC call gets windows + tabs ────────────────────────
 
@@ -60,7 +46,6 @@ function createBrowserState() {
 		const browserWindows = await browser.windows.getAll({ populate: true });
 
 		const seedWindows: Window[] = [];
-		const seedTabs: Tab[] = [];
 
 		for (const win of browserWindows) {
 			const windowRow = windowToRow(deviceId, win);
@@ -69,104 +54,79 @@ function createBrowserState() {
 			if (win.tabs) {
 				for (const tab of win.tabs) {
 					const tabRow = tabToRow(deviceId, tab);
-					if (tabRow) seedTabs.push(tabRow);
+					if (tabRow) tabs.set(tabRow.tabId, tabRow);
 				}
 			}
 		}
 
-		seedTabs.sort((a, b) => a.index - b.index);
-
 		windows = seedWindows;
-		tabs = seedTabs;
-		rebuildIndex();
 		ready = true;
 	})();
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────
 
 	// onCreated: Full Tab object provided
-	browser.tabs.onCreated.addListener(async (tab) => {
+	browser.tabs.onCreated.addListener((tab) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
-		const row = tabToRow(id, tab);
+		const row = tabToRow(deviceId!, tab);
 		if (!row) return;
-		tabs.push(row);
-		tabIndex.set(row.tabId, tabs.length - 1);
+		tabs.set(row.tabId, row);
 	});
 
-	// onRemoved: Only tabId provided — splice from array
-	browser.tabs.onRemoved.addListener(async (tabId) => {
+	// onRemoved: Only tabId provided — delete from map
+	browser.tabs.onRemoved.addListener((tabId) => {
 		if (!ready) return;
-		const idx = tabIndex.get(tabId);
-		if (idx === undefined) return;
-		tabs.splice(idx, 1);
-		rebuildIndex();
+		tabs.delete(tabId);
 	});
 
-	// onUpdated: Full Tab in 3rd arg — replace element at index
-	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
+	// onUpdated: Full Tab in 3rd arg — update in map
+	browser.tabs.onUpdated.addListener((_tabId, _changeInfo, tab) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
-		const row = tabToRow(id, tab);
+		const row = tabToRow(deviceId!, tab);
 		if (!row) return;
-		const idx = tabIndex.get(row.tabId);
-		if (idx !== undefined) {
-			tabs[idx] = row;
-		}
+		tabs.set(row.tabId, row);
 	});
 
 	// onMoved: Re-query tab to get updated index
 	browser.tabs.onMoved.addListener(async (tabId) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(id, tab);
+			const row = tabToRow(deviceId!, tab);
 			if (!row) return;
-			const idx = tabIndex.get(row.tabId);
-			if (idx !== undefined) {
-				tabs[idx] = row;
-			}
+			tabs.set(row.tabId, row);
 		} catch {
 			// Tab may have been closed during move
 		}
 	});
 
 	// onActivated: Update active flags on old and new tab
-	browser.tabs.onActivated.addListener(async (activeInfo) => {
+	browser.tabs.onActivated.addListener((activeInfo) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
-		const windowId = createWindowCompositeId(id, activeInfo.windowId);
+		const windowId = createWindowCompositeId(deviceId!, activeInfo.windowId);
 
 		// Deactivate previous active tab(s) in this window
-		for (let i = 0; i < tabs.length; i++) {
-			if (tabs[i].windowId === windowId && tabs[i].active) {
-				tabs[i] = { ...tabs[i], active: false };
+		for (const [tabId, tab] of tabs) {
+			if (tab.windowId === windowId && tab.active) {
+				tabs.set(tabId, { ...tab, active: false });
 			}
 		}
 
 		// Activate the new tab
-		const idx = tabIndex.get(activeInfo.tabId);
-		if (idx !== undefined) {
-			tabs[idx] = { ...tabs[idx], active: true };
+		const tab = tabs.get(activeInfo.tabId);
+		if (tab) {
+			tabs.set(activeInfo.tabId, { ...tab, active: true });
 		}
 	});
 
 	// onAttached: Tab moved between windows — re-query
 	browser.tabs.onAttached.addListener(async (tabId) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(id, tab);
+			const row = tabToRow(deviceId!, tab);
 			if (!row) return;
-			const idx = tabIndex.get(row.tabId);
-			if (idx !== undefined) {
-				tabs[idx] = row;
-			} else {
-				tabs.push(row);
-				tabIndex.set(row.tabId, tabs.length - 1);
-			}
+			tabs.set(row.tabId, row);
 		} catch {
 			// Tab may have been closed
 		}
@@ -175,15 +135,11 @@ function createBrowserState() {
 	// onDetached: Tab detached from window — re-query
 	browser.tabs.onDetached.addListener(async (tabId) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
 		try {
 			const tab = await browser.tabs.get(tabId);
-			const row = tabToRow(id, tab);
+			const row = tabToRow(deviceId!, tab);
 			if (!row) return;
-			const idx = tabIndex.get(row.tabId);
-			if (idx !== undefined) {
-				tabs[idx] = row;
-			}
+			tabs.set(row.tabId, row);
 		} catch {
 			// Tab may have been closed during detach
 		}
@@ -192,19 +148,17 @@ function createBrowserState() {
 	// ── Window Event Listeners ────────────────────────────────────────────
 
 	// onCreated: Full Window object provided
-	browser.windows.onCreated.addListener(async (window) => {
+	browser.windows.onCreated.addListener((window) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
-		const row = windowToRow(id, window);
+		const row = windowToRow(deviceId!, window);
 		if (!row) return;
 		windows.push(row);
 	});
 
 	// onRemoved: Remove window and all its tabs
-	browser.windows.onRemoved.addListener(async (windowId) => {
+	browser.windows.onRemoved.addListener((windowId) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
-		const compositeId = createWindowCompositeId(id, windowId);
+		const compositeId = createWindowCompositeId(deviceId!, windowId);
 
 		// Remove window
 		const winIdx = windows.findIndex((w) => w.id === compositeId);
@@ -213,14 +167,16 @@ function createBrowserState() {
 		}
 
 		// Remove all tabs in that window
-		tabs = tabs.filter((t) => t.windowId !== compositeId);
-		rebuildIndex();
+		for (const [tabId, tab] of tabs) {
+			if (tab.windowId === compositeId) {
+				tabs.delete(tabId);
+			}
+		}
 	});
 
 	// onFocusChanged: Update focused flags
-	browser.windows.onFocusChanged.addListener(async (windowId) => {
+	browser.windows.onFocusChanged.addListener((windowId) => {
 		if (!ready) return;
-		const id = await resolveDeviceId();
 
 		// Unfocus all windows
 		for (let i = 0; i < windows.length; i++) {
@@ -231,7 +187,7 @@ function createBrowserState() {
 
 		// Focus the new window (WINDOW_ID_NONE means all lost focus)
 		if (windowId !== browser.windows.WINDOW_ID_NONE) {
-			const compositeId = createWindowCompositeId(id, windowId);
+			const compositeId = createWindowCompositeId(deviceId!, windowId);
 			const winIdx = windows.findIndex((w) => w.id === compositeId);
 			if (winIdx !== -1) {
 				windows[winIdx] = { ...windows[winIdx], focused: true };
@@ -247,7 +203,7 @@ function createBrowserState() {
 
 		/** All tabs across all windows. */
 		get tabs() {
-			return tabs;
+			return [...tabs.values()];
 		},
 
 		/** All browser windows. */
@@ -266,7 +222,7 @@ function createBrowserState() {
 		 * ```
 		 */
 		tabsByWindow(windowId: WindowCompositeId): Tab[] {
-			return tabs
+			return [...tabs.values()]
 				.filter((t) => t.windowId === windowId)
 				.sort((a, b) => a.index - b.index);
 		},

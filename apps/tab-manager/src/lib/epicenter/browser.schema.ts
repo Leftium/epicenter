@@ -159,6 +159,28 @@ const tab_groups = defineTable(
 	}),
 );
 
+/**
+ * Suspended tabs table — explicitly saved tabs that can be restored later.
+ *
+ * Unlike the `tabs` table (which mirrors live browser state and is device-owned),
+ * suspended tabs are shared across all devices. Any device can read, edit, or
+ * restore a suspended tab.
+ *
+ * Created when a user explicitly "suspends" a tab (close + save).
+ * Deleted when a user restores the tab (opens URL locally + deletes row).
+ */
+const suspended_tabs = defineTable(
+	type({
+		id: 'string', // nanoid, generated on suspend
+		url: 'string', // The tab URL
+		title: 'string', // Tab title at time of suspend
+		'fav_icon_url?': 'string', // Favicon URL (nullable)
+		pinned: 'boolean', // Whether tab was pinned
+		source_device_id: 'string', // Device that suspended this tab
+		suspended_at: 'number', // Timestamp (ms since epoch)
+	}),
+);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -168,6 +190,7 @@ export const BROWSER_TABLES = {
 	tabs,
 	windows,
 	tab_groups,
+	suspended_tabs,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,5 +201,6 @@ export type Device = InferTableRow<typeof BROWSER_TABLES.devices>;
 export type Tab = InferTableRow<typeof BROWSER_TABLES.tabs>;
 export type Window = InferTableRow<typeof BROWSER_TABLES.windows>;
 export type TabGroup = InferTableRow<typeof BROWSER_TABLES.tab_groups>;
+export type SuspendedTab = InferTableRow<typeof BROWSER_TABLES.suspended_tabs>;
 
 export type BrowserTables = typeof BROWSER_TABLES;

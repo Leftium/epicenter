@@ -25,9 +25,10 @@ import { definition } from '$lib/workspace';
  * Shares the same Y.Doc as the background service worker via IndexedDB
  * persistence and Y-Sweet sync.
  */
-export const popupWorkspace = createWorkspace(definition).withExtensions({
-	sync: ySweetPersistSync({
+export const popupWorkspace = createWorkspace(definition).withExtension(
+	'sync',
+	ySweetPersistSync({
 		auth: directAuth('http://127.0.0.1:8080'),
 		persistence: indexeddbPersistence,
 	}),
-});
+);

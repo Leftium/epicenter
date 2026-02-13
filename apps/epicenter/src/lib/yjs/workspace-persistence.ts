@@ -61,25 +61,23 @@ const FILE_NAMES = {
  * @example
  * ```typescript
  * const client = createWorkspace(definition)
- *   .withExtensions({
- *     persistence: (ctx) => workspacePersistence(ctx),
- *   });
+ *   .withExtension('persistence', (ctx) => workspacePersistence(ctx));
  * ```
  */
 export function workspacePersistence(
 	ctx: ExtensionContext,
 	config: WorkspacePersistenceConfig = {},
 ): Lifecycle {
-	const { ydoc, workspaceId, kv } = ctx;
+	const { ydoc, id, kv } = ctx;
 	const { jsonDebounceMs = 500 } = config;
 
 	// For logging
-	const logPath = `workspaces/${workspaceId}`;
+	const logPath = `workspaces/${id}`;
 
 	// Resolve paths once, cache the promise
 	const pathsPromise = (async () => {
 		const baseDir = await appLocalDataDir();
-		const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
+		const workspaceDir = await join(baseDir, 'workspaces', id);
 		const workspaceYjsPath = await join(workspaceDir, FILE_NAMES.WORKSPACE_YJS);
 		const kvJsonPath = await join(workspaceDir, FILE_NAMES.KV_JSON);
 
@@ -122,7 +120,7 @@ export function workspacePersistence(
 			const kvData = kv.toJSON();
 			const json = JSON.stringify(kvData, null, '\t');
 			await writeFile(kvJsonPath, new TextEncoder().encode(json));
-			console.log(`[WorkspacePersistence] Saved kv.json for ${workspaceId}`);
+			console.log(`[WorkspacePersistence] Saved kv.json for ${id}`);
 		} catch (error) {
 			console.error(`[WorkspacePersistence] Failed to save kv.json:`, error);
 		}

@@ -10,8 +10,8 @@
  *   (Head Doc, Registry Doc). Receive minimal context: `{ ydoc }`.
  *
  * - **Extensions** (workspace-level): Plugins that extend workspaces with features
- *   like SQLite queries, Markdown sync, revision history. Receive flattened context
- *   with all workspace data plus extensionId.
+ *   like SQLite queries, Markdown sync, revision history. Receive the client-so-far
+ *   as context, including previously added extensions.
  *
  * Use `defineExports()` to wrap your extension's return value for lifecycle normalization.
  */
@@ -34,6 +34,4 @@ export type ExtensionExports<
 export type {
 	ExtensionContext,
 	ExtensionFactory,
-	ExtensionFactoryMap,
-	InferExtensionExports,
 } from './workspace/types';

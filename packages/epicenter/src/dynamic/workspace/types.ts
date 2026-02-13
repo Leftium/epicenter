@@ -2,7 +2,16 @@
  * Type definitions for the dynamic workspace builder pattern.
  *
  * These types enable the ergonomic builder API where `createWorkspace()` returns
- * a client that IS directly usable AND has `.withExtensions()` for optional chaining.
+ * a client that IS directly usable AND has `.withExtension()` for chainable extensions.
+ *
+ * ## Why `.withExtension()` is chainable (not a map)
+ *
+ * Extensions use chainable `.withExtension(key, factory)` calls because
+ * extensions build on each other progressively.
+ * Each `.withExtension()` call returns a new builder where the next extension's factory
+ * receives the accumulated extensions-so-far as typed context. This means extension N+1
+ * can access extension N's exports. You may also be importing extensions you don't fully
+ * control, and chaining lets you compose on top of them without modifying their source.
  *
  * ## Pattern Overview
  *
@@ -13,8 +22,10 @@
  *
  * // With extensions (chained)
  * const workspace = createWorkspace(definition)
- *   .withExtensions({ sqlite, persistence });
- * workspace.extensions.sqlite;  // Typed!
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
+ * workspace.extensions.persistence;  // Typed!
+ * workspace.extensions.sync;         // Typed!
  * ```
  *
  * @module
@@ -24,7 +35,6 @@ import type * as Y from 'yjs';
 import type { Lifecycle } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
-import type { WorkspaceDefinition } from '../schema/workspace-definition';
 import type { Tables } from '../tables/create-tables';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -32,40 +42,44 @@ import type { Tables } from '../tables/create-tables';
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to extension factory functions.
+ * Context passed to extension factories — the "client-so-far".
  *
- * Extensions receive typed access to the workspace's Y.Doc, tables, kv,
- * and identity information. This enables extensions to attach functionality
- * like persistence, SQLite queries, or sync with full type safety.
+ * Each `.withExtension()` call passes this context to the factory function.
+ * The `extensions` field contains all previously added extensions, fully typed.
+ * This enables progressive composition: extension N+1 can access extension N's exports.
+ *
+ * Omits lifecycle methods (`destroy`, `Symbol.asyncDispose`) since extensions
+ * shouldn't control the workspace's lifecycle — only their own.
  *
  * @typeParam TTableDefinitions - Array of table definitions for this workspace
  * @typeParam TKvFields - Array of KV field definitions for this workspace
+ * @typeParam TExtensions - Accumulated extension exports from previous `.withExtension()` calls
  *
  * @example
  * ```typescript
- * // Destructure only what you need
- * const persistence: ExtensionFactory = ({ ydoc }) => { ... };
- * const sqlite: ExtensionFactory = ({ id, tables }) => { ... };
- * const markdown: ExtensionFactory = ({ ydoc, tables, id }) => { ... };
+ * .withExtension('sync', ({ ydoc, extensions }) => {
+ *   // extensions.persistence is typed if persistence was added before this
+ *   const provider = createProvider(ydoc);
+ *   return defineExports({ provider, destroy: () => provider.destroy() });
+ * })
  * ```
  */
 export type ExtensionContext<
 	TTableDefinitions extends
 		readonly TableDefinition[] = readonly TableDefinition[],
 	TKvFields extends readonly KvField[] = readonly KvField[],
+	TExtensions extends Record<string, Lifecycle> = Record<string, Lifecycle>,
 > = {
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
 	/** Workspace identifier (from definition.id) */
 	id: string;
-	/** The workspace definition with typed tables and kv fields */
-	definition: WorkspaceDefinition<TTableDefinitions, TKvFields>;
 	/** Typed table helpers */
 	tables: Tables<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: Kv<TKvFields>;
-	/** This extension's key from `.withExtensions({ key: ... })` */
-	extensionId: string;
+	/** Accumulated extension exports from previous `.withExtension()` calls */
+	extensions: TExtensions;
 };
 
 /**
@@ -77,8 +91,6 @@ export type ExtensionContext<
  *
  * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant exports.
  *
- * @typeParam TTableDefinitions - Table definitions this extension accepts
- * @typeParam TKvFields - KV fields this extension accepts
  * @typeParam TExports - The exports returned by this extension (must extend Lifecycle)
  *
  * @example
@@ -93,36 +105,9 @@ export type ExtensionContext<
  * };
  * ```
  */
-export type ExtensionFactory<
-	TTableDefinitions extends
-		readonly TableDefinition[] = readonly TableDefinition[],
-	TKvFields extends readonly KvField[] = readonly KvField[],
-	TExports extends Lifecycle = Lifecycle,
-> = (context: ExtensionContext<TTableDefinitions, TKvFields>) => TExports;
-
-/**
- * Map of extension factory functions.
- *
- * Each extension must return a `Lifecycle` (with `whenSynced` and `destroy`).
- * Use `defineExports()` from `shared/lifecycle.ts` to easily create compliant returns.
- */
-export type ExtensionFactoryMap = Record<
-	string,
-	// biome-ignore lint/suspicious/noExplicitAny: extension factories are variadic
-	(...args: any[]) => Lifecycle
->;
-
-/**
- * Infer exports from an extension factory map.
- *
- * Extensions return `Lifecycle & CustomExports` via `defineExports()`.
- * This type extracts the full return type of each extension.
- *
- * @typeParam TExtensions - The extension map to infer exports from
- */
-export type InferExtensionExports<TExtensions extends ExtensionFactoryMap> = {
-	[K in keyof TExtensions]: ReturnType<TExtensions[K]>;
-};
+export type ExtensionFactory<TExports extends Lifecycle = Lifecycle> = (
+	context: ExtensionContext,
+) => TExports;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CLIENT TYPES
@@ -135,12 +120,12 @@ export type InferExtensionExports<TExtensions extends ExtensionFactoryMap> = {
  *
  * @typeParam TTableDefinitions - Table definitions for this workspace
  * @typeParam TKvFields - KV field definitions for this workspace
- * @typeParam TExtensions - Extension factory map (defaults to empty)
+ * @typeParam TExtensions - Accumulated extension exports (defaults to empty)
  */
 export type WorkspaceClient<
 	TTableDefinitions extends readonly TableDefinition[],
 	TKvFields extends readonly KvField[],
-	TExtensions extends ExtensionFactoryMap = Record<string, never>,
+	TExtensions extends Record<string, Lifecycle> = Record<string, never>,
 > = {
 	/** Workspace identifier */
 	id: string;
@@ -150,8 +135,8 @@ export type WorkspaceClient<
 	tables: Tables<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: Kv<TKvFields>;
-	/** Extension exports (empty object if no extensions) */
-	extensions: InferExtensionExports<TExtensions>;
+	/** Extension exports (accumulated via `.withExtension()` calls) */
+	extensions: TExtensions;
 	/** Promise resolving when all extensions are synced */
 	whenSynced: Promise<void>;
 	/** Cleanup all resources */
@@ -161,42 +146,51 @@ export type WorkspaceClient<
 };
 
 /**
- * Builder returned by createWorkspace() that IS a client AND has .withExtensions().
+ * Builder returned by `createWorkspace()` and by each `.withExtension()` call.
  *
- * This uses Object.assign pattern to merge the base client with the builder methods,
- * allowing both direct use and chaining:
- * - Direct: `createWorkspace(...).tables.get('posts').upsert(...)`
- * - Chained: `createWorkspace(...).withExtensions({ sqlite })`
+ * IS a usable client AND has `.withExtension()` for chaining.
+ *
+ * Extensions are chained because they build on each other progressively —
+ * each factory receives the client-so-far (including previously added extensions)
+ * as typed context. This enables extension N+1 to access extension N's exports.
  *
  * @typeParam TTableDefinitions - Table definitions for this workspace
  * @typeParam TKvFields - KV field definitions for this workspace
+ * @typeParam TExtensions - Accumulated extension exports
  */
 export type WorkspaceClientBuilder<
 	TTableDefinitions extends readonly TableDefinition[],
 	TKvFields extends readonly KvField[],
-> = WorkspaceClient<TTableDefinitions, TKvFields, Record<string, never>> & {
+	TExtensions extends Record<string, Lifecycle> = Record<string, never>,
+> = WorkspaceClient<TTableDefinitions, TKvFields, TExtensions> & {
 	/**
-	 * Add extensions to the workspace client.
+	 * Add a single extension. Returns a new builder with the extension's
+	 * exports accumulated into the extensions type.
 	 *
-	 * Extensions receive typed access to ydoc, tables, kv, and workspace identity.
-	 * They must return a Lifecycle object (via defineExports).
-	 *
-	 * @param extensions - Map of extension factories
-	 * @returns New workspace client with typed extensions
+	 * @param key - Unique name for this extension (used as the key in `.extensions`)
+	 * @param factory - Factory function receiving the client-so-far context, returns exports
+	 * @returns A new builder with the extension added to the type
 	 *
 	 * @example
 	 * ```typescript
 	 * const workspace = createWorkspace(definition)
-	 *   .withExtensions({
-	 *     sqlite: (ctx) => sqliteExtension(ctx),
-	 *     persistence: (ctx) => persistenceExtension(ctx),
+	 *   .withExtension('persistence', ({ ydoc }) => {
+	 *     return defineExports({ ... });
+	 *   })
+	 *   .withExtension('sync', ({ extensions }) => {
+	 *     // extensions.persistence is fully typed here!
+	 *     return defineExports({ ... });
 	 *   });
-	 *
-	 * await workspace.whenSynced;
-	 * workspace.extensions.sqlite.db.select()...;
 	 * ```
 	 */
-	withExtensions<TExtensions extends ExtensionFactoryMap>(
-		extensions: TExtensions,
-	): WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
+	withExtension<TKey extends string, TExports extends Lifecycle>(
+		key: TKey,
+		factory: (
+			context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
+		) => TExports,
+	): WorkspaceClientBuilder<
+		TTableDefinitions,
+		TKvFields,
+		TExtensions & Record<TKey, TExports>
+	>;
 };

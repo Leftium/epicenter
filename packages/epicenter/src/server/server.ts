@@ -25,7 +25,9 @@ export type ServerOptions = {
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/static';
  *
- * const workspace = createWorkspace(definition).withExtensions({ ... });
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('persistence', (ctx) => setupPersistence(ctx))
+ *   .withExtension('sqlite', (ctx) => sqliteProvider(ctx));
  *
  * const server = createServer(workspace, { port: 3913 });
  * server.start();

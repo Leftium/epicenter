@@ -63,7 +63,7 @@ describe('defineWorkspace', () => {
 		expect(themeResult.status).toBe('valid');
 	});
 
-	test('createWorkspace().withExtensions() adds extensions', () => {
+	test('createWorkspace().withExtension() adds extensions', () => {
 		// Mock extension with custom exports - uses defineExports for lifecycle
 		const mockExtension = (_context: {
 			ydoc: Y.Doc;
@@ -79,9 +79,7 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			mock: mockExtension,
-		});
+		}).withExtension('mock', mockExtension);
 
 		expect(client.extensions.mock).toBeDefined();
 		expect(client.extensions.mock.customMethod()).toBe('hello');
@@ -111,10 +109,9 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			persistence: persistenceExtension,
-			sync: syncExtension,
-		});
+		})
+			.withExtension('persistence', persistenceExtension)
+			.withExtension('sync', syncExtension);
 
 		// Test persistence extension exports are typed
 		const queryResult = client.extensions.persistence.db.query('SELECT');
@@ -156,9 +153,7 @@ describe('defineWorkspace', () => {
 			tables: {
 				posts: defineTable(type({ id: 'string', title: 'string' })),
 			},
-		}).withExtensions({
-			mock: mockExtension,
-		});
+		}).withExtension('mock', mockExtension);
 
 		await client.destroy();
 		expect(destroyed).toBe(true);
@@ -193,7 +188,7 @@ describe('defineWorkspace', () => {
 		expect(result.status).toBe('valid');
 	});
 
-	test('createWorkspace client is usable before withExtensions', () => {
+	test('createWorkspace client is usable before withExtension', () => {
 		const client = createWorkspace({
 			id: 'builder-app',
 			tables: {
@@ -204,10 +199,10 @@ describe('defineWorkspace', () => {
 		client.tables.posts.set({ id: '1', title: 'Before Extensions' });
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
-		expect(typeof client.withExtensions).toBe('function');
+		expect(typeof client.withExtension).toBe('function');
 	});
 
-	test('withExtensions shares same ydoc', () => {
+	test('withExtension shares same ydoc', () => {
 		const baseClient = createWorkspace({
 			id: 'shared-doc-app',
 			tables: {
@@ -216,7 +211,7 @@ describe('defineWorkspace', () => {
 		});
 
 		baseClient.tables.posts.set({ id: '1', title: 'Original' });
-		const clientWithExt = baseClient.withExtensions({});
+		const clientWithExt = baseClient;
 
 		expect(clientWithExt.ydoc).toBe(baseClient.ydoc);
 

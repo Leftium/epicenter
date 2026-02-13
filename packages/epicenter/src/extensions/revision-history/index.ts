@@ -10,12 +10,10 @@
  * import { localRevisionHistory } from '@epicenter/hq/extensions/revision-history';
  *
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
- *   .withExtensions({
- *     revisions: (ctx) => localRevisionHistory(ctx, {
- *       directory: './workspaces',
- *       maxVersions: 50,
- *     }),
- *   });
+ *   .withExtension('revisions', (ctx) => localRevisionHistory(ctx, {
+ *     directory: './workspaces',
+ *     maxVersions: 50,
+ *   }));
  *
  * // Save manually (bypasses debounce)
  * workspace.extensions.revisions.save('Before refactor');

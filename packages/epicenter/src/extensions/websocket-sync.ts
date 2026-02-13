@@ -1,6 +1,6 @@
 import { WebsocketProvider } from 'y-websocket';
-import { defineExports, type ExtensionFactory } from '../dynamic/extension';
-import type { KvField, TableDefinition } from '../dynamic/schema';
+import type { ExtensionContext } from '../dynamic/extension';
+import { defineExports } from '../dynamic/extension';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MULTI-DEVICE SYNC ARCHITECTURE
@@ -139,9 +139,8 @@ export type WebsocketSyncConfig = {
  * import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
  *
  * // Browser connects to its own local Elysia server
- * const workspace = createWorkspace(definition).withExtensions({
- *   sync: websocketSync({ url: 'ws://localhost:3913/sync' }),
- * });
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('sync', () => websocketSync({ url: 'ws://localhost:3913/sync' }));
  * ```
  *
  * @example Multi-extension (phone connecting to all nodes)
@@ -156,12 +155,10 @@ export type WebsocketSyncConfig = {
  * } as const;
  *
  * // Phone browser connects to ALL available sync nodes
- * const workspace = createWorkspace(definition).withExtensions({
- *   // Create an extension for each sync node
- *   syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
- *   syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
- *   syncCloud: websocketSync({ url: SYNC_NODES.cloud }),
- * });
+ * const workspace = createWorkspace(definition)
+ *   .withExtension('syncDesktop', () => websocketSync({ url: SYNC_NODES.desktop }))
+ *   .withExtension('syncLaptop', () => websocketSync({ url: SYNC_NODES.laptop }))
+ *   .withExtension('syncCloud', () => websocketSync({ url: SYNC_NODES.cloud }));
  * ```
  *
  * @example Server-to-server sync (Elysia servers syncing with each other)
@@ -175,13 +172,12 @@ export type WebsocketSyncConfig = {
  *   cloud: 'wss://sync.myapp.com/sync',
  * } as const;
  *
- * const workspace = createWorkspace(definition).withExtensions({
+ * const workspace = createWorkspace(definition)
  *   // Server acts as both:
  *   // 1. A sync server (via createSyncPlugin in server.ts)
  *   // 2. A sync client connecting to other servers
- *   syncToLaptop: websocketSync({ url: SYNC_NODES.laptop }),
- *   syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
- * });
+ *   .withExtension('syncToLaptop', () => websocketSync({ url: SYNC_NODES.laptop }))
+ *   .withExtension('syncToCloud', () => websocketSync({ url: SYNC_NODES.cloud }));
  * ```
  *
  * @example Direct usage with y-websocket (no Epicenter client)
@@ -202,11 +198,8 @@ export type WebsocketSyncConfig = {
  * providers.forEach(p => p.on('sync', () => console.log('Synced!')));
  * ```
  */
-export function websocketSync<
-	TTableDefinitions extends readonly TableDefinition[],
-	TKvFields extends readonly KvField[],
->(config: WebsocketSyncConfig): ExtensionFactory<TTableDefinitions, TKvFields> {
-	return ({ ydoc }) => {
+export function websocketSync(config: WebsocketSyncConfig) {
+	return ({ ydoc }: ExtensionContext) => {
 		const provider = new WebsocketProvider(
 			config.url,
 			ydoc.guid, // Room name is the workspace ID (Y.Doc guid)

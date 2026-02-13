@@ -50,7 +50,8 @@
  *
  * // Or add extensions
  * const clientWithExt = createWorkspace({ id: 'my-app', tables: { posts } })
- *   .withExtensions({ sqlite, persistence });
+ *   .withExtension('sqlite', sqlite)
+ *   .withExtension('persistence', persistence);
  *
  * // Cleanup
  * await client.destroy();
@@ -127,9 +128,7 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
-	ExtensionMap,
 	GetResult,
-	InferExtensionExports,
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,

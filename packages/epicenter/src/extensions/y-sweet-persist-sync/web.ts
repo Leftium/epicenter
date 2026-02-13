@@ -17,17 +17,17 @@ import { defineExports } from '../../dynamic/extension';
  * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
  *
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
- *   .withExtensions({ persistence: indexeddbPersistence });
+ *   .withExtension('persistence', () => indexeddbPersistence);
  * ```
  *
  * @example With Y-Sweet persist sync
  * ```typescript
  * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
  *
- * sync: ySweetPersistSync({
+ * .withExtension('sync', () => ySweetPersistSync({
  *   auth: directAuth('http://localhost:8080'),
  *   persistence: indexeddbPersistence,
- * })
+ * }))
  * ```
  */
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {

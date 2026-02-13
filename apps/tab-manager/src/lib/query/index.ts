@@ -1,3 +1,4 @@
+import { suspendedTabs } from './suspended-tabs';
 import { tabs } from './tabs';
 
 /**
@@ -10,6 +11,7 @@ import { tabs } from './tabs';
  *
  * // Reactive (in components)
  * const tabsQuery = createQuery(() => rpc.tabs.getAll.options);
+ * const suspendedQuery = createQuery(() => rpc.suspendedTabs.getAll.options);
  *
  * // Imperative (anywhere)
  * const { data, error } = await rpc.tabs.close.execute(tabId);
@@ -17,6 +19,7 @@ import { tabs } from './tabs';
  */
 export const rpc = {
 	tabs,
+	suspendedTabs,
 };
 
 // Re-export query client for direct access if needed

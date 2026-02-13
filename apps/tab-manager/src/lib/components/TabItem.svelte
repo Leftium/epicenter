@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
 	import { Ok, trySync } from 'wellcrafted/result';
-	import { rpc } from '$lib/query';
+	import { rpc, queryClient } from '$lib/query';
+	import { suspendedTabs, suspendedTabsKeys } from '$lib/query/suspended-tabs';
+	import { tabsKeys } from '$lib/query/tabs';
 	import XIcon from '@lucide/svelte/icons/x';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
@@ -10,6 +12,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import PauseIcon from '@lucide/svelte/icons/pause';
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import * as Avatar from '@epicenter/ui/avatar';
@@ -29,6 +32,14 @@
 	const unmuteMutation = createMutation(() => rpc.tabs.unmute.options);
 	const reloadMutation = createMutation(() => rpc.tabs.reload.options);
 	const duplicateMutation = createMutation(() => rpc.tabs.duplicate.options);
+
+	const suspendMutation = createMutation(() => ({
+		...suspendedTabs.suspend.options,
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: suspendedTabsKeys.all });
+			queryClient.invalidateQueries({ queryKey: tabsKeys.all });
+		},
+	}));
 
 	const isPinPending = $derived(
 		pinMutation.isPending || unpinMutation.isPending,
@@ -168,6 +179,23 @@
 				<Spinner />
 			{:else}
 				<CopyIcon />
+			{/if}
+		</Button>
+
+		<Button
+			variant="ghost"
+			size="icon-xs"
+			disabled={suspendMutation.isPending}
+			tooltip="Suspend"
+			onclick={(e: MouseEvent) => {
+				e.stopPropagation();
+				suspendMutation.mutate(tab);
+			}}
+		>
+			{#if suspendMutation.isPending}
+				<Spinner />
+			{:else}
+				<PauseIcon />
 			{/if}
 		</Button>
 

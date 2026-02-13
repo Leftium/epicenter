@@ -33,8 +33,8 @@
  */
 
 import type { Static, TSchema } from 'typebox';
+import type { Id } from '../../../shared/id';
 import type { DateTimeString } from './datetime';
-import type { Id } from './id';
 
 // ============================================================================
 // Icon Type (Tagged String)

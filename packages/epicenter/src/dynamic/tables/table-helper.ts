@@ -31,10 +31,10 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
+import { Id } from '../../shared/id.js';
 import { TableKey } from '../../shared/ydoc-keys';
 import type { Field, PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
-import { Id } from '../schema/fields/id.js';
 import { createCellStore } from './y-cell-store.js';
 import { createRowStore } from './y-row-store.js';
 

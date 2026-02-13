@@ -1,3 +1,5 @@
+export type { Guid } from '../../shared/id.js';
+export { generateGuid, generateId, Id } from '../../shared/id.js';
 export { standardSchemaToJsonSchema } from '../../shared/standard-schema/to-json-schema.js';
 export type {
 	StandardJSONSchemaV1,
@@ -40,8 +42,6 @@ export {
 	text,
 } from './fields/factories.js';
 export { isNullableField } from './fields/helpers.js';
-export type { Guid } from './fields/id.js';
-export { generateGuid, generateId, Id } from './fields/id.js';
 export {
 	DATE_TIME_STRING_REGEX,
 	ISO_DATETIME_REGEX,

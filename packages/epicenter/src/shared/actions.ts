@@ -289,14 +289,15 @@ export function defineQuery<
 	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
 >(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput>;
-export function defineQuery(config: ActionConfig<any, any>): Query<any, any> {
+export function defineQuery({
+	handler,
+	...rest
+}: ActionConfig<any, any>): Query<any, any> {
 	const fn = (...args: unknown[]) =>
-		(config.handler as (...args: unknown[]) => unknown)(...args);
+		(handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'query' as const,
-		description: config.description,
-		input: config.input,
-		output: config.output,
+		...rest,
 	}) as unknown as Query<any, any>;
 }
 
@@ -340,16 +341,15 @@ export function defineMutation<
 	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
 >(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput>;
-export function defineMutation(
-	config: ActionConfig<any, any>,
-): Mutation<any, any> {
+export function defineMutation({
+	handler,
+	...rest
+}: ActionConfig<any, any>): Mutation<any, any> {
 	const fn = (...args: unknown[]) =>
-		(config.handler as (...args: unknown[]) => unknown)(...args);
+		(handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'mutation' as const,
-		description: config.description,
-		input: config.input,
-		output: config.output,
+		...rest,
 	}) as unknown as Mutation<any, any>;
 }
 

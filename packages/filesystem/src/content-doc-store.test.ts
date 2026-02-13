@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { defineExports } from '@epicenter/hq';
+import type { ProviderFactory } from '@epicenter/hq/dynamic';
 import * as Y from 'yjs';
-import type { ProviderFactory } from '../dynamic/provider-types.js';
-import { defineExports } from '../shared/lifecycle.js';
 import { createContentDocStore } from './content-doc-store.js';
 import type { FileId } from './types.js';
 

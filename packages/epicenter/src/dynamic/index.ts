@@ -100,6 +100,17 @@ export type { KvKey, TableKey as TableKeyType } from '../shared/ydoc-keys';
 export { KV_KEY, TableKey } from '../shared/ydoc-keys';
 
 // ════════════════════════════════════════════════════════════════════════════
+// PROVIDER TYPES (Doc-Level)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type {
+	ProviderContext,
+	ProviderExports,
+	ProviderFactory,
+	ProviderFactoryMap,
+} from './provider-types';
+
+// ════════════════════════════════════════════════════════════════════════════
 // TABLES & KV
 // ════════════════════════════════════════════════════════════════════════════
 

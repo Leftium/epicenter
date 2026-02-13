@@ -1,5 +1,5 @@
 import { type } from 'arktype';
-import { defineTable } from '../static/define-table.js';
+import { defineTable } from '@epicenter/hq/static';
 import { FileId } from './types.js';
 
 export const filesTable = defineTable(

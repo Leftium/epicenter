@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
-import { type Guid, generateGuid } from '../shared/id.js';
+import { type Guid, generateGuid } from '@epicenter/hq';
 
 /**
  * Timeline entry shapes — a discriminated union on 'type'.
@@ -20,7 +20,7 @@ export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
 /** Content modes supported by timeline entries */
 export type ContentMode = TimelineEntry['type'];
 
-import type { InferTableRow } from '../static/types.js';
+import type { InferTableRow } from '@epicenter/hq/static';
 import type { filesTable } from './file-table.js';
 
 /** Branded file identifier — a Guid that is specifically a file ID */

@@ -6,8 +6,8 @@ import type {
 	MkdirOptions,
 	RmOptions,
 } from 'just-bash';
-import type { ProviderFactory } from '../dynamic/provider-types.js';
-import type { TableHelper } from '../static/types.js';
+import type { ProviderFactory } from '@epicenter/hq/dynamic';
+import type { TableHelper } from '@epicenter/hq/static';
 import { ContentOps } from './content-ops.js';
 import { FileTree } from './file-tree.js';
 import { posixResolve } from './path-utils.js';

@@ -1,6 +1,6 @@
+import type { Lifecycle } from '@epicenter/hq';
+import type { ProviderFactory } from '@epicenter/hq/dynamic';
 import * as Y from 'yjs';
-import type { ProviderFactory } from '../dynamic/provider-types.js';
-import { defineExports, type Lifecycle } from '../shared/lifecycle.js';
 import type { ContentDocStore, FileId } from './types.js';
 
 type DocEntry = {

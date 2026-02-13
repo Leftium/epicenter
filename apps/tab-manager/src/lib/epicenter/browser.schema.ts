@@ -24,7 +24,18 @@ import type { Brand } from 'wellcrafted/brand';
  * Device-scoped composite tab ID: `${deviceId}_${tabId}`.
  *
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
- * Construct via `createBrowserConverters(deviceId).toTabId(tabId)`.
+ *
+ * @example
+ * ```typescript
+ * // As a type annotation
+ * function getTab(id: TabCompositeId): Tab { ... }
+ *
+ * // As a runtime validator (arktype schema) in table definitions
+ * const tabs = defineTable(type({ id: TabCompositeId, ... }));
+ *
+ * // To construct a new composite ID, use createTabCompositeId
+ * const id = createTabCompositeId(deviceId, 123);
+ * ```
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
 export const TabCompositeId = type('string').pipe(
@@ -35,7 +46,18 @@ export const TabCompositeId = type('string').pipe(
  * Device-scoped composite window ID: `${deviceId}_${windowId}`.
  *
  * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
- * Construct via `createBrowserConverters(deviceId).toWindowId(windowId)`.
+ *
+ * @example
+ * ```typescript
+ * // As a type annotation
+ * function getWindow(id: WindowCompositeId): Window { ... }
+ *
+ * // As a runtime validator (arktype schema) in table definitions
+ * const windows = defineTable(type({ id: WindowCompositeId, ... }));
+ *
+ * // To construct a new composite ID, use createWindowCompositeId
+ * const id = createWindowCompositeId(deviceId, 456);
+ * ```
  */
 export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
 export const WindowCompositeId = type('string').pipe(
@@ -46,7 +68,18 @@ export const WindowCompositeId = type('string').pipe(
  * Device-scoped composite group ID: `${deviceId}_${groupId}`.
  *
  * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
- * Construct via `createBrowserConverters(deviceId).toGroupId(groupId)`.
+ *
+ * @example
+ * ```typescript
+ * // As a type annotation
+ * function getGroup(id: GroupCompositeId): TabGroup { ... }
+ *
+ * // As a runtime validator (arktype schema) in table definitions
+ * const tabGroups = defineTable(type({ id: GroupCompositeId, ... }));
+ *
+ * // To construct a new composite ID, use createGroupCompositeId
+ * const id = createGroupCompositeId(deviceId, 789);
+ * ```
  */
 export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
 export const GroupCompositeId = type('string').pipe(
@@ -191,6 +224,156 @@ const suspendedTabs = defineTable(
 		suspendedAt: 'number', // Timestamp (ms since epoch)
 	}),
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Composite ID Constructors
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create a device-scoped composite tab ID: `${deviceId}_${tabId}`.
+ *
+ * Use this whenever you need to construct a {@link TabCompositeId} from its parts.
+ * The resulting ID is branded to prevent accidental mixing with other ID types.
+ *
+ * @example
+ * ```typescript
+ * const id = createTabCompositeId(deviceId, 123);
+ * // "abc123_123" as TabCompositeId
+ *
+ * tables.tabs.delete(createTabCompositeId(deviceId, tabId));
+ * ```
+ */
+export function createTabCompositeId(
+	deviceId: string,
+	tabId: number,
+): TabCompositeId {
+	return `${deviceId}_${tabId}` as TabCompositeId;
+}
+
+/**
+ * Create a device-scoped composite window ID: `${deviceId}_${windowId}`.
+ *
+ * Use this whenever you need to construct a {@link WindowCompositeId} from its parts.
+ * The resulting ID is branded to prevent accidental mixing with other ID types.
+ *
+ * @example
+ * ```typescript
+ * const id = createWindowCompositeId(deviceId, 456);
+ * // "abc123_456" as WindowCompositeId
+ *
+ * tables.windows.delete(createWindowCompositeId(deviceId, windowId));
+ * ```
+ */
+export function createWindowCompositeId(
+	deviceId: string,
+	windowId: number,
+): WindowCompositeId {
+	return `${deviceId}_${windowId}` as WindowCompositeId;
+}
+
+/**
+ * Create a device-scoped composite group ID: `${deviceId}_${groupId}`.
+ *
+ * Use this whenever you need to construct a {@link GroupCompositeId} from its parts.
+ * The resulting ID is branded to prevent accidental mixing with other ID types.
+ *
+ * @example
+ * ```typescript
+ * const id = createGroupCompositeId(deviceId, 789);
+ * // "abc123_789" as GroupCompositeId
+ *
+ * tables.tabGroups.delete(createGroupCompositeId(deviceId, groupId));
+ * ```
+ */
+export function createGroupCompositeId(
+	deviceId: string,
+	groupId: number,
+): GroupCompositeId {
+	return `${deviceId}_${groupId}` as GroupCompositeId;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Row Converters (Browser API → Schema Row)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Convert a browser tab to a schema row.
+ *
+ * Returns `null` if the tab has no ID (e.g. foreign tabs from the sessions API).
+ * Tabs without IDs can't be activated, closed, or stored with a composite key.
+ *
+ * @example
+ * ```typescript
+ * const row = tabToRow(deviceId, tab);
+ * if (row) tables.tabs.set(row);
+ * ```
+ */
+export function tabToRow(deviceId: string, tab: Browser.tabs.Tab): Tab | null {
+	if (tab.id === undefined) return null;
+
+	const { id, windowId, groupId, openerTabId, selected, ...rest } = tab;
+	return {
+		...rest,
+		id: createTabCompositeId(deviceId, id),
+		deviceId,
+		tabId: id,
+		windowId: createWindowCompositeId(deviceId, windowId),
+		groupId: createGroupCompositeId(deviceId, groupId),
+		openerTabId:
+			openerTabId !== undefined
+				? createTabCompositeId(deviceId, openerTabId)
+				: undefined,
+	};
+}
+
+/**
+ * Convert a browser window to a schema row.
+ *
+ * Returns `null` if the window has no ID.
+ *
+ * @example
+ * ```typescript
+ * const row = windowToRow(deviceId, window);
+ * if (row) tables.windows.set(row);
+ * ```
+ */
+export function windowToRow(
+	deviceId: string,
+	window: Browser.windows.Window,
+): Window | null {
+	if (window.id === undefined) return null;
+
+	const { id, tabs: _tabs, ...rest } = window;
+	return {
+		...rest,
+		id: createWindowCompositeId(deviceId, id),
+		deviceId,
+		windowId: id,
+	};
+}
+
+/**
+ * Convert a browser tab group to a schema row.
+ *
+ * @example
+ * ```typescript
+ * const row = tabGroupToRow(deviceId, group);
+ * tables.tabGroups.set(row);
+ * ```
+ */
+export function tabGroupToRow(
+	deviceId: string,
+	group: Browser.tabGroups.TabGroup,
+): TabGroup {
+	const { id, windowId, ...rest } = group;
+	return {
+		...rest,
+		id: createGroupCompositeId(deviceId, id),
+		deviceId,
+		groupId: id,
+		windowId: createWindowCompositeId(deviceId, windowId),
+	};
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports

@@ -8,8 +8,12 @@
 
 import { createTaggedError } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { createBrowserConverters } from '$lib/browser-helpers';
 import { getDeviceId } from '$lib/device-id';
+import {
+	tabGroupToRow,
+	tabToRow,
+	windowToRow,
+} from '$lib/epicenter/browser.schema';
 import { defineMutation, defineQuery } from './_client';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,11 +53,10 @@ export const tabs = {
 		queryKey: tabsKeys.all,
 		queryFn: async () => {
 			const deviceId = await getDeviceId();
-			const { tabToRow } = createBrowserConverters(deviceId);
 			const browserTabs = await browser.tabs.query({});
 			const rows = browserTabs
 				.flatMap((tab) => {
-					const row = tabToRow(tab);
+					const row = tabToRow(deviceId, tab);
 					return row ? [row] : [];
 				})
 				.sort((a, b) => a.index - b.index);
@@ -68,10 +71,9 @@ export const tabs = {
 		queryKey: tabsKeys.windows,
 		queryFn: async () => {
 			const deviceId = await getDeviceId();
-			const { windowToRow } = createBrowserConverters(deviceId);
 			const browserWindows = await browser.windows.getAll();
-			const rows = browserWindows.flatMap((window) => {
-				const row = windowToRow(window);
+			const rows = browserWindows.flatMap((win) => {
+				const row = windowToRow(deviceId, win);
 				return row ? [row] : [];
 			});
 			return Ok(rows);
@@ -87,9 +89,8 @@ export const tabs = {
 				return Ok([]);
 			}
 			const deviceId = await getDeviceId();
-			const { tabGroupToRow } = createBrowserConverters(deviceId);
 			const browserGroups = await browser.tabGroups.query({});
-			return Ok(browserGroups.map((group) => tabGroupToRow(group)));
+			return Ok(browserGroups.map((group) => tabGroupToRow(deviceId, group)));
 		},
 		staleTime: Infinity,
 	}),

@@ -27,7 +27,7 @@ export type PersistenceConfig = {
  * @example
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
- * import { persistence } from '@epicenter/hq/extensions/persistence';
+ * import { persistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
  * import { join } from 'node:path';
  *
  * const projectDir = '/my/project';
@@ -76,17 +76,17 @@ export const persistence = (
 };
 
 /**
- * Filesystem persistence factory for use with `ySweetSync`.
+ * Filesystem persistence factory for use with `ySweetPersistSync`.
  *
  * Returns a function `(ydoc: Y.Doc) => Lifecycle` that reads/writes a `.yjs` binary file.
  * Uses `Bun.file()` for read, debounced `writeFileSync` for write.
  *
  * @example
  * ```typescript
- * import { filesystemPersistence } from '@epicenter/hq/extensions/persistence/desktop';
- * import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+ * import { filesystemPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
+ * import { directAuth, ySweetPersistSync } from '@epicenter/hq/extensions/y-sweet-persist-sync';
  *
- * sync: ySweetSync({
+ * sync: ySweetPersistSync({
  *   auth: directAuth('http://localhost:8080'),
  *   persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
  * })

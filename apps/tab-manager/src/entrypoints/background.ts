@@ -22,8 +22,11 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import {
+	directAuth,
+	ySweetPersistSync,
+} from '@epicenter/hq/extensions/y-sweet-persist-sync';
+import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
 import { createWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -123,7 +126,7 @@ export default defineBackground(() => {
 		 * Server setup: npx y-sweet@latest serve
 		 * Default: http://127.0.0.1:8080
 		 */
-		sync: ySweetSync({
+		sync: ySweetPersistSync({
 			auth: directAuth('http://127.0.0.1:8080'),
 			persistence: indexeddbPersistence,
 		}),

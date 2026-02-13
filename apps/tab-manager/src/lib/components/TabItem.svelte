@@ -23,10 +23,11 @@
 
 	// Extract domain from URL for display
 	const domain = $derived.by(() => {
-		if (!tab.url) return '';
+		const url = tab.url;
+		if (!url) return '';
 		const { data } = trySync({
-			try: () => new URL(tab.url).hostname,
-			catch: () => Ok(tab.url),
+			try: () => new URL(url).hostname,
+			catch: () => Ok(url),
 		});
 		return data;
 	});

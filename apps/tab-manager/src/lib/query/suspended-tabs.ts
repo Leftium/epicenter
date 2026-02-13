@@ -54,9 +54,9 @@ export const suspendedTabs = {
 	getAll: defineQuery({
 		queryKey: suspendedTabsKeys.all,
 		queryFn: () => {
-			const rows = popupWorkspace.tables.suspended_tabs
+			const rows = popupWorkspace.tables.suspendedTabs
 				.getAllValid()
-				.sort((a, b) => b.suspended_at - a.suspended_at);
+				.sort((a, b) => b.suspendedAt - a.suspendedAt);
 			return Ok(rows);
 		},
 	}),
@@ -95,7 +95,7 @@ export const suspendedTabs = {
 		mutationFn: () =>
 			tryAsync({
 				try: async () => {
-					const all = popupWorkspace.tables.suspended_tabs.getAllValid();
+					const all = popupWorkspace.tables.suspendedTabs.getAllValid();
 					for (const tab of all) {
 						await restoreTab(popupWorkspace.tables, tab);
 					}
@@ -126,7 +126,7 @@ export const suspendedTabs = {
 		mutationFn: async () =>
 			trySync({
 				try: () => {
-					const all = popupWorkspace.tables.suspended_tabs.getAllValid();
+					const all = popupWorkspace.tables.suspendedTabs.getAllValid();
 					for (const tab of all) {
 						deleteSuspendedTab(popupWorkspace.tables, tab.id);
 					}

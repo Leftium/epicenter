@@ -1,7 +1,7 @@
 /**
  * Popup-side workspace client for accessing Y.Doc data.
  *
- * The popup needs direct access to the Y.Doc for the `suspended_tabs` table,
+ * The popup needs direct access to the Y.Doc for the `suspendedTabs` table,
  * which is shared across devices via Yjs (not available through Chrome APIs).
  *
  * This creates a lightweight workspace client with IndexedDB persistence
@@ -23,7 +23,7 @@ const definition = defineWorkspace({
 /**
  * Popup workspace client.
  *
- * Provides typed access to all browser tables including `suspended_tabs`.
+ * Provides typed access to all browser tables including `suspendedTabs`.
  * Shares the same Y.Doc as the background service worker via IndexedDB
  * persistence and Y-Sweet sync.
  */

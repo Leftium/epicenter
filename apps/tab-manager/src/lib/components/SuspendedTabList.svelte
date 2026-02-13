@@ -105,7 +105,7 @@
 					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
 				>
 					<Avatar.Root class="size-4 shrink-0 rounded-sm">
-						<Avatar.Image src={tab.fav_icon_url} alt="" />
+						<Avatar.Image src={tab.favIconUrl} alt="" />
 						<Avatar.Fallback class="rounded-sm">
 							<GlobeIcon class="size-3 text-muted-foreground" />
 						</Avatar.Fallback>
@@ -118,7 +118,7 @@
 						<div class="flex items-center gap-2 text-xs text-muted-foreground">
 							<span class="truncate">{getDomain(tab.url)}</span>
 							<span>•</span>
-							<span class="shrink-0">{getRelativeTime(tab.suspended_at)}</span>
+							<span class="shrink-0">{getRelativeTime(tab.suspendedAt)}</span>
 						</div>
 					</div>
 

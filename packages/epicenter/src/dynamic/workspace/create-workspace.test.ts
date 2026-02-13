@@ -304,4 +304,75 @@ describe('createWorkspace', () => {
 			expect(workspace.extensions.myExt.getName()).toBe('my-extension');
 		});
 	});
+
+	describe('progressive type safety', () => {
+		test('extension N+1 can access extension N exports via context', () => {
+			const workspace = createWorkspace(testDefinition)
+				.withExtension('first', () =>
+					defineExports({
+						value: 42,
+						helper: () => 'from-first',
+					}),
+				)
+				.withExtension('second', ({ extensions }) => {
+					// extensions.first is fully typed — no casts needed
+					const doubled = extensions.first.value * 2;
+					const msg = extensions.first.helper();
+					return defineExports({ doubled, msg });
+				})
+				.withExtension('third', ({ extensions }) => {
+					// extensions.first AND extensions.second are both fully typed
+					const tripled = extensions.first.value * 3;
+					const fromSecond = extensions.second.doubled;
+					return defineExports({ tripled, fromSecond });
+				});
+
+			// All extensions accessible and typed on the final client
+			expect(workspace.extensions.first.value).toBe(42);
+			expect(workspace.extensions.first.helper()).toBe('from-first');
+			expect(workspace.extensions.second.doubled).toBe(84);
+			expect(workspace.extensions.second.msg).toBe('from-first');
+			expect(workspace.extensions.third.tripled).toBe(126);
+			expect(workspace.extensions.third.fromSecond).toBe(84);
+
+			// Type-level assertions: these assignments would fail to compile if types were wrong
+			const _num: number = workspace.extensions.first.value;
+			const _str: string = workspace.extensions.first.helper();
+			const _doubled: number = workspace.extensions.second.doubled;
+			const _msg: string = workspace.extensions.second.msg;
+			const _tripled: number = workspace.extensions.third.tripled;
+			const _fromSecond: number = workspace.extensions.third.fromSecond;
+			void [_num, _str, _doubled, _msg, _tripled, _fromSecond];
+		});
+
+		test('destroy runs in reverse order (LIFO)', async () => {
+			const order: string[] = [];
+
+			const workspace = createWorkspace(testDefinition)
+				.withExtension('a', () =>
+					defineExports({
+						destroy: () => {
+							order.push('a');
+						},
+					}),
+				)
+				.withExtension('b', () =>
+					defineExports({
+						destroy: () => {
+							order.push('b');
+						},
+					}),
+				)
+				.withExtension('c', () =>
+					defineExports({
+						destroy: () => {
+							order.push('c');
+						},
+					}),
+				);
+
+			await workspace.destroy();
+			expect(order).toEqual(['c', 'b', 'a']);
+		});
+	});
 });

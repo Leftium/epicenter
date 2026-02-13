@@ -10,21 +10,21 @@ import { defineExports } from '../../dynamic/extension';
  * Yjs update (both handled internally by `y-indexeddb`).
  *
  * Works directly as an extension factory (destructures `ydoc` from context)
- * and as a persistence option for `ySweetSync`.
+ * and as a persistence option for `ySweetPersistSync`.
  *
  * @example As a workspace extension
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
  *
  * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
  *   .withExtensions({ persistence: indexeddbPersistence });
  * ```
  *
- * @example With Y-Sweet sync
+ * @example With Y-Sweet persist sync
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
  *
- * sync: ySweetSync({
+ * sync: ySweetPersistSync({
  *   auth: directAuth('http://localhost:8080'),
  *   persistence: indexeddbPersistence,
  * })

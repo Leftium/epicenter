@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { ClientToken } from '@epicenter/y-sweet';
 import { STATUS_OFFLINE, type YSweetProvider } from '@epicenter/y-sweet';
 import * as Y from 'yjs';
-import { ySweetSync } from './y-sweet-sync';
+import { ySweetPersistSync } from './y-sweet-persist-sync';
 
 /**
  * Mock auth that returns a WebSocket URL for the given server.
@@ -14,15 +14,15 @@ function mockAuth(server: string) {
 		Promise.resolve({ url: `ws://${server}/d/${docId}/ws` });
 }
 
-/** The shape of the ySweetSync extension exports (beyond Lifecycle). */
-type YSweetSyncExports = {
+/** The shape of the ySweetPersistSync extension exports (beyond Lifecycle). */
+type YSweetPersistSyncExports = {
 	provider: YSweetProvider;
 	whenSynced: Promise<unknown>;
 	reconnect: (newAuth: (docId: string) => Promise<ClientToken>) => void;
 	destroy: () => void;
 };
 
-describe('ySweetSync', () => {
+describe('ySweetPersistSync', () => {
 	describe('reconnect', () => {
 		test('destroys old provider, creates new provider, leaves persistence untouched', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
@@ -30,7 +30,7 @@ describe('ySweetSync', () => {
 			let persistenceInitCount = 0;
 			let persistenceDestroyCount = 0;
 
-			const factory = ySweetSync({
+			const factory = ySweetPersistSync({
 				auth: mockAuth('localhost:8080'),
 				persistence: ({ ydoc: _ydoc }) => {
 					persistenceInitCount++;
@@ -45,7 +45,7 @@ describe('ySweetSync', () => {
 
 			const extension = factory({
 				ydoc,
-			} as any) as unknown as YSweetSyncExports;
+			} as any) as unknown as YSweetPersistSyncExports;
 
 			const oldProvider = extension.provider;
 			expect(oldProvider).toBeDefined();
@@ -73,7 +73,7 @@ describe('ySweetSync', () => {
 		test('provider getter returns current provider after reconnect', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-getter' });
 
-			const factory = ySweetSync({
+			const factory = ySweetPersistSync({
 				auth: mockAuth('localhost:8080'),
 				persistence: () => ({
 					whenSynced: Promise.resolve(),
@@ -83,7 +83,7 @@ describe('ySweetSync', () => {
 
 			const extension = factory({
 				ydoc,
-			} as any) as unknown as YSweetSyncExports;
+			} as any) as unknown as YSweetPersistSyncExports;
 
 			const firstProvider = extension.provider;
 			extension.reconnect(mockAuth('server-2'));
@@ -105,7 +105,7 @@ describe('ySweetSync', () => {
 		test('destroy uses current provider after reconnect', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
 
-			const factory = ySweetSync({
+			const factory = ySweetPersistSync({
 				auth: mockAuth('localhost:8080'),
 				persistence: () => ({
 					whenSynced: Promise.resolve(),
@@ -115,7 +115,7 @@ describe('ySweetSync', () => {
 
 			const extension = factory({
 				ydoc,
-			} as any) as unknown as YSweetSyncExports;
+			} as any) as unknown as YSweetPersistSyncExports;
 			extension.reconnect(mockAuth('cloud.example.com'));
 
 			const currentProvider = extension.provider;

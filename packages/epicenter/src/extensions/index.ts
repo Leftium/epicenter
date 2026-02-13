@@ -5,7 +5,7 @@
  * use only. For browser persistence, use the conditional export:
  *
  * ```typescript
- * import { persistence } from '@epicenter/hq/extensions/persistence';
+ * import { persistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
  * ```
  *
  * @example Node.js/Bun usage
@@ -21,7 +21,7 @@
  * @example Browser usage (use conditional export)
  * ```typescript
  * // Browser: auto-selects IndexedDB persistence
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
  * ```
  *
  * @packageDocumentation
@@ -34,8 +34,8 @@
 export {
 	type PersistenceConfig,
 	persistence,
-} from './persistence/desktop.js';
-export { indexeddbPersistence as webPersistence } from './persistence/web.js';
+} from './y-sweet-persist-sync/desktop.js';
+export { indexeddbPersistence as webPersistence } from './y-sweet-persist-sync/web.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SQLITE

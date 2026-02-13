@@ -1,10 +1,5 @@
 import type { ClientToken } from '@epicenter/y-sweet';
-import {
-	createYjsProvider,
-	STATUS_CONNECTED,
-	STATUS_OFFLINE,
-	type YSweetProvider,
-} from '@epicenter/y-sweet';
+import { createYjsProvider, type YSweetProvider } from '@epicenter/y-sweet';
 import type * as Y from 'yjs';
 import type { ExtensionFactory } from '../dynamic/extension';
 import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
@@ -13,36 +8,38 @@ import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
 export type { ClientToken as YSweetClientToken };
 
 /**
- * Y-Sweet sync configuration.
+ * Y-Sweet persistence sync configuration.
  *
  * Mirrors the provider's API: `auth` produces a {@link ClientToken},
- * `persistence` optionally loads local state before connecting.
+ * `persistence` loads local state before connecting.
  *
  * @example Direct mode (local dev)
  * ```typescript
- * sync: ySweetSync({
+ * sync: ySweetPersistSync({
  *   auth: directAuth('http://localhost:8080'),
+ *   persistence: indexeddbPersistence,
  * })
  * ```
  *
  * @example Authenticated mode (hosted infrastructure)
  * ```typescript
- * sync: ySweetSync({
+ * sync: ySweetPersistSync({
  *   auth: (docId) => fetch(`/api/token/${docId}`).then(r => r.json()),
- * })
- * ```
- *
- * @example With persistence
- * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
- *
- * sync: ySweetSync({
- *   auth: directAuth('http://localhost:8080'),
  *   persistence: indexeddbPersistence,
  * })
  * ```
+ *
+ * @example With filesystem persistence
+ * ```typescript
+ * import { filesystemPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/node';
+ *
+ * sync: ySweetPersistSync({
+ *   auth: directAuth('http://localhost:8080'),
+ *   persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
+ * })
+ * ```
  */
-export type YSweetSyncConfig = {
+export type YSweetPersistSyncConfig = {
 	/**
 	 * Auth callback that returns a {@link ClientToken} for the given doc ID.
 	 *
@@ -52,10 +49,9 @@ export type YSweetSyncConfig = {
 	auth: (docId: string) => Promise<ClientToken>;
 
 	/**
-	 * Optional persistence factory.
+	 * Persistence factory (REQUIRED).
 	 *
-	 * When provided, `whenSynced` resolves after local state loads — the
-	 * WebSocket connects in the background. This is the local-first pattern:
+	 * Loads local state before the WebSocket connects. This is the local-first pattern:
 	 * render from local state immediately, sync in the background.
 	 *
 	 * Must return a {@link Lifecycle}: `{ whenSynced, destroy }`.
@@ -67,55 +63,51 @@ export type YSweetSyncConfig = {
 	 * persistence: ({ ydoc }) => ({ whenSynced: Promise.resolve(), destroy: () => {} })
 	 * ```
 	 */
-	persistence?: (context: { ydoc: Y.Doc }) => Lifecycle;
+	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
 };
 
 /**
- * Creates a Y-Sweet sync extension.
+ * Creates a Y-Sweet persistence sync extension.
  *
  * Orchestrates the lifecycle:
- * - **With persistence**: `whenSynced` resolves when local state loads.
+ * - **Persistence first**: `whenSynced` resolves when local state loads.
  *   WebSocket connects in the background (non-blocking). The UI renders
  *   from local state immediately — connection status is reactive via `provider`.
- * - **Without persistence**: `whenSynced` resolves on first WebSocket sync
- *   (rejects if disconnected before sync completes).
  *
  * @see specs/20260212T190000-y-sweet-persistence-architecture.md
  */
-export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
+export function ySweetPersistSync(
+	config: YSweetPersistSyncConfig,
+): ExtensionFactory {
 	return ({ ydoc }) => {
 		let currentAuth = config.auth;
 		const authEndpoint = () => currentAuth(ydoc.guid);
-		const hasPersistence = !!config.persistence;
 
-		// Create provider — defer connection if persistence needs to load first
+		// Create provider — defer connection until persistence loads
 		let provider: YSweetProvider = createYjsProvider(
 			ydoc,
 			ydoc.guid,
 			authEndpoint,
-			{ connect: !hasPersistence },
+			{ connect: false },
 		);
 
 		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
 
-		// With persistence: whenSynced = local data loaded (fast, reliable).
+		// Load persistence first, then kick off WebSocket in background.
+		// whenSynced = local data loaded (fast, reliable).
 		// WebSocket connects in background — don't block on it.
-		//
-		// Without persistence: whenSynced = first WebSocket sync (needs network).
-		// Rejects on disconnect so callers can handle failure.
-		const whenSynced = hasPersistence
-			? (async () => {
-					const p = config.persistence!({ ydoc });
-					persistenceCleanup = p.destroy;
-					await p.whenSynced;
-					// Kick off WebSocket in background — don't await it.
-					// Consumers subscribe to provider events for connection status.
-					provider.connect().catch(() => {
-						// Suppress unhandled rejection. Connection errors
-						// are surfaced reactively via provider status events.
-					});
-				})()
-			: waitForFirstSync(provider);
+		// Consumers subscribe to provider events for connection status.
+		const whenSynced = (async () => {
+			const p = config.persistence({ ydoc });
+			persistenceCleanup = p.destroy;
+			await p.whenSynced;
+			// Kick off WebSocket in background — don't await it.
+			// Consumers subscribe to provider events for connection status.
+			provider.connect().catch(() => {
+				// Suppress unhandled rejection. Connection errors
+				// are surfaced reactively via provider status events.
+			});
+		})();
 
 		// Build exports manually instead of using defineExports() because
 		// defineExports() destructures + spreads, which strips the provider getter.
@@ -161,7 +153,7 @@ export function ySweetSync(config: YSweetSyncConfig): ExtensionFactory {
  *
  * @example
  * ```typescript
- * ySweetSync({ auth: directAuth('http://localhost:8080') })
+ * ySweetPersistSync({ auth: directAuth('http://localhost:8080'), persistence: ... })
  * ```
  */
 export function directAuth(
@@ -174,36 +166,4 @@ export function directAuth(
 			url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
 		});
 	};
-}
-
-/**
- * Waits for the provider's first successful sync.
- *
- * Used when there's no local persistence — the network is the only data source.
- * Rejects if the provider transitions to OFFLINE (via disconnect/destroy)
- * before sync completes, so callers aren't left hanging forever.
- */
-function waitForFirstSync(provider: YSweetProvider): Promise<void> {
-	const { promise, resolve, reject } = Promise.withResolvers<void>();
-
-	if (provider.status === STATUS_CONNECTED) {
-		resolve();
-		return promise;
-	}
-
-	const handleStatus = (status: string) => {
-		if (status === STATUS_CONNECTED) {
-			cleanup();
-			resolve();
-		}
-		if (status === STATUS_OFFLINE) {
-			cleanup();
-			reject(new Error('Provider disconnected before sync completed'));
-		}
-	};
-
-	const cleanup = () => provider.off('connection-status', handleStatus);
-	provider.on('connection-status', handleStatus);
-
-	return promise;
 }

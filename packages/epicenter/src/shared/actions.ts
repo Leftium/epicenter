@@ -293,16 +293,22 @@ export type Actions = {
  * getPost({ id: '1' }); // call directly
  * ```
  */
+/** No input — `TInput` is explicitly `undefined`. */
+export function defineQuery<TOutput = unknown>(
+	config: ActionConfig<undefined, TOutput>,
+): Query<undefined, TOutput>;
+/** With input — `TInput` inferred from the schema. */
 export function defineQuery<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput> {
+>(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput>;
+export function defineQuery(config: ActionConfig<any, any>): Query<any, any> {
 	const fn = (...args: unknown[]) =>
 		(config.handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'query' as const,
 		...config,
-	}) as unknown as Query<TInput, TOutput>;
+	}) as unknown as Query<any, any>;
 }
 
 /**
@@ -336,16 +342,24 @@ export function defineQuery<
  * });
  * ```
  */
+/** No input — `TInput` is explicitly `undefined`. */
+export function defineMutation<TOutput = unknown>(
+	config: ActionConfig<undefined, TOutput>,
+): Mutation<undefined, TOutput>;
+/** With input — `TInput` inferred from the schema. */
 export function defineMutation<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends StandardSchemaWithJSONSchema,
 	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput> {
+>(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput>;
+export function defineMutation(
+	config: ActionConfig<any, any>,
+): Mutation<any, any> {
 	const fn = (...args: unknown[]) =>
 		(config.handler as (...args: unknown[]) => unknown)(...args);
 	return Object.assign(fn, {
 		type: 'mutation' as const,
 		...config,
-	}) as unknown as Mutation<TInput, TOutput>;
+	}) as unknown as Mutation<any, any>;
 }
 
 /**

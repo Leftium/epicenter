@@ -1,3 +1,4 @@
+import * as Y from 'yjs';
 import { getStaticWorkspace } from '$lib/workspaces/static/service';
 import {
 	discoverKvKeys,
@@ -5,10 +6,6 @@ import {
 	readAllKv,
 	readTableRows,
 } from '$lib/yjs/discover';
-import {
-	createYSweetConnection,
-	getDefaultSyncUrl,
-} from '$lib/yjs/y-sweet-connection';
 import type { LayoutLoad } from './$types';
 
 /**
@@ -16,9 +13,8 @@ import type { LayoutLoad } from './$types';
  *
  * Flow:
  * 1. Look up registry entry (may not exist for ad-hoc viewing)
- * 2. Create Y-Sweet connection
- * 3. Wait for initial sync
- * 4. Discover tables and KV keys
+ * 2. Create a local Y.Doc
+ * 3. Discover tables and KV keys
  */
 export const load: LayoutLoad = async ({ params }) => {
 	const workspaceId = params.id;
@@ -26,52 +22,31 @@ export const load: LayoutLoad = async ({ params }) => {
 	// Get registry entry (may not exist for ad-hoc viewing)
 	const entry = await getStaticWorkspace(workspaceId);
 
-	// Determine sync URL
-	const syncUrl = entry?.syncUrl ?? getDefaultSyncUrl();
-
-	// Create Y-Sweet connection
-	const connection = createYSweetConnection({
-		workspaceId,
-		serverUrl: syncUrl,
-	});
-
-	// Wait for initial sync with timeout
-	let syncStatus = 'unknown';
-	try {
-		await Promise.race([
-			connection.whenReady,
-			new Promise((_, reject) =>
-				setTimeout(() => reject(new Error('Sync timeout')), 10000),
-			),
-		]);
-		syncStatus = 'synced';
-	} catch {
-		syncStatus = 'failed';
-		// Don't throw - allow viewing even if sync fails
-	}
+	// Create a local Y.Doc (no sync connection)
+	const ydoc = new Y.Doc({ guid: workspaceId });
 
 	// Discover structure
-	const tables = discoverTables(connection.ydoc);
-	const kvKeys = discoverKvKeys(connection.ydoc);
+	const tables = discoverTables(ydoc);
+	const kvKeys = discoverKvKeys(ydoc);
 
 	// Read initial data for all tables
 	const tableData: Record<string, Record<string, unknown>[]> = {};
 	for (const tableName of tables) {
-		tableData[tableName] = readTableRows(connection.ydoc, tableName);
+		tableData[tableName] = readTableRows(ydoc, tableName);
 	}
 
 	// Read all KV values
-	const kvData = readAllKv(connection.ydoc);
+	const kvData = readAllKv(ydoc);
 
 	return {
 		workspaceId,
 		entry, // May be null for ad-hoc viewing
-		connection,
+		ydoc,
 		tables,
 		kvKeys,
 		tableData,
 		kvData,
-		syncStatus,
+		syncStatus: 'local',
 		displayName: entry?.name ?? workspaceId,
 	};
 };

@@ -11,7 +11,7 @@ import * as encoding from 'lib0/encoding';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { createSyncProvider } from './provider';
-import type { SyncStatus } from './types';
+import type { SyncStatus, WebSocketConstructor } from './types';
 
 // ============================================================================
 // Constants (must match provider.ts)
@@ -91,6 +91,13 @@ class MockWebSocket {
 	}
 }
 
+/**
+ * Single cast point — MockWebSocket satisfies the constructor shape
+ * but doesn't implement the full WebSocket interface (no addEventListener,
+ * bufferedAmount, etc.). That's fine for unit tests.
+ */
+const MockWS = MockWebSocket as unknown as WebSocketConstructor;
+
 // ============================================================================
 // Protocol Helpers
 // ============================================================================
@@ -144,7 +151,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		expect(provider.status).toBe('offline');
@@ -160,7 +167,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		// Auto-connect is default — loop starts asynchronously
@@ -178,7 +185,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		expect(provider.status).toBe('offline');
@@ -199,7 +206,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -231,7 +238,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		await tick();
@@ -257,7 +264,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		await tick();
@@ -281,7 +288,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -309,7 +316,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
@@ -338,7 +345,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.connect();
@@ -373,7 +380,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.connect();
@@ -411,7 +418,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.onLocalChanges((hasChanges) => changes.push(hasChanges));
@@ -454,7 +461,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -495,7 +502,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.connect();
@@ -521,7 +528,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -559,7 +566,7 @@ describe('createSyncProvider', () => {
 			url: 'ws://test/sync',
 			token: 'my-secret',
 			connect: false,
-			WebSocketConstructor: MockWebSocket as any,
+			WebSocketConstructor: MockWS,
 		});
 
 		provider.connect();

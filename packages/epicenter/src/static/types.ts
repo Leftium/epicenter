@@ -86,16 +86,19 @@ export type KvChange<TValue> =
 // TABLE DEFINITION TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Extract the last element from a tuple, constrained to StandardSchemaV1 */
-export type LastSchema<T extends readonly StandardSchemaV1[]> =
-	T extends readonly [...StandardSchemaV1[], infer L extends StandardSchemaV1]
+/** Extract the last element from a tuple of schemas. */
+export type LastSchema<T extends readonly StandardSchemaWithJSONSchema[]> =
+	T extends readonly [
+		...StandardSchemaWithJSONSchema[],
+		infer L extends StandardSchemaWithJSONSchema,
+	]
 		? L
 		: T[number];
 
 /**
  * A table definition created by defineTable().version().migrate()
  *
- * @typeParam TVersions - Tuple of StandardSchemaV1 types representing all versions
+ * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
 	TVersions extends readonly StandardSchemaWithJSONSchema<{ id: string }>[],
@@ -128,9 +131,11 @@ export type InferTableVersionUnion<T> =
 /**
  * A KV definition created by defineKv().version().migrate()
  *
- * @typeParam TVersions - Tuple of StandardSchemaV1 types representing all versions
+ * @typeParam TVersions - Tuple of schema versions
  */
-export type KvDefinition<TVersions extends readonly StandardSchemaV1[]> = {
+export type KvDefinition<
+	TVersions extends readonly StandardSchemaWithJSONSchema[],
+> = {
 	schema: StandardSchemaWithJSONSchema<
 		unknown,
 		StandardSchemaV1.InferOutput<TVersions[number]>
@@ -142,13 +147,13 @@ export type KvDefinition<TVersions extends readonly StandardSchemaV1[]> = {
 
 /** Extract the value type from a KvDefinition */
 export type InferKvValue<T> =
-	T extends KvDefinition<infer V extends readonly StandardSchemaV1[]>
+	T extends KvDefinition<infer V>
 		? StandardSchemaV1.InferOutput<LastSchema<V>>
 		: never;
 
 /** Extract the version union type from a KvDefinition */
 export type InferKvVersionUnion<T> =
-	T extends KvDefinition<infer V extends readonly StandardSchemaV1[]>
+	T extends KvDefinition<infer V>
 		? StandardSchemaV1.InferOutput<V[number]>
 		: never;
 

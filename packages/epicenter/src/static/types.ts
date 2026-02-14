@@ -599,7 +599,7 @@ export type { Extension } from '../shared/lifecycle.js';
  *
  * @example
  * ```typescript
- * .withExtension('sync', ({ ydoc, extensions, awareness }) => {
+ * .withExtension('sync', ({ ydoc, awareness, extensions }) => {
  *   // extensions.persistence is typed if persistence was added before this
  *   // awareness.raw is always available to pass to sync providers
  *   const provider = createProvider(ydoc, { awareness: awareness.raw });

@@ -318,8 +318,8 @@ const client = createClient(definition.id)
 	.withExtension('sqlite', (c) => sqliteProvider(c))
 	.withExtension(
 		'sync',
-		createWebsocketSyncProvider({
-			url: 'ws://localhost:3913/sync',
+		createSyncExtension({
+			url: 'ws://localhost:3913/workspaces/{id}/sync',
 		}),
 	);
 ```
@@ -880,52 +880,58 @@ deserialize: ({ frontmatter, body, filename, table }) => {
 }
 ```
 
-### WebSocket Sync Extension
+### Sync Extension
 
-The WebSocket sync extension enables real-time Y.Doc synchronization using the y-websocket protocol. This is the recommended sync solution for Epicenter.
+The sync extension enables real-time Y.Doc synchronization using the y-websocket protocol with `@epicenter/sync` as the underlying provider and `@epicenter/server` as the server. This is the recommended sync solution for Epicenter.
 
 **Setup:**
 
 ```typescript
 import { createClient } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
 	.withExtension(
 		'sync',
-		createWebsocketSyncProvider({
-			url: 'ws://localhost:3913/sync',
+		createSyncExtension({
+			url: 'ws://localhost:3913/workspaces/{id}/sync',
 		}),
 	);
 ```
 
+The `{id}` placeholder is replaced with the workspace ID automatically.
+
 **Server-side sync endpoint:**
 
-The Epicenter server includes a sync endpoint at `/sync/{workspaceId}`:
+The Epicenter server (`@epicenter/server`) includes a sync endpoint at `/workspaces/{workspaceId}/sync`:
 
 ```typescript
-// In server.ts, sync is automatically included
-const { app, client } = await createServer(config);
-app.listen(3913);
+import { createServer } from '@epicenter/server';
 
-// Clients connect to: ws://localhost:3913/sync/blog
+const server = createServer(blogClient, { port: 3913 });
+server.start();
+
+// Clients connect to: ws://localhost:3913/workspaces/blog/sync
 ```
 
 **How it works:**
 
-1. Client opens WebSocket to `/sync/{workspaceId}`
-2. Server sends initial sync state
+1. Client opens WebSocket to `/workspaces/{workspaceId}/sync`
+2. Server sends initial sync state (sync step 1)
 3. Client and server exchange updates bidirectionally
 4. Server broadcasts updates to all connected clients
 5. All Y.Docs converge via Yjs CRDTs
 
 **Key properties:**
 
-- Server is authoritative: REST API always reflects current Y.Doc state
 - Standard protocol: Compatible with any y-websocket client
+- `hasLocalChanges` tracking via MESSAGE_SYNC_STATUS (102) heartbeat extension
 - Built-in awareness: User presence/cursors work out of the box
+- Three auth modes: open, static token, dynamic token refresh
 - No native modules: Pure JS, works with Bun
+
+See `@epicenter/sync` for the client-side provider API and `@epicenter/server` for the server-side sync plugin.
 
 ### Multi-Device Sync Architecture
 
@@ -937,14 +943,14 @@ Epicenter supports a distributed sync architecture where Y.Doc instances can be 
 // src/config/sync-nodes.ts
 export const SYNC_NODES = {
 	// Local devices via Tailscale
-	desktop: 'ws://desktop.my-tailnet.ts.net:3913/sync',
-	laptop: 'ws://laptop.my-tailnet.ts.net:3913/sync',
+	desktop: 'ws://desktop.my-tailnet.ts.net:3913/workspaces/{id}/sync',
+	laptop: 'ws://laptop.my-tailnet.ts.net:3913/workspaces/{id}/sync',
 
 	// Cloud server (optional, always-on)
-	cloud: 'wss://sync.myapp.com/sync',
+	cloud: 'wss://sync.myapp.com/workspaces/{id}/sync',
 
 	// Localhost (for browser connecting to local server)
-	localhost: 'ws://localhost:3913/sync',
+	localhost: 'ws://localhost:3913/workspaces/{id}/sync',
 } as const;
 ```
 
@@ -966,15 +972,15 @@ const client = createClient(definition.id)
 	.withDefinition(definition)
 	.withExtension(
 		'syncDesktop',
-		createWebsocketSyncProvider({ url: SYNC_NODES.desktop }),
+		createSyncExtension({ url: SYNC_NODES.desktop }),
 	)
 	.withExtension(
 		'syncLaptop',
-		createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
+		createSyncExtension({ url: SYNC_NODES.laptop }),
 	)
 	.withExtension(
 		'syncCloud',
-		createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+		createSyncExtension({ url: SYNC_NODES.cloud }),
 	);
 ```
 
@@ -986,11 +992,11 @@ const client = createClient(definition.id)
 	.withDefinition(definition)
 	.withExtension(
 		'syncToLaptop',
-		createWebsocketSyncProvider({ url: SYNC_NODES.laptop }),
+		createSyncExtension({ url: SYNC_NODES.laptop }),
 	)
 	.withExtension(
 		'syncToCloud',
-		createWebsocketSyncProvider({ url: SYNC_NODES.cloud }),
+		createSyncExtension({ url: SYNC_NODES.cloud }),
 	);
 ```
 
@@ -1217,7 +1223,7 @@ type ProviderPaths = {
 ```typescript
 import { setupPersistence } from '@epicenter/hq/providers';
 import { sqliteProvider, markdownProvider } from '@epicenter/hq';
-import { createWebsocketSyncProvider } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 
 providers: {
   // Filesystem persistence (Node.js) or IndexedDB (browser)
@@ -1229,9 +1235,9 @@ providers: {
   // Markdown materializer
   markdown: (c) => markdownProvider(c),
 
-  // WebSocket sync provider (y-websocket protocol)
-  sync: createWebsocketSyncProvider({
-    url: 'ws://localhost:3913/sync',
+  // WebSocket sync extension (y-websocket protocol via @epicenter/sync)
+  sync: createSyncExtension({
+    url: 'ws://localhost:3913/workspaces/{id}/sync',
   }),
 
   // Custom provider

@@ -5,13 +5,17 @@
  * Works with any Standard Schema v1 compliant library (arktype, zod, valibot, typebox).
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type {
+	StandardSchemaV1,
+	StandardSchemaWithJSONSchema,
+} from '../shared/standard-schema/types.js';
 
 /**
  * Creates a Standard Schema that validates against a union of schemas.
  *
  * Tries each schema in order until one passes validation.
  * If none pass, returns an issue indicating no schema matched.
+ * Produces JSON Schema via `oneOf` from all member schemas.
  *
  * Note: Only synchronous schemas are supported. Async schemas will throw.
  *
@@ -25,10 +29,14 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
  * const union = createUnionSchema([v1, v2]);
  * const result = union['~standard'].validate({ id: '1', title: 'Hello' });
  * // result.value is { id: '1', title: 'Hello' }
+ *
+ * // JSON Schema output
+ * const jsonSchema = union['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+ * // { oneOf: [v1JsonSchema, v2JsonSchema] }
  * ```
  */
 export function createUnionSchema<
-	const TSchemas extends readonly StandardSchemaV1[],
+	const TSchemas extends readonly StandardSchemaWithJSONSchema[],
 >(schemas: TSchemas) {
 	return {
 		'~standard': {
@@ -63,8 +71,16 @@ export function createUnionSchema<
 					],
 				};
 			},
+			jsonSchema: {
+				input: (options) => ({
+					oneOf: schemas.map((s) => s['~standard'].jsonSchema.input(options)),
+				}),
+				output: (options) => ({
+					oneOf: schemas.map((s) => s['~standard'].jsonSchema.output(options)),
+				}),
+			},
 		},
-	} as const satisfies StandardSchemaV1<
+	} as const satisfies StandardSchemaWithJSONSchema<
 		StandardSchemaV1.InferInput<TSchemas[number]>,
 		StandardSchemaV1.InferOutput<TSchemas[number]>
 	>;

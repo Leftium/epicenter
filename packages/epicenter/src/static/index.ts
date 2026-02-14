@@ -116,6 +116,19 @@ export { createKv } from './create-kv.js';
 export { createTables } from './create-tables.js';
 
 // ════════════════════════════════════════════════════════════════════════════
+// Introspection
+// ════════════════════════════════════════════════════════════════════════════
+
+export type {
+	ActionDescriptor,
+	AwarenessDescriptor,
+	KvDescriptor,
+	TableDescriptor,
+	WorkspaceDescriptor,
+} from './describe-workspace.js';
+export { describeWorkspace } from './describe-workspace.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // Validation Utilities
 // ════════════════════════════════════════════════════════════════════════════
 

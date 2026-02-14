@@ -24,6 +24,7 @@
 		"svelte-sonner": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
-		"vite": "catalog:"
+		"vite": "catalog:",
+		"yjs": "^13.6.27"
 	}
 }

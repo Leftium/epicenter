@@ -17,7 +17,9 @@
 		"just-bash": "^2.9.7",
 		"prosemirror-markdown": "^1.13.4",
 		"y-prosemirror": "^1.3.7",
-		"wellcrafted": "catalog:",
+		"wellcrafted": "catalog:"
+	},
+	"peerDependencies": {
 		"yjs": "^13.6.27"
 	},
 	"devDependencies": {

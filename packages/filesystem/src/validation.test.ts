@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '../static/create-workspace.js';
+import { createWorkspace } from '@epicenter/hq/static';
 import { filesTable } from './file-table.js';
 import type { FileId } from './types.js';
 import {

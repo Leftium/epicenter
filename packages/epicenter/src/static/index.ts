@@ -141,7 +141,6 @@ export type {
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
-	KvBatchTransaction,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
@@ -150,7 +149,6 @@ export type {
 	NotFoundResult,
 	// Result types - composed
 	RowResult,
-	TableBatchTransaction,
 	// Definition types
 	TableDefinition,
 	// Map types

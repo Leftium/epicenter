@@ -153,12 +153,6 @@ export type InferKvVersionUnion<T> =
 // HELPER TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Operations available inside a table batch transaction. */
-export type TableBatchTransaction<TRow extends { id: string }> = {
-	set(row: TRow): void;
-	delete(id: string): void;
-};
-
 /**
  * Type-safe table helper for a single static workspace table.
  *
@@ -173,10 +167,10 @@ export type TableBatchTransaction<TRow extends { id: string }> = {
  *
  * ## Difference from Dynamic API's TableHelper
  *
- * The static API uses row-level replacement (`set`) and a general `batch()`
- * transaction, while the dynamic API has cell-level LWW merge (`upsert`) and
- * dedicated batch methods (`upsertMany`, `deleteMany`). They share a common
- * core but diverge intentionally based on their storage models.
+ * The static API uses row-level replacement (`set`) while the dynamic API has
+ * cell-level LWW merge (`upsert`) and dedicated batch methods (`upsertMany`,
+ * `deleteMany`). Batching in the static API is done at the workspace level
+ * via `client.batch()`, which wraps `ydoc.transact()`.
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
@@ -312,31 +306,6 @@ export type TableHelper<TRow extends { id: string }> = {
 	 * table helper continues to work after clearing. Only row data is removed.
 	 */
 	clear(): void;
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// BATCH (Y.js transaction for atomicity)
-	// ═══════════════════════════════════════════════════════════════════════
-
-	/**
-	 * Execute multiple operations atomically in a Y.js transaction.
-	 *
-	 * All changes inside the callback are applied as a single unit:
-	 * - Single undo/redo step
-	 * - Observers fire once (not per-operation)
-	 * - All changes applied together or not at all
-	 *
-	 * @param fn - Callback receiving a transaction object with `set` and `delete`
-	 *
-	 * @example
-	 * ```typescript
-	 * table.batch((tx) => {
-	 *   tx.set({ id: '1', title: 'First' });
-	 *   tx.set({ id: '2', title: 'Second' });
-	 *   tx.delete('3');
-	 * });
-	 * ```
-	 */
-	batch(fn: (tx: TableBatchTransaction<TRow>) => void): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// OBSERVE
@@ -499,15 +468,6 @@ export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 	>;
 };
 
-/** Operations available inside a KV batch transaction. */
-export type KvBatchTransaction<TKvDefinitions extends KvDefinitions> = {
-	set<K extends keyof TKvDefinitions & string>(
-		key: K,
-		value: InferKvValue<TKvDefinitions[K]>,
-	): void;
-	delete<K extends keyof TKvDefinitions & string>(key: K): void;
-};
-
 /** KV helper with dictionary-style access */
 export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	/** Get a value by key (validates + migrates). */
@@ -523,11 +483,6 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 
 	/** Delete a value by key. */
 	delete<K extends keyof TKvDefinitions & string>(key: K): void;
-
-	/**
-	 * Execute multiple operations atomically in a Y.js transaction.
-	 */
-	batch(fn: (tx: KvBatchTransaction<TKvDefinitions>) => void): void;
 
 	/** Watch for changes to a key. Returns unsubscribe function. */
 	observe<K extends keyof TKvDefinitions & string>(

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { defineMutation, defineQuery } from '@epicenter/hq';
 import { type } from 'arktype';
-import { defineMutation, defineQuery } from '../shared/actions';
 import { collectActionPaths, createActionsRouter } from './actions';
 
 // Mock client for closure-based actions

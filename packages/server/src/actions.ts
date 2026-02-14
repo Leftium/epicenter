@@ -1,6 +1,6 @@
+import type { Actions } from '@epicenter/hq';
+import { iterateActions } from '@epicenter/hq';
 import { Elysia } from 'elysia';
-import type { Actions } from '../shared/actions';
-import { iterateActions } from '../shared/actions';
 
 type ActionsRouterOptions = {
 	client: unknown;

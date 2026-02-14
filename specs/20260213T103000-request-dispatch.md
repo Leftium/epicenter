@@ -4,6 +4,8 @@
 **Status**: Draft
 **Supersedes**: `20260212T132200-events-based-tab-management.md`
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## Overview
 
 Cross-runtime action dispatch via a per-workspace `requests` table. Any client connected to a workspace's Y.Doc can invoke actions on another online client by writing a request row. The target client observes, executes, writes the response, and the row is eventually purged.

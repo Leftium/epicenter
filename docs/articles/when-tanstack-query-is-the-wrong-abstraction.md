@@ -1,5 +1,7 @@
 # Stop Caching Data That Isn't Remote
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## When TanStack Query is the wrong abstraction
 
 TanStack Query solves a real problem: fetching remote data, caching it locally, and keeping it fresh. But when the data isn't remote, you're paying for an abstraction that does nothing useful. Our browser extension popup was using TanStack Query to read `browser.tabs.query({})`—an API call that takes less than a millisecond, returns data that's already local, and has a built-in push notification system for changes. We were caching data that didn't need caching, then spending more code invalidating that cache than it would have taken to just read the value.

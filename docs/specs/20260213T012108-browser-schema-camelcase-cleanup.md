@@ -1,5 +1,7 @@
 # Browser Schema camelCase Cleanup
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## Goal
 
 Refactor `browser.schema.ts` and all consumers in `apps/tab-manager/` to use camelCase field names and table keys. Remove unused constants. Simplify where possible.

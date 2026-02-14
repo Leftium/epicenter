@@ -153,6 +153,24 @@ All "suspend/suspended" terminology renamed to "save/saved" across the tab manag
 | `App.svelte` | Import `SavedTabList` |
 | `workspace-popup.ts` | JSDoc updated |
 
-Done in two commits:
+### Docs & Specs Updated
+
+Added terminology rename notes to all historical specs and docs that reference "suspended":
+
+| File | Type |
+|------|------|
+| `specs/20260213T003200-suspended-tabs.md` | Note added, status → "Complete (terminology renamed)" |
+| `specs/20260213T103000-request-dispatch.md` | Note added |
+| `specs/20260212T132200-events-based-tab-management.md` | Note added |
+| `docs/specs/20260213T015500-popup-reactive-state.md` | Note added |
+| `docs/specs/20260213T105705-tab-manager-src-reorganization.md` | Note added |
+| `docs/specs/20260213T012108-browser-schema-camelcase-cleanup.md` | Note added |
+| `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md` | Note added |
+| `docs/articles/when-tanstack-query-is-the-wrong-abstraction.md` | Note added |
+| `docs/articles/types-should-be-computed-not-declared.md` | Note added |
+| `packages/epicenter/docs/architecture/action-dispatch.md` | Note added |
+
+Done in three commits:
 1. `refactor(tab-manager): rename "suspended" to "saved" terminology` — user-facing + types + files (kept Y.Doc keys)
-2. `refactor(tab-manager): rename Y.Doc keys from suspended to saved` — breaking rename of storage keys
+2. `refactor(tab-manager)!: rename Y.Doc keys from suspended to saved` — breaking rename of storage keys
+3. `docs: add terminology rename notes to specs and articles` — notes on all historical docs

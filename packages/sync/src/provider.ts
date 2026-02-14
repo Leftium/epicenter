@@ -557,9 +557,22 @@ export function createSyncProvider({
 	doc.on('update', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
-	if (typeof window !== 'undefined') {
-		window.addEventListener('offline', handleOffline);
-		window.addEventListener('online', handleOnline);
+	// ========================================================================
+	// Window Event Helpers
+	// ========================================================================
+
+	function addWindowListeners() {
+		if (typeof window !== 'undefined') {
+			window.addEventListener('offline', handleOffline);
+			window.addEventListener('online', handleOnline);
+		}
+	}
+
+	function removeWindowListeners() {
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('offline', handleOffline);
+			window.removeEventListener('online', handleOnline);
+		}
 	}
 
 	// ========================================================================
@@ -569,6 +582,7 @@ export function createSyncProvider({
 	if (shouldConnect) {
 		// Auto-connect
 		desired = 'online';
+		addWindowListeners();
 		const myRunId = runId;
 		connectRun = runLoop(myRunId);
 	}
@@ -593,6 +607,7 @@ export function createSyncProvider({
 		connect() {
 			desired = 'online';
 			if (connectRun) return; // Loop already running
+			addWindowListeners();
 			const myRunId = runId;
 			connectRun = runLoop(myRunId);
 		},
@@ -605,6 +620,7 @@ export function createSyncProvider({
 			desired = 'offline';
 			runId++;
 			reconnectSleeper?.wake();
+			removeWindowListeners();
 
 			if (websocket) {
 				websocket.close();
@@ -661,10 +677,7 @@ export function createSyncProvider({
 				'window unload',
 			);
 
-			if (typeof window !== 'undefined') {
-				window.removeEventListener('offline', handleOffline);
-				window.removeEventListener('online', handleOnline);
-			}
+			removeWindowListeners();
 
 			statusListeners.clear();
 			localChangesListeners.clear();

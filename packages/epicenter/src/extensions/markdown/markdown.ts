@@ -57,13 +57,6 @@ export type MarkdownExtensionError = ReturnType<typeof MarkdownExtensionError>;
  */
 type Fields = readonly Field[];
 
-/**
- * Row type that guarantees an `id` property exists.
- * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
- * so we intersect with `{ id: string }` to make destructuring work.
- */
-type RowWithId<TFields extends Fields> = Row<TFields> & { id: Id };
-
 // Re-export config types and functions
 export type {
 	BodyFieldSerializerOptions,
@@ -386,12 +379,14 @@ export const markdown = async <
 			) as AbsolutePath;
 
 			// Flatten for internal use
-			const config: ResolvedTableConfig<TTableDefinitions[number]['fields']> = {
+			// Cast is safe: serializer operates on Fields (wide) but config needs specific table fields.
+			// The serializer factory pattern erases the specific field type at the boundary.
+			const config = {
 				directory,
 				serialize: serializer.serialize,
 				parseFilename: serializer.deserialize.parseFilename,
 				deserialize: serializer.deserialize.fromContent,
-			};
+			} as ResolvedTableConfig<TTableDefinitions[number]['fields']>;
 
 			return [tableName, config];
 		}),
@@ -420,7 +415,7 @@ export const markdown = async <
 			 * Write a YJS row to markdown file
 			 */
 			async function writeRowToMarkdown<TFields extends Fields>(
-				row: RowWithId<TFields>,
+				row: Row<TFields>,
 			) {
 				const { frontmatter, body, filename } = tableConfig.serialize({
 					row,
@@ -731,7 +726,7 @@ export const markdown = async <
 					const validatedRow = {
 						...row,
 						id: createId((row as { id: string }).id),
-					} as RowWithId<TTableDefinitions[number]['fields']>;
+					} as Row<TTableDefinitions[number]['fields']>;
 
 					// Success: remove from diagnostics if it was previously invalid
 					diagnostics.remove({ filePath: absolutePath });
@@ -1306,13 +1301,10 @@ export const markdown = async <
 
 						type TableSyncData = {
 							tableName: string;
-							table: TableHelper<string, TTableDefinitions[number]['fields']>;
+							table: TableHelper<Row<TTableDefinitions[number]['fields']>>;
 							yjsIds: Set<Id>;
 							fileExistsIds: Set<Id>;
-							markdownRows: Map<
-								Id,
-								RowWithId<TTableDefinitions[number]['fields']>
-							>;
+							markdownRows: Map<Id, Row<TTableDefinitions[number]['fields']>>;
 							markdownFilenames: Map<Id, string>;
 						};
 
@@ -1350,7 +1342,7 @@ export const markdown = async <
 
 									const markdownRows = new Map<
 										Id,
-										RowWithId<TTableDefinitions[number]['fields']>
+										Row<TTableDefinitions[number]['fields']>
 									>();
 									const markdownFilenames = new Map<Id, string>();
 
@@ -1441,7 +1433,7 @@ export const markdown = async <
 											const rowWithBrandedId = {
 												...row,
 												id: createId((row as { id: string }).id),
-											} as RowWithId<TTableDefinitions[number]['fields']>;
+											} as Row<TTableDefinitions[number]['fields']>;
 											markdownRows.set(rowWithBrandedId.id, rowWithBrandedId);
 											markdownFilenames.set(rowWithBrandedId.id, filename);
 										}),

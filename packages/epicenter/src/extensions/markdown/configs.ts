@@ -64,9 +64,12 @@ import { MarkdownExtensionErr, type MarkdownExtensionError } from './markdown';
 type Fields = readonly Field[];
 
 /**
- * Row type that guarantees an `id` property exists.
- * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
- * so we intersect with `{ id: string }` to make destructuring work.
+ * Row type for serializer signatures.
+ *
+ * Intersects with `{ id: string }` because serializers work with plain string
+ * ids from markdown filenames — not branded `Id` types. The `{ id: string }`
+ * is wider than `BaseRow`'s `{ id: Id }`, which is needed for the serializer
+ * boundary where id branding hasn't been applied yet.
  */
 type RowWithId<TFields extends Fields> = Row<TFields> & { id: string };
 

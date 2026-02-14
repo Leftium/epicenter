@@ -158,63 +158,158 @@ export type TableBatchTransaction<TRow extends { id: string }> = {
 	delete(id: string): void;
 };
 
-/** Helper for a single table */
+/**
+ * Type-safe table helper for a single static workspace table.
+ *
+ * Provides CRUD operations with schema validation and migration on read.
+ * Backed by a YKeyValueLww store with row-level atomicity — `set()` replaces
+ * the entire row, and partial updates are done via read-merge-write.
+ *
+ * ## Row Type
+ *
+ * `TRow` always extends `{ id: string }` and represents the latest schema
+ * version's output type. Old rows are migrated to the latest schema on read.
+ *
+ * ## Difference from Dynamic API's TableHelper
+ *
+ * The static API uses row-level replacement (`set`) and a general `batch()`
+ * transaction, while the dynamic API has cell-level LWW merge (`upsert`) and
+ * dedicated batch methods (`upsertMany`, `deleteMany`). They share a common
+ * core but diverge intentionally based on their storage models.
+ *
+ * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
+ */
 export type TableHelper<TRow extends { id: string }> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// PARSE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Parse unknown input against the table schema and migrate to latest version. Injects `id` into the input. Does not write. */
+	/**
+	 * Parse unknown input against the table schema and migrate to the latest version.
+	 *
+	 * Injects `id` into the input before validation. Does not write to storage.
+	 * Useful for validating external data (imports, API payloads) before committing.
+	 *
+	 * @param id - The row ID to inject into the input
+	 * @param input - Unknown data to validate against the table schema
+	 * @returns `{ status: 'valid', row }` or `{ status: 'invalid', id, errors, row }`
+	 */
 	parse(id: string, input: unknown): RowResult<TRow>;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// WRITE (always writes latest schema shape)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Set a row (insert or replace). Always writes full row. */
+	/**
+	 * Set a row (insert or replace). Always writes the full row.
+	 *
+	 * This is row-level atomic — the entire row is replaced in storage.
+	 * There is no runtime validation on write; TypeScript enforces the shape.
+	 *
+	 * @param row - The complete row to write (must include `id`)
+	 */
 	set(row: TRow): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// READ (validates + migrates to latest)
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Get a row by ID. Returns GetResult (valid | invalid | not_found). */
+	/**
+	 * Get a single row by ID.
+	 *
+	 * Returns a discriminated union:
+	 * - `{ status: 'valid', row }` — Row exists and passes schema validation
+	 * - `{ status: 'invalid', id, errors, row }` — Row exists but fails validation
+	 * - `{ status: 'not_found', id, row: undefined }` — Row doesn't exist
+	 *
+	 * Old data is migrated to the latest schema version on read.
+	 *
+	 * @param id - The row ID to look up
+	 */
 	get(id: string): GetResult<TRow>;
 
-	/** Get all rows with validation status. */
+	/**
+	 * Get all rows with their validation status.
+	 *
+	 * Each result is either `{ status: 'valid', row }` or
+	 * `{ status: 'invalid', id, errors, row }`. Old data is migrated on read.
+	 */
 	getAll(): RowResult<TRow>[];
 
-	/** Get all valid rows (skips invalid). */
+	/**
+	 * Get all rows that pass schema validation.
+	 *
+	 * Invalid rows are silently skipped. Use `getAllInvalid()` to inspect them.
+	 */
 	getAllValid(): TRow[];
 
-	/** Get all invalid rows with storage keys (for debugging/repair). */
+	/**
+	 * Get all rows that fail schema validation.
+	 *
+	 * Useful for debugging data corruption, schema drift, or incomplete migrations.
+	 * Returns the raw row data alongside validation errors.
+	 */
 	getAllInvalid(): InvalidRowResult[];
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// QUERY
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Filter rows by predicate (only valid rows). */
+	/**
+	 * Filter valid rows by predicate.
+	 *
+	 * Invalid rows are silently skipped (never passed to the predicate).
+	 *
+	 * @param predicate - Function that returns `true` for rows to include
+	 * @returns Array of matching valid rows
+	 */
 	filter(predicate: (row: TRow) => boolean): TRow[];
 
-	/** Find first row matching predicate (only valid rows). */
+	/**
+	 * Find the first valid row matching a predicate.
+	 *
+	 * Invalid rows are silently skipped. Returns `undefined` if no match found.
+	 *
+	 * @param predicate - Function that returns `true` for the desired row
+	 * @returns The first matching valid row, or `undefined`
+	 */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// UPDATE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Partial update a row by ID. Fetches current, merges partial, and saves. */
+	/**
+	 * Partial update a row by ID.
+	 *
+	 * Reads the current row, merges the partial fields, validates the merged
+	 * result, and writes it back. Returns the updated row on success.
+	 *
+	 * @param id - The row ID to update
+	 * @param partial - Fields to merge (all fields except `id` are optional)
+	 * @returns `{ status: 'updated', row }`, or not_found/invalid if the merge fails
+	 */
 	update(id: string, partial: Partial<Omit<TRow, 'id'>>): UpdateResult<TRow>;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// DELETE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Delete a row by ID. */
+	/**
+	 * Delete a single row by ID.
+	 *
+	 * If the row doesn't exist locally, returns `{ status: 'not_found_locally' }`.
+	 *
+	 * @param id - The row ID to delete
+	 */
 	delete(id: string): DeleteResult;
 
-	/** Delete all rows (table structure preserved). */
+	/**
+	 * Delete all rows from the table.
+	 *
+	 * The table structure is preserved — observers remain attached and the
+	 * table helper continues to work after clearing. Only row data is removed.
+	 */
 	clear(): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -223,9 +318,22 @@ export type TableHelper<TRow extends { id: string }> = {
 
 	/**
 	 * Execute multiple operations atomically in a Y.js transaction.
+	 *
+	 * All changes inside the callback are applied as a single unit:
 	 * - Single undo/redo step
 	 * - Observers fire once (not per-operation)
-	 * - All changes applied together
+	 * - All changes applied together or not at all
+	 *
+	 * @param fn - Callback receiving a transaction object with `set` and `delete`
+	 *
+	 * @example
+	 * ```typescript
+	 * table.batch((tx) => {
+	 *   tx.set({ id: '1', title: 'First' });
+	 *   tx.set({ id: '2', title: 'Second' });
+	 *   tx.delete('3');
+	 * });
+	 * ```
 	 */
 	batch(fn: (tx: TableBatchTransaction<TRow>) => void): void;
 
@@ -233,7 +341,19 @@ export type TableHelper<TRow extends { id: string }> = {
 	// OBSERVE
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Watch for row changes. Returns unsubscribe function. */
+	/**
+	 * Watch for row changes.
+	 *
+	 * The callback receives a `Set<string>` of row IDs that changed. To
+	 * determine what happened, call `table.get(id)`:
+	 * - `status === 'not_found'` → the row was deleted
+	 * - Otherwise → the row was added or updated
+	 *
+	 * Changes are batched per Y.Transaction.
+	 *
+	 * @param callback - Receives changed IDs and the Y.Transaction
+	 * @returns Unsubscribe function
+	 */
 	observe(
 		callback: (changedIds: Set<string>, transaction: unknown) => void,
 	): () => void;
@@ -242,10 +362,18 @@ export type TableHelper<TRow extends { id: string }> = {
 	// METADATA
 	// ═══════════════════════════════════════════════════════════════════════
 
-	/** Number of rows in table. */
+	/**
+	 * Get the total number of rows in the table.
+	 *
+	 * Includes both valid and invalid rows.
+	 */
 	count(): number;
 
-	/** Check if row exists. */
+	/**
+	 * Check if a row exists by ID.
+	 *
+	 * @param id - The row ID to check
+	 */
 	has(id: string): boolean;
 };
 

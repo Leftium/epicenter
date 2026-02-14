@@ -15,6 +15,7 @@ import {
 	ySweetPersistSync,
 } from '@epicenter/hq/extensions/y-sweet-persist-sync';
 import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
+import type { ExtensionFactory } from '@epicenter/hq/static';
 import { createWorkspace } from '@epicenter/hq/static';
 import { definition } from '$lib/workspace';
 
@@ -30,5 +31,13 @@ export const popupWorkspace = createWorkspace(definition).withExtension(
 	ySweetPersistSync({
 		auth: directAuth('http://127.0.0.1:8080'),
 		persistence: indexeddbPersistence,
-	}),
+	}) as ExtensionFactory,
 );
+
+// Set local awareness on connect
+void popupWorkspace.whenReady.then(() => {
+	popupWorkspace.awareness.setLocal({
+		deviceId: 'popup',
+		deviceType: 'browser-extension',
+	});
+});

@@ -2,7 +2,7 @@ import type { ClientToken } from '@epicenter/y-sweet';
 import { createYjsProvider, type YSweetProvider } from '@epicenter/y-sweet';
 import type * as Y from 'yjs';
 import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
-import type { ExtensionFactory } from '../static/types';
+import type { AwarenessDefinitions, ExtensionFactory } from '../static/types';
 
 // Re-export the ClientToken type for consumers
 export type { ClientToken as YSweetClientToken };

@@ -19,7 +19,7 @@
 		"./cli": "./src/cli/index.ts",
 		"./server": "./src/server/index.ts",
 		"./ingest": "./src/ingest/index.ts",
-		"./ingest/reddit": "./src/ingest/reddit/index.ts",
+		"./ingest/reddit": "./src/ingest/reddit/index.ts"
 	},
 	"bin": {
 		"epicenter": "./src/cli/bin.ts"

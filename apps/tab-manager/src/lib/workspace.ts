@@ -29,6 +29,11 @@ import {
 export const definition = defineWorkspace({
 	id: 'tab-manager',
 
+	awareness: {
+		deviceId: type('string'),
+		deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
+	},
+
 	tables: {
 		/**
 		 * Devices table - tracks browser installations for multi-device sync.

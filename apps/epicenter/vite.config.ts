@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
 	plugins: [sveltekit(), tailwindcss()],
+	resolve: {
+		dedupe: ['yjs'],
+	},
 	clearScreen: false,
 	server: {
 		port: 1421,

@@ -4,12 +4,14 @@
  * This module contains all type definitions for versioned tables and KV stores.
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension } from '../shared/lifecycle.js';
-import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
+import type {
+	StandardSchemaV1,
+	StandardSchemaWithJSONSchema,
+} from '../shared/standard-schema/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks

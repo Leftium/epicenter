@@ -43,8 +43,10 @@
  * ```
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
+import type {
+	StandardSchemaV1,
+	StandardSchemaWithJSONSchema,
+} from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { KvDefinition, LastSchema } from './types.js';
 

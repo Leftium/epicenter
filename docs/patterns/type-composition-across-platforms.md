@@ -86,14 +86,14 @@ import type { WorkspaceClientInternals } from './client.shared';
 
 export type WorkspaceClient<TActions> = TActions &
 	WorkspaceClientInternals & {
-		whenSynced: Promise<void>; // Browser-specific
+		whenReady: Promise<void>; // Browser-specific
 	};
 
 // client.node.ts
 import type { WorkspaceClientInternals } from './client.shared';
 
 export type WorkspaceClient<TActions> = TActions & WorkspaceClientInternals;
-// No whenSynced - Node clients are fully initialized
+// No whenReady - Node clients are fully initialized
 ```
 
 ## Real Example: Epicenter Workspace Clients
@@ -112,7 +112,7 @@ export type WorkspaceClient<TActions> = TActions & {
 	/** Async cleanup method... */
 	destroy: () => Promise<void>;
 	[Symbol.asyncDispose]: () => Promise<void>;
-	// Browser also had: whenSynced: Promise<void>
+	// Browser also had: whenReady: Promise<void>
 };
 ```
 
@@ -129,7 +129,7 @@ export type WorkspaceClientInternals<TSchema, TProviders> = {
 // client.browser.ts - just compose
 export type WorkspaceClient<TActions, TSchema, TProviders> = TActions &
 	WorkspaceClientInternals<TSchema, TProviders> & {
-		whenSynced: Promise<void>;
+		whenReady: Promise<void>;
 	};
 
 // client.node.ts - even simpler

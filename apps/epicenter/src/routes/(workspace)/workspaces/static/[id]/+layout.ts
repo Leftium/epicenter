@@ -39,7 +39,7 @@ export const load: LayoutLoad = async ({ params }) => {
 	let syncStatus = 'unknown';
 	try {
 		await Promise.race([
-			connection.whenSynced,
+			connection.whenReady,
 			new Promise((_, reject) =>
 				setTimeout(() => reject(new Error('Sync timeout')), 10000),
 			),

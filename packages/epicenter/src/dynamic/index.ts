@@ -25,6 +25,7 @@ export type { WorkspaceDefinition } from './schema/workspace-definition';
 // The builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {
+	Extension,
 	ExtensionContext,
 	ExtensionFactory,
 	WorkspaceClient,
@@ -55,7 +56,8 @@ export type { Id } from '../shared/id';
 export { generateId, Id as createId } from '../shared/id';
 // Lifecycle utilities (re-exported for extension authors)
 export {
-	defineExports,
+	defineExtension,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle';
@@ -98,6 +100,17 @@ export {
 export type { KvKey, TableKey as TableKeyType } from '../shared/ydoc-keys';
 // Y.Doc array key conventions (for direct Y.Doc access / custom providers)
 export { KV_KEY, TableKey } from '../shared/ydoc-keys';
+
+// ════════════════════════════════════════════════════════════════════════════
+// PROVIDER TYPES (Doc-Level)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type {
+	Provider,
+	ProviderContext,
+	ProviderFactory,
+	ProviderFactoryMap,
+} from './provider-types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLES & KV

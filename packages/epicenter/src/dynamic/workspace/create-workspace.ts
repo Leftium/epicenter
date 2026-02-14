@@ -20,17 +20,13 @@
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
  *
- * await workspace.whenSynced;
+ * 	await workspace.whenReady;
  * workspace.extensions.persistence.clearData();
  * ```
  */
 
 import * as Y from 'yjs';
-import {
-	defineExports,
-	type Lifecycle,
-	type MaybePromise,
-} from '../../shared/lifecycle';
+import type { Extension, MaybePromise } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
 import type { WorkspaceDefinition } from '../schema/workspace-definition';
@@ -69,7 +65,7 @@ import type {
  *   .withExtension('persistence', ({ ydoc }) => persistenceExtension({ ydoc }))
  *   .withExtension('sync', ({ ydoc }) => syncExtension({ ydoc }));
  *
- * await workspace.whenSynced;
+ * 	await workspace.whenReady;
  * ```
  *
  * @param definition - Workspace definition with id, tables, and kv
@@ -91,15 +87,15 @@ export function createWorkspace<
 	const tables = createTables(ydoc, definition.tables ?? []);
 	const kv = createKv(ydoc, definition.kv ?? []);
 
-	// Internal state: accumulated cleanup functions and whenSynced promises.
+	// Internal state: accumulated cleanup functions and whenReady promises.
 	// Shared across the builder chain (same ydoc).
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
-	const whenSyncedPromises: Promise<unknown>[] = [];
+	const whenReadyPromises: Promise<unknown>[] = [];
 
-	function buildClient<TExtensions extends Record<string, Lifecycle>>(
+	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<TTableDefinitions, TKvFields, TExtensions> {
-		const whenSynced = Promise.all(whenSyncedPromises).then(() => {});
+		const whenReady = Promise.all(whenReadyPromises).then(() => {});
 
 		const destroy = async (): Promise<void> => {
 			// Destroy extensions in reverse order (last added = first destroyed)
@@ -115,28 +111,28 @@ export function createWorkspace<
 			tables,
 			kv,
 			extensions,
-			whenSynced,
+			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
 		};
 
 		return Object.assign(client, {
-			withExtension<TKey extends string, TExports extends Lifecycle>(
+			withExtension<
+				TKey extends string,
+				TExports extends Record<string, unknown>,
+			>(
 				key: TKey,
 				factory: (
 					context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
-				) => TExports,
+				) => Extension<TExports>,
 			) {
 				const result = factory({ id, ydoc, tables, kv, extensions });
-				const exports = defineExports(
-					result as Record<string, unknown>,
-				) as unknown as TExports;
-				extensionCleanups.push(() => exports.destroy());
-				whenSyncedPromises.push(exports.whenSynced);
+				extensionCleanups.push(() => result.lifecycle.destroy());
+				whenReadyPromises.push(result.lifecycle.whenReady);
 
 				const newExtensions = {
 					...extensions,
-					[key]: exports,
+					[key]: result.exports,
 				} as TExtensions & Record<TKey, TExports>;
 
 				return buildClient(newExtensions);

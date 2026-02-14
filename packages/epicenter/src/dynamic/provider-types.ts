@@ -2,7 +2,7 @@ import type * as Y from 'yjs';
 import type { Lifecycle } from '../shared/lifecycle';
 
 // Re-export lifecycle utilities for provider authors
-export { defineExports, type Lifecycle } from '../shared/lifecycle';
+export type { Lifecycle } from '../shared/lifecycle';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Doc-Level Provider Types
@@ -28,46 +28,45 @@ export type ProviderContext = {
 };
 
 /**
- * Provider exports - returned values accessible via `doc.providers.{name}`.
+ * The return type of a `ProviderFactory` — accessible via `doc.providers.{name}`.
  *
- * This type combines the lifecycle protocol with custom exports.
- * The framework guarantees `whenSynced` and `destroy` exist on all providers.
+ * Combines the lifecycle protocol with custom exports.
+ * The framework guarantees `whenReady` and `destroy` exist on all providers.
  *
  * @typeParam T - Additional exports beyond lifecycle fields
  *
  * @example
  * ```typescript
  * // Type for a provider that exports a connection
- * type SyncProviderExports = ProviderExports<{ connection: WebSocket }>;
- * // → { whenSynced, destroy, connection }
+ * type SyncProvider = Provider<{ connection: WebSocket }>;
+ * // → { whenReady, destroy, connection }
  *
  * // Type for a provider with no custom exports
- * type SimpleProviderExports = ProviderExports;
- * // → { whenSynced, destroy }
+ * type SimpleProvider = Provider;
+ * // → { whenReady, destroy }
  * ```
  */
-export type ProviderExports<T extends Record<string, unknown> = {}> =
-	Lifecycle & T;
+export type Provider<T extends Record<string, unknown> = {}> = Lifecycle & T;
 
 /**
  * A doc-level provider factory function.
  *
  * Factories are **always synchronous**. Async initialization is tracked via
- * the returned `whenSynced` promise, not the factory itself.
+ * the returned `whenReady` promise, not the factory itself.
  *
- * Use `defineExports()` to wrap your return for explicit type safety and
- * lifecycle normalization. The framework fills in defaults for missing fields:
- * - `whenSynced`: defaults to `Promise.resolve()`
+ * Return an object satisfying the `Lifecycle` protocol directly.
+ * The framework fills in defaults for missing fields:
+ * - `whenReady`: defaults to `Promise.resolve()`
  * - `destroy`: defaults to no-op `() => {}`
  *
  * @example Persistence provider
  * ```typescript
  * const persistence: ProviderFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return defineExports({
- *     whenSynced: provider.whenSynced,
+ *   return {
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
- *   });
+ *   };
  * };
  * ```
  *
@@ -75,17 +74,17 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * ```typescript
  * const websocket: ProviderFactory = ({ ydoc }) => {
  *   const ws = new WebsocketProvider(url, ydoc.guid, ydoc);
- *   return defineExports({
+ *   return {
  *     ws,
- *     whenSynced: new Promise(r => ws.on('sync', r)),
+ *     whenReady: new Promise(r => ws.on('sync', r)),
  *     destroy: () => ws.destroy(),
- *   });
+ *   };
  * };
  * ```
  */
-export type ProviderFactory<
-	TExports extends ProviderExports = ProviderExports,
-> = (context: ProviderContext) => TExports;
+export type ProviderFactory<TExports extends Provider = Provider> = (
+	context: ProviderContext,
+) => TExports;
 
 /**
  * Map of provider factories keyed by provider ID.
@@ -93,8 +92,8 @@ export type ProviderFactory<
 export type ProviderFactoryMap = Record<string, ProviderFactory>;
 
 /**
- * Infer exports from provider factories.
+ * Infer the return type of provider factories.
  */
-export type InferProviderExports<T extends ProviderFactoryMap> = {
+export type InferProviderReturn<T extends ProviderFactoryMap> = {
 	[K in keyof T]: ReturnType<T[K]>;
 };

@@ -1,4 +1,4 @@
-import type { ProviderFactory } from '../dynamic/provider-types.js';
+import type { ProviderFactory } from '@epicenter/hq/dynamic';
 import { createContentDocStore } from './content-doc-store.js';
 import { createTimeline } from './timeline-helpers.js';
 import type { ContentDocStore, FileId } from './types.js';

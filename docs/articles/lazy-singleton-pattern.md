@@ -192,5 +192,5 @@ In practice, this optimization rarely matters. Awaiting an already-resolved prom
 ## Related Patterns
 
 - **[Store the Promise, Not the Value](./store-the-promise-not-the-value.md)**: Related pattern for tracking in-flight operations during cleanup
-- **[Sync Client Initialization](./sync-client-initialization.md)**: The `whenSynced` pattern for synchronous construction with deferred async work
+- **[Sync Client Initialization](./sync-client-initialization.md)**: The `whenReady` pattern for synchronous construction with deferred async work
 - **[Factory Function Pattern](./factory-function-pattern.md)**: How to structure the initialization function itself

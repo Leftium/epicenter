@@ -1487,7 +1487,7 @@ client.tables; // YJS-backed table operations
 client.kv; // Key-value store
 client.extensions; // Extension exports
 client.ydoc; // Underlying Y.Doc
-client.whenSynced; // Promise for async initialization
+client.whenReady; // Promise for async initialization
 
 await client.destroy(); // Cleanup resources
 ```

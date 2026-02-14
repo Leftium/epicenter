@@ -1,6 +1,6 @@
 import { IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
-import { defineExports } from '../../dynamic/extension';
+import { defineExtension } from '../../shared/lifecycle';
 
 /**
  * IndexedDB persistence for a Yjs document.
@@ -32,9 +32,12 @@ import { defineExports } from '../../dynamic/extension';
  */
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	return defineExports({
-		whenSynced: idb.whenSynced,
+	return defineExtension({
+		exports: {
+			clearData: () => idb.clearData(),
+		},
+		// y-indexeddb's whenSynced = "data loaded from IndexedDB"
+		whenReady: idb.whenSynced,
 		destroy: () => idb.destroy(),
-		clearData: () => idb.clearData(),
 	});
 }

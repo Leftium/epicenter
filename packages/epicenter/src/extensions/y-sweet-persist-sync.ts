@@ -54,13 +54,13 @@ export type YSweetPersistSyncConfig = {
 	 * Loads local state before the WebSocket connects. This is the local-first pattern:
 	 * render from local state immediately, sync in the background.
 	 *
-	 * Must return a {@link Lifecycle}: `{ whenSynced, destroy }`.
+	 * Must return a {@link Lifecycle}: `{ whenReady, destroy }`.
 	 *
 	 * @example
 	 * ```typescript
 	 * persistence: indexeddbPersistence
 	 * persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' })
-	 * persistence: ({ ydoc }) => ({ whenSynced: Promise.resolve(), destroy: () => {} })
+	 * persistence: ({ ydoc }) => ({ whenReady: Promise.resolve(), destroy: () => {} })
 	 * ```
 	 */
 	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
@@ -70,7 +70,7 @@ export type YSweetPersistSyncConfig = {
  * Creates a Y-Sweet persistence sync extension.
  *
  * Orchestrates the lifecycle:
- * - **Persistence first**: `whenSynced` resolves when local state loads.
+ * - **Persistence first**: `whenReady` resolves when local state loads.
  *   WebSocket connects in the background (non-blocking). The UI renders
  *   from local state immediately — connection status is reactive via `provider`.
  *
@@ -94,13 +94,13 @@ export function ySweetPersistSync(
 		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
 
 		// Load persistence first, then kick off WebSocket in background.
-		// whenSynced = local data loaded (fast, reliable).
+		// whenReady = local data loaded (fast, reliable).
 		// WebSocket connects in background — don't block on it.
 		// Consumers subscribe to provider events for connection status.
-		const whenSynced = (async () => {
+		const whenReady = (async () => {
 			const p = config.persistence({ ydoc });
 			persistenceCleanup = p.destroy;
-			await p.whenSynced;
+			await p.whenReady;
 			// Kick off WebSocket in background — don't await it.
 			// Consumers subscribe to provider events for connection status.
 			provider.connect().catch(() => {
@@ -109,35 +109,39 @@ export function ySweetPersistSync(
 			});
 		})();
 
-		// Build exports manually instead of using defineExports() because
-		// defineExports() destructures + spreads, which strips the provider getter.
+		// Build exports manually instead of using defineExtension() because
+		// we need to preserve the provider getter (not spread it).
 		// The getter ensures consumers always see the current provider after reconnect.
 		return {
-			get provider() {
-				return provider;
+			exports: {
+				get provider() {
+					return provider;
+				},
+				/**
+				 * Swap the sync rail (WebSocket target) without reinitializing persistence.
+				 *
+				 * Destroys the current provider, updates the auth callback, creates a new
+				 * `YSweetProvider` on the same `Y.Doc`, and connects it. Persistence
+				 * (IndexedDB/filesystem) is untouched — only the sync provider changes.
+				 *
+				 * @example
+				 * ```typescript
+				 * workspace.extensions.sync.reconnect(directAuth('https://cloud.example.com'));
+				 * ```
+				 */
+				reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
+					provider.destroy();
+					currentAuth = newAuth;
+					provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint);
+					provider.connect();
+				},
 			},
-			whenSynced,
-			/**
-			 * Swap the sync rail (WebSocket target) without reinitializing persistence.
-			 *
-			 * Destroys the current provider, updates the auth callback, creates a new
-			 * `YSweetProvider` on the same `Y.Doc`, and connects it. Persistence
-			 * (IndexedDB/filesystem) is untouched — only the sync provider changes.
-			 *
-			 * @example
-			 * ```typescript
-			 * workspace.extensions.sync.reconnect(directAuth('https://cloud.example.com'));
-			 * ```
-			 */
-			reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
-				provider.destroy();
-				currentAuth = newAuth;
-				provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint);
-				provider.connect();
-			},
-			destroy() {
-				persistenceCleanup?.();
-				provider.destroy();
+			lifecycle: {
+				whenReady,
+				destroy() {
+					persistenceCleanup?.();
+					provider.destroy();
+				},
 			},
 		};
 	};

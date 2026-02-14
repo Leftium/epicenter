@@ -1,5 +1,7 @@
 # Tab Manager `src/` Reorganization
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 Reorganize `apps/tab-manager/src/lib/` from a flat/ad-hoc layout to domain-grouped modules.
 
 ## Problem

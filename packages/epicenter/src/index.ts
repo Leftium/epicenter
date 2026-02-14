@@ -41,7 +41,8 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	defineExports,
+	defineExtension,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from './shared/lifecycle';
@@ -58,6 +59,13 @@ export { ExtensionErr } from './shared/errors';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type { AbsolutePath, ProjectDir } from './shared/types';
+
+// ════════════════════════════════════════════════════════════════════════════
+// ID UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { Guid, Id } from './shared/id';
+export { generateGuid, generateId, Id as createId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS

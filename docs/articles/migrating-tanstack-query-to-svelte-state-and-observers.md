@@ -1,5 +1,7 @@
 # Nine Mutations Became One Import
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. Code examples below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## Migrating Tanstack Query To Svelte State And Observers
 
 We had a browser extension popup with TanStack Query managing tab state. Every component that could close, pin, mute, reload, duplicate, or suspend a tab needed a `createMutation` call for each action—plus loading spinners, `isPending` checks, and `invalidateQueries` callbacks. A single `TabItem.svelte` component had nine mutation objects. [PR #1337](https://github.com/EpicenterHQ/epicenter/pull/1337) replaced all of them with one import line. Here's what the migration looked like and why the result is so much less code.

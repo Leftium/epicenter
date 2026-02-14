@@ -343,7 +343,7 @@ export default defineBackground(() => {
 
 	const initPromise = (async () => {
 		// Wait for local data to load (WebSocket connects in background)
-		await client.extensions.sync.whenSynced;
+		await client.whenReady;
 		console.log('[Background] Persistence loaded');
 
 		// Then refetch to sync Y.Doc with current browser state

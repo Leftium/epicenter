@@ -7,7 +7,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { Lifecycle } from '../shared/lifecycle.js';
+import type { Extension } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -468,7 +468,7 @@ export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
-	TExtensions extends Record<string, Lifecycle>,
+	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
 > = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
 	actions: TActions;
@@ -508,7 +508,7 @@ export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-	TExtensions extends Record<string, Lifecycle> = Record<string, never>,
+	TExtensions extends Record<string, unknown> = Record<string, never>,
 > = WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
 	/**
 	 * Add a single extension. Returns a new builder with the extension's
@@ -518,24 +518,28 @@ export type WorkspaceClientBuilder<
 	 * each factory receives the client-so-far (including all previously added extensions)
 	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
+	 * The factory must return an `Extension` (from `defineExtension()`).
+	 * The framework plucks `lifecycle` for internal management and stores
+	 * `exports` by reference — getters and object identity are preserved.
+	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
-	 * @param factory - Factory function receiving the client-so-far context, returns exports
-	 * @returns A new builder with the extension added to the type
+	 * @param factory - Factory function receiving the client-so-far context, returns Extension
+	 * @returns A new builder with the extension's exports added to the type
 	 *
 	 * @example
 	 * ```typescript
 	 * const client = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
 	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	 *     return defineExports({ whenSynced: idb.whenSynced, destroy: () => idb.destroy() });
+	 *     return defineExtension({ whenReady: idb.whenReady, destroy: () => idb.destroy() });
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
-	 *     return defineExports({ ... });
+	 *     return defineExtension({ ... });
 	 *   });
 	 * ```
 	 */
-	withExtension<TKey extends string, TExports extends Lifecycle>(
+	withExtension<TKey extends string, TExports extends Record<string, unknown>>(
 		key: TKey,
 		factory: (
 			context: ExtensionContext<
@@ -544,7 +548,7 @@ export type WorkspaceClientBuilder<
 				TKvDefinitions,
 				TExtensions
 			>,
-		) => TExports,
+		) => Extension<TExports>,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -580,6 +584,9 @@ export type WorkspaceClientBuilder<
 	>;
 };
 
+// Re-export Extension for convenience
+export type { Extension } from '../shared/lifecycle.js';
+
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES
 // ════════════════════════════════════════════════════════════════════════════
@@ -604,7 +611,7 @@ export type WorkspaceClientBuilder<
  * .withExtension('sync', ({ ydoc, extensions }) => {
  *   // extensions.persistence is typed if persistence was added before this
  *   const provider = createProvider(ydoc);
- *   return defineExports({ provider, destroy: () => provider.destroy() });
+ *   return defineExtension({ exports: { provider }, destroy: () => provider.destroy() });
  * })
  * ```
  */
@@ -612,7 +619,7 @@ export type ExtensionContext<
 	TId extends string = string,
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
-	TExtensions extends Record<string, Lifecycle> = Record<string, Lifecycle>,
+	TExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -629,36 +636,36 @@ export type ExtensionContext<
 /**
  * Factory function that creates an extension with lifecycle hooks.
  *
- * All extensions MUST return an object that satisfies the {@link Lifecycle} protocol:
- * - `whenSynced`: Promise that resolves when the extension is ready
- * - `destroy`: Cleanup function called when the workspace is destroyed
+ * All extensions MUST return an `Extension` (from `defineExtension()`).
+ * The framework plucks `lifecycle` for internal management and stores
+ * `exports` by reference — getters and object identity are preserved.
  *
- * Use {@link defineExports} from `shared/lifecycle.ts` to easily create compliant exports.
+ * Use `defineExtension()` from `shared/lifecycle.ts` to create the result:
  *
  * @example Simple extension (works with any workspace)
  * ```typescript
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return defineExports({
- *     provider,
- *     whenSynced: provider.whenSynced,
+ *   return defineExtension({
+ *     exports: { provider },
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   });
  * };
  * ```
  *
- * @typeParam TExports - The exports returned by this extension (must extend Lifecycle)
+ * @typeParam TExports - The consumer-facing exports object type
  */
-export type ExtensionFactory<TExports extends Lifecycle = Lifecycle> = (
-	context: ExtensionContext,
-) => TExports;
+export type ExtensionFactory<
+	TExports extends Record<string, unknown> = Record<string, unknown>,
+> = (context: ExtensionContext) => Extension<TExports>;
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
-	TExtensions extends Record<string, Lifecycle>,
+	TExtensions extends Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
@@ -672,6 +679,9 @@ export type WorkspaceClient<
 	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
+
+	/** Promise resolving when all extensions are ready */
+	whenReady: Promise<void>;
 
 	/** Cleanup all resources */
 	destroy(): Promise<void>;

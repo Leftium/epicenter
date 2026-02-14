@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { defineExports, type ExtensionContext } from '../../dynamic/extension';
-import type { Lifecycle } from '../../shared/lifecycle';
+import type { ExtensionContext } from '../../dynamic/extension';
+import { defineExtension, type Lifecycle } from '../../shared/lifecycle';
 
 /**
  * Configuration for the persistence extension.
@@ -43,8 +43,8 @@ export const persistence = (
 	{ ydoc }: ExtensionContext,
 	{ filePath }: PersistenceConfig,
 ) => {
-	// Track async initialization via whenSynced
-	const whenSynced = (async () => {
+	// Track async initialization via whenReady
+	const whenReady = (async () => {
 		await mkdir(path.dirname(filePath), { recursive: true });
 
 		// Try to load existing state from disk using Bun.file
@@ -70,7 +70,7 @@ export const persistence = (
 		});
 	})();
 
-	return defineExports({ whenSynced });
+	return defineExtension({ whenReady });
 };
 
 /**
@@ -105,7 +105,7 @@ export function filesystemPersistence(options: {
 			}, 500);
 		};
 
-		const whenSynced = (async () => {
+		const whenReady = (async () => {
 			await mkdir(path.dirname(filePath), { recursive: true });
 
 			const file = Bun.file(filePath);
@@ -120,7 +120,7 @@ export function filesystemPersistence(options: {
 		})();
 
 		return {
-			whenSynced,
+			whenReady,
 			destroy: () => {
 				if (saveTimeout) clearTimeout(saveTimeout);
 				ydoc.off('update', updateHandler);

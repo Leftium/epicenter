@@ -108,7 +108,7 @@ const client = workspace.create({
 client.extensions.sqlite.db.query('SELECT * FROM posts');
 ```
 
-Extensions receive typed access to the workspace's Y.Doc and helpers. They must return a `Lifecycle` object (with `whenSynced` and `destroy`). Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
+Extensions receive typed access to the workspace's Y.Doc and helpers. They must return a `Lifecycle` object (with `whenReady` and `destroy`). Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
 
 ### Layer 3: createTables / createKv - Bring Your Own Y.Doc
 
@@ -350,7 +350,7 @@ Each extension factory must return a `Lifecycle` object:
 
 ```typescript
 type Lifecycle = {
-	whenSynced: Promise<void>; // Resolves when ready
+	whenReady: Promise<void>; // Resolves when ready
 	destroy(): Promise<void>; // Cleanup
 };
 ```
@@ -371,7 +371,7 @@ const persistence = ({ ydoc }) => {
 
 `defineExports()` automatically adds:
 
-- `whenSynced: Promise.resolve()` (or your custom promise)
+- `whenReady: Promise.resolve()` (or your custom promise)
 - `destroy` (or your custom cleanup)
 
 Extensions are schema-generic by default. If you need typed access, add generic parameters:
@@ -402,10 +402,10 @@ console.log(client.extensions.persistence); // Exists
 console.log(client.extensions.sync); // Exists
 ```
 
-If an extension needs time to initialize (connecting to a server, opening a database), it signals readiness with `whenSynced`:
+If an extension needs time to initialize (connecting to a server, opening a database), it signals readiness with `whenReady`:
 
 ```typescript
-await client.extensions.sync.whenSynced; // Wait for connection
+await client.extensions.sync.whenReady; // Wait for connection
 ```
 
 This pattern lets your UI render immediately while extensions initialize in the background.

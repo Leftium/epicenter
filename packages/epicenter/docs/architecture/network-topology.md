@@ -105,11 +105,11 @@ Phone has no local server, so it connects directly to all available servers:
 
 ```typescript
 providers: {
-  syncToLaptopA: createWebsocketSyncProvider({
-    url: 'ws://laptop-a.tailnet:3913/sync'
+  syncToLaptopA: createSyncExtension({
+    url: 'ws://laptop-a.tailnet:3913/workspaces/{id}/sync'
   }),
-  syncToLaptopB: createWebsocketSyncProvider({
-    url: 'ws://laptop-b.tailnet:3913/sync'
+  syncToLaptopB: createSyncExtension({
+    url: 'ws://laptop-b.tailnet:3913/workspaces/{id}/sync'
   }),
 }
 ```
@@ -120,8 +120,8 @@ Browser connects to its own local server:
 
 ```typescript
 providers: {
-  sync: createWebsocketSyncProvider({
-    url: 'ws://localhost:3913/sync'
+  sync: createSyncExtension({
+    url: 'ws://localhost:3913/workspaces/{id}/sync'
   }),
 }
 ```
@@ -133,8 +133,8 @@ Server accepts connections AND connects to other servers:
 ```typescript
 // Laptop A server connects to Laptop B
 providers: {
-  syncToLaptopB: createWebsocketSyncProvider({
-    url: 'ws://laptop-b.tailnet:3913/sync'
+  syncToLaptopB: createSyncExtension({
+    url: 'ws://laptop-b.tailnet:3913/workspaces/{id}/sync'
   }),
 }
 
@@ -148,9 +148,9 @@ Yjs supports **multiple providers simultaneously**:
 ```typescript
 const doc = new Y.Doc();
 
-// Connect to multiple servers
-new WebsocketProvider('ws://laptop-a.tailnet:3913/sync', 'workspace', doc);
-new WebsocketProvider('ws://laptop-b.tailnet:3913/sync', 'workspace', doc);
+// Connect to multiple servers via createSyncProvider from @epicenter/sync
+const provider1 = createSyncProvider({ doc, url: 'ws://laptop-a.tailnet:3913/workspaces/blog/sync' });
+const provider2 = createSyncProvider({ doc, url: 'ws://laptop-b.tailnet:3913/workspaces/blog/sync' });
 
 // Changes sync through ALL connected providers
 // Yjs deduplicates updates automatically (vector clocks)
@@ -172,8 +172,8 @@ providers: {
   // Local persistence (IndexedDB in browser, filesystem in Node.js)
   persistence: setupPersistence,
 
-  // Network sync
-  sync: createWebsocketSyncProvider({ url: '...' }),
+  // Network sync (via @epicenter/sync)
+  sync: createSyncExtension({ url: 'ws://localhost:3913/workspaces/{id}/sync' }),
 }
 ```
 

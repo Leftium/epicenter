@@ -4,6 +4,26 @@ import yargs from 'yargs';
 import { defineMutation, defineQuery } from '../shared/actions';
 import { buildActionCommands } from './command-builder';
 
+/**
+ * Yargs exposes `getInternalMethods()` at runtime but not in its public type
+ * definitions. This helper casts the Argv instance so we can inspect registered
+ * commands in tests without scattering casts throughout the file.
+ */
+function getYargsCommands(cli: ReturnType<typeof yargs>): {
+	getCommands(): string[];
+	getCommandHandlers(): Record<string, { handler: Function }>;
+} {
+	return (
+		cli as unknown as {
+			getInternalMethods(): {
+				getCommandInstance(): ReturnType<typeof getYargsCommands>;
+			};
+		}
+	)
+		.getInternalMethods()
+		.getCommandInstance();
+}
+
 describe('CLI command registration', () => {
 	test('registers flat action commands with yargs', () => {
 		const actions = {
@@ -22,7 +42,7 @@ describe('CLI command registration', () => {
 			cli = cli.command(cmd);
 		}
 
-		const commandInstance = cli.getInternalMethods().getCommandInstance();
+		const commandInstance = getYargsCommands(cli);
 		const registeredCommands = commandInstance.getCommands();
 
 		expect(registeredCommands).toContain('ping');
@@ -45,7 +65,7 @@ describe('CLI command registration', () => {
 			cli = cli.command(cmd);
 		}
 
-		const commandInstance = cli.getInternalMethods().getCommandInstance();
+		const commandInstance = getYargsCommands(cli);
 		const registeredCommands = commandInstance.getCommands();
 
 		expect(registeredCommands).toContain('posts');
@@ -65,7 +85,7 @@ describe('CLI command registration', () => {
 			cli = cli.command(cmd);
 		}
 
-		const commandInstance = cli.getInternalMethods().getCommandInstance();
+		const commandInstance = getYargsCommands(cli);
 		const handlers = commandInstance.getCommandHandlers();
 
 		expect(handlers).toHaveProperty('ping');
@@ -96,9 +116,8 @@ describe('CLI command registration', () => {
 
 		await cli.parseAsync(['create', '--title', 'Hello', '--count', '42']);
 
-		expect(capturedArgs).not.toBeNull();
-		expect(capturedArgs?.title).toBe('Hello');
-		expect(capturedArgs?.count).toBe(42);
+		if (capturedArgs === null) throw new Error('capturedArgs is null');
+		expect(capturedArgs).toMatchObject({ title: 'Hello', count: 42 });
 	});
 
 	test('buildActionCommands returns correct command paths', () => {

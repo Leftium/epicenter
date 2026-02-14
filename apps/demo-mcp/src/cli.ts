@@ -219,7 +219,6 @@ async function cmdImport(args: CLIArgs, adapterID: string) {
 	const adapter = await findAdapter(adapterID);
 	const vault = createVault({
 		adapters: [adapter],
-		// @ts-expect-error works but slight type mismatch
 		database: rawDb,
 	});
 
@@ -250,7 +249,6 @@ async function cmdExportFs(args: CLIArgs, adapterID: string) {
 	const adapter = await findAdapter(adapterID);
 	const vault = createVault({
 		adapters: [adapter],
-		// @ts-expect-error works but slight type mismatch
 		database: rawDb,
 	});
 
@@ -284,7 +282,6 @@ async function cmdImportFs(args: CLIArgs, adapterID: string) {
 	const adapter = await findAdapter(adapterID);
 	const vault = createVault({
 		adapters: [adapter],
-		// @ts-expect-error works but slight type mismatch
 		database: rawDb,
 	});
 

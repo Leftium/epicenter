@@ -4,8 +4,8 @@
  * Provides CRUD operations with validation and migration on read.
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
+import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
 import type {
 	YKeyValueLww,
 	YKeyValueLwwChange,
@@ -25,7 +25,7 @@ import type {
  * Creates a TableHelper for a single table bound to a YKeyValue store.
  */
 export function createTableHelper<
-	TVersions extends readonly StandardSchemaV1[],
+	TVersions extends readonly StandardSchemaWithJSONSchema<{ id: string }>[],
 >(
 	ykv: YKeyValueLww<unknown>,
 	definition: TableDefinition<TVersions>,
@@ -41,8 +41,9 @@ export function createTableHelper<
 			throw new TypeError('Async schemas not supported');
 		if (result.issues)
 			return { status: 'invalid', id, errors: result.issues, row };
-		// Migrate to latest version
-		const migrated = definition.migrate(result.value);
+		// Migrate to latest version. The cast is safe because `id` was injected
+		// into the input above and preserved through validation + migration.
+		const migrated = definition.migrate(result.value) as TRow;
 		return { status: 'valid', row: migrated };
 	}
 

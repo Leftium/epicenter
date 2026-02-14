@@ -53,15 +53,15 @@ import type { LastSchema, TableDefinition } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<TVersions extends StandardSchemaWithJSONSchema[]> = {
+type TableBuilder<
+	TVersions extends StandardSchemaWithJSONSchema<{ id: string }>[],
+> = {
 	/**
 	 * Add a schema version. Schema must include `{ id: string }`.
 	 * The last version added becomes the "latest" schema shape.
 	 */
-	version<TSchema extends StandardSchemaWithJSONSchema>(
-		schema: StandardSchemaV1.InferOutput<TSchema> extends { id: string }
-			? TSchema
-			: never,
+	version<TSchema extends StandardSchemaWithJSONSchema<{ id: string }>>(
+		schema: TSchema,
 	): TableBuilder<[...TVersions, TSchema]>;
 
 	/**
@@ -88,11 +88,9 @@ type TableBuilder<TVersions extends StandardSchemaWithJSONSchema[]> = {
  * const users = defineTable(type({ id: 'string', email: 'string' }));
  * ```
  */
-export function defineTable<TSchema extends StandardSchemaWithJSONSchema>(
-	schema: StandardSchemaV1.InferOutput<TSchema> extends { id: string }
-		? TSchema
-		: never,
-): TableDefinition<[TSchema]>;
+export function defineTable<
+	TSchema extends StandardSchemaWithJSONSchema<{ id: string }>,
+>(schema: TSchema): TableDefinition<[TSchema]>;
 
 /**
  * Creates a table definition builder for multiple versions with migrations.
@@ -133,9 +131,9 @@ export function defineTable<TSchema extends StandardSchemaWithJSONSchema>(
  */
 export function defineTable(): TableBuilder<[]>;
 
-export function defineTable<TSchema extends StandardSchemaWithJSONSchema>(
-	schema?: TSchema,
-): TableDefinition<[TSchema]> | TableBuilder<[]> {
+export function defineTable<
+	TSchema extends StandardSchemaWithJSONSchema<{ id: string }>,
+>(schema?: TSchema): TableDefinition<[TSchema]> | TableBuilder<[]> {
 	if (schema) {
 		return {
 			schema,

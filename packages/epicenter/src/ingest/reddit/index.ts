@@ -54,14 +54,12 @@ function importTableRows(
 	csvData: Record<string, string>[],
 	schema: { assert(data: unknown): { id: string } },
 	tableClient: {
-		batch(fn: (tx: { set(row: { id: string }): void }) => void): void;
+		set(row: { id: string }): void;
 	},
 ): number {
 	if (csvData.length === 0) return 0;
 	const rows = csvData.map((row) => schema.assert(row));
-	tableClient.batch((tx) => {
-		for (const row of rows) tx.set(row);
-	});
+	for (const row of rows) tableClient.set(row);
 	return rows.length;
 }
 
@@ -131,36 +129,37 @@ export async function importRedditExport(
 	// ═══════════════════════════════════════════════════════════════════════════
 	let tableIndex = 0;
 
-	for (const table of tableNames) {
-		options?.onProgress?.({
-			phase: 'transform',
-			current: tableIndex++,
-			total: tableNames.length,
-			table,
-		});
+	// Batch all table and KV inserts into a single Y.Doc transaction
+	workspace.batch(() => {
+		for (const table of tableNames) {
+			options?.onProgress?.({
+				phase: 'transform',
+				current: tableIndex++,
+				total: tableNames.length,
+				table,
+			});
 
-		const csv = snakify(table);
-		const csvData = rawData[csv as keyof ParsedRedditData] ?? [];
+			const csv = snakify(table);
+			const csvData = rawData[csv as keyof ParsedRedditData] ?? [];
 
-		stats.tables[table] = importTableRows(
-			csvData,
-			csvSchemas[table],
-			workspace.tables[table as keyof typeof workspace.tables],
-		);
-	}
+			stats.tables[table] = importTableRows(
+				csvData,
+				csvSchemas[table],
+				workspace.tables[table as keyof typeof workspace.tables],
+			);
+		}
 
-	// ═══════════════════════════════════════════════════════════════════════════
-	// PHASE 3: KV STORE
-	// ═══════════════════════════════════════════════════════════════════════════
-	options?.onProgress?.({ phase: 'insert', current: 0, total: 1 });
-	const kvData = transformKv(rawData);
-	workspace.kv.batch((tx) => {
+		// ═══════════════════════════════════════════════════════════════════════
+		// PHASE 3: KV STORE
+		// ═══════════════════════════════════════════════════════════════════════
+		options?.onProgress?.({ phase: 'insert', current: 0, total: 1 });
+		const kvData = transformKv(rawData);
 		for (const [key, value] of Object.entries(kvData) as [
 			keyof KvData,
 			KvData[keyof KvData],
 		][]) {
 			if (value !== null) {
-				tx.set(key, value as string & Record<string, string>);
+				workspace.kv.set(key, value as string & Record<string, string>);
 				stats.kv++;
 			}
 		}

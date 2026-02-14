@@ -136,7 +136,7 @@ function createSavedTabState() {
 
 				// Batch-delete from Y.Doc in a single transaction so the observer
 				// fires exactly once (not N times).
-				popupWorkspace.ydoc.transact(() => {
+				popupWorkspace.batch(() => {
 					for (const tab of all) {
 						popupWorkspace.tables.savedTabs.delete(tab.id);
 					}
@@ -162,7 +162,7 @@ function createSavedTabState() {
 				const all = popupWorkspace.tables.savedTabs.getAllValid();
 				if (!all.length) return;
 
-				popupWorkspace.ydoc.transact(() => {
+				popupWorkspace.batch(() => {
 					for (const tab of all) {
 						popupWorkspace.tables.savedTabs.delete(tab.id);
 					}

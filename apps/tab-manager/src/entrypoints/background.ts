@@ -136,7 +136,7 @@ export default defineBackground(() => {
 	// Action Helpers (extracted from workspace definition)
 	// ─────────────────────────────────────────────────────────────────────────
 
-	const { tables, ydoc } = client;
+	const { tables } = client;
 
 	const actions = {
 		/**
@@ -173,7 +173,7 @@ export default defineBackground(() => {
 			const tabIds = new Set(rows.map((r) => r.tabId));
 			const existingYDocTabs = tables.tabs.getAllValid();
 
-			ydoc.transact(() => {
+			client.batch(() => {
 				// Set all browser tabs (with device-scoped IDs)
 				for (const row of rows) {
 					tables.tabs.set(row);
@@ -213,7 +213,7 @@ export default defineBackground(() => {
 			const windowIds = new Set(rows.map((r) => r.windowId));
 			const existingYDocWindows = tables.windows.getAllValid();
 
-			ydoc.transact(() => {
+			client.batch(() => {
 				// Set all browser windows (with device-scoped IDs)
 				for (const row of rows) {
 					tables.windows.set(row);
@@ -253,7 +253,7 @@ export default defineBackground(() => {
 			const groupIds = new Set(browserGroups.map((g) => g.id));
 			const existingYDocGroups = tables.tabGroups.getAllValid();
 
-			ydoc.transact(() => {
+			client.batch(() => {
 				// Set all browser groups (with device-scoped IDs)
 				for (const group of browserGroups) {
 					tables.tabGroups.set(tabGroupToRow(deviceId, group));
@@ -312,9 +312,9 @@ export default defineBackground(() => {
 	};
 
 	// Debug: Listen for all Y.Doc updates to see if we're receiving them
-	ydoc.on('update', (update: Uint8Array, origin: unknown) => {
+	client.ydoc.on('update', (update: Uint8Array, origin: unknown) => {
 		// Get the ytables Y.Map to inspect structure
-		const ytables = ydoc.getMap('tables');
+		const ytables = client.ydoc.getMap('tables');
 		const tabsTable = ytables.get('tabs') as Map<string, unknown> | undefined;
 
 		// Get entries from tabs table if it's a Y.Map

@@ -13,7 +13,7 @@ function setup() {
 	const ydoc = new Y.Doc();
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
 	const ykv = new YKeyValueLww(yarray);
-	return { yarray, ykv };
+	return { ydoc, yarray, ykv };
 }
 
 describe('createTableHelper', () => {
@@ -47,15 +47,15 @@ describe('createTableHelper', () => {
 			}
 		});
 
-		test('batch stores multiple rows atomically', () => {
-			const { ykv } = setup();
+		test('transact stores multiple rows atomically', () => {
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'Alice' });
-				tx.set({ id: '2', name: 'Bob' });
-				tx.set({ id: '3', name: 'Charlie' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'Alice' });
+				helper.set({ id: '2', name: 'Bob' });
+				helper.set({ id: '3', name: 'Charlie' });
 			});
 
 			expect(helper.count()).toBe(3);
@@ -140,14 +140,14 @@ describe('createTableHelper', () => {
 
 	describe('query operations', () => {
 		test('filter returns matching rows', () => {
-			const { ykv } = setup();
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', active: 'boolean' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', active: true });
-				tx.set({ id: '2', active: false });
-				tx.set({ id: '3', active: true });
+			ydoc.transact(() => {
+				helper.set({ id: '1', active: true });
+				helper.set({ id: '2', active: false });
+				helper.set({ id: '3', active: true });
 			});
 
 			const active = helper.filter((row) => row.active);
@@ -156,13 +156,13 @@ describe('createTableHelper', () => {
 		});
 
 		test('filter returns empty array when no matches', () => {
-			const { ykv } = setup();
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', active: 'boolean' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', active: false });
-				tx.set({ id: '2', active: false });
+			ydoc.transact(() => {
+				helper.set({ id: '1', active: false });
+				helper.set({ id: '2', active: false });
 			});
 
 			const active = helper.filter((row) => row.active);
@@ -184,13 +184,13 @@ describe('createTableHelper', () => {
 		});
 
 		test('find returns first matching row', () => {
-			const { ykv } = setup();
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'Alice' });
-				tx.set({ id: '2', name: 'Bob' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'Alice' });
+				helper.set({ id: '2', name: 'Bob' });
 			});
 
 			const found = helper.find((row) => row.name === 'Bob');
@@ -322,39 +322,39 @@ describe('createTableHelper', () => {
 			expect(result.status).toBe('not_found_locally');
 		});
 
-		test('batch deletes multiple rows atomically', () => {
-			const { ykv } = setup();
+		test('transact deletes multiple rows atomically', () => {
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'A' });
-				tx.set({ id: '2', name: 'B' });
-				tx.set({ id: '3', name: 'C' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'A' });
+				helper.set({ id: '2', name: 'B' });
+				helper.set({ id: '3', name: 'C' });
 			});
 
-			helper.batch((tx) => {
-				tx.delete('1');
-				tx.delete('2');
-				tx.delete('3');
+			ydoc.transact(() => {
+				helper.delete('1');
+				helper.delete('2');
+				helper.delete('3');
 			});
 
 			expect(helper.count()).toBe(0);
 		});
 
-		test('batch can mix set and delete operations', () => {
-			const { ykv } = setup();
+		test('transact can mix set and delete operations', () => {
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'A' });
-				tx.set({ id: '2', name: 'B' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'A' });
+				helper.set({ id: '2', name: 'B' });
 			});
 
-			helper.batch((tx) => {
-				tx.delete('1');
-				tx.set({ id: '3', name: 'C' });
+			ydoc.transact(() => {
+				helper.delete('1');
+				helper.set({ id: '3', name: 'C' });
 			});
 
 			expect(helper.count()).toBe(2);
@@ -364,13 +364,13 @@ describe('createTableHelper', () => {
 		});
 
 		test('clear removes all rows', () => {
-			const { ykv } = setup();
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'A' });
-				tx.set({ id: '2', name: 'B' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'A' });
+				helper.set({ id: '2', name: 'B' });
 			});
 			expect(helper.count()).toBe(2);
 
@@ -402,8 +402,8 @@ describe('createTableHelper', () => {
 			unsubscribe();
 		});
 
-		test('batch fires observer once for all operations', () => {
-			const { ykv } = setup();
+		test('transact fires observer once for all operations', () => {
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
@@ -413,10 +413,10 @@ describe('createTableHelper', () => {
 			});
 
 			// Three operations, but observer should fire once
-			helper.batch((tx) => {
-				tx.set({ id: '1', name: 'Alice' });
-				tx.set({ id: '2', name: 'Bob' });
-				tx.set({ id: '3', name: 'Charlie' });
+			ydoc.transact(() => {
+				helper.set({ id: '1', name: 'Alice' });
+				helper.set({ id: '2', name: 'Bob' });
+				helper.set({ id: '3', name: 'Charlie' });
 			});
 
 			// Should have exactly one change event containing all three IDs
@@ -450,7 +450,7 @@ describe('createTableHelper', () => {
 
 	describe('metadata', () => {
 		test('count returns number of rows', () => {
-			const { ykv } = setup();
+			const { ydoc, ykv } = setup();
 			const definition = defineTable(type({ id: 'string', name: 'string' }));
 			const helper = createTableHelper(ykv, definition);
 
@@ -459,9 +459,9 @@ describe('createTableHelper', () => {
 			helper.set({ id: '1', name: 'A' });
 			expect(helper.count()).toBe(1);
 
-			helper.batch((tx) => {
-				tx.set({ id: '2', name: 'B' });
-				tx.set({ id: '3', name: 'C' });
+			ydoc.transact(() => {
+				helper.set({ id: '2', name: 'B' });
+				helper.set({ id: '3', name: 'C' });
 			});
 			expect(helper.count()).toBe(3);
 		});

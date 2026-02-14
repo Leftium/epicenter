@@ -84,12 +84,14 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * });
  * ```
  */
-export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
-	const { doc, url, token: staticToken, getToken, WebSocketPolyfill } = config;
-	const WS: WebSocketPolyfillType =
-		WebSocketPolyfill ?? (WebSocket as unknown as WebSocketPolyfillType);
-	const awareness = config.awareness ?? new awarenessProtocol.Awareness(doc);
-
+export function createSyncProvider({
+	doc,
+	url,
+	token: staticToken,
+	getToken,
+	WebSocketPolyfill: WS = WebSocket as unknown as WebSocketPolyfillType,
+	awareness = new awarenessProtocol.Awareness(doc),
+}: SyncProviderConfig): SyncProvider {
 	// ========================================================================
 	// Closure State
 	// ========================================================================

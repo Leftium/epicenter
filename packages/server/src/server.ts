@@ -1,6 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
+import type { AnyWorkspaceClient } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import type { AnyWorkspaceClient } from '../static/types';
 import { collectActionPaths, createActionsRouter } from './actions';
 import { createSyncPlugin } from './sync';
 import { createTablesPlugin } from './tables';

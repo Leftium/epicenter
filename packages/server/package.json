@@ -1,0 +1,29 @@
+{
+	"name": "@epicenter/server",
+	"version": "0.0.1",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"license": "AGPL-3.0",
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@elysiajs/openapi": "^1.4.11",
+		"elysia": "^1.2.25",
+		"lib0": "^0.2.99",
+		"wellcrafted": "catalog:",
+		"y-protocols": "^1.0.6",
+		"yjs": "^13.6.27"
+	},
+	"peerDependencies": {
+		"@epicenter/hq": "workspace:*"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"arktype": "catalog:",
+		"typescript": "catalog:"
+	}
+}

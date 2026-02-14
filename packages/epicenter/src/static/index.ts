@@ -125,6 +125,8 @@ export { createUnionSchema } from './schema-union.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
+	// Any-typed client (for duck-typing in CLI/server)
+	AnyWorkspaceClient,
 	DeleteResult,
 	Extension,
 	// Extension types

@@ -17,7 +17,6 @@
 		"./extensions/y-sweet-persist-sync/desktop": "./src/extensions/y-sweet-persist-sync/desktop.ts",
 		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
 		"./cli": "./src/cli/index.ts",
-		"./server": "./src/server/index.ts",
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts",
 	},
@@ -31,7 +30,6 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
-		"@elysiajs/openapi": "^1.4.11",
 		"@sindresorhus/slugify": "^3.0.0",
 		"@standard-schema/spec": "^1.1.0",
 		"@tursodatabase/database": "^0.3.2",

@@ -271,7 +271,6 @@
       },
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@elysiajs/openapi": "^1.4.11",
         "@epicenter/y-sweet": "workspace:*",
         "@sindresorhus/slugify": "^3.0.0",
         "@standard-schema/spec": "^1.1.0",
@@ -322,6 +321,26 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+      },
+    },
+    "packages/server": {
+      "name": "@epicenter/server",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/openapi": "^1.4.11",
+        "elysia": "^1.2.25",
+        "lib0": "^0.2.99",
+        "wellcrafted": "catalog:",
+        "y-protocols": "^1.0.6",
+        "yjs": "^13.6.27",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "arktype": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@epicenter/hq": "workspace:*",
       },
     },
     "packages/shared": {
@@ -590,6 +609,8 @@
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
+
+    "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

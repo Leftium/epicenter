@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browserState } from '$lib/state/browser-state.svelte';
-	import { suspendedTabState } from '$lib/state/suspended-tab-state.svelte';
+	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import type { Tab } from '$lib/workspace';
 	import { getDomain } from '$lib/utils/format';
 	import XIcon from '@lucide/svelte/icons/x';
@@ -11,7 +11,7 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import GlobeIcon from '@lucide/svelte/icons/globe';
-	import PauseIcon from '@lucide/svelte/icons/pause';
+	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import { cn } from '@epicenter/ui/utils';
@@ -135,13 +135,13 @@
 		<Button
 			variant="ghost"
 			size="icon-xs"
-			tooltip="Suspend"
+			tooltip="Save for later"
 			onclick={(e: MouseEvent) => {
 				e.stopPropagation();
-				suspendedTabState.actions.suspend(tab);
+				savedTabState.actions.save(tab);
 			}}
 		>
-			<PauseIcon />
+			<BookmarkIcon />
 		</Button>
 
 		<Button

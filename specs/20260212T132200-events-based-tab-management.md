@@ -1,8 +1,10 @@
 # Events-Based Tab Management
 
 **Date**: 2026-02-12
-**Status**: Superseded by `20260213T003200-suspended-tabs.md` (suspend/restore) and `20260213T103000-request-dispatch.md` (cross-runtime dispatch)
+**Status**: Superseded by `20260213T003200-suspended-tabs.md` (suspend/restore → now "save/saved") and `20260213T103000-request-dispatch.md` (cross-runtime dispatch)
 **Author**: AI-assisted
+
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. See `specs/20260213T014300-rename-suspended-to-saved.md`.
 
 ## Overview
 

@@ -33,7 +33,7 @@
  */
 
 import type { Static, TSchema } from 'typebox';
-import type { Id } from '../../../shared/id';
+import type { BaseRow, Id } from '../../../shared/id';
 import type { DateTimeString } from './datetime';
 
 // ============================================================================
@@ -547,6 +547,10 @@ export type TableDefinition<
 /**
  * Plain object representing a complete table row.
  *
+ * Always includes `{ id: Id }` — every table row has an id. The `& BaseRow`
+ * intersection guarantees this even when `TFields` is a bare generic
+ * (where TypeScript widens mapped keys to `string`).
+ *
  * Row is the unified type for both reads and writes. All values are plain
  * JSON-serializable primitives (no Y.js types, no methods, no proxy behavior).
  *
@@ -572,7 +576,7 @@ export type TableDefinition<
  */
 export type Row<TFields extends readonly Field[] = readonly Field[]> = {
 	[K in FieldIds<TFields>]: CellValue<FieldById<TFields, K>>;
-};
+} & BaseRow;
 
 /**
  * Partial row for updates. ID is required, all other fields are optional.
@@ -593,9 +597,8 @@ export type Row<TFields extends readonly Field[] = readonly Field[]> = {
  * });
  * ```
  */
-export type PartialRow<TFields extends readonly Field[] = readonly Field[]> = {
-	id: Id;
-} & Partial<Omit<Row<TFields>, 'id'>>;
+export type PartialRow<TFields extends readonly Field[] = readonly Field[]> =
+	Partial<Row<TFields>> & BaseRow;
 
 // ============================================================================
 // Key-Value Schema Types

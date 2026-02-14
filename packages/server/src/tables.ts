@@ -1,5 +1,5 @@
+import type { AnyWorkspaceClient, TableHelper } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import type { AnyWorkspaceClient, TableHelper } from '../static/types';
 
 export function createTablesPlugin(
 	workspaceClients: Record<string, AnyWorkspaceClient>,

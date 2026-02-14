@@ -1,5 +1,4 @@
 import yargs from 'yargs';
-import { createServer, DEFAULT_PORT } from '../server/server';
 import { buildActionCommands } from './command-builder';
 import { buildKvCommands } from './commands/kv-commands';
 import { buildMetaCommands } from './commands/meta-commands';
@@ -20,12 +19,22 @@ export function createCLI(client: AnyWorkspaceClient) {
 				yargs.option('port', {
 					type: 'number',
 					description: 'Port to run the server on',
-					default: DEFAULT_PORT,
+					default: 3913,
 				}),
-			(argv) => {
-				createServer(client, {
-					port: argv.port,
-				}).start();
+			async (argv) => {
+				try {
+					const { createServer } = await import('@epicenter/server');
+					createServer(client, {
+						port: argv.port,
+					}).start();
+				} catch {
+					console.error(
+						'Error: @epicenter/server is not installed.\n\n' +
+							'Install it to use the serve command:\n' +
+							'  bun add @epicenter/server\n',
+					);
+					process.exit(1);
+				}
 			},
 		);
 

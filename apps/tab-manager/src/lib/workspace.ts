@@ -149,24 +149,25 @@ export const definition = defineWorkspace({
 		),
 
 		/**
-		 * Suspended tabs table — explicitly saved tabs that can be restored later.
+		 * Saved tabs table — explicitly saved tabs that can be restored later.
 		 *
 		 * Unlike the `tabs` table (which mirrors live browser state and is device-owned),
-		 * suspended tabs are shared across all devices. Any device can read, edit, or
-		 * restore a suspended tab.
+		 * saved tabs are shared across all devices. Any device can read, edit, or
+		 * restore a saved tab.
 		 *
-		 * Created when a user explicitly "suspends" a tab (close + save).
+		 * Created when a user explicitly saves a tab (close + persist).
 		 * Deleted when a user restores the tab (opens URL locally + deletes row).
+		 *
 		 */
-		suspendedTabs: defineTable(
+		savedTabs: defineTable(
 			type({
-				id: 'string', // nanoid, generated on suspend
+				id: 'string', // nanoid, generated on save
 				url: 'string', // The tab URL
-				title: 'string', // Tab title at time of suspend
+				title: 'string', // Tab title at time of save
 				'favIconUrl?': 'string', // Favicon URL (nullable)
 				pinned: 'boolean', // Whether tab was pinned
-				sourceDeviceId: 'string', // Device that suspended this tab
-				suspendedAt: 'number', // Timestamp (ms since epoch)
+				sourceDeviceId: 'string', // Device that saved this tab
+				savedAt: 'number', // Timestamp (ms since epoch)
 			}),
 		),
 	},
@@ -182,4 +183,4 @@ export type Device = InferTableRow<Tables['devices']>;
 export type Tab = InferTableRow<Tables['tabs']>;
 export type Window = InferTableRow<Tables['windows']>;
 export type TabGroup = InferTableRow<Tables['tabGroups']>;
-export type SuspendedTab = InferTableRow<Tables['suspendedTabs']>;
+export type SavedTab = InferTableRow<Tables['savedTabs']>;

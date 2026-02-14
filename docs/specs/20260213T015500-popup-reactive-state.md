@@ -3,7 +3,7 @@
 **Date**: 2026-02-13
 **Status**: Implemented
 **Author**: AI-assisted
-**Implementation notes**: All 5 phases completed. `browser-state.svelte.ts` created with `$state` reactive class, surgical browser event handlers, and direct action methods. Components (`TabList.svelte`, `TabItem.svelte`, `SuspendedTabList.svelte`) rewritten to use `browserState`. TanStack Query fully removed — `query/` directory deleted, `EpicenterProvider.svelte` deleted, no `@tanstack/svelte-query` imports remain.
+**Implementation notes**: All 5 phases completed. `browser-state.svelte.ts` created with `$state` reactive class, surgical browser event handlers, and direct action methods. Components (`TabList.svelte`, `TabItem.svelte`, `SavedTabList.svelte`) rewritten to use `browserState`. TanStack Query fully removed — `query/` directory deleted, `EpicenterProvider.svelte` deleted, no `@tanstack/svelte-query` imports remain.
 
 ## Overview
 
@@ -193,20 +193,20 @@ POPUP CLOSE
   Next open → fresh seed + fresh listeners.
 ```
 
-### Suspended Tabs (Separate Concern)
+### Saved Tabs (Separate Concern)
 
 ```
   ┌───────────────────────────────────────────┐
-  │ SuspendedTabState  (.svelte.ts)           │
+  │ SavedTabState  (.svelte.ts)               │
   │                                           │
-  │  #tabs = $state<SuspendedTab[]>([])       │
+  │  #tabs = $state<SavedTab[]>([])           │
   │                                           │
   │  constructor:                              │
   │    seed from popupWorkspace.tables         │
   │    observe Y.Doc table for changes         │
   │                                           │
-  │  actions.suspend(tab)                     │
-  │  actions.restore(suspendedTab)            │
+  │  actions.save(tab)                        │
+  │  actions.restore(savedTab)                │
   │  actions.remove(id)                       │
   └───────────────────────────────────────────┘
        ▲
@@ -242,12 +242,12 @@ POPUP CLOSE
   - `windows.onFocusChanged` → update `focused` on windows
   - `tabGroups.onCreated/Updated/Removed` → if tab groups are tracked
 
-### Phase 2: Create `SuspendedTabState` reactive class
+### Phase 2: Create `SavedTabState` reactive class
 
-- [ ] **2.1** Create `src/lib/suspended-tab-state.svelte.ts` with:
-  - `$state<SuspendedTab[]>` seeded from `popupWorkspace.tables.suspendedTabs.getAllValid()`
-  - Y.Doc table observer for reactive updates (when background or remote device changes suspended tabs)
-  - Action methods: `suspend(tab)`, `restore(suspendedTab)`, `restoreAll()`, `remove(id)`, `removeAll()`, `update(suspendedTab)` — call the existing `suspend-tab.ts` helpers
+- [ ] **2.1** Create `src/lib/saved-tab-state.svelte.ts` with:
+  - `$state<SavedTab[]>` seeded from `popupWorkspace.tables.savedTabs.getAllValid()`
+  - Y.Doc table observer for reactive updates (when background or remote device changes saved tabs)
+  - Action methods: `save(tab)`, `restore(savedTab)`, `restoreAll()`, `remove(id)`, `removeAll()`, `update(savedTab)` — call the existing `save-tab.ts` helpers
 
 ### Phase 3: Update components
 
@@ -261,8 +261,8 @@ POPUP CLOSE
   - Remove mutation pending states (browser APIs are ~instant, no spinner needed)
   - Keep suspend action (calls `suspendedTabState.actions.suspend(tab)`)
 
-- [ ] **3.3** Rewrite `SuspendedTabList.svelte`:
-  - Replace `createQuery` / `createMutation` with `suspendedTabState` reactive class
+- [ ] **3.3** Rewrite `SavedTabList.svelte`:
+  - Replace `createQuery` / `createMutation` with `savedTabState` reactive class
   - Keep existing UI structure
 
 - [ ] **3.4** Simplify `App.svelte`:
@@ -274,7 +274,7 @@ POPUP CLOSE
 
 - [ ] **4.1** Delete `src/lib/query/_client.ts` (QueryClient setup)
 - [ ] **4.2** Delete `src/lib/query/tabs.ts` (TanStack Query tab definitions)
-- [ ] **4.3** Delete `src/lib/query/suspended-tabs.ts` (TanStack Query suspended tab definitions)
+- [ ] **4.3** Delete `src/lib/query/saved-tabs.ts` (TanStack Query saved tab definitions)
 - [ ] **4.4** Delete `src/lib/query/index.ts` (rpc namespace)
 - [ ] **4.5** Delete `src/lib/epicenter/EpicenterProvider.svelte` (chrome event → query invalidation)
 - [ ] **4.6** Remove `@tanstack/svelte-query` and `@tanstack/svelte-query-devtools` from popup dependencies (if not used elsewhere)
@@ -285,6 +285,7 @@ POPUP CLOSE
 - [ ] **5.1** Type check passes (`bun run --filter tab-manager typecheck`)
 - [ ] **5.2** Extension builds successfully
 - [ ] **5.3** Manual test: popup shows tabs grouped by window, updates live when tabs are created/closed/moved/updated
+- [ ] **5.4** Manual test: saved tabs list works (save, restore, delete)
 
 ## Edge Cases
 
@@ -352,8 +353,8 @@ POPUP CLOSE
 - [ ] Creating a new tab appears in popup without full re-query
 - [ ] Closing a tab disappears from popup without full re-query
 - [ ] Tab updates (title, favicon, status) reflect in popup surgically
-- [ ] Tab actions (close, pin, mute, reload, duplicate, suspend) work
-- [ ] Suspended tabs list works (suspend, restore, delete)
+- [ ] Tab actions (close, pin, mute, reload, duplicate, save) work
+- [ ] Saved tabs list works (save, restore, delete)
 - [ ] No TanStack Query imports remain in popup code
 - [ ] Type check passes
 - [ ] Extension builds and loads in browser
@@ -363,7 +364,7 @@ POPUP CLOSE
 - `apps/tab-manager/src/lib/browser-helpers.ts` — Row converters (keep, reuse in seed)
 - `apps/tab-manager/src/lib/epicenter/browser.schema.ts` — Tab/Window types (keep, unchanged)
 - `apps/tab-manager/src/lib/epicenter/workspace.ts` — Popup Y.Doc client (keep, for suspended tabs)
-- `apps/tab-manager/src/lib/epicenter/suspend-tab.ts` — Suspend/restore helpers (keep, reuse in SuspendedTabState)
+- `apps/tab-manager/src/lib/epicenter/save-tab.ts` — Save/restore helpers (keep, reuse in SavedTabState)
 - `apps/tab-manager/src/entrypoints/background.ts` — Background sync (unchanged)
 - `apps/tab-manager/src/lib/query/` — Entire directory removed
 - `apps/tab-manager/src/lib/epicenter/EpicenterProvider.svelte` — Removed

@@ -2,6 +2,8 @@
 
 # Types Should Be Computed, Not Declared
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. Code examples below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## `types.ts` is a code smell
 
 I've written before about [co-locating types with their implementations](./type-co-location-pattern.md) and [not using generic type buckets](./type-colocation-pattern.md). Both of those are about where types should live. This one is about whether they should exist at all.
@@ -78,7 +80,7 @@ export const BROWSER_TABLES = {
 	tabs,
 	windows,
 	tabGroups,
-	suspendedTabs,
+	savedTabs,
 };
 
 export const definition = defineWorkspace({

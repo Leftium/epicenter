@@ -1,5 +1,7 @@
 # Nine Mutations Became One Import
 
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. Code examples below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
+
 ## Migrating Tanstack Query To Svelte State And Observers
 
 We had a browser extension popup with TanStack Query managing tab state. Every component that could close, pin, mute, reload, duplicate, or suspend a tab needed a `createMutation` call for each action—plus loading spinners, `isPending` checks, and `invalidateQueries` callbacks. A single `TabItem.svelte` component had nine mutation objects. [PR #1337](https://github.com/EpicenterHQ/epicenter/pull/1337) replaced all of them with one import line. Here's what the migration looked like and why the result is so much less code.
@@ -41,7 +43,7 @@ After:
 ```svelte
 <script lang="ts">
 	import { browserState } from '$lib/browser-state.svelte';
-	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+	import { savedTabState } from '$lib/saved-tab-state.svelte';
 </script>
 ```
 
@@ -86,7 +88,7 @@ const suspendMutation = createMutation(() => ({
 }));
 ```
 
-After: `suspendedTabState.actions.suspend(tab)`. That's it. When the tab is closed by the suspend action, the browser fires `tabs.onRemoved`, which splices the tab from `browserState`'s `$state` array. The suspended tab gets added to `suspendedTabState`'s `$state` array via a Y.Doc observer. Both UI lists update because both `$state` arrays changed. No manual invalidation, no cross-referencing query keys.
+After: `savedTabState.actions.save(tab)`. That's it. When the tab is closed by the save action, the browser fires `tabs.onRemoved`, which splices the tab from `browserState`'s `$state` array. The saved tab gets added to `savedTabState`'s `$state` array via a Y.Doc observer. Both UI lists update because both `$state` arrays changed. No manual invalidation, no cross-referencing query keys.
 
 ## What Happened to the Root Component
 

@@ -57,17 +57,17 @@ const client = createWorkspace({
 	tables: { posts },
 }).withExtension('persistence', ({ ydoc }) => {
 	const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-	return defineExports({
-		provider,
+	return {
+		exports: { provider },
 		destroy: () => provider.destroy(),
-	});
+	};
 });
 
-await client.extensions.persistence.whenReady;
+await client.whenReady;
 client.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
-Extensions get typed access to ydoc, tables, and kv. They must return a Lifecycle object (whenReady and destroy). Use `defineExports()` from `shared/lifecycle.ts` to easily comply.
+Extensions get typed access to ydoc, tables, and kv. They return a plain `{ exports?, whenReady?, destroy? }` object — the framework normalizes defaults internally.
 
 ### Lower-Level APIs
 

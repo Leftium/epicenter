@@ -80,7 +80,7 @@ export const BROWSER_TABLES = {
 	tabs,
 	windows,
 	tabGroups,
-	suspendedTabs,
+	savedTabs,
 };
 
 export const definition = defineWorkspace({

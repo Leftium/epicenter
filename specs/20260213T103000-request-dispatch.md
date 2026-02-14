@@ -1,7 +1,7 @@
 # Request Dispatch
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Complete (terminology renamed)
 **Supersedes**: `20260212T132200-events-based-tab-management.md`
 
 > **Note**: "Suspended" terminology was renamed to "saved" in the codebase. See `specs/20260213T014300-rename-suspended-to-saved.md`.

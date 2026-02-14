@@ -251,7 +251,7 @@ const tabManagerWorkspace = defineWorkspace({
 		tabs,
 		windows,
 		devices,
-		suspended_tabs,
+		savedTabs,
 		requests, // Opt-in to dispatch
 	},
 	kv: {},

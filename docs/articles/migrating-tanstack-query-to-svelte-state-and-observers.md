@@ -43,7 +43,7 @@ After:
 ```svelte
 <script lang="ts">
 	import { browserState } from '$lib/browser-state.svelte';
-	import { suspendedTabState } from '$lib/suspended-tab-state.svelte';
+	import { savedTabState } from '$lib/saved-tab-state.svelte';
 </script>
 ```
 
@@ -88,7 +88,7 @@ const suspendMutation = createMutation(() => ({
 }));
 ```
 
-After: `suspendedTabState.actions.suspend(tab)`. That's it. When the tab is closed by the suspend action, the browser fires `tabs.onRemoved`, which splices the tab from `browserState`'s `$state` array. The suspended tab gets added to `suspendedTabState`'s `$state` array via a Y.Doc observer. Both UI lists update because both `$state` arrays changed. No manual invalidation, no cross-referencing query keys.
+After: `savedTabState.actions.save(tab)`. That's it. When the tab is closed by the save action, the browser fires `tabs.onRemoved`, which splices the tab from `browserState`'s `$state` array. The saved tab gets added to `savedTabState`'s `$state` array via a Y.Doc observer. Both UI lists update because both `$state` arrays changed. No manual invalidation, no cross-referencing query keys.
 
 ## What Happened to the Root Component
 

@@ -117,6 +117,8 @@ class BrowserState {
 export const browserState = new BrowserState();
 ```
 
+For saved tabs, a similar pattern applies with Y.Doc observation instead of browser events.
+
 Actions don't need to invalidate anything. Calling `browser.tabs.remove(tabId)` fires the `onRemoved` event, which splices the tab from the `$state` array, which Svelte picks up through its deep proxy. The loop closes naturally.
 
 Components went from this:
@@ -145,7 +147,7 @@ To this:
 | -------------------------------------- | -------: |
 | `lib/query/_client.ts`                 |       31 |
 | `lib/query/tabs.ts`                    |      183 |
-| `lib/query/suspended-tabs.ts`          |      154 |
+| `lib/query/saved-tabs.ts`              |      154 |
 | `lib/query/index.ts`                   |       26 |
 | `EpicenterProvider.svelte`             |      101 |
 | Component mutation boilerplate         |     ~255 |

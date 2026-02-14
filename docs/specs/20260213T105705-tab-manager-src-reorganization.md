@@ -53,10 +53,10 @@ lib/
 │   ├── row-converters.ts            # tabToRow, windowToRow, tabGroupToRow
 │   └── index.ts                     # Barrel: re-exports + BrowserDb type
 ├── services/
-│   └── suspend-tab.ts               # Moved from epicenter/, imports updated
+│   └── save-tab.ts                  # Moved from epicenter/, imports updated
 ├── state/
 │   ├── browser-state.svelte.ts      # Moved from lib/, imports updated
-│   └── suspended-tab-state.svelte.ts
+│   └── saved-tab-state.svelte.ts
 ├── utils/
 │   └── format.ts                    # getDomain + getRelativeTime (deduplicated)
 └── workspace.ts                     # Moved from epicenter/, imports updated
@@ -71,9 +71,9 @@ lib/
 - [x] Create `lib/schema/row-converters.ts` — tabToRow, windowToRow, tabGroupToRow
 - [x] Create `lib/schema/index.ts` — barrel re-exports + BrowserDb type
 - [x] Create `lib/utils/format.ts` — getDomain, getRelativeTime
-- [x] Move + update `lib/services/suspend-tab.ts`
+- [x] Move + update `lib/services/save-tab.ts`
 - [x] Move + update `lib/state/browser-state.svelte.ts`
-- [x] Move + update `lib/state/suspended-tab-state.svelte.ts`
+- [x] Move + update `lib/state/saved-tab-state.svelte.ts`
 - [x] Move + update `lib/workspace.ts`
 - [x] Update imports in `background.ts`
 - [x] Update imports in `TabItem.svelte` + use format utils
@@ -84,16 +84,16 @@ lib/
 
 ## Files Deleted (2 dead, 6 moved)
 
-| File                                | Reason                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `epicenter/schema.ts`               | Pointless 18-line re-export, merged into `schema/index.ts`                            |
-| `epicenter/index.ts`                | Dead barrel, 1 consumer switched to `$lib/schema`                                     |
-| `epicenter/browser.schema.ts`       | Split into `device/composite-id.ts` + `schema/tables.ts` + `schema/row-converters.ts` |
-| `epicenter/suspend-tab.ts`          | Moved to `services/suspend-tab.ts`                                                    |
-| `epicenter/workspace.ts`            | Moved to `lib/workspace.ts`                                                           |
-| `lib/device-id.ts`                  | Split: identity → `device/device-id.ts`, parsers → `device/composite-id.ts`           |
-| `lib/browser-state.svelte.ts`       | Moved to `state/browser-state.svelte.ts`                                              |
-| `lib/suspended-tab-state.svelte.ts` | Moved to `state/suspended-tab-state.svelte.ts`                                        |
+| File                            | Reason                                                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| `epicenter/schema.ts`           | Pointless 18-line re-export, merged into `schema/index.ts`                            |
+| `epicenter/index.ts`            | Dead barrel, 1 consumer switched to `$lib/schema`                                     |
+| `epicenter/browser.schema.ts`   | Split into `device/composite-id.ts` + `schema/tables.ts` + `schema/row-converters.ts` |
+| `epicenter/save-tab.ts`         | Moved to `services/save-tab.ts`                                                       |
+| `epicenter/workspace.ts`        | Moved to `lib/workspace.ts`                                                           |
+| `lib/device-id.ts`              | Split: identity → `device/device-id.ts`, parsers → `device/composite-id.ts`           |
+| `lib/browser-state.svelte.ts`   | Moved to `state/browser-state.svelte.ts`                                              |
+| `lib/saved-tab-state.svelte.ts` | Moved to `state/saved-tab-state.svelte.ts`                                            |
 
 ## Review
 

@@ -130,11 +130,11 @@ export function createWorkspace<
 		const client = {
 			id,
 			ydoc,
+			definitions,
 			tables,
 			kv,
-			definitions,
-			extensions,
 			awareness,
+			extensions,
 			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
@@ -161,8 +161,8 @@ export function createWorkspace<
 					ydoc,
 					tables,
 					kv,
-					extensions,
 					awareness,
+					extensions,
 				};
 
 				const result = factory(context);

@@ -622,10 +622,10 @@ export type ExtensionContext<
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */
 	kv: KvHelper<TKvDefinitions>;
-	/** Accumulated extension exports from previous `.withExtension()` calls */
-	extensions: TExtensions;
 	/** Typed awareness helper — always present, like tables and kv */
 	awareness: AwarenessHelper<TAwarenessDefinitions>;
+	/** Accumulated extension exports from previous `.withExtension()` calls */
+	extensions: TExtensions;
 };
 
 /**
@@ -667,20 +667,20 @@ export type WorkspaceClient<
 	id: TId;
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
-	/** Typed table helpers */
-	tables: TablesHelper<TTableDefinitions>;
-	/** Typed KV helper */
-	kv: KvHelper<TKvDefinitions>;
 	/** Workspace definitions for introspection */
 	definitions: {
 		tables: TTableDefinitions;
 		kv: TKvDefinitions;
 		awareness: TAwarenessDefinitions;
 	};
-	/** Extension exports (accumulated via `.withExtension()` calls) */
-	extensions: TExtensions;
+	/** Typed table helpers */
+	tables: TablesHelper<TTableDefinitions>;
+	/** Typed KV helper */
+	kv: KvHelper<TKvDefinitions>;
 	/** Typed awareness helper — always present, like tables and kv */
 	awareness: AwarenessHelper<TAwarenessDefinitions>;
+	/** Extension exports (accumulated via `.withExtension()` calls) */
+	extensions: TExtensions;
 
 	/** Promise resolving when all extensions are ready */
 	whenReady: Promise<void>;

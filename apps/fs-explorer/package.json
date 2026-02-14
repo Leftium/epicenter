@@ -17,10 +17,12 @@
 		"@sveltejs/adapter-auto": "^6.1.0",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "^4.1.11",
 		"bun-types": "^1.3.0",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"svelte-sonner": "catalog:",
+		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	}

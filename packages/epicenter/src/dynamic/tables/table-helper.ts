@@ -182,8 +182,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 }: {
 	ydoc: Y.Doc;
 	tableDefinition: TTableDef;
-}): TableHelper<Row<TTableDef['fields']> & BaseRow> {
-	type TRow = Row<TTableDef['fields']> & BaseRow;
+}): TableHelper<Row<TTableDef['fields']>> {
+	type TRow = Row<TTableDef['fields']>;
 
 	// Compose storage layers: YKeyValueLww → CellStore → RowStore
 	const cellStore = createCellStore<unknown>(ydoc, TableKey(tableId));

@@ -1,5 +1,4 @@
 import type * as Y from 'yjs';
-import type { BaseRow } from '../../shared/id.js';
 import type { TableDefinition } from '../schema';
 import type { Row, TableById } from '../schema/fields/types';
 import { createTableHelper, type TableHelper } from './table-helper';
@@ -44,7 +43,7 @@ export type TablesFunction<
 	 */
 	get<K extends TTableDefinitions[number]['id']>(
 		name: K,
-	): TableHelper<Row<TableById<TTableDefinitions, K>['fields']> & BaseRow>;
+	): TableHelper<Row<TableById<TTableDefinitions, K>['fields']>>;
 
 	// ════════════════════════════════════════════════════════════════════
 	// EXISTENCE & ENUMERATION
@@ -156,7 +155,7 @@ export function createTables<
 		]),
 	) as {
 		[K in TTableDefinitions[number]['id']]: TableHelper<
-			Row<TableById<TTableDefinitions, K>['fields']> & BaseRow
+			Row<TableById<TTableDefinitions, K>['fields']>
 		>;
 	};
 
@@ -185,8 +184,7 @@ export function createTables<
 		get(
 			name: string,
 		): TableHelper<
-			Row<Extract<TTableDefinitions[number], { id: string }>['fields']> &
-				BaseRow
+			Row<Extract<TTableDefinitions[number], { id: string }>['fields']>
 		> {
 			if (name in tableHelpers) {
 				return tableHelpers[name as keyof typeof tableHelpers];

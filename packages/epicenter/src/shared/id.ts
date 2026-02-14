@@ -28,16 +28,8 @@ export type Id = string & Brand<'Id'>;
 /**
  * Minimum shape every row must satisfy — an object with a branded `Id`.
  *
- * Use as a type constraint on generic row parameters. TypeScript cannot
- * resolve mapped types like `Row<TFields>` to prove `{ id: Id }` exists
- * when `TFields` is a bare generic, so intersect with `BaseRow` to make
- * `.id` accessible:
- *
- * ```typescript
- * type MyRow<TFields extends Field[]> = Row<TFields> & BaseRow;
- * ```
- *
- * Both the dynamic and static APIs share this constraint.
+ * `Row<TFields>` always includes `& BaseRow` to guarantee `.id` is accessible
+ * even when TypeScript widens mapped-type keys to `string`.
  */
 export type BaseRow = { id: Id };
 

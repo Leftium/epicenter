@@ -26,11 +26,7 @@
  */
 
 import * as Y from 'yjs';
-import {
-	defineExports,
-	type Lifecycle,
-	type MaybePromise,
-} from '../../shared/lifecycle';
+import type { Extension, MaybePromise } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
 import type { WorkspaceDefinition } from '../schema/workspace-definition';
@@ -96,7 +92,7 @@ export function createWorkspace<
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
 	const whenReadyPromises: Promise<unknown>[] = [];
 
-	function buildClient<TExtensions extends Record<string, Lifecycle>>(
+	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<TTableDefinitions, TKvFields, TExtensions> {
 		const whenReady = Promise.all(whenReadyPromises).then(() => {});
@@ -121,22 +117,22 @@ export function createWorkspace<
 		};
 
 		return Object.assign(client, {
-			withExtension<TKey extends string, TExports extends Lifecycle>(
+			withExtension<
+				TKey extends string,
+				TExports extends Record<string, unknown>,
+			>(
 				key: TKey,
 				factory: (
 					context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
-				) => TExports,
+				) => Extension<TExports>,
 			) {
 				const result = factory({ id, ydoc, tables, kv, extensions });
-				const exports = defineExports(
-					result as Record<string, unknown>,
-				) as unknown as TExports;
-				extensionCleanups.push(() => exports.destroy());
-				whenReadyPromises.push(exports.whenReady);
+				extensionCleanups.push(() => result.lifecycle.destroy());
+				whenReadyPromises.push(result.lifecycle.whenReady);
 
 				const newExtensions = {
 					...extensions,
-					[key]: exports,
+					[key]: result.exports,
 				} as TExtensions & Record<TKey, TExports>;
 
 				return buildClient(newExtensions);

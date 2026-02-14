@@ -14,12 +14,16 @@ function mockAuth(server: string) {
 		Promise.resolve({ url: `ws://${server}/d/${docId}/ws` });
 }
 
-/** The shape of the ySweetPersistSync extension exports (beyond Lifecycle). */
+/** The shape of the ySweetPersistSync extension exports. */
 type YSweetPersistSyncExports = {
 	provider: YSweetProvider;
-	whenReady: Promise<unknown>;
 	reconnect: (newAuth: (docId: string) => Promise<ClientToken>) => void;
-	destroy: () => void;
+};
+
+/** The shape returned by the extension factory. */
+type YSweetPersistSyncResult = {
+	exports: YSweetPersistSyncExports;
+	lifecycle: { whenReady: Promise<unknown>; destroy: () => void };
 };
 
 describe('ySweetPersistSync', () => {
@@ -43,22 +47,22 @@ describe('ySweetPersistSync', () => {
 				},
 			});
 
-			const extension = factory({
+			const result = factory({
 				ydoc,
-			} as any) as unknown as YSweetPersistSyncExports;
+			} as any) as unknown as YSweetPersistSyncResult;
 
-			const oldProvider = extension.provider;
+			const oldProvider = result.exports.provider;
 			expect(oldProvider).toBeDefined();
 			expect(persistenceInitCount).toBe(1);
 
 			// Reconnect with a different auth callback
-			extension.reconnect(mockAuth('cloud.example.com'));
+			result.exports.reconnect(mockAuth('cloud.example.com'));
 
 			// Old provider should be destroyed (offline)
 			expect(oldProvider.status).toBe(STATUS_OFFLINE);
 
 			// New provider should be a different instance
-			const newProvider = extension.provider;
+			const newProvider = result.exports.provider;
 			expect(newProvider).not.toBe(oldProvider);
 			expect(newProvider).toBeDefined();
 
@@ -67,7 +71,7 @@ describe('ySweetPersistSync', () => {
 			expect(persistenceDestroyCount).toBe(0);
 
 			// Cleanup
-			extension.destroy();
+			result.lifecycle.destroy();
 		});
 
 		test('provider getter returns current provider after reconnect', () => {
@@ -81,15 +85,15 @@ describe('ySweetPersistSync', () => {
 				}),
 			});
 
-			const extension = factory({
+			const result = factory({
 				ydoc,
-			} as any) as unknown as YSweetPersistSyncExports;
+			} as any) as unknown as YSweetPersistSyncResult;
 
-			const firstProvider = extension.provider;
-			extension.reconnect(mockAuth('server-2'));
-			const secondProvider = extension.provider;
-			extension.reconnect(mockAuth('server-3'));
-			const thirdProvider = extension.provider;
+			const firstProvider = result.exports.provider;
+			result.exports.reconnect(mockAuth('server-2'));
+			const secondProvider = result.exports.provider;
+			result.exports.reconnect(mockAuth('server-3'));
+			const thirdProvider = result.exports.provider;
 
 			// Each reconnect should yield a different provider
 			expect(firstProvider).not.toBe(secondProvider);
@@ -99,7 +103,7 @@ describe('ySweetPersistSync', () => {
 			expect(firstProvider.status).toBe(STATUS_OFFLINE);
 			expect(secondProvider.status).toBe(STATUS_OFFLINE);
 
-			extension.destroy();
+			result.lifecycle.destroy();
 		});
 
 		test('destroy uses current provider after reconnect', () => {
@@ -113,13 +117,13 @@ describe('ySweetPersistSync', () => {
 				}),
 			});
 
-			const extension = factory({
+			const result = factory({
 				ydoc,
-			} as any) as unknown as YSweetPersistSyncExports;
-			extension.reconnect(mockAuth('cloud.example.com'));
+			} as any) as unknown as YSweetPersistSyncResult;
+			result.exports.reconnect(mockAuth('cloud.example.com'));
 
-			const currentProvider = extension.provider;
-			extension.destroy();
+			const currentProvider = result.exports.provider;
+			result.lifecycle.destroy();
 
 			// The current (post-reconnect) provider should be destroyed
 			expect(currentProvider.status).toBe(STATUS_OFFLINE);

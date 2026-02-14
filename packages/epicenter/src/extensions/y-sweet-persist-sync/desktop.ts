@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
-import { defineExports, type ExtensionContext } from '../../dynamic/extension';
-import type { Lifecycle } from '../../shared/lifecycle';
+import type { ExtensionContext } from '../../dynamic/extension';
+import { defineExtension, type Lifecycle } from '../../shared/lifecycle';
 
 /**
  * Configuration for the persistence extension.
@@ -70,7 +70,7 @@ export const persistence = (
 		});
 	})();
 
-	return defineExports({ whenReady });
+	return defineExtension({ whenReady });
 };
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { defineExports } from '@epicenter/hq';
+import type { Lifecycle } from '@epicenter/hq';
 import type { ProviderFactory } from '@epicenter/hq/dynamic';
 import * as Y from 'yjs';
 import { createContentDocStore } from './content-doc-store.js';
@@ -87,7 +87,7 @@ describe('with providers', () => {
 
 		const mockProvider: ProviderFactory = () => {
 			factoryCallCount++;
-			return defineExports({ whenReady });
+			return { whenReady, destroy: () => {} } satisfies Lifecycle;
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -117,7 +117,10 @@ describe('with providers', () => {
 		let factoryCallCount = 0;
 		const mockProvider: ProviderFactory = () => {
 			factoryCallCount++;
-			return defineExports();
+			return {
+				whenReady: Promise.resolve(),
+				destroy: () => {},
+			} satisfies Lifecycle;
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -135,11 +138,12 @@ describe('with providers', () => {
 	test('destroy calls provider destroy', async () => {
 		let destroyed = false;
 		const mockProvider: ProviderFactory = () => {
-			return defineExports({
+			return {
+				whenReady: Promise.resolve(),
 				destroy: () => {
 					destroyed = true;
 				},
-			});
+			} satisfies Lifecycle;
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -152,11 +156,12 @@ describe('with providers', () => {
 	test('destroyAll calls all provider destroys', async () => {
 		const destroyCalls: string[] = [];
 		const mockProvider: ProviderFactory = ({ ydoc }) => {
-			return defineExports({
+			return {
+				whenReady: Promise.resolve(),
 				destroy: () => {
 					destroyCalls.push(ydoc.guid);
 				},
-			});
+			} satisfies Lifecycle;
 		};
 
 		const store = createContentDocStore([mockProvider]);
@@ -171,11 +176,12 @@ describe('with providers', () => {
 	test('factory error cleans up partially-created providers', () => {
 		let firstDestroyed = false;
 		const goodProvider: ProviderFactory = () => {
-			return defineExports({
+			return {
+				whenReady: Promise.resolve(),
 				destroy: () => {
 					firstDestroyed = true;
 				},
-			});
+			} satisfies Lifecycle;
 		};
 		const badProvider: ProviderFactory = () => {
 			throw new Error('factory failed');

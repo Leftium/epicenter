@@ -25,6 +25,7 @@ export type { WorkspaceDefinition } from './schema/workspace-definition';
 // The builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {
+	Extension,
 	ExtensionContext,
 	ExtensionFactory,
 	WorkspaceClient,
@@ -55,7 +56,8 @@ export type { Id } from '../shared/id';
 export { generateId, Id as createId } from '../shared/id';
 // Lifecycle utilities (re-exported for extension authors)
 export {
-	defineExports,
+	defineExtension,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle';
@@ -104,8 +106,8 @@ export { KV_KEY, TableKey } from '../shared/ydoc-keys';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
+	Provider,
 	ProviderContext,
-	ProviderExports,
 	ProviderFactory,
 	ProviderFactoryMap,
 } from './provider-types';

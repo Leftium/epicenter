@@ -1,5 +1,5 @@
 import { WebsocketProvider } from 'y-websocket';
-import { defineExports } from '../shared/lifecycle';
+import { defineExtension } from '../shared/lifecycle';
 import type { ExtensionContext } from '../static/types';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -206,7 +206,7 @@ export function websocketSync(config: WebsocketSyncConfig) {
 			ydoc,
 		);
 
-		return defineExports({
+		return defineExtension({
 			destroy: () => {
 				provider.destroy();
 			},

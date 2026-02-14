@@ -79,7 +79,8 @@ export type { ExtensionError } from '../shared/errors.js';
 export { ExtensionErr } from '../shared/errors.js';
 // Lifecycle protocol
 export {
-	defineExports,
+	defineExtension,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle.js';
@@ -125,6 +126,7 @@ export { createUnionSchema } from './schema-union.js';
 
 export type {
 	DeleteResult,
+	Extension,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,

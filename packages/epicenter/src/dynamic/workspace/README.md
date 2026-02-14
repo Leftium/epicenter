@@ -33,7 +33,7 @@ const workspace = createWorkspace(definition).withExtension(
 	(ctx) => myPersistence(ctx),
 );
 
-await workspace.whenSynced;
+await workspace.whenReady;
 workspace.tables.get('posts').upsert({ id: '1', title: 'Hello' });
 ```
 
@@ -98,7 +98,7 @@ workspace.tables;        // Table operations
 workspace.kv;            // Key-value store
 workspace.extensions;    // Extension exports
 workspace.ydoc;          // Underlying Y.Doc
-workspace.whenSynced;    // Promise that resolves when extensions are ready
+workspace.whenReady;    // Promise that resolves when extensions are ready
 
 await workspace.destroy();        // Cleanup resources
 await using workspace = ...;      // Auto-cleanup with dispose
@@ -136,7 +136,7 @@ const workspace = createWorkspace(definition)
     return { save: () => {...}, load: () => {...} };
   });
 
-await workspace.whenSynced;
+await workspace.whenReady;
 ```
 
 ### Sequential Script Execution

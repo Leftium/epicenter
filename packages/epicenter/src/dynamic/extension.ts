@@ -23,7 +23,7 @@ export { defineExports, type Lifecycle };
 /**
  * Extension exports combining lifecycle protocol with custom exports.
  *
- * The framework guarantees `whenSynced` and `destroy` exist on all extensions.
+ * The framework guarantees `whenReady` and `destroy` exist on all extensions.
  * Use `defineExports()` to easily create compliant extension returns.
  */
 export type ExtensionExports<

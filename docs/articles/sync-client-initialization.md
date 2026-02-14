@@ -149,7 +149,7 @@ You make construction synchronous by kicking off the initialization promise imme
 
 UI frameworks want synchronous access to things. You can't easily export and import an awaited value. Components need to access clients immediately, not after an await. All these workarounds are trying to paper over that fundamental mismatch.
 
-## The `whenSynced` Pattern
+## The `whenReady` Pattern
 
 [y-indexeddb](https://github.com/yjs/y-indexeddb) (the IndexedDB persistence layer for Yjs) solves this brilliantly. Here's how it works:
 
@@ -185,23 +185,23 @@ import { client } from './client';
 client.on('update', handleUpdate);
 
 // Or wait for it to be ready
-await client.whenSynced;
+await client.whenReady;
 ```
 
 **Browser vs Node Initialization:**
 
 In my .node.ts and .browser.ts files:
 
-The browser `createClient` uses sync creation + `whenSynced` to allow **immediate UI rendering** while data loads in the background. This is intentional:
+The browser `createClient` uses sync creation + `whenReady` to allow **immediate UI rendering** while data loads in the background. This is intentional:
 
 - Browser providers like y-indexeddb are designed to return synchronously
-- They expose a `whenSynced` promise for tracking when data is loaded
+- They expose a `whenReady` promise for tracking when data is loaded
 - This allows your UI to render immediately with loading states, then update when data arrives
 
 Node uses async creation because scripts and servers can just await:
 
 - When `createClient()` returns, everything is ready
-- No `whenSynced` needed because initialization is fully awaited
+- No `whenReady` needed because initialization is fully awaited
 - This is simpler for CLI scripts, migrations, and server startup
 
 **Example:**
@@ -210,7 +210,7 @@ Node uses async creation because scripts and servers can just await:
 // Browser: sync creation, deferred sync
 const client = createClient(workspace);
 // UI can render immediately here (maybe with loading state)
-await client.whenSynced;
+await client.whenReady;
 // Now all data is loaded
 
 // Node: async creation, everything ready
@@ -228,7 +228,7 @@ Once you have a client with this structure, the cleanest approach is to await on
 	import { client } from '$lib/client';
 </script>
 
-{#await client.whenSynced}
+{#await client.whenReady}
 	<LoadingSpinner />
 {:then}
 	{@render children?.()}
@@ -251,7 +251,7 @@ This is the key insight: you can synchronously export the client, but asynchrono
 export const client = createClient();
 
 // +layout.svelte
-{#await client.whenSynced}
+{#await client.whenReady}
   Loading...
 {:then}
   <App />
@@ -263,7 +263,7 @@ export const client = createClient();
 </script>
 
 <button onclick={() => client.saveData(data)}>
-  <!-- No await needed - this component only renders after client.whenSynced resolves -->
+  <!-- No await needed - this component only renders after client.whenReady resolves -->
   Save
 </button>
 ```
@@ -304,7 +304,7 @@ async function handleLoad() {
 export const client = createClient();
 
 // +layout.svelte
-{#await client.whenSynced}Loading...{:then}<App />{/await}
+{#await client.whenReady}Loading...{:then}<App />{/await}
 
 // component.svelte
 function handleSave() {
@@ -324,14 +324,14 @@ Not every async operation needs to block construction. When you're building clie
 
 1. Construct synchronously
 2. Initialize asynchronously in the background
-3. Expose a `whenSynced` promise for consumers who need to wait
+3. Expose a `whenReady` promise for consumers who need to wait
 4. In most cases, wait once at the root and forget about it
 
 This is what Yjs figured out with IndexedDB persistence. It's a pattern worth adopting anywhere you have clients that UI code needs to access.
 
 ## How Epicenter Implements This
 
-Epicenter uses this pattern for browser clients, with a twist: it aggregates `whenSynced` promises from all providers.
+Epicenter uses this pattern for browser clients, with a twist: it aggregates `whenReady` promises from all providers.
 
 ### Browser: Synchronous Construction with Deferred Sync
 
@@ -345,7 +345,7 @@ const client = createEpicenterClient(epicenter);
 const pages = client.pages.getAllPages();
 
 // But you can wait for providers to sync if needed
-await client.pages.whenSynced;
+await client.pages.whenReady;
 ```
 
 Why synchronous? Because browser modules can't use top-level await effectively. The client needs to be exportable and importable like any other value.
@@ -361,14 +361,14 @@ const client = await createEpicenterClient(epicenter);
 // Everything is fully initialized
 const pages = client.pages.getAllPages();
 
-// No whenSynced needed - providers are already synced
+// No whenReady needed - providers are already synced
 ```
 
 Why async? Node.js supports top-level await, and files evaluate top-down. Scripts, CLIs, and servers can simply await initialization at the entry point. There's no module import constraint forcing synchronous construction.
 
-### Provider `whenSynced` Aggregation
+### Provider `whenReady` Aggregation
 
-Browser workspace clients aggregate `whenSynced` promises from all providers:
+Browser workspace clients aggregate `whenReady` promises from all providers:
 
 ```typescript
 // In client.browser.ts
@@ -380,29 +380,29 @@ export function createWorkspaceClient(config) {
 	for (const [name, providerFn] of Object.entries(config.providers)) {
 		const exports = providerFn({ ydoc, ...context });
 
-		// Collect whenSynced promises from providers that have them
-		if (exports?.whenSynced) {
-			syncPromises.push(exports.whenSynced);
+		// Collect whenReady promises from providers that have them
+		if (exports?.whenReady) {
+			syncPromises.push(exports.whenReady);
 		}
 	}
 
 	// Aggregate all sync promises
-	const whenSynced =
+	const whenReady =
 		syncPromises.length > 0
 			? Promise.all(syncPromises).then(() => {})
 			: Promise.resolve();
 
 	return {
 		...workspaceExports,
-		whenSynced,
+		whenReady,
 		destroy,
 	};
 }
 ```
 
-This means providers can optionally expose a `whenSynced` promise. The workspace client collects them all and exposes a single `whenSynced` that resolves when every provider has synced.
+This means providers can optionally expose a `whenReady` promise. The workspace client collects them all and exposes a single `whenReady` that resolves when every provider is ready.
 
-### Providers That Use `whenSynced`
+### Providers That Use `whenReady`
 
 The IndexedDB persistence provider is the canonical example:
 
@@ -412,7 +412,7 @@ export function createIndexedDBPersistence({ ydoc, id }) {
 	const persistence = new IndexeddbPersistence(id, ydoc);
 
 	return {
-		whenSynced: persistence.whenSynced.then(() => {
+		whenReady: persistence.whenSynced.then(() => {
 			console.log(`[Persistence] IndexedDB synced for ${id}`);
 		}),
 		destroy: () => persistence.destroy(),
@@ -420,29 +420,29 @@ export function createIndexedDBPersistence({ ydoc, id }) {
 }
 ```
 
-The y-indexeddb library's `IndexeddbPersistence` class exposes `whenSynced` exactly as described earlier. Epicenter just passes it through.
+The y-indexeddb library's `IndexeddbPersistence` class exposes `whenSynced`. Epicenter adapts it to `whenReady` at the boundary.
 
 ### The Type Difference
 
 Browser and Node workspace clients have different types to reflect this:
 
 ```typescript
-// Browser WorkspaceClient - includes whenSynced
+// Browser WorkspaceClient - includes whenReady
 type WorkspaceClient<TExports> = TExports & {
 	$ydoc: Y.Doc;
-	whenSynced: Promise<void>; // Present in browser
+	whenReady: Promise<void>; // Present in browser
 	destroy: () => Promise<void>;
 };
 
-// Node WorkspaceClient - no whenSynced needed
+// Node WorkspaceClient - no whenReady needed
 type WorkspaceClient<TExports> = TExports & {
 	$ydoc: Y.Doc;
-	// No whenSynced - fully awaited at construction
+	// No whenReady - fully awaited at construction
 	destroy: () => Promise<void>;
 };
 ```
 
-This type difference is intentional. Browser code can rely on `whenSynced` existing; Node code doesn't need it because initialization is already awaited.
+This type difference is intentional. Browser code can rely on `whenReady` existing; Node code doesn't need it because initialization is already awaited.
 
 ### Using It in Svelte
 
@@ -454,7 +454,7 @@ The pattern from earlier works exactly as expected:
 	import { client } from '$lib/epicenter';
 </script>
 
-{#await client.pages.whenSynced}
+{#await client.pages.whenReady}
 	<LoadingSpinner />
 {:then}
 	{@render children?.()}
@@ -464,7 +464,7 @@ The pattern from earlier works exactly as expected:
 Or if you have multiple workspaces:
 
 ```svelte
-{#await Promise.all([client.pages.whenSynced, client.auth.whenSynced])}
+{#await Promise.all([client.pages.whenReady, client.auth.whenReady])}
 	<LoadingSpinner />
 {:then}
 	<App />
@@ -475,7 +475,7 @@ Or if you have multiple workspaces:
 
 Epicenter maintains separate browser and Node implementations (`client.browser.ts` and `client.node.ts`) rather than a single polymorphic implementation. This is intentional:
 
-1. **Maximum type safety**: Browser clients have `whenSynced`, Node clients don't. The types reflect reality.
+1. **Maximum type safety**: Browser clients have `whenReady`, Node clients don't. The types reflect reality.
 2. **No runtime polymorphism**: No `if (typeof window !== 'undefined')` checks. Bundlers select the right file via package.json exports.
 3. **Clear mental model**: If you're in the browser, you get browser semantics. If you're in Node, you get Node semantics.
 

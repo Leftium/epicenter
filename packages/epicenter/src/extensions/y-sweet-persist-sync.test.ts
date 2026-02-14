@@ -17,7 +17,7 @@ function mockAuth(server: string) {
 /** The shape of the ySweetPersistSync extension exports (beyond Lifecycle). */
 type YSweetPersistSyncExports = {
 	provider: YSweetProvider;
-	whenSynced: Promise<unknown>;
+	whenReady: Promise<unknown>;
 	reconnect: (newAuth: (docId: string) => Promise<ClientToken>) => void;
 	destroy: () => void;
 };
@@ -35,7 +35,7 @@ describe('ySweetPersistSync', () => {
 				persistence: ({ ydoc: _ydoc }) => {
 					persistenceInitCount++;
 					return {
-						whenSynced: Promise.resolve(),
+						whenReady: Promise.resolve(),
 						destroy: () => {
 							persistenceDestroyCount++;
 						},
@@ -76,7 +76,7 @@ describe('ySweetPersistSync', () => {
 			const factory = ySweetPersistSync({
 				auth: mockAuth('localhost:8080'),
 				persistence: () => ({
-					whenSynced: Promise.resolve(),
+					whenReady: Promise.resolve(),
 					destroy: () => {},
 				}),
 			});
@@ -108,7 +108,7 @@ describe('ySweetPersistSync', () => {
 			const factory = ySweetPersistSync({
 				auth: mockAuth('localhost:8080'),
 				persistence: () => ({
-					whenSynced: Promise.resolve(),
+					whenReady: Promise.resolve(),
 					destroy: () => {},
 				}),
 			});

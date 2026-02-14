@@ -231,7 +231,7 @@ const client = createClient(definition.id, { epoch })
 	.withExtension('persistence', persistence);
 
 // Now you have a fully typed client
-await client.whenSynced;
+await client.whenReady;
 client.tables.posts.upsert({ id: '1', title: 'Hello' });
 ```
 

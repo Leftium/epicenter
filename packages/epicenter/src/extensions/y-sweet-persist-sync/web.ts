@@ -33,7 +33,8 @@ import { defineExports } from '../../dynamic/extension';
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 	const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
 	return defineExports({
-		whenSynced: idb.whenSynced,
+		// y-indexeddb's whenSynced = "data loaded from IndexedDB"
+		whenReady: idb.whenSynced,
 		destroy: () => idb.destroy(),
 		clearData: () => idb.clearData(),
 	});

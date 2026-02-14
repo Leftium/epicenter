@@ -20,7 +20,7 @@
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', ySweetSync({ auth: directAuth('...') }));
  *
- * await workspace.whenSynced;
+ * 	await workspace.whenReady;
  * workspace.extensions.persistence.clearData();
  * ```
  */
@@ -69,7 +69,7 @@ import type {
  *   .withExtension('persistence', ({ ydoc }) => persistenceExtension({ ydoc }))
  *   .withExtension('sync', ({ ydoc }) => syncExtension({ ydoc }));
  *
- * await workspace.whenSynced;
+ * 	await workspace.whenReady;
  * ```
  *
  * @param definition - Workspace definition with id, tables, and kv
@@ -91,15 +91,15 @@ export function createWorkspace<
 	const tables = createTables(ydoc, definition.tables ?? []);
 	const kv = createKv(ydoc, definition.kv ?? []);
 
-	// Internal state: accumulated cleanup functions and whenSynced promises.
+	// Internal state: accumulated cleanup functions and whenReady promises.
 	// Shared across the builder chain (same ydoc).
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
-	const whenSyncedPromises: Promise<unknown>[] = [];
+	const whenReadyPromises: Promise<unknown>[] = [];
 
 	function buildClient<TExtensions extends Record<string, Lifecycle>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<TTableDefinitions, TKvFields, TExtensions> {
-		const whenSynced = Promise.all(whenSyncedPromises).then(() => {});
+		const whenReady = Promise.all(whenReadyPromises).then(() => {});
 
 		const destroy = async (): Promise<void> => {
 			// Destroy extensions in reverse order (last added = first destroyed)
@@ -115,7 +115,7 @@ export function createWorkspace<
 			tables,
 			kv,
 			extensions,
-			whenSynced,
+			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
 		};
@@ -132,7 +132,7 @@ export function createWorkspace<
 					result as Record<string, unknown>,
 				) as unknown as TExports;
 				extensionCleanups.push(() => exports.destroy());
-				whenSyncedPromises.push(exports.whenSynced);
+				whenReadyPromises.push(exports.whenReady);
 
 				const newExtensions = {
 					...extensions,

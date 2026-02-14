@@ -87,7 +87,7 @@ describe('defineWorkspace', () => {
 	});
 
 	test('extension exports are fully typed', () => {
-		// Extension with rich exports - defineExports fills in whenSynced/destroy
+		// Extension with rich exports - defineExports fills in whenReady/destroy
 		const persistenceExtension = () =>
 			defineExports({
 				db: {

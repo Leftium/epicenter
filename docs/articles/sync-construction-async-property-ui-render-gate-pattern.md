@@ -21,10 +21,10 @@ client.save(data);
 client.load(id);
 
 // The async work (loading from IndexedDB, etc.) tracked here
-await client.whenSynced;
+await client.whenReady;
 ```
 
-Construction returns immediately. The async initialization (loading from disk, connecting to servers) happens in the background and is tracked via `whenSynced`.
+Construction returns immediately. The async initialization (loading from disk, connecting to servers) happens in the background and is tracked via `whenReady`.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -34,17 +34,17 @@ Construction returns immediately. The async initialization (loading from disk, c
 │    │  client                                                         │  │
 │    │  ├── .save(data)     ← Function (returned now)                  │  │
 │    │  ├── .load(id)       ← Function (returned now)                  │  │
-│    │  └── .whenSynced     ← Promise  (returned now)                  │  │
+│    │  └── .whenReady      ← Promise  (returned now)                  │  │
 │    └─────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
 │    All three properties exist on the object immediately.                │
 │                                                                         │
 │    However, save() and load() may internally depend on initialization:  │
-│    • They might `await this.whenSynced` before doing real work          │
+│    • They might `await this.whenReady` before doing real work           │
 │    • They might throw if called before initialization completes         │
-│    • They might queue operations until whenSynced resolves              │
+│    • They might queue operations until whenReady resolves               │
 │                                                                         │
-│    The whenSynced promise lets you (or the UI) wait for readiness.      │
+│    The whenReady promise lets you (or the UI) wait for readiness.       │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -56,14 +56,14 @@ Construction returns immediately. The async initialization (loading from disk, c
 │         │  You have:                            ┃  Initializing...      │
 │         │  ├── client.save(data)                ┃  Loading IndexedDB    │
 │         │  ├── client.load(id)                  ┃  Connecting server    │
-│         │  └── client.whenSynced (pending)      ┃        │              │
+│         │  └── client.whenReady (pending)       ┃        │              │
 │         │                                       ┃        │              │
 │         │  If you call save() or load() now,    ┃        │              │
 │         │  they may internally await            ┃        │              │
-│         │  whenSynced before doing real work.   ┃        ↓              │
+│         │  whenReady before doing real work.    ┃        ↓              │
 │         │                                       ┃                       │
 │    t=N  │                                       ┃  Done!                │
-│         └── whenSynced resolves ←───────────────┛                       │
+│         └── whenReady resolves ←────────────────┛                       │
 │             Now save/load proceed without waiting                       │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -133,7 +133,7 @@ With sync construction, await once at the root of your app:
 	import { client } from '$lib/client';
 </script>
 
-{#await client.whenSynced}
+{#await client.whenReady}
 	<LoadingSpinner />
 {:then}
 	{@render children?.()}
@@ -144,7 +144,7 @@ With sync construction, await once at the root of your app:
 ┌─────────────────────────────────────────────────────────────────┐
 │  +layout.svelte                                                  │
 │  ┌────────────────────────────────────────────────────────────┐ │
-│  │  {#await client.whenSynced}                                │ │
+│  │  {#await client.whenReady}                                │ │
 │  │    <Loading />          ← UI blocked here                  │ │
 │  │  {:then}                                                   │ │
 │  │    {@render children()}  ← Only renders after sync         │ │
@@ -177,7 +177,7 @@ export async function getClient() { ... }
 const client = await getClient();
 ```
 
-**After: Sync construction with whenSynced**
+**After: Sync construction with whenReady**
 
 ```typescript
 // Export directly
@@ -188,7 +188,7 @@ import { client } from '$lib/client';
 client.save(data);  // No await!
 
 // Await once at the UI boundary
-{#await client.whenSynced}...{/await}
+{#await client.whenReady}...{/await}
 ```
 
 ## This Is What y-indexeddb Does
@@ -215,13 +215,13 @@ You're fighting async initialization when you see:
 - Getter functions wrapping singleton access
 - Components that can't import a client directly
 
-The fix: make construction synchronous, attach async work to the object via `whenSynced`, and await once at the UI boundary.
+The fix: make construction synchronous, attach async work to the object via `whenReady`, and await once at the UI boundary.
 
 ---
 
-| Aspect         | Async Construction        | Sync + whenSynced       |
+| Aspect         | Async Construction        | Sync + whenReady        |
 | -------------- | ------------------------- | ----------------------- |
 | Module export  | Can't export directly     | Export the object       |
 | Consumer code  | `await getX()` everywhere | Direct import, sync use |
 | UI integration | Awkward promise handling  | Single `{#await}` gate  |
-| Type signature | `Promise<X>`              | `X` with `.whenSynced`  |
+| Type signature | `Promise<X>`              | `X` with `.whenReady`   |

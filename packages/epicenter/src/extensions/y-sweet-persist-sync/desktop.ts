@@ -43,8 +43,8 @@ export const persistence = (
 	{ ydoc }: ExtensionContext,
 	{ filePath }: PersistenceConfig,
 ) => {
-	// Track async initialization via whenSynced
-	const whenSynced = (async () => {
+	// Track async initialization via whenReady
+	const whenReady = (async () => {
 		await mkdir(path.dirname(filePath), { recursive: true });
 
 		// Try to load existing state from disk using Bun.file
@@ -70,7 +70,7 @@ export const persistence = (
 		});
 	})();
 
-	return defineExports({ whenSynced });
+	return defineExports({ whenReady });
 };
 
 /**
@@ -105,7 +105,7 @@ export function filesystemPersistence(options: {
 			}, 500);
 		};
 
-		const whenSynced = (async () => {
+		const whenReady = (async () => {
 			await mkdir(path.dirname(filePath), { recursive: true });
 
 			const file = Bun.file(filePath);
@@ -120,7 +120,7 @@ export function filesystemPersistence(options: {
 		})();
 
 		return {
-			whenSynced,
+			whenReady,
 			destroy: () => {
 				if (saveTimeout) clearTimeout(saveTimeout);
 				ydoc.off('update', updateHandler);

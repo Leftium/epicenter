@@ -399,7 +399,7 @@ export type WorkspaceClientBuilder<
 	 * const client = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
 	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	 *     return defineExports({ whenSynced: idb.whenSynced, destroy: () => idb.destroy() });
+	 *     return defineExports({ whenReady: idb.whenReady, destroy: () => idb.destroy() });
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
@@ -502,7 +502,7 @@ export type ExtensionContext<
  * Factory function that creates an extension with lifecycle hooks.
  *
  * All extensions MUST return an object that satisfies the {@link Lifecycle} protocol:
- * - `whenSynced`: Promise that resolves when the extension is ready
+ * - `whenReady`: Promise that resolves when the extension is ready
  * - `destroy`: Cleanup function called when the workspace is destroyed
  *
  * Use {@link defineExports} from `shared/lifecycle.ts` to easily create compliant exports.
@@ -513,7 +513,7 @@ export type ExtensionContext<
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
  *   return defineExports({
  *     provider,
- *     whenSynced: provider.whenSynced,
+ *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
  *   });
  * };

@@ -38,7 +38,7 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { Lifecycle, MaybePromise } from '../shared/lifecycle.js';
+import type { ExtensionResult, MaybePromise } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
@@ -76,11 +76,12 @@ export function createWorkspace<
 	const kv = createKv(ydoc, kvDefs);
 	const definitions = { tables: tableDefs, kv: kvDefs };
 
-	// Internal state: accumulated cleanup functions.
+	// Internal state: accumulated cleanup functions and whenReady promises.
 	// Shared across the builder chain (same ydoc).
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
+	const whenReadyPromises: Promise<unknown>[] = [];
 
-	function buildClient<TExtensions extends Record<string, Lifecycle>>(
+	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<
 		TId,
@@ -88,6 +89,8 @@ export function createWorkspace<
 		TKvDefinitions,
 		TExtensions
 	> {
+		const whenReady = Promise.all(whenReadyPromises).then(() => {});
+
 		const destroy = async (): Promise<void> => {
 			// Destroy extensions in reverse order (last added = first destroyed)
 			for (let i = extensionCleanups.length - 1; i >= 0; i--) {
@@ -103,12 +106,16 @@ export function createWorkspace<
 			kv,
 			definitions,
 			extensions,
+			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
 		};
 
 		return Object.assign(client, {
-			withExtension<TKey extends string, TExports extends Lifecycle>(
+			withExtension<
+				TKey extends string,
+				TExports extends Record<string, unknown>,
+			>(
 				key: TKey,
 				factory: (
 					context: ExtensionContext<
@@ -117,14 +124,15 @@ export function createWorkspace<
 						TKvDefinitions,
 						TExtensions
 					>,
-				) => TExports,
+				) => ExtensionResult<TExports>,
 			) {
-				const exports = factory({ id, ydoc, tables, kv, extensions });
-				extensionCleanups.push(() => exports.destroy());
+				const result = factory({ id, ydoc, tables, kv, extensions });
+				extensionCleanups.push(() => result.lifecycle.destroy());
+				whenReadyPromises.push(result.lifecycle.whenReady);
 
 				const newExtensions = {
 					...extensions,
-					[key]: exports,
+					[key]: result.exports,
 				} as TExtensions & Record<TKey, TExports>;
 
 				return buildClient(newExtensions);

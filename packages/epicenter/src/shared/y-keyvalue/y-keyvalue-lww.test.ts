@@ -654,10 +654,9 @@ describe('YKeyValueLww', () => {
 					expect(kv.get('keep')).toBe('original');
 					expect(kv.get('update')).toBe('new');
 					expect(kv.get('new')).toBe('added');
-					// Note: has('delete') returns true during batch because delete() only
-					// removes from pending and deletes from yarray - map still has the old
-					// value until observer fires. This is a known limitation.
-					// The delete IS recorded in yarray, so after batch it will be gone.
+					// delete() adds key to pendingDeletes, so has() returns false immediately
+					expect(kv.has('delete')).toBe(false);
+					expect(kv.get('delete')).toBeUndefined();
 				});
 
 				expect(kv.get('keep')).toBe('original');
@@ -666,26 +665,121 @@ describe('YKeyValueLww', () => {
 				expect(kv.has('delete')).toBe(false);
 			});
 
-			test('delete during batch: has() returns true until batch ends (known limitation)', () => {
+			test('delete during batch: has() returns false immediately', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
 
 				kv.set('foo', 'bar');
 
-				let hasDuringBatch: boolean = false;
+				let hasDuringBatch: boolean = true;
 
 				ydoc.transact(() => {
 					kv.delete('foo');
-					// Known limitation: has() still returns true during batch
-					// because map hasn't been updated yet (observer hasn't fired)
 					hasDuringBatch = kv.has('foo');
 				});
 
-				// During batch, has() incorrectly returns true (reads from stale map)
-				expect(hasDuringBatch).toBe(true);
-				// After batch, correctly returns false
+				// During batch, has() correctly returns false via pendingDeletes
+				expect(hasDuringBatch).toBe(false);
+				// After batch, still correctly returns false
 				expect(kv.has('foo')).toBe(false);
+			});
+
+			test('delete then get in batch returns undefined', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				let getDuringBatch: string | undefined = 'not-cleared';
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					getDuringBatch = kv.get('foo');
+				});
+
+				expect(getDuringBatch).toBeUndefined();
+				expect(kv.get('foo')).toBeUndefined();
+			});
+
+			test('delete then set in batch returns new value', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				let getDuringBatch: string | undefined;
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					expect(kv.get('foo')).toBeUndefined();
+					kv.set('foo', 'new');
+					getDuringBatch = kv.get('foo');
+				});
+
+				expect(getDuringBatch).toBe('new');
+				expect(kv.get('foo')).toBe('new');
+				expect(kv.has('foo')).toBe(true);
+			});
+
+			test('double delete is idempotent', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					kv.delete('foo'); // second delete should be no-op
+					expect(kv.has('foo')).toBe(false);
+				});
+
+				expect(kv.has('foo')).toBe(false);
+				expect(kv.get('foo')).toBeUndefined();
+			});
+
+			test('entries skips pending deletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('a', '1');
+				kv.set('b', '2');
+				kv.set('c', '3');
+
+				let keysDuringBatch: string[] = [];
+
+				ydoc.transact(() => {
+					kv.delete('b');
+					keysDuringBatch = Array.from(kv.entries()).map(([key]) => key);
+				});
+
+				expect(keysDuringBatch).not.toContain('b');
+				expect(keysDuringBatch).toContain('a');
+				expect(keysDuringBatch).toContain('c');
+			});
+
+			test('observer clears pendingDeletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					expect(kv.has('foo')).toBe(false); // pendingDeletes active
+				});
+
+				// After transaction, observer has fired and cleared pendingDeletes
+				// Verify by setting a new value — if pendingDeletes wasn't cleared,
+				// has() would still return false incorrectly
+				kv.set('foo', 'baz');
+				expect(kv.has('foo')).toBe(true);
+				expect(kv.get('foo')).toBe('baz');
 			});
 		});
 	});

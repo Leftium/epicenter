@@ -802,30 +802,6 @@ export type WorkspaceClient<
 	 * // All three writes are one atomic transaction
 	 * ```
 	 *
-	 * ## Known Limitation: Stale reads after delete
-	 *
-	 * If you delete a pre-existing key inside `batch()` and then read it back
-	 * within the same callback, `has()` returns `true` and `get()` returns the
-	 * old value. This is because the underlying YKeyValue read cache (`map`) is
-	 * only updated by the Yjs observer, which doesn't fire until the transaction
-	 * ends. Writes via `set()` are not affected — they go through a `pending`
-	 * buffer that `get()`/`has()` check first.
-	 *
-	 * ```typescript
-	 * client.tables.posts.set({ id: '1', title: 'Hello' });
-	 *
-	 * client.batch(() => {
-	 *   client.tables.posts.delete('1');
-	 *   client.tables.posts.has('1');  // true  (stale — map not yet updated)
-	 *   client.tables.posts.get('1');  // valid (stale — returns old row)
-	 * });
-	 *
-	 * client.tables.posts.has('1');    // false (observer has now updated map)
-	 * ```
-	 *
-	 * This is a known consequence of the single-writer architecture in the
-	 * YKeyValue layer. If you need to check deletion status within a batch,
-	 * track deleted IDs yourself in a local `Set`.
 	 */
 	batch(fn: () => void): void;
 

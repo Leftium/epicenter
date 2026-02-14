@@ -75,14 +75,14 @@ batch() ends
 In the observer (lines 272-289), when timestamps are equal:
 
 ```typescript
-const oldIndex = allEntries.indexOf(existing);   // e.g., 5
-const newIndex = allEntries.indexOf(newEntry);   // ALSO 5 (same object!)
+const oldIndex = allEntries.indexOf(existing); // e.g., 5
+const newIndex = allEntries.indexOf(newEntry); // ALSO 5 (same object!)
 
 if (newIndex > oldIndex) {
-    // ... new wins
+	// ... new wins
 } else {
-    // Falls through here because 5 > 5 is false
-    indicesToDelete.push(newIndex);  // INCORRECTLY DELETES!
+	// Falls through here because 5 > 5 is false
+	indicesToDelete.push(newIndex); // INCORRECTLY DELETES!
 }
 ```
 
@@ -113,7 +113,7 @@ AFTER (single-writer, correct):
 ### Who Writes Where
 
 | Writer   | `pending` | `Y.Array` | `map`     |
-|----------|-----------|-----------|-----------|
+| -------- | --------- | --------- | --------- |
 | `set()`  | ✅ writes | ✅ writes | ❌ never  |
 | Observer | ❌ never  | ❌ never  | ✅ writes |
 
@@ -159,6 +159,7 @@ get('foo') is called:
 - **Observer** = watches `Y.Array`, writes to `map`, clears `pending`
 
 The `pending` map bridges the gap between:
+
 1. `set()` pushing to Y.Array
 2. Observer processing that push and updating map
 
@@ -167,6 +168,7 @@ Once the observer fires, `pending` is cleared and `map` has the data.
 ### Why This Works
 
 **Without batch:**
+
 ```
 set('foo', 1)
   → pending.set('foo')
@@ -179,6 +181,7 @@ get('foo') → checks pending (empty), checks map → returns 1
 ```
 
 **With batch:**
+
 ```
 batch(() => {
   set('foo', 1)  → pending.set('foo'), yarray.push()
@@ -259,12 +262,12 @@ has(key: string): boolean {
 ```typescript
 // In observer, after processing an added entry:
 for (const newEntry of addedEntries) {
-    // ... existing LWW logic ...
+	// ... existing LWW logic ...
 
-    // Clear from pending once processed
-    if (this.pending.get(newEntry.key) === newEntry) {
-        this.pending.delete(newEntry.key);
-    }
+	// Clear from pending once processed
+	if (this.pending.get(newEntry.key) === newEntry) {
+		this.pending.delete(newEntry.key);
+	}
 }
 ```
 
@@ -287,10 +290,11 @@ delete(key: string): void {
 ### Option A: Just check `existing === newEntry` in observer
 
 ```typescript
-if (existing === newEntry) continue;  // Skip if same object
+if (existing === newEntry) continue; // Skip if same object
 ```
 
 **Rejected because**:
+
 - Band-aid fix that doesn't address root cause
 - Dual-writer architecture remains fragile
 - YKeyValue would still emit wrong change events
@@ -305,6 +309,7 @@ set(key, val) {
 ```
 
 **Rejected because**:
+
 - Single `set()` fires observers twice (delete + add)
 - Emits "delete" + "add" events instead of "update"
 - Forces users to always wrap in `batch()` for correct semantics
@@ -312,6 +317,7 @@ set(key, val) {
 ### Option C: Use Y.Map instead
 
 **Rejected because**:
+
 - Y.Map uses Yjs internal ordering (clientID-based), not wall-clock timestamps
 - `YKeyValueLww` specifically exists for "latest edit wins" semantics in offline-first scenarios
 - Different conflict resolution behavior would break existing use cases
@@ -325,15 +331,18 @@ const inTransaction = (this.doc as any)._transaction !== null;
 ```
 
 **Concerns**:
+
 - Uses internal Yjs API (underscore prefix indicates private)
 - Could break in future Yjs versions
 
 **Mitigations**:
+
 - This pattern is stable in Yjs (used since early versions)
 - We can add a runtime check and fall back to always using `transact()`
 - The check is isolated to one location, easy to update if Yjs changes
 
 **Alternative considered**: Always use `transact()` (nested transactions merge anyway)
+
 - Works but adds unnecessary overhead
 - The check provides a small performance optimization
 
@@ -357,21 +366,21 @@ const inTransaction = (this.doc as any)._transaction !== null;
 
 ```typescript
 test('batch does not delete entries (regression)', () => {
-    const workspace = createDynamicWorkspace({ id: 'test' });
+	const workspace = createDynamicWorkspace({ id: 'test' });
 
-    workspace.batch((ws) => {
-        ws.tables.create('posts', { name: 'Posts' });
-        ws.fields.create('posts', 'title', { name: 'Title', type: 'text' });
-        ws.fields.create('posts', 'body', { name: 'Body', type: 'text' });
-        const rowId = ws.rows.create('posts');
-        ws.cells.set('posts', rowId, 'title', 'Hello');
-        ws.cells.set('posts', rowId, 'body', 'World');
-    });
+	workspace.batch((ws) => {
+		ws.tables.create('posts', { name: 'Posts' });
+		ws.fields.create('posts', 'title', { name: 'Title', type: 'text' });
+		ws.fields.create('posts', 'body', { name: 'Body', type: 'text' });
+		const rowId = ws.rows.create('posts');
+		ws.cells.set('posts', rowId, 'title', 'Hello');
+		ws.cells.set('posts', rowId, 'body', 'World');
+	});
 
-    // Previously this would fail - entries were deleted
-    expect(workspace.tables.get('posts')).toBeDefined();
-    expect(workspace.fields.get('posts', 'title')).toBeDefined();
-    expect(workspace.fields.get('posts', 'body')).toBeDefined();
+	// Previously this would fail - entries were deleted
+	expect(workspace.tables.get('posts')).toBeDefined();
+	expect(workspace.fields.get('posts', 'title')).toBeDefined();
+	expect(workspace.fields.get('posts', 'body')).toBeDefined();
 });
 ```
 
@@ -379,10 +388,10 @@ test('batch does not delete entries (regression)', () => {
 
 **Yes**, both `YKeyValue` and `YKeyValueLww` should be fixed for consistency:
 
-| Implementation | Current Bug | Severity |
-|----------------|-------------|----------|
-| YKeyValueLww | Deletes valid entries | Critical |
-| YKeyValue | Emits wrong change events | Moderate |
+| Implementation | Current Bug               | Severity |
+| -------------- | ------------------------- | -------- |
+| YKeyValueLww   | Deletes valid entries     | Critical |
+| YKeyValue      | Emits wrong change events | Moderate |
 
 Both share the same dual-writer architecture and should use the single-writer pattern.
 
@@ -396,29 +405,34 @@ Both share the same dual-writer architecture and should use the single-writer pa
 
 ## Performance Impact
 
-| Operation | Before | After | Impact |
-|-----------|--------|-------|--------|
-| `set()` without batch | 1 transact | 1 transact | None |
-| `set()` in batch | 1 nested transact | 0 transacts | Slight improvement |
-| `get()` | 1 map lookup | 2 map lookups | Negligible |
-| Observer processing | Same | +1 pending.delete | Negligible |
+| Operation             | Before            | After             | Impact             |
+| --------------------- | ----------------- | ----------------- | ------------------ |
+| `set()` without batch | 1 transact        | 1 transact        | None               |
+| `set()` in batch      | 1 nested transact | 0 transacts       | Slight improvement |
+| `get()`               | 1 map lookup      | 2 map lookups     | Negligible         |
+| Observer processing   | Same              | +1 pending.delete | Negligible         |
 
 ## Known Limitations
 
-### `delete()` + `has()` During Batch
+### `delete()` + `has()` During Batch — **FIXED**
 
-When `delete()` is called on a **pre-existing key** during a batch, `has()` will
-incorrectly return `true` until the batch ends.
+> **Fixed in**: `20260214T110000-fix-stale-read-after-delete.md`
+> A `pendingDeletes` Set was added to both YKeyValue and YKeyValueLww, mirroring
+> the `pending` Map pattern. `get()`, `has()`, and `entries()` now check
+> `pendingDeletes` first, returning correct results immediately after `delete()`.
+
+~~When `delete()` is called on a **pre-existing key** during a batch, `has()` will
+incorrectly return `true` until the batch ends.~~
 
 ```typescript
-kv.set('foo', 'bar');  // foo exists in map
+kv.set('foo', 'bar'); // foo exists in map
 
 ydoc.transact(() => {
-    kv.delete('foo');
-    kv.has('foo');     // Returns TRUE (incorrect!)
+	kv.delete('foo');
+	kv.has('foo'); // Returns TRUE (incorrect!)
 });
 
-kv.has('foo');         // Returns FALSE (correct)
+kv.has('foo'); // Returns FALSE (correct)
 ```
 
 **Why this happens:**
@@ -438,14 +452,18 @@ has('foo') during batch:
 ```
 
 **Impact**: Low. This only affects code that:
+
 1. Deletes a pre-existing key during a batch, AND
 2. Checks `has()` for that same key within the same batch
 
 **Workaround**: If you need accurate `has()` after `delete()` in a batch, track
 deletions manually or restructure to avoid this pattern.
 
-**Why not fix it?**: Adding a `pendingDeletes` set would add complexity for a
-rare edge case. The current behavior is documented and tested.
+~~**Why not fix it?**: Adding a `pendingDeletes` set would add complexity for a
+rare edge case. The current behavior is documented and tested.~~
+
+**Update**: This was fixed by adding `pendingDeletes` — turns out it was only ~8
+lines per class and the pattern mirrors `pending` exactly.
 
 ## Risks
 

@@ -165,6 +165,15 @@ export class YKeyValueLww<T> {
 	 */
 	private pending: Map<string, YKeyValueLwwEntry<T>> = new Map();
 
+	/**
+	 * Keys deleted by `delete()` but not yet processed by the observer.
+	 *
+	 * Symmetric counterpart to `pending` — while `pending` tracks writes not yet
+	 * in `map`, `pendingDeletes` tracks deletions not yet removed from `map`.
+	 * This prevents stale reads after `delete()` during a batch/transaction.
+	 */
+	private pendingDeletes: Set<string> = new Set();
+
 	/** Registered change handlers. */
 	private changeHandlers: Set<YKeyValueLwwChangeHandler<T>> = new Set();
 
@@ -278,6 +287,7 @@ export class YKeyValueLww<T> {
 						// Reference equality: only process if this is the entry we have cached
 						if (this.map.get(entry.key) === entry) {
 							this.map.delete(entry.key);
+							this.pendingDeletes.delete(entry.key);
 							changes.set(entry.key, { action: 'delete', oldValue: entry.val });
 						}
 					});
@@ -477,6 +487,7 @@ export class YKeyValueLww<T> {
 
 		// Track in pending for immediate reads via get()
 		this.pending.set(key, entry);
+		this.pendingDeletes.delete(key);
 
 		const doWork = () => {
 			// Check map for existing entry (pending entries aren't in yarray yet)
@@ -499,30 +510,20 @@ export class YKeyValueLww<T> {
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
-	 *
-	 * ## Known Limitation
-	 *
-	 * When deleting a **pre-existing key** during a batch, `has()` will still
-	 * return `true` until the batch ends (because `map` hasn't been updated yet).
-	 *
-	 * ```typescript
-	 * kv.set('foo', 'bar');  // foo in map
-	 *
-	 * ydoc.transact(() => {
-	 *     kv.delete('foo');
-	 *     kv.has('foo');     // TRUE (stale map)
-	 * });
-	 *
-	 * kv.has('foo');         // FALSE (observer updated map)
-	 * ```
+	 * Adds the key to `pendingDeletes` so that `get()`, `has()`, and
+	 * `entries()` return correct results before the observer fires.
 	 */
 	delete(key: string): void {
 		// Remove from pending if present. If it was pending, the entry is in the
 		// Y.Array (set() pushes immediately) but not yet in map (observer deferred).
 		const wasPending = this.pending.delete(key);
 
+		// If already pending delete, no-op
+		if (this.pendingDeletes.has(key)) return;
+
 		if (!this.map.has(key) && !wasPending) return;
 
+		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);
 		// DO NOT update this.map here - observer is the sole writer to map
 	}
@@ -534,6 +535,9 @@ export class YKeyValueLww<T> {
 	 * then falls back to `map` (authoritative cache updated by observer).
 	 */
 	get(key: string): T | undefined {
+		// Check pending deletes first (deleted but observer hasn't fired yet)
+		if (this.pendingDeletes.has(key)) return undefined;
+
 		// Check pending first (written by set() but observer hasn't fired yet)
 		const pending = this.pending.get(key);
 		if (pending) return pending.val;
@@ -548,6 +552,7 @@ export class YKeyValueLww<T> {
 	 * processed by the observer.
 	 */
 	has(key: string): boolean {
+		if (this.pendingDeletes.has(key)) return false;
 		return this.pending.has(key) || this.map.has(key);
 	}
 
@@ -575,9 +580,9 @@ export class YKeyValueLww<T> {
 			yield [key, entry];
 		}
 
-		// Yield map entries that weren't in pending
+		// Yield map entries that weren't in pending and aren't pending delete
 		for (const [key, entry] of this.map) {
-			if (!yieldedKeys.has(key)) {
+			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
 				yield [key, entry];
 			}
 		}

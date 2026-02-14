@@ -256,6 +256,15 @@ export class YKeyValue<T> {
 	private pending: Map<string, YKeyValueEntry<T>> = new Map();
 
 	/**
+	 * Keys deleted by `delete()` but not yet processed by the observer.
+	 *
+	 * Symmetric counterpart to `pending` — while `pending` tracks writes not yet
+	 * in `map`, `pendingDeletes` tracks deletions not yet removed from `map`.
+	 * This prevents stale reads after `delete()` during a batch/transaction.
+	 */
+	private pendingDeletes: Set<string> = new Set();
+
+	/**
 	 * Registered change handlers for the `.observe(handler)` API.
 	 *
 	 * ## Why not use Y.Array.observe() directly?
@@ -320,6 +329,10 @@ export class YKeyValue<T> {
 
 			event.changes.deleted.forEach((deletedItem) => {
 				deletedItem.content.getContent().forEach((entry: YKeyValueEntry<T>) => {
+					// Always clear pendingDeletes for this key — even if the ref-equality
+					// check fails (e.g. set+delete in same txn where entry never reached map)
+					this.pendingDeletes.delete(entry.key);
+
 					// Reference equality: only process if this is the entry we have cached
 					// (Yjs returns the same object reference from the array)
 					if (this.map.get(entry.key) === entry) {
@@ -376,6 +389,7 @@ export class YKeyValue<T> {
 						}
 						addedEntriesByKey.delete(currentEntry.key);
 						this.map.set(currentEntry.key, currentEntry);
+						this.pendingDeletes.delete(currentEntry.key);
 
 						// Clear from pending once processed.
 						// Use reference equality to only clear if it's the exact entry we added.
@@ -446,6 +460,7 @@ export class YKeyValue<T> {
 
 		// Track in pending for immediate reads via get()
 		this.pending.set(key, entry);
+		this.pendingDeletes.delete(key);
 
 		const doWork = () => {
 			// Check map for existing entry (pending entries aren't in yarray yet)
@@ -468,29 +483,19 @@ export class YKeyValue<T> {
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
-	 *
-	 * ## Known Limitation
-	 *
-	 * When deleting a **pre-existing key** during a batch, `has()` will still
-	 * return `true` until the batch ends (because `map` hasn't been updated yet).
-	 *
-	 * ```typescript
-	 * kv.set('foo', 'bar');  // foo in map
-	 *
-	 * ydoc.transact(() => {
-	 *     kv.delete('foo');
-	 *     kv.has('foo');     // TRUE (stale map)
-	 * });
-	 *
-	 * kv.has('foo');         // FALSE (observer updated map)
-	 * ```
+	 * Adds the key to `pendingDeletes` so that `get()`, `has()`, and
+	 * `entries()` return correct results before the observer fires.
 	 */
 	delete(key: string): void {
 		// Remove from pending if present
-		this.pending.delete(key);
+		const wasPending = this.pending.delete(key);
 
-		if (!this.map.has(key)) return;
+		// If already pending delete, no-op
+		if (this.pendingDeletes.has(key)) return;
 
+		if (!this.map.has(key) && !wasPending) return;
+
+		this.pendingDeletes.add(key);
 		this.deleteEntryByKey(key);
 		// DO NOT update this.map here - observer is the sole writer to map
 	}
@@ -502,6 +507,9 @@ export class YKeyValue<T> {
 	 * then falls back to `map` (authoritative cache updated by observer).
 	 */
 	get(key: string): T | undefined {
+		// Check pending deletes first (deleted but observer hasn't fired yet)
+		if (this.pendingDeletes.has(key)) return undefined;
+
 		// Check pending first (written by set() but observer hasn't fired yet)
 		const pending = this.pending.get(key);
 		if (pending) return pending.val;
@@ -516,6 +524,7 @@ export class YKeyValue<T> {
 	 * processed by the observer.
 	 */
 	has(key: string): boolean {
+		if (this.pendingDeletes.has(key)) return false;
 		return this.pending.has(key) || this.map.has(key);
 	}
 
@@ -543,9 +552,9 @@ export class YKeyValue<T> {
 			yield [key, entry];
 		}
 
-		// Yield map entries that weren't in pending
+		// Yield map entries that weren't in pending and aren't pending delete
 		for (const [key, entry] of this.map) {
-			if (!yieldedKeys.has(key)) {
+			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
 				yield [key, entry];
 			}
 		}

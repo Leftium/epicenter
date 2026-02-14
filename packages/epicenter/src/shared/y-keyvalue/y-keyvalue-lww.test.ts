@@ -654,10 +654,9 @@ describe('YKeyValueLww', () => {
 					expect(kv.get('keep')).toBe('original');
 					expect(kv.get('update')).toBe('new');
 					expect(kv.get('new')).toBe('added');
-					// Note: has('delete') returns true during batch because delete() only
-					// removes from pending and deletes from yarray - map still has the old
-					// value until observer fires. This is a known limitation.
-					// The delete IS recorded in yarray, so after batch it will be gone.
+					// delete() adds key to pendingDeletes, so has() returns false immediately
+					expect(kv.has('delete')).toBe(false);
+					expect(kv.get('delete')).toBeUndefined();
 				});
 
 				expect(kv.get('keep')).toBe('original');
@@ -666,26 +665,360 @@ describe('YKeyValueLww', () => {
 				expect(kv.has('delete')).toBe(false);
 			});
 
-			test('delete during batch: has() returns true until batch ends (known limitation)', () => {
+			test('delete during batch: has() returns false immediately', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
 
 				kv.set('foo', 'bar');
 
-				let hasDuringBatch: boolean = false;
+				let hasDuringBatch: boolean = true;
 
 				ydoc.transact(() => {
 					kv.delete('foo');
-					// Known limitation: has() still returns true during batch
-					// because map hasn't been updated yet (observer hasn't fired)
 					hasDuringBatch = kv.has('foo');
 				});
 
-				// During batch, has() incorrectly returns true (reads from stale map)
-				expect(hasDuringBatch).toBe(true);
-				// After batch, correctly returns false
+				// During batch, has() correctly returns false via pendingDeletes
+				expect(hasDuringBatch).toBe(false);
+				// After batch, still correctly returns false
 				expect(kv.has('foo')).toBe(false);
+			});
+
+			test('delete then get in batch returns undefined', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				let getDuringBatch: string | undefined = 'not-cleared';
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					getDuringBatch = kv.get('foo');
+				});
+
+				expect(getDuringBatch).toBeUndefined();
+				expect(kv.get('foo')).toBeUndefined();
+			});
+
+			test('delete then set in batch returns new value', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				let getDuringBatch: string | undefined;
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					expect(kv.get('foo')).toBeUndefined();
+					kv.set('foo', 'new');
+					getDuringBatch = kv.get('foo');
+				});
+
+				expect(getDuringBatch).toBe('new');
+				expect(kv.get('foo')).toBe('new');
+				expect(kv.has('foo')).toBe(true);
+			});
+
+			test('double delete is idempotent', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					kv.delete('foo'); // second delete should be no-op
+					expect(kv.has('foo')).toBe(false);
+				});
+
+				expect(kv.has('foo')).toBe(false);
+				expect(kv.get('foo')).toBeUndefined();
+			});
+
+			test('entries skips pending deletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('a', '1');
+				kv.set('b', '2');
+				kv.set('c', '3');
+
+				let keysDuringBatch: string[] = [];
+
+				ydoc.transact(() => {
+					kv.delete('b');
+					keysDuringBatch = Array.from(kv.entries()).map(([key]) => key);
+				});
+
+				expect(keysDuringBatch).not.toContain('b');
+				expect(keysDuringBatch).toContain('a');
+				expect(keysDuringBatch).toContain('c');
+			});
+
+			test('observer clears pendingDeletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'bar');
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					expect(kv.has('foo')).toBe(false); // pendingDeletes active
+				});
+
+				// After transaction, observer has fired and cleared pendingDeletes
+				// Verify by setting a new value — if pendingDeletes wasn't cleared,
+				// has() would still return false incorrectly
+				kv.set('foo', 'baz');
+				expect(kv.has('foo')).toBe(true);
+				expect(kv.get('foo')).toBe('baz');
+			});
+
+			test('set+delete in same batch leaves no sticky pendingDeletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				// set then delete in same batch — entry added+deleted from yarray
+				ydoc.transact(() => {
+					kv.set('foo', 'bar');
+					kv.delete('foo');
+				});
+
+				// After transaction, pendingDeletes should be clear (observer processed deletion)
+				// Verify: a subsequent set should work correctly
+				kv.set('foo', 'new');
+				expect(kv.has('foo')).toBe(true);
+				expect(kv.get('foo')).toBe('new');
+			});
+
+			test('remote set after local delete is not masked by pendingDeletes', () => {
+				const ydoc1 = new Y.Doc({ guid: 'test' });
+				const yarray1 = ydoc1.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv1 = new YKeyValueLww(yarray1);
+
+				const ydoc2 = new Y.Doc({ guid: 'test' });
+				const yarray2 = ydoc2.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv2 = new YKeyValueLww(yarray2);
+
+				// Both clients have the key
+				kv1.set('foo', 'original');
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+
+				// Client 1 deletes
+				kv1.delete('foo');
+				expect(kv1.has('foo')).toBe(false);
+
+				// Client 2 sets a new value (higher timestamp)
+				kv2.set('foo', 'remote-value');
+
+				// Sync client 2's update to client 1
+				Y.applyUpdate(ydoc1, Y.encodeStateAsUpdate(ydoc2));
+
+				// Client 1 should see the remote value — pendingDeletes must not mask it
+				expect(kv1.has('foo')).toBe(true);
+				expect(kv1.get('foo')).toBe('remote-value');
+			});
+
+			test('set→delete→set triple sequence in batch', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'initial');
+
+				let finalGet: string | undefined;
+
+				ydoc.transact(() => {
+					kv.set('foo', 'first');
+					kv.delete('foo');
+					expect(kv.get('foo')).toBeUndefined();
+					kv.set('foo', 'final');
+					finalGet = kv.get('foo');
+				});
+
+				expect(finalGet).toBe('final');
+				expect(kv.get('foo')).toBe('final');
+				expect(kv.has('foo')).toBe(true);
+			});
+
+			test('delete→set→delete triple sequence in batch', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'original');
+
+				ydoc.transact(() => {
+					kv.delete('foo');
+					expect(kv.has('foo')).toBe(false);
+					kv.set('foo', 'revived');
+					expect(kv.get('foo')).toBe('revived');
+					kv.delete('foo');
+					expect(kv.has('foo')).toBe(false);
+				});
+
+				expect(kv.has('foo')).toBe(false);
+				expect(kv.get('foo')).toBeUndefined();
+			});
+
+			test('set→set→delete triple sequence in batch: second set survives', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				ydoc.transact(() => {
+					kv.set('foo', 'first');
+					kv.set('foo', 'second');
+					expect(kv.get('foo')).toBe('second');
+					kv.delete('foo');
+					// During batch, pendingDeletes blocks reads
+					expect(kv.has('foo')).toBe(false);
+				});
+
+				// After batch: two set() calls in same batch push two entries to yarray.
+				// delete() only removes the first matching entry via findIndex().
+				// The second entry survives, and the observer processes it as an add.
+				// This is a known edge case — the second set's entry "wins".
+				expect(kv.has('foo')).toBe(true);
+				expect(kv.get('foo')).toBe('second');
+			});
+
+			test('delete non-existent key is no-op', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				// Delete a key that was never set — should not throw
+				kv.delete('never-existed');
+				expect(kv.has('never-existed')).toBe(false);
+				expect(kv.get('never-existed')).toBeUndefined();
+
+				// Also test inside a batch
+				ydoc.transact(() => {
+					kv.delete('also-never-existed');
+					expect(kv.has('also-never-existed')).toBe(false);
+				});
+			});
+
+			test('pendingDeletes beats pending: set then delete in batch', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv = new YKeyValueLww(yarray);
+
+				kv.set('foo', 'original');
+
+				let getDuringBatch: string | undefined = 'sentinel';
+
+				ydoc.transact(() => {
+					// set() adds to pending, clears pendingDeletes
+					kv.set('foo', 'updated');
+					expect(kv.get('foo')).toBe('updated');
+
+					// delete() clears pending, adds to pendingDeletes
+					kv.delete('foo');
+					getDuringBatch = kv.get('foo');
+				});
+
+				// During batch, pendingDeletes should have taken precedence
+				expect(getDuringBatch).toBeUndefined();
+				expect(kv.has('foo')).toBe(false);
+			});
+
+			test('remote add for different key does not clear unrelated pendingDeletes', () => {
+				const ydoc1 = new Y.Doc({ guid: 'test' });
+				const yarray1 = ydoc1.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv1 = new YKeyValueLww(yarray1);
+
+				const ydoc2 = new Y.Doc({ guid: 'test' });
+				const yarray2 = ydoc2.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv2 = new YKeyValueLww(yarray2);
+
+				// Both clients have keys 'a' and 'b'
+				kv1.set('a', '1');
+				kv1.set('b', '2');
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+
+				// Client 1 deletes 'a'
+				kv1.delete('a');
+				expect(kv1.has('a')).toBe(false);
+
+				// Client 2 adds a completely new key 'c'
+				kv2.set('c', '3');
+
+				// Sync client 2's update to client 1
+				Y.applyUpdate(ydoc1, Y.encodeStateAsUpdate(ydoc2));
+
+				// 'a' should still be deleted — the remote add of 'c' should not affect it
+				expect(kv1.has('a')).toBe(false);
+				expect(kv1.get('a')).toBeUndefined();
+				// 'c' should be visible
+				expect(kv1.get('c')).toBe('3');
+			});
+
+			test('both clients delete same key', () => {
+				const ydoc1 = new Y.Doc({ guid: 'test' });
+				const yarray1 = ydoc1.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv1 = new YKeyValueLww(yarray1);
+
+				const ydoc2 = new Y.Doc({ guid: 'test' });
+				const yarray2 = ydoc2.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv2 = new YKeyValueLww(yarray2);
+
+				// Both clients have the key
+				kv1.set('foo', 'shared');
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+				expect(kv2.get('foo')).toBe('shared');
+
+				// Both delete independently
+				kv1.delete('foo');
+				kv2.delete('foo');
+
+				// Sync both ways
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+				Y.applyUpdate(ydoc1, Y.encodeStateAsUpdate(ydoc2));
+
+				// Both should see it deleted
+				expect(kv1.has('foo')).toBe(false);
+				expect(kv2.has('foo')).toBe(false);
+			});
+
+			test('local set then remote delete of same key', () => {
+				const ydoc1 = new Y.Doc({ guid: 'test' });
+				const yarray1 = ydoc1.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv1 = new YKeyValueLww(yarray1);
+
+				const ydoc2 = new Y.Doc({ guid: 'test' });
+				const yarray2 = ydoc2.getArray<YKeyValueLwwEntry<string>>('data');
+				const kv2 = new YKeyValueLww(yarray2);
+
+				// Both clients have the key
+				kv1.set('foo', 'original');
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+
+				// Client 1 updates the key (gets higher timestamp)
+				kv1.set('foo', 'updated');
+
+				// Client 2 deletes the key
+				kv2.delete('foo');
+
+				// Sync both ways
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+				Y.applyUpdate(ydoc1, Y.encodeStateAsUpdate(ydoc2));
+
+				// Client 1's set had a higher timestamp, so it should win over client 2's delete.
+				// After sync, both should converge to the same value.
+				expect(kv1.get('foo')).toBe(kv2.get('foo'));
+				// The set (with higher ts) wins over the delete
+				expect(kv1.get('foo')).toBe('updated');
 			});
 		});
 	});

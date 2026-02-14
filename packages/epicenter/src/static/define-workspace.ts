@@ -19,8 +19,8 @@
  * ```
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type {
+	AwarenessDefinitions,
 	KvDefinitions,
 	TableDefinitions,
 	WorkspaceDefinition,
@@ -37,14 +37,19 @@ export function defineWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
-	TAwareness extends StandardSchemaV1 | undefined = undefined,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 >(config: {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
-	/** Raw StandardSchemaV1 schema for awareness state (no defineAwareness() wrapper needed) */
-	awareness?: TAwareness;
-}): WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions, TAwareness> {
+	/** Record of awareness field schemas. Each field has its own StandardSchemaV1 schema. */
+	awareness?: TAwarenessDefinitions;
+}): WorkspaceDefinition<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions
+> {
 	return {
 		id: config.id,
 		tables: (config.tables ?? {}) as TTableDefinitions,

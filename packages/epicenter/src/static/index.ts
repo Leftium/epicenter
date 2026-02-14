@@ -127,12 +127,15 @@ export { createUnionSchema } from './schema-union.js';
 
 export type {
 	// Awareness types
+	AwarenessDefinitions,
 	AwarenessHelper,
+	AwarenessState,
 	DeleteResult,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
 	GetResult,
+	InferAwarenessValue,
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,

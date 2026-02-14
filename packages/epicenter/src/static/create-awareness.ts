@@ -1,36 +1,24 @@
 /**
  * createAwareness() - Wraps a raw Awareness instance with typed helpers.
  *
- * ## Design: Full-State Updates Only
+ * Uses the record-of-fields pattern (same as tables and KV). Each field has its own
+ * StandardSchemaV1 schema. Validation happens per-field on read (`getAll()`), not on write.
  *
- * This wrapper intentionally exposes only `setLocal()` (full state replacement),
- * not `setLocalStateField()` (individual field updates). Here's why:
+ * ## API Design
  *
- * **Performance: Identical**
- * - `setLocalStateField()` internally calls `setLocalState()` after spreading the existing state
- * - Source: https://github.com/yjs/y-protocols/blob/master/src/awareness.js#L106-L154
- * - Both increment the awareness clock and trigger network propagation identically
- * - The "overhead" of object spreading is negligible (nanoseconds in JS)
+ * Both `setLocal()` (merge all fields) and `setLocalField()` (update one field) are provided.
+ * `setLocal()` merges into current state — it does NOT replace. This matches the mental model
+ * of "set these fields" and prevents accidentally losing fields.
  *
- * **Simplicity: Better API**
- * - Full replacement ensures no stale fields linger
- * - Clear mental model: "this is my complete state"
- * - Matches Epicenter's table pattern (`.upsert()` replaces entire rows)
- * - TypeScript ensures the state shape is always correct
+ * `setLocalField()` maps directly to y-protocols `setLocalStateField()` for single-field updates.
  *
- * **When Would You Need Field Updates?**
- * - High-frequency ephemeral state (cursor position updating 100x/sec)
- * - Mix of stable fields (user info) and rapidly changing fields (cursor)
- * - In practice: Epicenter awareness is typically stable identity (`{ deviceId, type }`)
+ * ## Validation Strategy
  *
- * **How to Update a Single Field Manually:**
- * ```typescript
- * const current = awareness.getLocal()!;
- * awareness.setLocal({ ...current, newField: value });
- * ```
- *
- * This is functionally identical to what `setLocalStateField()` does internally,
- * just more explicit. No performance penalty.
+ * - **On write** (`setLocal`, `setLocalField`): Compile-time only (TypeScript).
+ *   Local code, own TypeScript — runtime validation is pure overhead.
+ * - **On read** (`getAll`): Per-field schema validation. Remote peers can't be trusted.
+ *   Each field is independently validated; invalid fields are omitted but valid fields
+ *   from the same client are still included.
  *
  * @example
  * ```typescript
@@ -38,91 +26,99 @@
  * import { createAwareness } from 'epicenter/static';
  * import { type } from 'arktype';
  *
- * const schema = type({
- *   deviceId: 'string',
- *   type: '"browser-extension" | "desktop" | "server" | "cli"',
+ * const ydoc = new Y.Doc({ guid: 'my-doc' });
+ * const awareness = createAwareness(ydoc, {
+ *   deviceId: type('string'),
+ *   deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
  * });
  *
- * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const awareness = createAwareness(ydoc, schema);
+ * // Set all fields at once (merge)
+ * awareness.setLocal({ deviceId: 'abc', deviceType: 'desktop' });
  *
- * // Initialize awareness (full state)
- * awareness.setLocal({ deviceId: 'abc', type: 'desktop' });
+ * // Update a single field
+ * awareness.setLocalField('deviceType', 'server');
  *
- * // Get all peers (validated, invalid states skipped)
+ * // Get a single field
+ * const myType = awareness.getLocalField('deviceType');
+ * // ^? 'browser-extension' | 'desktop' | 'server' | 'cli' | undefined
+ *
+ * // Get all peers (per-field validated, invalid fields skipped)
  * const peers = awareness.getAll();
- * // ^? Map<number, { deviceId: string; type: 'browser-extension' | 'desktop' | 'server' | 'cli' }>
- *
- * // Update (manual spread if needed)
- * const current = awareness.getLocal()!;
- * awareness.setLocal({ ...current, type: 'server' });
+ * // ^? Map<number, { deviceId?: string; deviceType?: string }>
  * ```
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import type { AwarenessHelper } from './types.js';
+import type {
+	AwarenessDefinitions,
+	AwarenessHelper,
+	AwarenessState,
+} from './types.js';
 
 /**
- * Creates an AwarenessHelper from a Y.Doc and schema.
+ * Creates an AwarenessHelper from a Y.Doc and a record of field schemas.
  *
- * The Awareness instance is created internally and wrapped with schema-validated helpers.
- * No defineAwareness() wrapper needed — pass raw StandardSchemaV1 schema directly.
+ * The Awareness instance is created internally. Each field gets its own StandardSchemaV1
+ * schema for independent validation on read.
  *
  * @param ydoc - The Y.Doc to create awareness for
- * @param schema - Raw StandardSchemaV1 schema for awareness state (no wrapper)
- * @returns AwarenessHelper with typed methods
+ * @param definitions - Record of field name → StandardSchemaV1 schema
+ * @returns AwarenessHelper with typed per-field methods
  */
-export function createAwareness<TState>(
+export function createAwareness<TDefs extends AwarenessDefinitions>(
 	ydoc: Y.Doc,
-	schema: StandardSchemaV1<unknown, TState>,
-): AwarenessHelper<TState> {
+	definitions: TDefs,
+): AwarenessHelper<TDefs> {
 	const raw = new Awareness(ydoc);
+	const defEntries = Object.entries(definitions);
 
 	return {
-		/**
-		 * Set this client's awareness state (atomic replacement).
-		 *
-		 * This method replaces the ENTIRE local awareness state and broadcasts
-		 * it to all connected peers. It does NOT merge with existing state.
-		 *
-		 * **Why no `setField()` method?**
-		 * - Identical performance (setLocalStateField internally calls setLocalState)
-		 * - Simpler API (no confusion about merging vs replacing)
-		 * - Matches table pattern (upsert replaces entire rows)
-		 * - Manual spread is trivial: `setLocal({ ...getLocal()!, field: value })`
-		 *
-		 * @param state - Complete awareness state matching the schema
-		 *
-		 * @example
-		 * ```typescript
-		 * // Initial setup
-		 * awareness.setLocal({ deviceId: 'abc', type: 'desktop' });
-		 *
-		 * // Update entire state
-		 * awareness.setLocal({ deviceId: 'abc', type: 'server' });
-		 *
-		 * // Update one field (manual spread)
-		 * const current = awareness.getLocal()!;
-		 * awareness.setLocal({ ...current, type: 'browser-extension' });
-		 * ```
-		 */
-		setLocal(state: TState) {
-			raw.setLocalState(state);
+		setLocal(state) {
+			// Merge with current state (partial update, like setLocalStateField for each key)
+			const current = raw.getLocalState() ?? {};
+			raw.setLocalState({ ...current, ...state });
 		},
 
-		getLocal(): TState | null {
-			return raw.getLocalState() as TState | null;
+		setLocalField(key, value) {
+			raw.setLocalStateField(key, value);
 		},
 
-		getAll(): Map<number, TState> {
-			const result = new Map<number, TState>();
+		getLocal() {
+			return raw.getLocalState() as AwarenessState<TDefs> | null;
+		},
+
+		getLocalField(key) {
+			const state = raw.getLocalState();
+			if (state === null) return undefined;
+			return (state as Record<string, unknown>)[key] as ReturnType<
+				AwarenessHelper<TDefs>['getLocalField']
+			>;
+		},
+
+		getAll() {
+			const result = new Map<number, AwarenessState<TDefs>>();
+
 			for (const [clientId, state] of raw.getStates()) {
-				// Validate against schema — skip invalid
-				const validated = schema['~standard'].validate(state);
-				if (validated.issues) continue;
-				result.set(clientId, validated.value as TState);
+				if (state === null || typeof state !== 'object') continue;
+
+				// Validate each field independently against its schema
+				const validated: Record<string, unknown> = {};
+				for (const [fieldKey, fieldSchema] of defEntries) {
+					const fieldValue = (state as Record<string, unknown>)[fieldKey];
+					if (fieldValue === undefined) continue;
+
+					const fieldResult = fieldSchema['~standard'].validate(fieldValue);
+					if (fieldResult instanceof Promise) continue; // Skip async schemas
+					if (fieldResult.issues) continue; // Skip invalid fields
+
+					validated[fieldKey] = fieldResult.value;
+				}
+
+				// Skip clients with zero valid fields
+				if (Object.keys(validated).length > 0) {
+					result.set(clientId, validated as AwarenessState<TDefs>);
+				}
 			}
 			return result;
 		},
@@ -151,5 +147,5 @@ export function createAwareness<TState>(
 	};
 }
 
-// Re-export type for convenience
+// Re-export types for convenience
 export type { AwarenessHelper };

@@ -18,9 +18,10 @@
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return Extension<T>    │
- * │  directly                │    │  via defineExtension()        │
- * └──────────────────────────┘    └──────────────────────────────┘
+ * │  return Lifecycle & T    │    │  return Extension<T>          │
+ * │  directly                │    │  { exports?, whenReady?,      │
+ * └──────────────────────────┘    │    destroy? }                 │
+ *                                 └──────────────────────────────┘
  * ```
  *
  * ## Usage
@@ -28,16 +29,16 @@
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** use `defineExtension()` to separate lifecycle from consumer exports:
+ * **Extensions** return a flat `{ exports?, whenReady?, destroy? }` object:
  *
  * ```typescript
- * // Extension with cleanup — lifecycle separated from exports
+ * // Extension with cleanup — flat return, framework normalizes defaults
  * const withCleanup: ExtensionFactory = ({ ydoc }) => {
  *   const db = new Database(':memory:');
- *   return defineExtension({
+ *   return {
  *     exports: { db },
  *     destroy: () => db.close(),
- *   });
+ *   };
  * };
  * ```
  *
@@ -138,29 +139,48 @@ export type Lifecycle = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The result of `defineExtension()` — separates lifecycle from consumer exports.
+ * What extension factories return — a flat object with optional exports and lifecycle hooks.
  *
- * The framework plucks `lifecycle` for internal management (cleanup, readiness)
- * and stores `exports` by reference as `workspace.extensions[key]`. Extension
- * factories receive the full client (including `whenReady`) as context, but
- * consumers of `workspace.extensions[key]` see only the extension's public API.
+ * The framework normalizes defaults internally:
+ * - `exports` defaults to `{}` (empty — lifecycle-only extensions)
+ * - `whenReady` defaults to `Promise.resolve()` (instantly ready)
+ * - `destroy` defaults to `() => {}` (no-op cleanup)
+ *
+ * The `exports` object is stored **by reference** in `workspace.extensions[key]` —
+ * getters, proxies, and object identity are preserved.
  *
  * @typeParam T - The exports object type (what consumers access via `workspace.extensions[key]`)
  *
  * @example
  * ```typescript
- * // Framework usage (internal)
- * const { exports, lifecycle } = factory(context);
- * extensionCleanups.push(lifecycle.destroy);
- * whenReadyPromises.push(lifecycle.whenReady);
- * allExtensions[key] = exports; // by reference — getters survive
+ * // Extension with exports + lifecycle
+ * .withExtension('sqlite', (ctx) => ({
+ *   exports: { db, pullToSqlite },
+ *   whenReady: initPromise,
+ *   destroy: () => db.close(),
+ * }))
+ *
+ * // Lifecycle-only (no exports)
+ * .withExtension('persistence', (ctx) => ({
+ *   whenReady: loadFromDisk(),
+ *   destroy: () => flush(),
+ * }))
+ *
+ * // Exports-only (no lifecycle)
+ * .withExtension('helpers', () => ({
+ *   exports: { compute: (x: number) => x * 2 },
+ * }))
  * ```
  */
-export type Extension<T = Record<string, never>> = {
+export type Extension<
+	T extends Record<string, unknown> = Record<string, never>,
+> = {
 	/** Consumer-facing exports stored by reference in `workspace.extensions[key]` */
-	exports: T;
-	/** Framework-managed lifecycle hooks (cleanup + readiness tracking) */
-	lifecycle: Lifecycle;
+	exports?: T;
+	/** Resolves when initialization is complete. Defaults to `Promise.resolve()`. */
+	whenReady?: Promise<unknown>;
+	/** Clean up resources. Defaults to no-op. */
+	destroy?: () => MaybePromise<void>;
 };
 
 /**
@@ -244,9 +264,7 @@ export function defineExtension<
 ): Extension<T> {
 	return {
 		exports: (options?.exports ?? {}) as T,
-		lifecycle: {
-			whenReady: options?.whenReady ?? Promise.resolve(),
-			destroy: options?.destroy ?? (() => {}),
-		},
+		whenReady: options?.whenReady ?? Promise.resolve(),
+		destroy: options?.destroy ?? (() => {}),
 	};
 }

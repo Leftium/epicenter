@@ -588,9 +588,9 @@ export type WorkspaceClientBuilder<
 	 * each factory receives the client-so-far (including all previously added extensions)
 	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
-	 * The factory must return an `Extension` (from `defineExtension()`).
-	 * The framework plucks `lifecycle` for internal management and stores
-	 * `exports` by reference — getters and object identity are preserved.
+	 * The factory returns a flat `{ exports?, whenReady?, destroy? }` object.
+	 * The framework normalizes defaults and stores `exports` by reference —
+	 * getters and object identity are preserved.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
 	 * @param factory - Factory function receiving the client-so-far context, returns Extension
@@ -601,11 +601,11 @@ export type WorkspaceClientBuilder<
 	 * const client = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
 	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	 *     return defineExtension({ whenReady: idb.whenReady, destroy: () => idb.destroy() });
+	 *     return { whenReady: idb.whenReady, destroy: () => idb.destroy() };
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
-	 *     return defineExtension({ ... });
+	 *     return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
 	 *   });
 	 * ```
 	 */
@@ -690,7 +690,7 @@ export type { Extension } from '../shared/lifecycle.js';
  *     await context.whenReady; // wait for all prior extensions (persistence, etc.)
  *     provider.connect();
  *   })();
- *   return defineExtension({ exports: { provider }, whenReady, destroy: () => provider.destroy() });
+ *   return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
  * })
  * ```
  */
@@ -711,21 +711,19 @@ export type ExtensionContext<
 /**
  * Factory function that creates an extension with lifecycle hooks.
  *
- * All extensions MUST return an `Extension` (from `defineExtension()`).
- * The framework plucks `lifecycle` for internal management and stores
- * `exports` by reference — getters and object identity are preserved.
- *
- * Use `defineExtension()` from `shared/lifecycle.ts` to create the result:
+ * Returns a flat `{ exports?, whenReady?, destroy? }` object.
+ * The framework normalizes defaults and stores `exports` by reference —
+ * getters and object identity are preserved.
  *
  * @example Simple extension (works with any workspace)
  * ```typescript
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return defineExtension({
+ *   return {
  *     exports: { provider },
  *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
- *   });
+ *   };
  * };
  * ```
  *

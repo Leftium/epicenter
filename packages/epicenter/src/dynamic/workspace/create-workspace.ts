@@ -127,12 +127,13 @@ export function createWorkspace<
 				) => Extension<TExports>,
 			) {
 				const result = factory(client);
-				extensionCleanups.push(() => result.lifecycle.destroy());
-				whenReadyPromises.push(result.lifecycle.whenReady);
+				const destroy = result.destroy;
+				if (destroy) extensionCleanups.push(destroy);
+				whenReadyPromises.push(result.whenReady ?? Promise.resolve());
 
 				const newExtensions = {
 					...extensions,
-					[key]: result.exports,
+					[key]: result.exports ?? {},
 				} as TExtensions & Record<TKey, TExports>;
 
 				return buildClient(newExtensions);

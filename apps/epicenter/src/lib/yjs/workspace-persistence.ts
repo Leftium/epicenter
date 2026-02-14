@@ -1,8 +1,4 @@
-import {
-	defineExtension,
-	type Extension,
-	type ExtensionContext,
-} from '@epicenter/hq/dynamic';
+import type { Extension, ExtensionContext } from '@epicenter/hq/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 import * as Y from 'yjs';
@@ -141,7 +137,7 @@ export function workspacePersistence(
 	// Return Lifecycle
 	// =========================================================================
 
-	return defineExtension({
+	return {
 		whenReady: (async () => {
 			const { workspaceDir, workspaceYjsPath } = await pathsPromise;
 
@@ -183,5 +179,5 @@ export function workspacePersistence(
 			// Remove KV observer
 			unsubscribeKv();
 		},
-	});
+	};
 }

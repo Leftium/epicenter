@@ -3,7 +3,6 @@ import path from 'node:path';
 import * as Y from 'yjs';
 import type { ExtensionContext } from '../../dynamic/extension';
 import type { KvField, TableDefinition } from '../../dynamic/schema';
-import { defineExtension } from '../../shared/lifecycle';
 
 const SNAPSHOT_EXTENSION = '.ysnap';
 const METADATA_EXTENSION = '.json';
@@ -311,7 +310,7 @@ export async function localRevisionHistory<
 		`[RevisionHistory] Initialized with ${debounceMs}ms debounce, saving to ${snapshotDir}`,
 	);
 
-	return defineExtension({
+	return {
 		exports: {
 			/**
 			 * Save the current document state as a new version.
@@ -414,5 +413,5 @@ export async function localRevisionHistory<
 			}
 			ydoc.off('update', updateHandler);
 		},
-	});
+	};
 }

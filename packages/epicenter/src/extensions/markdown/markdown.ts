@@ -16,7 +16,7 @@ import type { TableById } from '../../dynamic/schema/fields/types';
 import { getTableById } from '../../dynamic/schema/schema-file';
 import type { TableHelper } from '../../dynamic/tables/create-tables';
 import { ExtensionErr, ExtensionError } from '../../shared/errors';
-import { defineExtension } from '../../shared/lifecycle';
+
 import type { AbsolutePath } from '../../shared/types';
 import { createIndexLogger } from '../error-logger';
 import {
@@ -1120,7 +1120,7 @@ export const markdown = async <
 		console.error('[MarkdownProvider] Background validation failed:', err);
 	});
 
-	return defineExtension({
+	return {
 		exports: {
 			/**
 			 * Pull: Sync from YJS to Markdown using diff-based synchronization.
@@ -1535,5 +1535,5 @@ export const markdown = async <
 			// Flush and close logger to ensure all pending logs are written
 			await logger.close();
 		},
-	});
+	};
 };

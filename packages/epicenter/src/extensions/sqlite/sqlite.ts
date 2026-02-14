@@ -11,7 +11,7 @@ import type { KvField, Row, TableDefinition } from '../../dynamic/schema';
 import { Id as createId } from '../../dynamic/schema';
 import { convertTableDefinitionsToDrizzle } from '../../dynamic/schema/converters/to-drizzle';
 import { ExtensionErr, ExtensionError } from '../../shared/errors';
-import { defineExtension } from '../../shared/lifecycle';
+
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -42,7 +42,7 @@ export type SqliteConfig = {
  * SQLite extension: syncs YJS changes to SQLite and exposes Drizzle query interface.
  *
  * This extension creates internal resources (sqliteDb, drizzleTables) and exports them
- * via defineExtension(). All exported resources become available in your workspace
+ * as a flat `{ exports, destroy }` object. All exported resources become available in your workspace
  * via `client.extensions.sqlite`.
  *
  * **Sync Strategy**:
@@ -260,7 +260,7 @@ export const sqlite = async <
 	}
 
 	// Return destroy function alongside exported resources (flattened structure)
-	return defineExtension({
+	return {
 		exports: {
 			async pullToSqlite() {
 				return tryAsync({
@@ -323,5 +323,5 @@ export const sqlite = async <
 			// Close the database connection to ensure WAL files are properly checkpointed
 			client.close();
 		},
-	});
+	};
 };

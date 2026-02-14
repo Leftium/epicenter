@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { defineExtension } from '../../shared/lifecycle';
 import { boolean, Id, id, integer, select, table, text } from '../schema';
 import { defineWorkspace } from '../schema/workspace-definition';
 import { createWorkspace } from './create-workspace';
@@ -112,13 +111,11 @@ describe('createWorkspace', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
 			// Use inline factory for better type inference
-			const workspace = baseWorkspace.withExtension('mock', ({ id }) =>
-				defineExtension({
-					exports: {
-						greeting: `Hello from ${id}`,
-					},
-				}),
-			);
+			const workspace = baseWorkspace.withExtension('mock', ({ id }) => ({
+				exports: {
+					greeting: `Hello from ${id}`,
+				},
+			}));
 
 			// Should have extension exports
 			expect(workspace.extensions.mock).toBeDefined();
@@ -138,7 +135,7 @@ describe('createWorkspace', () => {
 					hasTables: typeof ctx.tables.get === 'function',
 					hasKv: typeof ctx.kv.get === 'function',
 				};
-				return defineExtension();
+				return {};
 			});
 
 			expect(receivedContext).toBeDefined();
@@ -155,26 +152,22 @@ describe('createWorkspace', () => {
 			let resolved2 = false;
 
 			const workspace = baseWorkspace
-				.withExtension('ext1', () =>
-					defineExtension({
-						whenReady: new Promise<void>((resolve) => {
-							setTimeout(() => {
-								resolved1 = true;
-								resolve();
-							}, 10);
-						}),
+				.withExtension('ext1', () => ({
+					whenReady: new Promise<void>((resolve) => {
+						setTimeout(() => {
+							resolved1 = true;
+							resolve();
+						}, 10);
 					}),
-				)
-				.withExtension('ext2', () =>
-					defineExtension({
-						whenReady: new Promise<void>((resolve) => {
-							setTimeout(() => {
-								resolved2 = true;
-								resolve();
-							}, 20);
-						}),
+				}))
+				.withExtension('ext2', () => ({
+					whenReady: new Promise<void>((resolve) => {
+						setTimeout(() => {
+							resolved2 = true;
+							resolve();
+						}, 20);
 					}),
-				);
+				}));
 
 			// Before awaiting, neither should be resolved
 			expect(resolved1).toBe(false);
@@ -190,17 +183,15 @@ describe('createWorkspace', () => {
 			const order: string[] = [];
 
 			const workspace = createWorkspace(testDefinition)
-				.withExtension('slow', () =>
-					defineExtension({
-						exports: { tag: 'slow' },
-						whenReady: new Promise<void>((resolve) =>
-							setTimeout(() => {
-								order.push('slow-ready');
-								resolve();
-							}, 50),
-						),
-					}),
-				)
+				.withExtension('slow', () => ({
+					exports: { tag: 'slow' },
+					whenReady: new Promise<void>((resolve) =>
+						setTimeout(() => {
+							order.push('slow-ready');
+							resolve();
+						}, 50),
+					),
+				}))
 				.withExtension('dependent', (context) => {
 					// context.whenReady should be a promise representing all prior extensions
 					expect(context.whenReady).toBeInstanceOf(Promise);
@@ -210,10 +201,10 @@ describe('createWorkspace', () => {
 						order.push('dependent-ready');
 					})();
 
-					return defineExtension({
+					return {
 						exports: { tag: 'dependent' },
 						whenReady,
-					});
+					};
 				});
 
 			await workspace.whenReady;
@@ -230,16 +221,16 @@ describe('createWorkspace', () => {
 				expect(context.extensions).toBeDefined();
 				expect(context.whenReady).toBeInstanceOf(Promise);
 				expect(typeof context.destroy).toBe('function');
-				return defineExtension();
+				return {};
 			});
 		});
 
 		test('base client extensions remains empty after chaining', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
-			const chainedWorkspace = baseWorkspace.withExtension('mock', () =>
-				defineExtension({ exports: { data: 'test' } }),
-			);
+			const chainedWorkspace = baseWorkspace.withExtension('mock', () => ({
+				exports: { data: 'test' },
+			}));
 
 			// Base should still have empty extensions
 			expect(baseWorkspace.extensions).toEqual({});
@@ -273,20 +264,16 @@ describe('createWorkspace', () => {
 			let destroyed2 = false;
 
 			const workspace = baseWorkspace
-				.withExtension('ext1', () =>
-					defineExtension({
-						destroy: () => {
-							destroyed1 = true;
-						},
-					}),
-				)
-				.withExtension('ext2', () =>
-					defineExtension({
-						destroy: () => {
-							destroyed2 = true;
-						},
-					}),
-				);
+				.withExtension('ext1', () => ({
+					destroy: () => {
+						destroyed1 = true;
+					},
+				}))
+				.withExtension('ext2', () => ({
+					destroy: () => {
+						destroyed2 = true;
+					},
+				}));
 
 			// Before destroy
 			expect(destroyed1).toBe(false);
@@ -303,12 +290,11 @@ describe('createWorkspace', () => {
 
 			const workspace = createWorkspace(testDefinition).withExtension(
 				'tracker',
-				() =>
-					defineExtension({
-						destroy: () => {
-							destroyed = true;
-						},
-					}),
+				() => ({
+					destroy: () => {
+						destroyed = true;
+					},
+				}),
 			);
 
 			// Manually call asyncDispose (simulate await using)
@@ -342,13 +328,12 @@ describe('createWorkspace', () => {
 		test('extension types are inferred correctly', () => {
 			const workspace = createWorkspace(testDefinition).withExtension(
 				'myExt',
-				() =>
-					defineExtension({
-						exports: {
-							version: 1,
-							getName: () => 'my-extension',
-						},
-					}),
+				() => ({
+					exports: {
+						version: 1,
+						getName: () => 'my-extension',
+					},
+				}),
 			);
 
 			// These should be correctly typed via inference
@@ -360,25 +345,23 @@ describe('createWorkspace', () => {
 	describe('progressive type safety', () => {
 		test('extension N+1 can access extension N exports via context', () => {
 			const workspace = createWorkspace(testDefinition)
-				.withExtension('first', () =>
-					defineExtension({
-						exports: {
-							value: 42,
-							helper: () => 'from-first',
-						},
-					}),
-				)
+				.withExtension('first', () => ({
+					exports: {
+						value: 42,
+						helper: () => 'from-first',
+					},
+				}))
 				.withExtension('second', ({ extensions }) => {
 					// extensions.first is fully typed — no casts needed
 					const doubled = extensions.first.value * 2;
 					const msg = extensions.first.helper();
-					return defineExtension({ exports: { doubled, msg } });
+					return { exports: { doubled, msg } };
 				})
 				.withExtension('third', ({ extensions }) => {
 					// extensions.first AND extensions.second are both fully typed
 					const tripled = extensions.first.value * 3;
 					const fromSecond = extensions.second.doubled;
-					return defineExtension({ exports: { tripled, fromSecond } });
+					return { exports: { tripled, fromSecond } };
 				});
 
 			// All extensions accessible and typed on the final client
@@ -403,27 +386,21 @@ describe('createWorkspace', () => {
 			const order: string[] = [];
 
 			const workspace = createWorkspace(testDefinition)
-				.withExtension('a', () =>
-					defineExtension({
-						destroy: () => {
-							order.push('a');
-						},
-					}),
-				)
-				.withExtension('b', () =>
-					defineExtension({
-						destroy: () => {
-							order.push('b');
-						},
-					}),
-				)
-				.withExtension('c', () =>
-					defineExtension({
-						destroy: () => {
-							order.push('c');
-						},
-					}),
-				);
+				.withExtension('a', () => ({
+					destroy: () => {
+						order.push('a');
+					},
+				}))
+				.withExtension('b', () => ({
+					destroy: () => {
+						order.push('b');
+					},
+				}))
+				.withExtension('c', () => ({
+					destroy: () => {
+						order.push('c');
+					},
+				}));
 
 			await workspace.destroy();
 			expect(order).toEqual(['c', 'b', 'a']);

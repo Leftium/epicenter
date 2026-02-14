@@ -2,7 +2,7 @@ import type { ClientToken } from '@epicenter/y-sweet';
 import { createYjsProvider, type YSweetProvider } from '@epicenter/y-sweet';
 import type * as Y from 'yjs';
 import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
-import type { ExtensionFactory } from '../static/types';
+import type { AwarenessDefinitions, ExtensionFactory } from '../static/types';
 
 // Re-export the ClientToken type for consumers
 export type { ClientToken as YSweetClientToken };
@@ -79,16 +79,18 @@ export type YSweetPersistSyncConfig = {
 export function ySweetPersistSync(
 	config: YSweetPersistSyncConfig,
 ): ExtensionFactory {
-	return ({ ydoc }) => {
+	return ({ ydoc, awareness }) => {
 		let currentAuth = config.auth;
 		const authEndpoint = () => currentAuth(ydoc.guid);
 
 		// Create provider — defer connection until persistence loads
+		// TODO: Remove @ts-expect-error once Phase 1 (y-sweet provider awareness support) is complete
 		let provider: YSweetProvider = createYjsProvider(
 			ydoc,
 			ydoc.guid,
 			authEndpoint,
-			{ connect: false },
+			// @ts-expect-error Phase 1 pending: y-sweet provider doesn't accept awareness parameter yet
+			{ connect: false, awareness: awareness?.raw },
 		);
 
 		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
@@ -132,7 +134,11 @@ export function ySweetPersistSync(
 				reconnect(newAuth: (docId: string) => Promise<ClientToken>) {
 					provider.destroy();
 					currentAuth = newAuth;
-					provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint);
+					// TODO: Remove biome-ignore and type assertion once Phase 1 (y-sweet provider awareness support) is complete
+					provider = createYjsProvider(ydoc, ydoc.guid, authEndpoint, {
+						awareness: awareness?.raw,
+						// biome-ignore lint/suspicious/noExplicitAny: y-sweet provider types don't include awareness parameter yet (Phase 1 pending)
+					} as any);
 					provider.connect();
 				},
 			},

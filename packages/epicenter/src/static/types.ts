@@ -5,6 +5,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension } from '../shared/lifecycle.js';
@@ -378,6 +379,102 @@ export type TableHelper<TRow extends { id: string }> = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
+// AWARENESS TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Map of awareness field definitions. Each field has its own StandardSchemaV1 schema. */
+export type AwarenessDefinitions = Record<string, StandardSchemaV1>;
+
+/** Extract the output type of an awareness field's schema. */
+export type InferAwarenessValue<T> = T extends StandardSchemaV1
+	? StandardSchemaV1.InferOutput<T>
+	: never;
+
+/**
+ * The composed state type — all fields optional since peers may not have set every field.
+ *
+ * Each field's type is inferred from its StandardSchemaV1 schema. Fields are optional
+ * because awareness is inherently partial — peers publish what they have.
+ */
+export type AwarenessState<TDefs extends AwarenessDefinitions> = {
+	[K in keyof TDefs]?: InferAwarenessValue<TDefs[K]>;
+};
+
+/**
+ * Helper for typed awareness access.
+ * Wraps the raw y-protocols Awareness instance with schema-validated methods.
+ *
+ * Uses the record-of-fields pattern (same as tables and KV). Each field has its own
+ * StandardSchemaV1 schema. When no fields are defined, `AwarenessHelper<Record<string, never>>`
+ * has zero accessible field keys — methods exist but accept no valid arguments.
+ *
+ * @typeParam TDefs - Record of awareness field definitions (field name → StandardSchemaV1)
+ */
+export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
+	/**
+	 * Set this client's awareness state (merge into current state).
+	 * Broadcasts to all connected peers via the awareness protocol.
+	 * Accepts partial — only specified fields are set (merged into current state).
+	 * No runtime validation — TypeScript catches type errors at compile time.
+	 */
+	setLocal(state: AwarenessState<TDefs>): void;
+
+	/**
+	 * Set a single awareness field.
+	 * Maps directly to y-protocols setLocalStateField().
+	 *
+	 * @param key - The field name to set
+	 * @param value - The value for the field (type-checked against the field's schema)
+	 */
+	setLocalField<K extends keyof TDefs & string>(
+		key: K,
+		value: InferAwarenessValue<TDefs[K]>,
+	): void;
+
+	/**
+	 * Get this client's current awareness state.
+	 * Returns null if not yet set.
+	 */
+	getLocal(): AwarenessState<TDefs> | null;
+
+	/**
+	 * Get a single local awareness field.
+	 * Returns undefined if not set.
+	 *
+	 * @param key - The field name to get
+	 * @returns The field value, or undefined if not set
+	 */
+	getLocalField<K extends keyof TDefs & string>(
+		key: K,
+	): InferAwarenessValue<TDefs[K]> | undefined;
+
+	/**
+	 * Get all connected clients' awareness states.
+	 * Returns Map from Yjs clientID to validated state.
+	 * Each field is independently validated against its schema.
+	 * Invalid fields are omitted from the result (valid fields still included).
+	 * Clients with zero valid fields are excluded entirely.
+	 */
+	getAll(): Map<number, AwarenessState<TDefs>>;
+
+	/**
+	 * Watch for awareness changes.
+	 * Callback receives a map of clientIDs to change type.
+	 * Returns unsubscribe function.
+	 */
+	observe(
+		callback: (changes: Map<number, 'added' | 'updated' | 'removed'>) => void,
+	): () => void;
+
+	/**
+	 * The raw y-protocols Awareness instance.
+	 * Escape hatch for advanced use (custom heartbeats, direct protocol access).
+	 * Pass to sync providers: createYjsProvider(ydoc, ..., { awareness: ctx.awareness.raw })
+	 */
+	raw: Awareness;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -452,10 +549,13 @@ export type WorkspaceDefinition<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 > = {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
+	/** Record of awareness field schemas. Each field has its own StandardSchemaV1 schema. */
+	awareness?: TAwarenessDefinitions;
 };
 
 /**
@@ -468,9 +568,16 @@ export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
-> = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
+> = WorkspaceClient<
+	TId,
+	TTableDefs,
+	TKvDefs,
+	TAwarenessDefinitions,
+	TExtensions
+> & {
 	actions: TActions;
 };
 
@@ -508,8 +615,15 @@ export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
-> = WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
+> = WorkspaceClient<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions,
+	TExtensions
+> & {
 	/**
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
@@ -546,6 +660,7 @@ export type WorkspaceClientBuilder<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
+				TAwarenessDefinitions,
 				TExtensions
 			>,
 		) => Extension<TExports>,
@@ -553,6 +668,7 @@ export type WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwarenessDefinitions,
 		TExtensions & Record<TKey, TExports>
 	>;
 
@@ -572,6 +688,7 @@ export type WorkspaceClientBuilder<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
+				TAwarenessDefinitions,
 				TExtensions
 			>,
 		) => TActions,
@@ -579,6 +696,7 @@ export type WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwarenessDefinitions,
 		TExtensions,
 		TActions
 	>;
@@ -604,13 +722,15 @@ export type { Extension } from '../shared/lifecycle.js';
  * @typeParam TId - Workspace identifier type
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
  * @typeParam TKvDefinitions - Map of KV definitions for this workspace
+ * @typeParam TAwarenessDefinitions - Map of awareness field definitions for this workspace
  * @typeParam TExtensions - Accumulated extension exports from previous `.withExtension()` calls
  *
  * @example
  * ```typescript
- * .withExtension('sync', ({ ydoc, extensions }) => {
+ * .withExtension('sync', ({ ydoc, awareness, extensions }) => {
  *   // extensions.persistence is typed if persistence was added before this
- *   const provider = createProvider(ydoc);
+ *   // awareness.raw is always available to pass to sync providers
+ *   const provider = createProvider(ydoc, { awareness: awareness.raw });
  *   return defineExtension({ exports: { provider }, destroy: () => provider.destroy() });
  * })
  * ```
@@ -619,6 +739,7 @@ export type ExtensionContext<
 	TId extends string = string,
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
@@ -629,6 +750,8 @@ export type ExtensionContext<
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper for the workspace */
 	kv: KvHelper<TKvDefinitions>;
+	/** Typed awareness helper — always present, like tables and kv */
+	awareness: AwarenessHelper<TAwarenessDefinitions>;
 	/** Accumulated extension exports from previous `.withExtension()` calls */
 	extensions: TExtensions;
 };
@@ -665,18 +788,25 @@ export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
+	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown>,
 > = {
 	/** Workspace identifier */
 	id: TId;
 	/** The underlying Y.Doc instance */
 	ydoc: Y.Doc;
+	/** Workspace definitions for introspection */
+	definitions: {
+		tables: TTableDefinitions;
+		kv: TKvDefinitions;
+		awareness: TAwarenessDefinitions;
+	};
 	/** Typed table helpers */
 	tables: TablesHelper<TTableDefinitions>;
 	/** Typed KV helper */
 	kv: KvHelper<TKvDefinitions>;
-	/** Workspace definitions for introspection */
-	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
+	/** Typed awareness helper — always present, like tables and kv */
+	awareness: AwarenessHelper<TAwarenessDefinitions>;
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
 
@@ -695,6 +825,6 @@ export type WorkspaceClient<
  * Includes optional actions property since clients may or may not have actions attached.
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
-export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any> & {
+export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any> & {
 	actions?: Actions;
 };

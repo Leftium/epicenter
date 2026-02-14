@@ -7,12 +7,15 @@
  */
 export function createSleeper(timeout: number) {
 	const { promise, resolve } = Promise.withResolvers<void>();
-	setTimeout(resolve, timeout);
+	const handle = setTimeout(resolve, timeout);
 	return {
 		/** Resolves when the timeout expires or `wake()` is called. */
 		promise,
-		/** Resolves the promise immediately, skipping the remaining timeout. */
-		wake: resolve,
+		/** Resolves the promise immediately, clearing the pending timeout. */
+		wake() {
+			clearTimeout(handle);
+			resolve();
+		},
 	};
 }
 

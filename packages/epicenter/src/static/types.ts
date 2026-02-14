@@ -806,6 +806,49 @@ export type WorkspaceClient<
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
 
+	/**
+	 * Execute multiple operations atomically in a single Y.js transaction.
+	 *
+	 * Groups all table and KV mutations inside the callback into one transaction.
+	 * This means:
+	 * - Observers fire once (not per-operation)
+	 * - Creates a single undo/redo step
+	 * - All changes are applied together
+	 *
+	 * The callback receives nothing because `tables` and `kv` are the same objects
+	 * whether you're inside `batch()` or not — `ydoc.transact()` makes ALL operations
+	 * on the shared doc atomic automatically. No special transactional wrapper needed.
+	 *
+	 * **Note**: Yjs transactions do NOT roll back on error. If the callback throws,
+	 * any mutations that already executed within the callback are still applied.
+	 *
+	 * Nested `batch()` calls are safe — Yjs transact is reentrant, so inner calls
+	 * are absorbed by the outer transaction.
+	 *
+	 * @param fn - Callback containing table/KV operations to batch
+	 *
+	 * @example Single table batching
+	 * ```typescript
+	 * client.batch(() => {
+	 *   client.tables.posts.set({ id: '1', title: 'First' });
+	 *   client.tables.posts.set({ id: '2', title: 'Second' });
+	 *   client.tables.posts.delete('3');
+	 * });
+	 * // Observer fires once with all 3 changed IDs
+	 * ```
+	 *
+	 * @example Cross-table + KV batching
+	 * ```typescript
+	 * client.batch(() => {
+	 *   client.tables.tabs.set({ id: '1', url: 'https://...' });
+	 *   client.tables.windows.set({ id: 'w1', name: 'Main' });
+	 *   client.kv.set('lastSync', new Date().toISOString());
+	 * });
+	 * // All three writes are one atomic transaction
+	 * ```
+	 */
+	batch(fn: () => void): void;
+
 	/** Promise resolving when all extensions are ready */
 	whenReady: Promise<void>;
 

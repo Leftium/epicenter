@@ -37,7 +37,6 @@ import {
 import { KV_KEY } from '../shared/ydoc-keys.js';
 import type {
 	InferKvValue,
-	KvBatchTransaction,
 	KvDefinition,
 	KvDefinitions,
 	KvGetResult,
@@ -106,21 +105,6 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 		delete(key) {
 			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
 			ykv.delete(key);
-		},
-
-		batch(fn) {
-			ykv.doc.transact(() => {
-				fn({
-					set: (key, value) => {
-						if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-						ykv.set(key, value);
-					},
-					delete: (key) => {
-						if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-						ykv.delete(key);
-					},
-				} as KvBatchTransaction<TKvDefinitions>);
-			});
 		},
 
 		observe(key, callback) {

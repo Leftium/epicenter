@@ -110,18 +110,41 @@ function createSavedTabState() {
 			},
 
 			/**
-			 * Restore all saved tabs at once. Opens each tab sequentially
-			 * to avoid overwhelming the browser, then removes each from Y.Doc.
+			 * Restore all saved tabs at once.
+			 *
+			 * Fires all `browser.tabs.create()` calls in parallel (no sequential
+			 * awaiting) and batch-deletes from Y.Doc in a single transaction.
+			 *
+			 * This avoids two problems with the naive sequential approach:
+			 * 1. **Popup teardown**: `browser.tabs.create()` shifts focus, which
+			 *    can cause Chrome to destroy the popup mid-loop — killing the
+			 *    async context and leaving remaining tabs un-restored.
+			 * 2. **Observer spam**: Each individual `delete()` fires the Y.Doc
+			 *    observer, triggering a full `readAll()`. Wrapping in `transact()`
+			 *    collapses N observer callbacks into one.
 			 */
 			async restoreAll() {
 				const all = popupWorkspace.tables.savedTabs.getAllValid();
-				for (const tab of all) {
-					await browser.tabs.create({
-						url: tab.url,
-						pinned: tab.pinned,
-					});
-					popupWorkspace.tables.savedTabs.delete(tab.id);
-				}
+				if (!all.length) return;
+
+				// Fire all tab creations without awaiting each one individually.
+				// browser.tabs.create() sends IPC to the browser process immediately —
+				// the tabs will be created even if the popup is torn down afterward.
+				const createPromises = all.map((tab) =>
+					browser.tabs.create({ url: tab.url, pinned: tab.pinned }),
+				);
+
+				// Batch-delete from Y.Doc in a single transaction so the observer
+				// fires exactly once (not N times).
+				popupWorkspace.batch(() => {
+					for (const tab of all) {
+						popupWorkspace.tables.savedTabs.delete(tab.id);
+					}
+				});
+
+				// Best-effort await — popup may die before this resolves, which is
+				// fine because the browser process is already creating the tabs.
+				await Promise.allSettled(createPromises);
 			},
 
 			/** Delete a saved tab without restoring it. */
@@ -129,12 +152,21 @@ function createSavedTabState() {
 				popupWorkspace.tables.savedTabs.delete(id);
 			},
 
-			/** Delete all saved tabs without restoring them. */
+			/**
+			 * Delete all saved tabs without restoring them.
+			 *
+			 * Wrapped in a Y.Doc transaction so the observer fires once
+			 * (not N times for N tabs).
+			 */
 			removeAll() {
 				const all = popupWorkspace.tables.savedTabs.getAllValid();
-				for (const tab of all) {
-					popupWorkspace.tables.savedTabs.delete(tab.id);
-				}
+				if (!all.length) return;
+
+				popupWorkspace.batch(() => {
+					for (const tab of all) {
+						popupWorkspace.tables.savedTabs.delete(tab.id);
+					}
+				});
 			},
 
 			/** Update a saved tab's metadata in Y.Doc. */

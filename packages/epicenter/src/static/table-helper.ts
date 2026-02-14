@@ -16,7 +16,6 @@ import type {
 	InferTableRow,
 	InvalidRowResult,
 	RowResult,
-	TableBatchTransaction,
 	TableDefinition,
 	TableHelper,
 	UpdateResult,
@@ -165,19 +164,6 @@ export function createTableHelper<
 			for (const key of keys) {
 				ykv.delete(key);
 			}
-		},
-
-		// ═══════════════════════════════════════════════════════════════════════
-		// BATCH (Y.js transaction for atomicity)
-		// ═══════════════════════════════════════════════════════════════════════
-
-		batch(fn: (tx: TableBatchTransaction<TRow>) => void): void {
-			ykv.doc.transact(() => {
-				fn({
-					set: (row: TRow) => ykv.set(row.id, row),
-					delete: (id: string) => ykv.delete(id),
-				});
-			});
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════

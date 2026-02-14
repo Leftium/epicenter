@@ -304,9 +304,13 @@ describe('table benchmarks', () => {
 		const tables2 = createTables(ydoc2, { posts: postDefinition });
 
 		const { durationMs: batchMs } = measureTime(() => {
-			tables2.posts.batch((tx) => {
+			ydoc2.transact(() => {
 				for (let i = 0; i < 1_000; i++) {
-					tx.set({ id: generateId(i), title: `Post ${i}`, views: i });
+					tables2.posts.set({
+						id: generateId(i),
+						title: `Post ${i}`,
+						views: i,
+					});
 				}
 			});
 		});

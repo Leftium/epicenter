@@ -153,12 +153,6 @@ export type InferKvVersionUnion<T> =
 // HELPER TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Operations available inside a table batch transaction. */
-export type TableBatchTransaction<TRow extends { id: string }> = {
-	set(row: TRow): void;
-	delete(id: string): void;
-};
-
 /**
  * Type-safe table helper for a single static workspace table.
  *
@@ -173,10 +167,10 @@ export type TableBatchTransaction<TRow extends { id: string }> = {
  *
  * ## Difference from Dynamic API's TableHelper
  *
- * The static API uses row-level replacement (`set`) and a general `batch()`
- * transaction, while the dynamic API has cell-level LWW merge (`upsert`) and
- * dedicated batch methods (`upsertMany`, `deleteMany`). They share a common
- * core but diverge intentionally based on their storage models.
+ * The static API uses row-level replacement (`set`) while the dynamic API has
+ * cell-level LWW merge (`upsert`) and dedicated batch methods (`upsertMany`,
+ * `deleteMany`). Batching in the static API is done at the workspace level
+ * via `client.batch()`, which wraps `ydoc.transact()`.
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
@@ -312,31 +306,6 @@ export type TableHelper<TRow extends { id: string }> = {
 	 * table helper continues to work after clearing. Only row data is removed.
 	 */
 	clear(): void;
-
-	// ═══════════════════════════════════════════════════════════════════════
-	// BATCH (Y.js transaction for atomicity)
-	// ═══════════════════════════════════════════════════════════════════════
-
-	/**
-	 * Execute multiple operations atomically in a Y.js transaction.
-	 *
-	 * All changes inside the callback are applied as a single unit:
-	 * - Single undo/redo step
-	 * - Observers fire once (not per-operation)
-	 * - All changes applied together or not at all
-	 *
-	 * @param fn - Callback receiving a transaction object with `set` and `delete`
-	 *
-	 * @example
-	 * ```typescript
-	 * table.batch((tx) => {
-	 *   tx.set({ id: '1', title: 'First' });
-	 *   tx.set({ id: '2', title: 'Second' });
-	 *   tx.delete('3');
-	 * });
-	 * ```
-	 */
-	batch(fn: (tx: TableBatchTransaction<TRow>) => void): void;
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// OBSERVE
@@ -499,15 +468,6 @@ export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 	>;
 };
 
-/** Operations available inside a KV batch transaction. */
-export type KvBatchTransaction<TKvDefinitions extends KvDefinitions> = {
-	set<K extends keyof TKvDefinitions & string>(
-		key: K,
-		value: InferKvValue<TKvDefinitions[K]>,
-	): void;
-	delete<K extends keyof TKvDefinitions & string>(key: K): void;
-};
-
 /** KV helper with dictionary-style access */
 export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 	/** Get a value by key (validates + migrates). */
@@ -523,11 +483,6 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 
 	/** Delete a value by key. */
 	delete<K extends keyof TKvDefinitions & string>(key: K): void;
-
-	/**
-	 * Execute multiple operations atomically in a Y.js transaction.
-	 */
-	batch(fn: (tx: KvBatchTransaction<TKvDefinitions>) => void): void;
 
 	/** Watch for changes to a key. Returns unsubscribe function. */
 	observe<K extends keyof TKvDefinitions & string>(
@@ -805,6 +760,74 @@ export type WorkspaceClient<
 	awareness: AwarenessHelper<TAwarenessDefinitions>;
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
+
+	/**
+	 * Execute multiple operations atomically in a single Y.js transaction.
+	 *
+	 * Groups all table and KV mutations inside the callback into one transaction.
+	 * This means:
+	 * - Observers fire once (not per-operation)
+	 * - Creates a single undo/redo step
+	 * - All changes are applied together
+	 *
+	 * The callback receives nothing because `tables` and `kv` are the same objects
+	 * whether you're inside `batch()` or not — `ydoc.transact()` makes ALL operations
+	 * on the shared doc atomic automatically. No special transactional wrapper needed.
+	 *
+	 * **Note**: Yjs transactions do NOT roll back on error. If the callback throws,
+	 * any mutations that already executed within the callback are still applied.
+	 *
+	 * Nested `batch()` calls are safe — Yjs transact is reentrant, so inner calls
+	 * are absorbed by the outer transaction.
+	 *
+	 * @param fn - Callback containing table/KV operations to batch
+	 *
+	 * @example Single table batching
+	 * ```typescript
+	 * client.batch(() => {
+	 *   client.tables.posts.set({ id: '1', title: 'First' });
+	 *   client.tables.posts.set({ id: '2', title: 'Second' });
+	 *   client.tables.posts.delete('3');
+	 * });
+	 * // Observer fires once with all 3 changed IDs
+	 * ```
+	 *
+	 * @example Cross-table + KV batching
+	 * ```typescript
+	 * client.batch(() => {
+	 *   client.tables.tabs.set({ id: '1', url: 'https://...' });
+	 *   client.tables.windows.set({ id: 'w1', name: 'Main' });
+	 *   client.kv.set('lastSync', new Date().toISOString());
+	 * });
+	 * // All three writes are one atomic transaction
+	 * ```
+	 *
+	 * ## Known Limitation: Stale reads after delete
+	 *
+	 * If you delete a pre-existing key inside `batch()` and then read it back
+	 * within the same callback, `has()` returns `true` and `get()` returns the
+	 * old value. This is because the underlying YKeyValue read cache (`map`) is
+	 * only updated by the Yjs observer, which doesn't fire until the transaction
+	 * ends. Writes via `set()` are not affected — they go through a `pending`
+	 * buffer that `get()`/`has()` check first.
+	 *
+	 * ```typescript
+	 * client.tables.posts.set({ id: '1', title: 'Hello' });
+	 *
+	 * client.batch(() => {
+	 *   client.tables.posts.delete('1');
+	 *   client.tables.posts.has('1');  // true  (stale — map not yet updated)
+	 *   client.tables.posts.get('1');  // valid (stale — returns old row)
+	 * });
+	 *
+	 * client.tables.posts.has('1');    // false (observer has now updated map)
+	 * ```
+	 *
+	 * This is a known consequence of the single-writer architecture in the
+	 * YKeyValue layer. If you need to check deletion status within a batch,
+	 * track deleted IDs yourself in a local `Set`.
+	 */
+	batch(fn: () => void): void;
 
 	/** Promise resolving when all extensions are ready */
 	whenReady: Promise<void>;

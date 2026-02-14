@@ -135,6 +135,9 @@ export function createWorkspace<
 			kv,
 			awareness,
 			extensions,
+			batch(fn: () => void): void {
+				ydoc.transact(fn);
+			},
 			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,

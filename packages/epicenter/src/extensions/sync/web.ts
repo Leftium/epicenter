@@ -9,25 +9,26 @@ import { defineExtension } from '../../shared/lifecycle';
  * database name. Loads existing state on creation and auto-saves on every
  * Yjs update (both handled internally by `y-indexeddb`).
  *
- * Works directly as an extension factory (destructures `ydoc` from context)
- * and as a persistence option for `ySweetPersistSync`.
+ * Works directly as an extension factory — destructures `ydoc` from the
+ * workspace client context. Chain before sync so `context.whenReady`
+ * includes persistence readiness.
  *
- * @example As a workspace extension
+ * @example Persistence + sync (recommended pattern)
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+ * import { createSyncExtension } from '@epicenter/hq/extensions/sync';
  *
- * const workspace = createWorkspace({ name: 'Blog', tables: {...} })
- *   .withExtension('persistence', () => indexeddbPersistence);
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://localhost:3913/workspaces/{id}/sync',
+ *   }))
  * ```
  *
- * @example With Y-Sweet persist sync
+ * @example Standalone persistence (no sync)
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
- *
- * .withExtension('sync', () => ySweetPersistSync({
- *   auth: directAuth('http://localhost:8080'),
- *   persistence: indexeddbPersistence,
- * }))
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
  * ```
  */
 export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {

@@ -27,7 +27,7 @@ export type PersistenceConfig = {
  * @example
  * ```typescript
  * import { createWorkspace } from '@epicenter/hq/dynamic';
- * import { persistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
+ * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
  * import { join } from 'node:path';
  *
  * const projectDir = '/my/project';
@@ -74,20 +74,27 @@ export const persistence = (
 };
 
 /**
- * Filesystem persistence factory for use with `ySweetPersistSync`.
+ * Filesystem persistence factory that returns a `Lifecycle`.
  *
- * Returns a function `(ydoc: Y.Doc) => Lifecycle` that reads/writes a `.yjs` binary file.
- * Uses `Bun.file()` for read, debounced `writeFileSync` for write.
+ * Reads/writes a `.yjs` binary file using `Bun.file()` for read and
+ * debounced `writeFileSync` for write.
  *
- * @example
+ * **Note**: This returns a raw `Lifecycle` (not an `Extension`), so it cannot
+ * be used directly with `.withExtension()`. Use the `persistence` export above
+ * for the extension-compatible version, or wrap this in `defineExtension()`.
+ *
+ * @example With the persistence extension pattern
  * ```typescript
- * import { filesystemPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
- * import { directAuth, ySweetPersistSync } from '@epicenter/hq/extensions/y-sweet-persist-sync';
+ * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
+ * import { createSyncExtension } from '@epicenter/hq/extensions/sync';
  *
- * sync: ySweetPersistSync({
- *   auth: directAuth('http://localhost:8080'),
- *   persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
- * })
+ * createWorkspace(definition)
+ *   .withExtension('persistence', (ctx) => persistence(ctx, {
+ *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
+ *   }))
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://localhost:3913/workspaces/{id}/sync',
+ *   }))
  * ```
  */
 export function filesystemPersistence(options: {

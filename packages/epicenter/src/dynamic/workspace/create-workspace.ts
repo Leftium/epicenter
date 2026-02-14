@@ -126,7 +126,7 @@ export function createWorkspace<
 					context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
 				) => Extension<TExports>,
 			) {
-				const result = factory({ id, ydoc, tables, kv, extensions });
+				const result = factory(client);
 				extensionCleanups.push(() => result.lifecycle.destroy());
 				whenReadyPromises.push(result.lifecycle.whenReady);
 

@@ -35,6 +35,21 @@ export const MESSAGE_TYPE = {
 	AUTH: 2,
 	/** Request current awareness states from server */
 	QUERY_AWARENESS: 3,
+	/**
+	 * Sync status heartbeat (extension beyond standard y-websocket protocol).
+	 *
+	 * Tag 102 is safely outside the standard Yjs protocol range (0–3).
+	 * Any y-websocket client/server that doesn't understand it simply ignores it.
+	 *
+	 * The client sends its `localVersion` as a varuint payload. The server echoes
+	 * the raw payload back unchanged. This enables:
+	 * - `hasLocalChanges` tracking (client compares acked vs local version)
+	 * - Fast heartbeat (2s probe + 3s timeout = 5s dead connection detection)
+	 * - Zero server-side cost (echo only, never parsed)
+	 *
+	 * Wire format: `[varuint: 102] [varuint: payload length] [varuint: localVersion]`
+	 */
+	SYNC_STATUS: 102,
 } as const;
 
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
@@ -211,6 +226,46 @@ export function handleSyncMessage({
 	// Only return if there's content beyond the message type byte.
 	// readSyncMessage only writes a response for SyncStep1 messages.
 	return encoding.length(encoder) > 1 ? encoding.toUint8Array(encoder) : null;
+}
+
+// ============================================================================
+// Sync Status Protocol (MESSAGE_SYNC_STATUS = 102)
+// ============================================================================
+
+/**
+ * Encodes a MESSAGE_SYNC_STATUS message from a raw payload.
+ *
+ * The server uses this to echo the client's sync status payload back.
+ * The payload is opaque bytes — the server never parses them.
+ *
+ * @param options.payload - Raw sync status bytes to echo back to the client
+ * @returns Encoded message ready to send over WebSocket
+ */
+export function encodeSyncStatus({
+	payload,
+}: {
+	payload: Uint8Array;
+}): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC_STATUS);
+		encoding.writeVarUint8Array(encoder, payload);
+	});
+}
+
+/**
+ * Decodes a MESSAGE_SYNC_STATUS message and returns the raw payload.
+ *
+ * @param data - Raw message bytes (including the 102 type prefix)
+ * @returns The sync status payload bytes
+ * @throws Error if message is not a valid SYNC_STATUS message
+ */
+export function decodeSyncStatus(data: Uint8Array): Uint8Array {
+	const decoder = decoding.createDecoder(data);
+	const messageType = decoding.readVarUint(decoder);
+	if (messageType !== MESSAGE_TYPE.SYNC_STATUS) {
+		throw new Error(`Expected SYNC_STATUS message (102), got ${messageType}`);
+	}
+	return decoding.readVarUint8Array(decoder);
 }
 
 // ============================================================================

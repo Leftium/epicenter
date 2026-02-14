@@ -42,14 +42,15 @@ import type { Tables } from '../tables/create-tables';
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Context passed to extension factories — the "client-so-far".
+ * Context passed to extension factories — the full "client-so-far".
  *
- * Each `.withExtension()` call passes this context to the factory function.
+ * Each `.withExtension()` call passes the current `WorkspaceClient` to the factory.
  * The `extensions` field contains all previously added extensions, fully typed.
  * This enables progressive composition: extension N+1 can access extension N's exports.
  *
- * Omits lifecycle methods (`destroy`, `Symbol.asyncDispose`) since extensions
- * shouldn't control the workspace's lifecycle — only their own.
+ * Includes `whenReady` (composite of all prior extensions' readiness), `destroy`,
+ * and all other client fields — giving extensions full access to sequence after
+ * prior extensions via `await context.whenReady`.
  *
  * @typeParam TTableDefinitions - Array of table definitions for this workspace
  * @typeParam TKvFields - Array of KV field definitions for this workspace
@@ -57,10 +58,13 @@ import type { Tables } from '../tables/create-tables';
  *
  * @example
  * ```typescript
- * .withExtension('sync', ({ ydoc, extensions }) => {
- *   // extensions.persistence is typed if persistence was added before this
- *   const provider = createProvider(ydoc);
- *   return defineExtension({ exports: { provider }, destroy: () => provider.destroy() });
+ * .withExtension('sync', (context) => {
+ *   const provider = createProvider(context.ydoc);
+ *   const whenReady = (async () => {
+ *     await context.whenReady; // wait for all prior extensions (persistence, etc.)
+ *     provider.connect();
+ *   })();
+ *   return defineExtension({ exports: { provider }, whenReady, destroy: () => provider.destroy() });
  * })
  * ```
  */
@@ -69,18 +73,7 @@ export type ExtensionContext<
 		readonly TableDefinition[] = readonly TableDefinition[],
 	TKvFields extends readonly KvField[] = readonly KvField[],
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** The underlying Y.Doc instance */
-	ydoc: Y.Doc;
-	/** Workspace identifier (from definition.id) */
-	id: string;
-	/** Typed table helpers */
-	tables: Tables<TTableDefinitions>;
-	/** Typed KV helper */
-	kv: Kv<TKvFields>;
-	/** Accumulated extension exports from previous `.withExtension()` calls */
-	extensions: TExtensions;
-};
+> = WorkspaceClient<TTableDefinitions, TKvFields, TExtensions>;
 
 /**
  * Factory function that creates an extension with lifecycle hooks.

@@ -14,9 +14,11 @@ import * as Y from 'yjs';
 import {
 	decodeMessageType,
 	decodeSyncMessage,
+	decodeSyncStatus,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
+	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
@@ -36,6 +38,10 @@ describe('MESSAGE_TYPE constants', () => {
 		expect(MESSAGE_TYPE.AWARENESS).toBe(1);
 		expect(MESSAGE_TYPE.AUTH).toBe(2);
 		expect(MESSAGE_TYPE.QUERY_AWARENESS).toBe(3);
+	});
+
+	test('SYNC_STATUS is 102 (extension beyond standard y-websocket)', () => {
+		expect(MESSAGE_TYPE.SYNC_STATUS).toBe(102);
 	});
 });
 
@@ -376,6 +382,60 @@ describe('MESSAGE_QUERY_AWARENESS', () => {
 
 		expect(message.length).toBe(1);
 		expect(message[0]).toBe(MESSAGE_TYPE.QUERY_AWARENESS);
+	});
+});
+
+// ============================================================================
+// MESSAGE_SYNC_STATUS Tests
+// ============================================================================
+
+describe('MESSAGE_SYNC_STATUS', () => {
+	test('encode → decode roundtrip preserves payload', () => {
+		// Simulate what the client sends: a varuint-encoded local version
+		const versionEncoder = encoding.createEncoder();
+		encoding.writeVarUint(versionEncoder, 42);
+		const payload = encoding.toUint8Array(versionEncoder);
+
+		const encoded = encodeSyncStatus({ payload });
+		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.SYNC_STATUS);
+
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toEqual(payload);
+	});
+
+	test('preserves large version numbers', () => {
+		const versionEncoder = encoding.createEncoder();
+		encoding.writeVarUint(versionEncoder, 999_999);
+		const payload = encoding.toUint8Array(versionEncoder);
+
+		const encoded = encodeSyncStatus({ payload });
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toEqual(payload);
+
+		// Verify the version can be read back
+		const decoder = decoding.createDecoder(decoded);
+		expect(decoding.readVarUint(decoder)).toBe(999_999);
+	});
+
+	test('handles empty payload', () => {
+		const payload = new Uint8Array(0);
+		const encoded = encodeSyncStatus({ payload });
+		const decoded = decodeSyncStatus(encoded);
+		expect(decoded).toEqual(payload);
+	});
+
+	test('decodeSyncStatus throws on non-SYNC_STATUS message', () => {
+		const doc = createDoc();
+		const syncMessage = encodeSyncStep1({ doc });
+		expect(() => decodeSyncStatus(syncMessage)).toThrow(
+			'Expected SYNC_STATUS message (102), got 0',
+		);
+	});
+
+	test('decodeMessageType correctly identifies SYNC_STATUS', () => {
+		const payload = new Uint8Array([1, 2, 3]);
+		const encoded = encodeSyncStatus({ payload });
+		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.SYNC_STATUS);
 	});
 });
 

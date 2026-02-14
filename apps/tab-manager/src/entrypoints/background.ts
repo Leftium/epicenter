@@ -22,11 +22,8 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
-import {
-	directAuth,
-	ySweetPersistSync,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
-import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
 import { createWorkspace } from '@epicenter/hq/static';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
@@ -115,23 +112,25 @@ export default defineBackground(() => {
 	// Create Workspace Client with Extensions
 	// ─────────────────────────────────────────────────────────────────────────
 
-	const client = createWorkspace(definition).withExtension(
-		'sync',
-		/**
-		 * Y-Sweet sync with IndexedDB persistence.
-		 *
-		 * Persistence loads first (critical for service worker restarts —
-		 * Chrome MV3 terminates after ~30s of inactivity), then WebSocket
-		 * connects with an accurate state vector.
-		 *
-		 * Server setup: npx y-sweet@latest serve
-		 * Default: http://127.0.0.1:8080
-		 */
-		ySweetPersistSync({
-			auth: directAuth('http://127.0.0.1:8080'),
-			persistence: indexeddbPersistence,
-		}),
-	);
+	const client = createWorkspace(definition)
+		.withExtension('persistence', indexeddbPersistence)
+		.withExtension(
+			'sync',
+			/**
+			 * WebSocket sync with Y-Sweet protocol.
+			 *
+			 * Persistence extension loads first (critical for service worker restarts —
+			 * Chrome MV3 terminates after ~30s of inactivity). The sync extension
+			 * waits for persistence via `context.whenReady`, then connects with
+			 * an accurate state vector.
+			 *
+			 * Server setup: bun run packages/server/
+			 * Default: ws://127.0.0.1:3913
+			 */
+			createSyncExtension({
+				url: 'ws://127.0.0.1:3913/workspaces/{id}/sync',
+			}),
+		);
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Action Helpers (extracted from workspace definition)

@@ -5,17 +5,13 @@
  * which is shared across devices via Yjs (not available through Chrome APIs).
  *
  * This creates a lightweight workspace client with IndexedDB persistence
- * and Y-Sweet sync — the same Y.Doc as the background service worker.
+ * and WebSocket sync — the same Y.Doc as the background service worker.
  * Both share the same workspace ID (`tab-manager`), so IndexedDB and
- * Y-Sweet will converge on the same document.
+ * sync will converge on the same document.
  */
 
-import {
-	directAuth,
-	ySweetPersistSync,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
-import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
-import type { ExtensionFactory } from '@epicenter/hq/static';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
 import { createWorkspace } from '@epicenter/hq/static';
 import { definition } from '$lib/workspace';
 
@@ -24,15 +20,16 @@ import { definition } from '$lib/workspace';
  *
  * Provides typed access to all browser tables including saved tabs.
  * Shares the same Y.Doc as the background service worker via IndexedDB
- * persistence and Y-Sweet sync.
+ * persistence and sync.
  */
-export const popupWorkspace = createWorkspace(definition).withExtension(
-	'sync',
-	ySweetPersistSync({
-		auth: directAuth('http://127.0.0.1:8080'),
-		persistence: indexeddbPersistence,
-	}) as ExtensionFactory,
-);
+export const popupWorkspace = createWorkspace(definition)
+	.withExtension('persistence', indexeddbPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: 'ws://127.0.0.1:3913/workspaces/{id}/sync',
+		}),
+	);
 
 // Set local awareness on connect
 void popupWorkspace.whenReady.then(() => {

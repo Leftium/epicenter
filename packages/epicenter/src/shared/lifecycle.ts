@@ -141,8 +141,9 @@ export type Lifecycle = {
  * The result of `defineExtension()` — separates lifecycle from consumer exports.
  *
  * The framework plucks `lifecycle` for internal management (cleanup, readiness)
- * and stores `exports` by reference as `workspace.extensions[key]`. Consumers
- * never see lifecycle hooks — only the extension's public API.
+ * and stores `exports` by reference as `workspace.extensions[key]`. Extension
+ * factories receive the full client (including `whenReady`) as context, but
+ * consumers of `workspace.extensions[key]` see only the extension's public API.
  *
  * @typeParam T - The exports object type (what consumers access via `workspace.extensions[key]`)
  *

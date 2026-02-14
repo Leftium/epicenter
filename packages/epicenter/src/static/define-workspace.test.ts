@@ -313,6 +313,83 @@ describe('defineWorkspace', () => {
 		expect(result.status).toBe('valid');
 	});
 
+	test('context.whenReady resolves after prior extensions', async () => {
+		const order: string[] = [];
+
+		const client = createWorkspace({
+			id: 'when-ready-test',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string' })),
+			},
+		})
+			.withExtension('slow', () =>
+				defineExtension({
+					exports: { tag: 'slow' },
+					whenReady: new Promise<void>((resolve) =>
+						setTimeout(() => {
+							order.push('slow-ready');
+							resolve();
+						}, 50),
+					),
+				}),
+			)
+			.withExtension('dependent', (context) => {
+				// context.whenReady should be a promise representing all prior extensions
+				expect(context.whenReady).toBeInstanceOf(Promise);
+
+				const whenReady = (async () => {
+					await context.whenReady;
+					order.push('dependent-ready');
+				})();
+
+				return defineExtension({
+					exports: { tag: 'dependent' },
+					whenReady,
+				});
+			});
+
+		await client.whenReady;
+		// 'slow' must resolve before 'dependent' starts
+		expect(order).toEqual(['slow-ready', 'dependent-ready']);
+	});
+
+	test('first extension gets immediately-resolving context.whenReady', async () => {
+		let contextWhenReady: Promise<void> | undefined;
+
+		createWorkspace({
+			id: 'first-ext-test',
+		}).withExtension('first', (context) => {
+			contextWhenReady = context.whenReady;
+			return defineExtension({ exports: { tag: 'first' } });
+		});
+
+		// First extension's context.whenReady = Promise.all([]) which resolves immediately
+		expect(contextWhenReady).toBeInstanceOf(Promise);
+		await contextWhenReady; // should not hang
+	});
+
+	test('context includes definitions, destroy, and whenReady', () => {
+		const tableDef = defineTable(type({ id: 'string', title: 'string' }));
+
+		createWorkspace({
+			id: 'full-context-test',
+			tables: { posts: tableDef },
+		}).withExtension('inspector', (context) => {
+			// All WorkspaceClient fields should be present
+			expect(context.id).toBe('full-context-test');
+			expect(context.ydoc).toBeDefined();
+			expect(context.tables).toBeDefined();
+			expect(context.kv).toBeDefined();
+			expect(context.awareness).toBeDefined();
+			expect(context.extensions).toBeDefined();
+			expect(context.definitions).toBeDefined();
+			expect(context.definitions.tables.posts).toBe(tableDef);
+			expect(context.whenReady).toBeInstanceOf(Promise);
+			expect(typeof context.destroy).toBe('function');
+			return defineExtension();
+		});
+	});
+
 	test('destroy runs in reverse order (LIFO)', async () => {
 		const order: string[] = [];
 

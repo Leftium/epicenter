@@ -5,7 +5,9 @@ You're building a sync provider. It connects to a WebSocket server and syncs dat
 ```typescript
 type SyncProviderConfig = {
 	url: string;
+	/** Static shared secret, set once when the server starts. */
 	token?: string;
+	/** Fetches a short-lived JWT from your auth service on each connection. */
 	getToken?: (workspaceId: string) => Promise<string>;
 };
 ```

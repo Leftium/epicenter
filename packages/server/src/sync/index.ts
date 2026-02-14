@@ -6,6 +6,7 @@ import type * as Y from 'yjs';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
+	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncMessage,
@@ -14,6 +15,12 @@ import {
 
 /** WebSocket close code for room not found (4000-4999 reserved for application use per RFC 6455) */
 const CLOSE_ROOM_NOT_FOUND = 4004;
+
+/** Interval between server-initiated ping frames (ms). Detects dead clients (laptop lid closed, browser killed). */
+const PING_INTERVAL_MS = 30_000;
+
+/** Time (ms) to wait after the last connection leaves a room before destroying it. */
+const ROOM_EVICTION_TIMEOUT_MS = 60_000;
 
 /**
  * Convert Uint8Array to Buffer for WebSocket transmission.
@@ -62,6 +69,9 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 	/** Track awareness (user presence) per room. */
 	const awarenessMap = new Map<string, awarenessProtocol.Awareness>();
 
+	/** Track pending eviction timers per room. Cancelled if a new connection joins before expiry. */
+	const evictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 	/**
 	 * Store per-connection state using the underlying raw WebSocket as key.
 	 *
@@ -86,6 +96,10 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 			controlledClientIds: Set<number>;
 			/** The raw WebSocket, used as origin for Yjs transactions to prevent echo. */
 			rawWs: object;
+			/** Interval handle for server-side ping keepalive. */
+			pingInterval: ReturnType<typeof setInterval> | null;
+			/** Whether a pong was received since the last ping. */
+			pongReceived: boolean;
 		}
 	>();
 
@@ -118,6 +132,14 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 
 			// Use ws.raw as stable key - Elysia creates new wrapper objects per event
 			const rawWs = ws.raw;
+
+			// Cancel pending eviction timer if a new connection joins the room
+			const existingTimer = evictionTimers.get(room);
+			if (existingTimer) {
+				clearTimeout(existingTimer);
+				evictionTimers.delete(room);
+				console.log(`[Sync Server] Cancelled eviction timer for room: ${room}`);
+			}
 
 			// Track connection
 			if (!rooms.has(room)) {
@@ -159,6 +181,28 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 			};
 			doc.on('update', updateHandler);
 
+			// Start server-side ping/pong keepalive to detect dead clients.
+			// If a pong wasn't received since the last ping, the client is dead.
+			const pongReceived = true;
+			const pingInterval = setInterval(() => {
+				const state = connectionState.get(rawWs);
+				if (!state) return;
+
+				if (!state.pongReceived) {
+					// No pong since last ping — client is dead
+					console.log(
+						`[Sync Server] No pong received, closing dead connection in room: ${room}`,
+					);
+					ws.close();
+					return;
+				}
+
+				// Reset pong flag and send ping
+				state.pongReceived = false;
+				// Bun's ServerWebSocket supports ping() on the raw socket
+				(rawWs as { ping?: () => void }).ping?.();
+			}, PING_INTERVAL_MS);
+
 			// Store connection state using ws.raw as key for consistent lookup
 			connectionState.set(rawWs, {
 				room,
@@ -167,7 +211,18 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 				updateHandler,
 				controlledClientIds,
 				rawWs,
+				pingInterval,
+				pongReceived,
 			});
+		},
+
+		pong(ws) {
+			// Pong received from client in response to our ping.
+			// Mark this connection as alive so the next ping check doesn't close it.
+			const state = connectionState.get(ws.raw);
+			if (state) {
+				state.pongReceived = true;
+			}
 		},
 
 		message(ws, message) {
@@ -253,6 +308,14 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 					}
 					break;
 				}
+
+				case MESSAGE_TYPE.SYNC_STATUS: {
+					// Echo the payload back unchanged — that's it.
+					// The client uses this to track hasLocalChanges and heartbeat.
+					const payload = decoding.readVarUint8Array(decoder);
+					ws.send(toBuffer(encodeSyncStatus({ payload })));
+					break;
+				}
 			}
 		},
 
@@ -261,10 +324,21 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 			const state = connectionState.get(ws.raw);
 			if (!state) return;
 
-			const { room, doc, updateHandler, awareness, controlledClientIds } =
-				state;
+			const {
+				room,
+				doc,
+				updateHandler,
+				awareness,
+				controlledClientIds,
+				pingInterval,
+			} = state;
 
 			console.log(`[Sync Server] Client disconnected from room: ${room}`);
+
+			// Clean up ping/pong keepalive interval
+			if (pingInterval) {
+				clearInterval(pingInterval);
+			}
 
 			// Remove update listener
 			doc.off('update', updateHandler);
@@ -281,9 +355,21 @@ export function createSyncPlugin(config: SyncPluginConfig) {
 			// Remove from room (use ws wrapper since that's what we added in open)
 			rooms.get(room)?.delete(ws);
 			if (rooms.get(room)?.size === 0) {
-				rooms.delete(room);
-				// Also clean up awareness for empty rooms
-				awarenessMap.delete(room);
+				// Last connection left — start eviction timer instead of immediately destroying
+				console.log(
+					`[Sync Server] Room ${room} is empty, starting ${ROOM_EVICTION_TIMEOUT_MS / 1000}s eviction timer`,
+				);
+				const timer = setTimeout(() => {
+					// Verify the room is still empty (a new connection could have cancelled this)
+					const conns = rooms.get(room);
+					if (!conns || conns.size === 0) {
+						rooms.delete(room);
+						awarenessMap.delete(room);
+						evictionTimers.delete(room);
+						console.log(`[Sync Server] Evicted idle room: ${room}`);
+					}
+				}, ROOM_EVICTION_TIMEOUT_MS);
+				evictionTimers.set(room, timer);
 			}
 
 			// Clean up connection state using raw key

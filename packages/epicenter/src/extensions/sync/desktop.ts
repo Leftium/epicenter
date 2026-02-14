@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
 import type { ExtensionContext } from '../../dynamic/extension';
-import { defineExtension, type Lifecycle } from '../../shared/lifecycle';
+import type { Lifecycle } from '../../shared/lifecycle';
 
 /**
  * Configuration for the persistence extension.
@@ -70,7 +70,7 @@ export const persistence = (
 		});
 	})();
 
-	return defineExtension({ whenReady });
+	return { whenReady };
 };
 
 /**
@@ -81,7 +81,7 @@ export const persistence = (
  *
  * **Note**: This returns a raw `Lifecycle` (not an `Extension`), so it cannot
  * be used directly with `.withExtension()`. Use the `persistence` export above
- * for the extension-compatible version, or wrap this in `defineExtension()`.
+ * for the extension-compatible version.
  *
  * @example With the persistence extension pattern
  * ```typescript

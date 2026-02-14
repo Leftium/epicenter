@@ -49,6 +49,7 @@ This document preserves the HeadDoc and Registry patterns from the original thre
 ```
 
 **Why three docs?**
+
 - **Registry**: Personal — syncs only between YOUR devices (which workspaces do I have?)
 - **Head**: Shared — lightweight pointer to current epoch (version control)
 - **Workspace**: Shared — the actual data, tied to an epoch for migrations
@@ -87,116 +88,117 @@ getEpoch() → MAX(3, 3, 5) = 5
 
 ```typescript
 export function createHeadDoc<T extends ProviderFactoryMap>(options: {
-  workspaceId: string;
-  providers: T;
+	workspaceId: string;
+	providers: T;
 }) {
-  const { workspaceId, providers } = options;
+	const { workspaceId, providers } = options;
 
-  // Y.Doc guid is just the workspaceId (no epoch suffix)
-  const ydoc = new Y.Doc({ guid: workspaceId });
-  const epochsMap = ydoc.getMap<number>('epochs');
-  const metaMap = ydoc.getMap<unknown>('meta');
+	// Y.Doc guid is just the workspaceId (no epoch suffix)
+	const ydoc = new Y.Doc({ guid: workspaceId });
+	const epochsMap = ydoc.getMap<number>('epochs');
+	const metaMap = ydoc.getMap<unknown>('meta');
 
-  // Initialize providers
-  const providerExports = {} as InferProviderExports<T>;
-  for (const [id, factory] of Object.entries(providers)) {
-    providerExports[id] = factory({ ydoc });
-  }
+	// Initialize providers
+	const providerExports = {} as InferProviderExports<T>;
+	for (const [id, factory] of Object.entries(providers)) {
+		providerExports[id] = factory({ ydoc });
+	}
 
-  const whenReady = Promise.all(
-    Object.values(providerExports).map((p) => p.whenReady)
-  ).then(() => {});
+	const whenReady = Promise.all(
+		Object.values(providerExports).map((p) => p.whenReady),
+	).then(() => {});
 
-  return {
-    ydoc,
-    workspaceId,
-    providers: providerExports,
-    whenReady,
+	return {
+		ydoc,
+		workspaceId,
+		providers: providerExports,
+		whenReady,
 
-    /**
-     * Get current epoch (MAX of all client proposals).
-     */
-    getEpoch(): number {
-      let max = 0;
-      epochsMap.forEach((value) => {
-        max = Math.max(max, value);
-      });
-      return max;
-    },
+		/**
+		 * Get current epoch (MAX of all client proposals).
+		 */
+		getEpoch(): number {
+			let max = 0;
+			epochsMap.forEach((value) => {
+				max = Math.max(max, value);
+			});
+			return max;
+		},
 
-    /**
-     * Get this client's own epoch value.
-     * May differ from global epoch (for viewing historical epochs).
-     */
-    getOwnEpoch(): number {
-      return epochsMap.get(ydoc.clientID.toString()) ?? 0;
-    },
+		/**
+		 * Get this client's own epoch value.
+		 * May differ from global epoch (for viewing historical epochs).
+		 */
+		getOwnEpoch(): number {
+			return epochsMap.get(ydoc.clientID.toString()) ?? 0;
+		},
 
-    /**
-     * Safely bump to next epoch.
-     * Computes MAX + 1 and proposes under this client's ID.
-     */
-    bumpEpoch(): number {
-      const next = this.getEpoch() + 1;
-      epochsMap.set(ydoc.clientID.toString(), next);
-      return next;
-    },
+		/**
+		 * Safely bump to next epoch.
+		 * Computes MAX + 1 and proposes under this client's ID.
+		 */
+		bumpEpoch(): number {
+			const next = this.getEpoch() + 1;
+			epochsMap.set(ydoc.clientID.toString(), next);
+			return next;
+		},
 
-    /**
-     * Set this client's epoch (clamped to not exceed global).
-     * Use for time-travel to view historical epochs.
-     */
-    setOwnEpoch(epoch: number): number {
-      const globalEpoch = this.getEpoch();
-      const clamped = Math.min(epoch, globalEpoch);
-      epochsMap.set(ydoc.clientID.toString(), clamped);
-      return clamped;
-    },
+		/**
+		 * Set this client's epoch (clamped to not exceed global).
+		 * Use for time-travel to view historical epochs.
+		 */
+		setOwnEpoch(epoch: number): number {
+			const globalEpoch = this.getEpoch();
+			const clamped = Math.min(epoch, globalEpoch);
+			epochsMap.set(ydoc.clientID.toString(), clamped);
+			return clamped;
+		},
 
-    /**
-     * Get all epoch proposals for debugging.
-     */
-    getEpochProposals(): Map<string, number> {
-      const proposals = new Map<string, number>();
-      epochsMap.forEach((value, key) => {
-        proposals.set(key, value);
-      });
-      return proposals;
-    },
+		/**
+		 * Get all epoch proposals for debugging.
+		 */
+		getEpochProposals(): Map<string, number> {
+			const proposals = new Map<string, number>();
+			epochsMap.forEach((value, key) => {
+				proposals.set(key, value);
+			});
+			return proposals;
+		},
 
-    /**
-     * Observe epoch changes.
-     */
-    observeEpoch(callback: (epoch: number) => void): () => void {
-      const handler = () => callback(this.getEpoch());
-      epochsMap.observe(handler);
-      return () => epochsMap.unobserve(handler);
-    },
+		/**
+		 * Observe epoch changes.
+		 */
+		observeEpoch(callback: (epoch: number) => void): () => void {
+			const handler = () => callback(this.getEpoch());
+			epochsMap.observe(handler);
+			return () => epochsMap.unobserve(handler);
+		},
 
-    // Meta helpers (workspace identity)
-    getMeta() {
-      return {
-        name: metaMap.get('name') as string ?? '',
-        icon: metaMap.get('icon') as Icon ?? null,
-        description: metaMap.get('description') as string ?? '',
-      };
-    },
+		// Meta helpers (workspace identity)
+		getMeta() {
+			return {
+				name: (metaMap.get('name') as string) ?? '',
+				icon: (metaMap.get('icon') as Icon) ?? null,
+				description: (metaMap.get('description') as string) ?? '',
+			};
+		},
 
-    setMeta(meta: { name?: string; icon?: Icon | null; description?: string }) {
-      ydoc.transact(() => {
-        if (meta.name !== undefined) metaMap.set('name', meta.name);
-        if (meta.icon !== undefined) metaMap.set('icon', meta.icon);
-        if (meta.description !== undefined) metaMap.set('description', meta.description);
-      });
-    },
+		setMeta(meta: { name?: string; icon?: Icon | null; description?: string }) {
+			ydoc.transact(() => {
+				if (meta.name !== undefined) metaMap.set('name', meta.name);
+				if (meta.icon !== undefined) metaMap.set('icon', meta.icon);
+				if (meta.description !== undefined)
+					metaMap.set('description', meta.description);
+			});
+		},
 
-    async destroy() {
-      await Promise.allSettled(
-        Object.values(providerExports).map((p) => p.destroy())
-      );
-      ydoc.destroy();
-    },
-  };
+		async destroy() {
+			await Promise.allSettled(
+				Object.values(providerExports).map((p) => p.destroy()),
+			);
+			ydoc.destroy();
+		},
+	};
 }
 ```
 
@@ -206,82 +208,83 @@ export function createHeadDoc<T extends ProviderFactoryMap>(options: {
 
 ```typescript
 export function headPersistence(
-  ydoc: Y.Doc,
-  config: { jsonDebounceMs?: number } = {},
+	ydoc: Y.Doc,
+	config: { jsonDebounceMs?: number } = {},
 ): ProviderExports {
-  const { jsonDebounceMs = 500 } = config;
-  const workspaceId = ydoc.guid;
+	const { jsonDebounceMs = 500 } = config;
+	const workspaceId = ydoc.guid;
 
-  const pathsPromise = (async () => {
-    const baseDir = await appLocalDataDir();
-    const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
-    return {
-      workspaceDir,
-      binaryPath: await join(workspaceDir, 'head.yjs'),
-      jsonPath: await join(workspaceDir, 'head.json'),
-    };
-  })();
+	const pathsPromise = (async () => {
+		const baseDir = await appLocalDataDir();
+		const workspaceDir = await join(baseDir, 'workspaces', workspaceId);
+		return {
+			workspaceDir,
+			binaryPath: await join(workspaceDir, 'head.yjs'),
+			jsonPath: await join(workspaceDir, 'head.json'),
+		};
+	})();
 
-  // Binary persistence (immediate)
-  const saveBinary = async () => {
-    const { binaryPath } = await pathsPromise;
-    const state = Y.encodeStateAsUpdate(ydoc);
-    await writeFile(binaryPath, state);
-  };
+	// Binary persistence (immediate)
+	const saveBinary = async () => {
+		const { binaryPath } = await pathsPromise;
+		const state = Y.encodeStateAsUpdate(ydoc);
+		await writeFile(binaryPath, state);
+	};
 
-  // JSON mirror (debounced, flattens meta to top level)
-  let jsonTimer: ReturnType<typeof setTimeout> | null = null;
+	// JSON mirror (debounced, flattens meta to top level)
+	let jsonTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const saveJson = async () => {
-    const { jsonPath } = await pathsPromise;
-    const metaMap = ydoc.getMap('meta');
-    const epochsMap = ydoc.getMap<number>('epochs');
+	const saveJson = async () => {
+		const { jsonPath } = await pathsPromise;
+		const metaMap = ydoc.getMap('meta');
+		const epochsMap = ydoc.getMap<number>('epochs');
 
-    const flattened = {
-      ...metaMap.toJSON(),
-      epochs: epochsMap.toJSON(),
-    };
+		const flattened = {
+			...metaMap.toJSON(),
+			epochs: epochsMap.toJSON(),
+		};
 
-    await writeFile(jsonPath, new TextEncoder().encode(
-      JSON.stringify(flattened, null, '\t')
-    ));
-  };
+		await writeFile(
+			jsonPath,
+			new TextEncoder().encode(JSON.stringify(flattened, null, '\t')),
+		);
+	};
 
-  const scheduleJsonSave = () => {
-    if (jsonTimer) clearTimeout(jsonTimer);
-    jsonTimer = setTimeout(() => {
-      jsonTimer = null;
-      saveJson();
-    }, jsonDebounceMs);
-  };
+	const scheduleJsonSave = () => {
+		if (jsonTimer) clearTimeout(jsonTimer);
+		jsonTimer = setTimeout(() => {
+			jsonTimer = null;
+			saveJson();
+		}, jsonDebounceMs);
+	};
 
-  const handleUpdate = () => {
-    saveBinary();
-    scheduleJsonSave();
-  };
+	const handleUpdate = () => {
+		saveBinary();
+		scheduleJsonSave();
+	};
 
-  ydoc.on('update', handleUpdate);
+	ydoc.on('update', handleUpdate);
 
-  return defineExports({
-    whenReady: (async () => {
-      const { workspaceDir, binaryPath } = await pathsPromise;
-      await mkdir(workspaceDir, { recursive: true }).catch(() => {});
+	return {
+		whenReady: (async () => {
+			const { workspaceDir, binaryPath } = await pathsPromise;
+			await mkdir(workspaceDir, { recursive: true }).catch(() => {});
 
-      try {
-        const savedState = await readFile(binaryPath);
-        Y.applyUpdate(ydoc, new Uint8Array(savedState));
-      } catch {
-        await saveBinary();
-      }
+			try {
+				const savedState = await readFile(binaryPath);
+				Y.applyUpdate(ydoc, new Uint8Array(savedState));
+			} catch {
+				await saveBinary();
+			}
 
-      await saveJson();
-    })(),
+			await saveJson();
+		})(),
 
-    destroy() {
-      ydoc.off('update', handleUpdate);
-      if (jsonTimer) clearTimeout(jsonTimer);
-    },
-  });
+		destroy() {
+			ydoc.off('update', handleUpdate);
+			if (jsonTimer) clearTimeout(jsonTimer);
+		},
+	};
 }
 ```
 
@@ -308,40 +311,40 @@ Y.Doc (guid: "registry")
 
 ```typescript
 export function createRegistry(options: {
-  registryId: string;
-  providers: ProviderFactoryMap;
+	registryId: string;
+	providers: ProviderFactoryMap;
 }) {
-  const ydoc = new Y.Doc({ guid: options.registryId });
-  const workspacesMap = ydoc.getMap<boolean>('workspaces');
+	const ydoc = new Y.Doc({ guid: options.registryId });
+	const workspacesMap = ydoc.getMap<boolean>('workspaces');
 
-  // Or with YKeyValueLww:
-  // const workspacesArray = ydoc.getArray('workspaces');
-  // const workspaces = new YKeyValueLww(workspacesArray);
+	// Or with YKeyValueLww:
+	// const workspacesArray = ydoc.getArray('workspaces');
+	// const workspaces = new YKeyValueLww(workspacesArray);
 
-  return {
-    ydoc,
+	return {
+		ydoc,
 
-    listWorkspaceIds(): string[] {
-      return Array.from(workspacesMap.keys());
-    },
+		listWorkspaceIds(): string[] {
+			return Array.from(workspacesMap.keys());
+		},
 
-    addWorkspace(id: string) {
-      workspacesMap.set(id, true);
-    },
+		addWorkspace(id: string) {
+			workspacesMap.set(id, true);
+		},
 
-    removeWorkspace(id: string) {
-      workspacesMap.delete(id);
-    },
+		removeWorkspace(id: string) {
+			workspacesMap.delete(id);
+		},
 
-    hasWorkspace(id: string): boolean {
-      return workspacesMap.has(id);
-    },
+		hasWorkspace(id: string): boolean {
+			return workspacesMap.has(id);
+		},
 
-    observe(callback: () => void): () => void {
-      workspacesMap.observe(callback);
-      return () => workspacesMap.unobserve(callback);
-    },
-  };
+		observe(callback: () => void): () => void {
+			workspacesMap.observe(callback);
+			return () => workspacesMap.unobserve(callback);
+		},
+	};
 }
 ```
 
@@ -380,12 +383,13 @@ When using epochs/snapshots, Y.Doc must have `gc: false`:
 ```typescript
 // Versioned mode: gc: false for snapshot capability
 const ydoc = new Y.Doc({
-  guid: `${workspaceId}-${epoch}`,
-  gc: false  // Required for Y.snapshot() to work
+	guid: `${workspaceId}-${epoch}`,
+	gc: false, // Required for Y.snapshot() to work
 });
 ```
 
 With `gc: false`, use **Y.Map** instead of YKeyValueLww for storage efficiency:
+
 - YKeyValueLww + gc:false = 800x storage bloat
 - Y.Map + gc:false = only 2x storage increase
 
@@ -401,33 +405,37 @@ Pattern for reactive epoch state in Svelte:
 import type { HeadDoc } from '@epicenter/hq';
 
 export function createReactiveHead(head: HeadDoc) {
-  let epoch = $state(head.getEpoch());
-  let meta = $state(head.getMeta());
+	let epoch = $state(head.getEpoch());
+	let meta = $state(head.getMeta());
 
-  // Subscribe to epoch changes
-  const unsubscribeEpoch = head.observeEpoch((newEpoch) => {
-    epoch = newEpoch;
-  });
+	// Subscribe to epoch changes
+	const unsubscribeEpoch = head.observeEpoch((newEpoch) => {
+		epoch = newEpoch;
+	});
 
-  // Subscribe to meta changes
-  const metaMap = head.ydoc.getMap('meta');
-  const handleMetaChange = () => {
-    meta = head.getMeta();
-  };
-  metaMap.observe(handleMetaChange);
+	// Subscribe to meta changes
+	const metaMap = head.ydoc.getMap('meta');
+	const handleMetaChange = () => {
+		meta = head.getMeta();
+	};
+	metaMap.observe(handleMetaChange);
 
-  return {
-    get epoch() { return epoch; },
-    get meta() { return meta; },
+	return {
+		get epoch() {
+			return epoch;
+		},
+		get meta() {
+			return meta;
+		},
 
-    setMeta: head.setMeta.bind(head),
-    bumpEpoch: head.bumpEpoch.bind(head),
+		setMeta: head.setMeta.bind(head),
+		bumpEpoch: head.bumpEpoch.bind(head),
 
-    destroy() {
-      unsubscribeEpoch();
-      metaMap.unobserve(handleMetaChange);
-    },
-  };
+		destroy() {
+			unsubscribeEpoch();
+			metaMap.unobserve(handleMetaChange);
+		},
+	};
 }
 ```
 

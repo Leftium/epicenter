@@ -18,9 +18,10 @@
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return Extension<T>    │
- * │  directly                │    │  via defineExtension()        │
- * └──────────────────────────┘    └──────────────────────────────┘
+ * │  return Lifecycle & T    │    │  return Extension<T>          │
+ * │  directly                │    │  { exports?, whenReady?,      │
+ * └──────────────────────────┘    │    destroy? }                 │
+ *                                 └──────────────────────────────┘
  * ```
  *
  * ## Usage
@@ -28,16 +29,16 @@
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** use `defineExtension()` to separate lifecycle from consumer exports:
+ * **Extensions** return a flat `{ exports?, whenReady?, destroy? }` object:
  *
  * ```typescript
- * // Extension with cleanup — lifecycle separated from exports
+ * // Extension with cleanup — flat return, framework normalizes defaults
  * const withCleanup: ExtensionFactory = ({ ydoc }) => {
  *   const db = new Database(':memory:');
- *   return defineExtension({
+ *   return {
  *     exports: { db },
  *     destroy: () => db.close(),
- *   });
+ *   };
  * };
  * ```
  *
@@ -138,115 +139,46 @@ export type Lifecycle = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The result of `defineExtension()` — separates lifecycle from consumer exports.
+ * What extension factories return — a flat object with optional exports and lifecycle hooks.
  *
- * The framework plucks `lifecycle` for internal management (cleanup, readiness)
- * and stores `exports` by reference as `workspace.extensions[key]`. Extension
- * factories receive the full client (including `whenReady`) as context, but
- * consumers of `workspace.extensions[key]` see only the extension's public API.
+ * The framework normalizes defaults internally:
+ * - `exports` defaults to `{}` (empty — lifecycle-only extensions)
+ * - `whenReady` defaults to `Promise.resolve()` (instantly ready)
+ * - `destroy` defaults to `() => {}` (no-op cleanup)
+ *
+ * The `exports` object is stored **by reference** in `workspace.extensions[key]` —
+ * getters, proxies, and object identity are preserved.
  *
  * @typeParam T - The exports object type (what consumers access via `workspace.extensions[key]`)
  *
  * @example
  * ```typescript
- * // Framework usage (internal)
- * const { exports, lifecycle } = factory(context);
- * extensionCleanups.push(lifecycle.destroy);
- * whenReadyPromises.push(lifecycle.whenReady);
- * allExtensions[key] = exports; // by reference — getters survive
- * ```
- */
-export type Extension<T = Record<string, never>> = {
-	/** Consumer-facing exports stored by reference in `workspace.extensions[key]` */
-	exports: T;
-	/** Framework-managed lifecycle hooks (cleanup + readiness tracking) */
-	lifecycle: Lifecycle;
-};
-
-/**
- * Define an extension's exports and lifecycle hooks as separate concerns.
- *
- * Separates lifecycle hooks from consumer exports. The `exports` object is stored
- * **by reference** — getters, proxies, and object identity are preserved.
- *
- * ## When to use
- *
- * Use in any extension factory that is passed to `withExtension()`:
- *
- * ```typescript
- * .withExtension('sqlite', ({ ydoc }) => {
- *   const db = new Database(':memory:');
- *   return defineExtension({
- *     exports: { db, query: (sql) => db.exec(sql) },
- *     destroy: () => db.close(),
- *   });
- * })
- * ```
- *
- * ## Defaults
- *
- * | Field | Default when omitted |
- * |-------|---------------------|
- * | `exports` | `{}` (empty object — valid for lifecycle-only extensions) |
- * | `whenReady` | `Promise.resolve()` (instantly ready) |
- * | `destroy` | `() => {}` (no-op cleanup) |
- *
- * @param options - Optional configuration with exports and/or lifecycle hooks
- * @returns `Extension<T>` with exports stored by reference and lifecycle normalized
- *
- * @example Lifecycle-only extension (no consumer exports)
- * ```typescript
- * return defineExtension({
- *   whenReady: loadPromise,
- *   destroy: cleanup,
- * });
- * // → exports: {}, lifecycle: { whenReady: loadPromise, destroy: cleanup }
- * ```
- *
- * @example Exports-only extension (no lifecycle)
- * ```typescript
- * return defineExtension({
- *   exports: { compute: (x) => x * 2 },
- * });
- * // → exports: { compute }, lifecycle: { whenReady: resolved, destroy: noop }
- * ```
- *
- * @example Getter-based extension (preserves getters)
- * ```typescript
- * return defineExtension({
- *   exports: {
- *     get provider() { return currentProvider; },
- *     reconnect(newAuth) { ... },
- *   },
- *   whenReady,
- *   destroy() { provider.destroy(); },
- * });
- * // → exports stored by reference — getter survives
- * ```
- *
- * @example Full extension with exports + lifecycle
- * ```typescript
- * return defineExtension({
- *   exports: { db, pullToSqlite, pushFromSqlite },
- *   whenReady: db.initialize(),
+ * // Extension with exports + lifecycle
+ * .withExtension('sqlite', (ctx) => ({
+ *   exports: { db, pullToSqlite },
+ *   whenReady: initPromise,
  *   destroy: () => db.close(),
- * });
+ * }))
+ *
+ * // Lifecycle-only (no exports)
+ * .withExtension('persistence', (ctx) => ({
+ *   whenReady: loadFromDisk(),
+ *   destroy: () => flush(),
+ * }))
+ *
+ * // Exports-only (no lifecycle)
+ * .withExtension('helpers', () => ({
+ *   exports: { compute: (x: number) => x * 2 },
+ * }))
  * ```
  */
-export function defineExtension<
+export type Extension<
 	T extends Record<string, unknown> = Record<string, never>,
->(
-	options?: {
-		exports?: T;
-		whenReady?: Promise<unknown>;
-		destroy?: () => MaybePromise<void>;
-	} | void | null,
-): Extension<T> {
-	return {
-		exports: (options?.exports ?? {}) as T,
-		lifecycle: {
-			whenReady: options?.whenReady ?? Promise.resolve(),
-			destroy: options?.destroy ?? (() => {}),
-		},
-	};
-}
+> = {
+	/** Consumer-facing exports stored by reference in `workspace.extensions[key]` */
+	exports?: T;
+	/** Resolves when initialization is complete. Defaults to `Promise.resolve()`. */
+	whenReady?: Promise<unknown>;
+	/** Clean up resources. Defaults to no-op. */
+	destroy?: () => MaybePromise<void>;
+};

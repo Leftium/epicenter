@@ -39,9 +39,15 @@ type DirentEntry = {
 export class YjsFileSystem implements IFileSystem {
 	constructor(
 		private tree: FileTree,
-		private content: ContentOps,
+		/** Content I/O operations — exposed for direct content reads/writes by UI layers. */
+		readonly content: ContentOps,
 		private cwd: string = '/',
 	) {}
+
+	/** Reactive file-system indexes for path lookups and parent-child queries. */
+	get index(): FileTree['index'] {
+		return this.tree.index;
+	}
 
 	/** Convenience factory for backward-compatible construction. */
 	static create(

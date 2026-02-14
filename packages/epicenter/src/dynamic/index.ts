@@ -54,11 +54,9 @@ export { ExtensionErr } from '../shared/errors';
 export type { Id } from '../shared/id';
 export { generateId, Id as createId } from '../shared/id';
 // Lifecycle utilities (re-exported for extension authors)
-export {
-	defineExtension,
-	type Extension,
-	type Lifecycle,
-	type MaybePromise,
+export type {
+	Lifecycle,
+	MaybePromise,
 } from '../shared/lifecycle';
 // Core field factories for programmatic schema creation
 export {

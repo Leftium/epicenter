@@ -64,7 +64,7 @@ import type { Tables } from '../tables/create-tables';
  *     await context.whenReady; // wait for all prior extensions (persistence, etc.)
  *     provider.connect();
  *   })();
- *   return defineExtension({ exports: { provider }, whenReady, destroy: () => provider.destroy() });
+ *   return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
  * })
  * ```
  */
@@ -78,11 +78,9 @@ export type ExtensionContext<
 /**
  * Factory function that creates an extension with lifecycle hooks.
  *
- * All extensions MUST return an `Extension` (from `defineExtension()`).
- * The framework plucks `lifecycle` for internal management and stores
- * `exports` by reference — getters and object identity are preserved.
- *
- * Use `defineExtension()` from `shared/lifecycle.ts` to create the result.
+ * Returns a flat `{ exports?, whenReady?, destroy? }` object.
+ * The framework normalizes defaults and stores `exports` by reference —
+ * getters and object identity are preserved.
  *
  * @typeParam TExports - The consumer-facing exports object type
  *
@@ -90,11 +88,11 @@ export type ExtensionContext<
  * ```typescript
  * const persistence: ExtensionFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return defineExtension({
+ *   return {
  *     exports: { provider },
  *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
- *   });
+ *   };
  * };
  * ```
  */
@@ -160,9 +158,9 @@ export type WorkspaceClientBuilder<
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
 	 *
-	 * The factory must return an `Extension` (from `defineExtension()`).
-	 * The framework plucks `lifecycle` for internal management and stores
-	 * `exports` by reference — getters and object identity are preserved.
+	 * The factory returns a flat `{ exports?, whenReady?, destroy? }` object.
+	 * The framework normalizes defaults and stores `exports` by reference —
+	 * getters and object identity are preserved.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
 	 * @param factory - Factory function receiving the client-so-far context, returns Extension
@@ -172,11 +170,11 @@ export type WorkspaceClientBuilder<
 	 * ```typescript
 	 * const workspace = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
-	 *     return defineExtension({ ... });
+	 *     return { whenReady: loadFromDisk(), destroy: () => flush() };
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
-	 *     return defineExtension({ ... });
+	 *     return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
 	 *   });
 	 * ```
 	 */

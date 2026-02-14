@@ -89,18 +89,18 @@ Need persistence, sync, or SQLite materialization? Capabilities let you add func
 const client = workspace.create({
 	persistence: ({ ydoc }) => {
 		const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-		return defineExports({
-			provider,
+		return {
+			exports: { provider },
 			destroy: () => provider.destroy(),
-		});
+		};
 	},
 	sqlite: ({ tables }) => {
 		const db = new Database(':memory:');
 		// Wire tables to materialized views
-		return defineExports({
-			db,
+		return {
+			exports: { db },
 			destroy: () => db.close(),
-		});
+		};
 	},
 });
 
@@ -108,7 +108,7 @@ const client = workspace.create({
 client.extensions.sqlite.db.query('SELECT * FROM posts');
 ```
 
-Extensions receive typed access to the workspace's Y.Doc and helpers. They must return a `Lifecycle` object (with `whenReady` and `destroy`). Use `defineExports()` from `core/lifecycle.ts` to easily create compliant returns.
+Extensions receive typed access to the workspace's Y.Doc and helpers. They return a plain `{ exports?, whenReady?, destroy? }` object — the framework normalizes defaults internally.
 
 ### Layer 3: createTables / createKv - Bring Your Own Y.Doc
 
@@ -346,33 +346,33 @@ type ExtensionContext = {
 };
 ```
 
-Each extension factory must return a `Lifecycle` object:
+Each extension factory returns a plain `Extension<T>` object:
 
 ```typescript
-type Lifecycle = {
-	whenReady: Promise<void>; // Resolves when ready
-	destroy(): Promise<void>; // Cleanup
+type Extension<T> = {
+	exports?: T; // Consumer-facing exports
+	whenReady?: Promise<unknown>; // Resolves when ready (default: resolved)
+	destroy?: () => MaybePromise<void>; // Cleanup (default: no-op)
 };
 ```
 
-Use `defineExports()` to easily create compliant returns:
+Return a plain object directly — the framework normalizes defaults:
 
 ```typescript
-import { defineExports } from 'epicenter';
-
 const persistence = ({ ydoc }) => {
 	const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
-	return defineExports({
-		provider,
+	return {
+		exports: { provider },
 		destroy: () => provider.destroy(),
-	});
+	};
 };
 ```
 
-`defineExports()` automatically adds:
+The framework automatically provides defaults for omitted fields:
 
-- `whenReady: Promise.resolve()` (or your custom promise)
-- `destroy` (or your custom cleanup)
+- `exports` defaults to `{}` (lifecycle-only extensions)
+- `whenReady` defaults to `Promise.resolve()` (instantly ready)
+- `destroy` defaults to `() => {}` (no-op cleanup)
 
 Extensions are schema-generic by default. If you need typed access, add generic parameters:
 
@@ -383,7 +383,7 @@ type MyKv = typeof workspace.kvDefinitions;
 const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
 	// tables is fully typed—autocomplete works for all your tables
 	tables.posts.getAll();
-	return defineExports();
+	return {};
 };
 ```
 
@@ -667,5 +667,5 @@ Not a good fit if you:
 This is one layer of a larger system. Related APIs:
 
 - **createTables / createKv** - Lower-level APIs for custom Y.Doc management
-- **defineExports** - Capability lifecycle helpers (from `core/lifecycle.ts`)
+- **Extension** - Extension type definition (from `shared/lifecycle.ts`)
 - **YKeyValue** - Y.js key-value abstraction (from `core/utils/y-keyvalue.ts`)

@@ -79,7 +79,8 @@ export type { ExtensionError } from '../shared/errors.js';
 export { ExtensionErr } from '../shared/errors.js';
 // Lifecycle protocol
 export {
-	defineExports,
+	defineExtension,
+	type ExtensionResult,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle.js';
@@ -128,6 +129,7 @@ export type {
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
+	ExtensionResult,
 	GetResult,
 	InferKvValue,
 	InferTableRow,

@@ -27,6 +27,7 @@ export { createWorkspace } from './workspace/create-workspace';
 export type {
 	ExtensionContext,
 	ExtensionFactory,
+	ExtensionResult,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 } from './workspace/types';
@@ -55,7 +56,8 @@ export type { Id } from '../shared/id';
 export { generateId, Id as createId } from '../shared/id';
 // Lifecycle utilities (re-exported for extension authors)
 export {
-	defineExports,
+	defineExtension,
+	type ExtensionResult,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle';

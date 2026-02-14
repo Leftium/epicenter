@@ -2,7 +2,7 @@ import type * as Y from 'yjs';
 import type { Lifecycle } from '../shared/lifecycle';
 
 // Re-export lifecycle utilities for provider authors
-export { defineExports, type Lifecycle } from '../shared/lifecycle';
+export type { Lifecycle } from '../shared/lifecycle';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Doc-Level Provider Types
@@ -55,8 +55,8 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * Factories are **always synchronous**. Async initialization is tracked via
  * the returned `whenReady` promise, not the factory itself.
  *
- * Use `defineExports()` to wrap your return for explicit type safety and
- * lifecycle normalization. The framework fills in defaults for missing fields:
+ * Return an object satisfying the `Lifecycle` protocol directly.
+ * The framework fills in defaults for missing fields:
  * - `whenReady`: defaults to `Promise.resolve()`
  * - `destroy`: defaults to no-op `() => {}`
  *
@@ -64,10 +64,10 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * ```typescript
  * const persistence: ProviderFactory = ({ ydoc }) => {
  *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
- *   return defineExports({
+ *   return {
  *     whenReady: provider.whenReady,
  *     destroy: () => provider.destroy(),
- *   });
+ *   };
  * };
  * ```
  *
@@ -75,11 +75,11 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * ```typescript
  * const websocket: ProviderFactory = ({ ydoc }) => {
  *   const ws = new WebsocketProvider(url, ydoc.guid, ydoc);
- *   return defineExports({
+ *   return {
  *     ws,
  *     whenReady: new Promise(r => ws.on('sync', r)),
  *     destroy: () => ws.destroy(),
- *   });
+ *   };
  * };
  * ```
  */

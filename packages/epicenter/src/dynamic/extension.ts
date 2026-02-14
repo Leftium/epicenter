@@ -13,22 +13,16 @@
  *   like SQLite queries, Markdown sync, revision history. Receive the client-so-far
  *   as context, including previously added extensions.
  *
- * Use `defineExports()` to wrap your extension's return value for lifecycle normalization.
+ * Use `defineExtension()` to wrap your extension's return value, separating lifecycle from exports.
  */
 
 // Re-export lifecycle utilities for extension authors
-import { defineExports, type Lifecycle } from '../shared/lifecycle';
-export { defineExports, type Lifecycle };
-
-/**
- * Extension exports combining lifecycle protocol with custom exports.
- *
- * The framework guarantees `whenReady` and `destroy` exist on all extensions.
- * Use `defineExports()` to easily create compliant extension returns.
- */
-export type ExtensionExports<
-	T extends Record<string, unknown> = Record<string, unknown>,
-> = Lifecycle & T;
+import {
+	defineExtension,
+	type ExtensionResult,
+	type Lifecycle,
+} from '../shared/lifecycle';
+export { defineExtension, type ExtensionResult, type Lifecycle };
 
 // Re-export all extension types from workspace/types.ts (the canonical location)
 export type {

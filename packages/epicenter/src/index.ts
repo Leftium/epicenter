@@ -41,7 +41,8 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	defineExports,
+	defineExtension,
+	type ExtensionResult,
 	type Lifecycle,
 	type MaybePromise,
 } from './shared/lifecycle';

@@ -97,7 +97,9 @@ export type LastSchema<T extends readonly StandardSchemaV1[]> =
  *
  * @typeParam TVersions - Tuple of StandardSchemaV1 types representing all versions
  */
-export type TableDefinition<TVersions extends readonly StandardSchemaV1[]> = {
+export type TableDefinition<
+	TVersions extends readonly StandardSchemaWithJSONSchema<{ id: string }>[],
+> = {
 	schema: StandardSchemaWithJSONSchema<
 		unknown,
 		StandardSchemaV1.InferOutput<TVersions[number]>
@@ -109,13 +111,13 @@ export type TableDefinition<TVersions extends readonly StandardSchemaV1[]> = {
 
 /** Extract the row type from a TableDefinition */
 export type InferTableRow<T> =
-	T extends TableDefinition<infer V extends readonly StandardSchemaV1[]>
+	T extends TableDefinition<infer V>
 		? StandardSchemaV1.InferOutput<LastSchema<V>>
 		: never;
 
 /** Extract the version union type from a TableDefinition */
 export type InferTableVersionUnion<T> =
-	T extends TableDefinition<infer V extends readonly StandardSchemaV1[]>
+	T extends TableDefinition<infer V>
 		? StandardSchemaV1.InferOutput<V[number]>
 		: never;
 

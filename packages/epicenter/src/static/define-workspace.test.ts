@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { defineQuery } from '../shared/actions.js';
-import { defineExports } from '../shared/lifecycle.js';
+import { defineExtension } from '../shared/lifecycle.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
@@ -65,14 +65,16 @@ describe('defineWorkspace', () => {
 	});
 
 	test('createWorkspace().withExtension() adds extensions', () => {
-		// Mock extension with custom exports - uses defineExports for lifecycle
+		// Mock extension with custom exports - uses defineExtension for lifecycle
 		const mockExtension = (_context: {
 			ydoc: Y.Doc;
 			tables: unknown;
 			kv: unknown;
 		}) =>
-			defineExports({
-				customMethod: () => 'hello',
+			defineExtension({
+				exports: {
+					customMethod: () => 'hello',
+				},
 			});
 
 		const client = createWorkspace({
@@ -87,22 +89,26 @@ describe('defineWorkspace', () => {
 	});
 
 	test('extension exports are fully typed', () => {
-		// Extension with rich exports - defineExports fills in whenReady/destroy
+		// Extension with rich exports - defineExtension fills in whenReady/destroy
 		const persistenceExtension = () =>
-			defineExports({
-				db: {
-					query: (sql: string) => sql.toUpperCase(),
-					execute: (sql: string) => ({ rows: [sql] }),
+			defineExtension({
+				exports: {
+					db: {
+						query: (sql: string) => sql.toUpperCase(),
+						execute: (sql: string) => ({ rows: [sql] }),
+					},
+					stats: { writes: 0, reads: 0 },
 				},
-				stats: { writes: 0, reads: 0 },
 			});
 
 		// Another extension with different exports
 		const syncExtension = () =>
-			defineExports({
-				connect: (url: string) => `connected to ${url}`,
-				disconnect: () => 'disconnected',
-				status: 'idle' as 'idle' | 'syncing' | 'synced',
+			defineExtension({
+				exports: {
+					connect: (url: string) => `connected to ${url}`,
+					disconnect: () => 'disconnected',
+					status: 'idle' as 'idle' | 'syncing' | 'synced',
+				},
 			});
 
 		const client = createWorkspace({
@@ -143,7 +149,7 @@ describe('defineWorkspace', () => {
 	test('client.destroy() cleans up', async () => {
 		let destroyed = false;
 		const mockExtension = () =>
-			defineExports({
+			defineExtension({
 				destroy: async () => {
 					destroyed = true;
 				},
@@ -231,22 +237,24 @@ describe('defineWorkspace', () => {
 			},
 		})
 			.withExtension('first', () =>
-				defineExports({
-					value: 42,
-					helper: () => 'from-first',
+				defineExtension({
+					exports: {
+						value: 42,
+						helper: () => 'from-first',
+					},
 				}),
 			)
 			.withExtension('second', ({ extensions }) => {
 				// extensions.first is fully typed here — no casts needed
 				const doubled = extensions.first.value * 2;
 				const msg = extensions.first.helper();
-				return defineExports({ doubled, msg });
+				return defineExtension({ exports: { doubled, msg } });
 			})
 			.withExtension('third', ({ extensions }) => {
 				// extensions.first AND extensions.second are both fully typed
 				const tripled = extensions.first.value * 3;
 				const fromSecond = extensions.second.doubled;
-				return defineExports({ tripled, fromSecond });
+				return defineExtension({ exports: { tripled, fromSecond } });
 			});
 
 		// All extensions accessible and typed on the final client
@@ -275,8 +283,10 @@ describe('defineWorkspace', () => {
 			},
 		})
 			.withExtension('analytics', () =>
-				defineExports({
-					getCount: () => 5,
+				defineExtension({
+					exports: {
+						getCount: () => 5,
+					},
 				}),
 			)
 			.withActions((c) => ({
@@ -310,21 +320,21 @@ describe('defineWorkspace', () => {
 			id: 'destroy-order',
 		})
 			.withExtension('a', () =>
-				defineExports({
+				defineExtension({
 					destroy: () => {
 						order.push('a');
 					},
 				}),
 			)
 			.withExtension('b', () =>
-				defineExports({
+				defineExtension({
 					destroy: () => {
 						order.push('b');
 					},
 				}),
 			)
 			.withExtension('c', () =>
-				defineExports({
+				defineExtension({
 					destroy: () => {
 						order.push('c');
 					},

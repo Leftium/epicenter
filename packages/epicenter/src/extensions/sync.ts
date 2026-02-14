@@ -1,6 +1,4 @@
 import { createSyncProvider, type SyncProvider } from '@epicenter/sync';
-import type * as Y from 'yjs';
-import type { Lifecycle, MaybePromise } from '../shared/lifecycle';
 import type { ExtensionFactory } from '../static/types';
 
 /**
@@ -11,36 +9,43 @@ import type { ExtensionFactory } from '../static/types';
  * - **Mode 2 (Shared Secret)**: `url` + `token` — static token
  * - **Mode 3 (External JWT)**: `url` + `getToken` — dynamic token refresh
  *
+ * Persistence is handled separately — add a persistence extension before sync
+ * in the `.withExtension()` chain. The sync extension waits for all prior
+ * extensions via `context.whenReady` before connecting the WebSocket.
+ *
  * @example Open mode (local dev)
  * ```typescript
- * createSyncExtension({
- *   url: 'ws://localhost:3913/workspaces/{id}/sync',
- *   persistence: indexeddbPersistence,
- * })
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://localhost:3913/workspaces/{id}/sync',
+ *   }))
  * ```
  *
  * @example Static token (self-hosted)
  * ```typescript
- * createSyncExtension({
- *   url: 'ws://my-server:3913/workspaces/{id}/sync',
- *   token: 'my-shared-secret',
- *   persistence: indexeddbPersistence,
- * })
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://my-server:3913/workspaces/{id}/sync',
+ *     token: 'my-shared-secret',
+ *   }))
  * ```
  *
  * @example Dynamic token (cloud)
  * ```typescript
- * createSyncExtension({
- *   url: 'wss://sync.epicenter.so/workspaces/{id}/sync',
- *   getToken: async (workspaceId) => {
- *     const res = await fetch('/api/sync/token', {
- *       method: 'POST',
- *       body: JSON.stringify({ workspaceId }),
- *     });
- *     return (await res.json()).token;
- *   },
- *   persistence: indexeddbPersistence,
- * })
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'wss://sync.epicenter.so/workspaces/{id}/sync',
+ *     getToken: async (workspaceId) => {
+ *       const res = await fetch('/api/sync/token', {
+ *         method: 'POST',
+ *         body: JSON.stringify({ workspaceId }),
+ *       });
+ *       return (await res.json()).token;
+ *     },
+ *   }))
  * ```
  */
 export type SyncExtensionConfig = {
@@ -59,37 +64,33 @@ export type SyncExtensionConfig = {
 	 * Mutually exclusive with token.
 	 */
 	getToken?: (workspaceId: string) => Promise<string>;
-
-	/**
-	 * Persistence factory (REQUIRED).
-	 *
-	 * Loads local state before the WebSocket connects. This is the local-first pattern:
-	 * render from local state immediately, sync in the background.
-	 *
-	 * Must return a {@link Lifecycle}: `{ whenReady, destroy }`.
-	 *
-	 * @example
-	 * ```typescript
-	 * persistence: indexeddbPersistence
-	 * persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' })
-	 * persistence: ({ ydoc }) => ({ whenReady: Promise.resolve(), destroy: () => {} })
-	 * ```
-	 */
-	persistence: (context: { ydoc: Y.Doc }) => Lifecycle;
 };
 
 /**
- * Creates a sync extension that orchestrates persistence + WebSocket sync.
+ * Creates a sync extension that connects a WebSocket after prior extensions are ready.
  *
  * Lifecycle:
- * - **Persistence first**: `whenReady` resolves when local state loads.
- *   WebSocket connects in the background (non-blocking). The UI renders
- *   from local state immediately — connection status is reactive via `provider`.
+ * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
+ *   chained extensions (persistence, etc.) are ready. The WebSocket connects only after
+ *   local state is loaded, ensuring an accurate state vector for the initial sync.
+ * - **`whenReady`**: Resolves when the WebSocket connection is initiated (after prior
+ *   extensions). The UI renders from local state immediately — connection status is
+ *   reactive via `provider`.
+ *
+ * @example
+ * ```typescript
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://localhost:3913/workspaces/{id}/sync',
+ *   }))
+ * ```
  */
 export function createSyncExtension(
 	config: SyncExtensionConfig,
 ): ExtensionFactory {
-	return ({ ydoc, awareness }) => {
+	return (client) => {
+		const { ydoc, awareness } = client;
 		const workspaceId = ydoc.guid;
 
 		// Resolve URL — supports string with {id} placeholder or function
@@ -98,7 +99,7 @@ export function createSyncExtension(
 				? config.url(workspaceId)
 				: config.url.replace('{id}', workspaceId);
 
-		// Build provider — defer connection until persistence loads
+		// Build provider — defer connection until prior extensions are ready
 		let provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: resolvedUrl,
@@ -110,16 +111,11 @@ export function createSyncExtension(
 			awareness: awareness.raw,
 		});
 
-		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
-
-		// Load persistence first, then kick off WebSocket in background.
-		// whenReady = local data loaded (fast, reliable).
-		// WebSocket connects in background — don't block on it.
+		// Wait for all prior extensions (persistence, etc.) then connect.
+		// This ensures the Y.Doc has local state loaded before syncing,
+		// giving an accurate state vector for the initial WebSocket handshake.
 		const whenReady = (async () => {
-			const p = config.persistence({ ydoc });
-			persistenceCleanup = p.destroy;
-			await p.whenReady;
-			// Kick off WebSocket in background
+			await client.whenReady;
 			provider.connect();
 		})();
 
@@ -129,10 +125,10 @@ export function createSyncExtension(
 					return provider;
 				},
 				/**
-				 * Swap the sync rail (WebSocket target) without reinitializing persistence.
+				 * Swap the sync rail (WebSocket target) without affecting other extensions.
 				 *
 				 * Destroys the current provider, creates a new `SyncProvider` on the same
-				 * `Y.Doc`, and connects it. Persistence (IndexedDB/filesystem) is untouched —
+				 * `Y.Doc`, and connects it. Other extensions (persistence, etc.) are untouched —
 				 * only the sync provider changes.
 				 *
 				 * @example
@@ -163,7 +159,6 @@ export function createSyncExtension(
 			lifecycle: {
 				whenReady,
 				destroy() {
-					persistenceCleanup?.();
 					provider.destroy();
 				},
 			},

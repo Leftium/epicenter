@@ -186,6 +186,54 @@ describe('createWorkspace', () => {
 			expect(resolved2).toBe(true);
 		});
 
+		test('context.whenReady resolves after prior extensions', async () => {
+			const order: string[] = [];
+
+			const workspace = createWorkspace(testDefinition)
+				.withExtension('slow', () =>
+					defineExtension({
+						exports: { tag: 'slow' },
+						whenReady: new Promise<void>((resolve) =>
+							setTimeout(() => {
+								order.push('slow-ready');
+								resolve();
+							}, 50),
+						),
+					}),
+				)
+				.withExtension('dependent', (context) => {
+					// context.whenReady should be a promise representing all prior extensions
+					expect(context.whenReady).toBeInstanceOf(Promise);
+
+					const whenReady = (async () => {
+						await context.whenReady;
+						order.push('dependent-ready');
+					})();
+
+					return defineExtension({
+						exports: { tag: 'dependent' },
+						whenReady,
+					});
+				});
+
+			await workspace.whenReady;
+			// 'slow' must resolve before 'dependent' starts
+			expect(order).toEqual(['slow-ready', 'dependent-ready']);
+		});
+
+		test('context includes whenReady and destroy', () => {
+			createWorkspace(testDefinition).withExtension('inspector', (context) => {
+				expect(context.id).toBe('test-workspace');
+				expect(context.ydoc).toBeDefined();
+				expect(context.tables).toBeDefined();
+				expect(context.kv).toBeDefined();
+				expect(context.extensions).toBeDefined();
+				expect(context.whenReady).toBeInstanceOf(Promise);
+				expect(typeof context.destroy).toBe('function');
+				return defineExtension();
+			});
+		});
+
 		test('base client extensions remains empty after chaining', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 

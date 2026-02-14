@@ -712,12 +712,13 @@ export type { Extension } from '../shared/lifecycle.js';
 /**
  * Context passed to extension factories — the "client-so-far".
  *
- * Each `.withExtension()` call passes this context to the factory function.
+ * Each `.withExtension()` call passes the current `WorkspaceClient` to the factory.
  * The `extensions` field contains all previously added extensions, fully typed.
  * This enables progressive composition: extension N+1 can access extension N's exports.
  *
- * Omits lifecycle methods (`destroy`, `Symbol.asyncDispose`) since extensions
- * shouldn't control the workspace's lifecycle — only their own.
+ * Includes `whenReady` (composite of all prior extensions' readiness), `destroy`,
+ * and `definitions`, giving extensions full access to sequence after prior extensions
+ * via `await context.whenReady`.
  *
  * @typeParam TId - Workspace identifier type
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
@@ -727,11 +728,13 @@ export type { Extension } from '../shared/lifecycle.js';
  *
  * @example
  * ```typescript
- * .withExtension('sync', ({ ydoc, awareness, extensions }) => {
- *   // extensions.persistence is typed if persistence was added before this
- *   // awareness.raw is always available to pass to sync providers
- *   const provider = createProvider(ydoc, { awareness: awareness.raw });
- *   return defineExtension({ exports: { provider }, destroy: () => provider.destroy() });
+ * .withExtension('sync', (context) => {
+ *   const provider = createProvider(context.ydoc, { awareness: context.awareness.raw });
+ *   const whenReady = (async () => {
+ *     await context.whenReady; // wait for all prior extensions (persistence, etc.)
+ *     provider.connect();
+ *   })();
+ *   return defineExtension({ exports: { provider }, whenReady, destroy: () => provider.destroy() });
  * })
  * ```
  */
@@ -739,22 +742,15 @@ export type ExtensionContext<
 	TId extends string = string,
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
-	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
+	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** Workspace identifier */
-	id: TId;
-	/** The underlying Y.Doc instance */
-	ydoc: Y.Doc;
-	/** Typed table helpers for the workspace */
-	tables: TablesHelper<TTableDefinitions>;
-	/** Typed KV helper for the workspace */
-	kv: KvHelper<TKvDefinitions>;
-	/** Typed awareness helper — always present, like tables and kv */
-	awareness: AwarenessHelper<TAwarenessDefinitions>;
-	/** Accumulated extension exports from previous `.withExtension()` calls */
-	extensions: TExtensions;
-};
+> = WorkspaceClient<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions,
+	TExtensions
+>;
 
 /**
  * Factory function that creates an extension with lifecycle hooks.

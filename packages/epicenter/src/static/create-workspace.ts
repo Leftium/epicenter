@@ -156,16 +156,7 @@ export function createWorkspace<
 					>,
 				) => Extension<TExports>,
 			) {
-				const context = {
-					id,
-					ydoc,
-					tables,
-					kv,
-					awareness,
-					extensions,
-				};
-
-				const result = factory(context);
+				const result = factory(client);
 				extensionCleanups.push(() => result.lifecycle.destroy());
 				whenReadyPromises.push(result.lifecycle.whenReady);
 

@@ -213,7 +213,7 @@ POPUP CLOSE
        │ Y.Doc observe callback
        │
   ┌───────────────────────────────────────────┐
-  │ popupWorkspace (Y.Doc + Y-Sweet sync)     │
+  │ popupWorkspace (Y.Doc + WebSocket sync)   │
   │ (unchanged — still needed for multi-device)│
   └───────────────────────────────────────────┘
 ```

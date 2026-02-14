@@ -46,11 +46,9 @@ const server = createEpicenterServer({
 });
 
 // Client
-const provider = createWebsocketSyncProvider({
-	url: 'ws://server:3913/sync',
-	auth: {
-		psk: process.env.EPICENTER_PSK,
-	},
+const provider = createSyncExtension({
+	url: 'ws://server:3913/workspaces/{id}/sync',
+	token: process.env.EPICENTER_PSK,
 });
 ```
 

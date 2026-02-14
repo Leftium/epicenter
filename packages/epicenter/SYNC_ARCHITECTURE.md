@@ -22,13 +22,13 @@ Yjs supports **multiple providers simultaneously**. Each provider connects to a 
 const doc = new Y.Doc();
 
 // Provider 1: Local desktop server
-new WebsocketProvider('ws://desktop.tailnet:3913/sync', 'blog', doc);
+new WebsocketProvider('ws://desktop.tailnet:3913/workspaces/blog/sync', 'blog', doc);
 
 // Provider 2: Laptop server
-new WebsocketProvider('ws://laptop.tailnet:3913/sync', 'blog', doc);
+new WebsocketProvider('ws://laptop.tailnet:3913/workspaces/blog/sync', 'blog', doc);
 
 // Provider 3: Cloud server
-new WebsocketProvider('wss://sync.myapp.com/sync', 'blog', doc);
+new WebsocketProvider('wss://sync.myapp.com/workspaces/blog/sync', 'blog', doc);
 
 // Changes sync through ALL connected providers
 // Yjs deduplicates updates automatically
@@ -98,14 +98,14 @@ Define your sync nodes as a constant for easy reference:
  */
 export const SYNC_NODES = {
 	// Local devices via Tailscale
-	desktop: 'ws://desktop.my-tailnet.ts.net:3913/sync',
-	laptop: 'ws://laptop.my-tailnet.ts.net:3913/sync',
+	desktop: 'ws://desktop.my-tailnet.ts.net:3913/workspaces/{id}/sync',
+	laptop: 'ws://laptop.my-tailnet.ts.net:3913/workspaces/{id}/sync',
 
 	// Cloud server (optional, always-on)
-	cloud: 'wss://sync.myapp.com/sync',
+	cloud: 'wss://sync.myapp.com/workspaces/{id}/sync',
 
 	// Localhost (for browser connecting to local server)
-	localhost: 'ws://localhost:3913/sync',
+	localhost: 'ws://localhost:3913/workspaces/{id}/sync',
 } as const;
 
 export type SyncNodeId = keyof typeof SYNC_NODES;
@@ -139,7 +139,7 @@ Phone has no local server, so it connects directly to all available sync nodes:
 ```typescript
 // phone/src/workspace.ts
 import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -149,9 +149,9 @@ export const blogWorkspace = defineWorkspace({
 	},
 	providers: {
 		// Connect to ALL sync nodes for maximum resilience
-		syncDesktop: websocketSync({ url: SYNC_NODES.desktop }),
-		syncLaptop: websocketSync({ url: SYNC_NODES.laptop }),
-		syncCloud: websocketSync({ url: SYNC_NODES.cloud }),
+		syncDesktop: createSyncExtension({ url: SYNC_NODES.desktop }),
+		syncLaptop: createSyncExtension({ url: SYNC_NODES.laptop }),
+		syncCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -166,7 +166,7 @@ Browser connects to its own local server (localhost). The server handles cross-d
 ```typescript
 // desktop/browser/src/workspace.ts
 import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -177,7 +177,7 @@ export const blogWorkspace = defineWorkspace({
 	providers: {
 		// Browser only needs to connect to its local server
 		// The server handles syncing with other devices
-		sync: websocketSync({ url: SYNC_NODES.localhost }),
+		sync: createSyncExtension({ url: SYNC_NODES.localhost }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -195,7 +195,7 @@ The server acts as BOTH:
 ```typescript
 // desktop/server/src/workspace.ts
 import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -206,8 +206,8 @@ export const blogWorkspace = defineWorkspace({
 	providers: {
 		// Connect to OTHER sync nodes (not itself!)
 		// Desktop connects to: laptop + cloud
-		syncToLaptop: websocketSync({ url: SYNC_NODES.laptop }),
-		syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
+		syncToLaptop: createSyncExtension({ url: SYNC_NODES.laptop }),
+		syncToCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -220,7 +220,7 @@ export const blogWorkspace = defineWorkspace({
 ```typescript
 // laptop/server/src/workspace.ts
 import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -230,8 +230,8 @@ export const blogWorkspace = defineWorkspace({
 	},
 	providers: {
 		// Laptop connects to: desktop + cloud
-		syncToDesktop: websocketSync({ url: SYNC_NODES.desktop }),
-		syncToCloud: websocketSync({ url: SYNC_NODES.cloud }),
+		syncToDesktop: createSyncExtension({ url: SYNC_NODES.desktop }),
+		syncToCloud: createSyncExtension({ url: SYNC_NODES.cloud }),
 	},
 	actions: ({ tables }) => ({
 		/* ... */
@@ -307,7 +307,7 @@ Each device should also use local persistence:
 
 ```typescript
 import { persistence } from '@epicenter/hq/extensions/persistence';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 
 const workspace = defineWorkspace({
 	id: 'blog',
@@ -316,7 +316,7 @@ const workspace = defineWorkspace({
 		persistence,
 
 		// Network sync
-		sync: websocketSync({ url: SYNC_NODES.desktop }),
+		sync: createSyncExtension({ url: SYNC_NODES.desktop }),
 	},
 });
 ```
@@ -338,9 +338,9 @@ When offline:
 ```typescript
 // With Tailscale, use hostnames instead of IPs
 const SYNC_NODES = {
-	desktop: 'ws://desktop.my-tailnet.ts.net:3913/sync', // Tailscale hostname
-	laptop: 'ws://laptop.my-tailnet.ts.net:3913/sync', // Tailscale hostname
-	cloud: 'wss://sync.myapp.com/sync', // Public domain
+	desktop: 'ws://desktop.my-tailnet.ts.net:3913/workspaces/{id}/sync', // Tailscale hostname
+	laptop: 'ws://laptop.my-tailnet.ts.net:3913/workspaces/{id}/sync', // Tailscale hostname
+	cloud: 'wss://sync.myapp.com/workspaces/{id}/sync', // Public domain
 } as const;
 ```
 

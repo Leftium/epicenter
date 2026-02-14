@@ -26,7 +26,7 @@
  */
 
 import * as Y from 'yjs';
-import type { ExtensionResult, MaybePromise } from '../../shared/lifecycle';
+import type { Extension, MaybePromise } from '../../shared/lifecycle';
 import { createKv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
 import type { WorkspaceDefinition } from '../schema/workspace-definition';
@@ -124,7 +124,7 @@ export function createWorkspace<
 				key: TKey,
 				factory: (
 					context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
-				) => ExtensionResult<TExports>,
+				) => Extension<TExports>,
 			) {
 				const result = factory({ id, ydoc, tables, kv, extensions });
 				extensionCleanups.push(() => result.lifecycle.destroy());

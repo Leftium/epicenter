@@ -32,7 +32,7 @@
  */
 
 import type * as Y from 'yjs';
-import type { ExtensionResult } from '../../shared/lifecycle';
+import type { Extension } from '../../shared/lifecycle';
 import type { Kv } from '../kv/create-kv';
 import type { KvField, TableDefinition } from '../schema/fields/types';
 import type { Tables } from '../tables/create-tables';
@@ -85,7 +85,7 @@ export type ExtensionContext<
 /**
  * Factory function that creates an extension with lifecycle hooks.
  *
- * All extensions MUST return an `ExtensionResult` (from `defineExtension()`).
+ * All extensions MUST return an `Extension` (from `defineExtension()`).
  * The framework plucks `lifecycle` for internal management and stores
  * `exports` by reference — getters and object identity are preserved.
  *
@@ -107,7 +107,7 @@ export type ExtensionContext<
  */
 export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
-> = (context: ExtensionContext) => ExtensionResult<TExports>;
+> = (context: ExtensionContext) => Extension<TExports>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE CLIENT TYPES
@@ -167,12 +167,12 @@ export type WorkspaceClientBuilder<
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
 	 *
-	 * The factory must return an `ExtensionResult` (from `defineExtension()`).
+	 * The factory must return an `Extension` (from `defineExtension()`).
 	 * The framework plucks `lifecycle` for internal management and stores
 	 * `exports` by reference — getters and object identity are preserved.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
-	 * @param factory - Factory function receiving the client-so-far context, returns ExtensionResult
+	 * @param factory - Factory function receiving the client-so-far context, returns Extension
 	 * @returns A new builder with the extension's exports added to the type
 	 *
 	 * @example
@@ -191,7 +191,7 @@ export type WorkspaceClientBuilder<
 		key: TKey,
 		factory: (
 			context: ExtensionContext<TTableDefinitions, TKvFields, TExtensions>,
-		) => ExtensionResult<TExports>,
+		) => Extension<TExports>,
 	): WorkspaceClientBuilder<
 		TTableDefinitions,
 		TKvFields,
@@ -199,5 +199,5 @@ export type WorkspaceClientBuilder<
 	>;
 };
 
-// Re-export ExtensionResult for convenience
-export type { ExtensionResult } from '../../shared/lifecycle';
+// Re-export Extension for convenience
+export type { Extension } from '../../shared/lifecycle';

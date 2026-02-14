@@ -80,7 +80,7 @@ export { ExtensionErr } from '../shared/errors.js';
 // Lifecycle protocol
 export {
 	defineExtension,
-	type ExtensionResult,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from '../shared/lifecycle.js';
@@ -126,10 +126,10 @@ export { createUnionSchema } from './schema-union.js';
 
 export type {
 	DeleteResult,
+	Extension,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
-	ExtensionResult,
 	GetResult,
 	InferKvValue,
 	InferTableRow,

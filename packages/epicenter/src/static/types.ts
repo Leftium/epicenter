@@ -7,7 +7,7 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { ExtensionResult } from '../shared/lifecycle.js';
+import type { Extension } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -390,12 +390,12 @@ export type WorkspaceClientBuilder<
 	 * each factory receives the client-so-far (including all previously added extensions)
 	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
-	 * The factory must return an `ExtensionResult` (from `defineExtension()`).
+	 * The factory must return an `Extension` (from `defineExtension()`).
 	 * The framework plucks `lifecycle` for internal management and stores
 	 * `exports` by reference — getters and object identity are preserved.
 	 *
 	 * @param key - Unique name for this extension (used as the key in `.extensions`)
-	 * @param factory - Factory function receiving the client-so-far context, returns ExtensionResult
+	 * @param factory - Factory function receiving the client-so-far context, returns Extension
 	 * @returns A new builder with the extension's exports added to the type
 	 *
 	 * @example
@@ -420,7 +420,7 @@ export type WorkspaceClientBuilder<
 				TKvDefinitions,
 				TExtensions
 			>,
-		) => ExtensionResult<TExports>,
+		) => Extension<TExports>,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
@@ -456,8 +456,8 @@ export type WorkspaceClientBuilder<
 	>;
 };
 
-// Re-export ExtensionResult for convenience
-export type { ExtensionResult } from '../shared/lifecycle.js';
+// Re-export Extension for convenience
+export type { Extension } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // EXTENSION TYPES
@@ -508,7 +508,7 @@ export type ExtensionContext<
 /**
  * Factory function that creates an extension with lifecycle hooks.
  *
- * All extensions MUST return an `ExtensionResult` (from `defineExtension()`).
+ * All extensions MUST return an `Extension` (from `defineExtension()`).
  * The framework plucks `lifecycle` for internal management and stores
  * `exports` by reference — getters and object identity are preserved.
  *
@@ -530,7 +530,7 @@ export type ExtensionContext<
  */
 export type ExtensionFactory<
 	TExports extends Record<string, unknown> = Record<string, unknown>,
-> = (context: ExtensionContext) => ExtensionResult<TExports>;
+> = (context: ExtensionContext) => Extension<TExports>;
 
 /** The workspace client returned by createWorkspace() */
 export type WorkspaceClient<

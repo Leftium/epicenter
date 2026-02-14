@@ -18,7 +18,7 @@
  *          ▼                                    ▼
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
- * │  return Lifecycle & T    │    │  return ExtensionResult<T>    │
+ * │  return Lifecycle & T    │    │  return Extension<T>    │
  * │  directly                │    │  via defineExtension()        │
  * └──────────────────────────┘    └──────────────────────────────┘
  * ```
@@ -155,7 +155,7 @@ export type Lifecycle = {
  * allExtensions[key] = exports; // by reference — getters survive
  * ```
  */
-export type ExtensionResult<T = Record<string, never>> = {
+export type Extension<T = Record<string, never>> = {
 	/** Consumer-facing exports stored by reference in `workspace.extensions[key]` */
 	exports: T;
 	/** Framework-managed lifecycle hooks (cleanup + readiness tracking) */
@@ -191,7 +191,7 @@ export type ExtensionResult<T = Record<string, never>> = {
  * | `destroy` | `() => {}` (no-op cleanup) |
  *
  * @param options - Optional configuration with exports and/or lifecycle hooks
- * @returns `ExtensionResult<T>` with exports stored by reference and lifecycle normalized
+ * @returns `Extension<T>` with exports stored by reference and lifecycle normalized
  *
  * @example Lifecycle-only extension (no consumer exports)
  * ```typescript
@@ -240,7 +240,7 @@ export function defineExtension<
 		whenReady?: Promise<unknown>;
 		destroy?: () => MaybePromise<void>;
 	} | void | null,
-): ExtensionResult<T> {
+): Extension<T> {
 	return {
 		exports: (options?.exports ?? {}) as T,
 		lifecycle: {

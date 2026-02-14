@@ -42,7 +42,7 @@ export {
 
 export {
 	defineExtension,
-	type ExtensionResult,
+	type Extension,
 	type Lifecycle,
 	type MaybePromise,
 } from './shared/lifecycle';

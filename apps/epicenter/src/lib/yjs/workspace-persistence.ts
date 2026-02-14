@@ -1,7 +1,7 @@
 import {
 	defineExtension,
+	type Extension,
 	type ExtensionContext,
-	type ExtensionResult,
 } from '@epicenter/hq/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
@@ -67,7 +67,7 @@ const FILE_NAMES = {
 export function workspacePersistence(
 	ctx: ExtensionContext,
 	config: WorkspacePersistenceConfig = {},
-): ExtensionResult {
+): Extension {
 	const { ydoc, id, kv } = ctx;
 	const { jsonDebounceMs = 500 } = config;
 

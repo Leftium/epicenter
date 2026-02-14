@@ -19,10 +19,10 @@
 // Re-export lifecycle utilities for extension authors
 import {
 	defineExtension,
-	type ExtensionResult,
+	type Extension,
 	type Lifecycle,
 } from '../shared/lifecycle';
-export { defineExtension, type ExtensionResult, type Lifecycle };
+export { defineExtension, type Extension, type Lifecycle };
 
 // Re-export all extension types from workspace/types.ts (the canonical location)
 export type {

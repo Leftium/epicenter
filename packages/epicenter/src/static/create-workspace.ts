@@ -38,7 +38,7 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { ExtensionResult, MaybePromise } from '../shared/lifecycle.js';
+import type { Extension, MaybePromise } from '../shared/lifecycle.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
@@ -124,7 +124,7 @@ export function createWorkspace<
 						TKvDefinitions,
 						TExtensions
 					>,
-				) => ExtensionResult<TExports>,
+				) => Extension<TExports>,
 			) {
 				const result = factory({ id, ydoc, tables, kv, extensions });
 				extensionCleanups.push(() => result.lifecycle.destroy());

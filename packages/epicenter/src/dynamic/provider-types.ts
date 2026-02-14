@@ -28,9 +28,9 @@ export type ProviderContext = {
 };
 
 /**
- * Provider exports - returned values accessible via `doc.providers.{name}`.
+ * The return type of a `ProviderFactory` — accessible via `doc.providers.{name}`.
  *
- * This type combines the lifecycle protocol with custom exports.
+ * Combines the lifecycle protocol with custom exports.
  * The framework guarantees `whenReady` and `destroy` exist on all providers.
  *
  * @typeParam T - Additional exports beyond lifecycle fields
@@ -38,16 +38,15 @@ export type ProviderContext = {
  * @example
  * ```typescript
  * // Type for a provider that exports a connection
- * type SyncProviderExports = ProviderExports<{ connection: WebSocket }>;
+ * type SyncProvider = Provider<{ connection: WebSocket }>;
  * // → { whenReady, destroy, connection }
  *
  * // Type for a provider with no custom exports
- * type SimpleProviderExports = ProviderExports;
+ * type SimpleProvider = Provider;
  * // → { whenReady, destroy }
  * ```
  */
-export type ProviderExports<T extends Record<string, unknown> = {}> =
-	Lifecycle & T;
+export type Provider<T extends Record<string, unknown> = {}> = Lifecycle & T;
 
 /**
  * A doc-level provider factory function.
@@ -83,9 +82,9 @@ export type ProviderExports<T extends Record<string, unknown> = {}> =
  * };
  * ```
  */
-export type ProviderFactory<
-	TExports extends ProviderExports = ProviderExports,
-> = (context: ProviderContext) => TExports;
+export type ProviderFactory<TExports extends Provider = Provider> = (
+	context: ProviderContext,
+) => TExports;
 
 /**
  * Map of provider factories keyed by provider ID.
@@ -93,8 +92,8 @@ export type ProviderFactory<
 export type ProviderFactoryMap = Record<string, ProviderFactory>;
 
 /**
- * Infer exports from provider factories.
+ * Infer the return type of provider factories.
  */
-export type InferProviderExports<T extends ProviderFactoryMap> = {
+export type InferProviderReturn<T extends ProviderFactoryMap> = {
 	[K in keyof T]: ReturnType<T[K]>;
 };

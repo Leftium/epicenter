@@ -1,7 +1,7 @@
 # Rename `whenSynced` to `whenReady`
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Complete
 **Author**: AI-assisted
 
 ## Overview
@@ -210,46 +210,53 @@ UI renders
 
 ### Phase 1: Core Type + Helper
 
-- [ ] **1.1** Rename `whenSynced` → `whenReady` in `Lifecycle` type (`packages/epicenter/src/shared/lifecycle.ts`)
-- [ ] **1.2** Update `defineExports()` default key and destructuring in same file
-- [ ] **1.3** Update all JSDoc referencing `whenSynced` in `lifecycle.ts`
+- [x] **1.1** Rename `whenSynced` → `whenReady` in `Lifecycle` type (`packages/epicenter/src/shared/lifecycle.ts`)
+- [x] **1.2** Update `defineExports()` default key and destructuring in same file
+- [x] **1.3** Update all JSDoc referencing `whenSynced` in `lifecycle.ts`
 
 ### Phase 2: Extension + Provider Implementations
 
-- [ ] **2.1** `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`
-- [ ] **2.2** `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts` (y-indexeddb adapter: `whenReady: idb.whenSynced`)
-- [ ] **2.3** `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts`
-- [ ] **2.4** `packages/epicenter/src/extensions/y-sweet-persist-sync.test.ts`
-- [ ] **2.5** `packages/epicenter/src/dynamic/workspace/create-workspace.ts` (aggregation)
-- [ ] **2.6** `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts`
-- [ ] **2.7** `packages/epicenter/src/dynamic/workspace/types.ts`
-- [ ] **2.8** `packages/epicenter/src/dynamic/provider-types.ts`
-- [ ] **2.9** `packages/epicenter/src/dynamic/extension.ts`
-- [ ] **2.10** `packages/epicenter/src/filesystem/content-doc-store.ts` (already uses `whenReady` internally; update provider references)
-- [ ] **2.11** `packages/epicenter/src/filesystem/content-doc-store.test.ts`
-- [ ] **2.12** `packages/epicenter/src/static/types.ts`
+- [x] **2.1** `packages/epicenter/src/extensions/y-sweet-persist-sync.ts`
+- [x] **2.2** `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts` (y-indexeddb adapter: `whenReady: idb.whenSynced`)
+- [x] **2.3** `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts`
+- [x] **2.4** `packages/epicenter/src/extensions/y-sweet-persist-sync.test.ts`
+- [x] **2.5** `packages/epicenter/src/dynamic/workspace/create-workspace.ts` (aggregation)
+- [x] **2.6** `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts`
+- [x] **2.7** `packages/epicenter/src/dynamic/workspace/types.ts`
+- [x] **2.8** `packages/epicenter/src/dynamic/provider-types.ts`
+- [x] **2.9** `packages/epicenter/src/dynamic/extension.ts`
+- [x] **2.10** `packages/epicenter/src/filesystem/content-doc-store.ts` (already uses `whenReady` internally; update provider references)
+- [x] **2.11** `packages/epicenter/src/filesystem/content-doc-store.test.ts`
+- [x] **2.12** `packages/epicenter/src/static/types.ts`
 
 ### Phase 3: App Consumers
 
-- [ ] **3.1** `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`
-- [ ] **3.2** `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+layout.ts`
-- [ ] **3.3** `apps/epicenter/src/lib/yjs/workspace-persistence.ts`
-- [ ] **3.4** `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`
-- [ ] **3.5** `apps/tab-manager/src/entrypoints/background.ts`
+- [x] **3.1** `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`
+- [x] **3.2** `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+layout.ts`
+- [x] **3.3** `apps/epicenter/src/lib/yjs/workspace-persistence.ts`
+- [x] **3.4** `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`
+- [x] **3.5** `apps/tab-manager/src/entrypoints/background.ts`
 
 ### Phase 4: Documentation + Specs
 
-- [ ] **4.1** Update `packages/epicenter/src/shared/lifecycle.ts` module-level JSDoc
-- [ ] **4.2** Update READMEs that reference `whenSynced` (workspace, dynamic, yjs)
-- [ ] **4.3** Update `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md`
-- [ ] **4.4** Update `docs/articles/sync-client-initialization.md`
-- [ ] **4.5** Historical specs can be left as-is (they document decisions at the time)
+- [x] **4.1** Update `packages/epicenter/src/shared/lifecycle.ts` module-level JSDoc
+- [x] **4.2** Update READMEs that reference `whenSynced` (workspace, dynamic, yjs, YDOC-ARCHITECTURE)
+- [x] **4.3** Update `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md`
+- [x] **4.4** Update `docs/articles/sync-client-initialization.md`
+- [x] **4.5** Historical specs left as-is (they document decisions at the time)
+- [x] **4.6** Update `docs/articles/lazy-singleton-pattern.md`
+- [x] **4.7** Update `docs/articles/archived-head-registry-patterns.md`
+- [x] **4.8** Update `docs/articles/20260127T120000-static-workspace-api-guide.md`
+- [x] **4.9** Update `docs/guides/yjs-persistence-guide.md` (our keys only; y-indexeddb right-side stays `whenSynced`)
+- [x] **4.10** Update `docs/patterns/type-composition-across-platforms.md`
+- [x] **4.11** Update `packages/epicenter/README.md`
+- [x] **4.12** Update `packages/epicenter/src/static/define-workspace.test.ts`
 
 ### Phase 5: Verify
 
-- [ ] **5.1** `bun typecheck` passes
-- [ ] **5.2** `bun test` passes
-- [ ] **5.3** Grep for any remaining `whenSynced` in source files (excluding specs, node_modules)
+- [x] **5.1** `bun typecheck` passes (pre-existing errors in cli.test.ts and table-helper.ts unrelated to rename)
+- [x] **5.2** `bun test` passes (811 pass, 0 fail)
+- [x] **5.3** Grep for any remaining `whenSynced` in source files — only `web.ts:37` (`idb.whenSynced`, legitimate external API)
 
 ## Edge Cases
 
@@ -319,12 +326,12 @@ This is a behavioral change (adds IndexedDB caching, changes the lifecycle) and 
 
 ## Success Criteria
 
-- [ ] No remaining `whenSynced` in `.ts` source files (excluding `node_modules`, historical specs)
-- [ ] `bun typecheck` passes
-- [ ] `bun test` passes
-- [ ] App builds successfully (`bun run build` in apps/epicenter)
-- [ ] y-indexeddb adapter has explicit comment documenting the name mapping
-- [ ] `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md` updated
+- [x] No remaining `whenSynced` in `.ts` source files (only `web.ts` with legitimate `idb.whenSynced`)
+- [x] `bun typecheck` passes (pre-existing errors unrelated to rename)
+- [x] `bun test` passes (811 pass, 0 fail)
+- [ ] App builds successfully (`bun run build` in apps/epicenter) — not run (Tauri build requires native toolchain)
+- [x] y-indexeddb adapter has explicit comment documenting the name mapping
+- [x] `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md` updated
 
 ## References
 
@@ -337,3 +344,76 @@ This is a behavioral change (adds IndexedDB caching, changes the lifecycle) and 
 - `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md` — Pattern documentation
 - `docs/articles/sync-client-initialization.md` — Client initialization guide
 - `specs/20260119T231252-resilient-client-architecture.md` — Prior decision to keep single promise
+
+## Review
+
+### Summary
+
+Pure rename of `Lifecycle.whenSynced` → `whenReady` across 31 files. No behavioral changes. The rename resolves naming confusion with Yjs core's `whenSynced` (which means network sync) — our promise means "ready to use" (usually local persistence loaded).
+
+### Files Changed (31 files, ~160 lines changed)
+
+**Core type + helper (1 file):**
+
+- `packages/epicenter/src/shared/lifecycle.ts` — Lifecycle type, `defineExports()`, all JSDoc
+
+**Extension implementations (5 files):**
+
+- `packages/epicenter/src/extensions/y-sweet-persist-sync.ts` — Internal variable and return
+- `packages/epicenter/src/extensions/y-sweet-persist-sync/web.ts` — Boundary adapter: `whenReady: idb.whenSynced`
+- `packages/epicenter/src/extensions/y-sweet-persist-sync/desktop.ts` — Internal variable and return
+- `packages/epicenter/src/extensions/y-sweet-persist-sync.test.ts` — Test assertions
+
+**Workspace core (5 files):**
+
+- `packages/epicenter/src/dynamic/workspace/create-workspace.ts` — `whenSyncedPromises` → `whenReadyPromises`, aggregation
+- `packages/epicenter/src/dynamic/workspace/create-workspace.test.ts` — Test assertions
+- `packages/epicenter/src/dynamic/workspace/types.ts` — Type definition
+- `packages/epicenter/src/dynamic/provider-types.ts` — Provider type
+- `packages/epicenter/src/dynamic/extension.ts` — Extension type
+
+**Other packages (4 files):**
+
+- `packages/epicenter/src/filesystem/content-doc-store.ts` — Provider references (also removed unused `defineExports` import)
+- `packages/epicenter/src/filesystem/content-doc-store.test.ts` — Test assertions
+- `packages/epicenter/src/static/types.ts` — Static workspace type
+- `packages/epicenter/src/static/define-workspace.test.ts` — Test assertions
+
+**App consumers (5 files):**
+
+- `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts` — `await client.whenReady`
+- `apps/epicenter/src/routes/(workspace)/workspaces/static/[id]/+layout.ts` — `connection.whenReady`
+- `apps/epicenter/src/lib/yjs/workspace-persistence.ts` — Return type
+- `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` — Type, promise, return
+- `apps/tab-manager/src/entrypoints/background.ts` — `await client.extensions.sync.whenReady`
+
+**Documentation (11 files):**
+
+- `packages/epicenter/README.md` — Client properties section
+- `packages/epicenter/src/dynamic/YDOC-ARCHITECTURE.md` — Code example
+- `packages/epicenter/src/dynamic/workspace/README.md` — Workspace docs
+- `packages/epicenter/src/static/README.md` — Static workspace docs
+- `apps/epicenter/src/lib/yjs/README.md` — Yjs module docs
+- `docs/articles/sync-client-initialization.md` — Full article update (our refs only; y-indexeddb refs preserved)
+- `docs/articles/sync-construction-async-property-ui-render-gate-pattern.md` — Pattern article (our refs only)
+- `docs/articles/lazy-singleton-pattern.md` — Pattern article
+- `docs/articles/archived-head-registry-patterns.md` — Archived article
+- `docs/articles/20260127T120000-static-workspace-api-guide.md` — API guide
+- `docs/guides/yjs-persistence-guide.md` — Persistence guide (our keys only; y-indexeddb RHS preserved)
+- `docs/patterns/type-composition-across-platforms.md` — Pattern doc
+
+### Key Decision: y-indexeddb Boundary
+
+The adapter in `web.ts` now reads `whenReady: idb.whenSynced` with a comment explaining the semantic mapping. This makes visible that y-indexeddb's concept ("data loaded from IndexedDB") maps to our concept ("ready to use"), despite the naming difference in the external library.
+
+### What Was NOT Changed
+
+- **Historical specs** — Left as-is per spec guidelines ("they document decisions at the time")
+- **y-indexeddb external API references** — `idb.whenSynced`, `persistence.whenSynced`, `provider.whenSynced` in docs that refer to the external library's API
+- **No behavioral changes** — Pure rename, no logic changes
+
+### Verification
+
+- `bun test` in `packages/epicenter`: 811 pass, 0 fail
+- `bun typecheck`: Pre-existing errors in `cli.test.ts` and `table-helper.ts` unrelated to this rename
+- Grep `.ts` for `whenSynced`: Only `web.ts` line 37 (`idb.whenSynced`) — legitimate external API reference

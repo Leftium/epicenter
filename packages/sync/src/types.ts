@@ -2,9 +2,12 @@ import type * as awarenessProtocol from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 
 /**
- * WebSocket constructor type for dependency injection (testing, polyfills).
+ * WebSocket constructor type for dependency injection.
+ *
+ * Allows swapping the WebSocket implementation for testing (mock)
+ * or non-browser environments (e.g., `ws` package in Node.js).
  */
-export type WebSocketPolyfillType = {
+export type WebSocketConstructor = {
 	new (url: string | URL, protocols?: string | string[]): WebSocket;
 	prototype: WebSocket;
 	readonly CLOSED: number;
@@ -43,8 +46,8 @@ export type SyncProviderConfig = {
 	/** External awareness instance. Defaults to `new Awareness(doc)`. */
 	awareness?: awarenessProtocol.Awareness;
 
-	/** WebSocket constructor override for testing or polyfills. */
-	WebSocketPolyfill?: WebSocketPolyfillType;
+	/** WebSocket constructor override for testing or non-browser environments. */
+	WebSocketConstructor?: WebSocketConstructor;
 };
 
 /**

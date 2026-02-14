@@ -343,6 +343,13 @@ export default defineBackground(() => {
 		await client.whenReady;
 		console.log('[Background] Persistence loaded');
 
+		// Set local awareness
+		const deviceId = await deviceIdPromise;
+		client.awareness.setLocal({
+			deviceId,
+			deviceType: 'browser-extension',
+		});
+
 		// Then refetch to sync Y.Doc with current browser state
 		await actions.refetchAll();
 		console.log('[Background] Initial sync complete');

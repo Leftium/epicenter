@@ -1,7 +1,7 @@
 /**
  * Unit tests for createSyncProvider.
  *
- * Uses a MockWebSocket injected via WebSocketPolyfill to test the
+ * Uses a MockWebSocket injected via WebSocketConstructor to test the
  * supervisor loop, status transitions, hasLocalChanges tracking,
  * reconnection, and cleanup without a real server.
  */
@@ -144,7 +144,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		expect(provider.status).toBe('offline');
@@ -160,7 +160,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		// Auto-connect is default — loop starts asynchronously
@@ -178,7 +178,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		expect(provider.status).toBe('offline');
@@ -199,7 +199,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -231,7 +231,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		await tick();
@@ -257,7 +257,7 @@ describe('createSyncProvider', () => {
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		await tick();
@@ -281,7 +281,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -309,7 +309,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
@@ -338,7 +338,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.connect();
@@ -373,7 +373,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.connect();
@@ -411,7 +411,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.onLocalChanges((hasChanges) => changes.push(hasChanges));
@@ -454,7 +454,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -495,7 +495,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.connect();
@@ -521,7 +521,7 @@ describe('createSyncProvider', () => {
 			doc,
 			url: 'ws://test/sync',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -559,7 +559,7 @@ describe('createSyncProvider', () => {
 			url: 'ws://test/sync',
 			token: 'my-secret',
 			connect: false,
-			WebSocketPolyfill: MockWebSocket as any,
+			WebSocketConstructor: MockWebSocket as any,
 		});
 
 		provider.connect();

@@ -39,9 +39,11 @@
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension, MaybePromise } from '../shared/lifecycle.js';
+import { createAwareness } from './create-awareness.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
+	AwarenessDefinitions,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
@@ -58,6 +60,10 @@ import type {
  * chaining `.withExtension()` calls to progressively add extensions, each with
  * typed access to all previously added extensions.
  *
+ * Single code path — no overloads, no branches. Awareness is always created
+ * (like tables and KV). When no awareness fields are defined, the helper has
+ * zero accessible field keys but `raw` is still available for sync providers.
+ *
  * @param config - Workspace config (or WorkspaceDefinition from defineWorkspace())
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtension()
  */
@@ -65,16 +71,35 @@ export function createWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 >(
-	config: WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions>,
-): WorkspaceClientBuilder<TId, TTableDefinitions, TKvDefinitions> {
+	config: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions
+	>,
+): WorkspaceClientBuilder<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions,
+	Record<string, never>
+> {
 	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
 	const tableDefs = (config.tables ?? {}) as TTableDefinitions;
 	const kvDefs = (config.kv ?? {}) as TKvDefinitions;
+	const awarenessDefs = (config.awareness ?? {}) as TAwarenessDefinitions;
+
 	const tables = createTables(ydoc, tableDefs);
 	const kv = createKv(ydoc, kvDefs);
-	const definitions = { tables: tableDefs, kv: kvDefs };
+	const awareness = createAwareness(ydoc, awarenessDefs);
+	const definitions = {
+		tables: tableDefs,
+		kv: kvDefs,
+		awareness: awarenessDefs,
+	};
 
 	// Internal state: accumulated cleanup functions and whenReady promises.
 	// Shared across the builder chain (same ydoc).
@@ -87,6 +112,7 @@ export function createWorkspace<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwarenessDefinitions,
 		TExtensions
 	> {
 		const whenReady = Promise.all(whenReadyPromises).then(() => {});
@@ -96,15 +122,18 @@ export function createWorkspace<
 			for (let i = extensionCleanups.length - 1; i >= 0; i--) {
 				await extensionCleanups[i]!();
 			}
+			// Destroy awareness
+			awareness.raw.destroy();
 			ydoc.destroy();
 		};
 
 		const client = {
 			id,
 			ydoc,
+			definitions,
 			tables,
 			kv,
-			definitions,
+			awareness,
 			extensions,
 			whenReady,
 			destroy,
@@ -122,11 +151,21 @@ export function createWorkspace<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,
+						TAwarenessDefinitions,
 						TExtensions
 					>,
 				) => Extension<TExports>,
 			) {
-				const result = factory({ id, ydoc, tables, kv, extensions });
+				const context = {
+					id,
+					ydoc,
+					tables,
+					kv,
+					awareness,
+					extensions,
+				};
+
+				const result = factory(context);
 				extensionCleanups.push(() => result.lifecycle.destroy());
 				whenReadyPromises.push(result.lifecycle.whenReady);
 
@@ -144,22 +183,20 @@ export function createWorkspace<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,
+						TAwarenessDefinitions,
 						TExtensions
 					>,
 				) => TActions,
 			) {
-				const actions = factory(
-					client as WorkspaceClient<
-						TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TExtensions
-					>,
-				);
-				return { ...client, actions } as WorkspaceClientWithActions<
+				const actions = factory(client);
+				return {
+					...client,
+					actions,
+				} as WorkspaceClientWithActions<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
+					TAwarenessDefinitions,
 					TExtensions,
 					TActions
 				>;

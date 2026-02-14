@@ -7,7 +7,7 @@ import type {
 	SyncProvider,
 	SyncProviderConfig,
 	SyncStatus,
-	WebSocketPolyfillType,
+	WebSocketConstructor,
 } from './types';
 
 // ============================================================================
@@ -89,7 +89,7 @@ export function createSyncProvider({
 	url,
 	token: staticToken,
 	getToken,
-	WebSocketPolyfill: WS = WebSocket as unknown as WebSocketPolyfillType,
+	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
 	awareness = new awarenessProtocol.Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================

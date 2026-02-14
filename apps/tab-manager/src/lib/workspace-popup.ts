@@ -12,6 +12,7 @@
 
 import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+import type { ExtensionFactory } from '@epicenter/hq/static';
 import { createWorkspace } from '@epicenter/hq/static';
 import { definition } from '$lib/workspace';
 
@@ -27,5 +28,13 @@ export const popupWorkspace = createWorkspace(definition).withExtension(
 	createSyncExtension({
 		url: 'ws://127.0.0.1:3913/workspaces/{id}/sync',
 		persistence: indexeddbPersistence,
-	}),
+	}) as ExtensionFactory,
 );
+
+// Set local awareness on connect
+void popupWorkspace.whenReady.then(() => {
+	popupWorkspace.awareness.setLocal({
+		deviceId: 'popup',
+		deviceType: 'browser-extension',
+	});
+});

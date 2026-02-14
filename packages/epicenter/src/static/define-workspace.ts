@@ -20,6 +20,7 @@
  */
 
 import type {
+	AwarenessDefinitions,
 	KvDefinitions,
 	TableDefinitions,
 	WorkspaceDefinition,
@@ -36,15 +37,24 @@ export function defineWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
 >(config: {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
-}): WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions> {
+	/** Record of awareness field schemas. Each field has its own StandardSchemaV1 schema. */
+	awareness?: TAwarenessDefinitions;
+}): WorkspaceDefinition<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions
+> {
 	return {
 		id: config.id,
 		tables: (config.tables ?? {}) as TTableDefinitions,
 		kv: (config.kv ?? {}) as TKvDefinitions,
+		awareness: config.awareness,
 	};
 }
 

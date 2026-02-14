@@ -818,6 +818,52 @@ describe('YKeyValue', () => {
 				expect(kv.has('foo')).toBe(true);
 				expect(kv.get('foo')).toBe('baz');
 			});
+
+			test('set+delete in same batch leaves no sticky pendingDeletes', () => {
+				const ydoc = new Y.Doc({ guid: 'test' });
+				const yarray = ydoc.getArray<YKeyValueEntry<string>>('data');
+				const kv = new YKeyValue(yarray);
+
+				// set then delete in same batch — entry added+deleted from yarray
+				ydoc.transact(() => {
+					kv.set('foo', 'bar');
+					kv.delete('foo');
+				});
+
+				// After transaction, pendingDeletes should be clear (observer processed deletion)
+				// Verify: a subsequent set should work correctly
+				kv.set('foo', 'new');
+				expect(kv.has('foo')).toBe(true);
+				expect(kv.get('foo')).toBe('new');
+			});
+
+			test('remote set after local delete is not masked by pendingDeletes', () => {
+				const ydoc1 = new Y.Doc({ guid: 'test' });
+				const yarray1 = ydoc1.getArray<YKeyValueEntry<string>>('data');
+				const kv1 = new YKeyValue(yarray1);
+
+				const ydoc2 = new Y.Doc({ guid: 'test' });
+				const yarray2 = ydoc2.getArray<YKeyValueEntry<string>>('data');
+				const kv2 = new YKeyValue(yarray2);
+
+				// Both clients have the key
+				kv1.set('foo', 'original');
+				Y.applyUpdate(ydoc2, Y.encodeStateAsUpdate(ydoc1));
+
+				// Client 1 deletes
+				kv1.delete('foo');
+				expect(kv1.has('foo')).toBe(false);
+
+				// Client 2 sets a new value
+				kv2.set('foo', 'remote-value');
+
+				// Sync client 2's update to client 1
+				Y.applyUpdate(ydoc1, Y.encodeStateAsUpdate(ydoc2));
+
+				// Client 1 should see the remote value — pendingDeletes must not mask it
+				expect(kv1.has('foo')).toBe(true);
+				expect(kv1.get('foo')).toBe('remote-value');
+			});
 		});
 	});
 });

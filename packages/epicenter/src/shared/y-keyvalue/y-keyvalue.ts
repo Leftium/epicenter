@@ -329,11 +329,14 @@ export class YKeyValue<T> {
 
 			event.changes.deleted.forEach((deletedItem) => {
 				deletedItem.content.getContent().forEach((entry: YKeyValueEntry<T>) => {
+					// Always clear pendingDeletes for this key — even if the ref-equality
+					// check fails (e.g. set+delete in same txn where entry never reached map)
+					this.pendingDeletes.delete(entry.key);
+
 					// Reference equality: only process if this is the entry we have cached
 					// (Yjs returns the same object reference from the array)
 					if (this.map.get(entry.key) === entry) {
 						this.map.delete(entry.key);
-						this.pendingDeletes.delete(entry.key);
 						changes.set(entry.key, { action: 'delete', oldValue: entry.val });
 					}
 				});
@@ -386,6 +389,7 @@ export class YKeyValue<T> {
 						}
 						addedEntriesByKey.delete(currentEntry.key);
 						this.map.set(currentEntry.key, currentEntry);
+						this.pendingDeletes.delete(currentEntry.key);
 
 						// Clear from pending once processed.
 						// Use reference equality to only clear if it's the exact entry we added.

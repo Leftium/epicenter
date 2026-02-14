@@ -134,50 +134,13 @@ export type RowStore<T> = {
 	 * - Observers fire once (not per-operation)
 	 * - Transaction has { merge, delete } — row-level operations only
 	 *
-	 * **Important**: Inside the batch callback, reads (`has`, `get`) may return
-	 * stale state for rows deleted in the same batch. This is because the underlying
-	 * cell store's CRDT observer only updates the internal cache when the transaction
-	 * completes.
-	 *
 	 * @example
 	 * ```typescript
-	 * // ❌ Unexpected: has() returns true after delete
 	 * rows.batch((tx) => {
 	 *   tx.delete('row-1');
-	 *   if (rows.has('row-1')) {
-	 *     // This WILL execute! The row is marked for deletion but still
-	 *     // appears to exist until the batch completes.
-	 *     console.log('Still visible');
-	 *   }
-	 * });
-	 *
-	 * // ✅ After batch completes, reads are consistent
-	 * rows.batch((tx) => {
-	 *   tx.delete('row-1');
-	 * });
-	 * rows.has('row-1'); // false (correct)
-	 * ```
-	 *
-	 * **Why does this happen?**
-	 * RowStore delegates to CellStore, which uses a "pending + cache" architecture.
-	 * The authoritative cache is only updated by a Yjs observer, which is deferred
-	 * until the transaction ends. See CellStore's `batch()` documentation for details.
-	 *
-	 * **Workaround**: If you need to check deletion state inside a batch, track it manually:
-	 * ```typescript
-	 * const deleted = new Set<string>();
-	 * rows.batch((tx) => {
-	 *   tx.delete('row-1');
-	 *   deleted.add('row-1');
-	 *
-	 *   if (!deleted.has('row-1') && rows.has('row-1')) {
-	 *     // Safe: checks local tracking first
-	 *   }
+	 *   rows.has('row-1'); // false (correct, even inside batch)
 	 * });
 	 * ```
-	 *
-	 * @see {@link CellStore.batch} for detailed explanation of the observer architecture
-	 * @see {@link YKeyValueLww.delete} for technical details on deferred updates
 	 */
 	batch(fn: (tx: RowStoreBatchTransaction<T>) => void): void;
 

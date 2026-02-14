@@ -95,11 +95,8 @@ export type CellStore<T> = {
 	/**
 	 * Delete a single cell. Returns true if existed.
 	 *
-	 * **Note**: When called inside a `batch()`, the deletion is applied immediately
-	 * but reads (`hasCell`, `getCell`) will still see the old value until the batch
-	 * completes. See `batch()` documentation for details and workarounds.
-	 *
-	 * @see {@link batch} for behavior inside transactions
+	 * Reads (`hasCell`, `getCell`) return correct results immediately after
+	 * deletion, even inside a `batch()`.
 	 */
 	deleteCell(rowId: string, columnId: string): boolean;
 
@@ -115,51 +112,13 @@ export type CellStore<T> = {
 	 * - Observers fire once (not per-operation)
 	 * - All changes applied together
 	 *
-	 * **Important**: Inside the batch callback, reads (`hasCell`, `getCell`) may return
-	 * stale state for cells deleted in the same batch. This is because the underlying
-	 * CRDT observer only updates the internal cache when the transaction completes.
-	 *
 	 * @example
 	 * ```typescript
-	 * // ❌ Unexpected: hasCell returns true after delete
 	 * cells.batch((tx) => {
 	 *   tx.deleteCell('row-1', 'status');
-	 *   if (cells.hasCell('row-1', 'status')) {
-	 *     // This WILL execute! The cell is marked for deletion but still
-	 *     // appears to exist until the batch completes.
-	 *     console.log('Still visible');
-	 *   }
-	 * });
-	 *
-	 * // ✅ After batch completes, reads are consistent
-	 * cells.batch((tx) => {
-	 *   tx.deleteCell('row-1', 'status');
-	 * });
-	 * cells.hasCell('row-1', 'status'); // false (correct)
-	 * ```
-	 *
-	 * **Why does this happen?**
-	 * The store uses a "pending + cache" architecture where the authoritative cache
-	 * is only updated by a Yjs observer. During a transaction, the observer is
-	 * deferred until the transaction ends. Newly-written cells are visible immediately
-	 * via a `pending` buffer, but deleted cells remain in the cache until the observer
-	 * processes them.
-	 *
-	 * **Workaround**: If you need to check deletion state inside a batch, track it manually:
-	 * ```typescript
-	 * const deleted = new Set<string>();
-	 * cells.batch((tx) => {
-	 *   const key = 'row-1:status';
-	 *   tx.deleteCell('row-1', 'status');
-	 *   deleted.add(key);
-	 *
-	 *   if (!deleted.has(key) && cells.hasCell('row-1', 'status')) {
-	 *     // Safe: checks local tracking first
-	 *   }
+	 *   cells.hasCell('row-1', 'status'); // false (correct, even inside batch)
 	 * });
 	 * ```
-	 *
-	 * @see {@link YKeyValueLww.delete} for technical details on the observer architecture
 	 */
 	batch(fn: (tx: CellStoreBatchTransaction<T>) => void): void;
 

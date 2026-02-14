@@ -284,10 +284,13 @@ export class YKeyValueLww<T> {
 				deletedItem.content
 					.getContent()
 					.forEach((entry: YKeyValueLwwEntry<T>) => {
+						// Always clear pendingDeletes for this key — even if the ref-equality
+						// check fails (e.g. set+delete in same txn where entry never reached map)
+						this.pendingDeletes.delete(entry.key);
+
 						// Reference equality: only process if this is the entry we have cached
 						if (this.map.get(entry.key) === entry) {
 							this.map.delete(entry.key);
-							this.pendingDeletes.delete(entry.key);
 							changes.set(entry.key, { action: 'delete', oldValue: entry.val });
 						}
 					});
@@ -337,6 +340,7 @@ export class YKeyValueLww<T> {
 						});
 					}
 					this.map.set(newEntry.key, newEntry);
+					this.pendingDeletes.delete(newEntry.key);
 				} else {
 					// Conflict: key exists in map. Must compare timestamps to determine winner,
 					// then find the loser's index in the array to delete it. This is the only
@@ -354,6 +358,7 @@ export class YKeyValueLww<T> {
 						if (oldIndex !== -1) indicesToDelete.push(oldIndex);
 
 						this.map.set(newEntry.key, newEntry);
+						this.pendingDeletes.delete(newEntry.key);
 					} else if (newEntry.ts < existing.ts) {
 						// Old entry wins: delete new from array
 						const newIndex = getAllEntries().indexOf(newEntry);
@@ -372,6 +377,7 @@ export class YKeyValueLww<T> {
 							});
 							if (oldIndex !== -1) indicesToDelete.push(oldIndex);
 							this.map.set(newEntry.key, newEntry);
+							this.pendingDeletes.delete(newEntry.key);
 						} else {
 							// Old is rightmost, delete new
 							if (newIndex !== -1) indicesToDelete.push(newIndex);

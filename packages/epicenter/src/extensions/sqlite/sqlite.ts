@@ -6,11 +6,12 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
-import { defineExports, type ExtensionContext } from '../../dynamic/extension';
+import type { ExtensionContext } from '../../dynamic/extension';
 import type { Id, KvField, Row, TableDefinition } from '../../dynamic/schema';
 import { Id as createId } from '../../dynamic/schema';
 import { convertTableDefinitionsToDrizzle } from '../../dynamic/schema/converters/to-drizzle';
 import { ExtensionErr, ExtensionError } from '../../shared/errors';
+import { defineExtension } from '../../shared/lifecycle';
 import { createIndexLogger } from '../error-logger';
 
 const DEFAULT_DEBOUNCE_MS = 100;
@@ -41,7 +42,7 @@ export type SqliteConfig = {
  * SQLite extension: syncs YJS changes to SQLite and exposes Drizzle query interface.
  *
  * This extension creates internal resources (sqliteDb, drizzleTables) and exports them
- * via defineExports(). All exported resources become available in your workspace
+ * via defineExtension(). All exported resources become available in your workspace
  * via `client.extensions.sqlite`.
  *
  * **Sync Strategy**:
@@ -259,7 +260,56 @@ export const sqlite = async <
 	}
 
 	// Return destroy function alongside exported resources (flattened structure)
-	return defineExports({
+	return defineExtension({
+		exports: {
+			async pullToSqlite() {
+				return tryAsync({
+					try: () => rebuildSqlite(),
+					catch: (error) =>
+						ExtensionErr({
+							message: `SQLite extension pull operation failed: ${extractErrorMessage(error)}`,
+						}),
+				});
+			},
+
+			async pushFromSqlite() {
+				return tryAsync({
+					try: async () => {
+						isPushingFromSqlite = true;
+						tables.clear();
+
+						for (const [tableName, drizzleTable] of Object.entries(
+							drizzleTables,
+						) as [string, SQLiteTable][]) {
+							const table = tables.get(tableName);
+							const rows = await sqliteDb.select().from(drizzleTable);
+							for (const row of rows) {
+								// Cast is safe: Drizzle schema is derived from workspace definition
+								// Convert string id to branded Id type
+								const rowWithBrandedId = {
+									...row,
+									id: createId((row as { id: string }).id),
+								} as Row<TTableDefinitions[number]['fields']> & {
+									id: Id;
+								};
+								table.upsert(rowWithBrandedId);
+							}
+						}
+
+						isPushingFromSqlite = false;
+					},
+					catch: (error) => {
+						isPushingFromSqlite = false;
+						return ExtensionErr({
+							message: `SQLite extension push operation failed: ${extractErrorMessage(error)}`,
+						});
+					},
+				});
+			},
+
+			db: sqliteDb,
+			...drizzleTables,
+		},
 		async destroy() {
 			// Clear any pending sync timeout
 			if (syncTimeout) {
@@ -275,53 +325,5 @@ export const sqlite = async <
 			// Close the database connection to ensure WAL files are properly checkpointed
 			client.close();
 		},
-
-		async pullToSqlite() {
-			return tryAsync({
-				try: () => rebuildSqlite(),
-				catch: (error) =>
-					ExtensionErr({
-						message: `SQLite extension pull operation failed: ${extractErrorMessage(error)}`,
-					}),
-			});
-		},
-
-		async pushFromSqlite() {
-			return tryAsync({
-				try: async () => {
-					isPushingFromSqlite = true;
-					tables.clear();
-
-					for (const [tableName, drizzleTable] of Object.entries(
-						drizzleTables,
-					) as [string, SQLiteTable][]) {
-						const table = tables.get(tableName);
-						const rows = await sqliteDb.select().from(drizzleTable);
-						for (const row of rows) {
-							// Cast is safe: Drizzle schema is derived from workspace definition
-							// Convert string id to branded Id type
-							const rowWithBrandedId = {
-								...row,
-								id: createId((row as { id: string }).id),
-							} as Row<TTableDefinitions[number]['fields']> & {
-								id: Id;
-							};
-							table.upsert(rowWithBrandedId);
-						}
-					}
-
-					isPushingFromSqlite = false;
-				},
-				catch: (error) => {
-					isPushingFromSqlite = false;
-					return ExtensionErr({
-						message: `SQLite extension push operation failed: ${extractErrorMessage(error)}`,
-					});
-				},
-			});
-		},
-
-		db: sqliteDb,
-		...drizzleTables,
 	});
 };

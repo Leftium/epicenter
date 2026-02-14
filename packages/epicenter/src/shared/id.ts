@@ -26,6 +26,22 @@ const nanoid15 = customAlphabet(ALPHABET, 15);
 export type Id = string & Brand<'Id'>;
 
 /**
+ * Minimum shape every row must satisfy — an object with a branded `Id`.
+ *
+ * Use as a type constraint on generic row parameters. TypeScript cannot
+ * resolve mapped types like `Row<TFields>` to prove `{ id: Id }` exists
+ * when `TFields` is a bare generic, so intersect with `BaseRow` to make
+ * `.id` accessible:
+ *
+ * ```typescript
+ * type MyRow<TFields extends Field[]> = Row<TFields> & BaseRow;
+ * ```
+ *
+ * Both the dynamic and static APIs share this constraint.
+ */
+export type BaseRow = { id: Id };
+
+/**
  * Create a branded Id from an arbitrary string.
  *
  * Validates that the string does not contain ':' (reserved for cell-key separator).

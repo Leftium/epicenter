@@ -31,7 +31,7 @@
 import { Compile } from 'typebox/compile';
 import type { TLocalizedValidationError } from 'typebox/error';
 import type * as Y from 'yjs';
-import { Id } from '../../shared/id.js';
+import { type BaseRow, Id } from '../../shared/id.js';
 import { TableKey } from '../../shared/ydoc-keys';
 import type { PartialRow, Row, TableDefinition } from '../schema';
 import { fieldsToTypebox } from '../schema';
@@ -182,8 +182,8 @@ export function createTableHelper<TTableDef extends TableDefinition>({
 }: {
 	ydoc: Y.Doc;
 	tableDefinition: TTableDef;
-}): TableHelper<Row<TTableDef['fields']>> {
-	type TRow = Row<TTableDef['fields']>;
+}): TableHelper<Row<TTableDef['fields']> & BaseRow> {
+	type TRow = Row<TTableDef['fields']> & BaseRow;
 
 	// Compose storage layers: YKeyValueLww → CellStore → RowStore
 	const cellStore = createCellStore<unknown>(ydoc, TableKey(tableId));
@@ -458,7 +458,7 @@ export function createTableHelper<TTableDef extends TableDefinition>({
  *
  * @typeParam TRow - The fully-typed row shape for this table (includes `{ id: Id }`)
  */
-export type TableHelper<TRow extends { id: Id } = { id: Id }> = {
+export type TableHelper<TRow extends BaseRow = BaseRow> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// IDENTITY
 	// ═══════════════════════════════════════════════════════════════════════

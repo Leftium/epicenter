@@ -16,6 +16,7 @@ import type { TableById } from '../../dynamic/schema/fields/types';
 import { getTableById } from '../../dynamic/schema/schema-file';
 import type { TableHelper } from '../../dynamic/tables/create-tables';
 import { ExtensionErr, ExtensionError } from '../../shared/errors';
+import type { BaseRow } from '../../shared/id.js';
 import type { AbsolutePath } from '../../shared/types';
 import { createIndexLogger } from '../error-logger';
 import {
@@ -59,9 +60,9 @@ type Fields = readonly Field[];
 /**
  * Row type that guarantees an `id` property exists.
  * Row<TFields> alone doesn't guarantee `.id` when TFields is a generic parameter,
- * so we intersect with `{ id: string }` to make destructuring work.
+ * so we intersect with BaseRow to make destructuring work.
  */
-type RowWithId<TFields extends Fields> = Row<TFields> & { id: Id };
+type RowWithId<TFields extends Fields> = Row<TFields> & BaseRow;
 
 // Re-export config types and functions
 export type {
@@ -1314,7 +1315,9 @@ export const markdown = async <
 
 					type TableSyncData = {
 						tableName: string;
-						table: TableHelper<string, TTableDefinitions[number]['fields']>;
+						table: TableHelper<
+							Row<TTableDefinitions[number]['fields']> & BaseRow
+						>;
 						yjsIds: Set<Id>;
 						fileExistsIds: Set<Id>;
 						markdownRows: Map<

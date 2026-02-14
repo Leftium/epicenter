@@ -15,7 +15,6 @@
 		"./extensions/sync": "./src/extensions/sync.ts",
 		"./extensions/sync/web": "./src/extensions/sync/web.ts",
 		"./extensions/sync/desktop": "./src/extensions/sync/desktop.ts",
-		"./extensions/websocket-sync": "./src/extensions/websocket-sync.ts",
 		"./cli": "./src/cli/index.ts",
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts"
@@ -51,7 +50,6 @@
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "^9.0.12",
 		"y-protocols": "^1.0.6",
-		"y-websocket": "^2.1.0",
 		"yargs": "catalog:",
 		"yjs": "^13.6.27"
 	},

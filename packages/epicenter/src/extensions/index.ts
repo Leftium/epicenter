@@ -5,7 +5,7 @@
  * use only. For browser persistence, use the conditional export:
  *
  * ```typescript
- * import { persistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
+ * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
  * ```
  *
  * @example Node.js/Bun usage
@@ -13,7 +13,6 @@
  * import {
  *   sqlite,
  *   markdown,
- *   websocketSync,
  *   persistence,  // Desktop/filesystem persistence
  * } from '@epicenter/hq/extensions';
  * ```
@@ -21,7 +20,7 @@
  * @example Browser usage (use conditional export)
  * ```typescript
  * // Browser: auto-selects IndexedDB persistence
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
+ * import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
  * ```
  *
  * @packageDocumentation
@@ -34,8 +33,8 @@
 export {
 	type PersistenceConfig,
 	persistence,
-} from './y-sweet-persist-sync/desktop.js';
-export { indexeddbPersistence as webPersistence } from './y-sweet-persist-sync/web.js';
+} from './sync/desktop.js';
+export { indexeddbPersistence as webPersistence } from './sync/web.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SQLITE
@@ -84,16 +83,6 @@ export {
 	titleFilenameSerializer,
 	writeMarkdownFile,
 } from './markdown/index.js';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// WEBSOCKET SYNC
-// ═══════════════════════════════════════════════════════════════════════════════
-
-export {
-	type SyncNodesConfig,
-	type WebsocketSyncConfig,
-	websocketSync,
-} from './websocket-sync.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // REVISION HISTORY

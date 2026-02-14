@@ -72,12 +72,12 @@ export type Provider<T extends Record<string, unknown> = {}> = Lifecycle & T;
  *
  * @example Sync provider with WebSocket
  * ```typescript
- * const websocket: ProviderFactory = ({ ydoc }) => {
- *   const ws = new WebsocketProvider(url, ydoc.guid, ydoc);
+ * const sync: ProviderFactory = ({ ydoc }) => {
+ *   const provider = createSyncProvider({ doc: ydoc, url });
  *   return {
- *     ws,
- *     whenReady: new Promise(r => ws.on('sync', r)),
- *     destroy: () => ws.destroy(),
+ *     provider,
+ *     whenReady: Promise.resolve(),
+ *     destroy: () => provider.destroy(),
  *   };
  * };
  * ```

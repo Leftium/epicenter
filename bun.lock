@@ -271,7 +271,7 @@
       },
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@epicenter/y-sweet": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "@sindresorhus/slugify": "^3.0.0",
         "@standard-schema/spec": "^1.1.0",
         "@tursodatabase/database": "^0.3.2",
@@ -368,6 +368,17 @@
         "typescript": "catalog:",
       },
     },
+    "packages/sync": {
+      "name": "@epicenter/sync",
+      "version": "0.1.0",
+      "dependencies": {
+        "lib0": "^0.2.99",
+        "y-protocols": "^1.0.6",
+      },
+      "peerDependencies": {
+        "yjs": "^13.0.0",
+      },
+    },
     "packages/ui": {
       "name": "@epicenter/ui",
       "version": "0.0.1",
@@ -420,17 +431,6 @@
         "drizzle-kit": "catalog:",
         "tsx": "^4.20.6",
         "typescript": "catalog:",
-      },
-    },
-    "packages/y-sweet": {
-      "name": "@epicenter/y-sweet",
-      "version": "0.1.0",
-      "dependencies": {
-        "lib0": "^0.2.99",
-        "y-protocols": "^1.0.6",
-      },
-      "peerDependencies": {
-        "yjs": "^13.0.0",
       },
     },
   },
@@ -616,6 +616,8 @@
 
     "@epicenter/svelte-utils": ["@epicenter/svelte-utils@workspace:packages/svelte-utils"],
 
+    "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
+
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
@@ -623,8 +625,6 @@
     "@epicenter/vault-core": ["@epicenter/vault-core@workspace:packages/vault-core"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
-
-    "@epicenter/y-sweet": ["@epicenter/y-sweet@workspace:packages/y-sweet"],
 
     "@esbuild-kit/core-utils": ["@esbuild-kit/core-utils@3.3.2", "", { "dependencies": { "esbuild": "~0.18.20", "source-map-support": "^0.5.21" } }, "sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ=="],
 

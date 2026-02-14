@@ -481,7 +481,8 @@ export function createSyncProvider({
 			wsUrl = parsed.toString();
 		}
 
-ttconst ws = new WS(wsUrl);		ws.binaryType = 'arraybuffer';
+		const ws = new WS(wsUrl);
+		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
 		// --- Promises that event handlers resolve ---

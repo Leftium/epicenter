@@ -552,7 +552,7 @@ describe('createSyncProvider', () => {
 		provider.destroy();
 	});
 
-	test('static token is passed as query param and protocol', async () => {
+	test('static token is passed as query param', async () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
@@ -567,7 +567,9 @@ describe('createSyncProvider', () => {
 
 		const ws = MockWebSocket.lastCreated!;
 		expect(ws.url).toContain('token=my-secret');
-		expect(ws.protocols).toEqual(['my-secret']);
+		// Token should NOT be passed as subprotocol — that leaks it
+		// into the Sec-WebSocket-Protocol header which proxies may log
+		expect(ws.protocols).toBeUndefined();
 
 		provider.destroy();
 	});

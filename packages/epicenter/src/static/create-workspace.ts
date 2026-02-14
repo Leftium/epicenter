@@ -36,9 +36,11 @@
  * ```
  */
 
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension, MaybePromise } from '../shared/lifecycle.js';
+import { createAwareness } from './create-awareness.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
@@ -61,13 +63,67 @@ import type {
  * @param config - Workspace config (or WorkspaceDefinition from defineWorkspace())
  * @returns WorkspaceClientBuilder - a client that can be used directly or chained with .withExtension()
  */
+// Overload: With awareness schema
+export function createWorkspace<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	const TAwareness extends StandardSchemaV1 = StandardSchemaV1,
+>(
+	config: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwareness
+	>,
+): WorkspaceClientBuilder<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwareness,
+	Record<string, never>
+>;
+
+// Overload: Without awareness schema
 export function createWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 >(
-	config: WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions>,
-): WorkspaceClientBuilder<TId, TTableDefinitions, TKvDefinitions> {
+	config: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		undefined
+	>,
+): WorkspaceClientBuilder<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	undefined,
+	Record<string, never>
+>;
+
+// Implementation signature (private)
+export function createWorkspace<
+	TId extends string,
+	TTableDefinitions extends TableDefinitions = Record<string, never>,
+	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwareness extends StandardSchemaV1 | undefined = undefined,
+>(
+	config: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwareness
+	>,
+): WorkspaceClientBuilder<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwareness,
+	Record<string, never>
+> {
 	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
 	const tableDefs = (config.tables ?? {}) as TTableDefinitions;
@@ -81,12 +137,132 @@ export function createWorkspace<
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
 	const whenReadyPromises: Promise<unknown>[] = [];
 
+	// Branch: No awareness schema
+	if (config.awareness === undefined) {
+		function buildClient<TExtensions extends Record<string, unknown>>(
+			extensions: TExtensions,
+		): WorkspaceClientBuilder<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			undefined,
+			TExtensions
+		> {
+			const whenReady = Promise.all(whenReadyPromises).then(() => {});
+
+			const destroy = async (): Promise<void> => {
+				// Destroy extensions in reverse order (last added = first destroyed)
+				for (let i = extensionCleanups.length - 1; i >= 0; i--) {
+					await extensionCleanups[i]!();
+				}
+				ydoc.destroy();
+			};
+
+			const client = {
+				id,
+				ydoc,
+				tables,
+				kv,
+				definitions,
+				extensions,
+				awareness: undefined,
+				whenReady,
+				destroy,
+				[Symbol.asyncDispose]: destroy,
+			};
+
+			return Object.assign(client, {
+				withExtension<
+					TKey extends string,
+					TExports extends Record<string, unknown>,
+				>(
+					key: TKey,
+					factory: (
+						context: ExtensionContext<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							undefined,
+							TExtensions
+						>,
+					) => Extension<TExports>,
+				) {
+					const context = {
+						id,
+						ydoc,
+						tables,
+						kv,
+						extensions,
+						awareness: undefined,
+					};
+
+					const result = factory(context);
+					extensionCleanups.push(() => result.lifecycle.destroy());
+					whenReadyPromises.push(result.lifecycle.whenReady);
+
+					const newExtensions = {
+						...extensions,
+						[key]: result.exports,
+					} as TExtensions & Record<TKey, TExports>;
+
+					return buildClient(newExtensions);
+				},
+
+				withActions<TActions extends Actions>(
+					factory: (
+						client: WorkspaceClient<
+							TId,
+							TTableDefinitions,
+							TKvDefinitions,
+							undefined,
+							TExtensions
+						>,
+					) => TActions,
+				) {
+					const actions = factory(client);
+					return {
+						...client,
+						actions,
+					} as WorkspaceClientWithActions<
+						TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						undefined,
+						TExtensions,
+						TActions
+					>;
+				},
+			});
+		}
+
+		return buildClient({} as Record<string, never>) as WorkspaceClientBuilder<
+			TId,
+			TTableDefinitions,
+			TKvDefinitions,
+			TAwareness,
+			Record<string, never>
+		>;
+	}
+
+	// Branch: With awareness schema
+	// At runtime we know config.awareness is not undefined here
+	// But TypeScript still sees TAwareness as potentially undefined
+	// So we assert the types explicitly
+	type AwarenessType = TAwareness extends StandardSchemaV1
+		? StandardSchemaV1.InferOutput<TAwareness>
+		: never;
+	const awareness = createAwareness(
+		ydoc,
+		config.awareness as StandardSchemaV1<unknown, AwarenessType>,
+	);
+
 	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwareness,
 		TExtensions
 	> {
 		const whenReady = Promise.all(whenReadyPromises).then(() => {});
@@ -96,6 +272,8 @@ export function createWorkspace<
 			for (let i = extensionCleanups.length - 1; i >= 0; i--) {
 				await extensionCleanups[i]!();
 			}
+			// Destroy awareness
+			awareness.raw.destroy();
 			ydoc.destroy();
 		};
 
@@ -106,6 +284,7 @@ export function createWorkspace<
 			kv,
 			definitions,
 			extensions,
+			awareness: awareness as any,
 			whenReady,
 			destroy,
 			[Symbol.asyncDispose]: destroy,
@@ -122,11 +301,21 @@ export function createWorkspace<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,
+						TAwareness,
 						TExtensions
 					>,
 				) => Extension<TExports>,
 			) {
-				const result = factory({ id, ydoc, tables, kv, extensions });
+				const context = {
+					id,
+					ydoc,
+					tables,
+					kv,
+					extensions,
+					awareness: awareness as any,
+				};
+
+				const result = factory(context);
 				extensionCleanups.push(() => result.lifecycle.destroy());
 				whenReadyPromises.push(result.lifecycle.whenReady);
 
@@ -144,22 +333,20 @@ export function createWorkspace<
 						TId,
 						TTableDefinitions,
 						TKvDefinitions,
+						TAwareness,
 						TExtensions
 					>,
 				) => TActions,
 			) {
-				const actions = factory(
-					client as WorkspaceClient<
-						TId,
-						TTableDefinitions,
-						TKvDefinitions,
-						TExtensions
-					>,
-				);
-				return { ...client, actions } as WorkspaceClientWithActions<
+				const actions = factory(client);
+				return {
+					...client,
+					actions,
+				} as WorkspaceClientWithActions<
 					TId,
 					TTableDefinitions,
 					TKvDefinitions,
+					TAwareness,
 					TExtensions,
 					TActions
 				>;
@@ -167,7 +354,13 @@ export function createWorkspace<
 		});
 	}
 
-	return buildClient({} as Record<string, never>);
+	return buildClient({} as Record<string, never>) as WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwareness,
+		Record<string, never>
+	>;
 }
 
 export type { WorkspaceClient, WorkspaceClientBuilder };

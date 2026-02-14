@@ -5,6 +5,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension } from '../shared/lifecycle.js';
@@ -250,6 +251,54 @@ export type TableHelper<TRow extends { id: string }> = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
+// AWARENESS TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Helper for typed awareness access.
+ * Wraps the raw y-protocols Awareness instance with schema-validated methods.
+ *
+ * @typeParam TState - The awareness state type inferred from the schema
+ */
+export type AwarenessHelper<TState> = {
+	/**
+	 * Set this client's awareness state.
+	 * Broadcasts to all connected peers via the awareness protocol.
+	 * No runtime validation — TypeScript catches type errors at compile time.
+	 */
+	setLocal(state: TState): void;
+
+	/**
+	 * Get this client's current awareness state.
+	 * Returns null if not yet set.
+	 */
+	getLocal(): TState | null;
+
+	/**
+	 * Get all connected clients' awareness states.
+	 * Returns Map from Yjs clientID to validated state.
+	 * Invalid states (schema mismatches) are silently skipped.
+	 */
+	getAll(): Map<number, TState>;
+
+	/**
+	 * Watch for awareness changes.
+	 * Callback receives a map of clientIDs to change type.
+	 * Returns unsubscribe function.
+	 */
+	observe(
+		callback: (changes: Map<number, 'added' | 'updated' | 'removed'>) => void,
+	): () => void;
+
+	/**
+	 * The raw y-protocols Awareness instance.
+	 * Escape hatch for advanced use (custom heartbeats, direct protocol access).
+	 * Pass to sync providers: createYjsProvider(ydoc, ..., { awareness: ctx.awareness.raw })
+	 */
+	raw: Awareness;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 // WORKSPACE TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -324,10 +373,13 @@ export type WorkspaceDefinition<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwareness extends StandardSchemaV1 | undefined = undefined,
 > = {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
+	/** Raw StandardSchemaV1 schema for awareness state (no defineAwareness() wrapper needed) */
+	awareness?: TAwareness;
 };
 
 /**
@@ -340,9 +392,10 @@ export type WorkspaceClientWithActions<
 	TId extends string,
 	TTableDefs extends TableDefinitions,
 	TKvDefs extends KvDefinitions,
+	TAwareness extends StandardSchemaV1 | undefined,
 	TExtensions extends Record<string, unknown>,
 	TActions extends Actions,
-> = WorkspaceClient<TId, TTableDefs, TKvDefs, TExtensions> & {
+> = WorkspaceClient<TId, TTableDefs, TKvDefs, TAwareness, TExtensions> & {
 	actions: TActions;
 };
 
@@ -380,8 +433,15 @@ export type WorkspaceClientBuilder<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
+	TAwareness extends StandardSchemaV1 | undefined,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
-> = WorkspaceClient<TId, TTableDefinitions, TKvDefinitions, TExtensions> & {
+> = WorkspaceClient<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwareness,
+	TExtensions
+> & {
 	/**
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
@@ -418,6 +478,7 @@ export type WorkspaceClientBuilder<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
+				TAwareness,
 				TExtensions
 			>,
 		) => Extension<TExports>,
@@ -425,6 +486,7 @@ export type WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwareness,
 		TExtensions & Record<TKey, TExports>
 	>;
 
@@ -444,6 +506,7 @@ export type WorkspaceClientBuilder<
 				TId,
 				TTableDefinitions,
 				TKvDefinitions,
+				TAwareness,
 				TExtensions
 			>,
 		) => TActions,
@@ -451,6 +514,7 @@ export type WorkspaceClientBuilder<
 		TId,
 		TTableDefinitions,
 		TKvDefinitions,
+		TAwareness,
 		TExtensions,
 		TActions
 	>;
@@ -477,6 +541,7 @@ export type { Extension } from '../shared/lifecycle.js';
  * @typeParam TTableDefinitions - Map of table definitions for this workspace
  * @typeParam TKvDefinitions - Map of KV definitions for this workspace
  * @typeParam TExtensions - Accumulated extension exports from previous `.withExtension()` calls
+ * @typeParam TAwareness - Awareness schema type (undefined if not defined)
  *
  * @example
  * ```typescript
@@ -491,6 +556,7 @@ export type ExtensionContext<
 	TId extends string = string,
 	TTableDefinitions extends TableDefinitions = TableDefinitions,
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
+	TAwareness extends StandardSchemaV1 | undefined = undefined,
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
 > = {
 	/** Workspace identifier */
@@ -503,6 +569,10 @@ export type ExtensionContext<
 	kv: KvHelper<TKvDefinitions>;
 	/** Accumulated extension exports from previous `.withExtension()` calls */
 	extensions: TExtensions;
+	/** Typed awareness helper (undefined if no schema defined) */
+	awareness: TAwareness extends StandardSchemaV1
+		? AwarenessHelper<StandardSchemaV1.InferOutput<TAwareness>>
+		: undefined;
 };
 
 /**
@@ -537,6 +607,7 @@ export type WorkspaceClient<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions,
 	TKvDefinitions extends KvDefinitions,
+	TAwareness extends StandardSchemaV1 | undefined,
 	TExtensions extends Record<string, unknown>,
 > = {
 	/** Workspace identifier */
@@ -551,6 +622,10 @@ export type WorkspaceClient<
 	definitions: { tables: TTableDefinitions; kv: TKvDefinitions };
 	/** Extension exports (accumulated via `.withExtension()` calls) */
 	extensions: TExtensions;
+	/** Typed awareness helper (undefined if no schema defined) */
+	awareness: TAwareness extends StandardSchemaV1
+		? AwarenessHelper<StandardSchemaV1.InferOutput<TAwareness>>
+		: undefined;
 
 	/** Promise resolving when all extensions are ready */
 	whenReady: Promise<void>;

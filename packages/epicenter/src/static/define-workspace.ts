@@ -19,6 +19,7 @@
  * ```
  */
 
+import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type {
 	KvDefinitions,
 	TableDefinitions,
@@ -36,15 +37,19 @@ export function defineWorkspace<
 	TId extends string,
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
+	TAwareness extends StandardSchemaV1 | undefined = undefined,
 >(config: {
 	id: TId;
 	tables?: TTableDefinitions;
 	kv?: TKvDefinitions;
-}): WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions> {
+	/** Raw StandardSchemaV1 schema for awareness state (no defineAwareness() wrapper needed) */
+	awareness?: TAwareness;
+}): WorkspaceDefinition<TId, TTableDefinitions, TKvDefinitions, TAwareness> {
 	return {
 		id: config.id,
 		tables: (config.tables ?? {}) as TTableDefinitions,
 		kv: (config.kv ?? {}) as TKvDefinitions,
+		awareness: config.awareness,
 	};
 }
 

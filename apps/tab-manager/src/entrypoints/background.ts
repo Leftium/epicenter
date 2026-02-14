@@ -904,11 +904,12 @@ export default defineBackground(() => {
 								const tabs = await browser.tabs.query({
 									groupId: parsed.groupId,
 								});
-								for (const tab of tabs) {
-									if (tab.id !== undefined) {
-										await browser.tabs.ungroup(tab.id);
-									}
-								}
+								const tabIds = tabs.flatMap((tab) =>
+									tab.id !== undefined ? [tab.id] : [],
+								);
+								await Promise.allSettled(
+									tabIds.map((id) => browser.tabs.ungroup(id)),
+								);
 							},
 							catch: (error) => {
 								console.log(

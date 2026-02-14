@@ -89,7 +89,7 @@ export type SyncExtensionConfig = {
 export function createSyncExtension(
 	config: SyncExtensionConfig,
 ): ExtensionFactory {
-	return ({ ydoc }) => {
+	return ({ ydoc, awareness }) => {
 		const workspaceId = ydoc.guid;
 
 		// Resolve URL — supports string with {id} placeholder or function
@@ -107,6 +107,7 @@ export function createSyncExtension(
 				? () => config.getToken!(workspaceId)
 				: undefined,
 			connect: false,
+			awareness: awareness.raw,
 		});
 
 		let persistenceCleanup: (() => MaybePromise<void>) | undefined;
@@ -155,6 +156,7 @@ export function createSyncExtension(
 						token: newConfig.token,
 						getToken: newConfig.getToken,
 						connect: true,
+						awareness: awareness.raw,
 					});
 				},
 			},

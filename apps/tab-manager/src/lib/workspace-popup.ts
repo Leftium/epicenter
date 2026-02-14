@@ -1,7 +1,7 @@
 /**
  * Popup-side workspace client for accessing Y.Doc data.
  *
- * The popup needs direct access to the Y.Doc for the `suspendedTabs` table,
+ * The popup needs direct access to the Y.Doc for the saved tabs table,
  * which is shared across devices via Yjs (not available through Chrome APIs).
  *
  * This creates a lightweight workspace client with IndexedDB persistence
@@ -21,7 +21,7 @@ import { definition } from '$lib/workspace';
 /**
  * Popup workspace client.
  *
- * Provides typed access to all browser tables including `suspendedTabs`.
+ * Provides typed access to all browser tables including saved tabs.
  * Shares the same Y.Doc as the background service worker via IndexedDB
  * persistence and Y-Sweet sync.
  */

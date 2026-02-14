@@ -3,7 +3,9 @@
 **Date**: 2026-02-13
 **Status**: Implemented
 **Author**: AI-assisted
-**Implementation notes**: All 5 phases completed. `browser-state.svelte.ts` created with `$state` reactive class, surgical browser event handlers, and direct action methods. Components (`TabList.svelte`, `TabItem.svelte`, `SuspendedTabList.svelte`) rewritten to use `browserState`. TanStack Query fully removed — `query/` directory deleted, `EpicenterProvider.svelte` deleted, no `@tanstack/svelte-query` imports remain.
+**Implementation notes**: All 5 phases completed. `browser-state.svelte.ts` created with `$state` reactive class, surgical browser event handlers, and direct action methods. Components (`TabList.svelte`, `TabItem.svelte`, `SavedTabList.svelte`) rewritten to use `browserState`. TanStack Query fully removed — `query/` directory deleted, `EpicenterProvider.svelte` deleted, no `@tanstack/svelte-query` imports remain.
+
+> **Note**: "Suspended" terminology was renamed to "saved" in the codebase. References below use the original names. See `specs/20260213T014300-rename-suspended-to-saved.md`.
 
 ## Overview
 

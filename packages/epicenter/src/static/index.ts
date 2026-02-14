@@ -78,11 +78,10 @@ export {
 export type { ExtensionError } from '../shared/errors.js';
 export { ExtensionErr } from '../shared/errors.js';
 // Lifecycle protocol
-export {
-	defineExtension,
-	type Extension,
-	type Lifecycle,
-	type MaybePromise,
+export type {
+	Extension,
+	Lifecycle,
+	MaybePromise,
 } from '../shared/lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════

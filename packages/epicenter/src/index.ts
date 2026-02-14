@@ -40,11 +40,10 @@ export {
 // LIFECYCLE PROTOCOL
 // ════════════════════════════════════════════════════════════════════════════
 
-export {
-	defineExtension,
-	type Extension,
-	type Lifecycle,
-	type MaybePromise,
+export type {
+	Extension,
+	Lifecycle,
+	MaybePromise,
 } from './shared/lifecycle';
 
 // ════════════════════════════════════════════════════════════════════════════

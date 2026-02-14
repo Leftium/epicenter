@@ -29,7 +29,8 @@
 				<BookmarkIcon class="size-8 text-muted-foreground" />
 			</Empty.Media>
 			<Empty.Title>No saved tabs</Empty.Title>
-			<Empty.Description>Save tabs to come back to them later</Empty.Description>
+			<Empty.Description>Save tabs to come back to them later</Empty.Description
+			>
 		</Empty.Root>
 	{:else}
 		<div class="flex flex-col gap-1">

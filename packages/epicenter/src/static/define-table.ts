@@ -44,6 +44,7 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { LastSchema, TableDefinition } from './types.js';
 
@@ -52,12 +53,12 @@ import type { LastSchema, TableDefinition } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<TVersions extends StandardSchemaV1[]> = {
+type TableBuilder<TVersions extends StandardSchemaWithJSONSchema[]> = {
 	/**
 	 * Add a schema version. Schema must include `{ id: string }`.
 	 * The last version added becomes the "latest" schema shape.
 	 */
-	version<TSchema extends StandardSchemaV1>(
+	version<TSchema extends StandardSchemaWithJSONSchema>(
 		schema: StandardSchemaV1.InferOutput<TSchema> extends { id: string }
 			? TSchema
 			: never,
@@ -87,7 +88,7 @@ type TableBuilder<TVersions extends StandardSchemaV1[]> = {
  * const users = defineTable(type({ id: 'string', email: 'string' }));
  * ```
  */
-export function defineTable<TSchema extends StandardSchemaV1>(
+export function defineTable<TSchema extends StandardSchemaWithJSONSchema>(
 	schema: StandardSchemaV1.InferOutput<TSchema> extends { id: string }
 		? TSchema
 		: never,
@@ -132,7 +133,7 @@ export function defineTable<TSchema extends StandardSchemaV1>(
  */
 export function defineTable(): TableBuilder<[]>;
 
-export function defineTable<TSchema extends StandardSchemaV1>(
+export function defineTable<TSchema extends StandardSchemaWithJSONSchema>(
 	schema?: TSchema,
 ): TableDefinition<[TSchema]> | TableBuilder<[]> {
 	if (schema) {
@@ -142,10 +143,10 @@ export function defineTable<TSchema extends StandardSchemaV1>(
 		} as TableDefinition<[TSchema]>;
 	}
 
-	const versions: StandardSchemaV1[] = [];
+	const versions: StandardSchemaWithJSONSchema[] = [];
 
 	const builder = {
-		version(versionSchema: StandardSchemaV1) {
+		version(versionSchema: StandardSchemaWithJSONSchema) {
 			versions.push(versionSchema);
 			return builder;
 		},

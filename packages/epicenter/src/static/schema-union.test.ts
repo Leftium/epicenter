@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { type } from 'arktype';
+import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 
 describe('createUnionSchema', () => {
@@ -46,13 +46,70 @@ describe('createUnionSchema', () => {
 				version: 1,
 				vendor: 'test',
 				validate: () => Promise.resolve({ value: {} }),
+				jsonSchema: {
+					input: () => ({}),
+					output: () => ({}),
+				},
 			},
-		} satisfies StandardSchemaV1;
+		} satisfies StandardSchemaWithJSONSchema;
 
 		const union = createUnionSchema([asyncSchema]);
 
 		expect(() => union['~standard'].validate({})).toThrow(
 			'Schema validation must be synchronous',
 		);
+	});
+
+	test('produces JSON Schema with oneOf for single schema', () => {
+		const v1 = type({ id: 'string', title: 'string' });
+
+		const union = createUnionSchema([v1]);
+		const jsonSchema = union['~standard'].jsonSchema.input({
+			target: 'draft-2020-12',
+		});
+
+		expect(jsonSchema).toHaveProperty('oneOf');
+		expect((jsonSchema as { oneOf: unknown[] }).oneOf).toHaveLength(1);
+
+		const first = (jsonSchema as { oneOf: Record<string, unknown>[] }).oneOf[0];
+		expect(first).toHaveProperty('type', 'object');
+		expect(first).toHaveProperty('properties');
+	});
+
+	test('produces JSON Schema with oneOf for multiple schemas', () => {
+		const v1 = type({ id: 'string', title: 'string' });
+		const v2 = type({ id: 'string', title: 'string', views: 'number' });
+
+		const union = createUnionSchema([v1, v2]);
+		const jsonSchema = union['~standard'].jsonSchema.input({
+			target: 'draft-2020-12',
+		});
+
+		expect(jsonSchema).toHaveProperty('oneOf');
+		const oneOf = jsonSchema.oneOf;
+		expect(oneOf).toHaveLength(2);
+
+		// Both should be object schemas
+		for (const schema of oneOf) {
+			expect(schema).toHaveProperty('type', 'object');
+		}
+
+		// Second schema should have 'views' property
+		const secondProps = (oneOf[1] as { properties: Record<string, unknown> })
+			.properties;
+		expect(secondProps).toHaveProperty('views');
+	});
+
+	test('output JSON Schema also uses oneOf', () => {
+		const v1 = type({ id: 'string' });
+		const v2 = type({ id: 'string', name: 'string' });
+
+		const union = createUnionSchema([v1, v2]);
+		const outputSchema = union['~standard'].jsonSchema.output({
+			target: 'draft-2020-12',
+		});
+
+		expect(outputSchema).toHaveProperty('oneOf');
+		expect((outputSchema as { oneOf: unknown[] }).oneOf).toHaveLength(2);
 	});
 });

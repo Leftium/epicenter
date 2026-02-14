@@ -9,6 +9,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension } from '../shared/lifecycle.js';
+import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -97,7 +98,7 @@ export type LastSchema<T extends readonly StandardSchemaV1[]> =
  * @typeParam TVersions - Tuple of StandardSchemaV1 types representing all versions
  */
 export type TableDefinition<TVersions extends readonly StandardSchemaV1[]> = {
-	schema: StandardSchemaV1<
+	schema: StandardSchemaWithJSONSchema<
 		unknown,
 		StandardSchemaV1.InferOutput<TVersions[number]>
 	>;
@@ -128,7 +129,7 @@ export type InferTableVersionUnion<T> =
  * @typeParam TVersions - Tuple of StandardSchemaV1 types representing all versions
  */
 export type KvDefinition<TVersions extends readonly StandardSchemaV1[]> = {
-	schema: StandardSchemaV1<
+	schema: StandardSchemaWithJSONSchema<
 		unknown,
 		StandardSchemaV1.InferOutput<TVersions[number]>
 	>;
@@ -382,8 +383,8 @@ export type TableHelper<TRow extends { id: string }> = {
 // AWARENESS TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Map of awareness field definitions. Each field has its own StandardSchemaV1 schema. */
-export type AwarenessDefinitions = Record<string, StandardSchemaV1>;
+/** Map of awareness field definitions. Each field has its own StandardSchemaWithJSONSchema schema. */
+export type AwarenessDefinitions = Record<string, StandardSchemaWithJSONSchema>;
 
 /** Extract the output type of an awareness field's schema. */
 export type InferAwarenessValue<T> = T extends StandardSchemaV1

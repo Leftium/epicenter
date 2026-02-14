@@ -1,2 +1,5 @@
-<h1>FS Explorer</h1>
-<p>Loading...</p>
+<script lang="ts">
+	import AppShell from '$lib/components/AppShell.svelte';
+</script>
+
+<AppShell />

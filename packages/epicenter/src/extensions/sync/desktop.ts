@@ -74,20 +74,27 @@ export const persistence = (
 };
 
 /**
- * Filesystem persistence factory for use with `createSyncExtension`.
+ * Filesystem persistence factory that returns a `Lifecycle`.
  *
- * Returns a function `(ydoc: Y.Doc) => Lifecycle` that reads/writes a `.yjs` binary file.
- * Uses `Bun.file()` for read, debounced `writeFileSync` for write.
+ * Reads/writes a `.yjs` binary file using `Bun.file()` for read and
+ * debounced `writeFileSync` for write.
  *
- * @example
+ * **Note**: This returns a raw `Lifecycle` (not an `Extension`), so it cannot
+ * be used directly with `.withExtension()`. Use the `persistence` export above
+ * for the extension-compatible version, or wrap this in `defineExtension()`.
+ *
+ * @example With the persistence extension pattern
  * ```typescript
- * import { filesystemPersistence } from '@epicenter/hq/extensions/sync/desktop';
+ * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
  * import { createSyncExtension } from '@epicenter/hq/extensions/sync';
  *
- * createSyncExtension({
- *   url: 'ws://localhost:3913/workspaces/{id}/sync',
- *   persistence: filesystemPersistence({ filePath: '/path/to/workspace.yjs' }),
- * })
+ * createWorkspace(definition)
+ *   .withExtension('persistence', (ctx) => persistence(ctx, {
+ *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
+ *   }))
+ *   .withExtension('sync', createSyncExtension({
+ *     url: 'ws://localhost:3913/workspaces/{id}/sync',
+ *   }))
  * ```
  */
 export function filesystemPersistence(options: {

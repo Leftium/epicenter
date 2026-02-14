@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';
 
@@ -19,34 +20,30 @@ type SyncExtensionResult = {
 	lifecycle: { whenReady: Promise<unknown>; destroy: () => void };
 };
 
+/** Create a minimal mock client for the sync extension factory. */
+function createMockClient(ydoc: Y.Doc) {
+	return {
+		ydoc,
+		awareness: { raw: new Awareness(ydoc) },
+		whenReady: Promise.resolve(),
+	} as any;
+}
+
 describe('createSyncExtension', () => {
 	describe('reconnect', () => {
-		test('destroys old provider, creates new provider, leaves persistence untouched', () => {
+		test('destroys old provider and creates new provider', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
-
-			let persistenceInitCount = 0;
-			let persistenceDestroyCount = 0;
 
 			const factory = createSyncExtension({
 				url: 'ws://localhost:8080/workspaces/{id}/sync',
-				persistence: () => {
-					persistenceInitCount++;
-					return {
-						whenReady: Promise.resolve(),
-						destroy: () => {
-							persistenceDestroyCount++;
-						},
-					};
-				},
 			});
 
-			const result = factory({
-				ydoc,
-			} as any) as unknown as SyncExtensionResult;
+			const result = factory(
+				createMockClient(ydoc),
+			) as unknown as SyncExtensionResult;
 
 			const oldProvider = result.exports.provider;
 			expect(oldProvider).toBeDefined();
-			expect(persistenceInitCount).toBe(1);
 
 			// Reconnect with a different URL
 			result.exports.reconnect({
@@ -61,10 +58,6 @@ describe('createSyncExtension', () => {
 			expect(newProvider).not.toBe(oldProvider);
 			expect(newProvider).toBeDefined();
 
-			// Persistence should NOT have been reinitialized
-			expect(persistenceInitCount).toBe(1);
-			expect(persistenceDestroyCount).toBe(0);
-
 			// Cleanup
 			result.lifecycle.destroy();
 		});
@@ -74,15 +67,11 @@ describe('createSyncExtension', () => {
 
 			const factory = createSyncExtension({
 				url: 'ws://localhost:8080/workspaces/{id}/sync',
-				persistence: () => ({
-					whenReady: Promise.resolve(),
-					destroy: () => {},
-				}),
 			});
 
-			const result = factory({
-				ydoc,
-			} as any) as unknown as SyncExtensionResult;
+			const result = factory(
+				createMockClient(ydoc),
+			) as unknown as SyncExtensionResult;
 
 			const firstProvider = result.exports.provider;
 			result.exports.reconnect({
@@ -110,15 +99,11 @@ describe('createSyncExtension', () => {
 
 			const factory = createSyncExtension({
 				url: 'ws://localhost:8080/workspaces/{id}/sync',
-				persistence: () => ({
-					whenReady: Promise.resolve(),
-					destroy: () => {},
-				}),
 			});
 
-			const result = factory({
-				ydoc,
-			} as any) as unknown as SyncExtensionResult;
+			const result = factory(
+				createMockClient(ydoc),
+			) as unknown as SyncExtensionResult;
 			result.exports.reconnect({
 				url: 'ws://cloud.example.com/workspaces/test-doc-destroy/sync',
 			});
@@ -136,16 +121,12 @@ describe('createSyncExtension', () => {
 
 		const factory = createSyncExtension({
 			url: 'ws://localhost:3913/workspaces/{id}/sync',
-			persistence: () => ({
-				whenReady: Promise.resolve(),
-				destroy: () => {},
-			}),
 		});
 
 		// The factory creates a provider with connect: false, so no actual connection
-		const result = factory({
-			ydoc,
-		} as any) as unknown as SyncExtensionResult;
+		const result = factory(
+			createMockClient(ydoc),
+		) as unknown as SyncExtensionResult;
 
 		// Provider should exist and be offline (not connected)
 		expect(result.exports.provider).toBeDefined();
@@ -159,18 +140,55 @@ describe('createSyncExtension', () => {
 
 		const factory = createSyncExtension({
 			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
-			persistence: () => ({
-				whenReady: Promise.resolve(),
-				destroy: () => {},
-			}),
+		});
+
+		const result = factory(
+			createMockClient(ydoc),
+		) as unknown as SyncExtensionResult;
+
+		expect(result.exports.provider).toBeDefined();
+		expect(result.exports.provider.status).toBe('offline');
+
+		result.lifecycle.destroy();
+	});
+
+	test('whenReady awaits client.whenReady before connecting', async () => {
+		const ydoc = new Y.Doc({ guid: 'await-test' });
+		const order: string[] = [];
+
+		let resolveClientReady!: () => void;
+		const clientWhenReady = new Promise<void>((resolve) => {
+			resolveClientReady = resolve;
+		});
+
+		const factory = createSyncExtension({
+			url: 'ws://localhost:8080/workspaces/{id}/sync',
 		});
 
 		const result = factory({
 			ydoc,
+			awareness: { raw: new Awareness(ydoc) },
+			whenReady: clientWhenReady.then(() => {
+				order.push('client-ready');
+			}),
 		} as any) as unknown as SyncExtensionResult;
 
-		expect(result.exports.provider).toBeDefined();
-		expect(result.exports.provider.status).toBe('offline');
+		// whenReady should not have resolved yet
+		let resolved = false;
+		void result.lifecycle.whenReady.then(() => {
+			resolved = true;
+			order.push('sync-ready');
+		});
+
+		// Give microtasks a chance
+		await new Promise((r) => setTimeout(r, 10));
+		expect(resolved).toBe(false);
+
+		// Resolve the client's whenReady
+		resolveClientReady();
+		await result.lifecycle.whenReady;
+
+		expect(order).toEqual(['client-ready', 'sync-ready']);
 
 		result.lifecycle.destroy();
 	});

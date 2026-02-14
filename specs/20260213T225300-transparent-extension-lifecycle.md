@@ -119,19 +119,15 @@ The key insight: `buildClient` already computes `whenReady = Promise.all(whenRea
 
 - [x] **3.1** Remove `persistence` from `SyncExtensionConfig` type
 - [x] **3.2** Rewrite `createSyncExtension` to use `context.whenReady` instead of manually orchestrating persistence
-- [ ] **3.3** Update call sites in `apps/tab-manager/src/entrypoints/background.ts` and `apps/tab-manager/src/lib/workspace-popup.ts` to use two separate extensions (`.withExtension('persistence', ...).withExtension('sync', ...)`)
-  - ✅ `background.ts` done
-  - ⬜ `workspace-popup.ts` remaining
-- [ ] **3.4** Update tests in `sync.test.ts`
-- [ ] **3.5** Update JSDoc and examples on `createSyncExtension`, `indexeddbPersistence`, `filesystemPersistence`
-  - ✅ `createSyncExtension` JSDoc done
-  - ⬜ `indexeddbPersistence` and `filesystemPersistence` remaining
+- [x] **3.3** Update call sites in `apps/tab-manager/src/entrypoints/background.ts` and `apps/tab-manager/src/lib/workspace-popup.ts` to use two separate extensions (`.withExtension('persistence', ...).withExtension('sync', ...)`)
+- [x] **3.4** Update tests in `sync.test.ts`
+- [x] **3.5** Update JSDoc and examples on `createSyncExtension`, `indexeddbPersistence`, `filesystemPersistence`
 
 ### Phase 4: Cleanup
 
 - [x] **4.1** Remove `Lifecycle` import from `sync.ts` (no longer needed for the persistence parameter type)
-- [ ] **4.2** Audit JSDoc across `lifecycle.ts` and `types.ts` — remove "consumers never see lifecycle hooks" language, update `ExtensionContext` docs
-- [ ] **4.3** Run build + tests, verify everything passes
+- [x] **4.2** Audit JSDoc across `lifecycle.ts` and `types.ts` — remove "consumers never see lifecycle hooks" language, update `ExtensionContext` docs
+- [x] **4.3** Run build + tests, verify everything passes (5 pre-existing type errors in `table-helper.ts`, unrelated)
 
 ## Edge Cases
 
@@ -153,12 +149,12 @@ Currently `indexeddbPersistence` takes `{ ydoc }` — a subset of `ExtensionCont
 
 ## Success Criteria
 
-- [ ] `context.whenReady` is accessible and correctly typed in extension factories
-- [ ] `createSyncExtension` no longer takes a `persistence` config parameter
-- [ ] Tab manager app uses two separate extensions (persistence + sync) instead of one combined
-- [ ] All existing tests pass
-- [ ] New tests verify `context.whenReady` resolves after prior extensions
-- [ ] Build passes with no type errors
+- [x] `context.whenReady` is accessible and correctly typed in extension factories
+- [x] `createSyncExtension` no longer takes a `persistence` config parameter
+- [x] Tab manager app uses two separate extensions (persistence + sync) instead of one combined
+- [x] All existing tests pass
+- [x] New tests verify `context.whenReady` resolves after prior extensions
+- [x] Build passes with no new type errors (5 pre-existing in `table-helper.ts`)
 
 ## References
 

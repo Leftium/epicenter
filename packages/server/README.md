@@ -115,6 +115,77 @@ Routes are namespaced by workspace ID:
 /workspaces/{workspaceId}/tables/{table}/{id}  - Single row operations
 ```
 
+## WebSocket Sync
+
+The server includes a y-websocket compatible sync endpoint for real-time Y.Doc synchronization. This is the primary feature for multi-device collaboration.
+
+### Client Connection
+
+Clients connect via WebSocket to:
+
+```
+ws://host:3913/workspaces/{workspaceId}/sync
+```
+
+The recommended client is `@epicenter/sync`, which provides `createSyncProvider` with automatic reconnection, heartbeat, and `hasLocalChanges` tracking. Most Epicenter consumers use `createSyncExtension` from `@epicenter/hq/extensions/sync`, which wraps the provider with extension lifecycle management.
+
+### Protocol Messages
+
+The server handles four y-websocket message types:
+
+| Tag | Name              | Description                                                                                  |
+| --- | ----------------- | -------------------------------------------------------------------------------------------- |
+| 0   | `SYNC`            | Document synchronization (sync step 1, sync step 2, update)                                  |
+| 1   | `AWARENESS`       | User presence — cursor positions, names, selection state. Broadcast to all peers in the room |
+| 3   | `QUERY_AWARENESS` | Client requests current awareness states from the server                                     |
+| 102 | `SYNC_STATUS`     | Heartbeat and change-tracking extension (see below)                                          |
+
+### MESSAGE_SYNC_STATUS (102)
+
+An extension beyond the standard y-websocket protocol. The client sends its `localVersion` as a varint payload. The server echoes the raw bytes back unchanged — zero parsing, zero cost. This enables:
+
+- **`hasLocalChanges`** on the client — compare acked version vs local version to show "Saving..." / "Saved"
+- **Fast heartbeat** — 2s idle probe + 3s timeout = 5s dead-connection detection
+
+### Server-Side Keepalive
+
+The server runs ping/pong keepalive independently of the 102 heartbeat:
+
+- Sends a WebSocket `ping` every **30 seconds**
+- If no `pong` arrives before the next ping, the connection is closed
+- Detects dead clients (laptop lid closed, browser killed, network drop)
+
+### Room Management
+
+Each workspace ID maps to a room:
+
+- Connections are tracked per room for broadcasting
+- Awareness (user presence) is managed per room
+- When the last connection leaves, a **60-second eviction timer** starts
+- If a new connection joins before eviction, the timer is cancelled
+- After eviction, the room and its awareness state are cleaned up
+
+### Server + Client Together
+
+```typescript
+import { createServer } from '@epicenter/server';
+import { createSyncProvider } from '@epicenter/sync';
+import * as Y from 'yjs';
+
+// Server side
+const server = createServer(blogClient, { port: 3913 });
+server.start();
+
+// Client side
+const doc = new Y.Doc();
+const provider = createSyncProvider({
+	doc,
+	url: 'ws://localhost:3913/workspaces/blog/sync',
+});
+// provider.status → 'connected'
+// provider.hasLocalChanges → false (all edits acked)
+```
+
 ## Server vs Scripts
 
 ### Use Scripts (Direct Client)

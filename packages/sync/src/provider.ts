@@ -89,6 +89,7 @@ export function createSyncProvider({
 	url,
 	token: staticToken,
 	getToken,
+	connect: shouldConnect = true,
 	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
 	awareness = new awarenessProtocol.Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
@@ -565,7 +566,7 @@ export function createSyncProvider({
 	// Public API
 	// ========================================================================
 
-	if (config.connect !== false) {
+	if (shouldConnect) {
 		// Auto-connect
 		desired = 'online';
 		const myRunId = runId;

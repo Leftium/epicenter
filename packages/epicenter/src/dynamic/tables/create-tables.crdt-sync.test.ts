@@ -433,12 +433,10 @@ describe('Cell-Level LWW CRDT Merging', () => {
 
 		// Concurrent edits with controlled timestamps
 		await new Promise((resolve) => setTimeout(resolve, 2));
-		const editTime1 = Date.now();
 		tablesA1.get('posts').update({ id: Id('post-1'), title: 'Edit by 1' });
 		tablesB1.get('posts').update({ id: Id('post-1'), title: 'Edit by 1' });
 
 		await new Promise((resolve) => setTimeout(resolve, 2));
-		const editTime2 = Date.now();
 		tablesA2.get('posts').update({ id: Id('post-1'), title: 'Edit by 2' });
 		tablesB2.get('posts').update({ id: Id('post-1'), title: 'Edit by 2' });
 

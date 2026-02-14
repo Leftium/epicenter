@@ -25,7 +25,6 @@ export type { WorkspaceDefinition } from './schema/workspace-definition';
 // The builder pattern API
 export { createWorkspace } from './workspace/create-workspace';
 export type {
-	Extension,
 	ExtensionContext,
 	ExtensionFactory,
 	WorkspaceClient,

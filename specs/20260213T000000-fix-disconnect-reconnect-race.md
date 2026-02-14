@@ -1,8 +1,8 @@
 # Disconnect/Reconnect Race: First-Principles Redesign
 
 **Date**: 2026-02-13
-**Status**: Partially implemented / Superseded
-**Implementation notes**: Option A (surgical fix with generation counter) was kept — it's live in `provider.ts`. Option B (supervisor loop redesign) was NOT implemented and is deferred indefinitely. From Part 5 remaining issues: the listener leak fix (item 2) was completed as part of the reconnect spec. Items 1, 3, 4, 5 remain unaddressed but are low priority.
+**Status**: Complete (Superseded)
+**Implementation notes**: The entire `YSweetProvider` was deleted as part of the migration to `@epicenter/sync` (PR #1350). The new `createSyncProvider()` uses a supervisor loop architecture that eliminates the race conditions analyzed here by design. Option B (supervisor loop redesign) was effectively implemented — just in a new package rather than as a refactor of the old one. All issues identified in this spec (generation counter races, listener leaks, reconnect state machine gaps) no longer exist.
 
 ## What This Document Is
 

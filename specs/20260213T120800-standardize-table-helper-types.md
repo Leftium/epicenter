@@ -1,7 +1,7 @@
 # Standardize TableHelper Type Definitions
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Complete
 
 ## Overview
 
@@ -173,19 +173,19 @@ Prerequisite work — `Row` and `TableRow` were two types that should have been 
 - [x] **1.5** Update `src/dynamic/index.ts` exports — export `TableHelper` from the new location.
 - [x] **1.6** Verify no downstream consumers reference `TId` on `TableHelper`.
 
-### Phase 2: Static API — Use `BaseRow` Instead of `{ id: string }` (TODO)
+### Phase 2: Static API — Use `BaseRow` Instead of `{ id: string }` (DROPPED)
 
-The static API's `TableHelper` uses `{ id: string }` as its row constraint. It should use `BaseRow` from `shared/id.ts` instead, for consistency with the dynamic API and to get branded `Id` safety.
+> **Decision (2026-02-14):** Phase 2 is dropped. The static API intentionally uses plain `string` ids while the dynamic API uses branded `Id`. `BaseRow` is `{ id: Id }` where `Id` is a branded string — adopting it in the static API would propagate branded ids through the entire static type surface, which is a separate design decision, not a standardization gap. The spec's core goal — "both APIs follow the same pattern (hand-written interface as contract, factory annotates against it)" — is fully achieved without this phase.
 
-- [ ] **2.1** Change `TableHelper<TRow extends { id: string }>` to `TableHelper<TRow extends BaseRow>` in `src/static/types.ts`.
-- [ ] **2.2** Update `createTableHelper()` in `src/static/table-helper.ts` — use `BaseRow` instead of `& { id: string }`.
-- [ ] **2.3** Update `InferTableRow` usage sites if needed to include `& BaseRow` instead of `& { id: string }`.
-- [ ] **2.4** Audit static `TableHelper` JSDoc for completeness.
-- [ ] **2.5** Type-check passes.
+- [x] ~~**2.1** Change `TableHelper<TRow extends { id: string }>` to `TableHelper<TRow extends BaseRow>`~~ — Dropped: intentional API divergence
+- [x] ~~**2.2** Update `createTableHelper()` to use `BaseRow`~~ — Dropped
+- [x] ~~**2.3** Update `InferTableRow` usage sites~~ — Dropped
+- [x] **2.4** Audit static `TableHelper` JSDoc for completeness. — Already thorough (every method has full JSDoc)
+- [x] **2.5** Type-check passes.
 
-### Phase 3: Clean Up Result Types
+### Phase 3: Clean Up Result Types (DONE)
 
-- [ ] **3.1** Audit that result types (`GetResult`, `RowResult`, `ValidRowResult`, `InvalidRowResult`, `NotFoundResult`, etc.) follow the same pattern — hand-written, standalone, JSDoc'd. Both APIs already do this, so this is a verification pass.
+- [x] **3.1** Audit that result types (`GetResult`, `RowResult`, `ValidRowResult`, `InvalidRowResult`, `NotFoundResult`, etc.) follow the same pattern — hand-written, standalone, JSDoc'd. Both APIs already do this — verified 2026-02-14.
 
 ## Edge Cases
 
@@ -221,9 +221,9 @@ The dynamic `TableHelper` has `inferRow: null as unknown as TRow` for type infer
 - [x] No `ReturnType<typeof createTableHelper>` alias exists
 - [x] `TId` generic parameter is removed from `TableHelper`
 - [x] Both APIs' `TableHelper` types use `<TRow>` as their single generic parameter
-- [ ] Static `TableHelper` uses `BaseRow` instead of `{ id: string }` (Phase 2)
-- [ ] Static `TableHelper` JSDoc is audited for completeness (Phase 2)
-- [ ] All existing tests pass
+- [x] ~~Static `TableHelper` uses `BaseRow` instead of `{ id: string }`~~ — Dropped: intentional API divergence (static uses plain `string`, dynamic uses branded `Id`)
+- [x] Static `TableHelper` JSDoc is audited for completeness
+- [x] All existing tests pass
 - [x] Type-check passes (zero new errors)
 
 ## References

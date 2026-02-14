@@ -1,7 +1,10 @@
 # Browser State Simplification
 
 **Date**: 2026-02-13
+**Status**: Obsolete (target file deleted)
 **File**: `apps/tab-manager/src/lib/browser-state.svelte.ts`
+
+> **Note (2026-02-14):** `browser-state.svelte.ts` no longer exists. The code this spec targeted was removed during prior refactoring. Nothing to do.
 
 ## Problem
 

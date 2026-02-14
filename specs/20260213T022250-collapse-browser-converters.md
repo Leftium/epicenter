@@ -1,5 +1,9 @@
 # Collapse Browser Converters into Schema Constructors
 
+**Status**: Obsolete (target files deleted)
+
+> **Note (2026-02-14):** `browser-helpers.ts` no longer exists and `createBrowserConverters` has zero references in the codebase. The code this spec targeted was removed during prior refactoring. Nothing to do.
+
 ## Problem
 
 `browser-helpers.ts` has a `createBrowserConverters(deviceId)` factory that returns device-scoped ID constructors (`toTabId`, `toWindowId`, `toGroupId`) and row converters (`tabToRow`, `windowToRow`, `tabGroupToRow`). Meanwhile, `browser.schema.ts` has branded type + const pairs (`TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`) that currently just assert strings — they don't do any real work.

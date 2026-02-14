@@ -1,7 +1,9 @@
 # Pass Full Client to Extension Factories
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Complete
+
+> **Note (2026-02-14):** Fully implemented in two commits: `292841138 refactor(extensions): pass full client as extension factory context` and `311b8bb41 feat(extensions): complete transparent extension lifecycle (phases 3-4)`. Extension factories now receive the full client-so-far (including `whenReady`, `destroy`, `definitions`) as context.
 
 ## Overview
 

@@ -1,8 +1,10 @@
 # Workspace Awareness
 
 **Date**: 2026-02-13
-**Status**: Draft (v2 — redesigned to record-of-fields pattern)
-**Depends on**: `20260213T103000-request-dispatch.md`, `20260213T102800-chainable-extension-api.md`
+**Status**: Complete
+
+> **Note (2026-02-14):** Fully implemented. `createAwareness()` exists at `src/static/create-awareness.ts` with the record-of-fields pattern. `AwarenessDefinitions`, `AwarenessState`, and `AwarenessHelper` types are in `src/static/types.ts`. Integrated into `defineWorkspace()` and `createWorkspace()` — awareness is a first-class concept alongside tables and KV.
+> **Depends on**: `20260213T103000-request-dispatch.md`, `20260213T102800-chainable-extension-api.md`
 
 ## Overview
 

@@ -1,6 +1,10 @@
 # Simplify Y-Sweet API Surface
 
+**Status**: Complete (Superseded by `@epicenter/sync` rewrite — PR #1350)
+
 Simplify `AuthEndpoint` and `ClientToken` types in `@epicenter/y-sweet` to remove unused fields, dead code paths, and a URL double-encoding bug. This is a follow-up to the backwards-compatibility removal spec.
+
+> **Note (2026-02-14):** This spec's goals were fully achieved, but not through incremental simplification. The entire `@epicenter/y-sweet` package was deleted and replaced with `@epicenter/sync` (a ground-up rewrite with supervisor loop architecture). All problems identified here — dead `ClientToken` fields, string-branch `AuthEndpoint`, double-docId URL bug, dead `Authorization`/`AuthDocRequest` types — no longer exist. The new `SyncProviderConfig` type takes `url` + `token?` + `getToken?` directly, matching the three auth modes from the server spec.
 
 ## Context
 
@@ -22,23 +26,29 @@ After the backwards-compat cleanup, the provider is ~672 lines with a tighter AP
 ### 1. Simplify `ClientToken` (`types.ts`)
 
 **Before:**
+
 ```typescript
 export type ClientToken = {
-    url: string;
-    baseUrl: string;
-    docId: string;
-    token?: string;
-    authorization?: Authorization;
+	url: string;
+	baseUrl: string;
+	docId: string;
+	token?: string;
+	authorization?: Authorization;
 };
 export type Authorization = 'full' | 'read-only';
-export type AuthDocRequest = { authorization?: Authorization; userId?: string; validForSeconds?: number; };
+export type AuthDocRequest = {
+	authorization?: Authorization;
+	userId?: string;
+	validForSeconds?: number;
+};
 ```
 
 **After:**
+
 ```typescript
 export type ClientToken = {
-    url: string;     // Fully-formed WebSocket URL (docId already in path)
-    token?: string;  // Optional auth token (appended as ?token=xxx)
+	url: string; // Fully-formed WebSocket URL (docId already in path)
+	token?: string; // Optional auth token (appended as ?token=xxx)
 };
 ```
 
@@ -49,11 +59,13 @@ The `url` field is now the **fully-formed** WebSocket URL — the provider no lo
 ### 2. Simplify `AuthEndpoint` (`provider.ts`)
 
 **Before:**
+
 ```typescript
 export type AuthEndpoint = string | (() => Promise<ClientToken>);
 ```
 
 **After:**
+
 ```typescript
 export type AuthEndpoint = () => Promise<ClientToken>;
 ```
@@ -63,9 +75,12 @@ export type AuthEndpoint = () => Promise<ClientToken>;
 **Before** (lines 89-121): Two branches — function call vs. fetch POST to string URL.
 
 **After:**
+
 ```typescript
-async function getClientToken(authEndpoint: AuthEndpoint): Promise<ClientToken> {
-    return authEndpoint();
+async function getClientToken(
+	authEndpoint: AuthEndpoint,
+): Promise<ClientToken> {
+	return authEndpoint();
 }
 ```
 
@@ -76,6 +91,7 @@ Or inline it entirely into `ensureClientToken()`. Remove `validateClientToken()`
 **Before** (lines 440-448): Parses URL, appends `/{docId}`, adds token query param.
 
 **After:**
+
 ```typescript
 private generateUrl(clientToken: ClientToken): string {
     if (!clientToken.token) return clientToken.url;
@@ -92,6 +108,7 @@ In the `update()` method (current lines 291-297), remove the block that checks `
 ### 6. Update extension layer (`y-sweet-sync.ts`)
 
 **`YSweetAuthenticatedConfig`:**
+
 ```typescript
 // Before
 authEndpoint: string | (() => Promise<ClientToken>);
@@ -101,28 +118,37 @@ authEndpoint: () => Promise<ClientToken>;
 ```
 
 **`buildAuthEndpoint()`** — simplify, no string-to-function conversion needed:
+
 ```typescript
-function buildAuthEndpoint(config: YSweetSyncConfig, docId: string): AuthEndpoint {
-    switch (config.mode) {
-        case 'direct':
-            return () => Promise.resolve(createDirectClientToken(config.serverUrl, docId));
-        case 'authenticated':
-            return config.authEndpoint;
-    }
+function buildAuthEndpoint(
+	config: YSweetSyncConfig,
+	docId: string,
+): AuthEndpoint {
+	switch (config.mode) {
+		case 'direct':
+			return () =>
+				Promise.resolve(createDirectClientToken(config.serverUrl, docId));
+		case 'authenticated':
+			return config.authEndpoint;
+	}
 }
 ```
 
 **Delete `createAuthFetcher()`** — consumers who have a URL can write their own async function. The extension doesn't need to provide fetch logic.
 
 **`createDirectClientToken()`** — return simplified type:
+
 ```typescript
-function createDirectClientToken(serverUrl: string, docId: string): ClientToken {
-    const url = new URL(serverUrl);
-    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-    return {
-        url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
-        token: undefined,
-    };
+function createDirectClientToken(
+	serverUrl: string,
+	docId: string,
+): ClientToken {
+	const url = new URL(serverUrl);
+	const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+	return {
+		url: `${wsProtocol}//${url.host}/d/${docId}/ws`,
+		token: undefined,
+	};
 }
 ```
 
@@ -133,26 +159,28 @@ function createDirectClientToken(serverUrl: string, docId: string): ClientToken 
 ```typescript
 // Before
 const provider = createYjsProvider(ydoc, workspaceId, async () => ({
-    url: `${serverUrl.replace('http', 'ws')}/d/${workspaceId}/ws`,
-    baseUrl: serverUrl,
-    docId: workspaceId,
-    token: undefined,
+	url: `${serverUrl.replace('http', 'ws')}/d/${workspaceId}/ws`,
+	baseUrl: serverUrl,
+	docId: workspaceId,
+	token: undefined,
 }));
 
 // After
 const provider = createYjsProvider(ydoc, workspaceId, async () => ({
-    url: `${serverUrl.replace('http', 'ws')}/d/${workspaceId}/ws`,
-    token: undefined,
+	url: `${serverUrl.replace('http', 'ws')}/d/${workspaceId}/ws`,
+	token: undefined,
 }));
 ```
 
 ### 8. Clean up exports (`main.ts`)
 
 Remove from exports:
+
 - `AuthDocRequest` type
 - `Authorization` type
 
 The remaining public API:
+
 - `createYjsProvider` (function)
 - `YSweetProvider` (class)
 - `AuthEndpoint` (type)
@@ -173,14 +201,14 @@ The remaining public API:
 - [x] Update `y-sweet-connection.ts` — remove `baseUrl` and `docId` from inline ClientToken
 - [x] Remove `AuthDocRequest` and `Authorization` exports from `main.ts`
 - [x] Run `bun run check` to verify no type errors (`@epicenter/y-sweet` compiles clean; pre-existing errors in other packages unrelated to this change)
-- [ ] Test WebSocket connection end-to-end against running Y-Sweet server to verify URL format
+- [x] ~~Test WebSocket connection end-to-end against running Y-Sweet server to verify URL format~~ — Superseded: `@epicenter/y-sweet` deleted, replaced by `@epicenter/sync` (PR #1350)
 
 ## File summary
 
-| File | Action |
-|------|--------|
-| `packages/y-sweet/src/types.ts` | Simplify ClientToken, delete Authorization/AuthDocRequest |
-| `packages/y-sweet/src/provider.ts` | Simplify AuthEndpoint, getClientToken, generateUrl, remove authorization warn |
-| `packages/y-sweet/src/main.ts` | Remove dead type exports |
-| `packages/epicenter/src/extensions/y-sweet-sync.ts` | Simplify config types, delete createAuthFetcher |
-| `apps/epicenter/src/lib/yjs/y-sweet-connection.ts` | Remove baseUrl/docId from inline ClientToken |
+| File                                                | Action                                                                        |
+| --------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `packages/y-sweet/src/types.ts`                     | Simplify ClientToken, delete Authorization/AuthDocRequest                     |
+| `packages/y-sweet/src/provider.ts`                  | Simplify AuthEndpoint, getClientToken, generateUrl, remove authorization warn |
+| `packages/y-sweet/src/main.ts`                      | Remove dead type exports                                                      |
+| `packages/epicenter/src/extensions/y-sweet-sync.ts` | Simplify config types, delete createAuthFetcher                               |
+| `apps/epicenter/src/lib/yjs/y-sweet-connection.ts`  | Remove baseUrl/docId from inline ClientToken                                  |

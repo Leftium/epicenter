@@ -146,6 +146,13 @@ export function createSyncProvider({
 	const statusListeners = new Set<(status: SyncStatus) => void>();
 	const localChangesListeners = new Set<(hasLocalChanges: boolean) => void>();
 
+	/**
+	 * Transition the provider's observable status and notify all listeners.
+	 *
+	 * This is the single place status is written — all transitions flow through
+	 * here so listeners get a consistent, deduplicated stream. No-ops when the
+	 * status hasn't actually changed.
+	 */
 	function setStatus(newStatus: SyncStatus) {
 		if (status === newStatus) return;
 		status = newStatus;
@@ -154,6 +161,12 @@ export function createSyncProvider({
 		}
 	}
 
+	/**
+	 * Notify listeners about a transition in the local changes state.
+	 *
+	 * Only called when `hasLocalChanges` actually toggles — not on every update.
+	 * This drives "Saving…" / "Saved" UI without spurious re-renders.
+	 */
 	function emitLocalChanges(hasChanges: boolean) {
 		for (const listener of localChangesListeners) {
 			listener(hasChanges);
@@ -164,6 +177,13 @@ export function createSyncProvider({
 	// Version Tracking (hasLocalChanges)
 	// ========================================================================
 
+	/**
+	 * Bump the local version counter after a local Y.Doc mutation.
+	 *
+	 * Only emits a `localChanges(true)` event on the clean→dirty transition
+	 * (i.e., the first unacked change). Subsequent local edits before an ack
+	 * just bump the counter silently.
+	 */
 	function incrementLocalVersion() {
 		const wasClean = ackedVersion === localVersion;
 		localVersion += 1;
@@ -172,6 +192,13 @@ export function createSyncProvider({
 		}
 	}
 
+	/**
+	 * Record the latest version the server has acknowledged via MESSAGE_SYNC_STATUS.
+	 *
+	 * Uses `Math.max` to guard against out-of-order acks. Only emits
+	 * `localChanges(false)` when the acked version catches up to the local
+	 * version — the dirty→clean transition.
+	 */
 	function updateAckedVersion(version: number) {
 		version = Math.max(version, ackedVersion);
 		const willBecomeClean =
@@ -200,6 +227,14 @@ export function createSyncProvider({
 		}
 	}
 
+	/**
+	 * Reset the heartbeat idle timer. After {@link HEARTBEAT_IDLE_MS} of
+	 * silence (no messages sent or received), sends a MESSAGE_SYNC_STATUS
+	 * probe to check if the connection is still alive.
+	 *
+	 * Called on every incoming message and after the WebSocket opens, so
+	 * the timer only fires during genuine idle periods.
+	 */
 	function resetHeartbeat() {
 		clearHeartbeat();
 		heartbeatHandle = setTimeout(() => {
@@ -208,6 +243,14 @@ export function createSyncProvider({
 		}, HEARTBEAT_IDLE_MS);
 	}
 
+	/**
+	 * Arm a timeout that closes the socket if no response arrives within
+	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
+	 *
+	 * Only arms when the server has previously responded to a MESSAGE_SYNC_STATUS
+	 * (i.e., `serverSupports102` is true). This prevents false-positive disconnects
+	 * from standard y-websocket servers that don't implement the 102 extension.
+	 */
 	function armConnectionTimeout() {
 		if (connectionTimeoutHandle) return;
 		// Only arm timeout if server supports 102 — otherwise we'd
@@ -221,6 +264,16 @@ export function createSyncProvider({
 		}, HEARTBEAT_TIMEOUT_MS);
 	}
 
+	/**
+	 * Send a MESSAGE_SYNC_STATUS (102) frame containing the current local version.
+	 *
+	 * The server echoes this back, which serves two purposes:
+	 * 1. **Heartbeat** — proves the connection is alive (arms the timeout).
+	 * 2. **Ack tracking** — when the echoed version equals `localVersion`,
+	 *    we know all local changes have been persisted server-side.
+	 *
+	 * Wire format: `[102][varint-length payload][varint localVersion]`
+	 */
 	function sendSyncStatus() {
 		const encoder = encoding.createEncoder();
 		encoding.writeVarUint(encoder, MESSAGE_SYNC_STATUS);
@@ -237,6 +290,7 @@ export function createSyncProvider({
 	// WebSocket Send Helper
 	// ========================================================================
 
+	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WS.OPEN) {
 			websocket.send(message);
@@ -247,6 +301,16 @@ export function createSyncProvider({
 	// Y.Doc Update Handler
 	// ========================================================================
 
+	/**
+	 * Y.Doc `'update'` handler — broadcasts local mutations to the server.
+	 *
+	 * Uses itself as the `origin` sentinel: when the sync protocol applies
+	 * a remote update it passes `handleDocUpdate` as origin, so this handler
+	 * skips those to avoid echoing remote changes back to the server.
+	 *
+	 * After sending the update, bumps the local version and sends a
+	 * MESSAGE_SYNC_STATUS probe so the server can ack receipt.
+	 */
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		// Ignore updates that came from us (applied via the WebSocket)
 		if (origin === handleDocUpdate) return;
@@ -264,6 +328,10 @@ export function createSyncProvider({
 	// Awareness Update Handler
 	// ========================================================================
 
+	/**
+	 * Awareness `'update'` handler — broadcasts local presence changes
+	 * (cursor position, user name, selection, etc.) to all connected peers.
+	 */
 	function handleAwarenessUpdate({
 		added,
 		updated,
@@ -287,10 +355,18 @@ export function createSyncProvider({
 	// Browser Online/Offline Handlers
 	// ========================================================================
 
+	/** Wake the backoff sleeper immediately when the browser comes back online. */
 	function handleOnline() {
 		reconnectSleeper?.wake();
 	}
 
+	/**
+	 * Probe the connection when the browser reports going offline.
+	 *
+	 * Doesn't blindly trust the browser's offline event (it can be wrong,
+	 * e.g. localhost connections). Instead sends a heartbeat probe — if
+	 * the connection is truly dead, the timeout will close the socket.
+	 */
 	function handleOffline() {
 		// Immediately probe when browser reports offline.
 		// This accelerates discovering we're offline, but doesn't blindly
@@ -405,10 +481,7 @@ export function createSyncProvider({
 			wsUrl = parsed.toString();
 		}
 
-		// Create WebSocket — optionally pass token as subprotocol too
-		const protocols = token ? [token] : undefined;
-		const ws = new WS(wsUrl, protocols);
-		ws.binaryType = 'arraybuffer';
+ttconst ws = new WS(wsUrl);		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
 		// --- Promises that event handlers resolve ---
@@ -561,6 +634,7 @@ export function createSyncProvider({
 	// Window Event Helpers
 	// ========================================================================
 
+	/** Attach browser online/offline listeners. No-ops in non-browser environments. */
 	function addWindowListeners() {
 		if (typeof window !== 'undefined') {
 			window.addEventListener('offline', handleOffline);
@@ -568,6 +642,7 @@ export function createSyncProvider({
 		}
 	}
 
+	/** Detach browser online/offline listeners. No-ops in non-browser environments. */
 	function removeWindowListeners() {
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('offline', handleOffline);

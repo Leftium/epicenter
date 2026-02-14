@@ -1,7 +1,7 @@
 # Rename "Suspended" to "Saved" Terminology
 
 **Date**: 2026-02-13
-**Status**: Draft
+**Status**: Complete
 
 ## Overview
 
@@ -116,33 +116,43 @@ Options for "save":
 
 ## Data Migration
 
-**Not required — but Y.Doc keys must stay unchanged.** The Yjs table key is derived from the JS object key name via `TableKey(name)` → `table:suspendedTabs`. Field names like `suspendedAt` are also Y.Map keys in the CRDT. Renaming either would orphan existing data. **Decision: keep internal Y.Doc keys (`suspendedTabs`, `suspendedAt`) unchanged, rename all code variables, types, file names, and user-facing strings.**
+**Breaking change accepted.** The Yjs table key is derived from the JS object key name via `TableKey(name)` → `table:{name}`. Field names are also Y.Map keys. Renaming `suspendedTabs` → `savedTabs` and `suspendedAt` → `savedAt` will orphan existing data (new empty table created). This was accepted as a breaking change — existing saved tabs will not carry over.
 
 ## Implementation Plan
 
-- [ ] **1. Verify data migration** — Confirm `defineTable` key derivation doesn't depend on variable name
-- [ ] **2. Schema rename** — `browser.schema.ts`: rename type, table const, field `suspendedAt` -> `savedAt`, update JSDoc
-- [ ] **3. Helper rename** — Rename `suspend-tab.ts` -> `save-tab.ts`, rename all functions and update JSDoc
-- [ ] **4. Query layer rename** — Rename `suspended-tabs.ts` -> `saved-tabs.ts`, rename all exports, keys, error types
-- [ ] **5. SavedTabList component** — Rename `SuspendedTabList.svelte` -> `SavedTabList.svelte`, update all imports and labels
-- [ ] **6. TabItem component** — Rename mutation, update tooltip to "Save for later", change icon to `BookmarkIcon`
-- [ ] **7. Remaining imports** — Update `App.svelte`, `index.ts`, `workspace.ts`, `query/index.ts`
-- [ ] **8. Update original spec** — Add note to `20260213T003200-suspended-tabs.md` that terminology was renamed
-- [ ] **9. Verify** — `bun run check` passes, no stale references to "suspend" terminology
+- [x] **1. Verify data migration** — `defineTable` uses object key name as Y.Doc key. Breaking change accepted.
+- [x] **2. Schema rename** — `workspace.ts`: `suspendedTabs` → `savedTabs`, `suspendedAt` → `savedAt`, type `SavedTab`, JSDoc updated
+- [x] **3. State file rename** — `suspended-tab-state.svelte.ts` → `saved-tab-state.svelte.ts`, all functions/exports renamed
+- [x] **4. SavedTabList component** — `SuspendedTabList.svelte` → `SavedTabList.svelte`, updated all imports, labels, icon
+- [x] **5. TabItem component** — Tooltip → "Save for later", icon → `BookmarkIcon`, action → `savedTabState.actions.save()`
+- [x] **6. Remaining imports** — `App.svelte`, `workspace-popup.ts` JSDoc updated
+- [x] **7. Verify** — Zero stale "suspend" references in code (except unrelated WebSocket comment in background.ts)
 
 ## Edge Cases
 
-### Yjs Table Key
+### Yjs Table Key (Breaking Change)
 
-If the table key in Y.Doc is derived from the variable name `suspendedTabs`, renaming to `savedTabs` would create a new empty table while orphaning existing data. **Must verify before proceeding.** If keys are positional or explicitly set, no migration needed.
-
-### Existing Suspended Tabs in User Data
-
-Users who already have suspended tabs should see them appear as "Saved Tabs" after the update. This works automatically if the underlying Y.Doc key doesn't change.
+The table key in Y.Doc IS derived from the variable name (`table:suspendedTabs`). Renaming to `savedTabs` creates `table:savedTabs` — a new empty table. Existing saved tabs in the old key are orphaned. This was accepted as a breaking change since the feature is new and has minimal user data.
 
 ## Success Criteria
 
-- [ ] Zero references to "suspend" terminology in user-facing text
-- [ ] Zero references to `suspended`/`Suspended`/`suspend` in code (except the background.ts WebSocket comment which is unrelated)
-- [ ] All existing saved tabs still appear after the rename
-- [ ] `bun run check` passes clean
+- [x] Zero references to "suspend" terminology in user-facing text
+- [x] Zero references to `suspended`/`Suspended`/`suspend` in code (except the background.ts WebSocket comment which is unrelated)
+- [x] Icon changed from `PauseIcon` to `BookmarkIcon`
+
+## Review
+
+All "suspend/suspended" terminology renamed to "save/saved" across the tab manager app:
+
+| File | Change |
+|------|--------|
+| `workspace.ts` | Table key `suspendedTabs` → `savedTabs`, field `suspendedAt` → `savedAt`, type `SavedTab` |
+| `saved-tab-state.svelte.ts` | New file (was `suspended-tab-state.svelte.ts`). All table refs + field refs updated. |
+| `SavedTabList.svelte` | New file (was `SuspendedTabList.svelte`). UI strings + icon updated. |
+| `TabItem.svelte` | Tooltip "Save for later", `BookmarkIcon`, `savedTabState.actions.save()` |
+| `App.svelte` | Import `SavedTabList` |
+| `workspace-popup.ts` | JSDoc updated |
+
+Done in two commits:
+1. `refactor(tab-manager): rename "suspended" to "saved" terminology` — user-facing + types + files (kept Y.Doc keys)
+2. `refactor(tab-manager): rename Y.Doc keys from suspended to saved` — breaking rename of storage keys

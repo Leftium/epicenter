@@ -51,7 +51,7 @@
 						<div class="flex items-center gap-2 text-xs text-muted-foreground">
 							<span class="truncate">{getDomain(tab.url)}</span>
 							<span>•</span>
-							<span class="shrink-0">{getRelativeTime(tab.suspendedAt)}</span>
+							<span class="shrink-0">{getRelativeTime(tab.savedAt)}</span>
 						</div>
 					</div>
 

@@ -153,10 +153,8 @@ export const definition = defineWorkspace({
 		 * Created when a user explicitly saves a tab (close + persist).
 		 * Deleted when a user restores the tab (opens URL locally + deletes row).
 		 *
-		 * NOTE: The key `suspendedTabs` and field `suspendedAt` are Y.Doc storage
-		 * keys — do not rename without a data migration.
 		 */
-		suspendedTabs: defineTable(
+		savedTabs: defineTable(
 			type({
 				id: 'string', // nanoid, generated on save
 				url: 'string', // The tab URL
@@ -164,7 +162,7 @@ export const definition = defineWorkspace({
 				'favIconUrl?': 'string', // Favicon URL (nullable)
 				pinned: 'boolean', // Whether tab was pinned
 				sourceDeviceId: 'string', // Device that saved this tab
-				suspendedAt: 'number', // Timestamp (ms since epoch)
+				savedAt: 'number', // Timestamp (ms since epoch)
 			}),
 		),
 	},
@@ -180,4 +178,4 @@ export type Device = InferTableRow<Tables['devices']>;
 export type Tab = InferTableRow<Tables['tabs']>;
 export type Window = InferTableRow<Tables['windows']>;
 export type TabGroup = InferTableRow<Tables['tabGroups']>;
-export type SavedTab = InferTableRow<Tables['suspendedTabs']>;
+export type SavedTab = InferTableRow<Tables['savedTabs']>;

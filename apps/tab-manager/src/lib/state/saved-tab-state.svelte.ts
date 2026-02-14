@@ -39,9 +39,9 @@ import { popupWorkspace } from '$lib/workspace-popup';
 function createSavedTabState() {
 	/** Read all valid saved tabs, most recently saved first. */
 	const readAll = () =>
-		popupWorkspace.tables.suspendedTabs
+		popupWorkspace.tables.savedTabs
 			.getAllValid()
-			.sort((a, b) => b.suspendedAt - a.suspendedAt);
+			.sort((a, b) => b.savedAt - a.savedAt);
 
 	/**
 	 * The full sorted list of saved tabs.
@@ -55,7 +55,7 @@ function createSavedTabState() {
 
 	// Re-read on every Y.Doc change — observer fires when persistence
 	// loads and on any subsequent remote/local modification.
-	popupWorkspace.tables.suspendedTabs.observe(() => {
+	popupWorkspace.tables.savedTabs.observe(() => {
 		tabs = readAll();
 	});
 
@@ -85,14 +85,14 @@ function createSavedTabState() {
 			async save(tab: Tab) {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
-				popupWorkspace.tables.suspendedTabs.set({
+				popupWorkspace.tables.savedTabs.set({
 					id: generateId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,
 					pinned: tab.pinned,
 					sourceDeviceId: deviceId,
-					suspendedAt: Date.now(),
+					savedAt: Date.now(),
 				});
 				await browser.tabs.remove(tab.tabId);
 			},
@@ -106,7 +106,7 @@ function createSavedTabState() {
 					url: savedTab.url,
 					pinned: savedTab.pinned,
 				});
-				popupWorkspace.tables.suspendedTabs.delete(savedTab.id);
+				popupWorkspace.tables.savedTabs.delete(savedTab.id);
 			},
 
 			/**
@@ -114,32 +114,32 @@ function createSavedTabState() {
 			 * to avoid overwhelming the browser, then removes each from Y.Doc.
 			 */
 			async restoreAll() {
-				const all = popupWorkspace.tables.suspendedTabs.getAllValid();
+				const all = popupWorkspace.tables.savedTabs.getAllValid();
 				for (const tab of all) {
 					await browser.tabs.create({
 						url: tab.url,
 						pinned: tab.pinned,
 					});
-					popupWorkspace.tables.suspendedTabs.delete(tab.id);
+					popupWorkspace.tables.savedTabs.delete(tab.id);
 				}
 			},
 
 			/** Delete a saved tab without restoring it. */
 			remove(id: string) {
-				popupWorkspace.tables.suspendedTabs.delete(id);
+				popupWorkspace.tables.savedTabs.delete(id);
 			},
 
 			/** Delete all saved tabs without restoring them. */
 			removeAll() {
-				const all = popupWorkspace.tables.suspendedTabs.getAllValid();
+				const all = popupWorkspace.tables.savedTabs.getAllValid();
 				for (const tab of all) {
-					popupWorkspace.tables.suspendedTabs.delete(tab.id);
+					popupWorkspace.tables.savedTabs.delete(tab.id);
 				}
 			},
 
 			/** Update a saved tab's metadata in Y.Doc. */
 			update(savedTab: SavedTab) {
-				popupWorkspace.tables.suspendedTabs.set(savedTab);
+				popupWorkspace.tables.savedTabs.set(savedTab);
 			},
 		},
 	};

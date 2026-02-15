@@ -80,13 +80,16 @@ function createBrowserState() {
 	(async () => {
 		const startTotal = performance.now();
 
+		// Parallelize independent async operations
 		const startFetch = performance.now();
-		const browserWindows = await browser.windows.getAll({ populate: true });
+		const [browserWindows, id] = await Promise.all([
+			browser.windows.getAll({ populate: true }),
+			getDeviceId(),
+		]);
 		const fetchDuration = performance.now() - startFetch;
 
-		const startDeviceId = performance.now();
-		const id = await getDeviceId();
-		const deviceIdDuration = performance.now() - startDeviceId;
+		// Note: deviceIdDuration is now included in fetchDuration since they run in parallel
+		const deviceIdDuration = 0; // Not measured separately anymore (parallel)
 
 		const startProcessing = performance.now();
 		let totalTabs = 0;
@@ -115,8 +118,7 @@ function createBrowserState() {
 
 		const perfData = {
 			total: `${totalDuration.toFixed(2)}ms`,
-			fetch: `${fetchDuration.toFixed(2)}ms (${((fetchDuration / totalDuration) * 100).toFixed(1)}%)`,
-			deviceId: `${deviceIdDuration.toFixed(2)}ms (${((deviceIdDuration / totalDuration) * 100).toFixed(1)}%)`,
+			'fetch+deviceId (parallel)': `${fetchDuration.toFixed(2)}ms (${((fetchDuration / totalDuration) * 100).toFixed(1)}%)`,
 			processing: `${processingDuration.toFixed(2)}ms (${((processingDuration / totalDuration) * 100).toFixed(1)}%)`,
 			windows: browserWindows.length,
 			tabs: totalTabs,
@@ -125,7 +127,7 @@ function createBrowserState() {
 		};
 
 		console.log(
-			`%c[Tab Manager Performance] Total: ${totalDuration.toFixed(2)}ms | Tabs: ${totalTabs} | Fetch: ${((fetchDuration / totalDuration) * 100).toFixed(1)}%`,
+			`%c[Tab Manager Performance] Total: ${totalDuration.toFixed(2)}ms | Tabs: ${totalTabs} | Parallel Fetch: ${((fetchDuration / totalDuration) * 100).toFixed(1)}%`,
 			'background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-weight: bold',
 		);
 		console.table(perfData);

@@ -142,23 +142,28 @@ describe('createTables', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.version(type({ id: 'string', title: 'string', views: 'number' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
+				.version(
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				)
 				.migrate((row) => {
-					if (!('views' in row)) return { ...row, views: 0 };
+					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
 					return row;
 				}),
 		});
 
 		// Simulate writing old data by accessing the raw array
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('table:posts');
-		yarray.push([{ key: '1', val: { id: '1', title: 'Old Post' }, ts: 0 }]);
+		yarray.push([
+			{ key: '1', val: { id: '1', title: 'Old Post', _v: 1 }, ts: 0 },
+		]);
 
 		// Read should migrate
 		const result = tables.posts.get('1');
 		expect(result.status).toBe('valid');
 		if (result.status === 'valid') {
 			expect(result.row.views).toBe(0);
+			expect(result.row._v).toBe(2);
 		}
 	});
 });
@@ -168,9 +173,9 @@ describe('migration scenarios', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '"1"' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }),
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 				)
 				.version(
 					type({
@@ -178,15 +183,15 @@ describe('migration scenarios', () => {
 						title: 'string',
 						views: 'number',
 						author: 'string | null',
-						_v: '"3"',
+						_v: '3',
 					}),
 				)
 				.migrate((row) => {
-					if (row._v === '1') {
-						return { ...row, views: 0, author: null, _v: '3' };
+					if (row._v === 1) {
+						return { ...row, views: 0, author: null, _v: 3 as const };
 					}
-					if (row._v === '2') {
-						return { ...row, author: null, _v: '3' };
+					if (row._v === 2) {
+						return { ...row, author: null, _v: 3 as const };
 					}
 					return row;
 				}),
@@ -194,11 +199,11 @@ describe('migration scenarios', () => {
 
 		// Insert v1 data directly
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('table:posts');
-		yarray.push([{ key: '1', val: { id: '1', title: 'Old', _v: '1' }, ts: 0 }]);
+		yarray.push([{ key: '1', val: { id: '1', title: 'Old', _v: 1 }, ts: 0 }]);
 		yarray.push([
 			{
 				key: '2',
-				val: { id: '2', title: 'Medium', views: 10, _v: '2' },
+				val: { id: '2', title: 'Medium', views: 10, _v: 2 },
 				ts: 0,
 			},
 		]);
@@ -207,7 +212,7 @@ describe('migration scenarios', () => {
 		const v1Result = tables.posts.get('1');
 		expect(v1Result.status).toBe('valid');
 		if (v1Result.status === 'valid') {
-			expect(v1Result.row._v).toBe('3');
+			expect(v1Result.row._v).toBe(3);
 			expect(v1Result.row.views).toBe(0);
 			expect(v1Result.row.author).toBeNull();
 		}
@@ -215,57 +220,50 @@ describe('migration scenarios', () => {
 		const v2Result = tables.posts.get('2');
 		expect(v2Result.status).toBe('valid');
 		if (v2Result.status === 'valid') {
-			expect(v2Result.row._v).toBe('3');
+			expect(v2Result.row._v).toBe(3);
 			expect(v2Result.row.views).toBe(10);
 			expect(v2Result.row.author).toBeNull();
 		}
 	});
 
-	test('migration without explicit version field', () => {
+	test('migration with _v across three versions', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.version(type({ id: 'string', title: 'string', views: 'number' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
+				.version(
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				)
 				.version(
 					type({
 						id: 'string',
 						title: 'string',
 						views: 'number',
 						tags: 'string[]',
+						_v: '3',
 					}),
 				)
 				.migrate((row) => {
-					let current = row as {
-						id: string;
-						title: string;
-						views?: number;
-						tags?: string[];
-					};
-					if (!('views' in current)) {
-						current = { ...current, views: 0 };
+					if (row._v === 1) {
+						return { ...row, views: 0, tags: [], _v: 3 as const };
 					}
-					if (!('tags' in current)) {
-						current = { ...current, tags: [] };
+					if (row._v === 2) {
+						return { ...row, tags: [], _v: 3 as const };
 					}
-					return current as {
-						id: string;
-						title: string;
-						views: number;
-						tags: string[];
-					};
+					return row;
 				}),
 		});
 
 		// Insert v1 data
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('table:posts');
-		yarray.push([{ key: '1', val: { id: '1', title: 'Old' }, ts: 0 }]);
+		yarray.push([{ key: '1', val: { id: '1', title: 'Old', _v: 1 }, ts: 0 }]);
 
 		const result = tables.posts.get('1');
 		expect(result.status).toBe('valid');
 		if (result.status === 'valid') {
 			expect(result.row.views).toBe(0);
 			expect(result.row.tags).toEqual([]);
+			expect(result.row._v).toBe(3);
 		}
 	});
 });

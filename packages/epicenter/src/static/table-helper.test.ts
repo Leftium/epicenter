@@ -20,25 +20,29 @@ describe('createTableHelper', () => {
 	describe('set operations', () => {
 		test('set stores a row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
 			const result = helper.get('1');
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice' });
+				expect(result.row).toEqual({ id: '1', name: 'Alice', _v: 1 });
 			}
 		});
 
 		test('set overwrites existing row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
-			helper.set({ id: '1', name: 'Bob' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
+			helper.set({ id: '1', name: 'Bob', _v: 1 });
 
 			const result = helper.get('1');
 			expect(result.status).toBe('valid');
@@ -49,13 +53,15 @@ describe('createTableHelper', () => {
 
 		test('transact stores multiple rows atomically', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'Alice' });
-				helper.set({ id: '2', name: 'Bob' });
-				helper.set({ id: '3', name: 'Charlie' });
+				helper.set({ id: '1', name: 'Alice', _v: 1 });
+				helper.set({ id: '2', name: 'Bob', _v: 1 });
+				helper.set({ id: '3', name: 'Charlie', _v: 1 });
 			});
 
 			expect(helper.count()).toBe(3);
@@ -66,7 +72,9 @@ describe('createTableHelper', () => {
 	describe('get operations', () => {
 		test('get returns not_found for missing row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			const result = helper.get('nonexistent');
@@ -78,28 +86,32 @@ describe('createTableHelper', () => {
 
 		test('get returns invalid for corrupted data', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			// Insert invalid data directly
-			yarray.push([{ key: '1', val: { id: '1', name: 123 }, ts: 0 }]); // name should be string
+			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
 			const result = helper.get('1');
 			expect(result.status).toBe('invalid');
 			if (result.status === 'invalid') {
 				expect(result.id).toBe('1');
 				expect(result.errors.length).toBeGreaterThan(0);
-				expect(result.row).toEqual({ id: '1', name: 123 });
+				expect(result.row).toEqual({ id: '1', name: 123, _v: 1 });
 			}
 		});
 
 		test('getAll returns valid and invalid rows', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Valid' });
-			yarray.push([{ key: '2', val: { id: '2', name: 999 }, ts: 0 }]); // invalid
+			helper.set({ id: '1', name: 'Valid', _v: 1 });
+			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
 
 			const results = helper.getAll();
 			expect(results).toHaveLength(2);
@@ -112,25 +124,29 @@ describe('createTableHelper', () => {
 
 		test('getAllValid skips invalid rows', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Valid' });
-			yarray.push([{ key: '2', val: { id: '2', name: 999 }, ts: 0 }]); // invalid
+			helper.set({ id: '1', name: 'Valid', _v: 1 });
+			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
 
 			const rows = helper.getAllValid();
 			expect(rows).toHaveLength(1);
-			expect(rows[0]).toEqual({ id: '1', name: 'Valid' });
+			expect(rows[0]).toEqual({ id: '1', name: 'Valid', _v: 1 });
 		});
 
 		test('getAllInvalid returns only invalid rows', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Valid' });
-			yarray.push([{ key: '2', val: { id: '2', name: 999 }, ts: 0 }]); // invalid
-			yarray.push([{ key: '3', val: { id: '3' }, ts: 0 }]); // also invalid - missing name
+			helper.set({ id: '1', name: 'Valid', _v: 1 });
+			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid
+			yarray.push([{ key: '3', val: { id: '3', _v: 1 }, ts: 0 }]); // also invalid - missing name
 
 			const invalid = helper.getAllInvalid();
 			expect(invalid).toHaveLength(2);
@@ -141,13 +157,15 @@ describe('createTableHelper', () => {
 	describe('query operations', () => {
 		test('filter returns matching rows', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', active: 'boolean' }));
+			const definition = defineTable(
+				type({ id: 'string', active: 'boolean', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', active: true });
-				helper.set({ id: '2', active: false });
-				helper.set({ id: '3', active: true });
+				helper.set({ id: '1', active: true, _v: 1 });
+				helper.set({ id: '2', active: false, _v: 1 });
+				helper.set({ id: '3', active: true, _v: 1 });
 			});
 
 			const active = helper.filter((row) => row.active);
@@ -157,12 +175,14 @@ describe('createTableHelper', () => {
 
 		test('filter returns empty array when no matches', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', active: 'boolean' }));
+			const definition = defineTable(
+				type({ id: 'string', active: 'boolean', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', active: false });
-				helper.set({ id: '2', active: false });
+				helper.set({ id: '1', active: false, _v: 1 });
+				helper.set({ id: '2', active: false, _v: 1 });
 			});
 
 			const active = helper.filter((row) => row.active);
@@ -171,12 +191,14 @@ describe('createTableHelper', () => {
 
 		test('filter skips invalid rows', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', active: 'boolean' }));
+			const definition = defineTable(
+				type({ id: 'string', active: 'boolean', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', active: true });
+			helper.set({ id: '1', active: true, _v: 1 });
 			yarray.push([
-				{ key: '2', val: { id: '2', active: 'not-a-boolean' }, ts: 0 },
+				{ key: '2', val: { id: '2', active: 'not-a-boolean', _v: 1 }, ts: 0 },
 			]);
 
 			const all = helper.filter(() => true);
@@ -185,24 +207,28 @@ describe('createTableHelper', () => {
 
 		test('find returns first matching row', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'Alice' });
-				helper.set({ id: '2', name: 'Bob' });
+				helper.set({ id: '1', name: 'Alice', _v: 1 });
+				helper.set({ id: '2', name: 'Bob', _v: 1 });
 			});
 
 			const found = helper.find((row) => row.name === 'Bob');
-			expect(found).toEqual({ id: '2', name: 'Bob' });
+			expect(found).toEqual({ id: '2', name: 'Bob', _v: 1 });
 		});
 
 		test('find returns undefined when no match', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
 			const found = helper.find((row) => row.name === 'Nobody');
 			expect(found).toBeUndefined();
@@ -210,14 +236,16 @@ describe('createTableHelper', () => {
 
 		test('find skips invalid rows', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			yarray.push([{ key: '1', val: { id: '1', name: 123 }, ts: 0 }]); // invalid
-			helper.set({ id: '2', name: 'Valid' });
+			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // invalid
+			helper.set({ id: '2', name: 'Valid', _v: 1 });
 
 			const found = helper.find(() => true);
-			expect(found).toEqual({ id: '2', name: 'Valid' });
+			expect(found).toEqual({ id: '2', name: 'Valid', _v: 1 });
 		});
 	});
 
@@ -225,29 +253,36 @@ describe('createTableHelper', () => {
 		test('update merges partial data correctly', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
-				type({ id: 'string', name: 'string', age: 'number' }),
+				type({ id: 'string', name: 'string', age: 'number', _v: '1' }),
 			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice', age: 25 });
+			helper.set({ id: '1', name: 'Alice', age: 25, _v: 1 });
 			const result = helper.update('1', { age: 30 });
 
 			expect(result.status).toBe('updated');
 			if (result.status === 'updated') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30 });
+				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30, _v: 1 });
 			}
 
 			// Verify the row is actually saved
 			const getResult = helper.get('1');
 			expect(getResult.status).toBe('valid');
 			if (getResult.status === 'valid') {
-				expect(getResult.row).toEqual({ id: '1', name: 'Alice', age: 30 });
+				expect(getResult.row).toEqual({
+					id: '1',
+					name: 'Alice',
+					age: 30,
+					_v: 1,
+				});
 			}
 		});
 
 		test('update returns not_found for missing rows', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			const result = helper.update('nonexistent', { name: 'Bob' });
@@ -260,11 +295,13 @@ describe('createTableHelper', () => {
 
 		test('update returns invalid for corrupted data', () => {
 			const { ykv, yarray } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			// Insert invalid data directly
-			yarray.push([{ key: '1', val: { id: '1', name: 123 }, ts: 0 }]); // name should be string
+			yarray.push([{ key: '1', val: { id: '1', name: 123, _v: 1 }, ts: 0 }]); // name should be string
 
 			const result = helper.update('1', { name: 'Valid' });
 
@@ -272,16 +309,18 @@ describe('createTableHelper', () => {
 			if (result.status === 'invalid') {
 				expect(result.id).toBe('1');
 				expect(result.errors.length).toBeGreaterThan(0);
-				expect(result.row).toEqual({ id: '1', name: 123 });
+				expect(result.row).toEqual({ id: '1', name: 123, _v: 1 });
 			}
 		});
 
 		test('update preserves id field (cannot be changed)', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
 			// TypeScript prevents passing `id` in partial due to Omit<TRow, 'id'>
 			// But we can test that even if someone bypasses TypeScript, the id is preserved
@@ -303,10 +342,12 @@ describe('createTableHelper', () => {
 	describe('delete operations', () => {
 		test('delete removes existing row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			const result = helper.delete('1');
 
 			expect(result.status).toBe('deleted');
@@ -315,7 +356,9 @@ describe('createTableHelper', () => {
 
 		test('delete returns not_found_locally for missing row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			const result = helper.delete('nonexistent');
@@ -324,13 +367,15 @@ describe('createTableHelper', () => {
 
 		test('transact deletes multiple rows atomically', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'A' });
-				helper.set({ id: '2', name: 'B' });
-				helper.set({ id: '3', name: 'C' });
+				helper.set({ id: '1', name: 'A', _v: 1 });
+				helper.set({ id: '2', name: 'B', _v: 1 });
+				helper.set({ id: '3', name: 'C', _v: 1 });
 			});
 
 			ydoc.transact(() => {
@@ -344,17 +389,19 @@ describe('createTableHelper', () => {
 
 		test('transact can mix set and delete operations', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'A' });
-				helper.set({ id: '2', name: 'B' });
+				helper.set({ id: '1', name: 'A', _v: 1 });
+				helper.set({ id: '2', name: 'B', _v: 1 });
 			});
 
 			ydoc.transact(() => {
 				helper.delete('1');
-				helper.set({ id: '3', name: 'C' });
+				helper.set({ id: '3', name: 'C', _v: 1 });
 			});
 
 			expect(helper.count()).toBe(2);
@@ -365,12 +412,14 @@ describe('createTableHelper', () => {
 
 		test('clear removes all rows', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'A' });
-				helper.set({ id: '2', name: 'B' });
+				helper.set({ id: '1', name: 'A', _v: 1 });
+				helper.set({ id: '2', name: 'B', _v: 1 });
 			});
 			expect(helper.count()).toBe(2);
 
@@ -382,7 +431,9 @@ describe('createTableHelper', () => {
 	describe('observe', () => {
 		test('observe calls callback on changes', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			const changes: Set<string>[] = [];
@@ -390,8 +441,8 @@ describe('createTableHelper', () => {
 				changes.push(changedIds);
 			});
 
-			helper.set({ id: '1', name: 'Alice' });
-			helper.set({ id: '2', name: 'Bob' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
+			helper.set({ id: '2', name: 'Bob', _v: 1 });
 			helper.delete('1');
 
 			expect(changes).toHaveLength(3);
@@ -404,7 +455,9 @@ describe('createTableHelper', () => {
 
 		test('transact fires observer once for all operations', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			const changes: Set<string>[] = [];
@@ -414,9 +467,9 @@ describe('createTableHelper', () => {
 
 			// Three operations, but observer should fire once
 			ydoc.transact(() => {
-				helper.set({ id: '1', name: 'Alice' });
-				helper.set({ id: '2', name: 'Bob' });
-				helper.set({ id: '3', name: 'Charlie' });
+				helper.set({ id: '1', name: 'Alice', _v: 1 });
+				helper.set({ id: '2', name: 'Bob', _v: 1 });
+				helper.set({ id: '3', name: 'Charlie', _v: 1 });
 			});
 
 			// Should have exactly one change event containing all three IDs
@@ -430,7 +483,9 @@ describe('createTableHelper', () => {
 
 		test('observe unsubscribe stops callbacks', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			let callCount = 0;
@@ -438,12 +493,12 @@ describe('createTableHelper', () => {
 				callCount++;
 			});
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 			expect(callCount).toBe(1);
 
 			unsubscribe();
 
-			helper.set({ id: '2', name: 'Bob' });
+			helper.set({ id: '2', name: 'Bob', _v: 1 });
 			expect(callCount).toBe(1); // no change
 		});
 	});
@@ -451,27 +506,31 @@ describe('createTableHelper', () => {
 	describe('metadata', () => {
 		test('count returns number of rows', () => {
 			const { ydoc, ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
 			expect(helper.count()).toBe(0);
 
-			helper.set({ id: '1', name: 'A' });
+			helper.set({ id: '1', name: 'A', _v: 1 });
 			expect(helper.count()).toBe(1);
 
 			ydoc.transact(() => {
-				helper.set({ id: '2', name: 'B' });
-				helper.set({ id: '3', name: 'C' });
+				helper.set({ id: '2', name: 'B', _v: 1 });
+				helper.set({ id: '3', name: 'C', _v: 1 });
 			});
 			expect(helper.count()).toBe(3);
 		});
 
 		test('has returns true for existing row', () => {
 			const { ykv } = setup();
-			const definition = defineTable(type({ id: 'string', name: 'string' }));
+			const definition = defineTable(
+				type({ id: 'string', name: 'string', _v: '1' }),
+			);
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice' });
+			helper.set({ id: '1', name: 'Alice', _v: 1 });
 
 			expect(helper.has('1')).toBe(true);
 			expect(helper.has('2')).toBe(false);
@@ -482,41 +541,43 @@ describe('createTableHelper', () => {
 		test('migrates old data on read', () => {
 			const { ykv, yarray } = setup();
 			const definition = defineTable()
-				.version(type({ id: 'string', name: 'string' }))
-				.version(type({ id: 'string', name: 'string', age: 'number' }))
+				.version(type({ id: 'string', name: 'string', _v: '1' }))
+				.version(type({ id: 'string', name: 'string', age: 'number', _v: '2' }))
 				.migrate((row) => {
-					if (!('age' in row)) return { ...row, age: 0 };
+					if (row._v === 1) return { ...row, age: 0, _v: 2 as const };
 					return row;
 				});
 			const helper = createTableHelper(ykv, definition);
 
 			// Insert v1 data directly
-			yarray.push([{ key: '1', val: { id: '1', name: 'Alice' }, ts: 0 }]);
+			yarray.push([
+				{ key: '1', val: { id: '1', name: 'Alice', _v: 1 }, ts: 0 },
+			]);
 
 			const result = helper.get('1');
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 0 });
+				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 0, _v: 2 });
 			}
 		});
 
 		test('passes through current version data unchanged', () => {
 			const { ykv } = setup();
 			const definition = defineTable()
-				.version(type({ id: 'string', name: 'string' }))
-				.version(type({ id: 'string', name: 'string', age: 'number' }))
+				.version(type({ id: 'string', name: 'string', _v: '1' }))
+				.version(type({ id: 'string', name: 'string', age: 'number', _v: '2' }))
 				.migrate((row) => {
-					if (!('age' in row)) return { ...row, age: 0 };
+					if (row._v === 1) return { ...row, age: 0, _v: 2 as const };
 					return row;
 				});
 			const helper = createTableHelper(ykv, definition);
 
-			helper.set({ id: '1', name: 'Alice', age: 30 });
+			helper.set({ id: '1', name: 'Alice', age: 30, _v: 2 });
 
 			const result = helper.get('1');
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30 });
+				expect(result.row).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
 			}
 		});
 	});

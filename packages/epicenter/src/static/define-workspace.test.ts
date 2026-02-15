@@ -12,7 +12,7 @@ describe('defineWorkspace', () => {
 		const workspace = defineWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
 				theme: defineKv(type({ mode: "'light' | 'dark'" })),
@@ -28,7 +28,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
 				theme: defineKv(type({ mode: "'light' | 'dark'" })),
@@ -45,7 +45,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 			kv: {
 				theme: defineKv(type({ mode: "'light' | 'dark'" })),
@@ -53,7 +53,7 @@ describe('defineWorkspace', () => {
 		});
 
 		// Use tables
-		client.tables.posts.set({ id: '1', title: 'Hello' });
+		client.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 		const postResult = client.tables.posts.get('1');
 		expect(postResult.status).toBe('valid');
 
@@ -78,7 +78,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		}).withExtension('mock', mockExtension);
 
@@ -110,7 +110,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
 			.withExtension('persistence', persistenceExtension)
@@ -153,7 +153,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		}).withExtension('mock', mockExtension);
 
@@ -178,14 +178,14 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'direct-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		});
 
 		expect(client.id).toBe('direct-app');
 		expect(client.tables.posts).toBeDefined();
 
-		client.tables.posts.set({ id: '1', title: 'Direct' });
+		client.tables.posts.set({ id: '1', title: 'Direct', _v: 1 });
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
 	});
@@ -194,11 +194,11 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'builder-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		});
 
-		client.tables.posts.set({ id: '1', title: 'Before Extensions' });
+		client.tables.posts.set({ id: '1', title: 'Before Extensions', _v: 1 });
 		const result = client.tables.posts.get('1');
 		expect(result.status).toBe('valid');
 		expect(typeof client.withExtension).toBe('function');
@@ -208,11 +208,11 @@ describe('defineWorkspace', () => {
 		const baseClient = createWorkspace({
 			id: 'shared-doc-app',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		});
 
-		baseClient.tables.posts.set({ id: '1', title: 'Original' });
+		baseClient.tables.posts.set({ id: '1', title: 'Original', _v: 1 });
 		const clientWithExt = baseClient;
 
 		expect(clientWithExt.ydoc).toBe(baseClient.ydoc);
@@ -228,7 +228,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'chain-test',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
 			.withExtension('first', () => ({
@@ -272,7 +272,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'actions-after-ext',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
 			.withExtension('analytics', () => ({
@@ -287,7 +287,7 @@ describe('defineWorkspace', () => {
 				addPost: defineQuery({
 					input: type({ title: 'string' }),
 					handler: ({ title }) => {
-						c.tables.posts.set({ id: '1', title });
+						c.tables.posts.set({ id: '1', title, _v: 1 });
 					},
 				}),
 			}));
@@ -310,7 +310,7 @@ describe('defineWorkspace', () => {
 		const client = createWorkspace({
 			id: 'when-ready-test',
 			tables: {
-				posts: defineTable(type({ id: 'string', title: 'string' })),
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 			},
 		})
 			.withExtension('slow', () => ({
@@ -358,7 +358,9 @@ describe('defineWorkspace', () => {
 	});
 
 	test('context includes definitions, destroy, and whenReady', () => {
-		const tableDef = defineTable(type({ id: 'string', title: 'string' }));
+		const tableDef = defineTable(
+			type({ id: 'string', title: 'string', _v: '1' }),
+		);
 
 		createWorkspace({
 			id: 'full-context-test',

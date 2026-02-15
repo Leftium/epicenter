@@ -1,8 +1,9 @@
 # Remove `defineExtension` — Flatten Extension Return Type
 
 **Date**: 2026-02-14
-**Status**: Draft
+**Status**: Complete
 **Author**: AI-assisted
+**PR**: [#1359](https://github.com/EpicenterHQ/epicenter/pull/1359) — Merged 2026-02-14. Shipped alongside FS Explorer v0 scaffold.
 
 ## Overview
 

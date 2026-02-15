@@ -8,7 +8,7 @@ import { describeWorkspace } from './describe-workspace.js';
 
 describe('describeWorkspace', () => {
 	test('workspace with tables + kv + actions produces complete descriptor', () => {
-		const posts = defineTable(type({ id: 'string', title: 'string' }));
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const settings = defineKv(
 			type({ theme: "'light' | 'dark'", fontSize: 'number' }),
 		);
@@ -27,7 +27,7 @@ describe('describeWorkspace', () => {
 					description: 'Create a post',
 					input: type({ title: 'string' }),
 					handler: ({ title }) => {
-						c.tables.posts.set({ id: '1', title });
+						c.tables.posts.set({ id: '1', title, _v: 1 });
 					},
 				}),
 			},
@@ -71,7 +71,7 @@ describe('describeWorkspace', () => {
 	});
 
 	test('workspace with no actions returns empty actions array', () => {
-		const posts = defineTable(type({ id: 'string', title: 'string' }));
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 		const client = createWorkspace({
 			id: 'no-actions',
@@ -86,15 +86,20 @@ describe('describeWorkspace', () => {
 	});
 
 	test('multi-version table produces oneOf in JSON Schema', () => {
-		const v1 = type({ id: 'string', title: 'string' });
-		const v2 = type({ id: 'string', title: 'string', views: 'number' });
+		const v1 = type({ id: 'string', title: 'string', _v: '1' });
+		const v2 = type({
+			id: 'string',
+			title: 'string',
+			views: 'number',
+			_v: '2',
+		});
 
 		const posts = defineTable()
 			.version(v1)
 			.version(v2)
 			.migrate((row) => {
-				if ('views' in row) return row;
-				return { ...row, views: 0 };
+				if (row._v === 2) return row;
+				return { ...row, views: 0, _v: 2 as const };
 			});
 
 		const client = createWorkspace({
@@ -111,7 +116,7 @@ describe('describeWorkspace', () => {
 	});
 
 	test('single-version table produces direct JSON Schema (no oneOf)', () => {
-		const posts = defineTable(type({ id: 'string', title: 'string' }));
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 		const client = createWorkspace({
 			id: 'single-version',
@@ -127,7 +132,7 @@ describe('describeWorkspace', () => {
 	});
 
 	test('JSON.stringify(descriptor) succeeds (no circular refs)', () => {
-		const posts = defineTable(type({ id: 'string', title: 'string' }));
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const settings = defineKv(type({ theme: "'light' | 'dark'" }));
 
 		const client = createWorkspace({
@@ -155,7 +160,7 @@ describe('describeWorkspace', () => {
 	});
 
 	test('workspace with no kv returns empty kv object', () => {
-		const posts = defineTable(type({ id: 'string', title: 'string' }));
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 		const client = createWorkspace({
 			id: 'no-kv',

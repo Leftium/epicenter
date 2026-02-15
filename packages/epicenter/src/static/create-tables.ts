@@ -8,22 +8,24 @@
  * import { type } from 'arktype';
  *
  * // Shorthand for single version
- * const users = defineTable(type({ id: 'string', email: 'string' }));
+ * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Builder pattern for multiple versions with migration (use _v discriminant)
+ * // Builder pattern for multiple versions with migration (symmetric _v)
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .version(type({ id: 'string', title: 'string', _v: '1' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
  *   .migrate((row) => {
- *     if (row._v === '1') return { ...row, views: 0, _v: '2' };
- *     return row;
+ *     switch (row._v) {
+ *       case 1: return { ...row, views: 0, _v: 2 };
+ *       case 2: return row;
+ *     }
  *   });
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
  * const tables = createTables(ydoc, { users, posts });
  *
- * tables.users.set({ id: '1', email: 'test@example.com' });
- * tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
+ * tables.users.set({ id: '1', email: 'test@example.com', _v: 1 });
+ * tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
  * ```
  */
 

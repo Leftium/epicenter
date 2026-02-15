@@ -93,6 +93,7 @@ function createSavedTabState() {
 					pinned: tab.pinned,
 					sourceDeviceId: deviceId,
 					savedAt: Date.now(),
+					_v: 1,
 				});
 				await browser.tabs.remove(tab.tabId);
 			},

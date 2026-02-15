@@ -1,7 +1,8 @@
 # Fix Stale Read After Delete in YKeyValue
 
 **Date**: 2026-02-14
-**Status**: Proposed
+**Status**: Complete
+**PR**: [#1355](https://github.com/EpicenterHQ/epicenter/pull/1355) — Merged 2026-02-14. Added `pendingDeletes` Set to both `YKeyValue` and `YKeyValueLww`. Oracle-reviewed.
 
 ## Overview
 

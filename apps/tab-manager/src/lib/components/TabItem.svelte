@@ -3,6 +3,7 @@
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import type { Tab } from '$lib/workspace';
 	import { getDomain } from '$lib/utils/format';
+	import TabFavicon from './TabFavicon.svelte';
 	import XIcon from '@lucide/svelte/icons/x';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
@@ -10,10 +11,8 @@
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import CopyIcon from '@lucide/svelte/icons/copy';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
-	import * as Avatar from '@epicenter/ui/avatar';
 	import { cn } from '@epicenter/ui/utils';
 
 	let { tab }: { tab: Tab } = $props();
@@ -33,13 +32,7 @@
 	)}
 	onclick={() => browserState.actions.activate(tabId)}
 >
-	<!-- Favicon -->
-	<Avatar.Root class="size-4 shrink-0 rounded-sm">
-		<Avatar.Image src={tab.favIconUrl} alt="" />
-		<Avatar.Fallback class="rounded-sm">
-			<GlobeIcon class="size-3 text-muted-foreground" />
-		</Avatar.Fallback>
-	</Avatar.Root>
+	<TabFavicon src={tab.favIconUrl} />
 
 	<!-- Title and URL -->
 	<div class="min-w-0 flex-1">

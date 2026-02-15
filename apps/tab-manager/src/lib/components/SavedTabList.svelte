@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
+	import TabFavicon from './TabFavicon.svelte';
 	import { Button } from '@epicenter/ui/button';
-	import * as Avatar from '@epicenter/ui/avatar';
 	import * as Empty from '@epicenter/ui/empty';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
@@ -26,12 +25,7 @@
 				<div
 					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
 				>
-					<Avatar.Root class="size-4 shrink-0 rounded-sm">
-						<Avatar.Image src={tab.favIconUrl} alt="" />
-						<Avatar.Fallback class="rounded-sm">
-							<GlobeIcon class="size-3 text-muted-foreground" />
-						</Avatar.Fallback>
-					</Avatar.Root>
+					<TabFavicon src={tab.favIconUrl} />
 
 					<div class="min-w-0 flex-1">
 						<div class="truncate text-sm font-medium">

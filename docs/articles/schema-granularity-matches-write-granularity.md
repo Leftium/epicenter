@@ -117,8 +117,8 @@ Each KV value is an atomic blob with a coherent shape. For small objects, field 
 
 **Granularity match is what makes versioned schemas possible.**
 
-- Tables: Row-level writes → Row-level schema versions (with `_v` discriminator)
-- KV: Value-level writes → Field presence checks (no `_v` needed)
+- Tables: Row-level writes → Row-level schema versions (requires `_v` number discriminator)
+- KV: Value-level writes → Field presence checks or `_v` (both work)
 
 If your writes are atomic at some boundary, your schemas can be versioned at that same boundary. Epicenter chooses row/value boundaries, which enables clean schema evolution at the cost of concurrent field editing.
 

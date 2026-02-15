@@ -127,15 +127,14 @@ Note: ArkType automatically discriminates unions for O(1) performance. For other
 
 ## The Discriminator Pattern
 
-While not required, we **highly recommend** including a version field in your schemas:
+Every table schema includes a `_v` field — a number literal that identifies the schema version. The type system enforces this: passing a schema without `_v` to `defineTable()` is a compile error.
 
 ```typescript
-// Recommended: Explicit version field
 .version(type({ id: 'string', title: 'string', _v: '1' }))
 .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
 ```
 
-This makes migrations trivial:
+This makes migrations a clean switch statement:
 
 ```typescript
 .migrate((row) => {
@@ -143,16 +142,6 @@ This makes migrations trivial:
       case 1: return { ...row, views: 0, _v: 2 };
       case 2: return row;
   }
-})
-```
-
-Without a discriminator, you have to check for field presence, which is fragile:
-
-```typescript
-// Works but not recommended
-.migrate((row) => {
-  if (!('views' in row)) return { ...row, views: 0 };
-  return row;
 })
 ```
 
@@ -271,8 +260,8 @@ YKeyValue uses an append-and-cleanup pattern that keeps memory bounded regardles
 
 1. Define schemas with `.version()` for each schema evolution
 2. Provide a `.migrate()` function that normalizes any version to latest
-3. Use a `_v` discriminator field for tables (recommended for clean migrations)
-4. KV stores use field presence checks instead of `_v`
+3. Tables require a `_v` number discriminant on every version (enforced by the type system)
+4. KV stores can use field presence checks or `_v` — both work
 5. Data is validated and migrated on read, not in storage
 
 This approach eliminates "CRDT migration hell" by embracing row-level atomicity and lazy migration. Your app always sees the latest schema shape, regardless of when the underlying data was written.

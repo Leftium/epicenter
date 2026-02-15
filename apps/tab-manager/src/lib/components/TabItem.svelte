@@ -13,141 +13,138 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
-	import { cn } from '@epicenter/ui/utils';
+	import * as Item from '@epicenter/ui/item';
 
 	let { tab }: { tab: Tab } = $props();
 
-	// Use tabId for browser API calls (native browser tab ID)
 	const tabId = $derived(tab.tabId);
-
-	// Extract domain from URL for display
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 </script>
 
-<button
-	type="button"
-	class={cn(
-		'group flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-accent',
-		tab.active && 'bg-accent/50',
-	)}
-	onclick={() => browserState.actions.activate(tabId)}
->
-	<TabFavicon src={tab.favIconUrl} />
-
-	<!-- Title and URL -->
-	<div class="min-w-0 flex-1">
-		<div class="flex items-center gap-1">
-			{#if tab.pinned}
-				<PinIcon class="size-3 shrink-0 text-muted-foreground" />
-			{/if}
-			{#if tab.audible && !tab.mutedInfo?.muted}
-				<Volume2Icon class="size-3 shrink-0 text-muted-foreground" />
-			{/if}
-			{#if tab.mutedInfo?.muted}
-				<VolumeXIcon class="size-3 shrink-0 text-muted-foreground" />
-			{/if}
-			<span class="truncate text-sm font-medium">
-				{tab.title || 'Untitled'}
-			</span>
-		</div>
-		<div class="truncate text-xs text-muted-foreground">
-			{domain}
-		</div>
-	</div>
-
-	<!-- Actions (visible on hover) -->
-	<div
-		class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-	>
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			tooltip={tab.pinned ? 'Unpin' : 'Pin'}
-			onclick={(e: MouseEvent) => {
-				e.stopPropagation();
-				if (tab.pinned) {
-					browserState.actions.unpin(tabId);
-				} else {
-					browserState.actions.pin(tabId);
-				}
-			}}
+<Item.Root size="sm" class={tab.active ? 'bg-accent/50' : 'hover:bg-accent'}>
+	{#snippet child({ props })}
+		<button
+			type="button"
+			{...props}
+			class="{props.class} w-full text-left"
+			onclick={() => browserState.actions.activate(tabId)}
 		>
-			{#if tab.pinned}
-				<PinOffIcon />
-			{:else}
-				<PinIcon />
-			{/if}
-		</Button>
+			<Item.Media>
+				<TabFavicon src={tab.favIconUrl} />
+			</Item.Media>
 
-		{#if tab.audible || tab.mutedInfo?.muted}
-			<Button
-				variant="ghost"
-				size="icon-xs"
-				tooltip={tab.mutedInfo?.muted ? 'Unmute' : 'Mute'}
-				onclick={(e: MouseEvent) => {
-					e.stopPropagation();
-					if (tab.mutedInfo?.muted) {
-						browserState.actions.unmute(tabId);
-					} else {
-						browserState.actions.mute(tabId);
-					}
-				}}
+			<Item.Content>
+				<Item.Title>
+					{#if tab.pinned}
+						<PinIcon class="size-3 shrink-0 text-muted-foreground" />
+					{/if}
+					{#if tab.audible && !tab.mutedInfo?.muted}
+						<Volume2Icon class="size-3 shrink-0 text-muted-foreground" />
+					{/if}
+					{#if tab.mutedInfo?.muted}
+						<VolumeXIcon class="size-3 shrink-0 text-muted-foreground" />
+					{/if}
+					<span class="truncate">{tab.title || 'Untitled'}</span>
+				</Item.Title>
+				<Item.Description class="truncate">
+					{domain}
+				</Item.Description>
+			</Item.Content>
+
+			<Item.Actions
+				class="gap-1 opacity-0 transition-opacity group-hover/item:opacity-100"
 			>
-				{#if tab.mutedInfo?.muted}
-					<Volume2Icon />
-				{:else}
-					<VolumeXIcon />
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					tooltip={tab.pinned ? 'Unpin' : 'Pin'}
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						if (tab.pinned) {
+							browserState.actions.unpin(tabId);
+						} else {
+							browserState.actions.pin(tabId);
+						}
+					}}
+				>
+					{#if tab.pinned}
+						<PinOffIcon />
+					{:else}
+						<PinIcon />
+					{/if}
+				</Button>
+
+				{#if tab.audible || tab.mutedInfo?.muted}
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						tooltip={tab.mutedInfo?.muted ? 'Unmute' : 'Mute'}
+						onclick={(e: MouseEvent) => {
+							e.stopPropagation();
+							if (tab.mutedInfo?.muted) {
+								browserState.actions.unmute(tabId);
+							} else {
+								browserState.actions.mute(tabId);
+							}
+						}}
+					>
+						{#if tab.mutedInfo?.muted}
+							<Volume2Icon />
+						{:else}
+							<VolumeXIcon />
+						{/if}
+					</Button>
 				{/if}
-			</Button>
-		{/if}
 
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			tooltip="Reload"
-			onclick={(e: MouseEvent) => {
-				e.stopPropagation();
-				browserState.actions.reload(tabId);
-			}}
-		>
-			<RefreshCwIcon />
-		</Button>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					tooltip="Reload"
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						browserState.actions.reload(tabId);
+					}}
+				>
+					<RefreshCwIcon />
+				</Button>
 
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			tooltip="Duplicate"
-			onclick={(e: MouseEvent) => {
-				e.stopPropagation();
-				browserState.actions.duplicate(tabId);
-			}}
-		>
-			<CopyIcon />
-		</Button>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					tooltip="Duplicate"
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						browserState.actions.duplicate(tabId);
+					}}
+				>
+					<CopyIcon />
+				</Button>
 
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			tooltip="Save for later"
-			onclick={(e: MouseEvent) => {
-				e.stopPropagation();
-				savedTabState.actions.save(tab);
-			}}
-		>
-			<BookmarkIcon />
-		</Button>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					tooltip="Save for later"
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						savedTabState.actions.save(tab);
+					}}
+				>
+					<BookmarkIcon />
+				</Button>
 
-		<Button
-			variant="ghost"
-			size="icon-xs"
-			class="text-destructive"
-			tooltip="Close"
-			onclick={(e: MouseEvent) => {
-				e.stopPropagation();
-				browserState.actions.close(tabId);
-			}}
-		>
-			<XIcon />
-		</Button>
-	</div>
-</button>
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					class="text-destructive"
+					tooltip="Close"
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						browserState.actions.close(tabId);
+					}}
+				>
+					<XIcon />
+				</Button>
+			</Item.Actions>
+		</button>
+	{/snippet}
+</Item.Root>

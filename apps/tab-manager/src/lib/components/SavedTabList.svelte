@@ -4,6 +4,7 @@
 	import TabFavicon from './TabFavicon.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as Item from '@epicenter/ui/item';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
@@ -20,26 +21,26 @@
 			>
 		</Empty.Root>
 	{:else}
-		<div class="flex flex-col gap-1">
+		<Item.Group>
 			{#each savedTabState.tabs as tab (tab.id)}
-				<div
-					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
-				>
-					<TabFavicon src={tab.favIconUrl} />
+				<Item.Root size="sm" class="hover:bg-accent/50">
+					<Item.Media>
+						<TabFavicon src={tab.favIconUrl} />
+					</Item.Media>
 
-					<div class="min-w-0 flex-1">
-						<div class="truncate text-sm font-medium">
-							{tab.title || 'Untitled'}
-						</div>
-						<div class="flex items-center gap-2 text-xs text-muted-foreground">
+					<Item.Content>
+						<Item.Title>
+							<span class="truncate">{tab.title || 'Untitled'}</span>
+						</Item.Title>
+						<Item.Description class="flex items-center gap-2 truncate">
 							<span class="truncate">{getDomain(tab.url)}</span>
 							<span>•</span>
 							<span class="shrink-0">{getRelativeTime(tab.savedAt)}</span>
-						</div>
-					</div>
+						</Item.Description>
+					</Item.Content>
 
-					<div
-						class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+					<Item.Actions
+						class="gap-1 opacity-0 transition-opacity group-hover/item:opacity-100"
 					>
 						<Button
 							variant="ghost"
@@ -58,10 +59,10 @@
 						>
 							<Trash2Icon />
 						</Button>
-					</div>
-				</div>
+					</Item.Actions>
+				</Item.Root>
 			{/each}
-		</div>
+		</Item.Group>
 
 		<div class="mt-2 flex justify-end gap-2 border-t pt-2">
 			<Button

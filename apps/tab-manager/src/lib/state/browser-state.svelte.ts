@@ -78,9 +78,18 @@ function createBrowserState() {
 	// Those events would be redundant anyway — the seed is a complete snapshot.
 
 	(async () => {
-		const browserWindows = await browser.windows.getAll({ populate: true });
-		const id = await getDeviceId();
+		const startTotal = performance.now();
 
+		const startFetch = performance.now();
+		const browserWindows = await browser.windows.getAll({ populate: true });
+		const fetchDuration = performance.now() - startFetch;
+
+		const startDeviceId = performance.now();
+		const id = await getDeviceId();
+		const deviceIdDuration = performance.now() - startDeviceId;
+
+		const startProcessing = performance.now();
+		let totalTabs = 0;
 		for (const win of browserWindows) {
 			const windowRow = windowToRow(id, win);
 			if (!windowRow) continue;
@@ -89,14 +98,37 @@ function createBrowserState() {
 			if (win.tabs) {
 				for (const tab of win.tabs) {
 					const tabRow = tabToRow(id, tab);
-					if (tabRow) tabsMap.set(tabRow.tabId, tabRow);
+					if (tabRow) {
+						tabsMap.set(tabRow.tabId, tabRow);
+						totalTabs++;
+					}
 				}
 			}
 
 			windowStates.set(windowRow.id, { window: windowRow, tabs: tabsMap });
 		}
+		const processingDuration = performance.now() - startProcessing;
 
 		deviceId = id;
+
+		const totalDuration = performance.now() - startTotal;
+
+		const perfData = {
+			total: `${totalDuration.toFixed(2)}ms`,
+			fetch: `${fetchDuration.toFixed(2)}ms (${((fetchDuration / totalDuration) * 100).toFixed(1)}%)`,
+			deviceId: `${deviceIdDuration.toFixed(2)}ms (${((deviceIdDuration / totalDuration) * 100).toFixed(1)}%)`,
+			processing: `${processingDuration.toFixed(2)}ms (${((processingDuration / totalDuration) * 100).toFixed(1)}%)`,
+			windows: browserWindows.length,
+			tabs: totalTabs,
+			avgPerTab:
+				totalTabs > 0 ? `${(totalDuration / totalTabs).toFixed(3)}ms` : 'N/A',
+		};
+
+		console.log(
+			`%c[Tab Manager Performance] Total: ${totalDuration.toFixed(2)}ms | Tabs: ${totalTabs} | Fetch: ${((fetchDuration / totalDuration) * 100).toFixed(1)}%`,
+			'background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-weight: bold',
+		);
+		console.table(perfData);
 	})();
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────

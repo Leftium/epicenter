@@ -21,6 +21,7 @@
 		"arktype": "catalog:",
 		"clsx": "catalog:",
 		"tailwind-merge": "catalog:",
+		"virtua": "^0.48.5",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "^9.0.12",
 		"yjs": "^13.6.27"

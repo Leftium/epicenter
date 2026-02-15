@@ -27,7 +27,7 @@
 				<h1 class="px-1 text-lg font-semibold">Tab Manager</h1>
 				<Tabs.List class="mt-2 w-full">
 					<Tabs.Trigger value="windows" class="flex-1 gap-1.5">
-						Windows
+						Tabs
 						<Badge variant="outline" class="ml-0.5">{totalTabs}</Badge>
 					</Tabs.Trigger>
 					<Tabs.Trigger value="saved" class="flex-1 gap-1.5">

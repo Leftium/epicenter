@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
-	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Avatar from '@epicenter/ui/avatar';
 	import * as Empty from '@epicenter/ui/empty';
@@ -11,18 +10,7 @@
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 </script>
 
-<section class="flex flex-col gap-2 p-4 pt-0">
-	<header class="flex items-center justify-between">
-		<h2 class="text-sm font-semibold text-muted-foreground">
-			Saved Tabs
-			{#if savedTabState.tabs.length}
-				<Badge variant="secondary" class="ml-1">
-					{savedTabState.tabs.length}
-				</Badge>
-			{/if}
-		</h2>
-	</header>
-
+<section class="flex flex-col gap-2 p-4">
 	{#if !savedTabState.tabs.length}
 		<Empty.Root class="py-8">
 			<Empty.Media>

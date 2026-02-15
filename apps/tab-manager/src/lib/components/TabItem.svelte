@@ -51,9 +51,7 @@
 				</Item.Description>
 			</Item.Content>
 
-			<Item.Actions
-				class="gap-1 opacity-0 transition-opacity group-hover/item:opacity-100"
-			>
+			<Item.Actions showOnHover class="gap-1">
 				<Button
 					variant="ghost"
 					size="icon-xs"

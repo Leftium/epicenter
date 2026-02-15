@@ -15,6 +15,7 @@ ALTER TABLE posts ADD COLUMN views INTEGER DEFAULT 0;
 Every row gets the new column. Done.
 
 But in a local-first app:
+
 - Data lives on many devices
 - Devices might be offline for weeks
 - Old app versions might still be writing data
@@ -28,16 +29,17 @@ Instead of migrating data in place, Epicenter migrates when you read:
 
 ```typescript
 // Storage contains original data:
-{ id: "row-1", title: "Hello", _v: "1" }  // v1 schema (no views field)
+{ id: "row-1", title: "Hello", _v: 1 }  // v1 schema (no views field)
 
 // When you read:
 const post = tables.posts.get("row-1");
-// → { id: "row-1", title: "Hello", views: 0, _v: "3" }  // Migrated to v3
+// → { id: "row-1", title: "Hello", views: 0, _v: 3 }  // Migrated to v3
 ```
 
 The migration function transforms old data to the latest schema on-the-fly. The original data stays untouched in storage.
 
 **Key benefits:**
+
 - No migrations to run
 - Old and new clients can coexist
 - Data is always valid when you use it
@@ -49,38 +51,44 @@ You define schemas with `.version()` and provide a migration function with `.mig
 
 ```typescript
 const posts = defineTable('posts')
-  // V1: Original schema
-  .version(type({
-    id: 'string',
-    title: 'string',
-    _v: '"1"'
-  }))
-  // V2: Added views counter
-  .version(type({
-    id: 'string',
-    title: 'string',
-    views: 'number',
-    _v: '"2"'
-  }))
-  // V3: Added tags
-  .version(type({
-    id: 'string',
-    title: 'string',
-    views: 'number',
-    tags: 'string[]',
-    _v: '"3"'
-  }))
-  .migrate((row) => {
-    // row is V1 | V2 | V3, must return V3
-    switch (row._v) {
-      case '1':
-        return { ...row, views: 0, tags: [], _v: '3' as const };
-      case '2':
-        return { ...row, tags: [], _v: '3' as const };
-      case '3':
-        return row;
-    }
-  });
+	// V1: Original schema
+	.version(
+		type({
+			id: 'string',
+			title: 'string',
+			_v: '1',
+		}),
+	)
+	// V2: Added views counter
+	.version(
+		type({
+			id: 'string',
+			title: 'string',
+			views: 'number',
+			_v: '2',
+		}),
+	)
+	// V3: Added tags
+	.version(
+		type({
+			id: 'string',
+			title: 'string',
+			views: 'number',
+			tags: 'string[]',
+			_v: '3',
+		}),
+	)
+	.migrate((row) => {
+		// row is V1 | V2 | V3, must return V3
+		switch (row._v) {
+			case 1:
+				return { ...row, views: 0, tags: [], _v: 3 };
+			case 2:
+				return { ...row, tags: [], _v: 3 };
+			case 3:
+				return row;
+		}
+	});
 ```
 
 ## How Validation Works
@@ -88,24 +96,27 @@ const posts = defineTable('posts')
 Internally, Epicenter creates a union of all your schemas using Standard Schema:
 
 ```typescript
-function createUnionStandardSchema(schemas: StandardSchemaV1[]): StandardSchemaV1 {
-  return {
-    '~standard': {
-      version: 1,
-      vendor: 'epicenter',
-      validate: (value) => {
-        for (const schema of schemas) {
-          const result = schema['~standard'].validate(value);
-          if (!result.issues) return result;  // Found a match
-        }
-        return { issues: [{ message: 'No schema version matched' }] };
-      }
-    }
-  };
+function createUnionStandardSchema(
+	schemas: StandardSchemaV1[],
+): StandardSchemaV1 {
+	return {
+		'~standard': {
+			version: 1,
+			vendor: 'epicenter',
+			validate: (value) => {
+				for (const schema of schemas) {
+					const result = schema['~standard'].validate(value);
+					if (!result.issues) return result; // Found a match
+				}
+				return { issues: [{ message: 'No schema version matched' }] };
+			},
+		},
+	};
 }
 ```
 
 When you read data:
+
 1. Validate against the union (tries each schema until one matches)
 2. Run the migration function to normalize to latest
 3. Return strongly-typed latest version
@@ -120,8 +131,8 @@ While not required, we **highly recommend** including a version field in your sc
 
 ```typescript
 // Recommended: Explicit version field
-.version(type({ id: 'string', title: 'string', _v: '"1"' }))
-.version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+.version(type({ id: 'string', title: 'string', _v: '1' }))
+.version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
 ```
 
 This makes migrations trivial:
@@ -129,8 +140,8 @@ This makes migrations trivial:
 ```typescript
 .migrate((row) => {
   switch (row._v) {
-    case '1': return { ...row, views: 0, _v: '2' as const };
-    case '2': return row;
+      case 1: return { ...row, views: 0, _v: 2 };
+      case 2: return row;
   }
 })
 ```
@@ -150,22 +161,24 @@ Without a discriminator, you have to check for field presence, which is fragile:
 Your migration function receives any version and must return the latest. You have two choices:
 
 **Incremental (v1→v2→v3):**
+
 ```typescript
 .migrate((row) => {
   let current = row;
-  if (current._v === '1') current = { ...current, views: 0, _v: '2' as const };
-  if (current._v === '2') current = { ...current, tags: [], _v: '3' as const };
+  if (current._v === 1) current = { ...current, views: 0, _v: 2 };
+  if (current._v === 2) current = { ...current, tags: [], _v: 3 };
   return current;
 })
 ```
 
 **Direct (v1→v3):**
+
 ```typescript
 .migrate((row) => {
   switch (row._v) {
-    case '1': return { ...row, views: 0, tags: [], _v: '3' as const };
-    case '2': return { ...row, tags: [], _v: '3' as const };
-    case '3': return row;
+    case 1: return { ...row, views: 0, tags: [], _v: 3 };
+    case 2: return { ...row, tags: [], _v: 3 };
+    case 3: return row;
   }
 })
 ```
@@ -193,20 +206,20 @@ The trade-off is you must handle all versions yourself, but TypeScript helps ens
 
 ## KV Storage
 
-The same pattern works for key-value storage:
+KV stores use the same versioning pattern but don't need a `_v` discriminator. KV values are small objects where field presence is unambiguous:
 
 ```typescript
 const theme = defineKv('theme')
-  .version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
-  .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
-  .migrate((v) => {
-    if (v._v === '1') return { ...v, fontSize: 14, _v: '2' as const };
-    return v;
-  });
+	.version(type({ mode: "'light' | 'dark'" }))
+	.version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
+	.migrate((v) => {
+		if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+		return v;
+	});
 
 // Usage
-kv.theme.set({ mode: 'dark', fontSize: 16, _v: '2' });
-const theme = kv.theme.get();  // Always returns v2 shape
+kv.theme.set({ mode: 'dark', fontSize: 16 });
+const theme = kv.theme.get(); // Always returns v2 shape
 ```
 
 ## Reads Are Pure
@@ -224,7 +237,7 @@ If you want to persist migrated data, do it explicitly:
 ```typescript
 const result = tables.posts.get('post-1');
 if (result.status === 'valid') {
-  tables.posts.upsert(result.row);  // Explicitly write back
+	tables.posts.upsert(result.row); // Explicitly write back
 }
 ```
 
@@ -232,22 +245,24 @@ if (result.status === 'valid') {
 
 Both tables and KV use YKeyValue (not Y.Map) for storage. Benchmarks show Y.Map has unbounded memory growth with frequent updates:
 
-| Updates/Key | Y.Map | YKeyValue |
-|-------------|-------|-----------|
-| 10 | 562 B | 241 B |
-| 100 | 4.43 KB | 254 B |
-| 1000 | 44 KB | 259 B |
+| Updates/Key | Y.Map   | YKeyValue |
+| ----------- | ------- | --------- |
+| 10          | 562 B   | 241 B     |
+| 100         | 4.43 KB | 254 B     |
+| 1000        | 44 KB   | 259 B     |
 
 YKeyValue uses an append-and-cleanup pattern that keeps memory bounded regardless of update frequency.
 
 ## When to Use This Pattern
 
 **Good fit:**
+
 - Apps with evolving schemas (most apps)
 - Document-style data edited by one user at a time
 - Apps where data integrity matters more than concurrent field editing
 
 **Consider alternatives if:**
+
 - You need concurrent editing of individual fields
 - Your schema is completely stable
 - You're building a highly collaborative real-time editor
@@ -256,8 +271,8 @@ YKeyValue uses an append-and-cleanup pattern that keeps memory bounded regardles
 
 1. Define schemas with `.version()` for each schema evolution
 2. Provide a `.migrate()` function that normalizes any version to latest
-3. Use a `_v` discriminator field (recommended) for clean migrations
-4. Data is validated and migrated on read, not in storage
-5. Both tables and KV use the same pattern
+3. Use a `_v` discriminator field for tables (recommended for clean migrations)
+4. KV stores use field presence checks instead of `_v`
+5. Data is validated and migrated on read, not in storage
 
 This approach eliminates "CRDT migration hell" by embracing row-level atomicity and lazy migration. Your app always sees the latest schema shape, regardless of when the underlying data was written.

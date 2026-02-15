@@ -141,7 +141,7 @@ describe('defineTable', () => {
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('with _v discriminant (symmetric)', () => {
+		test('two version migration with _v', () => {
 			const posts = defineTable()
 				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
@@ -177,7 +177,7 @@ describe('defineTable', () => {
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('with _v discriminant from start (symmetric switch)', () => {
+		test('three version migration with switch', () => {
 			const posts = defineTable()
 				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(

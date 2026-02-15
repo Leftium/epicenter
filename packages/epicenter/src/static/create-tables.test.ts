@@ -169,7 +169,7 @@ describe('createTables', () => {
 });
 
 describe('migration scenarios', () => {
-	test('three version migration with explicit _v field', () => {
+	test('three version migration', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
@@ -226,7 +226,7 @@ describe('migration scenarios', () => {
 		}
 	});
 
-	test('migration with _v across three versions', () => {
+	test('three version migration with tags', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()

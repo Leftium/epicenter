@@ -1,28 +1,16 @@
 <script lang="ts">
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
-	import { Badge } from '@epicenter/ui/badge';
+	import TabFavicon from './TabFavicon.svelte';
 	import { Button } from '@epicenter/ui/button';
-	import * as Avatar from '@epicenter/ui/avatar';
 	import * as Empty from '@epicenter/ui/empty';
-	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import * as Item from '@epicenter/ui/item';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 </script>
 
-<section class="flex flex-col gap-2 p-4 pt-0">
-	<header class="flex items-center justify-between">
-		<h2 class="text-sm font-semibold text-muted-foreground">
-			Saved Tabs
-			{#if savedTabState.tabs.length}
-				<Badge variant="secondary" class="ml-1">
-					{savedTabState.tabs.length}
-				</Badge>
-			{/if}
-		</h2>
-	</header>
-
+<section class="flex flex-col gap-2 p-4">
 	{#if !savedTabState.tabs.length}
 		<Empty.Root class="py-8">
 			<Empty.Media>
@@ -33,32 +21,25 @@
 			>
 		</Empty.Root>
 	{:else}
-		<div class="flex flex-col gap-1">
+		<Item.Group>
 			{#each savedTabState.tabs as tab (tab.id)}
-				<div
-					class="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent/50"
-				>
-					<Avatar.Root class="size-4 shrink-0 rounded-sm">
-						<Avatar.Image src={tab.favIconUrl} alt="" />
-						<Avatar.Fallback class="rounded-sm">
-							<GlobeIcon class="size-3 text-muted-foreground" />
-						</Avatar.Fallback>
-					</Avatar.Root>
+				<Item.Root size="sm" class="hover:bg-accent/50">
+					<Item.Media>
+						<TabFavicon src={tab.favIconUrl} />
+					</Item.Media>
 
-					<div class="min-w-0 flex-1">
-						<div class="truncate text-sm font-medium">
-							{tab.title || 'Untitled'}
-						</div>
-						<div class="flex items-center gap-2 text-xs text-muted-foreground">
+					<Item.Content>
+						<Item.Title>
+							<span class="truncate">{tab.title || 'Untitled'}</span>
+						</Item.Title>
+						<Item.Description class="flex items-center gap-2 truncate">
 							<span class="truncate">{getDomain(tab.url)}</span>
 							<span>•</span>
 							<span class="shrink-0">{getRelativeTime(tab.savedAt)}</span>
-						</div>
-					</div>
+						</Item.Description>
+					</Item.Content>
 
-					<div
-						class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-					>
+					<Item.Actions showOnHover class="gap-1">
 						<Button
 							variant="ghost"
 							size="icon-xs"
@@ -76,10 +57,10 @@
 						>
 							<Trash2Icon />
 						</Button>
-					</div>
-				</div>
+					</Item.Actions>
+				</Item.Root>
 			{/each}
-		</div>
+		</Item.Group>
 
 		<div class="mt-2 flex justify-end gap-2 border-t pt-2">
 			<Button

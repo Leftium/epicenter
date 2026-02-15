@@ -1,4 +1,5 @@
 import * as Y from 'yjs';
+import { parseSheetFromCsv, serializeSheetToCsv } from './sheet-helpers.js';
 import type { ContentMode } from './types.js';
 
 export type Timeline = {
@@ -12,6 +13,10 @@ export type Timeline = {
 	pushText(content: string): Y.Map<any>;
 	/** Append a new binary entry. Returns the Y.Map. */
 	pushBinary(data: Uint8Array): Y.Map<any>;
+	/** Append a new empty sheet entry. Returns the Y.Map. */
+	pushSheet(): Y.Map<any>;
+	/** Append a sheet entry populated from a CSV string. Returns the Y.Map. */
+	pushSheetFromCsv(csv: string): Y.Map<any>;
 	/** Read the current entry as a string. Returns '' if empty. */
 	readAsString(): string;
 	/** Read the current entry as Uint8Array. Returns empty array if empty. */
@@ -60,6 +65,27 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
+		pushSheet(): Y.Map<any> {
+			const entry = new Y.Map();
+			entry.set('type', 'sheet');
+			entry.set('columns', new Y.Map());
+			entry.set('rows', new Y.Map());
+			timeline.push([entry]);
+			return entry;
+		},
+
+		pushSheetFromCsv(csv: string): Y.Map<any> {
+			const entry = new Y.Map();
+			entry.set('type', 'sheet');
+			const columns = new Y.Map();
+			const rows = new Y.Map();
+			entry.set('columns', columns);
+			entry.set('rows', rows);
+			parseSheetFromCsv(csv, columns, rows);
+			timeline.push([entry]);
+			return entry;
+		},
+
 		readAsString(): string {
 			const entry = currentEntry();
 			if (!entry) return '';
@@ -70,6 +96,11 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					return '';
 				case 'binary':
 					return new TextDecoder().decode(entry.get('content') as Uint8Array);
+				case 'sheet':
+					return serializeSheetToCsv(
+						entry.get('columns') as Y.Map<Y.Map<string>>,
+						entry.get('rows') as Y.Map<Y.Map<string>>,
+					);
 			}
 		},
 
@@ -85,6 +116,13 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					return new Uint8Array();
 				case 'binary':
 					return entry.get('content') as Uint8Array;
+				case 'sheet':
+					return new TextEncoder().encode(
+						serializeSheetToCsv(
+							entry.get('columns') as Y.Map<Y.Map<string>>,
+							entry.get('rows') as Y.Map<Y.Map<string>>,
+						),
+					);
 			}
 		},
 	};

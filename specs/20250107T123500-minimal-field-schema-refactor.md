@@ -3,7 +3,7 @@
 **Created**: 2025-01-07T12:35:00
 **Status**: Complete
 
-> **Note (2026-01-08)**: The `json()` field API in this spec uses `StandardSchemaWithJSONSchema` (arktype/zod). This has been superseded by TypeBox. See `20260108T133200-collaborative-workspace-config-ydoc-handoff.md` Phase 4 for the current API using `Type.Object()` from TypeBox.
+> **Note (2026-01-08)**: The `json()` field API in this spec uses `CombinedStandardSchema` (arktype/zod). This has been superseded by TypeBox. See `20260108T133200-collaborative-workspace-config-ydoc-handoff.md` Phase 4 for the current API using `Type.Object()` from TypeBox.
 
 ## Summary
 
@@ -61,7 +61,7 @@ type FieldDefinition =
 	  }
 	| {
 			type: 'json';
-			schema: StandardSchemaWithJSONSchema;
+			schema: CombinedStandardSchema;
 			nullable?: boolean;
 			default?: unknown;
 	  };
@@ -138,7 +138,7 @@ export type TagsFieldSchema<
 };
 
 export type JsonFieldSchema<
-	TSchema extends StandardSchemaWithJSONSchema = StandardSchemaWithJSONSchema,
+	TSchema extends CombinedStandardSchema = CombinedStandardSchema,
 	TNullable extends boolean = boolean,
 > = {
 	type: 'json';
@@ -332,7 +332,7 @@ export function tags<
 	};
 }
 
-export function json<const TSchema extends StandardSchemaWithJSONSchema>(opts: {
+export function json<const TSchema extends CombinedStandardSchema>(opts: {
 	schema: TSchema;
 	nullable?: boolean;
 	default?: StandardSchemaV1.InferOutput<TSchema>;

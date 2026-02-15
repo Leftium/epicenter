@@ -63,8 +63,8 @@
  */
 
 import type {
+	CombinedStandardSchema,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 } from '../shared/standard-schema/types';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -79,14 +79,14 @@ import type {
  * `any` distributes over both branches giving `[input: any] | []` — which
  * correctly allows calling with 0 arguments for no-input actions.
  *
- * When `TInput` extends `StandardSchemaWithJSONSchema`, the handler takes validated input.
+ * When `TInput` extends `CombinedStandardSchema`, the handler takes validated input.
  * When `TInput` is `undefined`, the handler takes no arguments.
  */
 type ActionHandler<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = (
-	...args: TInput extends StandardSchemaWithJSONSchema
+	...args: TInput extends CombinedStandardSchema
 		? [input: StandardSchemaV1.InferOutput<TInput>]
 		: []
 ) => TOutput | Promise<TOutput>;
@@ -128,7 +128,7 @@ type ActionHandler<
  * ```
  */
 type ActionConfig<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = {
 	description?: string;
@@ -143,13 +143,12 @@ type ActionConfig<
  * (via `Object.assign`). The handler is NOT included — the action function IS
  * the handler. Call the action directly instead of accessing `.handler`.
  */
-type ActionMeta<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
-> = {
-	type: 'query' | 'mutation';
-	description?: string;
-	input?: TInput;
-};
+type ActionMeta<TInput extends CombinedStandardSchema | undefined = undefined> =
+	{
+		type: 'query' | 'mutation';
+		description?: string;
+		input?: TInput;
+	};
 
 /**
  * A query action definition (read operation).
@@ -172,7 +171,7 @@ type ActionMeta<
  * @see {@link defineQuery} for creating query definitions
  */
 export type Query<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'query' };
 
@@ -199,7 +198,7 @@ export type Query<
  * @see {@link defineMutation} for creating mutation definitions
  */
 export type Mutation<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'mutation' };
 
@@ -212,7 +211,7 @@ export type Mutation<
  * @typeParam TOutput - The return type of the handler
  */
 export type Action<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = Query<TInput, TOutput> | Mutation<TInput, TOutput>;
 
@@ -283,7 +282,7 @@ export function defineQuery<TOutput = unknown>(
 ): Query<undefined, TOutput>;
 /** With input — `TInput` inferred from the schema. */
 export function defineQuery<
-	TInput extends StandardSchemaWithJSONSchema,
+	TInput extends CombinedStandardSchema,
 	TOutput = unknown,
 >(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput>;
 export function defineQuery({
@@ -333,7 +332,7 @@ export function defineMutation<TOutput = unknown>(
 ): Mutation<undefined, TOutput>;
 /** With input — `TInput` inferred from the schema. */
 export function defineMutation<
-	TInput extends StandardSchemaWithJSONSchema,
+	TInput extends CombinedStandardSchema,
 	TOutput = unknown,
 >(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput>;
 export function defineMutation({

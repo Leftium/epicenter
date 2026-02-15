@@ -141,13 +141,13 @@ const cli = createCLI(client, { actions: customActions });
 
 ```typescript
 type ActionConfig<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = {
 	description?: string;
 	input?: TInput;
-	output?: StandardSchemaWithJSONSchema;
-	handler: TInput extends StandardSchemaWithJSONSchema
+	output?: CombinedStandardSchema;
+	handler: TInput extends CombinedStandardSchema
 		? (
 				ctx: WorkspaceClient,
 				input: InferOutput<TInput>,
@@ -196,8 +196,8 @@ After `.withActions()`, actions are "attached" - calling them executes the handl
 type AttachedAction<TInput, TOutput> = {
 	type: 'query' | 'mutation';
 	description?: string;
-	input?: StandardSchemaWithJSONSchema;
-	output?: StandardSchemaWithJSONSchema;
+	input?: CombinedStandardSchema;
+	output?: CombinedStandardSchema;
 	/** Executes the handler with the attached client context */
 	(input?: TInput): TOutput | Promise<TOutput>;
 };

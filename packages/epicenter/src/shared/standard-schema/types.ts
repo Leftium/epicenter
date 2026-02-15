@@ -209,14 +209,14 @@ export declare namespace StandardJSONSchemaV1 {
  * ```typescript
  * // ArkType
  * import { type } from 'arktype';
- * type('string') satisfies StandardSchemaWithJSONSchema; // ✅
+ * type('string') satisfies CombinedStandardSchema; // ✅
  *
  * // Zod (v4.2+)
  * import * as z from 'zod';
- * z.string() satisfies StandardSchemaWithJSONSchema; // ✅
+ * z.string() satisfies CombinedStandardSchema; // ✅
  * ```
  */
-export type StandardSchemaWithJSONSchema<TInput = unknown, TOutput = TInput> = {
+export type CombinedStandardSchema<TInput = unknown, TOutput = TInput> = {
 	'~standard': StandardSchemaV1.Props<TInput, TOutput> &
 		StandardJSONSchemaV1.Props<TInput, TOutput>;
 };

@@ -61,7 +61,7 @@ export type ActionDescriptor = {
  * A portable, JSON-serializable descriptor of a workspace.
  *
  * Every schema field is guaranteed to be a `JsonSchema` (never undefined) —
- * the `StandardSchemaWithJSONSchema` type constraint on definitions ensures this.
+ * the `CombinedStandardSchema` type constraint on definitions ensures this.
  * Action inputs are optional since some actions have no input.
  */
 export type WorkspaceDescriptor = {

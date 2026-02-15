@@ -9,8 +9,8 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { Extension } from '../shared/lifecycle.js';
 import type {
+	CombinedStandardSchema,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 } from '../shared/standard-schema/types.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -89,10 +89,10 @@ export type KvChange<TValue> =
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Extract the last element from a tuple of schemas. */
-export type LastSchema<T extends readonly StandardSchemaWithJSONSchema[]> =
+export type LastSchema<T extends readonly CombinedStandardSchema[]> =
 	T extends readonly [
-		...StandardSchemaWithJSONSchema[],
-		infer L extends StandardSchemaWithJSONSchema,
+		...CombinedStandardSchema[],
+		infer L extends CombinedStandardSchema,
 	]
 		? L
 		: T[number];
@@ -103,9 +103,9 @@ export type LastSchema<T extends readonly StandardSchemaWithJSONSchema[]> =
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
-	TVersions extends readonly StandardSchemaWithJSONSchema<{ id: string }>[],
+	TVersions extends readonly CombinedStandardSchema<{ id: string }>[],
 > = {
-	schema: StandardSchemaWithJSONSchema<
+	schema: CombinedStandardSchema<
 		unknown,
 		StandardSchemaV1.InferOutput<TVersions[number]>
 	>;
@@ -135,17 +135,16 @@ export type InferTableVersionUnion<T> =
  *
  * @typeParam TVersions - Tuple of schema versions
  */
-export type KvDefinition<
-	TVersions extends readonly StandardSchemaWithJSONSchema[],
-> = {
-	schema: StandardSchemaWithJSONSchema<
-		unknown,
-		StandardSchemaV1.InferOutput<TVersions[number]>
-	>;
-	migrate: (
-		value: StandardSchemaV1.InferOutput<TVersions[number]>,
-	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-};
+export type KvDefinition<TVersions extends readonly CombinedStandardSchema[]> =
+	{
+		schema: CombinedStandardSchema<
+			unknown,
+			StandardSchemaV1.InferOutput<TVersions[number]>
+		>;
+		migrate: (
+			value: StandardSchemaV1.InferOutput<TVersions[number]>,
+		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
+	};
 
 /** Extract the value type from a KvDefinition */
 export type InferKvValue<T> =
@@ -361,8 +360,8 @@ export type TableHelper<TRow extends { id: string }> = {
 // AWARENESS TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Map of awareness field definitions. Each field has its own StandardSchemaWithJSONSchema schema. */
-export type AwarenessDefinitions = Record<string, StandardSchemaWithJSONSchema>;
+/** Map of awareness field definitions. Each field has its own CombinedStandardSchema schema. */
+export type AwarenessDefinitions = Record<string, CombinedStandardSchema>;
 
 /** Extract the output type of an awareness field's schema. */
 export type InferAwarenessValue<T> = T extends StandardSchemaV1

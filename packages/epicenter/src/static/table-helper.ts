@@ -5,7 +5,7 @@
  */
 
 import type * as Y from 'yjs';
-import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
+import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type {
 	YKeyValueLww,
 	YKeyValueLwwChange,
@@ -25,7 +25,7 @@ import type {
  * Creates a TableHelper for a single table bound to a YKeyValue store.
  */
 export function createTableHelper<
-	TVersions extends readonly StandardSchemaWithJSONSchema<{ id: string }>[],
+	TVersions extends readonly CombinedStandardSchema<{ id: string }>[],
 >(
 	ykv: YKeyValueLww<unknown>,
 	definition: TableDefinition<TVersions>,

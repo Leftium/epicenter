@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
-import type { StandardSchemaWithJSONSchema } from '../shared/standard-schema/types.js';
+import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 
 describe('createUnionSchema', () => {
@@ -51,7 +51,7 @@ describe('createUnionSchema', () => {
 					output: () => ({}),
 				},
 			},
-		} satisfies StandardSchemaWithJSONSchema;
+		} satisfies CombinedStandardSchema;
 
 		const union = createUnionSchema([asyncSchema]);
 

@@ -29,6 +29,7 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
+		"@standard-schema/spec": "catalog:",
 		"@sindresorhus/slugify": "^3.0.0",
 		"@tursodatabase/database": "^0.3.2",
 		"@types/bun": "catalog:",

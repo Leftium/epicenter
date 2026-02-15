@@ -23,11 +23,11 @@ This couples the schema system to ArkType. We want library-agnostic schemas that
 
 ## Solution
 
-Change `JsonColumnSchema` to use `StandardSchemaWithJSONSchema` (combined interface that provides both validation and JSON Schema generation):
+Change `JsonColumnSchema` to use `CombinedStandardSchema` (combined interface that provides both validation and JSON Schema generation):
 
 ```typescript
 export type JsonColumnSchema<
-	TSchema extends StandardSchemaWithJSONSchema = StandardSchemaWithJSONSchema,
+	TSchema extends CombinedStandardSchema = CombinedStandardSchema,
 	TNullable extends boolean = boolean,
 > = {
 	type: 'json';
@@ -41,13 +41,13 @@ export type JsonColumnSchema<
 
 ### 1. Create shared type (schema/standard-schema.ts)
 
-- [ ] Move `StandardSchemaWithJSONSchema` from `actions.ts` to schema module
+- [ ] Move `CombinedStandardSchema` from `actions.ts` to schema module
 - [ ] Export from schema index
 
 ### 2. Update types.ts
 
-- [ ] Import `StandardSchemaWithJSONSchema` and `StandardSchemaV1`
-- [ ] Change `TSchema extends Type` to `TSchema extends StandardSchemaWithJSONSchema`
+- [ ] Import `CombinedStandardSchema` and `StandardSchemaV1`
+- [ ] Change `TSchema extends Type` to `TSchema extends CombinedStandardSchema`
 - [ ] Change `TSchema['infer']` to `StandardSchemaV1.InferOutput<TSchema>`
 
 ### 3. Update columns.ts
@@ -64,13 +64,13 @@ export type JsonColumnSchema<
 ### 5. Validation pattern
 
 - [ ] `arktype.ts` line 179: `columnSchema.schema` is used as arktype Type directly
-  - This still works because ArkType's Type satisfies StandardSchemaWithJSONSchema
+  - This still works because ArkType's Type satisfies CombinedStandardSchema
   - The validation uses it as a callable, which is ArkType-specific
   - For now, keep using the schema directly since ArkType is the implementation
 
 ## Success Criteria
 
-- [ ] `JsonColumnSchema` accepts any `StandardSchemaWithJSONSchema` compliant schema
+- [ ] `JsonColumnSchema` accepts any `CombinedStandardSchema` compliant schema
 - [ ] Type inference works via `StandardSchemaV1.InferOutput`
 - [ ] Existing ArkType usage continues to work (ArkType implements the spec)
 - [ ] TypeScript compiles without errors

@@ -90,26 +90,26 @@ const actions = {
 ```typescript
 // BEFORE: Handler receives ctx
 type ActionConfig<
-  TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+  TInput extends CombinedStandardSchema | undefined = undefined,
   TOutput = unknown,
 > = {
   description?: string;
   input?: TInput;
-  output?: StandardSchemaWithJSONSchema;
-  handler: TInput extends StandardSchemaWithJSONSchema
+  output?: CombinedStandardSchema;
+  handler: TInput extends CombinedStandardSchema
     ? (ctx: unknown, input: StandardSchemaV1.InferOutput<TInput>) => TOutput | Promise<TOutput>
     : (ctx: unknown) => TOutput | Promise<TOutput>;
 };
 
 // AFTER: Handler just receives input (or nothing)
 type ActionConfig<
-  TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+  TInput extends CombinedStandardSchema | undefined = undefined,
   TOutput = unknown,
 > = {
   description?: string;
   input?: TInput;
-  output?: StandardSchemaWithJSONSchema;
-  handler: TInput extends StandardSchemaWithJSONSchema
+  output?: CombinedStandardSchema;
+  handler: TInput extends CombinedStandardSchema
     ? (input: StandardSchemaV1.InferOutput<TInput>) => TOutput | Promise<TOutput>
     : () => TOutput | Promise<TOutput>;
 };

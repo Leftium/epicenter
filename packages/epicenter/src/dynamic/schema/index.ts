@@ -2,9 +2,9 @@ export type { Guid } from '../../shared/id.js';
 export { generateGuid, generateId, Id } from '../../shared/id.js';
 export { standardSchemaToJsonSchema } from '../../shared/standard-schema/to-json-schema.js';
 export type {
+	CombinedStandardSchema,
 	StandardJSONSchemaV1,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 	StandardTypedV1,
 } from '../../shared/standard-schema/types.js';
 export type { FieldToArktype } from './converters/to-arktype.js';

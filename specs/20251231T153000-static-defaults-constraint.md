@@ -63,7 +63,7 @@ tables.posts.upsert({
 
 ### What Changed
 
-`JsonColumnSchema` now uses `StandardSchemaWithJSONSchema` instead of arktype's `Type`:
+`JsonColumnSchema` now uses `CombinedStandardSchema` instead of arktype's `Type`:
 
 ```typescript
 // Before (arktype-specific)
@@ -73,7 +73,7 @@ type JsonColumnSchema<TSchema extends Type> = {
 };
 
 // After (any Standard Schema library)
-type JsonColumnSchema<TSchema extends StandardSchemaWithJSONSchema> = {
+type JsonColumnSchema<TSchema extends CombinedStandardSchema> = {
 	schema: TSchema;
 	// ...
 };
@@ -83,12 +83,12 @@ type JsonColumnSchema<TSchema extends StandardSchemaWithJSONSchema> = {
 
 Allows using Zod, Valibot, or any Standard Schema-compliant library for JSON column validation, not just arktype.
 
-### StandardSchemaWithJSONSchema
+### CombinedStandardSchema
 
 A schema that implements both validation and JSON Schema conversion:
 
 ```typescript
-type StandardSchemaWithJSONSchema = {
+type CombinedStandardSchema = {
 	'~standard': StandardSchemaV1.Props & StandardJSONSchemaV1.Props;
 };
 ```
@@ -114,7 +114,7 @@ Contains:
 - `StandardTypedV1` — Base type
 - `StandardSchemaV1` — Validation interface
 - `StandardJSONSchemaV1` — JSON Schema conversion interface
-- `StandardSchemaWithJSONSchema` — Combined type (our extension)
+- `CombinedStandardSchema` — Combined type (our extension)
 
 ### Why
 

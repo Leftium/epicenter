@@ -25,7 +25,7 @@ Refactor the schema type system and `ProviderContext` to:
 3. **Ambiguous `TSchema` generic**: Used for three different things:
    - `WorkspaceSchema` (all tables)
    - `TableSchema` (single table)
-   - `StandardSchemaWithJSONSchema` (JSON field validation)
+   - `CombinedStandardSchema` (JSON field validation)
 
 4. **No KV in providers**: KV storage exists but isn't passed to providers.
 

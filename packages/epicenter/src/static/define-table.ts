@@ -44,8 +44,8 @@
  */
 
 import type {
+	CombinedStandardSchema,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { LastSchema, TableDefinition } from './types.js';
@@ -55,29 +55,28 @@ import type { LastSchema, TableDefinition } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<
-	TVersions extends StandardSchemaWithJSONSchema<{ id: string }>[],
-> = {
-	/**
-	 * Add a schema version. Schema must include `{ id: string }`.
-	 * The last version added becomes the "latest" schema shape.
-	 */
-	version<TSchema extends StandardSchemaWithJSONSchema<{ id: string }>>(
-		schema: TSchema,
-	): TableBuilder<[...TVersions, TSchema]>;
+type TableBuilder<TVersions extends CombinedStandardSchema<{ id: string }>[]> =
+	{
+		/**
+		 * Add a schema version. Schema must include `{ id: string }`.
+		 * The last version added becomes the "latest" schema shape.
+		 */
+		version<TSchema extends CombinedStandardSchema<{ id: string }>>(
+			schema: TSchema,
+		): TableBuilder<[...TVersions, TSchema]>;
 
-	/**
-	 * Provide a migration function that normalizes any version to the latest.
-	 * This completes the table definition.
-	 *
-	 * @returns TableDefinition with TVersions tuple as the source of truth
-	 */
-	migrate(
-		fn: (
-			row: StandardSchemaV1.InferOutput<TVersions[number]>,
-		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-	): TableDefinition<TVersions>;
-};
+		/**
+		 * Provide a migration function that normalizes any version to the latest.
+		 * This completes the table definition.
+		 *
+		 * @returns TableDefinition with TVersions tuple as the source of truth
+		 */
+		migrate(
+			fn: (
+				row: StandardSchemaV1.InferOutput<TVersions[number]>,
+			) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+		): TableDefinition<TVersions>;
+	};
 
 /**
  * Creates a table definition with a single schema version.
@@ -91,7 +90,7 @@ type TableBuilder<
  * ```
  */
 export function defineTable<
-	TSchema extends StandardSchemaWithJSONSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string }>,
 >(schema: TSchema): TableDefinition<[TSchema]>;
 
 /**
@@ -134,7 +133,7 @@ export function defineTable<
 export function defineTable(): TableBuilder<[]>;
 
 export function defineTable<
-	TSchema extends StandardSchemaWithJSONSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string }>,
 >(schema?: TSchema): TableDefinition<[TSchema]> | TableBuilder<[]> {
 	if (schema) {
 		return {
@@ -143,10 +142,10 @@ export function defineTable<
 		} as TableDefinition<[TSchema]>;
 	}
 
-	const versions: StandardSchemaWithJSONSchema[] = [];
+	const versions: CombinedStandardSchema[] = [];
 
 	const builder = {
-		version(versionSchema: StandardSchemaWithJSONSchema) {
+		version(versionSchema: CombinedStandardSchema) {
 			versions.push(versionSchema);
 			return builder;
 		},

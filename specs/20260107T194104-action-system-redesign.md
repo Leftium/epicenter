@@ -109,13 +109,13 @@ const cli = createCLI(client, { actions });
 ### Action Types
 
 ````typescript
-import type { StandardSchemaV1, StandardSchemaWithJSONSchema } from './schema';
+import type { StandardSchemaV1, CombinedStandardSchema } from './schema';
 
 /**
  * Base configuration shared by queries and mutations.
  */
 type ActionConfig<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = {
 	/** Human-readable description for docs and MCP tool descriptions */
@@ -125,10 +125,10 @@ type ActionConfig<
 	input?: TInput;
 
 	/** Output schema for documentation (optional, can be inferred) */
-	output?: StandardSchemaWithJSONSchema;
+	output?: CombinedStandardSchema;
 
 	/** The handler function. Receives validated input if `input` is defined. */
-	handler: TInput extends StandardSchemaWithJSONSchema
+	handler: TInput extends CombinedStandardSchema
 		? (
 				input: StandardSchemaV1.InferOutput<TInput>,
 			) => TOutput | Promise<TOutput>
@@ -145,7 +145,7 @@ type ActionConfig<
  * - OpenAPI documentation
  */
 export type Query<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = ActionConfig<TInput, TOutput> & {
 	/** Discriminator for runtime type checking */
@@ -162,7 +162,7 @@ export type Query<
  * - OpenAPI documentation
  */
 export type Mutation<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = ActionConfig<TInput, TOutput> & {
 	/** Discriminator for runtime type checking */
@@ -171,7 +171,7 @@ export type Mutation<
 
 /** Union type for any action (query or mutation) */
 export type Action<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 > = Query<TInput, TOutput> | Mutation<TInput, TOutput>;
 
@@ -226,7 +226,7 @@ export type Actions = {
  * ```
  */
 export function defineQuery<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 >(config: Omit<Query<TInput, TOutput>, 'type'>): Query<TInput, TOutput> {
 	return { type: 'query', ...config };
@@ -256,7 +256,7 @@ export function defineQuery<
  * ```
  */
 export function defineMutation<
-	TInput extends StandardSchemaWithJSONSchema | undefined = undefined,
+	TInput extends CombinedStandardSchema | undefined = undefined,
 	TOutput = unknown,
 >(config: Omit<Mutation<TInput, TOutput>, 'type'>): Mutation<TInput, TOutput> {
 	return { type: 'mutation', ...config };
@@ -369,7 +369,7 @@ The old system made actions callable (`action(input)`). The new system uses plai
 3. **No confusion**: Actions are data describing behavior, not the behavior itself
 4. **Adapters invoke**: The server/CLI adapter calls `action.handler(input)`, not user code
 
-### Why `StandardSchemaWithJSONSchema` for Input?
+### Why `CombinedStandardSchema` for Input?
 
 Input schemas must support JSON Schema generation for:
 
@@ -377,7 +377,7 @@ Input schemas must support JSON Schema generation for:
 - OpenAPI request body schemas
 - CLI flag generation
 
-`StandardSchemaWithJSONSchema` ensures the schema can be converted to JSON Schema. ArkType and Zod (v4.2+) both satisfy this constraint.
+`CombinedStandardSchema` ensures the schema can be converted to JSON Schema. ArkType and Zod (v4.2+) both satisfy this constraint.
 
 ### Why Output is Optional?
 

@@ -6,8 +6,8 @@
  */
 
 import type {
+	CombinedStandardSchema,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 } from '../shared/standard-schema/types.js';
 
 /**
@@ -36,7 +36,7 @@ import type {
  * ```
  */
 export function createUnionSchema<
-	const TSchemas extends readonly StandardSchemaWithJSONSchema[],
+	const TSchemas extends readonly CombinedStandardSchema[],
 >(schemas: TSchemas) {
 	return {
 		'~standard': {
@@ -80,7 +80,7 @@ export function createUnionSchema<
 				}),
 			},
 		},
-	} as const satisfies StandardSchemaWithJSONSchema<
+	} as const satisfies CombinedStandardSchema<
 		StandardSchemaV1.InferInput<TSchemas[number]>,
 		StandardSchemaV1.InferOutput<TSchemas[number]>
 	>;

@@ -44,8 +44,8 @@
  */
 
 import type {
+	CombinedStandardSchema,
 	StandardSchemaV1,
-	StandardSchemaWithJSONSchema,
 } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { KvDefinition, LastSchema } from './types.js';
@@ -55,12 +55,12 @@ import type { KvDefinition, LastSchema } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type KvBuilder<TVersions extends StandardSchemaWithJSONSchema[]> = {
+type KvBuilder<TVersions extends CombinedStandardSchema[]> = {
 	/**
 	 * Add a schema version.
 	 * The last version added becomes the "latest" schema shape.
 	 */
-	version<TSchema extends StandardSchemaWithJSONSchema>(
+	version<TSchema extends CombinedStandardSchema>(
 		schema: TSchema,
 	): KvBuilder<[...TVersions, TSchema]>;
 
@@ -87,7 +87,7 @@ type KvBuilder<TVersions extends StandardSchemaWithJSONSchema[]> = {
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  * ```
  */
-export function defineKv<TSchema extends StandardSchemaWithJSONSchema>(
+export function defineKv<TSchema extends CombinedStandardSchema>(
 	schema: TSchema,
 ): KvDefinition<[TSchema]>;
 
@@ -130,7 +130,7 @@ export function defineKv<TSchema extends StandardSchemaWithJSONSchema>(
  */
 export function defineKv(): KvBuilder<[]>;
 
-export function defineKv<TSchema extends StandardSchemaWithJSONSchema>(
+export function defineKv<TSchema extends CombinedStandardSchema>(
 	schema?: TSchema,
 ): KvDefinition<[TSchema]> | KvBuilder<[]> {
 	if (schema) {
@@ -140,10 +140,10 @@ export function defineKv<TSchema extends StandardSchemaWithJSONSchema>(
 		} as KvDefinition<[TSchema]>;
 	}
 
-	const versions: StandardSchemaWithJSONSchema[] = [];
+	const versions: CombinedStandardSchema[] = [];
 
 	const builder = {
-		version(versionSchema: StandardSchemaWithJSONSchema) {
+		version(versionSchema: CombinedStandardSchema) {
 			versions.push(versionSchema);
 			return builder;
 		},

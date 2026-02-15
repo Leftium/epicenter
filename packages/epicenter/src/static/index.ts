@@ -4,9 +4,8 @@
  * A composable, type-safe API for defining and creating workspaces
  * with versioned tables and KV stores.
  *
- * **Versioning**: Supports field presence detection, symmetric `_v` (recommended default),
- * and asymmetric `_v` patterns. See `.agents/skills/static-workspace-api/SKILL.md` for
- * detailed comparison and best practices.
+ * All table and KV schemas must include `_v: number` as a discriminant field.
+ * Use shorthand for single versions, builder pattern for multiple versions with migrations.
  *
  * @example
  * ```typescript
@@ -16,7 +15,7 @@
  * // Tables: shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Tables: builder pattern for multiple versions with migration (symmetric _v)
+ * // Tables: builder pattern for multiple versions with migration
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '1' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
@@ -28,7 +27,7 @@
  *   });
  *
  * // KV: shorthand for single version
- * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
+ * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number', _v: '1' }));
  *
  * // KV: builder pattern for multiple versions with migration
  * const theme = defineKv()

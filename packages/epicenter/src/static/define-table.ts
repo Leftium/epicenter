@@ -1,27 +1,18 @@
 /**
  * defineTable() builder for creating versioned table definitions.
  *
- * **Versioning patterns:**
- * - **Shorthand**: `defineTable(schema)` — single version, no migration yet
- * - **Symmetric `_v`**: Include `_v: '1'` from start — clean switch statements (recommended default)
- * - **Asymmetric `_v`**: No `_v` on v1, add on v2+ — less ceremony upfront
- * - **Field presence**: `if (!('field' in row))` — simple two-version cases only
- *
- * Symmetric `_v` (include `_v` from the start) is the recommended default for tables that may evolve.
- * Use asymmetric `_v` when you want less ceremony upfront and don't expect versioning.
- * Use field presence for unambiguous two-version cases.
- *
- * See `.agents/skills/static-workspace-api/SKILL.md` for detailed comparison table.
+ * All table schemas must include `_v: number` as a discriminant field.
+ * Use shorthand for single-version tables, builder pattern for multiple versions with migrations.
  *
  * @example
  * ```typescript
  * import { defineTable } from 'epicenter/static';
  * import { type } from 'arktype';
  *
- * // Shorthand for single version (with _v from the start)
+ * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Builder pattern for multiple versions (symmetric _v — recommended)
+ * // Builder pattern for multiple versions with migration
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '1' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
@@ -30,15 +21,6 @@
  *       case 1: return { ...row, views: 0, _v: 2 };
  *       case 2: return row;
  *     }
- *   });
- *
- * // Or with asymmetric _v (less ceremony upfront)
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
- *   .migrate((row) => {
- *     if (!('_v' in row)) return { ...row, views: 0, _v: 2 };
- *     return row;
  *   });
  * ```
  */
@@ -59,7 +41,7 @@ type TableBuilder<
 	TVersions extends CombinedStandardSchema<{ id: string; _v: number }>[],
 > = {
 	/**
-	 * Add a schema version. Schema must include `{ id: string }`.
+	 * Add a schema version. Schema must include `{ id: string, _v: number }`.
 	 * The last version added becomes the "latest" schema shape.
 	 */
 	version<TSchema extends CombinedStandardSchema<{ id: string; _v: number }>>(
@@ -81,13 +63,13 @@ type TableBuilder<
 
 /**
  * Creates a table definition with a single schema version.
- * Schema must include `{ id: string }`.
+ * Schema must include `{ id: string, _v: number }`.
  *
  * For single-version definitions, the TVersions tuple contains a single element.
  *
  * @example
  * ```typescript
- * const users = defineTable(type({ id: 'string', email: 'string' }));
+ * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  * ```
  */
 export function defineTable<
@@ -110,7 +92,6 @@ export function defineTable<
  *
  * @example
  * ```typescript
- * // Symmetric _v (recommended) — include _v from the start for clean switch statements
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '1' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
@@ -119,15 +100,6 @@ export function defineTable<
  *       case 1: return { ...row, views: 0, _v: 2 };
  *       case 2: return row;
  *     }
- *   });
- *
- * // Asymmetric _v — add _v only when you need a second version
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
- *   .migrate((row) => {
- *     if (!('_v' in row)) return { ...row, views: 0, _v: 2 };
- *     return row;
  *   });
  * ```
  */

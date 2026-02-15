@@ -58,7 +58,7 @@ export function createTables<TTableDefinitions extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TTableDefinitions,
 ): TablesHelper<TTableDefinitions> {
-	const helpers: Record<string, TableHelper<{ id: string }>> = {};
+	const helpers: Record<string, TableHelper<{ id: string; _v: number }>> = {};
 
 	for (const [name, definition] of Object.entries(definitions)) {
 		// Each table gets its own Y.Array for isolation

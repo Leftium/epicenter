@@ -55,28 +55,29 @@ import type { LastSchema, TableDefinition } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<TVersions extends CombinedStandardSchema<{ id: string }>[]> =
-	{
-		/**
-		 * Add a schema version. Schema must include `{ id: string }`.
-		 * The last version added becomes the "latest" schema shape.
-		 */
-		version<TSchema extends CombinedStandardSchema<{ id: string }>>(
-			schema: TSchema,
-		): TableBuilder<[...TVersions, TSchema]>;
+type TableBuilder<
+	TVersions extends CombinedStandardSchema<{ id: string; _v: number }>[],
+> = {
+	/**
+	 * Add a schema version. Schema must include `{ id: string }`.
+	 * The last version added becomes the "latest" schema shape.
+	 */
+	version<TSchema extends CombinedStandardSchema<{ id: string; _v: number }>>(
+		schema: TSchema,
+	): TableBuilder<[...TVersions, TSchema]>;
 
-		/**
-		 * Provide a migration function that normalizes any version to the latest.
-		 * This completes the table definition.
-		 *
-		 * @returns TableDefinition with TVersions tuple as the source of truth
-		 */
-		migrate(
-			fn: (
-				row: StandardSchemaV1.InferOutput<TVersions[number]>,
-			) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-		): TableDefinition<TVersions>;
-	};
+	/**
+	 * Provide a migration function that normalizes any version to the latest.
+	 * This completes the table definition.
+	 *
+	 * @returns TableDefinition with TVersions tuple as the source of truth
+	 */
+	migrate(
+		fn: (
+			row: StandardSchemaV1.InferOutput<TVersions[number]>,
+		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+	): TableDefinition<TVersions>;
+};
 
 /**
  * Creates a table definition with a single schema version.
@@ -90,7 +91,7 @@ type TableBuilder<TVersions extends CombinedStandardSchema<{ id: string }>[]> =
  * ```
  */
 export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
 >(schema: TSchema): TableDefinition<[TSchema]>;
 
 /**
@@ -133,12 +134,12 @@ export function defineTable<
 export function defineTable(): TableBuilder<[]>;
 
 export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
 >(schema?: TSchema): TableDefinition<[TSchema]> | TableBuilder<[]> {
 	if (schema) {
 		return {
 			schema,
-			migrate: (row: unknown) => row as { id: string },
+			migrate: (row: unknown) => row as { id: string; _v: number },
 		} as TableDefinition<[TSchema]>;
 	}
 

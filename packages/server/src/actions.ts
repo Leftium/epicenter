@@ -3,7 +3,6 @@ import { iterateActions } from '@epicenter/hq';
 import { Elysia } from 'elysia';
 
 type ActionsRouterOptions = {
-	client: unknown;
 	actions: Actions;
 	basePath?: string;
 };

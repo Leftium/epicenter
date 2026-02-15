@@ -3,9 +3,6 @@ import { defineMutation, defineQuery } from '@epicenter/hq';
 import { type } from 'arktype';
 import { collectActionPaths, createActionsRouter } from './actions';
 
-// Mock client for closure-based actions
-const mockClient = { id: 'test' };
-
 describe('createActionsRouter', () => {
 	test('creates routes for flat actions', async () => {
 		const actions = {
@@ -14,7 +11,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(new Request('http://test/actions/ping'));
 		const body = await response.json();
 
@@ -31,7 +28,7 @@ describe('createActionsRouter', () => {
 			},
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/posts/list'),
 		);
@@ -48,7 +45,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/getStatus', { method: 'GET' }),
 		);
@@ -67,7 +64,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/doSomething', { method: 'POST' }),
 		);
@@ -90,7 +87,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -113,7 +110,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/create', {
 				method: 'POST',
@@ -135,7 +132,7 @@ describe('createActionsRouter', () => {
 			}),
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/asyncQuery'),
 		);
@@ -153,7 +150,6 @@ describe('createActionsRouter', () => {
 		};
 
 		const app = createActionsRouter({
-			client: mockClient,
 			actions,
 			basePath: '/api',
 		});
@@ -177,7 +173,7 @@ describe('createActionsRouter', () => {
 			},
 		};
 
-		const app = createActionsRouter({ client: mockClient, actions });
+		const app = createActionsRouter({ actions });
 		const response = await app.handle(
 			new Request('http://test/actions/api/v1/users/list'),
 		);

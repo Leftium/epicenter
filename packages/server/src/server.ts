@@ -19,6 +19,7 @@ export type ServerOptions = {
  * - `/openapi` - Interactive API documentation (Scalar UI)
  * - `/openapi/json` - OpenAPI specification
  * - `/workspaces/{id}/tables/{table}` - RESTful table CRUD endpoints
+ * - `/workspaces/{id}/actions/{action}` - Workspace action endpoints (queries via GET, mutations via POST)
  * - `/workspaces/{id}/sync` - WebSocket sync endpoint (y-websocket protocol)
  *
  * @example
@@ -66,10 +67,20 @@ function createServerInternal(
 		workspaces[client.id] = client;
 	}
 
-	// Read actions from the first client
-	const firstClient = clients[0];
-	const actions = firstClient?.actions;
-	const actionPaths = actions ? collectActionPaths(actions) : [];
+	// Collect action paths from all clients and mount per-client action routers
+	const allActionPaths: string[] = [];
+
+	const actionRouters = clients.flatMap((client) => {
+		if (!client.actions) return [];
+		const clientActionPaths = collectActionPaths(client.actions);
+		allActionPaths.push(...clientActionPaths.map((p) => `${client.id}/${p}`));
+		return [
+			createActionsRouter({
+				actions: client.actions,
+				basePath: `/workspaces/${client.id}/actions`,
+			}),
+		];
+	});
 
 	const baseApp = new Elysia()
 		.use(
@@ -91,16 +102,16 @@ function createServerInternal(
 		)
 		.use(createTablesPlugin(workspaces));
 
-	const appWithActions = actions
-		? baseApp.use(createActionsRouter({ client: firstClient, actions }))
-		: baseApp;
+	for (const router of actionRouters) {
+		baseApp.use(router);
+	}
 
-	const app = appWithActions.get('/', () => ({
+	const app = baseApp.get('/', () => ({
 		name: 'Epicenter API',
 		version: '1.0.0',
 		docs: '/openapi',
 		workspaces: Object.keys(workspaces),
-		actions: actionPaths,
+		actions: allActionPaths,
 	}));
 
 	const port =
@@ -130,15 +141,13 @@ function createServerInternal(
 				for (const tableName of Object.keys(client.definitions.tables)) {
 					console.log(`    tables/${tableName}`);
 				}
-				console.log(`    sync (WebSocket)`);
-				console.log();
-			}
-
-			if (actionPaths.length > 0) {
-				console.log('Available Actions:\n');
-				for (const actionPath of actionPaths) {
-					console.log(`  /actions/${actionPath}`);
+				if (client.actions) {
+					const clientActionPaths = collectActionPaths(client.actions);
+					for (const actionPath of clientActionPaths) {
+						console.log(`    actions/${actionPath}`);
+					}
 				}
+				console.log(`    sync (WebSocket)`);
 				console.log();
 			}
 

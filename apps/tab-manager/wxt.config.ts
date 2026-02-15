@@ -18,6 +18,7 @@ export default defineConfig({
 	vite: () => ({
 		plugins: [tailwindcss()],
 		resolve: {
+			dedupe: ['yjs'],
 			alias: {
 				$lib: resolve(__dirname, 'src/lib'),
 			},

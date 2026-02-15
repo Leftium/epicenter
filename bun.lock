@@ -81,12 +81,15 @@
         "@sveltejs/adapter-auto": "^6.1.0",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
+        "@tailwindcss/vite": "^4.1.11",
         "bun-types": "^1.3.0",
         "svelte": "catalog:",
         "svelte-check": "catalog:",
         "svelte-sonner": "catalog:",
+        "tailwindcss": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
+        "yjs": "^13.6.27",
       },
     },
     "apps/landing": {
@@ -215,6 +218,7 @@
         "tailwind-variants": "catalog:",
         "tauri-plugin-macos-permissions-api": "^2.3.0",
         "wellcrafted": "catalog:",
+        "yjs": "^13.6.27",
       },
       "devDependencies": {
         "@epicenter/config": "workspace:*",
@@ -289,7 +293,6 @@
         "@ark/json-schema": "^0.0.4",
         "@epicenter/sync": "workspace:*",
         "@sindresorhus/slugify": "^3.0.0",
-        "@standard-schema/spec": "^1.1.0",
         "@tursodatabase/database": "^0.3.2",
         "@types/bun": "catalog:",
         "arkregex": "catalog:",
@@ -309,7 +312,6 @@
         "y-indexeddb": "^9.0.12",
         "y-protocols": "^1.0.6",
         "yargs": "catalog:",
-        "yjs": "^13.6.27",
       },
       "devDependencies": {
         "@types/diff": "^8.0.0",
@@ -319,6 +321,9 @@
         "drizzle-kit": "catalog:",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "^13.6.27",
       },
     },
     "packages/filesystem": {
@@ -331,11 +336,13 @@
         "prosemirror-markdown": "^1.13.4",
         "wellcrafted": "catalog:",
         "y-prosemirror": "^1.3.7",
-        "yjs": "^13.6.27",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "^13.6.27",
       },
     },
     "packages/server": {
@@ -347,7 +354,6 @@
         "lib0": "^0.2.99",
         "wellcrafted": "catalog:",
         "y-protocols": "^1.0.6",
-        "yjs": "^13.6.27",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -356,6 +362,7 @@
       },
       "peerDependencies": {
         "@epicenter/hq": "workspace:*",
+        "yjs": "^13.6.27",
       },
     },
     "packages/shared": {

@@ -15,11 +15,11 @@
 		"elysia": "^1.2.25",
 		"lib0": "^0.2.99",
 		"wellcrafted": "catalog:",
-		"y-protocols": "^1.0.6",
-		"yjs": "^13.6.27"
+		"y-protocols": "^1.0.6"
 	},
 	"peerDependencies": {
-		"@epicenter/hq": "workspace:*"
+		"@epicenter/hq": "workspace:*",
+		"yjs": "^13.6.27"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

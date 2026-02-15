@@ -489,6 +489,39 @@ describe('timeline content storage', () => {
 	});
 });
 
+describe('sheet file support', () => {
+	test('readFile returns CSV for sheet-mode file', async () => {
+		const fs = setup();
+		// Create file and push sheet entry via internal access
+		await fs.writeFile('/data.csv', 'placeholder');
+		const tree = (fs as any).tree;
+		const content = (fs as any).content;
+		const fileId = tree.lookupId('/data.csv');
+		const ydoc = await content.store.ensure(fileId);
+		const { createTimeline } = await import('./timeline-helpers.js');
+		// Replace text entry with sheet entry
+		ydoc.transact(() => {
+			createTimeline(ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
+		});
+		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
+	});
+
+	test('writeFile on sheet-mode re-parses CSV in place', async () => {
+		const fs = setup();
+		await fs.writeFile('/data.csv', 'placeholder');
+		const tree = (fs as any).tree;
+		const content = (fs as any).content;
+		const fileId = tree.lookupId('/data.csv');
+		const ydoc = await content.store.ensure(fileId);
+		const { createTimeline } = await import('./timeline-helpers.js');
+		ydoc.transact(() => {
+			createTimeline(ydoc).pushSheetFromCsv('A,B\n1,2\n');
+		});
+		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
+		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');
+	});
+});
+
 describe('just-bash integration', () => {
 	function setupBash() {
 		const fs = setup();

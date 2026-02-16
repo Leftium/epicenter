@@ -10,7 +10,7 @@
  * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Builder pattern for multiple versions with migration (symmetric _v)
+ * // Builder pattern for multiple versions with migration
  * const posts = defineTable()
  *   .version(type({ id: 'string', title: 'string', _v: '1' }))
  *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))

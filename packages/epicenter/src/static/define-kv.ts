@@ -1,16 +1,13 @@
 /**
  * defineKv() builder for creating versioned KV definitions.
  *
- * **Versioning patterns:**
- * - **Shorthand**: `defineKv(schema)` — single version, no migration yet
- * - **Symmetric `_v`**: Include `_v: '1'` from start — clean switch statements
- * - **Asymmetric `_v`**: No `_v` on v1, add on v2+ — less ceremony upfront
- * - **Field presence**: `if (!('field' in value))` — simple two-version cases only
+ * KV stores are flexible — `_v` is optional (unlike tables where it's required).
+ * Use whichever pattern fits:
+ * - **Shorthand**: `defineKv(schema)` — single version, no migration
+ * - **With `_v`**: Include `_v` for clean switch-based migrations
+ * - **Field presence**: `if (!('field' in value))` — simple two-version cases
  *
- * Most KV stores never need versioning. When they do, both symmetric and asymmetric `_v` patterns work well.
- * Use field presence for unambiguous two-version cases.
- *
- * See `.agents/skills/static-workspace-api/SKILL.md` for detailed comparison table.
+ * Most KV stores never need versioning. When they do, both `_v` and field presence work well.
  *
  * @example
  * ```typescript
@@ -20,7 +17,7 @@
  * // Shorthand for single version
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  *
- * // Builder pattern for multiple versions (symmetric _v)
+ * // Builder pattern with _v discriminant
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'", _v: '1' }))
  *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }))
@@ -31,12 +28,12 @@
  *     }
  *   });
  *
- * // Or with asymmetric _v (less ceremony upfront)
+ * // Or with field presence (simpler for two versions)
  * const theme = defineKv()
  *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
  *   .migrate((v) => {
- *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: 2 };
+ *     if (!('fontSize' in v)) return { ...v, fontSize: 14 };
  *     return v;
  *   });
  * ```

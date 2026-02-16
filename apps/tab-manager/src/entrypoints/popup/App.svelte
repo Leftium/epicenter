@@ -1,5 +1,6 @@
 <script lang="ts">
 	import TabList from '$lib/components/TabList.svelte';
+	import FlatTabList from '$lib/components/FlatTabList.svelte';
 	import SavedTabList from '$lib/components/SavedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
@@ -7,6 +8,8 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import * as Tooltip from '@epicenter/ui/tooltip';
+
+	let viewMode = $state<'grouped' | 'flat'>('grouped');
 
 	const totalTabs = $derived(
 		browserState.windows.reduce(
@@ -17,14 +20,34 @@
 </script>
 
 <Tooltip.Provider>
-	<main
-		class="w-200 h-150 overflow-hidden bg-background text-foreground"
-	>
+	<main class="w-200 h-150 overflow-hidden bg-background text-foreground">
 		<Tabs.Root value="windows" class="flex h-full flex-col">
 			<header
 				class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 pt-3 pb-0"
 			>
-				<h1 class="px-1 text-lg font-semibold">Tab Manager</h1>
+				<div class="flex items-center justify-between px-1">
+					<h1 class="text-lg font-semibold">Tab Manager</h1>
+					<div class="flex gap-1">
+						<button
+							type="button"
+							class="px-2 py-1 text-xs rounded {viewMode === 'grouped'
+								? 'bg-primary text-primary-foreground'
+								: 'bg-muted hover:bg-muted/80'}"
+							onclick={() => (viewMode = 'grouped')}
+						>
+							Grouped
+						</button>
+						<button
+							type="button"
+							class="px-2 py-1 text-xs rounded {viewMode === 'flat'
+								? 'bg-primary text-primary-foreground'
+								: 'bg-muted hover:bg-muted/80'}"
+							onclick={() => (viewMode = 'flat')}
+						>
+							Flat
+						</button>
+					</div>
+				</div>
 				<Tabs.List class="mt-2 w-full">
 					<Tabs.Trigger value="windows" class="flex-1 gap-1.5">
 						Tabs
@@ -42,7 +65,11 @@
 			</header>
 			<ScrollArea class="flex-1">
 				<Tabs.Content value="windows">
-					<TabList />
+					{#if viewMode === 'grouped'}
+						<TabList />
+					{:else}
+						<FlatTabList />
+					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="saved">
 					<SavedTabList />

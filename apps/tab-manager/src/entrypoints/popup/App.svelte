@@ -18,7 +18,7 @@
 
 <Tooltip.Provider>
 	<main
-		class="w-[800px] min-h-[600px] max-h-[600px] overflow-hidden bg-background text-foreground"
+		class="w-200 h-150 overflow-hidden bg-background text-foreground"
 	>
 		<Tabs.Root value="windows" class="flex h-full flex-col">
 			<header

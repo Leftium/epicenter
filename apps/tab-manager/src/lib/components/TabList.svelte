@@ -42,8 +42,9 @@
 					</Badge>
 				</Accordion.Trigger>
 				<Accordion.Content class="pb-0">
-					<!-- Wrap VList in a container with max-height for proper scrolling -->
-					<div style="max-height: 400px;">
+					<!-- VList needs explicit height on parent, not max-height -->
+					<!-- Use min() to cap at 400px or use full height of tabs if less -->
+					<div style="height: {Math.min(windowTabs.length * 48, 400)}px;">
 						<VList
 							data={windowTabs}
 							style="height: 100%;"

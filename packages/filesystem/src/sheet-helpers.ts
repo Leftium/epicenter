@@ -44,3 +44,6 @@ export function generateInitialOrders(count: number): number[] {
 	}
 	return orders;
 }
+
+import * as Y from 'yjs';
+import { generateColumnId, generateRowId } from './types.js';

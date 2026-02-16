@@ -26,12 +26,23 @@ export {
 } from './markdown-helpers.js';
 // Path utilities
 export { posixResolve } from './path-utils.js';
+// Sheet helpers
+export {
+	parseSheetFromCsv,
+	reorderColumn,
+	reorderRow,
+	serializeSheetToCsv,
+} from './sheet-helpers.js';
 export type {
+	ColumnDefinition,
+	ColumnId,
 	ContentDocStore,
 	FileId,
 	FileRow,
+	RowId,
+	SheetEntry,
 } from './types.js';
-export { generateFileId } from './types.js';
+export { generateColumnId, generateFileId, generateRowId } from './types.js';
 // Validation
 export {
 	assertUniqueName,

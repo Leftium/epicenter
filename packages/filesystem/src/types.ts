@@ -41,7 +41,7 @@ export function generateFileId(): FileId {
 	return generateGuid() as FileId;
 }
 
-/** Branded row identifier — an Id that is specifically a row ID */
+/** Branded row identifier — a 10-char nanoid that is specifically a row ID */
 export type RowId = Id & Brand<'RowId'>;
 
 /** Generate a new unique row identifier */
@@ -49,7 +49,7 @@ export function generateRowId(): RowId {
 	return generateId() as RowId;
 }
 
-/** Branded column identifier — an Id that is specifically a column ID */
+/** Branded column identifier — a 10-char nanoid that is specifically a column ID */
 export type ColumnId = Id & Brand<'ColumnId'>;
 
 /** Generate a new unique column identifier */
@@ -58,17 +58,22 @@ export function generateColumnId(): ColumnId {
 }
 
 /**
- * Column definition for sheet entries.
+ * Column definition stored in a column Y.Map.
  *
- * Describes the structure and metadata of a column in a sheet.
- * Used to define column types, constraints, and display properties.
+ * This type documents the expected shape but cannot be enforced at runtime
+ * since Y.Maps are dynamic key-value stores. Use defensive reading with
+ * defaults when accessing column properties.
  */
 export type ColumnDefinition = {
-	id: ColumnId;
+	/** Display name of the column */
 	name: string;
-	type: string;
+	/** Column kind determines cell value interpretation */
+	kind: 'text' | 'number' | 'date' | 'select' | 'boolean';
+	/** Display width in pixels (stored as string) */
+	width: string;
+	/** Fractional index for column ordering */
+	order: string;
 };
-
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;
 

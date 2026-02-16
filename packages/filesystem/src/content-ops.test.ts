@@ -209,4 +209,51 @@ describe('ContentOps', () => {
 			expect(await content.read(id2)).toBe('');
 		});
 	});
+
+	describe('sheet mode', () => {
+		test('read returns CSV for sheet entry', async () => {
+			const content = setup();
+			const id = generateFileId();
+			// Push a sheet entry via timeline
+			const ydoc = await (content as any).store.ensure(id);
+			const { createTimeline } = await import('./timeline-helpers.js');
+			const tl = createTimeline(ydoc);
+			ydoc.transact(() => tl.pushSheetFromCsv('Name,Age\nAlice,30\nBob,25\n'));
+			expect(await content.read(id)).toBe('Name,Age\nAlice,30\nBob,25\n');
+		});
+
+		test('write CSV to sheet-mode file re-parses in place', async () => {
+			const content = setup();
+			const id = generateFileId();
+			const ydoc = await (content as any).store.ensure(id);
+			const { createTimeline } = await import('./timeline-helpers.js');
+			const tl = createTimeline(ydoc);
+			ydoc.transact(() => tl.pushSheetFromCsv('A,B\n1,2\n'));
+			await content.write(id, 'X,Y\n3,4\n');
+			expect(await content.read(id)).toBe('X,Y\n3,4\n');
+			// Timeline should NOT grow (same-mode write)
+			expect(createTimeline(ydoc).length).toBe(1);
+		});
+
+		test('write CSV to sheet-mode returns byte size', async () => {
+			const content = setup();
+			const id = generateFileId();
+			const ydoc = await (content as any).store.ensure(id);
+			const { createTimeline } = await import('./timeline-helpers.js');
+			ydoc.transact(() => createTimeline(ydoc).pushSheetFromCsv('A\n1\n'));
+			const size = await content.write(id, 'X,Y\n3,4\n');
+			expect(size).toBe(new TextEncoder().encode('X,Y\n3,4\n').byteLength);
+		});
+
+		test('binary write on sheet-mode file mode-switches', async () => {
+			const content = setup();
+			const id = generateFileId();
+			const ydoc = await (content as any).store.ensure(id);
+			const { createTimeline } = await import('./timeline-helpers.js');
+			ydoc.transact(() => createTimeline(ydoc).pushSheetFromCsv('A\n1\n'));
+			await content.write(id, new Uint8Array([0xde, 0xad]));
+			expect(createTimeline(ydoc).length).toBe(2);
+			expect(createTimeline(ydoc).currentMode).toBe('binary');
+		});
+	});
 });

@@ -44,7 +44,12 @@
 				<Accordion.Content class="pb-0">
 					<!-- Wrap VList in a container with max-height for proper scrolling -->
 					<div style="max-height: 400px;">
-						<VList data={windowTabs} style="height: 100%;" itemSize={48}>
+						<VList
+							data={windowTabs}
+							style="height: 100%;"
+							itemSize={48}
+							getKey={(tab) => tab.id}
+						>
 							{#snippet children(tab)}
 								<div style="border-bottom: 1px solid rgb(229 231 235);">
 									<TabItem {tab} />

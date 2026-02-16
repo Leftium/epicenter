@@ -28,7 +28,15 @@
 		<Empty.Description>Open some tabs to see them here</Empty.Description>
 	</Empty.Root>
 {:else}
-	<VList data={flatItems} style="height: 100%;">
+	<!-- VList needs explicit pixel height, not percentage -->
+	<VList
+		data={flatItems}
+		style="height: 600px;"
+		getKey={(item) =>
+			item.kind === 'window'
+				? `window-${item.window.id}`
+				: `tab-${item.tab.id}`}
+	>
 		{#snippet children(item)}
 			{#if item.kind === 'window'}
 				<div

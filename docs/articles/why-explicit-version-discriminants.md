@@ -113,3 +113,11 @@ You see what the row IS, then what version it IS. The `_v` at the end reads like
 We also confirmed that `as const` on `_v` values in migrate returns is unnecessary. TypeScript contextually narrows `2` to the literal type when the return type expects `_v: 2`. One less annotation to remember.
 
 One pattern, explicit, greppable. That's the bet.
+
+## Enforced at the Type Level
+
+We didn't stop at documentation. In [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366), we changed the table generic constraint from `CombinedStandardSchema<{ id: string }>` to `CombinedStandardSchema<{ id: string; _v: number }>`. Passing a table schema without `_v` to `defineTable()` is now a compile error.
+
+This closed the loop: `_v` went from "recommended" to "the only way." The pattern taxonomy — field presence, asymmetric `_v`, symmetric `_v` — disappeared from the docs entirely. There's one pattern for tables. KV stores stay flexible since they're small objects where field presence is unambiguous.
+
+The change was zero-risk because every table schema already had `_v: 1` from the same PR. The type enforcement just prevents future code from going back to the old patterns.

@@ -6,10 +6,11 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
-	import { VList } from 'virtua/svelte';
 
-	// Default all windows to open
-	const defaultOpenWindows = $derived(browserState.windows.map((w) => w.id));
+	// Only open the focused window by default
+	const defaultOpenWindows = $derived(
+		browserState.windows.filter((w) => w.focused).map((w) => w.id),
+	);
 </script>
 
 {#if browserState.windows.length === 0}
@@ -39,18 +40,10 @@
 						{windowTabs.length}
 					</Badge>
 				</Accordion.Trigger>
-				<Accordion.Content class="pb-0">
-					<VList
-						data={windowTabs}
-						style="max-height: 400px;"
-						getKey={(tab) => tab.id}
-					>
-						{#snippet children(tab)}
-							<div style="border-bottom: 1px solid rgb(229 231 235);">
-								<TabItem {tab} />
-							</div>
-						{/snippet}
-					</VList>
+				<Accordion.Content class="pb-0 divide-y">
+					{#each windowTabs as tab (tab.id)}
+						<TabItem {tab} />
+					{/each}
 				</Accordion.Content>
 			</Accordion.Item>
 		{/each}

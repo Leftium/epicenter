@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { VList } from 'virtua/svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import TabItem from './TabItem.svelte';
 	import * as Empty from '@epicenter/ui/empty';
@@ -7,8 +8,10 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 
-	// Default all windows to open
-	const defaultOpenWindows = $derived(browserState.windows.map((w) => w.id));
+	// Only open the focused window by default
+	const defaultOpenWindows = $derived(
+		browserState.windows.filter((w) => w.focused).map((w) => w.id),
+	);
 </script>
 
 {#if browserState.windows.length === 0}
@@ -38,10 +41,23 @@
 						{windowTabs.length}
 					</Badge>
 				</Accordion.Trigger>
-				<Accordion.Content class="pb-0 divide-y">
-					{#each windowTabs as tab (tab.id)}
-						<TabItem {tab} />
-					{/each}
+				<Accordion.Content class="pb-0">
+					<!-- VList needs explicit height on parent, not max-height -->
+					<!-- Use min() to cap at 400px or use full height of tabs if less -->
+					<div style="height: {Math.min(windowTabs.length * 48, 400)}px;">
+						<VList
+							data={windowTabs}
+							style="height: 100%;"
+							itemSize={48}
+							getKey={(tab) => tab.id}
+						>
+							{#snippet children(tab)}
+								<div class="border-b border-border">
+									<TabItem {tab} />
+								</div>
+							{/snippet}
+						</VList>
+					</div>
 				</Accordion.Content>
 			</Accordion.Item>
 		{/each}

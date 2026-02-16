@@ -78,8 +78,11 @@ function createBrowserState() {
 	// Those events would be redundant anyway — the seed is a complete snapshot.
 
 	(async () => {
-		const browserWindows = await browser.windows.getAll({ populate: true });
-		const id = await getDeviceId();
+		// Parallelize independent async operations
+		const [browserWindows, id] = await Promise.all([
+			browser.windows.getAll({ populate: true }),
+			getDeviceId(),
+		]);
 
 		for (const win of browserWindows) {
 			const windowRow = windowToRow(id, win);
@@ -89,7 +92,9 @@ function createBrowserState() {
 			if (win.tabs) {
 				for (const tab of win.tabs) {
 					const tabRow = tabToRow(id, tab);
-					if (tabRow) tabsMap.set(tabRow.tabId, tabRow);
+					if (tabRow) {
+						tabsMap.set(tabRow.tabId, tabRow);
+					}
 				}
 			}
 

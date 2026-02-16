@@ -54,7 +54,7 @@
 					</Badge>
 				</div>
 			{:else}
-				<div style="border-bottom: 1px solid rgb(229 231 235);">
+				<div class="border-b border-border">
 					<TabItem tab={item.tab} />
 				</div>
 			{/if}

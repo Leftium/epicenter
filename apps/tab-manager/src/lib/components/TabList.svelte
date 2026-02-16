@@ -52,7 +52,7 @@
 							getKey={(tab) => tab.id}
 						>
 							{#snippet children(tab)}
-								<div style="border-bottom: 1px solid rgb(229 231 235);">
+								<div class="border-b border-border">
 									<TabItem {tab} />
 								</div>
 							{/snippet}

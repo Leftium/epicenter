@@ -1,17 +1,8 @@
 /**
  * defineTable() builder for creating versioned table definitions.
  *
- * **Versioning patterns:**
- * - **Shorthand**: `defineTable(schema)` — single version, no migration yet
- * - **Field presence**: `if (!('field' in row))` — simple two-version cases only
- * - **Asymmetric `_v`**: No `_v` on v1, add on v2+ — recommended default (less ceremony upfront)
- * - **Symmetric `_v`**: Include `_v: '"1"'` from start — clean switch statements (must include `_v` in all writes)
- *
- * Most tables never need versioning, so asymmetric `_v` (start simple, add `_v` only when needed)
- * is the recommended default. Use symmetric `_v` when you know a table will evolve and want
- * consistent migration code. Use field presence for unambiguous two-version cases.
- *
- * See `.agents/skills/static-workspace-api/SKILL.md` for detailed comparison table.
+ * All table schemas must include `_v: number` as a discriminant field.
+ * Use shorthand for single-version tables, builder pattern for multiple versions with migrations.
  *
  * @example
  * ```typescript
@@ -19,25 +10,16 @@
  * import { type } from 'arktype';
  *
  * // Shorthand for single version
- * const users = defineTable(type({ id: 'string', email: 'string' }));
+ * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Builder pattern for multiple versions (asymmetric _v — recommended)
+ * // Builder pattern for multiple versions with migration
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
- *   .migrate((row) => {
- *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
- *     return row;
- *   });
- *
- * // Or with _v from the start (symmetric switch)
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .version(type({ id: 'string', title: 'string', _v: '1' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
  *   .migrate((row) => {
  *     switch (row._v) {
- *       case '1': return { ...row, views: 0, _v: '2' };
- *       case '2': return row;
+ *       case 1: return { ...row, views: 0, _v: 2 };
+ *       case 2: return row;
  *     }
  *   });
  * ```
@@ -55,42 +37,43 @@ import type { LastSchema, TableDefinition } from './types.js';
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<TVersions extends CombinedStandardSchema<{ id: string }>[]> =
-	{
-		/**
-		 * Add a schema version. Schema must include `{ id: string }`.
-		 * The last version added becomes the "latest" schema shape.
-		 */
-		version<TSchema extends CombinedStandardSchema<{ id: string }>>(
-			schema: TSchema,
-		): TableBuilder<[...TVersions, TSchema]>;
+type TableBuilder<
+	TVersions extends CombinedStandardSchema<{ id: string; _v: number }>[],
+> = {
+	/**
+	 * Add a schema version. Schema must include `{ id: string, _v: number }`.
+	 * The last version added becomes the "latest" schema shape.
+	 */
+	version<TSchema extends CombinedStandardSchema<{ id: string; _v: number }>>(
+		schema: TSchema,
+	): TableBuilder<[...TVersions, TSchema]>;
 
-		/**
-		 * Provide a migration function that normalizes any version to the latest.
-		 * This completes the table definition.
-		 *
-		 * @returns TableDefinition with TVersions tuple as the source of truth
-		 */
-		migrate(
-			fn: (
-				row: StandardSchemaV1.InferOutput<TVersions[number]>,
-			) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-		): TableDefinition<TVersions>;
-	};
+	/**
+	 * Provide a migration function that normalizes any version to the latest.
+	 * This completes the table definition.
+	 *
+	 * @returns TableDefinition with TVersions tuple as the source of truth
+	 */
+	migrate(
+		fn: (
+			row: StandardSchemaV1.InferOutput<TVersions[number]>,
+		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+	): TableDefinition<TVersions>;
+};
 
 /**
  * Creates a table definition with a single schema version.
- * Schema must include `{ id: string }`.
+ * Schema must include `{ id: string, _v: number }`.
  *
  * For single-version definitions, the TVersions tuple contains a single element.
  *
  * @example
  * ```typescript
- * const users = defineTable(type({ id: 'string', email: 'string' }));
+ * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  * ```
  */
 export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
 >(schema: TSchema): TableDefinition<[TSchema]>;
 
 /**
@@ -109,23 +92,13 @@ export function defineTable<
  *
  * @example
  * ```typescript
- * // Asymmetric _v (recommended) — add _v only when you need a second version
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
- *   .migrate((row) => {
- *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
- *     return row;
- *   });
- *
- * // Symmetric _v — include _v from the start for clean switch statements
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '"1"' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .version(type({ id: 'string', title: 'string', _v: '1' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
  *   .migrate((row) => {
  *     switch (row._v) {
- *       case '1': return { ...row, views: 0, _v: '2' };
- *       case '2': return row;
+ *       case 1: return { ...row, views: 0, _v: 2 };
+ *       case 2: return row;
  *     }
  *   });
  * ```
@@ -133,12 +106,12 @@ export function defineTable<
 export function defineTable(): TableBuilder<[]>;
 
 export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string }>,
+	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
 >(schema?: TSchema): TableDefinition<[TSchema]> | TableBuilder<[]> {
 	if (schema) {
 		return {
 			schema,
-			migrate: (row: unknown) => row as { id: string },
+			migrate: (row: unknown) => row as { id: string; _v: number },
 		} as TableDefinition<[TSchema]>;
 	}
 

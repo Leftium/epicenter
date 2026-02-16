@@ -47,6 +47,7 @@ export const definition = defineWorkspace({
 				name: 'string', // User-editable: "Chrome on macOS", "Firefox on Windows"
 				lastSeen: 'string', // ISO timestamp, updated on each sync
 				browser: 'string', // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+				_v: '1',
 			}),
 		),
 
@@ -95,6 +96,7 @@ export const definition = defineWorkspace({
 				'height?': 'number',
 				'width?': 'number',
 				'sessionId?': 'string', // From chrome.sessions API
+				_v: '1',
 			}),
 		),
 
@@ -123,6 +125,7 @@ export const definition = defineWorkspace({
 				'width?': 'number',
 				'height?': 'number',
 				'sessionId?': 'string', // From chrome.sessions API
+				_v: '1',
 			}),
 		),
 
@@ -145,6 +148,7 @@ export const definition = defineWorkspace({
 				shared: 'boolean', // Chrome 137+
 				// Optional fields — matching chrome.tabGroups.TabGroup optionality
 				'title?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -168,6 +172,7 @@ export const definition = defineWorkspace({
 				pinned: 'boolean', // Whether tab was pinned
 				sourceDeviceId: 'string', // Device that saved this tab
 				savedAt: 'number', // Timestamp (ms since epoch)
+				_v: '1',
 			}),
 		),
 	},

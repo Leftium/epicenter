@@ -4,9 +4,8 @@
  * A composable, type-safe API for defining and creating workspaces
  * with versioned tables and KV stores.
  *
- * **Versioning**: Supports field presence detection, asymmetric `_v` (recommended default),
- * and symmetric `_v` patterns. See `.agents/skills/static-workspace-api/SKILL.md` for
- * detailed comparison and best practices.
+ * All table and KV schemas must include `_v: number` as a discriminant field.
+ * Use shorthand for single versions, builder pattern for multiple versions with migrations.
  *
  * @example
  * ```typescript
@@ -14,27 +13,31 @@
  * import { type } from 'arktype';
  *
  * // Tables: shorthand for single version
- * const users = defineTable(type({ id: 'string', email: 'string' }));
+ * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
  * // Tables: builder pattern for multiple versions with migration
  * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+ *   .version(type({ id: 'string', title: 'string', _v: '1' }))
+ *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
  *   .migrate((row) => {
- *     if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
- *     return row;
+ *     switch (row._v) {
+ *       case 1: return { ...row, views: 0, _v: 2 };
+ *       case 2: return row;
+ *     }
  *   });
  *
  * // KV: shorthand for single version
- * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
+ * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number', _v: '1' }));
  *
- * // KV: builder pattern for multiple versions with migration (use _v discriminant)
+ * // KV: builder pattern for multiple versions with migration
  * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'" }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '"2"' }))
+ *   .version(type({ mode: "'light' | 'dark'", _v: '1' }))
+ *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }))
  *   .migrate((v) => {
- *     if (!('_v' in v)) return { ...v, fontSize: 14, _v: '2' };
- *     return v;
+ *     switch (v._v) {
+ *       case 1: return { ...v, fontSize: 14, _v: 2 };
+ *       case 2: return v;
+ *     }
  *   });
  *
  * // Create client (synchronous, directly usable)
@@ -45,8 +48,8 @@
  * });
  *
  * // Use tables and KV
- * client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
- * client.kv.set('theme', { mode: 'system', fontSize: 16, _v: '2' });
+ * client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
+ * client.kv.set('theme', { mode: 'system', fontSize: 16, _v: 2 });
  *
  * // Or add extensions
  * const clientWithExt = createWorkspace({ id: 'my-app', tables: { posts } })

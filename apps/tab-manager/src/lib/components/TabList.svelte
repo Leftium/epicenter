@@ -24,19 +24,19 @@
 		{#each browserState.windows as window (window.id)}
 			{@const windowTabs = browserState.tabsByWindow(window.id)}
 			<Accordion.Item value={window.id}>
-				<Accordion.Trigger class="px-2 py-2 hover:no-underline">
-					<div class="flex items-center gap-2">
-						<AppWindowIcon class="size-4 text-muted-foreground" />
-						<span class="text-sm font-medium">
-							Window
-							{#if window.focused}
-								<Badge variant="secondary" class="ml-1">focused</Badge>
-							{/if}
-						</span>
-						<Badge variant="outline" class="ml-auto">
-							{windowTabs.length}
-						</Badge>
-					</div>
+				<Accordion.Trigger
+					class="items-center gap-2 px-2 py-2 hover:no-underline"
+				>
+					<AppWindowIcon class="size-4 text-muted-foreground" />
+					<span class="text-sm font-medium">
+						Window
+						{#if window.focused}
+							<Badge variant="secondary" class="ml-1">focused</Badge>
+						{/if}
+					</span>
+					<Badge variant="outline" class="ml-auto">
+						{windowTabs.length}
+					</Badge>
 				</Accordion.Trigger>
 				<Accordion.Content class="pb-0 divide-y">
 					{#each windowTabs as tab (tab.id)}

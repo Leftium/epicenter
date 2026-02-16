@@ -24,6 +24,7 @@ export const redditWorkspace = defineWorkspace({
 				'title?': 'string',
 				'url?': 'string',
 				'body?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -39,6 +40,7 @@ export const redditWorkspace = defineWorkspace({
 				'parent?': 'string',
 				'body?': 'string',
 				'media?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -59,6 +61,7 @@ export const redditWorkspace = defineWorkspace({
 				'send_replies?': 'string',
 				'subreddit?': 'string',
 				'is_public_link?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -68,6 +71,7 @@ export const redditWorkspace = defineWorkspace({
 				id: 'string',
 				permalink: 'string',
 				direction: "'up' | 'down' | 'none' | 'removed'",
+				_v: '1',
 			}),
 		),
 
@@ -77,6 +81,7 @@ export const redditWorkspace = defineWorkspace({
 				id: 'string',
 				permalink: 'string',
 				direction: "'up' | 'down' | 'none' | 'removed'",
+				_v: '1',
 			}),
 		),
 
@@ -90,6 +95,7 @@ export const redditWorkspace = defineWorkspace({
 				'image_url?': 'string',
 				'is_prediction?': 'string',
 				'stake_amount?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -98,6 +104,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string',
 				permalink: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -106,6 +113,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string',
 				permalink: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -114,6 +122,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string',
 				permalink: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -128,6 +137,7 @@ export const redditWorkspace = defineWorkspace({
 				'to?': 'string',
 				'subject?': 'string',
 				'body?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -142,6 +152,7 @@ export const redditWorkspace = defineWorkspace({
 				'to?': 'string',
 				'subject?': 'string',
 				'body?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -158,6 +169,7 @@ export const redditWorkspace = defineWorkspace({
 				subreddit: 'string | null',
 				channel_name: 'string | null',
 				conversation_type: 'string | null',
+				_v: '1',
 			}),
 		),
 
@@ -166,6 +178,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string', // subreddit
 				subreddit: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -174,6 +187,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string', // subreddit
 				subreddit: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -182,6 +196,7 @@ export const redditWorkspace = defineWorkspace({
 			type({
 				id: 'string', // subreddit
 				subreddit: 'string',
+				_v: '1',
 			}),
 		),
 
@@ -198,6 +213,7 @@ export const redditWorkspace = defineWorkspace({
 				'is_owner?': 'string',
 				'favorited?': 'string',
 				'followers?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -209,6 +225,7 @@ export const redditWorkspace = defineWorkspace({
 				'award?': 'string',
 				'amount?': 'string',
 				date: 'string | null',
+				_v: '1',
 			}),
 		),
 
@@ -220,6 +237,7 @@ export const redditWorkspace = defineWorkspace({
 				'gold_received?': 'string',
 				'gilder_username?': 'string',
 				date: 'string | null',
+				_v: '1',
 			}),
 		),
 
@@ -234,6 +252,7 @@ export const redditWorkspace = defineWorkspace({
 				'cost?': 'string',
 				'currency?': 'string',
 				'status?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -249,6 +268,7 @@ export const redditWorkspace = defineWorkspace({
 				'status?': 'string',
 				start_date: 'string | null',
 				end_date: 'string | null',
+				_v: '1',
 			}),
 		),
 
@@ -259,6 +279,7 @@ export const redditWorkspace = defineWorkspace({
 				'payout_amount_usd?': 'string',
 				date: 'string | null',
 				'payout_id?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -268,6 +289,7 @@ export const redditWorkspace = defineWorkspace({
 				id: 'string', // username
 				username: 'string',
 				'note?': 'string',
+				_v: '1',
 			}),
 		),
 
@@ -283,6 +305,7 @@ export const redditWorkspace = defineWorkspace({
 				subject: 'string | null',
 				body: 'string | null',
 				url: 'string | null',
+				_v: '1',
 			}),
 		),
 
@@ -297,6 +320,7 @@ export const redditWorkspace = defineWorkspace({
 				'url?': 'string',
 				submission_time: 'string | null',
 				'recurrence?': 'string',
+				_v: '1',
 			}),
 		),
 	},

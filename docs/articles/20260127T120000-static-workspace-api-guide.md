@@ -25,10 +25,10 @@ import { type } from 'arktype';
 
 // Define table schemas with versioning
 const posts = defineTable()
-	.version(type({ id: 'string', title: 'string', _v: '"1"' }))
-	.version(type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }))
+	.version(type({ id: 'string', title: 'string', _v: '1' }))
+	.version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
 	.migrate((row) => {
-		if (row._v === '1') return { ...row, views: 0, _v: '2' as const };
+		if (row._v === 1) return { ...row, views: 0, _v: 2 };
 		return row;
 	});
 
@@ -48,7 +48,7 @@ const workspace = defineWorkspace({
 const client = workspace.create();
 
 // Read and write with full type safety
-client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
+client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
 const post = client.tables.posts.get('1');
 
 if (post.status === 'valid') {
@@ -122,7 +122,7 @@ const ydoc = new Y.Doc({ guid: 'shared-app' });
 const tables = createTables(ydoc, { posts });
 const kv = createKv(ydoc, { theme });
 
-tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
+tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
 ```
 
 This gives you full control over the Y.Doc lifecycle while keeping typed helpers.
@@ -149,7 +149,7 @@ const settings = defineTable()
 		type({
 			id: 'string',
 			soundEnabled: 'boolean',
-			_v: '"1"' as const,
+			_v: '1',
 		}),
 	)
 	.version(
@@ -157,15 +157,15 @@ const settings = defineTable()
 			id: 'string',
 			soundEnabled: 'boolean',
 			volumeLevel: 'number', // New field
-			_v: '"2"' as const,
+			_v: '2',
 		}),
 	)
 	.migrate((row) => {
-		if (row._v === '1') {
+		if (row._v === 1) {
 			return {
 				...row,
 				volumeLevel: 100, // Default for v1 rows
-				_v: '2' as const,
+				_v: 2,
 			};
 		}
 		return row;
@@ -178,8 +178,8 @@ This pattern scales. Add a v3? Just handle it in the same function:
 
 ```typescript
 .migrate((row) => {
-  if (row._v === '1') return { ...row, volumeLevel: 100, _v: '2' as const };
-  if (row._v === '2') return { ...row, colorScheme: 'auto', _v: '3' as const };
+  if (row._v === 1) return { ...row, volumeLevel: 100, _v: 2 };
+  if (row._v === 2) return { ...row, colorScheme: 'auto', _v: 3 };
   return row;
 })
 ```
@@ -216,7 +216,7 @@ This explicit error handling catches data corruption early. If an old schema ver
 const posts = client.tables.posts;
 
 // Single row read/write
-posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
+posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
 const result = posts.get('1');
 
 // Bulk reads
@@ -248,8 +248,8 @@ Use `.batch()` for atomic transactions. All changes happen together, and observe
 
 ```typescript
 posts.batch((tx) => {
-	tx.set({ id: '1', title: 'Updated', views: 1, _v: '2' });
-	tx.set({ id: '2', title: 'New', views: 0, _v: '2' });
+	tx.set({ id: '1', title: 'Updated', views: 1, _v: 2 });
+	tx.set({ id: '2', title: 'New', views: 0, _v: 2 });
 	tx.delete('3');
 	// All three operations are a single Y.js transaction
 	// Observers see one notification with all three changes
@@ -395,7 +395,7 @@ The workspace.create() call is synchronous. It returns immediately:
 const client = workspace.create({ persistence, sync });
 
 // Can use tables/kv immediately
-client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: '2' });
+client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
 
 // But extensions might still be initializing
 console.log(client.extensions.persistence); // Exists
@@ -533,7 +533,7 @@ const users = defineTable()
 		type({
 			id: 'string',
 			email: 'string',
-			_v: '"1"' as const,
+			_v: '1',
 		}),
 	)
 	.version(
@@ -541,15 +541,15 @@ const users = defineTable()
 			id: 'string',
 			email: 'string',
 			phone: 'string | null', // New field
-			_v: '"2"' as const,
+			_v: '2',
 		}),
 	)
 	.migrate((row) => {
-		if (row._v === '1') {
+		if (row._v === 1) {
 			return {
 				...row,
 				phone: null, // Default for v1 rows
-				_v: '2' as const,
+				_v: 2,
 			};
 		}
 		return row;
@@ -587,22 +587,22 @@ const settings = defineTable()
 		type({
 			id: 'string',
 			notifyByEmail: 'boolean',
-			_v: '"1"' as const,
+			_v: '1',
 		}),
 	)
 	.version(
 		type({
 			id: 'string',
 			emailNotifications: 'boolean', // Renamed from notifyByEmail
-			_v: '"2"' as const,
+			_v: '2',
 		}),
 	)
 	.migrate((row) => {
-		if (row._v === '1') {
+		if (row._v === 1) {
 			return {
 				id: row.id,
 				emailNotifications: row.notifyByEmail,
-				_v: '2' as const,
+				_v: 2,
 			};
 		}
 		return row;

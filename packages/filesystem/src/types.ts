@@ -74,7 +74,6 @@ export type ColumnDefinition = {
 	/** Fractional index for column ordering */
 	order: string;
 };
-
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;
 

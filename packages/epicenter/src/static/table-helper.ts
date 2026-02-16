@@ -25,7 +25,10 @@ import type {
  * Creates a TableHelper for a single table bound to a YKeyValue store.
  */
 export function createTableHelper<
-	TVersions extends readonly CombinedStandardSchema<{ id: string }>[],
+	TVersions extends readonly CombinedStandardSchema<{
+		id: string;
+		_v: number;
+	}>[],
 >(
 	ykv: YKeyValueLww<unknown>,
 	definition: TableDefinition<TVersions>,

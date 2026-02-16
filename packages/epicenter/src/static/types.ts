@@ -103,7 +103,10 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
-	TVersions extends readonly CombinedStandardSchema<{ id: string }>[],
+	TVersions extends readonly CombinedStandardSchema<{
+		id: string;
+		_v: number;
+	}>[],
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -183,7 +186,7 @@ export type InferKvVersionUnion<T> =
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
-export type TableHelper<TRow extends { id: string }> = {
+export type TableHelper<TRow extends { id: string; _v: number }> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// PARSE
 	// ═══════════════════════════════════════════════════════════════════════

@@ -1,7 +1,8 @@
 # Workspace-Level `batch()` — Replace Per-Table/Per-KV Batch with `client.batch()`
 
 **Date**: 2026-02-14
-**Status**: Proposed
+**Status**: Complete
+**PR**: [#1353](https://github.com/EpicenterHQ/epicenter/pull/1353) — Merged 2026-02-14. `client.batch()` replaces per-table/per-KV batch; no transaction object needed.
 
 ## Overview
 

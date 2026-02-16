@@ -30,15 +30,15 @@ No conflicts. No data loss. This is the CRDT promise.
 In Epicenter, the entire row is one atomic blob:
 
 ```
-Record: users/alice = { name: "Alice", email: "a@b.com", bio: "Hello...", _v: "2" }
+Record: users/alice = { name: "Alice", email: "a@b.com", bio: "Hello...", _v: 2 }
                       ↑ One atomic value
 ```
 
 When Alice and Bob edit simultaneously:
 
 ```
-Alice: { name: "Alicia", email: "a@b.com", bio: "Hello...", _v: "2" }
-Bob:   { name: "Alice", email: "new@b.com", bio: "Hello...", _v: "2" }
+Alice: { name: "Alicia", email: "a@b.com", bio: "Hello...", _v: 2 }
+Bob:   { name: "Alice", email: "new@b.com", bio: "Hello...", _v: 2 }
 ```
 
 Last write wins. One of their changes is lost.
@@ -76,10 +76,10 @@ With row-level LWW, the entire row comes from a single write:
 
 ```typescript
 // Alice writes (v2 client):
-{ name: "Alice", email: "a@b.com", bio: "Hello", _v: "2" }
+{ name: "Alice", email: "a@b.com", bio: "Hello", _v: 2 }
 
 // Bob writes (v1 client):
-{ name: "Bobby", email: "b@b.com", _v: "1" }
+{ name: "Bobby", email: "b@b.com", _v: 1 }
 
 // After sync, it's one or the other - not a mix
 // Migration knows exactly what it's dealing with
@@ -89,23 +89,25 @@ Every row has a coherent schema version because every row is from a single atomi
 
 ## The Trade-off Matrix
 
-| Aspect | Cell-Level CRDT | Row-Level LWW |
-|--------|----------------|---------------|
-| Concurrent field edits | Merge perfectly | Last writer wins |
-| Schema versioning | Broken (mixed versions) | Works cleanly |
-| Conflict resolution | Per-field | Per-row |
-| Storage efficiency | More metadata | Less metadata |
-| Migration complexity | Very hard | Straightforward |
+| Aspect                 | Cell-Level CRDT         | Row-Level LWW    |
+| ---------------------- | ----------------------- | ---------------- |
+| Concurrent field edits | Merge perfectly         | Last writer wins |
+| Schema versioning      | Broken (mixed versions) | Works cleanly    |
+| Conflict resolution    | Per-field               | Per-row          |
+| Storage efficiency     | More metadata           | Less metadata    |
+| Migration complexity   | Very hard               | Straightforward  |
 
 ## When to Use Cell-Level CRDT
 
 **Good fit for:**
+
 - Real-time collaborative editing (Google Docs-style)
 - Apps where multiple users edit the same record simultaneously
 - Data with stable schemas that rarely change
 - Records with independent fields (editing one shouldn't affect others)
 
 **Examples:**
+
 - Collaborative document editors
 - Shared whiteboards
 - Real-time multiplayer game state
@@ -113,12 +115,14 @@ Every row has a coherent schema version because every row is from a single atomi
 ## When to Use Row-Level LWW
 
 **Good fit for:**
+
 - Document-style data (one author at a time)
 - Apps that need schema evolution
 - Records that are conceptually atomic
 - Apps where "last edit wins" is acceptable
 
 **Examples:**
+
 - Note-taking apps (one person writes a note)
 - Task managers (tasks have an owner)
 - CMS systems (articles have an author)
@@ -142,6 +146,7 @@ Epicenter chooses row-level LWW because:
 You don't have to choose one approach for everything.
 
 **Use row-level for structured data:**
+
 ```typescript
 // Settings, preferences, records with schemas
 const settings = defineKv('settings')
@@ -151,19 +156,21 @@ const settings = defineKv('settings')
 ```
 
 **Use cell-level for collaborative content:**
+
 ```typescript
 // Store rich text as Y.Text in a separate structure
-const content = doc.getText('content');  // Full CRDT merging
+const content = doc.getText('content'); // Full CRDT merging
 ```
 
 **Reference between them:**
+
 ```typescript
 // Row references the collaborative content
 const post = {
-  id: 'post-1',
-  title: 'My Post',          // Row-level LWW
-  contentId: 'content-123',  // Points to Y.Text
-  _v: '2'
+	id: 'post-1',
+	title: 'My Post', // Row-level LWW
+	contentId: 'content-123', // Points to Y.Text
+	_v: 2,
 };
 ```
 

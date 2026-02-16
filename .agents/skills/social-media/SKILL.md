@@ -30,9 +30,95 @@ Follow [writing-voice](../writing-voice/SKILL.md) for tone.
 - One unique feature detail ("with your model of choice")
 - Disclaimers when recommending tools ("Not affiliated, it just...")
 - Personal standards/opinions ("by my standards", "slated for cleanup")
-- Formal transitions with proper punctuation (semicolons, periods)
-- Include disclaimers when praising external tools
-- Use more precise language ("functionality" vs just "function")
+- Proper punctuation for transitions (semicolons, periods; not space-hyphens)
+
+## Examples: Twitter/X
+
+### Single Tweet (Feature Announcement)
+
+Good:
+
+```
+Whispering now does file uploads. Drag audio/video files in, get transcription out. Works with any OpenAI-compatible API.
+
+Open source: github.com/EpicenterHQ/epicenter
+```
+
+Bad:
+
+```
+🚀 Exciting news! Whispering now supports file uploads!
+
+Drag and drop your files for instant AI-powered transcription. This is a game-changer for productivity! 🎯
+
+Try it now 👇
+github.com/EpicenterHQ/epicenter
+
+#OpenSource #AI #Productivity
+```
+
+### Single Tweet (Technical Insight)
+
+Good:
+
+```
+TIL: Tauri's onDragDropEvent works where web drag-and-drop doesn't. If you're building a desktop app with web tech, native drag-and-drop is ~20 lines and handles file paths the OS way.
+```
+
+Bad:
+
+```
+Just discovered something amazing about Tauri! 🤯
+
+Their native drag-and-drop API is incredibly powerful and seamlessly handles file operations that web APIs simply can't match.
+
+This is why I love building with Tauri! 💪
+```
+
+The difference: the good tweet teaches something specific. The bad tweet expresses enthusiasm about nothing in particular.
+
+### Thread Structure (2-4 tweets max)
+
+When a single tweet isn't enough, use a short thread. Each tweet should be self-contained enough to make sense if someone sees it in isolation.
+
+Good:
+
+```
+Tweet 1:
+Built a CRDT-based table storage that's 1935x smaller than Y.Map for the same data. The trick: store cells as "rowId:colId" keys in a flat array with LWW timestamps.
+
+Tweet 2:
+Y.Map creates one CRDT entry per key, each with metadata overhead. A flat YKeyValue array stores raw entries with timestamps; conflict resolution happens in userland. 524KB → 271 bytes for a 50-row table.
+
+Tweet 3:
+Trade-off: you lose Y.Map's built-in observe() granularity. We rebuilt it with a CellStore layer that parses keys and emits typed change events. Worth it for the storage savings.
+
+Source: github.com/EpicenterHQ/epicenter
+```
+
+Bad:
+
+```
+Tweet 1:
+🧵 Thread: How we achieved a massive 1935x improvement in our CRDT storage! Let me walk you through our journey...
+
+Tweet 2:
+First, let's understand the problem. Y.Map is great but creates significant overhead...
+
+Tweet 3:
+So what did we do? We implemented an innovative approach using...
+
+Tweet 4:
+The results were absolutely incredible! Here are the key benefits:
+- 1935x smaller storage
+- Faster sync times
+- Better conflict resolution
+
+Tweet 5:
+If you found this helpful, please RT and follow for more content like this! 🙏
+```
+
+The good thread: each tweet has a concrete fact. The bad thread: tweet 1 is a hook, tweet 2 is setup, and the information doesn't start until tweet 3. The "please RT" closer is an instant credibility loss.
 
 ## Examples: LinkedIn Posts
 

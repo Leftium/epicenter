@@ -45,6 +45,109 @@ Never use " - " (space-hyphen-space) or " — " (space-em-dash-space). Prefer si
 
 Em dashes are fine but easy to overuse. When in doubt, use a period.
 
+## How to Write Good Prose
+
+The previous sections say what to avoid. This section says what to do.
+
+### Lead with the point
+
+Every paragraph should open with its conclusion. Setup comes after, not before. The reader should know where you're going before you take them there.
+
+Bad (buries the point):
+
+> After investigating several approaches to conflict resolution, including CRDTs, operational transforms, and manual merge strategies, we found that Yjs with LWW timestamps gave us the best combination of correctness and simplicity.
+
+Good (leads with it):
+
+> Yjs with LWW timestamps gave us the best conflict resolution. We tried CRDTs without timestamps, operational transforms, and manual merge strategies; none matched it for correctness with this little code.
+
+### Vary sentence length
+
+Monotone sentence length is the fastest way to sound robotic. Mix short declarative sentences with longer explanatory ones. Short sentences punch. Longer ones carry nuance and connect ideas that need to live together.
+
+Bad (uniform length):
+
+> The system processes incoming events. It validates each event against the schema. It then routes the event to the appropriate handler. The handler updates the database accordingly.
+
+Good (varied rhythm):
+
+> The system validates incoming events against the schema and routes them to the right handler. Simple enough. But the handler has to update the database, notify subscribers, and maintain the audit log in a single transaction. That's where it gets interesting.
+
+### Use concrete language
+
+Abstract language forces the reader to do translation work. Concrete language lets them see it immediately.
+
+Bad (abstract):
+
+> This approach provides significant performance improvements for data retrieval operations.
+
+Good (concrete):
+
+> Row lookups dropped from O(n) to O(1). On a 10,000-row table, that's the difference between scanning every cell and a single hash lookup.
+
+### Connect ideas without headers
+
+Not every transition needs a section heading. Use bridge sentences: one sentence at the end of a paragraph that sets up the next topic, or one at the start that links back. Headers break the reader's flow; use them for major shifts, not every new thought.
+
+Bad (header-heavy):
+
+> ## The Problem
+> Sessions were timing out.
+>
+> ## The Root Cause
+> The refresh only triggered on navigation.
+>
+> ## The Solution
+> We added a keepalive to background activity.
+
+Good (flowing):
+
+> Sessions were timing out during file uploads. The refresh logic only triggered on navigation events, so any background activity—uploads, sync, long-running mutations—would silently lose the session.
+>
+> The fix was a keepalive that fires on any authenticated request, not just page transitions.
+
+## Common Rewrite Patterns
+
+Mechanical substitutions you can apply without judgment:
+
+| If you wrote...                              | Rewrite to...                              |
+| -------------------------------------------- | ------------------------------------------ |
+| "It's important to note that X"              | "X"                                        |
+| "In order to achieve Y, we need to Z"        | "Z gives us Y"                             |
+| "The reason this works is because..."        | "This works because..."                    |
+| "What this means is that..."                 | State it directly                          |
+| "It should be noted that..."                 | Drop it entirely                           |
+| "Basically, X"                               | "X"                                        |
+| "As mentioned earlier/above"                 | Just re-state the thing                    |
+| "This allows us to..."                       | "We can now..." or "Now X works"           |
+| "We need to make sure that..."               | "X must..." or just do it                  |
+| "In the context of..."                       | Drop it or be specific                     |
+| "It is worth mentioning that..."             | Mention it or don't                        |
+| "Going forward, we will..."                  | "Next: ..." or just describe the action    |
+| "leverage" / "utilize"                       | "use"                                      |
+| "facilitate"                                 | "let", "enable", or "allow"                |
+| "implement a solution"                       | "fix it" / "build it" / say what you built |
+
+## Explaining Technical Concepts
+
+When explaining how something works, show the mechanism, not the marketing. Lead with what happens, then why.
+
+Bad (over-explains, AI voice):
+
+> The key insight here is that by leveraging Yjs's built-in conflict resolution mechanism, we can effectively handle concurrent edits in a way that seamlessly maintains consistency across all connected clients.
+
+Good (direct, shows the mechanism):
+
+> Yjs resolves conflicts automatically. Two users edit the same field, both edits survive in the CRDT, and the LWW timestamp picks the winner. No manual merge logic needed.
+
+Bad (abstract):
+
+> The factory function pattern provides a clean separation of concerns by encapsulating the client creation logic and exposing a well-defined interface for consumers.
+
+Good (concrete):
+
+> `createSync()` takes a Y.Doc and returns three methods: `connect()`, `disconnect()`, and `status()`. The consumer never touches WebSocket setup, reconnection logic, or auth token refresh. They call `connect()` and it works.
+
 ## Natural Prose
 
 - Write like a human telling a story, not a press kit.

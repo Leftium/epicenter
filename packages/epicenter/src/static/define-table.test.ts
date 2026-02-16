@@ -5,31 +5,36 @@ import { defineTable } from './define-table.js';
 describe('defineTable', () => {
 	describe('shorthand syntax', () => {
 		test('creates valid table definition with direct schema', () => {
-			const posts = defineTable(type({ id: 'string', title: 'string' }));
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
 
 			// Verify schema validates correctly
 			const result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Hello',
+				_v: 1,
 			});
 			expect(result).not.toHaveProperty('issues');
 		});
 
 		test('migrate is identity function for shorthand', () => {
-			const users = defineTable(type({ id: 'string', email: 'string' }));
+			const users = defineTable(
+				type({ id: 'string', email: 'string', _v: '1' }),
+			);
 
-			const row = { id: '1', email: 'test@example.com' };
+			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
 			expect(users.migrate(row)).toBe(row);
 		});
 
 		test('shorthand produces equivalent validation to builder pattern', () => {
-			const schema = type({ id: 'string', title: 'string' });
+			const schema = type({ id: 'string', title: 'string', _v: '1' });
 
 			const shorthand = defineTable(schema);
 			const builder = defineTable(schema);
 
 			// Both should validate the same data
-			const testRow = { id: '1', title: 'Test' };
+			const testRow = { id: '1', title: 'Test', _v: 1 };
 			const shorthandResult = shorthand.schema['~standard'].validate(testRow);
 			const builderResult = builder.schema['~standard'].validate(testRow);
 
@@ -40,21 +45,26 @@ describe('defineTable', () => {
 
 	describe('builder syntax', () => {
 		test('creates valid table definition with single version', () => {
-			const posts = defineTable(type({ id: 'string', title: 'string' }));
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
 
 			const result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Hello',
+				_v: 1,
 			});
 			expect(result).not.toHaveProperty('issues');
 		});
 
 		test('creates table definition with multiple versions that validates both', () => {
 			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.version(type({ id: 'string', title: 'string', views: 'number' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
+				.version(
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				)
 				.migrate((row) => {
-					if (!('views' in row)) return { ...row, views: 0 };
+					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
 					return row;
 				});
 
@@ -62,6 +72,7 @@ describe('defineTable', () => {
 			const v1Result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Test',
+				_v: 1,
 			});
 			expect(v1Result).not.toHaveProperty('issues');
 
@@ -70,22 +81,29 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 10,
+				_v: 2,
 			});
 			expect(v2Result).not.toHaveProperty('issues');
 		});
 
 		test('migrate function transforms old version to latest', () => {
 			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.version(type({ id: 'string', title: 'string', views: 'number' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
+				.version(
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				)
 				.migrate((row) => {
-					if (!('views' in row)) return { ...row, views: 0 };
+					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
 					return row;
 				});
 
 			// Migrate v1 to v2
-			const migrated = posts.migrate({ id: '1', title: 'Test' });
-			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0 });
+			const migrated = posts.migrate({
+				id: '1',
+				title: 'Test',
+				_v: 1 as const,
+			});
+			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
 		test('throws when no versions are defined', () => {
@@ -96,12 +114,14 @@ describe('defineTable', () => {
 	});
 
 	describe('schema patterns', () => {
-		test('without _v discriminant (field presence detection)', () => {
+		test('two version migration with _v discriminant', () => {
 			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.version(type({ id: 'string', title: 'string', views: 'number' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
+				.version(
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				)
 				.migrate((row) => {
-					if (!('views' in row)) return { ...row, views: 0 };
+					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
 					return row;
 				});
 
@@ -109,21 +129,26 @@ describe('defineTable', () => {
 			const v1Result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Test',
+				_v: 1,
 			});
 			expect(v1Result).not.toHaveProperty('issues');
 
-			const migrated = posts.migrate({ id: '1', title: 'Test' });
-			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0 });
+			const migrated = posts.migrate({
+				id: '1',
+				title: 'Test',
+				_v: 1 as const,
+			});
+			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('with _v discriminant (organic upgrade path)', () => {
+		test('two version migration with _v', () => {
 			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '"2"' }),
+					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 				)
 				.migrate((row) => {
-					if (!('_v' in row)) return { ...row, views: 0, _v: '2' };
+					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
 					return row;
 				});
 
@@ -131,6 +156,7 @@ describe('defineTable', () => {
 			const v1Result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Test',
+				_v: 1,
 			});
 			expect(v1Result).not.toHaveProperty('issues');
 
@@ -138,7 +164,7 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 10,
-				_v: '2',
+				_v: 2,
 			});
 			expect(v2Result).not.toHaveProperty('issues');
 
@@ -146,26 +172,27 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
+				_v: 1 as const,
 			});
-			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: '2' });
+			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('with _v discriminant from start (symmetric switch)', () => {
+		test('three version migration with switch', () => {
 			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '"1"' }))
+				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
 					type({
 						id: 'string',
 						title: 'string',
 						views: 'number',
-						_v: '"2"',
+						_v: '2',
 					}),
 				)
 				.migrate((row) => {
 					switch (row._v) {
-						case '1':
-							return { ...row, views: 0, _v: '2' };
-						case '2':
+						case 1:
+							return { ...row, views: 0, _v: 2 as const };
+						case 2:
 							return row;
 					}
 				});
@@ -174,7 +201,7 @@ describe('defineTable', () => {
 			const v1Result = posts.schema['~standard'].validate({
 				id: '1',
 				title: 'Test',
-				_v: '1',
+				_v: 1,
 			});
 			expect(v1Result).not.toHaveProperty('issues');
 
@@ -183,7 +210,7 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 10,
-				_v: '2',
+				_v: 2,
 			});
 			expect(v2Result).not.toHaveProperty('issues');
 
@@ -191,13 +218,13 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: '1',
+				_v: 1 as const,
 			});
 			expect(migrated).toEqual({
 				id: '1',
 				title: 'Test',
 				views: 0,
-				_v: '2',
+				_v: 2,
 			});
 
 			// V2 passes through unchanged
@@ -205,13 +232,13 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: '2',
+				_v: 2 as const,
 			});
 			expect(alreadyLatest).toEqual({
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: '2',
+				_v: 2,
 			});
 		});
 	});

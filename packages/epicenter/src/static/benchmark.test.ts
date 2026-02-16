@@ -20,7 +20,7 @@ import { defineWorkspace } from './define-workspace.js';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const postDefinition = defineTable(
-	type({ id: 'string', title: 'string', views: 'number' }),
+	type({ id: 'string', title: 'string', views: 'number', _v: '1' }),
 );
 
 // Realistic note with actual content
@@ -32,6 +32,7 @@ const noteDefinition = defineTable(
 		tags: 'string[]',
 		createdAt: 'number',
 		updatedAt: 'number',
+		_v: '1',
 	}),
 );
 
@@ -76,7 +77,12 @@ describe('storage analysis', () => {
 
 		// Insert 1000 rows
 		for (let i = 0; i < 1_000; i++) {
-			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 
 		const encoded = Y.encodeStateAsUpdate(ydoc);
@@ -124,6 +130,7 @@ Let's add a bit more to make it realistic. The quick brown fox jumps over the la
 				tags: ['tag1', 'tag2'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
+				_v: 1,
 			});
 		}
 
@@ -208,7 +215,12 @@ describe('table benchmarks', () => {
 
 		const { durationMs } = measureTime(() => {
 			for (let i = 0; i < 1_000; i++) {
-				tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+				tables.posts.set({
+					id: generateId(i),
+					title: `Post ${i}`,
+					views: i,
+					_v: 1,
+				});
 			}
 		});
 
@@ -223,7 +235,12 @@ describe('table benchmarks', () => {
 
 		const { durationMs } = measureTime(() => {
 			for (let i = 0; i < 10_000; i++) {
-				tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+				tables.posts.set({
+					id: generateId(i),
+					title: `Post ${i}`,
+					views: i,
+					_v: 1,
+				});
 			}
 		});
 
@@ -237,7 +254,12 @@ describe('table benchmarks', () => {
 		const tables = createTables(ydoc, { posts: postDefinition });
 
 		for (let i = 0; i < 10_000; i++) {
-			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 
 		const { durationMs } = measureTime(() => {
@@ -255,7 +277,12 @@ describe('table benchmarks', () => {
 		const tables = createTables(ydoc, { posts: postDefinition });
 
 		for (let i = 0; i < 10_000; i++) {
-			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 
 		const { durationMs: getAllMs } = measureTime(() => tables.posts.getAll());
@@ -276,7 +303,12 @@ describe('table benchmarks', () => {
 		const tables = createTables(ydoc, { posts: postDefinition });
 
 		for (let i = 0; i < 1_000; i++) {
-			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 
 		const { durationMs } = measureTime(() => {
@@ -296,7 +328,12 @@ describe('table benchmarks', () => {
 
 		const { durationMs: individualMs } = measureTime(() => {
 			for (let i = 0; i < 1_000; i++) {
-				tables1.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+				tables1.posts.set({
+					id: generateId(i),
+					title: `Post ${i}`,
+					views: i,
+					_v: 1,
+				});
 			}
 		});
 
@@ -310,6 +347,7 @@ describe('table benchmarks', () => {
 						id: generateId(i),
 						title: `Post ${i}`,
 						views: i,
+						_v: 1,
 					});
 				}
 			});
@@ -400,7 +438,12 @@ describe('stress tests: repeated add/remove cycles', () => {
 				const cycleStart = performance.now();
 
 				for (let i = 0; i < 1_000; i++) {
-					tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+					tables.posts.set({
+						id: generateId(i),
+						title: `Post ${i}`,
+						views: i,
+						_v: 1,
+					});
 				}
 
 				for (let i = 0; i < 1_000; i++) {
@@ -429,7 +472,12 @@ describe('stress tests: repeated add/remove cycles', () => {
 
 		for (let cycle = 0; cycle < 5; cycle++) {
 			for (let i = 0; i < 1_000; i++) {
-				tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+				tables.posts.set({
+					id: generateId(i),
+					title: `Post ${i}`,
+					views: i,
+					_v: 1,
+				});
 			}
 
 			for (let i = 0; i < 1_000; i++) {
@@ -459,6 +507,7 @@ describe('event log stress test', () => {
 			name: 'string',
 			payload: 'string',
 			timestamp: 'number',
+			_v: '1',
 		}),
 	);
 
@@ -483,6 +532,7 @@ describe('event log stress test', () => {
 					name: `action_${i}`,
 					payload: samplePayload,
 					timestamp: Date.now(),
+					_v: 1,
 				});
 			}
 
@@ -517,6 +567,7 @@ describe('event log stress test', () => {
 				name: `action_${i}`,
 				payload: samplePayload,
 				timestamp: Date.now(),
+				_v: 1,
 			});
 		}
 
@@ -551,7 +602,12 @@ describe('memory and storage benchmarks', () => {
 		const tables1 = createTables(ydoc1, { posts: postDefinition });
 
 		for (let i = 0; i < 1_000; i++) {
-			tables1.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables1.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 		const size1k = Y.encodeStateAsUpdate(ydoc1).byteLength;
 
@@ -559,7 +615,12 @@ describe('memory and storage benchmarks', () => {
 		const tables2 = createTables(ydoc2, { posts: postDefinition });
 
 		for (let i = 0; i < 10_000; i++) {
-			tables2.posts.set({ id: generateId(i), title: `Post ${i}`, views: i });
+			tables2.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: i,
+				_v: 1,
+			});
 		}
 		const size10k = Y.encodeStateAsUpdate(ydoc2).byteLength;
 
@@ -576,7 +637,12 @@ describe('memory and storage benchmarks', () => {
 		const tables = createTables(ydoc, { posts: postDefinition });
 
 		for (let i = 0; i < 1_000; i++) {
-			tables.posts.set({ id: generateId(i), title: `Post ${i}`, views: 0 });
+			tables.posts.set({
+				id: generateId(i),
+				title: `Post ${i}`,
+				views: 0,
+				_v: 1,
+			});
 		}
 		const initialSize = Y.encodeStateAsUpdate(ydoc).byteLength;
 
@@ -586,6 +652,7 @@ describe('memory and storage benchmarks', () => {
 					id: generateId(i),
 					title: `Post ${i} v${update}`,
 					views: update,
+					_v: 1,
 				});
 			}
 		}
@@ -616,6 +683,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 			tags: 'string[]',
 			createdAt: 'number',
 			updatedAt: 'number',
+			_v: '1',
 		}),
 	);
 
@@ -636,6 +704,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 			tags: ['research', 'important', 'draft', 'long-form'],
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
+			_v: 1 as const,
 		};
 	}
 
@@ -845,6 +914,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['research', 'important', 'draft', 'long-form'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
+				_v: 1 as const,
 			};
 		}
 
@@ -955,6 +1025,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['tag1', 'tag2'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
+				_v: 1 as const,
 			};
 		}
 
@@ -1050,6 +1121,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['work', 'notes'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
+				_v: 1 as const,
 			};
 		}
 
@@ -1150,6 +1222,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['active'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
+				_v: 1 as const,
 			};
 		}
 

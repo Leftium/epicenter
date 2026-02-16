@@ -156,6 +156,7 @@ export default defineBackground(() => {
 				name: existingName ?? (await generateDefaultDeviceName()),
 				lastSeen: new Date().toISOString(),
 				browser: getBrowserName(),
+				_v: 1,
 			});
 		},
 

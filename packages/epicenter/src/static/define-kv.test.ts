@@ -96,11 +96,12 @@ describe('defineKv', () => {
 					type({
 						mode: "'light' | 'dark' | 'system'",
 						fontSize: 'number',
-						_v: '"2"',
+						_v: '2',
 					}),
 				)
 				.migrate((v) => {
-					if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: '2' };
+					if (!('_v' in v))
+						return { mode: v.mode, fontSize: 14, _v: 2 as const };
 					return v;
 				});
 
@@ -113,13 +114,13 @@ describe('defineKv', () => {
 			const v2Result = theme.schema['~standard'].validate({
 				mode: 'system',
 				fontSize: 16,
-				_v: '2',
+				_v: 2,
 			});
 			expect(v2Result).not.toHaveProperty('issues');
 
 			// Migrate v1 to v2
 			const migrated = theme.migrate({ mode: 'dark' });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: '2' });
+			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: 2 });
 		});
 
 		test('object without _v discriminant (field presence detection)', () => {
@@ -152,19 +153,19 @@ describe('defineKv', () => {
 
 		test('object with _v discriminant from start (symmetric switch)', () => {
 			const theme = defineKv()
-				.version(type({ mode: "'light' | 'dark'", _v: '"1"' }))
+				.version(type({ mode: "'light' | 'dark'", _v: '1' }))
 				.version(
 					type({
 						mode: "'light' | 'dark' | 'system'",
 						fontSize: 'number',
-						_v: '"2"',
+						_v: '2',
 					}),
 				)
 				.migrate((v) => {
 					switch (v._v) {
-						case '1':
-							return { mode: v.mode, fontSize: 14, _v: '2' };
-						case '2':
+						case 1:
+							return { mode: v.mode, fontSize: 14, _v: 2 as const };
+						case 2:
 							return v;
 					}
 				});
@@ -172,7 +173,7 @@ describe('defineKv', () => {
 			// V1 data should validate
 			const v1Result = theme.schema['~standard'].validate({
 				mode: 'dark',
-				_v: '1',
+				_v: 1,
 			});
 			expect(v1Result).not.toHaveProperty('issues');
 
@@ -180,24 +181,24 @@ describe('defineKv', () => {
 			const v2Result = theme.schema['~standard'].validate({
 				mode: 'system',
 				fontSize: 16,
-				_v: '2',
+				_v: 2,
 			});
 			expect(v2Result).not.toHaveProperty('issues');
 
 			// Migrate v1 to v2
-			const migrated = theme.migrate({ mode: 'dark', _v: '1' });
-			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: '2' });
+			const migrated = theme.migrate({ mode: 'dark', _v: 1 as const });
+			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: 2 });
 
 			// V2 passes through unchanged
 			const alreadyLatest = theme.migrate({
 				mode: 'system',
 				fontSize: 16,
-				_v: '2',
+				_v: 2 as const,
 			});
 			expect(alreadyLatest).toEqual({
 				mode: 'system',
 				fontSize: 16,
-				_v: '2',
+				_v: 2,
 			});
 		});
 	});

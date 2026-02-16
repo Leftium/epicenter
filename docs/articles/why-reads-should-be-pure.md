@@ -70,14 +70,14 @@ Pure reads are easy to test:
 
 ```typescript
 // Setup
-storage.write({ id: '1', title: 'Test', _v: '1' });
+storage.write({ id: '1', title: 'Test', _v: 1 });
 
 // Test
 const result = table.get('1');
-expect(result._v).toBe('3');  // Migrated
+expect(result._v).toBe(3); // Migrated
 
 // Verify storage unchanged
-expect(storage.read('1')._v).toBe('1');  // Still v1
+expect(storage.read('1')._v).toBe(1); // Still v1
 ```
 
 With auto write-back, the same test modifies storage, making assertions about "before and after" states complicated.
@@ -93,8 +93,8 @@ If users want to persist migrations, they can do it explicitly:
 ```typescript
 const result = tables.posts.get('post-1');
 if (result.status === 'valid') {
-  // Explicitly persist the migrated version
-  tables.posts.upsert(result.row);
+	// Explicitly persist the migrated version
+	tables.posts.upsert(result.row);
 }
 ```
 
@@ -104,7 +104,7 @@ Or batch it:
 // Migrate all old data explicitly
 const allPosts = tables.posts.getAllValid();
 for (const post of allPosts) {
-  tables.posts.upsert(post);
+	tables.posts.upsert(post);
 }
 ```
 
@@ -115,11 +115,13 @@ This is intentional. The user knows they're writing. Sync traffic is expected.
 To be fair, auto write-back isn't always wrong:
 
 **Consider it when:**
+
 - Migration is computationally expensive (rare)
 - You control the network layer and can batch/debounce
 - Users expect writes (e.g., "upgrade all my data" button)
 
 **Avoid it when:**
+
 - Reads should be predictable
 - Bandwidth matters
 - You want simple, testable code

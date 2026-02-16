@@ -20,14 +20,15 @@ This didn't emerge fully formed. We considered many alternatives.
 
 **Options considered:**
 
-| Name | Feel | Problem |
-|------|------|---------|
-| `table('posts')` | Clean, short | Ambiguous - is it getting or creating a table? |
+| Name                   | Feel             | Problem                                          |
+| ---------------------- | ---------------- | ------------------------------------------------ |
+| `table('posts')`       | Clean, short     | Ambiguous - is it getting or creating a table?   |
 | `createTable('posts')` | Clear it creates | Conflicts with `createTables()` binding function |
-| `defineTable('posts')` | Clear it defines | Slightly verbose |
-| `schema('posts')` | Generic | Doesn't convey it's for tables |
+| `defineTable('posts')` | Clear it defines | Slightly verbose                                 |
+| `schema('posts')`      | Generic          | Doesn't convey it's for tables                   |
 
 **We chose `defineTable` because:**
+
 - The `define` prefix signals "this is a definition, not a runtime instance"
 - Clear distinction from `createTables()` which binds definitions to storage
 - Familiar pattern from other libraries (Drizzle's `defineRelations`, etc.)
@@ -43,6 +44,7 @@ const theme = defineKvKey('theme')
 ```
 
 **We shortened to `defineKv` because:**
+
 - "KVKey" is redundant - "KV" already implies key-value
 - The first argument IS the key
 - Saying it aloud: "define KV key theme" vs "define KV theme" - the latter is cleaner
@@ -50,35 +52,36 @@ const theme = defineKvKey('theme')
 ## Method Chaining: `.version().migrate()`
 
 **Alternative A: Explicit version numbers**
+
 ```typescript
-defineTable('posts')
-  .v1(schema1)
-  .v2(schema2)
-  .v3(schema3)
-  .migrate(fn);
+defineTable('posts').v1(schema1).v2(schema2).v3(schema3).migrate(fn);
 ```
 
 Rejected because:
+
 - Limits versions to whatever we pre-define (v1-v10?)
 - Verbose for no benefit
 - Version numbers are implicit in call order anyway
 
 **Alternative B: Migration per version**
+
 ```typescript
 defineTable('posts')
-  .version(schema1)
-  .version(schema2, (v1) => ({ ...v1, views: 0 }))
-  .version(schema3, (v2) => ({ ...v2, author: null }));
+	.version(schema1)
+	.version(schema2, (v1) => ({ ...v1, views: 0 }))
+	.version(schema3, (v2) => ({ ...v2, author: null }));
 ```
 
 This has appeal - each version is co-located with its migration. We almost chose this.
 
 Rejected because:
+
 - Can't do direct jumps (v1→v3) without intermediate steps
 - Type inference is trickier (each migration is `(prev) => next`)
 - Harder to refactor - migration logic spread across multiple calls
 
 **Chosen: `.version().migrate()`**
+
 ```typescript
 defineTable('posts')
   .version(schema1)
@@ -88,6 +91,7 @@ defineTable('posts')
 ```
 
 Benefits:
+
 - Clean separation of schema definitions and migration logic
 - Full control over migration strategy (incremental or direct)
 - Single place for all migration logic
@@ -96,6 +100,7 @@ Benefits:
 ## User-Defined vs Library-Managed Discriminator
 
 **Option A: Library injects `__v`**
+
 ```typescript
 // Library automatically adds __v: 1, __v: 2, etc.
 .version(schema1)
@@ -103,25 +108,25 @@ Benefits:
 ```
 
 **Option B: User defines discriminator**
+
 ```typescript
 // User explicitly adds _v (or whatever they want)
-.version(z.object({ ..., _v: z.literal('1') }))
-.version(z.object({ ..., _v: z.literal('2') }))
+.version(z.object({ ..., _v: z.literal(1) }))
+.version(z.object({ ..., _v: z.literal(2) }))
 ```
 
 **We chose Option B because:**
 
 1. **No magic** - What you see in your schema is what's in your data
-2. **Flexibility** - Use `_v`, `version`, `schemaVersion`, `type`, whatever
-3. **Value flexibility** - Numbers, strings, enums, your choice
-4. **Simpler implementation** - Library doesn't inject/strip fields
-5. **Debugging** - Raw data inspection shows exactly what you defined
+2. **Simpler implementation** - Library doesn't inject/strip fields
+3. **Debugging** - Raw data inspection shows exactly what you defined
 
-The trade-off is users might forget the discriminator. We mitigate with documentation and the fact that TypeScript will complain if your migration function can't discriminate.
+We later went further: tables now require `_v` as a number at the type level (`CombinedStandardSchema<{ id: string; _v: number }>`). Passing a table schema without `_v` to `defineTable()` is a compile error. KV stores remain flexible — `_v` is optional there. See [PR #1366](https://github.com/EpicenterHQ/epicenter/pull/1366) for the full rationale.
 
 ## Definition/Binding Separation
 
 **Option A: All-in-one**
+
 ```typescript
 const tables = createTables(ydoc, {
   posts: defineTable('posts').version(...).migrate(...)
@@ -129,6 +134,7 @@ const tables = createTables(ydoc, {
 ```
 
 **Option B: Separate definition from binding**
+
 ```typescript
 // Define (pure, no side effects)
 const postsDefinition = defineTable('posts')
@@ -151,11 +157,13 @@ const tables = createTables(ydoc, { posts: postsDefinition });
 With multiple versions, you need migration logic. The question is how to structure it.
 
 **Incremental (each version migrates to next):**
+
 ```typescript
 v1 → v2 → v3
 ```
 
 **Direct (any version migrates to latest):**
+
 ```typescript
 v1 → v3
 v2 → v3
@@ -167,17 +175,17 @@ We don't enforce either. The single `.migrate()` function receives any version a
 // Incremental style
 .migrate((row) => {
   let current = row;
-  if (current._v === '1') current = migrateV1toV2(current);
-  if (current._v === '2') current = migrateV2toV3(current);
+  if (current._v === 1) current = migrateV1toV2(current);
+  if (current._v === 2) current = migrateV2toV3(current);
   return current;
 })
 
-// Direct style
+// Direct style (recommended)
 .migrate((row) => {
   switch (row._v) {
-    case '1': return { ...row, views: 0, author: null, _v: '3' };
-    case '2': return { ...row, author: null, _v: '3' };
-    case '3': return row;
+    case 1: return { ...row, views: 0, author: null, _v: 3 };
+    case 2: return { ...row, author: null, _v: 3 };
+    case 3: return row;
   }
 })
 ```
@@ -205,6 +213,7 @@ Same pattern, same mental model. Learn one, use both.
 ## Summary
 
 Good API design is about:
+
 - **Clarity** - Names that say what they do
 - **Consistency** - Similar things work similarly
 - **Flexibility** - Don't over-constrain users

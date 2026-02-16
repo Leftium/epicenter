@@ -7,8 +7,12 @@ import { defineWorkspace } from './define-workspace.js';
 
 /** Creates a workspace client with two tables and one KV for testing. */
 function setup() {
-	const postsTable = defineTable(type({ id: 'string', title: 'string' }));
-	const tagsTable = defineTable(type({ id: 'string', name: 'string' }));
+	const postsTable = defineTable(
+		type({ id: 'string', title: 'string', _v: '1' }),
+	);
+	const tagsTable = defineTable(
+		type({ id: 'string', name: 'string', _v: '1' }),
+	);
 	const themeDef = defineKv(type({ mode: "'light' | 'dark'" }));
 
 	const definition = defineWorkspace({
@@ -33,9 +37,9 @@ describe('createWorkspace', () => {
 				});
 
 				client.batch(() => {
-					client.tables.posts.set({ id: '1', title: 'First' });
-					client.tables.posts.set({ id: '2', title: 'Second' });
-					client.tables.posts.set({ id: '3', title: 'Third' });
+					client.tables.posts.set({ id: '1', title: 'First', _v: 1 });
+					client.tables.posts.set({ id: '2', title: 'Second', _v: 1 });
+					client.tables.posts.set({ id: '3', title: 'Third', _v: 1 });
 				});
 
 				expect(changes).toHaveLength(1);
@@ -50,9 +54,9 @@ describe('createWorkspace', () => {
 			test('batch() batches table deletes', () => {
 				const { client } = setup();
 
-				client.tables.posts.set({ id: '1', title: 'A' });
-				client.tables.posts.set({ id: '2', title: 'B' });
-				client.tables.posts.set({ id: '3', title: 'C' });
+				client.tables.posts.set({ id: '1', title: 'A', _v: 1 });
+				client.tables.posts.set({ id: '2', title: 'B', _v: 1 });
+				client.tables.posts.set({ id: '3', title: 'C', _v: 1 });
 
 				const changes: Set<string>[] = [];
 				const unsubscribe = client.tables.posts.observe((changedIds) => {
@@ -77,7 +81,7 @@ describe('createWorkspace', () => {
 			test('batch() batches mixed set + delete', () => {
 				const { client } = setup();
 
-				client.tables.posts.set({ id: '1', title: 'Existing' });
+				client.tables.posts.set({ id: '1', title: 'Existing', _v: 1 });
 
 				const changes: Set<string>[] = [];
 				const unsubscribe = client.tables.posts.observe((changedIds) => {
@@ -85,7 +89,7 @@ describe('createWorkspace', () => {
 				});
 
 				client.batch(() => {
-					client.tables.posts.set({ id: '2', title: 'New' });
+					client.tables.posts.set({ id: '2', title: 'New', _v: 1 });
 					client.tables.posts.delete('1');
 				});
 
@@ -113,8 +117,8 @@ describe('createWorkspace', () => {
 				});
 
 				client.batch(() => {
-					client.tables.posts.set({ id: 'p1', title: 'Post' });
-					client.tables.tags.set({ id: 't1', name: 'Tag' });
+					client.tables.posts.set({ id: 'p1', title: 'Post', _v: 1 });
+					client.tables.tags.set({ id: 't1', name: 'Tag', _v: 1 });
 				});
 
 				expect(postChanges).toHaveLength(1);
@@ -140,7 +144,7 @@ describe('createWorkspace', () => {
 				});
 
 				client.batch(() => {
-					client.tables.posts.set({ id: 'p1', title: 'Post' });
+					client.tables.posts.set({ id: 'p1', title: 'Post', _v: 1 });
 					client.kv.set('theme', { mode: 'dark' });
 				});
 
@@ -178,11 +182,11 @@ describe('createWorkspace', () => {
 				});
 
 				client.batch(() => {
-					client.tables.posts.set({ id: '1', title: 'Outer' });
+					client.tables.posts.set({ id: '1', title: 'Outer', _v: 1 });
 					client.batch(() => {
-						client.tables.posts.set({ id: '2', title: 'Inner' });
+						client.tables.posts.set({ id: '2', title: 'Inner', _v: 1 });
 					});
-					client.tables.posts.set({ id: '3', title: 'After inner' });
+					client.tables.posts.set({ id: '3', title: 'After inner', _v: 1 });
 				});
 
 				// Inner batch absorbed by outer — single notification
@@ -204,9 +208,9 @@ describe('createWorkspace', () => {
 					changes.push(new Set(changedIds));
 				});
 
-				client.tables.posts.set({ id: '1', title: 'First' });
-				client.tables.posts.set({ id: '2', title: 'Second' });
-				client.tables.posts.set({ id: '3', title: 'Third' });
+				client.tables.posts.set({ id: '1', title: 'First', _v: 1 });
+				client.tables.posts.set({ id: '2', title: 'Second', _v: 1 });
+				client.tables.posts.set({ id: '3', title: 'Third', _v: 1 });
 
 				expect(changes).toHaveLength(3);
 
@@ -223,7 +227,7 @@ describe('createWorkspace', () => {
 
 				client.batch(() => {
 					for (let i = 0; i < 100; i++) {
-						client.tables.posts.set({ id: `${i}`, title: `Post ${i}` });
+						client.tables.posts.set({ id: `${i}`, title: `Post ${i}`, _v: 1 });
 					}
 				});
 
@@ -240,8 +244,8 @@ describe('createWorkspace', () => {
 
 				try {
 					client.batch(() => {
-						client.tables.posts.set({ id: '1', title: 'Before error' });
-						client.tables.posts.set({ id: '2', title: 'Also before' });
+						client.tables.posts.set({ id: '1', title: 'Before error', _v: 1 });
+						client.tables.posts.set({ id: '2', title: 'Also before', _v: 1 });
 						throw new Error('intentional');
 					});
 				} catch {

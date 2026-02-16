@@ -1,4 +1,4 @@
-import { type Guid, generateGuid } from '@epicenter/hq';
+import { type Guid, generateGuid, generateId, type Id } from '@epicenter/hq';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
@@ -15,7 +15,16 @@ export type RichTextEntry = {
 	frontmatter: Y.Map<unknown>;
 };
 export type BinaryEntry = { type: 'binary'; content: Uint8Array };
-export type TimelineEntry = TextEntry | RichTextEntry | BinaryEntry;
+export type SheetEntry = {
+	type: 'sheet';
+	columns: Y.Map<Y.Map<string>>;
+	rows: Y.Map<Y.Map<string>>;
+};
+export type TimelineEntry =
+	| TextEntry
+	| RichTextEntry
+	| BinaryEntry
+	| SheetEntry;
 
 /** Content modes supported by timeline entries */
 export type ContentMode = TimelineEntry['type'];
@@ -31,6 +40,34 @@ export const FileId = type('string').pipe((s): FileId => s as FileId);
 export function generateFileId(): FileId {
 	return generateGuid() as FileId;
 }
+
+/** Branded row identifier — an Id that is specifically a row ID */
+export type RowId = Id & Brand<'RowId'>;
+
+/** Generate a new unique row identifier */
+export function generateRowId(): RowId {
+	return generateId() as RowId;
+}
+
+/** Branded column identifier — an Id that is specifically a column ID */
+export type ColumnId = Id & Brand<'ColumnId'>;
+
+/** Generate a new unique column identifier */
+export function generateColumnId(): ColumnId {
+	return generateId() as ColumnId;
+}
+
+/**
+ * Column definition for sheet entries.
+ *
+ * Describes the structure and metadata of a column in a sheet.
+ * Used to define column types, constraints, and display properties.
+ */
+export type ColumnDefinition = {
+	id: ColumnId;
+	name: string;
+	type: string;
+};
 
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;

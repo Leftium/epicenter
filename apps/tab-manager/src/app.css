@@ -6,9 +6,5 @@
 @source "./lib/**/*.{svelte,ts}";
 
 /* Extension popup specific styles */
-body {
-	width: 400px;
-	min-height: 500px;
-	max-height: 600px;
-	overflow-y: auto;
-}
+/* Note: Popup dimensions are controlled by the root component (App.svelte) */
+/* Body styles are removed to avoid conflicts with browser defaults */

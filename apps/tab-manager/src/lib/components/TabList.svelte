@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { VList } from 'virtua/svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import TabItem from './TabItem.svelte';
 	import * as Empty from '@epicenter/ui/empty';
@@ -40,10 +41,17 @@
 						{windowTabs.length}
 					</Badge>
 				</Accordion.Trigger>
-				<Accordion.Content class="pb-0 divide-y">
-					{#each windowTabs as tab (tab.id)}
-						<TabItem {tab} />
-					{/each}
+				<Accordion.Content class="pb-0">
+					<!-- Wrap VList in a container with max-height for proper scrolling -->
+					<div style="max-height: 400px;">
+						<VList data={windowTabs} style="height: 100%;" itemSize={48}>
+							{#snippet children(tab)}
+								<div style="border-bottom: 1px solid rgb(229 231 235);">
+									<TabItem {tab} />
+								</div>
+							{/snippet}
+						</VList>
+					</div>
 				</Accordion.Content>
 			</Accordion.Item>
 		{/each}

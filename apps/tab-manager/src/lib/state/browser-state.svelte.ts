@@ -78,21 +78,12 @@ function createBrowserState() {
 	// Those events would be redundant anyway — the seed is a complete snapshot.
 
 	(async () => {
-		const startTotal = performance.now();
-
 		// Parallelize independent async operations
-		const startFetch = performance.now();
 		const [browserWindows, id] = await Promise.all([
 			browser.windows.getAll({ populate: true }),
 			getDeviceId(),
 		]);
-		const fetchDuration = performance.now() - startFetch;
 
-		// Note: deviceIdDuration is now included in fetchDuration since they run in parallel
-		const deviceIdDuration = 0; // Not measured separately anymore (parallel)
-
-		const startProcessing = performance.now();
-		let totalTabs = 0;
 		for (const win of browserWindows) {
 			const windowRow = windowToRow(id, win);
 			if (!windowRow) continue;
@@ -103,34 +94,14 @@ function createBrowserState() {
 					const tabRow = tabToRow(id, tab);
 					if (tabRow) {
 						tabsMap.set(tabRow.tabId, tabRow);
-						totalTabs++;
 					}
 				}
 			}
 
 			windowStates.set(windowRow.id, { window: windowRow, tabs: tabsMap });
 		}
-		const processingDuration = performance.now() - startProcessing;
 
 		deviceId = id;
-
-		const totalDuration = performance.now() - startTotal;
-
-		const perfData = {
-			total: `${totalDuration.toFixed(2)}ms`,
-			'fetch+deviceId (parallel)': `${fetchDuration.toFixed(2)}ms (${((fetchDuration / totalDuration) * 100).toFixed(1)}%)`,
-			processing: `${processingDuration.toFixed(2)}ms (${((processingDuration / totalDuration) * 100).toFixed(1)}%)`,
-			windows: browserWindows.length,
-			tabs: totalTabs,
-			avgPerTab:
-				totalTabs > 0 ? `${(totalDuration / totalTabs).toFixed(3)}ms` : 'N/A',
-		};
-
-		console.log(
-			`%c[Tab Manager Performance] Total: ${totalDuration.toFixed(2)}ms | Tabs: ${totalTabs} | Parallel Fetch: ${((fetchDuration / totalDuration) * 100).toFixed(1)}%`,
-			'background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-weight: bold',
-		);
-		console.table(perfData);
 	})();
 
 	// ── Tab Event Listeners ───────────────────────────────────────────────

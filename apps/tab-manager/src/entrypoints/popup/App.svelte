@@ -1,15 +1,12 @@
 <script lang="ts">
-	import TabList from '$lib/components/TabList.svelte';
 	import FlatTabList from '$lib/components/FlatTabList.svelte';
 	import SavedTabList from '$lib/components/SavedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-	import { ScrollArea } from '@epicenter/ui/scroll-area';
 	import { Badge } from '@epicenter/ui/badge';
+	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-
-	let viewMode = $state<'grouped' | 'flat'>('grouped');
 
 	const totalTabs = $derived(
 		browserState.windows.reduce(
@@ -20,8 +17,10 @@
 </script>
 
 <Tooltip.Provider>
-	<main class="w-200 h-150 overflow-hidden bg-background text-foreground">
-		<Tabs.Root value="windows" class="flex h-full flex-col">
+	<main
+		class="w-200 h-150 overflow-hidden flex flex-col bg-background text-foreground"
+	>
+		<Tabs.Root value="windows" class="flex flex-col h-full">
 			<header
 				class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 pt-3 pb-0"
 			>
@@ -41,40 +40,15 @@
 					</Tabs.Trigger>
 				</Tabs.List>
 			</header>
-			<ScrollArea class="flex-1">
-				<Tabs.Content value="windows">
-					<!-- View mode toggle only affects the Tabs view -->
-					<div class="flex items-center justify-end gap-1 px-4 py-2 border-b">
-						<button
-							type="button"
-							class="px-2 py-1 text-xs rounded {viewMode === 'grouped'
-								? 'bg-primary text-primary-foreground'
-								: 'bg-muted hover:bg-muted/80'}"
-							onclick={() => (viewMode = 'grouped')}
-						>
-							Grouped
-						</button>
-						<button
-							type="button"
-							class="px-2 py-1 text-xs rounded {viewMode === 'flat'
-								? 'bg-primary text-primary-foreground'
-								: 'bg-muted hover:bg-muted/80'}"
-							onclick={() => (viewMode = 'flat')}
-						>
-							Flat
-						</button>
-					</div>
-					{#if viewMode === 'grouped'}
-						<TabList />
-					{:else}
-						<FlatTabList />
-					{/if}
+			<ScrollArea.Root class="h-full w-full">
+				<Tabs.Content value="windows" class="mt-0">
+					<FlatTabList />
 				</Tabs.Content>
-				<Tabs.Content value="saved">
+				<Tabs.Content value="saved" class="mt-0">
 					<!-- Saved tabs are always flat (no grouping needed) -->
 					<SavedTabList />
 				</Tabs.Content>
-			</ScrollArea>
+			</ScrollArea.Root>
 		</Tabs.Root>
 	</main>
 </Tooltip.Provider>

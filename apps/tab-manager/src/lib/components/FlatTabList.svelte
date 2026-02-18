@@ -28,10 +28,9 @@
 		<Empty.Description>Open some tabs to see them here</Empty.Description>
 	</Empty.Root>
 {:else}
-	<!-- VList needs explicit pixel height, not percentage -->
 	<VList
 		data={flatItems}
-		style="height: 600px;"
+		style="height: 100%;"
 		getKey={(item) =>
 			item.kind === 'window'
 				? `window-${item.window.id}`

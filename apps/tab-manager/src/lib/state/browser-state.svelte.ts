@@ -76,8 +76,12 @@ function createBrowserState() {
 	// deviceId is assigned LAST so that event handlers (which guard on
 	// `!deviceId`) ignore any events that fire during this async window.
 	// Those events would be redundant anyway — the seed is a complete snapshot.
+	//
+	// The promise is exposed as `whenReady` so the UI can gate rendering:
+	//   {#await browserState.whenReady}...{:then}...{/await}
+	// This guarantees child components only mount after data is available.
 
-	(async () => {
+	const whenReady = (async () => {
 		// Parallelize independent async operations
 		const [browserWindows, id] = await Promise.all([
 			browser.windows.getAll({ populate: true }),
@@ -256,6 +260,23 @@ function createBrowserState() {
 	});
 
 	return {
+		/**
+		 * Resolves after the initial browser state seed completes.
+		 *
+		 * Use this to gate UI rendering so child components can safely read
+		 * `windows` and `tabsByWindow` synchronously at construction time.
+		 *
+		 * @example
+		 * ```svelte
+		 * {#await browserState.whenReady}
+		 *   <LoadingSpinner />
+		 * {:then}
+		 *   <FlatTabList />
+		 * {/await}
+		 * ```
+		 */
+		whenReady,
+
 		/** All browser windows. */
 		get windows() {
 			return [...windowStates.values()].map((s) => s.window);

@@ -1,20 +1,32 @@
 <script lang="ts">
 	import { VList } from 'virtua/svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { browserState } from '$lib/state/browser-state.svelte';
+	import type { WindowCompositeId } from '$lib/device/composite-id';
 	import TabItem from './TabItem.svelte';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Badge } from '@epicenter/ui/badge';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
-	// Flatten windows and tabs into a single list for virtualization
+	// Track which windows are expanded — seed with focused window
+	const expandedWindows = new SvelteSet<WindowCompositeId>(
+		browserState.windows.filter((w) => w.focused).map((w) => w.id),
+	);
+
+	function toggleWindow(id: WindowCompositeId) {
+		if (expandedWindows.has(id)) expandedWindows.delete(id);
+		else expandedWindows.add(id);
+	}
+
+	// Flatten windows and tabs, respecting collapsed state
 	const flatItems = $derived(
 		browserState.windows.flatMap((window) => {
+			const header = { kind: 'window' as const, window };
+			if (!expandedWindows.has(window.id)) return [header];
 			const tabs = browserState.tabsByWindow(window.id);
-			return [
-				{ kind: 'window' as const, window },
-				...tabs.map((tab) => ({ kind: 'tab' as const, tab })),
-			];
+			return [header, ...tabs.map((tab) => ({ kind: 'tab' as const, tab }))];
 		}),
 	);
 </script>
@@ -37,29 +49,37 @@
 				: `tab-${item.tab.id}`}
 	>
 		{#snippet children(item)}
-			{#if item.kind === 'window'}
-				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
-				{@const activeTab = windowTabs.find((t) => t.active)}
-				{@const firstTab = windowTabs[0]}
-				{@const displayTab = activeTab || firstTab}
-				<div
-					class="sticky top-0 z-10 flex items-center gap-2 bg-muted/50 px-4 py-2 text-xs backdrop-blur border-b"
-				>
-					<AppWindowIcon class="size-3 text-muted-foreground shrink-0" />
-					<span class="truncate text-muted-foreground">
-						{#if displayTab?.title}
-							{displayTab.title}
-						{:else}
-							Window
-						{/if}
-					</span>
-					{#if item.window.focused}
-						<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
+		{#if item.kind === 'window'}
+			{@const windowTabs = browserState.tabsByWindow(item.window.id)}
+			{@const activeTab = windowTabs.find((t) => t.active)}
+			{@const firstTab = windowTabs[0]}
+			{@const displayTab = activeTab || firstTab}
+			{@const isExpanded = expandedWindows.has(item.window.id)}
+			<button
+				type="button"
+				onclick={() => toggleWindow(item.window.id)}
+				class="sticky top-0 z-10 flex w-full items-center gap-2 bg-muted/50 px-4 py-2 text-xs backdrop-blur border-b cursor-pointer hover:bg-muted/80 transition-colors"
+			>
+				<ChevronRightIcon
+					class="size-3 text-muted-foreground shrink-0 transition-transform duration-200 {isExpanded
+						? 'rotate-90'
+						: ''}"
+				/>
+				<AppWindowIcon class="size-3 text-muted-foreground shrink-0" />
+				<span class="truncate text-muted-foreground">
+					{#if displayTab?.title}
+						{displayTab.title}
+					{:else}
+						Window
 					{/if}
-					<Badge variant="outline" class="shrink-0">
-						{windowTabs.length}
-					</Badge>
-				</div>
+				</span>
+				{#if item.window.focused}
+					<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
+				{/if}
+				<Badge variant="outline" class="shrink-0">
+					{windowTabs.length}
+				</Badge>
+			</button>
 			{:else}
 				<div class="border-b border-border">
 					<TabItem tab={item.tab} />

@@ -43,7 +43,8 @@
 </svelte:head>
 
 <QueryClientProvider client={queryClient}>
-	<Tooltip.Provider delayDuration={300} skipDelayDuration={150}>
+	<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
+	<Tooltip.Provider>
 		{@render children()}
 	</Tooltip.Provider>
 </QueryClientProvider>

@@ -2,84 +2,143 @@
 
 [PR #1376](https://github.com/EpicenterHQ/epicenter/pull/1376) · See also: [Gate the Component, Not the Data](/docs/articles/gate-the-component-not-the-data.md) (the general pattern)
 
-The focused window in our tab manager wouldn't stay open. It was supposed to default to an expanded state, but every time the sidepanel opened, all windows stayed collapsed. We had the data, we had the logic, but the timing was wrong.
-
-Some context: the tab manager is a browser extension sidepanel (Svelte 5, WXT). It shows your browser windows as collapsible headers with their tabs nested underneath. `browserState` is a singleton service that calls `browser.windows.getAll({ populate: true })` asynchronously in its constructor, storing results in a `SvelteMap`. The UI reads from this service reactively.
-
-The bug lived in `FlatTabList.svelte`, which uses a virtualized list (`VList` from virtua) with a `SvelteSet` to track expand/collapse state. At construction, it seeds the set with the focused window's ID so that window starts expanded.
+We had a singleton service called [`browserState`](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/state/browser-state.svelte.ts) that manages all browser windows and tabs for a tab manager extension. It's constructed synchronously at module scope so any component can import it, but the actual data comes from an async call to the browser API. The service starts empty and fills in after the seed resolves.
 
 ```typescript
-// FlatTabList.svelte — the component that renders the window/tab list
+// browser-state.svelte.ts — the singleton
+function createBrowserState() {
+  const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
+
+  // Fires immediately, resolves later
+  (async () => {
+    const browserWindows = await browser.windows.getAll({ populate: true });
+    for (const win of browserWindows) {
+      windowStates.set(win.id, toWindowState(win));
+    }
+  })();
+
+  return {
+    get windows() { return [...windowStates.values()].map((s) => s.window) },
+  };
+}
+
+export const browserState = createBrowserState();
+```
+
+The question: a child component needs to derive local state from `browserState.windows` at construction. But at construction, `windows` is empty. How do you initialize state that depends on async data?
+
+```
+Timeline
+────────
+  t=0   createBrowserState() returns         browserState.windows = []
+  t=1   Component mounts, reads windows      SvelteSet initialized with []
+  t=2   Async seed resolves                  browserState.windows = [win1, win2, ...]
+                                             ...but SvelteSet already constructed
+```
+
+## The Bug
+
+[`FlatTabList.svelte`](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/components/FlatTabList.svelte) renders browser windows as collapsible headers with tabs underneath, using a virtualized list. At construction, it creates a `SvelteSet` seeded with the focused window's ID so that window starts expanded.
+
+```typescript
+// FlatTabList.svelte
 const expandedWindows = new SvelteSet<WindowCompositeId>(
   browserState.windows.filter((w) => w.focused).map((w) => w.id),
 );
 ```
 
-On paper, this works. In reality, `browserState` fetches windows asynchronously in its constructor. The service is a module-level singleton created at import time, so the async seed fires immediately but the IIFE resolves later. When `FlatTabList` mounts, `browserState.windows` is still an empty array. The filter finds nothing, the set starts empty, and the user sees every window collapsed.
+This looks right. But `browserState.windows` is always `[]` here because the async seed hasn't resolved. The `SvelteSet` starts empty. Every window stays collapsed.
 
-Our first instinct was to fix it with an effect. We added a flag to track if we had seeded the initial state and waited for the data to arrive.
+```
+createBrowserState()       FlatTabList mounts        Async seed resolves
+        │                        │                         │
+        │  windows = []          │                         │
+        │───────────────────────>│                         │
+        │                        │                         │
+        │                        │  new SvelteSet([])      │
+        │                        │  (empty — no focused    │
+        │                        │   window found)         │
+        │                        │                         │
+        │                        │                   windows = [A, B, C]
+        │                        │                   (too late — set already
+        │                        │                    constructed)
+```
+
+## Fix 1: Effect Seeding
+
+Our first attempt was to make the component watch for data arrival using `$effect`.
 
 ```svelte
-const expandedWindows = new SvelteSet<WindowCompositeId>();
+<!-- FlatTabList.svelte — the $effect approach -->
+<script>
+  const expandedWindows = new SvelteSet<WindowCompositeId>();
 
-let hasSeeded = false;
-$effect(() => {
-  const focused = browserState.windows.filter((w) => w.focused);
-  if (hasSeeded || focused.length === 0) return;
-  for (const w of focused) expandedWindows.add(w.id);
-  hasSeeded = true;
-});
+  let hasSeeded = false;
+  $effect(() => {
+    const focused = browserState.windows.filter((w) => w.focused);
+    if (hasSeeded || focused.length === 0) return;
+    for (const w of focused) expandedWindows.add(w.id);
+    hasSeeded = true;
+  });
+</script>
 ```
 
-It worked, but it felt defensive. We were forcing a component to manage the lifecycle of global state. If we added a second component that needed the same data at mount, we would have to copy-paste this effect or move the seeding logic into the service.
+The effect subscribes to `browserState.windows`. When the async seed resolves and the windows array goes from `[]` to `[win1, win2, ...]`, the effect fires, finds the focused window, and adds it to the set. The `hasSeeded` flag prevents it from re-seeding on subsequent updates.
 
-The real problem was structural. We were mounting the UI before the application was actually ready to be seen.
-
-We moved the async tracking into the `browserState` service itself. The original code used a fire-and-forget IIFE to seed state. The promise resolved, the `SvelteMap` got populated, but nobody outside could know when that happened.
-
-```typescript
-// browser-state.svelte.ts — BEFORE (fire-and-forget)
-function createBrowserState() {
-  const windowStates = new SvelteMap<WindowCompositeId, WindowState>();
-  let deviceId: string | null = null;
-
-  (async () => {
-    const [browserWindows, id] = await Promise.all([
-      browser.windows.getAll({ populate: true }),
-      getDeviceId(),
-    ]);
-    // ... populate windowStates ...
-    deviceId = id;
-  })();
-
-  return {
-    get windows() { return [...windowStates.values()].map((s) => s.window) },
-    // ... no way to know when data is ready
-  };
-}
+```
+createBrowserState()       FlatTabList mounts        Async seed resolves
+        │                        │                         │
+        │  windows = []          │                         │
+        │───────────────────────>│                         │
+        │                        │                         │
+        │                        │  new SvelteSet()        │
+        │                        │  $effect registered     │
+        │                        │  (effect runs, sees     │
+        │                        │   empty, does nothing)  │
+        │                        │                         │
+        │                        │                   windows = [A, B*, C]
+        │                        │                         │
+        │                        │  $effect re-runs ◄──────│
+        │                        │  finds B (focused)      │
+        │                        │  expandedWindows.add(B)  │
+        │                        │  hasSeeded = true        │
 ```
 
-The fix was one word: `const`. Capture the IIFE's promise and expose it.
+This works. But the component is now responsible for handling the timing of a service it doesn't own. Every new component that needs data at construction would need its own `$effect` with its own `seeded` flag.
+
+## Fix 2: The Render Gate
+
+The real fix was structural. Instead of making the component deal with the timing, we made the component not exist until the timing was resolved.
+
+The service side: capture the fire-and-forget IIFE as a promise and [expose it](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/state/browser-state.svelte.ts#L83-L109).
 
 ```typescript
-// browser-state.svelte.ts — AFTER (captured promise)
-const whenReady = (async () => {
-  const [browserWindows, id] = await Promise.all([
-    browser.windows.getAll({ populate: true }),
-    getDeviceId(),
-  ]);
+// browser-state.svelte.ts — BEFORE
+(async () => {
+  const browserWindows = await browser.windows.getAll({ populate: true });
   // ... populate windowStates ...
-  deviceId = id;
+})();
+
+return {
+  get windows() { ... },
+  // no way for consumers to know when data is ready
+};
+```
+
+```typescript
+// browser-state.svelte.ts — AFTER
+const whenReady = (async () => {
+  const browserWindows = await browser.windows.getAll({ populate: true });
+  // ... populate windowStates ...
 })();
 
 return {
   whenReady,
-  get windows() { return [...windowStates.values()].map((s) => s.window) },
-  // ...
+  get windows() { ... },
 };
 ```
 
-This allowed us to implement a render gate at the root of the application. By using Svelte's `{#await}` block in `App.svelte`, we ensured that no child components would mount until the data was guaranteed to be there.
+The UI side: [`App.svelte`](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/entrypoints/sidepanel/App.svelte#L43-L54) awaits the promise before rendering children.
 
 ```svelte
 <!-- App.svelte -->
@@ -91,45 +150,48 @@ This allowed us to implement a render gate at the root of the application. By us
   <Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
     <FlatTabList />
   </Tabs.Content>
+  <Tabs.Content value="saved" class="flex-1 min-h-0 mt-0">
+    <SavedTabList />
+  </Tabs.Content>
 {/await}
 ```
 
-With the gate in place, the complexity in `FlatTabList` vanished. We could revert to the simple, synchronous constructor. We no longer needed to check if the data had seeded because the component only exists in a world where the data is already loaded.
+Now `FlatTabList` only mounts after `whenReady` resolves. By the time its `<script>` block runs, `browserState.windows` is populated. The [original one-liner](https://github.com/EpicenterHQ/epicenter/blob/9b893eddc/apps/tab-manager/src/lib/components/FlatTabList.svelte#L14-L19) works.
 
 ```typescript
-// FlatTabList.svelte (Simplified)
+// FlatTabList.svelte — back to the simple version
 const expandedWindows = new SvelteSet<WindowCompositeId>(
   browserState.windows.filter((w) => w.focused).map((w) => w.id),
 );
 ```
 
-This follows the sync construction with async property pattern. The service is created synchronously so it can be exported and used anywhere, but it exposes a promise that the UI respects.
+```
+createBrowserState()       App.svelte                 FlatTabList
+        │                      │                          │
+        │                      │                          │
+        │                      │  {#await whenReady}      │
+        │                      │  show "Loading tabs…"    │
+        │                      │                          │
+        │  seed resolves       │                          │
+        │  windows = [A,B*,C]  │                          │
+        │─────────────────────>│                          │
+        │                      │                          │
+        │                      │  {:then}                 │
+        │                      │  mount FlatTabList ──────>│
+        │                      │                          │
+        │                      │                          │  read windows → [A, B*, C]
+        │                      │                          │  SvelteSet = { B }  ✓
+```
+
+## The Difference
 
 | Aspect | $effect seeding | Render gate |
 | :--- | :--- | :--- |
-| Responsibility | Component handles service timing | App handles its own readiness |
-| Complexity | Flags and effects per consumer | Standard synchronous code |
-| Scalability | Every consumer needs a workaround | One fix covers all children |
-| UX | UI pops in and shifts | Clean loading state to ready state |
+| Who handles timing | Each component, independently | Once, in the parent |
+| Component code | Effects, flags, guards | Plain synchronous constructors |
+| Adding new components | Must duplicate effect pattern | No extra work |
+| UX | Content shifts as effects fire | Clean loading → ready transition |
 
-```
-App.svelte           browserState           FlatTabList
-    │                     │                      │
-    │  await whenReady    │                      │
-    │────────────────────>│                      │
-    │                     │                      │
-    │  promise resolves   │                      │
-    │<────────────────────│                      │
-    │                     │                      │
-    │  mount component    │                      │
-    │─────────────────────┼─────────────────────>│
-    │                     │                      │
-    │                     │   read windows()     │
-    │                     │<─────────────────────│
-    │                     │   (data is ready)    │
-    │                     │─────────────────────>│
-```
+The `$effect` approach treats the symptom: data isn't there yet, so wait for it. The render gate treats the cause: the component shouldn't exist yet. One `{#await}` at the root means every child component lives in a world where the data already exists. No component needs to wonder whether the service has finished initializing.
 
-The render gate turned a timing bug into a non-issue. By lifting the async boundary to the root, we allowed our components to remain simple, synchronous, and predictable.
-
-If a component needs data to initialize its internal state, don't write an effect to wait for it. Gate the component. See [Gate the Component, Not the Data](/docs/articles/gate-the-component-not-the-data.md) for the general pattern, and the [sync construction, async property](/docs/articles/sync-construction-async-property-ui-render-gate-pattern.md) article for the underlying approach.
+If a component derives local state from async service data, don't seed it with an effect. Gate the component so it only mounts after the data is ready. See [Gate the Component, Not the Data](/docs/articles/gate-the-component-not-the-data.md) for the general pattern, and the [sync construction, async property](/docs/articles/sync-construction-async-property-ui-render-gate-pattern.md) article for the underlying approach.

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { VList } from 'virtua/svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { cn } from '@epicenter/ui/utils';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import type { WindowCompositeId } from '$lib/device/composite-id';
 	import TabItem from './TabItem.svelte';
@@ -58,15 +59,13 @@
 			<button
 				type="button"
 				onclick={() => toggleWindow(item.window.id)}
-				class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:bg-muted/80"
+				class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs text-muted-foreground backdrop-blur transition hover:bg-muted/80"
 			>
 				<ChevronRightIcon
-					class="size-3 shrink-0 text-muted-foreground transition-transform {isExpanded
-						? 'rotate-90'
-						: ''}"
+					class={cn('size-3 shrink-0 transition', isExpanded && 'rotate-90')}
 				/>
-				<AppWindowIcon class="size-3 text-muted-foreground shrink-0" />
-				<span class="truncate text-muted-foreground">
+				<AppWindowIcon class="size-3 shrink-0" />
+				<span class="truncate">
 					{#if displayTab?.title}
 						{displayTab.title}
 					{:else}
@@ -74,9 +73,11 @@
 					{/if}
 				</span>
 				{#if item.window.focused}
-					<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
+					<Badge variant="secondary" class="ml-auto shrink-0 px-1.5 py-0 text-[10px]">
+						focused
+					</Badge>
 				{/if}
-				<Badge variant="outline" class="shrink-0">
+				<Badge variant="outline" class="shrink-0 px-1.5 py-0 text-[10px]">
 					{windowTabs.length}
 				</Badge>
 			</button>

@@ -17,7 +17,7 @@ import { Ok, trySync } from 'wellcrafted/result';
  */
 export function getDomain(url: string): string {
 	const { data } = trySync({
-		try: () => new URL(url).hostname,
+		try: () => new URL(url).hostname.replace(/^www\./, ''),
 		catch: () => Ok(url),
 	});
 	return data;

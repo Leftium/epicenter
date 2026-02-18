@@ -14,6 +14,7 @@
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
 	import * as Item from '@epicenter/ui/item';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 
 	let { tab }: { tab: Tab } = $props();
 
@@ -22,7 +23,7 @@
 </script>
 
 <Item.Root size="sm" class={tab.active ? 'bg-accent/50' : 'hover:bg-accent'}>
-	{#snippet child({ props })}
+	{#snippet child({ props }: { props: Record<string, unknown> })}
 		<button
 			type="button"
 			{...props}
@@ -46,9 +47,24 @@
 					{/if}
 					<span class="truncate">{tab.title || 'Untitled'}</span>
 				</Item.Title>
-				<Item.Description class="truncate">
-					{domain}
-				</Item.Description>
+				{#if tab.url}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props }: { props: Record<string, unknown> })}
+								<Item.Description {...props} class="w-fit truncate">
+									{domain}
+								</Item.Description>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content side="bottom">
+							{tab.url}
+						</Tooltip.Content>
+					</Tooltip.Root>
+				{:else}
+					<Item.Description class="truncate">
+						{domain}
+					</Item.Description>
+				{/if}
 			</Item.Content>
 
 			<Item.Actions showOnHover class="gap-1">

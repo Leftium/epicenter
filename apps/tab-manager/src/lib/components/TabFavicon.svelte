@@ -5,7 +5,7 @@
 	let { src }: { src: string | undefined } = $props();
 </script>
 
-<Avatar.Root class="size-4 shrink-0 rounded-sm">
+<Avatar.Root class="size-6 shrink-0 rounded-sm">
 	<Avatar.Image {src} alt="" />
 	<Avatar.Fallback class="rounded-sm">
 		<GlobeIcon class="size-3 text-muted-foreground" />

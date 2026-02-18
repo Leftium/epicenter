@@ -1,8 +1,8 @@
 # You Don't Need an Accordion Inside a Virtual List
 
-I tried to put a shadcn Accordion component inside a virtua `VList` in Svelte. The Accordion needs a context provider wrapping all its items, its CSS animations assume nested DOM (parent `Item` containing child `Content`), and the virtual list mounts and unmounts DOM nodes as you scroll. The two models are fundamentally incompatible.
+I tried to put a shadcn Accordion component inside a virtua `VList` in Svelte. Virtual lists expect flat, predictable-height items. Accordions give you nested DOM with variable-height content that expands and collapses. The virtual list needs to measure and position every item; the accordion wants to animate its own height transitions independently. The two models don't compose.
 
-Then I realized: accordion behavior is just conditional rendering with a Set.
+At first I was bummed-it seemed like I had to choose between collapsible groups and virtualization. Then it clicked: I don't need an accordion component. I can accomplish the same thing with headers with arrows that conditionally render their children in the virtual list. A reactive Set, a derived flat list, done.
 
 ## The Pattern
 

@@ -56,7 +56,11 @@
 								</Item.Description>
 							{/snippet}
 						</Tooltip.Trigger>
-						<Tooltip.Content side="bottom" class="max-w-sm break-all">
+						<Tooltip.Content
+							side="bottom"
+							collisionPadding={8}
+							class="max-w-[calc(100vw-2rem)] break-all"
+						>
 							{tab.url}
 						</Tooltip.Content>
 					</Tooltip.Root>

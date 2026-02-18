@@ -11,10 +11,19 @@
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
-	// Track which windows are expanded — seed with focused window
-	const expandedWindows = new SvelteSet<WindowCompositeId>(
-		browserState.windows.filter((w) => w.focused).map((w) => w.id),
-	);
+	// Track which windows are expanded (mutable — user can toggle freely)
+	const expandedWindows = new SvelteSet<WindowCompositeId>();
+
+	// Seed once: expand the focused window after async browser state loads.
+	// browserState.windows starts empty (async seed), so the old `new SvelteSet(initialValue)`
+	// constructor always received []. This $effect waits for data, seeds once, then stops.
+	let hasSeeded = false;
+	$effect(() => {
+		const focused = browserState.windows.filter((w) => w.focused);
+		if (hasSeeded || focused.length === 0) return;
+		for (const w of focused) expandedWindows.add(w.id);
+		hasSeeded = true;
+	});
 
 	function toggleWindow(id: WindowCompositeId) {
 		if (expandedWindows.has(id)) expandedWindows.delete(id);

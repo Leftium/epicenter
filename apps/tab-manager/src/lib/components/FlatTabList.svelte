@@ -28,10 +28,9 @@
 		<Empty.Description>Open some tabs to see them here</Empty.Description>
 	</Empty.Root>
 {:else}
-	<!-- VList needs explicit pixel height, not percentage -->
 	<VList
 		data={flatItems}
-		style="height: 600px;"
+		style="height: 100%;"
 		getKey={(item) =>
 			item.kind === 'window'
 				? `window-${item.window.id}`
@@ -39,18 +38,26 @@
 	>
 		{#snippet children(item)}
 			{#if item.kind === 'window'}
+				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
+				{@const activeTab = windowTabs.find((t) => t.active)}
+				{@const firstTab = windowTabs[0]}
+				{@const displayTab = activeTab || firstTab}
 				<div
-					class="sticky top-0 z-10 flex items-center gap-2 bg-muted/50 px-4 py-2 text-sm font-medium backdrop-blur"
+					class="sticky top-0 z-10 flex items-center gap-2 bg-muted/50 px-4 py-2 text-xs backdrop-blur border-b"
 				>
-					<AppWindowIcon class="size-4 text-muted-foreground" />
-					<span>
-						Window
-						{#if item.window.focused}
-							<Badge variant="secondary" class="ml-1">focused</Badge>
+					<AppWindowIcon class="size-3 text-muted-foreground shrink-0" />
+					<span class="truncate text-muted-foreground">
+						{#if displayTab?.title}
+							{displayTab.title}
+						{:else}
+							Window
 						{/if}
 					</span>
-					<Badge variant="outline" class="ml-auto">
-						{browserState.tabsByWindow(item.window.id).length}
+					{#if item.window.focused}
+						<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
+					{/if}
+					<Badge variant="outline" class="shrink-0">
+						{windowTabs.length}
 					</Badge>
 				</div>
 			{:else}

@@ -5,6 +5,5 @@
 @source "./entrypoints/**/*.{svelte,ts}";
 @source "./lib/**/*.{svelte,ts}";
 
-/* Extension popup specific styles */
-/* Note: Popup dimensions are controlled by the root component (App.svelte) */
-/* Body styles are removed to avoid conflicts with browser defaults */
+/* Full-height chain: html, body, #app use class="h-full" in index.html */
+/* Tailwind preflight already resets margin/padding on all elements */

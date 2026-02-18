@@ -103,6 +103,16 @@ const syncCoordination = {
 // Event listeners must be registered synchronously at the top level.
 // We use the "deferred handler" pattern: store initPromise, await it in handlers.
 export default defineBackground(() => {
+	// Open side panel when the extension icon is clicked (Chromium-based browsers).
+	// Firefox uses sidebar_action manifest key — no runtime call needed.
+	if (!import.meta.env.FIREFOX) {
+		browser.sidePanel
+			.setPanelBehavior({ openPanelOnActionClick: true })
+			.catch((error: unknown) =>
+				console.error('[Background] Failed to set panel behavior:', error),
+			);
+	}
+
 	console.log('[Background] Initializing Tab Manager...');
 
 	// Get device ID early (cached after first call)

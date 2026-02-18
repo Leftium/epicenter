@@ -56,7 +56,7 @@
 								</Item.Description>
 							{/snippet}
 						</Tooltip.Trigger>
-						<Tooltip.Content side="bottom">
+						<Tooltip.Content side="bottom" class="max-w-sm break-all">
 							{tab.url}
 						</Tooltip.Content>
 					</Tooltip.Root>

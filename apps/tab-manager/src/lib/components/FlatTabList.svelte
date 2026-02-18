@@ -50,35 +50,35 @@
 				: `tab-${item.tab.id}`}
 	>
 		{#snippet children(item)}
-		{#if item.kind === 'window'}
-			{@const windowTabs = browserState.tabsByWindow(item.window.id)}
-			{@const activeTab = windowTabs.find((t) => t.active)}
-			{@const firstTab = windowTabs[0]}
-			{@const displayTab = activeTab || firstTab}
-			{@const isExpanded = expandedWindows.has(item.window.id)}
-			<button
-				type="button"
-				onclick={() => toggleWindow(item.window.id)}
-				class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"
-			>
-				<ChevronRightIcon
-					class={cn('size-4 shrink-0 transition', isExpanded && 'rotate-90')}
-				/>
-				<AppWindowIcon class="size-4 shrink-0" />
-				<span class="truncate">
-					{#if displayTab?.title}
-						{displayTab.title}
-					{:else}
-						Window
+			{#if item.kind === 'window'}
+				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
+				{@const activeTab = windowTabs.find((t) => t.active)}
+				{@const firstTab = windowTabs[0]}
+				{@const displayTab = activeTab || firstTab}
+				{@const isExpanded = expandedWindows.has(item.window.id)}
+				<button
+					type="button"
+					onclick={() => toggleWindow(item.window.id)}
+					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"
+				>
+					<ChevronRightIcon
+						class={cn('size-4 shrink-0 transition', isExpanded && 'rotate-90')}
+					/>
+					<AppWindowIcon class="size-4 shrink-0" />
+					<span class="truncate">
+						{#if displayTab?.title}
+							{displayTab.title}
+						{:else}
+							Window
+						{/if}
+					</span>
+					{#if item.window.focused}
+						<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
 					{/if}
-				</span>
-				{#if item.window.focused}
-					<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>
-				{/if}
-				<Badge variant="outline" class="shrink-0">
-					{windowTabs.length}
-				</Badge>
-			</button>
+					<Badge variant="outline" class="shrink-0">
+						{windowTabs.length}
+					</Badge>
+				</button>
 			{:else}
 				<div class="border-b border-border">
 					<TabItem tab={item.tab} />

@@ -38,7 +38,7 @@
 								<Item.Title>
 									<span class="truncate">{tab.title || 'Untitled'}</span>
 								</Item.Title>
-								<Item.Description class="flex items-center gap-2 truncate">
+								<Item.Description class="flex min-w-0 items-center gap-2 truncate">
 									<span class="truncate">{getDomain(tab.url)}</span>
 									<span>•</span>
 									<span class="shrink-0">{getRelativeTime(tab.savedAt)}</span>

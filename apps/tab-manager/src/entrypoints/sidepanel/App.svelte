@@ -39,17 +39,13 @@
 					</Tabs.Trigger>
 				</Tabs.List>
 			</header>
-			<!--
-				VList (windows tab) handles its own scroll via overflow-y:auto.
-				ScrollArea would conflict — two competing scroll containers.
-				SavedTabList (saved tab) is non-virtualized, overflow-auto handles scroll.
-			-->
-			<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
-				<FlatTabList />
-			</Tabs.Content>
-			<Tabs.Content value="saved" class="flex-1 min-h-0 mt-0 overflow-auto">
-				<SavedTabList />
-			</Tabs.Content>
+		<!-- Both tabs use VList for virtualized scrolling — no ScrollArea needed -->
+		<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
+			<FlatTabList />
+		</Tabs.Content>
+		<Tabs.Content value="saved" class="flex-1 min-h-0 mt-0">
+			<SavedTabList />
+		</Tabs.Content>
 		</Tabs.Root>
 	</main>
 </Tooltip.Provider>

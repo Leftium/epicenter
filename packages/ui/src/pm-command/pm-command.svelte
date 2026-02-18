@@ -71,26 +71,26 @@
 				</Tabs.List>
 			</Tabs.Root>
 		</div>
-	<!-- delayDuration={0} overrides the ancestor provider's default for this tooltip.
+		<!-- delayDuration={0} overrides the ancestor provider's default for this tooltip.
 		 bits-ui Tooltip.Root props take precedence over Provider defaults via nullish coalescing.
 		 A Tooltip.Provider must exist somewhere above this component in the tree.
 		 See: https://bits-ui.com/docs/components/tooltip#delay-duration -->
-	<Tooltip.Root delayDuration={0}>
-		<Tooltip.Trigger>
-			{#snippet child({ props })}
-				<CopyButton
-					{...props}
-					text={commandText}
-					class="size-6 [&_svg]:size-3"
-				>
-					{#snippet icon()}
-						<ClipboardIcon />
-					{/snippet}
-				</CopyButton>
-			{/snippet}
-		</Tooltip.Trigger>
-		<Tooltip.Content>Copy to Clipboard</Tooltip.Content>
-	</Tooltip.Root>
+		<Tooltip.Root delayDuration={0}>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<CopyButton
+						{...props}
+						text={commandText}
+						class="size-6 [&_svg]:size-3"
+					>
+						{#snippet icon()}
+							<ClipboardIcon />
+						{/snippet}
+					</CopyButton>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Copy to Clipboard</Tooltip.Content>
+		</Tooltip.Root>
 	</div>
 	<div class="no-scrollbar overflow-x-auto p-3">
 		<span

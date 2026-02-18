@@ -53,8 +53,7 @@
 			{#if item.kind === 'window'}
 				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
 				{@const activeTab = windowTabs.find((t) => t.active)}
-				{@const firstTab = windowTabs[0]}
-				{@const displayTab = activeTab || firstTab}
+				{@const firstTab = windowTabs.at(0)}
 				{@const isExpanded = expandedWindows.has(item.window.id)}
 				<button
 					type="button"
@@ -66,11 +65,7 @@
 					/>
 					<AppWindowIcon class="size-4 shrink-0" />
 					<span class="truncate">
-						{#if displayTab?.title}
-							{displayTab.title}
-						{:else}
-							Window
-						{/if}
+						{(activeTab ?? firstTab)?.title ?? 'Window'}
 					</span>
 					{#if item.window.focused}
 						<Badge variant="secondary" class="ml-auto shrink-0">focused</Badge>

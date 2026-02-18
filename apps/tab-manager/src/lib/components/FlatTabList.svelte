@@ -58,10 +58,10 @@
 			<button
 				type="button"
 				onclick={() => toggleWindow(item.window.id)}
-				class="sticky top-0 z-10 flex w-full items-center gap-2 bg-muted/50 px-4 py-2 text-xs backdrop-blur border-b cursor-pointer hover:bg-muted/80 transition-colors"
+				class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-xs backdrop-blur transition-colors hover:bg-muted/80"
 			>
 				<ChevronRightIcon
-					class="size-3 text-muted-foreground shrink-0 transition-transform duration-200 {isExpanded
+					class="size-3 shrink-0 text-muted-foreground transition-transform {isExpanded
 						? 'rotate-90'
 						: ''}"
 				/>

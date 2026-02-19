@@ -14,6 +14,8 @@
 	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
 	import * as Item from '@epicenter/ui/item';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import { cn } from '@epicenter/ui/utils';
 
 	let { tab }: { tab: Tab } = $props();
 
@@ -21,12 +23,17 @@
 	const domain = $derived(tab.url ? getDomain(tab.url) : '');
 </script>
 
-<Item.Root size="sm" class={tab.active ? 'bg-accent/50' : 'hover:bg-accent'}>
-	{#snippet child({ props })}
+<Item.Root
+	size="sm"
+	class={cn(
+		'w-full text-left',
+		tab.active ? 'bg-accent/50' : 'hover:bg-accent',
+	)}
+>
+	{#snippet child({ props }: { props: Record<string, unknown> })}
 		<button
 			type="button"
 			{...props}
-			class="{props.class} w-full text-left"
 			onclick={() => browserState.actions.activate(tabId)}
 		>
 			<Item.Media>
@@ -46,9 +53,28 @@
 					{/if}
 					<span class="truncate">{tab.title || 'Untitled'}</span>
 				</Item.Title>
-				<Item.Description class="truncate">
-					{domain}
-				</Item.Description>
+				{#if tab.url}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props }: { props: Record<string, unknown> })}
+								<Item.Description {...props} class="w-fit truncate">
+									{domain}
+								</Item.Description>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content
+							side="bottom"
+							collisionPadding={8}
+							class="max-w-[calc(100vw-2rem)] break-all"
+						>
+							{tab.url}
+						</Tooltip.Content>
+					</Tooltip.Root>
+				{:else}
+					<Item.Description class="truncate">
+						{domain}
+					</Item.Description>
+				{/if}
 			</Item.Content>
 
 			<Item.Actions showOnHover class="gap-1">

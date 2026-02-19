@@ -39,13 +39,19 @@
 					</Tabs.Trigger>
 				</Tabs.List>
 			</header>
-			<!-- Both tabs use VList for virtualized scrolling — no ScrollArea needed -->
-			<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
-				<FlatTabList />
-			</Tabs.Content>
-			<Tabs.Content value="saved" class="flex-1 min-h-0 mt-0">
-				<SavedTabList />
-			</Tabs.Content>
+			<!-- Gate on browser state seed so child components can read data synchronously -->
+			{#await browserState.whenReady}
+				<div class="flex-1 flex items-center justify-center">
+					<p class="text-sm text-muted-foreground">Loading tabs…</p>
+				</div>
+			{:then}
+				<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
+					<FlatTabList />
+				</Tabs.Content>
+				<Tabs.Content value="saved" class="flex-1 min-h-0 mt-0">
+					<SavedTabList />
+				</Tabs.Content>
+			{/await}
 		</Tabs.Root>
 	</main>
 </Tooltip.Provider>

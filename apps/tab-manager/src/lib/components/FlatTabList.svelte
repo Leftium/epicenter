@@ -11,7 +11,9 @@
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
-	// Track which windows are expanded — seed with focused window
+	// Track which windows are expanded — seed with focused window.
+	// Safe to read browserState.windows here because App.svelte gates
+	// rendering on browserState.whenReady (data is already loaded).
 	const expandedWindows = new SvelteSet<WindowCompositeId>(
 		browserState.windows.filter((w) => w.focused).map((w) => w.id),
 	);

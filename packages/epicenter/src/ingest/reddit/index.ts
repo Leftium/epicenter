@@ -59,7 +59,7 @@ function importTableRows(
 ): number {
 	if (csvData.length === 0) return 0;
 	const rows = csvData.map((row) => schema.assert(row));
-	for (const row of rows) tableClient.set({ ...row, _v: 1 as const });
+	for (const row of rows) tableClient.set({ ...row, _v: 1 });
 	return rows.length;
 }
 

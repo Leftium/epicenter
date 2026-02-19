@@ -23,7 +23,7 @@ describe('defineTable', () => {
 				type({ id: 'string', email: 'string', _v: '1' }),
 			);
 
-			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
+			const row = { id: '1', email: 'test@example.com', _v: 1 };
 			expect(users.migrate(row)).toBe(row);
 		});
 
@@ -101,7 +101,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -136,7 +136,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -172,7 +172,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -218,7 +218,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({
 				id: '1',

@@ -81,9 +81,7 @@ export function createContentHelpers(
 						parseSheetFromCsv(data, columns, rows);
 					});
 				} else if (tl.currentMode === 'text') {
-					const ytext = tl.currentEntry!.get(
-						'content',
-					) as import('yjs').Text;
+					const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
 					ydoc.transact(() => {
 						ytext.delete(0, ytext.length);
 						ytext.insert(0, data);
@@ -103,9 +101,7 @@ export function createContentHelpers(
 			const tl = createTimeline(ydoc);
 
 			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry!.get(
-					'content',
-				) as import('yjs').Text;
+				const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
 				ydoc.transact(() => ytext.insert(ytext.length, data));
 			} else if (tl.currentMode === 'binary') {
 				const existing = new TextDecoder().decode(

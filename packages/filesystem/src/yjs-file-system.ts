@@ -8,8 +8,8 @@ import type {
 	RmOptions,
 } from 'just-bash';
 import {
-	createContentHelpers,
 	type ContentHelpers,
+	createContentHelpers,
 } from './content-helpers.js';
 import { FileTree } from './file-tree.js';
 import { posixResolve } from './path-utils.js';
@@ -73,10 +73,7 @@ export class YjsFileSystem implements IFileSystem {
 	 * const fs = YjsFileSystem.create(ws.tables.files);
 	 * ```
 	 */
-	static create(
-		filesTable: FilesTableWithDocs,
-		cwd?: string,
-	): YjsFileSystem {
+	static create(filesTable: FilesTableWithDocs, cwd?: string): YjsFileSystem {
 		const tree = new FileTree(filesTable);
 		const content = createContentHelpers(filesTable.docs.content);
 		return new YjsFileSystem(tree, content, cwd);

@@ -2,10 +2,13 @@
 
 // Content doc store (deprecated — Phase 3 will remove)
 export { createContentDocStore } from './content-doc-store.js';
+// Content helpers (document binding wrappers)
+export {
+	type ContentHelpers,
+	createContentHelpers,
+} from './content-helpers.js';
 // Content I/O operations (deprecated — Phase 3 will remove)
 export { ContentOps } from './content-ops.js';
-// Content helpers (document binding wrappers)
-export { createContentHelpers, type ContentHelpers } from './content-helpers.js';
 // Runtime indexes
 export {
 	createFileSystemIndex,

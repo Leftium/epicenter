@@ -198,7 +198,10 @@ export function defineTable<
 			schema,
 			migrate: (row: unknown) => row as { id: string; _v: number },
 			docs: {} as Record<string, never>,
-		}) as unknown as TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
+		}) as unknown as TableDefinitionWithDocBuilder<
+			[TSchema],
+			Record<string, never>
+		>;
 	}
 
 	const versions: CombinedStandardSchema[] = [];
@@ -237,27 +240,20 @@ function addWithDocument<
 		migrate: unknown;
 		docs: Record<string, DocBinding<string, string>>;
 	},
->(def: T): T & {
-	withDocument(
-		name: string,
-		binding: DocBinding<string, string>,
-	): T;
+>(
+	def: T,
+): T & {
+	withDocument(name: string, binding: DocBinding<string, string>): T;
 } {
 	return {
 		...def,
-		withDocument(
-			name: string,
-			binding: DocBinding<string, string>,
-		) {
+		withDocument(name: string, binding: DocBinding<string, string>) {
 			return addWithDocument({
 				...def,
 				docs: { ...def.docs, [name]: binding },
 			});
 		},
 	} as T & {
-		withDocument(
-			name: string,
-			binding: DocBinding<string, string>,
-		): T;
+		withDocument(name: string, binding: DocBinding<string, string>): T;
 	};
 }

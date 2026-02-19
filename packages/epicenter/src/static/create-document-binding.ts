@@ -37,7 +37,10 @@
  */
 
 import * as Y from 'yjs';
-import type { DocumentContext, DocumentLifecycle } from '../shared/lifecycle.js';
+import type {
+	DocumentContext,
+	DocumentLifecycle,
+} from '../shared/lifecycle.js';
 import type { DocumentBinding, TableHelper } from './types.js';
 
 /**
@@ -125,9 +128,9 @@ export type CreateDocumentBindingConfig<
  * @param config - Binding configuration
  * @returns A `DocumentBinding<TRow>` with open/read/write/destroy/purge methods
  */
-export function createDocumentBinding<
-	TRow extends { id: string; _v: number },
->(config: CreateDocumentBindingConfig<TRow>): DocumentBinding<TRow> {
+export function createDocumentBinding<TRow extends { id: string; _v: number }>(
+	config: CreateDocumentBindingConfig<TRow>,
+): DocumentBinding<TRow> {
 	const {
 		guidKey,
 		updatedAtKey,
@@ -239,9 +242,7 @@ export function createDocumentBinding<
 			const whenReady =
 				lifecycles.length === 0
 					? Promise.resolve(contentYdoc)
-					: Promise.all(
-							lifecycles.map((l) => l.whenReady ?? Promise.resolve()),
-						)
+					: Promise.all(lifecycles.map((l) => l.whenReady ?? Promise.resolve()))
 							.then(() => contentYdoc)
 							.catch(async (err) => {
 								// If any provider's whenReady rejects, clean up everything
@@ -299,9 +300,7 @@ export function createDocumentBinding<
 
 			// clearData first (while providers are still connected)
 			await Promise.allSettled(
-				entry.lifecycles
-					.filter((l) => l.clearData)
-					.map((l) => l.clearData!()),
+				entry.lifecycles.filter((l) => l.clearData).map((l) => l.clearData!()),
 			);
 
 			// Then tear down

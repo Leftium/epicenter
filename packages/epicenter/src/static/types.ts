@@ -124,18 +124,18 @@ export type TableDefinition<
 };
 
 /** Extract the row type from a TableDefinition */
-export type InferTableRow<T> =
-	T extends { migrate: (...args: never[]) => infer TLatest }
-		? TLatest
-		: never;
+export type InferTableRow<T> = T extends {
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest
+	: never;
 
 /** Extract the version union type from a TableDefinition */
-export type InferTableVersionUnion<T> =
-	T extends {
-		schema: CombinedStandardSchema<unknown, infer TOutput>;
-	}
-		? TOutput
-		: never;
+export type InferTableVersionUnion<T> = T extends {
+	schema: CombinedStandardSchema<unknown, infer TOutput>;
+}
+	? TOutput
+	: never;
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT BINDING TYPES
@@ -269,18 +269,20 @@ export type DocumentBinding<TRow extends { id: string; _v: number }> = {
  * client.tables.tags.docs // Property 'docs' does not exist
  * ```
  */
-export type DocsPropertyOf<T> =
-	T extends { docs: infer TDocs; migrate: (...args: never[]) => infer TLatest }
-		? TLatest extends { id: string; _v: number }
-			? keyof TDocs extends never
-				? {} // no .withDocument() → no .docs property
-				: {
-						docs: {
-							[K in keyof TDocs]: DocumentBinding<TLatest>;
-						};
-					}
-			: {}
-		: {};
+export type DocsPropertyOf<T> = T extends {
+	docs: infer TDocs;
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest extends { id: string; _v: number }
+		? keyof TDocs extends never
+			? {} // no .withDocument() → no .docs property
+			: {
+					docs: {
+						[K in keyof TDocs]: DocumentBinding<TLatest>;
+					};
+				}
+		: {}
+	: {};
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV DEFINITION TYPES

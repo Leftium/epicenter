@@ -129,18 +129,26 @@ export function createWorkspace<
 	const documentBindingCleanups: (() => Promise<void>)[] = [];
 
 	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
-		const docsDef = (tableDef as { docs?: Record<string, DocBinding<string, string>> }).docs;
+		const docsDef = (
+			tableDef as { docs?: Record<string, DocBinding<string, string>> }
+		).docs;
 		if (!docsDef || Object.keys(docsDef).length === 0) continue;
 
-		const tableHelper = (tables as Record<string, TableHelper<{ id: string; _v: number }>>)[tableName];
+		const tableHelper = (
+			tables as Record<string, TableHelper<{ id: string; _v: number }>>
+		)[tableName];
 		if (!tableHelper) continue;
 
-		const docsNamespace: Record<string, DocumentBinding<{ id: string; _v: number }>> = {};
+		const docsNamespace: Record<
+			string,
+			DocumentBinding<{ id: string; _v: number }>
+		> = {};
 
 		for (const [docName, docBinding] of Object.entries(docsDef)) {
 			const binding = createDocumentBinding({
 				guidKey: docBinding.guid as keyof { id: string; _v: number } & string,
-				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } & string,
+				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } &
+					string,
 				tableHelper,
 				ydoc,
 				onDocumentOpen: documentOpenHooks,
@@ -221,7 +229,9 @@ export function createWorkspace<
 				const result = factory(client);
 				const destroy = result.lifecycle?.destroy;
 				if (destroy) extensionCleanups.push(destroy);
-				whenReadyPromises.push(result.lifecycle?.whenReady ?? Promise.resolve());
+				whenReadyPromises.push(
+					result.lifecycle?.whenReady ?? Promise.resolve(),
+				);
 
 				// Collect onDocumentOpen hooks for document bindings
 				if (result.onDocumentOpen) {

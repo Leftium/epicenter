@@ -82,6 +82,8 @@ export type { ExtensionError } from '../shared/errors.js';
 export { ExtensionErr } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
+	DocumentContext,
+	DocumentLifecycle,
 	Extension,
 	Lifecycle,
 	MaybePromise,
@@ -108,6 +110,11 @@ export { defineWorkspace } from './define-workspace.js';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { createWorkspace } from './create-workspace.js';
+export {
+	createDocumentBinding,
+	DOCUMENT_BINDING_ORIGIN,
+} from './create-document-binding.js';
+export type { CreateDocumentBindingConfig } from './create-document-binding.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Lower-Level APIs (Bring Your Own Y.Doc)
@@ -148,6 +155,10 @@ export type {
 	AwarenessHelper,
 	AwarenessState,
 	DeleteResult,
+	// Document binding types
+	DocBinding,
+	DocumentBinding,
+	DocsPropertyOf,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,
@@ -162,8 +173,10 @@ export type {
 	KvGetResult,
 	KvHelper,
 	NotFoundResult,
+	NumberKeysOf,
 	// Result types - composed
 	RowResult,
+	StringKeysOf,
 	// Definition types
 	TableDefinition,
 	// Map types

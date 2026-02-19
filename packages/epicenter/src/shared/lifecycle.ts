@@ -19,8 +19,8 @@
  * ┌──────────────────────────┐    ┌──────────────────────────────┐
  * │  Providers (doc-level)   │    │  Extensions (workspace-level) │
  * │  return Lifecycle & T    │    │  return Extension<T>          │
- * │  directly                │    │  { exports?, whenReady?,      │
- * └──────────────────────────┘    │    destroy? }                 │
+ * │  directly                │    │  { exports?, lifecycle?,      │
+ * └──────────────────────────┘    │    onDocumentOpen? }          │
  *                                 └──────────────────────────────┘
  * ```
  *
@@ -29,15 +29,17 @@
  * Factory functions are **always synchronous**. Async initialization is tracked
  * via the returned `whenReady` promise, not the factory itself.
  *
- * **Extensions** return a flat `{ exports?, whenReady?, destroy? }` object:
+ * **Extensions** return `{ exports?, lifecycle?, onDocumentOpen? }`:
  *
  * ```typescript
- * // Extension with cleanup — flat return, framework normalizes defaults
+ * // Extension with cleanup — lifecycle wraps whenReady/destroy
  * const withCleanup: ExtensionFactory = ({ ydoc }) => {
  *   const db = new Database(':memory:');
  *   return {
  *     exports: { db },
- *     destroy: () => db.close(),
+ *     lifecycle: {
+ *       destroy: () => db.close(),
+ *     },
  *   };
  * };
  * ```
@@ -55,6 +57,8 @@
  * };
  * ```
  */
+
+import type * as Y from 'yjs';
 
 /**
  * A value that may be synchronous or wrapped in a Promise.
@@ -139,12 +143,13 @@ export type Lifecycle = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * What extension factories return — a flat object with optional exports and lifecycle hooks.
+ * What extension factories return — an object with optional exports, lifecycle hooks,
+ * and a document-open callback.
  *
  * The framework normalizes defaults internally:
  * - `exports` defaults to `{}` (empty — lifecycle-only extensions)
- * - `whenReady` defaults to `Promise.resolve()` (instantly ready)
- * - `destroy` defaults to `() => {}` (no-op cleanup)
+ * - `lifecycle.whenReady` defaults to `Promise.resolve()` (instantly ready)
+ * - `lifecycle.destroy` defaults to `() => {}` (no-op cleanup)
  *
  * The `exports` object is stored **by reference** in `workspace.extensions[key]` —
  * getters, proxies, and object identity are preserved.
@@ -156,14 +161,18 @@ export type Lifecycle = {
  * // Extension with exports + lifecycle
  * .withExtension('sqlite', (ctx) => ({
  *   exports: { db, pullToSqlite },
- *   whenReady: initPromise,
- *   destroy: () => db.close(),
+ *   lifecycle: {
+ *     whenReady: initPromise,
+ *     destroy: () => db.close(),
+ *   },
  * }))
  *
  * // Lifecycle-only (no exports)
  * .withExtension('persistence', (ctx) => ({
- *   whenReady: loadFromDisk(),
- *   destroy: () => flush(),
+ *   lifecycle: {
+ *     whenReady: loadFromDisk(),
+ *     destroy: () => flush(),
+ *   },
  * }))
  *
  * // Exports-only (no lifecycle)
@@ -177,8 +186,104 @@ export type Extension<
 > = {
 	/** Consumer-facing exports stored by reference in `workspace.extensions[key]` */
 	exports?: T;
-	/** Resolves when initialization is complete. Defaults to `Promise.resolve()`. */
+	/** Lifecycle hooks for initialization and cleanup. */
+	lifecycle?: {
+		/** Resolves when initialization is complete. Defaults to `Promise.resolve()`. */
+		whenReady?: Promise<unknown>;
+		/** Clean up resources. Defaults to no-op. */
+		destroy?: () => MaybePromise<void>;
+	};
+	/**
+	 * Optional handler for content Y.Docs created by document binding `open()`.
+	 *
+	 * Called synchronously when a document binding creates a new Y.Doc.
+	 * Returns lifecycle hooks for this specific content doc (persistence, sync, etc.).
+	 * The framework iterates extensions in chain order — ordering is automatic.
+	 *
+	 * Return `void` to skip this extension for a particular document.
+	 *
+	 * @example
+	 * ```typescript
+	 * .withExtension('persistence', ({ ydoc }) => ({
+	 *   lifecycle: { whenReady: loadFromDisk(), destroy: () => flush() },
+	 *   onDocumentOpen({ ydoc: contentDoc }) {
+	 *     const idb = new IndexeddbPersistence(contentDoc.guid, contentDoc);
+	 *     return {
+	 *       whenReady: idb.whenSynced,
+	 *       destroy: () => idb.destroy(),
+	 *       clearData: () => idb.clearData(),
+	 *     };
+	 *   },
+	 * }))
+	 * ```
+	 */
+	onDocumentOpen?: (context: DocumentContext) => DocumentLifecycle | void;
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT LIFECYCLE TYPES — Used by document bindings and onDocumentOpen
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Extended lifecycle for document providers.
+ *
+ * Adds an optional `clearData` method for permanent deletion of persisted data.
+ * This is intentionally NOT on the base `Lifecycle` type — it's a destructive
+ * capability that only makes sense for per-document persistence.
+ *
+ * @example
+ * ```typescript
+ * const lifecycle: DocumentLifecycle = {
+ *   whenReady: idb.whenSynced,
+ *   destroy: () => idb.destroy(),
+ *   clearData: () => idb.clearData(), // permanent deletion
+ * };
+ * ```
+ */
+export type DocumentLifecycle = {
+	/** Resolves when initialization is complete. */
 	whenReady?: Promise<unknown>;
-	/** Clean up resources. Defaults to no-op. */
-	destroy?: () => MaybePromise<void>;
+	/** Clean up resources (free memory, disconnect). */
+	destroy: () => MaybePromise<void>;
+	/**
+	 * Optional: delete all persisted data for this document.
+	 * Called by `purge()`. Providers without persistent storage can omit this.
+	 */
+	clearData?: () => MaybePromise<void>;
+};
+
+/**
+ * Context passed to `onDocumentOpen` handlers on extensions.
+ *
+ * Provides the content Y.Doc being created, a composite `whenReady` from
+ * prior extensions, and metadata about which table/binding this doc belongs to.
+ *
+ * @example
+ * ```typescript
+ * onDocumentOpen({ ydoc, whenReady, binding }) {
+ *   const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
+ *   return {
+ *     whenReady: provider.whenSynced,
+ *     destroy: () => provider.destroy(),
+ *     clearData: () => provider.clearData(),
+ *   };
+ * }
+ * ```
+ */
+export type DocumentContext = {
+	/** The content Y.Doc being created. */
+	ydoc: Y.Doc;
+	/**
+	 * Composite whenReady of all PRIOR extensions' onDocumentOpen results.
+	 * Named `whenReady` for consistency with `client.whenReady`.
+	 */
+	whenReady: Promise<void>;
+	/**
+	 * Which table + binding this doc belongs to.
+	 * Enables per-binding behavior (e.g., skip sync for cover images).
+	 */
+	binding: {
+		tableName: string;
+		documentName: string;
+	};
 };

@@ -4,6 +4,8 @@
  * All table schemas must include `_v: number` as a discriminant field.
  * Use shorthand for single-version tables, builder pattern for multiple versions with migrations.
  *
+ * Optionally chain `.withDocument()` to declare named document bindings on the table.
+ *
  * @example
  * ```typescript
  * import { defineTable } from 'epicenter/static';
@@ -11,6 +13,11 @@
  *
  * // Shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
+ *
+ * // Shorthand with document binding
+ * const files = defineTable(
+ *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+ * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
  *
  * // Builder pattern for multiple versions with migration
  * const posts = defineTable()
@@ -22,6 +29,12 @@
  *       case 2: return row;
  *     }
  *   });
+ *
+ * // Builder with document binding
+ * const notes = defineTable()
+ *   .version(type({ id: 'string', bodyDocId: 'string', bodyUpdatedAt: 'number', _v: '1' }))
+ *   .migrate((row) => row)
+ *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' });
  * ```
  */
 
@@ -30,7 +43,72 @@ import type {
 	StandardSchemaV1,
 } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
-import type { LastSchema, TableDefinition } from './types.js';
+import type {
+	DocBinding,
+	LastSchema,
+	NumberKeysOf,
+	StringKeysOf,
+	TableDefinition,
+} from './types.js';
+
+/**
+ * A table definition with a chainable `.withDocument()` method.
+ *
+ * Returned by both the shorthand `defineTable(schema)` and the builder's `.migrate()`.
+ * Each `.withDocument()` call accumulates a named binding into `TDocs`.
+ *
+ * @typeParam TVersions - Tuple of schema versions
+ * @typeParam TDocs - Accumulated document bindings
+ */
+type TableDefinitionWithDocBuilder<
+	TVersions extends readonly CombinedStandardSchema<{
+		id: string;
+		_v: number;
+	}>[],
+	TDocs extends Record<string, DocBinding<string, string>>,
+> = TableDefinition<TVersions, TDocs> & {
+	/**
+	 * Declare a named document binding on this table.
+	 *
+	 * Maps a document concept (e.g., 'content') to a GUID column and an updatedAt column.
+	 * The name becomes a property under `.docs` on the table helper at runtime.
+	 *
+	 * Chainable — call multiple times for tables with multiple document bindings.
+	 *
+	 * @param name - The binding name (becomes `table.docs[name]`)
+	 * @param binding - Column mapping: `guid` (string column) and `updatedAt` (number column)
+	 *
+	 * @example
+	 * ```typescript
+	 * const files = defineTable(
+	 *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+	 * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+	 *
+	 * // Multiple bindings
+	 * const notes = defineTable(
+	 *   type({ id: 'string', bodyDocId: 'string', coverDocId: 'string',
+	 *          bodyUpdatedAt: 'number', coverUpdatedAt: 'number', _v: '1' }),
+	 * )
+	 *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' })
+	 *   .withDocument('cover', { guid: 'coverDocId', updatedAt: 'coverUpdatedAt' });
+	 * ```
+	 */
+	withDocument<
+		TName extends string,
+		TGuid extends StringKeysOf<
+			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		>,
+		TUpdatedAt extends NumberKeysOf<
+			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		>,
+	>(
+		name: TName,
+		binding: { guid: TGuid; updatedAt: TUpdatedAt },
+	): TableDefinitionWithDocBuilder<
+		TVersions,
+		TDocs & Record<TName, DocBinding<TGuid, TUpdatedAt>>
+	>;
+};
 
 /**
  * Builder for defining table schemas with versioning support.
@@ -52,13 +130,13 @@ type TableBuilder<
 	 * Provide a migration function that normalizes any version to the latest.
 	 * This completes the table definition.
 	 *
-	 * @returns TableDefinition with TVersions tuple as the source of truth
+	 * @returns TableDefinition with TVersions tuple as the source of truth, plus `.withDocument()` chaining
 	 */
 	migrate(
 		fn: (
 			row: StandardSchemaV1.InferOutput<TVersions[number]>,
 		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-	): TableDefinition<TVersions>;
+	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
 };
 
 /**
@@ -74,7 +152,9 @@ type TableBuilder<
  */
 export function defineTable<
 	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
->(schema: TSchema): TableDefinition<[TSchema]>;
+>(
+	schema: TSchema,
+): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
 
 /**
  * Creates a table definition builder for multiple versions with migrations.
@@ -87,7 +167,8 @@ export function defineTable<
  * defineTable()                        // TableBuilder<[]>
  *   .version(schemaV1)                 // TableBuilder<[SchemaV1]>
  *   .version(schemaV2)                 // TableBuilder<[SchemaV1, SchemaV2]>
- *   .migrate(fn)                       // TableDefinition<[SchemaV1, SchemaV2]>
+ *   .migrate(fn)                       // TableDefinitionWithDocBuilder<...>
+ *   .withDocument('content', {...})    // TableDefinitionWithDocBuilder<..., { content: ... }>
  * ```
  *
  * @example
@@ -107,12 +188,17 @@ export function defineTable(): TableBuilder<[]>;
 
 export function defineTable<
 	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
->(schema?: TSchema): TableDefinition<[TSchema]> | TableBuilder<[]> {
+>(
+	schema?: TSchema,
+):
+	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
+	| TableBuilder<[]> {
 	if (schema) {
-		return {
+		return addWithDocument({
 			schema,
 			migrate: (row: unknown) => row as { id: string; _v: number },
-		} as TableDefinition<[TSchema]>;
+			docs: {} as Record<string, never>,
+		}) as unknown as TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
 	}
 
 	const versions: CombinedStandardSchema[] = [];
@@ -128,12 +214,50 @@ export function defineTable<
 				throw new Error('defineTable() requires at least one .version() call');
 			}
 
-			return {
+			return addWithDocument({
 				schema: createUnionSchema(versions),
 				migrate: fn,
-			};
+				docs: {},
+			});
 		},
 	};
 
 	return builder as unknown as TableBuilder<[]>;
+}
+
+/**
+ * Create a new definition object with a `.withDocument()` chainable method.
+ *
+ * Each `.withDocument()` call returns a fresh object with the new binding
+ * accumulated into `docs` — the original definition is never mutated.
+ */
+function addWithDocument<
+	T extends {
+		schema: CombinedStandardSchema;
+		migrate: unknown;
+		docs: Record<string, DocBinding<string, string>>;
+	},
+>(def: T): T & {
+	withDocument(
+		name: string,
+		binding: DocBinding<string, string>,
+	): T;
+} {
+	return {
+		...def,
+		withDocument(
+			name: string,
+			binding: DocBinding<string, string>,
+		) {
+			return addWithDocument({
+				...def,
+				docs: { ...def.docs, [name]: binding },
+			});
+		},
+	} as T & {
+		withDocument(
+			name: string,
+			binding: DocBinding<string, string>,
+		): T;
+	};
 }

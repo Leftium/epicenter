@@ -403,15 +403,17 @@ export async function localRevisionHistory<
 			 */
 			directory: snapshotDir,
 		},
-		/**
-		 * Cleanup: cancel pending debounce and remove Y.Doc listener.
-		 */
-		destroy() {
-			if (debounceTimer) {
-				clearTimeout(debounceTimer);
-				debounceTimer = null;
-			}
-			ydoc.off('update', updateHandler);
+		lifecycle: {
+			/**
+			 * Cleanup: cancel pending debounce and remove Y.Doc listener.
+			 */
+			destroy() {
+				if (debounceTimer) {
+					clearTimeout(debounceTimer);
+					debounceTimer = null;
+				}
+				ydoc.off('update', updateHandler);
+			},
 		},
 	};
 }

@@ -138,46 +138,48 @@ export function workspacePersistence(
 	// =========================================================================
 
 	return {
-		whenReady: (async () => {
-			const { workspaceDir, workspaceYjsPath } = await pathsPromise;
+		lifecycle: {
+			whenReady: (async () => {
+				const { workspaceDir, workspaceYjsPath } = await pathsPromise;
 
-			// Ensure workspace directory exists
-			await mkdir(workspaceDir, { recursive: true }).catch(() => {});
+				// Ensure workspace directory exists
+				await mkdir(workspaceDir, { recursive: true }).catch(() => {});
 
-			// Load existing Y.Doc state from disk
-			let isNewFile = false;
-			try {
-				const savedState = await readFile(workspaceYjsPath);
-				Y.applyUpdate(ydoc, new Uint8Array(savedState));
-				console.log(`[WorkspacePersistence] Loaded ${logPath}/workspace.yjs`);
-			} catch {
-				isNewFile = true;
-				console.log(
-					`[WorkspacePersistence] Creating new ${logPath}/workspace.yjs`,
-				);
-			}
+				// Load existing Y.Doc state from disk
+				let isNewFile = false;
+				try {
+					const savedState = await readFile(workspaceYjsPath);
+					Y.applyUpdate(ydoc, new Uint8Array(savedState));
+					console.log(`[WorkspacePersistence] Loaded ${logPath}/workspace.yjs`);
+				} catch {
+					isNewFile = true;
+					console.log(
+						`[WorkspacePersistence] Creating new ${logPath}/workspace.yjs`,
+					);
+				}
 
-			// Save initial state if new file
-			if (isNewFile) {
-				await saveYDoc();
-			}
+				// Save initial state if new file
+				if (isNewFile) {
+					await saveYDoc();
+				}
 
-			// Initial KV JSON save
-			await saveKvJson();
-		})(),
+				// Initial KV JSON save
+				await saveKvJson();
+			})(),
 
-		destroy() {
-			// Clear debounce timer
-			if (kvDebounceTimer) {
-				clearTimeout(kvDebounceTimer);
-				kvDebounceTimer = null;
-			}
+			destroy() {
+				// Clear debounce timer
+				if (kvDebounceTimer) {
+					clearTimeout(kvDebounceTimer);
+					kvDebounceTimer = null;
+				}
 
-			// Remove Y.Doc observer
-			ydoc.off('update', saveYDoc);
+				// Remove Y.Doc observer
+				ydoc.off('update', saveYDoc);
 
-			// Remove KV observer
-			unsubscribeKv();
+				// Remove KV observer
+				unsubscribeKv();
+			},
 		},
 	};
 }

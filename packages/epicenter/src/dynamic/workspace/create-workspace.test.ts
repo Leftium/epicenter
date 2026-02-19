@@ -153,20 +153,24 @@ describe('createWorkspace', () => {
 
 			const workspace = baseWorkspace
 				.withExtension('ext1', () => ({
-					whenReady: new Promise<void>((resolve) => {
-						setTimeout(() => {
-							resolved1 = true;
-							resolve();
-						}, 10);
-					}),
+					lifecycle: {
+						whenReady: new Promise<void>((resolve) => {
+							setTimeout(() => {
+								resolved1 = true;
+								resolve();
+							}, 10);
+						}),
+					},
 				}))
 				.withExtension('ext2', () => ({
-					whenReady: new Promise<void>((resolve) => {
-						setTimeout(() => {
-							resolved2 = true;
-							resolve();
-						}, 20);
-					}),
+					lifecycle: {
+						whenReady: new Promise<void>((resolve) => {
+							setTimeout(() => {
+								resolved2 = true;
+								resolve();
+							}, 20);
+						}),
+					},
 				}));
 
 			// Before awaiting, neither should be resolved
@@ -185,12 +189,14 @@ describe('createWorkspace', () => {
 			const workspace = createWorkspace(testDefinition)
 				.withExtension('slow', () => ({
 					exports: { tag: 'slow' },
-					whenReady: new Promise<void>((resolve) =>
-						setTimeout(() => {
-							order.push('slow-ready');
-							resolve();
-						}, 50),
-					),
+					lifecycle: {
+						whenReady: new Promise<void>((resolve) =>
+							setTimeout(() => {
+								order.push('slow-ready');
+								resolve();
+							}, 50),
+						),
+					},
 				}))
 				.withExtension('dependent', (context) => {
 					// context.whenReady should be a promise representing all prior extensions
@@ -203,7 +209,9 @@ describe('createWorkspace', () => {
 
 					return {
 						exports: { tag: 'dependent' },
-						whenReady,
+						lifecycle: {
+							whenReady,
+						},
 					};
 				});
 
@@ -265,13 +273,17 @@ describe('createWorkspace', () => {
 
 			const workspace = baseWorkspace
 				.withExtension('ext1', () => ({
-					destroy: () => {
-						destroyed1 = true;
+					lifecycle: {
+						destroy: () => {
+							destroyed1 = true;
+						},
 					},
 				}))
 				.withExtension('ext2', () => ({
-					destroy: () => {
-						destroyed2 = true;
+					lifecycle: {
+						destroy: () => {
+							destroyed2 = true;
+						},
 					},
 				}));
 
@@ -291,8 +303,10 @@ describe('createWorkspace', () => {
 			const workspace = createWorkspace(testDefinition).withExtension(
 				'tracker',
 				() => ({
-					destroy: () => {
-						destroyed = true;
+					lifecycle: {
+						destroy: () => {
+							destroyed = true;
+						},
 					},
 				}),
 			);
@@ -387,18 +401,24 @@ describe('createWorkspace', () => {
 
 			const workspace = createWorkspace(testDefinition)
 				.withExtension('a', () => ({
-					destroy: () => {
-						order.push('a');
+					lifecycle: {
+						destroy: () => {
+							order.push('a');
+						},
 					},
 				}))
 				.withExtension('b', () => ({
-					destroy: () => {
-						order.push('b');
+					lifecycle: {
+						destroy: () => {
+							order.push('b');
+						},
 					},
 				}))
 				.withExtension('c', () => ({
-					destroy: () => {
-						order.push('c');
+					lifecycle: {
+						destroy: () => {
+							order.push('c');
+						},
 					},
 				}));
 

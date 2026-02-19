@@ -127,9 +127,9 @@ export function createWorkspace<
 				) => Extension<TExports>,
 			) {
 				const result = factory(client);
-				const destroy = result.destroy;
+				const destroy = result.lifecycle?.destroy;
 				if (destroy) extensionCleanups.push(destroy);
-				whenReadyPromises.push(result.whenReady ?? Promise.resolve());
+				whenReadyPromises.push(result.lifecycle?.whenReady ?? Promise.resolve());
 
 				const newExtensions = {
 					...extensions,

@@ -158,7 +158,7 @@ export type WorkspaceClientBuilder<
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
 	 *
-	 * The factory returns a flat `{ exports?, whenReady?, destroy? }` object.
+	 * The factory returns `{ exports?, lifecycle?, onDocumentOpen? }`.
 	 * The framework normalizes defaults and stores `exports` by reference —
 	 * getters and object identity are preserved.
 	 *
@@ -170,11 +170,11 @@ export type WorkspaceClientBuilder<
 	 * ```typescript
 	 * const workspace = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
-	 *     return { whenReady: loadFromDisk(), destroy: () => flush() };
+	 *     return { lifecycle: { whenReady: loadFromDisk(), destroy: () => flush() } };
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
-	 *     return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
+	 *     return { exports: { provider }, lifecycle: { whenReady, destroy: () => provider.destroy() } };
 	 *   });
 	 * ```
 	 */

@@ -145,8 +145,10 @@ describe('defineWorkspace', () => {
 	test('client.destroy() cleans up', async () => {
 		let destroyed = false;
 		const mockExtension = () => ({
-			destroy: async () => {
-				destroyed = true;
+			lifecycle: {
+				destroy: async () => {
+					destroyed = true;
+				},
 			},
 		});
 
@@ -315,12 +317,14 @@ describe('defineWorkspace', () => {
 		})
 			.withExtension('slow', () => ({
 				exports: { tag: 'slow' },
-				whenReady: new Promise<void>((resolve) =>
-					setTimeout(() => {
-						order.push('slow-ready');
-						resolve();
-					}, 50),
-				),
+				lifecycle: {
+					whenReady: new Promise<void>((resolve) =>
+						setTimeout(() => {
+							order.push('slow-ready');
+							resolve();
+						}, 50),
+					),
+				},
 			}))
 			.withExtension('dependent', (context) => {
 				// context.whenReady should be a promise representing all prior extensions
@@ -333,7 +337,9 @@ describe('defineWorkspace', () => {
 
 				return {
 					exports: { tag: 'dependent' },
-					whenReady,
+					lifecycle: {
+						whenReady,
+					},
 				};
 			});
 
@@ -388,18 +394,24 @@ describe('defineWorkspace', () => {
 			id: 'destroy-order',
 		})
 			.withExtension('a', () => ({
-				destroy: () => {
-					order.push('a');
+				lifecycle: {
+					destroy: () => {
+						order.push('a');
+					},
 				},
 			}))
 			.withExtension('b', () => ({
-				destroy: () => {
-					order.push('b');
+				lifecycle: {
+					destroy: () => {
+						order.push('b');
+					},
 				},
 			}))
 			.withExtension('c', () => ({
-				destroy: () => {
-					order.push('c');
+				lifecycle: {
+					destroy: () => {
+						order.push('c');
+					},
 				},
 			}));
 

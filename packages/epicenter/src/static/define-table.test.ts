@@ -23,7 +23,7 @@ describe('defineTable', () => {
 				type({ id: 'string', email: 'string', _v: '1' }),
 			);
 
-			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
+			const row = { id: '1', email: 'test@example.com', _v: 1 };
 			expect(users.migrate(row)).toBe(row);
 		});
 
@@ -101,7 +101,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -136,7 +136,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -172,7 +172,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
@@ -218,7 +218,7 @@ describe('defineTable', () => {
 			const migrated = posts.migrate({
 				id: '1',
 				title: 'Test',
-				_v: 1 as const,
+				_v: 1,
 			});
 			expect(migrated).toEqual({
 				id: '1',
@@ -240,6 +240,92 @@ describe('defineTable', () => {
 				views: 5,
 				_v: 2,
 			});
+		});
+	});
+
+	describe('withDocument', () => {
+		test('shorthand path adds docs to definition', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+
+			expect(files.docs).toEqual({
+				content: { guid: 'id', updatedAt: 'updatedAt' },
+			});
+		});
+
+		test('builder path adds docs to definition', () => {
+			const notes = defineTable()
+				.version(
+					type({
+						id: 'string',
+						docId: 'string',
+						modifiedAt: 'number',
+						_v: '1',
+					}),
+				)
+				.migrate((row) => row)
+				.withDocument('content', {
+					guid: 'docId',
+					updatedAt: 'modifiedAt',
+				});
+
+			expect(notes.docs).toEqual({
+				content: { guid: 'docId', updatedAt: 'modifiedAt' },
+			});
+		});
+
+		test('multiple withDocument chains accumulate docs', () => {
+			const notes = defineTable(
+				type({
+					id: 'string',
+					bodyDocId: 'string',
+					coverDocId: 'string',
+					bodyUpdatedAt: 'number',
+					coverUpdatedAt: 'number',
+					_v: '1',
+				}),
+			)
+				.withDocument('body', {
+					guid: 'bodyDocId',
+					updatedAt: 'bodyUpdatedAt',
+				})
+				.withDocument('cover', {
+					guid: 'coverDocId',
+					updatedAt: 'coverUpdatedAt',
+				});
+
+			expect(notes.docs).toEqual({
+				body: { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' },
+				cover: { guid: 'coverDocId', updatedAt: 'coverUpdatedAt' },
+			});
+		});
+
+		test('table without withDocument has empty docs', () => {
+			const tags = defineTable(
+				type({ id: 'string', label: 'string', _v: '1' }),
+			);
+
+			expect(tags.docs).toEqual({});
+		});
+
+		test('withDocument preserves schema and migrate', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+
+			// Schema still works
+			const result = files.schema['~standard'].validate({
+				id: '1',
+				name: 'test.txt',
+				updatedAt: 123,
+				_v: 1,
+			});
+			expect(result).not.toHaveProperty('issues');
+
+			// Migrate still works
+			const row = { id: '1', name: 'test.txt', updatedAt: 123, _v: 1 };
+			expect(files.migrate(row)).toBe(row);
 		});
 	});
 });

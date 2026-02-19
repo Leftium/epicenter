@@ -36,8 +36,10 @@ export function indexeddbPersistence({ ydoc }: { ydoc: Y.Doc }) {
 		exports: {
 			clearData: () => idb.clearData(),
 		},
-		// y-indexeddb's whenSynced = "data loaded from IndexedDB"
-		whenReady: idb.whenSynced,
-		destroy: () => idb.destroy(),
+		lifecycle: {
+			// y-indexeddb's whenSynced = "data loaded from IndexedDB"
+			whenReady: idb.whenSynced,
+			destroy: () => idb.destroy(),
+		},
 	};
 }

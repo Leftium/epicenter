@@ -34,11 +34,11 @@ devices: defineTable(type({ id: 'string', name: 'string', ..., _v: '1' }))
 
 **File**: `apps/tab-manager/src/lib/sync/row-converters.ts`
 
-3 functions (`tabToRow`, `windowToRow`, `tabGroupToRow`) construct row objects. Add `_v: 1 as const` to each return value.
+3 functions (`tabToRow`, `windowToRow`, `tabGroupToRow`) construct row objects. Add `_v: 1` to each return value.
 
-- [ ] `tabToRow` — add `_v: 1 as const` to return object
-- [ ] `windowToRow` — add `_v: 1 as const` to return object
-- [ ] `tabGroupToRow` — add `_v: 1 as const` to return object
+- [ ] `tabToRow` — add `_v: 1` to return object
+- [ ] `windowToRow` — add `_v: 1` to return object
+- [ ] `tabGroupToRow` — add `_v: 1` to return object
 
 ### Task 3: Tab Manager write sites — Manual set() calls
 
@@ -125,11 +125,11 @@ All tasks completed. **630 tests pass, 0 failures.**
 **Production code (7 files):**
 
 - `apps/tab-manager/src/lib/workspace.ts` — `_v: '1'` added to 5 table schemas
-- `apps/tab-manager/src/lib/sync/row-converters.ts` — `_v: 1 as const` in 3 row converter returns
+- `apps/tab-manager/src/lib/sync/row-converters.ts` — `_v: 1` in 3 row converter returns
 - `apps/tab-manager/src/entrypoints/background.ts` — `_v: 1` in devices.set()
 - `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts` — `_v: 1` in savedTabs.set()
 - `packages/epicenter/src/ingest/reddit/workspace.ts` — `_v: '1'` added to 24 table schemas
-- `packages/epicenter/src/ingest/reddit/index.ts` — `{ ...row, _v: 1 as const }` in importTableRows
+- `packages/epicenter/src/ingest/reddit/index.ts` — `{ ...row, _v: 1 }` in importTableRows
 
 **JSDoc updates (5 files):**
 

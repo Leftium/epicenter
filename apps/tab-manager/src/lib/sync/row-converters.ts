@@ -43,7 +43,7 @@ export function tabToRow(deviceId: string, tab: Browser.tabs.Tab): Tab | null {
 			openerTabId !== undefined
 				? createTabCompositeId(deviceId, openerTabId)
 				: undefined,
-		_v: 1 as const,
+		_v: 1,
 	};
 }
 
@@ -70,7 +70,7 @@ export function windowToRow(
 		id: createWindowCompositeId(deviceId, id),
 		deviceId,
 		windowId: id,
-		_v: 1 as const,
+		_v: 1,
 	};
 }
 
@@ -94,6 +94,6 @@ export function tabGroupToRow(
 		deviceId,
 		groupId: id,
 		windowId: createWindowCompositeId(deviceId, windowId),
-		_v: 1 as const,
+		_v: 1,
 	};
 }

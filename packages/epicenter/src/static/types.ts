@@ -101,12 +101,17 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * A table definition created by defineTable().version().migrate()
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
+ * @typeParam TDocs - Record of named document bindings declared via `.withDocument()`
  */
 export type TableDefinition<
 	TVersions extends readonly CombinedStandardSchema<{
 		id: string;
 		_v: number;
 	}>[],
+	TDocs extends Record<string, DocBinding<string, string>> = Record<
+		string,
+		never
+	>,
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -115,19 +120,169 @@ export type TableDefinition<
 	migrate: (
 		row: StandardSchemaV1.InferOutput<TVersions[number]>,
 	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
+	docs: TDocs;
 };
 
 /** Extract the row type from a TableDefinition */
-export type InferTableRow<T> =
-	T extends TableDefinition<infer V>
-		? StandardSchemaV1.InferOutput<LastSchema<V>>
-		: never;
+export type InferTableRow<T> = T extends {
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest
+	: never;
 
 /** Extract the version union type from a TableDefinition */
-export type InferTableVersionUnion<T> =
-	T extends TableDefinition<infer V>
-		? StandardSchemaV1.InferOutput<V[number]>
-		: never;
+export type InferTableVersionUnion<T> = T extends {
+	schema: CombinedStandardSchema<unknown, infer TOutput>;
+}
+	? TOutput
+	: never;
+
+// ════════════════════════════════════════════════════════════════════════════
+// DOCUMENT BINDING TYPES
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A named document binding declared via `.withDocument()`.
+ *
+ * Maps a document concept (e.g., 'content') to two columns on the table:
+ * - `guid`: The column storing the Y.Doc GUID (must be a string column)
+ * - `updatedAt`: The column to bump when the doc changes (must be a number column)
+ *
+ * @typeParam TGuid - Literal string type of the guid column name
+ * @typeParam TUpdatedAt - Literal string type of the updatedAt column name
+ */
+export type DocBinding<TGuid extends string, TUpdatedAt extends string> = {
+	guid: TGuid;
+	updatedAt: TUpdatedAt;
+};
+
+/**
+ * Extract keys of `TRow` whose value type extends `string`.
+ * Used to constrain the `guid` parameter of `.withDocument()`.
+ */
+export type StringKeysOf<TRow> = {
+	[K in keyof TRow & string]: TRow[K] extends string ? K : never;
+}[keyof TRow & string];
+
+/**
+ * Extract keys of `TRow` whose value type extends `number`.
+ * Used to constrain the `updatedAt` parameter of `.withDocument()`.
+ */
+export type NumberKeysOf<TRow> = {
+	[K in keyof TRow & string]: TRow[K] extends number ? K : never;
+}[keyof TRow & string];
+
+/**
+ * The runtime document binding — a bidirectional link between a table row
+ * and its content Y.Doc. Returned by `createDocumentBinding()`.
+ *
+ * Manages Y.Doc creation, provider lifecycle, `updatedAt` auto-bumping,
+ * and cleanup on row deletion.
+ *
+ * @typeParam TRow - The row type of the bound table
+ *
+ * @example
+ * ```typescript
+ * const doc = await binding.open(row);
+ * doc.getText('body').insert(0, 'hello');
+ * // updatedAt on the row is bumped automatically
+ *
+ * const text = await binding.read(row);
+ * await binding.write(row, 'new content');
+ * await binding.destroy(row);
+ * ```
+ */
+export type DocumentBinding<TRow extends { id: string; _v: number }> = {
+	/**
+	 * Open a content Y.Doc for a row.
+	 *
+	 * Creates the Y.Doc if it doesn't exist, wires up providers, and attaches
+	 * the updatedAt observer. Idempotent — calling open() twice for the same
+	 * row returns the same Y.Doc.
+	 *
+	 * @param input - A row (extracts GUID from the bound column) or a GUID string
+	 */
+	open(input: TRow | string): Promise<Y.Doc>;
+
+	/**
+	 * Read document content as plain text.
+	 *
+	 * Opens the doc (if not already open) and reads the text content.
+	 * For domain-specific reading, use open() and work with the Y.Doc directly.
+	 *
+	 * @param input - A row or GUID string
+	 */
+	read(input: TRow | string): Promise<string>;
+
+	/**
+	 * Write plain text to a document.
+	 *
+	 * Opens the doc (if not already open) and replaces the text content.
+	 * The updatedAt observer fires automatically.
+	 *
+	 * @param input - A row or GUID string
+	 * @param text - The text content to write
+	 */
+	write(input: TRow | string, text: string): Promise<void>;
+
+	/**
+	 * Destroy a document — free memory, disconnect providers.
+	 * Persisted data is NOT deleted. The doc can be re-opened later.
+	 *
+	 * @param input - A row or GUID string
+	 */
+	destroy(input: TRow | string): Promise<void>;
+
+	/**
+	 * Purge a document — destroy AND delete all persisted data.
+	 * This is permanent. The document cannot be recovered.
+	 *
+	 * @param input - A row or GUID string
+	 */
+	purge(input: TRow | string): Promise<void>;
+
+	/**
+	 * Destroy all open documents. Called automatically by workspace destroy().
+	 */
+	destroyAll(): Promise<void>;
+
+	/** Extract the GUID from a row (reads the bound guid column). */
+	guidOf(row: TRow): string;
+
+	/** Extract the updatedAt value from a row (reads the bound updatedAt column). */
+	updatedAtOf(row: TRow): number;
+};
+
+/**
+ * Conditionally adds a `docs` property to a table helper when the table
+ * has document bindings declared via `.withDocument()`.
+ *
+ * - Tables with no `.withDocument()` → no `docs` property (empty intersection)
+ * - Tables with `.withDocument()` → `{ docs: { [name]: DocumentBinding<TRow> } }`
+ *
+ * @example
+ * ```typescript
+ * // Table with docs
+ * client.tables.files.docs.content.open(row)
+ *
+ * // Table without docs — TypeScript error
+ * client.tables.tags.docs // Property 'docs' does not exist
+ * ```
+ */
+export type DocsPropertyOf<T> = T extends {
+	docs: infer TDocs;
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest extends { id: string; _v: number }
+		? keyof TDocs extends never
+			? {} // no .withDocument() → no .docs property
+			: {
+					docs: {
+						[K in keyof TDocs]: DocumentBinding<TLatest>;
+					};
+				}
+		: {}
+	: {};
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV DEFINITION TYPES
@@ -463,7 +618,7 @@ export type AwarenessHelper<TDefs extends AwarenessDefinitions> = {
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any>
+	TableDefinition<any, any>
 >;
 
 /** Map of KV definitions (uses `any` to allow variance in generic parameters) */
@@ -473,11 +628,12 @@ export type KvDefinitions = Record<
 	KvDefinition<any>
 >;
 
-/** Tables helper object with all table helpers */
+/** Tables helper object with all table helpers, including .docs when declared */
 export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 	[K in keyof TTableDefinitions]: TableHelper<
 		InferTableRow<TTableDefinitions[K]>
-	>;
+	> &
+		DocsPropertyOf<TTableDefinitions[K]>;
 };
 
 /** KV helper with dictionary-style access */
@@ -599,7 +755,7 @@ export type WorkspaceClientBuilder<
 	 * each factory receives the client-so-far (including all previously added extensions)
 	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
-	 * The factory returns a flat `{ exports?, whenReady?, destroy? }` object.
+	 * The factory returns `{ exports?, lifecycle?, onDocumentOpen? }`.
 	 * The framework normalizes defaults and stores `exports` by reference —
 	 * getters and object identity are preserved.
 	 *
@@ -612,11 +768,11 @@ export type WorkspaceClientBuilder<
 	 * const client = createWorkspace(definition)
 	 *   .withExtension('persistence', ({ ydoc }) => {
 	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-	 *     return { whenReady: idb.whenReady, destroy: () => idb.destroy() };
+	 *     return { lifecycle: { whenReady: idb.whenReady, destroy: () => idb.destroy() } };
 	 *   })
 	 *   .withExtension('sync', ({ extensions }) => {
 	 *     // extensions.persistence is fully typed here!
-	 *     return { exports: { provider }, whenReady, destroy: () => provider.destroy() };
+	 *     return { exports: { provider }, lifecycle: { whenReady, destroy: () => provider.destroy() } };
 	 *   });
 	 * ```
 	 */

@@ -153,6 +153,7 @@ export class FileTree {
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 			trashedAt: null,
+			_v: 1,
 		});
 		return id;
 	}

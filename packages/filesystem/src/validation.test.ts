@@ -31,6 +31,7 @@ function makeRow(
 		createdAt,
 		updatedAt: createdAt,
 		trashedAt: null,
+		_v: 1,
 	};
 }
 

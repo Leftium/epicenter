@@ -38,15 +38,24 @@
 
 import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { Extension, MaybePromise } from '../shared/lifecycle.js';
+import type {
+	DocumentContext,
+	DocumentLifecycle,
+	Extension,
+	MaybePromise,
+} from '../shared/lifecycle.js';
 import { createAwareness } from './create-awareness.js';
+import { createDocumentBinding } from './create-document-binding.js';
 import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
 	AwarenessDefinitions,
+	DocBinding,
+	DocumentBinding,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
+	TableHelper,
 	WorkspaceClient,
 	WorkspaceClientBuilder,
 	WorkspaceClientWithActions,
@@ -106,6 +115,60 @@ export function createWorkspace<
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
 	const whenReadyPromises: Promise<unknown>[] = [];
 
+	// Accumulated onDocumentOpen callbacks from extensions (in chain order).
+	// Mutable array — grows as .withExtension() is called. Document bindings
+	// reference this array, so by the time user code calls .open(), all
+	// extensions' onDocumentOpen hooks are registered.
+	const documentOpenHooks: ((
+		context: DocumentContext,
+	) => DocumentLifecycle | void)[] = [];
+
+	// Create document bindings for tables that have .withDocument() declarations.
+	// Bindings are created eagerly but reference documentOpenHooks by closure,
+	// so they pick up hooks from extensions added later.
+	const documentBindingCleanups: (() => Promise<void>)[] = [];
+
+	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
+		const docsDef = (
+			tableDef as { docs?: Record<string, DocBinding<string, string>> }
+		).docs;
+		if (!docsDef || Object.keys(docsDef).length === 0) continue;
+
+		const tableHelper = (
+			tables as Record<string, TableHelper<{ id: string; _v: number }>>
+		)[tableName];
+		if (!tableHelper) continue;
+
+		const docsNamespace: Record<
+			string,
+			DocumentBinding<{ id: string; _v: number }>
+		> = {};
+
+		for (const [docName, docBinding] of Object.entries(docsDef)) {
+			const binding = createDocumentBinding({
+				guidKey: docBinding.guid as keyof { id: string; _v: number } & string,
+				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } &
+					string,
+				tableHelper,
+				ydoc,
+				onDocumentOpen: documentOpenHooks,
+				tableName,
+				documentName: docName,
+			});
+
+			docsNamespace[docName] = binding;
+			documentBindingCleanups.push(() => binding.destroyAll());
+		}
+
+		// Attach .docs namespace to the table helper
+		Object.defineProperty(tableHelper, 'docs', {
+			value: docsNamespace,
+			enumerable: true,
+			configurable: false,
+			writable: false,
+		});
+	}
+
 	function buildClient<TExtensions extends Record<string, unknown>>(
 		extensions: TExtensions,
 	): WorkspaceClientBuilder<
@@ -118,6 +181,10 @@ export function createWorkspace<
 		const whenReady = Promise.all(whenReadyPromises).then(() => {});
 
 		const destroy = async (): Promise<void> => {
+			// Destroy document bindings first (before extensions they depend on)
+			for (const cleanup of documentBindingCleanups) {
+				await cleanup();
+			}
 			// Destroy extensions in reverse order (last added = first destroyed)
 			for (let i = extensionCleanups.length - 1; i >= 0; i--) {
 				await extensionCleanups[i]!();
@@ -160,9 +227,16 @@ export function createWorkspace<
 				) => Extension<TExports>,
 			) {
 				const result = factory(client);
-				const destroy = result.destroy;
+				const destroy = result.lifecycle?.destroy;
 				if (destroy) extensionCleanups.push(destroy);
-				whenReadyPromises.push(result.whenReady ?? Promise.resolve());
+				whenReadyPromises.push(
+					result.lifecycle?.whenReady ?? Promise.resolve(),
+				);
+
+				// Collect onDocumentOpen hooks for document bindings
+				if (result.onDocumentOpen) {
+					documentOpenHooks.push(result.onDocumentOpen);
+				}
 
 				const newExtensions = {
 					...extensions,

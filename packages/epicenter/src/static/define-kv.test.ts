@@ -186,7 +186,7 @@ describe('defineKv', () => {
 			expect(v2Result).not.toHaveProperty('issues');
 
 			// Migrate v1 to v2
-			const migrated = theme.migrate({ mode: 'dark', _v: 1 as const });
+			const migrated = theme.migrate({ mode: 'dark', _v: 1 });
 			expect(migrated).toEqual({ mode: 'dark', fontSize: 14, _v: 2 });
 
 			// V2 passes through unchanged

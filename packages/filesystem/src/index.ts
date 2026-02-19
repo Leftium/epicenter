@@ -1,9 +1,11 @@
 // Types
 
-// Content doc store
+// Content doc store (deprecated — Phase 3 will remove)
 export { createContentDocStore } from './content-doc-store.js';
-// Content I/O operations
+// Content I/O operations (deprecated — Phase 3 will remove)
 export { ContentOps } from './content-ops.js';
+// Content helpers (document binding wrappers)
+export { createContentHelpers, type ContentHelpers } from './content-helpers.js';
 // Runtime indexes
 export {
 	createFileSystemIndex,

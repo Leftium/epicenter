@@ -101,7 +101,7 @@ const syncCoordination = {
 
 // NOTE: defineBackground callback CANNOT be async (MV3 constraint).
 // Event listeners must be registered synchronously at the top level.
-// We use the "deferred handler" pattern: store initPromise, await it in handlers.
+// We use the "deferred handler" pattern: store ready promise, await it in handlers.
 export default defineBackground(() => {
 	// Open side panel when the extension icon is clicked (Chromium-based browsers).
 	// Firefox uses sidebar_action manifest key — no runtime call needed.
@@ -114,9 +114,6 @@ export default defineBackground(() => {
 	}
 
 	console.log('[Background] Initializing Tab Manager...');
-
-	// Get device ID early (cached after first call)
-	const deviceIdPromise = getDeviceId();
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Create Workspace Client with Extensions
@@ -153,7 +150,7 @@ export default defineBackground(() => {
 		 * Register this device in the devices table.
 		 */
 		async registerDevice() {
-			const deviceId = await deviceIdPromise;
+			const { deviceId } = await whenReady;
 			const existingDevice = tables.devices.get(deviceId);
 
 			// Get existing name if valid, otherwise generate default
@@ -175,7 +172,7 @@ export default defineBackground(() => {
 		 * Only manages THIS device's tabs - other devices' tabs are untouched.
 		 */
 		async refetchTabs() {
-			const deviceId = await deviceIdPromise;
+			const { deviceId } = await whenReady;
 			const browserTabs = await browser.tabs.query({});
 			const rows = browserTabs.flatMap((tab) => {
 				const row = tabToRow(deviceId, tab);
@@ -215,7 +212,7 @@ export default defineBackground(() => {
 		 * Only manages THIS device's windows - other devices' windows are untouched.
 		 */
 		async refetchWindows() {
-			const deviceId = await deviceIdPromise;
+			const { deviceId } = await whenReady;
 			const browserWindows = await browser.windows.getAll();
 			const rows = browserWindows.flatMap((win) => {
 				const row = windowToRow(deviceId, win);
@@ -257,9 +254,8 @@ export default defineBackground(() => {
 		 * Only manages THIS device's groups - other devices' groups are untouched.
 		 */
 		async refetchTabGroups() {
+			const { deviceId } = await whenReady;
 			if (!browser.tabGroups) return;
-
-			const deviceId = await deviceIdPromise;
 			const browserGroups = await browser.tabGroups.query({});
 			const groupIds = new Set(browserGroups.map((g) => g.id));
 			const existingYDocGroups = tables.tabGroups.getAllValid();
@@ -346,29 +342,33 @@ export default defineBackground(() => {
 	});
 
 	// ─────────────────────────────────────────────────────────────────────────
-	// Initialization Promise (Deferred Handler Pattern)
+	// Ready Promise (Deferred Handler Pattern)
 	// All event handlers await this before processing to avoid race conditions.
-	// This ensures Browser state is synced to Y.Doc before any handler runs.
+	// Resolves with the device ID so handlers get both readiness and identity
+	// from a single await.
 	// ─────────────────────────────────────────────────────────────────────────
 
-	const initPromise = (async () => {
-		// Wait for local data to load (WebSocket connects in background)
+	const whenReady = (async (): Promise<{
+		deviceId: string;
+	}> => {
 		await client.whenReady;
 		console.log('[Background] Persistence loaded');
 
-		// Set local awareness
-		const deviceId = await deviceIdPromise;
+		const deviceId = await getDeviceId();
+
 		client.awareness.setLocal({
 			deviceId,
 			deviceType: 'browser-extension',
 		});
 
-		// Then refetch to sync Y.Doc with current browser state
 		await actions.refetchAll();
 		console.log('[Background] Initial sync complete');
-	})().catch((err) =>
-		console.error('[Background] Initialization failed:', err),
-	);
+
+		return Object.freeze({ deviceId });
+	})().catch((err) => {
+		console.error('[Background] Initialization failed:', err);
+		throw err;
+	});
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Browser Keepalive (Chrome MV3 only)
@@ -407,6 +407,7 @@ export default defineBackground(() => {
 
 	browser.runtime.onInstalled.addListener(async () => {
 		console.log('[Background] onInstalled: re-syncing...');
+		await whenReady;
 		await actions
 			.refetchAll()
 			.then(() => console.log('[Background] onInstalled: refetch complete'))
@@ -417,6 +418,7 @@ export default defineBackground(() => {
 
 	browser.runtime.onStartup.addListener(async () => {
 		console.log('[Background] onStartup: re-syncing...');
+		await whenReady;
 		await actions
 			.refetchAll()
 			.then(() => console.log('[Background] onStartup: refetch complete'))
@@ -434,7 +436,7 @@ export default defineBackground(() => {
 
 	// Helper: Set a single tab by querying Browser (for events that don't provide full tab)
 	const setTabById = async (tabId: number) => {
-		const deviceId = await deviceIdPromise;
+		const { deviceId } = await whenReady;
 		await tryAsync({
 			try: async () => {
 				const tab = await browser.tabs.get(tabId);
@@ -451,7 +453,7 @@ export default defineBackground(() => {
 
 	// Helper: Set a single window by querying Browser
 	const setWindowById = async (windowId: number) => {
-		const deviceId = await deviceIdPromise;
+		const { deviceId } = await whenReady;
 		await tryAsync({
 			try: async () => {
 				const win = await browser.windows.get(windowId);
@@ -472,10 +474,8 @@ export default defineBackground(() => {
 
 	// onCreated: Full Tab object provided
 	browser.tabs.onCreated.addListener(async (tab) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
-
-		const deviceId = await deviceIdPromise;
 		const row = tabToRow(deviceId, tab);
 		if (!row) return;
 
@@ -493,10 +493,8 @@ export default defineBackground(() => {
 
 	// onRemoved: Only tabId provided - delete directly
 	browser.tabs.onRemoved.addListener(async (tabId) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
-
-		const deviceId = await deviceIdPromise;
 		syncCoordination.refetchCount++;
 		tables.tabs.delete(createTabCompositeId(deviceId, tabId));
 		syncCoordination.refetchCount--;
@@ -504,10 +502,8 @@ export default defineBackground(() => {
 
 	// onUpdated: Full Tab object provided (3rd arg)
 	browser.tabs.onUpdated.addListener(async (_tabId, _changeInfo, tab) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
-
-		const deviceId = await deviceIdPromise;
 		const row = tabToRow(deviceId, tab);
 		if (!row) return;
 
@@ -518,7 +514,7 @@ export default defineBackground(() => {
 
 	// onMoved: Only tabId + moveInfo provided - need to query Browser
 	browser.tabs.onMoved.addListener(async (tabId) => {
-		await initPromise;
+		await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		syncCoordination.refetchCount++;
@@ -530,10 +526,9 @@ export default defineBackground(() => {
 	// Note: We need to update BOTH the newly activated tab AND the previously active tab
 	// in the same window (to set active: false on the old one)
 	browser.tabs.onActivated.addListener(async (activeInfo) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
 
-		const deviceId = await deviceIdPromise;
 		syncCoordination.refetchCount++;
 
 		const deviceWindowId = createWindowCompositeId(
@@ -559,7 +554,7 @@ export default defineBackground(() => {
 
 	// onAttached: Tab moved between windows - need to query Browser
 	browser.tabs.onAttached.addListener(async (tabId) => {
-		await initPromise;
+		await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		syncCoordination.refetchCount++;
@@ -569,7 +564,7 @@ export default defineBackground(() => {
 
 	// onDetached: Tab detached from window - need to query Browser
 	browser.tabs.onDetached.addListener(async (tabId) => {
-		await initPromise;
+		await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
 
 		syncCoordination.refetchCount++;
@@ -583,10 +578,8 @@ export default defineBackground(() => {
 
 	// onCreated: Full Window object provided
 	browser.windows.onCreated.addListener(async (window) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
-
-		const deviceId = await deviceIdPromise;
 		const row = windowToRow(deviceId, window);
 		if (!row) return;
 
@@ -597,10 +590,8 @@ export default defineBackground(() => {
 
 	// onRemoved: Only windowId provided - delete directly
 	browser.windows.onRemoved.addListener(async (windowId) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
-
-		const deviceId = await deviceIdPromise;
 		syncCoordination.refetchCount++;
 		tables.windows.delete(createWindowCompositeId(deviceId, windowId));
 		syncCoordination.refetchCount--;
@@ -610,10 +601,9 @@ export default defineBackground(() => {
 	// Note: windowId can be WINDOW_ID_NONE (-1) when all windows lose focus
 	// We need to update BOTH the newly focused window AND previously focused windows
 	browser.windows.onFocusChanged.addListener(async (windowId) => {
-		await initPromise;
+		const { deviceId } = await whenReady;
 		if (syncCoordination.yDocChangeCount > 0) return;
 
-		const deviceId = await deviceIdPromise;
 		syncCoordination.refetchCount++;
 
 		const deviceWindowId = createWindowCompositeId(deviceId, windowId);
@@ -642,10 +632,8 @@ export default defineBackground(() => {
 	if (browser.tabGroups) {
 		// onCreated: Full TabGroup object provided
 		browser.tabGroups.onCreated.addListener(async (group) => {
-			await initPromise;
+			const { deviceId } = await whenReady;
 			if (syncCoordination.yDocChangeCount > 0) return;
-
-			const deviceId = await deviceIdPromise;
 			syncCoordination.refetchCount++;
 			tables.tabGroups.set(tabGroupToRow(deviceId, group));
 			syncCoordination.refetchCount--;
@@ -653,10 +641,8 @@ export default defineBackground(() => {
 
 		// onRemoved: Full TabGroup object provided
 		browser.tabGroups.onRemoved.addListener(async (group) => {
-			await initPromise;
+			const { deviceId } = await whenReady;
 			if (syncCoordination.yDocChangeCount > 0) return;
-
-			const deviceId = await deviceIdPromise;
 			syncCoordination.refetchCount++;
 			tables.tabGroups.delete(createGroupCompositeId(deviceId, group.id));
 			syncCoordination.refetchCount--;
@@ -664,10 +650,8 @@ export default defineBackground(() => {
 
 		// onUpdated: Full TabGroup object provided
 		browser.tabGroups.onUpdated.addListener(async (group) => {
-			await initPromise;
+			const { deviceId } = await whenReady;
 			if (syncCoordination.yDocChangeCount > 0) return;
-
-			const deviceId = await deviceIdPromise;
 			syncCoordination.refetchCount++;
 			tables.tabGroups.set(tabGroupToRow(deviceId, group));
 			syncCoordination.refetchCount--;
@@ -688,7 +672,7 @@ export default defineBackground(() => {
 				case 'not_found':
 					// Deleted
 					void (async () => {
-						await initPromise;
+						const { deviceId } = await whenReady;
 
 						console.log('[Background] tabs.onDelete fired:', {
 							id,
@@ -702,8 +686,6 @@ export default defineBackground(() => {
 							);
 							return;
 						}
-
-						const deviceId = await deviceIdPromise;
 						const parsed = parseTabId(id as TabCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) {
@@ -738,7 +720,7 @@ export default defineBackground(() => {
 					// Added or updated
 					const row = result.row;
 					void (async () => {
-						await initPromise;
+						const { deviceId } = await whenReady;
 
 						console.log('[Background] tabs.onAdd fired:', {
 							origin: transaction.origin,
@@ -752,8 +734,6 @@ export default defineBackground(() => {
 							);
 							return;
 						}
-
-						const deviceId = await deviceIdPromise;
 
 						if (row.deviceId !== deviceId) {
 							console.log(
@@ -830,11 +810,10 @@ export default defineBackground(() => {
 				case 'not_found':
 					// Deleted
 					void (async () => {
-						await initPromise;
+						const { deviceId } = await whenReady;
 
 						if (transaction.origin === null) return;
 
-						const deviceId = await deviceIdPromise;
 						const parsed = parseWindowId(id as WindowCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) return;
@@ -859,11 +838,9 @@ export default defineBackground(() => {
 					// Added or updated
 					const row = result.row;
 					void (async () => {
-						await initPromise;
+						const { deviceId } = await whenReady;
 
 						if (transaction.origin === null) return;
-
-						const deviceId = await deviceIdPromise;
 
 						if (row.deviceId !== deviceId) return;
 
@@ -900,11 +877,10 @@ export default defineBackground(() => {
 				if (result.status === 'not_found') {
 					// Deleted
 					void (async () => {
-						await initPromise;
+						const { deviceId } = await whenReady;
 
 						if (transaction.origin === null) return;
 
-						const deviceId = await deviceIdPromise;
 						const parsed = parseGroupId(id as GroupCompositeId);
 
 						if (!parsed || parsed.deviceId !== deviceId) return;

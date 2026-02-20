@@ -123,10 +123,7 @@ export type TableDefinition<
 		id: string;
 		_v: number;
 	}>[],
-	TDocs extends Record<string, DocBinding<string, string, string>> = Record<
-		string,
-		never
-	>,
+	TDocs extends Record<string, DocBinding> = Record<string, never>,
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -166,15 +163,31 @@ export type InferTableVersionUnion<T> = T extends {
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TUpdatedAt - Literal string type of the updatedAt column name
- * @typeParam TTags - Literal union of tag strings (defaults to `never` = no tags)
+ * @typeParam TTags - Literal union of tag strings for document extension targeting.
+ *   Defaults to `string` so bare `DocBinding` works as a wide constraint (accepts any tags).
+ *   When `.withDocument()` is called without tags, `TTags` infers as `never` via the
+ *   method's own default, which makes the `tags` property `undefined` — preventing
+ *   tags on untagged bindings.
  */
 export type DocBinding<
-	TGuid extends string,
-	TUpdatedAt extends string,
-	TTags extends string = never,
+	TGuid extends string = string,
+	TUpdatedAt extends string = string,
+	TTags extends string = string,
 > = {
 	guid: TGuid;
 	updatedAt: TUpdatedAt;
+	/**
+	 * Optional tag literals for document extension targeting.
+	 *
+	 * Uses `[TTags] extends [never]` (bracketed) to detect when no tags were provided.
+	 * The brackets make this a non-distributive conditional — without them,
+	 * `never extends never` distributes over the empty union and resolves to `never`
+	 * instead of `true`, silently breaking the check.
+	 *
+	 * - `TTags = never` (no tags on binding) → `undefined`
+	 * - `TTags = 'persistent' | 'synced'` → `readonly ('persistent' | 'synced')[]`
+	 * - `TTags = string` (bare `DocBinding`) → `readonly string[]`
+	 */
 	tags?: [TTags] extends [never] ? undefined : readonly TTags[];
 };
 

@@ -129,9 +129,7 @@ export function createWorkspace<
 	const documentBindingCleanups: (() => Promise<void>)[] = [];
 
 	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
-		const docsDef = (
-			tableDef as { docs?: Record<string, DocBinding<string, string, string>> }
-		).docs;
+		const docsDef = (tableDef as { docs?: Record<string, DocBinding> }).docs;
 		if (!docsDef || Object.keys(docsDef).length === 0) continue;
 
 		const tableHelper = (tables as Record<string, TableHelper<BaseRow>>)[

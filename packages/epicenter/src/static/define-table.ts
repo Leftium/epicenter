@@ -63,7 +63,7 @@ import type {
  */
 type TableDefinitionWithDocBuilder<
 	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
-	TDocs extends Record<string, DocBinding<string, string, string>>,
+	TDocs extends Record<string, DocBinding>,
 > = TableDefinition<TVersions, TDocs> & {
 	/**
 	 * Declare a named document binding on this table.
@@ -99,6 +99,8 @@ type TableDefinitionWithDocBuilder<
 		TUpdatedAt extends NumberKeysOf<
 			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
 		>,
+		// Defaults to `never` when no tags are passed. This flows into
+		// DocBinding<..., never>, making its `tags` property `undefined`.
 		const TTags extends string = never,
 	>(
 		name: TName,
@@ -235,16 +237,16 @@ function addWithDocument<
 	T extends {
 		schema: CombinedStandardSchema;
 		migrate: unknown;
-		docs: Record<string, DocBinding<string, string, string>>;
+		docs: Record<string, DocBinding>;
 	},
 >(
 	def: T,
 ): T & {
-	withDocument(name: string, binding: DocBinding<string, string, string>): T;
+	withDocument(name: string, binding: DocBinding): T;
 } {
 	return {
 		...def,
-		withDocument(name: string, binding: DocBinding<string, string, string>) {
+		withDocument(name: string, binding: DocBinding) {
 			return addWithDocument({
 				...def,
 				docs: {
@@ -254,6 +256,6 @@ function addWithDocument<
 			});
 		},
 	} as T & {
-		withDocument(name: string, binding: DocBinding<string, string, string>): T;
+		withDocument(name: string, binding: DocBinding): T;
 	};
 }

@@ -105,7 +105,7 @@ type TableDefinitionWithDocBuilder<
 		binding: {
 			guid: TGuid;
 			updatedAt: TUpdatedAt;
-			tags?: TTags | readonly TTags[];
+			tags?: readonly TTags[];
 		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
@@ -245,17 +245,11 @@ function addWithDocument<
 	return {
 		...def,
 		withDocument(name: string, binding: DocBinding<string, string, string>) {
-			// Normalize tags to readonly array for storage
-			const tags = binding.tags
-				? typeof binding.tags === 'string'
-					? [binding.tags]
-					: binding.tags
-				: undefined;
 			return addWithDocument({
 				...def,
 				docs: {
 					...def.docs,
-					[name]: { guid: binding.guid, updatedAt: binding.updatedAt, tags },
+					[name]: binding,
 				},
 			});
 		},

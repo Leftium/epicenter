@@ -343,7 +343,7 @@ describe('createWorkspace', () => {
 				.withDocument('thumb', {
 					guid: 'thumbId',
 					updatedAt: 'thumbUpdatedAt',
-					tags: 'ephemeral',
+					tags: ['ephemeral'],
 				});
 
 			const client = createWorkspace({

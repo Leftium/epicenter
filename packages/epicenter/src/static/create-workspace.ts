@@ -142,12 +142,7 @@ export function createWorkspace<
 		const docsNamespace: Record<string, DocumentBinding<BaseRow>> = {};
 
 		for (const [docName, docBinding] of Object.entries(docsDef)) {
-			// Normalize tags from definition — may be string, readonly array, or undefined
-			const docTags: readonly string[] = docBinding.tags
-				? typeof docBinding.tags === 'string'
-					? [docBinding.tags]
-					: docBinding.tags
-				: [];
+			const docTags: readonly string[] = docBinding.tags ?? [];
 
 			const binding = createDocumentBinding({
 				guidKey: docBinding.guid as keyof BaseRow & string,

@@ -175,7 +175,7 @@ export type DocBinding<
 > = {
 	guid: TGuid;
 	updatedAt: TUpdatedAt;
-	tags?: [TTags] extends [never] ? undefined : readonly TTags[] | TTags;
+	tags?: [TTags] extends [never] ? undefined : readonly TTags[];
 };
 
 /**

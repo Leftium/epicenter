@@ -309,13 +309,13 @@ describe('defineTable', () => {
 			expect(Object.keys(tags.docs)).toHaveLength(0);
 		});
 
-		test('withDocument accepts a single tag string', () => {
+		test('withDocument accepts a single-element tag array', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
 				guid: 'id',
 				updatedAt: 'updatedAt',
-				tags: 'persistent',
+				tags: ['persistent'],
 			});
 
 			expect(files.docs.content.guid).toBe('id');

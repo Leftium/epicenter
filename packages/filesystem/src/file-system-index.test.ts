@@ -1,3 +1,14 @@
+/**
+ * FileSystemIndex Tests
+ *
+ * Verifies path indexing, orphan/cycle correction, and reactive rebuild behavior.
+ * These tests ensure path lookup remains deterministic under live mutations and conflict scenarios.
+ *
+ * Key behaviors:
+ * - File rows map to stable, disambiguated filesystem paths.
+ * - Reactive updates keep index state consistent after edits and deletes.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { createFileSystemIndex } from './file-system-index.js';
@@ -45,7 +56,7 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('single file at root', () => {
+	test('indexes a single root file by absolute path', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'hello.txt'));
 		const index = createFileSystemIndex(files);
@@ -56,7 +67,7 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('multiple files at root', () => {
+	test('indexes multiple root files with distinct absolute paths', () => {
 		const { files } = setup();
 		files.set(makeRow('f1', 'a.txt'));
 		files.set(makeRow('f2', 'b.txt'));
@@ -72,7 +83,7 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('nested directory structure', () => {
+	test('indexes nested directories and files under parent paths', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'docs', null, 'folder'));
 		files.set(makeRow('f1', 'api.md', 'd1'));
@@ -89,7 +100,7 @@ describe('createFileSystemIndex', () => {
 		index.destroy();
 	});
 
-	test('deeply nested path', () => {
+	test('resolves deeply nested file paths through multiple folders', () => {
 		const { files } = setup();
 		files.set(makeRow('d1', 'a', null, 'folder'));
 		files.set(makeRow('d2', 'b', 'd1', 'folder'));

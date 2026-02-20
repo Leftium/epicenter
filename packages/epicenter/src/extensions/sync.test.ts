@@ -1,3 +1,14 @@
+/**
+ * Sync Extension Tests
+ *
+ * These tests verify sync extension lifecycle behavior around provider creation,
+ * reconnect semantics, URL resolution, and readiness ordering. They ensure extension
+ * consumers get a stable provider reference and deterministic teardown behavior.
+ *
+ * Key behaviors:
+ * - Reconnect swaps providers and destroys previous connections
+ * - URL configuration and whenReady lifecycle resolve in the expected order
+ */
 import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync';
 import { Awareness } from 'y-protocols/awareness';
@@ -20,13 +31,17 @@ type SyncExtensionResult = {
 	lifecycle: { whenReady: Promise<unknown>; destroy: () => void };
 };
 
+type SyncExtensionFactoryClient = Parameters<
+	ReturnType<typeof createSyncExtension>
+>[0];
+
 /** Create a minimal mock client for the sync extension factory. */
 function createMockClient(ydoc: Y.Doc) {
 	return {
 		ydoc,
 		awareness: { raw: new Awareness(ydoc) },
 		whenReady: Promise.resolve(),
-	} as any;
+	} as unknown as SyncExtensionFactoryClient; // Minimal mock — only properties the sync extension accesses are provided
 }
 
 describe('createSyncExtension', () => {
@@ -135,7 +150,7 @@ describe('createSyncExtension', () => {
 		result.lifecycle.destroy();
 	});
 
-	test('resolves URL with function', () => {
+	test('resolves URL when url config is a function', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
 		const factory = createSyncExtension({
@@ -171,7 +186,7 @@ describe('createSyncExtension', () => {
 			whenReady: clientWhenReady.then(() => {
 				order.push('client-ready');
 			}),
-		} as any) as unknown as SyncExtensionResult;
+		} as SyncExtensionFactoryClient) as unknown as SyncExtensionResult;
 
 		// whenReady should not have resolved yet
 		let resolved = false;

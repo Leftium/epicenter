@@ -1,20 +1,13 @@
 /**
- * YRowStore Tests - Row Operations Wrapper over CellStore
+ * YRowStore Tests
  *
- * Tests cover:
- * 1. Row reconstruction: get() assembles cells correctly
- * 2. Row existence: has() returns true only if cells exist
- * 3. Row IDs: ids() returns deduplicated list
- * 4. Get all rows: getAll() reconstructs all rows
- * 5. Row count: count() matches unique row count
- * 6. Row deletion: delete() removes all cells for row
- * 7. Merge: merge() sets multiple cells, creates rows, preserves unmentioned columns
- * 8. Batch operations: batch() executes merge + delete atomically
- * 9. Atomic operations via doc.transact(): mixed cell/row ops in single transaction
- * 10. Observe dedupe: observe() fires with Set of changed row IDs
- * 11. Sparse rows: rows with different columns work correctly
- * 12. Column IDs with colons
- * 13. CRDT sync between documents
+ * These tests verify row-level behavior built on top of the cell store,
+ * including reconstruction, indexing, batch semantics, and observer behavior.
+ * They also validate consistency under sparse data and CRDT synchronization.
+ *
+ * Key behaviors:
+ * - row helpers reconstruct and mutate row state from underlying cells
+ * - observers and row indexes remain consistent across transactions and sync
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';

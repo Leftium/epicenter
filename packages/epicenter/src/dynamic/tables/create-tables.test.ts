@@ -1,10 +1,21 @@
+/**
+ * createTables Tests
+ *
+ * These tests verify runtime table behavior for CRUD operations, observers,
+ * dynamic table access, and iteration helpers backed by Yjs storage.
+ * They protect API behavior for valid and invalid data paths.
+ *
+ * Key behaviors:
+ * - CRUD and query helpers return expected row results
+ * - observers emit changed row IDs across single and batched transactions
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { boolean, Id, id, integer, table, tags, text } from '../schema';
 import { createTables } from './create-tables';
 
 describe('createTables', () => {
-	test('should create and retrieve rows correctly', () => {
+	test('upsert stores row and get retrieves it', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
 			table({
@@ -37,7 +48,7 @@ describe('createTables', () => {
 		}
 	});
 
-	test('should handle batch operations', () => {
+	test('upsertMany creates multiple rows retrieved by get', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
 			table({
@@ -71,7 +82,7 @@ describe('createTables', () => {
 		}
 	});
 
-	test('should filter and find rows correctly', () => {
+	test('filter returns matching rows and find returns first match', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
 			table({
@@ -104,7 +115,7 @@ describe('createTables', () => {
 		}
 	});
 
-	test('should return not_found status for non-existent rows', () => {
+	test('get returns not_found for non-existent rows', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
 			table({
@@ -133,7 +144,7 @@ describe('createTables', () => {
 		expect(findResult).toBeNull();
 	});
 
-	test('should store and retrieve richtext and tags correctly', () => {
+	test('upsert stores tags array and get returns plain array', () => {
 		const ydoc = new Y.Doc({ guid: 'test-workspace' });
 		const doc = createTables(ydoc, [
 			table({
@@ -784,7 +795,7 @@ describe('createTables', () => {
 			]);
 
 			// Accessing a table not in definition should throw
-			// Use `as any` to bypass TypeScript - we're testing runtime error handling
+			// Testing runtime error for invalid table name — bypasses TypeScript intentionally
 			expect(() => tables.get('custom_data' as any)).toThrow(
 				/Table 'custom_data' not found/,
 			);

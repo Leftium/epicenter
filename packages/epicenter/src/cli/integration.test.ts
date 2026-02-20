@@ -1,3 +1,14 @@
+/**
+ * CLI Integration Tests
+ *
+ * These skipped tests cover end-to-end CLI integration behavior once contract-handler
+ * separation is complete. They remain as placeholders to document intended coverage
+ * and prevent regressions when `.withHandlers()` lands.
+ *
+ * Key behaviors:
+ * - Creates a CLI instance from workspace contracts
+ * - Executes workspace commands through the CLI runtime
+ */
 import { describe, test } from 'bun:test';
 
 /**

@@ -1,3 +1,14 @@
+/**
+ * YjsFileSystem Tests
+ *
+ * Exercises filesystem-style APIs implemented on top of Yjs-backed file and content state.
+ * These tests verify compatibility with common FS operations and storage-mode transitions.
+ *
+ * Key behaviors:
+ * - Path operations (`writeFile`, `mkdir`, `rm`, `mv`, `cp`) match expected filesystem semantics.
+ * - Timeline-backed content preserves text, binary, and sheet-mode behavior across edits.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { Bash } from 'just-bash';
@@ -385,6 +396,7 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
+// Accessing private internals to inspect timeline state; no public API exposes this.
 async function getTimelineLength(
 	fs: YjsFileSystem,
 	binding: { open(input: string): Promise<import('yjs').Doc> },
@@ -505,10 +517,12 @@ describe('sheet file support', () => {
 		const { fs, ws } = setup();
 		const binding = ws.tables.files.docs.content;
 		// Create file and push sheet entry via internal access
+		// Accessing private internals to seed sheet mode for behavior coverage.
 		await fs.writeFile('/data.csv', 'placeholder');
 		const tree = (fs as any).tree;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await binding.open(fileId);
+		const { createTimeline } = await import('./timeline-helpers.js');
 		// Replace text entry with sheet entry
 		ydoc.transact(() => {
 			createTimeline(ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
@@ -523,6 +537,7 @@ describe('sheet file support', () => {
 		const tree = (fs as any).tree;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await binding.open(fileId);
+		const { createTimeline } = await import('./timeline-helpers.js');
 		ydoc.transact(() => {
 			createTimeline(ydoc).pushSheetFromCsv('A,B\n1,2\n');
 		});
@@ -537,21 +552,21 @@ describe('just-bash integration', () => {
 		return new Bash({ fs, cwd: '/' });
 	}
 
-	test('echo + cat', async () => {
+	test('bash echo writes text that cat reads back', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "hello world" > /greeting.txt');
 		const result = await bash.exec('cat /greeting.txt');
 		expect(result.stdout.trim()).toBe('hello world');
 	});
 
-	test('mkdir -p + ls', async () => {
+	test('bash mkdir -p creates directory visible to ls', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /docs/nested');
 		const result = await bash.exec('ls /docs');
 		expect(result.stdout.trim()).toBe('nested');
 	});
 
-	test('find', async () => {
+	test('bash find returns files matching extension pattern', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /src');
 		await bash.exec('echo "ts" > /src/index.ts');
@@ -560,7 +575,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toContain('/src/index.ts');
 	});
 
-	test('grep', async () => {
+	test('bash grep -r returns matching content and file path', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "TODO: fix this" > /file.txt');
 		await bash.exec('echo "all good" > /other.txt');
@@ -569,7 +584,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout).toContain('/file.txt');
 	});
 
-	test('rm -rf', async () => {
+	test('bash rm -rf removes nested directory tree', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /dir/sub');
 		await bash.exec('echo "x" > /dir/sub/file.txt');
@@ -578,7 +593,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('');
 	});
 
-	test('mv (rename)', async () => {
+	test('bash mv renames file and preserves content', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "content" > /old.txt');
 		await bash.exec('mv /old.txt /new.txt');
@@ -586,7 +601,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('content');
 	});
 
-	test('cp', async () => {
+	test('bash cp duplicates file content', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "content" > /src.txt');
 		await bash.exec('cp /src.txt /dest.txt');
@@ -594,7 +609,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('content');
 	});
 
-	test('wc -l', async () => {
+	test('bash wc -l reports the expected line count', async () => {
 		const bash = setupBash();
 		await bash.exec('printf "line1\\nline2\\nline3\\n" > /file.txt');
 		const result = await bash.exec('wc -l /file.txt');

@@ -1,3 +1,14 @@
+/**
+ * Parse Input Tests
+ *
+ * These tests verify how CLI JSON input is sourced and parsed across positional values,
+ * file paths, and stdin. They protect input precedence and error messaging so command
+ * handlers receive the intended payload.
+ *
+ * Key behaviors:
+ * - Accepts JSON from positional input, --file, and stdin
+ * - Applies source precedence and returns clear errors for invalid input
+ */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

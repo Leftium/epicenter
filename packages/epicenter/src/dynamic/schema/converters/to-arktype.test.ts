@@ -1,3 +1,15 @@
+/**
+ * To Arktype Converter Tests
+ *
+ * This file verifies `tableToArktype` produces ArkType validators that enforce
+ * dynamic table field constraints at runtime.
+ * The suite also confirms composed validators (`partial`, `array`, `merge`) stay
+ * usable with generated table schemas.
+ *
+ * Key behaviors:
+ * - Validates rows against generated ArkType schemas
+ * - Supports ArkType composition on generated validators
+ */
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { Type } from 'typebox';
@@ -103,7 +115,7 @@ describe('tableToArktype', () => {
 		expect(valid).not.toBeInstanceOf(type.errors);
 	});
 
-	test('handles complex nested schema', () => {
+	test('validates nested json fields and rejects invalid nested data', () => {
 		const fields = [
 			id(),
 			text({ id: 'title' }),

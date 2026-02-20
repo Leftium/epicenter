@@ -1,15 +1,13 @@
 /**
- * @fileoverview Test suite for datetime and timezone validation regex patterns.
+ * Regex Field Validators Tests
  *
- * Tests three regex patterns used in the schema system:
- * - ISO_DATETIME_REGEX: Validates ISO 8601 datetime strings
- * - TIMEZONE_ID_REGEX: Validates IANA timezone identifiers
- * - DATE_TIME_STRING_REGEX: Validates DateTimeString format (ISO datetime + IANA timezone)
+ * This file verifies datetime and timezone regex patterns used by dynamic schema
+ * validation. It covers both accepted formats and known limitations so date
+ * parsing behavior remains explicit and stable.
  *
- * References:
- * - ISO 8601: https://en.wikipedia.org/wiki/ISO_8601
- * - IANA Time Zones: https://www.iana.org/time-zones
- * - Date.toISOString(): https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toISOString
+ * Key behaviors:
+ * - Matches supported ISO datetime and DateTimeString storage formats
+ * - Rejects malformed timezone and datetime strings outside supported patterns
  */
 import { describe, expect, test } from 'bun:test';
 import {
@@ -153,31 +151,31 @@ describe('TIMEZONE_ID_REGEX', () => {
 	 * These are real timezone identifiers from the IANA Time Zone Database.
 	 */
 	describe('matches valid IANA timezone identifiers', () => {
-		test('UTC', () => {
+		test('matches standalone UTC identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('UTC')).toBe(true);
 		});
 
-		test('America/New_York', () => {
+		test('matches region/city timezone identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('America/New_York')).toBe(true);
 		});
 
-		test('Europe/London', () => {
+		test('matches Europe timezone identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('Europe/London')).toBe(true);
 		});
 
-		test('Asia/Tokyo', () => {
+		test('matches Asia timezone identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('Asia/Tokyo')).toBe(true);
 		});
 
-		test('Etc/GMT+5', () => {
+		test('matches positive GMT offset identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('Etc/GMT+5')).toBe(true);
 		});
 
-		test('Etc/GMT-5', () => {
+		test('matches negative GMT offset identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('Etc/GMT-5')).toBe(true);
 		});
 
-		test('US/Pacific', () => {
+		test('matches legacy alias timezone identifier', () => {
 			expect(TIMEZONE_ID_REGEX.test('US/Pacific')).toBe(true);
 		});
 
@@ -339,7 +337,7 @@ describe('DATE_TIME_STRING_REGEX', () => {
 	 * Verifies the regex works with commonly used timezone identifiers and realistic datetime values.
 	 */
 	describe('validates real-world timezone examples', () => {
-		test('New York Eastern Time', () => {
+		test('matches DateTimeString using America/New_York timezone', () => {
 			expect(
 				DATE_TIME_STRING_REGEX.test(
 					'2024-01-01T15:30:00.000Z|America/New_York',
@@ -347,19 +345,19 @@ describe('DATE_TIME_STRING_REGEX', () => {
 			).toBe(true);
 		});
 
-		test('Tokyo time', () => {
+		test('matches DateTimeString using Asia/Tokyo timezone', () => {
 			expect(
 				DATE_TIME_STRING_REGEX.test('2024-01-01T09:00:00.000Z|Asia/Tokyo'),
 			).toBe(true);
 		});
 
-		test('London time', () => {
+		test('matches DateTimeString using Europe/London timezone', () => {
 			expect(
 				DATE_TIME_STRING_REGEX.test('2024-07-15T14:22:33.123Z|Europe/London'),
 			).toBe(true);
 		});
 
-		test('UTC time', () => {
+		test('matches DateTimeString using UTC timezone', () => {
 			expect(DATE_TIME_STRING_REGEX.test('2024-12-31T23:59:59.999Z|UTC')).toBe(
 				true,
 			);

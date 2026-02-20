@@ -1,3 +1,14 @@
+/**
+ * Command Builder Tests
+ *
+ * These tests verify that action trees are converted into executable yargs command
+ * definitions with stable command paths, descriptions, and builders. They ensure the
+ * CLI can expose both flat and nested contracts consistently.
+ *
+ * Key behaviors:
+ * - Flattens nested action objects into space-delimited command paths
+ * - Builds per-command yargs option builders from input schemas
+ */
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineMutation, defineQuery } from '../shared/actions';
@@ -113,7 +124,7 @@ describe('buildActionCommands', () => {
 		expect(commands).toEqual([]);
 	});
 
-	test('handles mixed flat and nested actions', () => {
+	test('builds commands for mixed flat and nested action trees', () => {
 		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',

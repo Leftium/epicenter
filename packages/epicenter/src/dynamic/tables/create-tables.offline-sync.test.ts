@@ -1,5 +1,5 @@
 /**
- * Offline Sync Conflict Resolution Tests
+ * createTables Offline Sync Tests
  *
  * These tests verify YKeyValue's conflict resolution behavior in realistic
  * offline-first scenarios where clients edit data without seeing each other's
@@ -11,9 +11,9 @@
  *   see each other's changes before making their own.
  * - It does NOT mean "same millisecond" - it means "no causal relationship"
  *
- * KEY QUESTION: Does sync ORDER affect which value wins?
- * - If A syncs to B first, then B syncs to A - does A always win? Or B?
- * - If B syncs to A first, then A syncs to B - does the winner change?
+ * Key behaviors:
+ * - causally concurrent offline edits converge to a deterministic shared state
+ * - sync order, multi-client merges, and delayed edits do not break convergence
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';

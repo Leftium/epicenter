@@ -1,3 +1,14 @@
+/**
+ * createTables Tests
+ *
+ * Covers table helper creation over Y.Doc, including CRUD, filtering, and migration scenarios.
+ * These tests ensure table APIs behave predictably for both direct writes and legacy rows read through migrations.
+ *
+ * Key behaviors:
+ * - Table helpers expose consistent row status results for reads and deletes.
+ * - Versioned table definitions migrate older row versions on read.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -6,7 +17,7 @@ import { createTables } from './create-tables.js';
 import { defineTable } from './define-table.js';
 
 describe('createTables', () => {
-	test('set and get a row', () => {
+	test('set stores a row that get returns as valid', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable(type({ id: 'string', title: 'string' })),
@@ -86,7 +97,7 @@ describe('createTables', () => {
 		expect(found).toEqual({ id: '2', title: 'Second' });
 	});
 
-	test('delete removes a row', () => {
+	test('delete removes an existing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable(type({ id: 'string', title: 'string' })),
@@ -110,7 +121,7 @@ describe('createTables', () => {
 		expect(result.status).toBe('not_found_locally');
 	});
 
-	test('count returns number of rows', () => {
+	test('count reflects the current number of rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable(type({ id: 'string', title: 'string' })),
@@ -169,7 +180,7 @@ describe('createTables', () => {
 });
 
 describe('migration scenarios', () => {
-	test('three version migration', () => {
+	test('migrates three schema versions to latest', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
@@ -226,7 +237,7 @@ describe('migration scenarios', () => {
 		}
 	});
 
-	test('three version migration with tags', () => {
+	test('migrates three schema versions including tags field', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable()
@@ -265,5 +276,31 @@ describe('migration scenarios', () => {
 			expect(result.row.tags).toEqual([]);
 			expect(result.row._v).toBe(3);
 		}
+	});
+});
+
+describe('type errors', () => {
+	test('rejects rows missing required fields for table.set', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, {
+			posts: defineTable(type({ id: 'string', title: 'string' })),
+		});
+
+		// @ts-expect-error title is required by the posts schema
+		const _invalidSetInput: Parameters<typeof tables.posts.set>[0] = {
+			id: '1',
+		};
+		void _invalidSetInput;
+	});
+
+	test('rejects access to tables not defined in schema', () => {
+		const ydoc = new Y.Doc();
+		const tables = createTables(ydoc, {
+			posts: defineTable(type({ id: 'string', title: 'string' })),
+		});
+
+		// @ts-expect-error comments table is not defined on this workspace
+		const _missingTable = tables.comments;
+		void _missingTable;
 	});
 });

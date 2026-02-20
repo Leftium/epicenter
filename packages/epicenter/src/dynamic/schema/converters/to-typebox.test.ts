@@ -1,3 +1,15 @@
+/**
+ * To Typebox Converter Tests
+ *
+ * This file verifies `fieldToTypebox` and `fieldsToTypebox` convert dynamic
+ * schema field definitions into valid TypeBox JSON Schema structures.
+ * It protects compatibility for both runtime validation and compiled TypeBox
+ * validators used downstream.
+ *
+ * Key behaviors:
+ * - Maps each field type to the expected TypeBox validation shape
+ * - Preserves JSON-schema compatibility for nested json fields and compiled checks
+ */
 import { describe, expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import { Compile } from 'typebox/compile';
@@ -87,7 +99,7 @@ describe('fieldToTypebox', () => {
 			const schema = fieldToTypebox(real({ id: 'price' }));
 			expect(Value.Check(schema, 0)).toBe(true);
 			expect(Value.Check(schema, 42)).toBe(true);
-			expect(Value.Check(schema, 3.14159)).toBe(true);
+			expect(Value.Check(schema, Math.PI)).toBe(true);
 			expect(Value.Check(schema, -99.99)).toBe(true);
 		});
 

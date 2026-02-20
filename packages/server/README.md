@@ -57,6 +57,7 @@ function createServer(
 
 type ServerOptions = {
 	port?: number; // Default: 3913
+	auth?: AuthConfig; // See "Auth Modes" below
 };
 ```
 
@@ -85,7 +86,56 @@ const server = createServer(blogClient, { port: 3913 });
 
 server.app; // Underlying Elysia instance
 server.start(); // Start the HTTP server
-await server.destroy(); // Stop server and cleanup all clients
+await server.stop(); // Stop server and cleanup all clients
+```
+
+### Composable Plugins
+
+The server is built from modular Elysia plugins. You can use these to compose your own server or add Epicenter features to an existing Elysia app.
+
+#### `@epicenter/server/sync`
+
+The sync sub-entry provides WebSocket synchronization without requiring the full workspace server.
+
+```typescript
+import { createSyncPlugin, createSyncServer } from '@epicenter/server/sync';
+
+// 1. Standalone relay (zero-config, rooms created on demand)
+const relay = createSyncServer({ port: 3913 });
+relay.start();
+
+// 2. Integrated plugin (use your own Elysia instance)
+const app = new Elysia()
+	.use(
+		createSyncPlugin({
+			auth: { token: 'my-secret' },
+			onRoomCreated: (room, doc) => console.log(`Room ${room} created`),
+		}),
+	)
+	.listen(3913);
+
+// 3. Workspace-bound sync
+const plugin = createSyncPlugin({
+	getDoc: (roomId) => workspaces[roomId]?.ydoc,
+});
+```
+
+**Auth Modes:**
+
+- **Open**: Omit `auth` config to allow any client to connect.
+- **Token**: `{ token: 'secret' }` for simple shared secret validation.
+- **Verify**: `{ verify: (token) => boolean }` for custom logic (e.g., JWT).
+
+#### `createWorkspacePlugin(clients)`
+
+Exposes the RESTful tables and actions for the provided clients.
+
+```typescript
+import { createWorkspacePlugin } from '@epicenter/server';
+
+const app = new Elysia()
+	.use(createWorkspacePlugin([blogClient, authClient]))
+	.listen(3913);
 ```
 
 ## Multiple Workspaces
@@ -113,6 +163,7 @@ Routes are namespaced by workspace ID:
 /workspaces/{workspaceId}/ws                   - WebSocket sync (y-websocket protocol)
 /workspaces/{workspaceId}/tables/{table}       - RESTful table CRUD
 /workspaces/{workspaceId}/tables/{table}/{id}  - Single row operations
+/workspaces/{workspaceId}/actions/{action}     - Workspace action endpoints
 ```
 
 ## WebSocket Sync
@@ -293,7 +344,7 @@ const server = createServer([blogClient, authClient], { port: 3913 });
 // Start the server
 server.start();
 
-// Server handles SIGINT/SIGTERM for graceful shutdown
-// Or manually destroy:
-await server.destroy(); // Stops server, cleans up all clients
+// The caller owns signal handling and logging.
+// Stop manually or wire up to SIGINT/SIGTERM:
+await server.stop(); // Stops server, cleans up all clients
 ```

@@ -1,10 +1,10 @@
 import { openapi } from '@elysiajs/openapi';
 import type { AnyWorkspaceClient } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import { collectActionPaths } from './actions';
 import type { AuthConfig } from './sync/auth';
 import { createSyncPlugin } from './sync/plugin';
-import { createWorkspacePlugin } from './workspace-plugin';
+import { createWorkspacePlugin } from './workspace';
+import { collectActionPaths } from './workspace/actions';
 
 export const DEFAULT_PORT = 3913;
 

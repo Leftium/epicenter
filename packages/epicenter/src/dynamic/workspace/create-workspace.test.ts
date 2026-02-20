@@ -1,3 +1,15 @@
+/**
+ * Create Workspace Tests
+ *
+ * This file verifies the dynamic workspace factory creates a usable client,
+ * correctly composes extensions, and honors lifecycle guarantees.
+ * These tests protect the core runtime contract that all higher-level workspace
+ * features build on.
+ *
+ * Key behaviors:
+ * - Creates immediately usable workspace clients with tables and kv helpers
+ * - Composes extension exports and lifecycle hooks in predictable order
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { boolean, Id, id, integer, select, table, text } from '../schema';
@@ -54,7 +66,7 @@ describe('createWorkspace', () => {
 			expect(typeof workspace.destroy).toBe('function');
 		});
 
-		test('Y.Doc has correct guid and gc settings', () => {
+		test('creates Y.Doc with workspace guid and gc enabled', () => {
 			const workspace = createWorkspace(testDefinition);
 
 			// guid should be definition.id
@@ -65,22 +77,28 @@ describe('createWorkspace', () => {
 
 		test('tables are usable without extensions', () => {
 			const workspace = createWorkspace(testDefinition);
+			const posts = workspace.tables.get('posts');
 
 			// Insert a row
-			workspace.tables.get('posts').upsert({
+			posts.upsert({
 				id: '1',
 				title: 'Hello World',
 				view_count: 0,
 				published: false,
-			} as any);
+			} as Parameters<typeof posts.upsert>[0]);
 
 			// Read back
 			const result = workspace.tables.get('posts').get(Id('1'));
 			expect(result.status).toBe('valid');
 			if (result.status === 'valid') {
-				expect((result.row as any).title).toBe('Hello World');
-				expect((result.row as any).view_count).toBe(0);
-				expect((result.row as any).published).toBe(false);
+				const row = result.row as {
+					title: string;
+					view_count: number;
+					published: boolean;
+				};
+				expect(row.title).toBe('Hello World');
+				expect(row.view_count).toBe(0);
+				expect(row.published).toBe(false);
 			}
 		});
 
@@ -233,7 +251,7 @@ describe('createWorkspace', () => {
 			});
 		});
 
-		test('base client extensions remains empty after chaining', () => {
+		test('keeps base client extensions empty after chaining', () => {
 			const baseWorkspace = createWorkspace(testDefinition);
 
 			const chainedWorkspace = baseWorkspace.withExtension('mock', () => ({
@@ -250,14 +268,15 @@ describe('createWorkspace', () => {
 	describe('lifecycle', () => {
 		test('destroy() cleans up Y.Doc', async () => {
 			const workspace = createWorkspace(testDefinition);
+			const posts = workspace.tables.get('posts');
 
 			// Add some data
-			workspace.tables.get('posts').upsert({
+			posts.upsert({
 				id: '1',
 				title: 'Test',
 				view_count: 0,
 				published: false,
-			} as any);
+			} as Parameters<typeof posts.upsert>[0]);
 
 			// Destroy
 			await workspace.destroy();
@@ -319,23 +338,28 @@ describe('createWorkspace', () => {
 	});
 
 	describe('type inference', () => {
-		test('table types work at runtime', () => {
+		test('returns persisted row values for typed table fields', () => {
 			const workspace = createWorkspace(testDefinition);
+			const posts = workspace.tables.get('posts');
 
 			// Insert data
-			workspace.tables.get('posts').upsert({
+			posts.upsert({
 				id: '1',
 				title: 'Test',
 				view_count: 100,
 				published: true,
-			} as any);
+			} as Parameters<typeof posts.upsert>[0]);
 
 			const result = workspace.tables.get('posts').get(Id('1'));
 			if (result.status === 'valid') {
-				// Verify values at runtime
-				expect((result.row as any).title).toBe('Test');
-				expect((result.row as any).view_count).toBe(100);
-				expect((result.row as any).published).toBe(true);
+				const row = result.row as {
+					title: string;
+					view_count: number;
+					published: boolean;
+				};
+				expect(row.title).toBe('Test');
+				expect(row.view_count).toBe(100);
+				expect(row.published).toBe(true);
 			}
 		});
 

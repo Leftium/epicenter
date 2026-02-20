@@ -1,3 +1,14 @@
+/**
+ * createKv Tests
+ *
+ * Verifies key-value helpers over Y.Doc for set/get/delete behavior and migration-on-read.
+ * These tests protect the core KV contract used by workspace settings and metadata.
+ *
+ * Key behaviors:
+ * - `set` and `get` return typed value results with correct status states.
+ * - Versioned KV definitions migrate old values when read.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -6,7 +17,7 @@ import { createKv } from './create-kv.js';
 import { defineKv } from './define-kv.js';
 
 describe('createKv', () => {
-	test('set and get a value', () => {
+	test('set stores a value that get returns as valid', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
 			theme: defineKv(type({ mode: "'light' | 'dark'" })),

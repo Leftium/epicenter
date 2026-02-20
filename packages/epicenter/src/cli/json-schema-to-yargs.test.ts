@@ -1,3 +1,14 @@
+/**
+ * JSON Schema To Yargs Tests
+ *
+ * These tests verify conversion from JSON Schema field metadata into yargs option
+ * definitions used by CLI command builders. They ensure requiredness, option types,
+ * and enum choices are preserved during translation.
+ *
+ * Key behaviors:
+ * - Maps schema property types and required flags to yargs options
+ * - Handles optional fields, literal unions, arrays, and non-object schemas
+ */
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
@@ -75,7 +86,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		expect(options.tags?.type).toBe('array');
 	});
 
-	test('handles multiple fields', () => {
+	test('converts required and optional fields in one schema object', () => {
 		const schema = type({
 			title: 'string',
 			count: 'number',
@@ -98,7 +109,7 @@ describe('jsonSchemaToYargsOptions', () => {
 		expect(options).toEqual({});
 	});
 
-	test('handles schema without descriptions gracefully', () => {
+	test('leaves yargs description undefined when schema has no descriptions', () => {
 		const schema = type({ title: 'string' });
 		const jsonSchema = standardSchemaToJsonSchema(schema);
 		const options = jsonSchemaToYargsOptions(jsonSchema);

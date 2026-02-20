@@ -1,9 +1,35 @@
+/**
+ * YjsFileSystem Tests
+ *
+ * Exercises filesystem-style APIs implemented on top of Yjs-backed file and content state.
+ * These tests verify compatibility with common FS operations and storage-mode transitions.
+ *
+ * Key behaviors:
+ * - Path operations (`writeFile`, `mkdir`, `rm`, `mv`, `cp`) match expected filesystem semantics.
+ * - Timeline-backed content preserves text, binary, and sheet-mode behavior across edits.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { Bash } from 'just-bash';
 import { filesTable } from './file-table.js';
 import { createTimeline } from './timeline-helpers.js';
 import { YjsFileSystem } from './yjs-file-system.js';
+
+type FsWithUnsupportedLinks = {
+	symlink: (target: string, path: string) => Promise<void>;
+	link: (existingPath: string, newPath: string) => Promise<void>;
+	readlink: (path: string) => Promise<string>;
+};
+
+type FsWithInternals = {
+	tree: { lookupId: (path: string) => unknown };
+	content: {
+		store: {
+			ensure: (id: unknown) => Promise<Parameters<typeof createTimeline>[0]>;
+		};
+	};
+};
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
@@ -17,21 +43,21 @@ describe('YjsFileSystem', () => {
 			expect(await fs.exists('/')).toBe(true);
 		});
 
-		test('nonexistent path', async () => {
+		test('returns false for nonexistent paths', async () => {
 			const fs = setup();
 			expect(await fs.exists('/nope')).toBe(false);
 		});
 	});
 
 	describe('writeFile + readFile', () => {
-		test('create and read a file', async () => {
+		test('writeFile creates a file that readFile returns', async () => {
 			const fs = setup();
 			await fs.writeFile('/hello.txt', 'Hello World');
 			const content = await fs.readFile('/hello.txt');
 			expect(content).toBe('Hello World');
 		});
 
-		test('overwrite existing file', async () => {
+		test('writeFile overwrites existing file content', async () => {
 			const fs = setup();
 			await fs.writeFile('/file.txt', 'first');
 			await fs.writeFile('/file.txt', 'second');
@@ -57,14 +83,14 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('appendFile', () => {
-		test('append to existing file', async () => {
+		test('appendFile appends to existing file content', async () => {
 			const fs = setup();
 			await fs.writeFile('/file.txt', 'Hello');
 			await fs.appendFile('/file.txt', ' World');
 			expect(await fs.readFile('/file.txt')).toBe('Hello World');
 		});
 
-		test('append creates file if not exists', async () => {
+		test('appendFile creates target file when it does not exist', async () => {
 			const fs = setup();
 			await fs.appendFile('/new.txt', 'content');
 			expect(await fs.readFile('/new.txt')).toBe('content');
@@ -86,14 +112,14 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('stat', () => {
-		test('stat root', async () => {
+		test('stat on root reports a directory', async () => {
 			const fs = setup();
 			const s = await fs.stat('/');
 			expect(s.isDirectory).toBe(true);
 			expect(s.isFile).toBe(false);
 		});
 
-		test('stat file', async () => {
+		test('stat on file reports file metadata and size', async () => {
 			const fs = setup();
 			await fs.writeFile('/hello.txt', 'Hi');
 			const s = await fs.stat('/hello.txt');
@@ -103,7 +129,7 @@ describe('YjsFileSystem', () => {
 			expect(s.mode).toBe(0o644);
 		});
 
-		test('stat directory', async () => {
+		test('stat on directory reports directory mode', async () => {
 			const fs = setup();
 			await fs.mkdir('/dir');
 			const s = await fs.stat('/dir');
@@ -118,7 +144,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('mkdir', () => {
-		test('create directory', async () => {
+		test('mkdir creates a directory that exists and stats as directory', async () => {
 			const fs = setup();
 			await fs.mkdir('/docs');
 			expect(await fs.exists('/docs')).toBe(true);
@@ -126,7 +152,7 @@ describe('YjsFileSystem', () => {
 			expect(s.isDirectory).toBe(true);
 		});
 
-		test('mkdir -p (recursive)', async () => {
+		test('mkdir recursive creates intermediate directory chain', async () => {
 			const fs = setup();
 			await fs.mkdir('/a/b/c', { recursive: true });
 			expect(await fs.exists('/a')).toBe(true);
@@ -164,7 +190,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('readdir', () => {
-		test('readdir root', async () => {
+		test('readdir on root returns sorted file names', async () => {
 			const fs = setup();
 			await fs.writeFile('/a.txt', 'a');
 			await fs.writeFile('/b.txt', 'b');
@@ -172,7 +198,7 @@ describe('YjsFileSystem', () => {
 			expect(entries).toEqual(['a.txt', 'b.txt']);
 		});
 
-		test('readdir nested', async () => {
+		test('readdir on nested directory returns child entries', async () => {
 			const fs = setup();
 			await fs.mkdir('/docs');
 			await fs.writeFile('/docs/api.md', '# API');
@@ -189,14 +215,14 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('rm', () => {
-		test('rm file (soft delete)', async () => {
+		test('rm removes file path from active tree', async () => {
 			const fs = setup();
 			await fs.writeFile('/file.txt', 'content');
 			await fs.rm('/file.txt');
 			expect(await fs.exists('/file.txt')).toBe(false);
 		});
 
-		test('rm -rf directory', async () => {
+		test('rm recursive removes directory and descendants', async () => {
 			const fs = setup();
 			await fs.mkdir('/dir');
 			await fs.writeFile('/dir/file.txt', 'content');
@@ -224,7 +250,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('mv', () => {
-		test('rename file', async () => {
+		test('mv renames file path while keeping content', async () => {
 			const fs = setup();
 			await fs.writeFile('/old.txt', 'content');
 			await fs.mv('/old.txt', '/new.txt');
@@ -232,7 +258,7 @@ describe('YjsFileSystem', () => {
 			expect(await fs.exists('/new.txt')).toBe(true);
 		});
 
-		test('move file to directory', async () => {
+		test('mv moves file into target directory', async () => {
 			const fs = setup();
 			await fs.mkdir('/dir');
 			await fs.writeFile('/file.txt', 'content');
@@ -244,7 +270,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('cp', () => {
-		test('copy file', async () => {
+		test('cp duplicates file content without modifying source', async () => {
 			const fs = setup();
 			await fs.writeFile('/src.txt', 'content');
 			await fs.cp('/src.txt', '/dest.txt');
@@ -252,7 +278,7 @@ describe('YjsFileSystem', () => {
 			expect(await fs.readFile('/src.txt')).toBe('content');
 		});
 
-		test('copy directory recursively', async () => {
+		test('cp with recursive true copies directory trees', async () => {
 			const fs = setup();
 			await fs.mkdir('/src');
 			await fs.writeFile('/src/a.txt', 'aaa');
@@ -264,7 +290,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('resolvePath', () => {
-		test('resolves relative paths', () => {
+		test('resolvePath normalizes relative and absolute targets', () => {
 			const fs = setup();
 			expect(fs.resolvePath('/docs', 'api.md')).toBe('/docs/api.md');
 			expect(fs.resolvePath('/docs', '../src/index.ts')).toBe('/src/index.ts');
@@ -273,7 +299,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('getAllPaths', () => {
-		test('returns all paths except root', async () => {
+		test('getAllPaths includes descendants and excludes root', async () => {
 			const fs = setup();
 			await fs.mkdir('/docs');
 			await fs.writeFile('/docs/api.md', '# API');
@@ -285,7 +311,7 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('chmod', () => {
-		test('no-op but verifies file exists', async () => {
+		test('chmod succeeds for existing files without changing API-visible state', async () => {
 			const fs = setup();
 			await fs.writeFile('/file.txt', 'content');
 			await fs.chmod('/file.txt', 0o755); // should not throw
@@ -298,23 +324,31 @@ describe('YjsFileSystem', () => {
 	});
 
 	describe('symlink / link / readlink', () => {
-		test('symlink throws ENOSYS', async () => {
+		test('symlink rejects with ENOSYS because links are unsupported', async () => {
 			const fs = setup();
-			await expect((fs as any).symlink('/target', '/link')).rejects.toThrow(
-				'ENOSYS',
-			);
+			// Accessing unsupported method for compatibility check - not part of typed public API
+			const fsWithUnsupportedLinks = fs as unknown as FsWithUnsupportedLinks;
+			await expect(
+				fsWithUnsupportedLinks.symlink('/target', '/link'),
+			).rejects.toThrow('ENOSYS');
 		});
 
-		test('link throws ENOSYS', async () => {
+		test('link rejects with ENOSYS because hard links are unsupported', async () => {
 			const fs = setup();
-			await expect((fs as any).link('/existing', '/new')).rejects.toThrow(
-				'ENOSYS',
-			);
+			// Accessing unsupported method for compatibility check - not part of typed public API
+			const fsWithUnsupportedLinks = fs as unknown as FsWithUnsupportedLinks;
+			await expect(
+				fsWithUnsupportedLinks.link('/existing', '/new'),
+			).rejects.toThrow('ENOSYS');
 		});
 
-		test('readlink throws ENOSYS', async () => {
+		test('readlink rejects with ENOSYS because links are unsupported', async () => {
 			const fs = setup();
-			await expect((fs as any).readlink('/link')).rejects.toThrow('ENOSYS');
+			// Accessing unsupported method for compatibility check - not part of typed public API
+			const fsWithUnsupportedLinks = fs as unknown as FsWithUnsupportedLinks;
+			await expect(fsWithUnsupportedLinks.readlink('/link')).rejects.toThrow(
+				'ENOSYS',
+			);
 		});
 	});
 });
@@ -379,12 +413,14 @@ describe('mv preserves content (no conversion)', () => {
 	});
 });
 
+// Accessing private internals to inspect timeline state; no public API exposes this.
 async function getTimelineLength(
 	fs: YjsFileSystem,
 	path: string,
 ): Promise<number> {
-	const tree = (fs as any).tree;
-	const content = (fs as any).content;
+	const fsWithInternals = fs as unknown as FsWithInternals;
+	const tree = fsWithInternals.tree;
+	const content = fsWithInternals.content;
 	const id = tree.lookupId(path);
 	const ydoc = await content.store.ensure(id);
 	return createTimeline(ydoc).length;
@@ -493,9 +529,11 @@ describe('sheet file support', () => {
 	test('readFile returns CSV for sheet-mode file', async () => {
 		const fs = setup();
 		// Create file and push sheet entry via internal access
+		// Accessing private internals to seed sheet mode for behavior coverage.
 		await fs.writeFile('/data.csv', 'placeholder');
-		const tree = (fs as any).tree;
-		const content = (fs as any).content;
+		const fsWithInternals = fs as unknown as FsWithInternals;
+		const tree = fsWithInternals.tree;
+		const content = fsWithInternals.content;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await content.store.ensure(fileId);
 		// Replace text entry with sheet entry
@@ -508,8 +546,10 @@ describe('sheet file support', () => {
 	test('writeFile on sheet-mode re-parses CSV in place', async () => {
 		const fs = setup();
 		await fs.writeFile('/data.csv', 'placeholder');
-		const tree = (fs as any).tree;
-		const content = (fs as any).content;
+		// Accessing private internals to seed sheet mode for behavior coverage.
+		const fsWithInternals = fs as unknown as FsWithInternals;
+		const tree = fsWithInternals.tree;
+		const content = fsWithInternals.content;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await content.store.ensure(fileId);
 		ydoc.transact(() => {
@@ -526,21 +566,21 @@ describe('just-bash integration', () => {
 		return new Bash({ fs, cwd: '/' });
 	}
 
-	test('echo + cat', async () => {
+	test('bash echo writes text that cat reads back', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "hello world" > /greeting.txt');
 		const result = await bash.exec('cat /greeting.txt');
 		expect(result.stdout.trim()).toBe('hello world');
 	});
 
-	test('mkdir -p + ls', async () => {
+	test('bash mkdir -p creates directory visible to ls', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /docs/nested');
 		const result = await bash.exec('ls /docs');
 		expect(result.stdout.trim()).toBe('nested');
 	});
 
-	test('find', async () => {
+	test('bash find returns files matching extension pattern', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /src');
 		await bash.exec('echo "ts" > /src/index.ts');
@@ -549,7 +589,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toContain('/src/index.ts');
 	});
 
-	test('grep', async () => {
+	test('bash grep -r returns matching content and file path', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "TODO: fix this" > /file.txt');
 		await bash.exec('echo "all good" > /other.txt');
@@ -558,7 +598,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout).toContain('/file.txt');
 	});
 
-	test('rm -rf', async () => {
+	test('bash rm -rf removes nested directory tree', async () => {
 		const bash = setupBash();
 		await bash.exec('mkdir -p /dir/sub');
 		await bash.exec('echo "x" > /dir/sub/file.txt');
@@ -567,7 +607,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('');
 	});
 
-	test('mv (rename)', async () => {
+	test('bash mv renames file and preserves content', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "content" > /old.txt');
 		await bash.exec('mv /old.txt /new.txt');
@@ -575,7 +615,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('content');
 	});
 
-	test('cp', async () => {
+	test('bash cp duplicates file content', async () => {
 		const bash = setupBash();
 		await bash.exec('echo "content" > /src.txt');
 		await bash.exec('cp /src.txt /dest.txt');
@@ -583,7 +623,7 @@ describe('just-bash integration', () => {
 		expect(result.stdout.trim()).toBe('content');
 	});
 
-	test('wc -l', async () => {
+	test('bash wc -l reports the expected line count', async () => {
 		const bash = setupBash();
 		await bash.exec('printf "line1\\nline2\\nline3\\n" > /file.txt');
 		const result = await bash.exec('wc -l /file.txt');

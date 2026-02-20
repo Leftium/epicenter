@@ -1,3 +1,14 @@
+/**
+ * describeWorkspace Tests
+ *
+ * Validates workspace descriptor generation for tables, kv, actions, and awareness schemas.
+ * These tests ensure generated metadata is complete, serializable, and stable for introspection tooling.
+ *
+ * Key behaviors:
+ * - Descriptor includes table/kv/action metadata with expected schema structure.
+ * - Descriptor output remains JSON-serializable without circular references.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineMutation, defineQuery } from '../shared/actions.js';
@@ -70,7 +81,7 @@ describe('describeWorkspace', () => {
 		expect(createAction!.input).toHaveProperty('type', 'object');
 	});
 
-	test('workspace with no actions returns empty actions array', () => {
+	test('workspace without actions returns an empty actions array', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 		const client = createWorkspace({
@@ -159,7 +170,7 @@ describe('describeWorkspace', () => {
 		expect(parsed.actions).toHaveLength(1);
 	});
 
-	test('workspace with no kv returns empty kv object', () => {
+	test('workspace without kv definitions returns an empty kv object', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 		const client = createWorkspace({
@@ -172,7 +183,7 @@ describe('describeWorkspace', () => {
 		expect(descriptor.kv).toEqual({});
 	});
 
-	test('workspace with no tables returns empty tables object', () => {
+	test('workspace without tables returns empty descriptor sections', () => {
 		const client = createWorkspace({
 			id: 'no-tables',
 		});

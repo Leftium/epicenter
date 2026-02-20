@@ -1,3 +1,14 @@
+/**
+ * defineKv Tests
+ *
+ * Covers shorthand and builder KV definitions, including versioned migration strategies.
+ * The suite ensures KV schemas remain compatible with validation and gradual schema evolution.
+ *
+ * Key behaviors:
+ * - KV schemas validate both simple and versioned value shapes.
+ * - Migrations convert legacy values into the current schema.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineKv } from './define-kv.js';
@@ -12,7 +23,7 @@ describe('defineKv', () => {
 			expect(result).not.toHaveProperty('issues');
 		});
 
-		test('migrate is identity function for shorthand', () => {
+		test('shorthand migrate returns the same value reference', () => {
 			const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
 
 			const value = { collapsed: true, width: 300 };
@@ -66,7 +77,7 @@ describe('defineKv', () => {
 			expect(v2Result).not.toHaveProperty('issues');
 		});
 
-		test('migrate function transforms old version to latest', () => {
+		test('migrate function upgrades old values to latest version', () => {
 			const theme = defineKv()
 				.version(type({ mode: "'light' | 'dark'" }))
 				.version(type({ mode: "'light' | 'dark'", fontSize: 'number' }))

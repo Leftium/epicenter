@@ -1,3 +1,15 @@
+/**
+ * Sheet Helpers Tests
+ *
+ * Verifies CSV parsing/serialization and row/column ordering utilities for sheet-mode
+ * timeline entries. These tests keep spreadsheet behavior stable across import, export,
+ * and interactive reorder operations.
+ *
+ * Key behaviors:
+ * - CSV conversion preserves ordering, escaping, and round-trip fidelity.
+ * - Fractional index helpers generate valid, stable order values for reordering.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
@@ -22,7 +34,7 @@ describe('serializeSheetToCsv', () => {
 		expect(serializeSheetToCsv(columns, rows)).toBe('');
 	});
 
-	test('single column, single row', () => {
+	test('single column and row serialize to one header and one record', () => {
 		const { columns, rows } = createSheetMaps();
 		const col = new Y.Map<string>();
 		col.set('name', 'Name');

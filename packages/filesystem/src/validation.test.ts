@@ -1,3 +1,14 @@
+/**
+ * Validation Tests
+ *
+ * Covers filename validation, duplicate-name checks, and deterministic disambiguation rules.
+ * These tests guard filesystem naming constraints that are shared across tree and index operations.
+ *
+ * Key behaviors:
+ * - Invalid path-like names are rejected with filesystem-style errors.
+ * - Duplicate names are disambiguated in stable creation order.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { filesTable } from './file-table.js';
@@ -137,7 +148,7 @@ describe('disambiguateNames', () => {
 		expect(result.get('b')).toBe('foo (1).txt');
 	});
 
-	test('three duplicates', () => {
+	test('three duplicates get incrementing suffixes by creation order', () => {
 		const rows = [
 			makeRow('c', 'file.md', null, 3000),
 			makeRow('a', 'file.md', null, 1000),

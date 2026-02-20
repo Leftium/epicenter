@@ -1,3 +1,15 @@
+/**
+ * Actions Router Tests
+ *
+ * Verifies HTTP routing for query and mutation actions, including nested action trees
+ * and input validation behavior. These tests protect the contract between action
+ * definitions and the generated server endpoints.
+ *
+ * Key behaviors:
+ * - Query/mutation actions map to correct HTTP methods and response payloads.
+ * - Action path discovery produces expected flattened route paths.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/hq';
 import { type } from 'arktype';
@@ -122,7 +134,7 @@ describe('createActionsRouter', () => {
 		expect(response.status).toBe(422);
 	});
 
-	test('async handlers work correctly', async () => {
+	test('async handlers resolve and return data payloads', async () => {
 		const actions = {
 			asyncQuery: defineQuery({
 				handler: async () => {
@@ -142,7 +154,7 @@ describe('createActionsRouter', () => {
 		expect(body).toEqual({ data: { async: true } });
 	});
 
-	test('supports custom base path', async () => {
+	test('custom basePath prefixes generated action routes', async () => {
 		const actions = {
 			test: defineQuery({
 				handler: () => 'ok',
@@ -217,7 +229,7 @@ describe('collectActionPaths', () => {
 		expect(paths).toHaveLength(3);
 	});
 
-	test('handles deeply nested actions', () => {
+	test('collectActionPaths flattens deeply nested actions into slash paths', () => {
 		const actions = {
 			api: {
 				v1: {

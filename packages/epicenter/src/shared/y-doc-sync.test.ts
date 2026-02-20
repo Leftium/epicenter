@@ -1,3 +1,14 @@
+/**
+ * YDoc Sync Utility Tests
+ *
+ * These tests validate string-to-CRDT sync helpers for `Y.Text` and `Y.XmlFragment`.
+ * They ensure updates are minimal when possible, transactional when required, and safe
+ * when called with detached Yjs types.
+ *
+ * Key behaviors:
+ * - Identical content is a no-op, while diffs apply expected text or fragment updates.
+ * - Helpers preserve convergence guarantees and emit predictable transaction counts.
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
@@ -46,7 +57,7 @@ describe('updateYTextFromString', () => {
 		expect(ytext.toString()).toBe('xyz');
 	});
 
-	test('works with empty initial content', () => {
+	test('inserts target content when initial text is empty', () => {
 		const ydoc = new Y.Doc();
 		const ytext = ydoc.getText('text');
 
@@ -54,7 +65,7 @@ describe('updateYTextFromString', () => {
 		expect(ytext.toString()).toBe('Hello');
 	});
 
-	test('works when target is empty', () => {
+	test('deletes all content when target text is empty', () => {
 		const ydoc = new Y.Doc();
 		const ytext = ydoc.getText('text');
 		ytext.insert(0, 'Hello');
@@ -170,7 +181,7 @@ describe('updateYXmlFragmentFromString', () => {
 		expect(serialize(frag)).toBe('replaced');
 	});
 
-	test('works with empty initial content', () => {
+	test('inserts target content when initial fragment is empty', () => {
 		const ydoc = new Y.Doc();
 		const frag = ydoc.getXmlFragment('richtext');
 

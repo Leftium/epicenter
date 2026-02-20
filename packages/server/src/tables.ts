@@ -14,15 +14,17 @@ export function createTablesPlugin(
 		for (const [tableName, value] of Object.entries(workspace.tables)) {
 			const tableHelper = value as TableHelper<BaseRow>;
 
-			const basePath = `/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
+			const tableRouter = new Elysia({
+				prefix: `/${workspaceId}/tables/${tableName}`,
+			});
 
-			app.get(basePath, () => tableHelper.getAllValid(), {
+			tableRouter.get('/', () => tableHelper.getAllValid(), {
 				detail: { description: `List all ${tableName}`, tags },
 			});
 
-			app.get(
-				`${basePath}/:id`,
+			tableRouter.get(
+				'/:id',
 				({ params, status }) => {
 					const result = tableHelper.get(params.id);
 					if (result.status === 'not_found')
@@ -36,8 +38,8 @@ export function createTablesPlugin(
 				},
 			);
 
-			app.put(
-				`${basePath}/:id`,
+			tableRouter.put(
+				'/:id',
 				({ params, body, status }) => {
 					const result = tableHelper.parse(params.id, body);
 					if (result.status === 'invalid')
@@ -50,8 +52,8 @@ export function createTablesPlugin(
 				},
 			);
 
-			app.patch(
-				`${basePath}/:id`,
+			tableRouter.patch(
+				'/:id',
 				({ params, body, status }) => {
 					const result = tableHelper.update(
 						params.id,
@@ -67,13 +69,15 @@ export function createTablesPlugin(
 				},
 			);
 
-			app.delete(
-				`${basePath}/:id`,
+			tableRouter.delete(
+				'/:id',
 				({ params }) => tableHelper.delete(params.id),
 				{
 					detail: { description: `Delete ${tableName} by ID`, tags },
 				},
 			);
+
+			app.use(tableRouter);
 		}
 	}
 

@@ -38,12 +38,7 @@ export function createWorkspacePlugin(
 	// Mount action routers per workspace
 	for (const client of clients) {
 		if (!client.actions) continue;
-		app.use(
-			createActionsRouter({
-				actions: client.actions,
-				basePath: `/${client.id}/actions`,
-			}),
-		);
+		app.use(createActionsRouter(client.actions, `/${client.id}/actions`));
 	}
 
 	return app;

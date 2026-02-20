@@ -124,10 +124,10 @@ function createServerInternal(
 		start() {
 			console.log('Creating HTTP server...');
 
-			const server = Bun.serve({
-				fetch: app.fetch,
-				port,
-			});
+			// IMPORTANT: Use app.listen() instead of Bun.serve({ fetch: app.fetch }).
+			// Bun.serve() with only `fetch` doesn't pass Elysia's `websocket` handler,
+			// so WebSocket upgrades silently fail. app.listen() wires up both HTTP and WS.
+			app.listen(port);
 
 			console.log('\nEpicenter HTTP Server Running!\n');
 			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -162,7 +162,7 @@ function createServerInternal(
 
 				console.log(`\nReceived ${signal}, shutting down...`);
 
-				server.stop();
+				app.stop();
 				await Promise.all(clients.map((c) => c.destroy()));
 
 				console.log('Server stopped cleanly\n');
@@ -172,7 +172,7 @@ function createServerInternal(
 			process.on('SIGINT', () => shutdown('SIGINT'));
 			process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-			return server;
+			return app.server;
 		},
 
 		async destroy() {

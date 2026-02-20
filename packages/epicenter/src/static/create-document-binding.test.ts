@@ -23,7 +23,10 @@ function setup() {
 }
 
 function setupWithBinding(
-	overrides?: Partial<Parameters<typeof createDocumentBinding>[0]>,
+	overrides?: Omit<
+		Partial<Parameters<typeof createDocumentBinding>[0]>,
+		'guidKey' | 'updatedAtKey' | 'tableHelper' | 'ydoc'
+	>,
 ) {
 	const { ydoc, tables } = setup();
 	const binding = createDocumentBinding({
@@ -66,7 +69,7 @@ describe('createDocumentBinding', () => {
 				id: 'f1',
 				name: 'test.txt',
 				updatedAt: 0,
-				_v: 1,
+				_v: 1 as const,
 			};
 			tables.files.set(row);
 
@@ -311,7 +314,7 @@ describe('createDocumentBinding', () => {
 		});
 
 		test('custom onRowDeleted fires with the guid', async () => {
-			let deletedGuid: string | null = null;
+			let deletedGuid = '';
 			const { tables } = setup();
 
 			const binding = createDocumentBinding({
@@ -345,7 +348,7 @@ describe('createDocumentBinding', () => {
 				id: 'f1',
 				name: 'test.txt',
 				updatedAt: 123,
-				_v: 1,
+				_v: 1 as const,
 			};
 			expect(binding.guidOf(row)).toBe('f1');
 		});
@@ -356,7 +359,7 @@ describe('createDocumentBinding', () => {
 				id: 'f1',
 				name: 'test.txt',
 				updatedAt: 456,
-				_v: 1,
+				_v: 1 as const,
 			};
 			expect(binding.updatedAtOf(row)).toBe(456);
 		});
@@ -463,11 +466,13 @@ describe('createDocumentBinding', () => {
 		});
 
 		test('hook receives correct binding metadata with tags', async () => {
-			let capturedBinding: {
-				tableName: string;
-				documentName: string;
-				tags: readonly string[];
-			} | null = null;
+			let capturedBinding:
+				| {
+						tableName: string;
+						documentName: string;
+						tags: readonly string[];
+				  }
+				| undefined;
 
 			const { ydoc, tables } = setup();
 			const binding = createDocumentBinding({
@@ -491,11 +496,10 @@ describe('createDocumentBinding', () => {
 			});
 
 			await binding.open('f1');
-			expect(capturedBinding).toEqual({
-				tableName: 'files',
-				documentName: 'content',
-				tags: ['persistent', 'synced'],
-			});
+			expect(capturedBinding).toBeDefined();
+			expect(capturedBinding!.tableName).toBe('files');
+			expect(capturedBinding!.documentName).toBe('content');
+			expect(capturedBinding!.tags).toEqual(['persistent', 'synced']);
 		});
 
 		test('tag matching: extension with no tags fires for all docs', async () => {

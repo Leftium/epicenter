@@ -5,7 +5,8 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-		"./sync": "./src/sync/index.ts"
+		"./sync": "./src/sync/index.ts",
+		"./workspace": "./src/workspace/index.ts"
 	},
 	"license": "AGPL-3.0",
 	"scripts": {

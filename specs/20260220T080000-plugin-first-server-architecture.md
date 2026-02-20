@@ -597,16 +597,21 @@ All 5 phases implemented in dependency order. Typecheck clean after each phase. 
 
 5. **Connection state tracking (Phase 1.7)** → Per-connection state (updateHandler, pingInterval, controlledClientIds) stays in the plugin via a `WeakMap<object, ConnectionState>` keyed by `ws.raw`. This is transport-specific (WebSocket concerns). The room manager handles rooms, docs, awareness, and the connection map (`Map<object, { send }>`). Clean separation: room manager is transport-agnostic, plugin is Elysia/WebSocket-specific.
 
-### Design Decision: Route Prefix Room ID Extraction
+### Design Decision: Fixed Route + Elysia Prefix (replaces routePrefix)
 
-The sync plugin supports configurable `routePrefix` (e.g., `/:room/sync` or `/workspaces/:workspaceId/sync`). Since the param name varies by route pattern, the plugin extracts the room ID as the first value from `ws.data.params`:
+The sync plugin always registers `/:room/sync` as a fixed route string. Consumers control the mount point via Elysia's native `prefix` option:
 
 ```typescript
-const params = ws.data.params as Record<string, string>;
-const roomId = Object.values(params)[0] as string;
+// Standalone: /:room/sync
+new Elysia().use(createSyncPlugin()).listen(3913);
+
+// Integrated: /workspaces/:room/sync
+new Elysia()
+	.use(new Elysia({ prefix: '/workspaces' }).use(createSyncPlugin({ getDoc })))
+	.listen(3913);
 ```
 
-This works for any route pattern with exactly one dynamic segment. The `as Record<string, string>` cast is necessary because Elysia infers params from the route string at type level, but the plugin's route is dynamic.
+This replaced the earlier `routePrefix` config + `Object.values(params)[0]` extraction, which was fragile (relied on JS object key ordering for the room ID). The fixed route gives Elysia full type inference on `ws.data.params.room` — no casts, no runtime fragility.
 
 ### Verification
 

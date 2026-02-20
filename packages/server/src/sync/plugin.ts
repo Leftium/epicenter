@@ -45,14 +45,6 @@ export type SyncPluginConfig = {
 	/** Auth configuration. Omit for open mode (no auth). */
 	auth?: AuthConfig;
 
-	/**
-	 * Route pattern for the WebSocket endpoint.
-	 * Must contain exactly one path parameter for the room ID.
-	 *
-	 * Default: `/:room/sync` (standalone) or `/workspaces/:workspaceId/sync` (when used with createServer)
-	 */
-	routePrefix?: string;
-
 	/** Called when a room is created (first connection). Only fires in standalone mode (no getDoc). */
 	onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
 
@@ -73,25 +65,28 @@ export type SyncPluginConfig = {
  * - **Standalone** (no `getDoc`): Creates fresh Y.Docs on demand. Rooms are ephemeral.
  * - **Integrated** (`getDoc` provided): Uses existing Y.Docs. Returns 4004 for unknown rooms.
  *
+ * The plugin always registers the route `/:room/sync`. Use Elysia's native
+ * `prefix` option to mount it under a different path:
+ *
  * @example
  * ```typescript
  * // Standalone mode — rooms created on demand
+ * // Route: /:room/sync
  * const app = new Elysia()
  *   .use(createSyncPlugin())
  *   .listen(3913);
  *
- * // Integrated mode — existing docs
+ * // Integrated mode — mount under /workspaces prefix
+ * // Route: /workspaces/:room/sync
  * const app = new Elysia()
- *   .use(createSyncPlugin({
- *     getDoc: (room) => workspaces[room]?.ydoc,
- *     routePrefix: '/workspaces/:workspaceId/sync',
- *   }))
+ *   .use(
+ *     new Elysia({ prefix: '/workspaces' })
+ *       .use(createSyncPlugin({ getDoc: (room) => workspaces[room]?.ydoc }))
+ *   )
  *   .listen(3913);
  * ```
  */
 export function createSyncPlugin(config?: SyncPluginConfig) {
-	const routePrefix = config?.routePrefix ?? '/:room/sync';
-
 	const roomManager = createRoomManager({
 		getDoc: config?.getDoc,
 		onRoomCreated: config?.onRoomCreated,
@@ -124,11 +119,9 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 		}
 	>();
 
-	return new Elysia().ws(routePrefix, {
+	return new Elysia().ws('/:room/sync', {
 		async open(ws) {
-			// Extract room ID from the first path param (works with any routePrefix pattern)
-			const params = ws.data.params as Record<string, string>;
-			const roomId = Object.values(params)[0] as string;
+			const roomId = ws.data.params.room;
 
 			// Auth check — extract ?token from query params
 			const token =

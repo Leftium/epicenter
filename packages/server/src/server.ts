@@ -83,11 +83,12 @@ function createServerInternal(
 			}),
 		)
 		.use(
-			createSyncPlugin({
-				getDoc: (room) => workspaces[room]?.ydoc,
-				auth: options?.auth,
-				routePrefix: '/workspaces/:workspaceId/sync',
-			}),
+			new Elysia({ prefix: '/workspaces' }).use(
+				createSyncPlugin({
+					getDoc: (room) => workspaces[room]?.ydoc,
+					auth: options?.auth,
+				}),
+			),
 		)
 		.use(createWorkspacePlugin(clients));
 

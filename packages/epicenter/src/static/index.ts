@@ -109,12 +109,12 @@ export { defineWorkspace } from './define-workspace.js';
 // Workspace Creation
 // ════════════════════════════════════════════════════════════════════════════
 
-export { createWorkspace } from './create-workspace.js';
+export type { CreateDocumentBindingConfig } from './create-document-binding.js';
 export {
 	createDocumentBinding,
 	DOCUMENT_BINDING_ORIGIN,
 } from './create-document-binding.js';
-export type { CreateDocumentBindingConfig } from './create-document-binding.js';
+export { createWorkspace } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Lower-Level APIs (Bring Your Own Y.Doc)
@@ -154,11 +154,13 @@ export type {
 	AwarenessDefinitions,
 	AwarenessHelper,
 	AwarenessState,
+	// Base row type
+	BaseRow,
 	DeleteResult,
 	// Document binding types
 	DocBinding,
-	DocumentBinding,
 	DocsPropertyOf,
+	DocumentBinding,
 	// Extension types
 	ExtensionContext,
 	ExtensionFactory,

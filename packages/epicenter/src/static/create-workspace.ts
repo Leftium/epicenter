@@ -50,6 +50,7 @@ import { createKv } from './create-kv.js';
 import { createTables } from './create-tables.js';
 import type {
 	AwarenessDefinitions,
+	BaseRow,
 	DocBinding,
 	DocumentBinding,
 	DocumentExtensionRegistration,
@@ -133,15 +134,12 @@ export function createWorkspace<
 		).docs;
 		if (!docsDef || Object.keys(docsDef).length === 0) continue;
 
-		const tableHelper = (
-			tables as Record<string, TableHelper<{ id: string; _v: number }>>
-		)[tableName];
+		const tableHelper = (tables as Record<string, TableHelper<BaseRow>>)[
+			tableName
+		];
 		if (!tableHelper) continue;
 
-		const docsNamespace: Record<
-			string,
-			DocumentBinding<{ id: string; _v: number }>
-		> = {};
+		const docsNamespace: Record<string, DocumentBinding<BaseRow>> = {};
 
 		for (const [docName, docBinding] of Object.entries(docsDef)) {
 			// Normalize tags from definition — may be string, readonly array, or undefined
@@ -152,9 +150,8 @@ export function createWorkspace<
 				: [];
 
 			const binding = createDocumentBinding({
-				guidKey: docBinding.guid as keyof { id: string; _v: number } & string,
-				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } &
-					string,
+				guidKey: docBinding.guid as keyof BaseRow & string,
+				updatedAtKey: docBinding.updatedAt as keyof BaseRow & string,
 				tableHelper,
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,

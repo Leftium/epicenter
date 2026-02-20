@@ -1,4 +1,8 @@
-import type { AnyWorkspaceClient, TableHelper } from '@epicenter/hq/static';
+import type {
+	AnyWorkspaceClient,
+	BaseRow,
+	TableHelper,
+} from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
 
 export function createTablesPlugin(
@@ -8,7 +12,7 @@ export function createTablesPlugin(
 
 	for (const [workspaceId, workspace] of Object.entries(workspaceClients)) {
 		for (const [tableName, value] of Object.entries(workspace.tables)) {
-			const tableHelper = value as TableHelper<{ id: string; _v: number }>;
+			const tableHelper = value as TableHelper<BaseRow>;
 
 			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];

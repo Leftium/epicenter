@@ -39,6 +39,7 @@
 import * as Y from 'yjs';
 import type { DocumentLifecycle } from '../shared/lifecycle.js';
 import type {
+	BaseRow,
 	DocumentBinding,
 	DocumentExtensionRegistration,
 	TableHelper,
@@ -81,9 +82,7 @@ type DocEntry = {
  *
  * @typeParam TRow - The row type of the bound table
  */
-export type CreateDocumentBindingConfig<
-	TRow extends { id: string; _v: number },
-> = {
+export type CreateDocumentBindingConfig<TRow extends BaseRow> = {
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
 	/** Column name to bump when the doc changes. */
@@ -134,7 +133,7 @@ export type CreateDocumentBindingConfig<
  * @param config - Binding configuration
  * @returns A `DocumentBinding<TRow>` with open/read/write/destroy/purge methods
  */
-export function createDocumentBinding<TRow extends { id: string; _v: number }>(
+export function createDocumentBinding<TRow extends BaseRow>(
 	config: CreateDocumentBindingConfig<TRow>,
 ): DocumentBinding<TRow> {
 	const {

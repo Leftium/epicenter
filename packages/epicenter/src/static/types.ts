@@ -21,6 +21,17 @@ import type {
 // TABLE RESULT TYPES - Building Blocks
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * The minimum shape every versioned table row must satisfy.
+ *
+ * - `id`: Unique identifier for row lookup and identity
+ * - `_v`: Schema version number for tracking which version this row conforms to
+ *
+ * All table rows extend this base shape. Used as a constraint in generic types
+ * to ensure rows have the required fields for versioning and identification.
+ */
+export type BaseRow = { id: string; _v: number };
+
 /** A row that passed validation. */
 export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
 
@@ -243,7 +254,7 @@ export type NumberKeysOf<TRow> = {
  * await binding.destroy(row);
  * ```
  */
-export type DocumentBinding<TRow extends { id: string; _v: number }> = {
+export type DocumentBinding<TRow extends BaseRow> = {
 	/**
 	 * Open a content Y.Doc for a row.
 	 *
@@ -324,7 +335,7 @@ export type DocsPropertyOf<T> = T extends {
 	docs: infer TDocs;
 	migrate: (...args: never[]) => infer TLatest;
 }
-	? TLatest extends { id: string; _v: number }
+	? TLatest extends BaseRow
 		? keyof TDocs extends never
 			? {} // no .withDocument() → no .docs property
 			: {
@@ -392,7 +403,7 @@ export type InferKvVersionUnion<T> =
  *
  * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
  */
-export type TableHelper<TRow extends { id: string; _v: number }> = {
+export type TableHelper<TRow extends BaseRow> = {
 	// ═══════════════════════════════════════════════════════════════════════
 	// PARSE
 	// ═══════════════════════════════════════════════════════════════════════

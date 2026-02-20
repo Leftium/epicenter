@@ -148,6 +148,34 @@ describe('createDocumentBinding', () => {
 
 			expect(capturedOrigin).toBe(DOCUMENT_BINDING_ORIGIN);
 		});
+
+		test('remote update does NOT bump updatedAt', async () => {
+			const { tables, binding } = setupWithBinding();
+			tables.files.set({
+				id: 'f1',
+				name: 'test.txt',
+				updatedAt: 0,
+				_v: 1,
+			});
+
+			const doc = await binding.open('f1');
+
+			// Capture the state update from a local edit on a separate Y.Doc,
+			// then apply it as a "remote" update via Y.applyUpdate
+			const remoteDoc = new Y.Doc({ guid: 'f1', gc: false });
+			remoteDoc.getText('content').insert(0, 'remote edit');
+			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
+
+			Y.applyUpdate(doc, remoteUpdate);
+
+			const result = tables.files.get('f1');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.row.updatedAt).toBe(0);
+			}
+
+			remoteDoc.destroy();
+		});
 	});
 
 	describe('destroy', () => {

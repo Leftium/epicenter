@@ -37,7 +37,10 @@
  */
 
 import * as Y from 'yjs';
-import type { DocumentContext, DocumentLifecycle } from '../shared/lifecycle.js';
+import type {
+	DocumentContext,
+	DocumentLifecycle,
+} from '../shared/lifecycle.js';
 import type { DocumentBinding, TableHelper } from './types.js';
 
 /**
@@ -125,9 +128,9 @@ export type CreateDocumentBindingConfig<
  * @param config - Binding configuration
  * @returns A `DocumentBinding<TRow>` with open/read/write/destroy/purge methods
  */
-export function createDocumentBinding<
-	TRow extends { id: string; _v: number },
->(config: CreateDocumentBindingConfig<TRow>): DocumentBinding<TRow> {
+export function createDocumentBinding<TRow extends { id: string; _v: number }>(
+	config: CreateDocumentBindingConfig<TRow>,
+): DocumentBinding<TRow> {
 	const {
 		guidKey,
 		updatedAtKey,
@@ -218,10 +221,21 @@ export function createDocumentBinding<
 				throw err;
 			}
 
-			// Attach updatedAt observer — fires when content doc changes
-			const updateHandler = (_update: Uint8Array, origin: unknown) => {
+			// Attach updatedAt observer — fires when content doc changes.
+			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
+			// We use transaction.local to skip remote sync updates — only local edits
+			// should bump updatedAt. Remote devices receive the bumped value via
+			// workspace ydoc sync; redundant bumping would cause unnecessary churn.
+			const updateHandler = (
+				_update: Uint8Array,
+				origin: unknown,
+				_doc: Y.Doc,
+				transaction: Y.Transaction,
+			) => {
 				// Skip updates from the document binding itself to avoid loops
 				if (origin === DOCUMENT_BINDING_ORIGIN) return;
+				// Skip remote updates — only local edits bump updatedAt
+				if (!transaction.local) return;
 
 				// Find the row that references this guid and bump updatedAt
 				// For guid === rowId (common case), we can update directly
@@ -239,9 +253,7 @@ export function createDocumentBinding<
 			const whenReady =
 				lifecycles.length === 0
 					? Promise.resolve(contentYdoc)
-					: Promise.all(
-							lifecycles.map((l) => l.whenReady ?? Promise.resolve()),
-						)
+					: Promise.all(lifecycles.map((l) => l.whenReady ?? Promise.resolve()))
 							.then(() => contentYdoc)
 							.catch(async (err) => {
 								// If any provider's whenReady rejects, clean up everything
@@ -299,9 +311,7 @@ export function createDocumentBinding<
 
 			// clearData first (while providers are still connected)
 			await Promise.allSettled(
-				entry.lifecycles
-					.filter((l) => l.clearData)
-					.map((l) => l.clearData!()),
+				entry.lifecycles.filter((l) => l.clearData).map((l) => l.clearData!()),
 			);
 
 			// Then tear down

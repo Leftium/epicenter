@@ -3,8 +3,6 @@ import type * as Y from 'yjs';
 import type { AuthConfig } from './auth';
 import { createSyncPlugin } from './plugin';
 
-export const DEFAULT_SYNC_PORT = 3913;
-
 export type SyncServerConfig = {
 	port?: number;
 	auth?: AuthConfig;
@@ -39,18 +37,25 @@ export function createSyncServer(config?: SyncServerConfig) {
 
 	const app = new Elysia().use(syncPlugin).get('/', () => ({ status: 'ok' }));
 
-	const port = config?.port ?? DEFAULT_SYNC_PORT;
+	const port = config?.port ?? 3913;
 
 	return {
 		app,
 
+		/**
+		 * Start listening on the configured port.
+		 *
+		 * Does not log or install signal handlers — the caller owns those concerns.
+		 */
 		start() {
 			app.listen(port);
-			console.log(`[Sync Server] Listening on http://localhost:${port}`);
 			return app.server;
 		},
 
-		destroy() {
+		/**
+		 * Stop the HTTP server.
+		 */
+		async stop() {
 			app.stop();
 		},
 	};

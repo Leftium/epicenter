@@ -621,3 +621,34 @@ This replaced the earlier `routePrefix` config + `Object.values(params)[0]` extr
 - `protocol.ts` — untouched
 - `tables.ts`, `actions.ts` — untouched
 - Backward compatibility: `createServer(client, { port })` signature unchanged, additive `auth` option
+
+### Phase B: DX Improvements (Breaking Changes)
+
+After Phase A, we applied 7 DX improvements that intentionally break backwards compatibility for better developer experience.
+
+**Changes:**
+
+1. **Dropped function overloads** — `createServer` has a single `export function` signature (no separate declaration + `export { createServer }` pattern).
+2. **Added `stop()`** — Async method that stops the HTTP server and destroys all workspace clients. Replaces the old `destroy()` which only cleaned up clients without stopping the server.
+3. **Removed signal handling** — `start()` no longer installs `SIGINT`/`SIGTERM` handlers or calls `process.exit()`. The caller owns lifecycle concerns.
+4. **Removed startup logging** — `start()` no longer prints the wall-of-text banner. The CLI's `serve` command now owns startup logging (2 lines: server URL + API docs URL).
+5. **Unified port constant** — Removed `DEFAULT_SYNC_PORT` from `sync/server.ts`. The sync server inlines `3913` as the default. Only `DEFAULT_PORT` exists (exported from the main entry).
+6. **Consistent return type** — `createSyncServer` now returns `async stop()` matching `createServer`'s shape. Previously had sync `destroy()`.
+7. **Moved discovery `GET /`** — The discovery endpoint (listing workspaces and actions) moved from `createWorkspacePlugin` to `createServer`. The workspace plugin is now purely tables + actions. `createServer` owns the root route.
+8. **CLI owns startup UX** — The `serve` command in `cli.ts` now prints startup info and blocks with `await new Promise(() => {})`, letting the CLI's existing signal handlers manage shutdown.
+
+**Files changed:**
+
+| File                  | Changes                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------- |
+| `server.ts`           | Single export, slim `start()`, added `stop()`, removed `destroy()`, added `GET /` discovery |
+| `sync/server.ts`      | Removed `DEFAULT_SYNC_PORT`, renamed `destroy()` → async `stop()`, removed startup log      |
+| `workspace-plugin.ts` | Removed `GET /` discovery endpoint, removed `collectActionPaths` import                     |
+| `cli.ts`              | Added startup logging, `await new Promise(() => {})` for blocking                           |
+
+**Verification:**
+
+- `bun run typecheck` (packages/server) — clean
+- `bun test` (packages/server) — 56/56 pass
+- `bun run typecheck` (packages/epicenter) — no new errors (pre-existing `_v` type errors in test files only)
+- LSP diagnostics — zero errors on all 4 changed files

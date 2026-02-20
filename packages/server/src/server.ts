@@ -27,22 +27,16 @@ export type ServerOptions = {
  *
  * @example
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/static';
- *
- * const workspace = createWorkspace(definition)
- *   .withExtension('persistence', (ctx) => setupPersistence(ctx))
- *   .withExtension('sqlite', (ctx) => sqliteProvider(ctx));
+ * import { createServer } from '@epicenter/server';
  *
  * const server = createServer(workspace, { port: 3913 });
  * server.start();
  *
- * // Access endpoints:
- * // GET  http://localhost:3913/workspaces/blog/tables/posts
- * // POST http://localhost:3913/workspaces/blog/tables/posts
- * // WS   ws://localhost:3913/workspaces/blog/ws
+ * // Later:
+ * await server.stop();
  * ```
  */
-function createServer(
+export function createServer(
 	clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: ServerOptions,
 ) {
@@ -53,6 +47,11 @@ function createServer(
 	for (const client of clients) {
 		workspaces[client.id] = client;
 	}
+
+	const allActionPaths = clients.flatMap((client) => {
+		if (!client.actions) return [];
+		return collectActionPaths(client.actions).map((p) => `${client.id}/${p}`);
+	});
 
 	const app = new Elysia()
 		.use(
@@ -75,7 +74,13 @@ function createServer(
 				}),
 			),
 		)
-		.use(createWorkspacePlugin(clients));
+		.use(createWorkspacePlugin(clients))
+		.get('/', () => ({
+			name: 'Epicenter API',
+			version: '1.0.0',
+			workspaces: Object.keys(workspaces),
+			actions: allActionPaths,
+		}));
 
 	const port =
 		options?.port ??
@@ -84,64 +89,22 @@ function createServer(
 	return {
 		app,
 
+		/**
+		 * Start listening on the configured port.
+		 *
+		 * Does not log or install signal handlers — the caller owns those concerns.
+		 */
 		start() {
-			console.log('Creating HTTP server...');
-
-			// IMPORTANT: Use app.listen() instead of Bun.serve({ fetch: app.fetch }).
-			// Bun.serve() with only `fetch` doesn't pass Elysia's `websocket` handler,
-			// so WebSocket upgrades silently fail. app.listen() wires up both HTTP and WS.
 			app.listen(port);
-
-			console.log('\nEpicenter HTTP Server Running!\n');
-			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-			console.log(`Server: http://localhost:${port}`);
-			console.log(`API Docs: http://localhost:${port}/openapi`);
-			console.log(`OpenAPI Spec: http://localhost:${port}/openapi/json\n`);
-
-			console.log('Available Workspaces:\n');
-			for (const [workspaceId, client] of Object.entries(workspaces)) {
-				console.log(`  ${workspaceId}`);
-				for (const tableName of Object.keys(client.definitions.tables)) {
-					console.log(`    tables/${tableName}`);
-				}
-				if (client.actions) {
-					const clientActionPaths = collectActionPaths(client.actions);
-					for (const actionPath of clientActionPaths) {
-						console.log(`    actions/${actionPath}`);
-					}
-				}
-				console.log(`    sync (WebSocket)`);
-				console.log();
-			}
-
-			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-			console.log('Server is running. Press Ctrl+C to stop.\n');
-
-			let isShuttingDown = false;
-
-			const shutdown = async (signal: string) => {
-				if (isShuttingDown) return;
-				isShuttingDown = true;
-
-				console.log(`\nReceived ${signal}, shutting down...`);
-
-				app.stop();
-				await Promise.all(clients.map((c) => c.destroy()));
-
-				console.log('Server stopped cleanly\n');
-				process.exit(0);
-			};
-
-			process.on('SIGINT', () => shutdown('SIGINT'));
-			process.on('SIGTERM', () => shutdown('SIGTERM'));
-
 			return app.server;
 		},
 
-		async destroy() {
+		/**
+		 * Stop the HTTP server and destroy all workspace clients.
+		 */
+		async stop() {
+			app.stop();
 			await Promise.all(clients.map((c) => c.destroy()));
 		},
 	};
 }
-
-export { createServer };

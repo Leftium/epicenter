@@ -1,12 +1,13 @@
 import type { AnyWorkspaceClient } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import { collectActionPaths, createActionsRouter } from './actions';
+import { createActionsRouter } from './actions';
 import { createTablesPlugin } from './tables';
 
 /**
  * Create an Elysia plugin that bundles tables + actions for workspace clients.
  *
- * Does NOT include sync (that's a separate plugin) or OpenAPI (added by createServer).
+ * Does NOT include sync (that's a separate plugin), OpenAPI (added by createServer),
+ * or the discovery `GET /` endpoint (added by createServer).
  * Provides REST CRUD for all tables and action endpoints per workspace.
  *
  * @example
@@ -44,19 +45,6 @@ export function createWorkspacePlugin(
 			}),
 		);
 	}
-
-	// Discovery endpoint listing workspaces, tables, and actions
-	const allActionPaths = clients.flatMap((client) => {
-		if (!client.actions) return [];
-		return collectActionPaths(client.actions).map((p) => `${client.id}/${p}`);
-	});
-
-	app.get('/', () => ({
-		name: 'Epicenter API',
-		version: '1.0.0',
-		workspaces: Object.keys(workspaces),
-		actions: allActionPaths,
-	}));
 
 	return app;
 }

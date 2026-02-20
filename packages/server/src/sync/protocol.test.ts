@@ -1,8 +1,13 @@
 /**
  * Protocol Unit Tests
  *
- * Tests for y-websocket protocol encoding/decoding following Yjs patterns.
- * Co-located with protocol.ts for easy discovery.
+ * Tests y-websocket-compatible protocol helpers used by the server sync endpoint.
+ * Coverage focuses on message encoding/decoding, compatibility with y-protocols,
+ * and end-to-end synchronization behavior under common and edge conditions.
+ *
+ * Key behaviors:
+ * - Sync, awareness, and sync-status frames encode/decode with expected wire formats.
+ * - Handshake and incremental updates converge document state across peers.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -147,7 +152,10 @@ describe('MESSAGE_SYNC', () => {
 			doc.getMap('data').set('key', 'value');
 
 			expect(capturedUpdate).not.toBeNull();
-			const message = encodeSyncUpdate({ update: capturedUpdate! });
+			if (!capturedUpdate) {
+				throw new Error('Expected captured update after document mutation');
+			}
+			const message = encodeSyncUpdate({ update: capturedUpdate });
 			const decoded = decodeSyncMessage(message);
 
 			expect(decoded.type).toBe('update');
@@ -180,7 +188,12 @@ describe('MESSAGE_SYNC', () => {
 			});
 
 			expect(response).not.toBeNull();
-			const decoded = decodeSyncMessage(response!);
+			if (!response) {
+				throw new Error(
+					'Expected sync step 2 response for sync step 1 payload',
+				);
+			}
+			const decoded = decodeSyncMessage(response);
 			expect(decoded.type).toBe('step2');
 		});
 
@@ -476,7 +489,10 @@ describe('decodeSyncMessage', () => {
 		});
 		doc.getMap('test').set('key', 'value');
 
-		const encoded = encodeSyncUpdate({ update: capturedUpdate! });
+		if (!capturedUpdate) {
+			throw new Error('Expected captured update after document mutation');
+		}
+		const encoded = encodeSyncUpdate({ update: capturedUpdate });
 		const decoded = decodeSyncMessage(encoded);
 
 		expect(decoded.type).toBe('update');
@@ -566,9 +582,12 @@ describe('full sync protocol', () => {
 		});
 
 		expect(serverResponse).not.toBeNull();
+		if (!serverResponse) {
+			throw new Error('Expected server sync response during handshake');
+		}
 
 		// Client applies server's response
-		const decoder2 = decoding.createDecoder(serverResponse!);
+		const decoder2 = decoding.createDecoder(serverResponse);
 		decoding.readVarUint(decoder2); // skip MESSAGE_TYPE.SYNC
 		syncProtocol.readSyncMessage(
 			decoder2,

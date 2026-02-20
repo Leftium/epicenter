@@ -1,8 +1,12 @@
 /**
- * Performance benchmarks for the Static Workspace API.
+ * Static Workspace Benchmark Tests
  *
- * Tests createWorkspace, table operations, and KV operations at scale.
- * Scaled to complete in reasonable time while still providing useful metrics.
+ * Benchmarks createWorkspace, table operations, KV operations, and storage growth under load.
+ * These tests provide practical performance baselines and tombstone-size observations for local-first usage.
+ *
+ * Key behaviors:
+ * - Bulk operations complete within expected runtime envelopes.
+ * - Encoded Y.Doc sizes and tombstone behavior are measurable across realistic workloads.
  */
 
 import { describe, expect, test } from 'bun:test';

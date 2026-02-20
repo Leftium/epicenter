@@ -1,8 +1,14 @@
 /**
- * Tests for icon and KV normalization functions.
+ * Normalize Workspace Inputs Tests
  *
- * Note: Table normalization is now handled by the `table()` factory function
- * in fields/factories.ts. See fields/factories.test.ts for table tests.
+ * This file verifies `normalizeIcon` normalizes plain emoji values into the
+ * tagged icon format while preserving already-tagged icon strings.
+ * These checks ensure workspace definitions accept common icon inputs without
+ * losing canonical storage format guarantees.
+ *
+ * Key behaviors:
+ * - Converts plain emoji strings to `emoji:`-prefixed icon values
+ * - Returns tagged icon strings and nullish inputs unchanged or normalized
  */
 
 import { describe, expect, test } from 'bun:test';

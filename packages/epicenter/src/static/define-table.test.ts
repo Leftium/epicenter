@@ -1,3 +1,14 @@
+/**
+ * defineTable Tests
+ *
+ * Verifies shorthand and builder-based table definitions, including multi-version schema migration.
+ * These tests ensure table contracts remain stable for runtime validation and for typed document bindings.
+ *
+ * Key behaviors:
+ * - Table schemas validate expected row shapes across versions.
+ * - Migration functions upgrade legacy rows to the latest schema.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import { defineTable } from './define-table.js';
@@ -18,7 +29,7 @@ describe('defineTable', () => {
 			expect(result).not.toHaveProperty('issues');
 		});
 
-		test('migrate is identity function for shorthand', () => {
+		test('shorthand migrate returns the same row reference', () => {
 			const users = defineTable(
 				type({ id: 'string', email: 'string', _v: '1' }),
 			);
@@ -86,7 +97,7 @@ describe('defineTable', () => {
 			expect(v2Result).not.toHaveProperty('issues');
 		});
 
-		test('migrate function transforms old version to latest', () => {
+		test('migrate function upgrades old rows to latest version', () => {
 			const posts = defineTable()
 				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
@@ -177,7 +188,7 @@ describe('defineTable', () => {
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('three version migration with switch', () => {
+		test('three-version migration uses switch and preserves latest rows', () => {
 			const posts = defineTable()
 				.version(type({ id: 'string', title: 'string', _v: '1' }))
 				.version(
@@ -301,7 +312,7 @@ describe('defineTable', () => {
 			});
 		});
 
-		test('table without withDocument has empty docs', () => {
+		test('table without withDocument keeps docs map empty', () => {
 			const tags = defineTable(
 				type({ id: 'string', label: 'string', _v: '1' }),
 			);
@@ -309,7 +320,7 @@ describe('defineTable', () => {
 			expect(tags.docs).toEqual({});
 		});
 
-		test('withDocument preserves schema and migrate', () => {
+		test('withDocument preserves schema validation and migrate behavior', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
@@ -326,6 +337,32 @@ describe('defineTable', () => {
 			// Migrate still works
 			const row = { id: '1', name: 'test.txt', updatedAt: 123, _v: 1 };
 			expect(files.migrate(row)).toBe(row);
+		});
+	});
+
+	describe('type errors', () => {
+		test('rejects migrate input missing required fields', () => {
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+			);
+
+			// @ts-expect-error title is required by the row schema
+			const _invalidRow: Parameters<typeof posts.migrate>[0] = {
+				id: '1',
+				_v: 1,
+			};
+			void _invalidRow;
+		});
+
+		test('rejects withDocument mappings that reference missing keys', () => {
+			const files = defineTable(
+				type({ id: 'string', updatedAt: 'number', _v: '1' }),
+			);
+			// @ts-expect-error guid key must exist on the row schema
+			files.withDocument('content', {
+				guid: 'missing',
+				updatedAt: 'updatedAt',
+			});
 		});
 	});
 });

@@ -1,3 +1,15 @@
+/**
+ * Content Doc Store Tests
+ *
+ * Validates lazy Y.Doc lifecycle management for file content documents, including
+ * provider integration. These tests guard cleanup and concurrency behavior that
+ * prevents leaked docs or duplicate provider initialization.
+ *
+ * Key behaviors:
+ * - `ensure`, `destroy`, and `destroyAll` manage Y.Doc instances deterministically.
+ * - Provider factories run once per doc and are cleaned up on failures and teardown.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import type { Lifecycle } from '@epicenter/hq';
 import type { ProviderFactory } from '@epicenter/hq/dynamic';

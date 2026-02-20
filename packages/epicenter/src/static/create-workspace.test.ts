@@ -1,9 +1,35 @@
+/**
+ * createWorkspace Tests
+ *
+ * Verifies workspace client behavior for batching, observer delivery, and document-binding wiring.
+ * These tests protect the runtime contract that table/KV operations stay consistent across transactions
+ * and that optional document bindings are attached only when configured.
+ *
+ * Key behaviors:
+ * - Batch transactions coalesce notifications while preserving applied mutations.
+ * - Document-bound tables expose `docs`, while non-bound tables do not.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
+import type * as Y from 'yjs';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { defineWorkspace } from './define-workspace.js';
+
+type DocumentBindingLike = {
+	open: (guid: string) => Promise<Y.Doc>;
+	read: (guid: string) => Promise<string>;
+	write: (guid: string, text: string) => Promise<void>;
+	destroy: (guid: string) => Promise<void>;
+	purge: (guid: string) => Promise<void>;
+	destroyAll: () => Promise<void>;
+};
+
+type TableWithDocs = {
+	docs?: Record<string, DocumentBindingLike>;
+};
 
 /** Creates a workspace client with two tables and one KV for testing. */
 function setup() {
@@ -173,7 +199,7 @@ describe('createWorkspace', () => {
 				unsubscribe();
 			});
 
-			test('nested batch() calls work', () => {
+			test('nested batch() calls emit one merged notification', () => {
 				const { client } = setup();
 
 				const changes: Set<string>[] = [];
@@ -217,7 +243,7 @@ describe('createWorkspace', () => {
 				unsubscribe();
 			});
 
-			test('with batch(), N calls = 1 notification', () => {
+			test('with batch(), many operations emit one notification', () => {
 				const { client } = setup();
 
 				const changes: Set<string>[] = [];
@@ -261,7 +287,7 @@ describe('createWorkspace', () => {
 	});
 
 	describe('document binding wiring', () => {
-		test('table with withDocument gets docs namespace on helper', () => {
+		test('table using withDocument exposes docs namespace on helper', () => {
 			const filesTable = defineTable(
 				type({
 					id: 'string',
@@ -276,9 +302,11 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			});
 
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			const docs = (client.tables.files as any).docs;
+			const docs = (client.tables.files as TableWithDocs).docs;
 			expect(docs).toBeDefined();
+			if (!docs) {
+				throw new Error('Expected files docs binding to exist');
+			}
 			expect(docs.content).toBeDefined();
 			expect(typeof docs.content.open).toBe('function');
 			expect(typeof docs.content.read).toBe('function');
@@ -288,11 +316,10 @@ describe('createWorkspace', () => {
 			expect(typeof docs.content.destroyAll).toBe('function');
 		});
 
-		test('table without withDocument does NOT have docs property', () => {
+		test('table without withDocument does not expose docs property', () => {
 			const { client } = setup();
 
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			expect((client.tables.posts as any).docs).toBeUndefined();
+			expect((client.tables.posts as TableWithDocs).docs).toBeUndefined();
 		});
 
 		test('extension onDocumentOpen is wired into document bindings', async () => {
@@ -317,8 +344,10 @@ describe('createWorkspace', () => {
 				},
 			}));
 
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			const docs = (client.tables.files as any).docs;
+			const docs = (client.tables.files as TableWithDocs).docs;
+			if (!docs) {
+				throw new Error('Expected files docs binding to exist');
+			}
 			await docs.content.open('f1');
 
 			expect(hookCalled).toBe(true);
@@ -339,8 +368,10 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable },
 			});
 
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			const docs = (client.tables.files as any).docs;
+			const docs = (client.tables.files as TableWithDocs).docs;
+			if (!docs) {
+				throw new Error('Expected files docs binding to exist');
+			}
 			const doc1 = await docs.content.open('f1');
 
 			await client.destroy();
@@ -374,10 +405,11 @@ describe('createWorkspace', () => {
 				tables: { files: filesTable, notes: notesTable },
 			});
 
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			const fileDocs = (client.tables.files as any).docs;
-			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
-			const noteDocs = (client.tables.notes as any).docs;
+			const fileDocs = (client.tables.files as TableWithDocs).docs;
+			const noteDocs = (client.tables.notes as TableWithDocs).docs;
+			if (!fileDocs || !noteDocs) {
+				throw new Error('Expected document bindings for both tables');
+			}
 
 			expect(fileDocs.content).toBeDefined();
 			expect(noteDocs.body).toBeDefined();

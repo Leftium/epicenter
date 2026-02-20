@@ -1,16 +1,13 @@
 /**
- * YCellStore Tests - Schema-agnostic Sparse Grid Storage
+ * YCellStore Tests
  *
- * Tests cover:
- * 1. Cell CRUD: setCell, getCell, hasCell, deleteCell
- * 2. Key validation: rowId with ':' throws error
- * 3. Batch operations: multiple cell operations atomically
- * 4. Observer fires once per batch: not per operation
- * 5. Change types: add, update, delete events with correct rowId/columnId
- * 6. Iteration: cells() yields all cells with parsed components
- * 7. Count accuracy: after various operations
- * 8. Clear: removes all cells
- * 9. Escape hatch: ykv and doc accessible
+ * These tests verify the schema-agnostic cell store used as the dynamic table
+ * storage primitive, including CRUD behavior, transactions, observation, and
+ * low-level escape hatches.
+ *
+ * Key behaviors:
+ * - cell operations preserve key semantics and emit correct change events
+ * - batching, iteration, clear, and CRDT sync remain internally consistent
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
@@ -18,7 +15,7 @@ import { type CellChange, createCellStore } from './y-cell-store';
 
 describe('YCellStore', () => {
 	describe('Cell CRUD', () => {
-		test('setCell and getCell work correctly', () => {
+		test('setCell stores value and getCell retrieves it', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const cells = createCellStore<string>(ydoc, 'cells');
 

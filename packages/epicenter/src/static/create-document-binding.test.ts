@@ -1,3 +1,14 @@
+/**
+ * createDocumentBinding Tests
+ *
+ * Validates document binding lifecycle, read/write behavior, and integration with table row metadata.
+ * The suite protects contracts around open/read/write idempotency, cleanup semantics, and hook orchestration.
+ *
+ * Key behaviors:
+ * - Document operations keep row metadata in sync and honor binding origins.
+ * - Lifecycle methods (`destroy`, `purge`, `destroyAll`) safely clean up open docs.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -60,7 +71,7 @@ describe('createDocumentBinding', () => {
 			expect(doc1).toBe(doc2);
 		});
 
-		test('accepts a row object', async () => {
+		test('open accepts a row object and resolves guid', async () => {
 			const { tables, binding } = setupWithBinding();
 			const row = {
 				id: 'f1',
@@ -74,7 +85,7 @@ describe('createDocumentBinding', () => {
 			expect(doc.guid).toBe('f1');
 		});
 
-		test('accepts a string GUID', async () => {
+		test('open accepts a string guid directly', async () => {
 			const { binding } = setupWithBinding();
 
 			const doc = await binding.open('f1');
@@ -161,7 +172,7 @@ describe('createDocumentBinding', () => {
 			expect(doc2).not.toBe(doc1);
 		});
 
-		test('destroy is safe on non-existent guid', async () => {
+		test('destroy on non-existent guid is a no-op', async () => {
 			const { binding } = setupWithBinding();
 
 			// Should not throw

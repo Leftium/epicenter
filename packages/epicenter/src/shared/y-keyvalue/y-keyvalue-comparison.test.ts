@@ -1,8 +1,13 @@
 /**
  * YKeyValue vs YKeyValueLww - Comparison Tests
  *
- * This file demonstrates the behavioral differences between the two implementations
- * and provides benchmarks for storage and performance.
+ * These tests compare positional conflict resolution and timestamp-based LWW
+ * conflict resolution under the same concurrent edit scenarios. They also measure
+ * storage overhead and confirm API parity for migration safety.
+ *
+ * Key behaviors:
+ * - Equal scenarios produce different winners depending on conflict strategy.
+ * - LWW adds predictable storage overhead while preserving the same public API.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
@@ -30,7 +35,7 @@ describe('Conflict Resolution: YKeyValue vs YKeyValueLww', () => {
 	 * YKeyValue: Winner determined by clientID (arbitrary)
 	 * YKeyValueLww: Winner determined by timestamp (chronological)
 	 */
-	test('demonstrates the behavioral difference', () => {
+	test('same concurrent conflict yields clientID winner vs timestamp winner', () => {
 		// Two clients edit the same key while offline
 		const doc1 = new Y.Doc({ guid: 'shared' });
 		const doc2 = new Y.Doc({ guid: 'shared' });
@@ -140,7 +145,7 @@ describe('Conflict Resolution: YKeyValue vs YKeyValueLww', () => {
 });
 
 describe('Storage Comparison', () => {
-	test('entry size difference', () => {
+	test('LWW entries serialize larger than positional entries', () => {
 		const { array: arr } = createKv<string>();
 		const { array: arrLww } = createKvLww<string>();
 
@@ -164,7 +169,7 @@ describe('Storage Comparison', () => {
 		);
 	});
 
-	test('document size after many operations', () => {
+	test('LWW document remains bounded but larger after many updates', () => {
 		const { doc: doc1, kv: kv1 } = createKv<number>();
 		const { doc: doc2, kv: kv2 } = createKvLww<number>();
 
@@ -226,7 +231,7 @@ describe('API Compatibility', () => {
 		expect(kv2.doc).toBeDefined();
 	});
 
-	test('drop-in replacement works', () => {
+	test('both implementations satisfy the same consumer contract', () => {
 		// Code that works with YKeyValue should work with YKeyValueLww
 		function useKV(kv: {
 			get: (k: string) => string | undefined;

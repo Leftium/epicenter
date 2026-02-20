@@ -1,9 +1,13 @@
 /**
- * Unit tests for createSyncProvider.
+ * Sync Provider Tests
  *
- * Uses a MockWebSocket injected via WebSocketConstructor to test the
- * supervisor loop, status transitions, hasLocalChanges tracking,
- * reconnection, and cleanup without a real server.
+ * Uses a mocked WebSocket to validate the provider supervisor loop without
+ * requiring a real sync server. The suite focuses on lifecycle transitions,
+ * reconnection behavior, and local-change acknowledgment tracking.
+ *
+ * Key behaviors:
+ * - Connection lifecycle transitions follow the expected status model.
+ * - `hasLocalChanges` and listener callbacks reflect local edits and server echoes.
  */
 
 import { describe, expect, test } from 'bun:test';

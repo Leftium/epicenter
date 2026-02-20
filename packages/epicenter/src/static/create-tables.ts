@@ -37,6 +37,7 @@ import {
 import { TableKey } from '../shared/ydoc-keys.js';
 import { createTableHelper } from './table-helper.js';
 import type {
+	BaseRow,
 	InferTableRow,
 	TableDefinition,
 	TableDefinitions,
@@ -58,7 +59,7 @@ export function createTables<TTableDefinitions extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TTableDefinitions,
 ): TablesHelper<TTableDefinitions> {
-	const helpers: Record<string, TableHelper<{ id: string; _v: number }>> = {};
+	const helpers: Record<string, TableHelper<BaseRow>> = {};
 
 	for (const [name, definition] of Object.entries(definitions)) {
 		// Each table gets its own Y.Array for isolation

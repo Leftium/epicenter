@@ -1,8 +1,13 @@
 /**
  * YKeyValueLww Tests - Last-Write-Wins Conflict Resolution
  *
- * These tests verify that YKeyValueLww correctly implements timestamp-based
- * conflict resolution, where higher timestamps always win regardless of sync order.
+ * These tests verify timestamp-based last-write-wins semantics in `YKeyValueLww`
+ * across local operations, batched transactions, and multi-client synchronization.
+ * They ensure deterministic winner selection by timestamp and convergence after sync.
+ *
+ * Key behaviors:
+ * - Higher timestamps win conflicts regardless of merge ordering.
+ * - Transaction-local pending state and observer processing stay internally consistent.
  *
  * See also:
  * - `y-keyvalue.ts` for positional (rightmost-wins) alternative
@@ -14,7 +19,7 @@ import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue-lww';
 
 describe('YKeyValueLww', () => {
 	describe('Basic Operations', () => {
-		test('set and get work correctly', () => {
+		test('set stores value and get retrieves it', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 			const kv = new YKeyValueLww(yarray);
@@ -68,8 +73,12 @@ describe('YKeyValueLww', () => {
 			kv.set('c', '3');
 
 			const entries = yarray.toArray();
-			expect(entries[0]!.ts).toBeLessThan(entries[1]!.ts);
-			expect(entries[1]!.ts).toBeLessThan(entries[2]!.ts);
+			const [firstEntry, secondEntry, thirdEntry] = entries;
+			expect(firstEntry).toBeDefined();
+			expect(secondEntry).toBeDefined();
+			expect(thirdEntry).toBeDefined();
+			expect(firstEntry?.ts).toBeLessThan(secondEntry?.ts);
+			expect(secondEntry?.ts).toBeLessThan(thirdEntry?.ts);
 		});
 	});
 
@@ -130,7 +139,11 @@ describe('YKeyValueLww', () => {
 		});
 
 		test('convergence: both clients see same value after sync', () => {
-			const results: { value: string; ts1: number; ts2: number }[] = [];
+			const results: Array<{
+				value: string | undefined;
+				ts1: number;
+				ts2: number;
+			}> = [];
 
 			for (let i = 0; i < 10; i++) {
 				const doc1 = new Y.Doc({ guid: `shared-${i}` });
@@ -161,7 +174,7 @@ describe('YKeyValueLww', () => {
 				const expectedWinner = ts1 > ts2 ? `client-1-${i}` : `client-2-${i}`;
 				expect(kv1.get('key')).toBe(expectedWinner);
 
-				results.push({ value: kv1.get('key')!, ts1, ts2 });
+				results.push({ value: kv1.get('key'), ts1, ts2 });
 			}
 
 			console.log('LWW convergence results:', results);
@@ -285,17 +298,17 @@ describe('YKeyValueLww', () => {
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
 
-				const valuesInBatch: string[] = [];
+				const valuesInBatch: Array<string | undefined> = [];
 
 				ydoc.transact(() => {
 					kv.set('foo', 'first');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 
 					kv.set('foo', 'second');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 
 					kv.set('foo', 'third');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 				});
 
 				expect(valuesInBatch).toEqual(['first', 'second', 'third']);
@@ -484,7 +497,7 @@ describe('YKeyValueLww', () => {
 				expect(kv.map.has('foo')).toBe(true);
 			});
 
-			test('multiple batches work correctly', () => {
+			test('multiple transactions preserve prior keys and apply updates', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<string>>('data');
 				const kv = new YKeyValueLww(yarray);
@@ -623,7 +636,7 @@ describe('YKeyValueLww', () => {
 				expect(kv.get('foo')).toBeUndefined();
 			});
 
-			test('rapid set/get cycles', () => {
+			test('rapid set/get cycles always return the latest value', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueLwwEntry<number>>('data');
 				const kv = new YKeyValueLww(yarray);

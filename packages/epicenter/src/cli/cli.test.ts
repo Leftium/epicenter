@@ -1,3 +1,14 @@
+/**
+ * CLI Command Registration Tests
+ *
+ * These tests verify that action contracts are transformed into yargs command
+ * registrations with callable handlers and parsed option values. They protect command
+ * discoverability and argument parsing behavior used by the CLI entrypoint.
+ *
+ * Key behaviors:
+ * - Registers flat and nested action paths as yargs commands
+ * - Parses command input into typed action handler arguments
+ */
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import yargs from 'yargs';
@@ -11,8 +22,12 @@ import { buildActionCommands } from './command-builder';
  */
 function getYargsCommands(cli: ReturnType<typeof yargs>): {
 	getCommands(): string[];
-	getCommandHandlers(): Record<string, { handler: Function }>;
+	getCommandHandlers(): Record<
+		string,
+		{ handler: (...args: unknown[]) => unknown }
+	>;
 } {
+	// Accessing yargs private API for test inspection — no public equivalent exists
 	return (
 		cli as unknown as {
 			getInternalMethods(): {
@@ -71,7 +86,7 @@ describe('CLI command registration', () => {
 		expect(registeredCommands).toContain('posts');
 	});
 
-	test('command handlers are accessible', () => {
+	test('command handlers are functions on the registered command', () => {
 		const actions = {
 			ping: defineQuery({
 				handler: () => 'pong',
@@ -92,7 +107,7 @@ describe('CLI command registration', () => {
 		expect(typeof handlers.ping?.handler).toBe('function');
 	});
 
-	test('parses flat command options correctly', async () => {
+	test('parseAsync extracts typed options from flat command', async () => {
 		let capturedArgs: Record<string, unknown> | null = null;
 
 		const actions = {

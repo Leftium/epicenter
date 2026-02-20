@@ -44,6 +44,7 @@ import type {
 } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type {
+	BaseRow,
 	DocBinding,
 	LastSchema,
 	NumberKeysOf,
@@ -61,11 +62,8 @@ import type {
  * @typeParam TDocs - Accumulated document bindings
  */
 type TableDefinitionWithDocBuilder<
-	TVersions extends readonly CombinedStandardSchema<{
-		id: string;
-		_v: number;
-	}>[],
-	TDocs extends Record<string, DocBinding<string, string>>,
+	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
+	TDocs extends Record<string, DocBinding>,
 > = TableDefinition<TVersions, TDocs> & {
 	/**
 	 * Declare a named document binding on this table.
@@ -101,12 +99,19 @@ type TableDefinitionWithDocBuilder<
 		TUpdatedAt extends NumberKeysOf<
 			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
 		>,
+		// Defaults to `never` when no tags are passed. This flows into
+		// DocBinding<..., never>, making its `tags` property `undefined`.
+		const TTags extends string = never,
 	>(
 		name: TName,
-		binding: { guid: TGuid; updatedAt: TUpdatedAt },
+		binding: {
+			guid: TGuid;
+			updatedAt: TUpdatedAt;
+			tags?: readonly TTags[];
+		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
-		TDocs & Record<TName, DocBinding<TGuid, TUpdatedAt>>
+		TDocs & Record<TName, DocBinding<TGuid, TUpdatedAt, TTags>>
 	>;
 };
 
@@ -115,14 +120,12 @@ type TableDefinitionWithDocBuilder<
  *
  * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
  */
-type TableBuilder<
-	TVersions extends CombinedStandardSchema<{ id: string; _v: number }>[],
-> = {
+type TableBuilder<TVersions extends CombinedStandardSchema<BaseRow>[]> = {
 	/**
 	 * Add a schema version. Schema must include `{ id: string, _v: number }`.
 	 * The last version added becomes the "latest" schema shape.
 	 */
-	version<TSchema extends CombinedStandardSchema<{ id: string; _v: number }>>(
+	version<TSchema extends CombinedStandardSchema<BaseRow>>(
 		schema: TSchema,
 	): TableBuilder<[...TVersions, TSchema]>;
 
@@ -150,9 +153,7 @@ type TableBuilder<
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  * ```
  */
-export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
->(
+export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema: TSchema,
 ): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
 
@@ -186,9 +187,7 @@ export function defineTable<
  */
 export function defineTable(): TableBuilder<[]>;
 
-export function defineTable<
-	TSchema extends CombinedStandardSchema<{ id: string; _v: number }>,
->(
+export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema?: TSchema,
 ):
 	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
@@ -196,7 +195,7 @@ export function defineTable<
 	if (schema) {
 		return addWithDocument({
 			schema,
-			migrate: (row: unknown) => row as { id: string; _v: number },
+			migrate: (row: unknown) => row as BaseRow,
 			docs: {} as Record<string, never>,
 		}) as unknown as TableDefinitionWithDocBuilder<
 			[TSchema],
@@ -238,22 +237,25 @@ function addWithDocument<
 	T extends {
 		schema: CombinedStandardSchema;
 		migrate: unknown;
-		docs: Record<string, DocBinding<string, string>>;
+		docs: Record<string, DocBinding>;
 	},
 >(
 	def: T,
 ): T & {
-	withDocument(name: string, binding: DocBinding<string, string>): T;
+	withDocument(name: string, binding: DocBinding): T;
 } {
 	return {
 		...def,
-		withDocument(name: string, binding: DocBinding<string, string>) {
+		withDocument(name: string, binding: DocBinding) {
 			return addWithDocument({
 				...def,
-				docs: { ...def.docs, [name]: binding },
+				docs: {
+					...def.docs,
+					[name]: binding,
+				},
 			});
 		},
 	} as T & {
-		withDocument(name: string, binding: DocBinding<string, string>): T;
+		withDocument(name: string, binding: DocBinding): T;
 	};
 }

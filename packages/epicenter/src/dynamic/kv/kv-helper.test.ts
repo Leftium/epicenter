@@ -1,3 +1,15 @@
+/**
+ * KV Helper Tests
+ *
+ * This file verifies dynamic key-value helpers for all supported field types,
+ * including defaults, nullability, resets, observation, and validation failures.
+ * These tests ensure KV behavior stays predictable for both direct writes and
+ * replicated Yjs data.
+ *
+ * Key behaviors:
+ * - Returns validated values and schema-aware defaults across field types
+ * - Emits key-scoped change events and surfaces invalid replicated data safely
+ */
 import { describe, expect, test } from 'bun:test';
 import { Temporal } from 'temporal-polyfill';
 import * as Y from 'yjs';
@@ -518,7 +530,7 @@ describe('KV Helpers', () => {
 	});
 
 	describe('Edge Cases', () => {
-		test('multiple sets in sequence', () => {
+		test('keeps the last value after multiple sequential sets', () => {
 			const ydoc = new Y.Doc({ guid: 'test-kv' });
 			const kv = createKv(ydoc, [integer({ id: 'count', default: 0 })]);
 
@@ -533,7 +545,7 @@ describe('KV Helpers', () => {
 			}
 		});
 
-		test('setting same value twice', () => {
+		test('emits change notifications when setting the same value repeatedly', () => {
 			const ydoc = new Y.Doc({ guid: 'test-kv' });
 			const kv = createKv(ydoc, [
 				select({
@@ -557,7 +569,7 @@ describe('KV Helpers', () => {
 			expect(values).toEqual(['dark', 'dark', 'dark']);
 		});
 
-		test('interaction between multiple KV fields', () => {
+		test('isolates updates across multiple KV fields', () => {
 			const ydoc = new Y.Doc({ guid: 'test-kv' });
 			const kv = createKv(ydoc, [
 				select({

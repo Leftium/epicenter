@@ -1,3 +1,14 @@
+/**
+ * createUnionSchema Tests
+ *
+ * Verifies runtime and JSON Schema behavior for combined standard schemas.
+ * The suite ensures union validation chooses the correct matching schema and rejects unsupported async validators.
+ *
+ * Key behaviors:
+ * - Validation succeeds on the first matching schema and fails when none match.
+ * - Generated input/output JSON Schema uses `oneOf` consistently.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
@@ -31,7 +42,7 @@ describe('createUnionSchema', () => {
 		expect(result).not.toHaveProperty('issues');
 	});
 
-	test('returns error when no schema matches', () => {
+	test('returns validation issues when no schema matches', () => {
 		const v1 = type({ id: 'string', title: 'string' });
 
 		const union = createUnionSchema([v1]);

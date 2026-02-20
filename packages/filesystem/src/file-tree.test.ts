@@ -1,3 +1,15 @@
+/**
+ * File Tree Tests
+ *
+ * Validates path resolution and mutation behavior for the FileTree abstraction.
+ * These tests ensure higher-level filesystem APIs can rely on stable ID lookups,
+ * traversal, and soft-delete semantics.
+ *
+ * Key behaviors:
+ * - Path parsing and lookup operations return expected IDs and filesystem errors.
+ * - Create, move, delete, and traversal helpers keep tree state consistent.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { filesTable } from './file-table.js';
@@ -74,14 +86,14 @@ describe('FileTree', () => {
 	});
 
 	describe('parsePath', () => {
-		test('root-level file', () => {
+		test('parsePath on root-level file returns null parent and file name', () => {
 			const tree = setup();
 			const result = tree.parsePath('/test.txt');
 			expect(result.parentId).toBeNull();
 			expect(result.name).toBe('test.txt');
 		});
 
-		test('nested file', () => {
+		test('parsePath on nested file returns parent ID and leaf name', () => {
 			const tree = setup();
 			const dirId = tree.create({
 				name: 'docs',
@@ -171,7 +183,11 @@ describe('FileTree', () => {
 			tree.softDelete(id);
 			const children = tree.activeChildren(null);
 			expect(children).toHaveLength(1);
-			expect(children[0]!.name).toBe('b.txt');
+			const remainingChild = children[0];
+			expect(remainingChild).toBeDefined();
+			if (remainingChild) {
+				expect(remainingChild.name).toBe('b.txt');
+			}
 		});
 	});
 
@@ -380,7 +396,7 @@ describe('FileTree', () => {
 	});
 
 	describe('move', () => {
-		test('renames file', () => {
+		test('move updates path when renaming a file in place', () => {
 			const tree = setup();
 			const id = tree.create({
 				name: 'old.txt',

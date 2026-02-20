@@ -1,16 +1,21 @@
+/**
+ * createTables Type Inference Tests
+ *
+ * This file validates TypeScript inference across table definitions and helper
+ * methods so callers get strong row typing without manual annotations.
+ * It also includes negative type checks to prevent invalid writes at compile time.
+ *
+ * Key behaviors:
+ * - table definitions flow into typed upsert/get/filter/find APIs
+ * - invalid row shapes and field types are rejected by TypeScript
+ */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import { boolean, Id, id, integer, select, table, tags, text } from '../schema';
 import { createTables } from './create-tables';
 
-/**
- * Type inference test file for YjsDoc
- * This file tests that generics properly flow through the API
- * Hover over variables to verify types are correctly inferred
- */
-
 describe('YjsDoc Type Inference', () => {
-	test('should infer row types from definition', () => {
+	test('infers row types from table definition', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'posts',
@@ -54,7 +59,7 @@ describe('YjsDoc Type Inference', () => {
 		}
 	});
 
-	test('should infer types for getAll()', () => {
+	test('infers getAllValid row array types', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'products',
@@ -80,7 +85,7 @@ describe('YjsDoc Type Inference', () => {
 		expect(products).toHaveLength(2);
 	});
 
-	test('should infer predicate parameter types in filter()', () => {
+	test('infers filter predicate parameter type', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'tasks',
@@ -111,7 +116,7 @@ describe('YjsDoc Type Inference', () => {
 		expect(incompleteTasks[0]?.title).toBe('Task 1');
 	});
 
-	test('should infer predicate parameter types in find()', () => {
+	test('infers find predicate parameter type', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'items',
@@ -138,7 +143,7 @@ describe('YjsDoc Type Inference', () => {
 		expect(outOfStockItem?.name).toBe('Item 2');
 	});
 
-	test('should infer observer handler parameter types', () => {
+	test('observe callback accesses typed rows from changed ids', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'notifications',
@@ -178,7 +183,7 @@ describe('YjsDoc Type Inference', () => {
 		unsubscribe();
 	});
 
-	test('should handle nullable richtext types correctly', () => {
+	test('supports nullable text fields with null and string values', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'articles',
@@ -223,7 +228,7 @@ describe('YjsDoc Type Inference', () => {
 		}
 	});
 
-	test('should handle multi-table definitions with proper type inference', () => {
+	test('infers types across multiple table definitions', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'authors',
@@ -283,7 +288,7 @@ describe('YjsDoc Type Inference', () => {
 		}
 	});
 
-	test('should properly type upsertMany with array of rows', () => {
+	test('upsertMany accepts typed array of rows', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'comments',
@@ -308,7 +313,7 @@ describe('YjsDoc Type Inference', () => {
 		expect(comments).toHaveLength(2);
 	});
 
-	test('should handle richtext and tags in complex scenarios', () => {
+	test('upsert and get preserve plain text and tags array values', () => {
 		const doc = createTables(new Y.Doc({ guid: 'test-workspace' }), [
 			table({
 				id: 'documents',
@@ -343,5 +348,41 @@ describe('YjsDoc Type Inference', () => {
 			expect(retrieved.tags).toEqual(['tag1', 'tag2']);
 			expect(retrieved.notes).toBeNull();
 		}
+	});
+});
+
+describe('type errors', () => {
+	test('rejects missing required fields', () => {
+		const doc = createTables(new Y.Doc({ guid: 'type-errors' }), [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [
+					id(),
+					text({ id: 'title' }),
+					boolean({ id: 'published' }),
+				] as const,
+			}),
+		]);
+
+		// @ts-expect-error - missing required field 'published'
+		doc.get('posts').upsert({ id: Id('1'), title: 'Test' });
+	});
+
+	test('rejects wrong field types', () => {
+		const doc = createTables(new Y.Doc({ guid: 'type-errors-2' }), [
+			table({
+				id: 'posts',
+				name: '',
+				fields: [
+					id(),
+					text({ id: 'title' }),
+					integer({ id: 'views' }),
+				] as const,
+			}),
+		]);
+
+		// @ts-expect-error - title should be string, not number
+		doc.get('posts').upsert({ id: Id('1'), title: 42, views: 0 });
 	});
 });

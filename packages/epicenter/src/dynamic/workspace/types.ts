@@ -158,7 +158,7 @@ export type WorkspaceClientBuilder<
 	 * Add a single extension. Returns a new builder with the extension's
 	 * exports accumulated into the extensions type.
 	 *
-	 * The factory returns `{ exports?, lifecycle?, onDocumentOpen? }`.
+	 * The factory returns `{ exports?, lifecycle? }`.
 	 * The framework normalizes defaults and stores `exports` by reference —
 	 * getters and object identity are preserved.
 	 *

@@ -1,8 +1,13 @@
 /**
- * The Case FOR Y.Map of Y.Maps (Native YJS)
+ * YMap Simplicity Case Tests
  *
- * This test file explores whether the simplicity of native Y.Map
- * outweighs the benefits of YKeyValue approaches.
+ * These tests evaluate whether a native `Y.Map` of `Y.Map` records is a practical
+ * default for collaborative table-like data. They focus on realistic usage patterns,
+ * conflict behavior, and implementation complexity tradeoffs.
+ *
+ * Key behaviors:
+ * - Simulated workloads show storage and merge behavior across common usage scenarios.
+ * - Cell-level collaboration converges consistently, even with concurrent edits.
  */
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
@@ -22,9 +27,10 @@ function createSimpleTable(ydoc: Y.Doc, name: string) {
 				rowMap = new Y.Map();
 				table.set(id, rowMap);
 			}
+			const ensuredRowMap = rowMap;
 			ydoc.transact(() => {
 				for (const [key, val] of Object.entries(row)) {
-					rowMap!.set(key, val);
+					ensuredRowMap.set(key, val);
 				}
 			});
 		},
@@ -157,7 +163,21 @@ describe('Realistic Storage Comparison', () => {
 		for (let user = 0; user < 5; user++) {
 			for (let edit = 0; edit < 20; edit++) {
 				const rowIdx = (user + edit) % 10;
-				const col = ['col_a', 'col_b', 'col_c', 'col_d'][edit % 4]!;
+				const colIndex = edit % 4;
+				let col: 'col_a' | 'col_b' | 'col_c' | 'col_d';
+				switch (colIndex) {
+					case 0:
+						col = 'col_a';
+						break;
+					case 1:
+						col = 'col_b';
+						break;
+					case 2:
+						col = 'col_c';
+						break;
+					default:
+						col = 'col_d';
+				}
 				rows.update({
 					id: `row-${rowIdx}`,
 					[col]: `User${user}-Edit${edit}`,

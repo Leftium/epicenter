@@ -37,11 +37,13 @@
  */
 
 import * as Y from 'yjs';
+import type { DocumentLifecycle } from '../shared/lifecycle.js';
 import type {
-	DocumentContext,
-	DocumentLifecycle,
-} from '../shared/lifecycle.js';
-import type { DocumentBinding, TableHelper } from './types.js';
+	BaseRow,
+	DocumentBinding,
+	DocumentExtensionRegistration,
+	TableHelper,
+} from './types.js';
 
 /**
  * Sentinel symbol used as the Y.js transaction origin when the document binding
@@ -80,9 +82,7 @@ type DocEntry = {
  *
  * @typeParam TRow - The row type of the bound table
  */
-export type CreateDocumentBindingConfig<
-	TRow extends { id: string; _v: number },
-> = {
+export type CreateDocumentBindingConfig<TRow extends BaseRow> = {
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
 	/** Column name to bump when the doc changes. */
@@ -92,11 +92,16 @@ export type CreateDocumentBindingConfig<
 	/** The workspace Y.Doc — needed for transact() when bumping updatedAt. */
 	ydoc: Y.Doc;
 	/**
-	 * Provider factories for each content doc.
-	 * Called synchronously when `open()` creates a new Y.Doc.
-	 * Async initialization is tracked via the returned `whenReady` promise.
+	 * Document extension registrations (from `withDocumentExtension()` calls).
+	 * Each registration has a key, factory, and optional tags for filtering.
+	 * At open time, registrations are filtered by tag matching before firing.
 	 */
-	onDocumentOpen?: ((context: DocumentContext) => DocumentLifecycle | void)[];
+	documentExtensions?: DocumentExtensionRegistration[];
+	/**
+	 * Tags declared on this document binding (from `withDocument(..., { tags })`).
+	 * Used for tag matching against document extension registrations.
+	 */
+	documentTags?: readonly string[];
 	/**
 	 * Table name for the `DocumentContext.binding` metadata.
 	 * Used by extensions to distinguish which table a doc belongs to.
@@ -121,14 +126,14 @@ export type CreateDocumentBindingConfig<
  *
  * The binding manages:
  * - Y.Doc creation with `gc: false` (required for Yjs provider compatibility)
- * - Provider lifecycle (persistence, sync) via `onDocumentOpen` callbacks
+ * - Provider lifecycle (persistence, sync) via document extension hooks
  * - Automatic `updatedAt` bumping when content docs change
  * - Automatic cleanup when rows are deleted from the table
  *
  * @param config - Binding configuration
  * @returns A `DocumentBinding<TRow>` with open/read/write/destroy/purge methods
  */
-export function createDocumentBinding<TRow extends { id: string; _v: number }>(
+export function createDocumentBinding<TRow extends BaseRow>(
 	config: CreateDocumentBindingConfig<TRow>,
 ): DocumentBinding<TRow> {
 	const {
@@ -136,7 +141,8 @@ export function createDocumentBinding<TRow extends { id: string; _v: number }>(
 		updatedAtKey,
 		tableHelper,
 		ydoc: workspaceYdoc,
-		onDocumentOpen = [],
+		documentExtensions = [],
+		documentTags = [],
 		tableName = '',
 		documentName = '',
 		onRowDeleted,
@@ -195,11 +201,19 @@ export function createDocumentBinding<TRow extends { id: string; _v: number }>(
 			const contentYdoc = new Y.Doc({ guid, gc: false });
 			const lifecycles: DocumentLifecycle[] = [];
 
-			// Call onDocumentOpen hooks synchronously.
+			// Filter document extensions by tag matching:
+			// - No tags on extension → fire for all docs (universal)
+			// - Has tags → fire only if doc tags and extension tags share ANY value
+			const applicableExtensions = documentExtensions.filter((reg) => {
+				if (reg.tags.length === 0) return true;
+				return reg.tags.some((tag) => documentTags.includes(tag));
+			});
+
+			// Call document extension factories synchronously.
 			// IMPORTANT: No await between docs.get() and docs.set() — ensures
 			// concurrent open() calls for the same guid are safe.
 			try {
-				for (const hook of onDocumentOpen) {
+				for (const reg of applicableExtensions) {
 					const whenReady =
 						lifecycles.length === 0
 							? Promise.resolve()
@@ -207,10 +221,10 @@ export function createDocumentBinding<TRow extends { id: string; _v: number }>(
 									lifecycles.map((l) => l.whenReady ?? Promise.resolve()),
 								).then(() => {});
 
-					const result = hook({
+					const result = reg.factory({
 						ydoc: contentYdoc,
 						whenReady,
-						binding: { tableName, documentName },
+						binding: { tableName, documentName, tags: documentTags },
 					});
 
 					if (result) lifecycles.push(result);
@@ -221,10 +235,21 @@ export function createDocumentBinding<TRow extends { id: string; _v: number }>(
 				throw err;
 			}
 
-			// Attach updatedAt observer — fires when content doc changes
-			const updateHandler = (_update: Uint8Array, origin: unknown) => {
+			// Attach updatedAt observer — fires when content doc changes.
+			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
+			// We use transaction.local to skip remote sync updates — only local edits
+			// should bump updatedAt. Remote devices receive the bumped value via
+			// workspace ydoc sync; redundant bumping would cause unnecessary churn.
+			const updateHandler = (
+				_update: Uint8Array,
+				origin: unknown,
+				_doc: Y.Doc,
+				transaction: Y.Transaction,
+			) => {
 				// Skip updates from the document binding itself to avoid loops
 				if (origin === DOCUMENT_BINDING_ORIGIN) return;
+				// Skip remote updates — only local edits bump updatedAt
+				if (!transaction.local) return;
 
 				// Find the row that references this guid and bump updatedAt
 				// For guid === rowId (common case), we can update directly

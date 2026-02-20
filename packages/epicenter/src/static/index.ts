@@ -154,6 +154,8 @@ export type {
 	AwarenessDefinitions,
 	AwarenessHelper,
 	AwarenessState,
+	// Base row type
+	BaseRow,
 	DeleteResult,
 	// Document binding types
 	DocBinding,

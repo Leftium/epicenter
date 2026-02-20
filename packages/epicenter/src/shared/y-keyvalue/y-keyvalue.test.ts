@@ -1,13 +1,13 @@
 /**
  * YKeyValue Conflict Resolution Tests
  *
- * These tests verify the conflict resolution behavior of YKeyValue,
- * particularly in offline sync scenarios where multiple clients
- * update the same key concurrently.
+ * These tests verify positional conflict resolution in `YKeyValue`, especially
+ * for concurrent offline edits and transaction-batched writes. The suite documents
+ * deterministic convergence semantics and single-writer map synchronization behavior.
  *
- * Key finding: YKeyValue uses POSITIONAL conflict resolution (rightmost wins),
- * built on top of Yjs's clientID-based ordering. The "winner" is deterministic
- * based on clientIDs, just like Y.Map.
+ * Key behaviors:
+ * - Concurrent writes converge deterministically using rightmost/clientID ordering.
+ * - Batch reads and observers expose pending state correctly during transactions.
  *
  * See also:
  * - `y-keyvalue-lww.ts` for timestamp-based LWW alternative
@@ -18,7 +18,7 @@ import { YKeyValue, type YKeyValueEntry } from './y-keyvalue';
 
 describe('YKeyValue', () => {
 	describe('Basic Operations', () => {
-		test('set and get work correctly', () => {
+		test('set stores value and get retrieves it', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray = ydoc.getArray<YKeyValueEntry<string>>('data');
 			const kv = new YKeyValue(yarray);
@@ -48,7 +48,7 @@ describe('YKeyValue', () => {
 			expect(kv.has('foo')).toBe(false);
 		});
 
-		test('has returns correct boolean', () => {
+		test('has returns false before set and true after set', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray = ydoc.getArray<YKeyValueEntry<string>>('data');
 			const kv = new YKeyValue(yarray);
@@ -172,7 +172,7 @@ describe('YKeyValue', () => {
 
 		test('concurrent updates converge to same value across all clients', () => {
 			// Run the sync test multiple times to observe if outcome varies
-			const results: string[] = [];
+			const results: Array<string | undefined> = [];
 
 			for (let i = 0; i < 10; i++) {
 				const doc1 = new Y.Doc({ guid: `shared-${i}` });
@@ -196,7 +196,7 @@ describe('YKeyValue', () => {
 				// Convergence check: both should have same value
 				expect(kv1.get('key')).toBe(kv2.get('key'));
 
-				results.push(kv1.get('key')!);
+				results.push(kv1.get('key'));
 			}
 
 			// Log results to observe pattern
@@ -418,17 +418,17 @@ describe('YKeyValue', () => {
 				const yarray = ydoc.getArray<YKeyValueEntry<string>>('data');
 				const kv = new YKeyValue(yarray);
 
-				const valuesInBatch: string[] = [];
+				const valuesInBatch: Array<string | undefined> = [];
 
 				ydoc.transact(() => {
 					kv.set('foo', 'first');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 
 					kv.set('foo', 'second');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 
 					kv.set('foo', 'third');
-					valuesInBatch.push(kv.get('foo')!);
+					valuesInBatch.push(kv.get('foo'));
 				});
 
 				expect(valuesInBatch).toEqual(['first', 'second', 'third']);
@@ -611,7 +611,7 @@ describe('YKeyValue', () => {
 				expect(kv.map.has('foo')).toBe(true);
 			});
 
-			test('multiple batches work correctly', () => {
+			test('multiple transactions preserve prior keys and apply updates', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueEntry<string>>('data');
 				const kv = new YKeyValue(yarray);
@@ -689,7 +689,7 @@ describe('YKeyValue', () => {
 				expect(kv.get('foo')).toBeUndefined();
 			});
 
-			test('rapid set/get cycles', () => {
+			test('rapid set/get cycles always return the latest value', () => {
 				const ydoc = new Y.Doc({ guid: 'test' });
 				const yarray = ydoc.getArray<YKeyValueEntry<number>>('data');
 				const kv = new YKeyValue(yarray);

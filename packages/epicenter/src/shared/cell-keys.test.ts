@@ -1,3 +1,14 @@
+/**
+ * Cell Keys Utility Tests
+ *
+ * These tests verify the key format helpers that compose and parse row/column
+ * addressing strings. They protect separator rules so row identifiers remain
+ * unambiguous even when column identifiers contain colons.
+ *
+ * Key behaviors:
+ * - Key construction and parsing round-trip valid row/column combinations.
+ * - Invalid keys without separators or with invalid row ids fail fast.
+ */
 import { describe, expect, test } from 'bun:test';
 import { CellKey, extractRowId, parseCellKey, RowPrefix } from './cell-keys';
 
@@ -7,7 +18,7 @@ describe('cell-keys', () => {
 			expect(CellKey('row-1', 'title')).toBe('row-1:title');
 		});
 
-		test('roundtrips with parseCellKey', () => {
+		test('CellKey output parses back to original rowId and columnId', () => {
 			const key = CellKey('row-1', 'col-a');
 			const parsed = parseCellKey(key);
 			expect(parsed).toEqual({ rowId: 'row-1', columnId: 'col-a' });

@@ -1,3 +1,14 @@
+/**
+ * createDocumentBinding Tests
+ *
+ * Validates document binding lifecycle, read/write behavior, and integration with table row metadata.
+ * The suite protects contracts around open/read/write idempotency, cleanup semantics, and hook orchestration.
+ *
+ * Key behaviors:
+ * - Document operations keep row metadata in sync and honor binding origins.
+ * - Lifecycle methods (`destroy`, `purge`, `destroyAll`) safely clean up open docs.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -16,14 +27,20 @@ const fileSchema = type({
 });
 
 function setup() {
-	const tableDef = defineTable(fileSchema);
 	const ydoc = new Y.Doc({ guid: 'test-workspace' });
-	const tables = createTables(ydoc, { files: tableDef });
+	const tables = createTables(ydoc, { files: defineTable(fileSchema) });
 	return { ydoc, tables };
 }
 
 function setupWithBinding(
-	overrides?: Partial<Parameters<typeof createDocumentBinding>[0]>,
+	overrides?: Pick<
+		Parameters<typeof createDocumentBinding>[0],
+		| 'documentExtensions'
+		| 'documentTags'
+		| 'tableName'
+		| 'documentName'
+		| 'onRowDeleted'
+	>,
 ) {
 	const { ydoc, tables } = setup();
 	const binding = createDocumentBinding({
@@ -60,21 +77,21 @@ describe('createDocumentBinding', () => {
 			expect(doc1).toBe(doc2);
 		});
 
-		test('accepts a row object', async () => {
+		test('open accepts a row object and resolves guid', async () => {
 			const { tables, binding } = setupWithBinding();
 			const row = {
 				id: 'f1',
 				name: 'test.txt',
 				updatedAt: 0,
 				_v: 1,
-			};
+			} as const;
 			tables.files.set(row);
 
 			const doc = await binding.open(row);
 			expect(doc.guid).toBe('f1');
 		});
 
-		test('accepts a string GUID', async () => {
+		test('open accepts a string guid directly', async () => {
 			const { binding } = setupWithBinding();
 
 			const doc = await binding.open('f1');
@@ -148,6 +165,34 @@ describe('createDocumentBinding', () => {
 
 			expect(capturedOrigin).toBe(DOCUMENT_BINDING_ORIGIN);
 		});
+
+		test('remote update does NOT bump updatedAt', async () => {
+			const { tables, binding } = setupWithBinding();
+			tables.files.set({
+				id: 'f1',
+				name: 'test.txt',
+				updatedAt: 0,
+				_v: 1,
+			});
+
+			const doc = await binding.open('f1');
+
+			// Capture the state update from a local edit on a separate Y.Doc,
+			// then apply it as a "remote" update via Y.applyUpdate
+			const remoteDoc = new Y.Doc({ guid: 'f1', gc: false });
+			remoteDoc.getText('content').insert(0, 'remote edit');
+			const remoteUpdate = Y.encodeStateAsUpdate(remoteDoc);
+
+			Y.applyUpdate(doc, remoteUpdate);
+
+			const result = tables.files.get('f1');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.row.updatedAt).toBe(0);
+			}
+
+			remoteDoc.destroy();
+		});
 	});
 
 	describe('destroy', () => {
@@ -161,7 +206,7 @@ describe('createDocumentBinding', () => {
 			expect(doc2).not.toBe(doc1);
 		});
 
-		test('destroy is safe on non-existent guid', async () => {
+		test('destroy on non-existent guid is a no-op', async () => {
 			const { binding } = setupWithBinding();
 
 			// Should not throw
@@ -173,13 +218,17 @@ describe('createDocumentBinding', () => {
 		test('calls clearData on providers that support it', async () => {
 			let clearDataCalled = false;
 			const { tables, binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						destroy: () => {},
-						clearData: () => {
-							clearDataCalled = true;
-						},
-					}),
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => ({
+							destroy: () => {},
+							clearData: () => {
+								clearDataCalled = true;
+							},
+						}),
+						tags: [],
+					},
 				],
 			});
 
@@ -199,13 +248,17 @@ describe('createDocumentBinding', () => {
 		test('purge gracefully handles providers without clearData', async () => {
 			let destroyCalled = false;
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						destroy: () => {
-							destroyCalled = true;
-						},
-						// no clearData
-					}),
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => ({
+							destroy: () => {
+								destroyCalled = true;
+							},
+							// no clearData
+						}),
+						tags: [],
+					},
 				],
 			});
 
@@ -218,13 +271,17 @@ describe('createDocumentBinding', () => {
 		test('purge opens doc if not already open', async () => {
 			let openedByPurge = false;
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						openedByPurge = true;
-						return {
-							destroy: () => {},
-							clearData: () => {},
-						};
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => {
+							openedByPurge = true;
+							return {
+								destroy: () => {},
+								clearData: () => {},
+							};
+						},
+						tags: [],
 					},
 				],
 			});
@@ -271,7 +328,7 @@ describe('createDocumentBinding', () => {
 		});
 
 		test('custom onRowDeleted fires with the guid', async () => {
-			let deletedGuid: string | null = null;
+			let deletedGuid = '';
 			const { tables } = setup();
 
 			const binding = createDocumentBinding({
@@ -301,44 +358,53 @@ describe('createDocumentBinding', () => {
 	describe('guidOf and updatedAtOf', () => {
 		test('guidOf extracts the guid column value', () => {
 			const { binding } = setupWithBinding();
-			const row = {
-				id: 'f1',
-				name: 'test.txt',
-				updatedAt: 123,
-				_v: 1,
-			};
-			expect(binding.guidOf(row)).toBe('f1');
+			expect(
+				binding.guidOf({ id: 'f1', name: 'test.txt', updatedAt: 123, _v: 1 }),
+			).toBe('f1');
 		});
 
 		test('updatedAtOf extracts the updatedAt column value', () => {
 			const { binding } = setupWithBinding();
-			const row = {
-				id: 'f1',
-				name: 'test.txt',
-				updatedAt: 456,
-				_v: 1,
-			};
-			expect(binding.updatedAtOf(row)).toBe(456);
+			expect(
+				binding.updatedAtOf({
+					id: 'f1',
+					name: 'test.txt',
+					updatedAt: 456,
+					_v: 1,
+				}),
+			).toBe(456);
 		});
 	});
 
-	describe('onDocumentOpen hooks', () => {
+	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
 			const order: number[] = [];
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						order.push(1);
-						return { destroy: () => {} };
+				documentExtensions: [
+					{
+						key: 'first',
+						factory: () => {
+							order.push(1);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
-					() => {
-						order.push(2);
-						return { destroy: () => {} };
+					{
+						key: 'second',
+						factory: () => {
+							order.push(2);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
-					() => {
-						order.push(3);
-						return { destroy: () => {} };
+					{
+						key: 'third',
+						factory: () => {
+							order.push(3);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -351,14 +417,22 @@ describe('createDocumentBinding', () => {
 			let secondReceivedWhenReady = false;
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						whenReady: Promise.resolve(),
-						destroy: () => {},
-					}),
-					({ whenReady }) => {
-						secondReceivedWhenReady = whenReady instanceof Promise;
-						return { destroy: () => {} };
+				documentExtensions: [
+					{
+						key: 'first',
+						factory: () => ({
+							whenReady: Promise.resolve(),
+							destroy: () => {},
+						}),
+						tags: [],
+					},
+					{
+						key: 'second',
+						factory: ({ whenReady }) => {
+							secondReceivedWhenReady = whenReady instanceof Promise;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -371,14 +445,22 @@ describe('createDocumentBinding', () => {
 			let hooksCalled = 0;
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						hooksCalled++;
-						return undefined; // void return
+				documentExtensions: [
+					{
+						key: 'void-hook',
+						factory: () => {
+							hooksCalled++;
+							return undefined; // void return
+						},
+						tags: [],
 					},
-					() => {
-						hooksCalled++;
-						return { destroy: () => {} };
+					{
+						key: 'normal-hook',
+						factory: () => {
+							hooksCalled++;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -388,15 +470,20 @@ describe('createDocumentBinding', () => {
 		});
 
 		test('no hooks → bare Y.Doc, instant resolution', async () => {
-			const { binding } = setupWithBinding({ onDocumentOpen: [] });
+			const { binding } = setupWithBinding({ documentExtensions: [] });
 
 			const doc = await binding.open('f1');
 			expect(doc).toBeInstanceOf(Y.Doc);
 		});
 
-		test('hook receives correct binding metadata', async () => {
-			let capturedBinding: { tableName: string; documentName: string } | null =
-				null;
+		test('hook receives correct binding metadata with tags', async () => {
+			let capturedBinding:
+				| {
+						tableName: string;
+						documentName: string;
+						tags: readonly string[];
+				  }
+				| undefined;
 
 			const { ydoc, tables } = setup();
 			const binding = createDocumentBinding({
@@ -406,19 +493,112 @@ describe('createDocumentBinding', () => {
 				ydoc,
 				tableName: 'files',
 				documentName: 'content',
-				onDocumentOpen: [
-					(ctx) => {
-						capturedBinding = ctx.binding;
-						return { destroy: () => {} };
+				documentTags: ['persistent', 'synced'],
+				documentExtensions: [
+					{
+						key: 'capture',
+						factory: (ctx) => {
+							capturedBinding = ctx.binding;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
 
 			await binding.open('f1');
-			expect(capturedBinding).toEqual({
-				tableName: 'files',
-				documentName: 'content',
+			expect(capturedBinding).toBeDefined();
+			expect(capturedBinding!.tableName).toBe('files');
+			expect(capturedBinding!.documentName).toBe('content');
+			expect(capturedBinding!.tags).toEqual(['persistent', 'synced']);
+		});
+
+		test('tag matching: extension with no tags fires for all docs', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent'],
+				documentExtensions: [
+					{
+						key: 'universal',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: [], // universal — no tags
+					},
+				],
 			});
+
+			await binding.open('f1');
+			expect(called).toBe(true);
+		});
+
+		test('tag matching: extension with matching tag fires', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent', 'synced'],
+				documentExtensions: [
+					{
+						key: 'sync-ext',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: ['synced'],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(called).toBe(true);
+		});
+
+		test('tag matching: extension with non-matching tag does NOT fire', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent'],
+				documentExtensions: [
+					{
+						key: 'ephemeral-ext',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: ['ephemeral'],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(called).toBe(false);
+		});
+
+		test('tag matching: doc with no tags only gets universal extensions', async () => {
+			const calls: string[] = [];
+			const { binding } = setupWithBinding({
+				documentTags: [], // no tags on doc
+				documentExtensions: [
+					{
+						key: 'tagged',
+						factory: () => {
+							calls.push('tagged');
+							return { destroy: () => {} };
+						},
+						tags: ['persistent'],
+					},
+					{
+						key: 'universal',
+						factory: () => {
+							calls.push('universal');
+							return { destroy: () => {} };
+						},
+						tags: [],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(calls).toEqual(['universal']);
 		});
 	});
 });

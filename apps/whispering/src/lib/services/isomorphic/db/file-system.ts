@@ -5,11 +5,14 @@ import {
 	readDir,
 	readTextFile,
 	remove,
+	rename as tauriRename,
+	writeFile as tauriWriteFile,
 	writeTextFile,
 } from '@tauri-apps/plugin-fs';
 import { type } from 'arktype';
 import matter from 'gray-matter';
 import mime from 'mime';
+import { nanoid } from 'nanoid/non-secure';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
@@ -229,7 +232,7 @@ export function createFileSystemDb(): DbService {
 									extension,
 								);
 								const arrayBuffer = await audio.arrayBuffer();
-								await writeFile(audioPath, new Uint8Array(arrayBuffer));
+								await tauriWriteFile(audioPath, new Uint8Array(arrayBuffer));
 
 								// 2. Create .md file with front matter
 								const mdContent = recordingToMarkdown(recording);
@@ -238,7 +241,7 @@ export function createFileSystemDb(): DbService {
 								// Write to temp file first, then rename (atomic operation)
 								const tmpPath = `${mdPath}.tmp`;
 								await writeTextFile(tmpPath, mdContent);
-								await rename(tmpPath, mdPath);
+								await tauriRename(tmpPath, mdPath);
 							}),
 						);
 					},
@@ -274,7 +277,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						// Note: We don't update audio files on update
 						// Audio files are immutable once created
@@ -535,7 +538,7 @@ export function createFileSystemDb(): DbService {
 								);
 								const tmpPath = `${mdPath}.tmp`;
 								await writeTextFile(tmpPath, mdContent);
-								await rename(tmpPath, mdPath);
+								await tauriRename(tmpPath, mdPath);
 							}),
 						);
 					},
@@ -563,7 +566,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						return transformationWithTimestamp;
 					},
@@ -803,7 +806,7 @@ export function createFileSystemDb(): DbService {
 								const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 								const tmpPath = `${mdPath}.tmp`;
 								await writeTextFile(tmpPath, mdContent);
-								await rename(tmpPath, mdPath);
+								await tauriRename(tmpPath, mdPath);
 							}),
 						);
 					},
@@ -818,7 +821,6 @@ export function createFileSystemDb(): DbService {
 				return tryAsync({
 					try: async () => {
 						const now = new Date().toISOString();
-						const { nanoid } = await import('nanoid/non-secure');
 						const newTransformationStepRun = {
 							id: nanoid(),
 							stepId: step.id,
@@ -840,7 +842,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						return newTransformationStepRun;
 					},
@@ -881,7 +883,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						return failedRun;
 					},
@@ -919,7 +921,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						return updatedRun;
 					},
@@ -949,7 +951,7 @@ export function createFileSystemDb(): DbService {
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
 						await writeTextFile(tmpPath, mdContent);
-						await rename(tmpPath, mdPath);
+						await tauriRename(tmpPath, mdPath);
 
 						return completedRun;
 					},
@@ -1021,22 +1023,4 @@ async function findAudioFile(dir: string, id: string): Promise<string | null> {
 		(f) => f.name.startsWith(`${id}.`) && !f.name.endsWith('.md'),
 	);
 	return audioFile?.name ?? null;
-}
-
-/**
- * Rename/move a file atomically.
- * This is a wrapper around Tauri's fs plugin.
- */
-async function rename(oldPath: string, newPath: string): Promise<void> {
-	const { rename: tauriRename } = await import('@tauri-apps/plugin-fs');
-	await tauriRename(oldPath, newPath);
-}
-
-/**
- * Write a file from ArrayBuffer.
- * This is a wrapper around Tauri's fs plugin.
- */
-async function writeFile(path: string, data: Uint8Array): Promise<void> {
-	const { writeFile: tauriWriteFile } = await import('@tauri-apps/plugin-fs');
-	await tauriWriteFile(path, data);
 }

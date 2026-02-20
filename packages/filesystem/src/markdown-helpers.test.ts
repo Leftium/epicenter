@@ -1,3 +1,15 @@
+/**
+ * Markdown Helpers Tests
+ *
+ * Covers markdown/frontmatter parsing and Yjs conversion helpers used by markdown-mode
+ * files. These tests protect fidelity between plain markdown content and structured Yjs
+ * state used by the filesystem layer.
+ *
+ * Key behaviors:
+ * - Frontmatter and markdown body round-trip predictably across parse/serialize helpers.
+ * - Y.Map and Y.XmlFragment adapters preserve expected document content.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/hq/static';
 import { Bash } from 'just-bash';
@@ -11,16 +23,16 @@ import {
 	updateYXmlFragmentFromString,
 	yMapToRecord,
 } from './markdown-helpers.js';
-import { YjsFileSystem } from './yjs-file-system.js';
+import { createYjsFileSystem } from './yjs-file-system.js';
 
 describe('parseFrontmatter', () => {
-	test('no front matter', () => {
+	test('parseFrontmatter returns empty metadata when front matter is absent', () => {
 		const result = parseFrontmatter('# Hello World');
 		expect(result.frontmatter).toEqual({});
 		expect(result.body).toBe('# Hello World');
 	});
 
-	test('with front matter', () => {
+	test('parseFrontmatter extracts front matter and markdown body', () => {
 		const input = '---\ntitle: Hello\ndate: 2026-02-09\n---\n# Content';
 		const result = parseFrontmatter(input);
 		expect(result.frontmatter).toEqual({ title: 'Hello', date: '2026-02-09' });
@@ -49,7 +61,7 @@ describe('serializeMarkdownWithFrontmatter', () => {
 		expect(result).toBe('# Hello');
 	});
 
-	test('with frontmatter', () => {
+	test('serializeMarkdownWithFrontmatter emits YAML block before body', () => {
 		const result = serializeMarkdownWithFrontmatter(
 			{ title: 'Test' },
 			'# Hello',
@@ -118,7 +130,7 @@ describe('XmlFragment serialization', () => {
 		expect(serialized).toContain('This is a paragraph.');
 	});
 
-	test('empty markdown', () => {
+	test('empty markdown still serializes XmlFragment to a string', () => {
 		const ydoc = new Y.Doc();
 		const fragment = ydoc.getXmlFragment('richtext');
 
@@ -128,7 +140,7 @@ describe('XmlFragment serialization', () => {
 		expect(typeof serialized).toBe('string');
 	});
 
-	test('markdown with formatting', () => {
+	test('formatted markdown preserves visible text through XmlFragment conversion', () => {
 		const ydoc = new Y.Doc();
 		const fragment = ydoc.getXmlFragment('richtext');
 
@@ -143,7 +155,7 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return YjsFileSystem.create(ws.tables.files);
+		return createYjsFileSystem(ws.tables.files);
 	}
 
 	test('write and read .md file with front matter', async () => {

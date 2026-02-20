@@ -14,4 +14,8 @@ export const filesTable = defineTable(
 		trashedAt: 'number | null',
 		_v: '1',
 	}),
-).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+).withDocument('content', {
+	guid: 'id',
+	updatedAt: 'updatedAt',
+	tags: ['persistent'],
+});

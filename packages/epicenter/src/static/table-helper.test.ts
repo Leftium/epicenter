@@ -1,3 +1,14 @@
+/**
+ * createTableHelper Tests
+ *
+ * Exercises the table helper CRUD, query, observation, and migration paths over the YKeyValueLww store.
+ * These tests ensure row validation and migration behavior remain consistent for both valid and corrupted data.
+ *
+ * Key behaviors:
+ * - CRUD and query operations return discriminated statuses with correct payloads.
+ * - Observers and migration logic handle batched and legacy data safely.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -18,7 +29,7 @@ function setup() {
 
 describe('createTableHelper', () => {
 	describe('set operations', () => {
-		test('set stores a row', () => {
+		test('set stores a row that get returns as valid', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -221,7 +232,7 @@ describe('createTableHelper', () => {
 			expect(found).toEqual({ id: '2', name: 'Bob', _v: 1 });
 		});
 
-		test('find returns undefined when no match', () => {
+		test('find returns undefined when no rows match', () => {
 			const { ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),
@@ -504,7 +515,7 @@ describe('createTableHelper', () => {
 	});
 
 	describe('metadata', () => {
-		test('count returns number of rows', () => {
+		test('count returns the current number of rows', () => {
 			const { ydoc, ykv } = setup();
 			const definition = defineTable(
 				type({ id: 'string', name: 'string', _v: '1' }),

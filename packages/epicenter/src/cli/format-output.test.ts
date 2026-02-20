@@ -1,3 +1,14 @@
+/**
+ * Format Output Tests
+ *
+ * These tests verify CLI JSON output formatting for interactive terminals and
+ * pipeline-friendly non-interactive usage. They ensure helpers produce deterministic
+ * pretty, compact, and JSONL output shapes.
+ *
+ * Key behaviors:
+ * - Switches between pretty and compact JSON based on TTY/format options
+ * - Serializes arrays into newline-delimited JSON for JSONL output
+ */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { formatJson, formatJsonl, output } from './format-output.js';
 
@@ -69,7 +80,7 @@ describe('formatJsonl', () => {
 		expect(result).toBe('{"value":"single"}');
 	});
 
-	test('handles mixed types', () => {
+	test('serializes mixed JSON-compatible values as one JSON value per line', () => {
 		const values = [{ a: 1 }, 'string', 42, null, [1, 2, 3]];
 		const result = formatJsonl(values);
 		expect(result).toBe('{"a":1}\n"string"\n42\nnull\n[1,2,3]');

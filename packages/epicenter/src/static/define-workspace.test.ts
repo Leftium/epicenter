@@ -1,3 +1,14 @@
+/**
+ * defineWorkspace Tests
+ *
+ * Validates that workspace definitions and created clients expose the expected typed APIs.
+ * The suite also covers extension chaining, lifecycle ordering, and action binding semantics.
+ *
+ * Key behaviors:
+ * - Workspace creation preserves typed access to tables, kv, and extensions.
+ * - Extension readiness and teardown order stay deterministic.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
@@ -41,7 +52,7 @@ describe('defineWorkspace', () => {
 		expect(client.kv.get).toBeDefined();
 	});
 
-	test('client.tables and client.kv work correctly', () => {
+	test('client.tables and client.kv support read and write operations', () => {
 		const client = createWorkspace({
 			id: 'test-app',
 			tables: {
@@ -163,7 +174,7 @@ describe('defineWorkspace', () => {
 		expect(destroyed).toBe(true);
 	});
 
-	test('workspace with empty tables and kv', () => {
+	test('workspace with empty tables and kv initializes base client APIs', () => {
 		const workspace = defineWorkspace({
 			id: 'empty-app',
 		});
@@ -206,7 +217,7 @@ describe('defineWorkspace', () => {
 		expect(typeof client.withExtension).toBe('function');
 	});
 
-	test('withExtension shares same ydoc', () => {
+	test('withExtension chain keeps the same ydoc instance', () => {
 		const baseClient = createWorkspace({
 			id: 'shared-doc-app',
 			tables: {

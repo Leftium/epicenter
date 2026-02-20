@@ -498,7 +498,6 @@ describe('sheet file support', () => {
 		const content = (fs as any).content;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await content.store.ensure(fileId);
-		const { createTimeline } = await import('./timeline-helpers.js');
 		// Replace text entry with sheet entry
 		ydoc.transact(() => {
 			createTimeline(ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
@@ -513,7 +512,6 @@ describe('sheet file support', () => {
 		const content = (fs as any).content;
 		const fileId = tree.lookupId('/data.csv');
 		const ydoc = await content.store.ensure(fileId);
-		const { createTimeline } = await import('./timeline-helpers.js');
 		ydoc.transact(() => {
 			createTimeline(ydoc).pushSheetFromCsv('A,B\n1,2\n');
 		});

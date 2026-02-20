@@ -216,7 +216,6 @@ describe('ContentOps', () => {
 			const id = generateFileId();
 			// Push a sheet entry via timeline
 			const ydoc = await (content as any).store.ensure(id);
-			const { createTimeline } = await import('./timeline-helpers.js');
 			const tl = createTimeline(ydoc);
 			ydoc.transact(() => tl.pushSheetFromCsv('Name,Age\nAlice,30\nBob,25\n'));
 			expect(await content.read(id)).toBe('Name,Age\nAlice,30\nBob,25\n');
@@ -226,7 +225,6 @@ describe('ContentOps', () => {
 			const content = setup();
 			const id = generateFileId();
 			const ydoc = await (content as any).store.ensure(id);
-			const { createTimeline } = await import('./timeline-helpers.js');
 			const tl = createTimeline(ydoc);
 			ydoc.transact(() => tl.pushSheetFromCsv('A,B\n1,2\n'));
 			await content.write(id, 'X,Y\n3,4\n');
@@ -239,7 +237,6 @@ describe('ContentOps', () => {
 			const content = setup();
 			const id = generateFileId();
 			const ydoc = await (content as any).store.ensure(id);
-			const { createTimeline } = await import('./timeline-helpers.js');
 			ydoc.transact(() => createTimeline(ydoc).pushSheetFromCsv('A\n1\n'));
 			const size = await content.write(id, 'X,Y\n3,4\n');
 			expect(size).toBe(new TextEncoder().encode('X,Y\n3,4\n').byteLength);
@@ -249,7 +246,6 @@ describe('ContentOps', () => {
 			const content = setup();
 			const id = generateFileId();
 			const ydoc = await (content as any).store.ensure(id);
-			const { createTimeline } = await import('./timeline-helpers.js');
 			ydoc.transact(() => createTimeline(ydoc).pushSheetFromCsv('A\n1\n'));
 			await content.write(id, new Uint8Array([0xde, 0xad]));
 			expect(createTimeline(ydoc).length).toBe(2);

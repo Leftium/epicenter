@@ -8,6 +8,7 @@
  * Run: bun packages/epicenter/scripts/stress-test-static.ts
  */
 
+import { unlinkSync } from 'node:fs';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import { createTables, defineTable } from '../src/static/index.js';
@@ -158,7 +159,6 @@ async function main() {
 	ydoc2.destroy();
 
 	// Cleanup output file
-	const { unlinkSync } = await import('node:fs');
 	unlinkSync(OUTPUT_PATH);
 	console.log(`\nCleaned up ${OUTPUT_PATH}`);
 }

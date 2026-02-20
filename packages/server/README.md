@@ -18,7 +18,13 @@ The key difference from running scripts:
 ## Quick Start
 
 ```typescript
-import { defineWorkspace, createServer, id, text } from '@epicenter/hq/dynamic';
+import {
+	defineWorkspace,
+	createWorkspace,
+	id,
+	text,
+} from '@epicenter/hq/static';
+import { createServer } from '@epicenter/server';
 import { sqlite } from '@epicenter/hq/extensions';
 
 // 1. Define workspace
@@ -30,7 +36,7 @@ const blogWorkspace = defineWorkspace({
 });
 
 // 2. Create client
-const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
+const blogClient = createWorkspace(blogWorkspace);
 
 // 3. Create and start server
 const server = createServer(blogClient, { port: 3913 });
@@ -57,6 +63,7 @@ function createServer(
 
 type ServerOptions = {
 	port?: number; // Default: 3913
+	auth?: AuthConfig; // See "Auth Modes" below
 };
 ```
 
@@ -85,14 +92,104 @@ const server = createServer(blogClient, { port: 3913 });
 
 server.app; // Underlying Elysia instance
 server.start(); // Start the HTTP server
-await server.destroy(); // Stop server and cleanup all clients
+await server.stop(); // Stop server and cleanup all clients
 ```
+
+### Composable Plugins
+
+The server is built from modular Elysia plugins. You can use these to compose your own server or add Epicenter features to an existing Elysia app.
+
+#### `@epicenter/server/sync`
+
+The sync sub-entry provides WebSocket synchronization without requiring the full workspace server.
+
+```typescript
+import { createSyncPlugin, createSyncServer } from '@epicenter/server/sync';
+
+// 1. Standalone relay (zero-config, rooms created on demand)
+const relay = createSyncServer({ port: 3913 });
+relay.start();
+
+// 2. Integrated plugin (use your own Elysia instance)
+const app = new Elysia()
+	.use(
+		createSyncPlugin({
+			auth: { token: 'my-secret' },
+			onRoomCreated: (room, doc) => console.log(`Room ${room} created`),
+		}),
+	)
+	.listen(3913);
+
+// 3. Workspace-bound sync
+const plugin = createSyncPlugin({
+	getDoc: (roomId) => workspaces[roomId]?.ydoc,
+});
+```
+
+**Auth Modes:**
+
+- **Open**: Omit `auth` config to allow any client to connect.
+- **Token**: `{ token: 'secret' }` for simple shared secret validation.
+- **Verify**: `{ verify: (token) => boolean }` for custom logic (e.g., JWT).
+
+#### `createWorkspacePlugin(clients)`
+
+Exposes the RESTful tables and actions for the provided clients.
+
+```typescript
+import { createWorkspacePlugin } from '@epicenter/server';
+
+const app = new Elysia()
+	.use(createWorkspacePlugin([blogClient, authClient]))
+	.listen(3913);
+```
+
+## Deployment Modes
+
+The server package is designed for two deployment targets. The sync plugin is portable across both; the workspace plugin is self-hosted only.
+
+### Self-Hosted (Bun + Elysia)
+
+`createServer()` composes everything into a single process:
+
+```
+createServer()
+├── Sync Plugin        → /workspaces/:room/ws        (WebSocket sync)
+├── Workspace Plugin   → /workspaces/:id/tables/...   (REST CRUD)
+│                      → /workspaces/:id/actions/...  (Query/Mutation endpoints)
+└── OpenAPI + Discovery
+```
+
+This is the default mode. Everything runs in one process — sync, table access, and actions share memory with your workspace clients.
+
+### Cloud (Cloudflare Workers + Durable Objects)
+
+The cloud target focuses on **sync + auth only**. Table access happens via CRDTs (clients sync directly), and actions run on the user's own infrastructure.
+
+```
+CF Worker (HTTP router + auth)
+└── Durable Object (1 per workspace)
+    ├── WebSocket sync     (same protocol as self-hosted)
+    ├── Awareness/Presence
+    └── Y.Doc persistence  (DO SQLite storage)
+```
+
+The sync plugin's protocol layer (rooms, auth, y-websocket encoding) is transport-agnostic and reusable in the DO context. The workspace plugin (`createWorkspacePlugin`) is not used in cloud mode.
+
+### Which Plugin Goes Where
+
+| Plugin                  | Self-Hosted | Cloud               | Why                                              |
+| ----------------------- | ----------- | ------------------- | ------------------------------------------------ |
+| `createSyncPlugin`      | ✅          | ✅ (protocol layer) | Sync is the core value prop for both targets     |
+| `createWorkspacePlugin` | ✅          | ❌                  | Tables/actions need in-process workspace clients |
+| `createServer`          | ✅          | ❌                  | Convenience wrapper for self-hosted              |
+| `createSyncServer`      | ✅          | ❌                  | Standalone relay for self-hosted                 |
 
 ## Multiple Workspaces
 
 ```typescript
-const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
-const authClient = await authWorkspace.withProviders({ sqlite }).create();
+const blogClient = createWorkspace(blogWorkspace);
+const authClient = createWorkspace(authWorkspace);
 
 // Pass array of clients
 const server = createServer([blogClient, authClient], { port: 3913 });
@@ -110,9 +207,10 @@ Routes are namespaced by workspace ID:
 /                                              - API root/discovery
 /openapi                                       - Scalar UI documentation
 /openapi/json                                  - OpenAPI spec (JSON)
-/workspaces/{workspaceId}/sync                 - WebSocket sync (y-websocket protocol)
+/workspaces/{workspaceId}/ws                   - WebSocket sync (y-websocket protocol)
 /workspaces/{workspaceId}/tables/{table}       - RESTful table CRUD
 /workspaces/{workspaceId}/tables/{table}/{id}  - Single row operations
+/workspaces/{workspaceId}/actions/{action}     - Workspace action endpoints
 ```
 
 ## WebSocket Sync
@@ -124,7 +222,7 @@ The server's primary real-time feature is WebSocket-based Y.Doc synchronization.
 Clients connect to:
 
 ```
-ws://host:3913/workspaces/{workspaceId}/sync
+ws://host:3913/workspaces/{workspaceId}/ws
 ```
 
 The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@epicenter/hq/extensions/sync`):
@@ -133,23 +231,26 @@ The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@ep
 import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 
 const client = createClient(definition.id)
-  .withDefinition(definition)
-  .withExtension('persistence', setupPersistence)
-  .withExtension('sync', createSyncExtension({
-    url: 'ws://localhost:3913/workspaces/{id}/sync',
-  }));
+	.withDefinition(definition)
+	.withExtension('persistence', setupPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: 'ws://localhost:3913/workspaces/{id}/ws',
+		}),
+	);
 ```
 
 ### Protocol
 
 The sync plugin implements the y-websocket protocol with one custom extension:
 
-| Message Type          | Tag | Direction          | Purpose                                    |
-| --------------------- | --- | ------------------ | ------------------------------------------ |
-| SYNC                  | 0   | Bidirectional      | Document synchronization (step 1, 2, updates) |
-| AWARENESS             | 1   | Bidirectional      | User presence (cursors, names, selections) |
-| QUERY_AWARENESS       | 3   | Client → Server    | Request current awareness states           |
-| SYNC_STATUS           | 102 | Client → Server → Client | Heartbeat + `hasLocalChanges` tracking |
+| Message Type    | Tag | Direction                | Purpose                                       |
+| --------------- | --- | ------------------------ | --------------------------------------------- |
+| SYNC            | 0   | Bidirectional            | Document synchronization (step 1, 2, updates) |
+| AWARENESS       | 1   | Bidirectional            | User presence (cursors, names, selections)    |
+| QUERY_AWARENESS | 3   | Client → Server          | Request current awareness states              |
+| SYNC_STATUS     | 102 | Client → Server → Client | Heartbeat + `hasLocalChanges` tracking        |
 
 **MESSAGE_SYNC_STATUS (102)**: The client sends its local version counter. The server echoes the raw bytes back unchanged (zero parsing cost). This enables the client to know when all local changes have reached the server, powering "Saving..." / "Saved" UI. It also doubles as a heartbeat for fast dead-connection detection (5s worst case).
 
@@ -174,14 +275,14 @@ The server exposes the WebSocket endpoint. `@epicenter/sync` is the client-side 
 // Server side
 const server = createServer(blogClient, { port: 3913 });
 server.start();
-// Exposes: ws://localhost:3913/workspaces/blog/sync
+// Exposes: ws://localhost:3913/workspaces/blog/ws
 
 // Client side
 import { createSyncProvider } from '@epicenter/sync';
 
 const provider = createSyncProvider({
-  doc: myDoc,
-  url: 'ws://localhost:3913/workspaces/blog/sync',
+	doc: myDoc,
+	url: 'ws://localhost:3913/workspaces/blog/ws',
 });
 ```
 
@@ -193,7 +294,7 @@ See `@epicenter/sync` for the client-side API (auth modes, status model, `hasLoc
 
 ```typescript
 {
-	await using client = await blogWorkspace.withProviders({ sqlite }).create();
+	await using client = createWorkspace(blogWorkspace);
 
 	client.tables.posts.upsert({ id: '1', title: 'Hello' });
 	// Client disposed when block exits
@@ -207,7 +308,7 @@ See `@epicenter/sync` for the client-side API (auth modes, status model, `hasLoc
 ### Use Server (HTTP Wrapper)
 
 ```typescript
-const client = await blogWorkspace.withProviders({ sqlite }).create();
+const client = createWorkspace(blogWorkspace);
 
 const server = createServer(client, { port: 3913 });
 server.start();
@@ -223,7 +324,7 @@ Use the HTTP API instead of creating another client:
 ```typescript
 // DON'T: Create another client (storage conflict!)
 {
-	await using client = await blogWorkspace.withProviders({ sqlite }).create();
+	await using client = createWorkspace(blogWorkspace);
 	client.tables.posts.upsert({ ... });
 }
 
@@ -290,7 +391,7 @@ const server = createServer([blogClient, authClient], { port: 3913 });
 // Start the server
 server.start();
 
-// Server handles SIGINT/SIGTERM for graceful shutdown
-// Or manually destroy:
-await server.destroy(); // Stops server, cleans up all clients
+// The caller owns signal handling and logging.
+// Stop manually or wire up to SIGINT/SIGTERM:
+await server.stop(); // Stops server, cleans up all clients
 ```

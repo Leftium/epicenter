@@ -20,7 +20,12 @@ The Static Workspace API makes this structured. You define your schemas once wit
 ## Quick Start
 
 ```typescript
-import { defineWorkspace, defineTable, defineKv } from 'epicenter/static';
+import {
+	defineWorkspace,
+	defineTable,
+	defineKv,
+	createWorkspace,
+} from 'epicenter/static';
 import { type } from 'arktype';
 
 // Define table schemas with versioning
@@ -45,7 +50,7 @@ const workspace = defineWorkspace({
 });
 
 // Create a client (synchronous)
-const client = workspace.create();
+const client = createWorkspace(workspace);
 
 // Read and write with full type safety
 client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
@@ -76,7 +81,7 @@ const workspace = defineWorkspace({
 	kv: { theme },
 });
 
-const client = workspace.create();
+const client = createWorkspace(workspace);
 ```
 
 This creates a Y.Doc, binds your schemas to it, and returns a fully-typed client. It's synchronous and ready to use immediately.
@@ -86,23 +91,22 @@ This creates a Y.Doc, binds your schemas to it, and returns a fully-typed client
 Need persistence, sync, or SQLite materialization? Capabilities let you add functionality without changing the core API:
 
 ```typescript
-const client = workspace.create({
-	persistence: ({ ydoc }) => {
+const client = createWorkspace(workspace)
+	.withExtension('persistence', ({ ydoc }) => {
 		const provider = new IndexeddbPersistence(ydoc.guid, ydoc);
 		return {
 			exports: { provider },
 			destroy: () => provider.destroy(),
 		};
-	},
-	sqlite: ({ tables }) => {
+	})
+	.withExtension('sqlite', ({ tables }) => {
 		const db = new Database(':memory:');
 		// Wire tables to materialized views
 		return {
 			exports: { db },
 			destroy: () => db.close(),
 		};
-	},
-});
+	});
 
 // Access extensions after creation
 client.extensions.sqlite.db.query('SELECT * FROM posts');
@@ -389,10 +393,12 @@ const logger: ExtensionFactory<MyTables, MyKv> = ({ tables }) => {
 
 ## Sync Construction, Async Properties
 
-The workspace.create() call is synchronous. It returns immediately:
+The createWorkspace() call is synchronous. It returns immediately:
 
 ```typescript
-const client = workspace.create({ persistence, sync });
+const client = createWorkspace(workspace)
+	.withExtension('persistence', persistence)
+	.withExtension('sync', sync);
 
 // Can use tables/kv immediately
 client.tables.posts.set({ id: '1', title: 'Hello', views: 0, _v: 2 });
@@ -437,7 +443,7 @@ const kv = createKv(ydoc, {
 tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
-You don't get the workspace.create() wrapper or automatic lifecycle management, but you keep full type safety and all the table/KV operations.
+You don't get the createWorkspace() wrapper or automatic lifecycle management, but you keep full type safety and all the table/KV operations.
 
 ## Storage
 
@@ -499,7 +505,7 @@ const workspace = defineWorkspace({
 	tables: { posts },
 });
 
-const client = workspace.create();
+const client = createWorkspace(workspace);
 
 // TypeScript knows:
 // - client.tables.posts.set() requires { id: string; title: string; views: number }
@@ -632,7 +638,7 @@ const workspace = defineWorkspace({
 	},
 });
 
-const client = workspace.create();
+const client = createWorkspace(workspace);
 
 client.tables.notebooks.set({ id: 'nb1', name: 'Work' });
 client.tables.notes.set({

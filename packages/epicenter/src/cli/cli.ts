@@ -24,9 +24,25 @@ export function createCLI(client: AnyWorkspaceClient) {
 			async (argv) => {
 				try {
 					const { createServer } = await import('@epicenter/server');
-					createServer(client, {
+					const server = createServer(client, {
 						port: argv.port,
-					}).start();
+					});
+					server.start();
+
+					console.log(`\nEpicenter server on http://localhost:${argv.port}`);
+					console.log(`API docs: http://localhost:${argv.port}/openapi\n`);
+
+					// Override the CLI's generic cleanup with server-aware shutdown.
+					// server.stop() gracefully closes the HTTP server AND destroys clients.
+					const shutdown = async () => {
+						await server.stop();
+						process.exit(0);
+					};
+					process.on('SIGINT', shutdown);
+					process.on('SIGTERM', shutdown);
+
+					// Block forever — signal handlers above manage shutdown
+					await new Promise(() => {});
 				} catch {
 					console.error(
 						'Error: @epicenter/server is not installed.\n\n' +

@@ -2,11 +2,6 @@ import type { Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
 import { Elysia } from 'elysia';
 
-type ActionsRouterOptions = {
-	actions: Actions;
-	basePath?: string;
-};
-
 /**
  * Create an Elysia router for action definitions.
  *
@@ -14,9 +9,8 @@ type ActionsRouterOptions = {
  * Actions are closure-based - they capture their dependencies (tables, extensions, etc.)
  * at definition time. The router invokes handlers directly.
  */
-export function createActionsRouter(options: ActionsRouterOptions) {
-	const { actions, basePath = '/actions' } = options;
-	const router = new Elysia({ prefix: basePath });
+export function createActionsRouter(actions: Actions, prefix = '/actions') {
+	const router = new Elysia({ prefix });
 
 	for (const [action, path] of iterateActions(actions)) {
 		const routePath = `/${path.join('/')}`;

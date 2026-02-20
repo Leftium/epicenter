@@ -1,5 +1,7 @@
 # Static Schema Library Architecture
 
+> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+
 > **📝 NOTE**: This spec should be read alongside [`specs/20260124T162638-stable-id-schema-pattern.md`](./20260124T162638-stable-id-schema-pattern.md) which introduces stable internal IDs for fields. The stable ID pattern simplifies the migration story further: instead of lazy ArkType pipe migrations, fields have permanent internal IDs and invalid data simply returns defaults.
 
 ---
@@ -30,14 +32,14 @@ This spec describes the architecture for `@epicenter/static`, a developer-focuse
 
 ## Architecture Comparison
 
-| Aspect | Current Epicenter | @epicenter/static |
-|--------|-------------------|-------------------|
-| Schema storage | In Y.Doc `definition` map | TypeScript only (no Y.Doc) |
-| Schema introspection | Runtime via Y.Doc | Compile-time via types |
-| Migration strategy | Hybrid (lazy + epoch) | Lazy only (ArkType pipes) |
-| Y.Doc structure | `definition`, `kv`, `tables` | `kv`, `tables` only |
-| Garbage collection | Disabled (revision history) | Enabled (smaller docs) |
-| Epoch system | Required for breaking changes | Not needed |
+| Aspect               | Current Epicenter             | @epicenter/static          |
+| -------------------- | ----------------------------- | -------------------------- |
+| Schema storage       | In Y.Doc `definition` map     | TypeScript only (no Y.Doc) |
+| Schema introspection | Runtime via Y.Doc             | Compile-time via types     |
+| Migration strategy   | Hybrid (lazy + epoch)         | Lazy only (ArkType pipes)  |
+| Y.Doc structure      | `definition`, `kv`, `tables`  | `kv`, `tables` only        |
+| Garbage collection   | Disabled (revision history)   | Enabled (smaller docs)     |
+| Epoch system         | Required for breaking changes | Not needed                 |
 
 ---
 
@@ -46,34 +48,40 @@ This spec describes the architecture for `@epicenter/static`, a developer-focuse
 ### Table Definition
 
 ```typescript
-import { defineTable, text, select, integer, timestamp } from '@epicenter/static';
+import {
+	defineTable,
+	text,
+	select,
+	integer,
+	timestamp,
+} from '@epicenter/static';
 
 const recordings = defineTable('recordings', {
-  // Required fields (non-nullable by default)
-  id: text(),
-  title: text(),
+	// Required fields (non-nullable by default)
+	id: text(),
+	title: text(),
 
-  // Optional fields
-  subtitle: text({ nullable: true }),
+	// Optional fields
+	subtitle: text({ nullable: true }),
 
-  // Fields with defaults
-  status: select(['pending', 'completed'], { default: 'pending' }),
-  views: integer({ default: 0 }),
+	// Fields with defaults
+	status: select(['pending', 'completed'], { default: 'pending' }),
+	views: integer({ default: 0 }),
 
-  // Timestamps
-  createdAt: timestamp({ default: 'now' }),
-  updatedAt: timestamp({ default: 'now' }),
+	// Timestamps
+	createdAt: timestamp({ default: 'now' }),
+	updatedAt: timestamp({ default: 'now' }),
 });
 
 // Inferred type:
 type Recording = {
-  id: string;
-  title: string;
-  subtitle: string | null;
-  status: 'pending' | 'completed';
-  views: number;
-  createdAt: string;
-  updatedAt: string;
+	id: string;
+	title: string;
+	subtitle: string | null;
+	status: 'pending' | 'completed';
+	views: number;
+	createdAt: string;
+	updatedAt: string;
 };
 ```
 
@@ -84,12 +92,12 @@ import { defineWorkspace } from '@epicenter/static';
 import { recordings, transformations } from './tables';
 
 const workspace = defineWorkspace({
-  id: 'epicenter.whispering',
-  tables: { recordings, transformations },
-  kv: {
-    theme: { type: 'select', options: ['light', 'dark'], default: 'dark' },
-    autoSave: { type: 'boolean', default: true },
-  },
+	id: 'epicenter.whispering',
+	tables: { recordings, transformations },
+	kv: {
+		theme: { type: 'select', options: ['light', 'dark'], default: 'dark' },
+		autoSave: { type: 'boolean', default: true },
+	},
 });
 
 export type Workspace = typeof workspace;
@@ -108,15 +116,15 @@ Schema changes are **code changes**. When you add a field with a default, old ro
 ```typescript
 // Version 1: Initial schema
 const recordings = defineTable('recordings', {
-  id: text(),
-  title: text(),
+	id: text(),
+	title: text(),
 });
 
 // Version 2: Add field with default
 const recordings = defineTable('recordings', {
-  id: text(),
-  title: text(),
-  status: select(['pending', 'completed'], { default: 'pending' }), // NEW
+	id: text(),
+	title: text(),
+	status: select(['pending', 'completed'], { default: 'pending' }), // NEW
 });
 
 // Old row in Y.Doc: { id: '123', title: 'Hello' }
@@ -129,19 +137,20 @@ For migrations that need to compute values from existing data:
 
 ```typescript
 const recordings = defineTable('recordings', {
-  id: text(),
-  title: text(),
-  transcript: text({ nullable: true }),
+	id: text(),
+	title: text(),
+	transcript: text({ nullable: true }),
 
-  // NEW: Computed from existing data
-  hasTranscript: boolean({
-    default: false,
-    migrateFrom: (row) => row.transcript !== null,
-  }),
+	// NEW: Computed from existing data
+	hasTranscript: boolean({
+		default: false,
+		migrateFrom: (row) => row.transcript !== null,
+	}),
 });
 ```
 
 **Behavior:**
+
 1. Read row from Y.Doc
 2. If `hasTranscript` missing, run `migrateFrom(row)`
 3. Return row with computed value
@@ -149,22 +158,22 @@ const recordings = defineTable('recordings', {
 
 ### What's Supported (Lazy)
 
-| Change | Supported | Notes |
-|--------|-----------|-------|
-| Add nullable field | ✅ | Returns `null` for old rows |
-| Add field with default | ✅ | Returns default for old rows |
-| Add field with migrateFrom | ✅ | Computes from row data |
-| Change default value | ✅ | Only affects new rows |
-| Add select option | ✅ | Non-breaking |
+| Change                     | Supported | Notes                        |
+| -------------------------- | --------- | ---------------------------- |
+| Add nullable field         | ✅        | Returns `null` for old rows  |
+| Add field with default     | ✅        | Returns default for old rows |
+| Add field with migrateFrom | ✅        | Computes from row data       |
+| Change default value       | ✅        | Only affects new rows        |
+| Add select option          | ✅        | Non-breaking                 |
 
 ### What Requires Manual Migration
 
-| Change | Reason | Solution |
-|--------|--------|----------|
-| Rename field | Can't auto-detect | Migration script |
-| Change field type | Type mismatch | Migration script |
-| Remove field | Data loss | Migration script (opt-in) |
-| Remove select option | Invalid values | Requires validation |
+| Change               | Reason            | Solution                  |
+| -------------------- | ----------------- | ------------------------- |
+| Rename field         | Can't auto-detect | Migration script          |
+| Change field type    | Type mismatch     | Migration script          |
+| Remove field         | Data loss         | Migration script (opt-in) |
+| Remove select option | Invalid values    | Requires validation       |
 
 ---
 
@@ -219,21 +228,21 @@ const pending = client.tables.recordings.where({ status: 'pending' });
 ```typescript
 // Insert
 client.tables.recordings.insert({
-  id: '123',
-  title: 'New Recording',
-  // status defaults to 'pending'
+	id: '123',
+	title: 'New Recording',
+	// status defaults to 'pending'
 });
 
 // Update (patch-based, safe for concurrent edits)
 client.tables.recordings.update('123', {
-  title: 'Updated Title',
-  // Only touches 'title' cell, not entire row
+	title: 'Updated Title',
+	// Only touches 'title' cell, not entire row
 });
 
 // Upsert
 client.tables.recordings.upsert({
-  id: '123',
-  title: 'Upserted',
+	id: '123',
+	title: 'Upserted',
 });
 
 // Delete
@@ -245,12 +254,12 @@ client.tables.recordings.delete('123');
 ```typescript
 // Subscribe to table changes
 client.tables.recordings.observe((event) => {
-  console.log('Changed rows:', event.changes);
+	console.log('Changed rows:', event.changes);
 });
 
 // Subscribe to specific row
 client.tables.recordings.observeRow('123', (row) => {
-  console.log('Row updated:', row);
+	console.log('Row updated:', row);
 });
 ```
 
@@ -267,10 +276,10 @@ import { WebsocketProvider } from 'y-websocket';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
 const client = await workspace.create({
-  extensions: {
-    websocket: (ctx) => new WebsocketProvider(url, ctx.ydoc.guid, ctx.ydoc),
-    persistence: (ctx) => new IndexeddbPersistence(ctx.ydoc.guid, ctx.ydoc),
-  },
+	extensions: {
+		websocket: (ctx) => new WebsocketProvider(url, ctx.ydoc.guid, ctx.ydoc),
+		persistence: (ctx) => new IndexeddbPersistence(ctx.ydoc.guid, ctx.ydoc),
+	},
 });
 ```
 
@@ -284,6 +293,7 @@ Cloud: {orgId}:{workspaceId}
 ```
 
 Examples:
+
 - `epicenter.whispering` (local)
 - `org_abc123:epicenter.whispering` (cloud)
 
@@ -296,6 +306,7 @@ const ydoc = new Y.Doc({ guid: docId, gc: true });
 ```
 
 This means:
+
 - Smaller doc sizes (tombstones cleaned up)
 - No revision history (can't snapshot past states)
 - Simpler mental model
@@ -315,7 +326,7 @@ client.kv.theme.set('dark');
 
 // Observe
 client.kv.theme.observe((value) => {
-  console.log('Theme changed:', value);
+	console.log('Theme changed:', value);
 });
 ```
 
@@ -323,17 +334,17 @@ client.kv.theme.observe((value) => {
 
 ```typescript
 const workspace = defineWorkspace({
-  kv: {
-    // V1: Simple theme
-    theme: { type: 'select', options: ['light', 'dark'], default: 'dark' },
+	kv: {
+		// V1: Simple theme
+		theme: { type: 'select', options: ['light', 'dark'], default: 'dark' },
 
-    // V2: Add new setting with since version
-    fontSize: {
-      type: 'integer',
-      default: 14,
-      since: 2,  // Only read from version 2+
-    },
-  },
+		// V2: Add new setting with since version
+		fontSize: {
+			type: 'integer',
+			default: 14,
+			since: 2, // Only read from version 2+
+		},
+	},
 });
 ```
 
@@ -363,9 +374,9 @@ Validation happens before writing:
 
 ```typescript
 client.tables.recordings.insert({
-  id: '123',
-  title: 'Hello',
-  status: 'invalid', // TypeScript error + runtime validation error
+	id: '123',
+	title: 'Hello',
+	status: 'invalid', // TypeScript error + runtime validation error
 });
 ```
 
@@ -389,11 +400,13 @@ const results = client.tables.recordings.getAllWithErrors();
 Do we need to track schema version anywhere?
 
 **Option A**: No version tracking
+
 - Schema is always "latest" (code is source of truth)
 - Old data just gets defaults applied
 - Simplest approach
 
 **Option B**: Version in Y.Doc metadata
+
 - Store `{ schemaVersion: 2 }` in a metadata map
 - Enables detecting "this data is from a future version"
 - Useful for forward compatibility warnings
@@ -405,11 +418,13 @@ Do we need to track schema version anywhere?
 How do we handle truly breaking changes (field rename, type change)?
 
 **Option A**: Manual migration scripts
+
 - Developer writes a one-time script
 - Reads old data, writes new data
 - Simple but requires coordination
 
 **Option B**: Declarative migrations
+
 - Define renames in schema: `title: text({ renamedFrom: 'name' })`
 - Library handles the migration
 - More magic but less boilerplate
@@ -421,10 +436,12 @@ How do we handle truly breaking changes (field rename, type change)?
 Should the library detect schema changes?
 
 **Option A**: No detection
+
 - Developer knows what changed
 - No runtime overhead
 
 **Option B**: Runtime diffing
+
 - Compare schema to last-known schema
 - Warn on breaking changes
 - Store schema hash in localStorage
@@ -436,18 +453,21 @@ Should the library detect schema changes?
 What happens when Device A has schema v2 and Device B has schema v1?
 
 **Scenario**:
+
 1. Device A adds field `priority: integer({ default: 0 })`
 2. Device A creates row with `priority: 5`
 3. Device B (still v1) syncs the row
 4. Device B doesn't know about `priority` field
 
 **Option A**: Forward-compatible by default
+
 - Device B preserves unknown fields in Y.Doc
 - Device B's reads just don't see `priority`
 - When Device B updates, only touch known fields (patch-based)
 - `priority: 5` survives the round-trip
 
 **Option B**: Strict mode
+
 - Device B rejects unknown fields
 - Forces all devices to upgrade together
 - Safer but less flexible
@@ -459,30 +479,35 @@ What happens when Device A has schema v2 and Device B has schema v1?
 ## Implementation Plan
 
 ### Phase 1: Core Schema System
+
 - [ ] Field factory functions (`text()`, `select()`, `integer()`, etc.)
 - [ ] `defineTable()` with type inference
 - [ ] `defineWorkspace()` with tables and KV
 - [ ] ArkType integration for validation
 
 ### Phase 2: Y.Doc Integration
+
 - [ ] `workspace.create()` factory
 - [ ] Table CRUD operations (insert, update, delete, get, getAll)
 - [ ] KV operations (get, set)
 - [ ] Observation (observe table, observe row, observe KV)
 
 ### Phase 3: Migration System
+
 - [ ] Lazy defaults (apply on read)
 - [ ] `migrateFrom` computed defaults
 - [ ] Patch-based writes (forward-compatible)
 - [ ] Unknown field preservation
 
 ### Phase 4: Sync Integration
+
 - [ ] Extension system for providers
 - [ ] GC-enabled docs
 - [ ] Doc ID format (local vs cloud)
 - [ ] Multi-device testing
 
 ### Phase 5: Developer Experience
+
 - [ ] Error messages for schema mismatches
 - [ ] Debug mode for migration tracking
 - [ ] Typed client generation (if needed)

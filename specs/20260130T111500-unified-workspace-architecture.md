@@ -1,5 +1,7 @@
 # Unified Workspace Architecture
 
+> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+
 **Status**: Design Revised - Grid HeadDoc only
 **Created**: 2026-01-30
 **Updated**: 2026-01-30

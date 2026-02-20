@@ -1,18 +1,26 @@
 import { openapi } from '@elysiajs/openapi';
 import type { AnyWorkspaceClient } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import { collectActionPaths, createActionsRouter } from './actions';
-import { createSyncPlugin } from './sync';
-import { createTablesPlugin } from './tables';
+import { collectActionPaths } from './actions';
+import type { AuthConfig } from './sync/auth';
+import { createSyncPlugin } from './sync/plugin';
+import { createWorkspacePlugin } from './workspace-plugin';
 
 export const DEFAULT_PORT = 3913;
 
 export type ServerOptions = {
 	port?: number;
+	/** Auth configuration passed through to the sync plugin. */
+	auth?: AuthConfig;
 };
 
 /**
  * Create an HTTP server that exposes workspace clients as REST APIs and WebSocket sync.
+ *
+ * This is the self-hosted convenience wrapper that composes both the sync plugin and
+ * workspace plugin into a single server. For cloud deployments (e.g., Cloudflare Durable
+ * Objects), use {@link createSyncPlugin} directly — the sync protocol is portable,
+ * while table/action endpoints are a self-hosted concern.
  *
  * The server provides:
  * - `/` - API root with discovery info
@@ -20,69 +28,37 @@ export type ServerOptions = {
  * - `/openapi/json` - OpenAPI specification
  * - `/workspaces/{id}/tables/{table}` - RESTful table CRUD endpoints
  * - `/workspaces/{id}/actions/{action}` - Workspace action endpoints (queries via GET, mutations via POST)
- * - `/workspaces/{id}/sync` - WebSocket sync endpoint (y-websocket protocol)
+ * - `/workspaces/{id}/ws` - WebSocket sync endpoint (y-websocket protocol)
  *
  * @example
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq/static';
- *
- * const workspace = createWorkspace(definition)
- *   .withExtension('persistence', (ctx) => setupPersistence(ctx))
- *   .withExtension('sqlite', (ctx) => sqliteProvider(ctx));
+ * import { createServer } from '@epicenter/server';
  *
  * const server = createServer(workspace, { port: 3913 });
  * server.start();
  *
- * // Access endpoints:
- * // GET  http://localhost:3913/workspaces/blog/tables/posts
- * // POST http://localhost:3913/workspaces/blog/tables/posts
- * // WS   ws://localhost:3913/workspaces/blog/sync
+ * // Later:
+ * await server.stop();
  * ```
  */
-function createServer(
-	client: AnyWorkspaceClient,
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
-function createServer(
-	clients: AnyWorkspaceClient[],
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
-function createServer(
+export function createServer(
 	clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: ServerOptions,
-): ReturnType<typeof createServerInternal> {
+) {
 	const clients = Array.isArray(clientOrClients)
 		? clientOrClients
 		: [clientOrClients];
-	return createServerInternal(clients, options);
-}
-
-function createServerInternal(
-	clients: AnyWorkspaceClient[],
-	options?: ServerOptions,
-) {
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
-
 	for (const client of clients) {
 		workspaces[client.id] = client;
 	}
 
-	// Collect action paths from all clients and mount per-client action routers
-	const allActionPaths: string[] = [];
-
-	const actionRouters = clients.flatMap((client) => {
+	const allActionPaths = clients.flatMap((client) => {
 		if (!client.actions) return [];
-		const clientActionPaths = collectActionPaths(client.actions);
-		allActionPaths.push(...clientActionPaths.map((p) => `${client.id}/${p}`));
-		return [
-			createActionsRouter({
-				actions: client.actions,
-				basePath: `/workspaces/${client.id}/actions`,
-			}),
-		];
+		return collectActionPaths(client.actions).map((p) => `${client.id}/${p}`);
 	});
 
-	const baseApp = new Elysia()
+	const app = new Elysia()
 		.use(
 			openapi({
 				embedSpec: true,
@@ -96,23 +72,21 @@ function createServerInternal(
 			}),
 		)
 		.use(
-			createSyncPlugin({
-				getDoc: (room) => workspaces[room]?.ydoc,
-			}),
+			new Elysia({ prefix: '/workspaces' })
+				.use(
+					createSyncPlugin({
+						getDoc: (room) => workspaces[room]?.ydoc,
+						auth: options?.auth,
+					}),
+				)
+				.use(createWorkspacePlugin(clients)),
 		)
-		.use(createTablesPlugin(workspaces));
-
-	for (const router of actionRouters) {
-		baseApp.use(router);
-	}
-
-	const app = baseApp.get('/', () => ({
-		name: 'Epicenter API',
-		version: '1.0.0',
-		docs: '/openapi',
-		workspaces: Object.keys(workspaces),
-		actions: allActionPaths,
-	}));
+		.get('/', () => ({
+			name: 'Epicenter API',
+			version: '1.0.0',
+			workspaces: Object.keys(workspaces),
+			actions: allActionPaths,
+		}));
 
 	const port =
 		options?.port ??
@@ -121,64 +95,22 @@ function createServerInternal(
 	return {
 		app,
 
+		/**
+		 * Start listening on the configured port.
+		 *
+		 * Does not log or install signal handlers — the caller owns those concerns.
+		 */
 		start() {
-			console.log('Creating HTTP server...');
-
-			const server = Bun.serve({
-				fetch: app.fetch,
-				port,
-			});
-
-			console.log('\nEpicenter HTTP Server Running!\n');
-			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-			console.log(`Server: http://localhost:${port}`);
-			console.log(`API Docs: http://localhost:${port}/openapi`);
-			console.log(`OpenAPI Spec: http://localhost:${port}/openapi/json\n`);
-
-			console.log('Available Workspaces:\n');
-			for (const [workspaceId, client] of Object.entries(workspaces)) {
-				console.log(`  ${workspaceId}`);
-				for (const tableName of Object.keys(client.definitions.tables)) {
-					console.log(`    tables/${tableName}`);
-				}
-				if (client.actions) {
-					const clientActionPaths = collectActionPaths(client.actions);
-					for (const actionPath of clientActionPaths) {
-						console.log(`    actions/${actionPath}`);
-					}
-				}
-				console.log(`    sync (WebSocket)`);
-				console.log();
-			}
-
-			console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-			console.log('Server is running. Press Ctrl+C to stop.\n');
-
-			let isShuttingDown = false;
-
-			const shutdown = async (signal: string) => {
-				if (isShuttingDown) return;
-				isShuttingDown = true;
-
-				console.log(`\nReceived ${signal}, shutting down...`);
-
-				server.stop();
-				await Promise.all(clients.map((c) => c.destroy()));
-
-				console.log('Server stopped cleanly\n');
-				process.exit(0);
-			};
-
-			process.on('SIGINT', () => shutdown('SIGINT'));
-			process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-			return server;
+			app.listen(port);
+			return app.server;
 		},
 
-		async destroy() {
+		/**
+		 * Stop the HTTP server and destroy all workspace clients.
+		 */
+		async stop() {
+			app.stop();
 			await Promise.all(clients.map((c) => c.destroy()));
 		},
 	};
 }
-
-export { createServer };

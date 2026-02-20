@@ -1,14 +1,17 @@
 import { openapi } from '@elysiajs/openapi';
 import type { AnyWorkspaceClient } from '@epicenter/hq/static';
 import { Elysia } from 'elysia';
-import { collectActionPaths, createActionsRouter } from './actions';
-import { createSyncPlugin } from './sync';
-import { createTablesPlugin } from './tables';
+import { collectActionPaths } from './actions';
+import type { AuthConfig } from './sync/auth';
+import { createSyncPlugin } from './sync/plugin';
+import { createWorkspacePlugin } from './workspace-plugin';
 
 export const DEFAULT_PORT = 3913;
 
 export type ServerOptions = {
 	port?: number;
+	/** Auth configuration passed through to the sync plugin. */
+	auth?: AuthConfig;
 };
 
 /**
@@ -62,27 +65,11 @@ function createServerInternal(
 	options?: ServerOptions,
 ) {
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
-
 	for (const client of clients) {
 		workspaces[client.id] = client;
 	}
 
-	// Collect action paths from all clients and mount per-client action routers
-	const allActionPaths: string[] = [];
-
-	const actionRouters = clients.flatMap((client) => {
-		if (!client.actions) return [];
-		const clientActionPaths = collectActionPaths(client.actions);
-		allActionPaths.push(...clientActionPaths.map((p) => `${client.id}/${p}`));
-		return [
-			createActionsRouter({
-				actions: client.actions,
-				basePath: `/workspaces/${client.id}/actions`,
-			}),
-		];
-	});
-
-	const baseApp = new Elysia()
+	const app = new Elysia()
 		.use(
 			openapi({
 				embedSpec: true,
@@ -98,21 +85,11 @@ function createServerInternal(
 		.use(
 			createSyncPlugin({
 				getDoc: (room) => workspaces[room]?.ydoc,
+				auth: options?.auth,
+				routePrefix: '/workspaces/:workspaceId/sync',
 			}),
 		)
-		.use(createTablesPlugin(workspaces));
-
-	for (const router of actionRouters) {
-		baseApp.use(router);
-	}
-
-	const app = baseApp.get('/', () => ({
-		name: 'Epicenter API',
-		version: '1.0.0',
-		docs: '/openapi',
-		workspaces: Object.keys(workspaces),
-		actions: allActionPaths,
-	}));
+		.use(createWorkspacePlugin(clients));
 
 	const port =
 		options?.port ??

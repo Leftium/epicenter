@@ -559,3 +559,60 @@ for (const [raw, conn] of room.conns) {
 - `packages/sync/src/provider.ts` — Client-side sync provider (no changes needed)
 - `packages/sync/src/types.ts` — Client auth mode types (reference for auth design)
 - `specs/20260219T195800-server-architecture-rethink.md` — 5-layer vision (this spec is Layers 0+1)
+
+## Review
+
+### Implementation Summary
+
+All 5 phases implemented in dependency order. Typecheck clean after each phase. All 56 existing tests pass unchanged.
+
+### Files Created
+
+| File                  | Purpose                                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `sync/rooms.ts`       | `createRoomManager()` — extracted room lifecycle, fixes ws identity bug via `Map<object, { send }>` keyed by `ws.raw` |
+| `sync/auth.ts`        | `validateAuth()` — open/token/verify modes, `CLOSE_UNAUTHORIZED` constant                                             |
+| `sync/plugin.ts`      | `createSyncPlugin()` — rewritten to use room manager + auth, configurable route prefix, standalone + integrated modes |
+| `sync/server.ts`      | `createSyncServer()` — zero-config sync relay with health endpoint                                                    |
+| `workspace-plugin.ts` | `createWorkspacePlugin()` — bundles tables + actions + discovery endpoint                                             |
+
+### Files Modified
+
+| File            | Changes                                                                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync/index.ts` | Replaced old buggy sync plugin with barrel export (3 re-exports)                                                                                           |
+| `server.ts`     | Updated imports to use `sync/plugin` and `workspace-plugin`. Added `auth` option to `ServerOptions`. Simplified `createServerInternal` to compose plugins. |
+| `index.ts`      | Added `createWorkspacePlugin` export                                                                                                                       |
+| `package.json`  | Added `"./sync": "./src/sync/index.ts"` subpath export                                                                                                     |
+
+### Open Questions Decisions
+
+1. **OpenAPI placement** → (b) Keep in `createServer` only. `createWorkspacePlugin` does not include OpenAPI. Power users who compose plugins may not want Scalar UI; `createServer` is the opinionated batteries-included wrapper.
+
+2. **Room manager export** → (a) Internal only. `createRoomManager` is not exported from the package. No external consumer exists yet. Export when there's a real use case (Durable Objects, custom transport).
+
+3. **Room count limits** → (a) Unlimited. Eviction keeps memory bounded. Add limits when DoS is a real concern.
+
+4. **REST room state in sync** → Only in `createSyncServer` wrapper (the `GET /` health endpoint). The raw `createSyncPlugin` doesn't add REST routes — it's a WebSocket-only plugin.
+
+5. **Connection state tracking (Phase 1.7)** → Per-connection state (updateHandler, pingInterval, controlledClientIds) stays in the plugin via a `WeakMap<object, ConnectionState>` keyed by `ws.raw`. This is transport-specific (WebSocket concerns). The room manager handles rooms, docs, awareness, and the connection map (`Map<object, { send }>`). Clean separation: room manager is transport-agnostic, plugin is Elysia/WebSocket-specific.
+
+### Design Decision: Route Prefix Room ID Extraction
+
+The sync plugin supports configurable `routePrefix` (e.g., `/:room/sync` or `/workspaces/:workspaceId/sync`). Since the param name varies by route pattern, the plugin extracts the room ID as the first value from `ws.data.params`:
+
+```typescript
+const params = ws.data.params as Record<string, string>;
+const roomId = Object.values(params)[0] as string;
+```
+
+This works for any route pattern with exactly one dynamic segment. The `as Record<string, string>` cast is necessary because Elysia infers params from the route string at type level, but the plugin's route is dynamic.
+
+### Verification
+
+- `bun run typecheck` — clean after every phase
+- `bun test` — 56 tests pass, 103 expect() calls, 0 failures
+- `grep @epicenter/hq src/sync/` — zero imports (only the JSDoc comment about the firewall)
+- `protocol.ts` — untouched
+- `tables.ts`, `actions.ts` — untouched
+- Backward compatibility: `createServer(client, { port })` signature unchanged, additive `auth` option

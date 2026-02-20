@@ -10,8 +10,7 @@ import type { FileId, FileRow } from './types.js';
  * operations (binary, sheet, text append) that the binding's built-in
  * `read()`/`write()` don't cover.
  *
- * Replaces the standalone `ContentOps` class — same operations, but the
- * Y.Doc lifecycle is now managed by the workspace's document binding
+ * The Y.Doc lifecycle is managed by the workspace's document binding
  * (automatic cleanup on row deletion, `updatedAt` auto-bump, extension hooks).
  */
 export type ContentHelpers = {

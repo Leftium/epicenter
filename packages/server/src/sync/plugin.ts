@@ -65,19 +65,19 @@ export type SyncPluginConfig = {
  * - **Standalone** (no `getDoc`): Creates fresh Y.Docs on demand. Rooms are ephemeral.
  * - **Integrated** (`getDoc` provided): Uses existing Y.Docs. Returns 4004 for unknown rooms.
  *
- * The plugin always registers the route `/:room/sync`. Use Elysia's native
+ * The plugin always registers the route `/:room/ws`. Use Elysia's native
  * `prefix` option to mount it under a different path:
  *
  * @example
  * ```typescript
  * // Standalone mode — rooms created on demand
- * // Route: /:room/sync
+ * // Route: /:room/ws
  * const app = new Elysia()
  *   .use(createSyncPlugin())
  *   .listen(3913);
  *
  * // Integrated mode — mount under /workspaces prefix
- * // Route: /workspaces/:room/sync
+ * // Route: /workspaces/:room/ws
  * const app = new Elysia()
  *   .use(
  *     new Elysia({ prefix: '/workspaces' })
@@ -119,7 +119,7 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 		}
 	>();
 
-	return new Elysia().ws('/:room/sync', {
+	return new Elysia().ws('/:room/ws', {
 		async open(ws) {
 			const roomId = ws.data.params.room;
 

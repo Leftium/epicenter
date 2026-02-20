@@ -110,7 +110,7 @@ Routes are namespaced by workspace ID:
 /                                              - API root/discovery
 /openapi                                       - Scalar UI documentation
 /openapi/json                                  - OpenAPI spec (JSON)
-/workspaces/{workspaceId}/sync                 - WebSocket sync (y-websocket protocol)
+/workspaces/{workspaceId}/ws                   - WebSocket sync (y-websocket protocol)
 /workspaces/{workspaceId}/tables/{table}       - RESTful table CRUD
 /workspaces/{workspaceId}/tables/{table}/{id}  - Single row operations
 ```
@@ -124,7 +124,7 @@ The server's primary real-time feature is WebSocket-based Y.Doc synchronization.
 Clients connect to:
 
 ```
-ws://host:3913/workspaces/{workspaceId}/sync
+ws://host:3913/workspaces/{workspaceId}/ws
 ```
 
 The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@epicenter/hq/extensions/sync`):
@@ -133,23 +133,26 @@ The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@ep
 import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 
 const client = createClient(definition.id)
-  .withDefinition(definition)
-  .withExtension('persistence', setupPersistence)
-  .withExtension('sync', createSyncExtension({
-    url: 'ws://localhost:3913/workspaces/{id}/sync',
-  }));
+	.withDefinition(definition)
+	.withExtension('persistence', setupPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: 'ws://localhost:3913/workspaces/{id}/ws',
+		}),
+	);
 ```
 
 ### Protocol
 
 The sync plugin implements the y-websocket protocol with one custom extension:
 
-| Message Type          | Tag | Direction          | Purpose                                    |
-| --------------------- | --- | ------------------ | ------------------------------------------ |
-| SYNC                  | 0   | Bidirectional      | Document synchronization (step 1, 2, updates) |
-| AWARENESS             | 1   | Bidirectional      | User presence (cursors, names, selections) |
-| QUERY_AWARENESS       | 3   | Client → Server    | Request current awareness states           |
-| SYNC_STATUS           | 102 | Client → Server → Client | Heartbeat + `hasLocalChanges` tracking |
+| Message Type    | Tag | Direction                | Purpose                                       |
+| --------------- | --- | ------------------------ | --------------------------------------------- |
+| SYNC            | 0   | Bidirectional            | Document synchronization (step 1, 2, updates) |
+| AWARENESS       | 1   | Bidirectional            | User presence (cursors, names, selections)    |
+| QUERY_AWARENESS | 3   | Client → Server          | Request current awareness states              |
+| SYNC_STATUS     | 102 | Client → Server → Client | Heartbeat + `hasLocalChanges` tracking        |
 
 **MESSAGE_SYNC_STATUS (102)**: The client sends its local version counter. The server echoes the raw bytes back unchanged (zero parsing cost). This enables the client to know when all local changes have reached the server, powering "Saving..." / "Saved" UI. It also doubles as a heartbeat for fast dead-connection detection (5s worst case).
 
@@ -174,14 +177,14 @@ The server exposes the WebSocket endpoint. `@epicenter/sync` is the client-side 
 // Server side
 const server = createServer(blogClient, { port: 3913 });
 server.start();
-// Exposes: ws://localhost:3913/workspaces/blog/sync
+// Exposes: ws://localhost:3913/workspaces/blog/ws
 
 // Client side
 import { createSyncProvider } from '@epicenter/sync';
 
 const provider = createSyncProvider({
-  doc: myDoc,
-  url: 'ws://localhost:3913/workspaces/blog/sync',
+	doc: myDoc,
+	url: 'ws://localhost:3913/workspaces/blog/ws',
 });
 ```
 

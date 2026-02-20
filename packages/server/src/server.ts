@@ -23,7 +23,7 @@ export type ServerOptions = {
  * - `/openapi/json` - OpenAPI specification
  * - `/workspaces/{id}/tables/{table}` - RESTful table CRUD endpoints
  * - `/workspaces/{id}/actions/{action}` - Workspace action endpoints (queries via GET, mutations via POST)
- * - `/workspaces/{id}/sync` - WebSocket sync endpoint (y-websocket protocol)
+ * - `/workspaces/{id}/ws` - WebSocket sync endpoint (y-websocket protocol)
  *
  * @example
  * ```typescript
@@ -39,7 +39,7 @@ export type ServerOptions = {
  * // Access endpoints:
  * // GET  http://localhost:3913/workspaces/blog/tables/posts
  * // POST http://localhost:3913/workspaces/blog/tables/posts
- * // WS   ws://localhost:3913/workspaces/blog/sync
+ * // WS   ws://localhost:3913/workspaces/blog/ws
  * ```
  */
 function createServer(

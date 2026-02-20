@@ -92,7 +92,7 @@ Key behaviors:
 | --------------- | ------------------------------------------- | ------------------------------------------------ | ---------------------------------------- |
 | Room creation   | On-demand (first connection creates Y.Doc)  | On-demand via `get_or_create_doc`                | Pre-registered only (4004 if unknown)    |
 | Auth            | None built-in                               | Two-tier: server token + client token (JWT-like) | None                                     |
-| Room routing    | URL path = room name                        | `/d/:id/ws/:id` path-based                       | `/workspaces/:id/sync`                   |
+| Room routing    | URL path = room name                        | `/d/:id/ws/:id` path-based                       | `/workspaces/:id/ws`                     |
 | Connection ID   | Node `ws` library (stable objects)          | Rust (stable connection IDs)                     | Elysia wrappers (NOT stable)             |
 | Doc persistence | Optional callback (`persistence.bindState`) | `SyncKv` with filesystem/S3 backends             | Delegates to workspace client extensions |
 | Room eviction   | No built-in eviction                        | `doc_gc_worker` evicts after inactivity          | 60s timer (never triggers due to bug)    |
@@ -119,7 +119,7 @@ Key behaviors:
 | Connection tracking    | `ws.raw` keyed `Map`, not `Set`                                       | Fixes the identity bug by construction. `Map<object, { send }>` keyed by `ws.raw`.                                                                               |
 | Auth modes             | Open (no auth), shared token, verify function                         | Matches the three modes in `@epicenter/sync` client. Verify function enables JWTs without us implementing JWT.                                                   |
 | Auth check timing      | In WS `open` handler, close with 4401 on failure                      | Elysia's `.ws()` handler runs after HTTP upgrade. Rejecting before upgrade requires HTTP middleware which is more complex with Elysia. Close code 4401 is clean. |
-| Route pattern          | Configurable `routePrefix`, default varies                            | Standalone sync: `/:room/sync`. Workspace plugin: `/workspaces/:id/sync`.                                                                                        |
+| Route pattern          | Configurable `routePrefix`, default varies                            | Standalone sync: `/:room/ws`. Workspace plugin: `/workspaces/:id/ws`.                                                                                            |
 | Package structure      | Subpath exports within `@epicenter/server`                            | One package, three entry points. Avoids release coordination of multiple packages.                                                                               |
 | Backward compatibility | `createServer()` signature unchanged                                  | Existing users don't change anything. New capabilities are additive.                                                                                             |
 
@@ -174,14 +174,14 @@ The sync plugin operates in two modes based on whether `getDoc` is provided:
 ```
 Mode 1: Standalone (no getDoc)
 ──────────────────────────────
-Client connects to /:room/sync
+Client connects to /:room/ws
   → Room manager creates fresh Y.Doc on demand
   → Y.Doc is ephemeral (rebuilt from client state)
   → Room evicted 60s after last disconnect
 
 Mode 2: Workspace-Integrated (getDoc provided)
 ───────────────────────────────────────────────
-Client connects to /workspaces/:id/sync
+Client connects to /workspaces/:id/ws
   → getDoc(id) returns workspace's Y.Doc
   → If undefined → 4004 (room not found)
   → Room lifecycle managed by workspace client
@@ -192,7 +192,7 @@ Client connects to /workspaces/:id/sync
 ### Auth Flow
 
 ```
-Client connects:  ws://host:3913/room/sync?token=my-secret
+Client connects:  ws://host:3913/room/ws?token=my-secret
 
 Server (open handler):
   1. Extract ?token from URL
@@ -247,7 +247,7 @@ function createServer(
     .use(createSyncPlugin({
       getDoc: (room) => workspaces[room]?.ydoc,
       auth: options?.auth,
-      routePrefix: '/workspaces/:workspaceId/sync',
+      routePrefix: '/workspaces/:workspaceId/ws',
     }))
     .use(createWorkspacePlugin(clients));
 
@@ -295,7 +295,7 @@ type SyncPluginConfig = {
 
 	/**
 	 * Route prefix for the WebSocket endpoint.
-	 * Default: '/:room/sync' (standalone) or '/workspaces/:workspaceId/sync' (when used in createServer)
+	 * Default: '/:room/ws' (standalone) or '/workspaces/:workspaceId/ws' (when used in createServer)
 	 */
 	routePrefix?: string;
 
@@ -502,10 +502,10 @@ for (const [raw, conn] of room.conns) {
 ### Both plugins mounted on same Elysia app
 
 1. User mounts sync plugin and workspace plugin on the same app
-2. Sync plugin registers `/:room/sync` (standalone route)
+2. Sync plugin registers `/:room/ws` (standalone route)
 3. Workspace plugin registers `/workspaces/:id/tables/...`
 4. No route conflicts — different path patterns
-5. If user wants workspace-integrated sync, they pass `getDoc` and set `routePrefix: '/workspaces/:workspaceId/sync'`
+5. If user wants workspace-integrated sync, they pass `getDoc` and set `routePrefix: '/workspaces/:workspaceId/ws'`
 
 ### createServer backward compatibility
 

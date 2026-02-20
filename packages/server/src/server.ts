@@ -17,6 +17,11 @@ export type ServerOptions = {
 /**
  * Create an HTTP server that exposes workspace clients as REST APIs and WebSocket sync.
  *
+ * This is the self-hosted convenience wrapper that composes both the sync plugin and
+ * workspace plugin into a single server. For cloud deployments (e.g., Cloudflare Durable
+ * Objects), use {@link createSyncPlugin} directly — the sync protocol is portable,
+ * while table/action endpoints are a self-hosted concern.
+ *
  * The server provides:
  * - `/` - API root with discovery info
  * - `/openapi` - Interactive API documentation (Scalar UI)

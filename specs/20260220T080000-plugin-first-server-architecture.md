@@ -652,3 +652,23 @@ After Phase A, we applied 7 DX improvements that intentionally break backwards c
 - `bun test` (packages/server) — 56/56 pass
 - `bun run typecheck` (packages/epicenter) — no new errors (pre-existing `_v` type errors in test files only)
 - LSP diagnostics — zero errors on all 4 changed files
+
+## Cloud Portability
+
+The plugin architecture is designed with two deployment targets in mind:
+
+**Portable (used in both self-hosted and cloud):**
+
+- Sync plugin protocol layer (rooms, auth, y-websocket encoding)
+- Auth validation (`validateAuth`, `AuthConfig`)
+- Room manager (`createRoomManager`)
+
+**Self-hosted only:**
+
+- `createServer()` — full convenience wrapper
+- `createWorkspacePlugin()` — tables + actions REST endpoints
+- `createTablesPlugin()` — per-workspace table CRUD
+- `createActionsRouter()` — action query/mutation endpoints
+- OpenAPI documentation
+
+In cloud mode (Cloudflare Workers + Durable Objects), the sync protocol code runs inside a DO class. The DO handles WebSocket connections directly via Hibernatable WebSockets. The CF Worker handles HTTP routing and authentication. Table access happens via CRDTs (clients sync Y.Docs directly), and actions run on the user's own infrastructure.

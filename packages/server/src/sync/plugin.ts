@@ -65,6 +65,11 @@ export type SyncPluginConfig = {
  * - **Standalone** (no `getDoc`): Creates fresh Y.Docs on demand. Rooms are ephemeral.
  * - **Integrated** (`getDoc` provided): Uses existing Y.Docs. Returns 4004 for unknown rooms.
  *
+ * The sync protocol, room management, and auth logic are transport-agnostic.
+ * For cloud deployments (e.g., Cloudflare Durable Objects), the same protocol
+ * code runs inside a DO class — only the WebSocket transport layer differs.
+ * This plugin provides the Elysia/Bun adapter; the protocol layer is reusable.
+ *
  * The plugin always registers the route `/:room/ws`. Use Elysia's native
  * `prefix` option to mount it under a different path:
  *

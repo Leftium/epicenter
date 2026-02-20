@@ -1,5 +1,7 @@
 # Workspace `.create()` Accepts Capabilities Directly
 
+> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+
 **Status:** Draft  
 **Created:** 2026-01-08  
 **Author:** Braden Wong

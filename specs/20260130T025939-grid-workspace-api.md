@@ -1,5 +1,7 @@
 # Grid Workspace API Specification
 
+> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+
 **Status**: Implemented (2026-01-30)
 
 Unify Cell and Dynamic workspace systems into a single **Grid Workspace** API with cell-level CRDT storage, external schema validation, and optional HeadDoc integration for time travel.
@@ -289,7 +291,12 @@ type InvalidRowResult = {
 /** Result of getting a KV value with validation. */
 type KvGetResult<TValue> =
 	| { status: 'valid'; value: TValue }
-	| { status: 'invalid'; key: string; errors: ValidationError[]; value: unknown }
+	| {
+			status: 'invalid';
+			key: string;
+			errors: ValidationError[];
+			value: unknown;
+	  }
 	| { status: 'not_found'; key: string; value: undefined };
 
 type KvStore = {

@@ -1,5 +1,7 @@
 # Static Workspace API Specification
 
+> **Status: Superseded** — This spec was a design document. The API evolved during implementation. The current API uses `createWorkspace(definition)` instead of `workspace.create()`. See `packages/epicenter/src/static/README.md` for the current API.
+
 ## Overview
 
 This specification defines the **Static Workspace API** for Epicenter - a composable, type-safe API for defining and creating workspaces with versioned tables and KV stores.

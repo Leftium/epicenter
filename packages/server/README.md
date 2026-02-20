@@ -18,7 +18,13 @@ The key difference from running scripts:
 ## Quick Start
 
 ```typescript
-import { defineWorkspace, createServer, id, text } from '@epicenter/hq/dynamic';
+import {
+	defineWorkspace,
+	createWorkspace,
+	id,
+	text,
+} from '@epicenter/hq/static';
+import { createServer } from '@epicenter/server';
 import { sqlite } from '@epicenter/hq/extensions';
 
 // 1. Define workspace
@@ -30,7 +36,7 @@ const blogWorkspace = defineWorkspace({
 });
 
 // 2. Create client
-const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
+const blogClient = createWorkspace(blogWorkspace);
 
 // 3. Create and start server
 const server = createServer(blogClient, { port: 3913 });
@@ -138,11 +144,52 @@ const app = new Elysia()
 	.listen(3913);
 ```
 
+## Deployment Modes
+
+The server package is designed for two deployment targets. The sync plugin is portable across both; the workspace plugin is self-hosted only.
+
+### Self-Hosted (Bun + Elysia)
+
+`createServer()` composes everything into a single process:
+
+```
+createServer()
+├── Sync Plugin        → /workspaces/:room/ws        (WebSocket sync)
+├── Workspace Plugin   → /workspaces/:id/tables/...   (REST CRUD)
+│                      → /workspaces/:id/actions/...  (Query/Mutation endpoints)
+└── OpenAPI + Discovery
+```
+
+This is the default mode. Everything runs in one process — sync, table access, and actions share memory with your workspace clients.
+
+### Cloud (Cloudflare Workers + Durable Objects)
+
+The cloud target focuses on **sync + auth only**. Table access happens via CRDTs (clients sync directly), and actions run on the user's own infrastructure.
+
+```
+CF Worker (HTTP router + auth)
+└── Durable Object (1 per workspace)
+    ├── WebSocket sync     (same protocol as self-hosted)
+    ├── Awareness/Presence
+    └── Y.Doc persistence  (DO SQLite storage)
+```
+
+The sync plugin's protocol layer (rooms, auth, y-websocket encoding) is transport-agnostic and reusable in the DO context. The workspace plugin (`createWorkspacePlugin`) is not used in cloud mode.
+
+### Which Plugin Goes Where
+
+| Plugin                  | Self-Hosted | Cloud               | Why                                              |
+| ----------------------- | ----------- | ------------------- | ------------------------------------------------ |
+| `createSyncPlugin`      | ✅          | ✅ (protocol layer) | Sync is the core value prop for both targets     |
+| `createWorkspacePlugin` | ✅          | ❌                  | Tables/actions need in-process workspace clients |
+| `createServer`          | ✅          | ❌                  | Convenience wrapper for self-hosted              |
+| `createSyncServer`      | ✅          | ❌                  | Standalone relay for self-hosted                 |
+
 ## Multiple Workspaces
 
 ```typescript
-const blogClient = await blogWorkspace.withProviders({ sqlite }).create();
-const authClient = await authWorkspace.withProviders({ sqlite }).create();
+const blogClient = createWorkspace(blogWorkspace);
+const authClient = createWorkspace(authWorkspace);
 
 // Pass array of clients
 const server = createServer([blogClient, authClient], { port: 3913 });
@@ -247,7 +294,7 @@ See `@epicenter/sync` for the client-side API (auth modes, status model, `hasLoc
 
 ```typescript
 {
-	await using client = await blogWorkspace.withProviders({ sqlite }).create();
+	await using client = createWorkspace(blogWorkspace);
 
 	client.tables.posts.upsert({ id: '1', title: 'Hello' });
 	// Client disposed when block exits
@@ -261,7 +308,7 @@ See `@epicenter/sync` for the client-side API (auth modes, status model, `hasLoc
 ### Use Server (HTTP Wrapper)
 
 ```typescript
-const client = await blogWorkspace.withProviders({ sqlite }).create();
+const client = createWorkspace(blogWorkspace);
 
 const server = createServer(client, { port: 3913 });
 server.start();
@@ -277,7 +324,7 @@ Use the HTTP API instead of creating another client:
 ```typescript
 // DON'T: Create another client (storage conflict!)
 {
-	await using client = await blogWorkspace.withProviders({ sqlite }).create();
+	await using client = createWorkspace(blogWorkspace);
 	client.tables.posts.upsert({ ... });
 }
 

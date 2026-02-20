@@ -12,7 +12,7 @@ It's structured in three layers. Start at the top, drop down when you need contr
 ┌────────────────────────────────────────────────┐
 │  Your App                                      │
 ├────────────────────────────────────────────────┤
-│  defineWorkspace() → workspace.create()        │ ← Most apps
+│  defineWorkspace() → createWorkspace()         │ ← Most apps
 │  ↓ Result: WorkspaceClient                     │
 │  { tables, kv, extensions, ydoc }               │
 ├────────────────────────────────────────────────┤
@@ -37,13 +37,13 @@ const posts = defineTable()
 const workspace = defineWorkspace({ id: 'my-app', tables: { posts } });
 
 // Creates Y.Doc and returns a typed client
-const client = workspace.create();
+const client = createWorkspace(workspace);
 
 // Or bring your own Y.Doc
 const tables = createTables(myYdoc, { posts });
 ```
 
-For most apps, just call `workspace.create()` and you're done. It's synchronous, returns immediately, and everything is typed.
+For most apps, just call `createWorkspace(definition)` and you're done. It's synchronous, returns immediately, and everything is typed.
 
 ## If You Need More
 

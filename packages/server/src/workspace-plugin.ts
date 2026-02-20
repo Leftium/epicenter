@@ -6,16 +6,19 @@ import { createTablesPlugin } from './tables';
 /**
  * Create an Elysia plugin that bundles tables + actions for workspace clients.
  *
- * Does NOT include sync (that's a separate plugin), OpenAPI (added by createServer),
- * or the discovery `GET /` endpoint (added by createServer).
- * Provides REST CRUD for all tables and action endpoints per workspace.
+ * Self-hosted only. Provides REST CRUD for all tables and action endpoints per workspace.
+ * For cloud deployments, use the sync plugin directly — table access is via CRDTs
+ * and actions run on the user's own infrastructure.
+ *
+ * Each workspace is mounted under its own prefix (`/{workspaceId}`), so this plugin
+ * is itself prefix-agnostic. Mount it under `/workspaces` (or any prefix) via Elysia:
  *
  * @example
  * ```typescript
  * import { createWorkspacePlugin } from '@epicenter/server';
  * import { createSyncPlugin } from '@epicenter/server/sync';
  *
- * const app = new Elysia()
+ * const app = new Elysia({ prefix: '/workspaces' })
  *   .use(createSyncPlugin({ getDoc: (room) => workspaces[room]?.ydoc }))
  *   .use(createWorkspacePlugin(clients))
  *   .listen(3913);
@@ -28,17 +31,20 @@ export function createWorkspacePlugin(
 		? clientOrClients
 		: [clientOrClients];
 
-	const workspaces: Record<string, AnyWorkspaceClient> = {};
-	for (const client of clients) {
-		workspaces[client.id] = client;
-	}
+	const app = new Elysia();
 
-	const app = new Elysia().use(createTablesPlugin(workspaces));
-
-	// Mount action routers per workspace
 	for (const client of clients) {
-		if (!client.actions) continue;
-		app.use(createActionsRouter(client.actions, `/${client.id}/actions`));
+		const workspaceApp = new Elysia({ prefix: `/${client.id}` });
+
+		// Tables: /tables/:table, /tables/:table/:id
+		workspaceApp.use(createTablesPlugin(client));
+
+		// Actions: /actions/:path
+		if (client.actions) {
+			workspaceApp.use(createActionsRouter(client.actions));
+		}
+
+		app.use(workspaceApp);
 	}
 
 	return app;

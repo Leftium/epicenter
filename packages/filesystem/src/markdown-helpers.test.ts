@@ -23,7 +23,7 @@ import {
 	updateYXmlFragmentFromString,
 	yMapToRecord,
 } from './markdown-helpers.js';
-import { YjsFileSystem } from './yjs-file-system.js';
+import { createYjsFileSystem } from './yjs-file-system.js';
 
 describe('parseFrontmatter', () => {
 	test('parseFrontmatter returns empty metadata when front matter is absent', () => {
@@ -155,7 +155,7 @@ describe('XmlFragment serialization', () => {
 describe('markdown integration with YjsFileSystem', () => {
 	function setup() {
 		const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-		return YjsFileSystem.create(ws.tables.files);
+		return createYjsFileSystem(ws.tables.files);
 	}
 
 	test('write and read .md file with front matter', async () => {

@@ -1,8 +1,8 @@
 import {
+	createYjsFileSystem,
 	type FileId,
 	type FileRow,
 	filesTable,
-	YjsFileSystem,
 } from '@epicenter/filesystem';
 import { createWorkspace } from '@epicenter/hq/static';
 import { SvelteSet } from 'svelte/reactivity';
@@ -58,7 +58,7 @@ function createFsState() {
 			},
 			{ tags: ['persistent'] },
 		);
-	const fs = YjsFileSystem.create(ws.tables.files);
+	const fs = createYjsFileSystem(ws.tables.files);
 
 	// ── Reactive state ────────────────────────────────────────────────
 	let version = $state(0);

@@ -27,16 +27,19 @@ const fileSchema = type({
 });
 
 function setup() {
-	const tableDef = defineTable(fileSchema);
 	const ydoc = new Y.Doc({ guid: 'test-workspace' });
-	const tables = createTables(ydoc, { files: tableDef });
+	const tables = createTables(ydoc, { files: defineTable(fileSchema) });
 	return { ydoc, tables };
 }
 
 function setupWithBinding(
-	overrides?: Omit<
-		Partial<Parameters<typeof createDocumentBinding>[0]>,
-		'guidKey' | 'updatedAtKey' | 'tableHelper' | 'ydoc'
+	overrides?: Pick<
+		Parameters<typeof createDocumentBinding>[0],
+		| 'documentExtensions'
+		| 'documentTags'
+		| 'tableName'
+		| 'documentName'
+		| 'onRowDeleted'
 	>,
 ) {
 	const { ydoc, tables } = setup();

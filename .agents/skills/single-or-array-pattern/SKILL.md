@@ -6,46 +6,35 @@ metadata:
   version: '1.0'
 ---
 
-# Single-or-Array Overload Pattern
+# Single-or-Array Pattern
 
-Accept both single items and arrays, normalize internally, delegate to array-only implementation.
+Accept both single items and arrays, normalize at the top, process uniformly.
 
 ## Quick Reference
 
 ```typescript
-// Option 1: Explicit overloads (cleaner IDE signatures)
-function create(item: T): Promise<Result<T, E>>;
-function create(items: T[]): Promise<Result<T[], E>>;
-function create(itemOrItems: T | T[]): Promise<Result<T | T[], E>> {
-	const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
-	return createInternal(items);
-}
-
-// Option 2: Union type (less boilerplate)
 function create(itemOrItems: T | T[]): Promise<Result<void, E>> {
 	const items = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
-	// ... implementation
+	// ... implementation works on items array
 }
 ```
 
 ## The Structure
 
-1. **Public API**: Accepts `T | T[]`
-2. **Normalization**: `Array.isArray()` check, wrap single in array
-3. **Internal function**: Only handles arrays
+1. **Accept `T | T[]`** as the parameter type
+2. **Normalize** with `Array.isArray()` at the top of the function
+3. **All logic** works against the array — one code path
 
 ```typescript
-// Public: flexible API
 function createServer(clientOrClients: Client | Client[], options?: Options) {
 	const clients = Array.isArray(clientOrClients)
 		? clientOrClients
 		: [clientOrClients];
-	return createServerInternal(clients, options);
-}
 
-// Internal: array-only, all real logic here
-function createServerInternal(clients: Client[], options?: Options) {
-	// Implementation only handles arrays
+	// All real logic here, working with the array
+	for (const client of clients) {
+		// ...
+	}
 }
 ```
 
@@ -75,17 +64,9 @@ function createServerInternal(clients: Client[], options?: Options) {
 
 ## Codebase Examples
 
-### Server Factory (`packages/epicenter/src/server/server.ts`)
+### Server Factory (`packages/server/src/server.ts`)
 
 ```typescript
-function createServer(
-	client: AnyWorkspaceClient,
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
-function createServer(
-	clients: AnyWorkspaceClient[],
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
 function createServer(
 	clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: ServerOptions,
@@ -93,7 +74,13 @@ function createServer(
 	const clients = Array.isArray(clientOrClients)
 		? clientOrClients
 		: [clientOrClients];
-	return createServerInternal(clients, options);
+
+	// All server setup logic directly here
+	const workspaces: Record<string, AnyWorkspaceClient> = {};
+	for (const client of clients) {
+		workspaces[client.id] = client;
+	}
+	// ...
 }
 ```
 

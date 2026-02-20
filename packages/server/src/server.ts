@@ -43,27 +43,12 @@ export type ServerOptions = {
  * ```
  */
 function createServer(
-	client: AnyWorkspaceClient,
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
-function createServer(
-	clients: AnyWorkspaceClient[],
-	options?: ServerOptions,
-): ReturnType<typeof createServerInternal>;
-function createServer(
 	clientOrClients: AnyWorkspaceClient | AnyWorkspaceClient[],
 	options?: ServerOptions,
-): ReturnType<typeof createServerInternal> {
+) {
 	const clients = Array.isArray(clientOrClients)
 		? clientOrClients
 		: [clientOrClients];
-	return createServerInternal(clients, options);
-}
-
-function createServerInternal(
-	clients: AnyWorkspaceClient[],
-	options?: ServerOptions,
-) {
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
 	for (const client of clients) {
 		workspaces[client.id] = client;

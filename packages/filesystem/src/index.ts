@@ -1,9 +1,8 @@
-// Types
-
-// Content doc store
-export { createContentDocStore } from './content-doc-store.js';
-// Content I/O operations
-export { ContentOps } from './content-ops.js';
+// Content helpers (document binding wrappers)
+export {
+	type ContentHelpers,
+	createContentHelpers,
+} from './content-helpers.js';
 // Runtime indexes
 export {
 	createFileSystemIndex,
@@ -36,7 +35,6 @@ export {
 export type {
 	ColumnDefinition,
 	ColumnId,
-	ContentDocStore,
 	FileId,
 	FileRow,
 	RowId,

@@ -76,12 +76,3 @@ export type ColumnDefinition = {
 };
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;
-
-export type ContentDocStore = {
-	/** Get or create a Y.Doc for a file. Awaits provider readiness (e.g. IndexedDB sync). Idempotent. */
-	ensure(fileId: FileId): Promise<Y.Doc>;
-	/** Destroy a specific file's Y.Doc and its providers. No-op if not created. */
-	destroy(fileId: FileId): Promise<void>;
-	/** Destroy all Y.Docs and their providers. Called on filesystem/workspace shutdown. */
-	destroyAll(): Promise<void>;
-};

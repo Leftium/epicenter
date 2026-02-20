@@ -34,7 +34,7 @@ describe('defineTable', () => {
 				type({ id: 'string', email: 'string', _v: '1' }),
 			);
 
-			const row = { id: '1', email: 'test@example.com', _v: 1 };
+			const row = { id: '1', email: 'test@example.com', _v: 1 as const };
 			expect(users.migrate(row)).toBe(row);
 		});
 
@@ -260,9 +260,9 @@ describe('defineTable', () => {
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
 
-			expect(files.docs).toEqual({
-				content: { guid: 'id', updatedAt: 'updatedAt' },
-			});
+			expect(files.docs.content.guid).toBe('id');
+			expect(files.docs.content.updatedAt).toBe('updatedAt');
+			expect(files.docs.content.tags).toBeUndefined();
 		});
 
 		test('builder path adds docs to definition', () => {
@@ -281,9 +281,9 @@ describe('defineTable', () => {
 					updatedAt: 'modifiedAt',
 				});
 
-			expect(notes.docs).toEqual({
-				content: { guid: 'docId', updatedAt: 'modifiedAt' },
-			});
+			expect(notes.docs.content.guid).toBe('docId');
+			expect(notes.docs.content.updatedAt).toBe('modifiedAt');
+			expect(notes.docs.content.tags).toBeUndefined();
 		});
 
 		test('multiple withDocument chains accumulate docs', () => {
@@ -306,10 +306,10 @@ describe('defineTable', () => {
 					updatedAt: 'coverUpdatedAt',
 				});
 
-			expect(notes.docs).toEqual({
-				body: { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' },
-				cover: { guid: 'coverDocId', updatedAt: 'coverUpdatedAt' },
-			});
+			expect(notes.docs.body.guid).toBe('bodyDocId');
+			expect(notes.docs.body.updatedAt).toBe('bodyUpdatedAt');
+			expect(notes.docs.cover.guid).toBe('coverDocId');
+			expect(notes.docs.cover.updatedAt).toBe('coverUpdatedAt');
 		});
 
 		test('table without withDocument keeps docs map empty', () => {
@@ -317,7 +317,43 @@ describe('defineTable', () => {
 				type({ id: 'string', label: 'string', _v: '1' }),
 			);
 
-			expect(tags.docs).toEqual({});
+			expect(Object.keys(tags.docs)).toHaveLength(0);
+		});
+
+		test('withDocument accepts a single-element tag array', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', {
+				guid: 'id',
+				updatedAt: 'updatedAt',
+				tags: ['persistent'],
+			});
+
+			expect(files.docs.content.guid).toBe('id');
+			expect(files.docs.content.updatedAt).toBe('updatedAt');
+			expect(files.docs.content.tags).toEqual(['persistent']);
+		});
+
+		test('withDocument accepts an array of tags', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', {
+				guid: 'id',
+				updatedAt: 'updatedAt',
+				tags: ['persistent', 'synced'] as const,
+			});
+
+			expect(files.docs.content.guid).toBe('id');
+			expect(files.docs.content.updatedAt).toBe('updatedAt');
+			expect(files.docs.content.tags).toEqual(['persistent', 'synced']);
+		});
+
+		test('withDocument without tags omits tags from docs', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+
+			expect(files.docs.content.tags).toBeUndefined();
 		});
 
 		test('withDocument preserves schema validation and migrate behavior', () => {
@@ -335,7 +371,7 @@ describe('defineTable', () => {
 			expect(result).not.toHaveProperty('issues');
 
 			// Migrate still works
-			const row = { id: '1', name: 'test.txt', updatedAt: 123, _v: 1 };
+			const row = { id: '1', name: 'test.txt', updatedAt: 123, _v: 1 as const };
 			expect(files.migrate(row)).toBe(row);
 		});
 	});

@@ -1,5 +1,4 @@
-import type { ProviderFactory } from '@epicenter/hq/dynamic';
-import type { TableHelper } from '@epicenter/hq/static';
+import type { DocumentBinding, TableHelper } from '@epicenter/hq/static';
 import type {
 	CpOptions,
 	FileContent,
@@ -8,11 +7,22 @@ import type {
 	MkdirOptions,
 	RmOptions,
 } from 'just-bash';
-import { ContentOps } from './content-ops.js';
+import {
+	type ContentHelpers,
+	createContentHelpers,
+} from './content-helpers.js';
 import { FileTree } from './file-tree.js';
 import { posixResolve } from './path-utils.js';
 import type { FileRow } from './types.js';
 import { disambiguateNames, fsError } from './validation.js';
+
+/**
+ * Table helper with a document binding attached via `.withDocument()`.
+ * This is the shape that `createWorkspace()` produces for tables with document declarations.
+ */
+type FilesTableWithDocs = TableHelper<FileRow> & {
+	docs: { content: DocumentBinding<FileRow> };
+};
 
 /** Directory entry with type information, mirroring `DirentEntry` from `just-bash` (not re-exported from package root). */
 type DirentEntry = {
@@ -26,7 +36,8 @@ type DirentEntry = {
  * POSIX-like virtual filesystem backed by Yjs CRDTs.
  *
  * Thin orchestrator that delegates metadata operations to {@link FileTree}
- * and content I/O to {@link ContentOps}. Every method applies `cwd` via
+ * and content I/O to {@link ContentHelpers} (backed by a
+ * {@link DocumentBinding}). Every method applies `cwd` via
  * {@link posixResolve}, then calls the appropriate sub-service.
  *
  * Implements the `IFileSystem` interface from `just-bash`, which allows this
@@ -40,7 +51,7 @@ export class YjsFileSystem implements IFileSystem {
 	constructor(
 		private tree: FileTree,
 		/** Content I/O operations — exposed for direct content reads/writes by UI layers. */
-		readonly content: ContentOps,
+		readonly content: ContentHelpers,
 		private cwd: string = '/',
 	) {}
 
@@ -49,21 +60,33 @@ export class YjsFileSystem implements IFileSystem {
 		return this.tree.index;
 	}
 
-	/** Convenience factory for backward-compatible construction. */
-	static create(
-		filesTable: TableHelper<FileRow>,
-		cwd?: string,
-		options?: { providers?: ProviderFactory[] },
-	): YjsFileSystem {
+	/**
+	 * Create a `YjsFileSystem` from a files table that has a document binding.
+	 *
+	 * The table must have been defined with `.withDocument('content', ...)` so that
+	 * `filesTable.docs.content` is available. Content doc lifecycle (creation,
+	 * provider wiring, cleanup on row deletion) is handled by the binding automatically.
+	 *
+	 * @example
+	 * ```typescript
+	 * const ws = createWorkspace({ id: 'app', tables: { files: filesTable } });
+	 * const fs = YjsFileSystem.create(ws.tables.files);
+	 * ```
+	 */
+	static create(filesTable: FilesTableWithDocs, cwd?: string): YjsFileSystem {
 		const tree = new FileTree(filesTable);
-		const content = new ContentOps(options?.providers);
+		const content = createContentHelpers(filesTable.docs.content);
 		return new YjsFileSystem(tree, content, cwd);
 	}
 
-	/** Tear down reactive indexes and release all content docs. */
-	async destroy(): Promise<void> {
+	/**
+	 * Tear down reactive indexes.
+	 *
+	 * Content doc cleanup is handled by the workspace's document binding
+	 * destroy cascade — no need to call `destroyAll()` here.
+	 */
+	destroy(): void {
 		this.tree.destroy();
-		await this.content.destroyAll();
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -260,13 +283,13 @@ export class YjsFileSystem implements IFileSystem {
 				throw fsError('ENOTEMPTY', abs);
 		}
 
+		// Soft-delete the row. The document binding's table observer
+		// automatically cleans up the associated content doc.
 		this.tree.softDelete(id);
-		await this.content.destroy(id);
 
 		if (row.type === 'folder' && options?.recursive) {
 			for (const did of this.tree.descendantIds(id)) {
 				this.tree.softDelete(did);
-				await this.content.destroy(did);
 			}
 		}
 	}

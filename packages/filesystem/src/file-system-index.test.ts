@@ -19,7 +19,7 @@ const fid = (s: string) => s as FileId;
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
-	return { files: ws.tables.files };
+	return { files: ws.tables.files, ws };
 }
 
 function makeRow(
@@ -577,13 +577,13 @@ describe('createFileSystemIndex', () => {
 	// ═══════════════════════════════════════════════════════════════════════
 
 	test('batch mutations trigger rebuild', () => {
-		const { files } = setup();
+		const { files, ws } = setup();
 		const index = createFileSystemIndex(files);
 
-		files.batch((tx) => {
-			tx.set(makeRow('d1', 'folder', null, 'folder'));
-			tx.set(makeRow('f1', 'inside.txt', 'd1'));
-			tx.set(makeRow('f2', 'root.txt'));
+		ws.batch(() => {
+			files.set(makeRow('d1', 'folder', null, 'folder'));
+			files.set(makeRow('f1', 'inside.txt', 'd1'));
+			files.set(makeRow('f2', 'root.txt'));
 		});
 
 		expect(index.getIdByPath('/folder')).toBe(fid('d1'));

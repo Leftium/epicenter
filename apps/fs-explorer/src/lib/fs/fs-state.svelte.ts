@@ -7,6 +7,7 @@ import {
 import { createWorkspace } from '@epicenter/hq/static';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
+import { IndexeddbPersistence } from 'y-indexeddb';
 
 /**
  * Reactive filesystem state singleton.
@@ -31,7 +32,32 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'fs-explorer',
 		tables: { files: filesTable },
-	});
+	})
+		.withExtension('persistence', ({ ydoc }) => {
+			const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+			return {
+				exports: { clearData: () => idb.clearData() },
+				lifecycle: {
+					whenReady: idb.whenSynced,
+					destroy: () => idb.destroy(),
+				},
+			};
+		})
+		.withDocumentExtension(
+			'persistence',
+			({ ydoc: contentDoc }) => {
+				const contentIdb = new IndexeddbPersistence(
+					contentDoc.guid,
+					contentDoc,
+				);
+				return {
+					whenReady: contentIdb.whenSynced,
+					destroy: () => contentIdb.destroy(),
+					clearData: () => contentIdb.clearData(),
+				};
+			},
+			{ tags: ['persistent'] },
+		);
 	const fs = YjsFileSystem.create(ws.tables.files);
 
 	// ── Reactive state ────────────────────────────────────────────────
@@ -221,20 +247,30 @@ function createFsState() {
 				}
 			},
 
-			/** Read file content as string. */
+			/**
+			 * Read file content as string via the document binding.
+			 *
+			 * Uses the workspace's document binding directly — the binding
+			 * opens (or reuses) the per-file Y.Doc and reads `getText('content')`.
+			 */
 			async readContent(id: FileId): Promise<string | null> {
 				try {
-					return await fs.content.read(id);
+					return await ws.tables.files.docs.content.read(id);
 				} catch (err) {
 					console.error('Failed to read content:', err);
 					return null;
 				}
 			},
 
-			/** Write file content. Toasts only on error. */
+			/**
+			 * Write file content via the document binding.
+			 *
+			 * The binding automatically bumps `updatedAt` on the file row
+			 * when content changes. Toasts only on error.
+			 */
 			async writeContent(id: FileId, data: string): Promise<void> {
 				try {
-					await fs.content.write(id, data);
+					await ws.tables.files.docs.content.write(id, data);
 				} catch (err) {
 					toast.error(
 						err instanceof Error ? err.message : 'Failed to save file',

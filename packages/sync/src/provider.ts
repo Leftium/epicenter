@@ -1,6 +1,11 @@
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import {
+	Awareness,
+	applyAwarenessUpdate,
+	encodeAwarenessUpdate,
+	removeAwarenessStates,
+} from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import { createSleeper, type Sleeper } from './sleeper';
 import type {
@@ -91,7 +96,7 @@ export function createSyncProvider({
 	getToken,
 	connect: shouldConnect = true,
 	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
-	awareness = new awarenessProtocol.Awareness(doc),
+	awareness = new Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================
 	// Closure State
@@ -346,7 +351,7 @@ export function createSyncProvider({
 		encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
 		encoding.writeVarUint8Array(
 			encoder,
-			awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients),
+			encodeAwarenessUpdate(awareness, changedClients),
 		);
 		send(encoding.toUint8Array(encoder));
 	}
@@ -511,7 +516,7 @@ export function createSyncProvider({
 				encoding.writeVarUint(awarenessEncoder, MESSAGE_AWARENESS);
 				encoding.writeVarUint8Array(
 					awarenessEncoder,
-					awarenessProtocol.encodeAwarenessUpdate(awareness, [doc.clientID]),
+					encodeAwarenessUpdate(awareness, [doc.clientID]),
 				);
 				send(encoding.toUint8Array(awarenessEncoder));
 			}
@@ -525,7 +530,7 @@ export function createSyncProvider({
 			clearConnectionTimeout();
 
 			// Remove remote awareness states (keep our own)
-			awarenessProtocol.removeAwarenessStates(
+			removeAwarenessStates(
 				awareness,
 				Array.from(awareness.getStates().keys()).filter(
 					(client) => client !== doc.clientID,
@@ -574,7 +579,7 @@ export function createSyncProvider({
 				}
 
 				case MESSAGE_AWARENESS: {
-					awarenessProtocol.applyAwarenessUpdate(
+					applyAwarenessUpdate(
 						awareness,
 						decoding.readVarUint8Array(decoder),
 						handleDocUpdate,
@@ -587,7 +592,7 @@ export function createSyncProvider({
 					encoding.writeVarUint(awarenessEncoder, MESSAGE_QUERY_AWARENESS);
 					encoding.writeVarUint8Array(
 						awarenessEncoder,
-						awarenessProtocol.encodeAwarenessUpdate(
+						encodeAwarenessUpdate(
 							awareness,
 							Array.from(awareness.getStates().keys()),
 						),
@@ -747,11 +752,7 @@ export function createSyncProvider({
 			doc.off('update', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 
-			awarenessProtocol.removeAwarenessStates(
-				awareness,
-				[doc.clientID],
-				'window unload',
-			);
+			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
 
 			removeWindowListeners();
 

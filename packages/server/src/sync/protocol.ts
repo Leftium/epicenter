@@ -14,7 +14,7 @@
 
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import { type Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import type * as Y from 'yjs';
 
@@ -279,7 +279,7 @@ export function decodeSyncStatus(data: Uint8Array): Uint8Array {
  * user names, and online status. Unlike document updates, awareness state
  * is not persisted and is cleared when users disconnect.
  *
- * @param options.update - Raw awareness update bytes (from awarenessProtocol.encodeAwarenessUpdate)
+ * @param options.update - Raw awareness update bytes (from encodeAwarenessUpdate)
  * @returns Encoded message ready to send over WebSocket
  */
 export function encodeAwareness({
@@ -307,11 +307,11 @@ export function encodeAwarenessStates({
 	awareness,
 	clients,
 }: {
-	awareness: awarenessProtocol.Awareness;
+	awareness: Awareness;
 	clients: number[];
 }): Uint8Array {
 	return encodeAwareness({
-		update: awarenessProtocol.encodeAwarenessUpdate(awareness, clients),
+		update: encodeAwarenessUpdate(awareness, clients),
 	});
 }
 

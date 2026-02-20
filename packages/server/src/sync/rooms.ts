@@ -1,4 +1,4 @@
-import * as awarenessProtocol from 'y-protocols/awareness';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 /** Time (ms) to wait after the last connection leaves a room before destroying it. */
@@ -6,7 +6,7 @@ const DEFAULT_EVICTION_TIMEOUT_MS = 60_000;
 
 type Room = {
 	doc: Y.Doc;
-	awareness: awarenessProtocol.Awareness;
+	awareness: Awareness;
 	/** Connections keyed by ws.raw (stable identity). */
 	conns: Map<object, { send: (data: Buffer) => void }>;
 	evictionTimer?: ReturnType<typeof setTimeout>;
@@ -70,7 +70,7 @@ export function createRoomManager(config?: RoomManagerConfig) {
 			roomId: string,
 			wsRaw: object,
 			send: (data: Buffer) => void,
-		): { doc: Y.Doc; awareness: awarenessProtocol.Awareness } | undefined {
+		): { doc: Y.Doc; awareness: Awareness } | undefined {
 			// Cancel pending eviction if a connection joins before the timer fires
 			const existing = rooms.get(roomId);
 			if (existing?.evictionTimer) {
@@ -94,7 +94,7 @@ export function createRoomManager(config?: RoomManagerConfig) {
 				config?.onRoomCreated?.(roomId, doc);
 			}
 
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			const room: Room = {
 				doc,
 				awareness,
@@ -149,7 +149,7 @@ export function createRoomManager(config?: RoomManagerConfig) {
 		},
 
 		/** Get the awareness instance for an existing room. */
-		getAwareness(roomId: string): awarenessProtocol.Awareness | undefined {
+		getAwareness(roomId: string): Awareness | undefined {
 			return rooms.get(roomId)?.awareness;
 		},
 

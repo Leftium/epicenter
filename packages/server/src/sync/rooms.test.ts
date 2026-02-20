@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createRoomManager } from './rooms';
 
@@ -45,7 +45,7 @@ describe('join()', () => {
 
 		expect(result).not.toBeNull();
 		expect(result?.doc).toBeInstanceOf(Y.Doc);
-		expect(result?.awareness).toBeInstanceOf(awarenessProtocol.Awareness);
+		expect(result?.awareness).toBeInstanceOf(Awareness);
 	});
 
 	test('returns doc and awareness for new room', () => {

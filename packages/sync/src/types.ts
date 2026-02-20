@@ -1,4 +1,4 @@
-import type * as awarenessProtocol from 'y-protocols/awareness';
+import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 
 /**
@@ -44,7 +44,7 @@ export type SyncProviderConfig = {
 	connect?: boolean;
 
 	/** External awareness instance. Defaults to `new Awareness(doc)`. */
-	awareness?: awarenessProtocol.Awareness;
+	awareness?: Awareness;
 
 	/** WebSocket constructor override for testing or non-browser environments. */
 	WebSocketConstructor?: WebSocketConstructor;
@@ -84,7 +84,7 @@ export type SyncProvider = {
 	readonly hasLocalChanges: boolean;
 
 	/** The awareness instance for user presence. */
-	readonly awareness: awarenessProtocol.Awareness;
+	readonly awareness: Awareness;
 
 	/**
 	 * Start connecting. Idempotent — safe to call multiple times.

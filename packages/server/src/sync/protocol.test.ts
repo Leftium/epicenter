@@ -13,7 +13,11 @@
 import { describe, expect, test } from 'bun:test';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import {
+	Awareness,
+	applyAwarenessUpdate,
+	encodeAwarenessUpdate,
+} from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import {
@@ -269,7 +273,7 @@ describe('MESSAGE_AWARENESS', () => {
 	describe('encodeAwarenessStates', () => {
 		test('encodes single client state', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({ name: 'User 1', cursor: { x: 10, y: 20 } });
 
 			const message = encodeAwarenessStates({
@@ -282,7 +286,7 @@ describe('MESSAGE_AWARENESS', () => {
 
 		test('encodes complex nested state', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({
 				user: { name: 'Test', color: '#ff0000' },
 				cursor: { position: { x: 100, y: 200 }, selection: [0, 10] },
@@ -299,7 +303,7 @@ describe('MESSAGE_AWARENESS', () => {
 
 		test('handles special characters in state', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({
 				name: 'User with "quotes" and \'apostrophes\'',
 				emoji: '🎉🚀',
@@ -316,7 +320,7 @@ describe('MESSAGE_AWARENESS', () => {
 
 		test('handles large awareness state', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({
 				largeArray: Array(1000).fill('item'),
 				largeString: 'x'.repeat(10000),
@@ -335,12 +339,10 @@ describe('MESSAGE_AWARENESS', () => {
 	describe('encodeAwareness', () => {
 		test('wraps raw awareness update', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({ name: 'Test' });
 
-			const update = awarenessProtocol.encodeAwarenessUpdate(awareness, [
-				awareness.clientID,
-			]);
+			const update = encodeAwarenessUpdate(awareness, [awareness.clientID]);
 			const message = encodeAwareness({ update });
 
 			expect(decodeMessageType(message)).toBe(MESSAGE_TYPE.AWARENESS);
@@ -350,19 +352,17 @@ describe('MESSAGE_AWARENESS', () => {
 	describe('awareness protocol compatibility', () => {
 		test('encoded awareness can be applied to another instance', () => {
 			const doc1 = createDoc();
-			const awareness1 = new awarenessProtocol.Awareness(doc1);
+			const awareness1 = new Awareness(doc1);
 			awareness1.setLocalState({ name: 'User 1' });
 
 			const doc2 = createDoc();
-			const awareness2 = new awarenessProtocol.Awareness(doc2);
+			const awareness2 = new Awareness(doc2);
 
 			// Encode from awareness1
-			const update = awarenessProtocol.encodeAwarenessUpdate(awareness1, [
-				awareness1.clientID,
-			]);
+			const update = encodeAwarenessUpdate(awareness1, [awareness1.clientID]);
 
 			// Apply to awareness2
-			awarenessProtocol.applyAwarenessUpdate(awareness2, update, 'remote');
+			applyAwarenessUpdate(awareness2, update, 'remote');
 
 			// awareness2 should have awareness1's state
 			const states = awareness2.getStates();
@@ -372,7 +372,7 @@ describe('MESSAGE_AWARENESS', () => {
 
 		test('null state removes client (disconnect)', () => {
 			const doc = createDoc();
-			const awareness = new awarenessProtocol.Awareness(doc);
+			const awareness = new Awareness(doc);
 			awareness.setLocalState({ name: 'User' });
 
 			expect(awareness.getStates().has(awareness.clientID)).toBe(true);
@@ -503,7 +503,7 @@ describe('decodeSyncMessage', () => {
 
 	test('throws on non-SYNC message type', () => {
 		const doc = createDoc();
-		const awareness = new awarenessProtocol.Awareness(doc);
+		const awareness = new Awareness(doc);
 		awareness.setLocalState({ name: 'Test' });
 		const awarenessMessage = encodeAwarenessStates({
 			awareness,
@@ -542,7 +542,7 @@ describe('decodeMessageType', () => {
 
 	test('decodes AWARENESS message type', () => {
 		const doc = createDoc();
-		const awareness = new awarenessProtocol.Awareness(doc);
+		const awareness = new Awareness(doc);
 		awareness.setLocalState({ name: 'Test' });
 		const message = encodeAwarenessStates({
 			awareness,

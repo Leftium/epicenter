@@ -295,7 +295,7 @@ describe('createWorkspace', () => {
 			expect((client.tables.posts as any).docs).toBeUndefined();
 		});
 
-		test('extension onDocumentOpen is wired into document bindings', async () => {
+		test('withDocumentExtension is wired into document bindings', async () => {
 			let hookCalled = false;
 
 			const filesTable = defineTable(
@@ -310,18 +310,85 @@ describe('createWorkspace', () => {
 			const client = createWorkspace({
 				id: 'doc-ext-test',
 				tables: { files: filesTable },
-			}).withExtension('test', () => ({
-				onDocumentOpen() {
-					hookCalled = true;
-					return { destroy: () => {} };
-				},
-			}));
+			}).withDocumentExtension('test', () => {
+				hookCalled = true;
+				return { destroy: () => {} };
+			});
 
 			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
 			const docs = (client.tables.files as any).docs;
 			await docs.content.open('f1');
 
 			expect(hookCalled).toBe(true);
+		});
+
+		test('withDocumentExtension with tags only fires for matching documents', async () => {
+			const hookCalls: string[] = [];
+
+			const notesTable = defineTable(
+				type({
+					id: 'string',
+					name: 'string',
+					updatedAt: 'number',
+					thumbId: 'string',
+					thumbUpdatedAt: 'number',
+					_v: '1',
+				}),
+			)
+				.withDocument('content', {
+					guid: 'id',
+					updatedAt: 'updatedAt',
+					tags: ['persistent', 'synced'],
+				})
+				.withDocument('thumb', {
+					guid: 'thumbId',
+					updatedAt: 'thumbUpdatedAt',
+					tags: 'ephemeral',
+				});
+
+			const client = createWorkspace({
+				id: 'doc-tag-test',
+				tables: { notes: notesTable },
+			})
+				.withDocumentExtension(
+					'persistent-only',
+					() => {
+						hookCalls.push('persistent-only');
+						return { destroy: () => {} };
+					},
+					{ tags: ['persistent'] },
+				)
+				.withDocumentExtension(
+					'ephemeral-only',
+					() => {
+						hookCalls.push('ephemeral-only');
+						return { destroy: () => {} };
+					},
+					{ tags: ['ephemeral'] },
+				)
+				.withDocumentExtension('universal', () => {
+					hookCalls.push('universal');
+					return { destroy: () => {} };
+				});
+
+			// biome-ignore lint/suspicious/noExplicitAny: testing runtime property
+			const docs = (client.tables.notes as any).docs;
+
+			// Content doc has tags ['persistent', 'synced']
+			await docs.content.open('f1');
+			// 'persistent-only' matches (shares 'persistent')
+			// 'ephemeral-only' does NOT match (no overlap)
+			// 'universal' matches (no tags = fires for all)
+			expect(hookCalls).toEqual(['persistent-only', 'universal']);
+
+			hookCalls.length = 0;
+
+			// Thumb doc has tag ['ephemeral']
+			await docs.thumb.open('t1');
+			// 'persistent-only' does NOT match
+			// 'ephemeral-only' matches (shares 'ephemeral')
+			// 'universal' matches (no tags = fires for all)
+			expect(hookCalls).toEqual(['ephemeral-only', 'universal']);
 		});
 
 		test('workspace destroy cascades to destroyAll on bindings', async () => {

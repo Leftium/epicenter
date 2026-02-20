@@ -65,7 +65,7 @@ type TableDefinitionWithDocBuilder<
 		id: string;
 		_v: number;
 	}>[],
-	TDocs extends Record<string, DocBinding<string, string>>,
+	TDocs extends Record<string, DocBinding<string, string, string>>,
 > = TableDefinition<TVersions, TDocs> & {
 	/**
 	 * Declare a named document binding on this table.
@@ -101,12 +101,17 @@ type TableDefinitionWithDocBuilder<
 		TUpdatedAt extends NumberKeysOf<
 			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
 		>,
+		const TTags extends string = never,
 	>(
 		name: TName,
-		binding: { guid: TGuid; updatedAt: TUpdatedAt },
+		binding: {
+			guid: TGuid;
+			updatedAt: TUpdatedAt;
+			tags?: TTags | readonly TTags[];
+		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
-		TDocs & Record<TName, DocBinding<TGuid, TUpdatedAt>>
+		TDocs & Record<TName, DocBinding<TGuid, TUpdatedAt, TTags>>
 	>;
 };
 
@@ -198,7 +203,10 @@ export function defineTable<
 			schema,
 			migrate: (row: unknown) => row as { id: string; _v: number },
 			docs: {} as Record<string, never>,
-		}) as unknown as TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
+		}) as unknown as TableDefinitionWithDocBuilder<
+			[TSchema],
+			Record<string, never>
+		>;
 	}
 
 	const versions: CombinedStandardSchema[] = [];
@@ -235,29 +243,52 @@ function addWithDocument<
 	T extends {
 		schema: CombinedStandardSchema;
 		migrate: unknown;
-		docs: Record<string, DocBinding<string, string>>;
+		docs: Record<string, DocBinding<string, string, string>>;
 	},
->(def: T): T & {
+>(
+	def: T,
+): T & {
 	withDocument(
 		name: string,
-		binding: DocBinding<string, string>,
+		binding: {
+			guid: string;
+			updatedAt: string;
+			tags?: string | readonly string[];
+		},
 	): T;
 } {
 	return {
 		...def,
 		withDocument(
 			name: string,
-			binding: DocBinding<string, string>,
+			binding: {
+				guid: string;
+				updatedAt: string;
+				tags?: string | readonly string[];
+			},
 		) {
+			// Normalize tags to readonly array for storage
+			const tags = binding.tags
+				? typeof binding.tags === 'string'
+					? [binding.tags]
+					: binding.tags
+				: undefined;
 			return addWithDocument({
 				...def,
-				docs: { ...def.docs, [name]: binding },
+				docs: {
+					...def.docs,
+					[name]: { guid: binding.guid, updatedAt: binding.updatedAt, tags },
+				},
 			});
 		},
 	} as T & {
 		withDocument(
 			name: string,
-			binding: DocBinding<string, string>,
+			binding: {
+				guid: string;
+				updatedAt: string;
+				tags?: string | readonly string[];
+			},
 		): T;
 	};
 }

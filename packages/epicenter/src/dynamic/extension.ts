@@ -13,7 +13,7 @@
  *   like SQLite queries, Markdown sync, revision history. Receive the client-so-far
  *   as context, including previously added extensions.
  *
- * Extension factories return `{ exports?, lifecycle?, onDocumentOpen? }`.
+ * Extension factories return `{ exports?, lifecycle? }`.
  * The framework normalizes defaults internally.
  */
 

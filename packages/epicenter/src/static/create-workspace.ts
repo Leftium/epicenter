@@ -52,6 +52,7 @@ import type {
 	AwarenessDefinitions,
 	DocBinding,
 	DocumentBinding,
+	DocumentExtensionRegistration,
 	ExtensionContext,
 	KvDefinitions,
 	TableDefinitions,
@@ -115,35 +116,49 @@ export function createWorkspace<
 	const extensionCleanups: (() => MaybePromise<void>)[] = [];
 	const whenReadyPromises: Promise<unknown>[] = [];
 
-	// Accumulated onDocumentOpen callbacks from extensions (in chain order).
-	// Mutable array — grows as .withExtension() is called. Document bindings
-	// reference this array, so by the time user code calls .open(), all
-	// extensions' onDocumentOpen hooks are registered.
-	const documentOpenHooks: ((
-		context: DocumentContext,
-	) => DocumentLifecycle | void)[] = [];
+	// Accumulated document extension registrations (in chain order).
+	// Mutable array — grows as .withDocumentExtension() is called. Document
+	// bindings reference this array, so by the time user code calls .open(),
+	// all document extensions are registered.
+	const documentExtensionRegistrations: DocumentExtensionRegistration[] = [];
 
 	// Create document bindings for tables that have .withDocument() declarations.
-	// Bindings are created eagerly but reference documentOpenHooks by closure,
-	// so they pick up hooks from extensions added later.
+	// Bindings are created eagerly but reference documentExtensionRegistrations by closure,
+	// so they pick up extensions added later via .withDocumentExtension().
 	const documentBindingCleanups: (() => Promise<void>)[] = [];
 
 	for (const [tableName, tableDef] of Object.entries(tableDefs)) {
-		const docsDef = (tableDef as { docs?: Record<string, DocBinding<string, string>> }).docs;
+		const docsDef = (
+			tableDef as { docs?: Record<string, DocBinding<string, string, string>> }
+		).docs;
 		if (!docsDef || Object.keys(docsDef).length === 0) continue;
 
-		const tableHelper = (tables as Record<string, TableHelper<{ id: string; _v: number }>>)[tableName];
+		const tableHelper = (
+			tables as Record<string, TableHelper<{ id: string; _v: number }>>
+		)[tableName];
 		if (!tableHelper) continue;
 
-		const docsNamespace: Record<string, DocumentBinding<{ id: string; _v: number }>> = {};
+		const docsNamespace: Record<
+			string,
+			DocumentBinding<{ id: string; _v: number }>
+		> = {};
 
 		for (const [docName, docBinding] of Object.entries(docsDef)) {
+			// Normalize tags from definition — may be string, readonly array, or undefined
+			const docTags: readonly string[] = docBinding.tags
+				? typeof docBinding.tags === 'string'
+					? [docBinding.tags]
+					: docBinding.tags
+				: [];
+
 			const binding = createDocumentBinding({
 				guidKey: docBinding.guid as keyof { id: string; _v: number } & string,
-				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } & string,
+				updatedAtKey: docBinding.updatedAt as keyof { id: string; _v: number } &
+					string,
 				tableHelper,
 				ydoc,
-				onDocumentOpen: documentOpenHooks,
+				documentExtensions: documentExtensionRegistrations,
+				documentTags: docTags,
 				tableName,
 				documentName: docName,
 			});
@@ -221,12 +236,9 @@ export function createWorkspace<
 				const result = factory(client);
 				const destroy = result.lifecycle?.destroy;
 				if (destroy) extensionCleanups.push(destroy);
-				whenReadyPromises.push(result.lifecycle?.whenReady ?? Promise.resolve());
-
-				// Collect onDocumentOpen hooks for document bindings
-				if (result.onDocumentOpen) {
-					documentOpenHooks.push(result.onDocumentOpen);
-				}
+				whenReadyPromises.push(
+					result.lifecycle?.whenReady ?? Promise.resolve(),
+				);
 
 				const newExtensions = {
 					...extensions,
@@ -234,6 +246,19 @@ export function createWorkspace<
 				} as TExtensions & Record<TKey, TExports>;
 
 				return buildClient(newExtensions);
+			},
+
+			withDocumentExtension(
+				key: string,
+				factory: (context: DocumentContext) => DocumentLifecycle | void,
+				options?: { tags?: string[] },
+			) {
+				documentExtensionRegistrations.push({
+					key,
+					factory,
+					tags: options?.tags ?? [],
+				});
+				return buildClient(extensions);
 			},
 
 			withActions<TActions extends Actions>(

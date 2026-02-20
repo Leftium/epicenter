@@ -32,14 +32,20 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'fs-explorer',
 		tables: { files: filesTable },
-	}).withExtension('persistence', ({ ydoc }) => {
-		const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
-		return {
-			exports: { clearData: () => idb.clearData() }, lifecycle: {
-				whenReady: idb.whenSynced,
-				destroy: () => idb.destroy(),
-			},
-			onDocumentOpen({ ydoc: contentDoc }) {
+	})
+		.withExtension('persistence', ({ ydoc }) => {
+			const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+			return {
+				exports: { clearData: () => idb.clearData() },
+				lifecycle: {
+					whenReady: idb.whenSynced,
+					destroy: () => idb.destroy(),
+				},
+			};
+		})
+		.withDocumentExtension(
+			'persistence',
+			({ ydoc: contentDoc }) => {
 				const contentIdb = new IndexeddbPersistence(
 					contentDoc.guid,
 					contentDoc,
@@ -50,8 +56,8 @@ function createFsState() {
 					clearData: () => contentIdb.clearData(),
 				};
 			},
-		};
-	});
+			{ tags: ['persistent'] },
+		);
 	const fs = YjsFileSystem.create(ws.tables.files);
 
 	// ── Reactive state ────────────────────────────────────────────────

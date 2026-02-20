@@ -7,7 +7,11 @@
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type { Extension } from '../shared/lifecycle.js';
+import type {
+	DocumentContext,
+	DocumentLifecycle,
+	Extension,
+} from '../shared/lifecycle.js';
 import type {
 	CombinedStandardSchema,
 	StandardSchemaV1,
@@ -108,7 +112,7 @@ export type TableDefinition<
 		id: string;
 		_v: number;
 	}>[],
-	TDocs extends Record<string, DocBinding<string, string>> = Record<
+	TDocs extends Record<string, DocBinding<string, string, string>> = Record<
 		string,
 		never
 	>,
@@ -124,18 +128,18 @@ export type TableDefinition<
 };
 
 /** Extract the row type from a TableDefinition */
-export type InferTableRow<T> =
-	T extends { migrate: (...args: never[]) => infer TLatest }
-		? TLatest
-		: never;
+export type InferTableRow<T> = T extends {
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest
+	: never;
 
 /** Extract the version union type from a TableDefinition */
-export type InferTableVersionUnion<T> =
-	T extends {
-		schema: CombinedStandardSchema<unknown, infer TOutput>;
-	}
-		? TOutput
-		: never;
+export type InferTableVersionUnion<T> = T extends {
+	schema: CombinedStandardSchema<unknown, infer TOutput>;
+}
+	? TOutput
+	: never;
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT BINDING TYPES
@@ -147,14 +151,61 @@ export type InferTableVersionUnion<T> =
  * Maps a document concept (e.g., 'content') to two columns on the table:
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
  * - `updatedAt`: The column to bump when the doc changes (must be a number column)
+ * - `tags`: Optional tag literals for document extension targeting
  *
  * @typeParam TGuid - Literal string type of the guid column name
  * @typeParam TUpdatedAt - Literal string type of the updatedAt column name
+ * @typeParam TTags - Literal union of tag strings (defaults to `never` = no tags)
  */
-export type DocBinding<TGuid extends string, TUpdatedAt extends string> = {
+export type DocBinding<
+	TGuid extends string,
+	TUpdatedAt extends string,
+	TTags extends string = never,
+> = {
 	guid: TGuid;
 	updatedAt: TUpdatedAt;
+	tags?: [TTags] extends [never] ? undefined : readonly TTags[] | TTags;
 };
+
+/**
+ * Internal registration for a document extension.
+ *
+ * Stored in an array by `withDocumentExtension()`. Each entry contains
+ * the extension key, factory function, and optional tag filter.
+ *
+ * At document open time, the runtime iterates registrations and fires
+ * factories whose tags match (set intersection) or have no tags (universal).
+ */
+export type DocumentExtensionRegistration = {
+	key: string;
+	factory: (context: DocumentContext) => DocumentLifecycle | void;
+	tags: readonly string[];
+};
+
+/** Extract tags from a single DocBinding. */
+export type ExtractDocTags<T> =
+	T extends DocBinding<string, string, infer TTags> ? TTags : never;
+
+/**
+ * Extract all tags across all tables' document bindings.
+ *
+ * Collects all tag literal types from all table definitions into a union
+ * for type-safe autocomplete in `withDocumentExtension({ tags: [...] })`.
+ *
+ * @example
+ * ```typescript
+ * // Given tables with tags ['persistent', 'synced'] and ['ephemeral']:
+ * type Tags = ExtractAllDocTags<typeof tables>;
+ * // => 'persistent' | 'synced' | 'ephemeral'
+ * ```
+ */
+export type ExtractAllDocTags<TTableDefs extends TableDefinitions> = {
+	[K in keyof TTableDefs]: TTableDefs[K] extends { docs: infer TDocs }
+		? TDocs extends Record<string, infer TBinding>
+			? ExtractDocTags<TBinding>
+			: never
+		: never;
+}[keyof TTableDefs];
 
 /**
  * Extract keys of `TRow` whose value type extends `string`.
@@ -269,18 +320,20 @@ export type DocumentBinding<TRow extends { id: string; _v: number }> = {
  * client.tables.tags.docs // Property 'docs' does not exist
  * ```
  */
-export type DocsPropertyOf<T> =
-	T extends { docs: infer TDocs; migrate: (...args: never[]) => infer TLatest }
-		? TLatest extends { id: string; _v: number }
-			? keyof TDocs extends never
-				? {} // no .withDocument() → no .docs property
-				: {
-						docs: {
-							[K in keyof TDocs]: DocumentBinding<TLatest>;
-						};
-					}
-			: {}
-		: {};
+export type DocsPropertyOf<T> = T extends {
+	docs: infer TDocs;
+	migrate: (...args: never[]) => infer TLatest;
+}
+	? TLatest extends { id: string; _v: number }
+		? keyof TDocs extends never
+			? {} // no .withDocument() → no .docs property
+			: {
+					docs: {
+						[K in keyof TDocs]: DocumentBinding<TLatest>;
+					};
+				}
+		: {}
+	: {};
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV DEFINITION TYPES
@@ -738,6 +791,7 @@ export type WorkspaceClientBuilder<
 	TKvDefinitions extends KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, never>,
+	TDocExtKeys extends string = never,
 > = WorkspaceClient<
 	TId,
 	TTableDefinitions,
@@ -753,7 +807,7 @@ export type WorkspaceClientBuilder<
 	 * each factory receives the client-so-far (including all previously added extensions)
 	 * as typed context. This enables extension N+1 to access extension N's exports.
 	 *
-	 * The factory returns `{ exports?, lifecycle?, onDocumentOpen? }`.
+	 * The factory returns `{ exports?, lifecycle? }`.
 	 * The framework normalizes defaults and stores `exports` by reference —
 	 * getters and object identity are preserved.
 	 *
@@ -790,7 +844,48 @@ export type WorkspaceClientBuilder<
 		TTableDefinitions,
 		TKvDefinitions,
 		TAwarenessDefinitions,
-		TExtensions & Record<TKey, TExports>
+		TExtensions & Record<TKey, TExports>,
+		TDocExtKeys
+	>;
+
+	/**
+	 * Register a document extension that fires when content Y.Docs are opened
+	 * via a table's document binding.
+	 *
+	 * Document extensions are separate from workspace extensions — they operate on
+	 * content Y.Docs (not the workspace Y.Doc). Use optional `{ tags }` to target
+	 * specific document types declared via `withDocument(..., { tags })`.
+	 *
+	 * If no `tags` option is provided, the extension is universal (fires for all content docs).
+	 * If `tags` is provided, the extension fires only for documents whose tags share at
+	 * least one value with the extension's tags (set intersection).
+	 *
+	 * @param key - Unique name for this document extension (independent namespace from workspace extensions)
+	 * @param factory - Factory function receiving DocumentContext, returns DocumentLifecycle or void
+	 * @param options - Optional tag filter for targeting specific document types
+	 * @returns A new builder with the document extension key accumulated
+	 *
+	 * @example
+	 * ```typescript
+	 * createWorkspace({ id: 'app', tables: { notes } })
+	 *   .withExtension('persistence', workspacePersistence)
+	 *   .withDocumentExtension('persistence', ({ ydoc }) => {
+	 *     const idb = new IndexeddbPersistence(ydoc.guid, ydoc);
+	 *     return { whenReady: idb.whenSynced, destroy: () => idb.destroy() };
+	 *   }, { tags: ['persistent'] })
+	 * ```
+	 */
+	withDocumentExtension<K extends string>(
+		key: K,
+		factory: (context: DocumentContext) => DocumentLifecycle | void,
+		options?: { tags?: ExtractAllDocTags<TTableDefinitions>[] },
+	): WorkspaceClientBuilder<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions,
+		TDocExtKeys | K
 	>;
 
 	/**

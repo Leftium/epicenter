@@ -201,13 +201,17 @@ describe('createDocumentBinding', () => {
 		test('calls clearData on providers that support it', async () => {
 			let clearDataCalled = false;
 			const { tables, binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						destroy: () => {},
-						clearData: () => {
-							clearDataCalled = true;
-						},
-					}),
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => ({
+							destroy: () => {},
+							clearData: () => {
+								clearDataCalled = true;
+							},
+						}),
+						tags: [],
+					},
 				],
 			});
 
@@ -227,13 +231,17 @@ describe('createDocumentBinding', () => {
 		test('purge gracefully handles providers without clearData', async () => {
 			let destroyCalled = false;
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						destroy: () => {
-							destroyCalled = true;
-						},
-						// no clearData
-					}),
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => ({
+							destroy: () => {
+								destroyCalled = true;
+							},
+							// no clearData
+						}),
+						tags: [],
+					},
 				],
 			});
 
@@ -246,13 +254,17 @@ describe('createDocumentBinding', () => {
 		test('purge opens doc if not already open', async () => {
 			let openedByPurge = false;
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						openedByPurge = true;
-						return {
-							destroy: () => {},
-							clearData: () => {},
-						};
+				documentExtensions: [
+					{
+						key: 'test',
+						factory: () => {
+							openedByPurge = true;
+							return {
+								destroy: () => {},
+								clearData: () => {},
+							};
+						},
+						tags: [],
 					},
 				],
 			});
@@ -350,23 +362,35 @@ describe('createDocumentBinding', () => {
 		});
 	});
 
-	describe('onDocumentOpen hooks', () => {
+	describe('document extension hooks', () => {
 		test('hooks are called in order', async () => {
 			const order: number[] = [];
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						order.push(1);
-						return { destroy: () => {} };
+				documentExtensions: [
+					{
+						key: 'first',
+						factory: () => {
+							order.push(1);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
-					() => {
-						order.push(2);
-						return { destroy: () => {} };
+					{
+						key: 'second',
+						factory: () => {
+							order.push(2);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
-					() => {
-						order.push(3);
-						return { destroy: () => {} };
+					{
+						key: 'third',
+						factory: () => {
+							order.push(3);
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -379,14 +403,22 @@ describe('createDocumentBinding', () => {
 			let secondReceivedWhenReady = false;
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => ({
-						whenReady: Promise.resolve(),
-						destroy: () => {},
-					}),
-					({ whenReady }) => {
-						secondReceivedWhenReady = whenReady instanceof Promise;
-						return { destroy: () => {} };
+				documentExtensions: [
+					{
+						key: 'first',
+						factory: () => ({
+							whenReady: Promise.resolve(),
+							destroy: () => {},
+						}),
+						tags: [],
+					},
+					{
+						key: 'second',
+						factory: ({ whenReady }) => {
+							secondReceivedWhenReady = whenReady instanceof Promise;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -399,14 +431,22 @@ describe('createDocumentBinding', () => {
 			let hooksCalled = 0;
 
 			const { binding } = setupWithBinding({
-				onDocumentOpen: [
-					() => {
-						hooksCalled++;
-						return undefined; // void return
+				documentExtensions: [
+					{
+						key: 'void-hook',
+						factory: () => {
+							hooksCalled++;
+							return undefined; // void return
+						},
+						tags: [],
 					},
-					() => {
-						hooksCalled++;
-						return { destroy: () => {} };
+					{
+						key: 'normal-hook',
+						factory: () => {
+							hooksCalled++;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -416,15 +456,18 @@ describe('createDocumentBinding', () => {
 		});
 
 		test('no hooks → bare Y.Doc, instant resolution', async () => {
-			const { binding } = setupWithBinding({ onDocumentOpen: [] });
+			const { binding } = setupWithBinding({ documentExtensions: [] });
 
 			const doc = await binding.open('f1');
 			expect(doc).toBeInstanceOf(Y.Doc);
 		});
 
-		test('hook receives correct binding metadata', async () => {
-			let capturedBinding: { tableName: string; documentName: string } | null =
-				null;
+		test('hook receives correct binding metadata with tags', async () => {
+			let capturedBinding: {
+				tableName: string;
+				documentName: string;
+				tags: readonly string[];
+			} | null = null;
 
 			const { ydoc, tables } = setup();
 			const binding = createDocumentBinding({
@@ -434,10 +477,15 @@ describe('createDocumentBinding', () => {
 				ydoc,
 				tableName: 'files',
 				documentName: 'content',
-				onDocumentOpen: [
-					(ctx) => {
-						capturedBinding = ctx.binding;
-						return { destroy: () => {} };
+				documentTags: ['persistent', 'synced'],
+				documentExtensions: [
+					{
+						key: 'capture',
+						factory: (ctx) => {
+							capturedBinding = ctx.binding;
+							return { destroy: () => {} };
+						},
+						tags: [],
 					},
 				],
 			});
@@ -446,7 +494,96 @@ describe('createDocumentBinding', () => {
 			expect(capturedBinding).toEqual({
 				tableName: 'files',
 				documentName: 'content',
+				tags: ['persistent', 'synced'],
 			});
+		});
+
+		test('tag matching: extension with no tags fires for all docs', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent'],
+				documentExtensions: [
+					{
+						key: 'universal',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: [], // universal — no tags
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(called).toBe(true);
+		});
+
+		test('tag matching: extension with matching tag fires', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent', 'synced'],
+				documentExtensions: [
+					{
+						key: 'sync-ext',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: ['synced'],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(called).toBe(true);
+		});
+
+		test('tag matching: extension with non-matching tag does NOT fire', async () => {
+			let called = false;
+			const { binding } = setupWithBinding({
+				documentTags: ['persistent'],
+				documentExtensions: [
+					{
+						key: 'ephemeral-ext',
+						factory: () => {
+							called = true;
+							return { destroy: () => {} };
+						},
+						tags: ['ephemeral'],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(called).toBe(false);
+		});
+
+		test('tag matching: doc with no tags only gets universal extensions', async () => {
+			const calls: string[] = [];
+			const { binding } = setupWithBinding({
+				documentTags: [], // no tags on doc
+				documentExtensions: [
+					{
+						key: 'tagged',
+						factory: () => {
+							calls.push('tagged');
+							return { destroy: () => {} };
+						},
+						tags: ['persistent'],
+					},
+					{
+						key: 'universal',
+						factory: () => {
+							calls.push('universal');
+							return { destroy: () => {} };
+						},
+						tags: [],
+					},
+				],
+			});
+
+			await binding.open('f1');
+			expect(calls).toEqual(['universal']);
 		});
 	});
 });

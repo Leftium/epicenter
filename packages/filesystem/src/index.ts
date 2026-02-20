@@ -50,4 +50,4 @@ export {
 } from './validation.js';
 
 // IFileSystem implementation
-export { YjsFileSystem } from './yjs-file-system.js';
+export { createYjsFileSystem, type YjsFileSystem } from './yjs-file-system.js';

@@ -17,5 +17,5 @@ export const filesTable = defineTable(
 ).withDocument('content', {
 	guid: 'id',
 	updatedAt: 'updatedAt',
-	tags: 'persistent',
+	tags: ['persistent'],
 });

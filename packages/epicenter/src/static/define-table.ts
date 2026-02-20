@@ -240,25 +240,11 @@ function addWithDocument<
 >(
 	def: T,
 ): T & {
-	withDocument(
-		name: string,
-		binding: {
-			guid: string;
-			updatedAt: string;
-			tags?: string | readonly string[];
-		},
-	): T;
+	withDocument(name: string, binding: DocBinding<string, string, string>): T;
 } {
 	return {
 		...def,
-		withDocument(
-			name: string,
-			binding: {
-				guid: string;
-				updatedAt: string;
-				tags?: string | readonly string[];
-			},
-		) {
+		withDocument(name: string, binding: DocBinding<string, string, string>) {
 			// Normalize tags to readonly array for storage
 			const tags = binding.tags
 				? typeof binding.tags === 'string'
@@ -274,13 +260,6 @@ function addWithDocument<
 			});
 		},
 	} as T & {
-		withDocument(
-			name: string,
-			binding: {
-				guid: string;
-				updatedAt: string;
-				tags?: string | readonly string[];
-			},
-		): T;
+		withDocument(name: string, binding: DocBinding<string, string, string>): T;
 	};
 }

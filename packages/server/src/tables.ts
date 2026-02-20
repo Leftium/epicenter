@@ -14,7 +14,7 @@ export function createTablesPlugin(
 		for (const [tableName, value] of Object.entries(workspace.tables)) {
 			const tableHelper = value as TableHelper<BaseRow>;
 
-			const basePath = `/workspaces/${workspaceId}/tables/${tableName}`;
+			const basePath = `/${workspaceId}/tables/${tableName}`;
 			const tags = [workspaceId, 'tables'];
 
 			app.get(basePath, () => tableHelper.getAllValid(), {

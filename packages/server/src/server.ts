@@ -67,14 +67,15 @@ export function createServer(
 			}),
 		)
 		.use(
-			new Elysia({ prefix: '/workspaces' }).use(
-				createSyncPlugin({
-					getDoc: (room) => workspaces[room]?.ydoc,
-					auth: options?.auth,
-				}),
-			),
+			new Elysia({ prefix: '/workspaces' })
+				.use(
+					createSyncPlugin({
+						getDoc: (room) => workspaces[room]?.ydoc,
+						auth: options?.auth,
+					}),
+				)
+				.use(createWorkspacePlugin(clients)),
 		)
-		.use(createWorkspacePlugin(clients))
 		.get('/', () => ({
 			name: 'Epicenter API',
 			version: '1.0.0',

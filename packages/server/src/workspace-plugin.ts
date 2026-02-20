@@ -41,7 +41,7 @@ export function createWorkspacePlugin(
 		app.use(
 			createActionsRouter({
 				actions: client.actions,
-				basePath: `/workspaces/${client.id}/actions`,
+				basePath: `/${client.id}/actions`,
 			}),
 		);
 	}

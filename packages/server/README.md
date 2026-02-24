@@ -243,14 +243,14 @@ Each workspace ID or room name maps to a room. When the last client disconnects,
 
 ## CLI Usage
 
-The server can be started via the CLI using `start.ts`:
+Each server mode has its own entry point:
 
 ```bash
-# Start hub server (default)
-bun run src/start.ts --mode hub
+# Start hub server (sync relay + AI + auth)
+bun run src/start-hub.ts
 
-# Start local server
-bun run src/start.ts --mode local
+# Start local server (sync relay + workspace CRUD, no AI)
+bun run src/start-local.ts
 ```
 
 The `serve` command in the Epicenter CLI uses `createLocalServer` to expose your local workspaces.

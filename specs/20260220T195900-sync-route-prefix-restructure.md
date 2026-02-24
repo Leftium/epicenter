@@ -254,7 +254,8 @@ Split the single `/workspaces` Elysia instance in `server.ts` into two separate 
 
 - `packages/server/src/server.ts` — Split mount prefix, two separate `.use()` calls
 - `packages/server/src/sync/server.ts` — Changed prefix from `/workspaces` to `/rooms`
-- `packages/server/src/start.ts` — Updated JSDoc and console.log URL
+- `packages/server/src/start-hub.ts` -- Hub server CLI entry point, updated JSDoc and console.log URL
+- `packages/server/src/start-local.ts` -- Local server CLI entry point, updated JSDoc and console.log URL
 
 **Client-side (functional):**
 

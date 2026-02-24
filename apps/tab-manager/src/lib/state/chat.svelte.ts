@@ -37,8 +37,11 @@ import { ANTHROPIC_MODELS } from '@tanstack/ai-anthropic';
 import { GeminiTextModels } from '@tanstack/ai-gemini';
 import { GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
-import type { UIMessage } from '@tanstack/ai-svelte';
+import type { CreateChatReturn, UIMessage } from '@tanstack/ai-svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { tabManagerClientTools } from '$lib/ai/tools/client';
+import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
 	ChatMessage,
@@ -48,9 +51,6 @@ import type {
 } from '$lib/workspace';
 import { popupWorkspace } from '$lib/workspace-popup';
 
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider / Model Configuration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,8 +96,8 @@ void getHubServerUrl().then((url) => {
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-	/** Generate a new branded ConversationId from a random ID. */
-	const generateConversationId = () => generateId() as string as ConversationId;
+/** Generate a new branded ConversationId from a random ID. */
+const generateConversationId = () => generateId() as string as ConversationId;
 
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
@@ -230,9 +230,7 @@ function createAiChatState() {
 	 * chat.sendMessage({ content: 'Hello' });
 	 * ```
 	 */
-	function ensureChat(
-		conversationId: ConversationId,
-	): ReturnType<typeof createChat> {
+	function ensureChat(conversationId: ConversationId): CreateChatReturn {
 		const existing = chatInstances.get(conversationId);
 		if (existing) return existing;
 
@@ -536,7 +534,8 @@ function createAiChatState() {
 			// and rename from default title on first message.
 			const conv = getActiveConversation();
 			updateConversation(convId, {
-				title: conv.title === 'New Chat' ? content.trim().slice(0, 50) : conv.title,
+				title:
+					conv.title === 'New Chat' ? content.trim().slice(0, 50) : conv.title,
 			});
 			// Send via this conversation's ChatClient (triggers SSE streaming)
 			void ensureChat(convId).sendMessage({ content, id: userMessageId });
@@ -553,7 +552,9 @@ function createAiChatState() {
 			const chat = ensureChat(activeConversationId);
 			const lastMessage = chat.messages.at(-1);
 			if (lastMessage?.role === 'assistant') {
-				popupWorkspace.tables.chatMessages.delete(lastMessage.id as string as ChatMessageId);
+				popupWorkspace.tables.chatMessages.delete(
+					lastMessage.id as string as ChatMessageId,
+				);
 			}
 			void chat.reload();
 		},

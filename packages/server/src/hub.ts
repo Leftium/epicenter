@@ -103,13 +103,7 @@ export function createHubServer(config: HubServerConfig) {
 				}),
 			),
 		)
-		.use(
-			new Elysia({ prefix: '/ai' }).use(
-				createAIPlugin({
-					getDoc: (room) => dynamicDocs.get(room),
-				}),
-			),
-		)
+		.use(new Elysia({ prefix: '/ai' }).use(createAIPlugin()))
 		.get('/', () => ({
 			name: 'Epicenter Hub',
 			version: '1.0.0',

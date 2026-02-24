@@ -29,6 +29,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
 import { startCommandConsumer } from '$lib/commands/consumer';
+
 import {
 	generateDefaultDeviceName,
 	getBrowserName,

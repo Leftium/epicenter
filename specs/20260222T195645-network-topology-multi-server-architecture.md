@@ -1,32 +1,9 @@
 # Network Topology: Multi-Server Architecture
 
 **Date**: 2026-02-22
-**Status**: Implemented (Steps 1-9 on `feat/network-topology-multi-server`)
+**Status**: Draft (design discussion — not yet implementation-ready)
 **Author**: Braden + AI-assisted
 **Related**: `20260219T195800-server-architecture-rethink.md`, `20260220T080000-plugin-first-server-architecture.md`, `20260220T133004-unified-local-server-architecture.md`, `20260222T073156-unified-cli-server-sidecar.md`, `20260219T200000-deployment-targets-research.md`, `20260222T195800-server-side-api-key-management.md`, `20260121T170000-sync-architecture.md`, `20260109T140700-opencode-integration-architecture.md`
-
-> **Implementation Note — Ollama Removed (2026-02-23)**
->
-> During implementation, Ollama support was removed entirely. Rationale:
->
-> - Ollama was the only provider that didn't require an API key, creating special-case branches in every layer (resolveApiKey, adapters, client UI, tests).
-> - Epicenter Cloud will never run Ollama (no local GPU on CF Workers).
-> - Removing it simplified the architecture: every provider now follows the same key-required path.
-> - Ollama can be re-added in a future self-hosted-only iteration if there's demand.
-
-> **Implementation Note — Encrypted Key Store Removed (2026-02-23)**
->
-> The encrypted key store (`keys/store.ts`, `keys/plugin.ts`, `/api/provider-keys` REST API) has been removed. See `20260223T102844-remove-key-store-simplify-api-key-resolution.md` for the full rationale. Summary:
->
-> - The encryption was security theater (`master.key` in the same directory as `keys.json`).
-> - `process.env` lookups are nanoseconds vs. async disk decryption in the hot path.
-> - Env vars are the standard mechanism for both cloud and self-hosted deployments.
-> - User BYOK keys belong on the client side (encrypted Yjs workspaces, sent per-request via `x-provider-api-key` header).
-> - API key resolution is now synchronous: header → env var → 401. The proxy plugin reads `process.env[PROVIDER_ENV_VARS[provider]]` directly.
->
-> References to the key store, `keys.json`, `master.key`, and `/api/provider-keys` endpoints in this spec are historical context only.
->
-> References to Ollama below are **historical** — they document the original design reasoning but no longer reflect the implementation.
 
 ## Overview
 
@@ -75,28 +52,28 @@ A topology where:
 
 Several existing specs address pieces of this topology:
 
-| Spec                                | What It Covers                                  | Relationship to This Spec                                 |
-| ----------------------------------- | ----------------------------------------------- | --------------------------------------------------------- |
-| `plugin-first-server-architecture`  | Composable Elysia plugins (sync, workspace, AI) | The building blocks for hub server composition            |
-| `unified-local-server-architecture` | Bun HTTP server as Tauri sidecar                | How local desktop servers work today (to be slimmed down) |
-| `unified-cli-server-sidecar`        | Single compiled binary running the server       | The self-hosted hub server binary                         |
-| `deployment-targets-research`       | Self-hosted Bun vs CF Workers + DOs             | Cloud target for the hub server                           |
-| `server-side-api-key-management`    | Encrypted key store on server                   | Key storage on the hub server                             |
-| `sync-architecture`                 | Three sync modes: local, self-hosted, cloud     | How sync works across the topology                        |
-| `server-endpoint-security`          | CORS allowlist + bearer token for localhost     | Auth boundary on sidecars                                 |
+| Spec | What It Covers | Relationship to This Spec |
+| --- | --- | --- |
+| `plugin-first-server-architecture` | Composable Elysia plugins (sync, workspace, AI) | The building blocks for hub server composition |
+| `unified-local-server-architecture` | Bun HTTP server as Tauri sidecar | How local desktop servers work today (to be slimmed down) |
+| `unified-cli-server-sidecar` | Single compiled binary running the server | The self-hosted hub server binary |
+| `deployment-targets-research` | Self-hosted Bun vs CF Workers + DOs | Cloud target for the hub server |
+| `server-side-api-key-management` | Encrypted key store on server | Key storage on the hub server |
+| `sync-architecture` | Three sync modes: local, self-hosted, cloud | How sync works across the topology |
+| `server-endpoint-security` | CORS allowlist + bearer token for localhost | Auth boundary on sidecars |
 
 The architecture is already designed in layers. The plugin-first approach means `createServer()` can be composed differently for the hub (full: sync + AI + auth + coordination) versus local sidecars (minimal: sync + workspace only). No fundamental redesign is needed; the topology is an orchestration layer on top of existing components.
 
 ### How Other Local-First Tools Handle Multi-Device
 
-| Tool          | Topology                    | Coordination                        | AI Location           |
-| ------------- | --------------------------- | ----------------------------------- | --------------------- |
-| Obsidian Sync | Client → Central server     | Obsidian's cloud relay              | N/A (no AI)           |
-| Linear        | Client → Central server     | Linear's cloud                      | Server-side           |
-| Figma         | Client → Central server     | Figma's cloud                       | Server-side           |
-| Jan.ai        | Single device only          | N/A                                 | Local only            |
-| Open WebUI    | Client → Self-hosted server | Single server                       | Server-side (proxied) |
-| Tailscale     | Mesh network (peer-to-peer) | Coordination server (control plane) | N/A                   |
+| Tool | Topology | Coordination | AI Location |
+| --- | --- | --- | --- |
+| Obsidian Sync | Client → Central server | Obsidian's cloud relay | N/A (no AI) |
+| Linear | Client → Central server | Linear's cloud | Server-side |
+| Figma | Client → Central server | Figma's cloud | Server-side |
+| Jan.ai | Single device only | N/A | Local only |
+| Open WebUI | Client → Self-hosted server | Single server | Server-side (proxied) |
+| Tailscale | Mesh network (peer-to-peer) | Coordination server (control plane) | N/A |
 
 Every multi-device collaboration tool uses a central coordination server. The variation is whether it's cloud-only (Linear, Figma), self-hosted (Open WebUI), or hybrid (Obsidian). Nobody does fully decentralized coordination for CRDT sync — there's always at least one "known" endpoint. Tailscale's model (lightweight control plane + direct peer connections) is the closest analog to what we're building.
 
@@ -118,34 +95,34 @@ The simplest design is: **all AI on hub, no exceptions.** Here's why:
 
 5. **The extra network hop is irrelevant.** An LLM API call takes 500ms–30s. A local-to-hub hop adds 5ms. Token arrival speed is identical because responses stream via SSE.
 
-| Dimension             | All AI on Hub                                   |
-| --------------------- | ----------------------------------------------- |
-| Client routing        | `hubUrl + "/ai/chat"` — one endpoint, always    |
-| Key management        | Keys on hub only. Zero distribution.            |
-| Ollama handling       | Hub config: `OLLAMA_HOST`. Same AI plugin code. |
-| Mobile support        | Same endpoint as desktop. Nothing special.      |
-| TanStack AI fit       | Used exactly as designed — serverful.           |
-| Local sidecar AI code | None. Deleted.                                  |
-| Fault tolerance       | Hub down = no AI. Same as sync/auth being down. |
+| Dimension | All AI on Hub |
+| --- | --- |
+| Client routing | `hubUrl + "/ai/chat"` — one endpoint, always |
+| Key management | Keys on hub only. Zero distribution. |
+| Ollama handling | Hub config: `OLLAMA_HOST`. Same AI plugin code. |
+| Mobile support | Same endpoint as desktop. Nothing special. |
+| TanStack AI fit | Used exactly as designed — serverful. |
+| Local sidecar AI code | None. Deleted. |
+| Fault tolerance | Hub down = no AI. Same as sync/auth being down. |
 
 ## Design Decisions
 
-| Decision                  | Choice                                                     | Rationale                                                                                                                                     |
-| ------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Topology model            | Three-tier (hub + local sidecars + clients)                | Standard pattern. Hub provides coordination + AI, sidecars provide low-latency local sync.                                                    |
-| Hub interchangeability    | Self-hosted binary OR Epicenter cloud                      | Users aren't locked in. Same Better Auth, same API surface. Only the URL changes.                                                             |
-| Auth system               | Better Auth on hub (both modes)                            | One auth system everywhere. Session tokens work the same whether hub is localhost or cloud.                                                   |
-| AI location               | ALL on hub (cloud providers AND Ollama)                    | One endpoint. No client routing logic. Keys centralized. TanStack AI is serverful.                                                            |
-| Ollama configuration      | `OLLAMA_HOST` env var on hub                               | Hub calls Ollama at the configured host. Default `localhost:11434` for self-hosted.                                                           |
-| Local sidecar role        | Sync relay + workspace API only                            | Sidecars stripped of AI responsibility. Simpler, focused.                                                                                     |
-| Mobile entry point        | Hub server URL (configured once)                           | Mobile has no sidecar. Hub is the only stable endpoint.                                                                                       |
-| Sidecar auth              | Session token validated against hub                        | Prevents random websites from hitting localhost. Tauri webview gets whitelisted origin + valid session.                                       |
-| Server discovery          | Yjs Awareness on a shared discovery room                   | Devices set presence via Awareness protocol on a shared coordination doc. Auto-cleanup on disconnect. No heartbeat/register endpoints needed. |
-| Key storage               | Hub server only (encrypted JSON or Postgres)               | Single source of truth. No key distribution problem. Same `server-side-api-key-management` spec.                                              |
-| Hub URL configuration     | Mode-based: built-in for cloud, manual for self-hosted     | Cloud users get a hardcoded URL. Self-hosted users enter their URL once during onboarding.                                                    |
-| OpenCode AI agent         | Local process per desktop, providers proxied through hub   | OpenCode needs local file access and local plugin execution. Provider API keys stay on hub via reverse proxy.                                 |
-| OpenCode key access       | Hub as provider-compatible reverse proxy (baseURL rewrite) | Keys never leave hub. Session token is the only credential on each device. Proxy is a passthrough -- no request parsing needed.               |
-| OpenCode plugin execution | Always local, never on cloud hub                           | Desktop plugins need arbitrary code execution. Cloud hub (CF Workers) cannot run arbitrary code. Plugin lists sync via Yjs.                   |
+| Decision | Choice | Rationale |
+| --- | --- | --- |
+| Topology model | Three-tier (hub + local sidecars + clients) | Standard pattern. Hub provides coordination + AI, sidecars provide low-latency local sync. |
+| Hub interchangeability | Self-hosted binary OR Epicenter cloud | Users aren't locked in. Same Better Auth, same API surface. Only the URL changes. |
+| Auth system | Better Auth on hub (both modes) | One auth system everywhere. Session tokens work the same whether hub is localhost or cloud. |
+| AI location | ALL on hub (cloud providers AND Ollama) | One endpoint. No client routing logic. Keys centralized. TanStack AI is serverful. |
+| Ollama configuration | `OLLAMA_HOST` env var on hub | Hub calls Ollama at the configured host. Default `localhost:11434` for self-hosted. |
+| Local sidecar role | Sync relay + workspace API only | Sidecars stripped of AI responsibility. Simpler, focused. |
+| Mobile entry point | Hub server URL (configured once) | Mobile has no sidecar. Hub is the only stable endpoint. |
+| Sidecar auth | Session token validated against hub | Prevents random websites from hitting localhost. Tauri webview gets whitelisted origin + valid session. |
+| Server discovery | Yjs Awareness on a shared discovery room | Devices set presence via Awareness protocol on a shared coordination doc. Auto-cleanup on disconnect. No heartbeat/register endpoints needed. |
+| Key storage | Hub server only (encrypted JSON or Postgres) | Single source of truth. No key distribution problem. Same `server-side-api-key-management` spec. |
+| Hub URL configuration | Mode-based: built-in for cloud, manual for self-hosted | Cloud users get a hardcoded URL. Self-hosted users enter their URL once during onboarding. |
+| OpenCode AI agent | Local process per desktop, providers proxied through hub | OpenCode needs local file access and local plugin execution. Provider API keys stay on hub via reverse proxy. |
+| OpenCode key access | Hub as provider-compatible reverse proxy (baseURL rewrite) | Keys never leave hub. Session token is the only credential on each device. Proxy is a passthrough -- no request parsing needed. |
+| OpenCode plugin execution | Always local, never on cloud hub | Desktop plugins need arbitrary code execution. Cloud hub (CF Workers) cannot run arbitrary code. Plugin lists sync via Yjs. |
 
 ## Architecture
 
@@ -224,7 +201,7 @@ The AI plugin on hub handles every provider identically. For cloud providers it 
 The sidecar is a minimal composition focused on sync and workspace:
 
 ```
-Local Server (createLocalServer)
+Sidecar (createSidecarServer)
 ├── GET  /                                     ← Discovery / health check
 ├── WS   /rooms/{id}/sync                      ← Yjs WebSocket sync (local relay)
 ├── /workspaces/...                             ← Workspace CRUD (local)
@@ -396,21 +373,21 @@ This is ~30 lines of proxy code per provider. No request parsing needed.
 ```typescript
 // Epicenter generates this on startup and injects via env var
 const config = {
-	provider: {
-		anthropic: {
-			options: {
-				apiKey: sessionToken, // Session token used as auth credential
-				baseURL: `${hubUrl}/proxy/anthropic`,
-			},
-		},
-		openai: {
-			options: {
-				apiKey: sessionToken,
-				baseURL: `${hubUrl}/proxy/openai`,
-			},
-		},
-		// ... same pattern for all providers
-	},
+  provider: {
+    anthropic: {
+      options: {
+        apiKey: sessionToken,  // Session token used as auth credential
+        baseURL: `${hubUrl}/proxy/anthropic`,
+      },
+    },
+    openai: {
+      options: {
+        apiKey: sessionToken,
+        baseURL: `${hubUrl}/proxy/openai`,
+      },
+    },
+    // ... same pattern for all providers
+  },
 };
 
 process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
@@ -420,7 +397,6 @@ process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
 OpenCode natively supports custom `baseURL` per provider in its config. The `apiKey` field carries the session token, which the hub validates and swaps for the real key. Keys never leave the hub.
 
 **Why proxy over key distribution:** Distributing keys to each device (via `auth.json` injection) would be simpler but violates the "keys never leave hub" principle. The proxy approach means:
-
 - Key revocation is instant (hub stops proxying, no stale keys on devices)
 - No key rotation sync across devices
 - Session token is the only credential on each device
@@ -534,11 +510,11 @@ Onboarding flow (cloud):
 
 The user enters their hub server URL once per device. The URL is persisted in platform-specific storage:
 
-| Platform          | Storage Mechanism                                          | Configuration UX            |
-| ----------------- | ---------------------------------------------------------- | --------------------------- |
-| Desktop (Tauri)   | Tauri app settings (persisted file)                        | Settings UI text field      |
-| Mobile            | App secure storage                                         | Settings UI or QR code scan |
-| Browser Extension | `chrome.storage.local` (already exists as `serverUrlItem`) | Settings UI text field      |
+| Platform | Storage Mechanism | Configuration UX |
+| --- | --- | --- |
+| Desktop (Tauri) | Tauri app settings (persisted file) | Settings UI text field |
+| Mobile | App secure storage | Settings UI or QR code scan |
+| Browser Extension | `chrome.storage.local` (already exists as `serverUrlItem`) | Settings UI text field |
 
 ```
 Onboarding flow (self-hosted):
@@ -552,7 +528,6 @@ Onboarding flow (self-hosted):
 **This is a one-time-per-device setup.** Once the hub URL is persisted, the device remembers it across app restarts, updates, and network changes. The user configures each device once and never thinks about it again — similar to how you sign into iCloud once per device.
 
 **QR code flow (recommended for mobile):**
-
 1. Hub server's admin UI (`hubUrl/admin`) displays a QR code containing the server URL and a one-time setup token
 2. User opens Epicenter on mobile → "Scan Setup Code"
 3. App reads the URL and token, validates against the hub, and persists the connection
@@ -657,7 +632,7 @@ Define the hub server as a distinct composition of existing plugins, plus Better
 
 Strip the local sidecar to sync + workspace only.
 
-- [ ] **2.1** Create `createLocalServer()` composition: sync plugin + workspace plugin (NO AI plugin, NO key management)
+- [ ] **2.1** Create `createSidecarServer()` composition: sync plugin + workspace plugin (NO AI plugin, NO key management)
 - [ ] **2.2** Implement session token validation on the local sidecar — validates against hub's `/auth/session` endpoint with response caching
 - [ ] **2.3** Configure CORS allowlist on sidecar startup (Tauri webview origin + hub origin)
 - [ ] **2.4** Wire the auth boundary into the Tauri sidecar startup flow
@@ -704,7 +679,6 @@ Wire up OpenCode as a local AI coding agent on each desktop, with provider reque
 The hub is a single point of failure for cross-device features. This is an inherent property of a coordination server -- every multi-device tool (Linear, Figma, Obsidian Sync) has the same SPOF. The local-first architecture softens the blow significantly:
 
 **Desktop (graceful degradation):**
-
 1. Local editing continues uninterrupted -- the sidecar handles all local Y.Doc sync independently of the hub
 2. Multiple Y.Doc contexts (workspaces, documents, chat) continue syncing through the local sidecar
 3. Edits persist to IndexedDB through the sidecar's sync layer -- nothing is lost
@@ -714,13 +688,11 @@ The hub is a single point of failure for cross-device features. This is an inher
 7. When hub returns, sidecar reconnects and CRDTs merge all accumulated changes automatically -- no user intervention
 
 **Mobile (hard failure):**
-
 1. Mobile loses all functionality -- sync, AI, and auth are all hub-dependent
 2. Mobile has no sidecar or offline persistence layer
 3. This is acceptable: mobile is a secondary access point, not a primary workspace
 
 **Recovery:**
-
 1. All devices reconnect automatically when hub comes back
 2. CRDT merge is deterministic -- no conflicts, no data loss, regardless of how long the hub was down
 3. The longer the outage, the larger the merge, but Yjs handles this efficiently
@@ -840,7 +812,7 @@ The hub is a single point of failure for cross-device features. This is an inher
 
 ## References
 
-- `packages/server/src/local.ts` — Local server composition (`createLocalServer()`)
+- `packages/server/src/server.ts` — Current `createServer()` composition
 - `packages/server/src/ai/plugin.ts` — AI chat plugin with `resolveApiKey()`
 - `packages/server/src/ai/adapters.ts` — Provider adapters, Ollama exemption, `PROVIDER_ENV_VARS`
 - `packages/server/src/sync/plugin.ts` — Sync plugin (WebSocket rooms)

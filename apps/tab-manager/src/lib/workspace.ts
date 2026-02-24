@@ -451,58 +451,60 @@ export const definition = defineWorkspace({
 		 * worker observes, executes the Chrome API action, and writes the result.
 		 * `result?` presence = status: no result = pending, has result = done.
 		 *
-		 * Uses `type.or()` + `.merge()` for a flat list of 8 action variants.
+		 * Uses `commandBase.merge(type.or(...))` for a flat list of 8 action variants.
 		 *
 		 * @see specs/20260223T200500-ai-tools-command-queue.md
 		 */
 		commands: defineTable(
-			type.or(
-				commandBase.merge({
-					action: "'closeTabs'",
-					tabIds: 'string[]',
-					'result?': type({ closedCount: 'number' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'openTab'",
-					url: 'string',
-					'windowId?': 'string',
-					'result?': type({ tabId: 'string' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'activateTab'",
-					tabId: 'string',
-					'result?': type({ activated: 'boolean' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'saveTabs'",
-					tabIds: 'string[]',
-					close: 'boolean',
-					'result?': type({ savedCount: 'number' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'groupTabs'",
-					tabIds: 'string[]',
-					'title?': 'string',
-					'color?': tabGroupColor,
-					'result?': type({ groupId: 'string' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'pinTabs'",
-					tabIds: 'string[]',
-					pinned: 'boolean',
-					'result?': type({ pinnedCount: 'number' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'muteTabs'",
-					tabIds: 'string[]',
-					muted: 'boolean',
-					'result?': type({ mutedCount: 'number' }).or('undefined'),
-				}),
-				commandBase.merge({
-					action: "'reloadTabs'",
-					tabIds: 'string[]',
-					'result?': type({ reloadedCount: 'number' }).or('undefined'),
-				}),
+			commandBase.merge(
+				type.or(
+					{
+						action: "'closeTabs'",
+						tabIds: 'string[]',
+						'result?': type({ closedCount: 'number' }).or('undefined'),
+					},
+					{
+						action: "'openTab'",
+						url: 'string',
+						'windowId?': 'string',
+						'result?': type({ tabId: 'string' }).or('undefined'),
+					},
+					{
+						action: "'activateTab'",
+						tabId: 'string',
+						'result?': type({ activated: 'boolean' }).or('undefined'),
+					},
+					{
+						action: "'saveTabs'",
+						tabIds: 'string[]',
+						close: 'boolean',
+						'result?': type({ savedCount: 'number' }).or('undefined'),
+					},
+					{
+						action: "'groupTabs'",
+						tabIds: 'string[]',
+						'title?': 'string',
+						'color?': tabGroupColor,
+						'result?': type({ groupId: 'string' }).or('undefined'),
+					},
+					{
+						action: "'pinTabs'",
+						tabIds: 'string[]',
+						pinned: 'boolean',
+						'result?': type({ pinnedCount: 'number' }).or('undefined'),
+					},
+					{
+						action: "'muteTabs'",
+						tabIds: 'string[]',
+						muted: 'boolean',
+						'result?': type({ mutedCount: 'number' }).or('undefined'),
+					},
+					{
+						action: "'reloadTabs'",
+						tabIds: 'string[]',
+						'result?': type({ reloadedCount: 'number' }).or('undefined'),
+					},
+				),
 			),
 		),
 	},

@@ -13,11 +13,9 @@ Patterns for composing discriminated unions with arktype's `.merge()` and `.or()
 - Composing a base type with per-variant fields
 - Working with `defineTable()` schemas that use union types
 
-## `type.or()` + `.merge()` Pattern (Recommended for 5+ variants)
+## `base.merge(type.or(...))` Pattern (Recommended)
 
-Use when you have shared base fields, per-variant payloads discriminated on a literal key, and **5 or more variants**. The static `type.or()` form avoids deeply nested `.or()` chaining and reads as a flat list.
-
-**Important**: `.merge()` only accepts object types, not unions. You cannot do `commandBase.merge(variantA.or(variantB))` — you must merge each variant individually, then combine via `type.or()`.
+Use when you have shared base fields and per-variant payloads discriminated on a literal key. `.merge()` distributes over unions — it merges the base into each branch of the union automatically.
 
 ```typescript
 import { type } from 'arktype';
@@ -29,42 +27,48 @@ const commandBase = type({
 	_v: '1',
 });
 
-const Command = type.or(
-	commandBase.merge({
-		action: "'closeTabs'",
-		tabIds: 'string[]',
-		'result?': type({ closedCount: 'number' }).or('undefined'),
-	}),
-	commandBase.merge({
-		action: "'openTab'",
-		url: 'string',
-		'result?': type({ tabId: 'string' }).or('undefined'),
-	}),
-	commandBase.merge({
-		action: "'activateTab'",
-		tabId: 'string',
-		'result?': type({ activated: 'boolean' }).or('undefined'),
-	}),
+const Command = commandBase.merge(
+	type.or(
+		{
+			action: "'closeTabs'",
+			tabIds: 'string[]',
+			'result?': type({ closedCount: 'number' }).or('undefined'),
+		},
+		{
+			action: "'openTab'",
+			url: 'string',
+			'windowId?': 'string',
+			'result?': type({ tabId: 'string' }).or('undefined'),
+		},
+		{
+			action: "'activateTab'",
+			tabId: 'string',
+			'result?': type({ activated: 'boolean' }).or('undefined'),
+		},
+	),
 );
 ```
 
 ### How it works
 
-1. `commandBase.merge({...})` creates a new object type with all base fields plus the variant-specific fields. Conflicting keys are overwritten by the merge argument.
-2. `type.or(...)` creates the union from all branches at once. Arktype auto-detects the `action` key as a discriminant because each branch has a distinct literal value.
-3. `switch (cmd.action)` in TypeScript narrows the full union — payload fields and result types are type-safe per branch.
+1. `type.or(...)` creates a union of plain object definitions — each is a variant with its own fields.
+2. `commandBase.merge(union)` distributes the merge across each branch of the union. Internally, arktype calls `rNode.distribute()` to apply the merge to each branch individually ([source](https://github.com/arktypeio/arktype/blob/6d0639bf/ark/schema/roots/root.ts#L290-L302)).
+3. The result is a union where each branch has all `commandBase` fields plus its variant-specific fields.
+4. Arktype auto-detects the `action` key as a discriminant because each branch has a distinct literal value.
+5. `switch (cmd.action)` in TypeScript narrows the full union — payload fields and result types are type-safe per branch.
 
 ### Why this pattern
 
-| Property                  | Benefit                                                       |
-| ------------------------- | ------------------------------------------------------------- |
-| Base is a real `Type`     | Reusable, composable, inspectable at runtime                  |
-| `.merge()` is first-class | Not a workaround — arktype's own API for type combination     |
-| `type.or()` is flat       | No deeply nested `.or()` chains — reads as a list of variants |
-| Auto-discrimination       | No manual discriminant config needed                          |
-| Flat payload              | No nested `payload` object — fields are top-level             |
+| Property               | Benefit                                            |
+| ---------------------- | -------------------------------------------------- |
+| Base is a real `Type`  | Reusable, composable, inspectable at runtime       |
+| `.merge()` distributes | No need to repeat `base.merge(...)` per variant    |
+| `type.or()` is flat    | All variants in one list — easy to read and add to |
+| Base appears once      | DRY — change base fields in one place              |
+| Auto-discrimination    | No manual discriminant config needed               |
+| Flat payload           | No nested `payload` object — fields are top-level  |
 
-## `.merge().or()` Chaining Pattern (Good for 2-4 variants)
+## `.merge().or()` Chaining Pattern (Good for 2-3 variants)
 
 Use when you have a small number of variants where chaining reads naturally.
 
@@ -84,7 +88,7 @@ const Command = commandBase
 	);
 ```
 
-Same semantics as `type.or()` — the only difference is readability at scale. For 5+ variants, prefer `type.or()`.
+For 4+ variants, prefer `base.merge(type.or(...))` to avoid repeating `commandBase.merge(...)` per branch.
 
 ## The `"..."` Spread Key Pattern (Alternative)
 
@@ -120,13 +124,13 @@ Functionally equivalent to `.merge().or()`. Choose based on readability preferen
 
 ## `.or()` Chaining vs `type.or()` Static
 
-### Chaining (preferred for 2-4 variants)
+### Chaining (preferred for 2-3 variants)
 
 ```typescript
 const Command = variantA.or(variantB).or(variantC);
 ```
 
-### Static `type.or()` (preferred for 5+ variants)
+### Static `type.or()` (preferred for 4+ variants)
 
 ```typescript
 const Command = type.or(variantA, variantB, variantC, variantD, variantE);
@@ -134,19 +138,25 @@ const Command = type.or(variantA, variantB, variantC, variantD, variantE);
 
 The static form avoids deeply nested chaining and creates the union in a single call.
 
-## `.merge()` Limitations
+## `.merge()` Distribution Over Unions
 
-**`.merge()` only accepts object types.** You cannot pass a union type into `.merge()`:
+`.merge()` distributes over unions on both sides. If you merge a union into an object type (or vice versa), the operation is applied to each branch individually:
 
 ```typescript
-// ❌ WRONG: .merge() rejects union types
-commandBase.merge(variantA.or(variantB));
-
-// ✅ CORRECT: merge each variant individually, then union
-type.or(commandBase.merge(variantA), commandBase.merge(variantB));
+// base.merge(union) — distributes merge across each branch
+const Result = baseType.merge(type.or({ a: 'string' }, { b: 'number' }));
+// Equivalent to: type.or(baseType.merge({ a: 'string' }), baseType.merge({ b: 'number' }))
 ```
 
-Arktype's `NaryMergeParser` validates that each argument `extends object` and will produce an error if you pass a union.
+**Constraint**: Each branch of the union must be an object type. If any branch is non-object (e.g., `'string'`), arktype will throw a `ParseError`:
+
+```typescript
+// ❌ WRONG: 'string' is not an object type
+commandBase.merge(type.or({ a: 'string' }, 'string'));
+
+// ✅ CORRECT: all branches are object types
+commandBase.merge(type.or({ a: 'string' }, { b: 'number' }));
+```
 
 ## Optional Properties in Unions
 
@@ -176,6 +186,7 @@ The `'result?': type({...}).or('undefined')` pattern is correct — the `?` make
 - **Override**: When both the base and merge argument define the same key, the merge argument wins
 - **Optional preservation**: If a key is optional (`'key?'`) in the base and required in the merge, the merge argument's optionality wins
 - **No deep merge**: `.merge()` is shallow — it replaces top-level keys, not nested objects
+- **Distributes over unions**: Both the base and the argument can be unions — merge is applied per-branch
 
 ## Discriminant Detection
 
@@ -208,14 +219,24 @@ const Command = type({ ...baseFields, action: "'closeTabs'" }).or({
 
 This works but `baseFields` is not an arktype `Type` — you can't call `.merge()`, `.or()`, or inspect it at runtime. Prefer `.merge()` when the base should be a proper type.
 
-### Passing unions into `.merge()`
+### Repeating `base.merge(...)` per variant
 
 ```typescript
-// Bad: .merge() only accepts object types
-commandBase.merge(variantA.or(variantB));
+// Bad: repetitive — base.merge repeated for every variant
+type.or(
+	commandBase.merge({ action: "'closeTabs'", tabIds: 'string[]' }),
+	commandBase.merge({ action: "'openTab'", url: 'string' }),
+	commandBase.merge({ action: "'activateTab'", tabId: 'string' }),
+);
 
-// Good: merge individually, then union
-type.or(commandBase.merge(variantA), commandBase.merge(variantB));
+// Good: merge once, union the variants
+commandBase.merge(
+	type.or(
+		{ action: "'closeTabs'", tabIds: 'string[]' },
+		{ action: "'openTab'", url: 'string' },
+		{ action: "'activateTab'", tabId: 'string' },
+	),
+);
 ```
 
 ### Forgetting `'key?'` syntax for optionals
@@ -230,6 +251,7 @@ commandBase.merge({ 'windowId?': 'string' });
 
 ## References
 
-- `apps/tab-manager/src/lib/workspace.ts` — Commands table using `type.or()` + `.merge()` (when implemented)
+- `apps/tab-manager/src/lib/workspace.ts` — Commands table using `commandBase.merge(type.or(...))`
 - `.agents/skills/typescript/SKILL.md` — Arktype optional properties section
 - `.agents/skills/workspace-api/SKILL.md` — `defineTable()` accepts union types
+- [arktype source: merge distributes](https://github.com/arktypeio/arktype/blob/6d0639bf/ark/schema/roots/root.ts#L290-L302) — `rNode.distribute()` in merge implementation

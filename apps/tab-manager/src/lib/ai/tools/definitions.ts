@@ -9,9 +9,10 @@
  * to the sidebar's Y.Doc tables and Chrome APIs.
  *
  * @see docs/articles/tanstack-ai-isomorphic-tool-pattern.md
+ * @see https://github.com/TanStack/ai/issues/276 — arktype `typeof` bug in convertSchemaToJsonSchema
  */
 
-import { convertSchemaToJsonSchema, toolDefinition } from '@tanstack/ai';
+import { toolDefinition } from '@tanstack/ai';
 import { type } from 'arktype';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,15 +166,16 @@ export const allToolDefinitions = [
 /**
  * Tool definitions with arktype schemas pre-converted to JSON Schema.
  *
- * Arktype schemas implement Standard Schema but their `~standard` protocol
- * (methods and symbol-keyed properties) doesn't survive JSON serialization.
- * This pre-converts them so the server receives valid JSON Schema objects
- * it can forward directly to the LLM provider.
+ * We use arktype's native `.toJsonSchema()` instead of TanStack AI's
+ * `convertSchemaToJsonSchema` because arktype types are callable functions
+ * (`typeof` → `'function'`), and TanStack AI's Standard JSON Schema
+ * detection checks `typeof schema === 'object'` — which fails for arktype.
+ *
+ * @see https://github.com/TanStack/ai/issues/276
+ * @see https://arktype.io/docs/type-api#tojsonschema
  */
 export const allServerToolDefinitions = allToolDefinitions.map((def) => ({
 	name: def.name,
 	description: def.description,
-	...(def.inputSchema
-		? { inputSchema: convertSchemaToJsonSchema(def.inputSchema) }
-		: {}),
+	...(def.inputSchema ? { inputSchema: def.inputSchema.toJsonSchema() } : {}),
 }));

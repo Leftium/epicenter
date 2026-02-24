@@ -1,5 +1,4 @@
 import { on } from 'svelte/events';
-import { createSubscriber } from 'svelte/reactivity';
 import {
 	isSupportedKey,
 	type KeyboardEventPossibleKey,
@@ -11,12 +10,17 @@ import { IS_MACOS } from '$lib/constants/platform';
 /**
  * Creates a reactive state manager for tracking pressed keyboard keys.
  *
+ * Uses pure `$state` for reactivity — array mutations (`.push()`, `.filter()`,
+ * reassignment) signal Svelte through the proxy. Event listeners are cheap and
+ * always wanted while the component is mounted, so `$effect` handles lifecycle
+ * directly without `createSubscriber`.
+ *
  * Features:
  * - Tracks currently pressed keys in lowercase format
  * - Prevents duplicate keys in the pressed state
  * - Handles special cases for modifier keys (meta, control, alt, shift)
  * - Clears pressed keys on window blur and tab visibility changes
- * - Automatically manages event listener cleanup
+ * - Automatically manages event listener cleanup via `$effect` teardown
  *
  * @returns An object with a `current` getter that returns the array of currently pressed keys
  *
@@ -46,18 +50,14 @@ export function createPressedKeys({
 	preventDefault?: boolean;
 	onUnsupportedKey?: (key: KeyboardEventPossibleKey) => void;
 }) {
-	/**
-	 * Pressed and normalized keys, internally stored and synced via createSubscriber.
-	 * Only contains supported keys (filtered by isSupportedKey guard).
-	 */
+	/** Pressed and normalized keys. Only contains supported keys (filtered by isSupportedKey guard). */
 	let pressedKeys = $state<KeyboardEventSupportedKey[]>([]);
 
 	/**
-	 * Creates a reactive subscription that tracks key events.
-	 * The createSubscriber pattern ensures event listeners are only attached
-	 * when the pressedKeys.current getter is accessed in a reactive context.
+	 * Sets up keyboard, blur, and visibility-change listeners to track pressed keys.
+	 * Returns a teardown that removes all listeners and resets state.
 	 */
-	const subscribe = createSubscriber((update) => {
+	$effect(() => {
 		const keydown = on(window, 'keydown', (e) => {
 			if (preventDefault) {
 				e.preventDefault();
@@ -85,7 +85,6 @@ export function createPressedKeys({
 			if (!pressedKeys.includes(key)) {
 				pressedKeys.push(key);
 			}
-			update(); // Notify reactive contexts of state change
 		});
 
 		const keyup = on(window, 'keyup', (e) => {
@@ -110,14 +109,12 @@ export function createPressedKeys({
 
 			// Regular key removal
 			pressedKeys = pressedKeys.filter((k) => k !== key);
-			update();
 		});
 
 		// Handle window blur events (switching applications, clicking outside browser)
 		// Reset all keys when user shifts focus away from the window
 		const blur = on(window, 'blur', () => {
 			pressedKeys = [];
-			update();
 		});
 
 		// Handle tab visibility changes (switching browser tabs)
@@ -125,13 +122,11 @@ export function createPressedKeys({
 		const visibilityChange = on(document, 'visibilitychange', () => {
 			if (document.visibilityState === 'hidden') {
 				pressedKeys = [];
-				update();
 			}
 		});
 
 		return () => {
-			// Cleanup called once all subscriptions are removed (no more .current being accessed)
-			// Clear pressed keys to prevent cases where keys are "stuck" in the pressed state
+			// Clear pressed keys to prevent "stuck" keys after teardown
 			pressedKeys = [];
 			keydown();
 			keyup();
@@ -150,7 +145,6 @@ export function createPressedKeys({
 		 * @returns Array of currently pressed key names in lowercase
 		 */
 		get current() {
-			subscribe();
 			return pressedKeys;
 		},
 	};

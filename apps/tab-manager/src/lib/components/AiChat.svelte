@@ -270,7 +270,7 @@
 	{/if}
 
 	<!-- Controls area -->
-	<div class="space-y-1.5 border-t bg-background px-2 py-1.5">
+	<div class="flex flex-col gap-1.5 border-t bg-background px-2 py-1.5">
 		<!-- Provider + Model selects -->
 		<div class="flex gap-2">
 			<Select.Root
@@ -296,18 +296,19 @@
 		<!-- Input + send/stop button -->
 		<form
 			class="flex items-end gap-1.5"
+			aria-label="Chat message"
 			onsubmit={(e) => {
 				e.preventDefault();
 				send();
 			}}
 		>
 			<Textarea
-				class="min-h-0 flex-1 resize-none"
+				class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
 				rows={1}
 				placeholder="Type a message…"
 				bind:value={inputValue}
 				onkeydown={(e: KeyboardEvent) => {
-					if (e.key === 'Enter' && !e.shiftKey) {
+					if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
 						e.preventDefault();
 						send();
 					}
@@ -320,7 +321,7 @@
 					type="button"
 					onclick={() => aiChatState.stop()}
 				>
-					<SquareIcon class="size-3.5" />
+					<SquareIcon />
 				</Button>
 			{:else}
 				<Button
@@ -329,7 +330,7 @@
 					type="submit"
 					disabled={!inputValue.trim()}
 				>
-					<SendIcon class="size-3.5" />
+					<SendIcon />
 				</Button>
 			{/if}
 		</form>

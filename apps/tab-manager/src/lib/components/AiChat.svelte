@@ -37,8 +37,18 @@
 			.join('');
 	}
 
-	/** Show loading dots when request is submitted but no tokens yet. */
-	const showLoadingDots = $derived(aiChatState.status === 'submitted');
+	/**
+	 * Show loading dots when waiting for assistant content.
+	 *
+	 * Covers the gap between 'submitted' (request sent) and first visible
+	 * assistant token. Without this, dots flash away when status transitions
+	 * to 'streaming' before any text is actually rendered.
+	 */
+	const showLoadingDots = $derived(
+		aiChatState.status === 'submitted' ||
+			(aiChatState.status === 'streaming' &&
+				aiChatState.messages.at(-1)?.role !== 'assistant'),
+	);
 
 	/** Show regenerate button when idle and last message is from assistant. */
 	const showRegenerate = $derived(

@@ -39,6 +39,18 @@
 			.map((p) => p.content)
 			.join('');
 	}
+	/** Format a timestamp as a short relative time string. */
+	function formatRelativeTime(ms: number): string {
+		const seconds = Math.floor((Date.now() - ms) / 1000);
+		if (seconds < 60) return 'now';
+		const minutes = Math.floor(seconds / 60);
+		if (minutes < 60) return `${minutes}m`;
+		const hours = Math.floor(minutes / 60);
+		if (hours < 24) return `${hours}h`;
+		const days = Math.floor(hours / 24);
+		if (days < 7) return `${days}d`;
+		return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+	}
 
 	/**
 	 * Show loading dots when waiting for assistant content.
@@ -88,10 +100,11 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start" class="w-[260px]">
 					{#each aiChatState.conversations as conv (conv.id)}
-						<DropdownMenu.Item
-							class="group justify-between gap-2 text-xs"
-							onclick={() => aiChatState.switchConversation(conv.id)}
-						>
+					<DropdownMenu.Item
+						class="group flex-col items-start gap-0.5 text-xs"
+						onclick={() => aiChatState.switchConversation(conv.id)}
+					>
+						<span class="flex w-full items-center justify-between gap-1.5">
 							<span class="flex min-w-0 items-center gap-1.5">
 								<span
 									class={cn(
@@ -108,21 +121,29 @@
 									/>
 								{/if}
 							</span>
-							<button
-								class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-								onclick={(e) => {
-									e.stopPropagation();
-									confirmationDialog.open({
-										title: 'Delete conversation',
+							<span class="flex shrink-0 items-center gap-1">
+								<span class="text-[10px] text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</span>
+								<button
+									class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+									onclick={(e) => {
+										e.stopPropagation();
+										confirmationDialog.open({
+											title: 'Delete conversation',
 										description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
-										confirm: { text: 'Delete', variant: 'destructive' },
-										onConfirm: () => aiChatState.deleteConversation(conv.id),
-									});
-								}}
-							>
-								<TrashIcon class="size-3" />
-							</button>
-						</DropdownMenu.Item>
+											confirm: { text: 'Delete', variant: 'destructive' },
+											onConfirm: () => aiChatState.deleteConversation(conv.id),
+										});
+									}}
+								>
+									<TrashIcon class="size-3" />
+								</button>
+							</span>
+						</span>
+						{@const preview = aiChatState.getLastMessagePreview(conv.id)}
+						{#if preview}
+							<span class="w-full truncate text-[10px] text-muted-foreground">{preview}</span>
+						{/if}
+					</DropdownMenu.Item>
 					{/each}
 				</DropdownMenu.Content>
 			</DropdownMenu.Root>

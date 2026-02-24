@@ -611,6 +611,28 @@ function createAiChatState() {
 		isStreaming(conversationId: ConversationId): boolean {
 			return chatInstances.get(conversationId)?.isLoading ?? false;
 		},
+		/**
+		 * Get a short preview of the last message in a conversation.
+		 *
+		 * Returns the first 60 characters of text content from the most
+		 * recent message, or an empty string if no messages exist.
+		 * Queries Y.Doc directly so it works for any conversation,
+		 * not just the active one.
+		 */
+		getLastMessagePreview(conversationId: ConversationId): string {
+			const messages = popupWorkspace.tables.chatMessages
+				.filter((m) => m.conversationId === conversationId)
+				.sort((a, b) => b.createdAt - a.createdAt);
+			const last = messages[0];
+			if (!last) return '';
+			const parts = last.parts as Array<{ type: string; content?: string }>;
+			const text = parts
+				.filter((p) => p.type === 'text')
+				.map((p) => p.content ?? '')
+				.join('')
+				.trim();
+			return text.length > 60 ? text.slice(0, 60) + '\u2026' : text;
+		},
 	};
 }
 

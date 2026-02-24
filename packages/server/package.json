@@ -17,11 +17,11 @@
 	"license": "AGPL-3.0",
 	"scripts": {
 		"start": "bun src/start-hub.ts",
-"start:hub": "bun src/start-hub.ts",
-"start:local": "bun src/start-local.ts",
-"dev": "bun src/start-hub.ts",
-"dev:hub": "bun src/start-hub.ts",
-"dev:local": "bun src/start-local.ts",
+		"start:hub": "bun src/start-hub.ts",
+		"start:local": "bun src/start-local.ts",
+		"dev": "bun src/start-hub.ts",
+		"dev:hub": "bun src/start-hub.ts",
+		"dev:local": "bun src/start-local.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

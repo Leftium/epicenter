@@ -11,9 +11,8 @@
  *
  * @example
  * ```typescript
- * const local = await getServerUrl(); // 'http://127.0.0.1:3913'
- * const hub = await getHubServerUrl(); // 'http://127.0.0.1:3913' (or custom)
- * await setHubServerUrl('https://hub.epicenter.so');
+ * const serverUrl = await getServerUrl();
+ * const hubUrl = await getHubServerUrl();
  * ```
  */
 
@@ -47,41 +46,34 @@ const hubServerUrlItem = storage.defineItem<string>('local:hubServerUrl', {
 });
 
 /**
- * Get the current local server URL.
+ * Get the local server URL from chrome.storage.
  *
- * Returns the user-configured URL, or the default localhost address
- * if no custom URL has been set. Used for sync and workspace operations.
+ * Returns the persisted URL, or the default `http://127.0.0.1:3913`
+ * if none has been set.
+ *
+ * @example
+ * ```typescript
+ * const url = await getServerUrl();
+ * fetch(`${url}/api/sync`);
+ * ```
  */
-export async function getServerUrl(): Promise<string> {
-	return await serverUrlItem.getValue();
+export async function getServerUrl() {
+	return serverUrlItem.getValue();
 }
 
 /**
- * Set the local server URL.
+ * Get the hub server URL from chrome.storage.
  *
- * Persisted to chrome.storage.local. Takes effect on the next
- * request (not retroactively on active connections).
- */
-export async function setServerUrl(url: string): Promise<void> {
-	await serverUrlItem.setValue(url);
-}
-
-/**
- * Get the current hub server URL.
+ * Returns the persisted URL, or the default `http://127.0.0.1:3913`
+ * if none has been set. The hub server handles AI completions,
+ * authentication, and API key management.
  *
- * Returns the user-configured hub URL, or the default localhost address.
- * Used for AI chat completions, authentication, and key management.
+ * @example
+ * ```typescript
+ * const hubUrl = await getHubServerUrl();
+ * fetch(`${hubUrl}/api/chat`);
+ * ```
  */
-export async function getHubServerUrl(): Promise<string> {
-	return await hubServerUrlItem.getValue();
-}
-
-/**
- * Set the hub server URL.
- *
- * Persisted to chrome.storage.local. Takes effect on the next
- * AI chat request (not retroactively on active streams).
- */
-export async function setHubServerUrl(url: string): Promise<void> {
-	await hubServerUrlItem.setValue(url);
+export async function getHubServerUrl() {
+	return hubServerUrlItem.getValue();
 }

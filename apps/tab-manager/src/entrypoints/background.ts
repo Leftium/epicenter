@@ -397,7 +397,6 @@ export default defineBackground(() => {
 		console.log('[Background] Command consumer started');
 	});
 
-
 	// ─────────────────────────────────────────────────────────────────────────
 	// Browser Keepalive (Chrome MV3 only)
 	// Chrome service workers go dormant after ~30 seconds of inactivity.

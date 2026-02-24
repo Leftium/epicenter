@@ -39,6 +39,9 @@ import { GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import type { UIMessage } from '@tanstack/ai-svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { tabManagerClientTools } from '$lib/ai/tools/client';
+import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
 	ChatMessage,
@@ -48,9 +51,6 @@ import type {
 } from '$lib/workspace';
 import { popupWorkspace } from '$lib/workspace-popup';
 
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider / Model Configuration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -557,7 +557,9 @@ function createAiChatState() {
 			const chat = ensureChat(activeConversationId);
 			const lastMessage = chat.messages.at(-1);
 			if (lastMessage?.role === 'assistant') {
-				popupWorkspace.tables.chatMessages.delete(lastMessage.id as string as ChatMessageId);
+				popupWorkspace.tables.chatMessages.delete(
+					lastMessage.id as string as ChatMessageId,
+				);
 			}
 			void chat.reload();
 		},

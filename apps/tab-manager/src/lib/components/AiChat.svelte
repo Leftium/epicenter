@@ -22,10 +22,8 @@
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import XIcon from '@lucide/svelte/icons/x';
 
-	let inputValue = $state('');
+	const active = $derived(aiChatState.active);
 
-	/** Tracks dismissed error to avoid re-showing the same one. */
-	let dismissedError = $state<string | null>(null);
 	const conversationPicker = useCombobox();
 	let conversationSearch = $state('');
 
@@ -37,10 +35,11 @@
 			: aiChatState.conversations,
 	);
 	function send() {
-		const content = inputValue.trim();
+		if (!active) return;
+		const content = active.inputValue.trim();
 		if (!content) return;
-		inputValue = '';
-		aiChatState.sendMessage(content);
+		active.inputValue = '';
+		active.sendMessage(content);
 	}
 
 	/** Extract text content from a message's parts array. */
@@ -62,7 +61,10 @@
 		if (hours < 24) return `${hours}h`;
 		const days = Math.floor(hours / 24);
 		if (days < 7) return `${days}d`;
-		return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		return new Date(ms).toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+		});
 	}
 
 	/**
@@ -73,21 +75,18 @@
 	 * to 'streaming' before any text is actually rendered.
 	 */
 	const showLoadingDots = $derived(
-		aiChatState.status === 'submitted' ||
-			(aiChatState.status === 'streaming' &&
-				aiChatState.messages.at(-1)?.role !== 'assistant'),
+		active?.status === 'submitted' ||
+			(active?.status === 'streaming' &&
+				active?.messages.at(-1)?.role !== 'assistant'),
 	);
 
 	/** Show regenerate button when idle and last message is from assistant. */
 	const showRegenerate = $derived(
-		aiChatState.status === 'ready' &&
-			aiChatState.messages.at(-1)?.role === 'assistant',
+		active?.status === 'ready' && active?.messages.at(-1)?.role === 'assistant',
 	);
 
 	/** Active conversation title for the header bar. */
-	const activeTitle = $derived(
-		aiChatState.activeConversation?.title ?? 'New Chat',
-	);
+	const activeTitle = $derived(active?.title ?? 'New Chat');
 
 	/** Whether there are any conversations to show in the dropdown. */
 	const hasConversations = $derived(aiChatState.conversations.length > 0);
@@ -116,7 +115,7 @@
 				<Popover.Content class="w-[280px] p-0" align="start">
 					<Command.Root shouldFilter={false}>
 						<Command.Input
-							placeholder="Search conversations\u2026"
+							placeholder="Search conversations…"
 							class="h-9 text-sm"
 							bind:value={conversationSearch}
 						/>
@@ -127,25 +126,34 @@
 									value={conv.id}
 									class="group flex-col items-start gap-0.5"
 									onSelect={() => {
-										aiChatState.switchConversation(conv.id);
+										aiChatState.switchTo(conv.id);
 										conversationSearch = '';
 										conversationPicker.closeAndFocusTrigger();
 									}}
 								>
-									<span class="flex w-full items-center justify-between gap-1.5 text-xs">
+									<span
+										class="flex w-full items-center justify-between gap-1.5 text-xs"
+									>
 										<span class="flex min-w-0 items-center gap-1.5">
 											<CheckIcon
 												class={cn('mr-0.5 size-3 shrink-0', {
-													'text-transparent': conv.id !== aiChatState.activeConversationId,
+													'text-transparent':
+														conv.id !== aiChatState.activeConversationId,
 												})}
 											/>
-											<span class="min-w-0 truncate font-medium">{conv.title}</span>
-											{#if aiChatState.isStreaming(conv.id)}
-												<LoaderCircleIcon class="size-3 shrink-0 animate-spin text-muted-foreground" />
+											<span class="min-w-0 truncate font-medium"
+												>{conv.title}</span
+											>
+											{#if conv.isLoading}
+												<LoaderCircleIcon
+													class="size-3 shrink-0 animate-spin text-muted-foreground"
+												/>
 											{/if}
 										</span>
 										<span class="flex shrink-0 items-center gap-1">
-											<span class="text-[10px] text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</span>
+											<span class="text-[10px] text-muted-foreground"
+												>{formatRelativeTime(conv.updatedAt)}</span
+											>
 											<button
 												class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
 												onclick={(e) => {
@@ -153,9 +161,9 @@
 													e.preventDefault();
 													confirmationDialog.open({
 														title: 'Delete conversation',
-													description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
+														description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
 														confirm: { text: 'Delete', variant: 'destructive' },
-														onConfirm: () => aiChatState.deleteConversation(conv.id),
+														onConfirm: () => conv.delete(),
 													});
 												}}
 											>
@@ -163,9 +171,12 @@
 											</button>
 										</span>
 									</span>
-									{@const preview = aiChatState.getLastMessagePreview(conv.id)}
+									{@const preview = conv.lastMessagePreview}
 									{#if preview}
-										<span class="w-full truncate pl-5 text-[10px] text-muted-foreground">{preview}</span>
+										<span
+											class="w-full truncate pl-5 text-[10px] text-muted-foreground"
+											>{preview}</span
+										>
 									{/if}
 								</Command.Item>
 							{/each}
@@ -190,7 +201,7 @@
 
 	<!-- Messages area -->
 	<div class="min-h-0 flex-1">
-		{#if aiChatState.messages.length === 0}
+		{#if (active?.messages ?? []).length === 0}
 			<Empty.Root class="py-12">
 				<Empty.Media>
 					<SparklesIcon class="size-8 text-muted-foreground" />
@@ -206,7 +217,7 @@
 			</Empty.Root>
 		{:else}
 			<Chat.List>
-				{#each aiChatState.messages as message (message.id)}
+				{#each active?.messages ?? [] as message (message.id)}
 					<Chat.Bubble variant={message.role === 'user' ? 'sent' : 'received'}>
 						<Chat.BubbleMessage>
 							{getTextContent(message.parts)}
@@ -224,7 +235,7 @@
 							variant="ghost"
 							size="sm"
 							class="h-7 gap-1 text-xs text-muted-foreground"
-							onclick={() => aiChatState.reload()}
+							onclick={() => active?.reload()}
 						>
 							<RotateCcwIcon class="size-3" />
 							Regenerate
@@ -236,20 +247,20 @@
 	</div>
 
 	<!-- Error banner -->
-	{#if aiChatState.error && aiChatState.error.message !== dismissedError}
+	{#if active?.error && active.error.message !== active.dismissedError}
 		<div
 			role="alert"
 			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
-			<span class="min-w-0 flex-1">{aiChatState.error.message}</span>
+			<span class="min-w-0 flex-1">{active.error.message}</span>
 			<div class="flex shrink-0 items-center gap-1">
 				<Button
 					variant="ghost"
 					size="sm"
 					class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
 					onclick={() => {
-						dismissedError = null;
-						aiChatState.reload();
+						if (active) active.dismissedError = null;
+						active?.reload();
 					}}
 				>
 					<RotateCcwIcon class="size-3" />
@@ -260,7 +271,7 @@
 					size="icon"
 					class="size-6 text-destructive hover:text-destructive"
 					onclick={() => {
-						dismissedError = aiChatState.error?.message ?? null;
+						if (active) active.dismissedError = active.error?.message ?? null;
 					}}
 				>
 					<XIcon class="size-3" />
@@ -275,13 +286,13 @@
 		<div class="flex gap-2">
 			<Select.Root
 				type="single"
-				value={aiChatState.provider}
+				value={active?.provider ?? ''}
 				onValueChange={(v) => {
-					if (v) aiChatState.provider = v;
+					if (v && active) active.provider = v;
 				}}
 			>
 				<Select.Trigger size="sm" class="flex-1">
-					{aiChatState.provider}
+					{active?.provider ?? ''}
 				</Select.Trigger>
 				<Select.Content>
 					{#each aiChatState.availableProviders as p (p)}
@@ -302,24 +313,26 @@
 				send();
 			}}
 		>
-			<Textarea
-				class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
-				rows={1}
-				placeholder="Type a message…"
-				bind:value={inputValue}
-				onkeydown={(e: KeyboardEvent) => {
-					if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-						e.preventDefault();
-						send();
-					}
-				}}
-			/>
-			{#if aiChatState.isLoading}
+			{#if active}
+				<Textarea
+					class="min-h-0 max-h-32 flex-1 resize-none overflow-y-auto"
+					rows={1}
+					placeholder="Type a message…"
+					bind:value={active.inputValue}
+					onkeydown={(e: KeyboardEvent) => {
+						if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+							e.preventDefault();
+							send();
+						}
+					}}
+				/>
+			{/if}
+			{#if active?.isLoading}
 				<Button
 					variant="outline"
 					size="icon-lg"
 					type="button"
-					onclick={() => aiChatState.stop()}
+					onclick={() => active?.stop()}
 				>
 					<SquareIcon />
 				</Button>
@@ -328,7 +341,7 @@
 					variant="default"
 					size="icon-lg"
 					type="submit"
-					disabled={!inputValue.trim()}
+					disabled={!active?.inputValue.trim()}
 				>
 					<SendIcon />
 				</Button>

@@ -13,7 +13,9 @@
 	const combobox = useCombobox();
 	let searchValue = $state('');
 
-	const models = $derived(aiChatState.modelsForProvider(aiChatState.provider));
+	const models = $derived(
+		aiChatState.modelsForProvider(aiChatState.active?.provider ?? ''),
+	);
 
 	const filteredModels = $derived(
 		searchValue
@@ -33,7 +35,7 @@
 	);
 
 	function selectModel(model: string) {
-		aiChatState.model = model;
+		if (aiChatState.active) aiChatState.active.model = model;
 		searchValue = '';
 		combobox.closeAndFocusTrigger();
 	}
@@ -50,7 +52,8 @@
 				variant="outline"
 				size="sm"
 			>
-				<span class="truncate">{aiChatState.model || 'Select model\u2026'}</span
+				<span class="truncate"
+					>{aiChatState.active?.model || 'Select model…'}</span
 				>
 				<ChevronsUpDownIcon class="ml-2 size-3 shrink-0 opacity-50" />
 			</Button>
@@ -59,7 +62,7 @@
 	<Popover.Content class="w-[280px] p-0" align="start">
 		<Command.Root shouldFilter={false}>
 			<Command.Input
-				placeholder="Search or type a model\u2026"
+				placeholder="Search or type a model…"
 				class="h-9 text-sm"
 				bind:value={searchValue}
 			/>
@@ -73,7 +76,7 @@
 					>
 						<CheckIcon
 							class={cn('mr-1.5 size-3 shrink-0', {
-								'text-transparent': aiChatState.model !== model,
+								'text-transparent': aiChatState.active?.model !== model,
 							})}
 						/>
 						{model}

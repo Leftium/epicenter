@@ -4,13 +4,16 @@
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import * as Chat from '@epicenter/ui/chat';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as Command from '@epicenter/ui/command';
+	import { useCombobox } from '@epicenter/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
 	import * as Empty from '@epicenter/ui/empty';
 	import ModelCombobox from '$lib/components/ModelCombobox.svelte';
 	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
+	import CheckIcon from '@lucide/svelte/icons/check';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
@@ -23,6 +26,16 @@
 
 	/** Tracks dismissed error to avoid re-showing the same one. */
 	let dismissedError = $state<string | null>(null);
+	const conversationPicker = useCombobox();
+	let conversationSearch = $state('');
+
+	const filteredConversations = $derived(
+		conversationSearch
+			? aiChatState.conversations.filter((c) =>
+					c.title.toLowerCase().includes(conversationSearch.toLowerCase()),
+				)
+			: aiChatState.conversations,
+	);
 	function send() {
 		const content = inputValue.trim();
 		if (!content) return;
@@ -84,69 +97,82 @@
 	<!-- Conversation bar -->
 	<div class="flex items-center gap-1 border-b px-2 py-1.5">
 		{#if hasConversations}
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
+			<Popover.Root bind:open={conversationPicker.open}>
+				<Popover.Trigger bind:ref={conversationPicker.triggerRef}>
 					{#snippet child({ props })}
 						<Button
 							{...props}
 							variant="ghost"
 							size="sm"
+							role="combobox"
+							aria-expanded={conversationPicker.open}
 							class="h-7 min-w-0 flex-1 justify-between gap-1 px-2 text-xs"
 						>
 							<span class="truncate">{activeTitle}</span>
 							<ChevronDownIcon class="size-3 shrink-0 opacity-50" />
 						</Button>
 					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="start" class="w-[260px]">
-					{#each aiChatState.conversations as conv (conv.id)}
-					<DropdownMenu.Item
-						class="group flex-col items-start gap-0.5 text-xs"
-						onclick={() => aiChatState.switchConversation(conv.id)}
-					>
-						<span class="flex w-full items-center justify-between gap-1.5">
-							<span class="flex min-w-0 items-center gap-1.5">
-								<span
-									class={cn(
-										'min-w-0 truncate',
-										conv.id === aiChatState.activeConversationId &&
-											'font-medium',
-									)}
-								>
-									{conv.title}
-								</span>
-								{#if aiChatState.isStreaming(conv.id)}
-									<LoaderCircleIcon
-										class="size-3 shrink-0 animate-spin text-muted-foreground"
-									/>
-								{/if}
-							</span>
-							<span class="flex shrink-0 items-center gap-1">
-								<span class="text-[10px] text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</span>
-								<button
-									class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-									onclick={(e) => {
-										e.stopPropagation();
-										confirmationDialog.open({
-											title: 'Delete conversation',
-										description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
-											confirm: { text: 'Delete', variant: 'destructive' },
-											onConfirm: () => aiChatState.deleteConversation(conv.id),
-										});
+				</Popover.Trigger>
+				<Popover.Content class="w-[280px] p-0" align="start">
+					<Command.Root shouldFilter={false}>
+						<Command.Input
+							placeholder="Search conversations\u2026"
+							class="h-9 text-sm"
+							bind:value={conversationSearch}
+						/>
+						<Command.List class="max-h-[300px]">
+							<Command.Empty>No conversations found.</Command.Empty>
+							{#each filteredConversations as conv (conv.id)}
+								<Command.Item
+									value={conv.id}
+									class="group flex-col items-start gap-0.5"
+									onSelect={() => {
+										aiChatState.switchConversation(conv.id);
+										conversationSearch = '';
+										conversationPicker.closeAndFocusTrigger();
 									}}
 								>
-									<TrashIcon class="size-3" />
-								</button>
-							</span>
-						</span>
-						{@const preview = aiChatState.getLastMessagePreview(conv.id)}
-						{#if preview}
-							<span class="w-full truncate text-[10px] text-muted-foreground">{preview}</span>
-						{/if}
-					</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+									<span class="flex w-full items-center justify-between gap-1.5 text-xs">
+										<span class="flex min-w-0 items-center gap-1.5">
+											<CheckIcon
+												class={cn('mr-0.5 size-3 shrink-0', {
+													'text-transparent': conv.id !== aiChatState.activeConversationId,
+												})}
+											/>
+											<span class="min-w-0 truncate font-medium">{conv.title}</span>
+											{#if aiChatState.isStreaming(conv.id)}
+												<LoaderCircleIcon class="size-3 shrink-0 animate-spin text-muted-foreground" />
+											{/if}
+										</span>
+										<span class="flex shrink-0 items-center gap-1">
+											<span class="text-[10px] text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</span>
+											<button
+												class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+												onclick={(e) => {
+													e.stopPropagation();
+													e.preventDefault();
+													confirmationDialog.open({
+														title: 'Delete conversation',
+													description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
+														confirm: { text: 'Delete', variant: 'destructive' },
+														onConfirm: () => aiChatState.deleteConversation(conv.id),
+													});
+												}}
+											>
+												<TrashIcon class="size-3" />
+											</button>
+										</span>
+									</span>
+									{@const preview = aiChatState.getLastMessagePreview(conv.id)}
+									{#if preview}
+										<span class="w-full truncate pl-5 text-[10px] text-muted-foreground">{preview}</span>
+									{/if}
+								</Command.Item>
+							{/each}
+						</Command.List>
+					</Command.Root>
+				</Popover.Content>
+			</Popover.Root>
 		{:else}
 			<span class="flex-1 px-2 text-xs text-muted-foreground">No chats yet</span
 			>

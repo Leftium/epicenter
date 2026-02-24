@@ -210,7 +210,7 @@ function createAiChatState() {
 			onFinish: (message) => {
 				// conversationId is baked in — can never target the wrong conversation
 				popupWorkspace.tables.chatMessages.set({
-				id: message.id as string as ChatMessageId,
+					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
 					parts: message.parts,
@@ -553,7 +553,9 @@ function createAiChatState() {
 			const chat = ensureChat(activeConversationId);
 			const lastMessage = chat.messages.at(-1);
 			if (lastMessage?.role === 'assistant') {
-				popupWorkspace.tables.chatMessages.delete(lastMessage.id as string as ChatMessageId);
+				popupWorkspace.tables.chatMessages.delete(
+					lastMessage.id as string as ChatMessageId,
+				);
 			}
 			void chat.reload();
 		},

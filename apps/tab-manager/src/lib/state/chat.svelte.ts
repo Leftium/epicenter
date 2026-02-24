@@ -171,6 +171,25 @@ function createAiChatState() {
 	const getActiveConversation = (): Conversation =>
 		findConversation(activeConversationId);
 
+	/**
+	 * Update a conversation's fields and touch `updatedAt`.
+	 *
+	 * Uses nullable lookup with early return — safe to call from streaming
+	 * callbacks and async contexts where throwing would crash the stream.
+	 */
+	function updateConversation(
+		conversationId: ConversationId,
+		patch: Partial<Omit<Conversation, 'id'>>,
+	) {
+		const conv = conversations.find((c) => c.id === conversationId);
+		if (!conv) return;
+		popupWorkspace.tables.conversations.set({
+			...conv,
+			...patch,
+			updatedAt: Date.now(),
+		});
+	}
+
 	/** Load persisted messages for a conversation from Y.Doc. */
 	const loadMessagesForConversation = (conversationId: ConversationId) =>
 		popupWorkspace.tables.chatMessages
@@ -244,13 +263,7 @@ function createAiChatState() {
 					_v: 1,
 				});
 				// Touch conversation's updatedAt so it floats to top of list
-				const conv = conversations.find((c) => c.id === conversationId);
-				if (conv) {
-					popupWorkspace.tables.conversations.set({
-						...conv,
-						updatedAt: Date.now(),
-					});
-				}
+				updateConversation(conversationId, {});
 			},
 		});
 
@@ -364,14 +377,7 @@ function createAiChatState() {
 	 * reactive `conversations` list and `activeConversation` derived.
 	 */
 	function renameConversation(conversationId: ConversationId, title: string) {
-		const conv = conversations.find((c) => c.id === conversationId);
-		if (!conv) return;
-
-		popupWorkspace.tables.conversations.set({
-			...conv,
-			title,
-			updatedAt: Date.now(),
-		});
+		updateConversation(conversationId, { title });
 	}
 
 	// ── Provider / Model (per-conversation) ───────────────────────────
@@ -385,22 +391,15 @@ function createAiChatState() {
 	function setProvider(providerName: string) {
 		const conv = getActiveConversation();
 		const models = PROVIDER_MODELS[providerName as Provider];
-		popupWorkspace.tables.conversations.set({
-			...conv,
+		updateConversation(activeConversationId, {
 			provider: providerName,
 			model: models?.[0] ?? conv.model,
-			updatedAt: Date.now(),
 		});
 	}
 
 	/** Update the active conversation's model. */
 	function setModel(modelName: string) {
-		const conv = getActiveConversation();
-		popupWorkspace.tables.conversations.set({
-			...conv,
-			model: modelName,
-			updatedAt: Date.now(),
-		});
+		updateConversation(activeConversationId, { model: modelName });
 	}
 
 	// ── Public API ────────────────────────────────────────────────────
@@ -533,10 +532,8 @@ function createAiChatState() {
 			// Touch updatedAt so this conversation floats to top,
 			// and rename from default title on first message.
 			const conv = getActiveConversation();
-			popupWorkspace.tables.conversations.set({
-				...conv,
+			updateConversation(convId, {
 				title: conv.title === 'New Chat' ? content.trim().slice(0, 50) : conv.title,
-				updatedAt: Date.now(),
 			});
 			// Send via this conversation's ChatClient (triggers SSE streaming)
 			void ensureChat(convId).sendMessage({ content, id: userMessageId });

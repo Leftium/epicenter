@@ -17,9 +17,12 @@
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import XIcon from '@lucide/svelte/icons/x';
 
 	let inputValue = $state('');
 
+	/** Tracks dismissed error to avoid re-showing the same one. */
+	let dismissedError = $state<string | null>(null);
 	function send() {
 		const content = inputValue.trim();
 		if (!content) return;
@@ -105,20 +108,20 @@
 									/>
 								{/if}
 							</span>
-						<button
-							class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-							onclick={(e) => {
-								e.stopPropagation();
-								confirmationDialog.open({
-									title: 'Delete conversation',
-									description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
-									confirm: { text: 'Delete', variant: 'destructive' },
-									onConfirm: () => aiChatState.deleteConversation(conv.id),
-								});
-							}}
-						>
-							<TrashIcon class="size-3" />
-						</button>
+							<button
+								class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+								onclick={(e) => {
+									e.stopPropagation();
+									confirmationDialog.open({
+										title: 'Delete conversation',
+										description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
+										confirm: { text: 'Delete', variant: 'destructive' },
+										onConfirm: () => aiChatState.deleteConversation(conv.id),
+									});
+								}}
+							>
+								<TrashIcon class="size-3" />
+							</button>
 						</DropdownMenu.Item>
 					{/each}
 				</DropdownMenu.Content>
@@ -186,16 +189,41 @@
 	</div>
 
 	<!-- Error banner -->
-	{#if aiChatState.error}
+	{#if aiChatState.error && aiChatState.error.message !== dismissedError}
 		<div
-			class="border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+			role="alert"
+			class="flex items-center justify-between gap-2 border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
-			{aiChatState.error.message}
+			<span class="min-w-0 flex-1">{aiChatState.error.message}</span>
+			<div class="flex shrink-0 items-center gap-1">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
+					onclick={() => {
+						dismissedError = null;
+						aiChatState.reload();
+					}}
+				>
+					<RotateCcwIcon class="size-3" />
+					Retry
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="size-6 text-destructive hover:text-destructive"
+					onclick={() => {
+						dismissedError = aiChatState.error?.message ?? null;
+					}}
+				>
+					<XIcon class="size-3" />
+				</Button>
+			</div>
 		</div>
 	{/if}
 
 	<!-- Controls area -->
-	<div class="space-y-2 border-t bg-background px-3 py-2">
+	<div class="space-y-1.5 border-t bg-background px-2 py-1.5">
 		<!-- Provider + Model selects -->
 		<div class="flex gap-2">
 			<Select.Root
@@ -219,7 +247,13 @@
 		</div>
 
 		<!-- Input + send/stop button -->
-		<div class="flex gap-2">
+		<form
+			class="flex items-end gap-1.5"
+			onsubmit={(e) => {
+				e.preventDefault();
+				send();
+			}}
+		>
 			<Textarea
 				class="min-h-0 flex-1 resize-none"
 				rows={1}
@@ -235,21 +269,22 @@
 			{#if aiChatState.isLoading}
 				<Button
 					variant="outline"
-					size="icon"
+					size="icon-lg"
+					type="button"
 					onclick={() => aiChatState.stop()}
 				>
-					<SquareIcon class="size-4" />
+					<SquareIcon class="size-3.5" />
 				</Button>
 			{:else}
 				<Button
 					variant="default"
-					size="icon"
-					onclick={() => send()}
+					size="icon-lg"
+					type="submit"
 					disabled={!inputValue.trim()}
 				>
-					<SendIcon class="size-4" />
+					<SendIcon class="size-3.5" />
 				</Button>
 			{/if}
-		</div>
+		</form>
 	</div>
 </div>

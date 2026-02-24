@@ -242,10 +242,7 @@ function createAiChatState() {
 	 * - No `setMessages()` swapping needed on conversation switch
 	 * - Multiple conversations can stream concurrently
 	 */
-	const chatInstances = new Map<
-		ConversationId,
-		ReturnType<typeof createChat>
-	>();
+	const chatInstances = new Map<ConversationId, CreateChatReturn>();
 
 	/**
 	 * Get or create a ChatClient for a conversation.

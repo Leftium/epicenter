@@ -109,11 +109,15 @@ export function createAIPlugin() {
 				conversationId: t.Optional(t.String()),
 				systemPrompt: t.Optional(t.String()),
 				modelOptions: t.Optional(t.Any()),
-				tools: t.Optional(t.Array(t.Object({
-					name: t.String(),
-					description: t.String(),
-					inputSchema: t.Optional(t.Any()),
-				}))),
+				tools: t.Optional(
+					t.Array(
+						t.Object({
+							name: t.String(),
+							description: t.String(),
+							inputSchema: t.Optional(t.Any()),
+						}),
+					),
+				),
 			}),
 			response: {
 				400: t.String(),

@@ -10,7 +10,6 @@
  */
 
 import { clientTools } from '@tanstack/ai-client';
-import { getDeviceId } from '$lib/device/device-id';
 import {
 	executeActivateTab,
 	executeCloseTabs,
@@ -21,6 +20,7 @@ import {
 	executeReloadTabs,
 	executeSaveTabs,
 } from '$lib/commands/actions';
+import { getDeviceId } from '$lib/device/device-id';
 import type { DeviceId } from '$lib/workspace';
 import { popupWorkspace } from '$lib/workspace-popup';
 import {
@@ -192,12 +192,7 @@ export const tabManagerClientTools = clientTools(
 
 	saveTabsDef.client(async ({ tabIds, close }) => {
 		const deviceId = await resolveDeviceId();
-		return executeSaveTabs(
-			tabIds,
-			close ?? false,
-			deviceId,
-			tables.savedTabs,
-		);
+		return executeSaveTabs(tabIds, close ?? false, deviceId, tables.savedTabs);
 	}),
 
 	groupTabsDef.client(async ({ tabIds, title, color }) => {

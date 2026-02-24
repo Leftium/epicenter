@@ -179,7 +179,9 @@ export const allServerToolDefinitions = allToolDefinitions.map((def) => {
 	// meta-schema declarations in function parameter schemas. TanStack AI's own
 	// convertSchemaToJsonSchema strips $schema for standard schemas — we mirror that here
 	// since we bypass it to work around the arktype callable-function bug (#276).
-	const raw = def.inputSchema?.toJsonSchema() as Record<string, unknown> | undefined;
+	const raw = def.inputSchema?.toJsonSchema() as
+		| Record<string, unknown>
+		| undefined;
 	if (!raw) return { name: def.name, description: def.description };
 	const { $schema: _, ...schema } = raw;
 	return {

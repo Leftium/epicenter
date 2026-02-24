@@ -144,7 +144,8 @@ export const reloadTabsDef = toolDefinition({
 /**
  * All tool definitions as an array.
  *
- * Used for `.client(execute)` in client.ts — ChatClient auto-execution.
+ * Source for `allServerToolDefinitions`. Each definition's `.client(execute)`
+ * is bound in `client.ts` by importing the individual exports directly.
  */
 export const allToolDefinitions = [
 	searchTabsDef,

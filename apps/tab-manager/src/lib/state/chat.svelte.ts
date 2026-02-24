@@ -39,6 +39,9 @@ import { GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import type { UIMessage } from '@tanstack/ai-svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { tabManagerClientTools } from '$lib/ai/tools/client';
+import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
 	ChatMessage,
@@ -192,6 +195,7 @@ function createAiChatState() {
 
 		const instance = createChat({
 			initialMessages: loadMessagesForConversation(conversationId),
+			tools: tabManagerClientTools,
 			connection: fetchServerSentEvents(
 				() => `${hubUrlCache}/ai/chat`,
 				async () => {
@@ -202,7 +206,8 @@ function createAiChatState() {
 							provider: conv?.provider ?? DEFAULT_PROVIDER,
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
-							systemPrompt: conv?.systemPrompt ?? undefined,
+							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+							tools: allServerToolDefinitions,
 						},
 					};
 				},
@@ -217,7 +222,6 @@ function createAiChatState() {
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 					_v: 1,
 				});
-
 				// Touch conversation's updatedAt so it floats to top of list
 				const conv = conversations.find((c) => c.id === conversationId);
 				if (conv) {

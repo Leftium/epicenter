@@ -31,7 +31,7 @@
 		parts: Array<{ type: string; content?: string }>,
 	): string {
 		return parts
-			.filter((p): p is { type: 'text'; content: string } => p.type === 'text')
+			.filter((p) => p.type === 'text')
 			.map((p) => p.content)
 			.join('');
 	}

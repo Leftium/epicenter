@@ -53,6 +53,7 @@ export function createAIPlugin() {
 				conversationId,
 				systemPrompt,
 				modelOptions,
+				tools,
 			} = body;
 
 			if (!isSupportedProvider(provider)) {
@@ -85,6 +86,7 @@ export function createAIPlugin() {
 						abortController,
 						agentLoopStrategy: maxIterations(10),
 						systemPrompts: systemPrompt ? [systemPrompt] : [],
+						...(tools ? { tools } : {}),
 						...(modelOptions ? { modelOptions } : {}),
 					}),
 				catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
@@ -107,6 +109,7 @@ export function createAIPlugin() {
 				conversationId: t.Optional(t.String()),
 				systemPrompt: t.Optional(t.String()),
 				modelOptions: t.Optional(t.Any()),
+				tools: t.Optional(t.Array(t.Any())),
 			}),
 			response: {
 				400: t.String(),

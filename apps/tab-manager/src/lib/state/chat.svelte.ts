@@ -109,15 +109,15 @@ function createAiChatState() {
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 
 	let conversations = $state<Conversation[]>(readAllConversations());
-	// Re-read on every Y.Doc change — observer fires on persistence load
-	// and any subsequent remote/local modification.
-	popupWorkspace.tables.conversations.observe(() => {
-		conversations = readAllConversations();
-	});
 
-	// Ensure at least one conversation always exists. Creates a default
-	// on first load so provider/model dropdowns always have a target.
-	if (conversations.length === 0) {
+	/**
+	 * Ensure at least one conversation exists.
+	 *
+	 * Called after persistence loads and in the conversations observer.
+	 * Safe to call multiple times — only creates if truly empty.
+	 */
+	function ensureDefaultConversation(): ConversationId | undefined {
+		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
 		popupWorkspace.tables.conversations.set({
@@ -130,7 +130,27 @@ function createAiChatState() {
 			_v: 1,
 		});
 		conversations = readAllConversations();
+		return id;
 	}
+
+	// Re-read on every Y.Doc change — observer fires on persistence load
+	// and any subsequent remote/local modification.
+	popupWorkspace.tables.conversations.observe(() => {
+		conversations = readAllConversations();
+	});
+
+	// Defer default conversation creation until Y.Doc persistence loads.
+	// Before this resolves, conversations may be empty — the UI handles
+	// this gracefully by showing the empty state.
+	void popupWorkspace.whenReady.then(() => {
+		conversations = readAllConversations();
+		const newId = ensureDefaultConversation();
+		// Point active to first real conversation after persistence merge
+		if (conversations.length > 0) {
+			activeConversationId = newId ?? conversations[0].id;
+		}
+	});
+
 	// Refresh active conversation's messages when Y.Doc changes (e.g. background completion).
 	// Non-active conversations get refreshed on switch via `switchConversation`.
 	popupWorkspace.tables.chatMessages.observe(() => {
@@ -138,9 +158,18 @@ function createAiChatState() {
 		if (!instance || instance.isLoading) return;
 		instance.setMessages(loadMessagesForConversation(activeConversationId));
 	});
+
 	// ── Active Conversation ───────────────────────────────────────────
-	/** Always points to a valid conversation — guaranteed by eager creation. */
-	let activeConversationId = $state<ConversationId>(conversations[0].id);
+
+	/**
+	 * The active conversation ID.
+	 *
+	 * May briefly be invalid before Y.Doc persistence loads — all getters
+	 * that depend on this handle the not-found case gracefully.
+	 */
+	let activeConversationId = $state<ConversationId>(
+		(conversations[0]?.id ?? '') as ConversationId,
+	);
 
 	/**
 	 * Derived from `activeConversationId` + `conversations`.
@@ -148,21 +177,21 @@ function createAiChatState() {
 	 * Re-evaluates when either changes — e.g. when provider/model is
 	 * updated in the table, the observer fires, `conversations` updates,
 	 * and this re-derives with the new metadata.
+	 *
+	 * Returns undefined if active conversation doesn't exist yet
+	 * (before persistence loads).
 	 */
 	const activeConversation = $derived(findConversation(activeConversationId));
 
 	// ── Helpers ───────────────────────────────────────────────────────
 
 	/**
-	 * Find a conversation by ID — throws if not found.
+	 * Find a conversation by ID.
 	 *
-	 * Safe because eager creation guarantees at least one conversation
-	 * always exists, and `activeConversationId` is always valid.
+	 * Returns undefined if not found (e.g., before persistence loads).
 	 */
-	function findConversation(id: ConversationId): Conversation {
-		const conv = conversations.find((c) => c.id === id);
-		if (!conv) throw new Error(`Conversation ${id} not found`);
-		return conv;
+	function findConversation(id: ConversationId): Conversation | undefined {
+		return conversations.find((c) => c.id === id);
 	}
 
 	/**
@@ -170,8 +199,9 @@ function createAiChatState() {
 	 *
 	 * Used in non-reactive contexts (async callbacks, event handlers)
 	 * where `$derived` tracking isn't needed.
+	 * Returns undefined if no active conversation exists yet.
 	 */
-	const getActiveConversation = (): Conversation =>
+	const getActiveConversation = (): Conversation | undefined =>
 		findConversation(activeConversationId);
 
 	/**
@@ -394,7 +424,7 @@ function createAiChatState() {
 		const models = PROVIDER_MODELS[providerName as Provider];
 		updateConversation(activeConversationId, {
 			provider: providerName,
-			model: models?.[0] ?? conv.model,
+			model: models?.[0] ?? conv?.model ?? DEFAULT_MODEL,
 		});
 	}
 
@@ -474,7 +504,7 @@ function createAiChatState() {
 
 		/** Current provider name (reads from active conversation). */
 		get provider() {
-			return activeConversation.provider;
+			return activeConversation?.provider ?? DEFAULT_PROVIDER;
 		},
 		set provider(value: string) {
 			setProvider(value);
@@ -482,7 +512,7 @@ function createAiChatState() {
 
 		/** Current model name (reads from active conversation). */
 		get model() {
-			return activeConversation.model;
+			return activeConversation?.model ?? DEFAULT_MODEL;
 		},
 		set model(value: string) {
 			setModel(value);
@@ -535,7 +565,7 @@ function createAiChatState() {
 			const conv = getActiveConversation();
 			updateConversation(convId, {
 				title:
-					conv.title === 'New Chat' ? content.trim().slice(0, 50) : conv.title,
+					conv?.title === 'New Chat' ? content.trim().slice(0, 50) : conv?.title,
 			});
 			// Send via this conversation's ChatClient (triggers SSE streaming)
 			void ensureChat(convId).sendMessage({ content, id: userMessageId });

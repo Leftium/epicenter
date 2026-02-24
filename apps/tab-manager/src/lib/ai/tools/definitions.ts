@@ -174,8 +174,26 @@ export const allToolDefinitions = [
  * @see https://github.com/TanStack/ai/issues/276
  * @see https://arktype.io/docs/type-api#tojsonschema
  */
-export const allServerToolDefinitions = allToolDefinitions.map((def) => ({
-	name: def.name,
-	description: def.description,
-	...(def.inputSchema ? { inputSchema: def.inputSchema.toJsonSchema() } : {}),
-}));
+export const allServerToolDefinitions = allToolDefinitions.map((def) => {
+	// Strip $schema: arktype's toJsonSchema() includes it, but AI providers don't expect
+	// meta-schema declarations in function parameter schemas. TanStack AI's own
+	// convertSchemaToJsonSchema strips $schema for standard schemas — we mirror that here
+	// since we bypass it to work around the arktype callable-function bug (#276).
+	const raw = def.inputSchema?.toJsonSchema() as Record<string, unknown> | undefined;
+	if (!raw) return { name: def.name, description: def.description };
+	const { $schema: _, ...schema } = raw;
+	return {
+		name: def.name,
+		description: def.description,
+		inputSchema: {
+			...schema,
+			// AI providers require `properties` to be present even for no-arg tools.
+			// arktype's `type({})` produces `{ type: 'object' }` without it.
+			properties: (schema.properties as Record<string, unknown>) ?? {},
+			// AI providers require `required` to be an array, not null/undefined.
+			// arktype omits `required` when there are no required fields, which causes
+			// Anthropic's adapter to pass `required: null` → rejected with 400.
+			required: (schema.required as string[]) ?? [],
+		},
+	};
+});

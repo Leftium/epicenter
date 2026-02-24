@@ -174,7 +174,7 @@
 		<div
 			class="border-t border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive"
 		>
-			{aiChatState.error.message || 'Something went wrong'}
+			{aiChatState.error.message}
 		</div>
 	{/if}
 

@@ -29,7 +29,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';
 import { startCommandConsumer } from '$lib/commands/consumer';
-import { createChatEngine, type ChatRequest } from '$lib/ai/engine';
+
 import {
 	generateDefaultDeviceName,
 	getBrowserName,
@@ -397,48 +397,6 @@ export default defineBackground(() => {
 		console.log('[Background] Command consumer started');
 	});
 
-	// ─────────────────────────────────────────────────────────────────────────
-	// AI Chat Engine — runs chat() directly in the BGSW
-	// Side panel sends { type: 'chat', ... } via chrome.runtime.sendMessage.
-	// Engine creates adapters, binds tools, streams response, writes to Y.Doc.
-	// Side panel observes Y.Doc changes via BroadcastChannel (sub-ms sync).
-	// ─────────────────────────────────────────────────────────────────────────
-
-	// Engine is created after workspace + deviceId are ready.
-	// The onMessage handler below awaits this promise (deferred handler pattern).
-	const chatEnginePromise = whenReady.then(({ deviceId }) => {
-		const engine = createChatEngine({
-			tables: client.tables,
-			deviceId,
-		});
-		console.log('[Background] Chat engine created');
-		return engine;
-	});
-
-	// Handle chat messages from the side panel.
-	// Registered synchronously (MV3 requirement) — awaits engine inside.
-	browser.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-		if (message.type !== 'chat') return;
-
-		// Return true to keep the sendResponse channel open for async work.
-		// Without this, Chrome closes the message channel before we respond.
-		void (async () => {
-			try {
-				const engine = await chatEnginePromise;
-				const response = await engine.handleChatRequest(message as ChatRequest);
-				sendResponse(response);
-			} catch (error) {
-				console.error('[Background] Chat request failed:', error);
-				sendResponse({
-					type: 'error',
-					message: error instanceof Error ? error.message : 'Unknown error',
-				});
-			}
-		})();
-
-		// Return true to indicate we will call sendResponse asynchronously
-		return true;
-	});
 
 	// ─────────────────────────────────────────────────────────────────────────
 	// Browser Keepalive (Chrome MV3 only)

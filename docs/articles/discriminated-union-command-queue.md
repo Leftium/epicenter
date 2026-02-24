@@ -10,23 +10,25 @@ const commandBase = type({
 	_v: '1',
 });
 
-const Command = type.or(
-	commandBase.merge({
-		action: "'closeTabs'",
-		tabIds: 'string[]',
-		'result?': type({ closedCount: 'number' }).or('undefined'),
-	}),
-	commandBase.merge({
-		action: "'openTab'",
-		url: 'string',
-		'windowId?': 'string',
-		'result?': type({ tabId: 'string' }).or('undefined'),
-	}),
-	// ... 6 more variants
+const Command = commandBase.merge(
+	type.or(
+		{
+			action: "'closeTabs'",
+			tabIds: 'string[]',
+			'result?': type({ closedCount: 'number' }).or('undefined'),
+		},
+		{
+			action: "'openTab'",
+			url: 'string',
+			'windowId?': 'string',
+			'result?': type({ tabId: 'string' }).or('undefined'),
+		},
+		// ... 6 more variants
+	),
 );
 ```
 
-`commandBase` holds the shared fields. Each variant merges it with a literal `action` string, variant-specific payload fields, and an optional `result` whose shape matches that action. Arktype auto-discriminates on `action`.
+`commandBase` holds the shared fields. `.merge()` distributes over the union—each variant gets the base fields merged in automatically. Arktype auto-discriminates on `action`.
 
 ## switch Narrows Everything
 

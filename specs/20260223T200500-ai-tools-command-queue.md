@@ -49,16 +49,15 @@ Arktype supports discriminated unions natively via `.or()` chaining, with automa
 
 Three patterns for combining base fields with variants:
 
-| Pattern                      | Syntax                                                                              | Tradeoff                                                                       |
-| ---------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **`type.or()` + `.merge()`** | `type.or(base.merge({action: "'foo'", ...}), base.merge({action: "'bar'", ...}))`   | Cleanest for 5+ variants — flat list, no nesting, base is a real `Type`        |
-| **`.merge().or()` chaining** | `base.merge({action: "'foo'", ...}).or(base.merge({action: "'bar'", ...}))`         | Good for 2-4 variants — base is a real `Type`, merge is first-class            |
-| **`"..."` spread key**       | `type({"...": base, action: "'foo'", ...}).or({"...": base, action: "'bar'", ...})` | Also clean, inline syntax                                                      |
+| Pattern                           | Syntax                                                                              | Tradeoff                                                                       |
+| --------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **`base.merge(type.or(...))`**    | `base.merge(type.or({action: "'foo'", ...}, {action: "'bar'", ...}))`              | Cleanest — base appears once, merge distributes over union branches            |
+| **`.merge().or()` chaining**      | `base.merge({action: "'foo'", ...}).or(base.merge({action: "'bar'", ...}))`         | OK for 2-3 variants — base repeated per branch                                |
+| **`"..."` spread key**             | `type({"...": base, action: "'foo'", ...}).or({"...": base, action: "'bar'", ...})` | Also clean, inline syntax                                                      |
 | **JS object spread**         | `type({...baseObj, action: "'foo'", ...}).or({...baseObj, action: "'bar'", ...})`   | Works but base is a plain object, not a Type — loses arktype-level composition |
+**Recommendation**: `base.merge(type.or(...))` — `.merge()` distributes over unions (via `rNode.distribute()` internally), so the base is written once and each variant is a plain object literal inside `type.or()`. No repeating `commandBase.merge(...)` per branch.
 
-**Recommendation**: `type.or()` + `.merge()` — for 5+ variants (like our 8 command actions), the static `type.or()` form avoids deeply nested `.or()` chaining and reads as a flat list of variants. Each variant still uses `.merge()` to combine the base type with variant-specific fields.
-
-**Important**: `.merge()` only accepts object types, not unions. You cannot do `commandBase.merge(variantA.or(variantB))` — you must merge each variant individually, then union the results.
+**Note**: `.merge()` requires each union branch to be an object type. Non-object branches (e.g., `'string'`) will throw a `ParseError`.
 
 ```typescript
 const commandBase = type({
@@ -68,18 +67,20 @@ const commandBase = type({
 	_v: '1' as const,
 });
 
-// Static type.or() — preferred for 5+ variants
-const Command = type.or(
-	commandBase.merge({
-		action: "'closeTabs'",
-		tabIds: 'string[]',
-		'result?': type({ closedCount: 'number' }).or('undefined'),
-	}),
-	commandBase.merge({
-		action: "'openTab'",
-		url: 'string',
-		'result?': type({ tabId: 'string' }).or('undefined'),
-	}),
+// base.merge(type.or(...)) — merge distributes over each branch
+const Command = commandBase.merge(
+	type.or(
+		{
+			action: "'closeTabs'",
+			tabIds: 'string[]',
+			'result?': type({ closedCount: 'number' }).or('undefined'),
+		},
+		{
+			action: "'openTab'",
+			url: 'string',
+			'result?': type({ tabId: 'string' }).or('undefined'),
+		},
+	),
 );
 // arktype auto-discriminates on `action`
 ```

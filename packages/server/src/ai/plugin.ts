@@ -86,8 +86,8 @@ export function createAIPlugin() {
 						abortController,
 						agentLoopStrategy: maxIterations(10),
 						systemPrompts: systemPrompt ? [systemPrompt] : [],
-						...(tools ? { tools } : {}),
-						...(modelOptions ? { modelOptions } : {}),
+						tools,
+						modelOptions,
 					}),
 				catch: (e) => Err(e instanceof Error ? e : new Error(String(e))),
 			});

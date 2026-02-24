@@ -11,7 +11,7 @@
  * @see docs/articles/tanstack-ai-isomorphic-tool-pattern.md
  */
 
-import { toolDefinition } from '@tanstack/ai';
+import { convertSchemaToJsonSchema, toolDefinition } from '@tanstack/ai';
 import { type } from 'arktype';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -144,9 +144,7 @@ export const reloadTabsDef = toolDefinition({
 /**
  * All tool definitions as an array.
  *
- * Used in two places:
- * 1. `.client(execute)` in client.ts — for ChatClient auto-execution
- * 2. Raw in the request body — so the server can forward schemas to the LLM
+ * Used for `.client(execute)` in client.ts — ChatClient auto-execution.
  */
 export const allToolDefinitions = [
 	searchTabsDef,
@@ -163,3 +161,19 @@ export const allToolDefinitions = [
 	muteTabsDef,
 	reloadTabsDef,
 ];
+
+/**
+ * Tool definitions with arktype schemas pre-converted to JSON Schema.
+ *
+ * Arktype schemas implement Standard Schema but their `~standard` protocol
+ * (methods and symbol-keyed properties) doesn't survive JSON serialization.
+ * This pre-converts them so the server receives valid JSON Schema objects
+ * it can forward directly to the LLM provider.
+ */
+export const allServerToolDefinitions = allToolDefinitions.map((def) => ({
+	name: def.name,
+	description: def.description,
+	...(def.inputSchema
+		? { inputSchema: convertSchemaToJsonSchema(def.inputSchema) }
+		: {}),
+}));

@@ -49,7 +49,7 @@ import type {
 import { popupWorkspace } from '$lib/workspace-popup';
 
 import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allToolDefinitions } from '$lib/ai/tools/definitions';
+import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider / Model Configuration
@@ -207,7 +207,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: allToolDefinitions,
+							tools: allServerToolDefinitions,
 						},
 					};
 				},

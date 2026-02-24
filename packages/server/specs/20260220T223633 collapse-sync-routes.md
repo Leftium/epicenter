@@ -92,7 +92,7 @@ If this fails, fallback plan: keep WS at `/:room` and HTTP at `/:room` but with 
 
 - [ ] **3.1** In `packages/server/src/server.ts`: update JSDoc URL references
 - [ ] **3.2** In `packages/server/src/sync/server.ts`: update JSDoc URL references
-- [ ] **3.3** In `packages/server/src/start.ts`: update console.log URL and JSDoc comment
+- [ ] **3.3** In `packages/server/src/start-hub.ts` and `packages/server/src/start-local.ts`: update console.log URL and JSDoc comment
 
 ### Phase 4: Update Client-Side Consumers
 
@@ -149,7 +149,8 @@ If this fails, fallback plan: keep WS at `/:room` and HTTP at `/:room` but with 
 - `packages/server/src/sync/plugin.test.ts` -- integration tests (largest file to update)
 - `packages/server/src/sync/server.ts` -- standalone server wrapper
 - `packages/server/src/server.ts` -- full server compositor
-- `packages/server/src/start.ts` -- CLI entry point
+- `packages/server/src/start-hub.ts` -- Hub server CLI entry point
+- `packages/server/src/start-local.ts` -- Local server CLI entry point
 - `packages/epicenter/src/extensions/sync.ts` -- client-side sync extension
 - `packages/epicenter/src/extensions/sync.test.ts` -- client-side tests
 - `packages/sync/src/provider.ts` -- raw sync provider

@@ -12,7 +12,7 @@
 - [x] 1.1 Create `createHubServer()` with sync + AI + OpenAPI (`packages/server/src/hub.ts`)
 - [x] 1.2 Create `createLocalServer()` with sync + workspace + OpenAPI, no AI (`packages/server/src/local.ts`)
 - [x] 1.3 Update exports in `index.ts`
-- [x] 1.4 Update `start.ts` to support `--mode hub|local` flag
+- [x] 1.4 Split `start.ts` into `start-hub.ts` and `start-local.ts` entry points
 - [x] 1.5 Tests pass (161/162, 1 pre-existing failure)
 
 ### Step 2: Better Auth Plugin
@@ -92,7 +92,8 @@
 ## Files Modified
 
 - `packages/server/src/index.ts` — Updated exports (all modules including opencode)
-- `packages/server/src/start.ts` — Added `--mode hub|local` flag
+- `packages/server/src/start-hub.ts` — Hub server entry point
+- `packages/server/src/start-local.ts` — Local server entry point
 - `packages/server/src/ai/adapters.ts` — Sync resolveApiKey (header → env var), removed Ollama. KeyStore removed (2026-02-23).
 - `packages/server/src/ai/plugin.ts` — No config needed, sync key resolution. KeyStore removed (2026-02-23).
 - `packages/server/src/ai/plugin.test.ts` — Fixed 3 tests for async resolveApiKey

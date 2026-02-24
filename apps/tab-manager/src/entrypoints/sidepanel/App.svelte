@@ -1,5 +1,6 @@
 <script lang="ts">
 	import AiChat from '$lib/components/AiChat.svelte';
+	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
 	import FlatTabList from '$lib/components/FlatTabList.svelte';
 	import SavedTabList from '$lib/components/SavedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
@@ -8,7 +9,6 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-
 	const totalTabs = $derived(
 		browserState.windows.reduce(
 			(sum, w) => sum + browserState.tabsByWindow(w.id).length,
@@ -64,3 +64,4 @@
 		</Tabs.Root>
 	</main>
 </Tooltip.Provider>
+<ConfirmationDialog />

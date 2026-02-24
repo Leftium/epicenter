@@ -29,7 +29,7 @@
 	});
 </script>
 
-<div class="relative">
+<div class="relative h-full">
 	<div
 		{...rest}
 		bind:this={ref}

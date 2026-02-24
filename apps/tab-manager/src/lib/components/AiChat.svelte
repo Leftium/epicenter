@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { aiChatState } from '$lib/state/chat.svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import * as Chat from '@epicenter/ui/chat';
@@ -94,15 +95,20 @@
 									/>
 								{/if}
 							</span>
-							<button
-								class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-								onclick={(e) => {
-									e.stopPropagation();
-									aiChatState.deleteConversation(conv.id);
-								}}
-							>
-								<TrashIcon class="size-3" />
-							</button>
+						<button
+							class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+							onclick={(e) => {
+								e.stopPropagation();
+								confirmationDialog.open({
+									title: 'Delete conversation',
+									description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
+									confirm: { text: 'Delete', variant: 'destructive' },
+									onConfirm: () => aiChatState.deleteConversation(conv.id),
+								});
+							}}
+						>
+							<TrashIcon class="size-3" />
+						</button>
 						</DropdownMenu.Item>
 					{/each}
 				</DropdownMenu.Content>
@@ -139,7 +145,7 @@
 				</Empty.Description>
 			</Empty.Root>
 		{:else}
-			<Chat.List class="h-full">
+			<Chat.List>
 				{#each aiChatState.messages as message (message.id)}
 					<Chat.Bubble variant={message.role === 'user' ? 'sent' : 'received'}>
 						<Chat.BubbleMessage>
@@ -215,7 +221,6 @@
 						send();
 					}
 				}}
-				disabled={aiChatState.isLoading}
 			/>
 			{#if aiChatState.isLoading}
 				<Button

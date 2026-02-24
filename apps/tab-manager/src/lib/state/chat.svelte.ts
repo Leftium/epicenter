@@ -96,6 +96,9 @@ void getHubServerUrl().then((url) => {
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
+	/** Generate a new branded ConversationId from a random ID. */
+	const generateConversationId = () => generateId() as string as ConversationId;
+
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
@@ -115,7 +118,7 @@ function createAiChatState() {
 	// Ensure at least one conversation always exists. Creates a default
 	// on first load so provider/model dropdowns always have a target.
 	if (conversations.length === 0) {
-		const id = generateId() as string as ConversationId;
+		const id = generateConversationId();
 		const now = Date.now();
 		popupWorkspace.tables.conversations.set({
 			id,
@@ -287,7 +290,7 @@ function createAiChatState() {
 		sourceMessageId?: ChatMessageId;
 		systemPrompt?: string;
 	}): ConversationId {
-		const id = generateId() as string as ConversationId;
+		const id = generateConversationId();
 		const now = Date.now();
 		const current = getActiveConversation();
 

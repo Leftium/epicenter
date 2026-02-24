@@ -111,5 +111,5 @@ The command queue infrastructure is kept intact for future cross-device AI mutat
 - [x] Remove AI code from background.ts
 - [x] Revert chat.svelte.ts to createChat() pattern
 - [x] Verify typecheck passes (0 new errors)
-- [ ] Implement client-side tools in sidebar (follow-up)
-- [ ] Add system prompt back (client-side, in createChat body)
+- [x] Implement client-side tools in sidebar (follow-up) — see `20260224T190000-client-side-ai-tools.md`
+- [x] Add system prompt back (client-side, in createChat body) — default `TAB_MANAGER_SYSTEM_PROMPT` in `$lib/ai/system-prompt.ts`

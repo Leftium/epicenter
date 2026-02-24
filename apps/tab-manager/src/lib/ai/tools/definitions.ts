@@ -77,10 +77,9 @@ export const closeTabsDef = toolDefinition({
 
 export const openTabDef = toolDefinition({
 	name: 'openTab',
-	description: 'Open a new tab with the given URL on a specific device.',
+	description: 'Open a new tab with the given URL on the current device.',
 	inputSchema: type({
 		url: 'string',
-		deviceId: 'string',
 		'windowId?': 'string',
 	}),
 });

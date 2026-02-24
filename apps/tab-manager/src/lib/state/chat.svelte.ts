@@ -562,7 +562,9 @@ function createAiChatState() {
 			const conv = getActiveConversation();
 			updateConversation(convId, {
 				title:
-					conv?.title === 'New Chat' ? content.trim().slice(0, 50) : conv?.title,
+					conv?.title === 'New Chat'
+						? content.trim().slice(0, 50)
+						: conv?.title,
 			});
 			// Send via this conversation's ChatClient (triggers SSE streaming)
 			void ensureChat(convId).sendMessage({ content, id: userMessageId });

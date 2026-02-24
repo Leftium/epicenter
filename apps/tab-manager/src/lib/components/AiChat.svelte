@@ -62,7 +62,10 @@
 		if (hours < 24) return `${hours}h`;
 		const days = Math.floor(hours / 24);
 		if (days < 7) return `${days}d`;
-		return new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		return new Date(ms).toLocaleDateString(undefined, {
+			month: 'short',
+			day: 'numeric',
+		});
 	}
 
 	/**
@@ -132,20 +135,29 @@
 										conversationPicker.closeAndFocusTrigger();
 									}}
 								>
-									<span class="flex w-full items-center justify-between gap-1.5 text-xs">
+									<span
+										class="flex w-full items-center justify-between gap-1.5 text-xs"
+									>
 										<span class="flex min-w-0 items-center gap-1.5">
 											<CheckIcon
 												class={cn('mr-0.5 size-3 shrink-0', {
-													'text-transparent': conv.id !== aiChatState.activeConversationId,
+													'text-transparent':
+														conv.id !== aiChatState.activeConversationId,
 												})}
 											/>
-											<span class="min-w-0 truncate font-medium">{conv.title}</span>
+											<span class="min-w-0 truncate font-medium"
+												>{conv.title}</span
+											>
 											{#if aiChatState.isStreaming(conv.id)}
-												<LoaderCircleIcon class="size-3 shrink-0 animate-spin text-muted-foreground" />
+												<LoaderCircleIcon
+													class="size-3 shrink-0 animate-spin text-muted-foreground"
+												/>
 											{/if}
 										</span>
 										<span class="flex shrink-0 items-center gap-1">
-											<span class="text-[10px] text-muted-foreground">{formatRelativeTime(conv.updatedAt)}</span>
+											<span class="text-[10px] text-muted-foreground"
+												>{formatRelativeTime(conv.updatedAt)}</span
+											>
 											<button
 												class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
 												onclick={(e) => {
@@ -153,9 +165,10 @@
 													e.preventDefault();
 													confirmationDialog.open({
 														title: 'Delete conversation',
-													description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
+														description: `Delete "${conv.title}"? This will remove all messages in this conversation.`,
 														confirm: { text: 'Delete', variant: 'destructive' },
-														onConfirm: () => aiChatState.deleteConversation(conv.id),
+														onConfirm: () =>
+															aiChatState.deleteConversation(conv.id),
 													});
 												}}
 											>
@@ -165,7 +178,10 @@
 									</span>
 									{@const preview = aiChatState.getLastMessagePreview(conv.id)}
 									{#if preview}
-										<span class="w-full truncate pl-5 text-[10px] text-muted-foreground">{preview}</span>
+										<span
+											class="w-full truncate pl-5 text-[10px] text-muted-foreground"
+											>{preview}</span
+										>
 									{/if}
 								</Command.Item>
 							{/each}

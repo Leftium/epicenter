@@ -50,7 +50,7 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
-import { actionsToClientTools, actionsToServerDefinitions } from '@epicenter/ai';
+import { actionsToClientTools, toDefinitions } from '@epicenter/ai';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
@@ -97,8 +97,8 @@ void getHubServerUrl().then((url) => {
 // AI Tools (derived from workspace actions)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const tabManagerClientTools = actionsToClientTools(popupWorkspace.actions);
-const serverToolDefinitions = actionsToServerDefinitions(popupWorkspace.actions);
+const tools = actionsToClientTools(popupWorkspace.actions);
+const toolDefinitions = toDefinitions(tools);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
@@ -201,7 +201,7 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: tabManagerClientTools,
+			tools: tools,
 			connection: fetchServerSentEvents(
 				() => `${hubUrlCache}/ai/chat`,
 				async () => {
@@ -212,7 +212,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: serverToolDefinitions,
+							tools: toolDefinitions,
 						},
 					};
 				},

@@ -11,11 +11,11 @@
  *
  * `.withActions()` attaches all AI-callable operations (tab search, close,
  * group, etc.) as workspace actions. These are derived into TanStack AI
- * tools by `actionsToClientTools()` / `actionsToServerDefinitions()`.
+ * tools by `actionsToClientTools()` then stripped to definitions via `toDefinitions()`.
  */
 
-import { createWorkspace } from '@epicenter/hq';
-import { defineMutation, defineQuery } from '@epicenter/hq';
+import type { ActionNames } from '@epicenter/ai';
+import { createWorkspace, defineMutation, defineQuery } from '@epicenter/hq';
 import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
 import Type from 'typebox';
@@ -121,8 +121,7 @@ export const popupWorkspace = createWorkspace(definition)
 			}),
 
 			open: defineMutation({
-				description:
-					'Open a new tab with the given URL on the current device.',
+				description: 'Open a new tab with the given URL on the current device.',
 				input: Type.Object({
 					url: Type.String(),
 					windowId: Type.Optional(Type.String()),
@@ -133,8 +132,7 @@ export const popupWorkspace = createWorkspace(definition)
 			}),
 
 			activate: defineMutation({
-				description:
-					'Activate (focus) a specific tab by its composite ID.',
+				description: 'Activate (focus) a specific tab by its composite ID.',
 				input: Type.Object({
 					tabId: Type.String(),
 				}),
@@ -145,8 +143,7 @@ export const popupWorkspace = createWorkspace(definition)
 			}),
 
 			save: defineMutation({
-				description:
-					'Save tabs for later. Optionally close them after saving.',
+				description: 'Save tabs for later. Optionally close them after saving.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 					close: Type.Optional(Type.Boolean()),
@@ -163,8 +160,7 @@ export const popupWorkspace = createWorkspace(definition)
 			}),
 
 			group: defineMutation({
-				description:
-					'Group tabs together with an optional title and color.',
+				description: 'Group tabs together with an optional title and color.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 					title: Type.Optional(Type.String()),
@@ -232,9 +228,7 @@ export const popupWorkspace = createWorkspace(definition)
 							focused: w.focused,
 							state: w.state ?? 'normal',
 							type: w.type ?? 'normal',
-							tabCount: allTabs.filter(
-								(t) => t.windowId === w.id,
-							).length,
+							tabCount: allTabs.filter((t) => t.windowId === w.id).length,
 						})),
 					};
 				},
@@ -277,10 +271,7 @@ export const popupWorkspace = createWorkspace(definition)
 						if (!tab.url) continue;
 						try {
 							const domain = new URL(tab.url).hostname;
-							counts.set(
-								domain,
-								(counts.get(domain) ?? 0) + 1,
-							);
+							counts.set(domain, (counts.get(domain) ?? 0) + 1);
 						} catch {
 							// Skip tabs with invalid URLs (e.g. chrome:// pages)
 						}
@@ -293,6 +284,8 @@ export const popupWorkspace = createWorkspace(definition)
 			}),
 		},
 	}));
+
+export type PopupActionName = ActionNames<(typeof popupWorkspace)['actions']>;
 
 // Set local awareness on connect
 void popupWorkspace.whenReady.then(() => {

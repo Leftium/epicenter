@@ -278,10 +278,7 @@ export function defineQuery<TOutput = unknown>(
 export function defineQuery<TInput extends TSchema, TOutput = unknown>(
 	config: ActionConfig<TInput, TOutput>,
 ): Query<TInput, TOutput>;
-export function defineQuery({
-	handler,
-	...rest
-}: ActionConfig): Query {
+export function defineQuery({ handler, ...rest }: ActionConfig): Query {
 	return Object.assign(handler, {
 		type: 'query' as const,
 		...rest,
@@ -327,10 +324,7 @@ export function defineMutation<TOutput = unknown>(
 export function defineMutation<TInput extends TSchema, TOutput = unknown>(
 	config: ActionConfig<TInput, TOutput>,
 ): Mutation<TInput, TOutput>;
-export function defineMutation({
-	handler,
-	...rest
-}: ActionConfig): Mutation {
+export function defineMutation({ handler, ...rest }: ActionConfig): Mutation {
 	return Object.assign(handler, {
 		type: 'mutation' as const,
 		...rest,

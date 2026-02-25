@@ -112,7 +112,10 @@ describe('CLI command registration', () => {
 
 		const actions = {
 			create: defineMutation({
-				input: Type.Object({ title: Type.String(), count: Type.Optional(Type.Number()) }),
+				input: Type.Object({
+					title: Type.String(),
+					count: Type.Optional(Type.Number()),
+				}),
 				handler: ({ title, count }) => {
 					capturedArgs = { title, count };
 					return { id: '1', title };

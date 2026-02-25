@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -282,7 +283,6 @@
       "dependencies": {
         "@epicenter/hq": "workspace:*",
         "@tanstack/ai": "^0.5.1",
-        "typebox": "catalog:",
       },
       "devDependencies": {
         "typescript": "catalog:",

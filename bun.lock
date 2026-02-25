@@ -281,6 +281,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/hq": "workspace:*",
+        "@standard-schema/spec": "catalog:",
         "@tanstack/ai": "^0.5.1",
       },
       "devDependencies": {

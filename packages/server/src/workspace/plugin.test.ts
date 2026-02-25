@@ -4,7 +4,7 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { createWorkspacePlugin } from './plugin';

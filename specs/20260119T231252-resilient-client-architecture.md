@@ -388,7 +388,7 @@ User creates workspaces through UI. Schema lives in Y.Doc and is discovered, not
 **Use `createDynamicClient()`** - only needs workspace ID, schema comes from Y.Doc.
 
 ```typescript
-import { createDynamicClient } from '@epicenter/hq';
+import { createDynamicClient } from '@epicenter/workspace';
 
 // Load existing workspace - schema comes from Y.Doc
 const client = createDynamicClient('my-workspace', {
@@ -420,7 +420,7 @@ Developer defines schema in code. Schema is fixed at compile time.
 **Use `createClient()`** - requires full `WorkspaceDefinition` (id, name, tables, kv).
 
 ```typescript
-import { createClient, defineWorkspace } from '@epicenter/hq';
+import { createClient, defineWorkspace } from '@epicenter/workspace';
 
 const definition = defineWorkspace({
 	id: 'my-app',
@@ -463,7 +463,7 @@ Instead of one function with optional fields and a boolean flag, we have two sep
 ### Where Each API Lives
 
 ```
-packages/epicenter/           ← The library (@epicenter/hq)
+packages/epicenter/           ← The library (@epicenter/workspace)
 ├── createClient()            ← Static schema API (requires full definition)
 ├── createDynamicClient()     ← Dynamic schema API (only needs ID)
 ├── createHeadDoc()           ← Low-level Head Doc (exported)
@@ -594,7 +594,7 @@ await oldClient.whenSynced;
 ### Static Schema App (Library Usage)
 
 ```typescript
-import { createClient, defineWorkspace, text, number } from '@epicenter/hq';
+import { createClient, defineWorkspace, text, number } from '@epicenter/workspace';
 
 const definition = defineWorkspace({
 	id: 'my-app',
@@ -873,7 +873,7 @@ When the epoch changes (due to migration on another device), the current client 
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from '$lib/components/ui/toast';
-	import { createClient, type WorkspaceClient } from '@epicenter/hq';
+	import { createClient, type WorkspaceClient } from '@epicenter/workspace';
 
 	let { definition, head, capabilities } = $props();
 
@@ -952,7 +952,7 @@ import {
 	createClient,
 	type WorkspaceClient,
 	type HeadDoc,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 
 export function createWorkspaceStore(
 	definition: WorkspaceDefinition,
@@ -1162,7 +1162,7 @@ No longer needed - definition comes from Y.Doc.
 
 ### Phase 2: Safe Migration
 
-- [ ] Add `migrateToNewEpoch()` helper function to `@epicenter/hq`
+- [ ] Add `migrateToNewEpoch()` helper function to `@epicenter/workspace`
 - [ ] Document `bumpEpoch()` with warning about prepare-then-bump requirement
 - [ ] Add migration examples to README
 

@@ -56,7 +56,7 @@ apps/tab-manager/
   - `@tanstack/svelte-query` (query layer)
   - `wellcrafted` (from catalog)
   - `arktype` (from catalog)
-  - Workspace packages: `@epicenter/hq`, `@epicenter/ui`
+  - Workspace packages: `@epicenter/workspace`, `@epicenter/ui`
 
 ### Phase 2: Epicenter Client Setup
 
@@ -108,7 +108,7 @@ apps/tab-manager/
 
 ```typescript
 // src/lib/epicenter.ts
-import { defineEpicenter, createEpicenterClient } from '@epicenter/hq';
+import { defineEpicenter, createEpicenterClient } from '@epicenter/workspace';
 import { browser } from '../../examples/content-hub/browser/browser.workspace';
 
 export const epicenter = defineEpicenter({

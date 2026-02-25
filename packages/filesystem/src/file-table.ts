@@ -1,4 +1,4 @@
-import { defineTable } from '@epicenter/hq';
+import { defineTable } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { FileId } from './types.js';
 

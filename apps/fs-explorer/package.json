@@ -12,7 +12,7 @@
 	},
 	"devDependencies": {
 		"@epicenter/filesystem": "workspace:*",
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@sveltejs/adapter-auto": "^6.1.0",
 		"@sveltejs/kit": "catalog:",

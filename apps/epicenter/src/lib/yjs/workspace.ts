@@ -1,4 +1,4 @@
-import { createWorkspace } from '@epicenter/hq';
+import { createWorkspace } from '@epicenter/workspace';
 import { WORKSPACE_TEMPLATE_BY_ID } from '$lib/templates';
 import { workspacePersistence } from './workspace-persistence';
 

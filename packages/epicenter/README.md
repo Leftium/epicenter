@@ -131,7 +131,7 @@ When two apps declare the same workspace ID, they intentionally point to the sam
 ### Installation
 
 ```bash
-bun add @epicenter/hq
+bun add @epicenter/workspace
 ```
 
 ### Basic Example
@@ -148,8 +148,8 @@ import {
 	select,
 	sqliteProvider,
 	markdownProvider,
-} from '@epicenter/hq';
-import { setupPersistence } from '@epicenter/hq/providers';
+} from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers';
 import { type } from 'arktype';
 
 // 1. Define your workspace
@@ -412,7 +412,7 @@ publishedAt: date({ nullable: true });
 Working with dates:
 
 ```typescript
-import { DateTimeString } from '@epicenter/hq';
+import { DateTimeString } from '@epicenter/workspace';
 
 // Create current timestamp
 const now = DateTimeString.now(); // Uses system timezone
@@ -474,7 +474,7 @@ JSON column with arktype schema validation.
 - Use `.matching(regex)` for patterns
 
 ```typescript
-import { json } from '@epicenter/hq';
+import { json } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 metadata: json({
@@ -713,7 +713,7 @@ The SQLite extension provides SQL query capabilities via Drizzle ORM.
 **Setup:**
 
 ```typescript
-import { createClient, sqliteProvider } from '@epicenter/hq';
+import { createClient, sqliteProvider } from '@epicenter/workspace';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
@@ -789,7 +789,7 @@ The markdown extension persists data as human-readable markdown files.
 **Setup:**
 
 ```typescript
-import { createClient, markdownProvider } from '@epicenter/hq';
+import { createClient, markdownProvider } from '@epicenter/workspace';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
@@ -887,8 +887,8 @@ The sync extension enables real-time Y.Doc synchronization using the y-websocket
 **Setup:**
 
 ````typescript
-import { createClient } from '@epicenter/hq';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { createClient } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)
@@ -1174,7 +1174,7 @@ action.description  // string | undefined
 ### Type Guards
 
 ```typescript
-import { isAction, isQuery, isMutation } from '@epicenter/hq';
+import { isAction, isQuery, isMutation } from '@epicenter/workspace';
 
 isAction(value); // value is Query | Mutation
 isQuery(value); // value is Query
@@ -1211,9 +1211,9 @@ type ProviderPaths = {
 **Common providers:**
 
 ```typescript
-import { setupPersistence } from '@epicenter/hq/providers';
-import { sqliteProvider, markdownProvider } from '@epicenter/hq';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { setupPersistence } from '@epicenter/workspace/providers';
+import { sqliteProvider, markdownProvider } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 
 providers: {
   // Filesystem persistence (Node.js) or IndexedDB (browser)
@@ -1416,7 +1416,7 @@ Create a client directly for standalone scripts. Use `await using` for automatic
 The server is a wrapper around the client that maps REST, MCP, and WebSocket Sync endpoints to workspace actions and tables.
 
 ```typescript
-import { createClient, createServer } from '@epicenter/hq';
+import { createClient, createServer } from '@epicenter/workspace';
 
 const client = createClient(blogWorkspace.id)
   .withDefinition(blogWorkspace)
@@ -1442,7 +1442,7 @@ await fetch('http://localhost:3913/actions/createPost', {
 ### Workspace Definition
 
 ```typescript
-import { defineWorkspace, defineMutation, defineQuery } from '@epicenter/hq';
+import { defineWorkspace, defineMutation, defineQuery } from '@epicenter/workspace';
 ```
 
 **`defineWorkspace({ id, tables, kv })`**
@@ -1505,7 +1505,7 @@ import {
 	type ColumnSchema,
 	type TableSchema,
 	type WorkspaceSchema,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **Column factory functions:**
@@ -1539,7 +1539,7 @@ import {
 	type Mutation,
 	type Action,
 	type Actions,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **`defineQuery(config)`**
@@ -1563,7 +1563,7 @@ Identity function for type inference.
 ### Table Operations
 
 ```typescript
-import { type Tables, type TableHelper } from '@epicenter/hq';
+import { type Tables, type TableHelper } from '@epicenter/workspace';
 ```
 
 **`TableHelper<TSchema>`** methods:
@@ -1579,14 +1579,14 @@ import { type Tables, type TableHelper } from '@epicenter/hq';
 ### Providers
 
 ```typescript
-import { sqliteProvider } from '@epicenter/hq';
-import { markdownProvider, type MarkdownProviderConfig } from '@epicenter/hq';
+import { sqliteProvider } from '@epicenter/workspace';
+import { markdownProvider, type MarkdownProviderConfig } from '@epicenter/workspace';
 import {
 	type Provider,
 	type ProviderContext,
 	type Providers,
 	type WorkspaceProviderMap,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **`sqliteProvider(context)`**
@@ -1600,7 +1600,7 @@ Create markdown file provider.
 ### Persistence Provider
 
 ```typescript
-import { setupPersistence } from '@epicenter/hq/providers';
+import { setupPersistence } from '@epicenter/workspace/providers';
 ```
 
 **`setupPersistence`**
@@ -1614,7 +1614,7 @@ import {
 	DateTimeString,
 	type DateIsoString,
 	type TimezoneId,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **`DateTimeString.now(timezone?)`**
@@ -1641,7 +1641,7 @@ import {
 	createWorkspaceValidators,
 	type TableValidators,
 	type WorkspaceValidators,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **`createTableValidators<TSchema>(schema)`**
@@ -1662,7 +1662,7 @@ import {
 	type EpicenterOperationError,
 	type IndexError,
 	type ValidationError,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 **Error constructors:**
@@ -1691,7 +1691,7 @@ import {
 	sql,
 	desc,
 	asc,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 Commonly used Drizzle operators for querying SQLite provider.
@@ -1699,7 +1699,7 @@ Commonly used Drizzle operators for querying SQLite provider.
 ### Server
 
 ```typescript
-import { createServer } from '@epicenter/hq';
+import { createServer } from '@epicenter/workspace';
 
 // Single workspace
 const server = createServer(blogClient, { port: 3913 });
@@ -1772,7 +1772,7 @@ Workspace actions are exposed via REST endpoints under the `/workspaces` prefix:
 ### Setup
 
 ```typescript
-import { createClient, createServer } from '@epicenter/hq';
+import { createClient, createServer } from '@epicenter/workspace';
 
 // Create clients with extensions
 const blogClient = createClient(blogWorkspace.id)

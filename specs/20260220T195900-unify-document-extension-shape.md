@@ -36,7 +36,7 @@ Both do the same thing: create an IndexedDB persistence provider for a Y.Doc. Bu
 
 ```typescript
 // Line 7: imports the built-in helper for workspace-level
-import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 // Line 11: imports the raw class for document-level
 import { IndexeddbPersistence } from 'y-indexeddb';
 ```

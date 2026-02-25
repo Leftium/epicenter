@@ -1,17 +1,17 @@
-# Consolidate CLI Package into @epicenter/hq
+# Consolidate CLI Package into @epicenter/workspace
 
 ## Problem
 
 Currently we have two packages:
 
-- `@epicenter/hq` - Main library with bin entry at `src/cli/bin.ts`
-- `@epicenter/cli` - Separate CLI package that re-exports `@epicenter/hq/cli`
+- `@epicenter/workspace` - Main library with bin entry at `src/cli/bin.ts`
+- `@epicenter/cli` - Separate CLI package that re-exports `@epicenter/workspace/cli`
 
 This creates duplication and maintenance overhead. Both packages have nearly identical entry points that load config and generate the CLI.
 
 ## Goal
 
-Consolidate into a single `@epicenter/hq` package that serves three purposes:
+Consolidate into a single `@epicenter/workspace` package that serves three purposes:
 
 1. TypeScript library for importing Epicenter functionality
 2. CLI tool (replacing `@epicenter/cli`)
@@ -28,23 +28,23 @@ Consolidate into a single `@epicenter/hq` package that serves three purposes:
 ## Tradeoffs
 
 - CLI-only users download the full library (negligible impact for TypeScript packages)
-- Package name `@epicenter/hq` less obvious than `@epicenter/cli` for CLI usage (mitigated by documentation)
+- Package name `@epicenter/workspace` less obvious than `@epicenter/cli` for CLI usage (mitigated by documentation)
 
 ## Implementation Plan
 
 ### Todo List
 
 - [ ] Verify current state of both packages
-- [ ] Update `@epicenter/hq` package.json
-- [ ] Update examples to use `@epicenter/hq` instead of file paths
-- [ ] Update documentation references from `@epicenter/cli` to `@epicenter/hq`
+- [ ] Update `@epicenter/workspace` package.json
+- [ ] Update examples to use `@epicenter/workspace` instead of file paths
+- [ ] Update documentation references from `@epicenter/cli` to `@epicenter/workspace`
 - [ ] Delete `packages/cli/` package
 - [ ] Test CLI functionality works from consolidated package
 - [ ] Verify library imports still work
 
 ## Changes
 
-### 1. Keep @epicenter/hq package.json bin entry
+### 1. Keep @epicenter/workspace package.json bin entry
 
 The current `bin` entry is already correct:
 
@@ -89,7 +89,7 @@ Remove the entire `@epicenter/cli` package directory.
 
 ### 4. Update documentation
 
-Update any references from `@epicenter/cli` to `@epicenter/hq` in:
+Update any references from `@epicenter/cli` to `@epicenter/workspace` in:
 
 - README files
 - Documentation
@@ -102,28 +102,28 @@ After consolidation, users can:
 **Install globally:**
 
 ```bash
-bun install -g @epicenter/hq
+bun install -g @epicenter/workspace
 epicenter
 ```
 
 **Use with bunx (no installation):**
 
 ```bash
-bunx @epicenter/hq
-bunx @epicenter/hq pages createPage --title "My Post"
+bunx @epicenter/workspace
+bunx @epicenter/workspace pages createPage --title "My Post"
 ```
 
 **Local project installation:**
 
 ```bash
-bun add -D @epicenter/hq
+bun add -D @epicenter/workspace
 bunx epicenter
 ```
 
 **Library usage (unchanged):**
 
 ```typescript
-import { defineEpicenter } from '@epicenter/hq/dynamic';
+import { defineEpicenter } from '@epicenter/workspace/dynamic';
 ```
 
 ### Future: bun create support
@@ -138,17 +138,17 @@ This is out of scope for this consolidation but the structure enables it.
 
 ## Testing
 
-1. Install `@epicenter/hq` in a test project
+1. Install `@epicenter/workspace` in a test project
 2. Run `bunx epicenter --help`
 3. Run `epicenter` in example projects
-4. Verify library imports work: `import { defineEpicenter } from '@epicenter/hq/dynamic'`
-5. Verify CLI generation works: `import { createCLI } from '@epicenter/hq/cli'`
+4. Verify library imports work: `import { defineEpicenter } from '@epicenter/workspace/dynamic'`
+5. Verify CLI generation works: `import { createCLI } from '@epicenter/workspace/cli'`
 
 ## Review
 
 ### Implementation Summary
 
-Successfully consolidated `@epicenter/cli` into `@epicenter/hq`. The package now serves as both a library and CLI tool.
+Successfully consolidated `@epicenter/cli` into `@epicenter/workspace`. The package now serves as both a library and CLI tool.
 
 ### Changes Made
 
@@ -163,30 +163,30 @@ Successfully consolidated `@epicenter/cli` into `@epicenter/hq`. The package now
 
 - ✅ CLI help command works: `bun cli.ts --help`
 - ✅ Workspace commands work: `bun cli.ts blog --help`
-- ✅ Library imports work: `import { defineEpicenter } from '@epicenter/hq'`
-- ✅ CLI imports work: `import { createCLI } from '@epicenter/hq/cli'`
+- ✅ Library imports work: `import { defineEpicenter } from '@epicenter/workspace'`
+- ✅ CLI imports work: `import { createCLI } from '@epicenter/workspace/cli'`
 
 ### Package Structure
 
-`@epicenter/hq` now handles:
+`@epicenter/workspace` now handles:
 
-- **Library usage**: `import { defineEpicenter } from '@epicenter/hq/dynamic'`
-- **CLI tool**: `bunx @epicenter/hq` or global install
-- **Programmatic CLI**: `import { createCLI } from '@epicenter/hq/cli'`
+- **Library usage**: `import { defineEpicenter } from '@epicenter/workspace/dynamic'`
+- **CLI tool**: `bunx @epicenter/workspace` or global install
+- **Programmatic CLI**: `import { createCLI } from '@epicenter/workspace/cli'`
 
 ### Usage Patterns
 
 **Global installation:**
 
 ```bash
-bun install -g @epicenter/hq
+bun install -g @epicenter/workspace
 epicenter
 ```
 
 **Direct execution:**
 
 ```bash
-bunx @epicenter/hq
+bunx @epicenter/workspace
 ```
 
 **Local CLI file (examples):**
@@ -197,6 +197,6 @@ bun cli.ts blog createPost --title "Hello"
 
 ### Notes
 
-- The `bin` entry in `@epicenter/hq/package.json` was already correctly configured
+- The `bin` entry in `@epicenter/workspace/package.json` was already correctly configured
 - Examples use local `cli.ts` files for educational purposes (shows programmatic CLI creation)
 - Pre-existing test failures in markdown index are unrelated to this consolidation

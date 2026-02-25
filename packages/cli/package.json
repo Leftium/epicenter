@@ -7,7 +7,7 @@
 		"epicenter": "./src/bin.ts"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/server": "workspace:*",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",

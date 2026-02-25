@@ -90,12 +90,12 @@ type YSweetSyncConfig = {
 
 ```typescript
 // apps/tab-manager/src/lib/workspace-popup.ts
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence';
+import { directAuth, ySweetSync } from '@epicenter/workspace/extensions/y-sweet-sync';
 
 // apps/tab-manager/src/entrypoints/background.ts
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence';
+import { directAuth, ySweetSync } from '@epicenter/workspace/extensions/y-sweet-sync';
 ```
 
 ### Current Usage
@@ -147,7 +147,7 @@ packages/epicenter/src/extensions/
 
 Note: The old export paths (`./extensions/persistence`, `./extensions/y-sweet-sync`) are kept temporarily as re-export shims. They can be removed in a future breaking change.
 
-**Alternative (clean break, recommended if external consumers are few):** Remove the old paths entirely. The only known consumers are the two tab-manager files. If there are no external consumers of `@epicenter/hq/extensions/persistence`, skip the shims.
+**Alternative (clean break, recommended if external consumers are few):** Remove the old paths entirely. The only known consumers are the two tab-manager files. If there are no external consumers of `@epicenter/workspace/extensions/persistence`, skip the shims.
 
 ### New Config Type
 
@@ -169,22 +169,22 @@ type YSweetPersistSyncConfig = {
 import {
 	ySweetPersistSync,
 	directAuth,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
+} from '@epicenter/workspace/extensions/y-sweet-persist-sync';
 
 // Persistence from platform-specific sub-paths
-import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
-import { filesystemPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/y-sweet-persist-sync/web';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/y-sweet-persist-sync/desktop';
 ```
 
 ### New Usage
 
 ```typescript
 // Browser (tab-manager)
-import { indexeddbPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/web';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/y-sweet-persist-sync/web';
 import {
 	ySweetPersistSync,
 	directAuth,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
+} from '@epicenter/workspace/extensions/y-sweet-persist-sync';
 
 createWorkspace(definition).withExtension(
 	'sync',
@@ -195,11 +195,11 @@ createWorkspace(definition).withExtension(
 );
 
 // Desktop/Node.js
-import { filesystemPersistence } from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/y-sweet-persist-sync/desktop';
 import {
 	ySweetPersistSync,
 	directAuth,
-} from '@epicenter/hq/extensions/y-sweet-persist-sync';
+} from '@epicenter/workspace/extensions/y-sweet-persist-sync';
 
 createWorkspace(definition).withExtension(
 	'sync',
@@ -306,7 +306,7 @@ Two options:
 ```typescript
 // packages/epicenter/src/extensions/y-sweet-sync.ts
 /**
- * @deprecated Use `@epicenter/hq/extensions/y-sweet-persist-sync` instead.
+ * @deprecated Use `@epicenter/workspace/extensions/y-sweet-persist-sync` instead.
  */
 export {
 	ySweetPersistSync as ySweetSync,
@@ -330,7 +330,7 @@ If we're doing a clean break (no external consumers), just delete `y-sweet-sync.
 ```typescript
 // packages/epicenter/src/extensions/persistence/web.ts
 /**
- * @deprecated Import from '@epicenter/hq/extensions/y-sweet-persist-sync/web' instead.
+ * @deprecated Import from '@epicenter/workspace/extensions/y-sweet-persist-sync/web' instead.
  */
 export { indexeddbPersistence } from '../y-sweet-persist-sync/web';
 ```
@@ -340,7 +340,7 @@ export { indexeddbPersistence } from '../y-sweet-persist-sync/web';
 ```typescript
 // packages/epicenter/src/extensions/persistence/desktop.ts
 /**
- * @deprecated Import from '@epicenter/hq/extensions/y-sweet-persist-sync/desktop' instead.
+ * @deprecated Import from '@epicenter/workspace/extensions/y-sweet-persist-sync/desktop' instead.
  */
 export {
 	filesystemPersistence,
@@ -360,7 +360,7 @@ The `persistence/` directory's only real consumers are:
 1. `apps/tab-manager/src/lib/workspace-popup.ts`
 2. `apps/tab-manager/src/entrypoints/background.ts`
 
-Both will be updated to import from the new path. The only reason to keep `persistence/` is if external packages import from `@epicenter/hq/extensions/persistence`. If that's not a concern, delete the directory and the package.json export.
+Both will be updated to import from the new path. The only reason to keep `persistence/` is if external packages import from `@epicenter/workspace/extensions/persistence`. If that's not a concern, delete the directory and the package.json export.
 
 **Recommendation:** Keep as re-export shims initially. Mark `@deprecated`. Remove in a future version.
 
@@ -389,8 +389,8 @@ export { indexeddbPersistence as webPersistence } from './y-sweet-persist-sync/w
 
 ```typescript
 // Before
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence';
+import { directAuth, ySweetSync } from '@epicenter/workspace/extensions/y-sweet-sync';
 
 export const popupWorkspace = createWorkspace(definition).withExtension(
 	'sync',
@@ -401,7 +401,7 @@ export const popupWorkspace = createWorkspace(definition).withExtension(
 );
 ```
 
-This is a different pattern — standalone persistence, no Y-Sweet. It does NOT use `ySweetSync` or `indexeddbPersistence`. Leave it as-is. The `workspacePersistence` function is app-specific and imports `ExtensionContext` from `@epicenter/hq/dynamic`, not from `extensions/persistence`.
+This is a different pattern — standalone persistence, no Y-Sweet. It does NOT use `ySweetSync` or `indexeddbPersistence`. Leave it as-is. The `workspacePersistence` function is app-specific and imports `ExtensionContext` from `@epicenter/workspace/dynamic`, not from `extensions/persistence`.
 
 **TODO for future:** This app should eventually use `ySweetPersistSync` when Y-Sweet sync is added to the Epicenter desktop app.
 

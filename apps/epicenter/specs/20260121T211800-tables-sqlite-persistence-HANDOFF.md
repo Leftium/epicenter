@@ -35,7 +35,7 @@ import {
 	getWorkspaceDocMaps,
 	type ProviderExports,
 	readSchemaFromYDoc,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import { appLocalDataDir, dirname, join } from '@tauri-apps/api/path';
 import {
 	exists,

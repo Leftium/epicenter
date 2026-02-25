@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
-import type { AnyWorkspaceClient } from '@epicenter/hq';
+import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createHubSessionValidator } from './auth/local-auth';

@@ -24,7 +24,7 @@ Type-safe schema definitions for tables and KV stores with versioned migrations.
 Use when a table has only one version:
 
 ```typescript
-import { defineTable } from '@epicenter/hq';
+import { defineTable } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
@@ -57,7 +57,7 @@ KV stores are flexible — `_v` is optional. Both patterns work:
 ### Without `_v` (field presence)
 
 ```typescript
-import { defineKv } from '@epicenter/hq';
+import { defineKv } from '@epicenter/workspace';
 
 const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
 

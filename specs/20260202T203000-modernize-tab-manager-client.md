@@ -119,7 +119,7 @@ const indexedDbPersistence = (ctx: CapabilityContext) => {
 
 ### Phase 2: Migrate to Static Workspace API
 
-- [ ] Change import from `@epicenter/hq/dynamic` to `@epicenter/hq/static`
+- [ ] Change import from `@epicenter/workspace/dynamic` to `@epicenter/workspace/static`
 - [ ] Remove `extensions` field from `defineWorkspace`
 - [ ] Remove `actions` field from `defineWorkspace`
 - [ ] Use stable workspace ID: `'tab-manager'` instead of `generateGuid()`
@@ -128,7 +128,7 @@ const indexedDbPersistence = (ctx: CapabilityContext) => {
 **Before** (broken):
 
 ```typescript
-import { defineWorkspace, generateGuid } from '@epicenter/hq/dynamic';
+import { defineWorkspace, generateGuid } from '@epicenter/workspace/dynamic';
 
 const backgroundWorkspace = defineWorkspace({
   id: generateGuid(),  // Random ID = new Y.Doc every restart!
@@ -147,7 +147,7 @@ const client = createWorkspaceClient(backgroundWorkspace); // NOT IMPORTED!
 **After** (correct):
 
 ```typescript
-import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
+import { createWorkspace, defineWorkspace } from '@epicenter/workspace/static';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
 // 1. Define workspace schema (pure, no runtime)
@@ -240,9 +240,9 @@ const initPromise = (async () => {
 ### background.ts Structure (After)
 
 ```typescript
-import { createWorkspace, defineWorkspace } from '@epicenter/hq/static';
+import { createWorkspace, defineWorkspace } from '@epicenter/workspace/static';
 import { IndexeddbPersistence } from 'y-indexeddb';
-import { websocketSync } from '@epicenter/hq/extensions/websocket-sync';
+import { websocketSync } from '@epicenter/workspace/extensions/websocket-sync';
 import { defineBackground } from 'wxt/utils/define-background';
 // ... other imports
 
@@ -331,7 +331,7 @@ export default defineBackground(() => {
   - [ ] Create persistence capability
   - [ ] Test service worker restart recovery
 - [ ] **Phase 2: Static Workspace API**
-  - [ ] Change import to `@epicenter/hq/static`
+  - [ ] Change import to `@epicenter/workspace/static`
   - [ ] Use stable workspace ID `'tab-manager'`
   - [ ] Remove `extensions` and `actions` from `defineWorkspace`
   - [ ] Use `createWorkspace().withExtension()`

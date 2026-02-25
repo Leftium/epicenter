@@ -23,7 +23,7 @@
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { createAwareness } from '@epicenter/hq';
+ * import { createAwareness } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });

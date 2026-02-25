@@ -138,8 +138,8 @@ Phone has no local server, so it connects directly to all available sync nodes:
 
 ```typescript
 // phone/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -165,8 +165,8 @@ Browser connects to its own local server (localhost). The server handles cross-d
 
 ```typescript
 // desktop/browser/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -194,8 +194,8 @@ The server acts as BOTH:
 
 ```typescript
 // desktop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -219,8 +219,8 @@ export const blogWorkspace = defineWorkspace({
 
 ```typescript
 // laptop/server/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq/dynamic';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { defineWorkspace } from '@epicenter/workspace/dynamic';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { SYNC_NODES } from './config/sync-nodes';
 
 export const blogWorkspace = defineWorkspace({
@@ -245,7 +245,7 @@ Cloud server typically only accepts connections (doesn't initiate):
 
 ```typescript
 // cloud/src/workspace.ts
-import { defineWorkspace } from '@epicenter/hq/dynamic';
+import { defineWorkspace } from '@epicenter/workspace/dynamic';
 
 export const blogWorkspace = defineWorkspace({
 	id: 'blog',
@@ -306,8 +306,8 @@ export const blogWorkspace = defineWorkspace({
 Each device should also use local persistence:
 
 ```typescript
-import { persistence } from '@epicenter/hq/extensions/persistence';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { persistence } from '@epicenter/workspace/extensions/persistence';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 
 const workspace = defineWorkspace({
 	id: 'blog',

@@ -6,7 +6,7 @@ Client-side Yjs sync provider for `@epicenter/server`.
 
 `createSyncProvider()` connects a `Y.Doc` to a WebSocket sync server using the y-websocket protocol, plus a custom heartbeat extension (MESSAGE_SYNC_STATUS, tag 102) for `hasLocalChanges` tracking and fast dead-connection detection.
 
-Most consumers don't use this package directly. Instead, they use `createSyncExtension` from `@epicenter/hq/extensions/sync`, which wraps this provider with workspace lifecycle management (waiting for persistence to load before connecting, auto-cleanup on destroy, URL templating with workspace IDs).
+Most consumers don't use this package directly. Instead, they use `createSyncExtension` from `@epicenter/workspace/extensions/sync`, which wraps this provider with workspace lifecycle management (waiting for persistence to load before connecting, auto-cleanup on destroy, URL templating with workspace IDs).
 
 Use this package directly when you need raw Y.Doc sync without the workspace extension system.
 
@@ -183,7 +183,7 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ## Relationship to Other Packages
 
 ```
-@epicenter/hq                          @epicenter/server
+@epicenter/workspace                          @epicenter/server
  └─ extensions/sync.ts                  └─ sync/index.ts (Elysia plugin)
      │                                      │
      │  createSyncExtension()               │  createSyncPlugin()
@@ -199,4 +199,4 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.
 - **`@epicenter/server`**: The server that this provider connects to. Exposes `ws://host:port/rooms/{id}`.
-- **`@epicenter/hq/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.
+- **`@epicenter/workspace/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.

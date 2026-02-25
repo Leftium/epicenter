@@ -301,7 +301,7 @@ Every `ContentOps` method maps to either the document binding directly or a thin
 
 2. **Two content access paths**: `ws.tables.files.docs.content` (binding) for simple text I/O, and `fs.content` (ContentHelpers) for full mode-aware operations. The UI uses the binding directly; filesystem operations use ContentHelpers.
 
-3. **Persistence extension inline**: The IndexedDB extension is defined inline in `fs-state.svelte.ts` rather than imported, because it needs `onDocumentOpen` which the existing `indexeddbPersistence` from `@epicenter/hq/extensions/sync/web` doesn't provide.
+3. **Persistence extension inline**: The IndexedDB extension is defined inline in `fs-state.svelte.ts` rather than imported, because it needs `onDocumentOpen` which the existing `indexeddbPersistence` from `@epicenter/workspace/extensions/sync/web` doesn't provide.
 
 ### Known Issues
 

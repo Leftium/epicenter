@@ -1,4 +1,4 @@
-import type { Documents } from '@epicenter/hq';
+import type { Documents } from '@epicenter/workspace';
 import { parseSheetFromCsv } from './sheet-helpers.js';
 import { createTimeline } from './timeline-helpers.js';
 import type { FileId, FileRow } from './types.js';

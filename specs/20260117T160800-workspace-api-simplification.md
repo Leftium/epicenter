@@ -11,7 +11,7 @@ Consolidated workspace architectures into a unified Cell API:
 - **Cell** inherits HeadDoc + Epochs + Extensions from Core
 - **Static** remains unchanged (row-level, compile-time typed schemas)
 - **Core** is deprecated after migration
-- Everything exports from `@epicenter/hq` and `@epicenter/hq/cell`
+- Everything exports from `@epicenter/workspace` and `@epicenter/workspace/cell`
 
 ## Problem
 
@@ -29,7 +29,7 @@ Cell's cell-level CRDT was better for concurrent editing, but it lacked Core's H
 ### Target API
 
 ```typescript
-import { createHeadDoc, createCellWorkspace, defineExports } from '@epicenter/hq';
+import { createHeadDoc, createCellWorkspace, defineExports } from '@epicenter/workspace';
 
 // 1. Create head doc (identity + epochs)
 const headDoc = createHeadDoc({
@@ -166,7 +166,7 @@ type CellWorkspaceBuilder<TTableDefs> = {
 ```
 
 ```typescript
-// From @epicenter/hq
+// From @epicenter/workspace
 export { createCellWorkspace } from './cell';
 export type {
   CellExtensionContext,
@@ -181,7 +181,7 @@ export type {
   SchemaFieldDefinition as CellFieldDefinition,
 } from './cell';
 
-// From @epicenter/hq/cell (full Cell API)
+// From @epicenter/workspace/cell (full Cell API)
 export { createHeadDoc, type HeadDoc } from '../core/docs/head-doc';
 export { defineExports, type Lifecycle, type MaybePromise } from '../core/lifecycle';
 export { createCellWorkspace } from './create-cell-workspace';
@@ -197,7 +197,7 @@ export type { CellExtensionContext, ... } from './extensions';
 
 ```typescript
 /**
- * @deprecated Use `createCellWorkspace` from `@epicenter/hq` or `@epicenter/hq/cell` instead.
+ * @deprecated Use `createCellWorkspace` from `@epicenter/workspace` or `@epicenter/workspace/cell` instead.
  * The Cell API provides cell-level CRDT (better concurrent editing) and a simpler builder pattern.
  *
  * Migration:
@@ -263,7 +263,7 @@ All 162 cell tests pass.
 
 ```typescript
 // Before (Core)
-import { createHeadDoc, createClient, defineWorkspace } from '@epicenter/hq';
+import { createHeadDoc, createClient, defineWorkspace } from '@epicenter/workspace';
 
 const head = createHeadDoc({ workspaceId: 'blog', providers: {} });
 const definition = defineWorkspace({
@@ -275,7 +275,7 @@ const client = createClient(head)
   .withExtensions({ persistence });
 
 // After (Cell)
-import { createHeadDoc, createCellWorkspace, defineExports } from '@epicenter/hq';
+import { createHeadDoc, createCellWorkspace, defineExports } from '@epicenter/workspace';
 
 const headDoc = createHeadDoc({ workspaceId: 'blog', providers: {} });
 const workspace = createCellWorkspace({

@@ -5,12 +5,12 @@
  * use the conditional export:
  *
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
  * ```
  *
  * @example Node.js/Bun usage
  * ```typescript
- * import { persistence } from '@epicenter/hq/extensions';
+ * import { persistence } from '@epicenter/workspace/extensions';
  * ```
  *
  * @packageDocumentation

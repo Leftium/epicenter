@@ -4,8 +4,8 @@ import {
 	type FileRow,
 	filesTable,
 } from '@epicenter/filesystem';
-import { createWorkspace } from '@epicenter/hq';
-import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+import { createWorkspace } from '@epicenter/workspace';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { SvelteSet } from 'svelte/reactivity';
 import { toast } from 'svelte-sonner';
 

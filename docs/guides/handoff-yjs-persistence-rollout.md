@@ -399,7 +399,7 @@ If `package.json` doesn't exist or lacks CLI scripts, create/update:
 		"cli": "bun ../../packages/epicenter/src/cli/bin.ts"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*"
+		"@epicenter/workspace": "workspace:*"
 	}
 }
 ```

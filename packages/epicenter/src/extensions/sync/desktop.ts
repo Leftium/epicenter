@@ -26,8 +26,8 @@ export type PersistenceConfig = {
  *
  * @example
  * ```typescript
- * import { createWorkspace } from '@epicenter/hq';
- * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
+ * import { createWorkspace } from '@epicenter/workspace';
+ * import { persistence } from '@epicenter/workspace/extensions/sync/desktop';
  * import { join } from 'node:path';
  *
  * const projectDir = '/my/project';
@@ -85,8 +85,8 @@ export const persistence = (
  *
  * @example With the persistence extension pattern
  * ```typescript
- * import { persistence } from '@epicenter/hq/extensions/sync/desktop';
- * import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+ * import { persistence } from '@epicenter/workspace/extensions/sync/desktop';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', (ctx) => persistence(ctx, {

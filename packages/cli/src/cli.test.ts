@@ -10,7 +10,7 @@
  * - Parses command input into typed action handler arguments
  */
 import { describe, expect, test } from 'bun:test';
-import { defineMutation, defineQuery } from '@epicenter/hq';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import yargs from 'yargs';
 import { buildActionCommands } from './command-builder';

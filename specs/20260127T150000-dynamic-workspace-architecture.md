@@ -570,7 +570,7 @@ type CellsStore = {
 ## Usage Example
 
 ```typescript
-import { createDynamicWorkspace } from '@epicenter/hq/dynamic'
+import { createDynamicWorkspace } from '@epicenter/workspace/dynamic'
 
 // Create workspace
 const workspace = createDynamicWorkspace({ id: 'my-workspace' })
@@ -653,7 +653,7 @@ workspace.tables.delete('posts')
 ### Phase 3: Integration
 
 **Tasks:**
-- [ ] Export public API from `@epicenter/hq/dynamic`
+- [ ] Export public API from `@epicenter/workspace/dynamic`
 - [ ] Ensure compatibility with persistence capability
 - [ ] Ensure compatibility with sync capability
 - [ ] Write migration guide from core API

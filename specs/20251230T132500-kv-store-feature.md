@@ -87,7 +87,7 @@ import {
 	boolean,
 	date,
 	json,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 
 const appWorkspace = defineWorkspace({
 	id: 'app',

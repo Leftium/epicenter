@@ -2,7 +2,7 @@
 
 **Date**: 2026-02-20
 **Status**: Superseded
-**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — all capabilities (on-demand rooms, 3 auth modes, zero @epicenter/hq dependency) are included via `createSyncPlugin()` + `createSyncServer()` wrapper.
+**Superseded by**: `specs/20260220T080000-plugin-first-server-architecture.md` — all capabilities (on-demand rooms, 3 auth modes, zero @epicenter/workspace dependency) are included via `createSyncPlugin()` + `createSyncServer()` wrapper.
 **Author**: Braden + Claude
 **Relates to**: `specs/20260219T195800-server-architecture-rethink.md` (Layers 0+1)
 
@@ -38,7 +38,7 @@ This creates three problems:
 
 2. **Zero server-side auth.** The client (`@epicenter/sync`) sends `?token=xxx` in the WebSocket URL. The server never reads it. Any connection is accepted. The three auth modes exist only client-side.
 
-3. **Tight coupling to `@epicenter/hq`.** You can't run a sync server without importing the entire workspace system. The server's `package.json` has `@epicenter/hq` as a peer dependency.
+3. **Tight coupling to `@epicenter/workspace`.** You can't run a sync server without importing the entire workspace system. The server's `package.json` has `@epicenter/workspace` as a peer dependency.
 
 ### Desired State
 
@@ -104,7 +104,7 @@ The 102 extension is backward-compatible — standard y-websocket clients ignore
 | Room eviction                 | 60s after last disconnect (existing)                               | Already implemented and tested. Keep as-is.                                    |
 | Doc persistence               | Out of scope (in-memory only)                                      | Persistence is a Layer 4 concern (see broader spec). Sync relay = ephemeral.   |
 | Separate from full server     | `createSyncServer` alongside `createServer`                        | Full server composes sync + tables + actions. Sync server is the minimal core. |
-| No `@epicenter/hq` dependency | Sync server depends only on `yjs`, `lib0`, `y-protocols`, `elysia` | Removes coupling. Full server still depends on hq for tables/actions.          |
+| No `@epicenter/workspace` dependency | Sync server depends only on `yjs`, `lib0`, `y-protocols`, `elysia` | Removes coupling. Full server still depends on hq for tables/actions.          |
 
 ## Architecture
 
@@ -164,9 +164,9 @@ New function that composes the sync plugin into a standalone server.
 - [ ] **2.4** Export from `packages/server/src/index.ts`
 - [ ] **2.5** Integration test: two `@epicenter/sync` clients sync through `createSyncServer`
 
-### Phase 3: Decouple from `@epicenter/hq` (optional, future)
+### Phase 3: Decouple from `@epicenter/workspace` (optional, future)
 
-- [ ] **3.1** Move sync-only code to a subpath export (`@epicenter/server/sync`) that doesn't import `@epicenter/hq`
+- [ ] **3.1** Move sync-only code to a subpath export (`@epicenter/server/sync`) that doesn't import `@epicenter/workspace`
 - [ ] **3.2** Keep `@epicenter/server` (full) depending on hq for tables/actions
 - [ ] **3.3** Or: extract sync server to its own package (`@epicenter/sync-server`)
 
@@ -240,7 +240,7 @@ Already handled correctly by existing code.
 - [ ] MESSAGE_SYNC_STATUS (102) heartbeat echo still works
 - [ ] Room eviction still works (60s after last disconnect)
 - [ ] Existing `createServer` still works (backward compatible)
-- [ ] No `@epicenter/hq` import in the sync-only code path
+- [ ] No `@epicenter/workspace` import in the sync-only code path
 
 ## References
 

@@ -56,7 +56,7 @@ For these simple cases, the HeadDoc is overhead. The `WorkspaceDefinition` alrea
 ### New API
 
 ```typescript
-import { createWorkspace } from '@epicenter/hq/dynamic';
+import { createWorkspace } from '@epicenter/workspace/dynamic';
 
 const workspace = createWorkspace(definition)
 	.withExtension('persistence', (ctx) => workspacePersistence(ctx))
@@ -313,7 +313,7 @@ Simplify to use new API:
 import {
 	createWorkspace,
 	type WorkspaceDefinition,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 import { workspacePersistence } from './workspace-persistence';
 
 /**
@@ -337,7 +337,7 @@ import {
 	defineExports,
 	type ExtensionContext,
 	type Lifecycle,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { mkdir, readFile, writeFile } from '@tauri-apps/plugin-fs';
 import * as Y from 'yjs';
@@ -473,7 +473,7 @@ export function workspacePersistence<TTableDefs, TKvFields>(
 New service for workspace management:
 
 ```typescript
-import type { WorkspaceDefinition } from '@epicenter/hq/dynamic';
+import type { WorkspaceDefinition } from '@epicenter/workspace/dynamic';
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import {
 	readDir,
@@ -482,7 +482,7 @@ import {
 	mkdir,
 	remove,
 } from '@tauri-apps/plugin-fs';
-import { generateGuid } from '@epicenter/hq';
+import { generateGuid } from '@epicenter/workspace';
 
 const WORKSPACES_DIR = 'workspaces';
 

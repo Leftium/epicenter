@@ -55,7 +55,7 @@ providers: [
 
 For this initial implementation, we're **removing the isomorphic abstraction**:
 - Focus on desktop-only implementation first
-- All imports will be from the desktop-specific module: `@epicenter/hq/providers/desktop`
+- All imports will be from the desktop-specific module: `@epicenter/workspace/providers/desktop`
 - Isomorphic support can be added later when there's an actual browser use case
 - Web persistence (`persistence/web.ts`) remains unchanged for future use
 
@@ -72,7 +72,7 @@ For this initial implementation, we're **removing the isomorphic abstraction**:
 ### Phase 2: Update All Call Sites
 
 All call sites will:
-1. Import from desktop-specific module: `from '@epicenter/hq/providers/desktop'` or `from '../../../../src/core/workspace/providers/persistence/desktop'`
+1. Import from desktop-specific module: `from '@epicenter/workspace/providers/desktop'` or `from '../../../../src/core/workspace/providers/persistence/desktop'`
 2. Add `import path from 'node:path'`
 3. Change `setupPersistence` to `setupPersistence({ storagePath: path.join(import.meta.dirname, '.epicenter') })`
 
@@ -111,7 +111,7 @@ Files to update:
 
 ### Before (Current)
 ```typescript
-import { setupPersistence } from '@epicenter/hq/providers/persistence';
+import { setupPersistence } from '@epicenter/workspace/providers/persistence';
 
 const workspace = defineWorkspace({
   id: 'blog',
@@ -121,7 +121,7 @@ const workspace = defineWorkspace({
 
 ### After (With Factory)
 ```typescript
-import { setupPersistence } from '@epicenter/hq/providers/desktop';
+import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 import path from 'node:path';
 
 // Each workspace persists in its own directory

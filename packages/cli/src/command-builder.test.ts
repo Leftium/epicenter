@@ -10,7 +10,7 @@
  * - Builds per-command yargs option builders from input schemas
  */
 import { describe, expect, test } from 'bun:test';
-import { defineMutation, defineQuery } from '@epicenter/hq';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import { buildActionCommands } from './command-builder';
 

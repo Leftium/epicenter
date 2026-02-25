@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/hq';
+import { createWorkspace } from '@epicenter/workspace';
 import { createFileSystemIndex } from './file-system-index.js';
 import { filesTable } from './file-table.js';
 import type { FileId } from './types.js';

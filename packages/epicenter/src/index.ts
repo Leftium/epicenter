@@ -3,13 +3,13 @@
  *
  * This root export provides the full workspace API and shared utilities.
  *
- * - `@epicenter/hq` - Full API (workspace creation, tables, KV, extensions)
- * - `@epicenter/hq/static` - Alias (kept for backward compatibility)
- * - `@epicenter/hq/extensions` - Extension plugins (persistence, sync)
+ * - `@epicenter/workspace` - Full API (workspace creation, tables, KV, extensions)
+ * - `@epicenter/workspace/static` - Alias (kept for backward compatibility)
+ * - `@epicenter/workspace/extensions` - Extension plugins (persistence, sync)
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineTable } from '@epicenter/hq';
+ * import { createWorkspace, defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));

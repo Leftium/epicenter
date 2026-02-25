@@ -18,11 +18,11 @@ This works, but it destroys the CRDT character identity. Every character becomes
 `updateYTextFromString` computes the minimal character-level differences between the current Y.Text content and the target string, then applies only the necessary insertions and deletions:
 
 ```typescript
-// NOTE: updateYTextFromString is not currently exported from @epicenter/hq
-// This function may be available in @epicenter/hq/dynamic or as a utility
+// NOTE: updateYTextFromString is not currently exported from @epicenter/workspace
+// This function may be available in @epicenter/workspace/dynamic or as a utility
 // For now, implement the diff logic directly or check the dynamic module
 
-import { updateYTextFromString } from '@epicenter/hq/dynamic';
+import { updateYTextFromString } from '@epicenter/workspace/dynamic';
 
 const ytext = ydoc.getText('content');
 ytext.insert(0, 'Hello World');
@@ -49,7 +49,7 @@ The main use case is syncing file system changes to Y.Text. When you have markdo
 ```typescript
 import { watch } from 'chokidar';
 import { readFile } from 'fs/promises';
-import { updateYTextFromString } from '@epicenter/hq/dynamic';
+import { updateYTextFromString } from '@epicenter/workspace/dynamic';
 
 // Watch a markdown file
 const watcher = watch('notes.md');

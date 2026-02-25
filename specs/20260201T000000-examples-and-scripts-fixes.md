@@ -20,7 +20,7 @@ The examples and scripts used a completely non-existent API pattern. Rather than
 
 ### Kept
 
-- `examples/yjs-size-benchmark/` - Pure Yjs benchmark, no `@epicenter/hq` dependencies
+- `examples/yjs-size-benchmark/` - Pure Yjs benchmark, no `@epicenter/workspace` dependencies
 - `packages/epicenter/scripts/yjs-data-structure-benchmark.ts` - Pure Yjs benchmark
 - `packages/epicenter/scripts/demo-yjs-nested-map-lww.ts` - Pure Yjs demonstration
 - `packages/epicenter/scripts/yjs-gc-benchmark.ts` - Pure Yjs benchmark
@@ -29,7 +29,7 @@ The examples and scripts used a completely non-existent API pattern. Rather than
 
 ### Public API Status
 
-The following types were already exported from `@epicenter/hq`:
+The following types were already exported from `@epicenter/workspace`:
 
 - `DateTimeString` (with companion object methods `.parse()`, `.stringify()`, `.now()`)
 - `ExtensionContext`
@@ -51,11 +51,11 @@ defineWorkspace({
 });
 ```
 
-Neither the **static API** (`@epicenter/hq/static`) nor the **dynamic API** (`@epicenter/hq/dynamic`) supports this pattern. The examples require **complete rewrites** or **deletion**.
+Neither the **static API** (`@epicenter/workspace/static`) nor the **dynamic API** (`@epicenter/workspace/dynamic`) supports this pattern. The examples require **complete rewrites** or **deletion**.
 
 ### Actual Available APIs
 
-**Dynamic API** (`@epicenter/hq/dynamic`):
+**Dynamic API** (`@epicenter/workspace/dynamic`):
 
 ```typescript
 const definition = defineWorkspace({
@@ -75,7 +75,7 @@ const client = createWorkspace({ headDoc, definition })
 	.withExtension('persistence', persistence);
 ```
 
-**Static API** (`@epicenter/hq/static`):
+**Static API** (`@epicenter/workspace/static`):
 
 ```typescript
 const posts = defineTable(type({ id: 'string', title: 'string' }));
@@ -127,7 +127,7 @@ const client = createWorkspace({
 | `email-minimal-simulation.ts`     | Critical | Same as above                                                                                   |
 | `yjs-vs-sqlite-comparison.ts`     | Critical | Same as above                                                                                   |
 | `ymap-vs-ykeyvalue-benchmark.ts`  | Low      | Uses internal `y-keyvalue` utility (may be fine)                                                |
-| `yjs-data-structure-benchmark.ts` | None     | Pure Yjs benchmark, no @epicenter/hq imports                                                    |
+| `yjs-data-structure-benchmark.ts` | None     | Pure Yjs benchmark, no @epicenter/workspace imports                                                    |
 | `demo-yjs-nested-map-lww.ts`      | Unknown  | Needs review                                                                                    |
 | `yjs-gc-benchmark.ts`             | Unknown  | Needs review                                                                                    |
 | `ykeyvalue-write-benchmark.ts`    | Unknown  | Needs review                                                                                    |
@@ -152,15 +152,15 @@ const client = createWorkspace({
 
 ```typescript
 // OLD (broken)
-import { ... } from '@epicenter/hq/providers/markdown';
-import { ... } from '@epicenter/hq/providers/persistence';
-import { ... } from '@epicenter/hq/providers/sqlite';
-import { ... } from '@epicenter/hq/capabilities/markdown';
+import { ... } from '@epicenter/workspace/providers/markdown';
+import { ... } from '@epicenter/workspace/providers/persistence';
+import { ... } from '@epicenter/workspace/providers/sqlite';
+import { ... } from '@epicenter/workspace/capabilities/markdown';
 
 // NEW (correct)
-import { ... } from '@epicenter/hq/extensions/markdown';
-import { ... } from '@epicenter/hq/extensions/persistence';
-import { ... } from '@epicenter/hq/extensions/sqlite';
+import { ... } from '@epicenter/workspace/extensions/markdown';
+import { ... } from '@epicenter/workspace/extensions/persistence';
+import { ... } from '@epicenter/workspace/extensions/sqlite';
 ```
 
 **Files affected**: 12 files
@@ -171,16 +171,16 @@ import { ... } from '@epicenter/hq/extensions/sqlite';
 
 | Old Name              | New Name               | Export Path                            |
 | --------------------- | ---------------------- | -------------------------------------- |
-| `markdownProvider`    | `markdown`             | `@epicenter/hq/extensions/markdown`    |
-| `sqliteProvider`      | `sqlite`               | `@epicenter/hq/extensions/sqlite`      |
-| `setupPersistence`    | `persistence`          | `@epicenter/hq/extensions/persistence` |
-| `MarkdownProviderErr` | `MarkdownExtensionErr` | `@epicenter/hq/extensions/markdown`    |
+| `markdownProvider`    | `markdown`             | `@epicenter/workspace/extensions/markdown`    |
+| `sqliteProvider`      | `sqlite`               | `@epicenter/workspace/extensions/sqlite`      |
+| `setupPersistence`    | `persistence`          | `@epicenter/workspace/extensions/persistence` |
+| `MarkdownProviderErr` | `MarkdownExtensionErr` | `@epicenter/workspace/extensions/markdown`    |
 
 **Files affected**: 11 files
 
 ### Category 3: Removed/Non-Exported Types
 
-**Problem**: Certain types/utilities are no longer exported from `@epicenter/hq` root.
+**Problem**: Certain types/utilities are no longer exported from `@epicenter/workspace` root.
 
 | Missing Export               | Status              | Recommendation                                                            |
 | ---------------------------- | ------------------- | ------------------------------------------------------------------------- |
@@ -189,7 +189,7 @@ import { ... } from '@epicenter/hq/extensions/sqlite';
 | `DateWithTimezoneString`     | Not exported (type) | Define locally or use string type                                         |
 | `SerializedRow`              | Not exported        | Import from internal path or use `Row<T>` type                            |
 | `WorkspaceSchema`            | Not exported        | Use `WorkspaceDefinition` type                                            |
-| `ProviderContext`            | Not exported        | Import from `@epicenter/hq/dynamic` subpath                               |
+| `ProviderContext`            | Not exported        | Import from `@epicenter/workspace/dynamic` subpath                               |
 
 **Files affected**: 6 files
 
@@ -316,7 +316,7 @@ For files that can be updated with find-and-replace style fixes:
 Update import paths in all files simultaneously:
 
 ```bash
-# Pattern: @epicenter/hq/providers/* → @epicenter/hq/extensions/*
+# Pattern: @epicenter/workspace/providers/* → @epicenter/workspace/extensions/*
 ```
 
 Files: All 12 workspace files in examples/
@@ -345,7 +345,7 @@ Delete files that require complete rewrites:
 
 ### Phase 4: DateWithTimezone Resolution (Requires Decision)
 
-**Option 4A**: Re-export `DateWithTimezone` utilities from `@epicenter/hq`
+**Option 4A**: Re-export `DateWithTimezone` utilities from `@epicenter/workspace`
 
 **Option 4B**: Replace with inline implementations:
 
@@ -372,7 +372,7 @@ import {
 	sqliteProvider, // Should come from extensions/sqlite
 	type ProviderContext, // Not publicly exported
 	type WorkspaceSchema, // Not publicly exported
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 ```
 
 Options:
@@ -412,8 +412,8 @@ After fixes are applied:
 import {
 	domainTitleFilenameSerializer,
 	markdownProvider,
-} from '@epicenter/hq/providers/markdown';
-import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
+} from '@epicenter/workspace/providers/markdown';
+import { sqliteProvider } from '@epicenter/workspace/providers/sqlite';
 ```
 
 **Fix**:
@@ -422,8 +422,8 @@ import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
 import {
 	domainTitleFilenameSerializer,
 	markdown,
-} from '@epicenter/hq/extensions/markdown';
-import { sqlite } from '@epicenter/hq/extensions/sqlite';
+} from '@epicenter/workspace/extensions/markdown';
+import { sqlite } from '@epicenter/workspace/extensions/sqlite';
 ```
 
 Also update usages: `markdownProvider` → `markdown`, `sqliteProvider` → `sqlite`
@@ -440,14 +440,14 @@ import {
 	DateWithTimezoneFromString,
 	DateWithTimezoneString,
 	// ... other imports
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import {
 	bodyFieldSerializer,
 	MarkdownProviderErr,
 	markdownProvider,
-} from '@epicenter/hq/providers/markdown';
-import { setupPersistence } from '@epicenter/hq/providers/persistence';
-import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
+} from '@epicenter/workspace/providers/markdown';
+import { setupPersistence } from '@epicenter/workspace/providers/persistence';
+import { sqliteProvider } from '@epicenter/workspace/providers/sqlite';
 ```
 
 **Issues**:
@@ -517,7 +517,7 @@ await using client = await createClient(head)
 
 ### packages/epicenter/scripts/yjs-data-structure-benchmark.ts
 
-**No @epicenter/hq imports** - Pure Yjs benchmark, should still work.
+**No @epicenter/workspace imports** - Pure Yjs benchmark, should still work.
 
 ---
 

@@ -35,7 +35,7 @@
  * ```
  */
 
-import { generateId } from '@epicenter/hq';
+import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,

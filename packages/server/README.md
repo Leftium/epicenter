@@ -24,7 +24,7 @@ import {
 	createWorkspace,
 	id,
 	text,
-} from '@epicenter/hq/static';
+} from '@epicenter/workspace/static';
 import { createLocalServer } from '@epicenter/server';
 
 // 1. Define workspace
@@ -209,10 +209,10 @@ Clients connect to:
 ws://host:3913/rooms/{workspaceId}
 ```
 
-The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@epicenter/hq/extensions/sync`):
+The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@epicenter/workspace/extensions/sync`):
 
 ```typescript
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 
 const client = createClient(definition.id)
 	.withDefinition(definition)

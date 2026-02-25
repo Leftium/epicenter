@@ -6,7 +6,7 @@
 
 ## Overview
 
-Remove the Dynamic workspace API (`@epicenter/hq/dynamic`) and promote the Static API to the primary (and only) workspace API. The `static/` folder becomes the top-level workspace implementation; the `dynamic/` folder is deleted. The extensions coupled to Dynamic (sqlite, markdown, revision-history) are deleted alongside it since no app imports them.
+Remove the Dynamic workspace API (`@epicenter/workspace/dynamic`) and promote the Static API to the primary (and only) workspace API. The `static/` folder becomes the top-level workspace implementation; the `dynamic/` folder is deleted. The extensions coupled to Dynamic (sqlite, markdown, revision-history) are deleted alongside it since no app imports them.
 
 ## Motivation
 
@@ -33,7 +33,7 @@ This creates problems:
 
 4. **Architectural overhead with no payoff**: The Dynamic API layers CellStore → RowStore → TableHelper on top of a flat `Y.Array`. The RowStore maintains an in-memory index to compensate for the flat storage model. The Sheet's nested `Y.Map` gives O(1) row lookups without an index.
 
-5. **Confusing developer experience**: New code has to choose between `@epicenter/hq/dynamic` and `@epicenter/hq/static` without a clear reason to pick one over the other. The naming implies "dynamic = flexible, static = rigid," which is backwards: the Dynamic API has fixed schemas while the Sheet structure is truly dynamic.
+5. **Confusing developer experience**: New code has to choose between `@epicenter/workspace/dynamic` and `@epicenter/workspace/static` without a clear reason to pick one over the other. The naming implies "dynamic = flexible, static = rigid," which is backwards: the Dynamic API has fixed schemas while the Sheet structure is truly dynamic.
 
 6. **The coupled extensions are dead code**: The sqlite, markdown, and revision-history extensions import Dynamic types directly. No app in the monorepo (`apps/epicenter`, `apps/tab-manager`, `apps/fs-explorer`) actually imports these extensions. They exist only as internal code within `packages/epicenter/`. Deleting Dynamic means deleting these extensions too, which simplifies the migration enormously.
 
@@ -72,13 +72,13 @@ packages/epicenter/src/
 └── shared/      ← Common utilities
 ```
 
-Imports go from `@epicenter/hq/static` to `@epicenter/hq` (or a new subpath like `@epicenter/hq/workspace`). The `dynamic/` folder and its coupled extensions are gone. Consumers that need "Notion-like" dynamic columns use the Sheet data structure from `@epicenter/filesystem`.
+Imports go from `@epicenter/workspace/static` to `@epicenter/workspace` (or a new subpath like `@epicenter/workspace/workspace`). The `dynamic/` folder and its coupled extensions are gone. Consumers that need "Notion-like" dynamic columns use the Sheet data structure from `@epicenter/filesystem`.
 
 ## Research Findings
 
 ### What Each Consumer Actually Uses
 
-Grepping the codebase for `@epicenter/hq/dynamic` imports reveals:
+Grepping the codebase for `@epicenter/workspace/dynamic` imports reveals:
 
 | Consumer                                          | What it imports                                                                              | What it actually needs                                                      |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -86,7 +86,7 @@ Grepping the codebase for `@epicenter/hq/dynamic` imports reveals:
 | `apps/epicenter/` workspace service               | `WorkspaceDefinition` type                                                                   | Type — migrate to Static equivalent                                         |
 | `apps/epicenter/` yjs workspace                   | `createWorkspace`, `Extension`, `ExtensionContext`                                           | Core workspace — migrate to Static `createWorkspace`                        |
 | `apps/epicenter/` workspace-persistence           | `ExtensionContext` type                                                                      | Type only — migrate to Static                                               |
-| `apps/tab-manager/` (2 files)                     | `generateId`                                                                                 | Just the ID utility — already exported from root `@epicenter/hq`            |
+| `apps/tab-manager/` (2 files)                     | `generateId`                                                                                 | Just the ID utility — already exported from root `@epicenter/workspace`            |
 | `extensions/sqlite`                               | `ExtensionContext`, schema types, `Row`, `TableDefinition`, Drizzle converters               | **Dead code** — no app imports this extension                               |
 | `extensions/markdown`                             | `ExtensionContext`, schema types, `Field`, `Row`, `TableHelper`, `TableById`, `getTableById` | **Dead code** — no app imports this extension                               |
 | `extensions/revision-history`                     | `ExtensionContext`, schema types                                                             | **Dead code** — no app imports this extension                               |
@@ -182,13 +182,13 @@ Files to delete (confirmed via grep and glob):
 | Decision                                   | Choice                                                     | Rationale                                                                                                                                                           |
 | ------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Folder rename                              | `static/` → `workspace/` (or promote to root)              | "Static" only made sense as a contrast to "Dynamic." Without the contrast, it's just the workspace API.                                                             |
-| Export path                                | `@epicenter/hq/static` → `@epicenter/hq` (merge into root) | Reduces import ceremony. Most consumers just want `createWorkspace`.                                                                                                |
+| Export path                                | `@epicenter/workspace/static` → `@epicenter/workspace` (merge into root) | Reduces import ceremony. Most consumers just want `createWorkspace`.                                                                                                |
 | Migration approach                         | Two phases: migrate apps, then delete                      | App imports are shallow (path changes only). Extensions are dead code. No need for phased re-exports.                                                               |
 | Dead extensions                            | Delete alongside Dynamic                                   | sqlite, markdown, revision-history: zero app imports. Migrating them would be the most expensive part for no benefit.                                               |
 | `./node` export                            | Delete                                                     | Dead. Only self-references in its own JSDoc.                                                                                                                        |
 | `typebox` dependency                       | Remove                                                     | Only used by Dynamic's schema system and `extensions/sqlite/builders.ts` (which is being deleted). After removal, verify no imports remain.                         |
 | Comparison test files                      | Keep                                                       | `ymap-simplicity-case.test.ts` and `y-keyvalue-comparison.test.ts` document the reasoning behind this decision. They're in `shared/`, not `dynamic/`.               |
-| Backward compat for `@epicenter/hq/static` | Temporary re-export                                        | Keep the old path working during migration with a deprecation comment. Remove in a follow-up.                                                                       |
+| Backward compat for `@epicenter/workspace/static` | Temporary re-export                                        | Keep the old path working during migration with a deprecation comment. Remove in a follow-up.                                                                       |
 | Display metadata (table name, icon)        | Defer                                                      | Dynamic definitions had `name`, `icon`, `description`. Static doesn't. No app currently depends on this through the Static API. Add if migration surfaces the need. |
 | Sync extension                             | Keep, migrate `ExtensionContext` import                    | `sync/desktop.ts` imports `ExtensionContext` from Dynamic. Single line change to import from Static.                                                                |
 
@@ -197,7 +197,7 @@ Files to delete (confirmed via grep and glob):
 ### Before
 
 ```
-@epicenter/hq
+@epicenter/workspace
 ├── .                  → shared utilities (Id, actions, lifecycle)
 ├── ./dynamic          → Dynamic workspace API (field-based)
 │   ├── schema/        → Field factories, TypeBox converters
@@ -218,7 +218,7 @@ Files to delete (confirmed via grep and glob):
 ### After
 
 ```
-@epicenter/hq
+@epicenter/workspace
 ├── .                  → Workspace API + shared utilities (merged)
 │   ├── define-table   → defineTable with versioning
 │   ├── create-*       → createWorkspace, createTables, createKv
@@ -234,7 +234,7 @@ Files to delete (confirmed via grep and glob):
 
 The app-level migration is shallow. No logic changes, just import paths.
 
-- [x] **1.1** `apps/tab-manager/` (2 files): Changed `import { generateId } from '@epicenter/hq/dynamic'` to `import { generateId } from '@epicenter/hq'`.
+- [x] **1.1** `apps/tab-manager/` (2 files): Changed `import { generateId } from '@epicenter/workspace/dynamic'` to `import { generateId } from '@epicenter/workspace'`.
 - [x] **1.2** `apps/epicenter/src/lib/templates/whispering.ts`: Rewrote from Dynamic field factories to Static `defineTable` + arktype schemas.
 - [x] **1.3** `apps/epicenter/src/lib/templates/entries.ts`: Same rewrite as 1.2.
 - [x] **1.4** `apps/epicenter/src/lib/workspaces/dynamic/service.ts`: Defined local `WorkspaceDefinition` type (display metadata only), removed Dynamic import.
@@ -244,7 +244,7 @@ The app-level migration is shallow. No logic changes, just import paths.
 - [x] **1.8** `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`: Updated to pass workspace ID instead of definition.
 - [x] **1.8b** `apps/epicenter/src/routes/.../tables/[tableId]/+page.svelte`: Rewrote for Static API (property access, data-derived columns).
 - [x] **1.8c** `apps/epicenter/src/routes/.../settings/[key]/+page.svelte`: Simplified to not-found state (no runtime KV schema).
-- [x] **1.9** Verified: zero `@epicenter/hq/dynamic` imports in `apps/`. Pre-existing errors only.
+- [x] **1.9** Verified: zero `@epicenter/workspace/dynamic` imports in `apps/`. Pre-existing errors only.
 
 **NOTE on 1.2-1.3**: This is the only non-trivial step. The Dynamic templates define workspaces like:
 
@@ -279,7 +279,7 @@ Every field factory (`id()`, `text()`, `select()`, etc.) must be translated to a
 - [x] **3.2** Merged Static exports into root `src/index.ts` (defineTable, defineWorkspace, createWorkspace, all types, introspection, validation).
 - [x] **3.3** Updated `package.json` exports: removed `"./dynamic"` and `"./node"`. Kept `"./static"` as alias.
 - [x] **3.4** Kept `"./static"` export pointing to `./src/static/index.ts` for backward compatibility.
-- [ ] **3.5** Existing `@epicenter/hq/static` imports left as-is (still works via the kept export). Migration deferred.
+- [ ] **3.5** Existing `@epicenter/workspace/static` imports left as-is (still works via the kept export). Migration deferred.
 - [x] **3.6** Deleted `src/dynamic/` folder entirely (58 files).
 - [x] **3.7** Deleted `src/shared/cell-keys.ts` and `cell-keys.test.ts`.
 - [x] **3.8** Deleted `src/extensions/sqlite/` folder entirely.
@@ -298,7 +298,7 @@ Every field factory (`id()`, `text()`, `select()`, etc.) must be translated to a
 - [ ] **4.5** Kept `"./static"` re-export for backward compatibility.
 - [x] **4.6** `bun run typecheck` — 0 source errors (149 pre-existing test file errors only).
 - [x] **4.7** `bun test` — 377 pass, 0 fail.
-- [x] **4.8** Zero imports of `@epicenter/hq/dynamic` or `@epicenter/hq/node` anywhere in the monorepo.
+- [x] **4.8** Zero imports of `@epicenter/workspace/dynamic` or `@epicenter/workspace/node` anywhere in the monorepo.
 - [ ] **4.9** App build — not tested (requires Tauri build environment). Typecheck passes.
 - [x] **4.10** Deleted `scripts/ymap-vs-ykeyvalue-benchmark.ts`.
 
@@ -329,11 +329,11 @@ Currently exports sqlite, markdown, revision-history, sync, and error-logger. Af
 | App templates fail to compile after field factory → arktype migration | Medium     | High   | Phase 1 is first; verify with typecheck before proceeding                                       |
 | Static `ExtensionContext` shape breaks sync extension                 | Low        | Medium | Check that sync only uses `{ ydoc }` from context                                               |
 | Removing typebox breaks something unexpected                          | Low        | Medium | Grep for all typebox imports before removing                                                    |
-| External consumers of `@epicenter/hq/dynamic` exist outside monorepo  | Very Low   | Medium | Package is `0.0.1`; likely no external consumers. Temporary re-export at `./static` for safety. |
+| External consumers of `@epicenter/workspace/dynamic` exist outside monorepo  | Very Low   | Medium | Package is `0.0.1`; likely no external consumers. Temporary re-export at `./static` for safety. |
 
 ## Success Criteria
 
-- [x] Zero imports of `@epicenter/hq/dynamic` or `@epicenter/hq/node` across the monorepo
+- [x] Zero imports of `@epicenter/workspace/dynamic` or `@epicenter/workspace/node` across the monorepo
 - [x] `src/dynamic/` folder deleted
 - [x] `src/extensions/sqlite/`, `src/extensions/markdown/`, `src/extensions/revision-history/` deleted
 - [x] `typebox` removed from package.json dependencies
@@ -346,7 +346,7 @@ Currently exports sqlite, markdown, revision-history, sync, and error-logger. Af
 
 ### Summary
 
-Removed the entire Dynamic workspace API and its coupled extensions. ~17,900 lines deleted across 58 files. The Static API is now the sole workspace API, with its exports merged into the root `@epicenter/hq` package.
+Removed the entire Dynamic workspace API and its coupled extensions. ~17,900 lines deleted across 58 files. The Static API is now the sole workspace API, with its exports merged into the root `@epicenter/workspace` package.
 
 ### Key Decisions Made During Implementation
 
@@ -360,13 +360,13 @@ Removed the entire Dynamic workspace API and its coupled extensions. ~17,900 lin
 
 5. **Settings page simplified**: Current templates don't define KV stores, so the settings detail page shows "not found" state.
 
-6. **Kept `./static` export as alias**: Rather than breaking existing `@epicenter/hq/static` imports, kept the export path working. Migration to `@epicenter/hq` deferred.
+6. **Kept `./static` export as alias**: Rather than breaking existing `@epicenter/workspace/static` imports, kept the export path working. Migration to `@epicenter/workspace` deferred.
 
 7. **Renamed `src/static/` → `src/workspace/`**: The "static" name only made sense as contrast to "dynamic." Now that the Dynamic API is gone, the folder is simply the workspace implementation. All internal imports updated. The `./static` package.json export alias is preserved (points to new path) for backward compatibility with external consumers.
 
 ### Deferred Work
 
-- Migrate remaining external `@epicenter/hq/static` imports to `@epicenter/hq` (tab-manager, fs-explorer, server, filesystem packages)
+- Migrate remaining external `@epicenter/workspace/static` imports to `@epicenter/workspace` (tab-manager, fs-explorer, server, filesystem packages)
 - Update `packages/epicenter/README.md` and `AGENTS.md`
 - Remove the `./static` re-export alias once all consumers migrated
 - Re-implement sqlite/markdown extensions against the Workspace API if needed in future
@@ -376,7 +376,7 @@ Removed the entire Dynamic workspace API and its coupled extensions. ~17,900 lin
 - **Tests**: 377 pass, 0 fail
 - **Package typecheck**: 0 source errors (149 pre-existing in test files)
 - **App typecheck**: 233 errors, all pre-existing
-- **Import grep**: Zero `@epicenter/hq/dynamic` or `@epicenter/hq/node` anywhere
+- **Import grep**: Zero `@epicenter/workspace/dynamic` or `@epicenter/workspace/node` anywhere
 
 ## References
 

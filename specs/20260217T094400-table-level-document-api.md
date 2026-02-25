@@ -368,7 +368,7 @@ client.tables.tags.docs; // ← TypeScript error: property 'docs' does not exist
 ### Standalone usage (without `createWorkspace()`)
 
 ```typescript
-import { createDocumentBinding, createTables } from '@epicenter/hq/static';
+import { createDocumentBinding, createTables } from '@epicenter/workspace/static';
 
 const ydoc = new Y.Doc({ guid: 'my-workspace' });
 const tables = createTables(ydoc, { files: filesTable });

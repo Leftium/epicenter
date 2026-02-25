@@ -57,7 +57,7 @@ Actions should be defined **after** client creation, **separately** from capabil
 ### Code Example
 
 ```typescript
-import { defineWorkspace, defineQuery, defineMutation } from '@epicenter/hq';
+import { defineWorkspace, defineQuery, defineMutation } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 // Step 1: Define workspace

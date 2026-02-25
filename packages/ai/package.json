@@ -13,8 +13,7 @@
 	},
 	"dependencies": {
 		"@epicenter/hq": "workspace:*",
-		"@tanstack/ai": "^0.5.1",
-		"typebox": "catalog:"
+		"@tanstack/ai": "^0.5.1"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"

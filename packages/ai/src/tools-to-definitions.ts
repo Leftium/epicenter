@@ -9,12 +9,16 @@
  * @module
  */
 
-import type { AnyClientTool } from '@tanstack/ai';
+import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
+
+/** JSON Schema with `properties` and `required` guaranteed present. */
+type NormalizedJSONSchema = JSONSchema &
+	Required<Pick<JSONSchema, 'properties' | 'required'>>;
 
 export type ServerToolDefinition = {
 	name: string;
 	description: string;
-	inputSchema?: unknown;
+	inputSchema?: NormalizedJSONSchema;
 };
 
 /**
@@ -39,7 +43,7 @@ export function toDefinitions(
 		name: tool.name,
 		description: tool.description,
 		...(tool.inputSchema && {
-			inputSchema: normalizeSchema(tool.inputSchema),
+			inputSchema: normalizeSchema(tool.inputSchema as JSONSchema),
 		}),
 	}));
 }
@@ -52,12 +56,10 @@ export function toDefinitions(
  * and `Type.Object({})` already includes `properties: {}`, but we ensure both
  * are always present.
  */
-function normalizeSchema(schema: unknown): unknown {
-	if (typeof schema !== 'object' || schema === null) return schema;
-	const s = schema as Record<string, unknown>;
+function normalizeSchema(schema: JSONSchema): NormalizedJSONSchema {
 	return {
-		...s,
-		properties: (s.properties as Record<string, unknown>) ?? {},
-		required: (s.required as string[]) ?? [],
+		...schema,
+		properties: schema.properties ?? {},
+		required: schema.required ?? [],
 	};
 }

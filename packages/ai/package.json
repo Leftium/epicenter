@@ -14,7 +14,7 @@
 	"dependencies": {
 		"@epicenter/hq": "workspace:*",
 		"@tanstack/ai": "^0.5.1",
-		"@standard-schema/spec": "catalog:"
+		"typebox": "catalog:"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"

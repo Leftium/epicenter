@@ -26,18 +26,15 @@
 		<span class="min-w-0 flex-1">{error?.message}</span>
 		<div class="flex shrink-0 items-center gap-1">
 			<Button
-				variant="ghost"
-				size="sm"
-				class="h-6 gap-1 px-2 text-xs text-destructive hover:text-destructive"
+				variant="ghost-destructive"
 				onclick={onRetry}
 			>
 				<RotateCcwIcon class="size-3" />
 				Retry
 			</Button>
 			<Button
-				variant="ghost"
-				size="icon"
-				class="size-6 text-destructive hover:text-destructive"
+				variant="ghost-destructive"
+				size="icon-xs"
 				onclick={onDismiss}
 			>
 				<XIcon class="size-3" />

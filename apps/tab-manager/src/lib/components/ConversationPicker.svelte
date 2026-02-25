@@ -82,7 +82,7 @@
 			<Popover.Content class="w-[280px] p-0" align="start">
 				<Command.Root shouldFilter={false}>
 					<Command.Input
-						placeholder="Search conversations…"
+						placeholder="Search conversations..."
 						class="h-9 text-sm"
 						bind:value={conversationSearch}
 					/>

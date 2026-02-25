@@ -63,8 +63,7 @@
 			<div class="flex justify-start px-2 py-1">
 				<Button
 					variant="ghost"
-					size="sm"
-					class="h-7 gap-1 text-xs text-muted-foreground"
+					class="text-muted-foreground"
 					onclick={onReload}
 				>
 					<RotateCcwIcon class="size-3" />

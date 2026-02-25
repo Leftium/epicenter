@@ -15,6 +15,10 @@
 	} = $props();
 </script>
 
+{#snippet mediaPart(label: string)}
+	<div class="py-1 text-xs text-muted-foreground italic">{label}</div>
+{/snippet}
+
 {#each parts as part (part)}
 	{#if part.type === 'text'}
 		<div class="prose prose-sm">{part.content}</div>
@@ -25,14 +29,12 @@
 	{:else if part.type === 'thinking'}
 		<ThinkingPart content={(part as { type: 'thinking'; content: string }).content} />
 	{:else if part.type === 'image'}
-		<div class="py-1 text-xs text-muted-foreground italic">[Image content]</div>
+		{@render mediaPart('[Image content]')}
 	{:else if part.type === 'audio'}
-		<div class="py-1 text-xs text-muted-foreground italic">[Audio content]</div>
+		{@render mediaPart('[Audio content]')}
 	{:else if part.type === 'video'}
-		<div class="py-1 text-xs text-muted-foreground italic">[Video content]</div>
+		{@render mediaPart('[Video content]')}
 	{:else if part.type === 'document'}
-		<div class="py-1 text-xs text-muted-foreground italic">
-			[Document content]
-		</div>
+		{@render mediaPart('[Document content]')}
 	{/if}
 {/each}

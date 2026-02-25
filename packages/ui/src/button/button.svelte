@@ -20,6 +20,8 @@
 					'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
 				ghost:
 					'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+				'ghost-destructive':
+					'text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20',
 			},
 			size: {
 				default: 'h-9 px-4 py-2 has-[>svg]:px-3',

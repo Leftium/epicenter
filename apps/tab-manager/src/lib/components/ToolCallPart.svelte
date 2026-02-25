@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
-	import * as Collapsible from '@epicenter/ui/collapsible';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 
@@ -49,6 +48,10 @@
 	);
 </script>
 
+{#snippet codeBlock(text: string)}
+	<pre class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]">{text}</pre>
+{/snippet}
+
 <div class="flex flex-col gap-1 py-1">
 	<div class="flex items-center gap-1.5">
 		{#if isRunning}
@@ -61,42 +64,18 @@
 		</Badge>
 	</div>
 
-	<Collapsible.Root>
-		<Collapsible.Trigger
-			class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-		>
-			<ChevronRightIcon
-				class="size-3 transition-transform [[data-state=open]>&]:rotate-90"
-			/>
-			Details
-		</Collapsible.Trigger>
-		<Collapsible.Content>
-			<div class="mt-1 rounded-md bg-muted/50 p-2 text-xs">
-				{#if part.arguments}
-					<div class="mb-1">
-						<span class="font-medium text-muted-foreground"
-							>Arguments:</span
-						>
-						<pre
-							class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]"
-							>{part.arguments}</pre
-						>
-					</div>
-				{/if}
-				{#if part.output != null}
-					<div>
-						<span class="font-medium text-muted-foreground"
-							>Result:</span
-						>
-						<pre
-							class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]"
-							>{typeof part.output === 'string'
-								? part.output
-								: JSON.stringify(part.output, null, 2)}</pre
-						>
-					</div>
-				{/if}
+	<CollapsibleSection label="Details" contentClass="bg-muted/50">
+		{#if part.arguments}
+			<div class="mb-1">
+				<span class="font-medium text-muted-foreground">Arguments:</span>
+				{@render codeBlock(part.arguments)}
 			</div>
-		</Collapsible.Content>
-	</Collapsible.Root>
+		{/if}
+		{#if part.output != null}
+			<div>
+				<span class="font-medium text-muted-foreground">Result:</span>
+				{@render codeBlock(typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 2))}
+			</div>
+		{/if}
+	</CollapsibleSection>
 </div>

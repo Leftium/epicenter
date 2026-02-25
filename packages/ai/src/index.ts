@@ -1,3 +1,4 @@
+export { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
 export { actionsToClientTools } from './actions-to-client-tools';
 export {
 	actionsToServerDefinitions,

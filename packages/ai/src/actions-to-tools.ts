@@ -10,10 +10,9 @@
 import type { Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
 import type { Tool } from '@tanstack/ai';
+import { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
 
 export type ActionsToToolsOptions = {
-	/** Custom separator for joining path segments into tool names. @default '_' */
-	nameSeparator?: string;
 	/** If true, mutations will require user approval before executing. @default false */
 	requireApprovalForMutations?: boolean;
 };
@@ -30,15 +29,12 @@ export type ActionsToToolsOptions = {
  * chat({ tools, adapter, messages });
  * ```
  */
-export function actionsToTools(
-	actions: Actions,
-	{
-		nameSeparator = '_',
-		requireApprovalForMutations = false,
-	}: ActionsToToolsOptions = {},
-): Tool[] {
+export function actionsToTools<TActions extends Actions>(
+	actions: TActions,
+	{ requireApprovalForMutations = false }: ActionsToToolsOptions = {},
+): (Tool & { name: ActionNames<TActions> })[] {
 	return [...iterateActions(actions)].map(([action, path]) => ({
-		name: path.join(nameSeparator),
+		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
 		...(requireApprovalForMutations &&

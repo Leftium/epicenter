@@ -10,6 +10,7 @@
 import type { Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
 import type { AnyClientTool } from '@tanstack/ai';
+import { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
 import type { ActionsToToolsOptions } from './actions-to-tools';
 
 /**
@@ -24,16 +25,13 @@ import type { ActionsToToolsOptions } from './actions-to-tools';
  * new ChatClient({ tools, connection: ... });
  * ```
  */
-export function actionsToClientTools(
-	actions: Actions,
-	{
-		nameSeparator = '_',
-		requireApprovalForMutations = false,
-	}: ActionsToToolsOptions = {},
-): AnyClientTool[] {
+export function actionsToClientTools<TActions extends Actions>(
+	actions: TActions,
+	{ requireApprovalForMutations = false }: ActionsToToolsOptions = {},
+): (AnyClientTool & { name: ActionNames<TActions> })[] {
 	return [...iterateActions(actions)].map(([action, path]) => ({
 		__toolSide: 'client' as const,
-		name: path.join(nameSeparator),
+		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
 		...(requireApprovalForMutations &&

@@ -9,9 +9,10 @@
 
 import type { Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
+import { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
 
-export type ServerToolDefinition = {
-	name: string;
+export type ServerToolDefinition<TName extends string = string> = {
+	name: TName;
 	description: string;
 	inputSchema?: unknown;
 };
@@ -28,12 +29,11 @@ export type ServerToolDefinition = {
  * fetch('/ai/chat', { body: JSON.stringify({ tools: defs }) });
  * ```
  */
-export function actionsToServerDefinitions(
-	actions: Actions,
-	{ nameSeparator = '_' }: { nameSeparator?: string } = {},
-): ServerToolDefinition[] {
+export function actionsToServerDefinitions<TActions extends Actions>(
+	actions: TActions,
+): ServerToolDefinition<ActionNames<TActions>>[] {
 	return [...iterateActions(actions)].map(([action, path]) => ({
-		name: path.join(nameSeparator),
+		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: normalizeSchema(action.input) }),
 	}));

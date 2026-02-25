@@ -1,6 +1,7 @@
 import type { Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
 import { Elysia } from 'elysia';
+import Value from 'typebox/value';
 
 /**
  * Create an Elysia router for action definitions.
@@ -8,6 +9,9 @@ import { Elysia } from 'elysia';
  * @remarks
  * Actions are closure-based - they capture their dependencies (tables, extensions, etc.)
  * at definition time. The router invokes handlers directly.
+ *
+ * Action input schemas are TypeBox (JSON Schema). Validation is done via
+ * `Value.Check()` instead of Elysia's built-in schema validation.
  */
 export function createActionsRouter(actions: Actions, prefix = '/actions') {
 	const router = new Elysia({ prefix });
@@ -27,19 +31,39 @@ export function createActionsRouter(actions: Actions, prefix = '/actions') {
 			case 'query':
 				router.get(
 					routePath,
-					async ({ query }) => ({
-						data: await (action.input ? action(query) : action()),
-					}),
-					{ query: action.input, detail },
+					async ({ query }) => {
+						if (action.input) {
+							if (!Value.Check(action.input, query)) {
+								const errors = [...Value.Errors(action.input, query)];
+								return new Response(
+									JSON.stringify({ errors }),
+									{ status: 422, headers: { 'Content-Type': 'application/json' } },
+								);
+							}
+							return { data: await action(query) };
+						}
+						return { data: await action() };
+					},
+					{ detail },
 				);
 				break;
 			case 'mutation':
 				router.post(
 					routePath,
-					async ({ body }) => ({
-						data: await (action.input ? action(body) : action()),
-					}),
-					{ body: action.input, detail },
+					async ({ body }) => {
+						if (action.input) {
+							if (!Value.Check(action.input, body)) {
+								const errors = [...Value.Errors(action.input, body)];
+								return new Response(
+									JSON.stringify({ errors }),
+									{ status: 422, headers: { 'Content-Type': 'application/json' } },
+								);
+							}
+							return { data: await action(body) };
+						}
+						return { data: await action() };
+					},
+					{ detail },
 				);
 				break;
 			default: {

@@ -32,7 +32,9 @@
 	{:else if part.type === 'tool-result'}
 		<ToolResultPart part={part as ToolResultPartType} />
 	{:else if part.type === 'thinking'}
-		<ThinkingPart content={(part as { type: 'thinking'; content: string }).content} />
+		<ThinkingPart
+			content={(part as { type: 'thinking'; content: string }).content}
+		/>
 	{:else if part.type === 'image'}
 		{@render mediaPart('[Image content]')}
 	{:else if part.type === 'audio'}

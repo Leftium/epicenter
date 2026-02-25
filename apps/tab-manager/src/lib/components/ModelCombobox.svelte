@@ -57,9 +57,7 @@
 				variant="outline"
 				size="sm"
 			>
-				<span class="truncate"
-					>{value || 'Select model…'}</span
-				>
+				<span class="truncate">{value || 'Select model…'}</span>
 				<ChevronsUpDownIcon class="ml-2 size-3 shrink-0 opacity-50" />
 			</Button>
 		{/snippet}

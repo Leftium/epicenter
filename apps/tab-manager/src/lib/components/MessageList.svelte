@@ -41,9 +41,7 @@
 			<SparklesIcon class="size-8 text-muted-foreground" />
 		</Empty.Media>
 		<Empty.Title>AI Chat</Empty.Title>
-		<Empty.Description>
-			Send a message to start chatting
-		</Empty.Description>
+		<Empty.Description>Send a message to start chatting</Empty.Description>
 	</Empty.Root>
 {:else}
 	<Chat.List>

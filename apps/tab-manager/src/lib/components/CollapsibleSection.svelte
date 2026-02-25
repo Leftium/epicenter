@@ -28,7 +28,12 @@
 		{label}
 	</Collapsible.Trigger>
 	<Collapsible.Content>
-		<div class={cn('mt-1 rounded-md p-2 text-xs', contentClass ?? 'bg-muted/30 text-muted-foreground')}>
+		<div
+			class={cn(
+				'mt-1 rounded-md p-2 text-xs',
+				contentClass ?? 'bg-muted/30 text-muted-foreground',
+			)}
+		>
 			{@render children()}
 		</div>
 	</Collapsible.Content>

@@ -56,7 +56,8 @@
 </script>
 
 {#snippet codeBlock(text: string)}
-	<pre class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]">{text}</pre>
+	<pre
+		class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]">{text}</pre>
 {/snippet}
 
 <div class="flex flex-col gap-1 py-1">
@@ -69,7 +70,6 @@
 		<Badge variant={badgeVariant}>
 			{displayName}{isRunning ? '…' : ''}
 		</Badge>
-
 	</div>
 
 	<CollapsibleSection label="Details" contentClass="bg-muted/50">
@@ -82,7 +82,11 @@
 		{#if part.output != null}
 			<div>
 				<span class="font-medium text-muted-foreground">Result:</span>
-				{@render codeBlock(typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 2))}
+				{@render codeBlock(
+					typeof part.output === 'string'
+						? part.output
+						: JSON.stringify(part.output, null, 2),
+				)}
 			</div>
 		{/if}
 	</CollapsibleSection>

@@ -12,11 +12,7 @@
 	} = $props();
 </script>
 
-<Select.Root
-	type="single"
-	{value}
-	{onValueChange}
->
+<Select.Root type="single" {value} {onValueChange}>
 	<Select.Trigger size="sm" class="flex-1">
 		{value || 'Select provider…'}
 	</Select.Trigger>

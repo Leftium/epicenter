@@ -30,23 +30,23 @@
 
 import { generateId } from '@epicenter/hq';
 import {
-	DEFAULT_PROVIDER,
-	DEFAULT_MODEL,
 	AVAILABLE_PROVIDERS,
+	DEFAULT_MODEL,
+	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
 import { toUiMessage } from '$lib/ai/ui-message';
 import {
-	createConversationHandle,
 	type ConversationHandle,
 	type ConversationHandleDeps,
+	createConversationHandle,
 } from '$lib/state/conversation-handle.svelte';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
 	ChatMessageId,
-	ConversationId,
 	Conversation,
+	ConversationId,
 } from '$lib/workspace';
 import { popupWorkspace } from '$lib/workspace-popup';
 

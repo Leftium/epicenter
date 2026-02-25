@@ -14,19 +14,19 @@
 import { generateId } from '@epicenter/hq';
 import type { CreateChatReturn, UIMessage } from '@tanstack/ai-svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import {
-	DEFAULT_PROVIDER,
 	DEFAULT_MODEL,
+	DEFAULT_PROVIDER,
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
+import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { tabManagerClientTools } from '$lib/ai/tools/client';
+import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import type {
 	ChatMessageId,
-	ConversationId,
 	Conversation,
+	ConversationId,
 } from '$lib/workspace';
 import { popupWorkspace } from '$lib/workspace-popup';
 
@@ -106,8 +106,7 @@ export function createConversationHandle(
 							provider: conv?.provider ?? DEFAULT_PROVIDER,
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
-							systemPrompt:
-								conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 							tools: allServerToolDefinitions,
 						},
 					};
@@ -327,9 +326,7 @@ export function createConversationHandle(
 				_v: 1,
 			});
 
-			const conv = deps
-				.getConversations()
-				.find((c) => c.id === conversationId);
+			const conv = deps.getConversations().find((c) => c.id === conversationId);
 			deps.updateConversation(conversationId, {
 				title:
 					conv?.title === 'New Chat'

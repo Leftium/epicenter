@@ -1,10 +1,39 @@
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
-import type { JsonSchema } from 'arktype';
 import { Ok, trySync } from 'wellcrafted/result';
-import { ARKTYPE_JSON_SCHEMA_FALLBACK } from './arktype-fallback';
 
 /**
- * Safely convert a Standard JSON Schema to JSON Schema with graceful error handling.
+ * Arktype fallback handlers for JSON Schema conversion.
+ *
+ * Arktype represents optional properties as `T | undefined` internally.
+ * JSON Schema doesn't have an `undefined` type — it handles optionality via
+ * the `required` array. The `unit` handler strips `undefined` from unions
+ * so the conversion succeeds.
+ *
+ * Non-undefined fallbacks (morphs, predicates, proto types, etc.) are logged
+ * with console.warn and preserve the partial schema so other fields aren't lost.
+ *
+ * @see https://arktype.io/docs/json-schema - arktype's toJsonSchema docs
+ */
+const ARKTYPE_FALLBACK = {
+	unit: (ctx: { code: 'unit'; unit: unknown; base: Record<string, unknown> }): Record<string, unknown> => {
+		if (ctx.unit === undefined) return {};
+		console.warn(
+			`[arktype→JSON Schema] Unit type "${String(ctx.unit)}" (${typeof ctx.unit}) cannot be converted. ` +
+				`Using base schema as fallback.`,
+		);
+		return ctx.base;
+	},
+	default: (ctx: { code: string; base: Record<string, unknown> }): Record<string, unknown> => {
+		console.warn(
+			`[arktype→JSON Schema] Fallback triggered for code "${ctx.code}". ` +
+				`Base schema: ${JSON.stringify(ctx.base)}`,
+		);
+		return ctx.base;
+	},
+};
+
+/**
+ * Safely convert a Standard JSON Schema to a plain JSON Schema object.
  *
  * Uses the Standard JSON Schema interface (`~standard.jsonSchema.input`) which
  * is vendor-agnostic. For arktype, fallback handlers are passed via `libraryOptions`
@@ -19,41 +48,29 @@ import { ARKTYPE_JSON_SCHEMA_FALLBACK } from './arktype-fallback';
  * 2. **Outer catch**: Last-resort failsafe for truly catastrophic failures.
  *    Returns `{}` (permissive empty schema) if everything else fails.
  *
- * ## The `undefined` problem
- *
- * Arktype represents optional properties as `T | undefined` internally.
- * JSON Schema doesn't have an `undefined` type; it handles optionality via
- * the `required` array. The `unit` fallback handler strips `undefined` from
- * unions so the conversion succeeds.
- *
  * @see https://standardschema.dev/json-schema - Standard JSON Schema spec
  * @see https://arktype.io/docs/json-schema - arktype's toJsonSchema docs
- * @see ARKTYPE_JSON_SCHEMA_FALLBACK in arktype-fallback.ts for fallback handlers
  *
  * @param schema - Standard JSON Schema to convert
- * @returns JSON Schema representation, or permissive `{}` on error
+ * @returns JSON Schema object, or permissive `{}` on error
  */
 export function standardSchemaToJsonSchema(
 	schema: StandardJSONSchemaV1,
-): JsonSchema {
+): Record<string, unknown> {
 	const { data } = trySync({
 		try: () =>
 			schema['~standard'].jsonSchema.input({
 				target: 'draft-2020-12',
-				// Pass arktype-specific fallback handlers via libraryOptions.
-				// Other vendors will ignore this if they don't support it.
 				libraryOptions: {
-					fallback: ARKTYPE_JSON_SCHEMA_FALLBACK,
+					fallback: ARKTYPE_FALLBACK,
 				},
-			}) as JsonSchema,
-		// Last-resort fallback: if the entire conversion throws, return a
-		// permissive empty schema `{}` that accepts any input.
+			}),
 		catch: (e) => {
 			console.warn(
 				'[standardSchemaToJsonSchema] Conversion failure, using permissive fallback:',
 				e,
 			);
-			return Ok({} satisfies JsonSchema);
+			return Ok({});
 		},
 	});
 	return data;

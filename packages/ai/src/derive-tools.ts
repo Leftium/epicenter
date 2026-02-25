@@ -9,8 +9,7 @@
  */
 
 import type { Action, Actions } from '@epicenter/hq';
-import { iterateActions, standardSchemaToJsonSchema } from '@epicenter/hq';
-import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
+import { iterateActions } from '@epicenter/hq';
 import type { JSONSchema, ServerTool, ToolDefinition } from '@tanstack/ai';
 import { toolDefinition } from '@tanstack/ai';
 
@@ -78,19 +77,13 @@ export type DeriveToolsResult = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Convert a Standard Schema (e.g. ArkType) to a plain JSON Schema object
- * normalized for LLM provider consumption.
+ * Normalize a TypeBox JSON Schema object for LLM provider consumption.
  *
  * - Strips `$schema` (providers don't expect it)
- * - Ensures `properties` and `required` exist (ArkType omits them for
- *   empty or all-optional schemas, but providers expect them)
+ * - Ensures `properties` and `required` exist (providers expect them)
  */
-function toNormalizedJsonSchema(schema: StandardJSONSchemaV1): JSONSchema {
-	const raw = standardSchemaToJsonSchema(schema as any) as Record<
-		string,
-		unknown
-	>;
-	const { $schema: _, ...rest } = raw;
+function toNormalizedJsonSchema(schema: Record<string, unknown>): JSONSchema {
+	const { $schema: _, ...rest } = schema;
 	return {
 		type: 'object',
 		...rest,
@@ -111,7 +104,7 @@ function toNormalizedJsonSchema(schema: StandardJSONSchemaV1): JSONSchema {
  * conversion internally.
  */
 export function actionToToolDefinition(
-	action: Action<any, any>,
+	action: Action,
 	path: string[],
 	{
 		requireApprovalForMutations = false,
@@ -130,7 +123,7 @@ export function actionToToolDefinition(
 	const def = toolDefinition({
 		name,
 		description,
-		...(action.input && { inputSchema: action.input }),
+		...(action.input ? { inputSchema: action.input } : {}),
 		...(needsApproval && { needsApproval: true }),
 		metadata: { actionType: action.type, actionPath: path },
 	});
@@ -188,7 +181,9 @@ export function deriveTools(
 		name: e.definition.name,
 		description: e.definition.description,
 		...(e.definition.inputSchema && {
-			inputSchema: toNormalizedJsonSchema(e.definition.inputSchema),
+			inputSchema: toNormalizedJsonSchema(
+				e.definition.inputSchema as Record<string, unknown>,
+			),
 		}),
 	}));
 

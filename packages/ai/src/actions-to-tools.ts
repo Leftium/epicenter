@@ -14,8 +14,8 @@ import type { Tool } from '@tanstack/ai';
 export type ActionsToToolsOptions = {
 	/** Custom separator for joining path segments into tool names. @default '/' */
 	nameSeparator?: string;
-	/** Return false to exclude an action from the tool set. */
-	filter?: (info: { type: 'query' | 'mutation'; path: string[] }) => boolean;
+	/** If true, mutations will require user approval before executing. @default false */
+	requireApprovalForMutations?: boolean;
 };
 
 /**
@@ -32,17 +32,17 @@ export type ActionsToToolsOptions = {
  */
 export function actionsToTools(
 	actions: Actions,
-	options: ActionsToToolsOptions = {},
+	{
+		nameSeparator = '/',
+		requireApprovalForMutations = false,
+	}: ActionsToToolsOptions = {},
 ): Tool[] {
-	const { nameSeparator = '/', filter } = options;
-	return [...iterateActions(actions)]
-		.filter(([action, path]) => !filter || filter({ type: action.type, path }))
-		.map(([action, path]) => ({
-			name: path.join(nameSeparator),
-			description:
-				action.description ?? `${action.type}: ${path.join('.')}`,
-			...(action.input && { inputSchema: action.input }),
-			execute: async (args: unknown) =>
-				action.input ? action(args) : action(),
-		}));
+	return [...iterateActions(actions)].map(([action, path]) => ({
+		name: path.join(nameSeparator),
+		description: action.description ?? `${action.type}: ${path.join('.')}`,
+		...(action.input && { inputSchema: action.input }),
+		...(requireApprovalForMutations &&
+			action.type === 'mutation' && { needsApproval: true }),
+		execute: async (args: unknown) => (action.input ? action(args) : action()),
+	}));
 }

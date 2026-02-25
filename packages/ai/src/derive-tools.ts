@@ -10,12 +10,16 @@
 
 import type { Action, Actions } from '@epicenter/hq';
 import { iterateActions, standardSchemaToJsonSchema } from '@epicenter/hq';
+import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import type { JSONSchema, ServerTool, ToolDefinition } from '@tanstack/ai';
 import { toolDefinition } from '@tanstack/ai';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Types
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Shorthand — the three generics are always the same for derived tools. */
+type ToolDef = ToolDefinition<JSONSchema, JSONSchema, string>;
 
 export type DeriveToolsOptions = {
 	/**
@@ -30,22 +34,28 @@ export type DeriveToolsOptions = {
 	 */
 	nameSeparator?: string;
 
-	/** Optional filter — return false to exclude an action from the tool set. */
+	/** Return false to exclude an action from the tool set. */
 	filter?: (info: { type: 'query' | 'mutation'; path: string[] }) => boolean;
 };
 
 export type DerivedTool = {
-	definition: ToolDefinition<JSONSchema, JSONSchema, string>;
+	definition: ToolDef;
 	path: string[];
 	isMutation: boolean;
 };
 
+export type ServerToolDefinition = {
+	name: string;
+	description: string;
+	inputSchema?: JSONSchema;
+};
+
 export type DeriveToolsResult = {
 	/**
-	 * ToolDefinition instances with `.server(execute)` and `.client(execute)` methods.
-	 * Use these when you need to bind custom implementations.
+	 * Raw definitions with `.server(execute)` and `.client(execute)` methods.
+	 * Use when you need to bind custom implementations.
 	 */
-	definitions: ToolDefinition<JSONSchema, JSONSchema, string>[];
+	definitions: ToolDef[];
 
 	/**
 	 * Pre-bound server tools — action handlers wired as execute functions.
@@ -54,18 +64,40 @@ export type DeriveToolsResult = {
 	tools: ServerTool<JSONSchema, JSONSchema, string>[];
 
 	/**
-	 * JSON-serializable tool definitions for request bodies.
-	 * Schemas are pre-converted JSON Schema objects.
+	 * JSON-serializable definitions for request bodies.
+	 * Schemas are pre-converted to plain JSON Schema (ArkType-safe).
 	 */
-	serverDefinitions: Array<{
-		name: string;
-		description: string;
-		inputSchema?: JSONSchema;
-	}>;
+	serverDefinitions: ServerToolDefinition[];
 
-	/** Individual derived tools with metadata, for advanced use. */
+	/** All derived tools with metadata — the source of truth the above are projected from. */
 	entries: DerivedTool[];
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// Schema normalization
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Convert a Standard Schema (e.g. ArkType) to a plain JSON Schema object
+ * normalized for LLM provider consumption.
+ *
+ * - Strips `$schema` (providers don't expect it)
+ * - Ensures `properties` and `required` exist (ArkType omits them for
+ *   empty or all-optional schemas, but providers expect them)
+ */
+function toNormalizedJsonSchema(schema: StandardJSONSchemaV1): JSONSchema {
+	const raw = standardSchemaToJsonSchema(schema as any) as Record<
+		string,
+		unknown
+	>;
+	const { $schema: _, ...rest } = raw;
+	return {
+		type: 'object',
+		...rest,
+		properties: (rest.properties as Record<string, unknown>) ?? {},
+		required: (rest.required as string[]) ?? [],
+	} as JSONSchema;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Single action → ToolDefinition
@@ -75,10 +107,8 @@ export type DeriveToolsResult = {
  * Convert a single action + path into a TanStack AI ToolDefinition.
  *
  * Passes the action's input schema directly through to `toolDefinition()`.
- * TanStack AI's `convertSchemaToJsonSchema` handles the Standard Schema
- * protocol internally. If ArkType's `typeof === 'function'` causes issues
- * downstream, the `serverDefinitions` output pre-converts via
- * `standardSchemaToJsonSchema()` as a fallback.
+ * TanStack AI's `convertSchemaToJsonSchema` handles Standard Schema
+ * conversion internally.
  */
 export function actionToToolDefinition(
 	action: Action<any, any>,
@@ -95,15 +125,14 @@ export function actionToToolDefinition(
 		action.description ??
 		`${isMutation ? 'Mutation' : 'Query'}: ${path.join('.')}`;
 
+	const needsApproval = isMutation && requireApprovalForMutations;
+
 	const def = toolDefinition({
 		name,
 		description,
 		...(action.input && { inputSchema: action.input }),
-		...(isMutation && requireApprovalForMutations && { needsApproval: true }),
-		metadata: {
-			actionType: action.type,
-			actionPath: path,
-		},
+		...(needsApproval && { needsApproval: true }),
+		metadata: { actionType: action.type, actionPath: path },
 	});
 
 	return { definition: def, path, isMutation };
@@ -116,29 +145,18 @@ export function actionToToolDefinition(
 /**
  * Derive TanStack AI tools from a workspace action tree.
  *
- * Iterates all actions via `iterateActions()`, converts each to a
- * `ToolDefinition`, and pre-binds server tools with action handlers.
- *
  * @example
  * ```typescript
- * const client = createWorkspace({ ... })
- *   .withActions((c) => ({
- *     posts: {
- *       getAll: defineQuery({ handler: () => c.tables.posts.getAllValid() }),
- *       create: defineMutation({
- *         input: type({ title: 'string' }),
- *         handler: ({ title }) => c.tables.posts.upsert({ ... }),
- *       }),
- *     },
- *   }));
- *
  * const { tools, definitions, serverDefinitions } = deriveTools(client.actions);
  *
  * // Server-side: pass pre-bound tools to chat()
  * chat({ tools, model: 'claude-sonnet-4-20250514', messages });
  *
- * // Client-side: use definitions to bind custom execute fns
+ * // Client-side: bind custom execute fns
  * const clientTools = definitions.map((d) => d.client(...));
+ *
+ * // SSE request bodies: use pre-converted JSON Schema
+ * fetch('/api/chat', { body: JSON.stringify({ tools: serverDefinitions }) });
  * ```
  */
 export function deriveTools(
@@ -156,7 +174,6 @@ export function deriveTools(
 		const derived = actionToToolDefinition(action, path, options);
 		entries.push(derived);
 
-		// Pre-bind: wire action handler as server execute function
 		tools.push(
 			derived.definition.server(async (args: unknown) =>
 				action.input ? action(args) : action(),
@@ -164,32 +181,16 @@ export function deriveTools(
 		);
 	}
 
+	// Projections from entries — definitions for binding, serverDefinitions for wire format
 	const definitions = entries.map((e) => e.definition);
 
-	// serverDefinitions pre-converts to JSON Schema for request bodies,
-	// which also serves as the ArkType typeof === 'function' workaround
-	// when schemas need to be serialized.
-	const serverDefinitions = entries.map((e) => {
-		const base = {
-			name: e.definition.name,
-			description: e.definition.description,
-		};
-		if (!e.definition.inputSchema) return base;
-
-		const raw = standardSchemaToJsonSchema(
-			e.definition.inputSchema as any,
-		) as Record<string, unknown>;
-		const { $schema: _, ...schema } = raw;
-		return {
-			...base,
-			inputSchema: {
-				type: 'object',
-				...schema,
-				properties: (schema.properties as Record<string, unknown>) ?? {},
-				required: (schema.required as string[]) ?? [],
-			} as JSONSchema,
-		};
-	});
+	const serverDefinitions = entries.map<ServerToolDefinition>((e) => ({
+		name: e.definition.name,
+		description: e.definition.description,
+		...(e.definition.inputSchema && {
+			inputSchema: toNormalizedJsonSchema(e.definition.inputSchema),
+		}),
+	}));
 
 	return { definitions, tools, serverDefinitions, entries };
 }

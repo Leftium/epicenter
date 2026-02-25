@@ -1,18 +1,12 @@
 /**
- * Standard Schema type re-exports and Epicenter extensions.
+ * Epicenter-specific Standard Schema extensions.
  *
- * Re-exports the official types from `@standard-schema/spec` and adds
- * Epicenter's combined `StandardSchemaWithJSONSchema` type.
+ * Upstream spec types (`StandardSchemaV1`, `StandardJSONSchemaV1`, etc.)
+ * should be imported directly from `@standard-schema/spec`.
  *
  * @see https://standardschema.dev
  * @see https://github.com/standard-schema/standard-schema
  */
-
-export type {
-	StandardJSONSchemaV1,
-	StandardSchemaV1,
-	StandardTypedV1,
-} from '@standard-schema/spec';
 
 import type {
 	StandardJSONSchemaV1,

@@ -7,10 +7,8 @@
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
-import type {
-	CombinedStandardSchema,
-	StandardSchemaV1,
-} from '../shared/standard-schema/types.js';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -27,7 +27,7 @@
 import type { JsonSchema } from 'arktype';
 import { iterateActions } from '../shared/actions.js';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema.js';
-import type { StandardJSONSchemaV1 } from '../shared/standard-schema/types.js';
+import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import type { AnyWorkspaceClient } from './types.js';
 
 // ════════════════════════════════════════════════════════════════════════════

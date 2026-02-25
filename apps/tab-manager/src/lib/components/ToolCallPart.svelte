@@ -4,6 +4,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
+	import type { PopupActionName } from '$lib/workspace-popup';
 
 	let {
 		part,
@@ -11,24 +12,25 @@
 		part: TanStackToolCallPart;
 	} = $props();
 
-	const toolLabels: Record<string, { active: string; done: string }> = {
-		'tabs_search': { active: 'Searching tabs', done: 'Searched tabs' },
-		'tabs_list': { active: 'Listing tabs', done: 'Listed tabs' },
-		'windows_list': { active: 'Listing windows', done: 'Listed windows' },
-		'devices_list': { active: 'Listing devices', done: 'Listed devices' },
-		'domains_count': {
-			active: 'Counting domains',
-			done: 'Counted domains',
-		},
-		'tabs_close': { active: 'Closing tabs', done: 'Closed tabs' },
-		'tabs_open': { active: 'Opening tab', done: 'Opened tab' },
-		'tabs_activate': { active: 'Activating tab', done: 'Activated tab' },
-		'tabs_save': { active: 'Saving tabs', done: 'Saved tabs' },
-		'tabs_group': { active: 'Grouping tabs', done: 'Grouped tabs' },
-		'tabs_pin': { active: 'Pinning tabs', done: 'Pinned tabs' },
-		'tabs_mute': { active: 'Muting tabs', done: 'Muted tabs' },
-		'tabs_reload': { active: 'Reloading tabs', done: 'Reloaded tabs' },
-	};
+	const toolLabels: Record<PopupActionName, { active: string; done: string }> =
+		{
+			tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
+			tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
+			windows_list: { active: 'Listing windows', done: 'Listed windows' },
+			devices_list: { active: 'Listing devices', done: 'Listed devices' },
+			domains_count: {
+				active: 'Counting domains',
+				done: 'Counted domains',
+			},
+			tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
+			tabs_open: { active: 'Opening tab', done: 'Opened tab' },
+			tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
+			tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
+			tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
+			tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
+			tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
+			tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
+		};
 
 	const hasOutput = $derived(part.output != null);
 	const isRunning = $derived(
@@ -44,7 +46,9 @@
 			'error' in part.output,
 	);
 	const displayName = $derived.by(() => {
-		const labels = toolLabels[part.name];
+		const labels = toolLabels[part.name as PopupActionName] as
+			| { active: string; done: string }
+			| undefined;
 		if (!labels) return part.name;
 		return isRunning ? labels.active : labels.done;
 	});

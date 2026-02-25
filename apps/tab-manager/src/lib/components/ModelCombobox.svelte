@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { aiChatState } from '$lib/state/chat.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
 	import { useCombobox } from '@epicenter/ui/hooks';
@@ -8,14 +7,20 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 
-	let { class: className }: { class?: string } = $props();
+	let {
+		value,
+		models,
+		onSelect,
+		class: className,
+	}: {
+		value: string;
+		models: readonly string[];
+		onSelect: (model: string) => void;
+		class?: string;
+	} = $props();
 
 	const combobox = useCombobox();
 	let searchValue = $state('');
-
-	const models = $derived(
-		aiChatState.modelsForProvider(aiChatState.active?.provider ?? ''),
-	);
 
 	const filteredModels = $derived(
 		searchValue
@@ -35,7 +40,7 @@
 	);
 
 	function selectModel(model: string) {
-		if (aiChatState.active) aiChatState.active.model = model;
+		onSelect(model);
 		searchValue = '';
 		combobox.closeAndFocusTrigger();
 	}
@@ -53,7 +58,7 @@
 				size="sm"
 			>
 				<span class="truncate"
-					>{aiChatState.active?.model || 'Select model…'}</span
+					>{value || 'Select model…'}</span
 				>
 				<ChevronsUpDownIcon class="ml-2 size-3 shrink-0 opacity-50" />
 			</Button>
@@ -76,7 +81,7 @@
 					>
 						<CheckIcon
 							class={cn('mr-1.5 size-3 shrink-0', {
-								'text-transparent': aiChatState.active?.model !== model,
+								'text-transparent': value !== model,
 							})}
 						/>
 						{model}

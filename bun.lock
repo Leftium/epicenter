@@ -141,6 +141,7 @@
         "@wxt-dev/storage": "^1.2.6",
         "arktype": "catalog:",
         "clsx": "catalog:",
+        "marked": "^17.0.3",
         "tailwind-merge": "catalog:",
         "virtua": "^0.48.5",
         "wellcrafted": "catalog:",
@@ -274,6 +275,18 @@
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",
+      },
+    },
+    "packages/ai": {
+      "name": "@epicenter/ai",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/hq": "workspace:*",
+        "@standard-schema/spec": "catalog:",
+        "@tanstack/ai": "^0.5.1",
+      },
+      "devDependencies": {
+        "typescript": "catalog:",
       },
     },
     "packages/cli": {
@@ -674,6 +687,8 @@
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.1.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-WI0DdZ8xFSbgMjR1sFsKABJ/C5OnRrjT06JXbZKexJGrDuPTzZdDYfFlsgcCXCyf+suG5QU2e/y1Wo2V/OapLQ=="],
 
     "@emoji-mart/data": ["@emoji-mart/data@1.2.1", "", {}, "sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw=="],
+
+    "@epicenter/ai": ["@epicenter/ai@workspace:packages/ai"],
 
     "@epicenter/app": ["@epicenter/app@workspace:apps/epicenter"],
 

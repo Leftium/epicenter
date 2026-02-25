@@ -62,10 +62,8 @@
  * @module
  */
 
-import type {
-	CombinedStandardSchema,
-	StandardSchemaV1,
-} from '../shared/standard-schema/types';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { CombinedStandardSchema } from '../shared/standard-schema/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES

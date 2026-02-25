@@ -42,6 +42,10 @@ export function toDefinitions(
 	return tools.map((tool) => ({
 		name: tool.name,
 		description: tool.description,
+		// Safe cast: our action system only accepts TypeBox schemas (TSchema),
+		// which ARE plain JSON Schema objects. AnyClientTool widens the type to
+		// SchemaInput (JSONSchema | StandardJSONSchemaV1), but only TypeBox flows
+		// through actionsToClientTools.
 		...(tool.inputSchema && {
 			inputSchema: normalizeSchema(tool.inputSchema as JSONSchema),
 		}),

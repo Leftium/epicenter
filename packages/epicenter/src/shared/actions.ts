@@ -29,7 +29,7 @@
  * @example
  * ```typescript
  * import { createWorkspace, defineQuery, defineMutation } from '@epicenter/hq';
- * import { type } from 'arktype';
+ * import Type from 'typebox';
  *
  * // Step 1: Create the client (with all tables and extensions)
  * const client = createWorkspace({
@@ -44,7 +44,7 @@
  *       handler: () => client.tables.posts.getAllValid(),
  *     }),
  *     create: defineMutation({
- *       input: type({ title: 'string' }),
+ *       input: Type.Object({ title: Type.String() }),
  *       handler: ({ title }) => {
  *         const id = generateId();
  *         client.tables.posts.upsert({ id, title });
@@ -62,8 +62,7 @@
  * @module
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types';
+import type { Static, TSchema } from 'typebox';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ACTION DEFINITION TYPES
@@ -73,30 +72,28 @@ import type { CombinedStandardSchema } from '../shared/standard-schema/types';
  * The handler function type, conditional on whether input is provided.
  *
  * Uses variadic tuple args instead of conditional function signatures so that
- * when the type flows through `Action<any, any>` (via the `Actions` constraint),
+ * when the type flows through `Action` (via the `Actions` constraint),
  * `any` distributes over both branches giving `[input: any] | []` — which
  * correctly allows calling with 0 arguments for no-input actions.
  *
- * When `TInput` extends `CombinedStandardSchema`, the handler takes validated input.
+ * When `TInput` extends `TSchema`, the handler takes validated input.
  * When `TInput` is `undefined`, the handler takes no arguments.
  */
 type ActionHandler<
-	TInput extends CombinedStandardSchema | undefined = undefined,
+	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = (
-	...args: TInput extends CombinedStandardSchema
-		? [input: StandardSchemaV1.InferOutput<TInput>]
-		: []
+	...args: TInput extends TSchema ? [input: Static<TInput>] : []
 ) => TOutput | Promise<TOutput>;
 
 /**
  * Configuration for defining an action (query or mutation).
  *
- * @typeParam TInput - The input schema type (StandardSchema), or undefined for no input
+ * @typeParam TInput - The input schema type (TypeBox TSchema), or undefined for no input
  * @typeParam TOutput - The return type of the handler
  *
  * @property description - Human-readable description for introspection and documentation
- * @property input - Optional StandardSchema for validating and typing input
+ * @property input - Optional TypeBox schema for validating and typing input
  * @property handler - The action implementation. Handlers close over their dependencies and have signature `(input?) => output`
  *
  * @remarks
@@ -126,7 +123,7 @@ type ActionHandler<
  * ```
  */
 type ActionConfig<
-	TInput extends CombinedStandardSchema | undefined = undefined,
+	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = {
 	description?: string;
@@ -141,12 +138,11 @@ type ActionConfig<
  * (via `Object.assign`). The handler is NOT included — the action function IS
  * the handler. Call the action directly instead of accessing `.handler`.
  */
-type ActionMeta<TInput extends CombinedStandardSchema | undefined = undefined> =
-	{
-		type: 'query' | 'mutation';
-		description?: string;
-		input?: TInput;
-	};
+type ActionMeta<TInput extends TSchema | undefined = TSchema | undefined> = {
+	type: 'query' | 'mutation';
+	description?: string;
+	input?: TInput;
+};
 
 /**
  * A query action definition (read operation).
@@ -169,7 +165,7 @@ type ActionMeta<TInput extends CombinedStandardSchema | undefined = undefined> =
  * @see {@link defineQuery} for creating query definitions
  */
 export type Query<
-	TInput extends CombinedStandardSchema | undefined = undefined,
+	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'query' };
 
@@ -196,7 +192,7 @@ export type Query<
  * @see {@link defineMutation} for creating mutation definitions
  */
 export type Mutation<
-	TInput extends CombinedStandardSchema | undefined = undefined,
+	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = ActionHandler<TInput, TOutput> & ActionMeta<TInput> & { type: 'mutation' };
 
@@ -209,7 +205,7 @@ export type Mutation<
  * @typeParam TOutput - The return type of the handler
  */
 export type Action<
-	TInput extends CombinedStandardSchema | undefined = undefined,
+	TInput extends TSchema | undefined = TSchema | undefined,
 	TOutput = unknown,
 > = Query<TInput, TOutput> | Mutation<TInput, TOutput>;
 
@@ -246,7 +242,7 @@ export type Action<
  * ```
  */
 export type Actions = {
-	[key: string]: Action<any, any> | Actions;
+	[key: string]: Action | Actions;
 };
 
 /**
@@ -279,18 +275,17 @@ export function defineQuery<TOutput = unknown>(
 	config: ActionConfig<undefined, TOutput>,
 ): Query<undefined, TOutput>;
 /** With input — `TInput` inferred from the schema. */
-export function defineQuery<
-	TInput extends CombinedStandardSchema,
-	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Query<TInput, TOutput>;
+export function defineQuery<TInput extends TSchema, TOutput = unknown>(
+	config: ActionConfig<TInput, TOutput>,
+): Query<TInput, TOutput>;
 export function defineQuery({
 	handler,
 	...rest
-}: ActionConfig<any, any>): Query<any, any> {
+}: ActionConfig): Query {
 	return Object.assign(handler, {
 		type: 'query' as const,
 		...rest,
-	}) as unknown as Query<any, any>;
+	}) as unknown as Query;
 }
 
 /**
@@ -329,18 +324,17 @@ export function defineMutation<TOutput = unknown>(
 	config: ActionConfig<undefined, TOutput>,
 ): Mutation<undefined, TOutput>;
 /** With input — `TInput` inferred from the schema. */
-export function defineMutation<
-	TInput extends CombinedStandardSchema,
-	TOutput = unknown,
->(config: ActionConfig<TInput, TOutput>): Mutation<TInput, TOutput>;
+export function defineMutation<TInput extends TSchema, TOutput = unknown>(
+	config: ActionConfig<TInput, TOutput>,
+): Mutation<TInput, TOutput>;
 export function defineMutation({
 	handler,
 	...rest
-}: ActionConfig<any, any>): Mutation<any, any> {
+}: ActionConfig): Mutation {
 	return Object.assign(handler, {
 		type: 'mutation' as const,
 		...rest,
-	}) as unknown as Mutation<any, any>;
+	}) as unknown as Mutation;
 }
 
 /**
@@ -360,7 +354,7 @@ export function defineMutation({
  * }
  * ```
  */
-export function isAction(value: unknown): value is Action<any, any> {
+export function isAction(value: unknown): value is Action {
 	return (
 		typeof value === 'function' &&
 		'type' in value &&
@@ -374,7 +368,7 @@ export function isAction(value: unknown): value is Action<any, any> {
  * @param value - The value to check
  * @returns True if the value is a Query definition
  */
-export function isQuery(value: unknown): value is Query<any, any> {
+export function isQuery(value: unknown): value is Query {
 	return isAction(value) && value.type === 'query';
 }
 
@@ -384,7 +378,7 @@ export function isQuery(value: unknown): value is Query<any, any> {
  * @param value - The value to check
  * @returns True if the value is a Mutation definition
  */
-export function isMutation(value: unknown): value is Mutation<any, any> {
+export function isMutation(value: unknown): value is Mutation {
 	return isAction(value) && value.type === 'mutation';
 }
 
@@ -416,7 +410,7 @@ export function isMutation(value: unknown): value is Mutation<any, any> {
 export function* iterateActions(
 	actions: Actions,
 	path: string[] = [],
-): Generator<[Action<any, any>, string[]]> {
+): Generator<[Action, string[]]> {
 	for (const [key, value] of Object.entries(actions)) {
 		const currentPath = [...path, key];
 		if (isAction(value)) {

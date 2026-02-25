@@ -38,8 +38,8 @@
 import { generateId } from '@epicenter/hq';
 import {
 	ChatClient,
-	fetchServerSentEvents,
 	type ChatClientState,
+	fetchServerSentEvents,
 	type UIMessage,
 } from '@tanstack/ai-client';
 import { SvelteMap } from 'svelte/reactivity';
@@ -199,17 +199,13 @@ function createAiChatState() {
 			connection: fetchServerSentEvents(
 				() => `${hubUrlCache}/ai/chat`,
 				async () => {
-					const conv = conversations.find(
-						(c) => c.id === conversationId,
-					);
+					const conv = conversations.find((c) => c.id === conversationId);
 					return {
 						body: {
 							provider: conv?.provider ?? DEFAULT_PROVIDER,
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
-							systemPrompt:
-								conv?.systemPrompt ??
-								TAB_MANAGER_SYSTEM_PROMPT,
+							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
 							tools: allServerToolDefinitions,
 						},
 					};
@@ -219,18 +215,15 @@ function createAiChatState() {
 				messageStore.set(conversationId, msgs);
 			},
 			onLoadingChange: (isLoading) => {
-				const current =
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
+				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, isLoading });
 			},
 			onErrorChange: (error) => {
-				const current =
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
+				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, error });
 			},
 			onStatusChange: (status) => {
-				const current =
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
+				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, status });
 			},
 			onFinish: (message) => {
@@ -324,21 +317,16 @@ function createAiChatState() {
 			},
 
 			get isLoading() {
-				return (
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE
-				).isLoading;
+				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE)
+					.isLoading;
 			},
 
 			get error() {
-				return (
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE
-				).error;
+				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).error;
 			},
 
 			get status() {
-				return (
-					streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE
-				).status;
+				return (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
 			},
 
 			// ── Ephemeral UI state (centralized stores) ──
@@ -374,17 +362,14 @@ function createAiChatState() {
 					.map((p) => p.content ?? '')
 					.join('')
 					.trim();
-				return text.length > 60
-					? text.slice(0, 60) + '\u2026'
-					: text;
+				return text.length > 60 ? text.slice(0, 60) + '\u2026' : text;
 			},
 
 			// ── Actions ──
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId =
-					generateId() as string as ChatMessageId;
+				const userMessageId = generateId() as string as ChatMessageId;
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
@@ -405,9 +390,7 @@ function createAiChatState() {
 					_v: 1,
 				});
 
-				const conv = conversations.find(
-					(c) => c.id === conversationId,
-				);
+				const conv = conversations.find((c) => c.id === conversationId);
 				updateConversation(conversationId, {
 					title:
 						conv?.title === 'New Chat'

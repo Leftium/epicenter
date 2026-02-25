@@ -45,8 +45,7 @@ src/lib/
     providers.ts                    # Pure data — provider/model config
     ui-message.ts                   # Pure — toUiMessage + drift detection types
   state/
-    chat-state.svelte.ts            # Orchestrator — CRUD, active tracking, observers
-    conversation-handle.svelte.ts   # Per-conversation reactive handle factory
+    chat-state.svelte.ts            # Orchestrator + per-conversation reactive handles
   components/
     AiChat.svelte                   # Thin orchestrator (~50 lines)
     ConversationPicker.svelte       # Popover+Command conversation switcher
@@ -123,7 +122,7 @@ Tool call rendering should show human-readable names (e.g., "Searching tabs…",
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| State file split granularity | 4 files (providers, ui-message, handle, orchestrator) | Providers and ui-message are pure — no `.svelte.ts` needed. Handle is independently testable. |
+| State file split granularity | 3 files (providers, ui-message, chat-state) | Providers and ui-message are pure — no `.svelte.ts` needed. Handle factory is an inner function inside chat-state — DI was over-engineered for a single consumer. |
 | Component file split | 11 files (see Desired State) | Each concern maps to one change reason. `MessageParts` dispatches; leaf components render. |
 | ModelCombobox API | Controlled: `value`, `models`, `onSelect` props | Matches shadcn-svelte composition philosophy. Enables reuse and testing. |
 | ProviderSelect extraction | New component with `value`, `providers`, `onSelect` props | Same rationale as ModelCombobox. Symmetrical API. |
@@ -152,57 +151,31 @@ src/lib/ai/ui-message.ts
 └── TanStackMessagePart type alias
     (Pure functions + compile-time assertions — no runes)
 
-src/lib/state/conversation-handle.svelte.ts
-├── createConversationHandle(conversationId, dependencies)
-│   ├── Lazy ChatClient via ensureChat()
-│   ├── $state: inputValue, dismissedError
-│   ├── $derived: metadata (from conversations getter)
-│   ├── Getters: id, title, provider, model, messages, isLoading, error, status
-│   ├── Setters: provider, model, inputValue, dismissedError
-│   └── Actions: sendMessage, reload, stop, rename, delete, refreshFromDoc
-└── ConversationHandle type export
-
 src/lib/state/chat-state.svelte.ts
 ├── createAiChatState()
 │   ├── conversations $state array (Y.Doc-backed)
+│   ├── createConversationHandle(conversationId)  ← inner function, closes over orchestrator state
+│   │   ├── Lazy ChatClient via ensureChat()
+│   │   ├── $state: messages, isLoading, error, status, inputValue, dismissedError
+│   │   ├── $derived: metadata (from conversations array)
+│   │   ├── Getters: id, title, provider, model, messages, isLoading, error, status
+│   │   ├── Setters: provider, model, inputValue, dismissedError
+│   │   └── Actions: sendMessage, reload, stop, rename, delete, refreshFromDoc
 │   ├── handles Map<ConversationId, ConversationHandle>
 │   ├── activeConversationId $state
 │   ├── Observers (conversations table, chatMessages table, whenReady)
 │   ├── reconcileHandles()
 │   ├── CRUD: createConversation, switchConversation, deleteConversation
 │   └── Public API: active, conversations, get, switchTo, availableProviders, modelsForProvider
-└── export const aiChatState = createAiChatState()
+├── export const aiChatState = createAiChatState()
+└── export type ConversationHandle
 ```
 
-### Dependency Injection for ConversationHandle
+### Conversation Handle as Inner Function
 
-The current implementation has `createConversationHandle` reading from the outer closure's `conversations` array and `updateConversation` function. In the split version, these become explicit dependencies:
+`createConversationHandle` is an inner function inside `createAiChatState()`. It closes over the orchestrator's state directly — `conversations`, `updateConversation`, `deleteConversation`, `loadMessages`, `hubUrlCache` — eliminating the need for a dependency injection interface.
 
-```typescript
-// conversation-handle.svelte.ts
-
-export interface ConversationHandleDeps {
-  /** Reactive getter — returns the latest conversations array. */
-  getConversations: () => Conversation[];
-  /** Atomic update to a conversation's fields in Y.Doc. */
-  updateConversation: (id: ConversationId, patch: Partial<Omit<Conversation, 'id'>>) => void;
-  /** Delete this conversation (delegates to orchestrator). */
-  deleteConversation: (id: ConversationId) => void;
-  /** Load persisted messages from Y.Doc for a conversation. */
-  loadMessages: (id: ConversationId) => UIMessage[];
-  /** Get the hub server URL synchronously. */
-  getHubUrl: () => string;
-}
-
-export function createConversationHandle(
-  conversationId: ConversationId,
-  deps: ConversationHandleDeps,
-) {
-  // ... same internal structure, but reads deps instead of closure variables
-}
-```
-
-This makes ConversationHandle independently testable — inject mock deps, assert behavior.
+This was initially split into a separate file with an explicit `ConversationHandleDeps` interface, but the DI layer was over-engineered: there is exactly one consumer (the orchestrator), and the interface added ceremony without enabling meaningful independent testing. Consolidating into a single file reduced complexity and improved readability.
 
 ### Component Layer Split
 
@@ -294,10 +267,10 @@ Y.Doc (CRDT)
 
 ### Phase 2: Split State Files
 
-- [x] 2.1 Create `src/lib/state/conversation-handle.svelte.ts` — extract `createConversationHandle` with explicit `ConversationHandleDeps` interface
-- [x] 2.2 Update `chat.svelte.ts` → rename to `chat-state.svelte.ts` — import and use the extracted handle factory, wire deps from closure
+- [x] 2.1 ~~Create `src/lib/state/conversation-handle.svelte.ts`~~ → consolidated back into `chat-state.svelte.ts` (DI was over-engineered for single consumer)
+- [x] 2.2 Rename `chat.svelte.ts` → `chat-state.svelte.ts` with `createConversationHandle` as inner function
 - [x] 2.3 Fix `updateConversation` to use `TableHelper.update()` instead of find-then-set
-- [x] 2.4 Export `ConversationHandle` type from `conversation-handle.svelte.ts`
+- [x] 2.4 Export `ConversationHandle` type from `chat-state.svelte.ts`
 - [x] 2.5 Update all consumers to import from new paths (`chat-state.svelte` instead of `chat.svelte`)
 - [x] 2.6 Verify build passes — no behavior change
 
@@ -695,8 +668,7 @@ The parts array is `unknown[]` from Y.Doc. We cast at the `toUiMessage` boundary
 ## Success Criteria
 
 - [x] `AiChat.svelte` is under 60 lines (42 lines)
-- [x] `chat-state.svelte.ts` is under 400 lines (406 lines — close enough)
-- [x] `conversation-handle.svelte.ts` is independently importable (uses `ConversationHandleDeps` DI)
+- [x] `chat-state.svelte.ts` consolidates orchestrator + handle factory (~770 lines — well-structured with clear sections)
 - [x] `providers.ts` and `ui-message.ts` have no Svelte rune imports
 - [x] `ModelCombobox` accepts `value`, `models`, `onSelect` props — no singleton import
 - [x] `ProviderSelect` accepts `value`, `providers`, `onValueChange` props

@@ -31,15 +31,12 @@ export function createActionsRouter(actions: Actions, prefix = '/actions') {
 			case 'query':
 				router.get(
 					routePath,
-					async ({ query }) => {
+					async ({ query, status }) => {
 						if (action.input) {
-							if (!Value.Check(action.input, query)) {
-								const errors = [...Value.Errors(action.input, query)];
-								return new Response(
-									JSON.stringify({ errors }),
-									{ status: 422, headers: { 'Content-Type': 'application/json' } },
-								);
-							}
+							if (!Value.Check(action.input, query))
+								return status('Unprocessable Content', {
+									errors: Value.Errors(action.input, query),
+								});
 							return { data: await action(query) };
 						}
 						return { data: await action() };
@@ -50,15 +47,12 @@ export function createActionsRouter(actions: Actions, prefix = '/actions') {
 			case 'mutation':
 				router.post(
 					routePath,
-					async ({ body }) => {
+					async ({ body, status }) => {
 						if (action.input) {
-							if (!Value.Check(action.input, body)) {
-								const errors = [...Value.Errors(action.input, body)];
-								return new Response(
-									JSON.stringify({ errors }),
-									{ status: 422, headers: { 'Content-Type': 'application/json' } },
-								);
-							}
+							if (!Value.Check(action.input, body))
+								return status('Unprocessable Content', {
+									errors: Value.Errors(action.input, body),
+								});
 							return { data: await action(body) };
 						}
 						return { data: await action() };

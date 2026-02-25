@@ -4,6 +4,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
+	import type { ToolName } from '$lib/ai/tools/definitions';
 
 	let {
 		part,
@@ -11,27 +12,28 @@
 		part: TanStackToolCallPart;
 	} = $props();
 
-	const toolDisplayNames: Record<string, string> = {
-		searchTabs: 'Searching tabs',
-		listTabs: 'Listing tabs',
-		listWindows: 'Listing windows',
-		listDevices: 'Listing devices',
-		countByDomain: 'Counting domains',
-		closeTabs: 'Closing tabs',
-		openTab: 'Opening tab',
-		activateTab: 'Activating tab',
-		saveTabs: 'Saving tabs',
-		groupTabs: 'Grouping tabs',
-		pinTabs: 'Pinning tabs',
-		muteTabs: 'Muting tabs',
-		reloadTabs: 'Reloading tabs',
+	const toolLabels: Record<ToolName, { active: string; done: string }> = {
+		searchTabs: { active: 'Searching tabs', done: 'Searched tabs' },
+		listTabs: { active: 'Listing tabs', done: 'Listed tabs' },
+		listWindows: { active: 'Listing windows', done: 'Listed windows' },
+		listDevices: { active: 'Listing devices', done: 'Listed devices' },
+		countByDomain: { active: 'Counting domains', done: 'Counted domains' },
+		closeTabs: { active: 'Closing tabs', done: 'Closed tabs' },
+		openTab: { active: 'Opening tab', done: 'Opened tab' },
+		activateTab: { active: 'Activating tab', done: 'Activated tab' },
+		saveTabs: { active: 'Saving tabs', done: 'Saved tabs' },
+		groupTabs: { active: 'Grouping tabs', done: 'Grouped tabs' },
+		pinTabs: { active: 'Pinning tabs', done: 'Pinned tabs' },
+		muteTabs: { active: 'Muting tabs', done: 'Muted tabs' },
+		reloadTabs: { active: 'Reloading tabs', done: 'Reloaded tabs' },
 	};
 
-	const displayName = $derived(toolDisplayNames[part.name] ?? part.name);
+	const hasOutput = $derived(part.output != null);
 	const isRunning = $derived(
-		['awaiting-input', 'input-streaming', 'input-complete'].includes(
-			part.state,
-		),
+		!hasOutput &&
+			['awaiting-input', 'input-streaming', 'input-complete'].includes(
+				part.state,
+			),
 	);
 	const isFailed = $derived(
 		part.output &&
@@ -39,6 +41,11 @@
 			part.output !== null &&
 			'error' in part.output,
 	);
+	const displayName = $derived.by(() => {
+		const labels = toolLabels[part.name as ToolName];
+		if (!labels) return part.name;
+		return isRunning ? labels.active : labels.done;
+	});
 	const badgeVariant = $derived(
 		isFailed
 			? ('status.failed' as const)
@@ -62,6 +69,7 @@
 		<Badge variant={badgeVariant}>
 			{displayName}{isRunning ? '…' : ''}
 		</Badge>
+
 	</div>
 
 	<CollapsibleSection label="Details" contentClass="bg-muted/50">

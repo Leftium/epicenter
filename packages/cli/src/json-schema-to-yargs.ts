@@ -1,9 +1,24 @@
-import type { JsonSchema } from 'arktype';
+import type {
+	TEnum,
+	TLiteral,
+	TObject,
+	TSchema,
+	TUnion,
+} from 'typebox';
 import type { Options } from 'yargs';
 
+type TSchemaTypeName =
+	| 'string'
+	| 'number'
+	| 'integer'
+	| 'boolean'
+	| 'array'
+	| 'object'
+	| 'null';
+
 function isObjectSchema(
-	schema: JsonSchema,
-): schema is JsonSchema.Object & { properties: Record<string, JsonSchema> } {
+	schema: TSchema,
+): schema is TObject & { properties: Record<string, TSchema> } {
 	return (
 		'type' in schema &&
 		schema.type === 'object' &&
@@ -12,20 +27,20 @@ function isObjectSchema(
 	);
 }
 
-function isEnumSchema(schema: JsonSchema): schema is JsonSchema.Enum {
+function isEnumSchema(schema: TSchema): schema is TEnum {
 	return 'enum' in schema && schema.enum !== undefined;
 }
 
-function isUnionSchema(schema: JsonSchema): schema is JsonSchema.Union {
+function isUnionSchema(schema: TSchema): schema is TUnion {
 	return 'anyOf' in schema && schema.anyOf !== undefined;
 }
 
-function isConstSchema(schema: JsonSchema): schema is JsonSchema.Const {
+function isConstSchema(schema: TSchema): schema is TLiteral {
 	return 'const' in schema && schema.const !== undefined;
 }
 
-function hasType(schema: JsonSchema): schema is JsonSchema.Constrainable & {
-	type: JsonSchema.TypeName | JsonSchema.TypeName[];
+function hasType(schema: TSchema): schema is TSchema & {
+	type: TSchemaTypeName | TSchemaTypeName[];
 } {
 	return 'type' in schema && schema.type !== undefined;
 }
@@ -33,7 +48,7 @@ function hasType(schema: JsonSchema): schema is JsonSchema.Constrainable & {
 type YargsType = 'string' | 'number' | 'boolean' | 'array' | 'count';
 
 function jsonSchemaTypeToYargsType(
-	type: JsonSchema.TypeName | undefined,
+	type: TSchemaTypeName | undefined,
 ): YargsType | undefined {
 	switch (type) {
 		case 'string':
@@ -51,7 +66,7 @@ function jsonSchemaTypeToYargsType(
 }
 
 function extractChoicesFromUnion(
-	variants: readonly JsonSchema[],
+	variants: readonly TSchema[],
 ): string[] | undefined {
 	const choices: string[] = [];
 
@@ -73,7 +88,7 @@ function extractChoicesFromUnion(
 }
 
 function fieldSchemaToYargsOption(
-	fieldSchema: JsonSchema,
+	fieldSchema: TSchema,
 	isRequired: boolean,
 ): Options {
 	const description =
@@ -147,27 +162,26 @@ function fieldSchemaToYargsOption(
 /**
  * Convert JSON Schema to yargs options record.
  *
- * Takes a JSON Schema (typically generated from a StandardSchema action input)
- * and returns a record of yargs option configurations. Uses a permissive approach:
- * if a schema type can't be cleanly mapped to yargs, the option is still created
- * without a type constraint, letting action validation handle strict checking.
+ * Takes a JSON Schema object and returns a record of yargs option configurations.
+ * Uses a permissive approach: if a schema type can't be cleanly mapped to yargs,
+ * the option is still created without a type constraint, letting action validation
+ * handle strict checking.
  *
  * @example
  * ```typescript
- * const schema = type({ title: 'string', count: 'number?' });
- * const jsonSchema = standardSchemaToJsonSchema(schema);
- * const options = jsonSchemaToYargsOptions(jsonSchema);
+ * const schema = Type.Object({ title: Type.String(), count: Type.Optional(Type.Number()) });
+ * const options = jsonSchemaToYargsOptions(schema);
  * // { title: { type: 'string', demandOption: true }, count: { type: 'number', demandOption: false } }
  * ```
  */
 export function jsonSchemaToYargsOptions(
-	schema: JsonSchema,
+	schema: TSchema,
 ): Record<string, Options> {
 	if (!isObjectSchema(schema)) {
 		return {};
 	}
 
-	const required = new Set(schema.required ?? []);
+	const required = new Set((schema as TObject & { required?: string[] }).required ?? []);
 	const options: Record<string, Options> = {};
 
 	for (const [key, fieldSchema] of Object.entries(schema.properties)) {

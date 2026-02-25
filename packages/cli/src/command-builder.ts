@@ -1,4 +1,5 @@
 import { type Actions, iterateActions } from '@epicenter/hq';
+import type { TSchema } from 'typebox';
 import Value from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
@@ -36,18 +37,14 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			action.description ??
 			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
 
-		const jsonSchema = action.input
-			? (action.input as Record<string, unknown>)
-			: undefined;
-
-		const builder = jsonSchema ? jsonSchemaToYargsOptions(jsonSchema) : {};
+		const builder = action.input ? jsonSchemaToYargsOptions(action.input) : {};
 
 		return {
 			command: commandPath,
 			describe: description,
 			builder,
 			handler: async (argv: Record<string, unknown>) => {
-				const input = extractInputFromArgv(argv, jsonSchema);
+				const input = extractInputFromArgv(argv, action.input);
 
 				if (action.input) {
 					if (!Value.Check(action.input, input)) {
@@ -72,13 +69,19 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 
 function extractInputFromArgv(
 	argv: Record<string, unknown>,
-	jsonSchema: Record<string, unknown> | undefined,
+	schema: TSchema | undefined,
 ): Record<string, unknown> {
-	if (!jsonSchema || jsonSchema.type !== 'object' || !jsonSchema.properties) {
+	if (
+		!schema ||
+		!('type' in schema) ||
+		schema.type !== 'object' ||
+		!('properties' in schema) ||
+		!schema.properties
+	) {
 		return {};
 	}
 
-	const properties = jsonSchema.properties as Record<string, unknown>;
+	const properties = schema.properties as Record<string, unknown>;
 	const input: Record<string, unknown> = {};
 
 	for (const key of Object.keys(properties)) {

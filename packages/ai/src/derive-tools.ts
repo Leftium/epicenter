@@ -12,6 +12,7 @@ import type { Action, Actions } from '@epicenter/hq';
 import { iterateActions } from '@epicenter/hq';
 import type { JSONSchema, ServerTool, ToolDefinition } from '@tanstack/ai';
 import { toolDefinition } from '@tanstack/ai';
+import type { TSchema } from 'typebox';
 
 // ════════════════════════════════════════════════════════════════════════════
 // Types
@@ -41,12 +42,14 @@ export type DerivedTool = {
 	definition: ToolDef;
 	path: string[];
 	isMutation: boolean;
+	/** The original TypeBox input schema from the action, if any. */
+	inputSchema?: TSchema;
 };
 
 export type ServerToolDefinition = {
 	name: string;
 	description: string;
-	inputSchema?: JSONSchema;
+	inputSchema?: TSchema;
 };
 
 export type DeriveToolsResult = {
@@ -64,33 +67,13 @@ export type DeriveToolsResult = {
 
 	/**
 	 * JSON-serializable definitions for request bodies.
-	 * Schemas are pre-converted to plain JSON Schema (ArkType-safe).
+	 * Uses the original TypeBox schemas directly (already JSON Schema).
 	 */
 	serverDefinitions: ServerToolDefinition[];
 
 	/** All derived tools with metadata — the source of truth the above are projected from. */
 	entries: DerivedTool[];
 };
-
-// ════════════════════════════════════════════════════════════════════════════
-// Schema normalization
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Normalize a TypeBox JSON Schema object for LLM provider consumption.
- *
- * - Strips `$schema` (providers don't expect it)
- * - Ensures `properties` and `required` exist (providers expect them)
- */
-function toNormalizedJsonSchema(schema: Record<string, unknown>): JSONSchema {
-	const { $schema: _, ...rest } = schema;
-	return {
-		type: 'object',
-		...rest,
-		properties: (rest.properties as Record<string, unknown>) ?? {},
-		required: (rest.required as string[]) ?? [],
-	} as JSONSchema;
-}
 
 // ════════════════════════════════════════════════════════════════════════════
 // Single action → ToolDefinition
@@ -128,7 +111,12 @@ export function actionToToolDefinition(
 		metadata: { actionType: action.type, actionPath: path },
 	});
 
-	return { definition: def, path, isMutation };
+	return {
+		definition: def,
+		path,
+		isMutation,
+		...(action.input && { inputSchema: action.input }),
+	};
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -180,11 +168,7 @@ export function deriveTools(
 	const serverDefinitions = entries.map<ServerToolDefinition>((e) => ({
 		name: e.definition.name,
 		description: e.definition.description,
-		...(e.definition.inputSchema && {
-			inputSchema: toNormalizedJsonSchema(
-				e.definition.inputSchema as Record<string, unknown>,
-			),
-		}),
+		...(e.inputSchema && { inputSchema: e.inputSchema }),
 	}));
 
 	return { definitions, tools, serverDefinitions, entries };

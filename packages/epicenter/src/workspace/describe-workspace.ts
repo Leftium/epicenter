@@ -145,7 +145,7 @@ export function describeWorkspace(
 				descriptor.description = action.description;
 			}
 			if (action.input !== undefined) {
-				descriptor.input = standardSchemaToJsonSchema(action.input);
+				descriptor.input = action.input as JsonSchema;
 			}
 			actions.push(descriptor);
 		}

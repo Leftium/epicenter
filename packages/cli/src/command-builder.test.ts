@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/hq';
-import { type } from 'arktype';
+import Type from 'typebox';
 import { buildActionCommands } from './command-builder';
 
 describe('buildActionCommands', () => {
@@ -34,7 +34,7 @@ describe('buildActionCommands', () => {
 	test('builds command from action with input schema', () => {
 		const actions = {
 			create: defineMutation({
-				input: type({ title: 'string' }),
+				input: Type.Object({ title: Type.String() }),
 				handler: ({ title }) => ({ id: '1', title }),
 			}),
 		};
@@ -54,7 +54,7 @@ describe('buildActionCommands', () => {
 					handler: () => [],
 				}),
 				create: defineMutation({
-					input: type({ title: 'string' }),
+					input: Type.Object({ title: Type.String() }),
 					handler: ({ title }) => ({ id: '1', title }),
 				}),
 			},
@@ -104,9 +104,9 @@ describe('buildActionCommands', () => {
 	test('builder contains yargs options for input schema', () => {
 		const actions = {
 			create: defineMutation({
-				input: type({
-					title: 'string',
-					'count?': 'number',
+				input: Type.Object({
+					title: Type.String(),
+					count: Type.Optional(Type.Number()),
 				}),
 				handler: ({ title }) => ({ id: '1', title }),
 			}),

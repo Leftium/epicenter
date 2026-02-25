@@ -11,6 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
+import Type from 'typebox';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import { createWorkspace } from './create-workspace.js';
 import { defineKv } from './define-kv.js';
@@ -36,7 +37,7 @@ describe('describeWorkspace', () => {
 				}),
 				create: defineMutation({
 					description: 'Create a post',
-					input: type({ title: 'string' }),
+					input: Type.Object({ title: Type.String() }),
 					handler: ({ title }) => {
 						c.tables.posts.set({ id: '1', title, _v: 1 });
 					},

@@ -161,7 +161,10 @@ export const allToolDefinitions = [
 	pinTabsDef,
 	muteTabsDef,
 	reloadTabsDef,
-];
+] as const;
+
+/** Union of all tool names, derived from `allToolDefinitions`. */
+export type ToolName = (typeof allToolDefinitions)[number]['name'];
 
 /**
  * Tool definitions with arktype schemas pre-converted to JSON Schema.

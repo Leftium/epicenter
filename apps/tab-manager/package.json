@@ -30,6 +30,7 @@
 		"@wxt-dev/storage": "^1.2.6",
 		"arktype": "catalog:",
 		"clsx": "catalog:",
+		"marked": "^17.0.3",
 		"tailwind-merge": "catalog:",
 		"virtua": "^0.48.5",
 		"wellcrafted": "catalog:",

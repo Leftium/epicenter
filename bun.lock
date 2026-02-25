@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -128,6 +127,7 @@
       "name": "@epicenter/tab-manager",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/ai": "workspace:*",
         "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -143,6 +143,7 @@
         "clsx": "catalog:",
         "marked": "^17.0.3",
         "tailwind-merge": "catalog:",
+        "typebox": "catalog:",
         "virtua": "^0.48.5",
         "wellcrafted": "catalog:",
         "y-indexeddb": "catalog:",

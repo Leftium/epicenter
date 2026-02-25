@@ -8,19 +8,25 @@
  * and WebSocket sync — the same Y.Doc as the background service worker.
  * Both share the same workspace ID (`tab-manager`), so IndexedDB and
  * sync will converge on the same document.
+ *
+ * `.withActions()` attaches all AI-callable operations (tab search, close,
+ * group, etc.) as workspace actions. These are derived into TanStack AI
+ * tools by `actionsToClientTools()` / `actionsToServerDefinitions()`.
  */
 
 import { createWorkspace } from '@epicenter/hq';
 import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
 import { definition } from '$lib/workspace';
+import { createTabManagerActions } from '$lib/workspace-actions';
 
 /**
  * Popup workspace client.
  *
  * Provides typed access to all browser tables including saved tabs.
  * Shares the same Y.Doc as the background service worker via IndexedDB
- * persistence and sync.
+ * persistence and sync. Actions are available at `.actions` for AI tool
+ * derivation.
  */
 export const popupWorkspace = createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
@@ -29,7 +35,8 @@ export const popupWorkspace = createWorkspace(definition)
 		createSyncExtension({
 			url: 'ws://127.0.0.1:3913/rooms/{id}',
 		}),
-	);
+	)
+	.withActions(createTabManagerActions);
 
 // Set local awareness on connect
 void popupWorkspace.whenReady.then(() => {

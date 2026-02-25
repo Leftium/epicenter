@@ -12,7 +12,7 @@ import { iterateActions } from '@epicenter/hq';
 import type { Tool } from '@tanstack/ai';
 
 export type ActionsToToolsOptions = {
-	/** Custom separator for joining path segments into tool names. @default '/' */
+	/** Custom separator for joining path segments into tool names. @default '_' */
 	nameSeparator?: string;
 	/** If true, mutations will require user approval before executing. @default false */
 	requireApprovalForMutations?: boolean;
@@ -33,7 +33,7 @@ export type ActionsToToolsOptions = {
 export function actionsToTools(
 	actions: Actions,
 	{
-		nameSeparator = '/',
+		nameSeparator = '_',
 		requireApprovalForMutations = false,
 	}: ActionsToToolsOptions = {},
 ): Tool[] {

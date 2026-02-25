@@ -50,9 +50,8 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
+import { actionsToClientTools, actionsToServerDefinitions } from '@epicenter/ai';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
@@ -93,6 +92,13 @@ let hubUrlCache = 'http://127.0.0.1:3913';
 void getHubServerUrl().then((url) => {
 	hubUrlCache = url;
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI Tools (derived from workspace actions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const tabManagerClientTools = actionsToClientTools(popupWorkspace.actions);
+const serverToolDefinitions = actionsToServerDefinitions(popupWorkspace.actions);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
@@ -206,7 +212,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: allServerToolDefinitions,
+							tools: serverToolDefinitions,
 						},
 					};
 				},

@@ -385,6 +385,17 @@ function createAiChatState() {
 				if (!content.trim()) return;
 				const userMessageId =
 					generateId() as string as ChatMessageId;
+
+				// Send to client FIRST so isLoading=true before the
+				// Y.Doc observer fires refreshFromDoc (which skips
+				// when loading). Without this, the observer loads the
+				// user message from Y.Doc AND ChatClient appends its
+				// own copy → duplicate key → Svelte crash.
+				void client.sendMessage({
+					content,
+					id: userMessageId,
+				});
+
 				popupWorkspace.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
@@ -402,11 +413,6 @@ function createAiChatState() {
 						conv?.title === 'New Chat'
 							? content.trim().slice(0, 50)
 							: conv?.title,
-				});
-
-				void client.sendMessage({
-					content,
-					id: userMessageId,
 				});
 			},
 

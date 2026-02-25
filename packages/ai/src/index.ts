@@ -1,4 +1,5 @@
 export { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
+export { createActionContext } from './action-context';
 export {
 	actionsToClientTools,
 	type ActionsToClientToolsOptions,

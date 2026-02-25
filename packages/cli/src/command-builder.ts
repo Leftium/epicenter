@@ -1,8 +1,5 @@
-import {
-	type Actions,
-	iterateActions,
-	standardSchemaToJsonSchema,
-} from '@epicenter/hq';
+import { type Actions, iterateActions } from '@epicenter/hq';
+import Value from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
@@ -40,7 +37,7 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
 
 		const jsonSchema = action.input
-			? (standardSchemaToJsonSchema(action.input) as Record<string, unknown>)
+			? (action.input as Record<string, unknown>)
 			: undefined;
 
 		const builder = jsonSchema ? jsonSchemaToYargsOptions(jsonSchema) : {};
@@ -53,17 +50,16 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 				const input = extractInputFromArgv(argv, jsonSchema);
 
 				if (action.input) {
-					const result = await action.input['~standard'].validate(input);
-					if (result.issues) {
+					if (!Value.Check(action.input, input)) {
 						console.error('Validation failed:');
-						for (const issue of result.issues) {
+						for (const error of Value.Errors(action.input, input)) {
 							console.error(
-								`  - ${issue.path?.join('.') ?? 'input'}: ${issue.message}`,
+								`  - ${error.instancePath || 'input'}: ${error.message}`,
 							);
 						}
 						process.exit(1);
 					}
-					const output = await action(result.value);
+					const output = await action(input);
 					console.log(JSON.stringify(output, null, 2));
 				} else {
 					const output = await action();

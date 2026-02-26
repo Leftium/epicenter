@@ -60,6 +60,37 @@ export type LocalServerConfig = {
 };
 
 /**
+ * Create an Elysia plugin for auth guard (if hubUrl configured).
+ *
+ * Separated into its own plugin so the type chain is not broken by conditionals.
+ */
+function createAuthGuardPlugin(hubUrl?: string) {
+	const plugin = new Elysia();
+	if (!hubUrl) return plugin;
+
+	const validateSession = createHubSessionValidator({ hubUrl });
+	plugin.onBeforeHandle(
+		{ as: 'global' },
+		async ({ request, status, path }) => {
+			if (path === '/') return;
+
+			const authHeader = request.headers.get('authorization');
+			if (!authHeader?.startsWith('Bearer ')) {
+				return status(401, 'Unauthorized: Bearer token required');
+			}
+
+			const token = authHeader.slice(7);
+			const result = await validateSession(token);
+
+			if (!result.valid) {
+				return status(401, 'Unauthorized: Invalid session token');
+			}
+		},
+	);
+	return plugin;
+}
+
+/**
  * Create an Epicenter local server.
  *
  * The local server runs on each desktop (as a Tauri sidecar process). It provides:
@@ -101,11 +132,6 @@ export function createLocalServer(config: LocalServerConfig) {
 		return collectActionPaths(client.actions).map((p) => `${client.id}/${p}`);
 	});
 
-	// Session validator (if hub URL is configured)
-	const validateSession = config.hubUrl
-		? createHubSessionValidator({ hubUrl: config.hubUrl })
-		: undefined;
-
 	const app = new Elysia()
 		.use(
 			cors({
@@ -121,33 +147,13 @@ export function createLocalServer(config: LocalServerConfig) {
 					info: {
 						title: 'Epicenter Sidecar API',
 						version: '1.0.0',
-						description: 'Sidecar server — local sync relay and workspace API.',
+						description:
+							'Sidecar server — local sync relay and workspace API.',
 					},
 				},
 			}),
-		);
-
-	// Auth guard — validate session token against hub on all routes (except discovery root)
-	if (validateSession) {
-		app.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
-			// Allow discovery root without auth
-			if (path === '/') return;
-
-			const authHeader = request.headers.get('authorization');
-			if (!authHeader?.startsWith('Bearer ')) {
-				return status(401, 'Unauthorized: Bearer token required');
-			}
-
-			const token = authHeader.slice(7);
-			const result = await validateSession(token);
-
-			if (!result.valid) {
-				return status(401, 'Unauthorized: Invalid session token');
-			}
-		});
-	}
-
-	app
+		)
+		.use(createAuthGuardPlugin(config.hubUrl))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
 				createSyncPlugin({
@@ -174,13 +180,12 @@ export function createLocalServer(config: LocalServerConfig) {
 			mode: 'local' as const,
 			workspaces: Object.keys(workspaces),
 			actions: allActionPaths,
-		}));
-
-	if (clients.length > 0) {
-		app.use(
-			new Elysia({ prefix: '/workspaces' }).use(createWorkspacePlugin(clients)),
+		}))
+		.use(
+			new Elysia({ prefix: '/workspaces' }).use(
+				createWorkspacePlugin(clients),
+			),
 		);
-	}
 
 	const port = config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
@@ -210,3 +215,5 @@ export function createLocalServer(config: LocalServerConfig) {
 		},
 	};
 }
+
+export type LocalApp = ReturnType<typeof createLocalServer>['app'];

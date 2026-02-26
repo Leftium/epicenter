@@ -18,7 +18,7 @@ export {
 	getDiscoveredDevices,
 } from './discovery';
 export { createHubServer, type HubServerConfig } from './hub';
-export { createLocalServer, type LocalServerConfig } from './local';
+export { createLocalServer, type LocalApp, type LocalServerConfig } from './local';
 export {
 	createOpenCodeProcess,
 	type GenerateConfigOptions,

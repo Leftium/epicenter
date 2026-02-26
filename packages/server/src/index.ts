@@ -29,5 +29,5 @@ export {
 	type OpenCodeProcessConfig,
 } from './opencode';
 export { createProxyPlugin, type ProxyPluginConfig } from './proxy';
-export { DEFAULT_PORT } from './server';
+export { DEFAULT_PORT, listenWithFallback } from './server';
 export { createWorkspacePlugin } from './workspace';

@@ -14,18 +14,15 @@
 
 import { createLocalServer } from './local';
 
-const port = Number.parseInt(process.env.PORT ?? '3913', 10);
-
 const server = createLocalServer({
 	clients: [],
-	port,
 	sync: {
 		onRoomCreated: (roomId) => console.log(`[Sync] Room created: ${roomId}`),
 		onRoomEvicted: (roomId) => console.log(`[Sync] Room evicted: ${roomId}`),
 	},
 });
 
-server.start();
+const { port } = server.start();
 
 console.log(`Epicenter LOCAL server running on http://localhost:${port}`);
 console.log(`  Sync:    ws://localhost:${port}/rooms/{room}`);

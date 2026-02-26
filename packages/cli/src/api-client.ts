@@ -1,7 +1,6 @@
 import { treaty } from '@elysiajs/eden';
-import type { LocalApp } from '@epicenter/server';
+import { DEFAULT_PORT, type LocalApp } from '@epicenter/server';
 
-const DEFAULT_PORT = 3913;
 const DEFAULT_URL = `http://localhost:${DEFAULT_PORT}`;
 
 export function createApiClient(baseUrl = DEFAULT_URL) {

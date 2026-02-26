@@ -7,13 +7,16 @@ import { createProxyPlugin } from './proxy';
 import type { AuthConfig } from './sync/auth';
 import { createSyncPlugin } from './sync/plugin';
 
-export { DEFAULT_PORT } from './server';
+import { listenWithFallback } from './server';
+
+export { DEFAULT_PORT, listenWithFallback } from './server';
 
 export type HubServerConfig = {
 	/**
-	 * Port to listen on.
+	 * Preferred port to listen on.
 	 *
 	 * Falls back to the `PORT` environment variable, then 3913.
+	 * If the port is taken, the OS assigns an available one.
 	 */
 	port?: number;
 
@@ -41,15 +44,38 @@ export type HubServerConfig = {
 /**
  * Create an Epicenter hub server.
  *
- * The hub is the coordination server in the three-tier topology. It provides:
- * - Better Auth authentication (when configured)
- * - AI proxy for OpenCode (reads API keys from env vars)
- * - Sync relay (primary) — all devices sync through the hub
- * - AI streaming — all providers via SSE
- * - OpenAPI docs
- * - Discovery root
+ * The hub is the top tier in the three-tier topology: one cloud/hosted instance
+ * shared by all devices. Local sidecar servers (one per device) connect outward
+ * to the hub for cross-device Yjs sync and AI requests.
  *
- * The hub does NOT serve workspace CRUD — that's the local server's job.
+ *   Hub (cloud, one instance)
+ *   +--------------------------------------------------+
+ *   |  - Better Auth: sessions, JWT, JWKS              |
+ *   |  - AI proxy: API keys in env vars, never leave   |
+ *   |  - AI streaming: SSE chat completions            |
+ *   |  - Yjs relay: ephemeral Y.Docs, pure WebSocket   |
+ *   +--------------------------------------------------+
+ *          |  cross-device Yjs sync      |  AI requests
+ *          v                             v
+ *   Local Server A (Device 1)    Local Server B (Device 2)
+ *
+ * What the hub DOES:
+ * - Issues and validates sessions via Better Auth (`/auth/*`)
+ * - Proxies AI provider API keys so they never leave the hub (`/proxy/*`)
+ * - Streams AI completions from all providers via SSE (`/ai/chat`)
+ * - Relays Yjs updates between clients via WebSocket rooms (`/rooms/*`)
+ *
+ * What the hub does NOT do:
+ * - Workspace CRUD (no configs, tables, or file projections)
+ * - Extension or action execution
+ * - Persistence of any kind — Y.Docs on the hub are ephemeral; they are
+ *   created on demand when the first client joins a room and destroyed when
+ *   the last client leaves. The local server holds the persisted source of truth.
+ *
+ * Cross-device sync (Phase 4, not yet wired):
+ * Local servers will connect to the hub as Yjs clients (via `--hub` flag),
+ * so that edits on Device A propagate to Device B through the hub relay.
+ * The hub itself still holds no durable state; it is a pure relay.
  *
  * @example
  * ```typescript
@@ -118,19 +144,21 @@ export function createHubServer(config: HubServerConfig) {
 	// Mount AI proxy unconditionally — reads API keys from env vars
 	app.use(createProxyPlugin());
 
-	const port = config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
+	const preferredPort =
+		config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
 	return {
 		app,
 
 		/**
-		 * Start listening on the configured port.
+		 * Start listening on the preferred port, falling back to an OS-assigned
+		 * port if it's already taken.
 		 *
 		 * Does not log or install signal handlers — the caller owns those concerns.
 		 */
 		start() {
-			app.listen(port);
-			return app.server;
+			const actualPort = listenWithFallback(app, preferredPort);
+			return { ...app.server!, port: actualPort };
 		},
 
 		/**

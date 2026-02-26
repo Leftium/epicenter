@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.3.10/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -10,6 +10,10 @@
 			"cssModules": false,
 			"tailwindDirectives": true
 		}
+	},
+	"html": {
+		"experimentalFullSupportEnabled": true,
+		"formatter": { "enabled": true, "indentScriptAndStyle": true }
 	},
 	"files": {
 		"ignoreUnknown": true,
@@ -28,8 +32,6 @@
 			"!pnpm-lock.yaml",
 			"!yarn.lock",
 			"!.DS_Store",
-			"!**/*.svelte",
-			"!**/*.astro",
 			"!docs/articles"
 		]
 	},
@@ -65,37 +67,49 @@
 	},
 	"overrides": [
 		{
-			// https://biomejs.dev/internals/language-support/#linting-html-ish-languages
-			// We can still benefit from Biome's linting in Svelte files, but it currently doesn't read templating/markup
-			"includes": ["*.svelte"],
+			// Biome's HTML-ish language support can lint <script> blocks but can't see template usage
+			"includes": ["**/*.svelte", "**/*.astro"],
 			"linter": {
 				"rules": {
+					"correctness": {
+						// Biome can't see template usage, so namespace imports appear unused
+						"noUnusedImports": "off"
+					},
 					"style": {
-						// Runes are flagged as "const"-able
+						// Svelte runes are flagged as "const"-able
 						"useConst": "off",
-						// Biome doesn't enforce unused imports, but it *will* flag imports as "type-only"-able
-						"useImportType": "off"
+						// Biome flags imports as "type-only"-able when it can't see template usage
+						"useImportType": "off",
+						// Non-null assertions are sometimes needed for Svelte reactive bindings
+						"noNonNullAssertion": "off"
+					},
+					"complexity": {
+						// Svelte 5 bind:value getter/setter syntax uses commas that Biome misreads
+						"noCommaOperator": "off"
+					},
+					"suspicious": {
+						// `() => void | Promise<T>` is valid for callback props
+						"noConfusingVoidType": "off",
+						// Template expressions in Svelte can be false positives
+						"noTemplateCurlyInString": "off",
+						// Svelte template iterators don't always need explicit returns
+						"useIterableCallbackReturn": "off",
+						// Svelte components sometimes use `any` for template bindings
+						"noExplicitAny": "off"
+					},
+					"a11y": {
+						// SVG icons in components don't always need <title>
+						"noSvgWithoutTitle": "off",
+						// Svelte components often omit button type in templates
+						"useButtonType": "off"
 					}
 				}
 			}
 		},
 		{
-			// https://biomejs.dev/internals/language-support/
-			// Also, keep this synced with .vscode/settings.json & .prettierignore
-			// Biome _does_ support HTML, but we're just going to use Prettier until Svelte/Astro is supported
-			"includes": [
-				"**/*.html",
-				"**/*.vue",
-				"**/*.svelte",
-				"**/*.astro",
-				"**/*.yaml",
-				"**/*.yml",
-				"**/*.md",
-				"**/*.mdx"
-			],
-			"formatter": {
-				"enabled": false
-			}
+			// Vendored PostHog analytics snippet — minified code, not worth linting
+			"includes": ["**/posthog.astro"],
+			"linter": { "enabled": false }
 		}
 	]
 }

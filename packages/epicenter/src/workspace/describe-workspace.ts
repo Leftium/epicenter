@@ -68,7 +68,10 @@ export type WorkspaceDescriptor = {
 
 /** Convert a record of Standard Schema entries into a record of JSON Schema descriptors. */
 function describeSchemas(
-	entries: Record<string, StandardJSONSchemaV1 | { schema: StandardJSONSchemaV1 }>,
+	entries: Record<
+		string,
+		StandardJSONSchemaV1 | { schema: StandardJSONSchemaV1 }
+	>,
 ): Record<string, SchemaDescriptor> {
 	return Object.fromEntries(
 		Object.entries(entries).map(([name, entry]) => [

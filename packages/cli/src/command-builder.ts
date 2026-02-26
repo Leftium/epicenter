@@ -1,5 +1,5 @@
 import { type Actions, iterateActions } from '@epicenter/hq';
-import { Parser, ParseError } from 'typebox/value';
+import { ParseError, Parser } from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
@@ -41,9 +41,7 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			action.description ??
 			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
 
-		const builder = action.input
-			? jsonSchemaToYargsOptions(action.input)
-			: {};
+		const builder = action.input ? jsonSchemaToYargsOptions(action.input) : {};
 
 		return {
 			command: commandPath,

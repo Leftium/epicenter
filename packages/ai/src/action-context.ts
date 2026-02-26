@@ -106,7 +106,9 @@ const ACTION_NAME_SEPARATOR = '_';
  */
 function actionsToClientTools<TActions extends Actions>(
 	actions: TActions,
-	{ requireApprovalForMutations = false }: { requireApprovalForMutations?: boolean } = {},
+	{
+		requireApprovalForMutations = false,
+	}: { requireApprovalForMutations?: boolean } = {},
 ): (AnyClientTool & { name: ActionNames<TActions> })[] {
 	return [...iterateActions(actions)].map(([action, path]) => ({
 		__toolSide: 'client' as const,
@@ -135,7 +137,9 @@ type ServerToolDefinition = {
  * Removes runtime-only fields (`execute`, `__toolSide`, `needsApproval`),
  * leaving only what the AI provider needs.
  */
-function toDefinitions(tools: readonly AnyClientTool[]): ServerToolDefinition[] {
+function toDefinitions(
+	tools: readonly AnyClientTool[],
+): ServerToolDefinition[] {
 	return tools.map((tool) => ({
 		name: tool.name,
 		description: tool.description,

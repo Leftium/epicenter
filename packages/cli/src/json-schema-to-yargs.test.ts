@@ -8,14 +8,20 @@ describe('jsonSchemaToYargsOptions', () => {
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ title: Type.String() }),
 			);
-			expect(options.title).toMatchObject({ type: 'string', demandOption: true });
+			expect(options.title).toMatchObject({
+				type: 'string',
+				demandOption: true,
+			});
 		});
 
 		test('number field', () => {
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ count: Type.Number() }),
 			);
-			expect(options.count).toMatchObject({ type: 'number', demandOption: true });
+			expect(options.count).toMatchObject({
+				type: 'number',
+				demandOption: true,
+			});
 		});
 
 		test('integer maps to number', () => {
@@ -29,7 +35,10 @@ describe('jsonSchemaToYargsOptions', () => {
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ published: Type.Boolean() }),
 			);
-			expect(options.published).toMatchObject({ type: 'boolean', demandOption: true });
+			expect(options.published).toMatchObject({
+				type: 'boolean',
+				demandOption: true,
+			});
 		});
 
 		test('array field', () => {
@@ -43,7 +52,10 @@ describe('jsonSchemaToYargsOptions', () => {
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ title: Type.Optional(Type.String()) }),
 			);
-			expect(options.title).toMatchObject({ type: 'string', demandOption: false });
+			expect(options.title).toMatchObject({
+				type: 'string',
+				demandOption: false,
+			});
 		});
 
 		test('nested object field has no yargs type', () => {
@@ -96,7 +108,10 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('string enum becomes choices', () => {
-			enum Status { Draft = 'draft', Published = 'published' }
+			enum Status {
+				Draft = 'draft',
+				Published = 'published',
+			}
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ status: Type.Enum(Status) }),
 			);
@@ -105,7 +120,11 @@ describe('jsonSchemaToYargsOptions', () => {
 		});
 
 		test('numeric enum becomes number choices', () => {
-			enum Priority { Low = 0, Medium = 1, High = 2 }
+			enum Priority {
+				Low = 0,
+				Medium = 1,
+				High = 2,
+			}
 			const options = jsonSchemaToYargsOptions(
 				Type.Object({ priority: Type.Enum(Priority) }),
 			);

@@ -15,7 +15,11 @@ import { Ok, trySync } from 'wellcrafted/result';
  * @see https://arktype.io/docs/json-schema - arktype's toJsonSchema docs
  */
 const ARKTYPE_FALLBACK = {
-	unit: (ctx: { code: 'unit'; unit: unknown; base: Record<string, unknown> }): Record<string, unknown> => {
+	unit: (ctx: {
+		code: 'unit';
+		unit: unknown;
+		base: Record<string, unknown>;
+	}): Record<string, unknown> => {
 		if (ctx.unit === undefined) return {};
 		console.warn(
 			`[arktype→JSON Schema] Unit type "${String(ctx.unit)}" (${typeof ctx.unit}) cannot be converted. ` +
@@ -23,7 +27,10 @@ const ARKTYPE_FALLBACK = {
 		);
 		return ctx.base;
 	},
-	default: (ctx: { code: string; base: Record<string, unknown> }): Record<string, unknown> => {
+	default: (ctx: {
+		code: string;
+		base: Record<string, unknown>;
+	}): Record<string, unknown> => {
 		console.warn(
 			`[arktype→JSON Schema] Fallback triggered for code "${ctx.code}". ` +
 				`Base schema: ${JSON.stringify(ctx.base)}`,

@@ -50,7 +50,6 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
-import { actionContext } from '$lib/workspace-popup';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
@@ -59,7 +58,7 @@ import type {
 	Conversation,
 	ConversationId,
 } from '$lib/workspace';
-import { popupWorkspace } from '$lib/workspace-popup';
+import { actionContext, popupWorkspace } from '$lib/workspace-popup';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

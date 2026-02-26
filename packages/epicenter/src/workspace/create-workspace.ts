@@ -72,7 +72,7 @@ async function destroyLifo(
 	const errors: unknown[] = [];
 	for (let i = cleanups.length - 1; i >= 0; i--) {
 		try {
-			await cleanups[i]!();
+			await cleanups[i]?.();
 		} catch (err) {
 			errors.push(err);
 		}

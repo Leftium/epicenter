@@ -122,8 +122,8 @@ console.log('═'.repeat(60));
 console.log('\nRows       | YKeyValue  | Y.Map      | Ratio');
 console.log('-----------|------------|------------|-------');
 for (const count of rowCounts) {
-	const ykv = ykvResults[count]!.avgUpdate;
-	const ym = ymapResults[count]!.avgUpdate;
+	const ykv = ykvResults[count]?.avgUpdate;
+	const ym = ymapResults[count]?.avgUpdate;
 	const ratio = (ykv / ym).toFixed(1);
 	console.log(
 		`${count.toLocaleString().padEnd(10)} | ${ykv.toFixed(3).padEnd(10)}ms | ${ym.toFixed(3).padEnd(10)}ms | ${ratio}x`,
@@ -133,7 +133,7 @@ for (const count of rowCounts) {
 console.log(`\n${'═'.repeat(60)}`);
 console.log('Verdict');
 console.log('═'.repeat(60));
-const verdict100k = ykvResults[100_000]!.avgUpdate;
+const verdict100k = ykvResults[100_000]?.avgUpdate;
 if (verdict100k < 1) {
 	console.log(`\n✓ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`);
 	console.log('  This is sub-millisecond and totally fine for most UIs.');

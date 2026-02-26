@@ -297,16 +297,32 @@
 		</div>
 
 		<div class="presets">
-			<button type="button" class="btn-secondary preset-btn" onclick="applyPreset('small')">
+			<button
+				type="button"
+				class="btn-secondary preset-btn"
+				onclick="applyPreset('small')"
+			>
 				Small (1 table, 1k rows)
 			</button>
-			<button type="button" class="btn-secondary preset-btn" onclick="applyPreset('medium')">
+			<button
+				type="button"
+				class="btn-secondary preset-btn"
+				onclick="applyPreset('medium')"
+			>
 				Medium (5 tables, 5k rows)
 			</button>
-			<button type="button" class="btn-secondary preset-btn" onclick="applyPreset('large')">
+			<button
+				type="button"
+				class="btn-secondary preset-btn"
+				onclick="applyPreset('large')"
+			>
 				Large (20 tables, 10k rows)
 			</button>
-			<button type="button" class="btn-secondary preset-btn" onclick="applyPreset('huge')">
+			<button
+				type="button"
+				class="btn-secondary preset-btn"
+				onclick="applyPreset('huge')"
+			>
 				Huge (50 tables, 20k rows)
 			</button>
 		</div>
@@ -346,10 +362,16 @@
 		</div>
 
 		<div class="actions">
-			<button type="button" class="btn-primary" id="runBtn" onclick="runBenchmark()">
+			<button
+				type="button"
+				class="btn-primary"
+				id="runBtn"
+				onclick="runBenchmark()"
+			>
 				Run Benchmark
 			</button>
-			<button type="button"
+			<button
+				type="button"
 				class="btn-danger"
 				id="stopBtn"
 				onclick="stopBenchmark()"
@@ -357,7 +379,9 @@
 			>
 				Stop
 			</button>
-			<button type="button" class="btn-secondary" onclick="resetDoc()">Reset Document</button>
+			<button type="button" class="btn-secondary" onclick="resetDoc()">
+				Reset Document
+			</button>
 			<button type="button" class="btn-secondary" onclick="downloadDoc()">
 				Download .yjs
 			</button>
@@ -415,7 +439,8 @@
 		<div class="log-section">
 			<div class="log-header">
 				<span class="log-title">Activity Log</span>
-				<button type="button"
+				<button
+					type="button"
 					class="btn-secondary"
 					style="padding: 6px 12px; font-size: 0.75rem"
 					onclick="clearLog()"

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { Skeleton } from '@epicenter/ui/skeleton';
+	import { createQuery } from '@tanstack/svelte-query';
+	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { rpc } from '$lib/query';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { createQuery } from '@tanstack/svelte-query';
 
 	let {
 		recordingId,

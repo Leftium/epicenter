@@ -1,13 +1,7 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import MigrationDialog, {
-		migrationDialog,
-	} from '$lib/components/MigrationDialog.svelte';
-	import { GithubIcon } from '$lib/components/icons';
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import { cn } from '@epicenter/ui/utils';
-	import { LogicalSize, getCurrentWindow } from '@tauri-apps/api/window';
 	import Database from '@lucide/svelte/icons/database';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import ListIcon from '@lucide/svelte/icons/list';
@@ -16,7 +10,13 @@
 	import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SunIcon from '@lucide/svelte/icons/sun';
+	import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 	import { toggleMode } from 'mode-watcher';
+	import { page } from '$app/state';
+	import { GithubIcon } from '$lib/components/icons';
+	import MigrationDialog, {
+		migrationDialog,
+	} from '$lib/components/MigrationDialog.svelte';
 
 	let {
 		class: className,

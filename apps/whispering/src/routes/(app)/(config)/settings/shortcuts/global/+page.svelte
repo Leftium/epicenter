@@ -2,17 +2,15 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { Link } from '@epicenter/ui/link';
 	import { Separator } from '@epicenter/ui/separator';
-	import { desktopRpc, rpc } from '$lib/query';
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import { desktopRpc, rpc } from '$lib/query';
+	import { settings } from '$lib/state/settings.svelte';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 </script>
 
-<svelte:head>
-	<title>Global Shortcuts - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Global Shortcuts - Whispering</title> </svelte:head>
 
 {#if window.__TAURI_INTERNALS__}
 	<section>

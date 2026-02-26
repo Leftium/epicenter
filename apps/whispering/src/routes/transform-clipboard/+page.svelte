@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { onMount, onDestroy } from 'svelte';
+	import { Button } from '@epicenter/ui/button';
+	import { useCombobox } from '@epicenter/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import LayersIcon from '@lucide/svelte/icons/layers';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+	import { nanoid } from 'nanoid/non-secure';
+	import { onDestroy, onMount } from 'svelte';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { rpc } from '$lib/query';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
-	import { Textarea } from '@epicenter/ui/textarea';
-	import * as Popover from '@epicenter/ui/popover';
-	import { useCombobox } from '@epicenter/ui/hooks';
-	import { Button } from '@epicenter/ui/button';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { nanoid } from 'nanoid/non-secure';
 
 	const combobox = useCombobox();
 

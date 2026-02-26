@@ -16,8 +16,8 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '#/utils.js';
 	import * as Tooltip from '#/tooltip';
+	import { cn } from '#/utils.js';
 
 	let { children, class: className, tooltip, ...rest }: LinkProps = $props();
 </script>
@@ -43,9 +43,7 @@
 				{@render linkContent(props)}
 			{/snippet}
 		</Tooltip.Trigger>
-		<Tooltip.Content class="max-w-xs text-center">
-			{tooltip}
-		</Tooltip.Content>
+		<Tooltip.Content class="max-w-xs text-center"> {tooltip} </Tooltip.Content>
 	</Tooltip.Root>
 {:else}
 	{@render linkContent()}

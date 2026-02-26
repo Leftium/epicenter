@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your Google API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.google'],
-			(value) => settings.updateKey('apiKeys.google', value)
-		}
+		bind:value={() => settings.value['apiKeys.google'],
+			(value) => settings.updateKey('apiKeys.google', value)}
 	/>
 	<Field.Description>
 		You can find your Google API key in your <Link
@@ -24,6 +22,7 @@
 			rel="noopener noreferrer"
 		>
 			Google AI Studio
-		</Link>.
+		</Link>
+		.
 	</Field.Description>
 </Field.Field>

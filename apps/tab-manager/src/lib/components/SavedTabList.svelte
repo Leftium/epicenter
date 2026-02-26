@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
+	import * as Item from '@epicenter/ui/item';
+	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
 	import TabFavicon from './TabFavicon.svelte';
-	import { Button } from '@epicenter/ui/button';
-	import * as Empty from '@epicenter/ui/empty';
-	import * as Item from '@epicenter/ui/item';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
-	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 </script>
 
 {#if !savedTabState.tabs.length}
@@ -30,9 +30,7 @@
 				{#snippet children(tab)}
 					<div class="border-b border-border">
 						<Item.Root size="sm" class="hover:bg-accent/50">
-							<Item.Media>
-								<TabFavicon src={tab.favIconUrl} />
-							</Item.Media>
+							<Item.Media> <TabFavicon src={tab.favIconUrl} /> </Item.Media>
 
 							<Item.Content>
 								<Item.Title>

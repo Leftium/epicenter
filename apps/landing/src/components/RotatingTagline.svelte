@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '@epicenter/ui/utils';
-	import { fly, blur } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
+	import { blur, fly } from 'svelte/transition';
 
 	const audiences = [
 		'interdisciplinary thinkers',

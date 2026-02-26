@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your Mistral AI API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.mistral'],
-			(value) => settings.updateKey('apiKeys.mistral', value)
-		}
+		bind:value={() => settings.value['apiKeys.mistral'],
+			(value) => settings.updateKey('apiKeys.mistral', value)}
 	/>
 	<Field.Description>
 		You can find your API key in your <Link
@@ -24,7 +22,8 @@
 			rel="noopener noreferrer"
 		>
 			Mistral console
-		</Link>. Voxtral transcription is priced at <Link
+		</Link>
+		. Voxtral transcription is priced at <Link
 			href="https://mistral.ai/pricing#api-pricing"
 			target="_blank"
 			rel="noopener noreferrer"

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import * as Empty from '@epicenter/ui/empty';
 	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import SearchXIcon from '@lucide/svelte/icons/search-x';
+	import { page } from '$app/state';
 
 	const workspaceId = $derived(page.params.id);
 	const settingKey = $derived(page.params.key);
@@ -21,9 +21,7 @@
 <div class="space-y-6">
 	<Empty.Root>
 		<Empty.Header>
-			<Empty.Media variant="icon">
-				<SearchXIcon />
-			</Empty.Media>
+			<Empty.Media variant="icon"> <SearchXIcon /> </Empty.Media>
 			<Empty.Title>Setting not found</Empty.Title>
 			<Empty.Description>
 				The setting "{settingKey}" does not exist in this workspace.

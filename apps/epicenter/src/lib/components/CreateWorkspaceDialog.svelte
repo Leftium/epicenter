@@ -1,11 +1,11 @@
 <script module lang="ts">
-	import { toKebabCase } from '$lib/utils/slug';
 	import {
-		WORKSPACE_TEMPLATES,
 		WORKSPACE_TEMPLATE_BY_ID,
+		WORKSPACE_TEMPLATES,
 		type WorkspaceTemplate,
 		type WorkspaceTemplateId,
 	} from '$lib/templates';
+	import { toKebabCase } from '$lib/utils/slug';
 
 	/**
 	 * Template selection state for the Select component.
@@ -188,14 +188,14 @@
 </script>
 
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import * as Field from '@epicenter/ui/field';
-	import * as Select from '@epicenter/ui/select';
 	import { Input } from '@epicenter/ui/input';
-	import { Button } from '@epicenter/ui/button';
-	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import * as Select from '@epicenter/ui/select';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import LayoutTemplateIcon from '@lucide/svelte/icons/layout-template';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 
 	const templateOptions = [
 		{

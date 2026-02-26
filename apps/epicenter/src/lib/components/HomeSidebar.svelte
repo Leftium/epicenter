@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
-	import { createQuery, createMutation } from '@tanstack/svelte-query';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { rpc } from '$lib/query';
-	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
-	import { addStaticWorkspaceDialog } from '$lib/components/AddStaticWorkspaceDialog.svelte';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { addStaticWorkspaceDialog } from '$lib/components/AddStaticWorkspaceDialog.svelte';
+	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
+	import { rpc } from '$lib/query';
 
 	const workspaces = createQuery(() => rpc.workspaces.listWorkspaces.options);
 	const staticWorkspaces = createQuery(

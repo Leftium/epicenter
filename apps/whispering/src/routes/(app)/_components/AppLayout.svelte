@@ -10,9 +10,9 @@
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { services } from '$lib/services';
 	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,
@@ -26,12 +26,12 @@
 		syncGlobalShortcutsWithSettings,
 		syncLocalShortcutsWithSettings,
 	} from '../_layout-utils/register-commands';
+	import { registerOnboarding } from '../_layout-utils/register-onboarding';
 	import {
 		registerAccessibilityPermission,
 		registerMicrophonePermission,
 	} from '../_layout-utils/register-permissions';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
-	import { registerOnboarding } from '../_layout-utils/register-onboarding';
 
 	const getRecorderStateQuery = createQuery(
 		() => rpc.recorder.getRecorderState.options,

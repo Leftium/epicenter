@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import WorkspaceSidebar from '$lib/components/WorkspaceSidebar.svelte';
+	import { onDestroy } from 'svelte';
 	import HeaderBreadcrumbs from '$lib/components/HeaderBreadcrumbs.svelte';
+	import WorkspaceSidebar from '$lib/components/WorkspaceSidebar.svelte';
 
 	let { data, children } = $props();
 
@@ -18,8 +18,6 @@
 			<Sidebar.Trigger />
 			<HeaderBreadcrumbs />
 		</header>
-		<main class="flex-1 p-4">
-			{@render children()}
-		</main>
+		<main class="flex-1 p-4">{@render children()}</main>
 	</Sidebar.Inset>
 </Sidebar.Provider>

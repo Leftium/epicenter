@@ -6,7 +6,7 @@
 export function posixResolve(base: string, path: string): string {
 	const resolved = path.startsWith('/')
 		? path
-		: base.replace(/\/$/, '') + '/' + path;
+		: `${base.replace(/\/$/, '')}/${path}`;
 	const parts = resolved.split('/');
 	const stack: string[] = [];
 	for (const part of parts) {
@@ -17,5 +17,5 @@ export function posixResolve(base: string, path: string): string {
 			stack.push(part);
 		}
 	}
-	return '/' + stack.join('/');
+	return `/${stack.join('/')}`;
 }

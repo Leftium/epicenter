@@ -13,7 +13,7 @@ import { notify } from './notify';
 import { recorder } from './recorder';
 import { sound } from './sound';
 import { text } from './text';
-import { transcribeBlob, transcription } from './transcription';
+import { transcribeBlob } from './transcription';
 import { transformer } from './transformer';
 
 /**

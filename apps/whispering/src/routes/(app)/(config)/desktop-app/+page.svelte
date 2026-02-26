@@ -1,16 +1,14 @@
 <script lang="ts">
-	import { ChromeWebStoreIcon } from '$lib/components/icons';
 	import { Button } from '@epicenter/ui/button';
 	import { Card } from '@epicenter/ui/card';
 	import CommandIcon from '@lucide/svelte/icons/command';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import ZapIcon from '@lucide/svelte/icons/zap';
+	import { ChromeWebStoreIcon } from '$lib/components/icons';
 </script>
 
-<svelte:head>
-	<title>Download Desktop App - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Download Desktop App - Whispering</title> </svelte:head>
 
 <main
 	class="flex flex-1 items-center justify-center p-4 container max-w-4xl mx-auto"

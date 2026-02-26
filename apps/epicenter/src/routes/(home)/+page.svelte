@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
 	import { Button } from '@epicenter/ui/button';
-	import * as Item from '@epicenter/ui/item';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as Item from '@epicenter/ui/item';
 	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
-	import { editWorkspaceDialog } from '$lib/components/EditWorkspaceDialog.svelte';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
+	import { editWorkspaceDialog } from '$lib/components/EditWorkspaceDialog.svelte';
+	import { rpc } from '$lib/query';
 
 	const workspaces = createQuery(() => rpc.workspaces.listWorkspaces.options);
 	const createWorkspace = createMutation(
@@ -62,9 +62,7 @@
 		<Item.Group class="rounded-lg border">
 			{#each { length: 3 } as _, i}
 				<Item.Root>
-					<Item.Media variant="icon">
-						<Skeleton class="size-4" />
-					</Item.Media>
+					<Item.Media variant="icon"> <Skeleton class="size-4" /> </Item.Media>
 					<Item.Content>
 						<Skeleton class="h-4 w-32" />
 						<Skeleton class="h-3 w-24" />
@@ -85,9 +83,7 @@
 		<div class="rounded-lg border border-dashed p-8">
 			<Empty.Root>
 				<Empty.Header>
-					<Empty.Media variant="icon">
-						<FolderIcon />
-					</Empty.Media>
+					<Empty.Media variant="icon"> <FolderIcon /> </Empty.Media>
 					<Empty.Title>No workspaces yet</Empty.Title>
 					<Empty.Description>
 						Create your first workspace to get started.

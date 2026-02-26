@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { Button } from '@epicenter/ui/button';
 	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
-	import * as Popover from '@epicenter/ui/popover';
 	import { useCombobox } from '@epicenter/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
+	import { cn } from '@epicenter/ui/utils';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import LayersIcon from '@lucide/svelte/icons/layers';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import WandIcon from '@lucide/svelte/icons/wand';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { settings } from '$lib/state/settings.svelte';
-	import { cn } from '@epicenter/ui/utils';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { createQuery } from '@tanstack/svelte-query';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import WandIcon from '@lucide/svelte/icons/wand';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import LayersIcon from '@lucide/svelte/icons/layers';
 
 	const transformationsQuery = createQuery(
 		() => rpc.db.transformations.getAll.options,
@@ -43,9 +43,7 @@
 		<Badge variant="id" class="shrink-0 max-w-16 truncate">
 			{transformation.id}
 		</Badge>
-		<span class="font-medium truncate">
-			{transformation.title}
-		</span>
+		<span class="font-medium truncate"> {transformation.title} </span>
 	</div>
 {/snippet}
 

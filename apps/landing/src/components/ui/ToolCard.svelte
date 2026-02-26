@@ -20,9 +20,7 @@
 				<Card.Title class="text-xl">{title}</Card.Title>
 			</div>
 		</Card.Header>
-		<Card.Description class="mb-4">
-			{description}
-		</Card.Description>
+		<Card.Description class="mb-4"> {description} </Card.Description>
 		<Link {href}>Try it now →</Link>
 	</Card.Content>
 </Card.Root>

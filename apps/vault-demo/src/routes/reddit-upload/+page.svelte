@@ -1,8 +1,8 @@
 <script lang="ts">
 	import {
-		extractEntitiesFromReddit,
 		type ExtractedEntity,
 		type ExtractedOccurrence,
+		extractEntitiesFromReddit,
 	} from '$lib/extract/redditEntities';
 	import { insertEntities } from '$lib/remote/entityIndex.remote';
 
@@ -121,7 +121,7 @@
 				const path = f.path;
 				const parts = path.split('/').filter(Boolean);
 				// Find adapter segment anywhere in the path (supports vault/adapter/table/... and adapter/table/...)
-				const aIdx = parts.findIndex((p) => p === 'reddit');
+				const aIdx = parts.indexOf('reddit');
 				if (aIdx === -1) {
 					continue; // not a reddit file
 				}
@@ -234,17 +234,25 @@
 	on:submit={handleIngest}
 	style="margin: 0.5rem 0;"
 >
-	<input type="file" name="file" on:change={onFileChange} />
+	<input type="file" name="file" on:change={onFileChange}>
 	<div style="margin-top: 0.5rem;">
 		<button type="submit" disabled={!selectedFile || isPending}>
-			{#if isPending}Ingesting...{:else}Ingest{/if}
+			{#if isPending}
+				Ingesting...
+			{:else}
+				Ingest
+			{/if}
 		</button>
 	</div>
 </form>
 
 <div style="margin: 0.5rem 0;">
 	<button on:click={suggestEntities} disabled={isPending || isSuggesting}>
-		{#if isSuggesting}Analyzing…{:else}Suggest entities{/if}
+		{#if isSuggesting}
+			Analyzing…
+		{:else}
+			Suggest entities
+		{/if}
 	</button>
 	{#if suggestions}
 		<button
@@ -277,7 +285,7 @@
 							checked={selectedEntityIds.has(e.id)}
 							on:change={(ev) =>
 								toggleSelected(e.id, (ev.target as HTMLInputElement).checked)}
-						/>
+						>
 						{e.name} <small style="opacity: 0.7;">({e.id})</small>
 					</label>
 				</li>
@@ -296,7 +304,7 @@
 							checked={selectedEntityIds.has(e.id)}
 							on:change={(ev) =>
 								toggleSelected(e.id, (ev.target as HTMLInputElement).checked)}
-						/>
+						>
 						{e.name} <small style="opacity: 0.7;">({e.id})</small>
 					</label>
 				</li>
@@ -315,7 +323,7 @@
 							checked={selectedEntityIds.has(e.id)}
 							on:change={(ev) =>
 								toggleSelected(e.id, (ev.target as HTMLInputElement).checked)}
-						/>
+						>
 						{e.name} <small style="opacity: 0.7;">({e.id})</small>
 					</label>
 				</li>
@@ -343,6 +351,7 @@
 {/if}
 
 <p>
-	<a href="/">Back to Home</a> ·
+	<a href="/">Back to Home</a>
+	·
 	<a href="/import-export">Go to Import/Export</a>
 </p>

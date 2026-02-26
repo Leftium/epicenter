@@ -24,7 +24,9 @@
 		<ChevronRightIcon
 			class="size-3 transition-transform [[data-state=open]>&]:rotate-90"
 		/>
-		{#if icon}{@render icon()}{/if}
+		{#if icon}
+			{@render icon()}
+		{/if}
 		{label}
 	</Collapsible.Trigger>
 	<Collapsible.Content>

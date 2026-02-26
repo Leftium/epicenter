@@ -1,27 +1,27 @@
 <script lang="ts">
-	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
-	import FfmpegCommandBuilder from './FfmpegCommandBuilder.svelte';
-	import * as Field from '@epicenter/ui/field';
-	import * as Select from '@epicenter/ui/select';
 	import * as Alert from '@epicenter/ui/alert';
+	import { Button } from '@epicenter/ui/button';
+	import * as Field from '@epicenter/ui/field';
 	import { Link } from '@epicenter/ui/link';
+	import * as Select from '@epicenter/ui/select';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import {
 		BITRATE_OPTIONS,
 		RECORDING_MODE_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
+	import { IS_LINUX, IS_MACOS, PLATFORM_TYPE } from '$lib/constants/platform';
+	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/services/isomorphic/transcription/registry';
 	import { settings } from '$lib/state/settings.svelte';
-	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
-	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 	import {
-		isCompressionRecommended,
 		COMPRESSION_RECOMMENDED_MESSAGE,
 		hasNavigatorLocalTranscriptionIssue,
+		isCompressionRecommended,
 	} from '$routes/(app)/_layout-utils/check-ffmpeg';
-	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/services/isomorphic/transcription/registry';
-	import { IS_MACOS, IS_LINUX, PLATFORM_TYPE } from '$lib/constants/platform';
-	import { Button } from '@epicenter/ui/button';
+	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
+	import FfmpegCommandBuilder from './FfmpegCommandBuilder.svelte';
+	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
+	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
 	const { data } = $props();
 
@@ -92,9 +92,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Recording Settings - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Recording Settings - Whispering</title> </svelte:head>
 
 <Field.Set>
 	<Field.Legend>Recording</Field.Legend>
@@ -107,12 +105,10 @@
 			<Field.Label for="recording-mode">Recording Mode</Field.Label>
 			<Select.Root
 				type="single"
-				bind:value={
-					() => settings.value['recording.mode'],
+				bind:value={() => settings.value['recording.mode'],
 					(selected) => {
 						if (selected) settings.updateKey('recording.mode', selected);
-					}
-				}
+					}}
 			>
 				<Select.Trigger id="recording-mode" class="w-full">
 					{recordingModeLabel ?? 'Select a recording mode'}
@@ -124,7 +120,8 @@
 				</Select.Content>
 			</Select.Root>
 			<Field.Description>
-				Choose how you want to activate recording: {RECORDING_MODE_OPTIONS.map(
+				Choose how you want to activate recording:
+				{RECORDING_MODE_OPTIONS.map(
 					(option) => option.label.toLowerCase(),
 				).join(', ')}
 			</Field.Description>
@@ -135,16 +132,14 @@
 				<Field.Label for="recording-method">Recording Method</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['recording.method'],
+					bind:value={() => settings.value['recording.method'],
 						(selected) => {
 							if (selected)
 								settings.updateKey(
 									'recording.method',
 									selected as 'cpal' | 'navigator' | 'ffmpeg',
 								);
-						}
-					}
+						}}
 				>
 					<Select.Trigger id="recording-method" class="w-full">
 						{recordingMethodLabel ?? 'Select a recording method'}
@@ -228,7 +223,8 @@
 					</Alert.Title>
 					<Alert.Description>
 						The Browser API recording method produces compressed audio that
-						requires FFmpeg for local transcription with {TRANSCRIPTION_SERVICE_ID_TO_LABEL[
+						requires FFmpeg for local transcription with
+						{TRANSCRIPTION_SERVICE_ID_TO_LABEL[
 							settings.value['transcription.selectedTranscriptionService']
 						]}.
 						<div class="mt-3 space-y-3">
@@ -249,8 +245,8 @@
 							</div>
 							<div class="text-sm">
 								<strong>Option 3:</strong>
-								Switch to a cloud transcription service (OpenAI, Groq, Deepgram, etc.)
-								which work with all recording methods
+								Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
+								etc.) which work with all recording methods
 							</div>
 						</div>
 					</Alert.Description>
@@ -261,11 +257,9 @@
 		{#if settings.value['recording.mode'] === 'manual'}
 			{@const method = settings.value['recording.method']}
 			<ManualSelectRecordingDevice
-				bind:selected={
-					() => settings.value[`recording.${method}.deviceId`],
+				bind:selected={() => settings.value[`recording.${method}.deviceId`],
 					(selected) =>
-						settings.updateKey(`recording.${method}.deviceId`, selected)
-				}
+						settings.updateKey(`recording.${method}.deviceId`, selected)}
 			/>
 		{:else if settings.value['recording.mode'] === 'vad'}
 			{#if IS_LINUX}
@@ -304,11 +298,9 @@
 			{/if}
 
 			<VadSelectRecordingDevice
-				bind:selected={
-					() => settings.value['recording.navigator.deviceId'],
+				bind:selected={() => settings.value['recording.navigator.deviceId'],
 					(selected) =>
-						settings.updateKey('recording.navigator.deviceId', selected)
-				}
+						settings.updateKey('recording.navigator.deviceId', selected)}
 			/>
 		{/if}
 
@@ -319,16 +311,14 @@
 					<Field.Label for="bit-rate">Bitrate</Field.Label>
 					<Select.Root
 						type="single"
-						bind:value={
-							() => settings.value['recording.navigator.bitrateKbps'],
+						bind:value={() => settings.value['recording.navigator.bitrateKbps'],
 							(selected) => {
 								if (selected)
 									settings.updateKey(
 										'recording.navigator.bitrateKbps',
 										selected,
 									);
-							}
-						}
+							}}
 					>
 						<Select.Trigger id="bit-rate" class="w-full">
 							{bitrateLabel ?? 'Select a bitrate'}
@@ -358,18 +348,12 @@
 				</div>
 
 				<FfmpegCommandBuilder
-					bind:globalOptions={
-						() => settings.value['recording.ffmpeg.globalOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.globalOptions', v)
-					}
-					bind:inputOptions={
-						() => settings.value['recording.ffmpeg.inputOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.inputOptions', v)
-					}
-					bind:outputOptions={
-						() => settings.value['recording.ffmpeg.outputOptions'],
-						(v) => settings.updateKey('recording.ffmpeg.outputOptions', v)
-					}
+					bind:globalOptions={() => settings.value['recording.ffmpeg.globalOptions'],
+						(v) => settings.updateKey('recording.ffmpeg.globalOptions', v)}
+					bind:inputOptions={() => settings.value['recording.ffmpeg.inputOptions'],
+						(v) => settings.updateKey('recording.ffmpeg.inputOptions', v)}
+					bind:outputOptions={() => settings.value['recording.ffmpeg.outputOptions'],
+						(v) => settings.updateKey('recording.ffmpeg.outputOptions', v)}
 				/>
 			{:else}
 				<!-- CPAL method settings -->
@@ -377,13 +361,11 @@
 					<Field.Label for="sample-rate">Sample Rate</Field.Label>
 					<Select.Root
 						type="single"
-						bind:value={
-							() => settings.value['recording.cpal.sampleRate'],
+						bind:value={() => settings.value['recording.cpal.sampleRate'],
 							(selected) => {
 								if (selected)
 									settings.updateKey('recording.cpal.sampleRate', selected);
-							}
-						}
+							}}
 					>
 						<Select.Trigger id="sample-rate" class="w-full">
 							{sampleRateLabel ?? 'Select sample rate'}

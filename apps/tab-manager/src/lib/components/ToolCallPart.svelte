@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
-	import CollapsibleSection from './CollapsibleSection.svelte';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 	import { actionContext, type WorkspaceTools } from '$lib/workspace';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 
 	let {
 		part,
@@ -29,7 +29,8 @@
 
 {#snippet codeBlock(text: string)}
 	<pre
-		class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]">{text}</pre>
+		class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]"
+	>{text}</pre>
 {/snippet}
 
 <div class="flex flex-col gap-1 py-1">
@@ -39,9 +40,7 @@
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
-		<Badge variant={badgeVariant}>
-			{displayName}{isRunning ? '…' : ''}
-		</Badge>
+		<Badge variant={badgeVariant}> {displayName}{isRunning ? '…' : ''} </Badge>
 	</div>
 
 	<CollapsibleSection label="Details" contentClass="bg-muted/50">

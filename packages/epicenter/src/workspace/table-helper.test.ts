@@ -457,9 +457,9 @@ describe('createTableHelper', () => {
 			helper.delete('1');
 
 			expect(changes).toHaveLength(3);
-			expect(changes[0]!.has('1')).toBe(true);
-			expect(changes[1]!.has('2')).toBe(true);
-			expect(changes[2]!.has('1')).toBe(true);
+			expect(changes[0]?.has('1')).toBe(true);
+			expect(changes[1]?.has('2')).toBe(true);
+			expect(changes[2]?.has('1')).toBe(true);
 
 			unsubscribe();
 		});
@@ -485,9 +485,9 @@ describe('createTableHelper', () => {
 
 			// Should have exactly one change event containing all three IDs
 			expect(changes).toHaveLength(1);
-			expect(changes[0]!.has('1')).toBe(true);
-			expect(changes[0]!.has('2')).toBe(true);
-			expect(changes[0]!.has('3')).toBe(true);
+			expect(changes[0]?.has('1')).toBe(true);
+			expect(changes[0]?.has('2')).toBe(true);
+			expect(changes[0]?.has('3')).toBe(true);
 
 			unsubscribe();
 		});

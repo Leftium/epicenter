@@ -8,7 +8,7 @@
 
 import type { TableHelper } from '@epicenter/workspace';
 import { generateId } from '@epicenter/workspace';
-import type { Command, DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
+import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
 
 /**

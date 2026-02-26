@@ -101,10 +101,10 @@
 </script>
 
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
-	import { Button } from '@epicenter/ui/button';
 </script>
 
 <Dialog.Root bind:open={addStaticWorkspaceDialog.isOpen}>

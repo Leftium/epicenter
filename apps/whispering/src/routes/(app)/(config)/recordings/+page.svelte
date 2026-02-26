@@ -1,30 +1,33 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { TrashIcon } from '$lib/components/icons';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { CopyButton } from '@epicenter/ui/copy-button';
+	import { createPersistedState } from '@epicenter/svelte-utils';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Card } from '@epicenter/ui/card';
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import * as Modal from '@epicenter/ui/modal';
+	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
+	import * as Modal from '@epicenter/ui/modal';
 	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import * as Table from '@epicenter/ui/table';
+	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/isomorphic/db';
 	import { cn } from '@epicenter/ui/utils';
-	import { createPersistedState } from '@epicenter/svelte-utils';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
+	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
+	import SearchIcon from '@lucide/svelte/icons/search';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import {
-		FlexRender,
 		createTable as createSvelteTable,
+		FlexRender,
 		renderComponent,
 	} from '@tanstack/svelte-table';
 	import type {
@@ -38,24 +41,21 @@
 		getPaginationRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
-	import * as Empty from '@epicenter/ui/empty';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import MicIcon from '@lucide/svelte/icons/mic';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
-	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
-	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
+	import { type } from 'arktype';
+	import { format } from 'date-fns';
 	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
-	import { type } from 'arktype';
-	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
-	import RenderAudioUrl from './RenderAudioUrl.svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import { RecordingRowActions } from './row-actions';
-	import { format } from 'date-fns';
+	import { TrashIcon } from '$lib/components/icons';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
+	import { rpc } from '$lib/query';
+	import type { Recording } from '$lib/services/isomorphic/db';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
+	import RenderAudioUrl from './RenderAudioUrl.svelte';
+	import { RecordingRowActions } from './row-actions';
 
 	/**
 	 * Returns a cell renderer for a date/time column using date-fns format.
@@ -358,9 +358,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>All Recordings</title>
-</svelte:head>
+<svelte:head> <title>All Recordings</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
 	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
@@ -556,19 +554,16 @@
 							'ml-auto items-center transition-all [&[data-state=open]>svg]:rotate-180',
 						)}
 					>
-						Columns <ChevronDownIcon
-							class="size-4 transition-transform duration-200"
-						/>
+						Columns
+						<ChevronDownIcon class="size-4 transition-transform duration-200" />
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content>
 						{#each table
 							.getAllColumns()
 							.filter((c) => c.getCanHide()) as column (column.id)}
 							<DropdownMenu.CheckboxItem
-								bind:checked={
-									() => column.getIsVisible(),
-									(value) => column.toggleVisibility(!!value)
-								}
+								bind:checked={() => column.getIsVisible(),
+									(value) => column.toggleVisibility(!!value)}
 							>
 								{column.columnDef.id}
 							</DropdownMenu.CheckboxItem>
@@ -598,11 +593,9 @@
 				</Table.Header>
 				<Table.Body>
 					{#if getAllRecordingsQuery.isPending}
-						{#each { length: 5 }}
+						{#each { length: 5 } as _}
 							<Table.Row>
-								<Table.Cell>
-									<Skeleton class="size-4" />
-								</Table.Cell>
+								<Table.Cell> <Skeleton class="size-4" /> </Table.Cell>
 								<Table.Cell colspan={columns.length - 1}>
 									<Skeleton class="h-4 w-full" />
 								</Table.Cell>
@@ -658,8 +651,11 @@
 
 		<div class="flex items-center justify-between">
 			<div class="text-muted-foreground text-sm">
-				{selectedRecordingRows.length} of {table.getFilteredRowModel().rows
-					.length} row(s) selected.
+				{selectedRecordingRows.length}
+				of
+				{table.getFilteredRowModel().rows
+					.length}
+				row(s) selected.
 			</div>
 			<ButtonGroup.Root>
 				<Button

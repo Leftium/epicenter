@@ -58,9 +58,9 @@ describe('createWorkspace', () => {
 				});
 
 				expect(changes).toHaveLength(1);
-				expect(changes[0]!.has('1')).toBe(true);
-				expect(changes[0]!.has('2')).toBe(true);
-				expect(changes[0]!.has('3')).toBe(true);
+				expect(changes[0]?.has('1')).toBe(true);
+				expect(changes[0]?.has('2')).toBe(true);
+				expect(changes[0]?.has('3')).toBe(true);
 				expect(client.tables.posts.count()).toBe(3);
 
 				unsubscribe();
@@ -85,9 +85,9 @@ describe('createWorkspace', () => {
 				});
 
 				expect(changes).toHaveLength(1);
-				expect(changes[0]!.has('1')).toBe(true);
-				expect(changes[0]!.has('2')).toBe(true);
-				expect(changes[0]!.has('3')).toBe(true);
+				expect(changes[0]?.has('1')).toBe(true);
+				expect(changes[0]?.has('2')).toBe(true);
+				expect(changes[0]?.has('3')).toBe(true);
 				expect(client.tables.posts.count()).toBe(0);
 
 				unsubscribe();
@@ -109,8 +109,8 @@ describe('createWorkspace', () => {
 				});
 
 				expect(changes).toHaveLength(1);
-				expect(changes[0]!.has('1')).toBe(true);
-				expect(changes[0]!.has('2')).toBe(true);
+				expect(changes[0]?.has('1')).toBe(true);
+				expect(changes[0]?.has('2')).toBe(true);
 				expect(client.tables.posts.count()).toBe(1);
 				expect(client.tables.posts.has('1')).toBe(false);
 				expect(client.tables.posts.has('2')).toBe(true);
@@ -137,9 +137,9 @@ describe('createWorkspace', () => {
 				});
 
 				expect(postChanges).toHaveLength(1);
-				expect(postChanges[0]!.has('p1')).toBe(true);
+				expect(postChanges[0]?.has('p1')).toBe(true);
 				expect(tagChanges).toHaveLength(1);
-				expect(tagChanges[0]!.has('t1')).toBe(true);
+				expect(tagChanges[0]?.has('t1')).toBe(true);
 
 				unsubPosts();
 				unsubTags();
@@ -164,7 +164,7 @@ describe('createWorkspace', () => {
 				});
 
 				expect(postChanges).toHaveLength(1);
-				expect(postChanges[0]!.has('p1')).toBe(true);
+				expect(postChanges[0]?.has('p1')).toBe(true);
 				expect(kvChanges).toHaveLength(1);
 
 				unsubPosts();
@@ -206,9 +206,9 @@ describe('createWorkspace', () => {
 
 				// Inner batch absorbed by outer — single notification
 				expect(changes).toHaveLength(1);
-				expect(changes[0]!.has('1')).toBe(true);
-				expect(changes[0]!.has('2')).toBe(true);
-				expect(changes[0]!.has('3')).toBe(true);
+				expect(changes[0]?.has('1')).toBe(true);
+				expect(changes[0]?.has('2')).toBe(true);
+				expect(changes[0]?.has('3')).toBe(true);
 
 				unsubscribe();
 			});
@@ -247,7 +247,7 @@ describe('createWorkspace', () => {
 				});
 
 				expect(changes).toHaveLength(1);
-				expect(changes[0]!.size).toBe(100);
+				expect(changes[0]?.size).toBe(100);
 
 				unsubscribe();
 			});

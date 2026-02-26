@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
-	import * as Popover from '@epicenter/ui/popover';
 	import { useCombobox } from '@epicenter/ui/hooks';
-	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { settings } from '$lib/state/settings.svelte';
+	import * as Popover from '@epicenter/ui/popover';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
-	import { createQuery } from '@tanstack/svelte-query';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { rpc } from '$lib/query';
+	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
 	const combobox = useCombobox();
 

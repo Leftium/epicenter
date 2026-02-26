@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your Anthropic API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.anthropic'],
-			(value) => settings.updateKey('apiKeys.anthropic', value)
-		}
+		bind:value={() => settings.value['apiKeys.anthropic'],
+			(value) => settings.updateKey('apiKeys.anthropic', value)}
 	/>
 	<Field.Description>
 		You can find your Anthropic API key in your <Link
@@ -24,6 +22,7 @@
 			rel="noopener noreferrer"
 		>
 			Anthropic console
-		</Link>.
+		</Link>
+		.
 	</Field.Description>
 </Field.Field>

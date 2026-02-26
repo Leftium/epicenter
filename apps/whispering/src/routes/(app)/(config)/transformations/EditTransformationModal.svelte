@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { PencilIcon as EditIcon } from '$lib/components/icons';
-	import { Editor } from '$lib/components/transformations-editor';
 	import { Button } from '@epicenter/ui/button';
 	import * as Modal from '@epicenter/ui/modal';
 	import { Separator } from '@epicenter/ui/separator';
-	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
-	import { createMutation } from '@tanstack/svelte-query';
-	import HistoryIcon from '@lucide/svelte/icons/history';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import HistoryIcon from '@lucide/svelte/icons/history';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import TrashIcon from '@lucide/svelte/icons/trash';
+	import { createMutation } from '@tanstack/svelte-query';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { PencilIcon as EditIcon } from '$lib/components/icons';
+	import { Editor } from '$lib/components/transformations-editor';
+	import { rpc } from '$lib/query';
+	import type { Transformation } from '$lib/services/isomorphic/db';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	const updateTransformation = createMutation(
@@ -125,13 +125,11 @@
 		</Modal.Header>
 
 		<Editor
-			bind:transformation={
-				() => workingCopy,
+			bind:transformation={() => workingCopy,
 				(v) => {
 					workingCopy = v;
 					isWorkingCopyDirty = true;
-				}
-			}
+				}}
 		/>
 
 		<Modal.Footer>

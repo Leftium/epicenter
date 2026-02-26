@@ -1,10 +1,16 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { sep } from '@tauri-apps/api/path';
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
-	import * as Popover from '@epicenter/ui/popover';
 	import { useCombobox } from '@epicenter/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
+	import { cn } from '@epicenter/ui/utils';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import { sep } from '@tauri-apps/api/path';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { goto } from '$app/navigation';
 	import {
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
@@ -14,12 +20,6 @@
 		isTranscriptionServiceConfigured,
 	} from '$lib/settings/transcription-validation';
 	import { settings } from '$lib/state/settings.svelte';
-	import { cn } from '@epicenter/ui/utils';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import MicIcon from '@lucide/svelte/icons/mic';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import { SvelteSet } from 'svelte/reactivity';
 
 	let { class: className }: { class?: string } = $props();
 

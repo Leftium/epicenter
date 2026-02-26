@@ -25,7 +25,5 @@
 		{@render children?.()}
 	</Dialog.Content>
 {:else}
-	<Drawer.Content bind:ref {...rest}>
-		{@render children?.()}
-	</Drawer.Content>
+	<Drawer.Content bind:ref {...rest}> {@render children?.()} </Drawer.Content>
 {/if}

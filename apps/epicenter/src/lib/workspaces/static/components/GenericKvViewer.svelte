@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Y from 'yjs';
 	import * as Card from '@epicenter/ui/card';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import * as Y from 'yjs';
 	import { readKvValue } from '$lib/yjs/discover';
 
 	type Props = {

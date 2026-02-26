@@ -1,20 +1,41 @@
 /**
- * Workspace definition — the single source of truth for the tab manager schema.
+ * Workspace — schema, client, and actions for the tab manager.
  *
- * Contains table definitions, the workspace definition, and all inferred types.
- * Both background and popup import from here; neither defines their own schema.
+ * Contains table definitions, branded ID types, composite ID helpers, the
+ * workspace client (single Y.Doc instance with IndexedDB + WebSocket sync),
+ * and all AI-callable actions. Everything lives in one file because there is
+ * exactly one consumer of the schema: the side panel's `createWorkspace` call.
  *
  * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
+import { createActionContext } from '@epicenter/ai';
 import {
+	createWorkspace,
+	defineMutation,
+	defineQuery,
 	defineTable,
 	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
+import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import {
+	executeActivateTab,
+	executeCloseTabs,
+	executeGroupTabs,
+	executeMuteTabs,
+	executeOpenTab,
+	executePinTabs,
+	executeReloadTabs,
+	executeSaveTabs,
+} from '$lib/commands/actions';
+import { startCommandConsumer } from '$lib/commands/consumer';
+import { getDeviceId } from '$lib/device/device-id';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -241,13 +262,7 @@ const commandBase = type({
 const tabGroupColor =
 	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'";
 
-/**
- * The workspace definition — shared by background and popup.
- *
- * Both call `createWorkspace(definition)` independently (each needs its own
- * Y.Doc instance), but the schema is defined exactly once here.
- */
-export const definition = defineWorkspace({
+const definition = defineWorkspace({
 	id: 'tab-manager',
 
 	awareness: {
@@ -524,3 +539,300 @@ export type SavedTab = InferTableRow<Tables['savedTabs']>;
 export type Conversation = InferTableRow<Tables['conversations']>;
 export type ChatMessage = InferTableRow<Tables['chatMessages']>;
 export type Command = InferTableRow<Tables['commands']>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace Client
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Workspace client — single Y.Doc instance for the tab manager.
+ *
+ * Runs in the side panel context, which is a persistent extension page with
+ * full Chrome API access and no dormancy. IndexedDB persistence and WebSocket
+ * sync handle local storage and cross-device sync. Actions are available at
+ * `.actions` for AI tool derivation.
+ */
+export const workspaceClient = createWorkspace(definition)
+	.withExtension('persistence', indexeddbPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: 'ws://127.0.0.1:3913/rooms/{id}',
+		}),
+	)
+	.withActions(({ tables }) => ({
+		tabs: {
+			search: defineQuery({
+				description:
+					'Search tabs by URL or title match. Returns matching tabs across all devices, optionally scoped to one device.',
+				input: Type.Object({
+					query: Type.String(),
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ query, deviceId }) => {
+					const lower = query.toLowerCase();
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						const title = tab.title?.toLowerCase() ?? '';
+						const url = tab.url?.toLowerCase() ?? '';
+						return title.includes(lower) || url.includes(lower);
+					});
+					return {
+						results: matched.map((tab) => ({
+							id: tab.id,
+							deviceId: tab.deviceId,
+							windowId: tab.windowId,
+							title: tab.title ?? '(untitled)',
+							url: tab.url ?? '',
+							active: tab.active,
+							pinned: tab.pinned,
+						})),
+					};
+				},
+			}),
+
+			list: defineQuery({
+				description:
+					'List all open tabs. Optionally filter by device or window.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+					windowId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId, windowId }) => {
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						if (windowId && tab.windowId !== windowId) return false;
+						return true;
+					});
+					return {
+						tabs: matched.map((tab) => ({
+							id: tab.id,
+							deviceId: tab.deviceId,
+							windowId: tab.windowId,
+							title: tab.title ?? '(untitled)',
+							url: tab.url ?? '',
+							active: tab.active,
+							pinned: tab.pinned,
+							audible: tab.audible ?? false,
+							muted: tab.mutedInfo?.muted ?? false,
+							groupId: tab.groupId ?? null,
+						})),
+					};
+				},
+			}),
+
+			close: defineMutation({
+				description: 'Close one or more tabs by their composite IDs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+				}),
+				handler: async ({ tabIds }) => {
+					const deviceId = await getDeviceId();
+					return executeCloseTabs(tabIds, deviceId);
+				},
+			}),
+
+			open: defineMutation({
+				description: 'Open a new tab with the given URL on the current device.',
+				input: Type.Object({
+					url: Type.String(),
+					windowId: Type.Optional(Type.String()),
+				}),
+				handler: async ({ url, windowId }) => {
+					return executeOpenTab(url, windowId);
+				},
+			}),
+
+			activate: defineMutation({
+				description: 'Activate (focus) a specific tab by its composite ID.',
+				input: Type.Object({
+					tabId: Type.String(),
+				}),
+				handler: async ({ tabId }) => {
+					const deviceId = await getDeviceId();
+					return executeActivateTab(tabId, deviceId);
+				},
+			}),
+
+			save: defineMutation({
+				description: 'Save tabs for later. Optionally close them after saving.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					close: Type.Optional(Type.Boolean()),
+				}),
+				handler: async ({ tabIds, close }) => {
+					const deviceId = await getDeviceId();
+					return executeSaveTabs(
+						tabIds,
+						close ?? false,
+						deviceId,
+						tables.savedTabs,
+					);
+				},
+			}),
+
+			group: defineMutation({
+				description: 'Group tabs together with an optional title and color.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					title: Type.Optional(Type.String()),
+					color: Type.Optional(Type.String()),
+				}),
+				handler: async ({ tabIds, title, color }) => {
+					const deviceId = await getDeviceId();
+					return executeGroupTabs(tabIds, deviceId, title, color);
+				},
+			}),
+
+			pin: defineMutation({
+				description: 'Pin or unpin tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					pinned: Type.Boolean(),
+				}),
+				handler: async ({ tabIds, pinned }) => {
+					const deviceId = await getDeviceId();
+					return executePinTabs(tabIds, pinned, deviceId);
+				},
+			}),
+
+			mute: defineMutation({
+				description: 'Mute or unmute tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					muted: Type.Boolean(),
+				}),
+				handler: async ({ tabIds, muted }) => {
+					const deviceId = await getDeviceId();
+					return executeMuteTabs(tabIds, muted, deviceId);
+				},
+			}),
+
+			reload: defineMutation({
+				description: 'Reload one or more tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+				}),
+				handler: async ({ tabIds }) => {
+					const deviceId = await getDeviceId();
+					return executeReloadTabs(tabIds, deviceId);
+				},
+			}),
+		},
+
+		windows: {
+			list: defineQuery({
+				description:
+					'List all browser windows with their tab counts. Optionally filter by device.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId }) => {
+					const windows = tables.windows.filter((w) => {
+						if (deviceId && w.deviceId !== deviceId) return false;
+						return true;
+					});
+					const allTabs = tables.tabs.getAllValid();
+					return {
+						windows: windows.map((w) => ({
+							id: w.id,
+							deviceId: w.deviceId,
+							focused: w.focused,
+							state: w.state ?? 'normal',
+							type: w.type ?? 'normal',
+							tabCount: allTabs.filter((t) => t.windowId === w.id).length,
+						})),
+					};
+				},
+			}),
+		},
+
+		devices: {
+			list: defineQuery({
+				description:
+					'List all synced devices with their names, browsers, and online status.',
+				input: Type.Object({}),
+				handler: () => {
+					const devices = tables.devices.getAllValid();
+					return {
+						devices: devices.map((d) => ({
+							id: d.id,
+							name: d.name,
+							browser: d.browser,
+							lastSeen: d.lastSeen,
+						})),
+					};
+				},
+			}),
+		},
+
+		domains: {
+			count: defineQuery({
+				description:
+					'Count open tabs grouped by domain (e.g. youtube.com: 5, github.com: 3). Optionally filter by device.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId }) => {
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						return true;
+					});
+					const counts = new Map<string, number>();
+					for (const tab of matched) {
+						if (!tab.url) continue;
+						try {
+							const domain = new URL(tab.url).hostname;
+							counts.set(domain, (counts.get(domain) ?? 0) + 1);
+						} catch {
+							// Skip tabs with invalid URLs (e.g. chrome:// pages)
+						}
+					}
+					const domains = Array.from(counts.entries())
+						.map(([domain, count]) => ({ domain, count }))
+						.sort((a, b) => b.count - a.count);
+					return { domains };
+				},
+			}),
+		},
+	}));
+
+export const actionContext = createActionContext(workspaceClient.actions, {
+	labels: {
+		tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
+		tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
+		windows_list: { active: 'Listing windows', done: 'Listed windows' },
+		devices_list: { active: 'Listing devices', done: 'Listed devices' },
+		domains_count: {
+			active: 'Counting domains',
+			done: 'Counted domains',
+		},
+		tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
+		tabs_open: { active: 'Opening tab', done: 'Opened tab' },
+		tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
+		tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
+		tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
+		tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
+		tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
+		tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
+	},
+});
+
+export type WorkspaceTools = typeof actionContext.tools;
+export type WorkspaceActionName = WorkspaceTools[number]['name'];
+
+// Initialize workspace: set awareness + start command consumer
+void workspaceClient.whenReady.then(async () => {
+	const deviceId = await getDeviceId();
+	workspaceClient.awareness.setLocal({
+		deviceId,
+		deviceType: 'browser-extension',
+	});
+
+	// Start consuming AI commands targeting this device
+	startCommandConsumer(
+		workspaceClient.tables.commands,
+		workspaceClient.tables.savedTabs,
+		deviceId,
+	);
+});

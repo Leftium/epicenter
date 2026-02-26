@@ -4,7 +4,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { actionContext, type WorkspaceTools } from '$lib/workspace-client';
+	import { actionContext, type WorkspaceTools } from '$lib/workspace';
 
 	let {
 		part,

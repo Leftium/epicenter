@@ -8,7 +8,7 @@
 		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
-	import type { WorkspaceTools } from '$lib/workspace-client';
+	import type { WorkspaceTools } from '$lib/workspace';
 
 	let {
 		parts,

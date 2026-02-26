@@ -53,12 +53,13 @@ import {
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
-import type {
-	ChatMessageId,
-	Conversation,
-	ConversationId,
+import {
+	actionContext,
+	workspaceClient,
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
 } from '$lib/workspace';
-import { actionContext, workspaceClient } from '$lib/workspace-client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

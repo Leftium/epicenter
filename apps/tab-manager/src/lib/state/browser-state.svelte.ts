@@ -57,8 +57,8 @@ import {
 	type TabCompositeId,
 	type Window,
 	type WindowCompositeId,
+	workspaceClient,
 } from '$lib/workspace';
-import { workspaceClient } from '$lib/workspace-client';
 
 const { tables } = workspaceClient;
 

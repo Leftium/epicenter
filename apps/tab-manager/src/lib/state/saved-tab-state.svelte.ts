@@ -33,7 +33,12 @@
 
 import { generateId } from '@epicenter/workspace';
 import { getDeviceId } from '$lib/device/device-id';
-import { workspaceClient, type SavedTab, type SavedTabId, type Tab } from '$lib/workspace';
+import {
+	type SavedTab,
+	type SavedTabId,
+	type Tab,
+	workspaceClient,
+} from '$lib/workspace';
 
 function createSavedTabState() {
 	/** Read all valid saved tabs, most recently saved first. */

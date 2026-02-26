@@ -1,4 +1,9 @@
-import { type Guid, generateGuid, generateId, type Id } from '@epicenter/workspace';
+import {
+	type Guid,
+	generateGuid,
+	generateId,
+	type Id,
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';

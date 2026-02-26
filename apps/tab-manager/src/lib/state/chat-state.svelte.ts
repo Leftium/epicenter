@@ -55,10 +55,10 @@ import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
 import {
 	actionContext,
-	workspaceClient,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	workspaceClient,
 } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────

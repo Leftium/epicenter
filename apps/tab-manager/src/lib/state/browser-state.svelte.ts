@@ -39,11 +39,7 @@ import {
 	getBrowserName,
 	getDeviceId,
 } from '$lib/device/device-id';
-import {
-	tabGroupToRow,
-	tabToRow,
-	windowToRow,
-} from '$lib/sync/row-converters';
+import { tabGroupToRow, tabToRow, windowToRow } from '$lib/sync/row-converters';
 import {
 	createGroupCompositeId,
 	createTabCompositeId,

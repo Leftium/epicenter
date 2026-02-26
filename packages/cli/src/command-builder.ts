@@ -1,4 +1,4 @@
-import { type Actions, iterateActions } from '@epicenter/hq';
+import { type Actions, iterateActions } from '@epicenter/workspace';
 import { ParseError, Parser } from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';

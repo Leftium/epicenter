@@ -8,7 +8,7 @@
 
 ## Overview
 
-Extract the server code from `@epicenter/hq` (currently at `packages/epicenter/src/server/`) into a standalone `@epicenter/server` package at `packages/server/`. Then build the sync core: a transport-agnostic room manager and three-mode authentication system that serve as the shared foundation for both the self-hosted Elysia server and the Cloudflare Durable Objects cloud path.
+Extract the server code from `@epicenter/workspace` (currently at `packages/epicenter/src/server/`) into a standalone `@epicenter/server` package at `packages/server/`. Then build the sync core: a transport-agnostic room manager and three-mode authentication system that serve as the shared foundation for both the self-hosted Elysia server and the Cloudflare Durable Objects cloud path.
 
 **Scope boundary**: This spec covers `@epicenter/server` — the self-hosted Elysia/Bun sync server and the transport-agnostic sync core (`createRoom()`, `createAuthValidator()`, `Connection` type) that both deployment paths depend on. It also defines the **canonical client-side provider API** consumed by all three specs. The Cloudflare Durable Objects cloud path is a separate codebase documented in `20260213T120800-cloud-sync-durable-objects.md`. Client-side E2EE is documented in `20260213T120813-encryption-at-rest-architecture.md`.
 
@@ -16,7 +16,7 @@ Extract the server code from `@epicenter/hq` (currently at `packages/epicenter/s
 
 ### Current State
 
-The server lives inside `@epicenter/hq` at `src/server/`:
+The server lives inside `@epicenter/workspace` at `src/server/`:
 
 ```
 packages/epicenter/src/server/
@@ -46,7 +46,7 @@ And `package.json` exports it as:
 
 This creates problems:
 
-1. **Server code is coupled to the library package.** Users who want a self-hostable server must install `@epicenter/hq`, which includes the entire workspace system, CLI, providers, and ingest modules.
+1. **Server code is coupled to the library package.** Users who want a self-hostable server must install `@epicenter/workspace`, which includes the entire workspace system, CLI, providers, and ingest modules.
 2. **No authentication.** `MESSAGE_AUTH=2` is reserved in the protocol but unimplemented. Anyone who can reach the WebSocket can read and write all data.
 3. **No encryption at rest.** Yjs documents are stored and synced as plaintext. Sensitive data (API keys, tokens) stored in Yjs is visible to anyone with disk or network access.
 4. **Topology is implicit.** Multi-device sync works but there's no formal server identity, discovery, or trust model for self-hosted deployments.
@@ -68,8 +68,8 @@ The server imports from two internal modules:
 
 | Import              | Source          | What's Used                             |
 | ------------------- | --------------- | --------------------------------------- |
-| `../static/types`   | `@epicenter/hq` | `AnyWorkspaceClient`, `TableHelper`     |
-| `../shared/actions` | `@epicenter/hq` | `Actions`, `iterateActions`, `isAction` |
+| `../static/types`   | `@epicenter/workspace` | `AnyWorkspaceClient`, `TableHelper`     |
+| `../shared/actions` | `@epicenter/workspace` | `Actions`, `iterateActions`, `isAction` |
 
 External dependencies:
 
@@ -82,7 +82,7 @@ External dependencies:
 | `yjs`               | sync/protocol.ts (type-only)                    | Y.Doc type                    |
 | `wellcrafted`       | sync/index.ts                                   | `trySync` for error handling  |
 
-**Key finding**: The server's dependency on `@epicenter/hq` is narrow — just 5 type imports and 2 function imports (`iterateActions`, `isAction`). The types can be imported from `@epicenter/hq` as a peer dependency.
+**Key finding**: The server's dependency on `@epicenter/workspace` is narrow — just 5 type imports and 2 function imports (`iterateActions`, `isAction`). The types can be imported from `@epicenter/workspace` as a peer dependency.
 
 ### Elysia.js and Cloudflare Durable Objects
 
@@ -113,9 +113,9 @@ The sync server's only auth question: **"should I let this WebSocket connection 
 
 | Decision                     | Choice                                                                          | Rationale                                                                                                    |
 | ---------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Package dependency direction | `@epicenter/server` depends on `@epicenter/hq` as peer dep                      | Server needs workspace types; keeping them in `@epicenter/hq` avoids a types-only package                    |
-| Backward compatibility       | Breaking change, no re-export from `@epicenter/hq/server`                       | Clean break. The server export path was pre-1.0 and has few consumers.                                       |
-| No circular deps             | `@epicenter/hq` must NEVER depend on `@epicenter/server`                        | One-way dependency: `server → hq`. CLI uses dynamic import for `serve` command until CLI is extracted later. |
+| Package dependency direction | `@epicenter/server` depends on `@epicenter/workspace` as peer dep                      | Server needs workspace types; keeping them in `@epicenter/workspace` avoids a types-only package                    |
+| Backward compatibility       | Breaking change, no re-export from `@epicenter/workspace/server`                       | Clean break. The server export path was pre-1.0 and has few consumers.                                       |
+| No circular deps             | `@epicenter/workspace` must NEVER depend on `@epicenter/server`                        | One-way dependency: `server → hq`. CLI uses dynamic import for `serve` command until CLI is extracted later. |
 | CLI extraction (future)      | Extract `@epicenter/cli` that depends on both `hq` and `server`                 | Clean leaf package that composes everything. Deferred — not in scope for Phase 1.                            |
 | Auth model                   | Three modes: open, shared secret, external JWT — NOT Better Auth on the server  | Sync server is a relay, not an auth authority. Auth complexity belongs in a separate service.                |
 | Auth default                 | Mode 1 (open, no auth) is the default                                           | Self-hosted on a trusted network shouldn't require OAuth setup to sync your own devices.                     |
@@ -158,7 +158,7 @@ Dependency graph after extraction (no circular deps):
                  depends  │        │  depends
                           ▼        ▼
 ┌──────────────────┐              ┌──────────────────┐
-│ @epicenter/server │──────────►  │  @epicenter/hq   │
+│ @epicenter/server │──────────►  │  @epicenter/workspace   │
 │                   │  peer dep   │                   │
 │ createServer()    │             │ AnyWorkspaceClient│
 │ createSyncPlugin  │             │ TableHelper       │
@@ -173,7 +173,7 @@ Dependency graph after extraction (no circular deps):
   wellcrafted
 ```
 
-**Key constraint**: `@epicenter/hq` NEVER depends on `@epicenter/server`. The arrow is one-way.
+**Key constraint**: `@epicenter/workspace` NEVER depends on `@epicenter/server`. The arrow is one-way.
 
 ### Phase 2: Three-Mode Auth + Room Extraction
 
@@ -497,28 +497,28 @@ These are handled by companion specs:
 
 - [x] **1.1** Create `packages/server/` directory with `package.json`, `tsconfig.json`
   - Name: `@epicenter/server`
-  - Peer dep: `@epicenter/hq` (for types)
+  - Peer dep: `@epicenter/workspace` (for types)
   - Direct deps: `elysia`, `@elysiajs/openapi`, `lib0`, `y-protocols`, `yjs`, `wellcrafted`
 - [x] **1.2** Copy server source files from `packages/epicenter/src/server/` to `packages/server/src/`
   - `server.ts`, `actions.ts`, `tables.ts`, `index.ts`
   - `sync/index.ts`, `sync/protocol.ts`
   - `actions.test.ts`, `sync/protocol.test.ts`
 - [x] **1.3** Update imports in copied files
-  - `../static/types` → `@epicenter/hq/static` (for `AnyWorkspaceClient`, `TableHelper`)
-  - `../shared/actions` → `@epicenter/hq` (for `Actions`, `iterateActions`, `isAction`)
+  - `../static/types` → `@epicenter/workspace/static` (for `AnyWorkspaceClient`, `TableHelper`)
+  - `../shared/actions` → `@epicenter/workspace` (for `Actions`, `iterateActions`, `isAction`)
   - Verify all imports resolve correctly
 - [x] **1.4** Update `packages/epicenter/src/cli/cli.ts` to use dynamic import
   - Changed static import to `const { createServer } = await import('@epicenter/server')` with try/catch
-  - `@epicenter/server` is NOT a dependency of `@epicenter/hq` — no circular deps
+  - `@epicenter/server` is NOT a dependency of `@epicenter/workspace` — no circular deps
   - If `@epicenter/server` is not installed, the `serve` command prints a helpful error and exits
 - [x] **1.5** Remove `./server` export from `packages/epicenter/package.json`
   - Deleted the `"./server": "./src/server/index.ts"` entry
-  - Also removed `@elysiajs/openapi` from `@epicenter/hq` dependencies (now owned by `@epicenter/server`)
+  - Also removed `@elysiajs/openapi` from `@epicenter/workspace` dependencies (now owned by `@epicenter/server`)
 - [x] **1.6** Delete `packages/epicenter/src/server/` directory entirely
 - [x] **1.7** Verify the server README at `packages/epicenter/src/server/README.md` is moved to `packages/server/README.md`
 - [x] **1.8** Run existing tests in new location: `bun test` from `packages/server/` — 50 pass, 0 fail
-- [x] **1.9** Run `bun typecheck` on both `@epicenter/server` and `@epicenter/hq` — all errors are pre-existing upstream, none related to extraction
-- [x] **1.10** No documentation references to `@epicenter/hq/server` found outside the spec itself
+- [x] **1.9** Run `bun typecheck` on both `@epicenter/server` and `@epicenter/workspace` — all errors are pre-existing upstream, none related to extraction
+- [x] **1.10** No documentation references to `@epicenter/workspace/server` found outside the spec itself
 
 ### Phase 2: Room Extraction + Three-Mode Auth (Design Only — Implementation Deferred)
 
@@ -555,10 +555,10 @@ These are handled by companion specs:
 
 ### Phase 1: CLI `serve` Command Without Circular Dependency
 
-1. `@epicenter/hq` currently exports the server AND defines the types the server uses
-2. After extraction, `@epicenter/server` depends on `@epicenter/hq` for types
-3. The CLI's `serve` command (in `@epicenter/hq`) needs `createServer` from `@epicenter/server`
-4. **`@epicenter/hq` must NEVER depend on `@epicenter/server`** — no circular deps
+1. `@epicenter/workspace` currently exports the server AND defines the types the server uses
+2. After extraction, `@epicenter/server` depends on `@epicenter/workspace` for types
+3. The CLI's `serve` command (in `@epicenter/workspace`) needs `createServer` from `@epicenter/server`
+4. **`@epicenter/workspace` must NEVER depend on `@epicenter/server`** — no circular deps
 
 **Resolution**: The CLI uses a dynamic import: `const { createServer } = await import('@epicenter/server')`. This makes `@epicenter/server` an optional peer dep. If not installed, the `serve` command prints "Install @epicenter/server to use this command." Later, the entire CLI will be extracted to `@epicenter/cli` which depends on both packages normally.
 
@@ -612,10 +612,10 @@ If using `?token=secret` query param fallback, the secret appears in server acce
 - [x] `bun test` passes in `packages/server/` (50 pass, 0 fail)
 - [x] `bun typecheck` passes in both packages (all errors pre-existing, none from extraction)
 - [x] `epicenter serve` CLI command uses dynamic import from `@epicenter/server`
-- [x] `@epicenter/hq` no longer contains server code in `src/server/`
-- [x] No `./server` export in `@epicenter/hq/package.json`
-- [x] `@epicenter/hq` has NO dependency (direct or peer) on `@epicenter/server` in package.json
-- [x] Dependency direction is strictly one-way: `@epicenter/server` → `@epicenter/hq`
+- [x] `@epicenter/workspace` no longer contains server code in `src/server/`
+- [x] No `./server` export in `@epicenter/workspace/package.json`
+- [x] `@epicenter/workspace` has NO dependency (direct or peer) on `@epicenter/server` in package.json
+- [x] Dependency direction is strictly one-way: `@epicenter/server` → `@epicenter/workspace`
 
 ### Phase 2
 
@@ -651,25 +651,25 @@ Phase 1 was a pure extraction — ~95% move/rename, ~5% glue code. No business l
 
 **New package: `packages/server/`**
 
-- `package.json` — `@epicenter/server`, peer dep on `@epicenter/hq`, direct deps on `elysia`, `@elysiajs/openapi`, `lib0`, `y-protocols`, `yjs`, `wellcrafted`
-- `tsconfig.json` — mirrors `@epicenter/hq` compiler options
+- `package.json` — `@epicenter/server`, peer dep on `@epicenter/workspace`, direct deps on `elysia`, `@elysiajs/openapi`, `lib0`, `y-protocols`, `yjs`, `wellcrafted`
+- `tsconfig.json` — mirrors `@epicenter/workspace` compiler options
 - `src/index.ts` — 1-line re-export of `createServer`, `DEFAULT_PORT`, `ServerOptions`
 - `src/server.ts` — moved from `packages/epicenter/src/server/server.ts`, import paths updated
-- `src/actions.ts` — moved, import paths updated (`../shared/actions` → `@epicenter/hq`)
-- `src/tables.ts` — moved, import paths updated (`../static/types` → `@epicenter/hq/static`)
+- `src/actions.ts` — moved, import paths updated (`../shared/actions` → `@epicenter/workspace`)
+- `src/tables.ts` — moved, import paths updated (`../static/types` → `@epicenter/workspace/static`)
 - `src/sync/index.ts` — moved verbatim (no import changes needed, all deps are external)
 - `src/sync/protocol.ts` — moved verbatim
 - `src/actions.test.ts` — moved, import paths updated
 - `src/sync/protocol.test.ts` — moved verbatim
 - `README.md` — moved verbatim
 
-**Modified in `@epicenter/hq`:**
+**Modified in `@epicenter/workspace`:**
 
 - `src/static/index.ts` — added `AnyWorkspaceClient` to type exports (was missing, needed by server package)
 - `src/cli/cli.ts` — replaced static `import { createServer }` with dynamic `await import('@epicenter/server')` + try/catch error handling
 - `package.json` — removed `"./server"` export, removed `@elysiajs/openapi` dependency
 
-**Deleted from `@epicenter/hq`:**
+**Deleted from `@epicenter/workspace`:**
 
 - `src/server/` — entire directory
 
@@ -686,5 +686,5 @@ Phase 1 was a pure extraction — ~95% move/rename, ~5% glue code. No business l
 ### Notes for Phase 2
 
 - The `DEFAULT_PORT` constant (3913) is now hardcoded in the CLI fallback since it can't import from `@epicenter/server` at module level. When Phase 2 adds auth config, the CLI will need `@epicenter/server` installed anyway, so this becomes moot.
-- `AnyWorkspaceClient` was not previously exported from `@epicenter/hq/static`. It is now. This is the only new public API surface from Phase 1.
-- The `@elysiajs/openapi` dependency moved from `@epicenter/hq` to `@epicenter/server`. If anything else in `@epicenter/hq` used it, it would break — but nothing does.
+- `AnyWorkspaceClient` was not previously exported from `@epicenter/workspace/static`. It is now. This is the only new public API surface from Phase 1.
+- The `@elysiajs/openapi` dependency moved from `@epicenter/workspace` to `@epicenter/server`. If anything else in `@epicenter/workspace` used it, it would break — but nothing does.

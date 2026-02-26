@@ -159,7 +159,7 @@ export function createRichContentId(): RichContentId {
 
 ```typescript
 // BEFORE
-import { ytext, tags } from '@epicenter/hq';
+import { ytext, tags } from '@epicenter/workspace';
 
 const schema = {
 	content: ytext(),
@@ -172,7 +172,7 @@ row.content.toString(); // Y.Text method
 row.labels.toArray(); // Y.Array method
 
 // AFTER
-import { richtext, tags, createRichContentId } from '@epicenter/hq';
+import { richtext, tags, createRichContentId } from '@epicenter/workspace';
 
 const schema = {
 	content: richtext(),

@@ -18,7 +18,7 @@
 	},
 	"dependencies": {
 		"@epicenter/ai": "workspace:*",
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@tanstack/ai": "^0.5.1",

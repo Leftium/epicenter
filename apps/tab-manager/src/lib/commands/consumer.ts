@@ -7,7 +7,7 @@
  * @see specs/20260223T200500-ai-tools-command-queue.md
  */
 
-import type { TableHelper } from '@epicenter/hq';
+import type { TableHelper } from '@epicenter/workspace';
 import type { Command, DeviceId, SavedTab } from '$lib/workspace';
 import {
 	executeActivateTab,

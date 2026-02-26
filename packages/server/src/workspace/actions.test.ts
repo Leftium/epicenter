@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { defineMutation, defineQuery } from '@epicenter/hq';
+import { defineMutation, defineQuery } from '@epicenter/workspace';
 import Type from 'typebox';
 import { collectActionPaths, createActionsRouter } from './actions';
 

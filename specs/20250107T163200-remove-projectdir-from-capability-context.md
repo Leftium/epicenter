@@ -256,7 +256,7 @@ const client = await workspace
 ### AFTER (Option 2: Helper function)
 
 ```typescript
-import { buildEpicenterPaths } from '@epicenter/hq';
+import { buildEpicenterPaths } from '@epicenter/workspace';
 
 const paths = buildEpicenterPaths('/my/project');
 

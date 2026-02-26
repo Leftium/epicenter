@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * import { createDocuments, createTables, defineTable } from '@epicenter/hq';
+ * import { createDocuments, createTables, defineTable } from '@epicenter/workspace';
  * import * as Y from 'yjs';
  * import { type } from 'arktype';
  *
@@ -59,7 +59,7 @@ import type {
  *
  * @example
  * ```typescript
- * import { DOCUMENTS_ORIGIN } from '@epicenter/hq';
+ * import { DOCUMENTS_ORIGIN } from '@epicenter/workspace';
  *
  * client.tables.files.observe((changedIds, transaction) => {
  *   if (transaction.origin === DOCUMENTS_ORIGIN) {

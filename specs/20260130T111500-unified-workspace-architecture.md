@@ -316,9 +316,9 @@ The Epicenter desktop app uses both workspace types:
 ```typescript
 // apps/epicenter/src/lib/workspaces/whispering.ts
 
-import { createGridWorkspace } from '@epicenter/hq/grid';
-import { createHeadDoc } from '@epicenter/hq/core/docs';
-import { workspacePersistence } from '@epicenter/hq/extensions/persistence';
+import { createGridWorkspace } from '@epicenter/workspace/grid';
+import { createHeadDoc } from '@epicenter/workspace/core/docs';
+import { workspacePersistence } from '@epicenter/workspace/extensions/persistence';
 
 // 1. Create HeadDoc (if you want epochs/snapshots)
 const headDoc = createHeadDoc({

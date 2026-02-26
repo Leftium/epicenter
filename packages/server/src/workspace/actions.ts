@@ -1,5 +1,5 @@
-import type { Actions } from '@epicenter/hq';
-import { iterateActions } from '@epicenter/hq';
+import type { Actions } from '@epicenter/workspace';
+import { iterateActions } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import Value from 'typebox/value';
 

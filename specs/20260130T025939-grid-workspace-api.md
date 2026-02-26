@@ -376,7 +376,7 @@ packages/epicenter/src/grid/
 
 ```typescript
 // Before (Cell)
-import { createCellWorkspace } from '@epicenter/hq/cell';
+import { createCellWorkspace } from '@epicenter/workspace/cell';
 
 const client = createCellWorkspace({
 	headDoc,
@@ -384,7 +384,7 @@ const client = createCellWorkspace({
 }).withExtensions({ persistence });
 
 // After (Grid)
-import { createGridWorkspace } from '@epicenter/hq/grid';
+import { createGridWorkspace } from '@epicenter/workspace/grid';
 
 const client = createGridWorkspace({
 	id: headDoc.workspaceId, // Extract ID
@@ -397,14 +397,14 @@ const client = createGridWorkspace({
 
 ```typescript
 // Before (Dynamic)
-import { createDynamicWorkspace } from '@epicenter/hq/dynamic';
+import { createDynamicWorkspace } from '@epicenter/workspace/dynamic';
 
 const workspace = createDynamicWorkspace({ id: 'my-workspace' });
 workspace.tables.create('posts', { name: 'Posts' });
 workspace.fields.create('posts', 'title', { type: 'text' });
 
 // After (Grid)
-import { createGridWorkspace } from '@epicenter/hq/grid';
+import { createGridWorkspace } from '@epicenter/workspace/grid';
 
 // Define schema externally (JSON file, database, etc.)
 const definition = {

@@ -362,7 +362,7 @@ This is a **breaking change** for anyone using the table API:
 tables.get('posts').upsert({ id: 'my-id', ... });
 
 // After (required)
-import { Id } from '@epicenter/hq';
+import { Id } from '@epicenter/workspace';
 tables.get('posts').upsert({ id: Id('my-id'), ... });
 // OR
 tables.get('posts').upsert({ id: generateId(), ... });
@@ -394,7 +394,7 @@ Key changes made:
 6. Updated extensions (`sqlite`, `markdown`) to convert string IDs to branded `Id` at deserialization boundaries
 7. Updated `server/tables.ts` to wrap URL params with `Id()`
 8. Updated all test files to use `Id()` constructor
-9. Exported `Id` function from package root (`@epicenter/hq`)
+9. Exported `Id` function from package root (`@epicenter/workspace`)
 
 Related commits:
 - `1b65057a3` - Removed duplicate `dynamic/keys.ts` and public API exports of key utilities

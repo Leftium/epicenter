@@ -426,7 +426,7 @@ Any file importing these should NOT be updated:
 
 6. **Run tests frequently** - After each phase, run `bun test` to catch issues early.
 
-7. **The public API must not change** - External consumers import from `@epicenter/hq`. The same exports must remain available, just sourced from different internal paths.
+7. **The public API must not change** - External consumers import from `@epicenter/workspace`. The same exports must remain available, just sourced from different internal paths.
 
 ---
 

@@ -40,7 +40,7 @@
 		"y-protocols": "catalog:"
 	},
 	"peerDependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"yjs": "catalog:"
 	},
 	"devDependencies": {

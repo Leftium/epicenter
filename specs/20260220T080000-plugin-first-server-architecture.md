@@ -8,7 +8,7 @@
 
 ## Overview
 
-Restructure `@epicenter/server` around two independent Elysia plugins: a sync plugin with zero `@epicenter/hq` dependency and a workspace plugin that provides REST tables, actions, and OpenAPI. Convenience wrappers (`createSyncServer`, `createServer`) compose the plugins for users who don't want to touch Elysia directly. The sync plugin fixes the ws identity tracking bug and adds auth.
+Restructure `@epicenter/server` around two independent Elysia plugins: a sync plugin with zero `@epicenter/workspace` dependency and a workspace plugin that provides REST tables, actions, and OpenAPI. Convenience wrappers (`createSyncServer`, `createServer`) compose the plugins for users who don't want to touch Elysia directly. The sync plugin fixes the ws identity tracking bug and adds auth.
 
 ## Motivation
 
@@ -114,7 +114,7 @@ Key behaviors:
 | Decision               | Choice                                                                | Rationale                                                                                                                                                        |
 | ---------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Architecture           | Two Elysia plugins + convenience wrappers                             | Plugins are the primitive. Wrappers are sugar. Matches how Elysia is designed.                                                                                   |
-| Sync plugin dependency | Zero `@epicenter/hq` imports                                          | Sync only needs `yjs`, `lib0`, `y-protocols`, `elysia`. Decouples completely.                                                                                    |
+| Sync plugin dependency | Zero `@epicenter/workspace` imports                                          | Sync only needs `yjs`, `lib0`, `y-protocols`, `elysia`. Decouples completely.                                                                                    |
 | Room creation          | On-demand by default, `getDoc` override for workspace-integrated mode | Standalone mode creates docs automatically. Workspace mode provides existing docs.                                                                               |
 | Connection tracking    | `ws.raw` keyed `Map`, not `Set`                                       | Fixes the identity bug by construction. `Map<object, { send }>` keyed by `ws.raw`.                                                                               |
 | Auth modes             | Open (no auth), shared token, verify function                         | Matches the three modes in `@epicenter/sync` client. Verify function enables JWTs without us implementing JWT.                                                   |
@@ -150,9 +150,9 @@ Key behaviors:
 │   └── POST /:room/doc (update)                                   │
 │                                                                  │
 │   Depends on:                    Depends on:                     │
-│     elysia, yjs, lib0,            elysia, @epicenter/hq          │
+│     elysia, yjs, lib0,            elysia, @epicenter/workspace          │
 │     y-protocols                                                  │
-│   NO @epicenter/hq               (tables, actions, types)        │
+│   NO @epicenter/workspace               (tables, actions, types)        │
 └────────────────────────────────────────────────────────────────┘
                     │
                     ▼
@@ -230,9 +230,9 @@ packages/server/
       protocol.ts               # unchanged — encode/decode functions
 ```
 
-**Critical**: `src/sync/index.ts` must NOT import from `@epicenter/hq`. The `./sync` subpath export is the dependency firewall.
+**Critical**: `src/sync/index.ts` must NOT import from `@epicenter/workspace`. The `./sync` subpath export is the dependency firewall.
 
-`src/index.ts` re-exports `createServer` and `createWorkspacePlugin`. It does NOT re-export sync — users import sync from `@epicenter/server/sync` to avoid pulling in `@epicenter/hq`.
+`src/index.ts` re-exports `createServer` and `createWorkspacePlugin`. It does NOT re-export sync — users import sync from `@epicenter/server/sync` to avoid pulling in `@epicenter/workspace`.
 
 ### How createServer() Composes the Plugins
 
@@ -474,7 +474,7 @@ for (const [raw, conn] of room.conns) {
 - [ ] **5.1** Create `packages/server/src/sync/index.ts` — exports `createSyncPlugin`, `createSyncServer`
 - [ ] **5.2** Update `packages/server/src/index.ts` — exports `createServer`, `createWorkspacePlugin`, `DEFAULT_PORT`
 - [ ] **5.3** Add `"./sync": "./src/sync/index.ts"` to `package.json` exports
-- [ ] **5.4** Verify `@epicenter/server/sync` has zero `@epicenter/hq` imports (grep for it)
+- [ ] **5.4** Verify `@epicenter/server/sync` has zero `@epicenter/workspace` imports (grep for it)
 - [ ] **5.5** Update existing tests
 - [ ] **5.6** Add new tests: sync plugin standalone mode, auth modes, room manager lifecycle
 
@@ -547,7 +547,7 @@ for (const [raw, conn] of room.conns) {
 - [ ] Awareness broadcast doesn't echo back to sender (fixes the current bug)
 - [ ] `createServer(client)` still works identically (backward compatible)
 - [ ] `createServer(client, { auth: { token: 'secret' } })` adds auth to sync
-- [ ] `import { createSyncPlugin } from '@epicenter/server/sync'` has zero `@epicenter/hq` imports
+- [ ] `import { createSyncPlugin } from '@epicenter/server/sync'` has zero `@epicenter/workspace` imports
 - [ ] MESSAGE_SYNC_STATUS (102) heartbeat echo still works
 - [ ] Existing server tests pass unchanged (or with minimal updates)
 - [ ] Power user can mount `createSyncPlugin` on their own Elysia app
@@ -622,7 +622,7 @@ This replaced the earlier `routePrefix` config + `Object.values(params)[0]` extr
 
 - `bun run typecheck` — clean after every phase
 - `bun test` — 56 tests pass, 103 expect() calls, 0 failures
-- `grep @epicenter/hq src/sync/` — zero imports (only the JSDoc comment about the firewall)
+- `grep @epicenter/workspace src/sync/` — zero imports (only the JSDoc comment about the firewall)
 - `protocol.ts` — untouched
 - `tables.ts`, `actions.ts` — untouched
 - Backward compatibility: `createServer(client, { port })` signature unchanged, additive `auth` option

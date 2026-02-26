@@ -1,4 +1,4 @@
-import type { Documents, TableHelper } from '@epicenter/hq';
+import type { Documents, TableHelper } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import {
 	type ContentHelpers,

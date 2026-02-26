@@ -331,7 +331,7 @@ Source: https://github.com/jamsocket/y-sweet/tree/main/js-pkg/client
 ### What depends on `@epicenter/y-sweet`
 
 ```
-@epicenter/hq (packages/epicenter/)
+@epicenter/workspace (packages/epicenter/)
 └── extensions/y-sweet-sync.ts
 ```
 

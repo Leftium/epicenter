@@ -12,7 +12,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"arktype": "catalog:",
 		"just-bash": "^2.9.7",
 		"prosemirror-markdown": "^1.13.4",

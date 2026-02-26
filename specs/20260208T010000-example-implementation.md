@@ -69,7 +69,7 @@ npx y-sweet@latest serve ./y-sweet-data
 
 ### Reusable Library Code
 
-These patterns should live in `@epicenter/hq` for reuse:
+These patterns should live in `@epicenter/workspace` for reuse:
 
 ```typescript
 // packages/epicenter/src/filesystem/sync-coordination.ts
@@ -230,9 +230,9 @@ With the library code above, the application becomes simple:
 
 ```typescript
 // scripts/fs-sync.ts
-import { defineWorkspace, defineTable, createWorkspace } from '@epicenter/hq/static';
-import { ySweetSync } from '@epicenter/hq/extensions';
-import { ContentDocManager, createBidirectionalSync } from '@epicenter/hq/filesystem';
+import { defineWorkspace, defineTable, createWorkspace } from '@epicenter/workspace/static';
+import { ySweetSync } from '@epicenter/workspace/extensions';
+import { ContentDocManager, createBidirectionalSync } from '@epicenter/workspace/filesystem';
 import { type } from 'arktype';
 
 // 1. Define workspace
@@ -291,9 +291,9 @@ bun scripts/fs-sync.ts
 ```svelte
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { defineWorkspace, createWorkspace } from '@epicenter/hq/static';
-  import { ySweetSync } from '@epicenter/hq/extensions';
-  import { ContentDocManager } from '@epicenter/hq/filesystem';
+  import { defineWorkspace, createWorkspace } from '@epicenter/workspace/static';
+  import { ySweetSync } from '@epicenter/workspace/extensions';
+  import { ContentDocManager } from '@epicenter/workspace/filesystem';
   import * as Y from 'yjs';
 
   // Same workspace definition as backend

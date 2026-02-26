@@ -82,7 +82,7 @@ When navigating to `/workspaces/my-blog`:
 
 ### Phase 1: Tauri Persistence Providers
 
-Create specialized persistence providers in the app (not in `@epicenter/hq` package).
+Create specialized persistence providers in the app (not in `@epicenter/workspace` package).
 
 #### File: `apps/epicenter/src/lib/capabilities/tauri-persistence.ts`
 
@@ -188,7 +188,7 @@ import {
 	type RegistryDoc,
 	type HeadDoc,
 	type WorkspaceSchema,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import {
 	registryPersistence,
 	headPersistence,
@@ -329,7 +329,7 @@ import {
 	getAllWorkspaceSchemas,
 	findWorkspaceBySlug,
 } from '$lib/services/workspace-registry';
-import { generateGuid } from '@epicenter/hq';
+import { generateGuid } from '@epicenter/workspace';
 import { Ok, Err } from 'wellcrafted/result';
 
 const workspaceKeys = {
@@ -443,7 +443,7 @@ export const workspaces = {
 #### File: `apps/epicenter/src/routes/(workspace)/workspaces/[id]/+layout.ts`
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
 import {
 	getHeadDoc,
 	getWorkspaceSchema,
@@ -495,7 +495,7 @@ The registry and cached schemas need to be loaded when the app starts.
 
 ```typescript
 import { getRegistry, setWorkspaceSchema } from './workspace-registry';
-import { defineWorkspace } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
 import { workspacePersistence } from '$lib/capabilities/tauri-persistence';
 
 /**
@@ -578,7 +578,7 @@ async function loadWorkspaceSchema(guid: string) {
 1. **No `.epicenter/` subfolder** — App data directory is already app-specific
 2. **Slug in URLs, GUID in filesystem** — Best of both worlds
 3. **Specialized providers (Option B)** — Path logic centralized, type-safe
-4. **Tauri persistence in app, not package** — Keeps `@epicenter/hq` dependency-lean
+4. **Tauri persistence in app, not package** — Keeps `@epicenter/workspace` dependency-lean
 5. **No backwards compatibility** — Existing JSON workspaces won't be migrated
 
 ## Open Implementation Questions

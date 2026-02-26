@@ -190,8 +190,8 @@ type SnapshotEntry = {
 ### Usage Example
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { localPersistence } from '@epicenter/hq/providers';
+import { defineWorkspace } from '@epicenter/workspace';
+import { localPersistence } from '@epicenter/workspace/providers';
 
 const workspace = defineWorkspace({
   id: 'my-workspace',

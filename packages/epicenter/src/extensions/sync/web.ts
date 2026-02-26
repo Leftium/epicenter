@@ -14,8 +14,8 @@ import type * as Y from 'yjs';
  *
  * @example Persistence + sync (recommended pattern)
  * ```typescript
- * import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
- * import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
  *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)

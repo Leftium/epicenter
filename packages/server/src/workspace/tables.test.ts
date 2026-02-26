@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/hq';
+import { createWorkspace, defineTable, defineWorkspace } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import { createTablesPlugin } from './tables';

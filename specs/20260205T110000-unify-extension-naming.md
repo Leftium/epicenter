@@ -298,10 +298,10 @@ If you're using the static API, you'll need to update your code:
 
 ```typescript
 // Before
-import type { CapabilityFactory, CapabilityMap } from '@epicenter/hq/static';
+import type { CapabilityFactory, CapabilityMap } from '@epicenter/workspace/static';
 
 // After
-import type { ExtensionFactory, ExtensionMap } from '@epicenter/hq/static';
+import type { ExtensionFactory, ExtensionMap } from '@epicenter/workspace/static';
 ```
 
 ### Client Property Access

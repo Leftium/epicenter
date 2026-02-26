@@ -11,7 +11,7 @@ import {
 	defineQuery,
 	defineMutation,
 	runWorkspace,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 
 // Define your workspace
 const todosWorkspace = defineWorkspace({

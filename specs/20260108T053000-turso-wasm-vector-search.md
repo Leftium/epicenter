@@ -207,7 +207,7 @@ apps/epicenter/src/lib/providers/
 
 ```typescript
 import { connect, type Database } from '@tursodatabase/database-wasm/vite';
-import { defineCapabilities, type CapabilityContext } from '@epicenter/hq';
+import { defineCapabilities, type CapabilityContext } from '@epicenter/workspace';
 
 const DEFAULT_DEBOUNCE_MS = 100;
 
@@ -287,7 +287,7 @@ export const turso = async <TTablesSchema extends TablesSchema>(
 
 ```typescript
 import Database from '@tauri-apps/plugin-sql';
-import { defineCapabilities, type CapabilityContext } from '@epicenter/hq';
+import { defineCapabilities, type CapabilityContext } from '@epicenter/workspace';
 
 const DEFAULT_DEBOUNCE_MS = 100;
 
@@ -389,7 +389,7 @@ bun add @tauri-apps/plugin-sql
 ### Phase 5: Usage in Workspace
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
 import { turso } from './lib/providers/turso';
 import { sqlite } from './lib/providers/sqlite';
 

@@ -290,7 +290,7 @@ return defineExtension({
 
 ## Success Criteria
 
-- [x] `defineExtension()` exists and is exported from `@epicenter/hq`
+- [x] `defineExtension()` exists and is exported from `@epicenter/workspace`
 - [x] `workspace.extensions.sqlite` does NOT have `.destroy` or `.whenReady` in its type
 - [x] `workspace.whenReady` works on both static and dynamic workspaces
 - [x] `workspace.destroy()` still calls all extension cleanup in reverse order

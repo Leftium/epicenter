@@ -22,9 +22,9 @@
  * - Coordination flags prevent infinite loops between the two directions
  */
 
-import { createWorkspace } from '@epicenter/hq';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
-import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+import { createWorkspace } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { defineBackground } from 'wxt/utils/define-background';
 import type { Transaction } from 'yjs';

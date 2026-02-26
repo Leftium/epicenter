@@ -26,8 +26,8 @@ Following the refactoring work documented in `20260203T000000-ingest-simplificat
 
 3. **Updated usage pattern**:
    ```typescript
-   import { redditWorkspace, importRedditExport } from '@epicenter/hq/ingest/reddit';
-   import { createWorkspace } from '@epicenter/hq/static';
+   import { redditWorkspace, importRedditExport } from '@epicenter/workspace/ingest/reddit';
+   import { createWorkspace } from '@epicenter/workspace/static';
 
    // Before: const workspace = createRedditWorkspace();
    // After:
@@ -59,8 +59,8 @@ Following the refactoring work documented in `20260203T000000-ingest-simplificat
 3. **Performance**: Real reddit_export.zip (~5.8K rows) imports in ~86ms
 4. **API**:
    ```typescript
-   import { redditWorkspace, importRedditExport, previewRedditExport } from '@epicenter/hq/ingest/reddit';
-   import { createWorkspace } from '@epicenter/hq/static';
+   import { redditWorkspace, importRedditExport, previewRedditExport } from '@epicenter/workspace/ingest/reddit';
+   import { createWorkspace } from '@epicenter/workspace/static';
 
    const workspace = createWorkspace(redditWorkspace);
    const stats = await importRedditExport(zipFile, workspace);
@@ -747,7 +747,7 @@ export function validateRedditExport(
 ```typescript
 // packages/ingest/src/platforms/reddit/schema.ts
 
-import { defineTable, defineWorkspace } from '@epicenter/hq/static';
+import { defineTable, defineWorkspace } from '@epicenter/workspace/static';
 import { type } from 'arktype';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1067,7 +1067,7 @@ The importer uses the **Static API** with `batch()` for atomic writes:
 ```typescript
 // packages/ingest/src/importer.ts
 
-import type { StaticWorkspace } from '@epicenter/hq/static';
+import type { StaticWorkspace } from '@epicenter/workspace/static';
 
 /**
  * Importer definition config
@@ -1134,7 +1134,7 @@ import { defineImporter } from '../../importer';
 import { parseRedditZip } from './parse';
 import { validateRedditExport, type ValidatedRedditExport } from './validation';
 import { redditWorkspace } from './schema';
-import type { StaticWorkspace } from '@epicenter/hq/static';
+import type { StaticWorkspace } from '@epicenter/workspace/static';
 
 type Workspace = StaticWorkspace<typeof redditWorkspace>;
 

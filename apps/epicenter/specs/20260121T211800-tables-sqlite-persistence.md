@@ -89,7 +89,7 @@ Y.Map('tables')
   └── {tableName}: Y.Map<rowId, Y.Map<fieldName, value>>
 ```
 
-Type aliases from `@epicenter/hq`:
+Type aliases from `@epicenter/workspace`:
 
 ```typescript
 type RowMap = Y.Map<unknown>; // Single row: fieldName → value
@@ -178,7 +178,7 @@ import {
 	getWorkspaceDocMaps,
 	type ProviderExports,
 	readSchemaFromYDoc,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import { appLocalDataDir, dirname, join } from '@tauri-apps/api/path';
 import {
 	exists,

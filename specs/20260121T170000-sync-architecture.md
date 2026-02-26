@@ -977,7 +977,7 @@ export function getSyncContext(
 ```typescript
 // apps/epicenter/src/lib/docs/workspace.ts
 
-import { createClient } from '@epicenter/hq';
+import { createClient } from '@epicenter/workspace';
 import { getSyncContext } from '../sync/context';
 
 export async function createSyncedWorkspaceClient(

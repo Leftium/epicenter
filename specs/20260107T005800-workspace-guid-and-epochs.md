@@ -323,7 +323,7 @@ packages/epicenter/src/
 ### Defining a Workspace with GUID
 
 ```typescript
-import { defineWorkspace, generateGuid, id, text } from '@epicenter/hq';
+import { defineWorkspace, generateGuid, id, text } from '@epicenter/workspace';
 
 const blogWorkspace = defineWorkspace({
 	guid: 'abc123xyz789012', // Stable forever (15 chars)

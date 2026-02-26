@@ -133,7 +133,7 @@ Since the client is only going to be accessed in the scope of async handlers (li
 
 ```typescript
 // workspace.ts - create promise at module level
-import { createWorkspaceClient } from '@epicenter/hq';
+import { createWorkspaceClient } from '@epicenter/workspace';
 import { workspace } from './workspace-config';
 
 // Promise starts immediately, shared across your app
@@ -174,7 +174,7 @@ Put the client creation in your load function:
 
 ```typescript
 // src/routes/+page.ts
-import { createWorkspaceClient } from '@epicenter/hq';
+import { createWorkspaceClient } from '@epicenter/workspace';
 import { workspace } from './workspace';
 
 export const load = async () => {
@@ -205,7 +205,7 @@ Use a query to initialize the client once:
 ```typescript
 // hooks/useWorkspaceClient.ts
 import { useQuery } from '@tanstack/react-query';
-import { createWorkspaceClient } from '@epicenter/hq';
+import { createWorkspaceClient } from '@epicenter/workspace';
 import { workspace } from './workspace';
 
 export function useWorkspaceClient() {
@@ -238,7 +238,7 @@ Create the client at the module level and wrap it:
 
 ```typescript
 // lib/workspace.ts
-import { createWorkspaceClient } from '@epicenter/hq';
+import { createWorkspaceClient } from '@epicenter/workspace';
 import { workspace } from './workspace';
 
 // Create promise at module load

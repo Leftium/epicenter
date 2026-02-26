@@ -210,7 +210,7 @@ Reasons:
 ### Creating DateTimes
 
 ```typescript
-import { DateTime } from '@epicenter/hq';
+import { DateTime } from '@epicenter/workspace';
 
 // Current moment in a timezone
 const now = DateTime.now('America/New_York');
@@ -300,7 +300,7 @@ Once browsers ship native Temporal support, the polyfill can be dropped with zer
 Went with the simpler approach—no wrapper namespace. Just use `Temporal.ZonedDateTime` directly with two helper functions for serialization:
 
 ```typescript
-import { Temporal, toDateTimeString, fromDateTimeString } from '@epicenter/hq';
+import { Temporal, toDateTimeString, fromDateTimeString } from '@epicenter/workspace';
 
 // Create - use Temporal directly
 const now = Temporal.Now.zonedDateTimeISO('America/New_York');

@@ -7,7 +7,7 @@
 
 ## Overview
 
-Replace the old Dynamic workspace implementation with Grid's implementation, using the `dynamic` namespace. This consolidates three overlapping systems (Cell, Grid, old Dynamic) into one canonical cell-level CRDT workspace API exported from `@epicenter/hq/dynamic`.
+Replace the old Dynamic workspace implementation with Grid's implementation, using the `dynamic` namespace. This consolidates three overlapping systems (Cell, Grid, old Dynamic) into one canonical cell-level CRDT workspace API exported from `@epicenter/workspace/dynamic`.
 
 **Key Design Decision**: Static and Dynamic are completely separate sub-path exports. They do NOT export from root `index.ts`. This means no namespace prefixes are needed - both use `createWorkspace`, `WorkspaceClient`, etc.
 
@@ -17,13 +17,13 @@ Replace the old Dynamic workspace implementation with Grid's implementation, usi
 
 ```typescript
 // Dynamic workspace (cell-level CRDT, external schema)
-import { createWorkspace, WorkspaceClient } from '@epicenter/hq/dynamic';
+import { createWorkspace, WorkspaceClient } from '@epicenter/workspace/dynamic';
 
 // Static workspace (row-level CRDT, arktype schema, migrations)
-import { createWorkspace, WorkspaceClient } from '@epicenter/hq/static';
+import { createWorkspace, WorkspaceClient } from '@epicenter/workspace/static';
 
 // Core utilities (shared, if needed)
-import { generateId, DateTimeString } from '@epicenter/hq';
+import { generateId, DateTimeString } from '@epicenter/workspace';
 ```
 
 ### Dynamic Workspace Usage
@@ -54,7 +54,7 @@ import {
   type TableHelper,
   type ExtensionContext,
   type KvStore,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 
 const workspace = createWorkspace({
   id: 'my-workspace',
@@ -105,7 +105,7 @@ Since imports come from distinct paths, no "Dynamic" or "Static" prefix is neede
 
 ### Field Helpers Inventory
 
-All 11 field helpers available from `@epicenter/hq/dynamic`:
+All 11 field helpers available from `@epicenter/workspace/dynamic`:
 
 1. **`id()`** - Primary key, always NOT NULL
 2. **`text({ id, nullable?, default? })`** - String field
@@ -177,10 +177,10 @@ This creates problems:
 
 ### Desired State
 
-One canonical implementation in `@epicenter/hq/dynamic` with clean naming:
+One canonical implementation in `@epicenter/workspace/dynamic` with clean naming:
 
 ```typescript
-import { createWorkspace } from '@epicenter/hq/dynamic';
+import { createWorkspace } from '@epicenter/workspace/dynamic';
 
 const client = createWorkspace({
   id: 'my-workspace',
@@ -407,8 +407,8 @@ Update `package.json` exports:
 
 ### Phase 5: Update Dependents
 
-- [ ] **5.1** Search for all `@epicenter/hq/cell` imports in the codebase
-- [ ] **5.2** Search for all `@epicenter/hq/grid` imports in the codebase
+- [ ] **5.1** Search for all `@epicenter/workspace/cell` imports in the codebase
+- [ ] **5.2** Search for all `@epicenter/workspace/grid` imports in the codebase
 - [ ] **5.3** Update extension documentation (`persistence`, `sqlite`, `websocket-sync`)
 - [ ] **5.4** Update test files to use new imports
 - [ ] **5.5** Update JSDoc examples throughout
@@ -433,7 +433,7 @@ Update `package.json` exports:
 ### Extension Documentation References Cell
 
 1. All extension JSDoc examples reference `createCellWorkspace`
-2. During migration, update these to `createWorkspace` (from `@epicenter/hq/dynamic`)
+2. During migration, update these to `createWorkspace` (from `@epicenter/workspace/dynamic`)
 3. Search pattern: `createCellWorkspace` in `src/extensions/`
 
 ### Grid Imports from Cell
@@ -452,8 +452,8 @@ Update `package.json` exports:
 
 1. `src/index.ts` currently exports `CellWorkspaceClient`, etc.
 2. After migration, root index exports ONLY core utilities
-3. Dynamic types come from `@epicenter/hq/dynamic`
-4. Static types come from `@epicenter/hq/static`
+3. Dynamic types come from `@epicenter/workspace/dynamic`
+4. Static types come from `@epicenter/workspace/static`
 
 ## Open Questions
 
@@ -477,12 +477,12 @@ Update `package.json` exports:
 
 ## Success Criteria
 
-- [x] `createWorkspace` from `@epicenter/hq/dynamic` works identically to current `createGridWorkspace`
-- [x] `createWorkspace` from `@epicenter/hq/static` unchanged
+- [x] `createWorkspace` from `@epicenter/workspace/dynamic` works identically to current `createGridWorkspace`
+- [x] `createWorkspace` from `@epicenter/workspace/static` unchanged
 - [x] All existing Grid tests pass with renamed imports
 - [x] No `cell/` or `grid/` directories remain
-- [x] `@epicenter/hq/dynamic` exports all necessary types and utilities
-- [x] `@epicenter/hq` does NOT export dynamic/static workspace APIs
+- [x] `@epicenter/workspace/dynamic` exports all necessary types and utilities
+- [x] `@epicenter/workspace` does NOT export dynamic/static workspace APIs
 - [x] Extension examples work with `createWorkspace` from dynamic
 - [x] TypeScript type checking passes (pre-existing issues in scripts/tests unrelated to this change)
 - [x] Full test suite passes (509 tests pass)

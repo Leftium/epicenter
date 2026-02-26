@@ -6,7 +6,7 @@
  * persisted in storage.local across sessions.
  */
 
-import { generateId } from '@epicenter/hq';
+import { generateId } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { DeviceId } from '$lib/workspace';
 

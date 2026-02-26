@@ -228,8 +228,8 @@ const client = createClient(definition).withExtensions({ ... });
 ### Whispering App (Static Schema)
 
 ```typescript
-import { defineWorkspace, createClient, id, text } from '@epicenter/hq/dynamic';
-import { persistence } from '@epicenter/hq/extensions/persistence';
+import { defineWorkspace, createClient, id, text } from '@epicenter/workspace/dynamic';
+import { persistence } from '@epicenter/workspace/extensions/persistence';
 
 const whisperingDefinition = defineWorkspace({
   id: 'epicenter.whispering',
@@ -257,8 +257,8 @@ client.tables.recordings.upsert({ ... });
 ### Epicenter App (Dynamic Schema)
 
 ```typescript
-import { createClient } from '@epicenter/hq/dynamic';
-import { persistence } from '@epicenter/hq/extensions/persistence';
+import { createClient } from '@epicenter/workspace/dynamic';
+import { persistence } from '@epicenter/workspace/extensions/persistence';
 
 // Schema comes from Y.Doc, not code
 const client = createClient('user-workspace-123', { epoch: 2 }).withExtensions({

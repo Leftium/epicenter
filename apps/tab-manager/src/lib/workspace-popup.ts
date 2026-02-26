@@ -15,9 +15,9 @@
  */
 
 import { createActionContext } from '@epicenter/ai';
-import { createWorkspace, defineMutation, defineQuery } from '@epicenter/hq';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
-import { indexeddbPersistence } from '@epicenter/hq/extensions/sync/web';
+import { createWorkspace, defineMutation, defineQuery } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import Type from 'typebox';
 import {
 	executeActivateTab,

@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createWorkspace } from '@epicenter/hq';
+import { createWorkspace } from '@epicenter/workspace';
 import { filesTable } from './file-table.js';
 import { FileTree } from './file-tree.js';
 import type { FileId } from './types.js';

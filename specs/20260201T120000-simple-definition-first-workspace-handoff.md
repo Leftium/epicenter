@@ -82,7 +82,7 @@ Update `create-workspace.ts` to pass definition into the context.
 
 **1.3 Verify exports in `index.ts`**
 
-Ensure `WorkspaceDefinition` type is exported from `@epicenter/hq/dynamic`.
+Ensure `WorkspaceDefinition` type is exported from `@epicenter/workspace/dynamic`.
 
 ---
 
@@ -127,7 +127,7 @@ Replace complex HeadDoc-based creation with:
 import {
 	createWorkspace,
 	type WorkspaceDefinition,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 import { workspacePersistence } from './workspace-persistence';
 
 export function createWorkspaceClient(definition: WorkspaceDefinition) {
@@ -226,7 +226,7 @@ The app should:
 
 3. **Skip SQLite for now**: The spec mentions SQLite materialized views but this can be a follow-up task. Focus on the core JSON + YJS persistence first.
 
-4. **Imports**: The app imports from `@epicenter/hq` (the root), which re-exports from dynamic. Make sure the new types/functions are exported properly.
+4. **Imports**: The app imports from `@epicenter/workspace` (the root), which re-exports from dynamic. Make sure the new types/functions are exported properly.
 
 ---
 

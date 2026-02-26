@@ -4,7 +4,7 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 import { createLocalServer } from './local';
 import { DEFAULT_PORT } from './server';

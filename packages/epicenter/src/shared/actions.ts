@@ -28,7 +28,7 @@
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineQuery, defineMutation } from '@epicenter/hq';
+ * import { createWorkspace, defineQuery, defineMutation } from '@epicenter/workspace';
  * import Type from 'typebox';
  *
  * // Step 1: Create the client (with all tables and extensions)

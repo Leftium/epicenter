@@ -1,47 +1,57 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import { collectActionPaths } from './actions';
+import { createActionsPlugin } from './actions';
 import { Elysia } from 'elysia';
-import { createActionsRouter } from './actions';
+import { createKvPlugin } from './kv';
 import { createTablesPlugin } from './tables';
 
 /**
- * Create an Elysia plugin that bundles tables + actions for workspace clients.
+ * Create an Elysia plugin that bundles tables + KV + actions for workspace clients.
  *
- * Self-hosted only. Provides REST CRUD for all tables and action endpoints per workspace.
- * For cloud deployments, use the sync plugin directly — table access is via CRDTs
- * and actions run on the user's own infrastructure.
+ * Uses parameterized routes (`/:workspaceId/tables/:tableName`, etc.) so that
+ * Eden Treaty can infer the full type chain. Workspace and table resolution
+ * happens at request time via the workspaces map.
  *
- * Each workspace is mounted under its own prefix (`/{workspaceId}`), so this plugin
- * is itself prefix-agnostic. Mount it under `/workspaces` (or any prefix) via Elysia:
+ * Mount under `/workspaces` (or any prefix) via Elysia:
  *
  * @example
  * ```typescript
- * import { createWorkspacePlugin } from '@epicenter/server';
- * import { createSyncPlugin } from '@epicenter/server/sync';
- *
  * const app = new Elysia()
- *   .use(new Elysia({ prefix: '/rooms' })
- *     .use(createSyncPlugin({ getDoc: (room) => workspaces[room]?.ydoc })))
  *   .use(new Elysia({ prefix: '/workspaces' })
  *     .use(createWorkspacePlugin(clients)))
  *   .listen(3913);
  * ```
  */
 export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
-	const app = new Elysia();
-
+	const workspaces: Record<string, AnyWorkspaceClient> = {};
 	for (const client of clients) {
-		const workspaceApp = new Elysia({ prefix: `/${client.id}` });
-
-		// Tables: /tables/:table, /tables/:table/:id
-		workspaceApp.use(createTablesPlugin(client));
-
-		// Actions: /actions/:path
-		if (client.actions) {
-			workspaceApp.use(createActionsRouter(client.actions));
-		}
-
-		app.use(workspaceApp);
+		workspaces[client.id] = client;
 	}
 
-	return app;
+	return new Elysia()
+		.get(
+			'/:workspaceId',
+			({ params, status }) => {
+				const workspace = workspaces[params.workspaceId];
+				if (!workspace)
+					return status('Not Found', { error: 'Workspace not found' });
+				return {
+					id: workspace.id,
+					tables: Object.keys(workspace.definitions.tables),
+					kv: Object.keys(workspace.definitions.kv ?? {}),
+					actions: workspace.actions
+						? collectActionPaths(workspace.actions)
+						: [],
+				};
+			},
+			{
+				detail: {
+					description: 'Get workspace metadata',
+					tags: ['workspaces'],
+				},
+			},
+		)
+		.use(createTablesPlugin(workspaces))
+		.use(createKvPlugin(workspaces))
+		.use(createActionsPlugin(workspaces));
 }

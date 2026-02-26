@@ -52,6 +52,7 @@ import type {
 	BaseRow,
 	DocumentExtensionRegistration,
 	Documents,
+	DocumentConfig,
 	DocumentsHelper,
 	ExtensionContext,
 	KvDefinitions,
@@ -163,9 +164,10 @@ export function createWorkspace<
 
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
-		for (const [docName, documentConfig] of Object.entries(
+		for (const [docName, _documentConfig] of Object.entries(
 			tableDef.documents,
 		)) {
+			const documentConfig = _documentConfig as DocumentConfig;
 			const docTags: readonly string[] = documentConfig.tags ?? [];
 
 			const documents = createDocuments({

@@ -7,8 +7,8 @@
  * @module
  */
 
-import type { Action, Actions } from '@epicenter/hq';
-import { iterateActions } from '@epicenter/hq';
+import type { Action, Actions } from '@epicenter/workspace';
+import { iterateActions } from '@epicenter/workspace';
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 
 // ---------------------------------------------------------------------------

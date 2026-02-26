@@ -4,12 +4,12 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { actionContext, type PopupTools } from '$lib/workspace-popup';
+	import { actionContext, type WorkspaceTools } from '$lib/workspace-client';
 
 	let {
 		part,
 	}: {
-		part: TanStackToolCallPart<PopupTools>;
+		part: TanStackToolCallPart<WorkspaceTools>;
 	} = $props();
 
 	const isRunning = $derived(part.output == null);

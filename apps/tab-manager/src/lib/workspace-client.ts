@@ -1,14 +1,11 @@
 /**
- * Popup-side workspace client for accessing Y.Doc data.
+ * Workspace client — the single Y.Doc instance for the tab manager.
  *
- * The popup needs direct access to the Y.Doc for the saved tabs table,
- * which is shared across devices via Yjs (not available through Chrome APIs).
+ * Runs in the side panel context, which is a persistent extension page with
+ * full Chrome API access and no dormancy. This is the sole runtime for Y.Doc,
+ * eliminating the need for a background service worker or dual Y.Doc instances.
  *
- * This creates a lightweight workspace client with IndexedDB persistence
- * and WebSocket sync — the same Y.Doc as the background service worker.
- * Both share the same workspace ID (`tab-manager`), so IndexedDB and
- * sync will converge on the same document.
- *
+ * Creates a workspace client with IndexedDB persistence and WebSocket sync.
  * `.withActions()` attaches all AI-callable operations (tab search, close,
  * group, etc.) as workspace actions. `createActionContext()` derives these
  * into TanStack AI client tools, server definitions, and a label lookup.
@@ -29,18 +26,19 @@ import {
 	executeReloadTabs,
 	executeSaveTabs,
 } from '$lib/commands/actions';
+import { startCommandConsumer } from '$lib/commands/consumer';
 import { getDeviceId } from '$lib/device/device-id';
 import { definition } from '$lib/workspace';
 
 /**
- * Popup workspace client.
+ * Workspace client — single Y.Doc instance for the tab manager.
  *
  * Provides typed access to all browser tables including saved tabs.
- * Shares the same Y.Doc as the background service worker via IndexedDB
- * persistence and sync. Actions are available at `.actions` for AI tool
+ * IndexedDB persistence and WebSocket sync handle local storage and
+ * cross-device sync. Actions are available at `.actions` for AI tool
  * derivation.
  */
-export const popupWorkspace = createWorkspace(definition)
+export const workspaceClient = createWorkspace(definition)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',
@@ -285,7 +283,7 @@ export const popupWorkspace = createWorkspace(definition)
 		},
 	}));
 
-export const actionContext = createActionContext(popupWorkspace.actions, {
+export const actionContext = createActionContext(workspaceClient.actions, {
 	labels: {
 		tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
 		tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
@@ -306,13 +304,21 @@ export const actionContext = createActionContext(popupWorkspace.actions, {
 	},
 });
 
-export type PopupTools = typeof actionContext.tools;
-export type PopupActionName = PopupTools[number]['name'];
+export type WorkspaceTools = typeof actionContext.tools;
+export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
-// Set local awareness on connect
-void popupWorkspace.whenReady.then(() => {
-	popupWorkspace.awareness.setLocal({
-		deviceId: 'popup',
+// Initialize workspace: set awareness + start command consumer
+void workspaceClient.whenReady.then(async () => {
+	const deviceId = await getDeviceId();
+	workspaceClient.awareness.setLocal({
+		deviceId,
 		deviceType: 'browser-extension',
 	});
+
+	// Start consuming AI commands targeting this device
+	startCommandConsumer(
+		workspaceClient.tables.commands,
+		workspaceClient.tables.savedTabs,
+		deviceId,
+	);
 });

@@ -58,7 +58,7 @@ import type {
 	Conversation,
 	ConversationId,
 } from '$lib/workspace';
-import { actionContext, popupWorkspace } from '$lib/workspace-popup';
+import { actionContext, workspaceClient } from '$lib/workspace-client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -104,7 +104,7 @@ function createAiChatState() {
 
 	/** Read all conversations sorted by most recently updated first. */
 	const readAllConversations = (): Conversation[] =>
-		popupWorkspace.tables.conversations
+		workspaceClient.tables.conversations
 			.getAllValid()
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -120,7 +120,7 @@ function createAiChatState() {
 		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
-		popupWorkspace.tables.conversations.set({
+		workspaceClient.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -140,7 +140,7 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		popupWorkspace.tables.conversations.update(conversationId, {
+		workspaceClient.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
@@ -148,7 +148,7 @@ function createAiChatState() {
 
 	/** Load persisted messages for a conversation from Y.Doc. */
 	function loadMessages(conversationId: ConversationId) {
-		return popupWorkspace.tables.chatMessages
+		return workspaceClient.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -225,7 +225,7 @@ function createAiChatState() {
 				streamStore.set(conversationId, { ...current, status });
 			},
 			onFinish: (message) => {
-				popupWorkspace.tables.chatMessages.set({
+				workspaceClient.tables.chatMessages.set({
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -346,7 +346,7 @@ function createAiChatState() {
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = popupWorkspace.tables.chatMessages
+				const msgs = workspaceClient.tables.chatMessages
 					.filter((m) => m.conversationId === conversationId)
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
@@ -379,7 +379,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				popupWorkspace.tables.chatMessages.set({
+				workspaceClient.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -401,7 +401,7 @@ function createAiChatState() {
 				const msgs = messageStore.get(conversationId) ?? [];
 				const lastMessage = msgs.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					popupWorkspace.tables.chatMessages.delete(
+					workspaceClient.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
@@ -484,14 +484,14 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────
 
-	popupWorkspace.tables.conversations.observe(() => {
+	workspaceClient.tables.conversations.observe(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 	});
 
 	reconcileHandles();
 
-	void popupWorkspace.whenReady.then(() => {
+	void workspaceClient.whenReady.then(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
@@ -500,7 +500,7 @@ function createAiChatState() {
 		}
 	});
 
-	popupWorkspace.tables.chatMessages.observe(() => {
+	workspaceClient.tables.chatMessages.observe(() => {
 		refreshFromDoc(activeConversationId);
 	});
 
@@ -516,7 +516,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		popupWorkspace.tables.conversations.set({
+		workspaceClient.tables.conversations.set({
 			id,
 			title: opts?.title ?? 'New Chat',
 			parentId: opts?.parentId,
@@ -541,18 +541,18 @@ function createAiChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = popupWorkspace.tables.chatMessages
+		const msgs = workspaceClient.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		popupWorkspace.batch(() => {
+		workspaceClient.batch(() => {
 			for (const m of msgs) {
-				popupWorkspace.tables.chatMessages.delete(m.id);
+				workspaceClient.tables.chatMessages.delete(m.id);
 			}
-			popupWorkspace.tables.conversations.delete(conversationId);
+			workspaceClient.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = popupWorkspace.tables.conversations
+			const remaining = workspaceClient.tables.conversations
 				.getAllValid()
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];

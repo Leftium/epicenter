@@ -34,12 +34,12 @@
 import { generateId } from '@epicenter/workspace';
 import { getDeviceId } from '$lib/device/device-id';
 import type { SavedTab, SavedTabId, Tab } from '$lib/workspace';
-import { popupWorkspace } from '$lib/workspace-popup';
+import { workspaceClient } from '$lib/workspace-client';
 
 function createSavedTabState() {
 	/** Read all valid saved tabs, most recently saved first. */
 	const readAll = () =>
-		popupWorkspace.tables.savedTabs
+		workspaceClient.tables.savedTabs
 			.getAllValid()
 			.sort((a, b) => b.savedAt - a.savedAt);
 
@@ -55,7 +55,7 @@ function createSavedTabState() {
 
 	// Re-read on every Y.Doc change — observer fires when persistence
 	// loads and on any subsequent remote/local modification.
-	popupWorkspace.tables.savedTabs.observe(() => {
+	workspaceClient.tables.savedTabs.observe(() => {
 		tabs = readAll();
 	});
 
@@ -85,7 +85,7 @@ function createSavedTabState() {
 			async save(tab: Tab) {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
-				popupWorkspace.tables.savedTabs.set({
+				workspaceClient.tables.savedTabs.set({
 					id: generateId() as string as SavedTabId,
 					url: tab.url,
 					title: tab.title || 'Untitled',
@@ -107,7 +107,7 @@ function createSavedTabState() {
 					url: savedTab.url,
 					pinned: savedTab.pinned,
 				});
-				popupWorkspace.tables.savedTabs.delete(savedTab.id);
+				workspaceClient.tables.savedTabs.delete(savedTab.id);
 			},
 
 			/**
@@ -125,7 +125,7 @@ function createSavedTabState() {
 			 *    collapses N observer callbacks into one.
 			 */
 			async restoreAll() {
-				const all = popupWorkspace.tables.savedTabs.getAllValid();
+				const all = workspaceClient.tables.savedTabs.getAllValid();
 				if (!all.length) return;
 
 				// Fire all tab creations without awaiting each one individually.
@@ -137,9 +137,9 @@ function createSavedTabState() {
 
 				// Batch-delete from Y.Doc in a single transaction so the observer
 				// fires exactly once (not N times).
-				popupWorkspace.batch(() => {
+				workspaceClient.batch(() => {
 					for (const tab of all) {
-						popupWorkspace.tables.savedTabs.delete(tab.id);
+						workspaceClient.tables.savedTabs.delete(tab.id);
 					}
 				});
 
@@ -150,7 +150,7 @@ function createSavedTabState() {
 
 			/** Delete a saved tab without restoring it. */
 			remove(id: SavedTabId) {
-				popupWorkspace.tables.savedTabs.delete(id);
+				workspaceClient.tables.savedTabs.delete(id);
 			},
 
 			/**
@@ -160,19 +160,19 @@ function createSavedTabState() {
 			 * (not N times for N tabs).
 			 */
 			removeAll() {
-				const all = popupWorkspace.tables.savedTabs.getAllValid();
+				const all = workspaceClient.tables.savedTabs.getAllValid();
 				if (!all.length) return;
 
-				popupWorkspace.batch(() => {
+				workspaceClient.batch(() => {
 					for (const tab of all) {
-						popupWorkspace.tables.savedTabs.delete(tab.id);
+						workspaceClient.tables.savedTabs.delete(tab.id);
 					}
 				});
 			},
 
 			/** Update a saved tab's metadata in Y.Doc. */
 			update(savedTab: SavedTab) {
-				popupWorkspace.tables.savedTabs.set(savedTab);
+				workspaceClient.tables.savedTabs.set(savedTab);
 			},
 		},
 	};

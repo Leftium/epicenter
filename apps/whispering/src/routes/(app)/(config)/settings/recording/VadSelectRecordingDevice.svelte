@@ -1,11 +1,11 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import type { DeviceIdentifier } from '$lib/services/types';
 	import { asDeviceIdentifier } from '$lib/services/types';
-	import { createQuery } from '@tanstack/svelte-query';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
 	let {
 		selected = $bindable(),
@@ -49,18 +49,14 @@
 		</Select.Root>
 	</Field.Field>
 {:else if getDevicesQuery.isError}
-	<p class="text-sm text-red-500">
-		{getDevicesQuery.error.title}
-	</p>
+	<p class="text-sm text-red-500">{getDevicesQuery.error.title}</p>
 {:else}
 	<Field.Field>
 		<Field.Label for="vad-recording-device">VAD Recording Device</Field.Label>
 		<Select.Root
 			type="single"
-			bind:value={
-				() => selected ?? asDeviceIdentifier(''),
-				(value) => (selected = value ? asDeviceIdentifier(value) : null)
-			}
+			bind:value={() => selected ?? asDeviceIdentifier(''),
+				(value) => (selected = value ? asDeviceIdentifier(value) : null)}
 		>
 			<Select.Trigger id="vad-recording-device" class="w-full">
 				{selectedLabel ?? 'Select a device'}

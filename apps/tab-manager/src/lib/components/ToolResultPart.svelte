@@ -1,6 +1,6 @@
 <script lang="ts">
-	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import AlertCircleIcon from '@lucide/svelte/icons/circle-alert';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import type { ToolResultPart as TanStackToolResultPart } from '@tanstack/ai-client';
 
 	let {

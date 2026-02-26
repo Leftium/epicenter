@@ -43,7 +43,8 @@
 <h1>Notes</h1>
 
 <nav>
-	<a href="/dashboard">Dashboard</a> · <a href="/entities">Entities</a> ·
+	<a href="/dashboard">Dashboard</a>
+	· <a href="/entities">Entities</a> ·
 	<a href="/notes/new">New</a>
 </nav>
 
@@ -53,7 +54,7 @@
 		placeholder="Search notes…"
 		bind:value={search}
 		style="width: 100%; max-width: 420px;"
-	/>
+	>
 </div>
 
 {#if !isLoaded}

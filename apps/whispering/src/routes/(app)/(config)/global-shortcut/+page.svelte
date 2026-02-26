@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { ChromeWebStoreIcon } from '$lib/components/icons';
 	import { Button } from '@epicenter/ui/button';
 	import DesktopIcon from '@lucide/svelte/icons/laptop';
+	import { ChromeWebStoreIcon } from '$lib/components/icons';
 </script>
 
-<svelte:head>
-	<title>Change Global Keyboard Shortcut</title>
-</svelte:head>
+<svelte:head> <title>Change Global Keyboard Shortcut</title> </svelte:head>
 
 <main class="flex flex-1 items-center justify-center">
 	<section class="container flex flex-col items-center gap-4 text-center">

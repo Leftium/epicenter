@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { VList } from 'virtua/svelte';
-	import { SvelteSet } from 'svelte/reactivity';
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Empty from '@epicenter/ui/empty';
 	import { cn } from '@epicenter/ui/utils';
+	import AppWindowIcon from '@lucide/svelte/icons/app-window';
+	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
+	import { SvelteSet } from 'svelte/reactivity';
+	import { VList } from 'virtua/svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import type { WindowCompositeId } from '$lib/workspace';
 	import TabItem from './TabItem.svelte';
-	import * as Empty from '@epicenter/ui/empty';
-	import { Badge } from '@epicenter/ui/badge';
-	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import AppWindowIcon from '@lucide/svelte/icons/app-window';
-	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 
 	// Track which windows are expanded — seed with focused window.
 	// Safe to read browserState.windows here because App.svelte gates
@@ -77,9 +77,7 @@
 					</Badge>
 				</button>
 			{:else}
-				<div class="border-b border-border">
-					<TabItem tab={item.tab} />
-				</div>
+				<div class="border-b border-border"><TabItem tab={item.tab} /></div>
 			{/if}
 		{/snippet}
 	</VList>

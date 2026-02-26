@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { commands } from '$lib/commands';
 	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
+	import Search from '@lucide/svelte/icons/search';
+	import { commands } from '$lib/commands';
 	import { rpc } from '$lib/query';
 	import { getDefaultSettings } from '$lib/settings';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import Search from '@lucide/svelte/icons/search';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
 

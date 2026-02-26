@@ -1,18 +1,18 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import * as Tabs from '@epicenter/ui/tabs';
-	import * as Table from '@epicenter/ui/table';
-	import * as Empty from '@epicenter/ui/empty';
-	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
-	import { Button } from '@epicenter/ui/button';
 	import { Badge } from '@epicenter/ui/badge';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import DatabaseIcon from '@lucide/svelte/icons/database';
-	import TableIcon from '@lucide/svelte/icons/table-2';
+	import { Button } from '@epicenter/ui/button';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as Empty from '@epicenter/ui/empty';
+	import * as Table from '@epicenter/ui/table';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import CodeIcon from '@lucide/svelte/icons/code';
+	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchXIcon from '@lucide/svelte/icons/search-x';
+	import TableIcon from '@lucide/svelte/icons/table-2';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { page } from '$app/state';
 
 	let { data } = $props();
 
@@ -62,9 +62,7 @@
 	{#if !tableHelper}
 		<Empty.Root>
 			<Empty.Header>
-				<Empty.Media variant="icon">
-					<SearchXIcon />
-				</Empty.Media>
+				<Empty.Media variant="icon"> <SearchXIcon /> </Empty.Media>
 				<Empty.Title>Table not found</Empty.Title>
 				<Empty.Description>
 					The table "{tableId}" does not exist in this workspace.
@@ -82,7 +80,9 @@
 			<div>
 				<h1 class="text-2xl font-semibold">{tableId}</h1>
 				<p class="text-muted-foreground text-sm">
-					{columnNames.length} column{columnNames.length === 1 ? '' : 's'} · {rows.length}
+					{columnNames.length}
+					column{columnNames.length === 1 ? '' : 's'}
+					· {rows.length}
 					row{rows.length === 1 ? '' : 's'}
 				</p>
 			</div>
@@ -114,9 +114,7 @@
 				{#if rows.length === 0}
 					<Empty.Root class="mt-4">
 						<Empty.Header>
-							<Empty.Media variant="icon">
-								<DatabaseIcon />
-							</Empty.Media>
+							<Empty.Media variant="icon"> <DatabaseIcon /> </Empty.Media>
 							<Empty.Title>No data yet</Empty.Title>
 							<Empty.Description>
 								Add rows to this table to see them here.
@@ -204,7 +202,8 @@
 							{#each columnNames as columnName (columnName)}
 								{@const sampleValue = rows[0]?.[columnName]}
 								<Table.Row>
-									<Table.Cell class="font-mono text-sm">{columnName}</Table.Cell
+									<Table.Cell class="font-mono text-sm"
+										>{columnName}</Table.Cell
 									>
 									<Table.Cell>
 										<Badge variant="secondary"
@@ -236,7 +235,8 @@
 				<div class="mt-4 rounded-lg border p-4">
 					<h2 class="mb-2 font-medium">Raw Data</h2>
 					<pre
-						class="bg-muted overflow-auto rounded p-4 text-xs">{JSON.stringify(
+						class="bg-muted overflow-auto rounded p-4 text-xs"
+					>{JSON.stringify(
 							rows.slice(0, 10),
 							null,
 							2,

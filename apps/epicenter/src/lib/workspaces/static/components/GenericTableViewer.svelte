@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Y from 'yjs';
-	import * as Card from '@epicenter/ui/card';
 	import { Badge } from '@epicenter/ui/badge';
+	import * as Card from '@epicenter/ui/card';
 	import TableIcon from '@lucide/svelte/icons/table-2';
+	import * as Y from 'yjs';
 	import { readTableRows } from '$lib/yjs/discover';
 
 	type Props = {
@@ -58,13 +58,15 @@
 						<tr class="border-b">
 							<th
 								class="text-muted-foreground px-2 py-1.5 text-left font-medium"
-								>id</th
 							>
+								id
+							</th>
 							{#each columns as col}
 								<th
 									class="text-muted-foreground px-2 py-1.5 text-left font-medium"
-									>{col}</th
 								>
+									{col}
+								</th>
 							{/each}
 						</tr>
 					</thead>

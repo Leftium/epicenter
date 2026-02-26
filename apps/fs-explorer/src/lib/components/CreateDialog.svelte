@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Dialog from '@epicenter/ui/dialog';
 	import { Button } from '@epicenter/ui/button';
+	import * as Dialog from '@epicenter/ui/dialog';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	type Props = {
@@ -51,7 +51,7 @@
 				placeholder={mode === 'file' ? 'filename.txt' : 'folder-name'}
 				bind:value={name}
 				autofocus
-			/>
+			>
 			<Dialog.Footer class="mt-4">
 				<Button variant="outline" type="button" onclick={() => (open = false)}>
 					Cancel

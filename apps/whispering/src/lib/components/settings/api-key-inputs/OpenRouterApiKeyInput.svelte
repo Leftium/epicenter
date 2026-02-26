@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your OpenRouter API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.openrouter'],
-			(value) => settings.updateKey('apiKeys.openrouter', value)
-		}
+		bind:value={() => settings.value['apiKeys.openrouter'],
+			(value) => settings.updateKey('apiKeys.openrouter', value)}
 	/>
 	<Field.Description>
 		You can find your OpenRouter API key in your <Link
@@ -24,6 +22,7 @@
 			rel="noopener noreferrer"
 		>
 			OpenRouter dashboard
-		</Link>.
+		</Link>
+		.
 	</Field.Description>
 </Field.Field>

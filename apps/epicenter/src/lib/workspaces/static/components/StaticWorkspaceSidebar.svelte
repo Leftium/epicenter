@@ -2,8 +2,8 @@
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
 	import LayoutGridIcon from '@lucide/svelte/icons/layout-grid';
-	import TableIcon from '@lucide/svelte/icons/table-2';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import TableIcon from '@lucide/svelte/icons/table-2';
 
 	type Props = {
 		displayName: string;

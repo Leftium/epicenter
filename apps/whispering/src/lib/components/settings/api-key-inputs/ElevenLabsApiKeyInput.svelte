@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your ElevenLabs API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.elevenlabs'],
-			(value) => settings.updateKey('apiKeys.elevenlabs', value)
-		}
+		bind:value={() => settings.value['apiKeys.elevenlabs'],
+			(value) => settings.updateKey('apiKeys.elevenlabs', value)}
 	/>
 	<Field.Description>
 		You can find your ElevenLabs API key in your <Link
@@ -24,6 +22,7 @@
 			rel="noopener noreferrer"
 		>
 			ElevenLabs console
-		</Link>.
+		</Link>
+		.
 	</Field.Description>
 </Field.Field>

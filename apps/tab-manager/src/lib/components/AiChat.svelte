@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { aiChatState } from '$lib/state/chat-state.svelte';
-	import ConversationPicker from './ConversationPicker.svelte';
-	import MessageList from './MessageList.svelte';
 	import ChatErrorBanner from './ChatErrorBanner.svelte';
 	import ChatInput from './ChatInput.svelte';
+	import ConversationPicker from './ConversationPicker.svelte';
+	import MessageList from './MessageList.svelte';
 
 	const active = $derived(aiChatState.active);
 </script>

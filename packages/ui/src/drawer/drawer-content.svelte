@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Drawer as DrawerPrimitive } from 'vaul-svelte';
-	import DrawerOverlay from './drawer-overlay.svelte';
 	import { cn } from '#/utils.js';
+	import DrawerOverlay from './drawer-overlay.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -36,8 +36,6 @@
 		></div>
 		<!-- Custom: Scrollable content area. flex-1 takes remaining space after drag handle,
 		     overflow-y-auto enables vertical scrolling when content exceeds drawer height. -->
-		<div class="flex-1 overflow-y-auto">
-			{@render children?.()}
-		</div>
+		<div class="flex-1 overflow-y-auto">{@render children?.()}</div>
 	</DrawerPrimitive.Content>
 </DrawerPrimitive.Portal>

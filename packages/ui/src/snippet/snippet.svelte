@@ -3,10 +3,10 @@
 -->
 
 <script lang="ts" module>
-	import { cn } from '#/utils.js';
 	import { tv, type VariantProps } from 'tailwind-variants';
 	import { CopyButton } from '#/copy-button';
 	import type { UseClipboard } from '#/hooks/use-clipboard.svelte';
+	import { cn } from '#/utils.js';
 
 	const style = tv({
 		base: 'bg-background relative w-full max-w-full rounded-md border py-2.5 pr-12 pl-3',
@@ -44,7 +44,8 @@
 		<pre
 			class={cn(
 				'overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap',
-			)}>
+			)}
+		>
 			{text}
 		</pre>
 	{:else}
@@ -52,7 +53,8 @@
 			<pre
 				class={cn(
 					'overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap',
-				)}>
+				)}
+			>
 			{line}
 		</pre>
 		{/each}

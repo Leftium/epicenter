@@ -13,10 +13,8 @@
 			type="password"
 			placeholder="Your Groq API Key"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiKeys.groq'],
-				(value) => settings.updateKey('apiKeys.groq', value)
-			}
+			bind:value={() => settings.value['apiKeys.groq'],
+				(value) => settings.updateKey('apiKeys.groq', value)}
 		/>
 		<Field.Description>
 			You can find your Groq API key in your <Link
@@ -25,7 +23,8 @@
 				rel="noopener noreferrer"
 			>
 				Groq console
-			</Link>.
+			</Link>
+			.
 		</Field.Description>
 	</Field.Field>
 
@@ -36,10 +35,8 @@
 			type="url"
 			placeholder="https://api.groq.com/openai/v1 (default)"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiEndpoints.groq'],
-				(value) => settings.updateKey('apiEndpoints.groq', value)
-			}
+			bind:value={() => settings.value['apiEndpoints.groq'],
+				(value) => settings.updateKey('apiEndpoints.groq', value)}
 		/>
 		<Field.Description>
 			Override the default Groq API endpoint. Useful for reverse proxies or

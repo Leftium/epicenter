@@ -1,200 +1,198 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { TrashIcon } from '$lib/components/icons';
-	import { Badge } from '@epicenter/ui/badge';
-	import { Button } from '@epicenter/ui/button';
-	import * as ButtonGroup from '@epicenter/ui/button-group';
-	import { Checkbox } from '@epicenter/ui/checkbox';
-	import { Input } from '@epicenter/ui/input';
-	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
-	import * as Table from '@epicenter/ui/table';
-	import { rpc } from '$lib/query';
-	import { type Transformation } from '$lib/services/isomorphic/db';
 	import { createPersistedState } from '@epicenter/svelte-utils';
-	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { createQuery } from '@tanstack/svelte-query';
-	import {
-		FlexRender,
-		createTable as createSvelteTable,
-		renderComponent,
-	} from '@tanstack/svelte-table';
-	import type {
-		ColumnDef,
-		ColumnFiltersState,
-		PaginationState,
-	} from '@tanstack/table-core';
-	import {
-		getCoreRowModel,
-		getFilteredRowModel,
-		getPaginationRowModel,
-		getSortedRowModel,
-	} from '@tanstack/table-core';
-	import * as Empty from '@epicenter/ui/empty';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { createRawSnippet } from 'svelte';
-	import { type } from 'arktype';
-	import CreateTransformationButton from './CreateTransformationButton.svelte';
-	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
-	import TransformationRowActions from './TransformationRowActions.svelte';
-	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
-	import { PATHS } from '$lib/constants/paths';
+import { Badge } from '@epicenter/ui/badge';
+import { Button } from '@epicenter/ui/button';
+import * as ButtonGroup from '@epicenter/ui/button-group';
+import { Checkbox } from '@epicenter/ui/checkbox';
+import * as Empty from '@epicenter/ui/empty';
+import { Input } from '@epicenter/ui/input';
+import { Skeleton } from '@epicenter/ui/skeleton';
+import * as Table from '@epicenter/ui/table';
+import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
+import SearchIcon from '@lucide/svelte/icons/search';
+import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
+import { createQuery } from '@tanstack/svelte-query';
+import {
+	createTable as createSvelteTable,
+	FlexRender,
+	renderComponent,
+} from '@tanstack/svelte-table';
+import type {
+	ColumnDef,
+	ColumnFiltersState,
+	PaginationState,
+} from '@tanstack/table-core';
+import {
+	getCoreRowModel,
+	getFilteredRowModel,
+	getPaginationRowModel,
+	getSortedRowModel,
+} from '@tanstack/table-core';
+import { type } from 'arktype';
+import { createRawSnippet } from 'svelte';
+import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+import { TrashIcon } from '$lib/components/icons';
+import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
+import { PATHS } from '$lib/constants/paths';
+import { rpc } from '$lib/query';
+import { type Transformation } from '$lib/services/isomorphic/db';
+import { viewTransition } from '$lib/utils/viewTransitions';
+import CreateTransformationButton from './CreateTransformationButton.svelte';
+import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
+import TransformationRowActions from './TransformationRowActions.svelte';
 
-	const transformationsQuery = createQuery(
-		() => rpc.db.transformations.getAll.options,
-	);
+const transformationsQuery = createQuery(
+	() => rpc.db.transformations.getAll.options,
+);
 
-	const columns: ColumnDef<Transformation>[] = [
-		{
-			id: 'select',
-			header: ({ table }) =>
-				renderComponent(SelectAllPopover<Transformation>, { table }),
-			cell: ({ row }) =>
-				renderComponent(Checkbox, {
-					checked: row.getIsSelected(),
-					onCheckedChange: (value) => row.toggleSelected(!!value),
-					'aria-label': 'Select row',
-				}),
-			enableSorting: false,
-			enableHiding: false,
+const columns: ColumnDef<Transformation>[] = [
+	{
+		id: 'select',
+		header: ({ table }) =>
+			renderComponent(SelectAllPopover<Transformation>, { table }),
+		cell: ({ row }) =>
+			renderComponent(Checkbox, {
+				checked: row.getIsSelected(),
+				onCheckedChange: (value) => row.toggleSelected(!!value),
+				'aria-label': 'Select row',
+			}),
+		enableSorting: false,
+		enableHiding: false,
+	},
+	{
+		id: 'mark-selected',
+		cell: ({ row }) =>
+			renderComponent(MarkTransformationActiveButton, {
+				transformation: row.original,
+				size: 'icon',
+			}),
+		enableSorting: false,
+		enableHiding: false,
+	},
+	{
+		accessorKey: 'id',
+		cell: ({ getValue }) =>
+			renderComponent(Badge, {
+				variant: 'id',
+				children: createRawSnippet((name) => ({
+					render: () => getValue<string>(),
+				})),
+			}),
+		header: 'ID',
+	},
+	{
+		accessorKey: 'title',
+		header: ({ column }) =>
+			renderComponent(SortableTableHeader, {
+				column,
+				headerText: 'Title',
+			}),
+	},
+	{
+		accessorKey: 'description',
+		header: ({ column }) =>
+			renderComponent(SortableTableHeader, {
+				column,
+				headerText: 'Description',
+			}),
+	},
+	{
+		id: 'actions',
+		accessorFn: (transformation) => transformation,
+		header: 'Actions',
+		cell: ({ getValue }) => {
+			const transformation = getValue<Transformation>();
+			return renderComponent(TransformationRowActions, {
+				transformationId: transformation.id,
+			});
 		},
-		{
-			id: 'mark-selected',
-			cell: ({ row }) =>
-				renderComponent(MarkTransformationActiveButton, {
-					transformation: row.original,
-					size: 'icon',
-				}),
-			enableSorting: false,
-			enableHiding: false,
-		},
-		{
-			accessorKey: 'id',
-			cell: ({ getValue }) =>
-				renderComponent(Badge, {
-					variant: 'id',
-					children: createRawSnippet((name) => ({
-						render: () => getValue<string>(),
-					})),
-				}),
-			header: 'ID',
-		},
-		{
-			accessorKey: 'title',
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Title',
-				}),
-		},
-		{
-			accessorKey: 'description',
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Description',
-				}),
-		},
-		{
-			id: 'actions',
-			accessorFn: (transformation) => transformation,
-			header: 'Actions',
-			cell: ({ getValue }) => {
-				const transformation = getValue<Transformation>();
-				return renderComponent(TransformationRowActions, {
-					transformationId: transformation.id,
-				});
-			},
-		},
-	];
+	},
+];
 
-	let sorting = createPersistedState({
-		key: 'whispering-transformations-data-table-sorting',
-		onParseError: (error) => [{ id: 'title', desc: false }],
-		schema: type({ desc: 'boolean', id: 'string' }).array(),
-	});
-	let columnFilters = $state<ColumnFiltersState>([]);
-	let rowSelection = createPersistedState({
-		key: 'whispering-transformations-data-table-row-selection',
-		onParseError: (error) => ({}),
-		schema: type('Record<string, boolean>'),
-	});
-	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
-	let globalFilter = $state('');
+let sorting = createPersistedState({
+	key: 'whispering-transformations-data-table-sorting',
+	onParseError: (error) => [{ id: 'title', desc: false }],
+	schema: type({ desc: 'boolean', id: 'string' }).array(),
+});
+let columnFilters = $state<ColumnFiltersState>([]);
+let rowSelection = createPersistedState({
+	key: 'whispering-transformations-data-table-row-selection',
+	onParseError: (error) => ({}),
+	schema: type('Record<string, boolean>'),
+});
+let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+let globalFilter = $state('');
 
-	const table = createSvelteTable({
-		getRowId: (originalRow) => originalRow.id,
-		get data() {
-			return transformationsQuery.data ?? [];
+const table = createSvelteTable({
+	getRowId: (originalRow) => originalRow.id,
+	get data() {
+		return transformationsQuery.data ?? [];
+	},
+	columns,
+	getCoreRowModel: getCoreRowModel(),
+	getSortedRowModel: getSortedRowModel(),
+	getFilteredRowModel: getFilteredRowModel(),
+	getPaginationRowModel: getPaginationRowModel(),
+	onSortingChange: (updater) => {
+		if (typeof updater === 'function') {
+			sorting.value = updater(sorting.value);
+		} else {
+			sorting.value = updater;
+		}
+	},
+	onColumnFiltersChange: (updater) => {
+		if (typeof updater === 'function') {
+			columnFilters = updater(columnFilters);
+		} else {
+			columnFilters = updater;
+		}
+	},
+	onRowSelectionChange: (updater) => {
+		if (typeof updater === 'function') {
+			rowSelection.value = updater(rowSelection.value);
+		} else {
+			rowSelection.value = updater;
+		}
+	},
+	onPaginationChange: (updater) => {
+		if (typeof updater === 'function') {
+			pagination = updater(pagination);
+		} else {
+			pagination = updater;
+		}
+	},
+	onGlobalFilterChange: (updater) => {
+		if (typeof updater === 'function') {
+			globalFilter = updater(globalFilter);
+		} else {
+			globalFilter = updater;
+		}
+	},
+	state: {
+		get sorting() {
+			return sorting.value;
 		},
-		columns,
-		getCoreRowModel: getCoreRowModel(),
-		getSortedRowModel: getSortedRowModel(),
-		getFilteredRowModel: getFilteredRowModel(),
-		getPaginationRowModel: getPaginationRowModel(),
-		onSortingChange: (updater) => {
-			if (typeof updater === 'function') {
-				sorting.value = updater(sorting.value);
-			} else {
-				sorting.value = updater;
-			}
+		get columnFilters() {
+			return columnFilters;
 		},
-		onColumnFiltersChange: (updater) => {
-			if (typeof updater === 'function') {
-				columnFilters = updater(columnFilters);
-			} else {
-				columnFilters = updater;
-			}
+		get rowSelection() {
+			return rowSelection.value;
 		},
-		onRowSelectionChange: (updater) => {
-			if (typeof updater === 'function') {
-				rowSelection.value = updater(rowSelection.value);
-			} else {
-				rowSelection.value = updater;
-			}
+		get pagination() {
+			return pagination;
 		},
-		onPaginationChange: (updater) => {
-			if (typeof updater === 'function') {
-				pagination = updater(pagination);
-			} else {
-				pagination = updater;
-			}
+		get globalFilter() {
+			return globalFilter;
 		},
-		onGlobalFilterChange: (updater) => {
-			if (typeof updater === 'function') {
-				globalFilter = updater(globalFilter);
-			} else {
-				globalFilter = updater;
-			}
-		},
-		state: {
-			get sorting() {
-				return sorting.value;
-			},
-			get columnFilters() {
-				return columnFilters;
-			},
-			get rowSelection() {
-				return rowSelection.value;
-			},
-			get pagination() {
-				return pagination;
-			},
-			get globalFilter() {
-				return globalFilter;
-			},
-		},
-	});
+	},
+});
 
-	const selectedTransformationRows = $derived(
-		table.getFilteredSelectedRowModel().rows,
-	);
+const selectedTransformationRows = $derived(
+	table.getFilteredSelectedRowModel().rows,
+);
 </script>
 
-<svelte:head>
-	<title>All Transformations</title>
-</svelte:head>
+<svelte:head> <title>All Transformations</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
 	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
@@ -339,8 +337,11 @@
 
 	<div class="flex items-center justify-between">
 		<div class="text-muted-foreground text-sm">
-			{selectedTransformationRows.length} of {table.getFilteredRowModel().rows
-				.length} row(s) selected.
+			{selectedTransformationRows.length}
+			of
+			{table.getFilteredRowModel().rows
+				.length}
+			row(s) selected.
 		</div>
 		<ButtonGroup.Root>
 			<Button

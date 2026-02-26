@@ -18,9 +18,7 @@
 
 <h1>Entities</h1>
 
-<nav>
-	<a href="/dashboard">Dashboard</a> · <a href="/notes">Notes</a>
-</nav>
+<nav><a href="/dashboard">Dashboard</a> · <a href="/notes">Notes</a></nav>
 
 {#if entities.length === 0}
 	<p>No entities.</p>

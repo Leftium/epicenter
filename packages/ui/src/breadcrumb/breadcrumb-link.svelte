@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { HTMLAnchorAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
+	import type { HTMLAnchorAttributes } from 'svelte/elements';
 	import { cn, type WithElementRef } from '#/utils.js';
 
 	let {
@@ -25,7 +25,5 @@
 {#if child}
 	{@render child({ props: attrs })}
 {:else}
-	<a bind:this={ref} {...attrs}>
-		{@render children?.()}
-	</a>
+	<a bind:this={ref} {...attrs}> {@render children?.()} </a>
 {/if}

@@ -1,26 +1,26 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
-	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { TrashIcon } from '$lib/components/icons';
-	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { rpc } from '$lib/query';
-	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FileStackIcon from '@lucide/svelte/icons/file-stack';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RepeatIcon from '@lucide/svelte/icons/repeat';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { nanoid } from 'nanoid/non-secure';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { TrashIcon } from '$lib/components/icons';
+	import { rpc } from '$lib/query';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
 	import ViewTransformationRunsDialog from './ViewTransformationRunsDialog.svelte';
-	import { nanoid } from 'nanoid/non-secure';
 
 	const transcribeRecording = createMutation(
 		() => rpc.transcription.transcribeRecording.options,

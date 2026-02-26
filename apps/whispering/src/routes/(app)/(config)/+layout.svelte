@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import { cn } from '@epicenter/ui/utils';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { commandCallbacks } from '$lib/commands';
 	import NavItems from '$lib/components/NavItems.svelte';
-	import { Button } from '@epicenter/ui/button';
 	import {
-		RecordingModeSelector,
 		CompressionSelector,
+		RecordingModeSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -15,12 +18,9 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { cn } from '@epicenter/ui/utils';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { MediaQuery } from 'svelte/reactivity';
 
 	const getRecorderStateQuery = createQuery(
 		() => rpc.recorder.getRecorderState.options,
@@ -152,6 +152,4 @@
 	</div>
 </header>
 
-<div class="flex-1 overflow-x-auto">
-	{@render children()}
-</div>
+<div class="flex-1 overflow-x-auto">{@render children()}</div>

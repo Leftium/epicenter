@@ -34,7 +34,8 @@
 						table.toggleAllPageRowsSelected(true);
 					}}
 				>
-					Select this page ({currentPageCount} items)
+					Select this page ({currentPageCount}
+					items)
 				</DropdownMenu.Item>
 			{/if}
 			{#if !table.getIsAllRowsSelected()}
@@ -43,7 +44,8 @@
 						table.toggleAllRowsSelected(true);
 					}}
 				>
-					Select all ({totalRowCount} items)
+					Select all ({totalRowCount}
+					items)
 				</DropdownMenu.Item>
 			{/if}
 			{#if isSomeRowsSelected}
@@ -60,10 +62,8 @@
 	</DropdownMenu.Root>
 {:else}
 	<Checkbox
-		bind:checked={
-			() => table.getIsAllPageRowsSelected(),
-			(value) => table.toggleAllPageRowsSelected(!!value)
-		}
+		bind:checked={() => table.getIsAllPageRowsSelected(),
+			(value) => table.toggleAllPageRowsSelected(!!value)}
 		indeterminate={isSomeRowsSelected && !table.getIsAllPageRowsSelected()}
 		aria-label="Select all"
 	/>

@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onNavigate } from '$app/navigation';
-	import { queryClient } from '$lib/query/client';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher, mode } from 'mode-watcher';
 	import { Toaster, type ToasterProps } from 'svelte-sonner';
+	import { onNavigate } from '$app/navigation';
+	import { queryClient } from '$lib/query/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 
@@ -38,15 +38,11 @@
 	});
 </script>
 
-<svelte:head>
-	<title>Whispering</title>
-</svelte:head>
+<svelte:head> <title>Whispering</title> </svelte:head>
 
 <QueryClientProvider client={queryClient}>
 	<!-- Uses UI package defaults (300ms delay, 150ms skip) -->
-	<Tooltip.Provider>
-		{@render children()}
-	</Tooltip.Provider>
+	<Tooltip.Provider> {@render children()} </Tooltip.Provider>
 </QueryClientProvider>
 
 <Toaster

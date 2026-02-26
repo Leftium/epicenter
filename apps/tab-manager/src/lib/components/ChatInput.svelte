@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { ConversationHandle } from '$lib/state/chat-state.svelte';
-	import { aiChatState } from '$lib/state/chat-state.svelte';
-	import ProviderSelect from './ProviderSelect.svelte';
-	import ModelCombobox from './ModelCombobox.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
+	import type { ConversationHandle } from '$lib/state/chat-state.svelte';
+	import { aiChatState } from '$lib/state/chat-state.svelte';
+	import ModelCombobox from './ModelCombobox.svelte';
+	import ProviderSelect from './ProviderSelect.svelte';
 
 	let {
 		active,

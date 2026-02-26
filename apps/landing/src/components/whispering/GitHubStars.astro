@@ -26,8 +26,7 @@ const stars = await (async () => {
 })();
 ---
 
-{
-	stars && (
+{stars && (
 		<span class="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-muted/60 text-muted-foreground rounded-full text-[10px] font-normal align-middle">
 			<svg
 				class="w-2.5 h-2.5 opacity-60"
@@ -38,5 +37,4 @@ const stars = await (async () => {
 			</svg>
 			<span class="opacity-70">{stars}</span>
 		</span>
-	)
-}
+	)}

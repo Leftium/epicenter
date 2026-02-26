@@ -1,12 +1,12 @@
 <script lang="ts">
+	import type { FileId } from '@epicenter/filesystem';
 	import * as Collapsible from '@epicenter/ui/collapsible';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import { fsState } from '$lib/fs/fs-state.svelte';
-	import type { FileId } from '@epicenter/filesystem';
-	import TreeNode from './TreeNode.svelte';
 	import CreateDialog from './CreateDialog.svelte';
-	import RenameDialog from './RenameDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
+	import RenameDialog from './RenameDialog.svelte';
+	import TreeNode from './TreeNode.svelte';
 
 	type Props = {
 		id: FileId;

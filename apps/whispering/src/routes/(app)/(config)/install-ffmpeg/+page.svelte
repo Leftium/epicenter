@@ -1,23 +1,23 @@
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
-	import * as Card from '@epicenter/ui/card';
-	import * as Alert from '@epicenter/ui/alert';
-	import * as Tabs from '@epicenter/ui/tabs';
 	import { Snippet } from '@epicenter/ui/snippet';
-	import { Badge } from '@epicenter/ui/badge';
-	import DownloadIcon from '@lucide/svelte/icons/download';
-	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
-	import XCircleIcon from '@lucide/svelte/icons/x-circle';
 	import { Spinner } from '@epicenter/ui/spinner';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
-	import { services } from '$lib/services';
-	import { goto } from '$app/navigation';
+	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import XCircleIcon from '@lucide/svelte/icons/x-circle';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { goto } from '$app/navigation';
 	import { desktopRpc } from '$lib/query';
+	import { services } from '$lib/services';
 
 	const platform = services.os.type();
 
@@ -32,9 +32,7 @@
 	}));
 </script>
 
-<svelte:head>
-	<title>Install FFmpeg - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Install FFmpeg - Whispering</title> </svelte:head>
 
 <main class="flex flex-1 items-center justify-center p-8">
 	<div class="w-full min-w-[640px] max-w-4xl">
@@ -190,7 +188,8 @@
 											>
 											<div class="space-y-2 flex-1">
 												<p>
-													Download the latest <code
+													Download the latest
+													<code
 														class="bg-muted px-2 py-1 rounded text-xs font-mono"
 														>ffmpeg-master-latest-win64-gpl-shared.zip</code
 													>
@@ -204,7 +203,8 @@
 											>
 											<div class="space-y-2 flex-1">
 												<p>
-													Extract the ZIP file to <code
+													Extract the ZIP file to
+													<code
 														class="bg-muted px-2 py-1 rounded text-xs font-mono"
 														>C:\ffmpeg</code
 													>
@@ -218,10 +218,12 @@
 											>
 											<div class="space-y-6 flex-1">
 												<p>
-													Add <code
+													Add
+													<code
 														class="bg-muted px-2 py-1 rounded text-xs font-mono"
 														>C:\ffmpeg\bin</code
-													> to your Windows PATH:
+													>
+													to your Windows PATH:
 												</p>
 
 												<!-- Method 1 -->
@@ -233,8 +235,8 @@
 														<li class="flex gap-3">
 															<span class="shrink-0">a.</span>
 															<span
-																>Press <Kbd.Root>Windows + X</Kbd.Root> and select
-																"System"</span
+																>Press <Kbd.Root>Windows + X</Kbd.Root> and
+																select "System"</span
 															>
 														</li>
 														<li class="flex gap-3">
@@ -254,7 +256,8 @@
 														<li class="flex gap-3">
 															<span class="shrink-0">d.</span>
 															<span
-																>Add: <code
+																>Add:
+																<code
 																	class="bg-muted px-2 py-1 rounded font-mono text-xs"
 																	>C:\ffmpeg\bin</code
 																></span
@@ -277,8 +280,8 @@
 															text="[Environment]::SetEnvironmentVariable(&quot;Path&quot;, $env:Path + &quot;;C:\ffmpeg\bin&quot;, &quot;Machine&quot;)"
 														/>
 														<p class="text-xs text-muted-foreground">
-															<strong>Note:</strong> Run PowerShell as Administrator
-															for this command
+															<strong>Note:</strong>
+															Run PowerShell as Administrator for this command
 														</p>
 													</div>
 												</div>
@@ -331,7 +334,8 @@
 												class="space-y-3 ml-4 list-disc text-sm text-muted-foreground"
 											>
 												<li>
-													Make sure you added <code
+													Make sure you added
+													<code
 														class="bg-muted px-2 py-1 rounded font-mono text-xs"
 														>C:\ffmpeg\bin</code
 													>
@@ -345,7 +349,8 @@
 													Restart Whispering completely after adding to PATH
 												</li>
 												<li>
-													Test in a new Command Prompt: <code
+													Test in a new Command Prompt:
+													<code
 														class="bg-muted px-2 py-1 rounded font-mono text-xs"
 														>ffmpeg -version</code
 													>
@@ -369,7 +374,8 @@
 													</li>
 													<li>Check if Windows Defender is blocking FFmpeg</li>
 													<li>
-														Verify the ffmpeg.exe file exists at <code
+														Verify the ffmpeg.exe file exists at
+														<code
 															class="bg-muted px-2 py-1 rounded font-mono text-xs"
 															>C:\ffmpeg\bin\ffmpeg.exe</code
 														>

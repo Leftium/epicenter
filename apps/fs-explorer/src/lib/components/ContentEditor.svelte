@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { fsState } from '$lib/fs/fs-state.svelte';
 	import type { FileId } from '@epicenter/filesystem';
 	import { onMount } from 'svelte';
+	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	type Props = {
 		fileId: FileId;

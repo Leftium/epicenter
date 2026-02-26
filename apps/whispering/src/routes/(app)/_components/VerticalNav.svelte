@@ -1,23 +1,23 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
+	import { useSidebar } from '@epicenter/ui/sidebar';
+	import Database from '@lucide/svelte/icons/database';
 	import HomeIcon from '@lucide/svelte/icons/house';
-	import ListIcon from '@lucide/svelte/icons/list';
 	import LayersIcon from '@lucide/svelte/icons/layers';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import SunIcon from '@lucide/svelte/icons/sun';
+	import ListIcon from '@lucide/svelte/icons/list';
+	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import LogsIcon from '@lucide/svelte/icons/scroll-text';
-	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
-	import Database from '@lucide/svelte/icons/database';
-	import { GithubIcon } from '$lib/components/icons';
-	import { page } from '$app/state';
-	import { toggleMode } from 'mode-watcher';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import SunIcon from '@lucide/svelte/icons/sun';
 	import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
-	import { notificationLog } from '$lib/components/NotificationLog.svelte';
+	import { toggleMode } from 'mode-watcher';
+	import { page } from '$app/state';
+	import { GithubIcon } from '$lib/components/icons';
 	import MigrationDialog, {
 		migrationDialog,
 	} from '$lib/components/MigrationDialog.svelte';
-	import { useSidebar } from '@epicenter/ui/sidebar';
+	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 
 	const shouldShowMigrationButton = $derived(
 		window.__TAURI_INTERNALS__ &&

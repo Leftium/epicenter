@@ -58,8 +58,8 @@
 </script>
 
 <script lang="ts">
-	import * as Modal from '@epicenter/ui/modal';
 	import { Button } from '@epicenter/ui/button';
+	import * as Modal from '@epicenter/ui/modal';
 </script>
 
 <Modal.Root bind:open={moreDetailsDialog.isOpen}>
@@ -69,7 +69,8 @@
 			<Modal.Description>{moreDetailsDialog.description}</Modal.Description>
 		</Modal.Header>
 		<pre
-			class="bg-muted relative whitespace-pre-wrap break-words rounded p-4 pr-12 font-mono text-sm overflow-x-auto">{moreDetailsDialog.content}</pre>
+			class="bg-muted relative whitespace-pre-wrap break-words rounded p-4 pr-12 font-mono text-sm overflow-x-auto"
+		>{moreDetailsDialog.content}</pre>
 		{#if moreDetailsDialog.buttons.length !== 0}
 			<Modal.Footer>
 				{#each moreDetailsDialog.buttons as button}

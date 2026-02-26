@@ -12,10 +12,8 @@
 		type="password"
 		placeholder="Your Deepgram API Key"
 		autocomplete="off"
-		bind:value={
-			() => settings.value['apiKeys.deepgram'],
-			(value) => settings.updateKey('apiKeys.deepgram', value)
-		}
+		bind:value={() => settings.value['apiKeys.deepgram'],
+			(value) => settings.updateKey('apiKeys.deepgram', value)}
 	/>
 	<Field.Description>
 		You can find your API key in your <Link
@@ -24,7 +22,8 @@
 			rel="noopener noreferrer"
 		>
 			Deepgram Console
-		</Link>. Make sure you have <Link
+		</Link>
+		. Make sure you have <Link
 			href="https://console.deepgram.com/billing"
 			target="_blank"
 			rel="noopener noreferrer"

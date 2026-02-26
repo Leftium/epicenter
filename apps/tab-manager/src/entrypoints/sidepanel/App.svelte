@@ -1,20 +1,21 @@
 <script lang="ts">
-	import AiChat from '$lib/components/AiChat.svelte';
-	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
-	import FlatTabList from '$lib/components/FlatTabList.svelte';
-	import SavedTabList from '$lib/components/SavedTabList.svelte';
-	import { browserState } from '$lib/state/browser-state.svelte';
-	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { Badge } from '@epicenter/ui/badge';
-	import * as Tabs from '@epicenter/ui/tabs';
-	import * as Tooltip from '@epicenter/ui/tooltip';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	const totalTabs = $derived(
-		browserState.windows.reduce(
-			(sum, w) => sum + browserState.tabsByWindow(w.id).length,
-			0,
-		),
-	);
+import * as Tabs from '@epicenter/ui/tabs';
+import * as Tooltip from '@epicenter/ui/tooltip';
+import SparklesIcon from '@lucide/svelte/icons/sparkles';
+import AiChat from '$lib/components/AiChat.svelte';
+import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
+import FlatTabList from '$lib/components/FlatTabList.svelte';
+import SavedTabList from '$lib/components/SavedTabList.svelte';
+import { browserState } from '$lib/state/browser-state.svelte';
+import { savedTabState } from '$lib/state/saved-tab-state.svelte';
+
+const totalTabs = $derived(
+	browserState.windows.reduce(
+		(sum, w) => sum + browserState.tabsByWindow(w.id).length,
+		0,
+	),
+);
 </script>
 
 <Tooltip.Provider>

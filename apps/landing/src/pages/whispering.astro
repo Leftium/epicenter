@@ -1,33 +1,33 @@
 ---
 import { VERSIONS } from '@epicenter/constants/versions';
-import BaseLayout from '../layouts/BaseLayout.astro';
+import { Badge } from '@epicenter/ui/badge';
 import { Button } from '@epicenter/ui/button';
 import * as Card from '@epicenter/ui/card';
-import { Badge } from '@epicenter/ui/badge';
-import MicrophoneHero from '../components/whispering/MicrophoneHero.svelte';
-import OSDetector from '../components/whispering/OSDetector.svelte';
-import GitHubStars from '../components/whispering/GitHubStars.astro';
 import {
+	Apple as AppleIcon,
 	ArrowRight as ArrowRightIcon,
 	Check as CheckIcon,
-	Mic as MicIcon,
-	Zap as ZapIcon,
-	Shield as ShieldIcon,
-	Globe as GlobeIcon,
-	Download as DownloadIcon,
-	Github as GithubIcon,
-	Monitor as MonitorIcon,
-	Apple as AppleIcon,
-	Lock as LockIcon,
-	Terminal as TerminalIcon,
-	Star as StarIcon,
 	ChevronDown as ChevronDownIcon,
-	Menu as MenuIcon,
-	ExternalLink as ExternalLinkIcon,
 	Cloud as CloudIcon,
-	Lightbulb as LightbulbIcon,
 	DollarSign as DollarSignIcon,
+	Download as DownloadIcon,
+	ExternalLink as ExternalLinkIcon,
+	Github as GithubIcon,
+	Globe as GlobeIcon,
+	Lightbulb as LightbulbIcon,
+	Lock as LockIcon,
+	Menu as MenuIcon,
+	Mic as MicIcon,
+	Monitor as MonitorIcon,
+	Shield as ShieldIcon,
+	Star as StarIcon,
+	Terminal as TerminalIcon,
+	Zap as ZapIcon,
 } from '@lucide/astro';
+import GitHubStars from '../components/whispering/GitHubStars.astro';
+import MicrophoneHero from '../components/whispering/MicrophoneHero.svelte';
+import OSDetector from '../components/whispering/OSDetector.svelte';
+import BaseLayout from '../layouts/BaseLayout.astro';
 
 const features = [
 	{
@@ -257,11 +257,17 @@ const downloads = [
 							src="https://www.youtube.com/embed/1jYgBMrfVZs?controls=1&showinfo=0&rel=0&modestbranding=1&color=white"
 							title="Whispering Setup Guide"
 							frameborder="0"
-							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allow="
+								accelerometer;
+								autoplay;
+								clipboard-write;
+								encrypted-media;
+								gyroscope;
+								picture-in-picture;
+							"
 							allowfullscreen
 							class="w-full h-full border-0"
-						>
-						</iframe>
+						> </iframe>
 					</div>
 				</div>
 			</div>
@@ -351,8 +357,7 @@ const downloads = [
 				</div>
 
 				<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
-					{
-						features.map((feature, index) => {
+					{features.map((feature, index) => {
 							const Icon = feature.icon;
 							return (
 								<Card.Root
@@ -373,8 +378,7 @@ const downloads = [
 									</Card.Content>
 								</Card.Root>
 							);
-						})
-					}
+						})}
 				</div>
 			</div>
 		</section>
@@ -396,26 +400,25 @@ const downloads = [
 						<table class="w-full">
 							<thead class="bg-muted">
 								<tr>
-									<th class="px-6 py-5 text-left font-semibold text-base"
-										>Provider</th
-									>
-									<th class="px-6 py-5 text-left font-semibold text-base"
-										>Per Hour</th
-									>
-									<th class="px-6 py-5 text-left font-semibold text-base"
-										>Light Use</th
-									>
-									<th class="px-6 py-5 text-left font-semibold text-base"
-										>Heavy Use</th
-									>
-									<th class="px-6 py-5 text-left font-semibold text-base"
-										>Subscription</th
-									>
+									<th class="px-6 py-5 text-left font-semibold text-base">
+										Provider
+									</th>
+									<th class="px-6 py-5 text-left font-semibold text-base">
+										Per Hour
+									</th>
+									<th class="px-6 py-5 text-left font-semibold text-base">
+										Light Use
+									</th>
+									<th class="px-6 py-5 text-left font-semibold text-base">
+										Heavy Use
+									</th>
+									<th class="px-6 py-5 text-left font-semibold text-base">
+										Subscription
+									</th>
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-border">
-								{
-									pricingData.map((row) => (
+								{pricingData.map((row) => (
 										<tr
 											class="hover:bg-muted/50"
 											style="transition: all 0.2s ease"
@@ -434,8 +437,7 @@ const downloads = [
 												{row.subscription}
 											</td>
 										</tr>
-									))
-								}
+									))}
 							</tbody>
 						</table>
 					</div>
@@ -456,8 +458,7 @@ const downloads = [
 				</div>
 
 				<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-8 max-w-6xl mx-auto">
-					{
-						downloads.map((download, index) => {
+					{downloads.map((download, index) => {
 							const Icon = download.icon;
 							return (
 								<Card.Root
@@ -523,8 +524,7 @@ const downloads = [
 									</Card.Content>
 								</Card.Root>
 							);
-						})
-					}
+						})}
 				</div>
 
 				<!-- Version info -->
@@ -562,8 +562,7 @@ const downloads = [
 				</div>
 
 				<div class="space-y-6">
-					{
-						faqItems.map((item) => (
+					{faqItems.map((item) => (
 							<Card.Root class="hover:shadow-md transition-all duration-200 border-0 shadow-sm">
 								<Card.Header>
 									<details class="group">
@@ -577,8 +576,7 @@ const downloads = [
 									</details>
 								</Card.Header>
 							</Card.Root>
-						))
-					}
+						))}
 				</div>
 			</div>
 		</section>
@@ -672,8 +670,8 @@ const downloads = [
 
 					<!-- Copyright -->
 					<div class="text-foreground/65 text-sm border-t pt-8">
-						© {new Date().getFullYear()} Whispering. AGPL-3.0 License. Built for the
-						open source community.
+						© {new Date().getFullYear()} Whispering. AGPL-3.0 License. Built for
+						the open source community.
 					</div>
 				</div>
 			</div>
@@ -784,7 +782,7 @@ const downloads = [
 	}
 
 	.grid-hero::before {
-		content: '';
+		content: "";
 		position: absolute;
 		top: 0;
 		left: 0;
@@ -801,7 +799,7 @@ const downloads = [
 	}
 
 	.grid-hero::after {
-		content: '';
+		content: "";
 		position: absolute;
 		top: 0;
 		left: 0;
@@ -830,12 +828,12 @@ const downloads = [
 	}
 
 	/* Navigation link hover effect - only for nav menu links */
-	nav a[href^='#'] {
+	nav a[href^="#"] {
 		position: relative;
 	}
 
-	nav a[href^='#']::after {
-		content: '';
+	nav a[href^="#"]::after {
+		content: "";
 		position: absolute;
 		bottom: 0;
 		left: 50%;
@@ -846,7 +844,7 @@ const downloads = [
 		transform: translateX(-50%);
 	}
 
-	nav a[href^='#']:hover::after {
+	nav a[href^="#"]:hover::after {
 		width: 100%;
 	}
 

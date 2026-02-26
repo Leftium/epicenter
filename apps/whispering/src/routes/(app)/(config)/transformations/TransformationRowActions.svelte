@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@epicenter/ui/button';
-	import { TrashIcon } from '$lib/components/icons';
 	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { rpc } from '$lib/query';
 	import { createQuery } from '@tanstack/svelte-query';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { TrashIcon } from '$lib/components/icons';
+	import { rpc } from '$lib/query';
 	import EditTransformationModal from './EditTransformationModal.svelte';
 
 	let { transformationId }: { transformationId: string } = $props();

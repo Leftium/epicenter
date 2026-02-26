@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { marked } from 'marked';
-	import ToolCallPart from './ToolCallPart.svelte';
-	import ToolResultPart from './ToolResultPart.svelte';
-	import ThinkingPart from './ThinkingPart.svelte';
 	import type {
 		MessagePart,
 		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
+	import { marked } from 'marked';
 	import type { WorkspaceTools } from '$lib/workspace';
+	import ThinkingPart from './ThinkingPart.svelte';
+	import ToolCallPart from './ToolCallPart.svelte';
+	import ToolResultPart from './ToolResultPart.svelte';
 
 	let {
 		parts,

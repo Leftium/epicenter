@@ -3,9 +3,7 @@
 </script>
 
 <svelte:head>
-	<title>
-		{page.status === 404 ? 'Page Not Found' : 'Error'} - Whispering
-	</title>
+	<title>{page.status === 404 ? 'Page Not Found' : 'Error'} - Whispering</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col items-center justify-center gap-6 p-8">

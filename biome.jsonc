@@ -101,7 +101,11 @@
 						// SVG icons in components don't always need <title>
 						"noSvgWithoutTitle": "off",
 						// Svelte components often omit button type in templates
-						"useButtonType": "off"
+						"useButtonType": "off",
+						// autofocus is intentional UX in dialogs and forms
+						"noAutofocus": "off",
+						// Audio recording playback doesn't have captions
+						"useMediaCaption": "off"
 					}
 				}
 			}

@@ -204,6 +204,30 @@ const AorB = type({ kind: "'A'", value: 'number' }).or({
 
 This works with any literal type — string literals, number literals, or boolean literals.
 
+## Always Wrap Extracted Types with `type()`
+
+When extracting reusable arktype types into named constants, always wrap them with `type()` — even for simple string literal unions. This ensures the value is a proper arktype `Type` with `.infer`, `.or()`, `.merge()`, etc.
+
+```typescript
+// GOOD: wrapped with type() — composable, has .infer, works with .or()/.merge()
+const tabGroupColor = type(
+	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
+);
+
+const commandBase = type({
+	id: CommandId,
+	deviceId: DeviceId,
+	createdAt: 'number',
+	_v: '1',
+});
+
+// BAD: plain string — not a Type, can't compose, no .infer
+const tabGroupColor =
+	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'";
+```
+
+Both work when used as a value inside `type({...})` object literals (arktype coerces strings). But only the `type()`-wrapped version is a first-class `Type` that works in all positions.
+
 ## Anti-Patterns
 
 ### JS object spread (loses Type composition)

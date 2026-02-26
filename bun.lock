@@ -38,8 +38,8 @@
       "name": "@epicenter/app",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@sindresorhus/slugify": "^3.0.0",
         "@tanstack/svelte-query": "catalog:",
         "@tanstack/svelte-table": "catalog:",
@@ -76,8 +76,8 @@
       "version": "0.0.1",
       "devDependencies": {
         "@epicenter/filesystem": "workspace:*",
-        "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@sveltejs/adapter-auto": "^6.1.0",
         "@sveltejs/kit": "catalog:",
         "@sveltejs/vite-plugin-svelte": "catalog:",
@@ -129,8 +129,8 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/ai": "workspace:*",
-        "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
@@ -166,8 +166,8 @@
       "name": "@epicenter/tab-manager-markdown",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/hq": "workspace:*",
         "@epicenter/tab-manager": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "yjs": "^13.6.27",
       },
       "devDependencies": {
@@ -200,9 +200,9 @@
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/hq": "workspace:*",
         "@epicenter/shared": "workspace:*",
         "@epicenter/svelte-utils": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@google/generative-ai": "^0.24.1",
         "@mistralai/mistralai": "^1.9.18",
         "@ricky0123/vad-web": "^0.0.24",
@@ -283,7 +283,7 @@
       "name": "@epicenter/ai",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/hq": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "@tanstack/ai": "^0.5.1",
       },
       "devDependencies": {
@@ -297,8 +297,8 @@
         "epicenter": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/hq": "workspace:*",
         "@epicenter/server": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
@@ -338,7 +338,7 @@
       },
     },
     "packages/epicenter": {
-      "name": "@epicenter/hq",
+      "name": "@epicenter/workspace",
       "version": "0.0.1",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
@@ -380,7 +380,7 @@
       "name": "@epicenter/filesystem",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/hq": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "just-bash": "^2.9.7",
         "prosemirror-markdown": "^1.13.4",
@@ -421,7 +421,7 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@epicenter/hq": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
         "yjs": "catalog:",
       },
     },
@@ -707,8 +707,6 @@
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 
-    "@epicenter/hq": ["@epicenter/hq@workspace:packages/epicenter"],
-
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
@@ -730,6 +728,8 @@
     "@epicenter/vault-core": ["@epicenter/vault-core@workspace:packages/vault-core"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
+
+    "@epicenter/workspace": ["@epicenter/workspace@workspace:packages/epicenter"],
 
     "@esbuild-kit/core-utils": ["@esbuild-kit/core-utils@3.3.2", "", { "dependencies": { "esbuild": "~0.18.20", "source-map-support": "^0.5.21" } }, "sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ=="],
 

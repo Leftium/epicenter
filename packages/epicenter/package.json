@@ -5,7 +5,7 @@
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts",
-"./extensions": {
+		"./extensions": {
 			"node": "./src/extensions/index.ts",
 			"default": "./src/extensions/index.ts"
 		},

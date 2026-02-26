@@ -12,30 +12,19 @@
 		part: TanStackToolCallPart<PopupTools>;
 	} = $props();
 
-	const hasOutput = $derived(part.output != null);
-	const isRunning = $derived(
-		!hasOutput &&
-			['awaiting-input', 'input-streaming', 'input-complete'].includes(
-				part.state,
-			),
-	);
+	const isRunning = $derived(part.output == null);
 	const isFailed = $derived(
-		part.output &&
-			typeof part.output === 'object' &&
+		typeof part.output === 'object' &&
 			part.output !== null &&
 			'error' in part.output,
 	);
-	const displayName = $derived.by(() => {
-		const label = actionContext.getLabel(part.name);
-		return isRunning ? label.active : label.done;
+	const label = $derived(actionContext.getLabel(part.name));
+	const displayName = $derived(isRunning ? label.active : label.done);
+	const badgeVariant = $derived.by(() => {
+		if (isFailed) return 'status.failed';
+		if (isRunning) return 'status.running';
+		return 'status.completed';
 	});
-	const badgeVariant = $derived(
-		isFailed
-			? ('status.failed' as const)
-			: isRunning
-				? ('status.running' as const)
-				: ('status.completed' as const),
-	);
 </script>
 
 {#snippet codeBlock(text: string)}

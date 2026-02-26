@@ -16,7 +16,9 @@ import type { Result } from 'wellcrafted/result';
  */
 
 export const { NotificationServiceError, NotificationServiceErr } =
-	createTaggedError('NotificationServiceError');
+	createTaggedError('NotificationServiceError').withMessage(
+		() => 'Notification operation failed',
+	);
 export type NotificationServiceError = ReturnType<
 	typeof NotificationServiceError
 >;

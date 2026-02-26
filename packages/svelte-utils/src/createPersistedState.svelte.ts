@@ -169,7 +169,9 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	};
 }
 
-const { ParseJsonErr } = createTaggedError('ParseJsonError');
+const { ParseJsonErr } = createTaggedError('ParseJsonError').withMessage(
+	() => 'Failed to parse JSON',
+);
 
 function parseJson(value: string) {
 	return trySync({

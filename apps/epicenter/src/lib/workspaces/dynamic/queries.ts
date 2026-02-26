@@ -17,7 +17,9 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const { WorkspaceError, WorkspaceErr } =
-	createTaggedError('WorkspaceError');
+	createTaggedError('WorkspaceError').withMessage(
+		() => 'Workspace operation failed',
+	);
 export type WorkspaceError = ReturnType<typeof WorkspaceError>;
 
 // ─────────────────────────────────────────────────────────────────────────────

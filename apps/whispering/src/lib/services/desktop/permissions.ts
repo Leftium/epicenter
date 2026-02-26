@@ -3,7 +3,9 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { IS_MACOS } from '$lib/constants/platform';
 
 export const { PermissionsServiceError, PermissionsServiceErr } =
-	createTaggedError('PermissionsServiceError');
+	createTaggedError('PermissionsServiceError').withMessage(
+		() => 'Permissions check failed',
+	);
 export type PermissionsServiceError = ReturnType<
 	typeof PermissionsServiceError
 >;

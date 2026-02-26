@@ -11,7 +11,7 @@ import { asDeviceIdentifier } from '$lib/services/types';
 
 const { DeviceStreamServiceError, DeviceStreamServiceErr } = createTaggedError(
 	'DeviceStreamServiceError',
-);
+).withMessage(() => 'A device stream operation failed');
 type DeviceStreamServiceError = ReturnType<typeof DeviceStreamServiceError>;
 
 /**

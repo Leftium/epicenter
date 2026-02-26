@@ -2,7 +2,9 @@ import { createTaggedError } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 export const { CompletionServiceError, CompletionServiceErr } =
-	createTaggedError('CompletionServiceError');
+	createTaggedError('CompletionServiceError').withMessage(
+		() => 'A completion operation failed',
+	);
 export type CompletionServiceError = ReturnType<typeof CompletionServiceError>;
 
 export type CompletionService = {

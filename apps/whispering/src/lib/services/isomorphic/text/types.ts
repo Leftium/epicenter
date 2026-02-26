@@ -3,7 +3,9 @@ import type { Result } from 'wellcrafted/result';
 import type { MaybePromise, WhisperingError } from '$lib/result';
 
 const { TextServiceError, TextServiceErr } =
-	createTaggedError('TextServiceError');
+	createTaggedError('TextServiceError').withMessage(
+		() => 'Text service operation failed',
+	);
 type TextServiceError = ReturnType<typeof TextServiceError>;
 export { TextServiceErr, TextServiceError };
 

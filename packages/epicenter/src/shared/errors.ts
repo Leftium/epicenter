@@ -11,5 +11,7 @@ type ExtensionErrorContext = {
 
 export const { ExtensionError, ExtensionErr } = createTaggedError(
 	'ExtensionError',
-).withContext<ExtensionErrorContext | undefined>();
+)
+	.withContext<ExtensionErrorContext | undefined>()
+	.withMessage(() => 'An extension operation failed');
 export type ExtensionError = ReturnType<typeof ExtensionError>;

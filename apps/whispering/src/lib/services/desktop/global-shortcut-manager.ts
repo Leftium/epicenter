@@ -23,10 +23,12 @@ import {
 
 const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError(
 	'InvalidAcceleratorError',
-);
+).withMessage(() => 'Invalid keyboard accelerator');
 type InvalidAcceleratorError = ReturnType<typeof InvalidAcceleratorError>;
 const { GlobalShortcutServiceError, GlobalShortcutServiceErr } =
-	createTaggedError('GlobalShortcutServiceError');
+	createTaggedError('GlobalShortcutServiceError').withMessage(
+		() => 'Global shortcut registration failed',
+	);
 type GlobalShortcutServiceError = ReturnType<typeof GlobalShortcutServiceError>;
 
 /**

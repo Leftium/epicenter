@@ -6,7 +6,7 @@ import { Err, Ok, tryAsync } from 'wellcrafted/result';
 
 export const { CommandServiceError, CommandServiceErr } = createTaggedError(
 	'CommandServiceError',
-);
+).withMessage(() => 'Command execution failed');
 export type CommandServiceError = ReturnType<typeof CommandServiceError>;
 
 /**

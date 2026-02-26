@@ -11,7 +11,9 @@ import type {
 } from './models';
 
 export const { DbServiceError, DbServiceErr } =
-	createTaggedError('DbServiceError');
+	createTaggedError('DbServiceError').withMessage(
+		() => 'A database operation failed',
+	);
 export type DbServiceError = ReturnType<typeof DbServiceError>;
 
 type RecordingWithAudio = { recording: Recording; audio: Blob };

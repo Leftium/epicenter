@@ -16,7 +16,7 @@ import type {
  */
 export const { RecorderServiceError, RecorderServiceErr } = createTaggedError(
 	'RecorderServiceError',
-);
+).withMessage(() => 'A recording operation failed');
 export type RecorderServiceError = ReturnType<typeof RecorderServiceError>;
 
 /**

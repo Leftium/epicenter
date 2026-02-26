@@ -5,7 +5,9 @@ import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 
 export const { FsServiceError, FsServiceErr } =
-	createTaggedError('FsServiceError');
+	createTaggedError('FsServiceError').withMessage(
+		() => 'File system operation failed',
+	);
 export type FsServiceError = ReturnType<typeof FsServiceError>;
 
 export const FsServiceLive = {

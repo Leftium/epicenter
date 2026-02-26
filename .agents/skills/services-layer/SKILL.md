@@ -39,34 +39,38 @@ Services follow a three-layer architecture: **Service** → **Query** → **UI**
 
 ## Creating Tagged Errors with createTaggedError
 
-Every service defines domain-specific errors using `createTaggedError` from wellcrafted:
+Every service defines domain-specific errors using `createTaggedError` from wellcrafted. See the `create-tagged-error` skill for full API reference.
 
 ```typescript
 import { createTaggedError } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
-// Basic pattern - creates both constructor and Err helper
+// Basic pattern — .withMessage() is REQUIRED and always last
 export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError');
+	createTaggedError('MyServiceError')
+		.withMessage(() => 'Something went wrong in MyService');
 type MyServiceError = ReturnType<typeof MyServiceError>;
 ```
 
 ### What createTaggedError Returns
 
-`createTaggedError('Name')` returns an object with two properties:
+`createTaggedError('Name')` returns a **builder**. You must call `.withMessage(fn)` to get the factory functions:
 
 1. **`NameError`** - Constructor function for creating error objects
 2. **`NameErr`** - Helper that wraps the error in `Err()` for direct return
 
 ```typescript
 // These are equivalent:
-return Err(MyServiceError({ message: 'Something failed' }));
-return MyServiceErr({ message: 'Something failed' }); // Shorter form
+return Err(MyServiceError({}));
+return MyServiceErr({}); // Shorter form
+
+// Message override for one-off cases:
+return MyServiceErr({ message: 'Custom override message' });
 ```
 
 ### Adding Typed Context with .withContext()
 
-For errors that need structured metadata (like HTTP status codes), chain `.withContext<T>()`:
+For errors that need structured metadata, chain `.withContext<T>()` before `.withMessage()`:
 
 ```typescript
 type ResponseContext = {
@@ -74,32 +78,38 @@ type ResponseContext = {
 };
 
 export const { ResponseError, ResponseErr } =
-	createTaggedError('ResponseError').withContext<ResponseContext>();
+	createTaggedError('ResponseError')
+		.withContext<ResponseContext>()
+		.withMessage(({ context }) => `HTTP ${context.status} response`);
 
-// Usage: Include context when creating errors
+// Usage: Provide context, message auto-computes
 return ResponseErr({
-	message: 'Request failed',
 	context: { status: 401 }, // TypeScript enforces this shape
 });
+// error.message → "HTTP 401 response"
 ```
 
 ### Error Type Examples from the Codebase
 
 ```typescript
-// Simple service error (most common)
-export const { RecorderServiceError, RecorderServiceErr } = createTaggedError(
-	'RecorderServiceError',
-);
+// Simple service error with static message
+export const { RecorderBusyError, RecorderBusyErr } = createTaggedError(
+	'RecorderBusyError',
+).withMessage(() => 'A recording is already in progress');
 
-// HTTP errors with status context
+// HTTP errors with structured context
 export const { ResponseError, ResponseErr } = createTaggedError(
 	'ResponseError',
-).withContext<{ status: number }>();
+)
+	.withContext<{ status: number }>()
+	.withMessage(({ context }) => `HTTP ${context.status} response`);
 
-// Multiple related errors
+// Multiple related errors forming a discriminated union
 export const { ConnectionError, ConnectionErr } =
-	createTaggedError('ConnectionError');
-export const { ParseError, ParseErr } = createTaggedError('ParseError');
+	createTaggedError('ConnectionError')
+		.withMessage(() => 'Failed to connect to the server');
+export const { ParseError, ParseErr } = createTaggedError('ParseError')
+	.withMessage(() => 'Failed to parse response body');
 
 // Combine into union type
 export type HttpServiceError = ConnectionError | ResponseError | ParseError;
@@ -113,9 +123,10 @@ export type HttpServiceError = ConnectionError | ResponseError | ParseError;
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-// 1. Define domain-specific error type
+// 1. Define domain-specific error type with .withMessage()
 export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError');
+	createTaggedError('MyServiceError')
+		.withMessage(() => 'MyService operation failed');
 type MyServiceError = ReturnType<typeof MyServiceError>;
 
 // 2. Create factory function that returns service object

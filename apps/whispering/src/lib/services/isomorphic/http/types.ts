@@ -16,7 +16,9 @@ import type { Result } from 'wellcrafted/result';
  * ```
  */
 export const { ConnectionError, ConnectionErr } =
-	createTaggedError('ConnectionError');
+	createTaggedError('ConnectionError').withMessage(
+		() => 'Failed to connect to the server',
+	);
 type ConnectionError = ReturnType<typeof ConnectionError>;
 
 /**
@@ -42,7 +44,9 @@ type ResponseContext = {
  * ```
  */
 export const { ResponseError, ResponseErr } =
-	createTaggedError('ResponseError').withContext<ResponseContext>();
+	createTaggedError('ResponseError')
+		.withContext<ResponseContext>()
+		.withMessage(({ context }) => `HTTP ${context.status} response`);
 export type ResponseError = ReturnType<typeof ResponseError>;
 
 /**
@@ -58,7 +62,9 @@ export type ResponseError = ReturnType<typeof ResponseError>;
  * // Result: ParseError
  * ```
  */
-export const { ParseError, ParseErr } = createTaggedError('ParseError');
+export const { ParseError, ParseErr } = createTaggedError('ParseError').withMessage(
+	() => 'Failed to parse response body',
+);
 export type ParseError = ReturnType<typeof ParseError>;
 
 export type HttpServiceError = ConnectionError | ResponseError | ParseError;

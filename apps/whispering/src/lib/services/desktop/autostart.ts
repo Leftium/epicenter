@@ -4,7 +4,7 @@ import { tryAsync } from 'wellcrafted/result';
 
 export const { AutostartServiceError, AutostartServiceErr } = createTaggedError(
 	'AutostartServiceError',
-);
+).withMessage(() => 'Autostart operation failed');
 export type AutostartServiceError = ReturnType<typeof AutostartServiceError>;
 
 /**

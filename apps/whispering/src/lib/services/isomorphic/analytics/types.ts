@@ -4,7 +4,7 @@ import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/isomorphic/transcr
 
 const { AnalyticsServiceError, AnalyticsServiceErr } = createTaggedError(
 	'AnalyticsServiceError',
-);
+).withMessage(() => 'Analytics operation failed');
 type AnalyticsServiceError = ReturnType<typeof AnalyticsServiceError>;
 export { AnalyticsServiceErr, AnalyticsServiceError };
 

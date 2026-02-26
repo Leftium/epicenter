@@ -8,7 +8,9 @@ import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
 
 export const { FfmpegServiceErr, FfmpegServiceError } =
-	createTaggedError('FfmpegServiceError');
+	createTaggedError('FfmpegServiceError').withMessage(
+		() => 'An FFmpeg operation failed',
+	);
 
 export type FfmpegServiceError = ReturnType<typeof FfmpegServiceError>;
 

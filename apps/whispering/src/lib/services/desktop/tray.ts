@@ -12,7 +12,9 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 
 const TRAY_ID = 'whispering-tray';
 
-const { SetTrayIconServiceErr } = createTaggedError('SetTrayIconServiceError');
+const { SetTrayIconServiceErr } = createTaggedError(
+	'SetTrayIconServiceError',
+).withMessage(() => 'Failed to set tray icon');
 
 const trayPromise = initTray();
 

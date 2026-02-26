@@ -4,7 +4,9 @@ import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { addStaticWorkspace, listStaticWorkspaces } from './service';
 import type { StaticWorkspaceEntry } from './types';
 
-const { StaticWorkspaceErr } = createTaggedError('StaticWorkspaceError');
+const { StaticWorkspaceErr } = createTaggedError(
+	'StaticWorkspaceError',
+).withMessage(() => 'Static workspace operation failed');
 
 const staticWorkspaceKeys = {
 	all: ['static-workspaces'] as const,

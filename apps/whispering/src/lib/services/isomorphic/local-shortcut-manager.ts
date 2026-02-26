@@ -19,7 +19,7 @@ import { IS_MACOS } from '$lib/constants/platform';
  */
 const { LocalShortcutServiceError } = createTaggedError(
 	'LocalShortcutServiceError',
-);
+).withMessage(() => 'Local shortcut operation failed');
 type LocalShortcutServiceError = ReturnType<typeof LocalShortcutServiceError>;
 
 export type CommandId = string & Brand<'CommandId'>;

@@ -21,7 +21,7 @@ import { dbKeys } from './db';
 
 const { TransformServiceError, TransformServiceErr } = createTaggedError(
 	'TransformServiceError',
-);
+).withMessage(() => 'Transform operation failed');
 type TransformServiceError = ReturnType<typeof TransformServiceError>;
 
 const transformerKeys = {

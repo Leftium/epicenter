@@ -4,7 +4,7 @@ import type { WhisperingSoundNames } from '$lib/constants/sounds';
 
 export const { PlaySoundServiceError, PlaySoundServiceErr } = createTaggedError(
 	'PlaySoundServiceError',
-);
+).withMessage(() => 'Sound playback failed');
 export type PlaySoundServiceError = ReturnType<typeof PlaySoundServiceError>;
 
 export type PlaySoundService = {

@@ -12,7 +12,7 @@ metadata:
 
 When handling errors that can be gracefully recovered from, use `trySync` (for synchronous code) or `tryAsync` (for asynchronous code) from wellcrafted instead of traditional try-catch blocks. This provides better type safety and explicit error handling.
 
-> **Related Skills**: See `services-layer` skill for `createTaggedError` patterns. See `query-layer` skill for error transformation to `WhisperingError`.
+> **Related Skills**: See `create-tagged-error` skill for the full `createTaggedError` API (`.withMessage()` is required). See `services-layer` skill for service patterns. See `query-layer` skill for error transformation to `WhisperingError`.
 
 ### The Pattern
 

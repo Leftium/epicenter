@@ -128,6 +128,7 @@
       "name": "@epicenter/tab-manager",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/ai": "workspace:*",
         "@epicenter/hq": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -143,6 +144,7 @@
         "clsx": "catalog:",
         "marked": "^17.0.3",
         "tailwind-merge": "catalog:",
+        "typebox": "catalog:",
         "virtua": "^0.48.5",
         "wellcrafted": "catalog:",
         "y-indexeddb": "catalog:",
@@ -282,7 +284,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/hq": "workspace:*",
-        "@standard-schema/spec": "catalog:",
         "@tanstack/ai": "^0.5.1",
       },
       "devDependencies": {
@@ -298,6 +299,7 @@
       "dependencies": {
         "@epicenter/hq": "workspace:*",
         "@epicenter/server": "workspace:*",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
       },
@@ -357,6 +359,7 @@
         "nanoid": "catalog:",
         "temporal-polyfill": "^0.3.0",
         "tinybase": "^5.4.2",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "y-indexeddb": "catalog:",
         "y-protocols": "catalog:",
@@ -406,6 +409,7 @@
         "better-auth": "^1.4.19",
         "elysia": "^1.2.25",
         "lib0": "catalog:",
+        "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
       },
@@ -548,6 +552,7 @@
     "tailwind-variants": "^3.2.2",
     "tailwindcss": "^4.1.17",
     "turbo": "^2.6.1",
+    "typebox": "^1.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.2.4",
     "wellcrafted": "^0.29.1",
@@ -2949,6 +2954,8 @@
     "type-check": ["type-check@0.4.0", "", { "dependencies": { "prelude-ls": "^1.2.1" } }, "sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew=="],
 
     "type-fest": ["type-fest@4.41.0", "", {}, "sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA=="],
+
+    "typebox": ["typebox@1.1.3", "", {}, "sha512-tI2Rc3MERyZC1DSHKXpGayDgWVwQciQlWxVZPaJk/dMm25LDhQ11rgkTnrK/9PlcJYgLw0q03EHvt0aI5J/nuA=="],
 
     "typed-array-buffer": ["typed-array-buffer@1.0.3", "", { "dependencies": { "call-bound": "^1.0.3", "es-errors": "^1.3.0", "is-typed-array": "^1.1.14" } }, "sha512-nAYYwfY3qnzX30IkA6AQZjVbtK6duGontcQm1WSG1MD94YLqK0515GNApXkoxKOWMusVssAHWLh9SeaoefYFGw=="],
 

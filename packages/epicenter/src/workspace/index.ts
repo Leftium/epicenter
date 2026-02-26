@@ -124,9 +124,7 @@ export { createTables } from './create-tables.js';
 
 export type {
 	ActionDescriptor,
-	AwarenessDescriptor,
-	KvDescriptor,
-	TableDescriptor,
+	SchemaDescriptor,
 	WorkspaceDescriptor,
 } from './describe-workspace.js';
 export { describeWorkspace } from './describe-workspace.js';

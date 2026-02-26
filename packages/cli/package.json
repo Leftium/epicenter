@@ -9,6 +9,7 @@
 	"dependencies": {
 		"@epicenter/hq": "workspace:*",
 		"@epicenter/server": "workspace:*",
+		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"yargs": "catalog:"
 	},

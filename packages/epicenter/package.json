@@ -40,6 +40,7 @@
 		"nanoid": "catalog:",
 		"temporal-polyfill": "^0.3.0",
 		"tinybase": "^5.4.2",
+		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-indexeddb": "catalog:",
 		"y-protocols": "catalog:"

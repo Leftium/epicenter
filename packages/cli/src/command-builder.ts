@@ -1,8 +1,5 @@
-import {
-	type Actions,
-	iterateActions,
-	standardSchemaToJsonSchema,
-} from '@epicenter/hq';
+import { type Actions, iterateActions } from '@epicenter/hq';
+import { ParseError, Parser } from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
@@ -17,6 +14,11 @@ import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
  * Actions use closure-based dependency injection - they capture their context
  * (tables, extensions, etc.) at definition time. The handler is called directly
  * with just the validated input.
+ *
+ * Yargs handles help text display (types, choices, descriptions, required flags).
+ * TypeBox's Parser handles the actual validation pipeline: Clone → Default →
+ * Convert → Clean → Assert. This means yargs coercion and TypeBox coercion
+ * both run, but TypeBox is the single source of truth for validation.
  *
  * @example
  * ```typescript
@@ -39,32 +41,30 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			action.description ??
 			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
 
-		const jsonSchema = action.input
-			? (standardSchemaToJsonSchema(action.input) as Record<string, unknown>)
-			: undefined;
-
-		const builder = jsonSchema ? jsonSchemaToYargsOptions(jsonSchema) : {};
+		const builder = action.input ? jsonSchemaToYargsOptions(action.input) : {};
 
 		return {
 			command: commandPath,
 			describe: description,
 			builder,
 			handler: async (argv: Record<string, unknown>) => {
-				const input = extractInputFromArgv(argv, jsonSchema);
-
 				if (action.input) {
-					const result = await action.input['~standard'].validate(input);
-					if (result.issues) {
-						console.error('Validation failed:');
-						for (const issue of result.issues) {
-							console.error(
-								`  - ${issue.path?.join('.') ?? 'input'}: ${issue.message}`,
-							);
+					try {
+						const input = Parser(action.input, argv);
+						const output = await action(input);
+						console.log(JSON.stringify(output, null, 2));
+					} catch (error) {
+						if (error instanceof ParseError) {
+							console.error('Validation failed:');
+							for (const err of error.cause.errors) {
+								console.error(
+									`  - ${err.instancePath || 'input'}: ${err.message}`,
+								);
+							}
+							process.exit(1);
 						}
-						process.exit(1);
+						throw error;
 					}
-					const output = await action(result.value);
-					console.log(JSON.stringify(output, null, 2));
 				} else {
 					const output = await action();
 					console.log(JSON.stringify(output, null, 2));
@@ -72,24 +72,4 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			},
 		};
 	});
-}
-
-function extractInputFromArgv(
-	argv: Record<string, unknown>,
-	jsonSchema: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-	if (!jsonSchema || jsonSchema.type !== 'object' || !jsonSchema.properties) {
-		return {};
-	}
-
-	const properties = jsonSchema.properties as Record<string, unknown>;
-	const input: Record<string, unknown> = {};
-
-	for (const key of Object.keys(properties)) {
-		if (key in argv && argv[key] !== undefined) {
-			input[key] = argv[key];
-		}
-	}
-
-	return input;
 }

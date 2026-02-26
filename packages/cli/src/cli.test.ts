@@ -11,7 +11,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/hq';
-import { type } from 'arktype';
+import Type from 'typebox';
 import yargs from 'yargs';
 import { buildActionCommands } from './command-builder';
 
@@ -112,7 +112,10 @@ describe('CLI command registration', () => {
 
 		const actions = {
 			create: defineMutation({
-				input: type({ title: 'string', 'count?': 'number' }),
+				input: Type.Object({
+					title: Type.String(),
+					count: Type.Optional(Type.Number()),
+				}),
 				handler: ({ title, count }) => {
 					capturedArgs = { title, count };
 					return { id: '1', title };
@@ -141,7 +144,7 @@ describe('CLI command registration', () => {
 			posts: {
 				list: defineQuery({ handler: () => [] }),
 				create: defineMutation({
-					input: type({ title: 'string' }),
+					input: Type.Object({ title: Type.String() }),
 					handler: ({ title }) => ({ title }),
 				}),
 			},

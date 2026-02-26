@@ -99,9 +99,7 @@ export { createTables } from './workspace/create-tables';
 
 export type {
 	ActionDescriptor,
-	AwarenessDescriptor,
-	KvDescriptor,
-	TableDescriptor,
+	SchemaDescriptor,
 	WorkspaceDescriptor,
 } from './workspace/describe-workspace';
 export { describeWorkspace } from './workspace/describe-workspace';

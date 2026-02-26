@@ -12,7 +12,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineMutation, defineQuery } from '@epicenter/hq';
-import { type } from 'arktype';
+import Type from 'typebox';
 import { collectActionPaths, createActionsRouter } from './actions';
 
 describe('createActionsRouter', () => {
@@ -91,7 +91,7 @@ describe('createActionsRouter', () => {
 		let capturedInput: unknown = null;
 		const actions = {
 			create: defineMutation({
-				input: type({ title: 'string' }),
+				input: Type.Object({ title: Type.String() }),
 				handler: (input) => {
 					capturedInput = input;
 					return { id: '123', title: input.title };
@@ -117,7 +117,7 @@ describe('createActionsRouter', () => {
 	test('validates input and returns 422 for invalid data', async () => {
 		const actions = {
 			create: defineMutation({
-				input: type({ title: 'string', count: 'number' }),
+				input: Type.Object({ title: Type.String(), count: Type.Number() }),
 				handler: ({ title, count }) => ({ title, count }),
 			}),
 		};

@@ -51,8 +51,6 @@ import {
 	type Provider,
 } from '$lib/ai/providers';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getHubServerUrl } from '$lib/state/settings';
 import type {
@@ -60,7 +58,7 @@ import type {
 	Conversation,
 	ConversationId,
 } from '$lib/workspace';
-import { popupWorkspace } from '$lib/workspace-popup';
+import { actionContext, popupWorkspace } from '$lib/workspace-popup';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -195,7 +193,7 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: tabManagerClientTools,
+			tools: actionContext.tools,
 			connection: fetchServerSentEvents(
 				() => `${hubUrlCache}/ai/chat`,
 				async () => {
@@ -206,7 +204,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: allServerToolDefinitions,
+							tools: actionContext.definitions,
 						},
 					};
 				},

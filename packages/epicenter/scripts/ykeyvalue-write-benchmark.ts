@@ -116,7 +116,7 @@ for (const count of rowCounts) {
 	ymapResults[count] = benchmarkYMap(count, updateSamples);
 }
 
-console.log('\n' + '═'.repeat(60));
+console.log(`\n${'═'.repeat(60)}`);
 console.log('Summary: Single Update Latency');
 console.log('═'.repeat(60));
 console.log('\nRows       | YKeyValue  | Y.Map      | Ratio');
@@ -130,7 +130,7 @@ for (const count of rowCounts) {
 	);
 }
 
-console.log('\n' + '═'.repeat(60));
+console.log(`\n${'═'.repeat(60)}`);
 console.log('Verdict');
 console.log('═'.repeat(60));
 const verdict100k = ykvResults[100_000]!.avgUpdate;

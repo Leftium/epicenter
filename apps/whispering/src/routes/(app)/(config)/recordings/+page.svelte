@@ -1,361 +1,361 @@
 <script lang="ts">
 	import { createPersistedState } from '@epicenter/svelte-utils';
-import { Badge } from '@epicenter/ui/badge';
-import { Button, buttonVariants } from '@epicenter/ui/button';
-import * as ButtonGroup from '@epicenter/ui/button-group';
-import { Card } from '@epicenter/ui/card';
-import { Checkbox } from '@epicenter/ui/checkbox';
-import { CopyButton } from '@epicenter/ui/copy-button';
-import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
-import * as Empty from '@epicenter/ui/empty';
-import { Input } from '@epicenter/ui/input';
-import { Label } from '@epicenter/ui/label';
-import * as Modal from '@epicenter/ui/modal';
-import { Skeleton } from '@epicenter/ui/skeleton';
-import * as Table from '@epicenter/ui/table';
-import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
-import { Textarea } from '@epicenter/ui/textarea';
-import { cn } from '@epicenter/ui/utils';
-import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-import CopyIcon from '@lucide/svelte/icons/copy';
-import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
-import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
-import MicIcon from '@lucide/svelte/icons/mic';
-import StartTranscriptionIcon from '@lucide/svelte/icons/play';
-import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
-import SearchIcon from '@lucide/svelte/icons/search';
-import { createMutation, createQuery } from '@tanstack/svelte-query';
-import {
-	createTable as createSvelteTable,
-	FlexRender,
-	renderComponent,
-} from '@tanstack/svelte-table';
-import type {
-	ColumnDef,
-	ColumnFiltersState,
-	PaginationState,
-} from '@tanstack/table-core';
-import {
-	getCoreRowModel,
-	getFilteredRowModel,
-	getPaginationRowModel,
-	getSortedRowModel,
-} from '@tanstack/table-core';
-import { type } from 'arktype';
-import { format } from 'date-fns';
-import { nanoid } from 'nanoid/non-secure';
-import { createRawSnippet } from 'svelte';
-import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-import { TrashIcon } from '$lib/components/icons';
-import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
-import { PATHS } from '$lib/constants/paths';
-import { rpc } from '$lib/query';
-import type { Recording } from '$lib/services/isomorphic/db';
-import { createCopyFn } from '$lib/utils/createCopyFn';
-import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
-import RenderAudioUrl from './RenderAudioUrl.svelte';
-import { RecordingRowActions } from './row-actions';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as ButtonGroup from '@epicenter/ui/button-group';
+	import { Card } from '@epicenter/ui/card';
+	import { Checkbox } from '@epicenter/ui/checkbox';
+	import { CopyButton } from '@epicenter/ui/copy-button';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
+	import * as Empty from '@epicenter/ui/empty';
+	import { Input } from '@epicenter/ui/input';
+	import { Label } from '@epicenter/ui/label';
+	import * as Modal from '@epicenter/ui/modal';
+	import { Skeleton } from '@epicenter/ui/skeleton';
+	import * as Table from '@epicenter/ui/table';
+	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import { cn } from '@epicenter/ui/utils';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
+	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
+	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import {
+		createTable as createSvelteTable,
+		FlexRender,
+		renderComponent,
+	} from '@tanstack/svelte-table';
+	import type {
+		ColumnDef,
+		ColumnFiltersState,
+		PaginationState,
+	} from '@tanstack/table-core';
+	import {
+		getCoreRowModel,
+		getFilteredRowModel,
+		getPaginationRowModel,
+		getSortedRowModel,
+	} from '@tanstack/table-core';
+	import { type } from 'arktype';
+	import { format } from 'date-fns';
+	import { nanoid } from 'nanoid/non-secure';
+	import { createRawSnippet } from 'svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
+	import { TrashIcon } from '$lib/components/icons';
+	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
+	import { PATHS } from '$lib/constants/paths';
+	import { rpc } from '$lib/query';
+	import type { Recording } from '$lib/services/isomorphic/db';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
+	import RenderAudioUrl from './RenderAudioUrl.svelte';
+	import { RecordingRowActions } from './row-actions';
 
-/**
- * Returns a cell renderer for a date/time column using date-fns format.
- *
- * @param formatString - date-fns format string
- */
-function formattedCell(formatString: string) {
-	return ({ getValue }: { getValue: () => unknown }) => {
-		const value = getValue();
-		if (typeof value !== 'string' || !value) return '';
-		const date = new Date(value);
-		if (Number.isNaN(date.getTime())) return value;
-		try {
-			return format(date, formatString);
-		} catch {
-			return value;
-		}
-	};
-}
+	/**
+	 * Returns a cell renderer for a date/time column using date-fns format.
+	 *
+	 * @param formatString - date-fns format string
+	 */
+	function formattedCell(formatString: string) {
+		return ({ getValue }: { getValue: () => unknown }) => {
+			const value = getValue();
+			if (typeof value !== 'string' || !value) return '';
+			const date = new Date(value);
+			if (Number.isNaN(date.getTime())) return value;
+			try {
+				return format(date, formatString);
+			} catch {
+				return value;
+			}
+		};
+	}
 
-const getAllRecordingsQuery = createQuery(
-	() => rpc.db.recordings.getAll.options,
-);
-const transcribeRecordings = createMutation(
-	() => rpc.transcription.transcribeRecordings.options,
-);
-const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
+	const getAllRecordingsQuery = createQuery(
+		() => rpc.db.recordings.getAll.options,
+	);
+	const transcribeRecordings = createMutation(
+		() => rpc.transcription.transcribeRecordings.options,
+	);
+	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
 
-const columns: ColumnDef<Recording>[] = [
-	{
-		id: 'select',
-		header: ({ table }) =>
-			renderComponent(SelectAllPopover<Recording>, { table }),
-		cell: ({ row }) =>
-			renderComponent(Checkbox, {
-				checked: row.getIsSelected(),
-				onCheckedChange: (value) => row.toggleSelected(!!value),
-				'aria-label': 'Select row',
-			}),
-		enableSorting: false,
-		enableHiding: false,
-		filterFn: (row, _columnId, filterValue) => {
-			const title = String(row.getValue('title'));
-			const subtitle = String(row.getValue('subtitle'));
-			const transcribedText = String(row.getValue('transcribedText'));
-			return (
-				title.toLowerCase().includes(filterValue.toLowerCase()) ||
-				subtitle.toLowerCase().includes(filterValue.toLowerCase()) ||
-				transcribedText.toLowerCase().includes(filterValue.toLowerCase())
+	const columns: ColumnDef<Recording>[] = [
+		{
+			id: 'select',
+			header: ({ table }) =>
+				renderComponent(SelectAllPopover<Recording>, { table }),
+			cell: ({ row }) =>
+				renderComponent(Checkbox, {
+					checked: row.getIsSelected(),
+					onCheckedChange: (value) => row.toggleSelected(!!value),
+					'aria-label': 'Select row',
+				}),
+			enableSorting: false,
+			enableHiding: false,
+			filterFn: (row, _columnId, filterValue) => {
+				const title = String(row.getValue('title'));
+				const subtitle = String(row.getValue('subtitle'));
+				const transcribedText = String(row.getValue('transcribedText'));
+				return (
+					title.toLowerCase().includes(filterValue.toLowerCase()) ||
+					subtitle.toLowerCase().includes(filterValue.toLowerCase()) ||
+					transcribedText.toLowerCase().includes(filterValue.toLowerCase())
+				);
+			},
+		},
+		{
+			id: 'ID',
+			accessorKey: 'id',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, { column, headerText: 'ID' }),
+			cell: ({ getValue }) => {
+				const id = getValue<string>();
+				return renderComponent(Badge, {
+					variant: 'id',
+					children: createRawSnippet(() => ({
+						render: () => id,
+					})),
+				});
+			},
+		},
+		{
+			id: 'Title',
+			accessorKey: 'title',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Title',
+				}),
+		},
+		{
+			id: 'Subtitle',
+			accessorKey: 'subtitle',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Subtitle',
+				}),
+		},
+		{
+			id: 'Timestamp',
+			accessorKey: 'timestamp',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Timestamp',
+				}),
+			cell: formattedCell(DATE_FORMAT),
+		},
+		{
+			id: 'Created At',
+			accessorKey: 'createdAt',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Created At',
+				}),
+			cell: formattedCell(DATE_FORMAT),
+		},
+		{
+			id: 'Updated At',
+			accessorKey: 'updatedAt',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Updated At',
+				}),
+			cell: formattedCell(DATE_FORMAT),
+		},
+		{
+			id: 'Transcript',
+			accessorKey: 'transcribedText',
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Transcript',
+				}),
+			cell: ({ getValue, row }) => {
+				const transcribedText = getValue<string>();
+				if (!transcribedText) return;
+				return renderComponent(TranscriptDialog, {
+					recordingId: row.id,
+					transcribedText,
+				});
+			},
+		},
+		{
+			id: 'Latest Transformation Run Output',
+			accessorFn: ({ id }) => id,
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Latest Transformation Run Output',
+				}),
+			cell: ({ getValue }) => {
+				const recordingId = getValue<string>();
+				return renderComponent(LatestTransformationRunOutputByRecordingId, {
+					recordingId,
+				});
+			},
+		},
+		{
+			id: 'Audio',
+			accessorFn: ({ id }) => id,
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Audio',
+				}),
+			cell: ({ getValue }) => {
+				const id = getValue<string>();
+				return renderComponent(RenderAudioUrl, { id });
+			},
+		},
+		{
+			id: 'Actions',
+			accessorFn: (recording) => recording,
+			header: ({ column }) =>
+				renderComponent(SortableTableHeader, {
+					column,
+					headerText: 'Actions',
+				}),
+			cell: ({ getValue }) => {
+				const recording = getValue<Recording>();
+				return renderComponent(RecordingRowActions, {
+					recordingId: recording.id,
+				});
+			},
+		},
+	];
+
+	let sorting = createPersistedState({
+		key: 'whispering-recordings-data-table-sorting',
+		onParseError: (error) => [{ id: 'timestamp', desc: true }],
+		schema: type({ desc: 'boolean', id: 'string' }).array(),
+	});
+	let columnFilters = $state<ColumnFiltersState>([]);
+	let columnVisibility = createPersistedState({
+		key: 'whispering-recordings-data-table-column-visibility',
+		onParseError: (error) => ({
+			ID: false,
+			Title: false,
+			Subtitle: false,
+			'Created At': false,
+			'Updated At': false,
+		}),
+		schema: type('Record<string, boolean>'),
+	});
+	let rowSelection = createPersistedState({
+		key: 'whispering-recordings-data-table-row-selection',
+		onParseError: (error) => ({}),
+		schema: type('Record<string, boolean>'),
+	});
+	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
+	let globalFilter = $state('');
+
+	const table = createSvelteTable({
+		getRowId: (originalRow) => originalRow.id,
+		get data() {
+			return getAllRecordingsQuery.data ?? [];
+		},
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		getSortedRowModel: getSortedRowModel(),
+		getFilteredRowModel: getFilteredRowModel(),
+		getPaginationRowModel: getPaginationRowModel(),
+		onSortingChange: (updater) => {
+			if (typeof updater === 'function') {
+				sorting.value = updater(sorting.value);
+			} else {
+				sorting.value = updater;
+			}
+		},
+		onColumnFiltersChange: (updater) => {
+			if (typeof updater === 'function') {
+				columnFilters = updater(columnFilters);
+			} else {
+				columnFilters = updater;
+			}
+		},
+		onColumnVisibilityChange: (updater) => {
+			if (typeof updater === 'function') {
+				columnVisibility.value = updater(columnVisibility.value);
+			} else {
+				columnVisibility.value = updater;
+			}
+		},
+		onRowSelectionChange: (updater) => {
+			if (typeof updater === 'function') {
+				rowSelection.value = updater(rowSelection.value);
+			} else {
+				rowSelection.value = updater;
+			}
+		},
+		onPaginationChange: (updater) => {
+			if (typeof updater === 'function') {
+				pagination = updater(pagination);
+			} else {
+				pagination = updater;
+			}
+		},
+		onGlobalFilterChange: (updater) => {
+			if (typeof updater === 'function') {
+				globalFilter = updater(globalFilter);
+			} else {
+				globalFilter = updater;
+			}
+		},
+		state: {
+			get sorting() {
+				return sorting.value;
+			},
+			get columnFilters() {
+				return columnFilters;
+			},
+			get columnVisibility() {
+				return columnVisibility.value;
+			},
+			get rowSelection() {
+				return rowSelection.value;
+			},
+			get pagination() {
+				return pagination;
+			},
+			get globalFilter() {
+				return globalFilter;
+			},
+		},
+	});
+
+	const selectedRecordingRows = $derived(
+		table.getFilteredSelectedRowModel().rows,
+	);
+
+	let template = $state('{{timestamp}} {{transcribedText}}');
+	let delimiter = $state('\n\n');
+
+	let isDialogOpen = $state(false);
+
+	const joinedTranscriptionsText = $derived.by(() => {
+		const transcriptions = selectedRecordingRows
+			.map(({ original }) => original)
+			.filter((recording) => recording.transcribedText !== '')
+			.map((recording) =>
+				template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+					if (key in recording) {
+						const value = recording[key as keyof Recording];
+						return typeof value === 'string' ? value : '';
+					}
+					return '';
+				}),
 			);
-		},
-	},
-	{
-		id: 'ID',
-		accessorKey: 'id',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, { column, headerText: 'ID' }),
-		cell: ({ getValue }) => {
-			const id = getValue<string>();
-			return renderComponent(Badge, {
-				variant: 'id',
-				children: createRawSnippet(() => ({
-					render: () => id,
-				})),
-			});
-		},
-	},
-	{
-		id: 'Title',
-		accessorKey: 'title',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Title',
-			}),
-	},
-	{
-		id: 'Subtitle',
-		accessorKey: 'subtitle',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Subtitle',
-			}),
-	},
-	{
-		id: 'Timestamp',
-		accessorKey: 'timestamp',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Timestamp',
-			}),
-		cell: formattedCell(DATE_FORMAT),
-	},
-	{
-		id: 'Created At',
-		accessorKey: 'createdAt',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Created At',
-			}),
-		cell: formattedCell(DATE_FORMAT),
-	},
-	{
-		id: 'Updated At',
-		accessorKey: 'updatedAt',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Updated At',
-			}),
-		cell: formattedCell(DATE_FORMAT),
-	},
-	{
-		id: 'Transcript',
-		accessorKey: 'transcribedText',
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Transcript',
-			}),
-		cell: ({ getValue, row }) => {
-			const transcribedText = getValue<string>();
-			if (!transcribedText) return;
-			return renderComponent(TranscriptDialog, {
-				recordingId: row.id,
-				transcribedText,
-			});
-		},
-	},
-	{
-		id: 'Latest Transformation Run Output',
-		accessorFn: ({ id }) => id,
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Latest Transformation Run Output',
-			}),
-		cell: ({ getValue }) => {
-			const recordingId = getValue<string>();
-			return renderComponent(LatestTransformationRunOutputByRecordingId, {
-				recordingId,
-			});
-		},
-	},
-	{
-		id: 'Audio',
-		accessorFn: ({ id }) => id,
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Audio',
-			}),
-		cell: ({ getValue }) => {
-			const id = getValue<string>();
-			return renderComponent(RenderAudioUrl, { id });
-		},
-	},
-	{
-		id: 'Actions',
-		accessorFn: (recording) => recording,
-		header: ({ column }) =>
-			renderComponent(SortableTableHeader, {
-				column,
-				headerText: 'Actions',
-			}),
-		cell: ({ getValue }) => {
-			const recording = getValue<Recording>();
-			return renderComponent(RecordingRowActions, {
-				recordingId: recording.id,
-			});
-		},
-	},
-];
-
-let sorting = createPersistedState({
-	key: 'whispering-recordings-data-table-sorting',
-	onParseError: (error) => [{ id: 'timestamp', desc: true }],
-	schema: type({ desc: 'boolean', id: 'string' }).array(),
-});
-let columnFilters = $state<ColumnFiltersState>([]);
-let columnVisibility = createPersistedState({
-	key: 'whispering-recordings-data-table-column-visibility',
-	onParseError: (error) => ({
-		ID: false,
-		Title: false,
-		Subtitle: false,
-		'Created At': false,
-		'Updated At': false,
-	}),
-	schema: type('Record<string, boolean>'),
-});
-let rowSelection = createPersistedState({
-	key: 'whispering-recordings-data-table-row-selection',
-	onParseError: (error) => ({}),
-	schema: type('Record<string, boolean>'),
-});
-let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });
-let globalFilter = $state('');
-
-const table = createSvelteTable({
-	getRowId: (originalRow) => originalRow.id,
-	get data() {
-		return getAllRecordingsQuery.data ?? [];
-	},
-	columns,
-	getCoreRowModel: getCoreRowModel(),
-	getSortedRowModel: getSortedRowModel(),
-	getFilteredRowModel: getFilteredRowModel(),
-	getPaginationRowModel: getPaginationRowModel(),
-	onSortingChange: (updater) => {
-		if (typeof updater === 'function') {
-			sorting.value = updater(sorting.value);
-		} else {
-			sorting.value = updater;
-		}
-	},
-	onColumnFiltersChange: (updater) => {
-		if (typeof updater === 'function') {
-			columnFilters = updater(columnFilters);
-		} else {
-			columnFilters = updater;
-		}
-	},
-	onColumnVisibilityChange: (updater) => {
-		if (typeof updater === 'function') {
-			columnVisibility.value = updater(columnVisibility.value);
-		} else {
-			columnVisibility.value = updater;
-		}
-	},
-	onRowSelectionChange: (updater) => {
-		if (typeof updater === 'function') {
-			rowSelection.value = updater(rowSelection.value);
-		} else {
-			rowSelection.value = updater;
-		}
-	},
-	onPaginationChange: (updater) => {
-		if (typeof updater === 'function') {
-			pagination = updater(pagination);
-		} else {
-			pagination = updater;
-		}
-	},
-	onGlobalFilterChange: (updater) => {
-		if (typeof updater === 'function') {
-			globalFilter = updater(globalFilter);
-		} else {
-			globalFilter = updater;
-		}
-	},
-	state: {
-		get sorting() {
-			return sorting.value;
-		},
-		get columnFilters() {
-			return columnFilters;
-		},
-		get columnVisibility() {
-			return columnVisibility.value;
-		},
-		get rowSelection() {
-			return rowSelection.value;
-		},
-		get pagination() {
-			return pagination;
-		},
-		get globalFilter() {
-			return globalFilter;
-		},
-	},
-});
-
-const selectedRecordingRows = $derived(
-	table.getFilteredSelectedRowModel().rows,
-);
-
-let template = $state('{{timestamp}} {{transcribedText}}');
-let delimiter = $state('\n\n');
-
-let isDialogOpen = $state(false);
-
-const joinedTranscriptionsText = $derived.by(() => {
-	const transcriptions = selectedRecordingRows
-		.map(({ original }) => original)
-		.filter((recording) => recording.transcribedText !== '')
-		.map((recording) =>
-			template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-				if (key in recording) {
-					const value = recording[key as keyof Recording];
-					return typeof value === 'string' ? value : '';
-				}
-				return '';
-			}),
-		);
-	return transcriptions.join(delimiter);
-});
+		return transcriptions.join(delimiter);
+	});
 </script>
 
 <svelte:head> <title>All Recordings</title> </svelte:head>
@@ -595,9 +595,7 @@ const joinedTranscriptionsText = $derived.by(() => {
 					{#if getAllRecordingsQuery.isPending}
 						{#each { length: 5 } as _}
 							<Table.Row>
-								<Table.Cell>
-									<Skeleton class="size-4" />
-								</Table.Cell>
+								<Table.Cell> <Skeleton class="size-4" /> </Table.Cell>
 								<Table.Cell colspan={columns.length - 1}>
 									<Skeleton class="h-4 w-full" />
 								</Table.Cell>

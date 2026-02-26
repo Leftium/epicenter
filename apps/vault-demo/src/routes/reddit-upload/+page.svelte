@@ -121,7 +121,7 @@
 				const path = f.path;
 				const parts = path.split('/').filter(Boolean);
 				// Find adapter segment anywhere in the path (supports vault/adapter/table/... and adapter/table/...)
-				const aIdx = parts.findIndex((p) => p === 'reddit');
+				const aIdx = parts.indexOf('reddit');
 				if (aIdx === -1) {
 					continue; // not a reddit file
 				}

@@ -58,7 +58,7 @@
 
 			if (isCmdOrCtrl && e.key >= '0' && e.key <= '9') {
 				e.preventDefault();
-				const index = e.key === '0' ? 9 : parseInt(e.key) - 1; // 0 maps to 10th item
+				const index = e.key === '0' ? 9 : parseInt(e.key, 10) - 1; // 0 maps to 10th item
 
 				if (transformations[index]) {
 					onSelect(transformations[index]);

@@ -40,7 +40,7 @@
 </script>
 
 <div class={cn(style({ variant, className: className }))}>
-	{#if typeof text == 'string'}
+	{#if typeof text === 'string'}
 		<pre
 			class={cn(
 				'overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap',

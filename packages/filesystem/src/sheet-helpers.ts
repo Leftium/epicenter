@@ -225,7 +225,7 @@ export function parseSheetFromCsv(
 		colMap.set('kind', 'text');
 		colMap.set('width', '120');
 		colMap.set('order', String(columnOrders[i]));
-		columns.set(columnIds[i], colMap);
+		columns.set(columnIds[i]!, colMap);
 	}
 
 	// Remaining rows are data
@@ -247,7 +247,7 @@ export function parseSheetFromCsv(
 			for (let j = 0; j < columnIds.length; j++) {
 				const cellValue = dataRow[j] ?? '';
 				if (cellValue) {
-					rowMap.set(columnIds[j], cellValue);
+					rowMap.set(columnIds[j]!, cellValue);
 				}
 			}
 		}

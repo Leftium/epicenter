@@ -77,8 +77,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		pushSheetFromCsv(csv: string): Y.Map<any> {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
-			const columns = new Y.Map();
-			const rows = new Y.Map();
+			const columns = new Y.Map<Y.Map<string>>();
+			const rows = new Y.Map<Y.Map<string>>();
 			entry.set('columns', columns);
 			entry.set('rows', rows);
 			parseSheetFromCsv(csv, columns, rows);

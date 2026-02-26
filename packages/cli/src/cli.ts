@@ -22,9 +22,7 @@ async function fetchWorkspaceMetadata(
 	baseUrl: string,
 	workspaceId: string,
 ): Promise<WorkspaceMetadata> {
-	const response = await fetch(
-		`${baseUrl}/workspaces/${workspaceId}`,
-	);
+	const response = await fetch(`${baseUrl}/workspaces/${workspaceId}`);
 	if (!response.ok) {
 		if (response.status === 404) {
 			throw new Error(`Workspace "${workspaceId}" not found on server.`);
@@ -52,15 +50,30 @@ function buildServeCommand() {
 					type: 'string' as const,
 					description: 'Directory to scan for workspace configs',
 					array: true,
+				})
+				.option('watch', {
+					alias: 'w',
+					type: 'boolean' as const,
+					default: false,
+					description:
+						'Restart server when workspace config files change (uses bun --watch)',
 				}),
-		handler: async (argv: { port: number; dir?: string[] }) => {
+		handler: async (argv: { port: number; dir?: string[]; watch: boolean }) => {
+			if (argv.watch) {
+				// Re-exec with bun --watch, stripping --watch/-w to avoid recursion
+				const args = process.argv.filter((a) => a !== '--watch' && a !== '-w');
+				const proc = Bun.spawn(['bun', '--watch', ...args], {
+					stdio: ['inherit', 'inherit', 'inherit'],
+				});
+				process.exitCode = await proc.exited;
+				return;
+			}
+
 			const dirs = argv.dir ?? [process.cwd()];
 			const { clients, sources } = await discoverAllWorkspaces(dirs);
 
 			if (clients.length === 0) {
-				console.log(
-					'No workspaces found. Starting server with no workspaces.',
-				);
+				console.log('No workspaces found. Starting server with no workspaces.');
 			} else {
 				console.log(`\nLoaded ${clients.length} workspace(s):`);
 				for (const [id, path] of sources) {
@@ -145,27 +158,19 @@ export function createCLI() {
 			try {
 				metadata = await fetchWorkspaceMetadata(serverUrl, workspaceId);
 			} catch (error) {
-				if (
-					error instanceof TypeError &&
-					error.message.includes('fetch')
-				) {
+				if (error instanceof TypeError && error.message.includes('fetch')) {
 					console.error(
 						`No Epicenter server running on ${serverUrl}.\nStart one with: epicenter serve`,
 					);
 				} else {
-					console.error(
-						error instanceof Error ? error.message : String(error),
-					);
+					console.error(error instanceof Error ? error.message : String(error));
 				}
 				process.exitCode = 1;
 				return;
 			}
 
 			// Build workspace-scoped CLI
-			let cli = yargs()
-				.scriptName(`epicenter ${workspaceId}`)
-				.help()
-				.version();
+			let cli = yargs().scriptName(`epicenter ${workspaceId}`).help().version();
 
 			// Register table commands (dynamically from server metadata)
 			for (const tableName of metadata.tables) {

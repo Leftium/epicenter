@@ -34,143 +34,104 @@ function resolveAction(
 /**
  * Create an Elysia plugin for action endpoints.
  *
- * Uses parameterized routes with a wildcard for the action path.
+ * Registers per-action static routes at construction time by iterating over all
+ * workspaces. Each route gets its own OpenAPI metadata (summary, tags).
+ * Workspace resolution still happens at request time via :workspaceId param.
  */
 export function createActionsPlugin(
 	workspaces: Record<string, AnyWorkspaceClient>,
 ) {
-	return new Elysia({ prefix: '/:workspaceId/actions' })
-		.get(
-			'/*',
-			async ({ params, query, status, path }) => {
-				const workspace = workspaces[params.workspaceId];
-				if (!workspace?.actions)
-					return status('Not Found', { error: 'Workspace or actions not found' });
+	const router = new Elysia({ prefix: '/:workspaceId/actions' });
 
-				// Extract action path from the full URL path
-				const actionsPrefix = `/workspaces/${params.workspaceId}/actions/`;
-				const actionPath = path.startsWith(actionsPrefix)
-					? path.slice(actionsPrefix.length)
-					: (params as Record<string, string>)['*'] ?? '';
+	// Collect unique action shapes across all workspaces.
+	// Since workspaces may define the same action paths, we register
+	// routes once and resolve the specific workspace at request time.
+	const actionPaths = new Map<string, Set<'query' | 'mutation'>>();
 
-				const action = resolveAction(workspace.actions, actionPath);
-				if (!action) return status('Not Found', { error: `Action not found: ${actionPath}` });
-				if (action.type !== 'query')
-					return status('Bad Request', {
-						error: `Action "${actionPath}" is a mutation, use POST`,
-					});
+	for (const workspace of Object.values(workspaces)) {
+		if (!workspace.actions) continue;
+		for (const [action, path] of iterateActions(workspace.actions)) {
+			const routePath = path.join('/');
+			const types = actionPaths.get(routePath) ?? new Set();
+			types.add(action.type);
+			actionPaths.set(routePath, types);
+		}
+	}
 
-				if (action.input) {
-					if (!Value.Check(action.input, query))
-						return status('Unprocessable Content', {
-							errors: [...Value.Errors(action.input, query)],
+	for (const [actionPath, types] of actionPaths) {
+		const routePath = `/${actionPath}`;
+
+		const segments = actionPath.split('/');
+		const namespaceTags = segments.length > 1 ? [segments[0] as string] : [];
+
+		if (types.has('query')) {
+			const detail = {
+				summary: actionPath.replace(/\//g, '.'),
+				tags: [...namespaceTags, 'query'],
+			};
+
+			router.get(
+				routePath,
+				async ({ params, query, status }) => {
+					const workspace = workspaces[params.workspaceId];
+					if (!workspace?.actions)
+						return status('Not Found', { error: 'Workspace or actions not found' });
+
+					const action = resolveAction(workspace.actions, actionPath);
+					if (!action)
+						return status('Not Found', { error: `Action not found: ${actionPath}` });
+
+					if (action.type !== 'query')
+						return status('Bad Request', {
+							error: `Action "${actionPath}" is a mutation, use POST`,
 						});
-					return { data: await action(query) };
-				}
-				return { data: await action() };
-			},
-			{
-				detail: {
-					description: 'Run a query action',
-					tags: ['actions'],
+
+					if (action.input) {
+						if (!Value.Check(action.input, query))
+							return status('Unprocessable Content', {
+								errors: [...Value.Errors(action.input, query)],
+							});
+						return { data: await action(query) };
+					}
+					return { data: await action() };
 				},
-			},
-		)
-		.post(
-			'/*',
-			async ({ params, body, status, path }) => {
-				const workspace = workspaces[params.workspaceId];
-				if (!workspace?.actions)
-					return status('Not Found', { error: 'Workspace or actions not found' });
+				{ detail },
+			);
+		}
 
-				const actionsPrefix = `/workspaces/${params.workspaceId}/actions/`;
-				const actionPath = path.startsWith(actionsPrefix)
-					? path.slice(actionsPrefix.length)
-					: (params as Record<string, string>)['*'] ?? '';
+		if (types.has('mutation')) {
+			const detail = {
+				summary: actionPath.replace(/\//g, '.'),
+				tags: [...namespaceTags, 'mutation'],
+			};
 
-				const action = resolveAction(workspace.actions, actionPath);
-				if (!action) return status('Not Found', { error: `Action not found: ${actionPath}` });
-				if (action.type !== 'mutation')
-					return status('Bad Request', {
-						error: `Action "${actionPath}" is a query, use GET`,
-					});
+			router.post(
+				routePath,
+				async ({ params, body, status }) => {
+					const workspace = workspaces[params.workspaceId];
+					if (!workspace?.actions)
+						return status('Not Found', { error: 'Workspace or actions not found' });
 
-				if (action.input) {
-					if (!Value.Check(action.input, body))
-						return status('Unprocessable Content', {
-							errors: [...Value.Errors(action.input, body)],
+					const action = resolveAction(workspace.actions, actionPath);
+					if (!action)
+						return status('Not Found', { error: `Action not found: ${actionPath}` });
+
+					if (action.type !== 'mutation')
+						return status('Bad Request', {
+							error: `Action "${actionPath}" is a query, use GET`,
 						});
-					return { data: await action(body) };
-				}
-				return { data: await action() };
-			},
-			{
-				detail: {
-					description: 'Run a mutation action',
-					tags: ['actions'],
+
+					if (action.input) {
+						if (!Value.Check(action.input, body))
+							return status('Unprocessable Content', {
+								errors: [...Value.Errors(action.input, body)],
+							});
+						return { data: await action(body) };
+					}
+					return { data: await action() };
 				},
-			},
-		);
-}
-
-/**
- * Create an Elysia router for action definitions (legacy per-workspace).
- *
- * Used internally by createWorkspacePlugin for per-workspace dynamic routing.
- */
-export function createActionsRouter(actions: Actions, prefix = '/actions') {
-	const router = new Elysia({ prefix });
-
-	for (const [action, path] of iterateActions(actions)) {
-		const routePath = `/${path.join('/')}`;
-		const namespaceTags = path.length > 1 ? [path[0] as string] : [];
-		const tags = [...namespaceTags, action.type];
-
-		const detail = {
-			summary: path.join('.'),
-			description: action.description,
-			tags,
-		};
-
-		switch (action.type) {
-			case 'query':
-				router.get(
-					routePath,
-					async ({ query, status }) => {
-						if (action.input) {
-							if (!Value.Check(action.input, query))
-								return status('Unprocessable Content', {
-									errors: Value.Errors(action.input, query),
-								});
-							return { data: await action(query) };
-						}
-						return { data: await action() };
-					},
-					{ detail },
-				);
-				break;
-			case 'mutation':
-				router.post(
-					routePath,
-					async ({ body, status }) => {
-						if (action.input) {
-							if (!Value.Check(action.input, body))
-								return status('Unprocessable Content', {
-									errors: Value.Errors(action.input, body),
-								});
-							return { data: await action(body) };
-						}
-						return { data: await action() };
-					},
-					{ detail },
-				);
-				break;
-			default: {
-				const _exhaustive: never = action;
-				throw new Error(
-					`Unknown action type: ${(_exhaustive as { type: string }).type}`,
-				);
-			}
+				{ detail },
+			);
 		}
 	}
 

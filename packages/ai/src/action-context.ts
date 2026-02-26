@@ -1,6 +1,6 @@
 /**
  * Factory that captures an `Actions` generic once and derives everything
- * AI consumers need — tools, definitions, and lookup functions.
+ * AI consumers need — tools, definitions, and a label lookup.
  *
  * Assertions live here (infrastructure), never in consumer code.
  *
@@ -9,74 +9,48 @@
 
 import type { Actions } from '@epicenter/hq';
 import type { ActionNames } from './action-names';
-import {
-	actionsToClientTools,
-	type ActionsToClientToolsOptions,
-} from './actions-to-client-tools';
+import { actionsToClientTools } from './actions-to-client-tools';
 import { toDefinitions } from './tools-to-definitions';
 
-export type ActionContextOptions<
-	TActions extends Actions,
-	TLookups extends Record<string, Record<ActionNames<TActions>, unknown>>,
-> = ActionsToClientToolsOptions & {
-	/** Exhaustive lookup maps keyed by action name. Each becomes a `string → T | undefined` function. */
-	lookups?: TLookups;
-};
+/** Display labels for an action's active and completed states. */
+export type ActionLabel = { active: string; done: string };
 
 /**
  * Create a typed action context from a workspace action tree.
  *
  * Captures the `TActions` generic at the call site and returns tools,
- * definitions, and any lookup functions — all properly typed.
+ * definitions, and a label lookup — all properly typed.
  *
  * @example
  * ```ts
  * const ctx = createActionContext(workspace.actions, {
- *   lookups: {
- *     getToolLabel: {
- *       tabs_search: { active: 'Searching', done: 'Searched' },
- *       // ... compile error if you miss one
- *     },
+ *   labels: {
+ *     tabs_search: { active: 'Searching', done: 'Searched' },
+ *     // ... compile error if you miss one
  *   },
  * });
  *
  * ctx.tools;                    // AnyClientTool[]
  * ctx.definitions;              // ServerToolDefinition[]
- * ctx.getToolLabel(part.name);  // { active, done } | undefined
+ * ctx.getLabel('tabs_search');  // ActionLabel
  * ```
  */
-export function createActionContext<
-	TActions extends Actions,
-	TLookups extends Record<
-		string,
-		Record<ActionNames<TActions>, unknown>
-	> = Record<string, never>,
->(
+export function createActionContext<TActions extends Actions>(
 	actions: TActions,
-	options?: ActionContextOptions<TActions, TLookups>,
+	options: {
+		/** Exhaustive map of action name → label. Compile error if you miss one. */
+		labels: Record<ActionNames<TActions>, ActionLabel>;
+		/** If true, mutations will require user approval before executing. @default false */
+		requireApprovalForMutations?: boolean;
+	},
 ) {
-	const { lookups, ...toolOptions } = options ?? {};
-
+	const { labels, ...toolOptions } = options;
 	const tools = actionsToClientTools(actions, toolOptions);
 	const definitions = toDefinitions(tools);
-
-	const lookupFns = {} as {
-		[K in keyof TLookups]: (
-			name: string,
-		) => TLookups[K][ActionNames<TActions>] | undefined;
-	};
-
-	if (lookups) {
-		for (const [key, map] of Object.entries(lookups)) {
-			(lookupFns as Record<string, (name: string) => unknown>)[key] = (
-				name: string,
-			) => (map as Record<string, unknown>)[name];
-		}
-	}
 
 	return {
 		tools,
 		definitions,
-		...lookupFns,
+		getLabel: (name: ActionNames<TActions>): ActionLabel => labels[name],
 	};
 }

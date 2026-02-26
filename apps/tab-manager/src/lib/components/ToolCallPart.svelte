@@ -4,12 +4,12 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { actionContext } from '$lib/workspace-popup';
+	import { actionContext, type PopupTools } from '$lib/workspace-popup';
 
 	let {
 		part,
 	}: {
-		part: TanStackToolCallPart;
+		part: TanStackToolCallPart<PopupTools>;
 	} = $props();
 
 	const hasOutput = $derived(part.output != null);
@@ -26,9 +26,8 @@
 			'error' in part.output,
 	);
 	const displayName = $derived.by(() => {
-		const labels = actionContext.getToolLabel(part.name);
-		if (!labels) return part.name;
-		return isRunning ? labels.active : labels.done;
+		const label = actionContext.getLabel(part.name);
+		return isRunning ? label.active : label.done;
 	});
 	const badgeVariant = $derived(
 		isFailed

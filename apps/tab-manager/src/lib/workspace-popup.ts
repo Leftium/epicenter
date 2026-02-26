@@ -10,8 +10,8 @@
  * sync will converge on the same document.
  *
  * `.withActions()` attaches all AI-callable operations (tab search, close,
- * group, etc.) as workspace actions. These are derived into TanStack AI
- * tools by `actionsToClientTools()` then stripped to definitions via `toDefinitions()`.
+ * group, etc.) as workspace actions. `createActionContext()` derives these
+ * into TanStack AI client tools, server definitions, and a label lookup.
  */
 
 import { createActionContext } from '@epicenter/ai';
@@ -286,29 +286,28 @@ export const popupWorkspace = createWorkspace(definition)
 	}));
 
 export const actionContext = createActionContext(popupWorkspace.actions, {
-	lookups: {
-		getToolLabel: {
-			tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
-			tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
-			windows_list: { active: 'Listing windows', done: 'Listed windows' },
-			devices_list: { active: 'Listing devices', done: 'Listed devices' },
-			domains_count: {
-				active: 'Counting domains',
-				done: 'Counted domains',
-			},
-			tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
-			tabs_open: { active: 'Opening tab', done: 'Opened tab' },
-			tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
-			tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
-			tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
-			tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
-			tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
-			tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
+	labels: {
+		tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
+		tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
+		windows_list: { active: 'Listing windows', done: 'Listed windows' },
+		devices_list: { active: 'Listing devices', done: 'Listed devices' },
+		domains_count: {
+			active: 'Counting domains',
+			done: 'Counted domains',
 		},
+		tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
+		tabs_open: { active: 'Opening tab', done: 'Opened tab' },
+		tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
+		tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
+		tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
+		tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
+		tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
+		tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
 	},
 });
 
-export type PopupActionName = (typeof actionContext.tools)[number]['name'];
+export type PopupTools = typeof actionContext.tools;
+export type PopupActionName = PopupTools[number]['name'];
 
 // Set local awareness on connect
 void popupWorkspace.whenReady.then(() => {

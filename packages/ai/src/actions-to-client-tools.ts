@@ -29,7 +29,7 @@ import { iterateActions } from '@epicenter/hq';
 import type { AnyClientTool } from '@tanstack/ai';
 import { ACTION_NAME_SEPARATOR, type ActionNames } from './action-names';
 
-export type ActionsToClientToolsOptions = {
+type ActionsToClientToolsOptions = {
 	/** If true, mutations will require user approval before executing. @default false */
 	requireApprovalForMutations?: boolean;
 };

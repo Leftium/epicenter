@@ -1,6 +1,5 @@
 import { type Actions, iterateActions } from '@epicenter/hq';
-import type { TSchema } from 'typebox';
-import Value from 'typebox/value';
+import { Parser, ParseError } from 'typebox/value';
 import type { CommandModule } from 'yargs';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
@@ -15,6 +14,11 @@ import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
  * Actions use closure-based dependency injection - they capture their context
  * (tables, extensions, etc.) at definition time. The handler is called directly
  * with just the validated input.
+ *
+ * Yargs handles help text display (types, choices, descriptions, required flags).
+ * TypeBox's Parser handles the actual validation pipeline: Clone → Default →
+ * Convert → Clean → Assert. This means yargs coercion and TypeBox coercion
+ * both run, but TypeBox is the single source of truth for validation.
  *
  * @example
  * ```typescript
@@ -37,27 +41,32 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			action.description ??
 			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
 
-		const builder = action.input ? jsonSchemaToYargsOptions(action.input) : {};
+		const builder = action.input
+			? jsonSchemaToYargsOptions(action.input)
+			: {};
 
 		return {
 			command: commandPath,
 			describe: description,
 			builder,
 			handler: async (argv: Record<string, unknown>) => {
-				const input = extractInputFromArgv(argv, action.input);
-
 				if (action.input) {
-					if (!Value.Check(action.input, input)) {
-						console.error('Validation failed:');
-						for (const error of Value.Errors(action.input, input)) {
-							console.error(
-								`  - ${error.instancePath || 'input'}: ${error.message}`,
-							);
+					try {
+						const input = Parser(action.input, argv);
+						const output = await action(input);
+						console.log(JSON.stringify(output, null, 2));
+					} catch (error) {
+						if (error instanceof ParseError) {
+							console.error('Validation failed:');
+							for (const err of error.cause.errors) {
+								console.error(
+									`  - ${err.instancePath || 'input'}: ${err.message}`,
+								);
+							}
+							process.exit(1);
 						}
-						process.exit(1);
+						throw error;
 					}
-					const output = await action(input);
-					console.log(JSON.stringify(output, null, 2));
 				} else {
 					const output = await action();
 					console.log(JSON.stringify(output, null, 2));
@@ -65,30 +74,4 @@ export function buildActionCommands(actions: Actions): CommandModule[] {
 			},
 		};
 	});
-}
-
-function extractInputFromArgv(
-	argv: Record<string, unknown>,
-	schema: TSchema | undefined,
-): Record<string, unknown> {
-	if (
-		!schema ||
-		!('type' in schema) ||
-		schema.type !== 'object' ||
-		!('properties' in schema) ||
-		!schema.properties
-	) {
-		return {};
-	}
-
-	const properties = schema.properties as Record<string, unknown>;
-	const input: Record<string, unknown> = {};
-
-	for (const key of Object.keys(properties)) {
-		if (key in argv && argv[key] !== undefined) {
-			input[key] = argv[key];
-		}
-	}
-
-	return input;
 }

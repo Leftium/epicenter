@@ -1,163 +1,18 @@
-import type {
-	TEnum,
-	TLiteral,
-	TObject,
-	TSchema,
-	TUnion,
-} from 'typebox';
+import Type, { type TSchema } from 'typebox';
 import type { Options } from 'yargs';
-
-type TSchemaTypeName =
-	| 'string'
-	| 'number'
-	| 'integer'
-	| 'boolean'
-	| 'array'
-	| 'object'
-	| 'null';
-
-function isObjectSchema(
-	schema: TSchema,
-): schema is TObject & { properties: Record<string, TSchema> } {
-	return (
-		'type' in schema &&
-		schema.type === 'object' &&
-		'properties' in schema &&
-		schema.properties !== undefined
-	);
-}
-
-function isEnumSchema(schema: TSchema): schema is TEnum {
-	return 'enum' in schema && schema.enum !== undefined;
-}
-
-function isUnionSchema(schema: TSchema): schema is TUnion {
-	return 'anyOf' in schema && schema.anyOf !== undefined;
-}
-
-function isConstSchema(schema: TSchema): schema is TLiteral {
-	return 'const' in schema && schema.const !== undefined;
-}
-
-function hasType(schema: TSchema): schema is TSchema & {
-	type: TSchemaTypeName | TSchemaTypeName[];
-} {
-	return 'type' in schema && schema.type !== undefined;
-}
 
 type YargsType = 'string' | 'number' | 'boolean' | 'array' | 'count';
 
-function jsonSchemaTypeToYargsType(
-	type: TSchemaTypeName | undefined,
-): YargsType | undefined {
-	switch (type) {
-		case 'string':
-			return 'string';
-		case 'number':
-		case 'integer':
-			return 'number';
-		case 'boolean':
-			return 'boolean';
-		case 'array':
-			return 'array';
-		default:
-			return undefined;
-	}
-}
-
-function extractChoicesFromUnion(
-	variants: readonly TSchema[],
-): string[] | undefined {
-	const choices: string[] = [];
-
-	for (const variant of variants) {
-		if (hasType(variant) && variant.type === 'null') continue;
-
-		if (isConstSchema(variant) && typeof variant.const === 'string') {
-			choices.push(variant.const);
-		} else if (isEnumSchema(variant)) {
-			for (const val of variant.enum) {
-				if (typeof val === 'string') choices.push(val);
-			}
-		} else {
-			return undefined;
-		}
-	}
-
-	return choices.length > 0 ? choices : undefined;
-}
-
-function fieldSchemaToYargsOption(
-	fieldSchema: TSchema,
-	isRequired: boolean,
-): Options {
-	const description =
-		'description' in fieldSchema
-			? (fieldSchema.description as string | undefined)
-			: undefined;
-
-	const defaultValue =
-		'default' in fieldSchema ? fieldSchema.default : undefined;
-
-	const baseOption: Options = {
-		description,
-		demandOption: isRequired,
-		default: defaultValue,
-	};
-
-	if (isEnumSchema(fieldSchema)) {
-		const choices = fieldSchema.enum.filter(
-			(v): v is string | number =>
-				typeof v === 'string' || typeof v === 'number',
-		);
-		if (choices.length > 0) {
-			return {
-				...baseOption,
-				type: typeof choices[0] === 'number' ? 'number' : 'string',
-				choices,
-			};
-		}
-	}
-
-	if (isUnionSchema(fieldSchema)) {
-		const choices = extractChoicesFromUnion(fieldSchema.anyOf);
-		if (choices) {
-			return {
-				...baseOption,
-				type: 'string',
-				choices,
-			};
-		}
-		return baseOption;
-	}
-
-	if (isConstSchema(fieldSchema)) {
-		const constVal = fieldSchema.const;
-		if (typeof constVal === 'string' || typeof constVal === 'number') {
-			return {
-				...baseOption,
-				type: typeof constVal === 'number' ? 'number' : 'string',
-				choices: [constVal],
-			};
-		}
-	}
-
-	if (hasType(fieldSchema)) {
-		const type = Array.isArray(fieldSchema.type)
-			? fieldSchema.type.find((t) => t !== 'null')
-			: fieldSchema.type;
-
-		const yargsType = jsonSchemaTypeToYargsType(type);
-		if (yargsType) {
-			return {
-				...baseOption,
-				type: yargsType,
-			};
-		}
-	}
-
-	return baseOption;
-}
+/**
+ * TypeBox's TSchema is an empty interface {}, but at runtime factory functions
+ * merge TSchemaOptions (description, default, etc.) onto the schema object.
+ * This type declares only the properties we actually read during conversion.
+ */
+type FieldSchema = TSchema & {
+	type?: string;
+	description?: string;
+	default?: unknown;
+};
 
 /**
  * Convert JSON Schema to yargs options record.
@@ -177,16 +32,90 @@ function fieldSchemaToYargsOption(
 export function jsonSchemaToYargsOptions(
 	schema: TSchema,
 ): Record<string, Options> {
-	if (!isObjectSchema(schema)) {
-		return {};
-	}
+	if (!Type.IsObject(schema)) return {};
 
-	const required = new Set((schema as TObject & { required?: string[] }).required ?? []);
+	const required = new Set(schema.required ?? []);
 	const options: Record<string, Options> = {};
 
 	for (const [key, fieldSchema] of Object.entries(schema.properties)) {
-		options[key] = fieldSchemaToYargsOption(fieldSchema, required.has(key));
+		options[key] = fieldSchemaToYargsOption(
+			fieldSchema as FieldSchema,
+			required.has(key),
+		);
 	}
 
 	return options;
+}
+
+function fieldSchemaToYargsOption(
+	schema: FieldSchema,
+	isRequired: boolean,
+): Options {
+	const option: Options = {
+		description: schema.description,
+		demandOption: isRequired,
+		default: schema.default,
+	};
+
+	const choices = extractChoices(schema);
+	if (choices) {
+		option.type = typeof choices[0] === 'number' ? 'number' : 'string';
+		option.choices = choices;
+		return option;
+	}
+
+	const yargsType = schemaTypeToYargsType(schema.type);
+	if (yargsType) {
+		option.type = yargsType;
+	}
+
+	return option;
+}
+
+function extractChoices(schema: TSchema): (string | number)[] | undefined {
+	if (Type.IsEnum(schema)) {
+		const choices = schema.enum.filter(
+			(v): v is string | number =>
+				typeof v === 'string' || typeof v === 'number',
+		);
+		return choices.length > 0 ? choices : undefined;
+	}
+
+	if (Type.IsLiteral(schema)) {
+		const val = schema.const;
+		if (typeof val === 'string' || typeof val === 'number') return [val];
+	}
+
+	if (Type.IsUnion(schema)) {
+		const choices: string[] = [];
+		for (const variant of schema.anyOf) {
+			if (Type.IsNull(variant)) continue;
+			if (Type.IsLiteral(variant) && typeof variant.const === 'string') {
+				choices.push(variant.const);
+			} else {
+				return undefined;
+			}
+		}
+		return choices.length > 0 ? choices : undefined;
+	}
+
+	return undefined;
+}
+
+function schemaTypeToYargsType(
+	type: string | undefined,
+): YargsType | undefined {
+	switch (type) {
+		case 'string':
+			return 'string';
+		case 'number':
+		case 'integer':
+			return 'number';
+		case 'boolean':
+			return 'boolean';
+		case 'array':
+			return 'array';
+		default:
+			return undefined;
+	}
 }

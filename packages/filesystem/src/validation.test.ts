@@ -42,7 +42,7 @@ function makeRow(
 		createdAt,
 		updatedAt: createdAt,
 		trashedAt: null,
-		_v: 1,
+		_v: 1 as const,
 	};
 }
 

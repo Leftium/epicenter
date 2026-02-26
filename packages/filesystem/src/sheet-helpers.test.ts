@@ -156,9 +156,9 @@ describe('parseSheetFromCsv', () => {
 		expect(rows.size).toBe(2);
 
 		const colEntries = Array.from(columns.entries());
-		expect(colEntries[0][1].get('name')).toBe('A');
-		expect(colEntries[1][1].get('name')).toBe('B');
-		expect(colEntries[2][1].get('name')).toBe('C');
+		expect(colEntries[0]![1].get('name')).toBe('A');
+		expect(colEntries[1]![1].get('name')).toBe('B');
+		expect(colEntries[2]![1].get('name')).toBe('C');
 	});
 
 	test('empty CSV leaves maps empty', () => {
@@ -174,8 +174,8 @@ describe('parseSheetFromCsv', () => {
 
 		const rowEntries = Array.from(rows.entries());
 		const colEntries = Array.from(columns.entries());
-		const colId = colEntries[0][0];
-		expect(rowEntries[0][1].get(colId)).toBe('Smith, John');
+		const colId = colEntries[0]![0];
+		expect(rowEntries[0]![1].get(colId)).toBe('Smith, John');
 	});
 
 	test('quoted fields with escaped quotes', () => {
@@ -184,8 +184,8 @@ describe('parseSheetFromCsv', () => {
 
 		const rowEntries = Array.from(rows.entries());
 		const colEntries = Array.from(columns.entries());
-		const colId = colEntries[0][0];
-		expect(rowEntries[0][1].get(colId)).toBe('Say "hello"');
+		const colId = colEntries[0]![0];
+		expect(rowEntries[0]![1].get(colId)).toBe('Say "hello"');
 	});
 
 	test('quoted fields with newlines', () => {
@@ -194,8 +194,8 @@ describe('parseSheetFromCsv', () => {
 
 		const rowEntries = Array.from(rows.entries());
 		const colEntries = Array.from(columns.entries());
-		const colId = colEntries[0][0];
-		expect(rowEntries[0][1].get(colId)).toBe('Line 1\nLine 2');
+		const colId = colEntries[0]![0];
+		expect(rowEntries[0]![1].get(colId)).toBe('Line 1\nLine 2');
 	});
 
 	test('empty cells in CSV', () => {
@@ -204,10 +204,10 @@ describe('parseSheetFromCsv', () => {
 
 		const rowEntries = Array.from(rows.entries());
 		const colEntries = Array.from(columns.entries());
-		const row = rowEntries[0][1];
-		const colIdA = colEntries[0][0];
-		const colIdB = colEntries[1][0];
-		const colIdC = colEntries[2][0];
+		const row = rowEntries[0]![1];
+		const colIdA = colEntries[0]![0];
+		const colIdB = colEntries[1]![0];
+		const colIdC = colEntries[2]![0];
 
 		expect(row.get(colIdA)).toBe('1');
 		expect(row.has(colIdB)).toBe(false); // Empty cell not stored
@@ -261,7 +261,7 @@ describe('fractional indexing', () => {
 			expect(orders[i]).toBeGreaterThan(0);
 			expect(orders[i]).toBeLessThan(1);
 			if (i > 0) {
-				expect(orders[i]).toBeGreaterThan(orders[i - 1]);
+				expect(orders[i]).toBeGreaterThan(orders[i - 1]!);
 			}
 		}
 	});

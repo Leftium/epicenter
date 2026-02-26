@@ -50,9 +50,9 @@ import {
 import type {
 	AwarenessDefinitions,
 	BaseRow,
+	DocumentConfig,
 	DocumentExtensionRegistration,
 	Documents,
-	DocumentConfig,
 	DocumentsHelper,
 	ExtensionContext,
 	KvDefinitions,

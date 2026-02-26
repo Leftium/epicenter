@@ -248,7 +248,7 @@ export function parseGroupId(
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─── Shared schemas ────────────────────────────────────────────────────────
+// ─── Shared types ─────────────────────────────────────────────────────────
 
 const tabGroupColor = type(
 	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
@@ -278,6 +278,7 @@ const devicesTable = defineTable(
 		_v: '1',
 	}),
 );
+export type Device = InferTableRow<typeof devicesTable>;
 
 /**
  * Tabs — shadows browser tab state.
@@ -329,6 +330,7 @@ const tabsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type Tab = InferTableRow<typeof tabsTable>;
 
 /**
  * Windows — shadows browser window state.
@@ -358,6 +360,7 @@ const windowsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type Window = InferTableRow<typeof windowsTable>;
 
 /**
  * Tab groups — Chrome 88+ only, not supported on Firefox.
@@ -380,6 +383,7 @@ const tabGroupsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type TabGroup = InferTableRow<typeof tabGroupsTable>;
 
 /**
  * Saved tabs — explicitly saved tabs that can be restored later.
@@ -403,6 +407,7 @@ const savedTabsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
 /**
  * AI conversations — metadata for each chat thread.
@@ -426,6 +431,7 @@ const conversationsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**
  * Chat messages — TanStack AI UIMessage data persisted per conversation.
@@ -448,6 +454,7 @@ const chatMessagesTable = defineTable(
 		_v: '1',
 	}),
 );
+export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 /**
  * AI command queue — discriminated union on `action`.
@@ -512,43 +519,7 @@ const commandsTable = defineTable(
 		),
 	),
 );
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Type Exports (inferred from table definitions — works with any Standard Schema)
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type Device = InferTableRow<typeof devicesTable>;
-export type Tab = InferTableRow<typeof tabsTable>;
-export type Window = InferTableRow<typeof windowsTable>;
-export type TabGroup = InferTableRow<typeof tabGroupsTable>;
-export type SavedTab = InferTableRow<typeof savedTabsTable>;
-export type Conversation = InferTableRow<typeof conversationsTable>;
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 export type Command = InferTableRow<typeof commandsTable>;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Workspace Definition (composes pre-built tables)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const definition = defineWorkspace({
-	id: 'tab-manager',
-
-	awareness: {
-		deviceId: type('string'),
-		deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
-	},
-
-	tables: {
-		devices: devicesTable,
-		tabs: tabsTable,
-		windows: windowsTable,
-		tabGroups: tabGroupsTable,
-		savedTabs: savedTabsTable,
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-		commands: commandsTable,
-	},
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Client
@@ -562,7 +533,27 @@ const definition = defineWorkspace({
  * sync handle local storage and cross-device sync. Actions are available at
  * `.actions` for AI tool derivation.
  */
-export const workspaceClient = createWorkspace(definition)
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		id: 'tab-manager',
+
+		awareness: {
+			deviceId: type('string'),
+			deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
+		},
+
+		tables: {
+			devices: devicesTable,
+			tabs: tabsTable,
+			windows: windowsTable,
+			tabGroups: tabGroupsTable,
+			savedTabs: savedTabsTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			commands: commandsTable,
+		},
+	}),
+)
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension(
 		'sync',

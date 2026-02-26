@@ -108,7 +108,7 @@ export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
 
-// 2. Wrap in defineTable (enforces _v + id at this site)
+// 2. Wrap in defineTable + co-locate type export
 const conversationsTable = defineTable(
 	type({
 		id: ConversationId,              // Primary key — branded
@@ -117,6 +117,7 @@ const conversationsTable = defineTable(
 		_v: '1',
 	}),
 );
+export type Conversation = InferTableRow<typeof conversationsTable>;
 
 const chatMessagesTable = defineTable(
 	type({
@@ -126,18 +127,17 @@ const chatMessagesTable = defineTable(
 		_v: '1',
 	}),
 );
-
-// 3. Derive types from table definitions
-export type Conversation = InferTableRow<typeof conversationsTable>;
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
-// 4. Compose in defineWorkspace
-const definition = defineWorkspace({
-	tables: {
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-	},
-});
+// 3. Compose in createWorkspace
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		tables: {
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+		},
+	}),
+);
 ```
 
 ### Rules
@@ -167,18 +167,23 @@ See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 bra
 
 ## Workspace File Structure
 
-A workspace file has three layers, in this order:
+A workspace file has two layers:
 
-1. **Named table definitions** — `defineTable(schema)` called as standalone consts
-2. **Type exports** — derived via `InferTableRow<typeof table>` (works with any Standard Schema, including migrations)
-3. **`defineWorkspace` call** — composes pre-built tables
+1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
+2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client
 
 ### Pattern
 
 ```typescript
-import { defineTable, defineWorkspace, type InferTableRow } from '@epicenter/workspace';
+import {
+	createWorkspace,
+	defineTable,
+	defineWorkspace,
+	type InferTableRow,
+} from '@epicenter/workspace';
 
-// 1. Named table definitions (defineTable enforces _v + id here)
+// ─── Tables (each followed by its type export) ──────────────────────────
+
 const usersTable = defineTable(
 	type({
 		id: UserId,
@@ -186,6 +191,7 @@ const usersTable = defineTable(
 		_v: '1',
 	}),
 );
+export type User = InferTableRow<typeof usersTable>;
 
 const postsTable = defineTable(
 	type({
@@ -195,27 +201,28 @@ const postsTable = defineTable(
 		_v: '1',
 	}),
 );
-
-// 2. Type exports (inferred from table definitions)
-export type User = InferTableRow<typeof usersTable>;
 export type Post = InferTableRow<typeof postsTable>;
 
-// 3. Workspace definition (composes pre-built tables)
-const definition = defineWorkspace({
-	id: 'my-workspace',
-	tables: {
-		users: usersTable,
-		posts: postsTable,
-	},
-});
+// ─── Workspace client ───────────────────────────────────────────────────
+
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		id: 'my-workspace',
+		tables: {
+			users: usersTable,
+			posts: postsTable,
+		},
+	}),
+);
 ```
 
 ### Why This Structure
 
+- **Co-located types**: Each `export type` sits right below its `defineTable` — easy to verify 1:1 correspondence, easy to remove both together.
 - **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside `defineWorkspace`.
 - **Schema-agnostic inference**: `InferTableRow` works with any Standard Schema (arktype, zod, etc.) and handles migrations correctly (always infers the latest version's type).
 - **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire `defineWorkspace` return type.
-- **Readable composition**: The `defineWorkspace` call collapses to a few lines of `key: table` mappings. You can scan the workspace structure at a glance.
+- **No intermediate `definition` const**: `defineWorkspace({...})` is inlined directly into `createWorkspace()` since it's only used once.
 
 ### Anti-Pattern: Inline Tables + Deep Indirection
 
@@ -229,12 +236,13 @@ const definition = defineWorkspace({
 type Tables = NonNullable<(typeof definition)['tables']>;
 export type User = InferTableRow<Tables['users']>;
 
-// GOOD: Extract table, derive type from standalone const
+// GOOD: Extract table, co-locate type, inline defineWorkspace
 const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
 export type User = InferTableRow<typeof usersTable>;
-const definition = defineWorkspace({
-	tables: { users: usersTable },
-});
+
+export const workspaceClient = createWorkspace(
+	defineWorkspace({ tables: { users: usersTable } }),
+);
 ```
 
 ## The `_v` Convention

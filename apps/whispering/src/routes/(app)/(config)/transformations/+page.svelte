@@ -273,7 +273,7 @@ const selectedTransformationRows = $derived(
 			</Table.Header>
 			<Table.Body>
 				{#if transformationsQuery.isPending}
-					{#each { length: 5 }}
+					{#each { length: 5 } as _}
 						<Table.Row>
 							<Table.Cell>
 								<Skeleton class="size-4" />

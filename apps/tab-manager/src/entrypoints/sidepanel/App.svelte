@@ -51,7 +51,7 @@ const totalTabs = $derived(
 				<div class="flex-1 flex items-center justify-center">
 					<p class="text-sm text-muted-foreground">Loading tabs…</p>
 				</div>
-			{:then}
+			{:then _}
 				<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
 					<FlatTabList />
 				</Tabs.Content>

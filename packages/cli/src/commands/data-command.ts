@@ -4,19 +4,10 @@ import { formatYargsOptions, output, outputError } from '../format-output';
 import { parseJsonInput, readStdinSync } from '../parse-input';
 
 /**
- * Build the top-level `data` command group.
- *
- * Usage:
- *   epicenter data <workspace> tables
- *   epicenter data <workspace> <table> list
- *   epicenter data <workspace> <table> get <id>
- *   epicenter data <workspace> <table> set <id> [json]
- *   epicenter data <workspace> <table> update <id>
- *   epicenter data <workspace> <table> delete <id>
- *   epicenter data <workspace> kv get <key>
- *   epicenter data <workspace> kv set <key> [value]
- *   epicenter data <workspace> kv delete <key>
- *   epicenter data <workspace> action <path> [json]
+ * Build the top-level `data` command group for interacting with workspace data.
+ * Provides subcommands for tables, key-value store, and actions.
+ * @param serverUrl - Base URL of the Epicenter server to connect to.
+ * @returns A yargs command definition with tables, kv, action, and table-row subcommands.
  */
 export function buildDataCommand(serverUrl: string) {
 	return {

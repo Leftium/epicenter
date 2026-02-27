@@ -15,6 +15,13 @@ function resolveTable(
 	return (workspace.tables as Record<string, TableHelper<BaseRow>>)[tableName];
 }
 
+/**
+ * Create an Elysia plugin that exposes CRUD routes for all workspace tables.
+ * Registers GET (list/get-by-id), PUT (create/replace), PATCH (partial update),
+ * and DELETE routes for each table name found across all workspaces.
+ * @param workspaces - Map of workspace ID to workspace client.
+ * @returns An Elysia router scoped to `/:workspaceId/tables`.
+ */
 export function createTablesPlugin(
 	workspaces: Record<string, AnyWorkspaceClient>,
 ) {

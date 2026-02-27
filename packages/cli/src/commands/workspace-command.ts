@@ -17,6 +17,11 @@ import { loadClientFromPath } from '../discovery';
 import { formatYargsOptions, output, outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
+/**
+ * Build the `workspace` command group with subcommands for managing local workspaces.
+ * @param home - Epicenter home directory path.
+ * @returns A yargs CommandModule for the `workspace` command.
+ */
 export function buildWorkspaceCommand(home: string): CommandModule {
 	return {
 		command: 'workspace <subcommand>',

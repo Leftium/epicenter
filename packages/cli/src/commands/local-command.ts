@@ -5,8 +5,14 @@ import { discoverWorkspaces, resolveWorkspace } from '../discovery';
 import { outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
+/** Default port for the local Epicenter server. */
 const DEFAULT_PORT = 3913;
 
+/**
+ * Build the `local` command group with subcommands for managing the local Epicenter server.
+ * @param home - Epicenter home directory path.
+ * @returns A yargs CommandModule for the `local` command.
+ */
 export function buildLocalCommand(home: string): CommandModule {
 	return {
 		command: 'local <subcommand>',

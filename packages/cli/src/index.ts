@@ -1,3 +1,5 @@
+/** @module @epicenter/cli — Public API for the Epicenter CLI package. */
+
 export { createCLI } from './cli';
 export { createHttpClient, type HttpClient } from './http-client';
 export {

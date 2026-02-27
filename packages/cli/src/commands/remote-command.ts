@@ -5,6 +5,11 @@ import type { Argv, CommandModule } from 'yargs';
 
 const DEFAULT_REMOTE_PORT = 3914;
 
+/**
+ * Build the top-level `remote` command group for managing the remote Epicenter server.
+ * @param home - Path to the Epicenter home directory (used for PID file storage).
+ * @returns A yargs CommandModule with start, status, and stop subcommands.
+ */
 export function buildRemoteCommand(home: string): CommandModule {
 	return {
 		command: 'remote <subcommand>',

@@ -1,5 +1,6 @@
 // packages/cli/src/http-client.ts
 
+/** Minimal HTTP client with typed JSON responses and optional bearer-token auth. */
 interface HttpClient {
   get: <T = unknown>(path: string) => Promise<T>;
   post: <T = unknown>(path: string, body?: unknown) => Promise<T>;
@@ -8,6 +9,13 @@ interface HttpClient {
   delete: <T = unknown>(path: string) => Promise<T>;
 }
 
+/**
+ * Create an HTTP client that prepends `baseUrl` to every request path.
+ * Automatically sets Authorization and Content-Type headers as needed.
+ * @param baseUrl - Base URL for all requests (e.g. `http://localhost:4649`).
+ * @param token - Optional bearer token attached to every request.
+ * @returns An {@link HttpClient} with get/post/put/patch/delete methods.
+ */
 export function createHttpClient(baseUrl: string, token?: string): HttpClient {
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers: Record<string, string> = {};

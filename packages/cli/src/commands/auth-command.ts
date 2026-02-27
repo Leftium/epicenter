@@ -3,12 +3,14 @@ import type { Argv, CommandModule } from 'yargs';
 import { createHttpClient } from '../http-client';
 import { loadAuth, saveAuth, clearAuth } from '../auth-store';
 
+/** Response from the email sign-in endpoint. */
 interface SignInResponse {
   token: string;
   expiresAt: string;
   user: { id: string; email: string; name?: string };
 }
 
+/** Response from the get-session endpoint used to verify auth status. */
 interface SessionResponse {
   user: { id: string; email: string; name?: string };
   expiresAt: string;
@@ -152,6 +154,11 @@ function buildStatusCommand(home: string) {
   };
 }
 
+/**
+ * Build the top-level `auth` command group for managing authentication with a remote server.
+ * @param home - Path to the Epicenter home directory (used for credential storage).
+ * @returns A yargs CommandModule with login, logout, and status subcommands.
+ */
 export function buildAuthCommand(home: string): CommandModule {
   return {
     command: 'auth <subcommand>',

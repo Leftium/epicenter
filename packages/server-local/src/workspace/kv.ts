@@ -1,6 +1,12 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 
+/**
+ * Create an Elysia plugin that exposes GET, PUT, and DELETE routes for all workspace KV entries.
+ * Registers one route per KV key found across all workspaces.
+ * @param workspaces - Map of workspace ID to workspace client.
+ * @returns An Elysia router scoped to `/:workspaceId/kv`.
+ */
 export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 	const kvKeys = new Set<string>();
 	for (const workspace of Object.values(workspaces)) {

@@ -128,20 +128,40 @@ jsrepo distributes source code blocks from GitHub-backed registries.
 
 **Key finding**: jsrepo's model is "copy source into your project." It does not natively support isolated per-workspace `package.json` files. The `package.json` in the registry is read for dependency versions but not copied to the consumer.
 
-**Programmatic API surface** (confirmed from `dist/api/index.js`):
+**Programmatic API surface** (confirmed from `jsrepo@3.6.1` type declarations):
 ```typescript
-import { registry } from 'jsrepo/api';
+import {
+  resolveRegistries,       // registry URLs → Map<string, ResolvedRegistry>
+  parseWantedItems,        // item names → WantedItem[] (pure string parsing, no network)
+  resolveWantedItems,      // WantedItem[] → ResolvedWantedItem[] (matches against manifests)
+  resolveAndFetchAllItems, // ResolvedWantedItem[] → RegistryItemWithContent[] (fetches file content)
+  fetchManifest,           // Provider → Manifest (low-level: fetch registry.json)
+  DEFAULT_PROVIDERS,       // [azure, bitbucket, fs, github, gitlab, http, jsrepo]
+} from "jsrepo";
+import type { AbsolutePath, RegistryItemWithContent, ItemRepository } from "jsrepo";
 
-registry.getProviderState(url, options?)     // → Result<RegistryProviderState, string>
-registry.fetchManifest(providerState)        // → Result<RegistryManifest, string>
-registry.fetchManifests(providerStates[], options?) // → Result<RegistryManifest[], ...>
-registry.fetchRaw(providerState, filePath)   // → Result<string, string>  (raw file content)
-registry.getRemoteBlocks(manifests)          // → Map<string, RemoteBlock>
-registry.selectProvider(url)                // → RegistryProvider | undefined
-registry.jsrepo.parse(url, options)         // → parsed URL components
+// High-level flow:
+const registries = await resolveRegistries(["github/myorg/workspaces"], {
+  cwd: process.cwd() as AbsolutePath,
+  providers: DEFAULT_PROVIDERS,
+});
+const parsed = parseWantedItems(["my-workspace"], {
+  providers: DEFAULT_PROVIDERS,
+  registries: ["github/myorg/workspaces"],
+});
+const resolved = await resolveWantedItems(parsed.value.wantedItems, {
+  resolvedRegistries: registries.value,
+  nonInteractive: true,
+});
+const items = await resolveAndFetchAllItems(resolved.value, {
+  options: { withExamples: false, withDocs: false, withTests: false },
+});
+// items.value[n].files[m].content = raw file text
+// items.value[n].files[m].path = relative path within item (e.g. "index.ts")
+// items.value[n].dependencies = RemoteDependency[] for package.json generation
 ```
 
-File writing is not in the API — we use Bun's file APIs directly after fetching raw content. This means **no import rewriting happens** when using the programmatic API, solving the mangling concern without any post-processing.
+All results use `neverthrow`'s `Result<T, E>` — check `.isErr()` / `.isOk()` before unwrapping. File writing is not in the API — we use `Bun.write()` directly after fetching. This means **no import rewriting happens**, solving the mangling concern without any post-processing.
 
 **Implication**: We should use jsrepo for source distribution but handle `package.json` generation and `bun install` ourselves. The workspace directory layout includes a `package.json` that jsrepo doesn't manage — either we template it during install, or the `epicenter.config.ts` file is self-sufficient (imports only from `@epicenter/workspace` which is already installed globally).
 
@@ -167,12 +187,12 @@ The existing sync plugin (`packages/server/src/sync/plugin.ts`) is a Y.Doc WebSo
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Storage location | `~/.epicenter/` (dotfile in `$HOME`) | Developer-friendly: tab-completable (`~/.ep<tab>`), no spaces in path (unlike `~/Library/Application Support/`), cross-platform (works on macOS, Linux, WSL), follows conventions of `.cargo/`, `.bun/`, `.docker/`. Non-developer users never interact with the filesystem directly — the Tauri app and CLI are the interfaces. **Alternatives considered**: `~/Library/Application Support/Epicenter/` (Apple-sanctioned, Time Machine-backed, but path has spaces, macOS-only, annoying to `cd` into), `~/Documents/Epicenter/` (user-visible, iCloud-synced, but mixes app internals like `node_modules/` and `workspace.yjs` with user content). **Backup implication**: `~/.epicenter/` is excluded from iCloud sync by default and may be skipped by some backup tools. This is acceptable because: (1) the Y.Doc can be reconstructed from hub sync, (2) extensions project user-visible data to backed-up locations like `~/Documents/`, (3) Time Machine does cover dotfiles. |
+| Storage location | `~/.epicenter/` (configurable via `EPICENTER_HOME`) | Defaults to `~/.epicenter/` — developer-friendly: tab-completable (`~/.ep<tab>`), no spaces in path (unlike `~/Library/Application Support/`), cross-platform (works on macOS, Linux, WSL), follows conventions of `.cargo/`, `.bun/`, `.docker/`. **Configurable**: Set `EPICENTER_HOME=/path/to/dir` to override. CLI also accepts `--home /path/to/dir` on all commands. Resolution order: `--home` flag > `EPICENTER_HOME` env var > `~/.epicenter/`. This enables CI environments, portable installs, and testing against isolated directories. Non-developer users never interact with the filesystem directly — the Tauri app and CLI are the interfaces. **Alternatives considered**: `~/Library/Application Support/Epicenter/` (Apple-sanctioned, Time Machine-backed, but path has spaces, macOS-only, annoying to `cd` into), `~/Documents/Epicenter/` (user-visible, iCloud-synced, but mixes app internals like `node_modules/` and `workspace.yjs` with user content). **Backup implication**: `~/.epicenter/` is excluded from iCloud sync by default and may be skipped by some backup tools. This is acceptable because: (1) the Y.Doc can be reconstructed from hub sync, (2) extensions project user-visible data to backed-up locations like `~/Documents/`, (3) Time Machine does cover dotfiles. |
 | Discovery model | Centralized directory + symlinks for dev workspaces | Single `readdir()` scan — no config registry to corrupt or get stale. Installed workspaces live directly in `~/.epicenter/workspaces/`. Developer-authored workspaces (in git repos elsewhere) are symlinked in via `epicenter add <path>`. Avoids the "stale paths in config.json" problem of the distributed model. |
 | Filesystem projections | `.withExtension()` on workspace config | Workspaces may need to materialize Y.Doc data to arbitrary filesystem locations (Markdown files, JSON exports, etc.). Extensions are reactive side effects that subscribe to Y.Doc changes and write to a target path. This keeps the core contract clean (schema + actions) and makes materialization opt-in. The workspace directory stays centralized; extensions project *outward*. **This is the key enabler for the `~/.epicenter/` storage decision**: the internal data (Y.Doc, config, deps) lives in a hidden developer-friendly location, while extensions project user-visible output (Markdown, JSON, etc.) to wherever the user wants (`~/Documents/`, `~/notes/`, Obsidian vaults). The workspace doesn't need to *be* in the output directory to *write* to it. |
 | Composition mechanism | Shared `createWorkspacePlugin(clients)` via `.use()`, parameterized `/:workspaceId` routes, centralized sync relay for WS | All workspaces share one plugin with parameterized routes (`/workspaces/:workspaceId/tables/:tableName`, etc.). Workspace resolution happens at request time via `workspaces[params.workspaceId]`. This is the current working approach — simple, no per-workspace Elysia instances needed. The SPA never hits HTTP (it uses Y.Doc directly via WebSocket), and the CLI only uses Eden Treaty for ~8 table/KV commands. Per-workspace route prefixes would only improve type discrimination for those few CLI calls — not worth the architectural complexity. `.mount(path, handler.fetch)` reserved for future untrusted third-party code where lifecycle isolation is needed. |
 | Process model | Single process | Avoids port management, WebSocket relay, CORS across origins. `mount()` provides logical isolation. |
-| Distribution | jsrepo programmatic API for source + custom install step for deps | Use `registry.getProviderState()`, `registry.fetchManifest()`, `registry.getRemoteBlocks()`, `registry.fetchRaw()` from `jsrepo/api`. Write files ourselves via Bun (no file-writing in the API). We handle `package.json` generation and `bun install` since jsrepo doesn't support per-app isolation. Programmatic API skips CLI's import rewriting, so `@epicenter/workspace` imports arrive unmodified. |
+| Distribution | jsrepo programmatic API for source + custom install step for deps | Use `resolveRegistries()`, `parseWantedItems()`, `resolveWantedItems()`, `resolveAndFetchAllItems()` from `jsrepo`. Write files ourselves via `Bun.write()` (no file-writing in the API). We handle `package.json` generation and `bun install` since jsrepo doesn't support per-app isolation. Programmatic API returns raw file content without import rewriting, so `@epicenter/workspace` imports arrive unmodified. |
 | CLI role | Package manager + process launcher | `epicenter install`, `epicenter serve`, `epicenter add`, `epicenter <workspace> <command>`. Not a persistent daemon. |
 | Standalone mode | Each workspace can also run via `createLocalServer({ clients: [client] })` | The same `epicenter.config.ts` works mounted or standalone — isomorphic by design. |
 | Config portability | `epicenter.config.ts` default export is the builder — no extensions, no actions | The config is the data contract (schema only). Each runtime chains its own extensions and actions. Enables browser SPA to import the config for local-first Y.Doc operations, while the server chains FS extensions and server-only actions. |
@@ -270,10 +290,10 @@ All three have the full workspace installed. All three run it locally. All three
 
 ### Workspace Directory Layout
 
-Workspaces have two "weights" — installed from a registry, or symlinked from a developer's local project. Both have the same directory structure:
+Workspaces have two "weights" — installed from a registry, or symlinked from a developer's local project. Both have the same directory structure. The root is `$EPICENTER_HOME` (defaults to `~/.epicenter/`, configurable via env var or `--home` flag):
 
 ```
-~/.epicenter/
+$EPICENTER_HOME/                          # Default: ~/.epicenter/
 ├── config.json                          # Global: registries, default port
 │
 ├── workspaces/
@@ -627,58 +647,464 @@ The config file is portable across all runtime contexts — server (Bun local se
 
 ## Implementation Plan
 
-### Phase 1: Dynamic Workspace Discovery
+### Configurable Home Directory
 
-- [ ] **1.1** Add dynamic workspace discovery to `createLocalServer()` — scan `~/.epicenter/workspaces/`, import each `epicenter.config.ts`, pass all discovered clients to the existing `createWorkspacePlugin`. No route restructuring needed — the current parameterized `/workspaces/:workspaceId/...` approach stays.
-- [ ] **1.2** Add `/workspaces` endpoint that returns `describeWorkspace()` for all loaded workspaces (table names, KV keys, action paths). This is already partially done by the root `GET /` handler — extend it or add a dedicated endpoint.
-- [ ] **1.3** Handle discovery failures gracefully — if a workspace's `epicenter.config.ts` throws on import (syntax error, missing dep), log the error and continue loading other workspaces.
+All commands resolve `EPICENTER_HOME` before doing anything:
 
-### Phase 2: CLI as Package Manager
+```typescript
+// packages/cli/src/paths.ts
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-- [ ] **2.1** Add `epicenter install <registry/block>` — fetches source via jsrepo programmatic API (`registry.getProviderState` → `registry.fetchManifest` → `registry.getRemoteBlocks` → `registry.fetchRaw` per file, write to disk via Bun), creates workspace directory in `~/.epicenter/workspaces/`, generates `package.json`, runs `bun install` if deps present
-- [ ] **2.2** Add `epicenter add <path>` — validates that `<path>/epicenter.config.ts` exists, creates a symlink in `~/.epicenter/workspaces/<dirname>` pointing to the given path. This is how developers register workspaces that live in their own git repos.
-- [ ] **2.3** Add `epicenter uninstall <workspace-id>` — deletes the workspace directory (or removes symlink for `add`'d workspaces)
-- [ ] **2.4** Add `epicenter ls` — lists all workspaces from `~/.epicenter/workspaces/`, showing weight (installed/linked/developed) and status
-- [ ] **2.5** Add `epicenter update <workspace-id>` — re-fetches from registry, preserves `data/`
-- [ ] **2.6** Write `manifest.json` on install with provenance (registry source, version, hash)
+/** Resolution order: --home flag > EPICENTER_HOME env > ~/.epicenter/ */
+export function resolveEpicenterHome(flagValue?: string): string {
+  return flagValue ?? Bun.env.EPICENTER_HOME ?? join(homedir(), ".epicenter");
+}
 
-### Phase 3: Local Server as Sidecar
+export function workspacesDir(home: string): string {
+  return join(home, "workspaces");
+}
 
-- [ ] **3.1** Wire dynamic discovery (Phase 1) into `createLocalServer()` — the local server IS the "orchestrator," no separate concept needed
-- [ ] **3.2** Centralize sync relay — local server owns all WebSocket rooms, maps room IDs to workspace Y.Docs (already works this way)
-- [ ] **3.3** Serve Svelte SPA via `@elysiajs/static` with `indexHTML: true` for SPA fallback
-- [ ] **3.4** Wire Tauri sidecar to spawn local server (defaults to 3913, falls back to OS-assigned port if taken), read actual port, create WebView
+export function cacheDir(home: string): string {
+  return join(home, "cache");
+}
+```
 
-### Phase 4: Standalone Run + Remote Sync
+The `--home` global option is registered at the yargs root level so every command inherits it:
 
-- [ ] **4.1** Add `epicenter run <workspace-id> [--port N]` — runs a single workspace as a standalone server
-- [ ] **4.2** Document the remote sync pattern: hosted app + local instance both connect to hub room
-- [ ] **4.3** Add `epicenter run <workspace-id> --hub <url>` to connect a standalone workspace to a hub relay
+```bash
+# All equivalent:
+epicenter ls                                        # uses ~/.epicenter/
+EPICENTER_HOME=/tmp/test epicenter ls               # uses /tmp/test/
+epicenter --home /tmp/test ls                       # uses /tmp/test/
+```
 
-### Phase 5: Deployment as Hosted App
+### CLI Command Reference (After All Phases)
 
-- [ ] **5.1** Document how to deploy a workspace as a standalone hosted app (Dockerfile, fly.io, Railway patterns)
-- [ ] **5.2** Add `epicenter deploy <workspace-id>` scaffolding — generates deployment config from `epicenter.config.ts`
-- [ ] **5.3** Ensure standalone mode exposes `/registry` endpoint so other instances can discover the workspace schema
-- [ ] **5.4** Add CORS configuration for standalone mode so browser-based clients can hit the API directly
+```
+PACKAGE MANAGEMENT
+  epicenter install <registry/block>     Download workspace from jsrepo registry
+  epicenter add <path>                   Symlink a local workspace directory
+  epicenter uninstall <workspace-id>     Remove workspace (delete dir or unlink)
+  epicenter update <workspace-id>        Re-fetch from registry, preserve data/
+  epicenter ls                           List all workspaces (filesystem, no server)
+  epicenter export <workspace-id>        Export workspace data as JSON/CSV
 
-### Phase 6: Workspace Extensions (Filesystem Projections)
+SERVER
+  epicenter serve [--port 3913]          Start local server (all workspaces)
+  epicenter run <id> [--port N]          Run single workspace standalone
+    --hub <url>                            Connect to hub relay for sync
+
+WORKSPACE CRUD (requires running server)
+  epicenter <ws> tables                  List tables
+  epicenter <ws> <table> list            List rows
+  epicenter <ws> <table> get <id>        Get row
+  epicenter <ws> <table> set <id> [json] Create/replace row
+  epicenter <ws> <table> update <id>     Partial update
+  epicenter <ws> <table> delete <id>     Delete row
+  epicenter <ws> kv get|set|delete <key> KV operations
+  epicenter <ws> action <path> [json]    Invoke action
+
+GLOBAL OPTIONS
+  --home <path>                          Override EPICENTER_HOME
+  --format json|jsonl                    Output format
+  --help                                 Show help
+  --version                              Show version
+```
+
+### Step 1: Foundation — `resolveEpicenterHome` + Discovery Rewrite
+
+**What changes**: Create `packages/cli/src/paths.ts`. Rewrite `packages/cli/src/discovery.ts` to scan `$EPICENTER_HOME/workspaces/` instead of arbitrary `--dir` paths.
+
+**Files to create**:
+- `packages/cli/src/paths.ts` — `resolveEpicenterHome()`, `workspacesDir()`, `cacheDir()`
+
+**Files to modify**:
+- `packages/cli/src/discovery.ts` — replace `discoverAllWorkspaces(dirs)` with `discoverWorkspaces(home)` that does a single `readdir()` on `workspacesDir(home)` with `{ withFileTypes: true }`, follows symlinks, imports each `epicenter.config.ts`
+- `packages/cli/src/cli.ts` — add `--home` global option, thread through to discovery and commands
+
+**Exact Bun APIs**:
+```typescript
+import { readdir, lstat } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+
+// Ensure home exists on first use
+await mkdir(workspacesDir(home), { recursive: true });
+
+// Discover all workspaces
+const dirents = await readdir(workspacesDir(home), { withFileTypes: true });
+for (const dirent of dirents) {
+  const fullPath = join(workspacesDir(home), dirent.name);
+  const configPath = join(fullPath, "epicenter.config.ts");
+  const configExists = await Bun.file(configPath).exists();
+  if (!configExists) { /* warn and skip */ continue; }
+
+  try {
+    const mod = await import(Bun.pathToFileURL(configPath).href);
+    clients.push({ ...mod.default, _meta: { path: fullPath, isSymlink: dirent.isSymbolicLink() } });
+  } catch (err) {
+    console.error(`Failed to load ${dirent.name}: ${err}`);
+    // continue loading other workspaces
+  }
+}
+```
+
+**Success criteria**: `epicenter serve` (no `--dir`) discovers workspaces from `~/.epicenter/workspaces/`. The `--dir` flag still works as a fallback (deprecated, not removed yet).
+
+- [x] **1.1** Create `packages/cli/src/paths.ts` with `resolveEpicenterHome()`, `workspacesDir()`, `cacheDir()`
+- [x] **1.2** Rewrite `discoverAllWorkspaces()` in `packages/cli/src/discovery.ts` to scan `workspacesDir(home)` via `readdir({ withFileTypes: true })`
+- [x] **1.3** Add `--home` global yargs option in `packages/cli/src/cli.ts`, thread to all commands
+- [x] **1.4** Graceful failure: `try/catch` around each workspace import, log error, continue loading others
+- [x] **1.5** Ensure `mkdir(workspacesDir(home), { recursive: true })` on first use (idempotent)
+
+### Step 2: `epicenter add <path>` — Symlink Registration
+
+**What changes**: New command file. Simplest package manager command — validates path, creates symlink.
+
+**Files to create**:
+- `packages/cli/src/commands/add-command.ts`
+
+**Files to modify**:
+- `packages/cli/src/cli.ts` — register `buildAddCommand(home)` in tier 1 (non-workspace-scoped)
+
+**Exact implementation**:
+```typescript
+import { symlink, lstat } from "node:fs/promises";
+import { resolve, basename } from "node:path";
+
+export function buildAddCommand(home: string): CommandModule {
+  return {
+    command: "add <path>",
+    describe: "Symlink a local workspace into Epicenter",
+    builder: (yargs) => yargs.positional("path", { type: "string", demandOption: true }),
+    handler: async (argv) => {
+      const targetPath = resolve(argv.path as string);
+      const configPath = join(targetPath, "epicenter.config.ts");
+
+      if (!(await Bun.file(configPath).exists())) {
+        outputError(`No epicenter.config.ts found at ${targetPath}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      // Import to get the workspace ID
+      const mod = await import(Bun.pathToFileURL(configPath).href);
+      const workspaceId = mod.default.id;
+      const linkPath = join(workspacesDir(home), workspaceId);
+
+      // Check for existing
+      try {
+        await lstat(linkPath);
+        outputError(`Workspace "${workspaceId}" already exists at ${linkPath}`);
+        process.exitCode = 1;
+        return;
+      } catch { /* doesn't exist — good */ }
+
+      await symlink(targetPath, linkPath);
+      output({ added: workspaceId, path: targetPath, link: linkPath });
+    },
+  };
+}
+```
+
+**Success criteria**: `epicenter add ~/projects/my-workspace` creates symlink at `~/.epicenter/workspaces/my-workspace`, and `epicenter serve` discovers it.
+
+- [x] **2.1** Create `packages/cli/src/commands/add-command.ts` with `buildAddCommand(home)`
+- [x] **2.2** Validate `epicenter.config.ts` exists at target path before symlinking
+- [x] **2.3** Use workspace ID from config as the symlink name (not directory basename)
+- [x] **2.4** Error if a workspace with that ID already exists
+- [x] **2.5** Register in `cli.ts` as a tier-1 command
+
+### Step 3: `epicenter ls` — Filesystem Listing
+
+**What changes**: New command. Reads `~/.epicenter/workspaces/` directly (no running server needed).
+
+**Files to create**:
+- `packages/cli/src/commands/ls-command.ts`
+
+**Exact implementation**:
+```typescript
+import { readdir, lstat, readlink } from "node:fs/promises";
+
+export function buildLsCommand(home: string): CommandModule {
+  return {
+    command: "ls",
+    describe: "List installed workspaces",
+    builder: (yargs) => yargs.options(formatYargsOptions()),
+    handler: async (argv) => {
+      const dir = workspacesDir(home);
+      const dirents = await readdir(dir, { withFileTypes: true });
+      const workspaces = [];
+
+      for (const dirent of dirents) {
+        const fullPath = join(dir, dirent.name);
+        const isSymlink = dirent.isSymbolicLink();
+        const configExists = await Bun.file(join(fullPath, "epicenter.config.ts")).exists();
+        const hasManifest = await Bun.file(join(fullPath, "manifest.json")).exists();
+
+        workspaces.push({
+          id: dirent.name,
+          type: isSymlink ? "linked" : "installed",
+          path: isSymlink ? await readlink(fullPath) : fullPath,
+          status: configExists ? "ok" : "error",
+          registry: hasManifest ? JSON.parse(await Bun.file(join(fullPath, "manifest.json")).text()).registry : null,
+        });
+      }
+
+      output(workspaces, { format: argv.format as any });
+    },
+  };
+}
+```
+
+**Output example**:
+```json
+[
+  { "id": "epicenter.entries", "type": "installed", "path": "~/.epicenter/workspaces/epicenter.entries", "status": "ok", "registry": "github/epicenter-dev/workspaces" },
+  { "id": "my-journal", "type": "linked", "path": "/Users/braden/projects/my-journal", "status": "ok", "registry": null }
+]
+```
+
+- [x] **3.1** Create `packages/cli/src/commands/ls-command.ts` with `buildLsCommand(home)`
+- [x] **3.2** Show type (installed/linked), status (ok/error), path, and registry source
+- [x] **3.3** Handle broken symlinks gracefully (status: "error", message: "symlink target not found")
+- [x] **3.4** Register in `cli.ts` as tier-1 command
+
+### Step 4: Update `epicenter serve` — Use New Discovery
+
+**What changes**: Modify the existing `serve` command to use `discoverWorkspaces(home)` instead of `discoverAllWorkspaces(dirs)`. Deprecate `--dir` (keep it working with a warning).
+
+**Files to modify**:
+- `packages/cli/src/cli.ts` — `buildServeCommand()` uses `resolveEpicenterHome(argv.home)` and calls new discovery
+
+**Before → After**:
+```typescript
+// BEFORE (current)
+builder: (yargs) => yargs.option("dir", { type: "array", default: [process.cwd()] }),
+handler: async (argv) => {
+  const clients = await discoverAllWorkspaces(argv.dir);
+  // ...
+}
+
+// AFTER
+builder: (yargs) => yargs
+  .option("dir", { type: "array", deprecated: "Use epicenter add <path> instead" })
+  .option("home", { type: "string", describe: "Override EPICENTER_HOME" }),
+handler: async (argv) => {
+  const home = resolveEpicenterHome(argv.home);
+  const clients = argv.dir
+    ? await discoverAllWorkspaces(argv.dir)  // legacy fallback
+    : await discoverWorkspaces(home);
+  // ...
+}
+```
+
+- [x] **4.1** Update `buildServeCommand()` to default to `discoverWorkspaces(home)` instead of `discoverAllWorkspaces(dirs)`
+- [x] **4.2** Deprecate `--dir` with a console warning, keep it functional as fallback
+- [x] **4.3** Add `--home` option to serve command
+
+### Step 5: `epicenter install <registry/block>` — jsrepo Integration
+
+**What changes**: The largest new command. Fetches workspace source from jsrepo, writes to disk, generates `package.json`, runs `bun install`.
+
+**Files to create**:
+- `packages/cli/src/commands/install-command.ts`
+
+**Dependencies**: `jsrepo` (already in `packages/cli/package.json` or add it)
+
+**Exact flow using grounded jsrepo API**:
+```typescript
+import {
+  resolveRegistries, parseWantedItems, resolveWantedItems,
+  resolveAndFetchAllItems, DEFAULT_PROVIDERS,
+} from "jsrepo";
+import type { AbsolutePath, RemoteDependency } from "jsrepo";
+import { $ } from "bun";
+
+async function installWorkspace(registryUrl: string, itemName: string, home: string) {
+  const cwd = process.cwd() as AbsolutePath;
+
+  // 1. Resolve registry
+  const registriesResult = await resolveRegistries([registryUrl], {
+    cwd, providers: DEFAULT_PROVIDERS,
+  });
+  if (registriesResult.isErr()) throw registriesResult.error;
+
+  // 2. Parse + resolve wanted items
+  const parsed = parseWantedItems([itemName], {
+    providers: DEFAULT_PROVIDERS, registries: [registryUrl],
+  });
+  if (parsed.isErr()) throw parsed.error;
+
+  const resolved = await resolveWantedItems(parsed.value.wantedItems, {
+    resolvedRegistries: registriesResult.value, nonInteractive: true,
+  });
+  if (resolved.isErr()) throw resolved.error;
+
+  // 3. Fetch all file content
+  const items = await resolveAndFetchAllItems(resolved.value, {
+    options: { withExamples: false, withDocs: false, withTests: false },
+  });
+  if (items.isErr()) throw items.error;
+
+  const item = items.value[0];
+  const wsDir = join(workspacesDir(home), item.name);
+  await mkdir(wsDir, { recursive: true });
+  await mkdir(join(wsDir, "data"), { recursive: true });
+
+  // 4. Write files via Bun.write()
+  for (const file of item.files) {
+    const filePath = join(wsDir, file.path);
+    await mkdir(dirname(filePath), { recursive: true });
+    await Bun.write(filePath, file.content);
+  }
+
+  // 5. Generate package.json from item dependencies
+  const deps: Record<string, string> = {};
+  for (const dep of (item.dependencies ?? []) as RemoteDependency[]) {
+    deps[dep.name] = dep.version ?? "latest";
+  }
+  if (Object.keys(deps).length > 0) {
+    const pkg = { name: item.name, private: true, dependencies: deps };
+    await Bun.write(join(wsDir, "package.json"), JSON.stringify(pkg, null, 2));
+    await $`bun install`.cwd(wsDir).quiet();
+  }
+
+  // 6. Write manifest.json with provenance
+  const manifest = {
+    registry: registryUrl,
+    item: item.name,
+    installedAt: new Date().toISOString(),
+    files: item.files.map((f) => f.path),
+  };
+  await Bun.write(join(wsDir, "manifest.json"), JSON.stringify(manifest, null, 2));
+}
+```
+
+- [x] **5.1** Create `packages/cli/src/commands/install-command.ts` with `buildInstallCommand(home)`
+- [x] **5.2** Use `resolveRegistries()` → `parseWantedItems()` → `resolveWantedItems()` → `resolveAndFetchAllItems()` pipeline
+- [x] **5.3** Write files via `Bun.write()`, ensure parent dirs exist with `mkdir({ recursive: true })`
+- [x] **5.4** Generate `package.json` from `item.dependencies` (RemoteDependency[])
+- [x] **5.5** Run `bun install` via `$\`bun install\`.cwd(wsDir).quiet()` if `package.json` was generated
+- [x] **5.6** Write `manifest.json` with registry, item name, timestamp, file list
+- [x] **5.7** Create empty `data/` directory for future `workspace.yjs` persistence
+- [x] **5.8** Error if workspace ID already exists in `workspacesDir(home)`
+
+### Step 6: `epicenter run <id>` — Standalone Mode
+
+**What changes**: New command. Imports a single workspace, chains standard extensions, calls `createLocalServer({ clients: [client] })`.
+
+**Files to create**:
+- `packages/cli/src/commands/run-command.ts`
+
+**Implementation sketch**:
+```typescript
+export function buildRunCommand(home: string): CommandModule {
+  return {
+    command: "run <workspace-id>",
+    describe: "Run a single workspace as a standalone server",
+    builder: (yargs) => yargs
+      .positional("workspace-id", { type: "string", demandOption: true })
+      .option("port", { type: "number", default: 4000 })
+      .option("hub", { type: "string", describe: "Hub URL for Yjs sync" }),
+    handler: async (argv) => {
+      const wsId = argv["workspace-id"] as string;
+      const wsPath = join(workspacesDir(home), wsId);
+      const configPath = join(wsPath, "epicenter.config.ts");
+
+      if (!(await Bun.file(configPath).exists())) {
+        outputError(`Workspace "${wsId}" not found`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const mod = await import(Bun.pathToFileURL(configPath).href);
+      const builder = mod.default; // WorkspaceClientBuilder
+
+      // Chain standard server extensions
+      const { filePersistence } = await import("@epicenter/server/extensions");
+      const client = builder
+        .withExtension("persistence", () => filePersistence(join(wsPath, "data", "workspace.yjs")));
+
+      // If coreActions exported, chain them
+      if (mod.coreActions) {
+        client = client.withActions(mod.coreActions);
+      }
+
+      const { createLocalServer } = await import("@epicenter/server");
+      const server = createLocalServer({
+        clients: [client],
+        port: argv.port as number,
+        ...(argv.hub ? { hub: argv.hub as string } : {}),
+      });
+
+      console.log(`Running ${wsId} on http://localhost:${argv.port}`);
+      await server.start();
+    },
+  };
+}
+```
+
+- [x] **6.1** Create `packages/cli/src/commands/run-command.ts` with `buildRunCommand(home)`
+- [ ] **6.2** _(deferred: filePersistence extension not yet implemented — Step 9)_ Import workspace config, chain `filePersistence` extension for `data/workspace.yjs`
+- [ ] **6.3** _(deferred: coreActions chaining depends on convention adoption)_ Chain `coreActions` if exported from config
+- [x] **6.4** Pass `--hub` URL to `createLocalServer` for optional Yjs hub sync
+- [x] **6.5** Register as tier-1 command in `cli.ts`
+
+### Step 7: `epicenter uninstall`, `update`, `export`
+
+These are smaller commands that build on the foundation from Steps 1-6.
+
+**`uninstall`**: Check if symlink → `unlink()`, else `rm -rf` the directory. Confirm before deleting data.
+```typescript
+import { rm, unlink, lstat } from "node:fs/promises";
+
+const stat = await lstat(wsPath);
+if (stat.isSymbolicLink()) {
+  await unlink(wsPath);  // just removes symlink, not target
+} else {
+  await rm(wsPath, { recursive: true, force: true });
+}
+```
+
+**`update`**: Read `manifest.json` for registry source, re-run install flow, but preserve `data/` directory.
+
+**`export`**: Import workspace config, read Y.Doc from `data/workspace.yjs`, iterate tables, output as JSON/CSV.
+
+- [x] **7.1** Create `packages/cli/src/commands/uninstall-command.ts`
+- [ ] **7.2** Create `packages/cli/src/commands/update-command.ts`
+- [x] **7.3** Create `packages/cli/src/commands/export-command.ts`
+- [x] **7.4** `uninstall`: distinguish symlink vs directory, confirm before data deletion
+- [ ] **7.5** `update`: read `manifest.json` for provenance, re-fetch, preserve `data/`
+- [x] **7.6** `export`: load Y.Doc from disk, iterate `getAllValid()` per table, output via `output()`
+
+### Step 8: Wire Discovery into Server Package
+
+**What changes**: Move the discovery function from `packages/cli/` to `packages/server/` (or a shared `packages/discovery/`) so both the CLI and the Tauri sidecar can use it.
+
+- [ ] **8.1** Extract `discoverWorkspaces(home)` to a shared location importable by both `@epicenter/cli` and the Tauri sidecar
+- [ ] **8.2** `createLocalServer()` optionally accepts a `home` path and discovers workspaces itself (alternative to passing `clients` array directly)
+- [ ] **8.3** Serve Svelte SPA via `@elysiajs/static` with `indexHTML: true` for SPA fallback
+- [ ] **8.4** Wire Tauri sidecar to use `resolveEpicenterHome()` and spawn the local server
+
+### Step 9: Workspace Extensions (Filesystem Projections)
 
 Extensions allow workspaces to reactively materialize Y.Doc data to arbitrary filesystem locations. This is how a workspace writes Markdown files, JSON exports, or any other file-based output without requiring the workspace itself to live in the output directory.
 
-- [ ] **6.1** Define the `.withExtension()` API on the workspace builder — extensions receive access to the workspace's Y.Doc observation lifecycle and a target path
-- [ ] **6.2** Implement `markdownProjection` as the first built-in extension — subscribes to `observeDeep` on a table's Y.Map, diffs changes, writes/deletes `.md` files at the target path
-- [ ] **6.3** Wire extension lifecycle into the local server — start extensions on workspace load, stop on shutdown. Extensions run in the same process as the local server.
-- [ ] **6.4** Support multiple extensions per workspace (e.g., Markdown to `~/notes/` AND JSON to `~/backups/`)
-- [ ] **6.5** Handle extension errors gracefully — a failing extension should not crash the workspace or local server. Log errors, expose status via the workspace listing endpoint.
+- [ ] **9.1** Define the `.withExtension()` API on the workspace builder — extensions receive access to the workspace's Y.Doc observation lifecycle and a target path
+- [ ] **9.2** Implement `filePersistence` as the first built-in extension — binary snapshot of Y.Doc to `data/workspace.yjs`
+- [ ] **9.3** Implement `markdownProjection` — subscribes to `observeDeep` on a table's Y.Map, diffs changes, writes/deletes `.md` files at the target path
+- [ ] **9.4** Wire extension lifecycle into the local server — start extensions on workspace load, stop on shutdown
+- [ ] **9.5** Support multiple extensions per workspace
+- [ ] **9.6** Handle extension errors gracefully — log, expose status, don't crash the process
 
-### Phase 7: Third-Party Auth (Login with Epicenter)
+### Step 10: Third-Party Auth (Login with Epicenter)
 
-- [ ] **7.1** Enable Better Auth's `oauthProvider` plugin on the hub — adds `/oauth2/authorize`, `/oauth2/token`, `/jwks`, `/.well-known/openid-configuration`, `/oauth2/userinfo` endpoints
-- [ ] **7.2** Add OAuth client registration — at minimum, a CLI command (`epicenter register-app <domain> --redirect <uri>`) that creates an entry in the `oauthClient` database table. Hub admin UI registration is a nice-to-have.
-- [ ] **7.3** Add room-level access control on WebSocket upgrade — validate OAuth JWT via JWKS, check `token.sub` matches the room's user scope (`{workspaceId}:{userId}`), reject if mismatched
-- [ ] **7.4** Add consent screen UI on the hub — when a user is redirected from a third-party app, show what the app is requesting access to (workspace sync rooms, profile data)
-- [ ] **7.5** Document the third-party developer integration guide — how to register an app, add "Log in with Epicenter," connect to hub sync, and handle token refresh for long-lived WebSocket connections
+- [ ] **10.1** Enable Better Auth's `oauthProvider` plugin on the hub — adds `/oauth2/authorize`, `/oauth2/token`, `/jwks`, `/.well-known/openid-configuration`, `/oauth2/userinfo` endpoints
+- [ ] **10.2** Add `epicenter register-app <domain> --redirect <uri>` CLI command
+- [ ] **10.3** Add room-level access control on WebSocket upgrade — validate OAuth JWT via JWKS, check `token.sub` matches room's user scope
+- [ ] **10.4** Add consent screen UI on the hub
+- [ ] **10.5** Document the third-party developer integration guide
 
 **Example API:**
 
@@ -831,7 +1257,7 @@ These were open during design and have been decided. Kept here for context so im
    - **Alternative rejected**: Restricting workspaces to only import from `@epicenter/workspace` (too limiting — workspaces that call external APIs, use crypto libraries, etc. need their own deps).
 
 6. **Should the CLI shell out to `jsrepo add` or use the programmatic API?**
-   - **Decision**: Use jsrepo's programmatic API exported from `jsrepo/api` (`registry.getProviderState()`, `registry.fetchManifest()`, `registry.getRemoteBlocks()`, `registry.fetchRaw()`). File writing is not in the API — we write files via Bun's file APIs directly, which means no import rewriting occurs.
+   - **Decision**: Use jsrepo's programmatic API exported from `jsrepo` (`resolveRegistries()`, `parseWantedItems()`, `resolveWantedItems()`, `resolveAndFetchAllItems()`). File writing is not in the API — we write files via `Bun.write()` directly, which means no import rewriting occurs.
    - **Why programmatic over shelling out**: (a) We need custom post-processing anyway (generate `package.json`, run `bun install`, write `manifest.json` with provenance). (b) Avoids the import rewriting edge case — jsrepo's CLI automatically rewrites imports, which could mangle `@epicenter/workspace` paths. Programmatic control lets us skip that. (c) No subprocess overhead, error handling stays in-process.
    - **Alternative rejected**: Shelling out to `jsrepo add` via `Bun.$` (viable but gives less control over the install flow, and the import rewriting problem requires post-processing to fix anyway).
 

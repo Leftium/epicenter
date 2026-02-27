@@ -9,9 +9,9 @@ The monorepo uses consistent script naming conventions:
 
 | Command            | Purpose                                        | When to use |
 | ------------------ | ---------------------------------------------- | ----------- |
-| `bun format`       | **Fix** formatting (biome + prettier)          | Development |
+| `bun format`       | **Fix** formatting (biome)                     | Development |
 | `bun format:check` | Check formatting                               | CI          |
-| `bun lint`         | **Fix** lint issues (eslint + biome)           | Development |
+| `bun lint`         | **Fix** lint issues (biome)                    | Development |
 | `bun lint:check`   | Check lint issues                              | CI          |
 | `bun typecheck`    | Type checking (tsc, svelte-check, astro check) | Both        |
 

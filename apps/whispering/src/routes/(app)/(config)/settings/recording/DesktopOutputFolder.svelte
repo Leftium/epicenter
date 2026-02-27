@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
-	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { Input } from '@epicenter/ui/input';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { Input } from '@epicenter/ui/input';
 	import { Ok, tryAsync } from 'wellcrafted/result';
+	import { PATHS } from '$lib/constants/paths';
+	import { rpc } from '$lib/query';
+	import { settings } from '$lib/state/settings.svelte';
 
 	// Top-level await to get the default app data directory
 	let defaultRecordingsFolder = $state<string | null>(null);

@@ -52,14 +52,14 @@ describe('describeWorkspace', () => {
 
 		// Tables
 		expect(Object.keys(descriptor.tables)).toEqual(['posts']);
-		expect(descriptor.tables.posts!.schema).toBeDefined();
-		expect(descriptor.tables.posts!.schema).toHaveProperty('type', 'object');
-		expect(descriptor.tables.posts!.schema).toHaveProperty('properties');
+		expect(descriptor.tables.posts?.schema).toBeDefined();
+		expect(descriptor.tables.posts?.schema).toHaveProperty('type', 'object');
+		expect(descriptor.tables.posts?.schema).toHaveProperty('properties');
 
 		// KV
 		expect(Object.keys(descriptor.kv)).toEqual(['settings']);
-		expect(descriptor.kv.settings!.schema).toBeDefined();
-		expect(descriptor.kv.settings!.schema).toHaveProperty('type', 'object');
+		expect(descriptor.kv.settings?.schema).toBeDefined();
+		expect(descriptor.kv.settings?.schema).toHaveProperty('type', 'object');
 
 		// Actions
 		expect(descriptor.actions).toHaveLength(2);
@@ -68,18 +68,18 @@ describe('describeWorkspace', () => {
 			(a) => a.path.join('.') === 'posts.getAll',
 		);
 		expect(getAllAction).toBeDefined();
-		expect(getAllAction!.type).toBe('query');
-		expect(getAllAction!.description).toBe('Get all posts');
-		expect(getAllAction!.input).toBeUndefined();
+		expect(getAllAction?.type).toBe('query');
+		expect(getAllAction?.description).toBe('Get all posts');
+		expect(getAllAction?.input).toBeUndefined();
 
 		const createAction = descriptor.actions.find(
 			(a) => a.path.join('.') === 'posts.create',
 		);
 		expect(createAction).toBeDefined();
-		expect(createAction!.type).toBe('mutation');
-		expect(createAction!.description).toBe('Create a post');
-		expect(createAction!.input).toBeDefined();
-		expect(createAction!.input).toHaveProperty('type', 'object');
+		expect(createAction?.type).toBe('mutation');
+		expect(createAction?.description).toBe('Create a post');
+		expect(createAction?.input).toBeDefined();
+		expect(createAction?.input).toHaveProperty('type', 'object');
 	});
 
 	test('workspace without actions returns an empty actions array', () => {
@@ -121,8 +121,8 @@ describe('describeWorkspace', () => {
 
 		const descriptor = describeWorkspace(client);
 
-		expect(descriptor.tables.posts!.schema).toHaveProperty('oneOf');
-		const oneOf = (descriptor.tables.posts!.schema as { oneOf: unknown[] })
+		expect(descriptor.tables.posts?.schema).toHaveProperty('oneOf');
+		const oneOf = (descriptor.tables.posts?.schema as { oneOf: unknown[] })
 			.oneOf;
 		expect(oneOf).toHaveLength(2);
 	});
@@ -139,8 +139,8 @@ describe('describeWorkspace', () => {
 
 		// Single-version tables use the schema directly via arktype,
 		// which produces a normal object schema (no oneOf wrapper)
-		expect(descriptor.tables.posts!.schema).toHaveProperty('type', 'object');
-		expect(descriptor.tables.posts!.schema).not.toHaveProperty('oneOf');
+		expect(descriptor.tables.posts?.schema).toHaveProperty('type', 'object');
+		expect(descriptor.tables.posts?.schema).not.toHaveProperty('oneOf');
 	});
 
 	test('JSON.stringify(descriptor) succeeds (no circular refs)', () => {
@@ -209,11 +209,11 @@ describe('describeWorkspace', () => {
 		const descriptor = describeWorkspace(client);
 
 		expect(Object.keys(descriptor.awareness)).toEqual(['cursor', 'selection']);
-		expect(descriptor.awareness.cursor!.schema).toHaveProperty(
+		expect(descriptor.awareness.cursor?.schema).toHaveProperty(
 			'type',
 			'object',
 		);
-		expect(descriptor.awareness.selection!.schema).toHaveProperty(
+		expect(descriptor.awareness.selection?.schema).toHaveProperty(
 			'type',
 			'object',
 		);

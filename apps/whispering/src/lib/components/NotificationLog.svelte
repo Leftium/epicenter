@@ -26,17 +26,17 @@
 
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
-	import * as Modal from '@epicenter/ui/modal';
 	import * as Empty from '@epicenter/ui/empty';
-	import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
+	import * as Modal from '@epicenter/ui/modal';
 	import { ScrollArea } from '@epicenter/ui/scroll-area';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import AlertCircle from '@lucide/svelte/icons/alert-circle';
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import BellIcon from '@lucide/svelte/icons/bell';
 	import CheckCircle2 from '@lucide/svelte/icons/check-circle-2';
 	import Info from '@lucide/svelte/icons/info';
-	import { Spinner } from '@epicenter/ui/spinner';
 	import { mode } from 'mode-watcher';
+	import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
 </script>
 
 <Modal.Root bind:open={notificationLog.isOpen}>
@@ -76,9 +76,7 @@
 						{:else if log.variant === 'info'}
 							<div data-icon class="text-info"><Info class="size-4" /></div>
 						{:else if log.variant === 'loading'}
-							<div data-icon class="text-muted-foreground">
-								<Spinner />
-							</div>
+							<div data-icon class="text-muted-foreground"><Spinner /></div>
 						{/if}
 						<div class="flex-1">
 							<Alert.Title
@@ -97,9 +95,7 @@
 			{#if notificationLog.logs.length === 0}
 				<Empty.Root class="h-32">
 					<Empty.Header>
-						<Empty.Media variant="icon">
-							<BellIcon />
-						</Empty.Media>
+						<Empty.Media variant="icon"> <BellIcon /> </Empty.Media>
 						<Empty.Title>No notifications yet</Empty.Title>
 						<Empty.Description>
 							Notifications will appear here as they occur.
@@ -112,7 +108,7 @@
 </Modal.Root>
 
 <style>
-	:global([data-slot='dialog-content'] [data-sonner-toast]) {
+	:global([data-slot="dialog-content"] [data-sonner-toast]) {
 		position: relative;
 	}
 </style>

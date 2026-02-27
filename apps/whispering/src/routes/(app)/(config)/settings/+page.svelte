@@ -54,9 +54,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Settings - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Settings - Whispering</title> </svelte:head>
 
 <Field.Set>
 	<Field.Legend>General</Field.Legend>
@@ -74,11 +72,9 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transcription.copyToClipboardOnSuccess"
-						bind:checked={
-							() => settings.value['transcription.copyToClipboardOnSuccess'],
+						bind:checked={() => settings.value['transcription.copyToClipboardOnSuccess'],
 							(v) =>
-								settings.updateKey('transcription.copyToClipboardOnSuccess', v)
-						}
+								settings.updateKey('transcription.copyToClipboardOnSuccess', v)}
 					/>
 					<Field.Label for="transcription.copyToClipboardOnSuccess">
 						Copy transcript to clipboard
@@ -88,11 +84,9 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transcription.writeToCursorOnSuccess"
-						bind:checked={
-							() => settings.value['transcription.writeToCursorOnSuccess'],
+						bind:checked={() => settings.value['transcription.writeToCursorOnSuccess'],
 							(v) =>
-								settings.updateKey('transcription.writeToCursorOnSuccess', v)
-						}
+								settings.updateKey('transcription.writeToCursorOnSuccess', v)}
 					/>
 					<Field.Label for="transcription.writeToCursorOnSuccess">
 						Paste transcript at cursor
@@ -103,14 +97,12 @@
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transcription.simulateEnterAfterOutput"
-							bind:checked={
-								() => settings.value['transcription.simulateEnterAfterOutput'],
+							bind:checked={() => settings.value['transcription.simulateEnterAfterOutput'],
 								(v) =>
 									settings.updateKey(
 										'transcription.simulateEnterAfterOutput',
 										v,
-									)
-							}
+									)}
 						/>
 						<Field.Label for="transcription.simulateEnterAfterOutput">
 							Press Enter after pasting transcript
@@ -131,11 +123,9 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transformation.copyToClipboardOnSuccess"
-						bind:checked={
-							() => settings.value['transformation.copyToClipboardOnSuccess'],
+						bind:checked={() => settings.value['transformation.copyToClipboardOnSuccess'],
 							(v) =>
-								settings.updateKey('transformation.copyToClipboardOnSuccess', v)
-						}
+								settings.updateKey('transformation.copyToClipboardOnSuccess', v)}
 					/>
 					<Field.Label for="transformation.copyToClipboardOnSuccess">
 						Copy transformed text to clipboard
@@ -145,11 +135,9 @@
 				<Field.Field orientation="horizontal">
 					<Switch
 						id="transformation.writeToCursorOnSuccess"
-						bind:checked={
-							() => settings.value['transformation.writeToCursorOnSuccess'],
+						bind:checked={() => settings.value['transformation.writeToCursorOnSuccess'],
 							(v) =>
-								settings.updateKey('transformation.writeToCursorOnSuccess', v)
-						}
+								settings.updateKey('transformation.writeToCursorOnSuccess', v)}
 					/>
 					<Field.Label for="transformation.writeToCursorOnSuccess">
 						Paste transformed text at cursor
@@ -160,14 +148,12 @@
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transformation.simulateEnterAfterOutput"
-							bind:checked={
-								() => settings.value['transformation.simulateEnterAfterOutput'],
+							bind:checked={() => settings.value['transformation.simulateEnterAfterOutput'],
 								(v) =>
 									settings.updateKey(
 										'transformation.simulateEnterAfterOutput',
 										v,
-									)
-							}
+									)}
 						/>
 						<Field.Label for="transformation.simulateEnterAfterOutput">
 							Press Enter after pasting transformed text
@@ -185,10 +171,8 @@
 			>
 			<Select.Root
 				type="single"
-				bind:value={
-					() => settings.value['database.recordingRetentionStrategy'],
-					(v) => settings.updateKey('database.recordingRetentionStrategy', v)
-				}
+				bind:value={() => settings.value['database.recordingRetentionStrategy'],
+					(v) => settings.updateKey('database.recordingRetentionStrategy', v)}
 			>
 				<Select.Trigger id="recording-retention-strategy" class="w-full">
 					{retentionLabel ?? 'Select retention strategy'}
@@ -206,10 +190,8 @@
 				<Field.Label for="max-recording-count">Maximum Recordings</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['database.maxRecordingCount'],
-						(v) => settings.updateKey('database.maxRecordingCount', v)
-					}
+					bind:value={() => settings.value['database.maxRecordingCount'],
+						(v) => settings.updateKey('database.maxRecordingCount', v)}
 				>
 					<Select.Trigger id="max-recording-count" class="w-full">
 						{maxRecordingLabel ?? 'Select maximum recordings'}
@@ -254,10 +236,8 @@
 				<Field.Label for="always-on-top">Always On Top</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['system.alwaysOnTop'],
-						(v) => settings.updateKey('system.alwaysOnTop', v)
-					}
+					bind:value={() => settings.value['system.alwaysOnTop'],
+						(v) => settings.updateKey('system.alwaysOnTop', v)}
 				>
 					<Select.Trigger id="always-on-top" class="w-full">
 						{alwaysOnTopLabel ?? 'Select always on top mode'}
@@ -277,10 +257,8 @@
 			<Field.Legend variant="label">Navigation Layout</Field.Legend>
 			<Field.Description>Choose how you navigate the app.</Field.Description>
 			<RadioGroup.Root
-				bind:value={
-					() => settings.value['ui.layoutMode'],
-					(v) => settings.updateKey('ui.layoutMode', v)
-				}
+				bind:value={() => settings.value['ui.layoutMode'],
+					(v) => settings.updateKey('ui.layoutMode', v)}
 			>
 				{#each LAYOUT_MODE_OPTIONS as option (option.value)}
 					<Field.Label for="layout-{option.value}">

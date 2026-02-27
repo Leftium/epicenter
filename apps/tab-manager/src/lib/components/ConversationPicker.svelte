@@ -1,17 +1,17 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Command from '@epicenter/ui/command';
+	import { useCombobox } from '@epicenter/ui/hooks';
+	import * as Popover from '@epicenter/ui/popover';
+	import { cn } from '@epicenter/ui/utils';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
+	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
+	import TrashIcon from '@lucide/svelte/icons/trash';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import type { ConversationHandle } from '$lib/state/chat-state.svelte';
 	import type { ConversationId } from '$lib/workspace';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { useCombobox } from '@epicenter/ui/hooks';
-	import { Button } from '@epicenter/ui/button';
-	import { cn } from '@epicenter/ui/utils';
-	import * as Command from '@epicenter/ui/command';
-	import * as Popover from '@epicenter/ui/popover';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
-	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
-	import TrashIcon from '@lucide/svelte/icons/trash';
 
 	let {
 		conversations,

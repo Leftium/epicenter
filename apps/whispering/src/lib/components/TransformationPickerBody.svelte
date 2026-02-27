@@ -2,12 +2,12 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Command from '@epicenter/ui/command';
 	import { Kbd } from '@epicenter/ui/kbd';
+	import LayersIcon from '@lucide/svelte/icons/layers';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { onMount } from 'svelte';
+	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/isomorphic/db';
-	import { createQuery } from '@tanstack/svelte-query';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import { PLATFORM_TYPE } from '$lib/constants/platform';
-	import { onMount } from 'svelte';
 
 	const transformationsQuery = createQuery(
 		() => rpc.db.transformations.getAll.options,
@@ -58,7 +58,7 @@
 
 			if (isCmdOrCtrl && e.key >= '0' && e.key <= '9') {
 				e.preventDefault();
-				const index = e.key === '0' ? 9 : parseInt(e.key) - 1; // 0 maps to 10th item
+				const index = e.key === '0' ? 9 : parseInt(e.key, 10) - 1; // 0 maps to 10th item
 
 				if (transformations[index]) {
 					onSelect(transformations[index]);
@@ -76,9 +76,7 @@
 		<Badge variant="id" class="shrink-0 max-w-16 truncate">
 			{transformation.id}
 		</Badge>
-		<span class="font-medium truncate">
-			{transformation.title}
-		</span>
+		<span class="font-medium truncate"> {transformation.title} </span>
 	</div>
 {/snippet}
 

@@ -164,18 +164,23 @@ async function runBenchmark() {
 	try {
 		const numTables = parseInt(
 			(document.getElementById('numTables') as HTMLInputElement).value,
+			10,
 		);
 		const rowsPerTable = parseInt(
 			(document.getElementById('rowsPerTable') as HTMLInputElement).value,
+			10,
 		);
 		const fieldsPerRow = parseInt(
 			(document.getElementById('fieldsPerRow') as HTMLInputElement).value,
+			10,
 		);
 		const fieldSize = parseInt(
 			(document.getElementById('fieldSize') as HTMLInputElement).value,
+			10,
 		);
 		const batchSize = parseInt(
 			(document.getElementById('batchSize') as HTMLInputElement).value,
+			10,
 		);
 
 		isRunning = true;

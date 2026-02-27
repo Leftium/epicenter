@@ -1,22 +1,20 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { TrashIcon } from '$lib/components/icons';
+	import { createPersistedState } from '@epicenter/svelte-utils';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Checkbox } from '@epicenter/ui/checkbox';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { Skeleton } from '@epicenter/ui/skeleton';
-	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
 	import * as Table from '@epicenter/ui/table';
-	import { rpc } from '$lib/query';
-	import { type Transformation } from '$lib/services/isomorphic/db';
-	import { createPersistedState } from '@epicenter/svelte-utils';
-	import { viewTransition } from '$lib/utils/viewTransitions';
+	import { SelectAllPopover, SortableTableHeader } from '@epicenter/ui/table';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
 	import { createQuery } from '@tanstack/svelte-query';
 	import {
-		FlexRender,
 		createTable as createSvelteTable,
+		FlexRender,
 		renderComponent,
 	} from '@tanstack/svelte-table';
 	import type {
@@ -30,16 +28,18 @@
 		getPaginationRowModel,
 		getSortedRowModel,
 	} from '@tanstack/table-core';
-	import * as Empty from '@epicenter/ui/empty';
-	import SearchIcon from '@lucide/svelte/icons/search';
-	import WandSparklesIcon from '@lucide/svelte/icons/wand-sparkles';
-	import { createRawSnippet } from 'svelte';
 	import { type } from 'arktype';
+	import { createRawSnippet } from 'svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { TrashIcon } from '$lib/components/icons';
+	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
+	import { PATHS } from '$lib/constants/paths';
+	import { rpc } from '$lib/query';
+	import { type Transformation } from '$lib/services/isomorphic/db';
+	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CreateTransformationButton from './CreateTransformationButton.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 	import TransformationRowActions from './TransformationRowActions.svelte';
-	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
-	import { PATHS } from '$lib/constants/paths';
 
 	const transformationsQuery = createQuery(
 		() => rpc.db.transformations.getAll.options,
@@ -192,9 +192,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>All Transformations</title>
-</svelte:head>
+<svelte:head> <title>All Transformations</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
 	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
@@ -275,11 +273,9 @@
 			</Table.Header>
 			<Table.Body>
 				{#if transformationsQuery.isPending}
-					{#each { length: 5 }}
+					{#each { length: 5 } as _}
 						<Table.Row>
-							<Table.Cell>
-								<Skeleton class="size-4" />
-							</Table.Cell>
+							<Table.Cell> <Skeleton class="size-4" /> </Table.Cell>
 							<Table.Cell colspan={columns.length - 1}>
 								<Skeleton class="h-4 w-full" />
 							</Table.Cell>
@@ -339,8 +335,11 @@
 
 	<div class="flex items-center justify-between">
 		<div class="text-muted-foreground text-sm">
-			{selectedTransformationRows.length} of {table.getFilteredRowModel().rows
-				.length} row(s) selected.
+			{selectedTransformationRows.length}
+			of
+			{table.getFilteredRowModel().rows
+				.length}
+			row(s) selected.
 		</div>
 		<ButtonGroup.Root>
 			<Button

@@ -11,6 +11,4 @@
 	</nav>
 </header>
 
-<main style="padding: 1rem;">
-	<slot />
-</main>
+<main style="padding: 1rem;"><slot /></main>

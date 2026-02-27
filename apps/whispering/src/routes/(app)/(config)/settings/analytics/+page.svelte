@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Card from '@epicenter/ui/card';
 	import { Badge } from '@epicenter/ui/badge';
+	import * as Card from '@epicenter/ui/card';
 	import { Label } from '@epicenter/ui/label';
 	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
@@ -52,8 +52,7 @@
 				</div>
 				<Switch
 					id="analytics-toggle"
-					bind:checked={
-						() => settings.value['analytics.enabled'],
+					bind:checked={() => settings.value['analytics.enabled'],
 						(checked) => {
 							settings.updateKey('analytics.enabled', checked);
 
@@ -64,8 +63,7 @@
 									section: 'analytics',
 								});
 							}
-						}
-					}
+						}}
 					class="shrink-0"
 				/>
 			</div>

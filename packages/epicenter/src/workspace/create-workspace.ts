@@ -50,6 +50,7 @@ import {
 import type {
 	AwarenessDefinitions,
 	BaseRow,
+	DocumentConfig,
 	DocumentExtensionRegistration,
 	Documents,
 	DocumentsHelper,
@@ -72,7 +73,7 @@ async function destroyLifo(
 	const errors: unknown[] = [];
 	for (let i = cleanups.length - 1; i >= 0; i--) {
 		try {
-			await cleanups[i]!();
+			await cleanups[i]?.();
 		} catch (err) {
 			errors.push(err);
 		}
@@ -163,9 +164,10 @@ export function createWorkspace<
 
 		const tableDocumentsNamespace: Record<string, Documents<BaseRow>> = {};
 
-		for (const [docName, documentConfig] of Object.entries(
+		for (const [docName, _documentConfig] of Object.entries(
 			tableDef.documents,
 		)) {
+			const documentConfig = _documentConfig as DocumentConfig;
 			const docTags: readonly string[] = documentConfig.tags ?? [];
 
 			const documents = createDocuments({

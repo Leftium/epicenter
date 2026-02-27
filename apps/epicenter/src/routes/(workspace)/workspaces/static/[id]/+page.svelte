@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as Empty from '@epicenter/ui/empty';
 	import { Badge } from '@epicenter/ui/badge';
-	import TableIcon from '@lucide/svelte/icons/table-2';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import * as Empty from '@epicenter/ui/empty';
 	import DatabaseIcon from '@lucide/svelte/icons/database';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import TableIcon from '@lucide/svelte/icons/table-2';
 	import {
-		GenericTableViewer,
 		GenericKvViewer,
+		GenericTableViewer,
 	} from '$lib/workspaces/static/components';
 
 	let { data } = $props();
@@ -28,11 +28,13 @@
 	<div class="flex gap-4">
 		<Badge variant="secondary" class="gap-1.5">
 			<TableIcon class="size-3" />
-			{data.tables.length} tables
+			{data.tables.length}
+			tables
 		</Badge>
 		<Badge variant="secondary" class="gap-1.5">
 			<SettingsIcon class="size-3" />
-			{data.kvKeys.length} settings
+			{data.kvKeys.length}
+			settings
 		</Badge>
 	</div>
 
@@ -40,9 +42,7 @@
 	{#if data.tables.length === 0 && data.kvKeys.length === 0}
 		<Empty.Root>
 			<Empty.Header>
-				<Empty.Media variant="icon">
-					<DatabaseIcon />
-				</Empty.Media>
+				<Empty.Media variant="icon"> <DatabaseIcon /> </Empty.Media>
 				<Empty.Title>No data yet</Empty.Title>
 				<Empty.Description>
 					This workspace is empty or hasn't synced any data yet.

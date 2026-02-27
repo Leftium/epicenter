@@ -105,7 +105,7 @@ export function createSyncExtension(
 			url: resolvedUrl,
 			token: config.token,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken?.(workspaceId)
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,

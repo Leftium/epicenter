@@ -47,8 +47,8 @@
 		Import/Export (optional):
 		<ul>
 			<li>
-				Visit <a href="/import-export">Import/Export</a> to serialize/deserialize
-				adapter data bundles.
+				Visit <a href="/import-export">Import/Export</a> to
+				serialize/deserialize adapter data bundles.
 			</li>
 			<li>
 				Note: The Reddit entities flow now writes directly; Import is reserved

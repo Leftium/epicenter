@@ -1,22 +1,22 @@
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
+	import { Link } from '@epicenter/ui/link';
+	import { cn } from '@epicenter/ui/utils';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { desktopRpc } from '$lib/query';
 	import {
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/services/desktop/recorder/ffmpeg';
 	import { settings } from '$lib/state/settings.svelte';
-	import { cn } from '@epicenter/ui/utils';
-	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
-	import { createQuery } from '@tanstack/svelte-query';
-	import { desktopRpc } from '$lib/query';
-	import * as Alert from '@epicenter/ui/alert';
-	import { Link } from '@epicenter/ui/link';
 
 	// Compression preset definitions (UI only - not stored in settings)
 	const COMPRESSION_PRESETS = {
@@ -109,7 +109,7 @@
 		<div class="space-y-3">
 			<p class="text-base font-medium">Compression Presets</p>
 			<div class="flex flex-wrap gap-2">
-				{#each Object.entries(COMPRESSION_PRESETS) as [presetKey, preset]}
+				{#each Object.entries(COMPRESSION_PRESETS) as [ presetKey, preset ]}
 					<Button
 						tooltip={preset.description}
 						variant={isPresetActive(presetKey as CompressionPresetKey)
@@ -194,7 +194,8 @@
 			<Alert.Description>
 				Audio compression requires FFmpeg to be installed on your system. <Link
 					href="/install-ffmpeg"
-					class="font-medium underline underline-offset-4">Install FFmpeg</Link
+					class="font-medium underline underline-offset-4"
+					>Install FFmpeg</Link
 				> to enable this feature.
 			</Alert.Description>
 		</Alert.Root>

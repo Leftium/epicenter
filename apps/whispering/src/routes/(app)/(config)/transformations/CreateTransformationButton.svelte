@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { Editor } from '$lib/components/transformations-editor';
 	import { Button } from '@epicenter/ui/button';
 	import * as Modal from '@epicenter/ui/modal';
 	import { Separator } from '@epicenter/ui/separator';
+	import PlusIcon from '@lucide/svelte/icons/plus';
+	import { createMutation } from '@tanstack/svelte-query';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
 	import { generateDefaultTransformation } from '$lib/services/isomorphic/db';
-	import { createMutation } from '@tanstack/svelte-query';
-	import PlusIcon from '@lucide/svelte/icons/plus';
 
 	const createTransformation = createMutation(
 		() => rpc.db.transformations.create.options,

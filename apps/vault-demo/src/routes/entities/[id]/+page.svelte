@@ -22,7 +22,8 @@
 <h1>Entity Detail</h1>
 
 <nav>
-	<a href="/entities">Back to Entities</a> · <a href="/dashboard">Dashboard</a>
+	<a href="/entities">Back to Entities</a>
+	· <a href="/dashboard">Dashboard</a>
 	· <a href="/notes">Notes</a>
 </nav>
 

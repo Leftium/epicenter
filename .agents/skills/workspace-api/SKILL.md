@@ -3,7 +3,7 @@ name: workspace-api
 description: Workspace API patterns for defineTable, defineKv, versioning, and migrations. Use when defining workspace schemas, adding versions to existing tables/KV stores, or writing migration functions.
 metadata:
   author: epicenter
-  version: '3.0'
+  version: '4.0'
 ---
 
 # Workspace API
@@ -27,7 +27,8 @@ Use when a table has only one version:
 import { defineTable } from '@epicenter/workspace';
 import { type } from 'arktype';
 
-const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
+const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
+export type User = InferTableRow<typeof usersTable>;
 ```
 
 Every table schema must include `_v` with a number literal. The type system enforces this — passing a schema without `_v` to `defineTable()` is a compile error.
@@ -107,24 +108,36 @@ export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
 
-// 2. Use in defineTable schema
-conversations: defineTable(
+// 2. Wrap in defineTable + co-locate type export
+const conversationsTable = defineTable(
 	type({
 		id: ConversationId,              // Primary key — branded
 		title: 'string',
 		'parentId?': ConversationId.or('undefined'),  // Self-referencing FK
 		_v: '1',
 	}),
-),
+);
+export type Conversation = InferTableRow<typeof conversationsTable>;
 
-chatMessages: defineTable(
+const chatMessagesTable = defineTable(
 	type({
 		id: ChatMessageId,               // Different branded type
 		conversationId: ConversationId,   // FK to conversations — branded
 		role: "'user' | 'assistant'",
 		_v: '1',
 	}),
-),
+);
+export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
+
+// 3. Compose in createWorkspace
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		tables: {
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+		},
+	}),
+);
 ```
 
 ### Rules
@@ -151,6 +164,86 @@ deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
 ### Reference Implementation
 
 See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 branded ID types.
+
+## Workspace File Structure
+
+A workspace file has two layers:
+
+1. **Table definitions with co-located types** — `defineTable(schema)` as standalone consts, each immediately followed by `export type = InferTableRow<typeof table>`
+2. **`createWorkspace(defineWorkspace({...}))` call** — composes pre-built tables into the client
+
+### Pattern
+
+```typescript
+import {
+	createWorkspace,
+	defineTable,
+	defineWorkspace,
+	type InferTableRow,
+} from '@epicenter/workspace';
+
+// ─── Tables (each followed by its type export) ──────────────────────────
+
+const usersTable = defineTable(
+	type({
+		id: UserId,
+		email: 'string',
+		_v: '1',
+	}),
+);
+export type User = InferTableRow<typeof usersTable>;
+
+const postsTable = defineTable(
+	type({
+		id: PostId,
+		authorId: UserId,
+		title: 'string',
+		_v: '1',
+	}),
+);
+export type Post = InferTableRow<typeof postsTable>;
+
+// ─── Workspace client ───────────────────────────────────────────────────
+
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		id: 'my-workspace',
+		tables: {
+			users: usersTable,
+			posts: postsTable,
+		},
+	}),
+);
+```
+
+### Why This Structure
+
+- **Co-located types**: Each `export type` sits right below its `defineTable` — easy to verify 1:1 correspondence, easy to remove both together.
+- **Error co-location**: If you forget `_v` or `id`, the error shows on the `defineTable()` call right next to the schema — not buried inside `defineWorkspace`.
+- **Schema-agnostic inference**: `InferTableRow` works with any Standard Schema (arktype, zod, etc.) and handles migrations correctly (always infers the latest version's type).
+- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids the expensive `InferTableRow<NonNullable<(typeof definition)['tables']>['key']>` chain that forces TS to resolve the entire `defineWorkspace` return type.
+- **No intermediate `definition` const**: `defineWorkspace({...})` is inlined directly into `createWorkspace()` since it's only used once.
+
+### Anti-Pattern: Inline Tables + Deep Indirection
+
+```typescript
+// BAD: Tables inline in defineWorkspace, types derived through deep indirection
+const definition = defineWorkspace({
+	tables: {
+		users: defineTable(type({ id: 'string', email: 'string', _v: '1' })),
+	},
+});
+type Tables = NonNullable<(typeof definition)['tables']>;
+export type User = InferTableRow<Tables['users']>;
+
+// GOOD: Extract table, co-locate type, inline defineWorkspace
+const usersTable = defineTable(type({ id: UserId, email: 'string', _v: '1' }));
+export type User = InferTableRow<typeof usersTable>;
+
+export const workspaceClient = createWorkspace(
+	defineWorkspace({ tables: { users: usersTable } }),
+);
+```
 
 ## The `_v` Convention
 

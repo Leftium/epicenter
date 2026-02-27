@@ -1,7 +1,7 @@
 <script lang="ts">
+	import type { HTMLAttributes } from 'svelte/elements';
 	import * as Sheet from '#/sheet/index.js';
 	import { cn, type WithElementRef } from '#/utils.js';
-	import type { HTMLAttributes } from 'svelte/elements';
 	import { SIDEBAR_WIDTH_MOBILE } from './constants.js';
 	import { useSidebar } from './context.svelte.js';
 
@@ -50,9 +50,7 @@
 				<Sheet.Title>Sidebar</Sheet.Title>
 				<Sheet.Description>Displays the mobile sidebar.</Sheet.Description>
 			</Sheet.Header>
-			<div class="flex h-full w-full flex-col">
-				{@render children?.()}
-			</div>
+			<div class="flex h-full w-full flex-col">{@render children?.()}</div>
 		</Sheet.Content>
 	</Sheet.Root>
 {:else}

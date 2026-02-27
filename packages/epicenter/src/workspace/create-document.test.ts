@@ -232,7 +232,7 @@ describe('createDocuments', () => {
 			const handle = await documents.open('f1');
 			expect(handle.exports).toBeDefined();
 			expect(handle.exports.persistence).toBeDefined();
-			expect(typeof handle.exports.persistence!.clearData).toBe('function');
+			expect(typeof handle.exports.persistence?.clearData).toBe('function');
 		});
 
 		test('lifecycle-only extension is accessible with whenReady and destroy', async () => {
@@ -252,8 +252,8 @@ describe('createDocuments', () => {
 			expect(handle.exports).toBeDefined();
 			const ext = handle.exports['lifecycle-only'];
 			expect(ext).toBeDefined();
-			expect(ext!.whenReady).toBeInstanceOf(Promise);
-			expect(typeof ext!.destroy).toBe('function');
+			expect(ext?.whenReady).toBeInstanceOf(Promise);
+			expect(typeof ext?.destroy).toBe('function');
 		});
 
 		test('accepts a row object', async () => {
@@ -279,7 +279,7 @@ describe('createDocuments', () => {
 
 			const handle = await documents.open(row);
 			expect(handle.exports).toBeDefined();
-			expect(typeof handle.exports.test!.helper).toBe('function');
+			expect(typeof handle.exports.test?.helper).toBe('function');
 		});
 	});
 

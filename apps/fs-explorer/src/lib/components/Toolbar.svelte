@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
-	import { fsState } from '$lib/fs/fs-state.svelte';
 	import { toast } from 'svelte-sonner';
+	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
 	import RenameDialog from './RenameDialog.svelte';

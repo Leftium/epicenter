@@ -40,7 +40,7 @@
 		bind:files
 		bind:value
 		{...restProps}
-	/>
+	>
 {:else}
 	<input
 		bind:this={ref}
@@ -54,5 +54,5 @@
 		{type}
 		bind:value
 		{...restProps}
-	/>
+	>
 {/if}

@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { fsState } from '$lib/fs/fs-state.svelte';
-	import PathBreadcrumb from './PathBreadcrumb.svelte';
 	import ContentEditor from './ContentEditor.svelte';
+	import PathBreadcrumb from './PathBreadcrumb.svelte';
 </script>
 
 <div class="flex h-full flex-col">
 	{#if fsState.activeFileId && fsState.selectedNode}
-		<div class="flex items-center border-b px-4 py-2">
-			<PathBreadcrumb />
-		</div>
+		<div class="flex items-center border-b px-4 py-2"><PathBreadcrumb /></div>
 
 		{#if fsState.selectedNode.type === 'folder'}
 			<div

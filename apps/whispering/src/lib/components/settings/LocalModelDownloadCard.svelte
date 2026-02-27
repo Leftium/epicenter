@@ -1,17 +1,11 @@
 <script lang="ts">
-	import { PATHS } from '$lib/constants/paths';
-	import {
-		isModelFileSizeValid,
-		type LocalModelConfig,
-	} from '$lib/services/isomorphic/transcription/local/types';
-	import { settings } from '$lib/state/settings.svelte';
-	import CheckIcon from '@lucide/svelte/icons/check';
-	import Download from '@lucide/svelte/icons/download';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import X from '@lucide/svelte/icons/x';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
+	import { Spinner } from '@epicenter/ui/spinner';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import Download from '@lucide/svelte/icons/download';
+	import X from '@lucide/svelte/icons/x';
 	import { join } from '@tauri-apps/api/path';
 	import {
 		exists,
@@ -24,6 +18,12 @@
 	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
+	import { PATHS } from '$lib/constants/paths';
+	import {
+		isModelFileSizeValid,
+		type LocalModelConfig,
+	} from '$lib/services/isomorphic/transcription/local/types';
+	import { settings } from '$lib/state/settings.svelte';
 
 	let {
 		model,
@@ -350,12 +350,8 @@
 				<Badge variant="secondary" class="text-xs">Downloaded</Badge>
 			{/if}
 		</div>
-		<div class="text-sm text-muted-foreground">
-			{model.description}
-		</div>
-		<div class="text-xs text-muted-foreground mt-1">
-			{model.size}
-		</div>
+		<div class="text-sm text-muted-foreground">{model.description}</div>
+		<div class="text-xs text-muted-foreground mt-1">{model.size}</div>
 	</div>
 
 	<div class="flex items-center gap-2">

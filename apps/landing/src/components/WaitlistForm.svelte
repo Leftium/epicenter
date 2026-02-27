@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
-	import { Checkbox } from '@epicenter/ui/checkbox';
 	import { cn } from '@epicenter/ui/utils';
 
 	const interestOptions = [
@@ -91,10 +91,8 @@
 					<div class="flex items-center space-x-2">
 						<Checkbox
 							id={option.id}
-							bind:checked={
-								() => interests.includes(option.id),
-								(checked) => toggleInterest(option.id, checked)
-							}
+							bind:checked={() => interests.includes(option.id),
+								(checked) => toggleInterest(option.id, checked)}
 						/>
 						<Label for={option.id} class="font-normal cursor-pointer">
 							{option.label}

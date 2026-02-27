@@ -1,12 +1,4 @@
 <script lang="ts">
-	import {
-		AnthropicApiKeyInput,
-		CustomEndpointInput,
-		GoogleApiKeyInput,
-		GroqApiKeyInput,
-		OpenAiApiKeyInput,
-		OpenRouterApiKeyInput,
-	} from '$lib/components/settings';
 	import * as Accordion from '@epicenter/ui/accordion';
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
@@ -18,6 +10,18 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import { Switch } from '@epicenter/ui/switch';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import PlusIcon from '@lucide/svelte/icons/plus';
+	import TrashIcon from '@lucide/svelte/icons/trash';
+	import { slide } from 'svelte/transition';
+	import {
+		AnthropicApiKeyInput,
+		CustomEndpointInput,
+		GoogleApiKeyInput,
+		GroqApiKeyInput,
+		OpenAiApiKeyInput,
+		OpenRouterApiKeyInput,
+	} from '$lib/components/settings';
 	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/database';
 	import {
 		ANTHROPIC_INFERENCE_MODEL_OPTIONS,
@@ -28,10 +32,6 @@
 	} from '$lib/constants/inference';
 	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { generateDefaultTransformationStep } from '$lib/services/isomorphic/db';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import PlusIcon from '@lucide/svelte/icons/plus';
-	import TrashIcon from '@lucide/svelte/icons/trash';
-	import { slide } from 'svelte/transition';
 
 	// Derived labels for select triggers
 	const stepTypeLabel = (type: string) =>
@@ -150,13 +150,10 @@
 					<Card.Header class="space-y-4">
 						<div class="flex items-center justify-between">
 							<div class="flex items-center gap-3">
-								<Card.Title class="text-xl">
-									Step {index + 1}:
-								</Card.Title>
+								<Card.Title class="text-xl"> Step {index + 1}: </Card.Title>
 								<Select.Root
 									type="single"
-									bind:value={
-										() => step.type,
+									bind:value={() => step.type,
 										(value) => {
 											if (value) {
 												transformation = {
@@ -166,8 +163,7 @@
 													),
 												};
 											}
-										}
-									}
+										}}
 								>
 									<Select.Trigger id="step-type" class="h-8">
 										{stepTypeLabel(step.type) ?? 'Select a step type'}
@@ -308,8 +304,7 @@
 										>
 										<Select.Root
 											type="single"
-											bind:value={
-												() => step['prompt_transform.inference.provider'],
+											bind:value={() => step['prompt_transform.inference.provider'],
 												(value) => {
 													if (value) {
 														transformation = {
@@ -325,8 +320,7 @@
 															),
 														};
 													}
-												}
-											}
+												}}
 										>
 											<Select.Trigger
 												id="prompt_transform.inference.provider"
@@ -352,8 +346,7 @@
 											>
 											<Select.Root
 												type="single"
-												bind:value={
-													() =>
+												bind:value={() =>
 														step[
 															'prompt_transform.inference.provider.OpenAI.model'
 														],
@@ -372,8 +365,7 @@
 																),
 															};
 														}
-													}
-												}
+													}}
 											>
 												<Select.Trigger
 													id="prompt_transform.inference.provider.OpenAI.model"
@@ -403,8 +395,7 @@
 											>
 											<Select.Root
 												type="single"
-												bind:value={
-													() =>
+												bind:value={() =>
 														step[
 															'prompt_transform.inference.provider.Groq.model'
 														],
@@ -423,8 +414,7 @@
 																),
 															};
 														}
-													}
-												}
+													}}
 											>
 												<Select.Trigger
 													id="prompt_transform.inference.provider.Groq.model"
@@ -454,8 +444,7 @@
 											>
 											<Select.Root
 												type="single"
-												bind:value={
-													() =>
+												bind:value={() =>
 														step[
 															'prompt_transform.inference.provider.Anthropic.model'
 														],
@@ -474,8 +463,7 @@
 																),
 															};
 														}
-													}
-												}
+													}}
 											>
 												<Select.Trigger
 													id="prompt_transform.inference.provider.Anthropic.model"
@@ -505,8 +493,7 @@
 											>
 											<Select.Root
 												type="single"
-												bind:value={
-													() =>
+												bind:value={() =>
 														step[
 															'prompt_transform.inference.provider.Google.model'
 														],
@@ -525,8 +512,7 @@
 																),
 															};
 														}
-													}
-												}
+													}}
 											>
 												<Select.Trigger
 													id="prompt_transform.inference.provider.Google.model"
@@ -637,7 +623,8 @@
 												/>
 												<Field.Description>
 													Enter the exact model name as it appears in your local
-													service (e.g., run <code class="bg-muted px-1 rounded"
+													service (e.g., run
+													<code class="bg-muted px-1 rounded"
 														>ollama list</code
 													>).
 												</Field.Description>
@@ -696,8 +683,8 @@
 									{#if step['prompt_transform.userPromptTemplate'] && !step['prompt_transform.userPromptTemplate'].includes('{{input}}')}
 										<Field.Description>
 											<span class="text-warning font-semibold">
-												Remember to include {'{{input}}'} in your prompt - this is
-												where your text will be inserted!
+												Remember to include {'{{input}}'} in your prompt - this
+												is where your text will be inserted!
 											</span>
 										</Field.Description>
 									{/if}

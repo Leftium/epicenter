@@ -21,11 +21,7 @@
 </script>
 
 {#if modal.view === 'desktop'}
-	<Dialog.Header bind:ref {...rest}>
-		{@render children?.()}
-	</Dialog.Header>
+	<Dialog.Header bind:ref {...rest}> {@render children?.()} </Dialog.Header>
 {:else}
-	<Drawer.Header bind:ref {...rest}>
-		{@render children?.()}
-	</Drawer.Header>
+	<Drawer.Header bind:ref {...rest}> {@render children?.()} </Drawer.Header>
 {/if}

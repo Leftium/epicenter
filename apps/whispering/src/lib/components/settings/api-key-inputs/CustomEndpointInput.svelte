@@ -20,10 +20,8 @@
 				id="custom-endpoint-base-url"
 				placeholder="e.g. http://localhost:11434/v1"
 				autocomplete="off"
-				bind:value={
-					() => settings.value['completion.custom.baseUrl'],
-					(value) => settings.updateKey('completion.custom.baseUrl', value)
-				}
+				bind:value={() => settings.value['completion.custom.baseUrl'],
+					(value) => settings.updateKey('completion.custom.baseUrl', value)}
 			/>
 			<Field.Description>
 				Global default URL for OpenAI-compatible endpoints (Ollama, LM Studio,
@@ -39,10 +37,8 @@
 			type="password"
 			placeholder="Leave empty if not required"
 			autocomplete="off"
-			bind:value={
-				() => settings.value['apiKeys.custom'],
-				(value) => settings.updateKey('apiKeys.custom', value)
-			}
+			bind:value={() => settings.value['apiKeys.custom'],
+				(value) => settings.updateKey('apiKeys.custom', value)}
 		/>
 		<Field.Description>
 			Most local endpoints don't require authentication. Only enter a key if

@@ -1,20 +1,41 @@
 /**
- * Workspace definition — the single source of truth for the tab manager schema.
+ * Workspace — schema, client, and actions for the tab manager.
  *
- * Contains table definitions, the workspace definition, and all inferred types.
- * Both background and popup import from here; neither defines their own schema.
+ * Contains table definitions, branded ID types, composite ID helpers, the
+ * workspace client (single Y.Doc instance with IndexedDB + WebSocket sync),
+ * and all AI-callable actions. Everything lives in one file because there is
+ * exactly one consumer of the schema: the side panel's `createWorkspace` call.
  *
  * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
+import { createActionContext } from '@epicenter/ai';
 import {
+	createWorkspace,
+	defineMutation,
+	defineQuery,
 	defineTable,
 	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
+import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import {
+	executeActivateTab,
+	executeCloseTabs,
+	executeGroupTabs,
+	executeMuteTabs,
+	executeOpenTab,
+	executePinTabs,
+	executeReloadTabs,
+	executeSaveTabs,
+} from '$lib/commands/actions';
+import { startCommandConsumer } from '$lib/commands/consumer';
+import { getDeviceId } from '$lib/device/device-id';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -224,10 +245,14 @@ export function parseGroupId(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Workspace Definition
+// Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─── Shared command base fields ──────────────────────────────────────────────
+// ─── Shared types ─────────────────────────────────────────────────────────
+
+const tabGroupColor = type(
+	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
+);
 
 const commandBase = type({
 	id: CommandId,
@@ -236,291 +261,579 @@ const commandBase = type({
 	_v: '1',
 });
 
-// ─── Tab group color (reusable in commands + tabGroups) ─────────────────────
-
-const tabGroupColor =
-	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'";
+// ─── Tables ──────────────────────────────────────────────────────────────────
 
 /**
- * The workspace definition — shared by background and popup.
+ * Devices — tracks browser installations for multi-device sync.
  *
- * Both call `createWorkspace(definition)` independently (each needs its own
- * Y.Doc instance), but the schema is defined exactly once here.
+ * Each device generates a unique ID on first install, stored in storage.local.
+ * This enables syncing tabs across multiple computers while preventing ID collisions.
  */
-export const definition = defineWorkspace({
-	id: 'tab-manager',
+const devicesTable = defineTable(
+	type({
+		id: DeviceId, // NanoID, generated once on install
+		name: 'string', // User-editable: "Chrome on macOS", "Firefox on Windows"
+		lastSeen: 'string', // ISO timestamp, updated on each sync
+		browser: 'string', // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
+		_v: '1',
+	}),
+);
+export type Device = InferTableRow<typeof devicesTable>;
 
-	awareness: {
-		deviceId: type('string'),
-		deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
-	},
+/**
+ * Tabs — shadows browser tab state.
+ *
+ * Near 1:1 mapping with `chrome.tabs.Tab`. Optional fields match Chrome's optionality.
+ * The `id` field is a composite key: `${deviceId}_${tabId}`.
+ * This prevents collisions when syncing across multiple devices.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
+ */
+const tabsTable = defineTable(
+	type({
+		id: TabCompositeId, // Composite: `${deviceId}_${tabId}`
+		deviceId: DeviceId, // Foreign key to devices table
+		tabId: 'number', // Original chrome.tabs.Tab.id for API calls
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		index: 'number', // Zero-based position in tab strip
+		pinned: 'boolean',
+		active: 'boolean',
+		highlighted: 'boolean',
+		incognito: 'boolean',
+		discarded: 'boolean', // Tab unloaded to save memory
+		autoDiscardable: 'boolean',
+		frozen: 'boolean', // Chrome 132+, tab cannot execute tasks
+		// Optional fields — matching chrome.tabs.Tab optionality
+		// Unioned with `undefined` so that present-but-undefined keys pass
+		// arktype validation (which defaults to exactOptionalPropertyTypes).
+		'url?': 'string | undefined',
+		'title?': 'string | undefined',
+		'favIconUrl?': 'string | undefined',
+		'pendingUrl?': 'string | undefined', // Chrome 79+, URL before commit
+		'status?': "'unloaded' | 'loading' | 'complete' | undefined",
+		'audible?': 'boolean | undefined', // Chrome 45+
+		/** @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-MutedInfo */
+		'mutedInfo?': type({
+			/** Whether the tab is muted (prevented from playing sound). The tab may be muted even if it has not played or is not currently playing sound. Equivalent to whether the 'muted' audio indicator is showing. */
+			muted: 'boolean',
+			/** The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed. */
+			'reason?': "'user' | 'capture' | 'extension' | undefined",
+			/** The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed. */
+			'extensionId?': 'string | undefined',
+		}).or('undefined'),
+		'groupId?': GroupCompositeId.or('undefined'), // Composite: `${deviceId}_${groupId}`, Chrome 88+
+		'openerTabId?': TabCompositeId.or('undefined'), // Composite: `${deviceId}_${openerTabId}`
+		'lastAccessed?': 'number | undefined', // Chrome 121+, ms since epoch
+		'height?': 'number | undefined',
+		'width?': 'number | undefined',
+		'sessionId?': 'string | undefined', // From chrome.sessions API
+		_v: '1',
+	}),
+);
+export type Tab = InferTableRow<typeof tabsTable>;
 
-	tables: {
-		/**
-		 * Devices table - tracks browser installations for multi-device sync.
-		 *
-		 * Each device generates a unique ID on first install, stored in storage.local.
-		 * This enables syncing tabs across multiple computers while preventing ID collisions.
-		 */
-		devices: defineTable(
-			type({
-				id: DeviceId, // NanoID, generated once on install
-				name: 'string', // User-editable: "Chrome on macOS", "Firefox on Windows"
-				lastSeen: 'string', // ISO timestamp, updated on each sync
-				browser: 'string', // 'chrome' | 'firefox' | 'safari' | 'edge' | 'opera'
-				_v: '1',
-			}),
-		),
+/**
+ * Windows — shadows browser window state.
+ *
+ * Near 1:1 mapping with `chrome.windows.Window`. Optional fields match Chrome's optionality.
+ * The `id` field is a composite key: `${deviceId}_${windowId}`.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
+ */
+const windowsTable = defineTable(
+	type({
+		id: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		deviceId: DeviceId, // Foreign key to devices table
+		windowId: 'number', // Original browser window ID for API calls
+		focused: 'boolean',
+		alwaysOnTop: 'boolean',
+		incognito: 'boolean',
+		// Optional fields — matching chrome.windows.Window optionality
+		'state?':
+			"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen' | undefined",
+		'type?': "'normal' | 'popup' | 'panel' | 'app' | 'devtools' | undefined",
+		'top?': 'number | undefined',
+		'left?': 'number | undefined',
+		'width?': 'number | undefined',
+		'height?': 'number | undefined',
+		'sessionId?': 'string | undefined', // From chrome.sessions API
+		_v: '1',
+	}),
+);
+export type Window = InferTableRow<typeof windowsTable>;
 
-		/**
-		 * Tabs table - shadows browser tab state.
-		 *
-		 * Near 1:1 mapping with `chrome.tabs.Tab`. Optional fields match Chrome's optionality.
-		 * The `id` field is a composite key: `${deviceId}_${tabId}`.
-		 * This prevents collisions when syncing across multiple devices.
-		 *
-		 * @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-Tab
-		 */
-		tabs: defineTable(
-			type({
-				id: TabCompositeId, // Composite: `${deviceId}_${tabId}`
-				deviceId: DeviceId, // Foreign key to devices table
-				tabId: 'number', // Original chrome.tabs.Tab.id for API calls
-				windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
-				index: 'number', // Zero-based position in tab strip
+/**
+ * Tab groups — Chrome 88+ only, not supported on Firefox.
+ *
+ * The `id` field is a composite key: `${deviceId}_${groupId}`.
+ *
+ * @see https://developer.chrome.com/docs/extensions/reference/api/tabGroups
+ */
+const tabGroupsTable = defineTable(
+	type({
+		id: GroupCompositeId, // Composite: `${deviceId}_${groupId}`
+		deviceId: DeviceId, // Foreign key to devices table
+		groupId: 'number', // Original browser group ID for API calls
+		windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
+		collapsed: 'boolean',
+		color: tabGroupColor,
+		shared: 'boolean', // Chrome 137+
+		// Optional fields — matching chrome.tabGroups.TabGroup optionality
+		'title?': 'string | undefined',
+		_v: '1',
+	}),
+);
+export type TabGroup = InferTableRow<typeof tabGroupsTable>;
+
+/**
+ * Saved tabs — explicitly saved tabs that can be restored later.
+ *
+ * Unlike the `tabs` table (which mirrors live browser state and is device-owned),
+ * saved tabs are shared across all devices. Any device can read, edit, or
+ * restore a saved tab.
+ *
+ * Created when a user explicitly saves a tab (close + persist).
+ * Deleted when a user restores the tab (opens URL locally + deletes row).
+ */
+const savedTabsTable = defineTable(
+	type({
+		id: SavedTabId, // nanoid, generated on save
+		url: 'string', // The tab URL
+		title: 'string', // Tab title at time of save
+		'favIconUrl?': 'string | undefined', // Favicon URL (nullable)
+		pinned: 'boolean', // Whether tab was pinned
+		sourceDeviceId: DeviceId, // Device that saved this tab
+		savedAt: 'number', // Timestamp (ms since epoch)
+		_v: '1',
+	}),
+);
+export type SavedTab = InferTableRow<typeof savedTabsTable>;
+
+/**
+ * AI conversations — metadata for each chat thread.
+ *
+ * Each conversation has its own message history (linked via
+ * chatMessages.conversationId). Subpages use `parentId` to form
+ * a tree — e.g. a deep research thread spawned from a specific
+ * message in a parent conversation.
+ */
+const conversationsTable = defineTable(
+	type({
+		id: ConversationId,
+		title: 'string',
+		'parentId?': ConversationId.or('undefined'),
+		'sourceMessageId?': ChatMessageId.or('undefined'),
+		'systemPrompt?': 'string | undefined',
+		provider: 'string',
+		model: 'string',
+		createdAt: 'number',
+		updatedAt: 'number',
+		_v: '1',
+	}),
+);
+export type Conversation = InferTableRow<typeof conversationsTable>;
+
+/**
+ * Chat messages — TanStack AI UIMessage data persisted per conversation.
+ *
+ * The `parts` field stores MessagePart[] as a native array (no JSON
+ * serialization). Runtime validation is skipped for parts because
+ * they are always produced by TanStack AI — compile-time drift
+ * detection in `ui-message.ts` catches type mismatches on
+ * TanStack AI upgrades instead.
+ *
+ * @see {@link file://./ai/ui-message.ts} — drift detection + toUiMessage boundary
+ */
+const chatMessagesTable = defineTable(
+	type({
+		id: ChatMessageId,
+		conversationId: ConversationId,
+		role: "'user' | 'assistant' | 'system'",
+		parts: 'unknown[]',
+		createdAt: 'number',
+		_v: '1',
+	}),
+);
+export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
+
+/**
+ * AI command queue — discriminated union on `action`.
+ *
+ * The server writes commands targeting a device; the device's background
+ * worker observes, executes the Chrome API action, and writes the result.
+ * `result?` presence = status: no result = pending, has result = done.
+ *
+ * Uses `commandBase.merge(type.or(...))` for a flat list of 8 action variants.
+ *
+ * @see specs/20260223T200500-ai-tools-command-queue.md
+ */
+const commandsTable = defineTable(
+	commandBase.merge(
+		type.or(
+			{
+				action: "'closeTabs'",
+				tabIds: 'string[]',
+				'result?': type({ closedCount: 'number' }).or('undefined'),
+			},
+			{
+				action: "'openTab'",
+				url: 'string',
+				'windowId?': 'string',
+				'result?': type({ tabId: 'string' }).or('undefined'),
+			},
+			{
+				action: "'activateTab'",
+				tabId: 'string',
+				'result?': type({ activated: 'boolean' }).or('undefined'),
+			},
+			{
+				action: "'saveTabs'",
+				tabIds: 'string[]',
+				close: 'boolean',
+				'result?': type({ savedCount: 'number' }).or('undefined'),
+			},
+			{
+				action: "'groupTabs'",
+				tabIds: 'string[]',
+				'title?': 'string',
+				'color?': tabGroupColor,
+				'result?': type({ groupId: 'string' }).or('undefined'),
+			},
+			{
+				action: "'pinTabs'",
+				tabIds: 'string[]',
 				pinned: 'boolean',
-				active: 'boolean',
-				highlighted: 'boolean',
-				incognito: 'boolean',
-				discarded: 'boolean', // Tab unloaded to save memory
-				autoDiscardable: 'boolean',
-				frozen: 'boolean', // Chrome 132+, tab cannot execute tasks
-				// Optional fields — matching chrome.tabs.Tab optionality
-				// Unioned with `undefined` so that present-but-undefined keys pass
-				// arktype validation (which defaults to exactOptionalPropertyTypes).
-				'url?': 'string | undefined',
-				'title?': 'string | undefined',
-				'favIconUrl?': 'string | undefined',
-				'pendingUrl?': 'string | undefined', // Chrome 79+, URL before commit
-				'status?': "'unloaded' | 'loading' | 'complete' | undefined",
-				'audible?': 'boolean | undefined', // Chrome 45+
-				/** @see https://developer.chrome.com/docs/extensions/reference/api/tabs#type-MutedInfo */
-				'mutedInfo?': type({
-					/** Whether the tab is muted (prevented from playing sound). The tab may be muted even if it has not played or is not currently playing sound. Equivalent to whether the 'muted' audio indicator is showing. */
-					muted: 'boolean',
-					/** The reason the tab was muted or unmuted. Not set if the tab's mute state has never been changed. */
-					'reason?': "'user' | 'capture' | 'extension' | undefined",
-					/** The ID of the extension that changed the muted state. Not set if an extension was not the reason the muted state last changed. */
-					'extensionId?': 'string | undefined',
-				}).or('undefined'),
-				'groupId?': GroupCompositeId.or('undefined'), // Composite: `${deviceId}_${groupId}`, Chrome 88+
-				'openerTabId?': TabCompositeId.or('undefined'), // Composite: `${deviceId}_${openerTabId}`
-				'lastAccessed?': 'number | undefined', // Chrome 121+, ms since epoch
-				'height?': 'number | undefined',
-				'width?': 'number | undefined',
-				'sessionId?': 'string | undefined', // From chrome.sessions API
-				_v: '1',
-			}),
+				'result?': type({ pinnedCount: 'number' }).or('undefined'),
+			},
+			{
+				action: "'muteTabs'",
+				tabIds: 'string[]',
+				muted: 'boolean',
+				'result?': type({ mutedCount: 'number' }).or('undefined'),
+			},
+			{
+				action: "'reloadTabs'",
+				tabIds: 'string[]',
+				'result?': type({ reloadedCount: 'number' }).or('undefined'),
+			},
 		),
+	),
+);
+export type Command = InferTableRow<typeof commandsTable>;
 
-		/**
-		 * Windows table - shadows browser window state.
-		 *
-		 * Near 1:1 mapping with `chrome.windows.Window`. Optional fields match Chrome's optionality.
-		 * The `id` field is a composite key: `${deviceId}_${windowId}`.
-		 *
-		 * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
-		 */
-		windows: defineTable(
-			type({
-				id: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
-				deviceId: DeviceId, // Foreign key to devices table
-				windowId: 'number', // Original browser window ID for API calls
-				focused: 'boolean',
-				alwaysOnTop: 'boolean',
-				incognito: 'boolean',
-				// Optional fields — matching chrome.windows.Window optionality
-				'state?':
-					"'normal' | 'minimized' | 'maximized' | 'fullscreen' | 'locked-fullscreen' | undefined",
-				'type?':
-					"'normal' | 'popup' | 'panel' | 'app' | 'devtools' | undefined",
-				'top?': 'number | undefined',
-				'left?': 'number | undefined',
-				'width?': 'number | undefined',
-				'height?': 'number | undefined',
-				'sessionId?': 'string | undefined', // From chrome.sessions API
-				_v: '1',
-			}),
-		),
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace Client
+// ─────────────────────────────────────────────────────────────────────────────
 
-		/**
-		 * Tab groups table - Chrome 88+ only, not supported on Firefox.
-		 *
-		 * The `id` field is a composite key: `${deviceId}_${groupId}`.
-		 *
-		 * @see https://developer.chrome.com/docs/extensions/reference/api/tabGroups
-		 */
-		tabGroups: defineTable(
-			type({
-				id: GroupCompositeId, // Composite: `${deviceId}_${groupId}`
-				deviceId: DeviceId, // Foreign key to devices table
-				groupId: 'number', // Original browser group ID for API calls
-				windowId: WindowCompositeId, // Composite: `${deviceId}_${windowId}`
-				collapsed: 'boolean',
-				color: tabGroupColor,
-				shared: 'boolean', // Chrome 137+
-				// Optional fields — matching chrome.tabGroups.TabGroup optionality
-				'title?': 'string | undefined',
-				_v: '1',
-			}),
-		),
+/**
+ * Workspace client — single Y.Doc instance for the tab manager.
+ *
+ * Runs in the side panel context, which is a persistent extension page with
+ * full Chrome API access and no dormancy. IndexedDB persistence and WebSocket
+ * sync handle local storage and cross-device sync. Actions are available at
+ * `.actions` for AI tool derivation.
+ */
+export const workspaceClient = createWorkspace(
+	defineWorkspace({
+		id: 'tab-manager',
 
-		/**
-		 * Saved tabs table — explicitly saved tabs that can be restored later.
-		 *
-		 * Unlike the `tabs` table (which mirrors live browser state and is device-owned),
-		 * saved tabs are shared across all devices. Any device can read, edit, or
-		 * restore a saved tab.
-		 *
-		 * Created when a user explicitly saves a tab (close + persist).
-		 * Deleted when a user restores the tab (opens URL locally + deletes row).
-		 *
-		 */
-		savedTabs: defineTable(
-			type({
-				id: SavedTabId, // nanoid, generated on save
-				url: 'string', // The tab URL
-				title: 'string', // Tab title at time of save
-				'favIconUrl?': 'string | undefined', // Favicon URL (nullable)
-				pinned: 'boolean', // Whether tab was pinned
-				sourceDeviceId: DeviceId, // Device that saved this tab
-				savedAt: 'number', // Timestamp (ms since epoch)
-				_v: '1',
-			}),
-		),
+		awareness: {
+			deviceId: type('string'),
+			deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
+		},
 
-		/**
-		 * AI conversations — metadata for each chat thread.
-		 *
-		 * Each conversation has its own message history (linked via
-		 * chatMessages.conversationId). Subpages use `parentId` to form
-		 * a tree — e.g. a deep research thread spawned from a specific
-		 * message in a parent conversation.
-		 */
-		conversations: defineTable(
-			type({
-				id: ConversationId,
-				title: 'string',
-				'parentId?': ConversationId.or('undefined'),
-				'sourceMessageId?': ChatMessageId.or('undefined'),
-				'systemPrompt?': 'string | undefined',
-				provider: 'string',
-				model: 'string',
-				createdAt: 'number',
-				updatedAt: 'number',
-				_v: '1',
+		tables: {
+			devices: devicesTable,
+			tabs: tabsTable,
+			windows: windowsTable,
+			tabGroups: tabGroupsTable,
+			savedTabs: savedTabsTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			commands: commandsTable,
+		},
+	}),
+)
+	.withExtension('persistence', indexeddbPersistence)
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: 'ws://127.0.0.1:3913/rooms/{id}',
+		}),
+	)
+	.withActions(({ tables }) => ({
+		tabs: {
+			search: defineQuery({
+				description:
+					'Search tabs by URL or title match. Returns matching tabs across all devices, optionally scoped to one device.',
+				input: Type.Object({
+					query: Type.String(),
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ query, deviceId }) => {
+					const lower = query.toLowerCase();
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						const title = tab.title?.toLowerCase() ?? '';
+						const url = tab.url?.toLowerCase() ?? '';
+						return title.includes(lower) || url.includes(lower);
+					});
+					return {
+						results: matched.map((tab) => ({
+							id: tab.id,
+							deviceId: tab.deviceId,
+							windowId: tab.windowId,
+							title: tab.title ?? '(untitled)',
+							url: tab.url ?? '',
+							active: tab.active,
+							pinned: tab.pinned,
+						})),
+					};
+				},
 			}),
-		),
 
-		/**
-		 * Chat messages — TanStack AI UIMessage data persisted per conversation.
-		 *
-		 * The `parts` field stores MessagePart[] as a native array (no JSON
-		 * serialization). Runtime validation is skipped for parts because
-		 * they are always produced by TanStack AI — compile-time drift
-		 * detection in `ui-message.ts` catches type mismatches on
-		 * TanStack AI upgrades instead.
-		 *
-		 * @see {@link file://./ai/ui-message.ts} — drift detection + toUiMessage boundary
-		 */
-		chatMessages: defineTable(
-			type({
-				id: ChatMessageId,
-				conversationId: ConversationId,
-				role: "'user' | 'assistant' | 'system'",
-				parts: 'unknown[]',
-				createdAt: 'number',
-				_v: '1',
+			list: defineQuery({
+				description:
+					'List all open tabs. Optionally filter by device or window.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+					windowId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId, windowId }) => {
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						if (windowId && tab.windowId !== windowId) return false;
+						return true;
+					});
+					return {
+						tabs: matched.map((tab) => ({
+							id: tab.id,
+							deviceId: tab.deviceId,
+							windowId: tab.windowId,
+							title: tab.title ?? '(untitled)',
+							url: tab.url ?? '',
+							active: tab.active,
+							pinned: tab.pinned,
+							audible: tab.audible ?? false,
+							muted: tab.mutedInfo?.muted ?? false,
+							groupId: tab.groupId ?? null,
+						})),
+					};
+				},
 			}),
-		),
 
-		/**
-		 * AI command queue — discriminated union on `action`.
-		 *
-		 * The server writes commands targeting a device; the device's background
-		 * worker observes, executes the Chrome API action, and writes the result.
-		 * `result?` presence = status: no result = pending, has result = done.
-		 *
-		 * Uses `commandBase.merge(type.or(...))` for a flat list of 8 action variants.
-		 *
-		 * @see specs/20260223T200500-ai-tools-command-queue.md
-		 */
-		commands: defineTable(
-			commandBase.merge(
-				type.or(
-					{
-						action: "'closeTabs'",
-						tabIds: 'string[]',
-						'result?': type({ closedCount: 'number' }).or('undefined'),
-					},
-					{
-						action: "'openTab'",
-						url: 'string',
-						'windowId?': 'string',
-						'result?': type({ tabId: 'string' }).or('undefined'),
-					},
-					{
-						action: "'activateTab'",
-						tabId: 'string',
-						'result?': type({ activated: 'boolean' }).or('undefined'),
-					},
-					{
-						action: "'saveTabs'",
-						tabIds: 'string[]',
-						close: 'boolean',
-						'result?': type({ savedCount: 'number' }).or('undefined'),
-					},
-					{
-						action: "'groupTabs'",
-						tabIds: 'string[]',
-						'title?': 'string',
-						'color?': tabGroupColor,
-						'result?': type({ groupId: 'string' }).or('undefined'),
-					},
-					{
-						action: "'pinTabs'",
-						tabIds: 'string[]',
-						pinned: 'boolean',
-						'result?': type({ pinnedCount: 'number' }).or('undefined'),
-					},
-					{
-						action: "'muteTabs'",
-						tabIds: 'string[]',
-						muted: 'boolean',
-						'result?': type({ mutedCount: 'number' }).or('undefined'),
-					},
-					{
-						action: "'reloadTabs'",
-						tabIds: 'string[]',
-						'result?': type({ reloadedCount: 'number' }).or('undefined'),
-					},
-				),
-			),
-		),
+			close: defineMutation({
+				description: 'Close one or more tabs by their composite IDs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+				}),
+				handler: async ({ tabIds }) => {
+					const deviceId = await getDeviceId();
+					return executeCloseTabs(tabIds, deviceId);
+				},
+			}),
+
+			open: defineMutation({
+				description: 'Open a new tab with the given URL on the current device.',
+				input: Type.Object({
+					url: Type.String(),
+					windowId: Type.Optional(Type.String()),
+				}),
+				handler: async ({ url, windowId }) => {
+					return executeOpenTab(url, windowId);
+				},
+			}),
+
+			activate: defineMutation({
+				description: 'Activate (focus) a specific tab by its composite ID.',
+				input: Type.Object({
+					tabId: Type.String(),
+				}),
+				handler: async ({ tabId }) => {
+					const deviceId = await getDeviceId();
+					return executeActivateTab(tabId, deviceId);
+				},
+			}),
+
+			save: defineMutation({
+				description: 'Save tabs for later. Optionally close them after saving.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					close: Type.Optional(Type.Boolean()),
+				}),
+				handler: async ({ tabIds, close }) => {
+					const deviceId = await getDeviceId();
+					return executeSaveTabs(
+						tabIds,
+						close ?? false,
+						deviceId,
+						tables.savedTabs,
+					);
+				},
+			}),
+
+			group: defineMutation({
+				description: 'Group tabs together with an optional title and color.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					title: Type.Optional(Type.String()),
+					color: Type.Optional(Type.String()),
+				}),
+				handler: async ({ tabIds, title, color }) => {
+					const deviceId = await getDeviceId();
+					return executeGroupTabs(tabIds, deviceId, title, color);
+				},
+			}),
+
+			pin: defineMutation({
+				description: 'Pin or unpin tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					pinned: Type.Boolean(),
+				}),
+				handler: async ({ tabIds, pinned }) => {
+					const deviceId = await getDeviceId();
+					return executePinTabs(tabIds, pinned, deviceId);
+				},
+			}),
+
+			mute: defineMutation({
+				description: 'Mute or unmute tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+					muted: Type.Boolean(),
+				}),
+				handler: async ({ tabIds, muted }) => {
+					const deviceId = await getDeviceId();
+					return executeMuteTabs(tabIds, muted, deviceId);
+				},
+			}),
+
+			reload: defineMutation({
+				description: 'Reload one or more tabs.',
+				input: Type.Object({
+					tabIds: Type.Array(Type.String()),
+				}),
+				handler: async ({ tabIds }) => {
+					const deviceId = await getDeviceId();
+					return executeReloadTabs(tabIds, deviceId);
+				},
+			}),
+		},
+
+		windows: {
+			list: defineQuery({
+				description:
+					'List all browser windows with their tab counts. Optionally filter by device.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId }) => {
+					const windows = tables.windows.filter((w) => {
+						if (deviceId && w.deviceId !== deviceId) return false;
+						return true;
+					});
+					const allTabs = tables.tabs.getAllValid();
+					return {
+						windows: windows.map((w) => ({
+							id: w.id,
+							deviceId: w.deviceId,
+							focused: w.focused,
+							state: w.state ?? 'normal',
+							type: w.type ?? 'normal',
+							tabCount: allTabs.filter((t) => t.windowId === w.id).length,
+						})),
+					};
+				},
+			}),
+		},
+
+		devices: {
+			list: defineQuery({
+				description:
+					'List all synced devices with their names, browsers, and online status.',
+				input: Type.Object({}),
+				handler: () => {
+					const devices = tables.devices.getAllValid();
+					return {
+						devices: devices.map((d) => ({
+							id: d.id,
+							name: d.name,
+							browser: d.browser,
+							lastSeen: d.lastSeen,
+						})),
+					};
+				},
+			}),
+		},
+
+		domains: {
+			count: defineQuery({
+				description:
+					'Count open tabs grouped by domain (e.g. youtube.com: 5, github.com: 3). Optionally filter by device.',
+				input: Type.Object({
+					deviceId: Type.Optional(Type.String()),
+				}),
+				handler: ({ deviceId }) => {
+					const matched = tables.tabs.filter((tab) => {
+						if (deviceId && tab.deviceId !== deviceId) return false;
+						return true;
+					});
+					const counts = new Map<string, number>();
+					for (const tab of matched) {
+						if (!tab.url) continue;
+						try {
+							const domain = new URL(tab.url).hostname;
+							counts.set(domain, (counts.get(domain) ?? 0) + 1);
+						} catch {
+							// Skip tabs with invalid URLs (e.g. chrome:// pages)
+						}
+					}
+					const domains = Array.from(counts.entries())
+						.map(([domain, count]) => ({ domain, count }))
+						.sort((a, b) => b.count - a.count);
+					return { domains };
+				},
+			}),
+		},
+	}));
+
+export const actionContext = createActionContext(workspaceClient.actions, {
+	labels: {
+		tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
+		tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
+		windows_list: { active: 'Listing windows', done: 'Listed windows' },
+		devices_list: { active: 'Listing devices', done: 'Listed devices' },
+		domains_count: {
+			active: 'Counting domains',
+			done: 'Counted domains',
+		},
+		tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
+		tabs_open: { active: 'Opening tab', done: 'Opened tab' },
+		tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
+		tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
+		tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
+		tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
+		tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
+		tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
 	},
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Type Exports
-// ─────────────────────────────────────────────────────────────────────────────
+export type WorkspaceTools = typeof actionContext.tools;
+export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
-type Tables = NonNullable<(typeof definition)['tables']>;
+// Initialize workspace: set awareness + start command consumer
+void workspaceClient.whenReady.then(async () => {
+	const deviceId = await getDeviceId();
+	workspaceClient.awareness.setLocal({
+		deviceId,
+		deviceType: 'browser-extension',
+	});
 
-export type Device = InferTableRow<Tables['devices']>;
-export type Tab = InferTableRow<Tables['tabs']>;
-export type Window = InferTableRow<Tables['windows']>;
-export type TabGroup = InferTableRow<Tables['tabGroups']>;
-export type SavedTab = InferTableRow<Tables['savedTabs']>;
-export type Conversation = InferTableRow<Tables['conversations']>;
-export type ChatMessage = InferTableRow<Tables['chatMessages']>;
-export type Command = InferTableRow<Tables['commands']>;
+	// Start consuming AI commands targeting this device
+	startCommandConsumer(
+		workspaceClient.tables.commands,
+		workspaceClient.tables.savedTabs,
+		deviceId,
+	);
+});

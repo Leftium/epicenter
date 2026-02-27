@@ -20,11 +20,7 @@
 </script>
 
 {#if modal.view === 'desktop'}
-	<Dialog.Trigger bind:ref {...rest}>
-		{@render children?.()}
-	</Dialog.Trigger>
+	<Dialog.Trigger bind:ref {...rest}> {@render children?.()} </Dialog.Trigger>
 {:else}
-	<Drawer.Trigger bind:ref {...rest}>
-		{@render children?.()}
-	</Drawer.Trigger>
+	<Drawer.Trigger bind:ref {...rest}> {@render children?.()} </Drawer.Trigger>
 {/if}

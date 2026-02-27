@@ -1,23 +1,23 @@
 ---
-import BaseLayout from '../layouts/BaseLayout.astro';
+import { Badge } from '@epicenter/ui/badge';
 import { Button } from '@epicenter/ui/button';
 import * as Card from '@epicenter/ui/card';
-import { Badge } from '@epicenter/ui/badge';
-import PrinciplesRotatingHeadline from '../components/PrinciplesRotatingHeadline.svelte';
 import {
 	ArrowRight as ArrowRightIcon,
 	Check as CheckIcon,
+	Code2 as Code2Icon,
 	FolderOpen as FolderOpenIcon,
 	GitFork as GitForkIcon,
-	Shield as ShieldIcon,
-	Terminal as TerminalIcon,
 	HardDrive as HardDriveIcon,
-	Sparkles as SparklesIcon,
 	Link2 as Link2Icon,
-	Code2 as Code2Icon,
-	Zap as ZapIcon,
 	Rocket as RocketIcon,
+	Shield as ShieldIcon,
+	Sparkles as SparklesIcon,
+	Terminal as TerminalIcon,
+	Zap as ZapIcon,
 } from '@lucide/astro';
+import PrinciplesRotatingHeadline from '../components/PrinciplesRotatingHeadline.svelte';
+import BaseLayout from '../layouts/BaseLayout.astro';
 
 const userPrinciples = [
 	{
@@ -124,8 +124,7 @@ const ecosystem = [
 			<!-- Subtle gradient background -->
 			<div
 				class="absolute inset-0 bg-gradient-to-b from-primary/5 via-background to-background -z-10"
-			>
-			</div>
+			></div>
 
 			<div class="w-full max-w-6xl mx-auto px-6 sm:px-8 md:px-12 text-center">
 				<div>
@@ -133,7 +132,7 @@ const ecosystem = [
 					<h1
 						class="text-4xl md:text-5xl font-bold text-foreground tracking-tight leading-snug md:leading-snug mb-8"
 					>
-						A Database for Your Mind,<br />
+						A Database for Your Mind,<br>
 						Built on Plain Text
 					</h1>
 
@@ -207,8 +206,7 @@ const ecosystem = [
 				</div>
 
 				<div class="grid lg:grid-cols-2 gap-8">
-					{
-						tools.map((tool) => (
+					{tools.map((tool) => (
 							<Card.Root class="overflow-hidden border-muted/50 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-300 group">
 								<Card.Header class="pb-4">
 									<div class="flex items-start justify-between">
@@ -261,8 +259,7 @@ const ecosystem = [
 									</div>
 								</Card.Footer>
 							</Card.Root>
-						))
-					}
+						))}
 				</div>
 
 				<div class="mt-16 text-center">
@@ -304,8 +301,7 @@ const ecosystem = [
 							For you
 						</h3>
 						<div class="space-y-6">
-							{
-								userPrinciples.map((principle) => (
+							{userPrinciples.map((principle) => (
 									<div class="flex items-start gap-4">
 										<div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors shrink-0">
 											<principle.icon class="w-5 h-5" />
@@ -319,8 +315,7 @@ const ecosystem = [
 											</p>
 										</div>
 									</div>
-								))
-							}
+								))}
 						</div>
 					</div>
 
@@ -334,8 +329,7 @@ const ecosystem = [
 							For developers
 						</h3>
 						<div class="space-y-6">
-							{
-								developerPrinciples.map((principle) => (
+							{developerPrinciples.map((principle) => (
 									<div class="flex items-start gap-4">
 										<div class="p-3 rounded-xl bg-primary/10 text-primary group-hover:bg-primary/15 transition-colors shrink-0">
 											<principle.icon class="w-5 h-5" />
@@ -349,8 +343,7 @@ const ecosystem = [
 											</p>
 										</div>
 									</div>
-								))
-							}
+								))}
 						</div>
 					</div>
 				</div>
@@ -456,8 +449,7 @@ const ecosystem = [
 				</div>
 
 				<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-					{
-						ecosystem.map((tool) => (
+					{ecosystem.map((tool) => (
 							<div class="group p-6 rounded-xl bg-card border border-muted/50 hover:shadow-lg transition-all duration-300 cursor-default">
 								<div class="flex items-start gap-4">
 									<div class="text-4xl group-hover:scale-110 transition-transform duration-300 shrink-0">
@@ -473,8 +465,7 @@ const ecosystem = [
 									</div>
 								</div>
 							</div>
-						))
-					}
+						))}
 
 					<!-- Custom Tool Card -->
 					<div
@@ -555,7 +546,8 @@ const ecosystem = [
 					class="flex flex-col md:flex-row justify-between items-center gap-6"
 				>
 					<div class="text-sm text-muted-foreground">
-						© {new Date().getFullYear()} Epicenter. Open source under AGPL-3.0 license.
+						© {new Date().getFullYear()} Epicenter. Open source under AGPL-3.0
+						license.
 					</div>
 					<div class="flex gap-8 text-sm">
 						<a

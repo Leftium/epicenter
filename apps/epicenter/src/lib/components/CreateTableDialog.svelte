@@ -147,14 +147,14 @@
 </script>
 
 <script lang="ts">
-	import * as Dialog from '@epicenter/ui/dialog';
-	import * as Field from '@epicenter/ui/field';
-	import * as Popover from '@epicenter/ui/popover';
-	import * as EmojiPicker from '@epicenter/ui/emoji-picker';
-	import { Input } from '@epicenter/ui/input';
-	import { Textarea } from '@epicenter/ui/textarea';
 	import { Button } from '@epicenter/ui/button';
+	import * as Dialog from '@epicenter/ui/dialog';
+	import * as EmojiPicker from '@epicenter/ui/emoji-picker';
+	import * as Field from '@epicenter/ui/field';
+	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
+	import * as Popover from '@epicenter/ui/popover';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SmileIcon from '@lucide/svelte/icons/smile';
 

@@ -15,7 +15,8 @@
 <h1>Edit Note</h1>
 
 <nav>
-	<a href="/notes">Back to Notes</a> · <a href="/dashboard">Dashboard</a>
+	<a href="/notes">Back to Notes</a>
+	· <a href="/dashboard">Dashboard</a>
 </nav>
 
 <!-- https://github.com/sveltejs/kit/issues/14729 -->
@@ -23,7 +24,7 @@
 	{...updateNote}
 	style="display:flex; flex-direction: column; gap: 0.75rem; max-width: 760px;"
 >
-	<input {...updateNote.fields.id.as('hidden', id)} />
+	<input {...updateNote.fields.id.as('hidden', id)}>
 
 	<label>
 		<div>Title</div>
@@ -32,7 +33,7 @@
 			value={note.title}
 			placeholder="Note title"
 			required
-		/>
+		>
 	</label>
 
 	<label>
@@ -58,7 +59,7 @@
 						<input
 							{...updateNote.fields.entity_links.as('checkbox', e.id)}
 							checked={note.entity_links.includes(e.id)}
-						/>
+						>
 						<span>{e.name ?? e.id}</span>
 					</label>
 				{/each}
@@ -66,17 +67,15 @@
 		{/if}
 	</fieldset>
 
-	<div>
-		<button type="submit">Save</button>
-	</div>
+	<div><button type="submit">Save</button></div>
 
 	{#if updateNote.fields.allIssues()}
 		<p style="color: red;">{updateNote.fields.allIssues()?.[0].message}</p>
 	{/if}
 </form>
 <form {...deleteNote} style="margin-top: 1rem;">
-	<input {...deleteNote.fields.id.as('hidden', note.id)} />
-	<input type="submit" value="Delete" style="color:red;" />
+	<input {...deleteNote.fields.id.as('hidden', note.id)}>
+	<input type="submit" value="Delete" style="color:red;">
 </form>
 
 <footer style="margin-top: 1rem;">

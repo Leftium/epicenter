@@ -30,9 +30,7 @@
 
 <h1>Dashboard</h1>
 
-<nav>
-	<a href="/entities">Entities</a> · <a href="/notes">Notes</a>
-</nav>
+<nav><a href="/entities">Entities</a> · <a href="/notes">Notes</a></nav>
 
 {#if adapterIds.length === 0}
 	<p>No adapters found.</p>

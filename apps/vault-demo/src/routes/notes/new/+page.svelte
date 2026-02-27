@@ -8,7 +8,8 @@
 <h1>New Note</h1>
 
 <nav>
-	<a href="/notes">Back to Notes</a> · <a href="/entities">Entities</a> ·
+	<a href="/notes">Back to Notes</a>
+	· <a href="/entities">Entities</a> ·
 	<a href="/dashboard">Dashboard</a>
 </nav>
 
@@ -22,7 +23,7 @@
 			{...createNote.fields.title.as('text')}
 			placeholder="Note title"
 			required
-		/>
+		>
 	</label>
 
 	<label>
@@ -44,7 +45,7 @@
 			>
 				{#each entities as e}
 					<label style="display:flex; gap: 0.5rem; align-items: center;">
-						<input {...createNote.fields.entity_links.as('checkbox', e.id)} />
+						<input {...createNote.fields.entity_links.as('checkbox', e.id)}>
 						<span>{e.name ?? e.id}</span>
 					</label>
 				{/each}
@@ -54,7 +55,11 @@
 
 	<div style="display:flex; gap: 0.5rem;">
 		<button type="submit" disabled={createNote.pending > 0}>
-			{#if createNote.pending}Creating…{:else}Create{/if}
+			{#if createNote.pending}
+				Creating…
+			{:else}
+				Create
+			{/if}
 		</button>
 		<a href="/notes">Cancel</a>
 	</div>

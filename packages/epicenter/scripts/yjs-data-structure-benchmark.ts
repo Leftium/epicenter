@@ -142,7 +142,7 @@ function singleColumnUpdate(row: PlainRow): PlainRow {
 function fullRowUpdate(row: PlainRow): PlainRow {
 	return {
 		id: row.id,
-		name: row.name + '!',
+		name: `${row.name}!`,
 		age: row.age + 1,
 		email: row.email.replace('@', '+updated@'),
 		active: !row.active,
@@ -381,7 +381,7 @@ function benchmarkMapYMap(
 						break;
 					case 'full-row':
 						// Update all columns - creates 5 tombstones (one per column)
-						row.set('name', (row.get('name') as string) + '!');
+						row.set('name', `${row.get('name') as string}!`);
 						row.set('age', (row.get('age') as number) + 1);
 						row.set(
 							'email',
@@ -394,7 +394,7 @@ function benchmarkMapYMap(
 						if (Math.random() < 0.7) {
 							row.set('age', (row.get('age') as number) + 1);
 						} else {
-							row.set('name', (row.get('name') as string) + '!');
+							row.set('name', `${row.get('name') as string}!`);
 							row.set('age', (row.get('age') as number) + 1);
 							row.set(
 								'email',
@@ -475,7 +475,7 @@ function benchmarkArrayYMap(
 						row.set('age', (row.get('age') as number) + 1);
 						break;
 					case 'full-row':
-						row.set('name', (row.get('name') as string) + '!');
+						row.set('name', `${row.get('name') as string}!`);
 						row.set('age', (row.get('age') as number) + 1);
 						row.set(
 							'email',
@@ -487,7 +487,7 @@ function benchmarkArrayYMap(
 						if (Math.random() < 0.7) {
 							row.set('age', (row.get('age') as number) + 1);
 						} else {
-							row.set('name', (row.get('name') as string) + '!');
+							row.set('name', `${row.get('name') as string}!`);
 							row.set('age', (row.get('age') as number) + 1);
 							row.set(
 								'email',
@@ -588,7 +588,7 @@ function printStrategyResults(
 				'Final Size'.padStart(12) +
 				'Growth'.padStart(10),
 		);
-		console.log('  ' + '─'.repeat(96));
+		console.log(`  ${'─'.repeat(96)}`);
 
 		for (const r of group) {
 			const growth = r.sizes.afterRecreate / r.sizes.afterInsert - 1;
@@ -614,7 +614,7 @@ function printStrategyResults(
 				'GC'.padStart(8) +
 				'Tombstone %'.padStart(14),
 		);
-		console.log('  ' + '─'.repeat(70));
+		console.log(`  ${'─'.repeat(70)}`);
 
 		for (const r of group) {
 			const tombstoneRatio =
@@ -653,7 +653,7 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 	);
 
 	console.log('\n  STORAGE EFFICIENCY (with GC enabled)');
-	console.log('  ' + '─'.repeat(70));
+	console.log(`  ${'─'.repeat(70)}`);
 
 	console.log('\n  Single Column Updates - Final Size Ranking:');
 	singleColBySize.forEach((r, i) => {
@@ -673,7 +673,7 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 
 	// Compare plain vs nested for each strategy
 	console.log('\n  PLAIN OBJECTS vs NESTED Y.MAPS');
-	console.log('  ' + '─'.repeat(70));
+	console.log(`  ${'─'.repeat(70)}`);
 
 	const mapPlainSingle = singleCol.find((r) =>
 		r.name.includes('Map<id, Plain'),
@@ -724,7 +724,7 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 
 	// GC impact analysis
 	console.log('\n  GC IMPACT');
-	console.log('  ' + '─'.repeat(70));
+	console.log(`  ${'─'.repeat(70)}`);
 
 	const strategies: UpdateStrategy[] = ['single-column', 'full-row'];
 	for (const strategy of strategies) {

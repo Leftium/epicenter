@@ -1,7 +1,16 @@
 <script lang="ts">
-	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
-	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import * as Alert from '@epicenter/ui/alert';
+	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
+	import * as Card from '@epicenter/ui/card';
 	import { CopyButton } from '@epicenter/ui/copy-button';
+	import * as Field from '@epicenter/ui/field';
+	import { Input } from '@epicenter/ui/input';
+	import { Link } from '@epicenter/ui/link';
+	import * as Select from '@epicenter/ui/select';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import InfoIcon from '@lucide/svelte/icons/info';
+	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import {
 		CompressionBody,
 		DeepgramApiKeyInput,
@@ -23,16 +32,7 @@
 	import { WHISPER_MODELS } from '$lib/services/isomorphic/transcription/local/whispercpp';
 	import { TRANSCRIPTION_SERVICE_CAPABILITIES } from '$lib/services/isomorphic/transcription/registry';
 	import { settings } from '$lib/state/settings.svelte';
-	import InfoIcon from '@lucide/svelte/icons/info';
-	import * as Alert from '@epicenter/ui/alert';
-	import { Badge } from '@epicenter/ui/badge';
-	import { Button } from '@epicenter/ui/button';
-	import * as Card from '@epicenter/ui/card';
-	import * as Field from '@epicenter/ui/field';
-	import { Input } from '@epicenter/ui/input';
-	import { Link } from '@epicenter/ui/link';
-	import * as Select from '@epicenter/ui/select';
-	import { Textarea } from '@epicenter/ui/textarea';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { hasNavigatorLocalTranscriptionIssue } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
 	const { data } = $props();
@@ -116,9 +116,7 @@
 	);
 </script>
 
-<svelte:head>
-	<title>Transcription Settings - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Transcription Settings - Whispering</title> </svelte:head>
 
 <Field.Set>
 	<Field.Legend>Transcription</Field.Legend>
@@ -130,14 +128,12 @@
 		<TranscriptionServiceSelect
 			id="selected-transcription-service"
 			label="Transcription Service"
-			bind:selected={
-				() => settings.value['transcription.selectedTranscriptionService'],
+			bind:selected={() => settings.value['transcription.selectedTranscriptionService'],
 				(selected) =>
 					settings.updateKey(
 						'transcription.selectedTranscriptionService',
 						selected,
-					)
-			}
+					)}
 		/>
 
 		{#if settings.value['transcription.selectedTranscriptionService'] === 'OpenAI'}
@@ -145,10 +141,8 @@
 				<Field.Label for="openai-model">OpenAI Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['transcription.openai.model'],
-						(v) => settings.updateKey('transcription.openai.model', v)
-					}
+					bind:value={() => settings.value['transcription.openai.model'],
+						(v) => settings.updateKey('transcription.openai.model', v)}
 				>
 					<Select.Trigger id="openai-model" class="w-full">
 						{openaiModelLabel ?? 'Select a model'}
@@ -168,7 +162,8 @@
 						rel="noopener noreferrer"
 					>
 						OpenAI docs
-					</Link>.
+					</Link>
+					.
 				</Field.Description>
 			</Field.Field>
 			<OpenAiApiKeyInput />
@@ -177,10 +172,8 @@
 				<Field.Label for="groq-model">Groq Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['transcription.groq.model'],
-						(v) => settings.updateKey('transcription.groq.model', v)
-					}
+					bind:value={() => settings.value['transcription.groq.model'],
+						(v) => settings.updateKey('transcription.groq.model', v)}
 				>
 					<Select.Trigger id="groq-model" class="w-full">
 						{groqModelLabel ?? 'Select a model'}
@@ -200,7 +193,8 @@
 						rel="noopener noreferrer"
 					>
 						Groq docs
-					</Link>.
+					</Link>
+					.
 				</Field.Description>
 			</Field.Field>
 			<GroqApiKeyInput />
@@ -209,10 +203,8 @@
 				<Field.Label for="deepgram-model">Deepgram Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['transcription.deepgram.model'],
-						(v) => settings.updateKey('transcription.deepgram.model', v)
-					}
+					bind:value={() => settings.value['transcription.deepgram.model'],
+						(v) => settings.updateKey('transcription.deepgram.model', v)}
 				>
 					<Select.Trigger id="deepgram-model" class="w-full">
 						{deepgramModelLabel ?? 'Select a model'}
@@ -232,10 +224,8 @@
 				<Field.Label for="mistral-model">Mistral Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['transcription.mistral.model'],
-						(v) => settings.updateKey('transcription.mistral.model', v)
-					}
+					bind:value={() => settings.value['transcription.mistral.model'],
+						(v) => settings.updateKey('transcription.mistral.model', v)}
 				>
 					<Select.Trigger id="mistral-model" class="w-full">
 						{mistralModelLabel ?? 'Select a model'}
@@ -255,7 +245,8 @@
 						rel="noopener noreferrer"
 					>
 						Mistral docs
-					</Link>.
+					</Link>
+					.
 				</Field.Description>
 			</Field.Field>
 			<MistralApiKeyInput />
@@ -264,10 +255,8 @@
 				<Field.Label for="elevenlabs-model">ElevenLabs Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={
-						() => settings.value['transcription.elevenlabs.model'],
-						(v) => settings.updateKey('transcription.elevenlabs.model', v)
-					}
+					bind:value={() => settings.value['transcription.elevenlabs.model'],
+						(v) => settings.updateKey('transcription.elevenlabs.model', v)}
 				>
 					<Select.Trigger id="elevenlabs-model" class="w-full">
 						{elevenlabsModelLabel ?? 'Select a model'}
@@ -287,7 +276,8 @@
 						rel="noopener noreferrer"
 					>
 						ElevenLabs docs
-					</Link>.
+					</Link>
+					.
 				</Field.Description>
 			</Field.Field>
 			<ElevenLabsApiKeyInput />
@@ -324,8 +314,8 @@
 						<div class="space-y-4">
 							<div>
 								<p class="text-sm font-medium">
-									<span class="text-muted-foreground">Step 1:</span> Install Speaches
-									server
+									<span class="text-muted-foreground">Step 1:</span>
+									Install Speaches server
 								</p>
 								<ul class="ml-6 mt-2 space-y-2 text-sm text-muted-foreground">
 									<li class="list-disc">
@@ -346,8 +336,8 @@
 
 							<div>
 								<p class="text-sm font-medium mb-2">
-									<span class="text-muted-foreground">Step 2:</span> Start Speaches
-									container
+									<span class="text-muted-foreground">Step 2:</span>
+									Start Speaches container
 								</p>
 								<CopyablePre
 									copyableText="docker compose up --detach"
@@ -357,8 +347,8 @@
 
 							<div>
 								<p class="text-sm font-medium">
-									<span class="text-muted-foreground">Step 3:</span> Download a speech
-									recognition model
+									<span class="text-muted-foreground">Step 3:</span>
+									Download a speech recognition model
 								</p>
 								<ul class="ml-6 mt-2 space-y-2 text-sm text-muted-foreground">
 									<li class="list-disc">
@@ -384,8 +374,8 @@
 
 							<div>
 								<p class="text-sm font-medium">
-									<span class="text-muted-foreground">Step 4:</span> Configure the
-									settings below
+									<span class="text-muted-foreground">Step 4:</span>
+									Configure the settings below
 								</p>
 								<ul class="ml-6 mt-2 space-y-1 text-sm text-muted-foreground">
 									<li class="list-disc">Enter your Speaches server URL</li>
@@ -403,11 +393,9 @@
 					id="speaches-base-url"
 					placeholder="http://localhost:8000"
 					autocomplete="off"
-					bind:value={
-						() => settings.value['transcription.speaches.baseUrl'],
+					bind:value={() => settings.value['transcription.speaches.baseUrl'],
 						(value) =>
-							settings.updateKey('transcription.speaches.baseUrl', value)
-					}
+							settings.updateKey('transcription.speaches.baseUrl', value)}
 				/>
 				<Field.Description>
 					The URL where your Speaches server is running (<code>
@@ -431,11 +419,9 @@
 					id="speaches-model-id"
 					placeholder="Systran/faster-distil-whisper-small.en"
 					autocomplete="off"
-					bind:value={
-						() => settings.value['transcription.speaches.modelId'],
+					bind:value={() => settings.value['transcription.speaches.modelId'],
 						(value) =>
-							settings.updateKey('transcription.speaches.modelId', value)
-					}
+							settings.updateKey('transcription.speaches.modelId', value)}
 				/>
 				<Field.Description>
 					The model you downloaded in step 3 (<code>MODEL_ID</code>), e.g.
@@ -460,10 +446,8 @@
 						description="Select a pre-built model or browse for your own. Models run locally for private, offline transcription."
 						fileSelectionMode="file"
 						fileExtensions={['bin', 'gguf', 'ggml']}
-						bind:value={
-							() => settings.value['transcription.whispercpp.modelPath'],
-							(v) => settings.updateKey('transcription.whispercpp.modelPath', v)
-						}
+						bind:value={() => settings.value['transcription.whispercpp.modelPath'],
+							(v) => settings.updateKey('transcription.whispercpp.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">
@@ -483,8 +467,8 @@
 						{#snippet manualInstructions()}
 							<div>
 								<p class="text-sm font-medium mb-2">
-									<span class="text-muted-foreground">Step 1:</span> Download a Whisper
-									model
+									<span class="text-muted-foreground">Step 1:</span>
+									Download a Whisper model
 								</p>
 								<ul class="ml-6 mt-2 space-y-2 text-sm text-muted-foreground">
 									<li class="list-disc">
@@ -535,8 +519,8 @@
 									</div>
 									<div class="text-sm">
 										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
-										etc.) which work with all recording methods
+										Switch to a cloud transcription service (OpenAI, Groq,
+										Deepgram, etc.) which work with all recording methods
 									</div>
 								</div>
 							</Alert.Description>
@@ -553,10 +537,8 @@
 						title="Parakeet Model"
 						description="Parakeet is an NVIDIA NeMo model optimized for fast local transcription. It automatically detects the language and doesn't support manual language selection."
 						fileSelectionMode="directory"
-						bind:value={
-							() => settings.value['transcription.parakeet.modelPath'],
-							(v) => settings.updateKey('transcription.parakeet.modelPath', v)
-						}
+						bind:value={() => settings.value['transcription.parakeet.modelPath'],
+							(v) => settings.updateKey('transcription.parakeet.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">
@@ -644,8 +626,8 @@
 									</div>
 									<div class="text-sm">
 										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
-										etc.) which work with all recording methods
+										Switch to a cloud transcription service (OpenAI, Groq,
+										Deepgram, etc.) which work with all recording methods
 									</div>
 								</div>
 							</Alert.Description>
@@ -662,10 +644,8 @@
 						title="Moonshine Model"
 						description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
 						fileSelectionMode="directory"
-						bind:value={
-							() => settings.value['transcription.moonshine.modelPath'],
-							(v) => settings.updateKey('transcription.moonshine.modelPath', v)
-						}
+						bind:value={() => settings.value['transcription.moonshine.modelPath'],
+							(v) => settings.updateKey('transcription.moonshine.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">
@@ -740,7 +720,8 @@
 											<code class="rounded bg-muted px-1 py-0.5 font-mono"
 												>moonshine-tiny-en</code
 											>,
-											{' '}<code class="rounded bg-muted px-1 py-0.5 font-mono"
+											{' '}
+											<code class="rounded bg-muted px-1 py-0.5 font-mono"
 												>moonshine-base-en</code
 											>). The variant (tiny/base) determines model architecture.
 										</p>
@@ -775,8 +756,8 @@
 									</div>
 									<div class="text-sm">
 										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
-										etc.) which work with all recording methods
+										Switch to a cloud transcription service (OpenAI, Groq,
+										Deepgram, etc.) which work with all recording methods
 									</div>
 								</div>
 							</Alert.Description>
@@ -793,10 +774,8 @@
 			<Field.Label for="output-language">Output Language</Field.Label>
 			<Select.Root
 				type="single"
-				bind:value={
-					() => settings.value['transcription.outputLanguage'],
-					(v) => settings.updateKey('transcription.outputLanguage', v)
-				}
+				bind:value={() => settings.value['transcription.outputLanguage'],
+					(v) => settings.updateKey('transcription.outputLanguage', v)}
 				disabled={!currentServiceCapabilities.supportsLanguage}
 			>
 				<Select.Trigger id="output-language" class="w-full">
@@ -829,11 +808,9 @@
 				placeholder="0"
 				autocomplete="off"
 				disabled={!currentServiceCapabilities.supportsTemperature}
-				bind:value={
-					() => settings.value['transcription.temperature'],
+				bind:value={() => settings.value['transcription.temperature'],
 					(value) =>
-						settings.updateKey('transcription.temperature', String(value))
-				}
+						settings.updateKey('transcription.temperature', String(value))}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsTemperature
@@ -848,10 +825,8 @@
 				id="transcription-prompt"
 				placeholder="e.g., This is an academic lecture about quantum physics with technical terms like 'eigenvalue' and 'Schrödinger'"
 				disabled={!currentServiceCapabilities.supportsPrompt}
-				bind:value={
-					() => settings.value['transcription.prompt'],
-					(value) => settings.updateKey('transcription.prompt', value)
-				}
+				bind:value={() => settings.value['transcription.prompt'],
+					(value) => settings.updateKey('transcription.prompt', value)}
 			/>
 			<Field.Description>
 				{currentServiceCapabilities.supportsPrompt
@@ -873,9 +848,7 @@
 })}
 	<div class="flex flex-col gap-1 py-1">
 		<div class="font-medium">{item.name}</div>
-		<div class="text-sm text-muted-foreground">
-			{item.description}
-		</div>
+		<div class="text-sm text-muted-foreground">{item.description}</div>
 		<Badge variant="outline" class="text-xs">{item.cost}</Badge>
 	</div>
 {/snippet}

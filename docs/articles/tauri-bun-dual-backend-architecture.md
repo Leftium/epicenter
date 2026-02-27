@@ -4,6 +4,8 @@ Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same 
 
 ## The Architecture
 
+> **Note on current server topology:** The diagram below shows the local sidecar in isolation. In the full Epicenter architecture there is also a hub server (`createHubServer`) that runs separately and handles auth (Better Auth), AI streaming, and the cross-device Yjs relay. The local sidecar (`createLocalServer`) handles workspace CRUD, filesystem operations, extensions, and the local Yjs relay for the SPA on the same machine. AI requests from the SPA go to the hub, not to the local sidecar. This article focuses on the Tauri + Bun mechanics that apply to the local sidecar specifically.
+
 ```
 ┌───────────────────────────────────────────────────────────┐
 │                    Tauri Process                           │
@@ -25,13 +27,13 @@ Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same 
 │  └─────────────────────────────────────────────────────┘  │
 │                                                           │
 │  ┌─────────────────────────────────────────────────────┐  │
-│  │  Bun Sidecar (HTTP server)                          │  │
+│  │  Bun Sidecar (local server — HTTP server)           │  │
 │  │                                                     │  │
 │  │  GET /              → Svelte SPA                    │  │
 │  │  GET /assets/*      → static files                  │  │
 │  │  /api/documents     → workspace CRUD                │  │
 │  │  /api/fs/*          → filesystem operations         │  │
-│  │  /ws/sync           → Yjs sync protocol             │  │
+│  │  /ws/sync           → Yjs sync (SPA ↔ local Y.Doc) │  │
 │  │                                                     │  │
 │  │  127.0.0.1:N                                        │  │
 │  └──────────────────────────┬──────────────────────────┘  │
@@ -46,7 +48,7 @@ Tauri's `invoke()` IPC and a Bun HTTP server can run side by side from the same 
 └───────────────────────────────────────────────────────────┘
 ```
 
-Bun handles everything that's HTTP: serving the frontend, API routes, WebSocket connections, Yjs CRDT sync. Rust handles what JavaScript can't: system audio devices, global keyboard shortcuts, native notifications, tray icons.
+Bun handles everything that's HTTP for local workspace operations: serving the frontend, API routes, WebSocket connections, Yjs CRDT sync between the SPA and the local Y.Doc. Rust handles what JavaScript can't: system audio devices, global keyboard shortcuts, native notifications, tray icons.
 
 ## Why This Works
 

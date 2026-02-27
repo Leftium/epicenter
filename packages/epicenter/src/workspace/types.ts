@@ -1125,7 +1125,10 @@ export type WorkspaceClient<
 
 /**
  * Type alias for any workspace client (used for duck-typing in CLI/server).
- * Includes optional actions property since clients may or may not have actions attached.
+ *
+ * Uses `WorkspaceClient & { actions?: Actions }` rather than `WorkspaceClientWithActions`
+ * because `WorkspaceClientWithActions` requires `actions: TActions` (non-optional) —
+ * it can't express "might or might not have actions."
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
 export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any> & {

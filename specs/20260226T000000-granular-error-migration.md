@@ -1,186 +1,149 @@
-# Granular Error Migration: API Change + Service-by-Service Migration
+# Granular Error Migration: Service-by-Service Migration
 
 **Created**: 2026-02-26
-**Status**: Partially superseded
+**Updated**: 2026-02-27
+**Status**: Active
+**Depends on**: `wellcrafted/specs/20260226T233600-tagged-error-minimal-design.md` (API design)
 **Supersedes**: `20260225T000000-tagged-error-redesign.md` (draft)
-**Superseded by**: `20260226T233600-tagged-error-minimal-design.md` — Part 1 (wellcrafted API/type design) is replaced by the minimal design spec. Part 2 (service-by-service migration catalog) remains useful reference but call site targets should use flat props instead of nested `context`.
-**Scope**: wellcrafted API change + all service error migrations in apps/whispering and apps/epicenter
+**Scope**: All service error migrations in apps/whispering and apps/epicenter
 
 ## Summary
 
-Two changes, shipped together in one PR:
+Migrate service errors from monolithic `{ message: "..." }` patterns to the final `createTaggedError` API: flat fields, `.withMessage()` as an optional default, and call-site `message` for dynamic errors.
 
-1. **wellcrafted API**: Remove `message?: string` from `ErrorCallInput`. Make the factory input parameter optional when it resolves to `Record<never, never>` (no context, no cause).
-2. **Application errors**: Break monolithic service errors into granular, failure-mode-specific errors with typed context. Migrate all call sites from `{ message: "..." }` to `{ context: { ... } }`.
+This spec covers the **epicenter-side migration only**. The wellcrafted API redesign (flat `TaggedError`, `.withFields()`, no `.withCause()`) is specified in the wellcrafted repo's minimal design spec.
 
-## Part 1: wellcrafted API Change
+## Prerequisites
 
-### Current API (broken)
+Before migrating epicenter services:
 
-```typescript
-type ErrorCallInput<TContext, TCause> =
-  { message?: string }  // ← the escape hatch everyone uses
-  & ContextFields<TContext>
-  & CauseFields<TCause>;
-```
+1. New `createTaggedError` API implemented and published in wellcrafted
+2. Wellcrafted dependency updated in the epicenter monorepo
 
-Every call site passes `message:` directly, making `.withMessage()` templates dead code. The `message` field in `ErrorCallInput` undermines the entire structured context system.
+## New API Quick Reference
 
-### New API
+See the wellcrafted minimal design spec for full details. Summary of what changed:
 
 ```typescript
-type ErrorCallInput<TContext, TCause> =
-  ContextFields<TContext>
-  & CauseFields<TCause>;
-  // No message field. Template owns the message.
+// Old: nested context, message override
+createTaggedError('ResponseError')
+  .withContext<{ status: number }>()
+  .withMessage(({ context }) => `HTTP ${context.status}`)
+ResponseErr({ message: 'custom', context: { status: 404 } })
+
+// New: flat fields, message at call site or via optional default
+createTaggedError('ResponseError')
+  .withFields<{ status: number }>()
+  .withMessage(({ status }) => `HTTP ${status}`)
+ResponseErr({ status: 404 })                         // message: "HTTP 404"
+ResponseErr({ status: 404, message: 'Not found' })   // override
 ```
 
-When `ErrorCallInput` resolves to `Record<never, never>` (no context, no cause), the factory parameter becomes optional:
+The full API surface:
 
 ```typescript
-// Before: RecorderBusyErr({})
-// After:  RecorderBusyErr()
-RecorderBusyErr()  // no argument needed for static-message errors
+createTaggedError('XError')                                    → factory({ message })
+createTaggedError('XError').withMessage(fn)                    → factory() or factory({ message })
+createTaggedError('XError').withFields<F>()                    → factory({ message, ...fields })
+createTaggedError('XError').withFields<F>().withMessage(fn)    → factory({ ...fields }) or factory({ message, ...fields })
 ```
 
-### Files to change in wellcrafted
-
-The wellcrafted package is published as `wellcrafted@0.31.0`. The source lives externally. Changes needed:
-
-1. **`ErrorCallInput` type**: Remove `{ message?: string }` intersection
-2. **`FinalFactories` type**: Make the `input` parameter optional when `ErrorCallInput<TContext, TCause>` extends `Record<never, never>`
-3. **Runtime `errorConstructor`**: Remove `input.message ??` fallback — always call `fn(messageInput)`
-4. **Handle optional input**: When input is omitted (undefined), pass `{ name }` to the template function
-
-### Type change detail
-
-```typescript
-// Before
-type FinalFactories<TName, TContext, TCause> = {
-  [K in TName]: (input: ErrorCallInput<TContext, TCause>) => TaggedError<...>;
-  [K in ReplaceErrorWithErr<TName>]: (input: ErrorCallInput<TContext, TCause>) => Err<TaggedError<...>>;
-};
-
-// After — input is optional when empty
-type IsEmptyInput<TContext, TCause> =
-  ErrorCallInput<TContext, TCause> extends Record<never, never> ? true : false;
-
-type FinalFactories<TName, TContext, TCause> = {
-  [K in TName]: IsEmptyInput<TContext, TCause> extends true
-    ? (input?: ErrorCallInput<TContext, TCause>) => TaggedError<...>
-    : (input: ErrorCallInput<TContext, TCause>) => TaggedError<...>;
-  // Same for Err variant
-};
-```
-
-### Runtime change
-
-```typescript
-// Before
-const errorConstructor = (input) => ({
-  name,
-  message: input.message ?? fn(messageInput),  // escape hatch
-  ...contextSpread,
-  ...causeSpread,
-});
-
-// After
-const errorConstructor = (input = {}) => ({
-  name,
-  message: fn({
-    name,
-    ...('context' in input ? { context: input.context } : {}),
-    ...('cause' in input ? { cause: input.cause } : {}),
-  }),
-  ...('context' in input ? { context: input.context } : {}),
-  ...('cause' in input ? { cause: input.cause } : {}),
-});
-```
+- `.withContext()` → `.withFields()` (flat on the error object)
+- `.withCause()` → removed (use a typed field if needed)
+- `.withMessage()` is **optional** — provides a default message, not a required terminal step
+- Without `.withMessage()`: `message` is required at the call site
+- With `.withMessage()`: `message` is optional (template provides default, call site can override)
 
 ---
 
-## Part 2: Service-by-Service Migration
-
-### Design principles (from the draft spec)
+## Design Principles
 
 1. **Name errors by failure mode, not by service.** `RecorderBusyError`, not `RecorderServiceError`.
 2. **Union type keeps the service name.** `type RecorderServiceError = RecorderBusyError | RecorderDeviceError | ...`
-3. **Default to separate errors (Approach A).** Discriminate on `error.name`. Use union context (Approach B) only for 5+ variants that consumers rarely distinguish.
-4. **Aim for 2-5 error types per service.** Don't create one error per call site — group by failure mode.
-5. **Context must be JSON-serializable** (`JsonObject`). No `Date`, no `Error` instances, no class instances.
-6. **Use `extractErrorMessage(error)` for caught unknown errors** — put the result in a `reason: string` context field, not in the message string.
+3. **Split only when callers handle failure modes differently.** Don't create separate error types just for different messages — let the call site provide the message.
+4. **Small services can keep one error.** A 3-call-site service doesn't need 3 error types. One error with call-site `message` is fine.
+5. **Fields must be JSON-serializable** (`JsonObject`). No `Date`, no `Error` instances, no class instances.
 
-### Three tiers of error complexity
+## Deciding Per Error Type
 
-**Tier 1: Static errors — no context, no arguments.** The error name + template IS the message. Use when there's no dynamic content.
+Two questions replace the old three-tier model:
+
+1. **Does this error have useful typed fields for programmatic handling?** → `.withFields<...>()`
+2. **Is the message predictable from those fields (or always static)?** → `.withMessage(fn)`
+
+This produces three natural shapes:
+
+**Static message, no fields** — `.withMessage()` with static string:
 ```typescript
 const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
   .withMessage(() => 'A recording is already in progress');
-RecorderBusyErr()  // no argument needed
+RecorderBusyErr()
 ```
 
-**Tier 2: Caught-error-only — `reason` carries `extractErrorMessage(error)`.** Use when the only dynamic content is the stringified caught error.
-```typescript
-const { PlaySoundError, PlaySoundErr } = createTaggedError('PlaySoundError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to play sound: ${context.reason}`);
-PlaySoundErr({ context: { reason: extractErrorMessage(error) } })
-```
-
-**Tier 3: Structured data (with or without `reason`).** Use when there's domain-specific data worth preserving as named fields.
+**Structured fields with computed message** — `.withFields<F>().withMessage(fn)`:
 ```typescript
 const { ResponseError, ResponseErr } = createTaggedError('ResponseError')
-  .withContext<{ status: number; reason?: string }>()
-  .withMessage(({ context }) =>
-    `HTTP ${context.status}${context.reason ? `: ${context.reason}` : ''}`
-  );
-ResponseErr({ context: { status: 404 } })                        // "HTTP 404"
-ResponseErr({ context: { status: 500, reason: 'Internal error' } }) // "HTTP 500: Internal error"
+  .withFields<{ status: number }>()
+  .withMessage(({ status }) => `HTTP ${status}`);
+ResponseErr({ status: 404 })
 ```
 
-### The `reason` convention
+**Dynamic message, no useful fields** — no `.withMessage()`, message at call site:
+```typescript
+const { FsServiceError, FsServiceErr } = createTaggedError('FsServiceError');
+FsServiceErr({ message: `Failed to read '${path}': ${extractErrorMessage(error)}` })
+```
 
-`reason` is a **reserved context field name** with a specific meaning: the output of `extractErrorMessage(error)` from a caught exception. It answers "why did this fail at a low level?"
+### Why `reason: string` is not a convention
 
-- Don't use `reason` for domain-specific data — use named fields (`path`, `status`, `accelerator`, `id`)
-- Don't use `reason` as the only context field when the error name already says enough — use Tier 1 instead
-- Do use `reason` alongside named fields when you need both structured data and the caught error message
+The previous version of this spec proposed `reason: string` as a reserved field meaning "the output of `extractErrorMessage(error)`." This is rejected.
+
+`reason` is just `message` laundered through a field. If every error is `{ reason: string }` with a template of `({ reason }) => 'X failed: ${reason}'`, the template is doing nothing useful — it's prepending a static string that the call site could include in `message` directly.
+
+With `message` as a call-site input, the need for `reason` disappears:
+- Errors with predictable messages → use `.withMessage()` as a default
+- Errors with dynamic messages → call site passes `message` directly
+- No intermediate `reason` field needed in either case
+
+If an error type has a specific named field that happens to be called `reason` for domain-specific purposes, that's fine — it's just a field. But `reason` as a codebase-wide convention for "the stringified caught error" doesn't carry its weight.
 
 ### Pattern to follow
 
-The HTTP service is the model. It already uses the target pattern:
+The HTTP service is the model:
 
 ```typescript
-// Definition
+// Static message — callers never need to customize
 const { ConnectionError, ConnectionErr } = createTaggedError('ConnectionError')
   .withMessage(() => 'Failed to connect to the server');
 
+// Structured fields — `status` is useful for programmatic handling
 const { ResponseError, ResponseErr } = createTaggedError('ResponseError')
-  .withContext<{ status: number }>()
-  .withMessage(({ context }) => `HTTP ${context.status} response`);
+  .withFields<{ status: number }>()
+  .withMessage(({ status }) => `HTTP ${status} response`);
 
+// Static message
 const { ParseError, ParseErr } = createTaggedError('ParseError')
   .withMessage(() => 'Failed to parse response body');
 
 type HttpServiceError = ConnectionError | ResponseError | ParseError;
 
 // Call sites
-ConnectionErr()                              // static message, no args
-ResponseErr({ context: { status: 404 } })    // structured context
-ParseErr()                                    // static message, no args
+ConnectionErr()                    // static message, no args
+ResponseErr({ status: 404 })       // structured fields, computed message
+ParseErr()                         // static message, no args
 ```
 
 ---
 
-### Migration catalog
+## Migration Catalog
 
 For each service below: the current monolithic error, the proposed granular errors, and what call sites should look like after migration.
 
-**Important**: The proposed errors below are suggestions based on analyzing current call sites. The implementing agent should read each file and may adjust error names, context types, or groupings based on what makes sense.
+**Important**: The proposed errors below are suggestions based on analyzing current call sites. The implementing agent should read each file and may adjust error names, field types, or groupings based on what makes sense.
 
 ---
 
-#### 1. RecorderServiceError (LARGEST — ~25 call sites)
+### 1. RecorderServiceError (LARGEST — ~25 call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/recorder/types.ts`
 **Call sites**: `navigator.ts`, `desktop/recorder/cpal.ts`, `desktop/recorder/ffmpeg.ts`
@@ -193,33 +156,35 @@ const { RecorderServiceError, RecorderServiceErr } = createTaggedError('Recorder
 
 **Proposed errors**:
 ```typescript
+// Static — callers show "already recording" UI
 const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
   .withMessage(() => 'A recording is already in progress');
 
+// Structured — selectedDeviceId is useful for UI ("try selecting a different mic")
 const { RecorderDeviceNotFoundError, RecorderDeviceNotFoundErr } = createTaggedError('RecorderDeviceNotFoundError')
-  .withContext<{ selectedDeviceId: string | null }>()
-  .withMessage(({ context }) =>
-    context.selectedDeviceId
-      ? `Could not find selected microphone '${context.selectedDeviceId}'. Make sure it's connected.`
+  .withFields<{ selectedDeviceId: string | null }>()
+  .withMessage(({ selectedDeviceId }) =>
+    selectedDeviceId
+      ? `Could not find selected microphone '${selectedDeviceId}'. Make sure it's connected.`
       : 'No microphones found. Make sure a microphone is connected.'
   );
 
-const { RecorderStartError, RecorderStartErr } = createTaggedError('RecorderStartError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to start recording: ${context.reason}`);
+// Dynamic message — call site knows what went wrong during start
+const { RecorderStartError, RecorderStartErr } = createTaggedError('RecorderStartError');
 
-const { RecorderStopError, RecorderStopErr } = createTaggedError('RecorderStopError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to stop recording: ${context.reason}`);
+// Dynamic message — call site knows what went wrong during stop
+const { RecorderStopError, RecorderStopErr } = createTaggedError('RecorderStopError');
 
+// Structured — operation + path are useful for debugging
 const { RecorderFileError, RecorderFileErr } = createTaggedError('RecorderFileError')
-  .withContext<{ operation: string; path?: string }>()
-  .withMessage(({ context }) =>
-    context.path
-      ? `Failed to ${context.operation} recording file: ${context.path}`
-      : `Failed to ${context.operation} recording file`
+  .withFields<{ operation: string; path?: string }>()
+  .withMessage(({ operation, path }) =>
+    path
+      ? `Failed to ${operation} recording file: ${path}`
+      : `Failed to ${operation} recording file`
   );
 
+// Static
 const { RecorderDeviceEnumerationError, RecorderDeviceEnumerationErr } = createTaggedError('RecorderDeviceEnumerationError')
   .withMessage(() => 'Failed to enumerate recording devices');
 
@@ -236,23 +201,23 @@ type RecorderServiceError =
 ```typescript
 // Before
 RecorderServiceErr({ message: 'A recording is already in progress.' })
-// After
+// After — static default
 RecorderBusyErr()
 
 // Before
 RecorderServiceErr({ message: `Failed to initialize the audio recorder. ${extractErrorMessage(error)}` })
-// After
-RecorderStartErr({ context: { reason: extractErrorMessage(error) } })
+// After — call site provides message
+RecorderStartErr({ message: `Failed to initialize the audio recorder. ${extractErrorMessage(error)}` })
 
 // Before
 RecorderServiceErr({ message: `Unable to read recording file: ${error.message}` })
-// After
-RecorderFileErr({ context: { operation: 'read', path: filePath } })
+// After — structured fields compute message
+RecorderFileErr({ operation: 'read', path: filePath })
 ```
 
 ---
 
-#### 2. CompletionServiceError (~30 call sites)
+### 2. CompletionServiceError (~30 call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/completion/types.ts`
 **Call sites**: `anthropic.ts`, `groq.ts`, `google.ts`, `openai-compatible.ts`, `custom.ts`
@@ -263,26 +228,24 @@ const { CompletionServiceError, CompletionServiceErr } = createTaggedError('Comp
   .withMessage(() => 'A completion operation failed');
 ```
 
-**Proposed errors**: The completion providers have many call sites but the errors map well to HTTP status patterns. Use Approach B (union context) here since there are many variants and consumers rarely distinguish them — they just show the message.
+**Proposed errors**:
 
 ```typescript
+// Structured — provider + statusCode useful for retry logic and user guidance
 const { CompletionApiError, CompletionApiErr } = createTaggedError('CompletionApiError')
-  .withContext<{ provider: string; statusCode: number; reason: string }>()
-  .withMessage(({ context }) =>
-    `${context.provider} API error (${context.statusCode}): ${context.reason}`
+  .withFields<{ provider: string; statusCode: number }>()
+  .withMessage(({ provider, statusCode }) =>
+    `${provider} API error (${statusCode})`
   );
 
+// Dynamic message — connection failures have varied context
 const { CompletionConnectionError, CompletionConnectionErr } = createTaggedError('CompletionConnectionError')
-  .withContext<{ provider: string; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to connect to ${context.provider}: ${context.reason}`
-  );
+  .withFields<{ provider: string }>()
+  .withMessage(({ provider }) => `Failed to connect to ${provider}`);
 
+// Dynamic message — config issues are specific ("missing API key", "invalid base URL", etc.)
 const { CompletionConfigError, CompletionConfigErr } = createTaggedError('CompletionConfigError')
-  .withContext<{ provider: string; reason: string }>()
-  .withMessage(({ context }) =>
-    `${context.provider} configuration error: ${context.reason}`
-  );
+  .withFields<{ provider: string }>();
 
 type CompletionServiceError =
   | CompletionApiError
@@ -294,18 +257,23 @@ type CompletionServiceError =
 ```typescript
 // Before (in anthropic.ts, handling 401)
 CompletionServiceErr({ message: 'Invalid API key. Check your Anthropic API key.' })
-// After
-CompletionApiErr({ context: { provider: 'Anthropic', statusCode: 401, reason: 'Invalid API key' } })
+// After — statusCode is structured, message override for user-facing detail
+CompletionApiErr({ provider: 'Anthropic', statusCode: 401, message: 'Invalid API key. Check your Anthropic API key.' })
 
 // Before (in openai-compatible.ts, handling connection error)
 CompletionServiceErr({ message: `Failed to connect: ${extractErrorMessage(error)}` })
-// After
-CompletionConnectionErr({ context: { provider: providerName, reason: extractErrorMessage(error) } })
+// After — provider is structured, message override
+CompletionConnectionErr({ provider: providerName, message: `Failed to connect: ${extractErrorMessage(error)}` })
+
+// Before (missing API key)
+CompletionServiceErr({ message: 'No API key configured for OpenAI.' })
+// After — provider is structured, message at call site (no .withMessage())
+CompletionConfigErr({ provider: 'OpenAI', message: 'No API key configured for OpenAI.' })
 ```
 
 ---
 
-#### 3. DbServiceError (~60+ call sites)
+### 3. DbServiceError (~60+ call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/db/types.ts`
 **Call sites**: `desktop.ts`, `web.ts`, `file-system.ts`, `actions.ts`
@@ -316,26 +284,22 @@ const { DbServiceError, DbServiceErr } = createTaggedError('DbServiceError')
   .withMessage(() => 'A database operation failed');
 ```
 
-**Proposed errors**: The DB service has the most call sites. Most are CRUD operations that fail. Group by failure mode, not by table.
+**Proposed errors**:
 
 ```typescript
+// Structured — table + id useful for retry or redirect logic
 const { DbNotFoundError, DbNotFoundErr } = createTaggedError('DbNotFoundError')
-  .withContext<{ table: string; id: string }>()
-  .withMessage(({ context }) => `${context.table} '${context.id}' not found`);
+  .withFields<{ table: string; id: string }>()
+  .withMessage(({ table, id }) => `${table} '${id}' not found`);
 
-const { DbQueryError, DbQueryErr } = createTaggedError('DbQueryError')
-  .withContext<{ operation: string; table: string; reason: string }>()
-  .withMessage(({ context }) =>
-    `Database ${context.operation} on ${context.table} failed: ${context.reason}`
-  );
+// Dynamic message — covers many different query failures
+const { DbQueryError, DbQueryErr } = createTaggedError('DbQueryError');
 
-const { DbConnectionError, DbConnectionErr } = createTaggedError('DbConnectionError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Database connection failed: ${context.reason}`);
+// Dynamic message — connection issues vary
+const { DbConnectionError, DbConnectionErr } = createTaggedError('DbConnectionError');
 
-const { DbMigrationError, DbMigrationErr } = createTaggedError('DbMigrationError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Database migration failed: ${context.reason}`);
+// Dynamic message — migration failures vary
+const { DbMigrationError, DbMigrationErr } = createTaggedError('DbMigrationError');
 
 type DbServiceError =
   | DbNotFoundError
@@ -347,11 +311,11 @@ type DbServiceError =
 **Note**: With 60+ call sites across 3 implementations (desktop, web, file-system), this is the largest migration. The implementing agent should:
 1. Read each file completely before starting
 2. Identify the actual failure modes (many will map to `DbQueryErr`)
-3. Not force granularity — if a call site is a generic "this DB operation failed," `DbQueryErr` is fine
+3. Not force granularity — if a call site is a generic "this DB operation failed," `DbQueryErr({ message: '...' })` is fine
 
 ---
 
-#### 4. FsServiceError (3 call sites)
+### 4. FsServiceError (3 call sites)
 
 **File**: `apps/whispering/src/lib/services/desktop/fs.ts`
 
@@ -361,27 +325,24 @@ const { FsServiceError, FsServiceErr } = createTaggedError('FsServiceError')
   .withMessage(() => 'File system operation failed');
 ```
 
-**Proposed errors**:
+**Proposed**: Keep as one error, no fields, message at call site:
 ```typescript
-const { FileReadError, FileReadErr } = createTaggedError('FileReadError')
-  .withContext<{ path: string; reason: string }>()
-  .withMessage(({ context }) => `Failed to read file '${context.path}': ${context.reason}`);
-
-type FsServiceError = FileReadError;
-// Expand union as more operations are added
+const { FsServiceError, FsServiceErr } = createTaggedError('FsServiceError');
 ```
 
 **Call site migration**:
 ```typescript
 // Before
 FsServiceErr({ message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(error)}` })
-// After
-FileReadErr({ context: { path, reason: extractErrorMessage(error) } })
+// After — same message, just no wrapper
+FsServiceErr({ message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(error)}` })
 ```
+
+Only 3 call sites, callers don't differentiate failure modes. One error with call-site message is the right call.
 
 ---
 
-#### 5. TextServiceError (~12 call sites)
+### 5. TextServiceError (~12 call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/text/types.ts`
 **Call sites**: `desktop.ts`, `extension.ts`, `web.ts`
@@ -394,269 +355,191 @@ const { TextServiceError, TextServiceErr } = createTaggedError('TextServiceError
 
 **Proposed errors**:
 ```typescript
-const { ClipboardReadError, ClipboardReadErr } = createTaggedError('ClipboardReadError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to read from clipboard: ${context.reason}`);
-
-const { ClipboardWriteError, ClipboardWriteErr } = createTaggedError('ClipboardWriteError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to copy to clipboard: ${context.reason}`);
-
-const { TextInsertError, TextInsertErr } = createTaggedError('TextInsertError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to insert text: ${context.reason}`);
-
+// Static — genuinely distinct: callers show "not supported on this platform" UI
 const { KeystrokeSimulationUnsupportedError, KeystrokeSimulationUnsupportedErr } = createTaggedError('KeystrokeSimulationUnsupportedError')
   .withMessage(() => 'Simulating keystrokes is not supported on this platform');
 
+// Dynamic message — covers clipboard read/write and text insert failures
+const { TextServiceError, TextServiceErr } = createTaggedError('TextServiceError');
+
 type TextServiceError =
-  | ClipboardReadError
-  | ClipboardWriteError
-  | TextInsertError
-  | KeystrokeSimulationUnsupportedError;
+  | KeystrokeSimulationUnsupportedError
+  | TextServiceError;
 ```
+
+Callers don't differentiate clipboard-read vs clipboard-write vs text-insert at the error handling level. One dynamic-message error + one static error for the genuinely distinct platform limitation.
 
 ---
 
-#### 6. NotificationServiceError (4 call sites)
+### 6. NotificationServiceError (4 call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/notifications/types.ts`
 **Call sites**: `desktop.ts`, `web.ts`
 
-**Current**:
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { NotificationServiceError, NotificationServiceErr } = createTaggedError('NotificationServiceError')
-  .withMessage(() => 'Notification operation failed');
+const { NotificationServiceError, NotificationServiceErr } = createTaggedError('NotificationServiceError');
 ```
 
-**Proposed errors**:
-```typescript
-const { NotificationSendError, NotificationSendErr } = createTaggedError('NotificationSendError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to send notification: ${context.reason}`);
-
-const { NotificationRemoveError, NotificationRemoveErr } = createTaggedError('NotificationRemoveError')
-  .withContext<{ id: number; reason: string }>()
-  .withMessage(({ context }) => `Failed to remove notification ${context.id}: ${context.reason}`);
-
-type NotificationServiceError = NotificationSendError | NotificationRemoveError;
-```
+4 call sites, callers don't differentiate send vs remove failures.
 
 ---
 
-#### 7. PermissionsServiceError (4 call sites)
+### 7. PermissionsServiceError (4 call sites)
 
 **File**: `apps/whispering/src/lib/services/desktop/permissions.ts`
 
-**Current**:
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { PermissionsServiceError, PermissionsServiceErr } = createTaggedError('PermissionsServiceError')
-  .withMessage(() => 'Permissions check failed');
+const { PermissionsServiceError, PermissionsServiceErr } = createTaggedError('PermissionsServiceError');
 ```
 
-**Proposed errors**:
-```typescript
-const { PermissionCheckError, PermissionCheckErr } = createTaggedError('PermissionCheckError')
-  .withContext<{ permission: 'accessibility' | 'microphone'; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to check ${context.permission} permission: ${context.reason}`
-  );
-
-const { PermissionRequestError, PermissionRequestErr } = createTaggedError('PermissionRequestError')
-  .withContext<{ permission: 'accessibility' | 'microphone'; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to request ${context.permission} permission: ${context.reason}`
-  );
-
-type PermissionsServiceError = PermissionCheckError | PermissionRequestError;
-```
+4 call sites, callers don't differentiate check vs request failures.
 
 ---
 
-#### 8. AutostartServiceError (3 call sites)
+### 8. AutostartServiceError (3 call sites)
 
 **File**: `apps/whispering/src/lib/services/desktop/autostart.ts`
 
-**Proposed errors**:
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { AutostartError, AutostartErr } = createTaggedError('AutostartError')
-  .withContext<{ operation: 'check' | 'enable' | 'disable'; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to ${context.operation} autostart: ${context.reason}`
-  );
-
-type AutostartServiceError = AutostartError;
+const { AutostartServiceError, AutostartServiceErr } = createTaggedError('AutostartServiceError');
 ```
 
-**Note**: Only 3 call sites, all the same pattern. One error with a union context `operation` field is sufficient — don't over-split.
+3 call sites, all the same pattern. No need for fields or `.withMessage()`.
 
 ---
 
-#### 9. CommandServiceError (2 call sites)
+### 9. CommandServiceError (2 call sites)
 
 **File**: `apps/whispering/src/lib/services/desktop/command.ts`
 
-**Proposed errors**:
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { CommandExecutionError, CommandExecutionErr } = createTaggedError('CommandExecutionError')
-  .withContext<{ command: string; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to execute command '${context.command}': ${context.reason}`
-  );
-
-type CommandServiceError = CommandExecutionError;
+const { CommandServiceError, CommandServiceErr } = createTaggedError('CommandServiceError');
 ```
+
+2 call sites, callers don't differentiate.
 
 ---
 
-#### 10. FfmpegServiceError (defined, but check call sites)
+### 10. FfmpegServiceError (small)
 
 **File**: `apps/whispering/src/lib/services/desktop/ffmpeg.ts`
 
-Analyze actual call sites. If FFmpeg is only used for audio compression, a single error may suffice:
-
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { FfmpegError, FfmpegErr } = createTaggedError('FfmpegError')
-  .withContext<{ operation: string; reason: string }>()
-  .withMessage(({ context }) => `FFmpeg ${context.operation} failed: ${context.reason}`);
-
-type FfmpegServiceError = FfmpegError;
+const { FfmpegServiceError, FfmpegServiceErr } = createTaggedError('FfmpegServiceError');
 ```
 
 ---
 
-#### 11. GlobalShortcutServiceError + InvalidAcceleratorError (4 call sites)
+### 11. GlobalShortcutServiceError + InvalidAcceleratorError (4 call sites)
 
 **File**: `apps/whispering/src/lib/services/desktop/global-shortcut-manager.ts`
 
-Already somewhat granular. Refine:
+Already somewhat granular. `InvalidAcceleratorError` is genuinely distinct — callers show different UI for "your shortcut format is wrong" vs "registration failed."
 
+**Proposed**:
 ```typescript
+// Structured — accelerator is useful for UI ("the shortcut 'X' is invalid")
 const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError('InvalidAcceleratorError')
-  .withContext<{ accelerator: string }>()
-  .withMessage(({ context }) =>
-    `Invalid accelerator format: '${context.accelerator}'. Must follow Electron accelerator specification.`
+  .withFields<{ accelerator: string }>()
+  .withMessage(({ accelerator }) =>
+    `Invalid accelerator format: '${accelerator}'. Must follow Electron accelerator specification.`
   );
 
-const { ShortcutRegistrationError, ShortcutRegistrationErr } = createTaggedError('ShortcutRegistrationError')
-  .withContext<{ accelerator: string; reason: string }>()
-  .withMessage(({ context }) =>
-    `Failed to register shortcut '${context.accelerator}': ${context.reason}`
-  );
-
-const { ShortcutUnregistrationError, ShortcutUnregistrationErr } = createTaggedError('ShortcutUnregistrationError')
-  .withContext<{ accelerator?: string; reason: string }>()
-  .withMessage(({ context }) =>
-    context.accelerator
-      ? `Failed to unregister shortcut '${context.accelerator}': ${context.reason}`
-      : `Failed to unregister all shortcuts: ${context.reason}`
-  );
+// Dynamic message — registration/unregistration failures vary
+const { GlobalShortcutServiceError, GlobalShortcutServiceErr } = createTaggedError('GlobalShortcutServiceError');
 
 type GlobalShortcutServiceError =
   | InvalidAcceleratorError
-  | ShortcutRegistrationError
-  | ShortcutUnregistrationError;
+  | GlobalShortcutServiceError;
 ```
 
 ---
 
-#### 12. DownloadServiceError (4 call sites)
+### 12. DownloadServiceError (4 call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/download/types.ts`
 **Call sites**: `desktop.ts`, `web.ts`
 
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { DownloadSaveError, DownloadSaveErr } = createTaggedError('DownloadSaveError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to save download: ${context.reason}`);
-
-const { DownloadPathError, DownloadPathErr } = createTaggedError('DownloadPathError')
-  .withMessage(() => 'No save path specified');
-
-type DownloadServiceError = DownloadSaveError | DownloadPathError;
+const { DownloadServiceError, DownloadServiceErr } = createTaggedError('DownloadServiceError');
 ```
+
+4 call sites, callers don't differentiate "no path" vs "save failed."
 
 ---
 
-#### 13. PlaySoundServiceError (1 call site)
+### 13. PlaySoundServiceError (1 call site)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/sound/types.ts`
 
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { PlaySoundError, PlaySoundErr } = createTaggedError('PlaySoundError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to play sound: ${context.reason}`);
-
-type PlaySoundServiceError = PlaySoundError;
+const { PlaySoundServiceError, PlaySoundServiceErr } = createTaggedError('PlaySoundServiceError');
 ```
+
+1 call site. Simplest possible form.
 
 ---
 
-#### 14. DeviceStreamServiceError (local, in device-stream.ts)
+### 14. DeviceStreamServiceError (local, in device-stream.ts)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/device-stream.ts`
 
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { DeviceStreamError, DeviceStreamErr } = createTaggedError('DeviceStreamError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to acquire device stream: ${context.reason}`);
-
-type DeviceStreamServiceError = DeviceStreamError;
+const { DeviceStreamServiceError, DeviceStreamServiceErr } = createTaggedError('DeviceStreamServiceError');
 ```
 
 ---
 
-#### 15. AnalyticsServiceError (check if any call sites exist)
+### 15. AnalyticsServiceError (minimal)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/analytics/types.ts`
 
-May have zero call sites. If so, keep simple:
-
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { AnalyticsError, AnalyticsErr } = createTaggedError('AnalyticsError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to log analytics event: ${context.reason}`);
-
-type AnalyticsServiceError = AnalyticsError;
+const { AnalyticsServiceError, AnalyticsServiceErr } = createTaggedError('AnalyticsServiceError');
 ```
 
 ---
 
-#### 16. OsServiceError (check call sites)
+### 16. OsServiceError (minimal)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/os/types.ts`
 
-Check usage. If minimal:
-
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { OsServiceError, OsServiceErr } = createTaggedError('OsServiceError')
-  .withContext<{ operation: string; reason: string }>()
-  .withMessage(({ context }) => `OS ${context.operation} failed: ${context.reason}`);
+const { OsServiceError, OsServiceErr } = createTaggedError('OsServiceError');
 ```
 
 ---
 
-#### 17. LocalShortcutServiceError (check call sites)
+### 17. LocalShortcutServiceError (check call sites)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/local-shortcut-manager.ts`
 
-Check usage and apply same pattern as global shortcut service.
+Check usage and apply same pattern as global shortcut service if there's an `InvalidAcceleratorError` equivalent. Otherwise, one error with call-site message.
 
 ---
 
-#### 18. SetTrayIconServiceError (internal, 1 call site)
+### 18. SetTrayIconServiceError (internal, 1 call site)
 
 **File**: `apps/whispering/src/lib/services/desktop/tray.ts`
 
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { SetTrayIconError, SetTrayIconErr } = createTaggedError('SetTrayIconError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Failed to set tray icon: ${context.reason}`);
+const { SetTrayIconServiceError, SetTrayIconServiceErr } = createTaggedError('SetTrayIconServiceError');
 ```
 
 ---
 
-#### 19. TransformServiceError (in query layer)
+### 19. TransformServiceError (in query layer)
 
 **File**: `apps/whispering/src/lib/query/isomorphic/transformer.ts`
 
@@ -664,99 +547,93 @@ Check call sites and apply appropriate granularity.
 
 ---
 
-#### 20. StaticWorkspaceError (in epicenter app)
+### 20. StaticWorkspaceError (in epicenter app)
 
 **File**: `apps/epicenter/src/lib/workspaces/static/queries.ts`
 
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { StaticWorkspaceError, StaticWorkspaceErr } = createTaggedError('StaticWorkspaceError')
-  .withContext<{ reason: string }>()
-  .withMessage(({ context }) => `Static workspace error: ${context.reason}`);
+const { StaticWorkspaceError, StaticWorkspaceErr } = createTaggedError('StaticWorkspaceError');
 ```
 
 ---
 
-#### 21. WorkspaceError (in epicenter app)
+### 21. WorkspaceError (in epicenter app)
 
 **File**: `apps/epicenter/src/lib/workspaces/dynamic/queries.ts`
 
-Check call sites. If mostly generic failures:
-
+**Proposed**: Keep as one error, message at call site:
 ```typescript
-const { WorkspaceError, WorkspaceErr } = createTaggedError('WorkspaceError')
-  .withContext<{ operation: string; reason: string }>()
-  .withMessage(({ context }) => `Workspace ${context.operation} failed: ${context.reason}`);
+const { WorkspaceError, WorkspaceErr } = createTaggedError('WorkspaceError');
 ```
 
 ---
 
-#### 22. ExtensionError (in epicenter package)
+### 22. ExtensionError (in epicenter package)
 
 **File**: `packages/epicenter/src/shared/errors.ts`
 
-Already has `.withContext<ExtensionErrorContext | undefined>()`. Review and refine.
+Already has `.withContext<ExtensionErrorContext | undefined>()`. Convert to `.withFields()` with flat fields. Review whether the optional fields are actually used for programmatic handling — if not, drop them and use call-site message.
 
 ---
 
-#### 23. ParseJsonError (in svelte-utils)
+### 23. ParseJsonError (in svelte-utils)
 
 **File**: `packages/svelte-utils/src/createPersistedState.svelte.ts`
 
+**Proposed**: Structured — `preview` is useful for debugging:
 ```typescript
 const { ParseJsonError, ParseJsonErr } = createTaggedError('ParseJsonError')
-  .withContext<{ preview: string }>()
-  .withMessage(({ context }) => `Failed to parse JSON: "${context.preview}..."`);
+  .withFields<{ preview: string }>()
+  .withMessage(({ preview }) => `Failed to parse JSON: "${preview}..."`);
 ```
 
 ---
 
-#### 24. HttpServiceError (already done — the model)
+### 24. HttpServiceError (already close — the model)
 
 **File**: `apps/whispering/src/lib/services/isomorphic/http/types.ts`
 
-Already uses the target pattern. Only change: remove `message` overrides from call sites in `desktop.ts` and `web.ts`.
+Already uses the target pattern. Changes needed:
+- Convert `.withContext()` to `.withFields()` in definitions
+- Update template callbacks from `({ context })` to flat destructuring
+- Call sites that override `message` can keep doing so — the new API supports it natively
 
 ```typescript
-// Before (in desktop.ts)
-ConnectionErr({ message: `Failed to establish connection: ${extractErrorMessage(error)}` })
-// After — with API change, ConnectionErr has no message field
-// Option 1: Add context to ConnectionError
-// Option 2: Keep static message, the detail is in the error chain
-
-// Before
-ResponseErr({ message: extractErrorMessage(await response.json()), context: { status: response.status } })
-// After — message comes from template
-ResponseErr({ context: { status: response.status } })
-// If we need the response body info, add it to context:
-// .withContext<{ status: number; reason?: string }>()
+// ConnectionErr() — static, uses default message
+// ConnectionErr({ message: '...' }) — override when call site has more context
+// ResponseErr({ status: 404 }) — computed from fields
+// ResponseErr({ status: 404, message: 'Not found' }) — override
 ```
 
-The HTTP service needs review: `ConnectionError` and `ParseError` currently have static messages but call sites override with dynamic messages. Either add context to carry the detail, or accept the static message is sufficient (the original error is typically logged separately).
+The HTTP service needs review: `ConnectionError` and `ParseError` currently have static messages but some call sites override with dynamic messages. With the new API, this works naturally — the default message serves most call sites, and the few that need more context pass `message` to override.
 
 ---
 
-## Part 3: Skills to Update
+## Skills to Update
 
 After migration, update these skills:
 
-1. **`.agents/skills/services-layer/SKILL.md`**: Replace all `{ message: "..." }` examples with `{ context: { ... } }`. Show the granular error pattern as the default.
-2. **`.agents/skills/error-handling/SKILL.md`**: Update trySync/tryAsync examples to use structured context instead of message strings.
-3. **`.agents/skills/create-tagged-error/SKILL.md`** (if it exists): Update API reference.
+1. **`.agents/skills/services-layer/SKILL.md`**: Show the new patterns — static `.withMessage()`, structured fields, and call-site `message`.
+2. **`.agents/skills/error-handling/SKILL.md`**: Update trySync/tryAsync examples to show call-site `message` and optional `.withMessage()` defaults.
+3. **`.agents/skills/create-tagged-error/SKILL.md`** (if it exists): Update API reference for `.withFields()` and optional `.withMessage()`.
 
 ---
 
 ## Implementation Order
 
-1. **Publish new wellcrafted version** with `message` removed from `ErrorCallInput` and optional input parameter
+1. **Implement and publish new wellcrafted version** (see wellcrafted spec)
 2. **Update wellcrafted dependency** in the monorepo
 3. **Migrate services** — can be done in parallel per service, but commit atomically:
-   - Start with **HttpService** (already close, just remove message overrides)
+   - Start with **HttpService** (already close, just convert to flat + `.withFields()`)
    - Then **FsService** (3 call sites, easy win)
-   - Then **TextService**, **NotificationService**, **PermissionsService** (small services)
+   - Then small services: **NotificationService**, **PermissionsService**, **AutostartService**, **CommandService**, **PlaySoundService**, **DeviceStreamService**, **SetTrayIcon**, **AnalyticsService**, **OsService**, **DownloadService**, **FfmpegService**
+   - Then **TextService** (split out `KeystrokeSimulationUnsupportedError`)
+   - Then **GlobalShortcutService** (split out `InvalidAcceleratorError`)
    - Then **CompletionService** (~30 call sites)
    - Then **RecorderService** (~25 call sites)
    - Then **DbService** (~60 call sites, largest)
-   - Then remaining small services
+   - Then **ExtensionError**, **ParseJsonError**, **WorkspaceError**, **StaticWorkspaceError**
 4. **Update skills** after all services are migrated
 5. **Type check**: `bun run typecheck` must pass
 6. **Build**: `bun run build` must pass
@@ -765,6 +642,7 @@ After migration, update these skills:
 
 - The proposed error types above are **suggestions**. Read each service file completely before deciding on the final error types. The actual failure modes in the code may differ from what's predicted here.
 - When in doubt, fewer error types is better. Don't create an error type that has only 1 call site unless it represents a genuinely distinct failure mode that callers handle differently.
-- The `reason: string` context field is a **reserved convention** meaning "the output of `extractErrorMessage(error)`." Use it when you need to capture a caught exception's message. Don't use it for domain-specific data — use named fields like `{ path: string }` or `{ status: number }` instead. Don't add `reason` when the error name already says enough — use Tier 1 (static, no context) instead.
-- Many existing error messages are user-facing and well-written. Preserve that quality in the `.withMessage()` templates — don't make messages worse in the name of structure.
+- **No `reason: string` convention.** If the only dynamic content is a caught exception message, skip `.withMessage()` and let the call site pass `message` directly. Don't launder `message` through a field.
+- Many existing error messages are user-facing and well-written. Preserve that quality — when converting to call-site `message`, keep the original message text.
 - The `type XServiceError = A | B | C` union must be exported and used in the service's return type signatures. Verify that `Result<T, XServiceError>` still works with the new union type in all service method signatures.
+- **For single-error services with all-dynamic messages**, the simplest form is `createTaggedError('XError')` with no `.withFields()` and no `.withMessage()`. Call sites pass `{ message: '...' }`. This is intentional — not every error needs typed fields.

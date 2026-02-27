@@ -13,36 +13,42 @@ System architecture documentation for Epicenter's distributed sync system.
 
 ## Quick Reference
 
+> **Topology note:** Epicenter uses a three-tier architecture. The diagrams below show the local-mesh layer (Phase 3): browsers talking to their local sidecar (`createLocalServer`), and sidecars syncing peer-to-peer. The hub (`createHubServer`) is a separate cloud tier that handles auth (Better Auth), AI streaming (`/ai/chat`), and an ephemeral Yjs relay. The SPA routes data sync to the local sidecar and AI requests to the hub. Cross-device sync via the hub (Phase 4) is not yet wired. See [Network Topology](./network-topology.md) for the full picture.
+
 ### Node Types
 
-| Type   | Runtime  | Can Accept Connections | Can Serve Blobs |
-| ------ | -------- | ---------------------- | --------------- |
-| Client | Browser  | No                     | No              |
-| Server | Bun/Node | Yes                    | Yes             |
+| Type          | Runtime  | Can Accept Connections | Can Serve Blobs | Notes                                         |
+| ------------- | -------- | ---------------------- | --------------- | --------------------------------------------- |
+| Client (SPA)  | Browser  | No                     | No              | Data → local sidecar; AI → hub                |
+| Local Sidecar | Bun/Node | Yes                    | Yes             | `createLocalServer`; workspace CRUD, actions  |
+| Hub           | Bun/Node | Yes                    | No              | `createHubServer`; auth, AI proxy, Yjs relay  |
 
 ### Connection Rules
 
 ```
-Client ──► Server     ✅  (WebSocket, HTTP)
-Client ──► Client     ✅  (via YJS action dispatch, not direct connection)
-Server ──► Server     ✅  (WebSocket)
-Server ──► Client     ✅  (via YJS action dispatch, not direct connection)
+Client ──► Local Sidecar   ✅  (WebSocket, HTTP — data sync)
+Client ──► Hub             ✅  (HTTP — AI streaming, auth)
+Client ──► Client          ✅  (via YJS action dispatch, not direct connection)
+Server ──► Server          ✅  (WebSocket)
+Server ──► Client          ✅  (via YJS action dispatch, not direct connection)
 ```
 
 Note: Direct connections are only possible **to** servers. However, any device can invoke actions on any other device via [action dispatch](./action-dispatch.md) through the shared Y.Doc.
 
-### Typical Setup
+### Typical Setup (Local Mesh — Phase 3)
 
 ```
          ┌─────────┐           ┌─────────┐
          │LAPTOP A │           │LAPTOP B │
          │ Browser │           │ Browser │
          │    ▼    │           │    ▼    │
-         │ Server ◄├───────────┼► Server │     ┌────────┐
+         │ Sidecar ◄├───────────┼► Sidecar│     ┌────────┐
          └────▲────┘           └────▲────┘     │ PHONE  │
               │                     │          │Browser │
               └─────────────────────┴──────────┴───┘
 ```
+
+AI requests from all browsers go to the hub (cloud), not to the local sidecar.
 
 ## Related Documentation
 

@@ -1,6 +1,8 @@
 # @epicenter/server: Package Extraction + Sync Core
 
 > **Update (Feb 2026)**: The cloud deployment scope has been narrowed. Cloud focuses on sync + auth only — the workspace plugin (tables/actions) is self-hosted only. The transport-agnostic sync core (rooms, auth, protocol) remains shared across both targets as described in this spec. See `specs/20260219T200000-deployment-targets-research.md` for the architectural decision.
+>
+> **Topology note (2026-02-26)**: This spec predates the hub/sidecar split. The "Network Topology" section describes a single-server model. The current architecture uses `createHubServer()` (Better Auth, AI streaming, ephemeral Yjs relay) and `createLocalServer()` (workspace CRUD, extensions, actions, persisted Y.Docs). There is no single `createServer()` that handles both roles. See `specs/20260222T195645-network-topology-multi-server-architecture.md` for the authoritative three-tier topology.
 
 **Date**: 2026-02-13
 **Status**: Phase 1 Complete, Phase 2 Design Revised

@@ -4,6 +4,8 @@
 **Status**: Draft (working document)
 **Author**: Braden + Claude
 
+> **Topology note (2026-02-26)**: This spec predates the hub/sidecar split. Where it describes a single `createServer()` with AI chat, the current architecture places AI streaming exclusively on `createHubServer()`. The local sidecar (`createLocalServer()`) handles workspace CRUD and sync but NOT AI streaming. "Hosted server" in this doc refers to a cloud deployment of the workspace server, not the hub. See `specs/20260222T195645-network-topology-multi-server-architecture.md` for the authoritative three-tier topology.
+
 ## Overview
 
 Epicenter's server needs to run in two environments: as a self-hosted Bun/Elysia process and as Cloudflare Workers with Durable Objects. This document maps the current architecture, catalogs what each target supports, identifies the shared abstractions, and explores how AI chat endpoints (TanStack AI) and authentication fit into both.

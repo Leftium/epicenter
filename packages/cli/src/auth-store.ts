@@ -3,10 +3,10 @@ import { join } from 'node:path';
 
 /** Persisted authentication credentials and user info for a remote server. */
 interface AuthState {
-  remoteUrl: string;
-  token: string;
-  expiresAt: string;
-  user?: { id: string; email: string; name?: string };
+	remoteUrl: string;
+	token: string;
+	expiresAt: string;
+	user?: { id: string; email: string; name?: string };
 }
 
 /**
@@ -14,7 +14,7 @@ interface AuthState {
  * @param home - Epicenter home directory (e.g. `~/.epicenter`).
  */
 export function authFilePath(home: string): string {
-  return join(home, 'auth.json');
+	return join(home, 'auth.json');
 }
 
 /**
@@ -23,9 +23,9 @@ export function authFilePath(home: string): string {
  * @returns The stored {@link AuthState}, or `null` if no credentials exist.
  */
 export async function loadAuth(home: string): Promise<AuthState | null> {
-  const file = Bun.file(authFilePath(home));
-  if (!(await file.exists())) return null;
-  return file.json() as Promise<AuthState>;
+	const file = Bun.file(authFilePath(home));
+	if (!(await file.exists())) return null;
+	return file.json() as Promise<AuthState>;
 }
 
 /**
@@ -34,7 +34,7 @@ export async function loadAuth(home: string): Promise<AuthState | null> {
  * @param state - Auth state to write.
  */
 export async function saveAuth(home: string, state: AuthState): Promise<void> {
-  await Bun.write(authFilePath(home), JSON.stringify(state, null, 2));
+	await Bun.write(authFilePath(home), JSON.stringify(state, null, 2));
 }
 
 /**
@@ -42,8 +42,10 @@ export async function saveAuth(home: string, state: AuthState): Promise<void> {
  * @param home - Epicenter home directory.
  */
 export async function clearAuth(home: string): Promise<void> {
-  const { unlink } = await import('node:fs/promises');
-  try { await unlink(authFilePath(home)); } catch {}
+	const { unlink } = await import('node:fs/promises');
+	try {
+		await unlink(authFilePath(home));
+	} catch {}
 }
 
 export type { AuthState };

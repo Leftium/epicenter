@@ -14,5 +14,5 @@ export {
 	type SupportedProvider,
 } from './providers';
 export { DEFAULT_PORT, listenWithFallback } from './server';
-export { type AuthConfig } from './sync/auth';
 export { createSyncPlugin, type SyncPluginConfig } from './sync';
+export { type AuthConfig } from './sync/auth';

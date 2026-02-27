@@ -1,6 +1,6 @@
 import type { Argv } from 'yargs';
-import { assertServerRunning, createHttpClient } from '../http-client';
 import { formatYargsOptions, output, outputError } from '../format-output';
+import { assertServerRunning, createHttpClient } from '../http-client';
 import { parseJsonInput, readStdinSync } from '../parse-input';
 
 /**
@@ -24,7 +24,10 @@ export function buildDataCommand(serverUrl: string) {
 				.command(buildKvSubcommand(serverUrl))
 				.command(buildActionSubcommand(serverUrl))
 				.command(buildTableSubcommand(serverUrl))
-				.demandCommand(1, 'Specify a subcommand: tables, kv, action, or a table name');
+				.demandCommand(
+					1,
+					'Specify a subcommand: tables, kv, action, or a table name',
+				);
 		},
 		handler: () => {},
 	};

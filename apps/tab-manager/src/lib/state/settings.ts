@@ -41,9 +41,12 @@ const serverUrlItem = storage.defineItem<string>('local:serverUrl', {
  * For multi-server deployments (e.g., Epicenter Cloud), set this to
  * the remote server's public address.
  */
-const remoteServerUrlItem = storage.defineItem<string>('local:remoteServerUrl', {
-	fallback: DEFAULT_SERVER_URL,
-});
+const remoteServerUrlItem = storage.defineItem<string>(
+	'local:remoteServerUrl',
+	{
+		fallback: DEFAULT_SERVER_URL,
+	},
+);
 
 /**
  * Get the local server URL from chrome.storage.

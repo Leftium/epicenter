@@ -1,5 +1,13 @@
 import type { Dirent } from 'node:fs';
-import { lstat, mkdir, readdir, readlink, rm, symlink, unlink } from 'node:fs/promises';
+import {
+	lstat,
+	mkdir,
+	readdir,
+	readlink,
+	rm,
+	symlink,
+	unlink,
+} from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { $ } from 'bun';
 import type { AbsolutePath } from 'jsrepo';
@@ -10,8 +18,8 @@ import {
 	resolveRegistries,
 	resolveWantedItems,
 } from 'jsrepo';
-import * as Y from 'yjs';
 import type { Argv, CommandModule } from 'yargs';
+import * as Y from 'yjs';
 import type { DiscoveredWorkspace } from '../discovery';
 import { loadClientFromPath } from '../discovery';
 import { formatYargsOptions, output, outputError } from '../format-output';

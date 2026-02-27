@@ -1,12 +1,12 @@
 import { openapi } from '@elysiajs/openapi';
+import { listenWithFallback } from '@epicenter/server';
+import type { AuthConfig } from '@epicenter/server/sync';
+import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
 import { type AuthPluginConfig, createAuthPlugin } from './auth';
 import { createProxyPlugin } from './proxy';
-import { listenWithFallback } from '@epicenter/server';
-import type { AuthConfig } from '@epicenter/server/sync';
-import { createSyncPlugin } from '@epicenter/server/sync';
 
 export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
 

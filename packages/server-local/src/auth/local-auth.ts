@@ -81,7 +81,9 @@ export type SessionValidationResult =
  * console.log(result.user.email);
  * ```
  */
-export function createRemoteSessionValidator(config: RemoteSessionValidatorConfig) {
+export function createRemoteSessionValidator(
+	config: RemoteSessionValidatorConfig,
+) {
 	const { remoteUrl, cacheTtlMs = 5 * 60 * 1000 } = config;
 	const cache = new Map<string, CacheEntry>();
 

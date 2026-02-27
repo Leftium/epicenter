@@ -131,7 +131,9 @@ export type OpenCodeProcess = {
 	 * @param newConfig - Optional partial config overrides (e.g., new sessionToken).
 	 */
 	restart(
-		newConfig?: Partial<Pick<OpenCodeProcessConfig, 'sessionToken' | 'remoteUrl'>>,
+		newConfig?: Partial<
+			Pick<OpenCodeProcessConfig, 'sessionToken' | 'remoteUrl'>
+		>,
 	): Promise<void>;
 
 	/** Whether the OpenCode process is currently running. */

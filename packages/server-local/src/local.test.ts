@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { DEFAULT_PORT } from '@epicenter/server';
 import {
 	createWorkspace,
 	defineQuery,
@@ -6,7 +7,6 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
-import { DEFAULT_PORT } from '@epicenter/server';
 import { createLocalServer } from './local';
 
 describe('createLocalServer', () => {

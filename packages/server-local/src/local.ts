@@ -1,12 +1,12 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
+import { listenWithFallback } from '@epicenter/server';
+import type { AuthConfig } from '@epicenter/server/sync';
+import { createSyncPlugin } from '@epicenter/server/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createRemoteSessionValidator } from './auth/local-auth';
-import { listenWithFallback } from '@epicenter/server';
-import type { AuthConfig } from '@epicenter/server/sync';
-import { createSyncPlugin } from '@epicenter/server/sync';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
 

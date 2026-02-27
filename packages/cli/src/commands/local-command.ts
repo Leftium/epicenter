@@ -1,5 +1,5 @@
-import { join } from 'node:path';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Argv, CommandModule } from 'yargs';
 import { discoverWorkspaces, resolveWorkspace } from '../discovery';
 import { outputError } from '../format-output';
@@ -41,7 +41,8 @@ function buildLocalStartCommand(home: string) {
 				.option('workspace', {
 					alias: 'w',
 					type: 'string' as const,
-					description: 'Load only this workspace ID (run single-workspace mode)',
+					description:
+						'Load only this workspace ID (run single-workspace mode)',
 				})
 				.option('remote', {
 					type: 'string' as const,
@@ -68,9 +69,7 @@ function buildLocalStartCommand(home: string) {
 		}) => {
 			if (argv.watch) {
 				// Re-exec with bun --watch, stripping --watch/-W to avoid recursion
-				const args = process.argv.filter(
-					(a) => a !== '--watch' && a !== '-W',
-				);
+				const args = process.argv.filter((a) => a !== '--watch' && a !== '-W');
 				const proc = Bun.spawn(['bun', '--watch', ...args], {
 					stdio: ['inherit', 'inherit', 'inherit'],
 				});
@@ -191,7 +190,9 @@ function buildLocalStatusCommand() {
 				workspaces?: string[];
 			};
 
-			console.log(`Server: ${info.name ?? 'Epicenter Local'} v${info.version ?? 'unknown'}`);
+			console.log(
+				`Server: ${info.name ?? 'Epicenter Local'} v${info.version ?? 'unknown'}`,
+			);
 			console.log(`Mode:   ${info.mode ?? 'unknown'}`);
 			console.log(`URL:    http://localhost:${argv.port}`);
 
@@ -240,7 +241,9 @@ function buildLocalStopCommand(home: string) {
 				console.log(`Sent SIGTERM to local server (PID ${pid}).`);
 			} catch (err) {
 				const isNoSuchProcess =
-					err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ESRCH';
+					err instanceof Error &&
+					'code' in err &&
+					(err as NodeJS.ErrnoException).code === 'ESRCH';
 
 				if (isNoSuchProcess) {
 					console.log(

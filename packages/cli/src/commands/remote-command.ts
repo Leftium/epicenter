@@ -1,5 +1,6 @@
-import { join } from 'node:path';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createRemoteServer } from '@epicenter/server-remote';
 import type { Argv, CommandModule } from 'yargs';
 
 const DEFAULT_REMOTE_PORT = 3914;
@@ -34,9 +35,6 @@ function buildRemoteStartCommand(home: string) {
 				description: 'Port to run the server on',
 			}),
 		handler: async (argv: { port: number }) => {
-			// @ts-expect-error — dependency added in Step 10, lazy-loaded at runtime
-			const { createRemoteServer } = await import('@epicenter/server-remote');
-
 			const server = createRemoteServer({ port: argv.port });
 			server.start();
 
@@ -100,7 +98,9 @@ function buildRemoteStatusCommand() {
 				mode?: string;
 			};
 
-			console.log(`Server: ${info.name ?? 'Epicenter Remote'} v${info.version ?? 'unknown'}`);
+			console.log(
+				`Server: ${info.name ?? 'Epicenter Remote'} v${info.version ?? 'unknown'}`,
+			);
 			console.log(`Mode:   ${info.mode ?? 'unknown'}`);
 			console.log(`URL:    ${argv.url}`);
 		},

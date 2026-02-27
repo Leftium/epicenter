@@ -9,8 +9,8 @@ import {
  * Provider API base URLs.
  *
  * Maps each supported provider to its real API endpoint.
- * OpenCode sends requests to `/proxy/{provider}/*` on the hub,
- * and the hub forwards them to these URLs with the real API key.
+ * OpenCode sends requests to `/proxy/{provider}/*` on the remote server,
+ * and the remote server forwards them to these URLs with the real API key.
  */
 const PROVIDER_BASE_URLS: Partial<Record<SupportedProvider, string>> = {
 	openai: 'https://api.openai.com',
@@ -34,10 +34,10 @@ export type ProxyPluginConfig = {
 /**
  * Create an Elysia plugin that provides provider-compatible reverse proxy endpoints.
  *
- * The proxy allows OpenCode instances to call LLM providers through the hub
+ * The proxy allows OpenCode instances to call LLM providers through the remote server
  * without having direct access to API keys. OpenCode sends requests to
- * `{hubUrl}/proxy/{provider}/...` with a session token as the Authorization header.
- * The hub validates the session, resolves the real API key from the operator's
+ * `{remoteUrl}/proxy/{provider}/...` with a session token as the Authorization header.
+ * The remote server validates the session, resolves the real API key from the operator's
  * environment variable, and forwards the request unchanged to the real provider API.
  *
  * Registers routes:
@@ -52,7 +52,7 @@ export type ProxyPluginConfig = {
  *   .use(createProxyPlugin());
  *
  * // OpenCode calls: POST /proxy/anthropic/v1/messages
- * // Hub: validates session → reads ANTHROPIC_API_KEY env var → forwards to api.anthropic.com/v1/messages
+ * // Remote server: validates session → reads ANTHROPIC_API_KEY env var → forwards to api.anthropic.com/v1/messages
  * ```
  */
 export function createProxyPlugin(config?: ProxyPluginConfig) {

@@ -92,9 +92,9 @@ function createAuthGuardPlugin(remoteUrl?: string) {
  *
  * The local server is the middle tier in the three-tier topology: one sidecar
  * process per device (embedded in the Tauri app or run standalone). It sits
- * between the SPA/webview on the same machine and the shared hub in the cloud.
+ * between the SPA/webview on the same machine and the shared remote server in the cloud.
  *
- *   Hub (cloud)
+ *   Remote Server (cloud)
  *   +-----------------------------------------+
  *   |  Auth, AI proxy, AI streaming, Yjs relay |
  *   +-----------------------------------------+
@@ -125,26 +125,26 @@ function createAuthGuardPlugin(remoteUrl?: string) {
  *   same machine (sub-millisecond round-trip).
  *
  * What the local server does NOT do:
- * - AI streaming: the SPA sends AI requests directly to the hub's `/ai/chat`
+ * - AI streaming: the SPA sends AI requests directly to the remote server's `/ai/chat`
  *   endpoint; the local server is not involved.
  * - Auth issuance: sessions and JWT/JWKS are issued exclusively by Better Auth
- *   on the hub. The local server only validates tokens — it calls the hub's
+ *   on the remote server. The local server only validates tokens — it calls the remote server's
  *   `/auth/get-session` endpoint (configured via `remoteUrl`) and caches results
  *   for 5 minutes.
  *
  * Two sync scopes:
  * 1. Local relay (always active): SPA <-> local server on the same machine,
  *    via `/rooms/*` WebSocket. Latency is sub-millisecond.
- * 2. Hub sync (Phase 4, not yet wired): local server <-> hub, enabled by the
- *    `--hub` flag. Propagates persisted Y.Doc updates across devices through
- *    the hub's ephemeral Yjs relay.
+ * 2. Remote server sync (Phase 4, not yet wired): local server <-> remote server,
+ *    enabled by the `--remote` flag. Propagates persisted Y.Doc updates across
+ *    devices through the remote server's ephemeral Yjs relay.
  *
  * @example
  * ```typescript
  * // Local server with auth (production)
  * createLocalServer({
  *   clients: [blogClient],
- *   remoteUrl: 'https://hub.example.com',
+ *   remoteUrl: 'https://remote.example.com',
  *   allowedOrigins: ['tauri://localhost'],
  * }).start();
  *

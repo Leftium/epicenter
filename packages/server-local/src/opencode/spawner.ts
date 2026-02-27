@@ -63,16 +63,16 @@ export type OpenCodeProcessConfig = {
 	appDataDir: string;
 
 	/**
-	 * Hub server URL for provider proxy routing.
+	 * Remote server URL for provider proxy routing.
 	 *
 	 * Passed through to `generateOpenCodeConfigContent`.
 	 */
-	hubUrl: string;
+	remoteUrl: string;
 
 	/**
 	 * Better Auth session token.
 	 *
-	 * Used as the `apiKey` for all providers. The hub proxy validates
+	 * Used as the `apiKey` for all providers. The remote server proxy validates
 	 * this token and swaps it for the real API key.
 	 */
 	sessionToken: string;
@@ -131,7 +131,7 @@ export type OpenCodeProcess = {
 	 * @param newConfig - Optional partial config overrides (e.g., new sessionToken).
 	 */
 	restart(
-		newConfig?: Partial<Pick<OpenCodeProcessConfig, 'sessionToken' | 'hubUrl'>>,
+		newConfig?: Partial<Pick<OpenCodeProcessConfig, 'sessionToken' | 'remoteUrl'>>,
 	): Promise<void>;
 
 	/** Whether the OpenCode process is currently running. */
@@ -152,11 +152,11 @@ export type OpenCodeProcess = {
 	 * configuration without restarting the process. Useful for
 	 * session token refresh.
 	 *
-	 * @param configOptions - New config generation options (hubUrl + sessionToken).
+	 * @param configOptions - New config generation options (remoteUrl + sessionToken).
 	 * @returns true if the config was updated successfully, false otherwise.
 	 */
 	updateConfig(
-		configOptions: Pick<GenerateConfigOptions, 'hubUrl' | 'sessionToken'>,
+		configOptions: Pick<GenerateConfigOptions, 'remoteUrl' | 'sessionToken'>,
 	): Promise<boolean>;
 };
 
@@ -172,15 +172,15 @@ const DEFAULT_BINARY = 'opencode';
  * from any user-installed OpenCode.
  *
  * Provider configuration is injected via `OPENCODE_CONFIG_CONTENT` at
- * spawn time. Each provider's `baseURL` points to the hub's proxy
- * (`{hubUrl}/proxy/{provider}`), and the `apiKey` is the session token.
- * Keys never leave the hub.
+ * spawn time. Each provider's `baseURL` points to the remote server's proxy
+ * (`{remoteUrl}/proxy/{provider}`), and the `apiKey` is the session token.
+ * Keys never leave the remote server.
  *
  * @example
  * ```typescript
  * const opencode = createOpenCodeProcess({
  *   appDataDir: '/Users/me/Library/Application Support/Epicenter',
- *   hubUrl: 'http://localhost:3913',
+ *   remoteUrl: 'http://localhost:3913',
  *   sessionToken: 'ses_abc123...',
  * });
  *
@@ -189,7 +189,7 @@ const DEFAULT_BINARY = 'opencode';
  *
  * // Later: refresh token without restart
  * await opencode.updateConfig({
- *   hubUrl: 'http://localhost:3913',
+ *   remoteUrl: 'http://localhost:3913',
  *   sessionToken: 'ses_newtoken...',
  * });
  *
@@ -201,7 +201,7 @@ export function createOpenCodeProcess(
 	config: OpenCodeProcessConfig,
 ): OpenCodeProcess {
 	const { appDataDir, binary = DEFAULT_BINARY, env: extraEnv = {} } = config;
-	let { hubUrl, sessionToken } = config;
+	let { remoteUrl, sessionToken } = config;
 	const port = config.port ?? DEFAULT_PORT;
 	const paths = xdgPaths(appDataDir);
 
@@ -222,7 +222,7 @@ export function createOpenCodeProcess(
 			]);
 
 			const configContent = generateOpenCodeConfigContent({
-				hubUrl,
+				remoteUrl,
 				sessionToken,
 			});
 
@@ -262,7 +262,7 @@ export function createOpenCodeProcess(
 		},
 
 		async restart(newConfig) {
-			if (newConfig?.hubUrl) hubUrl = newConfig.hubUrl;
+			if (newConfig?.remoteUrl) remoteUrl = newConfig.remoteUrl;
 			if (newConfig?.sessionToken) sessionToken = newConfig.sessionToken;
 
 			await this.stop();
@@ -278,7 +278,7 @@ export function createOpenCodeProcess(
 
 			const { generateOpenCodeConfig } = await import('./config');
 			const newConfig = generateOpenCodeConfig({
-				hubUrl: configOptions.hubUrl,
+				remoteUrl: configOptions.remoteUrl,
 				sessionToken: configOptions.sessionToken,
 			});
 

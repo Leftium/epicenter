@@ -21,12 +21,12 @@ import {
  * the API key, creates the appropriate TanStack AI adapter, calls `chat()`,
  * and streams the response back as SSE.
  *
- * This plugin runs on the hub server only — the SPA sends AI requests to
- * the hub's `/ai/chat` endpoint, never to the local sidecar.
+ * This plugin runs on the remote server only — the SPA sends AI requests to
+ * the remote server's `/ai/chat` endpoint, never to the local sidecar.
  *
  * This is a generic relay — no app-specific tools or system prompts are
  * baked in. Apps that need tools should run `chat()` client-side and use
- * the hub's `/proxy/:provider/*` endpoint for operator-key API access.
+ * the remote server's `/proxy/:provider/*` endpoint for operator-key API access.
  *
  * **API key resolution chain:**
  * 1. `x-provider-api-key` header (per-request BYOK — user's own billing)

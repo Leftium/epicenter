@@ -5,7 +5,7 @@ import { Elysia } from 'elysia';
 /**
  * Configuration for the Better Auth Elysia plugin.
  *
- * The auth plugin provides session-based authentication for the hub server.
+ * The auth plugin provides session-based authentication for the remote server.
  * It supports both cookie-based auth (browser) and Bearer token auth (desktop/API clients).
  */
 export type AuthPluginConfig = {
@@ -63,7 +63,7 @@ export type AuthPluginConfig = {
  * Create the Better Auth instance from config.
  *
  * Separated from the Elysia plugin so callers can access
- * `auth.api.getSession()` for token validation (e.g., local server → hub).
+ * `auth.api.getSession()` for token validation (e.g., local server → remote).
  *
  * @example
  * ```typescript
@@ -127,7 +127,7 @@ export function createBetterAuth(config: AuthPluginConfig) {
  * const app = new Elysia()
  *   .use(createAuthPlugin({
  *     database: new Database('auth.db'),
- *     secret: 'hub-secret',
+ *     secret: 'remote-secret',
  *     trustedOrigins: ['tauri://localhost'],
  *   }))
  *   .get('/me', ({ user }) => user, { auth: true })

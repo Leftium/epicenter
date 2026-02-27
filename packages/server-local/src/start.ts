@@ -6,7 +6,7 @@
  * - Workspace API — RESTful CRUD for workspace tables, extensions, and actions
  *   (pass workspace clients to `createLocalServer` to activate these routes)
  *
- * The local server does NOT handle AI — all AI goes through the hub.
+ * The local server does NOT handle AI — all AI goes through the remote server.
  *
  * Usage:
  *   bun packages/server-local/src/start.ts
@@ -27,7 +27,7 @@ const { port } = server.start();
 
 console.log(`Epicenter LOCAL server running on http://localhost:${port}`);
 console.log(`  Sync:    ws://localhost:${port}/rooms/{room}`);
-console.log(`  (No AI — all AI goes through the hub)`);
+console.log(`  (No AI — all AI goes through the remote server)`);
 
 process.on('SIGINT', async () => {
 	console.log('\nShutting down...');

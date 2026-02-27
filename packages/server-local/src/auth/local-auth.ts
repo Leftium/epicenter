@@ -13,7 +13,7 @@
  * @example
  * ```typescript
  * const validate = createRemoteSessionValidator({
- *   remoteUrl: 'https://hub.example.com',
+ *   remoteUrl: 'https://remote.example.com',
  *   cacheTtlMs: 5 * 60 * 1000, // 5 minutes
  * });
  *
@@ -36,7 +36,7 @@ type CacheEntry = {
 
 export type RemoteSessionValidatorConfig = {
 	/**
-	 * The remote server URL (e.g., 'https://hub.example.com' or 'http://localhost:3913').
+	 * The remote server URL (e.g., 'https://remote.example.com' or 'http://localhost:3913').
 	 *
 	 * The local server calls `{remoteUrl}/auth/get-session` to validate tokens.
 	 */

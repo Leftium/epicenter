@@ -1,22 +1,22 @@
 import { SUPPORTED_PROVIDERS, type SupportedProvider } from '@epicenter/server';
 
 /**
- * Provider API base URLs for the hub proxy.
+ * Provider API base URLs for the remote server proxy.
  *
- * Maps each supported provider to its proxy path on the hub server.
- * OpenCode calls `{hubUrl}/proxy/{provider}` instead of the real
- * provider API, and the hub injects the real API key on the way through.
+ * Maps each supported provider to its proxy path on the remote server.
+ * OpenCode calls `{remoteUrl}/proxy/{provider}` instead of the real
+ * provider API, and the remote server injects the real API key on the way through.
  */
-function proxyBaseUrl(hubUrl: string, provider: SupportedProvider): string {
-	return `${hubUrl}/proxy/${provider}`;
+function proxyBaseUrl(remoteUrl: string, provider: SupportedProvider): string {
+	return `${remoteUrl}/proxy/${provider}`;
 }
 
 /**
  * OpenCode provider configuration for a single provider.
  *
  * The `apiKey` field carries the session token (not a real API key).
- * The hub proxy validates this token and swaps it for the real key.
- * The `baseURL` points to the hub's proxy endpoint for this provider.
+ * The remote server proxy validates this token and swaps it for the real key.
+ * The `baseURL` points to the remote server's proxy endpoint for this provider.
  */
 type ProviderConfig = {
 	options: {
@@ -39,19 +39,19 @@ export type OpenCodeConfig = {
 
 export type GenerateConfigOptions = {
 	/**
-	 * Hub server URL (e.g., `http://localhost:3913` or `https://hub.epicenter.so`).
+	 * Remote server URL (e.g., `http://localhost:3913` or `https://hub.epicenter.so`).
 	 *
-	 * Each provider's `baseURL` will be set to `{hubUrl}/proxy/{provider}`,
-	 * routing all LLM requests through the hub's proxy.
+	 * Each provider's `baseURL` will be set to `{remoteUrl}/proxy/{provider}`,
+	 * routing all LLM requests through the remote server's proxy.
 	 */
-	hubUrl: string;
+	remoteUrl: string;
 
 	/**
 	 * Better Auth session token.
 	 *
-	 * Injected as the `apiKey` for every provider. The hub proxy validates
+	 * Injected as the `apiKey` for every provider. The remote server proxy validates
 	 * this token and swaps it for the real API key before forwarding.
-	 * Keys never leave the hub.
+	 * Keys never leave the remote server.
 	 */
 	sessionToken: string;
 
@@ -65,18 +65,18 @@ export type GenerateConfigOptions = {
 };
 
 /**
- * Generate the OpenCode configuration object for hub proxy routing.
+ * Generate the OpenCode configuration object for remote server proxy routing.
  *
- * Creates a config where every provider's `baseURL` points to the hub's
- * reverse proxy (`{hubUrl}/proxy/{provider}`) and every provider's `apiKey`
- * is the session token. The hub validates the token, resolves the real API
+ * Creates a config where every provider's `baseURL` points to the remote server's
+ * reverse proxy (`{remoteUrl}/proxy/{provider}`) and every provider's `apiKey`
+ * is the session token. The remote server validates the token, resolves the real API
  * key from the environment variable, and forwards the request to the real
  * provider API.
  *
  * @example
  * ```typescript
  * const config = generateOpenCodeConfig({
- *   hubUrl: 'http://localhost:3913',
+ *   remoteUrl: 'http://localhost:3913',
  *   sessionToken: 'ses_abc123...',
  * });
  *
@@ -94,7 +94,7 @@ export type GenerateConfigOptions = {
 export function generateOpenCodeConfig(
 	options: GenerateConfigOptions,
 ): OpenCodeConfig {
-	const { hubUrl, sessionToken, providers = SUPPORTED_PROVIDERS } = options;
+	const { remoteUrl, sessionToken, providers = SUPPORTED_PROVIDERS } = options;
 
 	const providerEntries: Record<string, ProviderConfig> = {};
 
@@ -102,7 +102,7 @@ export function generateOpenCodeConfig(
 		providerEntries[provider] = {
 			options: {
 				apiKey: sessionToken,
-				baseURL: proxyBaseUrl(hubUrl, provider),
+				baseURL: proxyBaseUrl(remoteUrl, provider),
 			},
 		};
 	}
@@ -120,7 +120,7 @@ export function generateOpenCodeConfig(
  * @example
  * ```typescript
  * const configJson = generateOpenCodeConfigContent({
- *   hubUrl: 'http://localhost:3913',
+ *   remoteUrl: 'http://localhost:3913',
  *   sessionToken: 'ses_abc123...',
  * });
  *

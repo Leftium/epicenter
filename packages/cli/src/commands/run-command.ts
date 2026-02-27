@@ -20,14 +20,14 @@ export function buildRunCommand(home: string) {
 					default: 4000,
 					describe: 'Port to run on',
 				})
-				.option('hub', {
+				.option('remote', {
 					type: 'string' as const,
-					describe: 'Hub URL for Yjs sync (e.g. wss://hub.example.com)',
+					describe: 'Remote server URL for sync and auth (e.g. wss://remote.example.com)',
 				}),
 		handler: async (argv: {
 			'workspace-id': string;
 			port: number;
-			hub?: string;
+			remote?: string;
 		}) => {
 			const wsId = argv['workspace-id'];
 			const wsPath = join(workspacesDir(home), wsId);
@@ -45,13 +45,13 @@ export function buildRunCommand(home: string) {
 			const server = createLocalServer({
 				clients: [client],
 				port: argv.port,
-				...(argv.hub ? { hubUrl: argv.hub } : {}),
+				...(argv.remote ? { remoteUrl: argv.remote } : {}),
 			});
 			server.start();
 
 			console.log(`Running ${wsId} on http://localhost:${argv.port}`);
-			if (argv.hub) {
-				console.log(`Syncing to hub: ${argv.hub}`);
+			if (argv.remote) {
+				console.log(`Syncing to remote: ${argv.remote}`);
 			}
 			console.log(`API docs: http://localhost:${argv.port}/openapi\n`);
 

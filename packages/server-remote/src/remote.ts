@@ -72,7 +72,7 @@ export type RemoteServerConfig = {
  *   the last client leaves. The local server holds the persisted source of truth.
  *
  * Cross-device sync (Phase 4, not yet wired):
- * Local servers will connect to the remote server as Yjs clients (via `--hub` flag),
+ * Local servers will connect to the remote server as Yjs clients (via `--remote` flag),
  * so that edits on Device A propagate to Device B through the remote relay.
  * The remote server itself still holds no durable state; it is a pure relay.
  *

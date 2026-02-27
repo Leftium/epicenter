@@ -18,7 +18,11 @@ export {
 	getDiscoveredDevices,
 } from './discovery';
 export { createHubServer, type HubServerConfig } from './hub';
-export { createLocalServer, type LocalServerConfig } from './local';
+export {
+	createLocalServer,
+	type LocalApp,
+	type LocalServerConfig,
+} from './local';
 export {
 	createOpenCodeProcess,
 	type GenerateConfigOptions,
@@ -29,5 +33,5 @@ export {
 	type OpenCodeProcessConfig,
 } from './opencode';
 export { createProxyPlugin, type ProxyPluginConfig } from './proxy';
-export { DEFAULT_PORT } from './server';
+export { DEFAULT_PORT, listenWithFallback } from './server';
 export { createWorkspacePlugin } from './workspace';

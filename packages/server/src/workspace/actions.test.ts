@@ -1,30 +1,62 @@
 /**
- * Actions Router Tests
+ * Actions Plugin Tests
  *
- * Verifies HTTP routing for query and mutation actions, including nested action trees
- * and input validation behavior. These tests protect the contract between action
- * definitions and the generated server endpoints.
+ * Verifies HTTP routing for query and mutation actions via static per-action
+ * routes registered by createActionsPlugin. Tests cover single and multi-workspace
+ * scenarios, nested action trees, input validation, and OpenAPI metadata.
  *
  * Key behaviors:
  * - Query/mutation actions map to correct HTTP methods and response payloads.
+ * - Per-action routes get individual OpenAPI metadata with namespace tags.
  * - Action path discovery produces expected flattened route paths.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { defineMutation, defineQuery } from '@epicenter/workspace';
+import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import {
+	createWorkspace,
+	defineMutation,
+	defineQuery,
+	defineTable,
+	defineWorkspace,
+} from '@epicenter/workspace';
+import { type } from 'arktype';
+import { Elysia } from 'elysia';
 import Type from 'typebox';
-import { collectActionPaths, createActionsRouter } from './actions';
+import { collectActionPaths, createActionsPlugin } from './actions';
 
-describe('createActionsRouter', () => {
+function makeWorkspaceWithActions(
+	id: string,
+	actions: () => Record<string, any>,
+) {
+	return createWorkspace(
+		defineWorkspace({
+			id,
+			tables: {
+				_dummy: defineTable(type({ id: 'string', _v: '1' })),
+			},
+		}),
+	).withActions(actions);
+}
+
+function buildApp(clients: AnyWorkspaceClient[]) {
+	const workspaces: Record<string, AnyWorkspaceClient> = {};
+	for (const client of clients) {
+		workspaces[client.id] = client;
+	}
+	return new Elysia().use(createActionsPlugin(workspaces));
+}
+
+describe('createActionsPlugin', () => {
 	test('creates routes for flat actions', async () => {
-		const actions = {
-			ping: defineQuery({
-				handler: () => 'pong',
-			}),
-		};
+		const client = makeWorkspaceWithActions('ws', () => ({
+			ping: defineQuery({ handler: () => 'pong' }),
+		}));
 
-		const app = createActionsRouter(actions);
-		const response = await app.handle(new Request('http://test/actions/ping'));
+		const app = buildApp([client]);
+		const response = await app.handle(
+			new Request('http://test/ws/actions/ping'),
+		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
@@ -32,17 +64,15 @@ describe('createActionsRouter', () => {
 	});
 
 	test('creates routes for nested actions', async () => {
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			posts: {
-				list: defineQuery({
-					handler: () => ['post1', 'post2'],
-				}),
+				list: defineQuery({ handler: () => ['post1', 'post2'] }),
 			},
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/posts/list'),
+			new Request('http://test/ws/actions/posts/list'),
 		);
 		const body = await response.json();
 
@@ -51,15 +81,13 @@ describe('createActionsRouter', () => {
 	});
 
 	test('query actions respond to GET requests', async () => {
-		const actions = {
-			getStatus: defineQuery({
-				handler: () => ({ status: 'ok' }),
-			}),
-		};
+		const client = makeWorkspaceWithActions('ws', () => ({
+			getStatus: defineQuery({ handler: () => ({ status: 'ok' }) }),
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/getStatus', { method: 'GET' }),
+			new Request('http://test/ws/actions/getStatus', { method: 'GET' }),
 		);
 
 		expect(response.status).toBe(200);
@@ -67,18 +95,18 @@ describe('createActionsRouter', () => {
 
 	test('mutation actions respond to POST requests', async () => {
 		let called = false;
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			doSomething: defineMutation({
 				handler: () => {
 					called = true;
 					return { done: true };
 				},
 			}),
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/doSomething', { method: 'POST' }),
+			new Request('http://test/ws/actions/doSomething', { method: 'POST' }),
 		);
 		const body = await response.json();
 
@@ -89,7 +117,7 @@ describe('createActionsRouter', () => {
 
 	test('mutation actions accept JSON body input', async () => {
 		let capturedInput: unknown = null;
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			create: defineMutation({
 				input: Type.Object({ title: Type.String() }),
 				handler: (input) => {
@@ -97,11 +125,11 @@ describe('createActionsRouter', () => {
 					return { id: '123', title: input.title };
 				},
 			}),
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/create', {
+			new Request('http://test/ws/actions/create', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ title: 'Hello World' }),
@@ -115,16 +143,16 @@ describe('createActionsRouter', () => {
 	});
 
 	test('validates input and returns 422 for invalid data', async () => {
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			create: defineMutation({
 				input: Type.Object({ title: Type.String(), count: Type.Number() }),
 				handler: ({ title, count }) => ({ title, count }),
 			}),
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/create', {
+			new Request('http://test/ws/actions/create', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ title: 'Hello', count: 'not-a-number' }),
@@ -135,18 +163,18 @@ describe('createActionsRouter', () => {
 	});
 
 	test('async handlers resolve and return data payloads', async () => {
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			asyncQuery: defineQuery({
 				handler: async () => {
 					await new Promise((resolve) => setTimeout(resolve, 10));
 					return { async: true };
 				},
 			}),
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/asyncQuery'),
+			new Request('http://test/ws/actions/asyncQuery'),
 		);
 		const body = await response.json();
 
@@ -154,42 +182,77 @@ describe('createActionsRouter', () => {
 		expect(body).toEqual({ data: { async: true } });
 	});
 
-	test('custom prefix overrides default /actions base path', async () => {
-		const actions = {
-			test: defineQuery({
-				handler: () => 'ok',
-			}),
-		};
-
-		const app = createActionsRouter(actions, '/api');
-		const response = await app.handle(new Request('http://test/api/test'));
-		const body = await response.json();
-
-		expect(response.status).toBe(200);
-		expect(body).toEqual({ data: 'ok' });
-	});
-
 	test('deeply nested actions create correct routes', async () => {
-		const actions = {
+		const client = makeWorkspaceWithActions('ws', () => ({
 			api: {
 				v1: {
 					users: {
-						list: defineQuery({
-							handler: () => [],
-						}),
+						list: defineQuery({ handler: () => [] }),
 					},
 				},
 			},
-		};
+		}));
 
-		const app = createActionsRouter(actions);
+		const app = buildApp([client]);
 		const response = await app.handle(
-			new Request('http://test/actions/api/v1/users/list'),
+			new Request('http://test/ws/actions/api/v1/users/list'),
 		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(body).toEqual({ data: [] });
+	});
+
+	test('returns 404 for workspace without the requested action', async () => {
+		const wsA = makeWorkspaceWithActions('a', () => ({
+			ping: defineQuery({ handler: () => 'pong' }),
+		}));
+		const wsB = makeWorkspaceWithActions('b', () => ({
+			sync: defineMutation({ handler: () => 'synced' }),
+		}));
+
+		const app = buildApp([wsA, wsB]);
+
+		// Workspace B doesn't have 'ping'
+		const response = await app.handle(
+			new Request('http://test/b/actions/ping'),
+		);
+
+		expect(response.status).toBe(404);
+	});
+
+	test('routes are shared across workspaces with the same action paths', async () => {
+		const wsA = makeWorkspaceWithActions('a', () => ({
+			ping: defineQuery({ handler: () => 'pong-a' }),
+		}));
+		const wsB = makeWorkspaceWithActions('b', () => ({
+			ping: defineQuery({ handler: () => 'pong-b' }),
+		}));
+
+		const app = buildApp([wsA, wsB]);
+
+		const responseA = await app.handle(
+			new Request('http://test/a/actions/ping'),
+		);
+		const responseB = await app.handle(
+			new Request('http://test/b/actions/ping'),
+		);
+
+		expect((await responseA.json()).data).toBe('pong-a');
+		expect((await responseB.json()).data).toBe('pong-b');
+	});
+
+	test('returns 404 for nonexistent workspace', async () => {
+		const client = makeWorkspaceWithActions('ws', () => ({
+			ping: defineQuery({ handler: () => 'pong' }),
+		}));
+
+		const app = buildApp([client]);
+		const response = await app.handle(
+			new Request('http://test/nonexistent/actions/ping'),
+		);
+
+		expect(response.status).toBe(404);
 	});
 });
 

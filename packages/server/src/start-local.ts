@@ -3,7 +3,8 @@
  *
  * Starts the Epicenter local server — the per-device sidecar that provides:
  * - Sync relay (local) — fast sub-ms WebSocket sync between webview and Y.Doc
- * - Workspace API — RESTful CRUD for workspace tables and actions
+ * - Workspace API — RESTful CRUD for workspace tables, extensions, and actions
+ *   (pass workspace clients to `createLocalServer` to activate these routes)
  *
  * The local server does NOT handle AI — all AI goes through the hub.
  *
@@ -14,18 +15,15 @@
 
 import { createLocalServer } from './local';
 
-const port = Number.parseInt(process.env.PORT ?? '3913', 10);
-
 const server = createLocalServer({
 	clients: [],
-	port,
 	sync: {
 		onRoomCreated: (roomId) => console.log(`[Sync] Room created: ${roomId}`),
 		onRoomEvicted: (roomId) => console.log(`[Sync] Room evicted: ${roomId}`),
 	},
 });
 
-server.start();
+const { port } = server.start();
 
 console.log(`Epicenter LOCAL server running on http://localhost:${port}`);
 console.log(`  Sync:    ws://localhost:${port}/rooms/{room}`);

@@ -5,38 +5,52 @@ import type {
 } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 
+function resolveTable(
+	workspaces: Record<string, AnyWorkspaceClient>,
+	workspaceId: string,
+	tableName: string,
+): TableHelper<BaseRow> | undefined {
+	const workspace = workspaces[workspaceId];
+	if (!workspace) return undefined;
+	return (workspace.tables as Record<string, TableHelper<BaseRow>>)[tableName];
+}
+
 /**
  * Create an Elysia plugin that exposes tables as REST CRUD endpoints.
  *
- * Registers routes under `/tables/{tableName}` for each table in the workspace.
- * The workspace ID prefix is handled by the caller (via Elysia's prefix option).
- *
- * @example
- * ```typescript
- * const workspace = createWorkspace(definition);
- * const tablesPlugin = createTablesPlugin(workspace);
- * const app = new Elysia({ prefix: `/${workspace.id}` })
- *   .use(tablesPlugin);
- * ```
+ * Uses parameterized routes so Eden Treaty can infer the full type chain.
+ * The caller mounts this under `/:workspaceId` prefix.
  */
-export function createTablesPlugin(workspace: AnyWorkspaceClient) {
-	const app = new Elysia();
-
-	for (const [tableName, value] of Object.entries(workspace.tables)) {
-		const tableHelper = value as TableHelper<BaseRow>;
-
-		const tags = [workspace.id, 'tables'];
-		const tableRouter = new Elysia({
-			prefix: `/tables/${tableName}`,
-		});
-
-		tableRouter.get('/', () => tableHelper.getAllValid(), {
-			detail: { description: `List all ${tableName}`, tags },
-		});
-
-		tableRouter.get(
-			'/:id',
+export function createTablesPlugin(
+	workspaces: Record<string, AnyWorkspaceClient>,
+) {
+	return new Elysia({ prefix: '/:workspaceId/tables' })
+		.get(
+			'/:tableName',
 			({ params, status }) => {
+				const tableHelper = resolveTable(
+					workspaces,
+					params.workspaceId,
+					params.tableName,
+				);
+				if (!tableHelper)
+					return status('Not Found', { error: 'Table not found' });
+				return tableHelper.getAllValid();
+			},
+			{
+				detail: { description: 'List all rows in a table', tags: ['tables'] },
+			},
+		)
+		.get(
+			'/:tableName/:id',
+			({ params, status }) => {
+				const tableHelper = resolveTable(
+					workspaces,
+					params.workspaceId,
+					params.tableName,
+				);
+				if (!tableHelper)
+					return status('Not Found', { error: 'Table not found' });
 				const result = tableHelper.get(params.id);
 				if (result.status === 'not_found') return status('Not Found', result);
 				if (result.status === 'invalid')
@@ -44,13 +58,19 @@ export function createTablesPlugin(workspace: AnyWorkspaceClient) {
 				return result;
 			},
 			{
-				detail: { description: `Get ${tableName} by ID`, tags },
+				detail: { description: 'Get row by ID', tags: ['tables'] },
 			},
-		);
-
-		tableRouter.put(
-			'/:id',
+		)
+		.put(
+			'/:tableName/:id',
 			({ params, body, status }) => {
+				const tableHelper = resolveTable(
+					workspaces,
+					params.workspaceId,
+					params.tableName,
+				);
+				if (!tableHelper)
+					return status('Not Found', { error: 'Table not found' });
 				const result = tableHelper.parse(params.id, body);
 				if (result.status === 'invalid')
 					return status('Unprocessable Content', result);
@@ -58,13 +78,22 @@ export function createTablesPlugin(workspace: AnyWorkspaceClient) {
 				return result;
 			},
 			{
-				detail: { description: `Create or replace ${tableName} by ID`, tags },
+				detail: {
+					description: 'Create or replace row by ID',
+					tags: ['tables'],
+				},
 			},
-		);
-
-		tableRouter.patch(
-			'/:id',
+		)
+		.patch(
+			'/:tableName/:id',
 			({ params, body, status }) => {
+				const tableHelper = resolveTable(
+					workspaces,
+					params.workspaceId,
+					params.tableName,
+				);
+				if (!tableHelper)
+					return status('Not Found', { error: 'Table not found' });
 				const result = tableHelper.update(
 					params.id,
 					body as Record<string, unknown>,
@@ -75,16 +104,26 @@ export function createTablesPlugin(workspace: AnyWorkspaceClient) {
 				return result;
 			},
 			{
-				detail: { description: `Partial update ${tableName} by ID`, tags },
+				detail: {
+					description: 'Partial update row by ID',
+					tags: ['tables'],
+				},
+			},
+		)
+		.delete(
+			'/:tableName/:id',
+			({ params, status }) => {
+				const tableHelper = resolveTable(
+					workspaces,
+					params.workspaceId,
+					params.tableName,
+				);
+				if (!tableHelper)
+					return status('Not Found', { error: 'Table not found' });
+				return tableHelper.delete(params.id);
+			},
+			{
+				detail: { description: 'Delete row by ID', tags: ['tables'] },
 			},
 		);
-
-		tableRouter.delete('/:id', ({ params }) => tableHelper.delete(params.id), {
-			detail: { description: `Delete ${tableName} by ID`, tags },
-		});
-
-		app.use(tableRouter);
-	}
-
-	return app;
 }

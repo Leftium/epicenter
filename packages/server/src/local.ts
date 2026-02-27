@@ -4,12 +4,13 @@ import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createHubSessionValidator } from './auth/local-auth';
+import { listenWithFallback } from './server';
 import type { AuthConfig } from './sync/auth';
 import { createSyncPlugin } from './sync/plugin';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
 
-export { DEFAULT_PORT } from './server';
+export { DEFAULT_PORT, listenWithFallback } from './server';
 
 export type LocalServerConfig = {
 	/**
@@ -21,9 +22,10 @@ export type LocalServerConfig = {
 	clients: AnyWorkspaceClient[];
 
 	/**
-	 * Port to listen on.
+	 * Preferred port to listen on.
 	 *
 	 * Falls back to the `PORT` environment variable, then 3913.
+	 * If the port is taken, the OS assigns an available one.
 	 */
 	port?: number;
 
@@ -60,17 +62,84 @@ export type LocalServerConfig = {
 };
 
 /**
+ * Create an Elysia plugin for auth guard (if hubUrl configured).
+ *
+ * Separated into its own plugin so the type chain is not broken by conditionals.
+ */
+function createAuthGuardPlugin(hubUrl?: string) {
+	const plugin = new Elysia();
+	if (!hubUrl) return plugin;
+
+	const validateSession = createHubSessionValidator({ hubUrl });
+	plugin.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
+		if (path === '/') return;
+
+		const authHeader = request.headers.get('authorization');
+		if (!authHeader?.startsWith('Bearer ')) {
+			return status(401, 'Unauthorized: Bearer token required');
+		}
+
+		const token = authHeader.slice(7);
+		const result = await validateSession(token);
+
+		if (!result.valid) {
+			return status(401, 'Unauthorized: Invalid session token');
+		}
+	});
+	return plugin;
+}
+
+/**
  * Create an Epicenter local server.
  *
- * The local server runs on each desktop (as a Tauri sidecar process). It provides:
- * - Sync relay (local) — fast sub-ms WebSocket sync between webview and Y.Doc
- * - Workspace API — RESTful CRUD for workspace tables and actions
- * - CORS protection — only Tauri webview origin allowed by default
- * - Session token auth — validates against hub when hubUrl is configured
- * - OpenAPI docs
- * - Discovery root
+ * The local server is the middle tier in the three-tier topology: one sidecar
+ * process per device (embedded in the Tauri app or run standalone). It sits
+ * between the SPA/webview on the same machine and the shared hub in the cloud.
  *
- * The local server does NOT handle AI streaming — all AI goes through the hub.
+ *   Hub (cloud)
+ *   +-----------------------------------------+
+ *   |  Auth, AI proxy, AI streaming, Yjs relay |
+ *   +-----------------------------------------+
+ *          ^  cross-device Yjs sync (Phase 4)
+ *          |  AI requests
+ *          |
+ *   Local Server (this process, one per device)
+ *   +-----------------------------------------+
+ *   |  - Workspace CRUD (REST + action routes) |
+ *   |  - Extensions (filesystem projections)   |
+ *   |  - Actions (per-workspace endpoints)     |
+ *   |  - Persisted Y.Docs (workspace.yjs file) |
+ *   |  - Local Yjs relay (SPA <-> Y.Doc)       |
+ *   +-----------------------------------------+
+ *          |  sub-ms WebSocket sync (same machine)
+ *          v
+ *   SPA / WebView (Tauri or browser)
+ *
+ * What the local server DOES:
+ * - Workspace CRUD: read/write workspace configs, tables, and blobs (`/workspaces/*`)
+ * - Extensions: filesystem projections exposed as workspace tables
+ * - Actions: per-workspace HTTP endpoints generated from the workspace schema
+ * - Persisted Y.Docs: each workspace's Y.Doc is loaded from and saved to a
+ *   `workspace.yjs` file on disk. This is the authoritative source of truth
+ *   for that device.
+ * - Local Yjs relay: serves the `/rooms/*` WebSocket endpoint so the SPA's
+ *   in-memory Y.Doc stays in sync with the server's persisted Y.Doc on the
+ *   same machine (sub-millisecond round-trip).
+ *
+ * What the local server does NOT do:
+ * - AI streaming: the SPA sends AI requests directly to the hub's `/ai/chat`
+ *   endpoint; the local server is not involved.
+ * - Auth issuance: sessions and JWT/JWKS are issued exclusively by Better Auth
+ *   on the hub. The local server only validates tokens — it calls the hub's
+ *   `/auth/get-session` endpoint (configured via `hubUrl`) and caches results
+ *   for 5 minutes.
+ *
+ * Two sync scopes:
+ * 1. Local relay (always active): SPA <-> local server on the same machine,
+ *    via `/rooms/*` WebSocket. Latency is sub-millisecond.
+ * 2. Hub sync (Phase 4, not yet wired): local server <-> hub, enabled by the
+ *    `--hub` flag. Propagates persisted Y.Doc updates across devices through
+ *    the hub's ephemeral Yjs relay.
  *
  * @example
  * ```typescript
@@ -101,11 +170,6 @@ export function createLocalServer(config: LocalServerConfig) {
 		return collectActionPaths(client.actions).map((p) => `${client.id}/${p}`);
 	});
 
-	// Session validator (if hub URL is configured)
-	const validateSession = config.hubUrl
-		? createHubSessionValidator({ hubUrl: config.hubUrl })
-		: undefined;
-
 	const app = new Elysia()
 		.use(
 			cors({
@@ -125,29 +189,8 @@ export function createLocalServer(config: LocalServerConfig) {
 					},
 				},
 			}),
-		);
-
-	// Auth guard — validate session token against hub on all routes (except discovery root)
-	if (validateSession) {
-		app.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
-			// Allow discovery root without auth
-			if (path === '/') return;
-
-			const authHeader = request.headers.get('authorization');
-			if (!authHeader?.startsWith('Bearer ')) {
-				return status(401, 'Unauthorized: Bearer token required');
-			}
-
-			const token = authHeader.slice(7);
-			const result = await validateSession(token);
-
-			if (!result.valid) {
-				return status(401, 'Unauthorized: Invalid session token');
-			}
-		});
-	}
-
-	app
+		)
+		.use(createAuthGuardPlugin(config.hubUrl))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
 				createSyncPlugin({
@@ -174,27 +217,26 @@ export function createLocalServer(config: LocalServerConfig) {
 			mode: 'local' as const,
 			workspaces: Object.keys(workspaces),
 			actions: allActionPaths,
-		}));
-
-	if (clients.length > 0) {
-		app.use(
+		}))
+		.use(
 			new Elysia({ prefix: '/workspaces' }).use(createWorkspacePlugin(clients)),
 		);
-	}
 
-	const port = config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
+	const preferredPort =
+		config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
 	return {
 		app,
 
 		/**
-		 * Start listening on the configured port.
+		 * Start listening on the preferred port, falling back to an OS-assigned
+		 * port if it's already taken.
 		 *
 		 * Does not log or install signal handlers — the caller owns those concerns.
 		 */
 		start() {
-			app.listen(port);
-			return app.server;
+			const actualPort = listenWithFallback(app, preferredPort);
+			return { ...app.server!, port: actualPort };
 		},
 
 		/**
@@ -210,3 +252,5 @@ export function createLocalServer(config: LocalServerConfig) {
 		},
 	};
 }
+
+export type LocalApp = ReturnType<typeof createLocalServer>['app'];

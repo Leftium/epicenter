@@ -1,75 +1,102 @@
-import { type Actions, iterateActions } from '@epicenter/workspace';
-import { ParseError, Parser } from 'typebox/value';
 import type { CommandModule } from 'yargs';
-import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
+import { output, outputError } from './format-output';
+import { parseJsonInput, readStdinSync } from './parse-input';
 
 /**
- * Build yargs command configurations from an actions tree.
+ * Build a yargs command for running actions via HTTP.
  *
- * Iterates over all action definitions and creates CommandModule configs that can be
- * registered with yargs. Separates the concern of building command configs
- * from registering them, enabling cleaner CLI construction.
+ * Usage: epicenter <workspace> action <path> [json]
  *
- * @remarks
- * Actions use closure-based dependency injection - they capture their context
- * (tables, extensions, etc.) at definition time. The handler is called directly
- * with just the validated input.
- *
- * Yargs handles help text display (types, choices, descriptions, required flags).
- * TypeBox's Parser handles the actual validation pipeline: Clone → Default →
- * Convert → Clean → Assert. This means yargs coercion and TypeBox coercion
- * both run, but TypeBox is the single source of truth for validation.
- *
- * @example
- * ```typescript
- * const client = createWorkspace({ ... });
- * const actions = {
- *   posts: {
- *     getAll: defineQuery({ handler: () => client.tables.posts.getAllValid() }),
- *   },
- * };
- * const commands = buildActionCommands(actions);
- * for (const cmd of commands) {
- *   cli = cli.command(cmd);
- * }
- * ```
+ * The action path uses dot notation (e.g., "posts.create").
+ * Queries use GET, mutations use POST. The command determines
+ * the method based on whether JSON input is provided — if input
+ * is given, it's a POST (mutation); otherwise GET (query).
  */
-export function buildActionCommands(actions: Actions): CommandModule[] {
-	return [...iterateActions(actions)].map(([action, path]) => {
-		const commandPath = path.join(' ');
-		const description =
-			action.description ??
-			`${action.type === 'query' ? 'Query' : 'Mutation'}: ${path.join('.')}`;
+export function buildActionCommand(
+	baseUrl: string,
+	workspaceId: string,
+): CommandModule {
+	return {
+		command: 'action <path> [json]',
+		describe: 'Run an action (query or mutation)',
+		builder: (yargs) =>
+			yargs
+				.positional('path', {
+					type: 'string',
+					demandOption: true,
+					description: 'Action path (e.g., posts.getAll)',
+				})
+				.positional('json', {
+					type: 'string',
+					description: 'JSON input or @file (triggers mutation)',
+				})
+				.option('file', {
+					type: 'string',
+					description: 'Read input from file',
+				})
+				.option('mutation', {
+					type: 'boolean',
+					description: 'Force mutation (POST) even without input',
+					default: false,
+				}),
+		handler: async (argv) => {
+			const actionPath = (argv.path as string).replace(/\./g, '/');
+			const stdinContent = readStdinSync();
+			const hasInput =
+				argv.json !== undefined ||
+				argv.file !== undefined ||
+				stdinContent !== undefined;
 
-		const builder = action.input ? jsonSchemaToYargsOptions(action.input) : {};
+			// baseUrl is provided by the caller
+			const url = `${baseUrl}/workspaces/${workspaceId}/actions/${actionPath}`;
 
-		return {
-			command: commandPath,
-			describe: description,
-			builder,
-			handler: async (argv: Record<string, unknown>) => {
-				if (action.input) {
-					try {
-						const input = Parser(action.input, argv);
-						const output = await action(input);
-						console.log(JSON.stringify(output, null, 2));
-					} catch (error) {
-						if (error instanceof ParseError) {
-							console.error('Validation failed:');
-							for (const err of error.cause.errors) {
-								console.error(
-									`  - ${err.instancePath || 'input'}: ${err.message}`,
-								);
-							}
-							process.exit(1);
-						}
-						throw error;
+			if (hasInput || argv.mutation) {
+				// Mutation: POST with body
+				let body: unknown = undefined;
+				if (hasInput) {
+					const result = parseJsonInput({
+						positional: argv.json as string | undefined,
+						file: argv.file as string | undefined,
+						hasStdin: stdinContent !== undefined,
+						stdinContent,
+					});
+					if (!result.ok) {
+						outputError(result.error);
+						process.exitCode = 1;
+						return;
 					}
-				} else {
-					const output = await action();
-					console.log(JSON.stringify(output, null, 2));
+					body = result.data;
 				}
-			},
-		};
-	});
+
+				const response = await fetch(url, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: body !== undefined ? JSON.stringify(body) : undefined,
+				});
+
+				if (!response.ok) {
+					const text = await response.text();
+					outputError(`Action failed (${response.status}): ${text}`);
+					process.exitCode = 1;
+					return;
+				}
+
+				const data = await response.json();
+				output(data);
+			} else {
+				// Query: GET
+				const response = await fetch(url);
+
+				if (!response.ok) {
+					const text = await response.text();
+					outputError(`Action failed (${response.status}): ${text}`);
+					process.exitCode = 1;
+					return;
+				}
+
+				const data = await response.json();
+				output(data);
+			}
+		},
+	};
 }

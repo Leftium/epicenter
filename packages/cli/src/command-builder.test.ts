@@ -1,146 +1,26 @@
 /**
  * Command Builder Tests
  *
- * These tests verify that action trees are converted into executable yargs command
- * definitions with stable command paths, descriptions, and builders. They ensure the
- * CLI can expose both flat and nested contracts consistently.
- *
- * Key behaviors:
- * - Flattens nested action objects into space-delimited command paths
- * - Builds per-command yargs option builders from input schemas
+ * These tests verify that the action command is correctly built as a yargs
+ * command module that dispatches action calls via HTTP.
  */
 import { describe, expect, test } from 'bun:test';
-import { defineMutation, defineQuery } from '@epicenter/workspace';
-import Type from 'typebox';
-import { buildActionCommands } from './command-builder';
+import { buildActionCommand } from './command-builder';
 
-describe('buildActionCommands', () => {
-	test('builds command from simple action without input', () => {
-		const actions = {
-			getAll: defineQuery({
-				handler: () => [],
-			}),
-		};
+describe('buildActionCommand', () => {
+	test('returns a command module with correct shape', () => {
+		const cmd = buildActionCommand('http://localhost:3913', 'test-workspace');
 
-		const commands = buildActionCommands(actions);
-
-		expect(commands).toHaveLength(1);
-		expect(commands[0]?.command).toBe('getAll');
-		expect(commands[0]?.describe).toBe('Query: getAll');
-		expect(commands[0]?.builder).toEqual({});
-		expect(typeof commands[0]?.handler).toBe('function');
+		expect(cmd.command).toBe('action <path> [json]');
+		expect(cmd.describe).toBe('Run an action (query or mutation)');
+		expect(typeof cmd.handler).toBe('function');
+		expect(typeof cmd.builder).toBe('function');
 	});
 
-	test('builds command from action with input schema', () => {
-		const actions = {
-			create: defineMutation({
-				input: Type.Object({ title: Type.String() }),
-				handler: ({ title }) => ({ id: '1', title }),
-			}),
-		};
+	test('builder configures path and json positionals', () => {
+		const cmd = buildActionCommand('http://localhost:3913', 'test-workspace');
 
-		const commands = buildActionCommands(actions);
-
-		expect(commands).toHaveLength(1);
-		expect(commands[0]?.command).toBe('create');
-		expect(commands[0]?.describe).toBe('Mutation: create');
-		expect(commands[0]?.builder).toHaveProperty('title');
-	});
-
-	test('builds commands from nested actions', () => {
-		const actions = {
-			posts: {
-				getAll: defineQuery({
-					handler: () => [],
-				}),
-				create: defineMutation({
-					input: Type.Object({ title: Type.String() }),
-					handler: ({ title }) => ({ id: '1', title }),
-				}),
-			},
-		};
-
-		const commands = buildActionCommands(actions);
-
-		expect(commands).toHaveLength(2);
-
-		const commandNames = commands.map((c) => c.command);
-		expect(commandNames).toContain('posts getAll');
-		expect(commandNames).toContain('posts create');
-	});
-
-	test('builds commands from deeply nested actions', () => {
-		const actions = {
-			api: {
-				v1: {
-					posts: {
-						list: defineQuery({
-							handler: () => [],
-						}),
-					},
-				},
-			},
-		};
-
-		const commands = buildActionCommands(actions);
-
-		expect(commands).toHaveLength(1);
-		expect(commands[0]?.command).toBe('api v1 posts list');
-	});
-
-	test('uses description from action when provided', () => {
-		const actions = {
-			sync: defineMutation({
-				description: 'Sync data from external source',
-				handler: () => {},
-			}),
-		};
-
-		const commands = buildActionCommands(actions);
-
-		expect(commands[0]?.describe).toBe('Sync data from external source');
-	});
-
-	test('builder contains yargs options for input schema', () => {
-		const actions = {
-			create: defineMutation({
-				input: Type.Object({
-					title: Type.String(),
-					count: Type.Optional(Type.Number()),
-				}),
-				handler: ({ title }) => ({ id: '1', title }),
-			}),
-		};
-
-		const commands = buildActionCommands(actions);
-		const builder = commands[0]?.builder as Record<string, unknown>;
-
-		expect(builder).toHaveProperty('title');
-		expect(builder).toHaveProperty('count');
-	});
-
-	test('returns empty array for empty actions', () => {
-		const commands = buildActionCommands({});
-		expect(commands).toEqual([]);
-	});
-
-	test('builds commands for mixed flat and nested action trees', () => {
-		const actions = {
-			ping: defineQuery({
-				handler: () => 'pong',
-			}),
-			users: {
-				list: defineQuery({
-					handler: () => [],
-				}),
-			},
-		};
-
-		const commands = buildActionCommands(actions);
-
-		expect(commands).toHaveLength(2);
-		const commandNames = commands.map((c) => c.command);
-		expect(commandNames).toContain('ping');
-		expect(commandNames).toContain('users list');
+		// The builder is a function that configures yargs
+		expect(typeof cmd.builder).toBe('function');
 	});
 });

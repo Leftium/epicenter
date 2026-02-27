@@ -41,68 +41,84 @@ Services follow a three-layer architecture: **Service** → **Query** → **UI**
 
 Every service defines domain-specific errors using `createTaggedError` from wellcrafted. See the `create-tagged-error` skill for full API reference.
 
+### Two Clean Modes
+
+`.withMessage()` and call-site `message` are **mutually exclusive modes**, not a default-with-override:
+
 ```typescript
 import { createTaggedError } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
-// Basic pattern — .withMessage() is REQUIRED and always last
+// Mode 1: No .withMessage() — message REQUIRED at every call site
 export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError')
-		.withMessage(() => 'Something went wrong in MyService');
+	createTaggedError('MyServiceError');
 type MyServiceError = ReturnType<typeof MyServiceError>;
+
+MyServiceErr({ message: 'Something specific went wrong' })
+MyServiceErr({ message: `Failed to do X: ${extractErrorMessage(error)}` })
+
+// Mode 2: With .withMessage() — message SEALED by template, not in input type
+export const { RecorderBusyError, RecorderBusyErr } =
+	createTaggedError('RecorderBusyError')
+		.withMessage(() => 'A recording is already in progress');
+
+RecorderBusyErr()  // message is always "A recording is already in progress"
 ```
 
 ### What createTaggedError Returns
 
-`createTaggedError('Name')` returns a **builder**. You must call `.withMessage(fn)` to get the factory functions:
+`createTaggedError('Name')` returns a **builder**. You can use it directly (no `.withMessage()`) or chain `.withMessage(fn)` to seal the message:
 
 1. **`NameError`** - Constructor function for creating error objects
 2. **`NameErr`** - Helper that wraps the error in `Err()` for direct return
 
 ```typescript
-// These are equivalent:
-return Err(MyServiceError({}));
-return MyServiceErr({}); // Shorter form
+// Without .withMessage() — message required:
+return Err(MyServiceError({ message: 'Something failed' }));
+return MyServiceErr({ message: 'Something failed' }); // Shorter form
 
-// Message override for one-off cases:
-return MyServiceErr({ message: 'Custom override message' });
+// With .withMessage() — no message input:
+return Err(RecorderBusyError());
+return RecorderBusyErr(); // Shorter form
 ```
 
-### Adding Typed Context with .withContext()
+### Adding Typed Fields with .withFields()
 
-For errors that need structured metadata, chain `.withContext<T>()` before `.withMessage()`:
+For errors that need structured metadata, chain `.withFields<T>()`. Fields are flat on the error object (no nesting):
 
 ```typescript
-type ResponseContext = {
-	status: number; // HTTP status code
-};
-
 export const { ResponseError, ResponseErr } =
 	createTaggedError('ResponseError')
-		.withContext<ResponseContext>()
-		.withMessage(({ context }) => `HTTP ${context.status} response`);
+		.withFields<{ status: number }>()
+		.withMessage(({ status }) => `HTTP ${status} response`);
 
-// Usage: Provide context, message auto-computes
-return ResponseErr({
-	context: { status: 401 }, // TypeScript enforces this shape
-});
+// Usage: Provide fields, message auto-computes, sealed by template
+return ResponseErr({ status: 401 });
 // error.message → "HTTP 401 response"
+// error.status  → 401 (flat on the object)
 ```
 
 ### Error Type Examples from the Codebase
 
 ```typescript
-// Simple service error with static message
+// Static message, sealed — no input needed at call site
 export const { RecorderBusyError, RecorderBusyErr } = createTaggedError(
 	'RecorderBusyError',
 ).withMessage(() => 'A recording is already in progress');
+RecorderBusyErr()
 
-// HTTP errors with structured context
+// No .withMessage() — diverse messages, caller provides each time
+export const { FsServiceError, FsServiceErr } =
+	createTaggedError('FsServiceError');
+FsServiceErr({ message: `Failed to read '${path}': ${extractErrorMessage(e)}` })
+
+// Fields + sealed message — message computed from fields
 export const { ResponseError, ResponseErr } = createTaggedError(
 	'ResponseError',
 )
-	.withContext<{ status: number }>()
-	.withMessage(({ context }) => `HTTP ${context.status} response`);
+	.withFields<{ status: number }>()
+	.withMessage(({ status }) => `HTTP ${status} response`);
+ResponseErr({ status: 404 })
 
 // Multiple related errors forming a discriminated union
 export const { ConnectionError, ConnectionErr } =
@@ -123,10 +139,10 @@ export type HttpServiceError = ConnectionError | ResponseError | ParseError;
 import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-// 1. Define domain-specific error type with .withMessage()
+// 1. Define domain-specific error type — no .withMessage() means
+//    message is required at every call site (good for diverse messages)
 export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError')
-		.withMessage(() => 'MyService operation failed');
+	createTaggedError('MyServiceError');
 type MyServiceError = ReturnType<typeof MyServiceError>;
 
 // 2. Create factory function that returns service object
@@ -138,9 +154,7 @@ export function createMyService() {
 		}): Promise<Result<OutputType, MyServiceError>> {
 			// Input validation
 			if (!options.param1) {
-				return MyServiceErr({
-					message: 'param1 is required',
-				});
+				return MyServiceErr({ message: 'param1 is required' });
 			}
 
 			// Wrap risky operations with tryAsync
@@ -167,6 +181,11 @@ export const MyServiceLive = createMyService();
 
 ```typescript
 // From apps/whispering/src/lib/services/isomorphic/recorder/navigator.ts
+
+// RecorderServiceError has no .withMessage() — diverse messages at call sites
+export const { RecorderServiceError, RecorderServiceErr } =
+	createTaggedError('RecorderServiceError');
+
 export function createNavigatorRecorderService(): RecorderService {
 	let activeRecording: ActiveRecording | null = null;
 
@@ -322,7 +341,10 @@ export function createTextServiceDesktop(): TextService {
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => writeText(text), // Tauri API
-				catch: (error) => TextServiceErr({ message: 'Clipboard write failed' }),
+				catch: (error) =>
+					TextServiceErr({
+						message: `Clipboard write failed: ${extractErrorMessage(error)}`,
+					}),
 			}),
 	};
 }
@@ -333,7 +355,10 @@ export function createTextServiceWeb(): TextService {
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => navigator.clipboard.writeText(text), // Browser API
-				catch: (error) => TextServiceErr({ message: 'Clipboard write failed' }),
+				catch: (error) =>
+					TextServiceErr({
+						message: `Clipboard write failed: ${extractErrorMessage(error)}`,
+					}),
 			}),
 	};
 }
@@ -356,11 +381,28 @@ Write error messages that are:
 - **Actionable**: Suggest what the user can do
 - **Detailed**: Include technical details for debugging
 
+### Choosing the right mode
+
+- **Use `.withMessage()`** when the message is static or fully computable from fields. The template seals the message — call sites can't override it.
+- **Skip `.withMessage()`** when messages are diverse across call sites. Each call site provides `{ message }` directly.
+
 ```typescript
-// Good error messages
-return RecorderServiceErr({
-	message:
-		'Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.',
+// Sealed message — same message every time, no call-site input
+const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
+	.withMessage(() => 'A recording is already in progress');
+RecorderBusyErr()
+
+// Sealed message computed from fields — message varies but is predictable
+const { ResponseError, ResponseErr } = createTaggedError('ResponseError')
+	.withFields<{ status: number }>()
+	.withMessage(({ status }) => `HTTP ${status} response`);
+ResponseErr({ status: 404 })
+
+// No .withMessage() — diverse messages at call sites
+const { MyServiceError, MyServiceErr } = createTaggedError('MyServiceError');
+
+return MyServiceErr({
+	message: 'Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.',
 });
 
 return MyServiceErr({

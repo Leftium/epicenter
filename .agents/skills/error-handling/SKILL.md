@@ -12,7 +12,9 @@ metadata:
 
 When handling errors that can be gracefully recovered from, use `trySync` (for synchronous code) or `tryAsync` (for asynchronous code) from wellcrafted instead of traditional try-catch blocks. This provides better type safety and explicit error handling.
 
-> **Related Skills**: See `create-tagged-error` skill for the full `createTaggedError` API (`.withMessage()` is required). See `services-layer` skill for service patterns. See `query-layer` skill for error transformation to `WhisperingError`.
+> **Related Skills**: See `create-tagged-error` skill for the full `createTaggedError` API. See `services-layer` skill for service patterns (including the two `.withMessage()` modes). See `query-layer` skill for error transformation to `WhisperingError`.
+>
+> **`.withMessage()` modes**: Without `.withMessage()`, `message` is required at call sites (e.g., `ServiceErr({ message: '...' })`). With `.withMessage()`, the message is sealed by the template and not in the input type (e.g., `RecorderBusyErr()`). See `services-layer` skill for details.
 
 ### The Pattern
 
@@ -54,8 +56,7 @@ const syncResult = trySync({
 		return Ok('fallback-value');
 		// For unrecoverable errors, return Err
 		return ServiceErr({
-			message: 'Operation failed',
-			cause: error,
+			message: `Operation failed: ${extractErrorMessage(error)}`,
 		});
 	},
 });
@@ -132,8 +133,7 @@ const { data, error } = await tryAsync({
 	try: () => criticalOperation(),
 	catch: (error) =>
 		ServiceErr({
-			message: 'Critical operation failed',
-			cause: error,
+			message: `Critical operation failed: ${extractErrorMessage(error)}`,
 		}),
 });
 if (error) return Err(error);

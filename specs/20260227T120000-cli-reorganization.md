@@ -424,8 +424,7 @@ Merge `add`, `install`, `uninstall`, `ls`, and `export` into a single command gr
 - [x] **4.4** Migrate `uninstall` subcommand from `uninstall-command.ts` (remove workspace)
 - [x] **4.5** Migrate `ls` subcommand from `ls-command.ts` (list workspaces)
 - [x] **4.6** Migrate `export` subcommand from `export-command.ts` (offline Y.Doc export)
-- [ ] **4.7** Delete the five original command files
-  > **Note**: Deferred to Wave 4 (cli.ts rewrite) when old imports are removed
+- [x] **4.7** Delete the five original command files
 - [x] **4.8** All subcommands are offline (no server required)
 
 ### Step 5: Create `local-command.ts` — Local Server Management
@@ -447,10 +446,8 @@ Merge `serve` (inline in `cli.ts`) and `run-command.ts` into `local start`.
 - [x] **5.7** `local status` subcommand: probe `http://localhost:{port}/` and display server info
 - [x] **5.8** `local stop` subcommand: PID file approach with SIGTERM
 - [x] **5.9** SIGINT/SIGTERM handlers that call `server.stop()` then `process.exit(0)`
-- [ ] **5.10** Delete `run-command.ts`
-  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
-- [ ] **5.11** Remove inline `buildServeCommand()` from `cli.ts`
-  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
+- [x] **5.10** Delete `run-command.ts`
+- [x] **5.11** Remove inline `buildServeCommand()` from `cli.ts`
 
 ### Step 6: Create `remote-command.ts` — Remote Server Management
 
@@ -503,8 +500,7 @@ Merge `table-commands.ts`, `kv-commands.ts`, `meta-commands.ts`, `workspaces-com
 - [x] **8.4** `<table> list|get|set|update|delete` subcommands: migrated from `table-commands.ts`, uses `createHttpClient`
 - [x] **8.5** `kv get|set|delete` subcommands: migrated from `kv-commands.ts`, uses `createHttpClient`
 - [x] **8.6** `action <path> [json]` subcommand: migrated from `command-builder.ts`, converts dot-notation to slashes
-- [ ] **8.7** Delete the four original command files and `command-builder.ts`
-  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
+- [x] **8.7** Delete the four original command files and `command-builder.ts`
 - [x] **8.8** Use `parseJsonInput` for mutations (unchanged behavior)
 - [x] **8.9** `assertServerRunning()` with clear error message before any data command
 
@@ -518,13 +514,16 @@ Replace the tier-based dispatch with command group registration.
 **Files to delete**:
 - `packages/cli/src/api-client.ts`
 
-- [ ] **9.1** Rewrite `createCLI()` to register five command groups: `workspace`, `local`, `remote`, `auth`, `data`
-- [ ] **9.2** Each group is a yargs `.command()` call — no tier detection, no `argv[0]` string matching
-- [ ] **9.3** Global `--home` option threaded to all commands
+- [x] **9.1** Rewrite `createCLI()` to register five command groups: `workspace`, `local`, `remote`, `auth`, `data`
+- [x] **9.2** Each group is a yargs `.command()` call — no tier detection, no `argv[0]` string matching
+- [x] **9.3** Global `--home` option threaded to all commands
+  > **Note**: `home` resolved via `resolveEpicenterHome()` inside `run()`, passed to each builder
 - [ ] **9.4** Global `--format json|jsonl` option
-- [ ] **9.5** Delete `api-client.ts`
+  > **Note**: Format option handled per-subcommand via `formatYargsOptions()` — not added globally
+- [x] **9.5** Delete `api-client.ts`
 - [ ] **9.6** Remove `@elysiajs/eden` from `package.json` dependencies
-- [ ] **9.7** Remove `DEFAULT_PORT` and `LocalApp` type imports from `@epicenter/server-local` in the CLI root (only used inside `local-command.ts` via lazy import)
+  > **Note**: Deferred to Wave 5 (package.json updates)
+- [x] **9.7** Remove `DEFAULT_PORT` and `LocalApp` type imports from `@epicenter/server-local` in the CLI root (only used inside `local-command.ts` via lazy import)
 
 ### Step 10: Update `package.json` — Dependencies
 

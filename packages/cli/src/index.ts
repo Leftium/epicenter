@@ -1,4 +1,5 @@
 export { createCLI } from './cli';
+export { createHttpClient, type HttpClient } from './http-client';
 export {
 	type AnyWorkspaceClient,
 	type DiscoveredWorkspace,

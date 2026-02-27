@@ -41,7 +41,7 @@ export function buildRunCommand(home: string) {
 
 			const client = await loadClientFromPath(configPath);
 
-			const { createLocalServer } = await import('@epicenter/server');
+			const { createLocalServer } = await import('@epicenter/server-local');
 			const server = createLocalServer({
 				clients: [client],
 				port: argv.port,

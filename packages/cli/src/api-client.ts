@@ -1,5 +1,5 @@
 import { treaty } from '@elysiajs/eden';
-import { DEFAULT_PORT, type LocalApp } from '@epicenter/server';
+import { DEFAULT_PORT, type LocalApp } from '@epicenter/server-local';
 
 const DEFAULT_URL = `http://localhost:${DEFAULT_PORT}`;
 

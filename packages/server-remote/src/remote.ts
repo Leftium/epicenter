@@ -4,13 +4,13 @@ import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
 import { type AuthPluginConfig, createAuthPlugin } from './auth';
 import { createProxyPlugin } from './proxy';
-import { listenWithFallback } from './server';
-import type { AuthConfig } from './sync/auth';
-import { createSyncPlugin } from './sync/plugin';
+import { listenWithFallback } from '@epicenter/server';
+import type { AuthConfig } from '@epicenter/server/sync';
+import { createSyncPlugin } from '@epicenter/server/sync';
 
-export { DEFAULT_PORT, listenWithFallback } from './server';
+export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
 
-export type HubServerConfig = {
+export type RemoteServerConfig = {
 	/**
 	 * Preferred port to listen on.
 	 *
@@ -41,13 +41,13 @@ export type HubServerConfig = {
 };
 
 /**
- * Create an Epicenter hub server.
+ * Create an Epicenter remote server.
  *
- * The hub is the top tier in the three-tier topology: one cloud/hosted instance
+ * The remote server is the top tier in the three-tier topology: one cloud/hosted instance
  * shared by all devices. Local sidecar servers (one per device) connect outward
- * to the hub for cross-device Yjs sync and AI requests.
+ * to the remote server for cross-device Yjs sync and AI requests.
  *
- *   Hub (cloud, one instance)
+ *   Remote (cloud, one instance)
  *   +--------------------------------------------------+
  *   |  - Better Auth: sessions, JWT, JWKS              |
  *   |  - AI proxy: API keys in env vars, never leave   |
@@ -58,30 +58,30 @@ export type HubServerConfig = {
  *          v                             v
  *   Local Server A (Device 1)    Local Server B (Device 2)
  *
- * What the hub DOES:
+ * What the remote server DOES:
  * - Issues and validates sessions via Better Auth (`/auth/*`)
- * - Proxies AI provider API keys so they never leave the hub (`/proxy/*`)
+ * - Proxies AI provider API keys so they never leave the remote server (`/proxy/*`)
  * - Streams AI completions from all providers via SSE (`/ai/chat`)
  * - Relays Yjs updates between clients via WebSocket rooms (`/rooms/*`)
  *
- * What the hub does NOT do:
+ * What the remote server does NOT do:
  * - Workspace CRUD (no configs, tables, or file projections)
  * - Extension or action execution
- * - Persistence of any kind — Y.Docs on the hub are ephemeral; they are
+ * - Persistence of any kind — Y.Docs on the remote server are ephemeral; they are
  *   created on demand when the first client joins a room and destroyed when
  *   the last client leaves. The local server holds the persisted source of truth.
  *
  * Cross-device sync (Phase 4, not yet wired):
- * Local servers will connect to the hub as Yjs clients (via `--hub` flag),
- * so that edits on Device A propagate to Device B through the hub relay.
- * The hub itself still holds no durable state; it is a pure relay.
+ * Local servers will connect to the remote server as Yjs clients (via `--hub` flag),
+ * so that edits on Device A propagate to Device B through the remote relay.
+ * The remote server itself still holds no durable state; it is a pure relay.
  *
  * @example
  * ```typescript
  * import { Database } from 'bun:sqlite';
  *
- * // Full hub: auth + proxy + sync + AI
- * createHubServer({
+ * // Full remote server: auth + proxy + sync + AI
+ * createRemoteServer({
  *   auth: {
  *     database: new Database('auth.db'),
  *     secret: 'my-secret',
@@ -89,14 +89,14 @@ export type HubServerConfig = {
  *   },
  * }).start();
  *
- * // Minimal hub — no auth (development)
- * createHubServer({}).start();
+ * // Minimal remote server — no auth (development)
+ * createRemoteServer({}).start();
  * ```
  */
-export function createHubServer(config: HubServerConfig) {
+export function createRemoteServer(config: RemoteServerConfig) {
 	const { sync } = config;
 
-	/** Ephemeral Y.Docs for rooms (hub is a pure relay, no pre-registered workspaces). */
+	/** Ephemeral Y.Docs for rooms (remote server is a pure relay, no pre-registered workspaces). */
 	const dynamicDocs = new Map<string, Y.Doc>();
 
 	const app = new Elysia()
@@ -105,10 +105,10 @@ export function createHubServer(config: HubServerConfig) {
 				embedSpec: true,
 				documentation: {
 					info: {
-						title: 'Epicenter Hub API',
+						title: 'Epicenter Remote API',
 						version: '1.0.0',
 						description:
-							'Hub server — sync relay, AI streaming, and coordination.',
+							'Remote server — sync relay, AI streaming, and coordination.',
 					},
 				},
 			}),
@@ -130,9 +130,9 @@ export function createHubServer(config: HubServerConfig) {
 		)
 		.use(new Elysia({ prefix: '/ai' }).use(createAIPlugin()))
 		.get('/', () => ({
-			name: 'Epicenter Hub',
+			name: 'Epicenter Remote',
 			version: '1.0.0',
-			mode: 'hub' as const,
+			mode: 'remote' as const,
 		}));
 
 	// Mount Better Auth when configured

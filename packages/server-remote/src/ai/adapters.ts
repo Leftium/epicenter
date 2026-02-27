@@ -7,27 +7,14 @@ import { createGeminiChat, type GeminiTextModel } from '@tanstack/ai-gemini';
 import { createGrokText, type GrokChatModel } from '@tanstack/ai-grok';
 import { createOpenaiChat, type OpenAIChatModel } from '@tanstack/ai-openai';
 
-/**
- * Providers supported by the AI plugin.
- *
- * This is the source of truth — `SupportedProvider` is derived from this array.
- * Adding a new provider here automatically extends the type.
- */
-export const SUPPORTED_PROVIDERS = [
-	'openai',
-	'anthropic',
-	'gemini',
-	'grok',
-] as const;
+import { PROVIDER_ENV_VARS, type SupportedProvider } from '@epicenter/server';
 
-export type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
-
-/** Type guard for narrowing an arbitrary string to a known provider. */
-export function isSupportedProvider(
-	provider: string,
-): provider is SupportedProvider {
-	return SUPPORTED_PROVIDERS.includes(provider as SupportedProvider);
-}
+export {
+	isSupportedProvider,
+	PROVIDER_ENV_VARS,
+	SUPPORTED_PROVIDERS,
+	type SupportedProvider,
+} from '@epicenter/server';
 
 /**
  * Create a TanStack AI text adapter for the given provider.
@@ -64,14 +51,6 @@ export function createAdapter(
 			return undefined;
 	}
 }
-
-/** Environment variable names for each provider's API key. */
-export const PROVIDER_ENV_VARS: Record<SupportedProvider, string> = {
-	openai: 'OPENAI_API_KEY',
-	anthropic: 'ANTHROPIC_API_KEY',
-	gemini: 'GEMINI_API_KEY',
-	grok: 'GROK_API_KEY',
-};
 
 /**
  * Resolve an API key for the given provider.

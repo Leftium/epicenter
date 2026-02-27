@@ -3,14 +3,12 @@ import { openapi } from '@elysiajs/openapi';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
-import { createHubSessionValidator } from './auth/local-auth';
-import { listenWithFallback } from './server';
-import type { AuthConfig } from './sync/auth';
-import { createSyncPlugin } from './sync/plugin';
+import { createRemoteSessionValidator } from './auth/local-auth';
+import { listenWithFallback } from '@epicenter/server';
+import type { AuthConfig } from '@epicenter/server/sync';
+import { createSyncPlugin } from '@epicenter/server/sync';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
-
-export { DEFAULT_PORT, listenWithFallback } from './server';
 
 export type LocalServerConfig = {
 	/**
@@ -30,21 +28,21 @@ export type LocalServerConfig = {
 	port?: number;
 
 	/**
-	 * Hub URL for session token validation.
+	 * Remote server URL for session token validation.
 	 *
 	 * When provided, the local server validates all requests by checking
-	 * the Bearer token against the hub's `/auth/get-session` endpoint.
+	 * the Bearer token against the remote server's `/auth/get-session` endpoint.
 	 * Results are cached with a 5-minute TTL.
 	 *
 	 * Omit for open mode (no auth, development only).
 	 */
-	hubUrl?: string;
+	remoteUrl?: string;
 
 	/**
 	 * CORS allowed origins.
 	 *
 	 * Default: `['tauri://localhost']` — only the Tauri webview can call the local server.
-	 * Add the hub origin if the hub needs to reach it directly.
+	 * Add the remote server origin if it needs to reach it directly.
 	 */
 	allowedOrigins?: string[];
 
@@ -62,15 +60,15 @@ export type LocalServerConfig = {
 };
 
 /**
- * Create an Elysia plugin for auth guard (if hubUrl configured).
+ * Create an Elysia plugin for auth guard (if remoteUrl configured).
  *
  * Separated into its own plugin so the type chain is not broken by conditionals.
  */
-function createAuthGuardPlugin(hubUrl?: string) {
+function createAuthGuardPlugin(remoteUrl?: string) {
 	const plugin = new Elysia();
-	if (!hubUrl) return plugin;
+	if (!remoteUrl) return plugin;
 
-	const validateSession = createHubSessionValidator({ hubUrl });
+	const validateSession = createRemoteSessionValidator({ remoteUrl });
 	plugin.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
 		if (path === '/') return;
 
@@ -131,7 +129,7 @@ function createAuthGuardPlugin(hubUrl?: string) {
  *   endpoint; the local server is not involved.
  * - Auth issuance: sessions and JWT/JWKS are issued exclusively by Better Auth
  *   on the hub. The local server only validates tokens — it calls the hub's
- *   `/auth/get-session` endpoint (configured via `hubUrl`) and caches results
+ *   `/auth/get-session` endpoint (configured via `remoteUrl`) and caches results
  *   for 5 minutes.
  *
  * Two sync scopes:
@@ -146,7 +144,7 @@ function createAuthGuardPlugin(hubUrl?: string) {
  * // Local server with auth (production)
  * createLocalServer({
  *   clients: [blogClient],
- *   hubUrl: 'https://hub.example.com',
+ *   remoteUrl: 'https://hub.example.com',
  *   allowedOrigins: ['tauri://localhost'],
  * }).start();
  *
@@ -190,7 +188,7 @@ export function createLocalServer(config: LocalServerConfig) {
 				},
 			}),
 		)
-		.use(createAuthGuardPlugin(config.hubUrl))
+		.use(createAuthGuardPlugin(config.remoteUrl))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
 				createSyncPlugin({

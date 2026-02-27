@@ -6,8 +6,8 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
+import { DEFAULT_PORT } from '@epicenter/server';
 import { createLocalServer } from './local';
-import { DEFAULT_PORT } from './server';
 
 describe('createLocalServer', () => {
 	test('DEFAULT_PORT is 3913', () => {

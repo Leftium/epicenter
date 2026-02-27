@@ -1,4 +1,4 @@
-import { createLocalServer } from '@epicenter/server';
+import { createLocalServer } from '@epicenter/server-local';
 import type { Argv } from 'yargs';
 import yargs from 'yargs';
 import { createApiClient } from './api-client';

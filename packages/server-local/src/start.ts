@@ -9,8 +9,8 @@
  * The local server does NOT handle AI — all AI goes through the hub.
  *
  * Usage:
- *   bun packages/server/src/start-local.ts
- *   PORT=4000 bun packages/server/src/start-local.ts
+ *   bun packages/server-local/src/start.ts
+ *   PORT=4000 bun packages/server-local/src/start.ts
  */
 
 import { createLocalServer } from './local';

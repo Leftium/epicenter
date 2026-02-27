@@ -1,4 +1,4 @@
-import { SUPPORTED_PROVIDERS, type SupportedProvider } from '../ai/adapters';
+import { SUPPORTED_PROVIDERS, type SupportedProvider } from '@epicenter/server';
 
 /**
  * Provider API base URLs for the hub proxy.

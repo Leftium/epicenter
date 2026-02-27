@@ -1,4 +1,4 @@
-import { lstat, symlink } from 'node:fs/promises';
+import { lstat, mkdir, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Argv } from 'yargs';
 import { loadClientFromPath } from '../discovery';
@@ -38,7 +38,6 @@ export function buildAddCommand(home: string) {
 				// doesn't exist — good
 			}
 
-			const { mkdir } = await import('node:fs/promises');
 			await mkdir(workspacesDir(home), { recursive: true });
 			await symlink(targetPath, linkPath);
 			output({ added: workspaceId, path: targetPath, link: linkPath });

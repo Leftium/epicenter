@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import { readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Argv } from 'yargs';
@@ -13,11 +14,9 @@ export function buildLsCommand(home: string) {
 		handler: async (argv: { format?: 'json' | 'jsonl' }) => {
 			const dir = workspacesDir(home);
 
-			let dirents: import('node:fs').Dirent[];
+			let dirents: Dirent[];
 			try {
-				dirents = (await readdir(dir, {
-					withFileTypes: true,
-				})) as unknown as import('node:fs').Dirent[];
+				dirents = await readdir(dir, { withFileTypes: true });
 			} catch {
 				output([], { format: argv.format });
 				return;

@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import * as Y from 'yjs';
 import type { Argv } from 'yargs';
 import { loadClientFromPath } from '../discovery';
 import { formatYargsOptions, output, outputError } from '../format-output';
@@ -40,7 +41,6 @@ export function buildExportCommand(home: string) {
 			const client = await loadClientFromPath(configPath);
 
 			if (await Bun.file(dataPath).exists()) {
-				const Y = await import('yjs');
 				const data = await Bun.file(dataPath).arrayBuffer();
 				Y.applyUpdate(client.ydoc, new Uint8Array(data));
 			}

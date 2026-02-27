@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { createLocalServer } from '@epicenter/server-local';
 import type { Argv } from 'yargs';
 import { loadClientFromPath } from '../discovery';
 import { outputError } from '../format-output';
@@ -41,7 +42,6 @@ export function buildRunCommand(home: string) {
 
 			const client = await loadClientFromPath(configPath);
 
-			const { createLocalServer } = await import('@epicenter/server-local');
 			const server = createLocalServer({
 				clients: [client],
 				port: argv.port,

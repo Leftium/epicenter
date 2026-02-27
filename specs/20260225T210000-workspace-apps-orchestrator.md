@@ -429,6 +429,143 @@ This produces an identical API surface to being in the multi-workspace local ser
 
 Both the hosted version and local instance use the same `epicenter.config.ts` schema. They connect to the same hub room. Yjs CRDTs handle conflict-free merging. No special sync protocol — this is what Yjs already does.
 
+### Third-Party Auth Flow (Login with Epicenter)
+
+When a third-party developer (Alice) hosts a workspace at `myapp.com`, users need to authenticate so the hub knows which room to grant access to. The hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. This is the same pattern as "Log in with Google" — the hub is the identity provider, `myapp.com` is the relying party.
+
+**Why this doesn't contradict the "no JWT" auth spec**: The simplified auth spec (`20260223T160300`) eliminates JWT for first-party use — the Tauri app and local sidecar use opaque session tokens because they're same-origin with the hub. Third-party apps are a different threat model: `myapp.com` and `hub.epicenter.com` are different origins. Cookies don't work across origins. The OAuth provider plugin naturally issues JWTs (id_tokens, access_tokens) for cross-origin use. Session tokens for first-party, OAuth JWTs for third-party — no overlap, no contradiction.
+
+**Better Auth's `oauthProvider` plugin provides everything needed out of the box:**
+
+| Endpoint | Path | Purpose |
+|---|---|---|
+| Authorization | `/oauth2/authorize` | User login + consent |
+| Token | `/oauth2/token` | Code → token exchange |
+| UserInfo | `/oauth2/userinfo` | User profile data |
+| JWKS | `/jwks` | Public keys for token verification |
+| Dynamic Client Registration | `/oauth2/register` | Apps register themselves |
+| OIDC Discovery | `/.well-known/openid-configuration` | Standard discovery document |
+| End Session | `/oauth2/endsession` | RP-initiated logout |
+
+**The complete auth flow:**
+
+```
+STEP 1: Alice registers myapp.com as an OAuth client on the hub
+────────────────────────────────────────────────────────────────
+Option A: CLI         → epicenter register-app myapp.com --redirect https://myapp.com/callback
+Option B: Hub admin   → Hub admin UI at hub.epicenter.com/admin
+Option C: Dynamic     → POST /oauth2/register (if enabled)
+
+Result: Alice receives client_id + client_secret for myapp.com.
+
+
+STEP 2: User visits myapp.com and clicks "Log in with Epicenter"
+────────────────────────────────────────────────────────────────
+Browser redirects to:
+  https://hub.epicenter.com/oauth2/authorize
+    ?client_id=myapp_abc123
+    &redirect_uri=https://myapp.com/callback
+    &response_type=code
+    &scope=openid+profile+offline_access
+    &code_challenge=<PKCE_S256>
+    &code_challenge_method=S256
+
+
+STEP 3: User authenticates on the hub
+──────────────────────────────────────
+Hub shows login page (if not already logged in) → consent screen.
+User grants myapp.com access to their profile + sync rooms.
+Hub redirects back:
+  https://myapp.com/callback?code=<authorization_code>
+
+
+STEP 4: myapp.com exchanges the code for tokens
+────────────────────────────────────────────────
+POST https://hub.epicenter.com/oauth2/token
+  grant_type=authorization_code
+  &code=<authorization_code>
+  &redirect_uri=https://myapp.com/callback
+  &client_id=myapp_abc123
+  &client_secret=<secret>
+  &code_verifier=<PKCE_verifier>
+
+Response:
+  {
+    "access_token": "<JWT>",       // For hub API access (sync rooms)
+    "id_token": "<JWT>",           // User identity (sub, name, email)
+    "refresh_token": "<opaque>",   // For token renewal
+    "expires_in": 900              // 15 minutes
+  }
+
+
+STEP 5: myapp.com connects to the hub for Yjs sync
+───────────────────────────────────────────────────
+const provider = new WebsocketProvider(
+  'wss://hub.epicenter.com',
+  `myapp:${userId}`,             // Room scoped to workspace + user
+  workspace.ydoc,
+  { params: { token: accessToken } }
+);
+
+Hub validates JWT on WebSocket upgrade:
+  1. Verify signature via JWKS (local, no DB call)
+  2. Check token.sub matches the requested room's user scope
+  3. Allow connection → Yjs sync begins
+
+
+STEP 6: User's local Epicenter is already connected to the same room
+────────────────────────────────────────────────────────────────────
+The local sidecar (authenticated via session token, not OAuth) connects to:
+  wss://hub.epicenter.com/rooms/myapp:user_abc123
+
+Both peers sync via Yjs CRDTs. Data converges automatically.
+```
+
+**The full picture:**
+
+```
+┌──────────────────┐     ┌──────────────────────────┐     ┌──────────────────┐
+│  myapp.com       │     │  Hub                      │     │  User's Desktop  │
+│  (Alice's app)   │     │  (hub.epicenter.com)      │     │  (Epicenter app) │
+│                  │     │                           │     │                  │
+│  epicenter       │     │  Better Auth              │     │  epicenter       │
+│  .config.ts      │     │   + oauthProvider plugin  │     │  .config.ts      │
+│  (same schema)   │     │                           │     │  (same schema)   │
+│                  │     │  /oauth2/authorize         │     │                  │
+│  "Log in with    │────▶│  /oauth2/token            │     │  Session token   │
+│   Epicenter"     │◀────│  /jwks                    │     │  (first-party)   │
+│                  │     │                           │     │                  │
+│  access_token    │────▶│  /rooms/myapp:user123     │◀────│  session token   │
+│  (OAuth JWT)     │     │  Yjs relay                │     │  (via bearer)    │
+└──────────────────┘     └──────────────────────────┘     └──────────────────┘
+
+Both peers sync the same Y.Doc. User sees identical data everywhere.
+```
+
+**Room ID scoping**: The room ID encodes both the workspace and the user: `{workspaceId}:{userId}`. This ensures:
+- Each user gets their own Y.Doc (no cross-user data leakage)
+- The hub can verify room access by checking `token.sub` against the room's user component
+- Multiple workspaces for the same user have separate rooms
+
+**Token lifecycle for long-lived WebSocket connections**: Access tokens expire (15 minutes by default). For long-lived WebSocket connections:
+1. The SPA monitors token expiry and refreshes via the `refresh_token` grant before expiration
+2. On refresh, the SPA disconnects and reconnects the WebSocket with the new access token
+3. Yjs handles reconnection gracefully — pending updates queue locally and sync on reconnect
+4. Alternative: the hub could accept a token refresh message on the existing WebSocket (optimization for later)
+
+**What Alice (third-party developer) needs:**
+
+| Step | What | How |
+|---|---|---|
+| 1. Register app | Get OAuth credentials | CLI, admin UI, or dynamic registration |
+| 2. Add login button | "Log in with Epicenter" | Standard OAuth redirect (any OAuth library works) |
+| 3. Import config | Same `epicenter.config.ts` | `npm install` from jsrepo registry |
+| 4. Connect sync | WebSocket to hub with access token | `y-websocket` with `params: { token }` |
+
+Alice doesn't need an Epicenter SDK beyond the standard `@epicenter/workspace` package and any OAuth client library. The hub is a standard OIDC provider — Alice can use `openid-client`, `arctic`, or any OAuth library her framework supports.
+
+**Trust model**: Registering an OAuth client on the hub does NOT give Alice access to user data. The OAuth flow requires explicit user consent. A user must visit `myapp.com`, click "Log in with Epicenter," and approve the consent screen before `myapp.com` can access their sync rooms. The hub enforces room-level access control based on the JWT's `sub` claim.
+
 ### The epicenter.config.ts as Universal Contract
 
 The config file is portable across all runtime contexts — server (Bun local server, standalone), browser (Svelte SPA), or edge (Cloudflare Worker). This portability is possible because the config contains only the data contract: schema definitions and a Y.Doc. Actions and extensions are chained per-runtime.
@@ -534,6 +671,15 @@ Extensions allow workspaces to reactively materialize Y.Doc data to arbitrary fi
 - [ ] **6.3** Wire extension lifecycle into the local server — start extensions on workspace load, stop on shutdown. Extensions run in the same process as the local server.
 - [ ] **6.4** Support multiple extensions per workspace (e.g., Markdown to `~/notes/` AND JSON to `~/backups/`)
 - [ ] **6.5** Handle extension errors gracefully — a failing extension should not crash the workspace or local server. Log errors, expose status via the workspace listing endpoint.
+
+### Phase 7: Third-Party Auth (Login with Epicenter)
+
+- [ ] **7.1** Enable Better Auth's `oauthProvider` plugin on the hub — adds `/oauth2/authorize`, `/oauth2/token`, `/jwks`, `/.well-known/openid-configuration`, `/oauth2/userinfo` endpoints
+- [ ] **7.2** Add OAuth client registration — at minimum, a CLI command (`epicenter register-app <domain> --redirect <uri>`) that creates an entry in the `oauthClient` database table. Hub admin UI registration is a nice-to-have.
+- [ ] **7.3** Add room-level access control on WebSocket upgrade — validate OAuth JWT via JWKS, check `token.sub` matches the room's user scope (`{workspaceId}:{userId}`), reject if mismatched
+- [ ] **7.4** Add consent screen UI on the hub — when a user is redirected from a third-party app, show what the app is requesting access to (workspace sync rooms, profile data)
+- [ ] **7.5** Document the third-party developer integration guide — how to register an app, add "Log in with Epicenter," connect to hub sync, and handle token refresh for long-lived WebSocket connections
+
 **Example API:**
 
 Since the config exports the builder (not terminal), each runtime chains extensions and actions independently. `.withActions()` is terminal — extensions must come before actions in the chain.
@@ -719,6 +865,19 @@ These were open during design and have been decided. Kept here for context so im
    - Could the framework provide `defineActions()` that returns a reusable factory, or is the plain function export sufficient?
    - **Leaning toward convention** — a plain function export is simple, well-understood, and doesn't require framework support. Adding `defineActions()` would add API surface for minimal benefit.
 
+3. **Should the hub allow dynamic OAuth client registration?**
+   - Better Auth's `oauthProvider` plugin supports dynamic client registration (RFC 7591) at `/oauth2/register`.
+   - Option A: Manual registration only — third-party developers register via CLI or admin UI. Simpler, more controlled.
+   - Option B: Dynamic registration — any app can register itself programmatically. Lower friction for developers, but requires rate limiting and abuse prevention.
+   - **Leaning toward Option A for v1** — manual registration is sufficient for early third-party integrations. Dynamic registration can be enabled later when there's demand and the abuse prevention story is clear.
+
+4. **How should room IDs encode workspace + user scope for third-party access?**
+   - Current room IDs are workspace IDs (e.g., `myapp`). Third-party auth needs user scoping so each user gets their own Y.Doc.
+   - Option A: `{workspaceId}:{userId}` — simple, flat namespace.
+   - Option B: `{workspaceId}/{userId}` — path-like, easier to parse.
+   - Option C: Keep workspace-level rooms but use Yjs sub-documents for per-user data.
+   - **Leaning toward Option A** — simple, no ambiguity. The hub checks `token.sub === roomId.split(':')[1]`.
+
 ## Success Criteria
 
 ### Phase 1-3 (Core)
@@ -743,6 +902,15 @@ These were open during design and have been decided. Kept here for context so im
 - [ ] Multiple extensions per workspace work independently (different targets, different formats)
 - [ ] Extension failures are isolated — a broken extension doesn't crash the workspace or local server
 - [ ] Extensions run in the same process as the workspace (local server or standalone)
+
+### Phase 7 (Third-Party Auth)
+- [ ] Hub exposes `/.well-known/openid-configuration` and standard OAuth 2.1 endpoints
+- [ ] A third-party app can register as an OAuth client and receive `client_id` + `client_secret`
+- [ ] Users can "Log in with Epicenter" on a third-party hosted workspace via standard OAuth redirect
+- [ ] Third-party app receives JWT access token and connects to hub Yjs sync room
+- [ ] Hub validates JWT on WebSocket upgrade and enforces room-level access control (`token.sub` matches room user scope)
+- [ ] A user logged in at `myapp.com` and on their local Epicenter desktop sees the same data synced via the hub
+- [ ] Token refresh works for long-lived WebSocket connections without data loss
 
 ## Conceptual Model: The Filesystem as an App Store
 

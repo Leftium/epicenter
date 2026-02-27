@@ -491,6 +491,14 @@ Client behavior: identical             Client behavior: identical
 
 The client stores `hubUrl` and a session token. It doesn't know or care whether the hub is a binary on a Mac Mini or a Cloudflare Worker. The API surface is the same.
 
+**Third-Party Hosted Workspaces (OAuth Provider)**
+
+The auth flow above covers first-party clients — the Tauri desktop app, mobile app, and browser extension. These clients are same-origin (or trusted-origin) with the hub and use session tokens directly. Third-party developers who host workspace apps at their own domains (e.g., `myapp.com`) need a different mechanism because they are cross-origin with the hub and cannot share session cookies.
+
+For this case, the hub acts as an **OAuth 2.1 / OIDC identity provider** using Better Auth's `oauthProvider` plugin. Third-party apps register as OAuth clients, redirect users to the hub's authorization endpoint for login, receive OAuth access tokens (JWTs) on callback, and use those tokens to authenticate WebSocket connections to hub sync rooms. The hub validates these JWTs on WebSocket upgrade using its own JWKS keys — no external identity provider or third-party validation service is involved.
+
+This adds a second column to the auth topology: first-party clients authenticate with session tokens, third-party hosted workspaces authenticate with OAuth access tokens. Both token types resolve to the same user accounts, authorize access to the same sync rooms, and are validated by the same hub. From the sync layer's perspective, the token type is an implementation detail — the WebSocket upgrade handler accepts either. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full OAuth flow design.
+
 ### Hub URL Discovery
 
 Users need to tell each device where the hub server lives. How they do this depends on the mode:
@@ -783,7 +791,12 @@ The hub is a single point of failure for cross-device features. This is an inher
    - When the user switches `hubUrl`, the Y.Doc persists locally. When sync reconnects through the new hub's relay, CRDT merge handles convergence.
    - **Recommendation**: No action needed. This is a natural benefit of the local-first architecture.
 
-6. **Should the local sidecar sync relay be optional?**
+6. **Should the hub's `oauthProvider` plugin allow dynamic client registration (RFC 7591) or require manual registration only?**
+   - Dynamic registration: third-party developers register their OAuth client programmatically via a registration endpoint. Lower friction, but opens the door to abuse (spam registrations, token farming).
+   - Manual registration: developers register through a hub admin UI or CLI command. Higher friction, but full control over which apps can authenticate users.
+   - **Recommendation**: Start with manual registration only. The number of third-party workspace apps will be small initially. Add dynamic registration later if developer onboarding friction becomes a bottleneck, with rate limiting and admin approval workflows.
+
+7. **Should the local sidecar sync relay be optional?**
    - If the hub is on the same machine (self-hosted on desktop), the sidecar sync relay is redundant — the webview could connect directly to the hub.
    - If the hub is remote, the sidecar provides meaningful latency benefits (local WebSocket vs remote).
    - **Recommendation**: Always run the sidecar for consistency. The overhead is minimal and it simplifies the client code (always connect to `localhost:3913` for sync).

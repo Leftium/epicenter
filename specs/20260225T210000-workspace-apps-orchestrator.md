@@ -14,6 +14,25 @@ The core insight: `epicenter.config.ts` is a **universal contract** — a worksp
 
 **The config exports the builder, not the terminal client.** The `epicenter.config.ts` default export is a `WorkspaceClientBuilder` — the result of `createWorkspace()` without `.withExtension()` or `.withActions()` chained. This is the **data contract**: schema only. Each runtime (browser SPA, Bun sidecar, standalone hosted workspace) imports the builder and chains its own extensions and actions as appropriate. Extensions and actions are **not** part of the config — they are attached per-runtime, keeping the config portable and allowing different runtimes to expose different capabilities.
 
+## The Hub Server Is Separate
+
+This spec discusses three runtime contexts for a workspace config: the Bun sidecar, the browser SPA, and a "standalone hosted workspace." These must not be confused with the **hub server**, which is a fourth, entirely separate thing.
+
+| | Hub Server | Standalone Hosted Workspace |
+|---|---|---|
+| Created with | `createHubServer()` | `createLocalServer({ clients: [client] })` |
+| Knows about workspace configs | **No** | Yes — imports `epicenter.config.ts` |
+| Has extensions | **No** | Yes (e.g., `filePersistence`, `markdownProjection`) |
+| Has actions | **No** | Yes (e.g., `coreActions`, `sendWebhook`) |
+| Persists Y.Docs | **No** — ephemeral rooms only | Yes — `workspace.yjs` on disk |
+| Role | Auth + AI proxy + Yjs relay | Workspace CRUD + sync, running in the cloud |
+
+**Hub server** (`createHubServer()`): A generic, schema-agnostic relay. It provides auth (Better Auth JWT), an AI proxy (streaming), and Yjs WebSocket rooms (ephemeral Y.Docs). It has **no knowledge of any workspace** — no `epicenter.config.ts` is ever imported, no extensions are mounted, no actions are registered. Any number of workspace instances (local sidecars, standalone hosted workspaces, browser SPAs) connect to the hub as peers. The hub merges their updates and rebroadcasts — nothing more.
+
+**Standalone hosted workspace**: A specific `epicenter.config.ts` deployed as a cloud web service (Phase 5). It uses `createLocalServer({ clients: [client] })` — the same server used by the local Bun sidecar — with extensions and actions chained for the cloud environment (e.g., Durable Objects instead of `filePersistence`). It connects to the hub as a peer, just like the local sidecar does.
+
+**Summary**: Local sidecar and standalone hosted workspace are both "local servers" — one runs on your machine, one runs in the cloud. The hub knows about neither. All three connect to the hub as Yjs peers.
+
 ## Motivation
 
 ### Current State
@@ -399,6 +418,8 @@ This produces an identical API surface to being mounted in the orchestrator — 
 └─────────────────────┘     └──────────────────┘     └─────────────────────┘
 ```
 
+`myapp.com` here is a **standalone hosted workspace** — a specific `epicenter.config.ts` deployed as a cloud service (Phase 5). It is NOT the hub. The hub relay in the middle is the generic `createHubServer()` instance: schema-agnostic, no workspace config, no extensions, no actions. Both `myapp.com` and the local Bun sidecar connect to it as Yjs peers.
+
 Both the hosted version and local instance use the same `epicenter.config.ts` schema. They connect to the same hub room. Yjs CRDTs handle conflict-free merging. No special sync protocol — this is what Yjs already does.
 
 ### The epicenter.config.ts as Universal Contract
@@ -426,25 +447,28 @@ The config file is portable across all runtime contexts — server (Bun orchestr
                     │  import workspace   │
                     │  from config        │
                     └──────┬──────────────┘
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-┌──────────────────┐ ┌────────────────┐ ┌────────────────────┐
-│  Bun Sidecar     │ │  Browser SPA   │ │  Hosted Server     │
-│                  │ │                │ │                    │
-│  .withExtension  │ │  .withActions  │ │  .withExtension    │
-│    persistence   │ │    coreActions │ │    durableObjects  │
-│    markdown      │ │               │ │  .withActions      │
-│  .withActions    │ │  (no FS deps) │ │    coreActions     │
-│    coreActions   │ │               │ │    sendWebhook     │
-│    deleteAll     │ │               │ │    notifyEmail     │
-│    exportToCsv   │ │               │ │                    │
-└──────────────────┘ └────────────────┘ └────────────────────┘
-         │                  │                    │
-         └──────────────────┼────────────────────┘
+              ┌────────────┼────────────────────┐
+              ▼            ▼                    ▼
+┌──────────────────┐ ┌────────────────┐ ┌──────────────────────────┐
+│  Bun Sidecar     │ │  Browser SPA   │ │  Standalone Hosted       │
+│  (local)         │ │                │ │  Workspace (cloud)       │
+│                  │ │                │ │                          │
+│  .withExtension  │ │  .withActions  │ │  .withExtension          │
+│    persistence   │ │    coreActions │ │    durableObjects        │
+│    markdown      │ │               │ │  .withActions            │
+│  .withActions    │ │  (no FS deps) │ │    coreActions           │
+│    coreActions   │ │               │ │    sendWebhook           │
+│    deleteAll     │ │               │ │    notifyEmail           │
+│    exportToCsv   │ │               │ │                          │
+└──────────────────┘ └────────────────┘ └──────────────────────────┘
+         │                  │                        │
+         └──────────────────┼────────────────────────┘
                             ▼
                   Yjs sync (all converge on same data)
                   Awareness (each peer advertises its actions)
 ```
+
+**Note on the three columns above**: These are all consumers of `epicenter.config.ts` — each imports the builder and chains runtime-specific extensions and actions. The **hub server is not shown here** because it never imports workspace configs. The hub is a separate process that all three columns connect to as Yjs peers. "Standalone Hosted Workspace" (right column) is a `createLocalServer()` instance running in the cloud — a local server deployed remotely, not the hub.
 
 **Three layers, three portability levels:**
 - **Schema** (in config): Universal. Must be identical everywhere for Yjs sync to work.
@@ -545,7 +569,7 @@ const client = workspace
   }));
 ```
 
-**Key insight**: The workspace stays centralized in `~/.epicenter/workspaces/`. Extensions project *outward* to wherever the user wants output. The config exports a builder (not terminal), so every runtime — browser SPA, Bun sidecar, hosted server — chains exactly the extensions and actions it needs. This cleanly separates "what the data looks like" (config) from "what you can do with it" (per-runtime).
+**Key insight**: The workspace stays centralized in `~/.epicenter/workspaces/`. Extensions project *outward* to wherever the user wants output. The config exports a builder (not terminal), so every runtime — browser SPA, Bun sidecar, standalone hosted workspace — chains exactly the extensions and actions it needs. This cleanly separates "what the data looks like" (config) from "what you can do with it" (per-runtime).
 
 ## Hard Problems
 

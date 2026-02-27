@@ -287,8 +287,8 @@
         "epicenter": "./src/bin.ts",
       },
       "dependencies": {
-        "@elysiajs/eden": "^1.4.8",
-        "@epicenter/server": "workspace:*",
+        "@epicenter/server-local": "workspace:*",
+        "@epicenter/server-remote": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "jsrepo": "^3.6.1",
         "typebox": "catalog:",
@@ -379,8 +379,48 @@
       "name": "@epicenter/server",
       "version": "0.0.1",
       "dependencies": {
+        "elysia": "^1.2.25",
+        "lib0": "catalog:",
+        "wellcrafted": "catalog:",
+        "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/server-local": {
+      "name": "@epicenter/server-local",
+      "version": "0.0.1",
+      "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/server": "workspace:*",
+        "elysia": "^1.2.25",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "arktype": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "yjs": "catalog:",
+      },
+    },
+    "packages/server-remote": {
+      "name": "@epicenter/server-remote",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/server": "workspace:*",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
         "@tanstack/ai-gemini": "^0.5.0",
@@ -388,20 +428,13 @@
         "@tanstack/ai-openai": "^0.5.0",
         "better-auth": "^1.4.19",
         "elysia": "^1.2.25",
-        "lib0": "catalog:",
-        "typebox": "catalog:",
         "wellcrafted": "catalog:",
-        "y-protocols": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/sync": "workspace:*",
-        "@epicenter/tab-manager": "workspace:*",
         "@types/bun": "catalog:",
-        "arktype": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@epicenter/workspace": "workspace:*",
         "yjs": "catalog:",
       },
     },
@@ -646,8 +679,6 @@
 
     "@elysiajs/cors": ["@elysiajs/cors@1.4.1", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-lQfad+F3r4mNwsxRKbXyJB8Jg43oAOXjRwn7sKUL6bcOW3KjUqUimTS+woNpO97efpzjtDE0tEjGk9DTw8lqTQ=="],
 
-    "@elysiajs/eden": ["@elysiajs/eden@1.4.8", "", { "peerDependencies": { "elysia": ">=1.4.19" } }, "sha512-a7oct2kFa49tH+GawZtSUCZR2rQgucNYgGLz8alXUqb4IrU3PASA0T4zXJw4MhdV1Xb6vyiR7p7kkqJcVjgbkA=="],
-
     "@elysiajs/openapi": ["@elysiajs/openapi@1.4.14", "", { "peerDependencies": { "elysia": ">= 1.4.0" } }, "sha512-kWmJWdvP8/LwHwAJXSpz6xFfYUoyUyEPRimEYABuDU1rOnS27Da1u9T2jyU7frOopxKWV/wDfDxMP8z2xdCPJw=="],
 
     "@emmetio/abbreviation": ["@emmetio/abbreviation@2.3.3", "", { "dependencies": { "@emmetio/scanner": "^1.0.4" } }, "sha512-mgv58UrU3rh4YgbE/TzgLQwJ3pFsHHhCLqY20aJq+9comytTXUDNGG/SMtSeMJdkpxgXSXunBGLD8Boka3JyVA=="],
@@ -691,6 +722,10 @@
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
     "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
+
+    "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
+
+    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

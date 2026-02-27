@@ -8,7 +8,7 @@
 
 Turn each workspace into a self-contained app that can be installed from a registry, loaded into the local server process, accessed from a unified Svelte shell, and optionally run standalone or synced against a remote hosted version.
 
-The core insight: `epicenter.config.ts` is a **universal contract** — a workspace definition (schema + actions) that works identically whether mounted in an orchestrator, run standalone on its own port, or imported directly by a browser SPA. Every namespace in the filesystem is its own app. You can download and run 20 of them locally in one process, run any individually, or import the config in a client-side app that operates on its own Y.Doc and syncs via WebSocket. Hub sync keeps instances in sync regardless of where they run.
+The core insight: `epicenter.config.ts` is a **universal contract** — a workspace definition (schema + actions) that works identically whether loaded into the local server, run standalone on its own port, or imported directly by a browser SPA. Every namespace in the filesystem is its own app. You can download and run 20 of them locally in one process, run any individually, or import the config in a client-side app that operates on its own Y.Doc and syncs via WebSocket. Hub sync keeps instances in sync regardless of where they run.
 
 **Terminology**: `createWorkspace()` returns a `WorkspaceClientBuilder` — an object that IS a `WorkspaceClient` (Y.Doc, tables, kv, awareness) plus chainable builder methods (`.withExtension()`, `.withDocumentExtension()`, `.withActions()`). The builder uses immutable state — each `.withExtension()` returns a new builder, enabling builder branching (multiple chains from the same base). `.withActions()` is terminal, producing a `WorkspaceClientWithActions`.
 
@@ -591,26 +591,9 @@ When two instances of the same workspace sync via hub and one updates to a newer
 
 ### 2. Process Isolation at Scale
 
-The orchestrator runs all workspaces in a single Bun process. This is great for simplicity (no port management, no WebSocket relay) but means:
+The local server runs all workspaces in a single Bun process. This is fine for personal use — each Y.Doc is KB to low MB, Yjs sync is cheap, and the scale is 20 workspaces on one laptop, not a multi-tenant server. Installing a third-party workspace is the same trust model as `npm install`: you're already trusting that code with full access to your machine. Process isolation doesn't change that.
 
-- A memory leak in one workspace affects all others
-- A blocking operation (heavy computation, slow network call) blocks the event loop for all workspaces
-- A crash kills everything
-
-**The tension**: 20 apps in one process is fine for personal use. 200 apps (a team server) is not.
-
-**At what scale does this break?**
-- **Memory**: Each Y.Doc is typically small (KB to low MB). 20 workspaces ≈ 20-200 MB. Bun handles this easily.
-- **CPU**: Yjs sync is cheap. Action handlers are the wildcard — if a workspace does AI inference or image processing, it could block.
-- **Crash blast radius**: One `process.exit()` or unhandled exception kills everything.
-
-**Possible approaches for the future** (not v1):
-- **Worker threads**: Bun supports `Worker`. Each workspace could run in its own worker. The orchestrator forwards requests via `postMessage`. This gives memory isolation and crash isolation.
-- **Subprocess per workspace**: Each workspace runs as its own Bun process. The orchestrator is a reverse proxy. This is the heaviest isolation but loses the `.use()` type safety.
-- **Selective isolation via `.mount(path, handler.fetch)`**: Only untrusted third-party workspaces get mounted via the raw handler path (losing types and OpenAPI). First-party workspaces stay composed via `.use()`. This is the lightest isolation upgrade — same process, but opaque request boundary.
-- **Selective isolation via subprocess**: Same as above but stronger — untrusted workspaces run in their own Bun process. The orchestrator `fetch`-forwards to `localhost:{childPort}`. This is the only approach that provides true crash isolation.
-
-**Recommendation**: Single process for v1. It handles the personal-use scale. Add worker-based isolation when third-party workspaces arrive.
+**Recommendation**: Single process. Isolation becomes relevant only if Epicenter serves multiple untrusted tenants in a shared process — a product direction not currently planned.
 
 ### 3. The "20 Apps" UI Problem
 
@@ -620,7 +603,7 @@ If you have 20 workspaces mounted, the Svelte shell needs to render a coherent U
 - A bookmark manager wants a card grid
 - A kanban board wants columns with drag-and-drop
 
-**The tension**: The orchestrator serves a single SPA. Custom per-workspace UI means either:
+**The tension**: The local server serves a single SPA. Custom per-workspace UI means either:
 - The SPA is a generic shell that renders all workspaces as tables (current approach, boring but works)
 - Workspaces can ship their own Svelte components (powerful but complex — code loading, security, bundle size)
 - Workspaces define "views" declaratively (column layouts, card templates) that the SPA interprets
@@ -639,14 +622,14 @@ If you have 20 workspaces mounted, the Svelte shell needs to render a coherent U
 ### Duplicate Workspace IDs
 
 1. User installs two workspaces that both export `id: 'my-app'`.
-2. The orchestrator must detect this at mount time and fail with a clear error.
+2. The local server must detect this at load time and fail with a clear error.
 3. Already handled by `discoverAllWorkspaces()` in `packages/cli/src/discovery.ts:88-95`.
 
 ### Workspace Crashes During Import
 
 1. A workspace's `epicenter.config.ts` throws on import (syntax error, missing dep).
-2. The orchestrator should log the error and continue loading other workspaces.
-3. The failed workspace appears in the registry as `{ status: 'error', message: '...' }`.
+2. The local server should log the error and continue loading other workspaces.
+3. The failed workspace appears in the workspace listing as `{ status: 'error', message: '...' }`.
 
 ### Schema Evolution After Update
 
@@ -669,7 +652,7 @@ If you have 20 workspaces mounted, the Svelte shell needs to render a coherent U
 1. Developer runs `epicenter add ~/projects/my-app`, creating a symlink in `~/.epicenter/workspaces/my-app`.
 2. Developer deletes or moves `~/projects/my-app`.
 3. The symlink is now dangling. `readdir()` still returns it, but `readFileSync` on the target fails.
-4. The orchestrator should detect this (same codepath as "Workspace Crashes During Import"), log a warning, and skip. The workspace appears in `epicenter ls` as `{ status: 'error', message: 'symlink target not found' }`.
+4. The local server should detect this (same codepath as "Workspace Crashes During Import"), log a warning, and skip. The workspace appears in `epicenter ls` as `{ status: 'error', message: 'symlink target not found' }`.
 5. `epicenter remove my-app` cleans up the dangling symlink.
 
 ### jsrepo Import Rewriting
@@ -688,7 +671,7 @@ These were open during design and have been decided. Kept here for context so im
    - **Key enabler**: The extension/projection system means user-visible data doesn't need to live *in* `~/.epicenter/` — it gets projected outward to user-chosen locations.
 
 2. **How should developer-authored workspaces (in git repos) be registered?**
-   - **Decision**: `epicenter add <path>` creates a symlink in `~/.epicenter/workspaces/`. The orchestrator follows symlinks transparently. Broken symlinks are handled the same as import failures.
+   - **Decision**: `epicenter add <path>` creates a symlink in `~/.epicenter/workspaces/`. The local server follows symlinks transparently. Broken symlinks are handled the same as import failures.
    - **Alternative rejected**: Path registry in `config.json` (corrupts, gets stale, requires validation on every startup).
 
 3. **Where do non-technical users see their data?**
@@ -758,27 +741,27 @@ These were open during design and have been decided. Kept here for context so im
 ### Phase 6 (Extensions)
 - [ ] A workspace with `.withExtension(markdownProjection(...))` writes Markdown files to the target path on Y.Doc changes
 - [ ] Multiple extensions per workspace work independently (different targets, different formats)
-- [ ] Extension failures are isolated — a broken extension doesn't crash the workspace or orchestrator
-- [ ] Extensions run in the same process as the workspace (orchestrator or standalone)
+- [ ] Extension failures are isolated — a broken extension doesn't crash the workspace or local server
+- [ ] Extensions run in the same process as the workspace (local server or standalone)
 
 ## Conceptual Model: The Filesystem as an App Store
 
-The mental model that ties everything together: **your `~/.epicenter/workspaces/` directory is an app store**. Each subdirectory is an installed app. Some are downloaded from a registry (jsrepo). Some are symlinked from a developer's git repo. The orchestrator is the runtime that loads them all.
+The mental model that ties everything together: **your `~/.epicenter/workspaces/` directory is an app store**. Each subdirectory is an installed app. Some are downloaded from a registry (jsrepo). Some are symlinked from a developer's git repo. The local server is the runtime that loads them all.
 
 This mirrors how mobile operating systems work:
 - **Install** = download source + deps into a directory (like installing an APK/IPA)
 - **Add** = symlink a developer's existing workspace into the app store (like sideloading)
-- **Mount** = load into the orchestrator process (like the OS loading an app into memory)
-- **Run standalone** = launch outside the orchestrator (like running an app in debug mode)
+- **Load** = import into the local server process (like the OS loading an app into memory)
+- **Run standalone** = launch outside the local server (like running an app in debug mode)
 
 ### Why Centralized Directory, Not Distributed Paths
 
 An alternative design was considered: workspaces live anywhere on disk, and Epicenter tracks them via a path list in `config.json` (the Obsidian model). This was rejected for the centralized-with-symlinks approach because:
 
-1. **Stale path problem**: If a user moves or deletes a directory, `config.json` still points at it. The orchestrator must handle N missing paths on every startup. This is a persistent UX paper cut.
+1. **Stale path problem**: If a user moves or deletes a directory, `config.json` still points at it. The local server must handle N missing paths on every startup. This is a persistent UX paper cut.
 2. **Single point of failure**: A corrupted or deleted `config.json` means Epicenter forgets about every workspace. With the centralized model, the directory *is* the source of truth — there's nothing to corrupt.
 3. **Discovery simplicity**: One `readdir()` vs "read config, validate each path, handle missing ones."
-4. **Symlinks solve the 90% case**: The only scenario that needs workspaces outside `~/.epicenter/` is developer-authored workspaces in git repos. `epicenter add <path>` creates a symlink, which is transparent to the orchestrator and self-evidently broken (dangling symlink) if the target disappears.
+4. **Symlinks solve the 90% case**: The only scenario that needs workspaces outside `~/.epicenter/` is developer-authored workspaces in git repos. `epicenter add <path>` creates a symlink, which is transparent to the local server and self-evidently broken (dangling symlink) if the target disappears.
 
 The centralized model handles both workspace weights (installed, developed) without introducing a mutable registry of paths.
 

@@ -418,14 +418,15 @@ Merge `add`, `install`, `uninstall`, `ls`, and `export` into a single command gr
 - `packages/cli/src/commands/ls-command.ts`
 - `packages/cli/src/commands/export-command.ts`
 
-- [ ] **4.1** Create `workspace-command.ts` exporting `buildWorkspaceCommand(home: string)`
-- [ ] **4.2** Migrate `add` subcommand from `add-command.ts` (symlink registration)
-- [ ] **4.3** Migrate `install` subcommand from `install-command.ts` (jsrepo integration)
-- [ ] **4.4** Migrate `uninstall` subcommand from `uninstall-command.ts` (remove workspace)
-- [ ] **4.5** Migrate `ls` subcommand from `ls-command.ts` (list workspaces)
-- [ ] **4.6** Migrate `export` subcommand from `export-command.ts` (offline Y.Doc export)
+- [x] **4.1** Create `workspace-command.ts` exporting `buildWorkspaceCommand(home: string)`
+- [x] **4.2** Migrate `add` subcommand from `add-command.ts` (symlink registration)
+- [x] **4.3** Migrate `install` subcommand from `install-command.ts` (jsrepo integration)
+- [x] **4.4** Migrate `uninstall` subcommand from `uninstall-command.ts` (remove workspace)
+- [x] **4.5** Migrate `ls` subcommand from `ls-command.ts` (list workspaces)
+- [x] **4.6** Migrate `export` subcommand from `export-command.ts` (offline Y.Doc export)
 - [ ] **4.7** Delete the five original command files
-- [ ] **4.8** All subcommands are offline (no server required)
+  > **Note**: Deferred to Wave 4 (cli.ts rewrite) when old imports are removed
+- [x] **4.8** All subcommands are offline (no server required)
 
 ### Step 5: Create `local-command.ts` — Local Server Management
 
@@ -437,17 +438,19 @@ Merge `serve` (inline in `cli.ts`) and `run-command.ts` into `local start`.
 **Files to delete** (after migration):
 - `packages/cli/src/commands/run-command.ts`
 
-- [ ] **5.1** Create `local-command.ts` exporting `buildLocalCommand(home: string)`
-- [ ] **5.2** `local start` subcommand: lazy `import('@epicenter/server-local')`, calls `createLocalServer()`
-- [ ] **5.3** `--workspace <id>` flag: if provided, load only that workspace (replaces `run` command)
-- [ ] **5.4** `--remote <url>` flag: passed as `remoteUrl` to `createLocalServer()` for sync
-- [ ] **5.5** `--port <n>` flag: defaults to `DEFAULT_PORT` (3913)
-- [ ] **5.6** `--watch` flag: re-exec via `Bun.spawn(['bun', '--watch', ...])` (migrated from serve)
-- [ ] **5.7** `local status` subcommand: probe `http://localhost:{port}/` and display server info
-- [ ] **5.8** `local stop` subcommand: send signal to running server process (or inform user to Ctrl+C)
-- [ ] **5.9** SIGINT/SIGTERM handlers that call `server.stop()` then `process.exit(0)`
+- [x] **5.1** Create `local-command.ts` exporting `buildLocalCommand(home: string)`
+- [x] **5.2** `local start` subcommand: lazy `import('@epicenter/server-local')`, calls `createLocalServer()`
+- [x] **5.3** `--workspace <id>` flag: if provided, load only that workspace (replaces `run` command)
+- [x] **5.4** `--remote <url>` flag: passed as `remoteUrl` to `createLocalServer()` for sync
+- [x] **5.5** `--port <n>` flag: defaults to `DEFAULT_PORT` (3913)
+- [x] **5.6** `--watch` flag: re-exec via `Bun.spawn(['bun', '--watch', ...])` (migrated from serve)
+- [x] **5.7** `local status` subcommand: probe `http://localhost:{port}/` and display server info
+- [x] **5.8** `local stop` subcommand: PID file approach with SIGTERM
+- [x] **5.9** SIGINT/SIGTERM handlers that call `server.stop()` then `process.exit(0)`
 - [ ] **5.10** Delete `run-command.ts`
+  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
 - [ ] **5.11** Remove inline `buildServeCommand()` from `cli.ts`
+  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
 
 ### Step 6: Create `remote-command.ts` — Remote Server Management
 
@@ -456,13 +459,14 @@ New command group for starting and checking remote servers.
 **Files to create**:
 - `packages/cli/src/commands/remote-command.ts`
 
-- [ ] **6.1** Create `remote-command.ts` exporting `buildRemoteCommand(home: string)`
-- [ ] **6.2** `remote start` subcommand: lazy `import('@epicenter/server-remote')`, calls `createRemoteServer()`
-- [ ] **6.3** `--port <n>` flag: defaults to 3914 (one above local default)
-- [ ] **6.4** Pass through relevant config: auth database path, AI provider env vars
-- [ ] **6.5** `remote status` subcommand: `--url <url>` flag, probe health endpoint via `createHttpClient`, display server info
-- [ ] **6.6** `remote stop` subcommand: send signal to running server process
-- [ ] **6.7** SIGINT/SIGTERM handlers for clean shutdown
+- [x] **6.1** Create `remote-command.ts` exporting `buildRemoteCommand(home: string)`
+- [x] **6.2** `remote start` subcommand: lazy `import('@epicenter/server-remote')`, calls `createRemoteServer()`
+- [x] **6.3** `--port <n>` flag: defaults to 3914 (one above local default)
+- [x] **6.4** Pass through relevant config: auth database path, AI provider env vars
+  > **Note**: Only `port` passed through for now — auth/sync config requires database setup beyond CLI flags
+- [x] **6.5** `remote status` subcommand: `--url <url>` flag, probe health endpoint via plain fetch, display server info
+- [x] **6.6** `remote stop` subcommand: PID file approach with SIGTERM (mirrors local stop)
+- [x] **6.7** SIGINT/SIGTERM handlers for clean shutdown
 
 ### Step 7: Create `auth-command.ts` — Remote Authentication
 

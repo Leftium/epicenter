@@ -1,5 +1,7 @@
+import { mkdir, readdir, readlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { AnyWorkspaceClient, ProjectDir } from '@epicenter/workspace';
+import { workspacesDir } from './paths';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EXPORTED TYPES
@@ -11,6 +13,14 @@ export type WorkspaceResolution =
 	| { status: 'found'; projectDir: ProjectDir; client: AnyWorkspaceClient }
 	| { status: 'ambiguous'; configs: string[] }
 	| { status: 'not_found' };
+
+export type DiscoveredWorkspace = {
+	id: string;
+	type: 'installed' | 'linked';
+	path: string;
+	status: 'ok' | 'error';
+	error?: string;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN ENTRY POINT
@@ -117,6 +127,75 @@ export async function discoverAllWorkspaces(
 	}
 
 	return { clients, sources };
+}
+
+/**
+ * Discover workspaces from $EPICENTER_HOME/workspaces/.
+ *
+ * Scans the centralized workspaces directory via a single readdir().
+ * Follows symlinks transparently. Gracefully skips broken entries.
+ */
+export async function discoverWorkspaces(home: string): Promise<{
+	clients: AnyWorkspaceClient[];
+	sources: Map<string, string>;
+	discovered: DiscoveredWorkspace[];
+}> {
+	const dir = workspacesDir(home);
+	await mkdir(dir, { recursive: true });
+
+	const dirents = await readdir(dir, { withFileTypes: true });
+	const clients: AnyWorkspaceClient[] = [];
+	const sources = new Map<string, string>();
+	const discovered: DiscoveredWorkspace[] = [];
+
+	for (const dirent of dirents) {
+		const fullPath = join(dir, dirent.name);
+		const isSymlink = dirent.isSymbolicLink();
+		const configPath = join(fullPath, CONFIG_FILENAME);
+
+		const configExists = await Bun.file(configPath).exists();
+		if (!configExists) {
+			discovered.push({
+				id: dirent.name,
+				type: isSymlink ? 'linked' : 'installed',
+				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				status: 'error',
+				error: isSymlink ? 'symlink target not found or missing config' : 'missing epicenter.config.ts',
+			});
+			continue;
+		}
+
+		try {
+			const client = await loadClientFromPath(configPath);
+			if (sources.has(client.id)) {
+				throw new Error(
+					`Duplicate workspace ID "${client.id}" found:\n` +
+						`  - ${sources.get(client.id)}\n` +
+						`  - ${configPath}\n` +
+						`Each workspace must have a unique ID.`,
+				);
+			}
+			sources.set(client.id, configPath);
+			clients.push(client);
+			discovered.push({
+				id: client.id,
+				type: isSymlink ? 'linked' : 'installed',
+				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				status: 'ok',
+			});
+		} catch (err) {
+			console.error(`Failed to load workspace "${dirent.name}": ${err}`);
+			discovered.push({
+				id: dirent.name,
+				type: isSymlink ? 'linked' : 'installed',
+				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				status: 'error',
+				error: err instanceof Error ? err.message : String(err),
+			});
+		}
+	}
+
+	return { clients, sources, discovered };
 }
 
 export async function loadClientFromPath(

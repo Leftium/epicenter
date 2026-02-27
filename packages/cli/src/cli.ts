@@ -7,7 +7,10 @@ import { buildKvCommand } from './commands/kv-commands';
 import { buildTablesCommand } from './commands/meta-commands';
 import { buildTableCommand } from './commands/table-commands';
 import { buildWorkspacesCommand } from './commands/workspaces-command';
-import { discoverAllWorkspaces } from './discovery';
+import { buildAddCommand } from './commands/add-command';
+import { buildLsCommand } from './commands/ls-command';
+import { discoverAllWorkspaces, discoverWorkspaces } from './discovery';
+import { resolveEpicenterHome } from './paths';
 
 const DEFAULT_URL = 'http://localhost:3913';
 
@@ -46,10 +49,15 @@ function buildServeCommand() {
 					description: 'Port to run the server on',
 					default: 3913,
 				})
+				.option('home', {
+					type: 'string' as const,
+					description: 'Override EPICENTER_HOME directory',
+				})
 				.option('dir', {
 					type: 'string' as const,
-					description: 'Directory to scan for workspace configs',
+					description: 'Directory to scan for workspace configs (deprecated: use epicenter add <path> instead)',
 					array: true,
+					deprecated: true,
 				})
 				.option('watch', {
 					alias: 'w',
@@ -58,7 +66,7 @@ function buildServeCommand() {
 					description:
 						'Restart server when workspace config files change (uses bun --watch)',
 				}),
-		handler: async (argv: { port: number; dir?: string[]; watch: boolean }) => {
+		handler: async (argv: { port: number; home?: string; dir?: string[]; watch: boolean }) => {
 			if (argv.watch) {
 				// Re-exec with bun --watch, stripping --watch/-w to avoid recursion
 				const args = process.argv.filter((a) => a !== '--watch' && a !== '-w');
@@ -69,8 +77,16 @@ function buildServeCommand() {
 				return;
 			}
 
-			const dirs = argv.dir ?? [process.cwd()];
-			const { clients, sources } = await discoverAllWorkspaces(dirs);
+			let clients: Awaited<ReturnType<typeof discoverWorkspaces>>['clients'];
+			let sources: Awaited<ReturnType<typeof discoverWorkspaces>>['sources'];
+
+			if (argv.dir) {
+				console.warn('Warning: --dir is deprecated. Use "epicenter add <path>" to register workspaces.\n');
+				({ clients, sources } = await discoverAllWorkspaces(argv.dir));
+			} else {
+				const home = resolveEpicenterHome(argv.home);
+				({ clients, sources } = await discoverWorkspaces(home));
+			}
 
 			if (clients.length === 0) {
 				console.log('No workspaces found. Starting server with no workspaces.');
@@ -110,11 +126,16 @@ function buildServeCommand() {
 export function createCLI() {
 	return {
 		async run(argv: string[]) {
-			// Check if this is the serve command (doesn't need server running)
-			if (argv[0] === 'serve') {
+			const home = resolveEpicenterHome();
+
+			// Tier 1: commands that don't need a running server
+			const tier1Commands = ['serve', 'add', 'ls'];
+			if (tier1Commands.includes(argv[0] ?? '')) {
 				const cli = yargs()
 					.scriptName('epicenter')
 					.command(buildServeCommand() as any)
+					.command(buildAddCommand(home) as any)
+					.command(buildLsCommand(home) as any)
 					.help()
 					.version()
 					.strict();

@@ -4,11 +4,11 @@ import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createHubSessionValidator } from './auth/local-auth';
+import { listenWithFallback } from './server';
 import type { AuthConfig } from './sync/auth';
 import { createSyncPlugin } from './sync/plugin';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
-import { listenWithFallback } from './server';
 
 export { DEFAULT_PORT, listenWithFallback } from './server';
 
@@ -71,24 +71,21 @@ function createAuthGuardPlugin(hubUrl?: string) {
 	if (!hubUrl) return plugin;
 
 	const validateSession = createHubSessionValidator({ hubUrl });
-	plugin.onBeforeHandle(
-		{ as: 'global' },
-		async ({ request, status, path }) => {
-			if (path === '/') return;
+	plugin.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
+		if (path === '/') return;
 
-			const authHeader = request.headers.get('authorization');
-			if (!authHeader?.startsWith('Bearer ')) {
-				return status(401, 'Unauthorized: Bearer token required');
-			}
+		const authHeader = request.headers.get('authorization');
+		if (!authHeader?.startsWith('Bearer ')) {
+			return status(401, 'Unauthorized: Bearer token required');
+		}
 
-			const token = authHeader.slice(7);
-			const result = await validateSession(token);
+		const token = authHeader.slice(7);
+		const result = await validateSession(token);
 
-			if (!result.valid) {
-				return status(401, 'Unauthorized: Invalid session token');
-			}
-		},
-	);
+		if (!result.valid) {
+			return status(401, 'Unauthorized: Invalid session token');
+		}
+	});
 	return plugin;
 }
 
@@ -188,8 +185,7 @@ export function createLocalServer(config: LocalServerConfig) {
 					info: {
 						title: 'Epicenter Sidecar API',
 						version: '1.0.0',
-						description:
-							'Sidecar server — local sync relay and workspace API.',
+						description: 'Sidecar server — local sync relay and workspace API.',
 					},
 				},
 			}),
@@ -223,9 +219,7 @@ export function createLocalServer(config: LocalServerConfig) {
 			actions: allActionPaths,
 		}))
 		.use(
-			new Elysia({ prefix: '/workspaces' }).use(
-				createWorkspacePlugin(clients),
-			),
+			new Elysia({ prefix: '/workspaces' }).use(createWorkspacePlugin(clients)),
 		);
 
 	const preferredPort =

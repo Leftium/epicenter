@@ -15,7 +15,9 @@ export function buildLsCommand(home: string) {
 
 			let dirents: import('node:fs').Dirent[];
 			try {
-				dirents = await readdir(dir, { withFileTypes: true }) as unknown as import('node:fs').Dirent[];
+				dirents = (await readdir(dir, {
+					withFileTypes: true,
+				})) as unknown as import('node:fs').Dirent[];
 			} catch {
 				output([], { format: argv.format });
 				return;
@@ -26,8 +28,12 @@ export function buildLsCommand(home: string) {
 			for (const dirent of dirents) {
 				const fullPath = join(dir, dirent.name);
 				const isSymlink = dirent.isSymbolicLink();
-				const configExists = await Bun.file(join(fullPath, 'epicenter.config.ts')).exists();
-				const hasManifest = await Bun.file(join(fullPath, 'manifest.json')).exists();
+				const configExists = await Bun.file(
+					join(fullPath, 'epicenter.config.ts'),
+				).exists();
+				const hasManifest = await Bun.file(
+					join(fullPath, 'manifest.json'),
+				).exists();
 
 				const resolvedPath = isSymlink
 					? await readlink(fullPath).catch(() => fullPath)
@@ -51,7 +57,8 @@ export function buildLsCommand(home: string) {
 						const manifest = JSON.parse(
 							await Bun.file(join(fullPath, 'manifest.json')).text(),
 						);
-						(entry as Record<string, unknown>).registry = manifest.registry ?? null;
+						(entry as Record<string, unknown>).registry =
+							manifest.registry ?? null;
 					} catch {
 						// ignore corrupt manifest
 					}

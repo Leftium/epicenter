@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import {
 	createWorkspace,
 	defineMutation,
@@ -19,7 +20,6 @@ import {
 	defineTable,
 	defineWorkspace,
 } from '@epicenter/workspace';
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { type } from 'arktype';
 import { Elysia } from 'elysia';
 import Type from 'typebox';

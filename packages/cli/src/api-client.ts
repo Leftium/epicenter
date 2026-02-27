@@ -16,7 +16,8 @@ export async function assertServerRunning(
 		const response = await fetch(baseUrl, {
 			signal: AbortSignal.timeout(2000),
 		});
-		if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+		if (!response.ok)
+			throw new Error(`Server responded with ${response.status}`);
 	} catch (cause) {
 		const error = new Error(
 			`No Epicenter server running on ${baseUrl}.\nStart one with: epicenter serve`,

@@ -15,7 +15,11 @@
  */
 
 import { createActionContext } from '@epicenter/ai';
-import { createWorkspace, defineMutation, defineQuery } from '@epicenter/workspace';
+import {
+	createWorkspace,
+	defineMutation,
+	defineQuery,
+} from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import Type from 'typebox';

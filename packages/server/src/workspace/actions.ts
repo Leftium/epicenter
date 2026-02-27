@@ -1,6 +1,5 @@
-import type { Action, Actions } from '@epicenter/workspace';
+import type { Action, Actions, AnyWorkspaceClient } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import Value from 'typebox/value';
 
@@ -75,11 +74,15 @@ export function createActionsPlugin(
 				async ({ params, query, status }) => {
 					const workspace = workspaces[params.workspaceId];
 					if (!workspace?.actions)
-						return status('Not Found', { error: 'Workspace or actions not found' });
+						return status('Not Found', {
+							error: 'Workspace or actions not found',
+						});
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status('Not Found', { error: `Action not found: ${actionPath}` });
+						return status('Not Found', {
+							error: `Action not found: ${actionPath}`,
+						});
 
 					if (action.type !== 'query')
 						return status('Bad Request', {
@@ -110,11 +113,15 @@ export function createActionsPlugin(
 				async ({ params, body, status }) => {
 					const workspace = workspaces[params.workspaceId];
 					if (!workspace?.actions)
-						return status('Not Found', { error: 'Workspace or actions not found' });
+						return status('Not Found', {
+							error: 'Workspace or actions not found',
+						});
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status('Not Found', { error: `Action not found: ${actionPath}` });
+						return status('Not Found', {
+							error: `Action not found: ${actionPath}`,
+						});
 
 					if (action.type !== 'mutation')
 						return status('Bad Request', {

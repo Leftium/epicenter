@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { Argv } from 'yargs';
-import { outputError } from '../format-output';
 import { loadClientFromPath } from '../discovery';
+import { outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
 export function buildRunCommand(home: string) {
@@ -24,7 +24,11 @@ export function buildRunCommand(home: string) {
 					type: 'string' as const,
 					describe: 'Hub URL for Yjs sync (e.g. wss://hub.example.com)',
 				}),
-		handler: async (argv: { 'workspace-id': string; port: number; hub?: string }) => {
+		handler: async (argv: {
+			'workspace-id': string;
+			port: number;
+			hub?: string;
+		}) => {
 			const wsId = argv['workspace-id'];
 			const wsPath = join(workspacesDir(home), wsId);
 			const configPath = join(wsPath, 'epicenter.config.ts');

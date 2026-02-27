@@ -4,10 +4,9 @@ import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
 import { type AuthPluginConfig, createAuthPlugin } from './auth';
 import { createProxyPlugin } from './proxy';
+import { listenWithFallback } from './server';
 import type { AuthConfig } from './sync/auth';
 import { createSyncPlugin } from './sync/plugin';
-
-import { listenWithFallback } from './server';
 
 export { DEFAULT_PORT, listenWithFallback } from './server';
 

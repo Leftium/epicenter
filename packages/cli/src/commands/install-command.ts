@@ -22,7 +22,8 @@ export function buildInstallCommand(home: string) {
 				.positional('item', {
 					type: 'string' as const,
 					demandOption: true,
-					describe: 'Registry item to install (e.g. github/myorg/workspaces/my-app)',
+					describe:
+						'Registry item to install (e.g. github/myorg/workspaces/my-app)',
 				})
 				.option('registry', {
 					type: 'string' as const,
@@ -131,7 +132,10 @@ export function buildInstallCommand(home: string) {
 
 			if (Object.keys(deps).length > 0) {
 				const pkg = { name: item.name, private: true, dependencies: deps };
-				await Bun.write(join(wsDir, 'package.json'), JSON.stringify(pkg, null, 2));
+				await Bun.write(
+					join(wsDir, 'package.json'),
+					JSON.stringify(pkg, null, 2),
+				);
 				console.log('Installing dependencies...');
 				await $`bun install`.cwd(wsDir).quiet();
 			}
@@ -143,7 +147,10 @@ export function buildInstallCommand(home: string) {
 				installedAt: new Date().toISOString(),
 				files: item.files.map((f: { path: string }) => f.path),
 			};
-			await Bun.write(join(wsDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+			await Bun.write(
+				join(wsDir, 'manifest.json'),
+				JSON.stringify(manifest, null, 2),
+			);
 
 			output({
 				installed: item.name,

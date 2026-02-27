@@ -7,9 +7,7 @@ import { Elysia } from 'elysia';
  * Uses parameterized routes so Eden Treaty can infer the full type chain.
  * The caller mounts this under `/:workspaceId` prefix.
  */
-export function createKvPlugin(
-	workspaces: Record<string, AnyWorkspaceClient>,
-) {
+export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 	return new Elysia({ prefix: '/:workspaceId/kv' })
 		.get(
 			'/:key',
@@ -19,15 +17,13 @@ export function createKvPlugin(
 					return status('Not Found', { error: 'Workspace not found' });
 				try {
 					const result = workspace.kv.get(params.key);
-					if (result.status === 'not_found')
-						return status('Not Found', result);
+					if (result.status === 'not_found') return status('Not Found', result);
 					if (result.status === 'invalid')
 						return status('Unprocessable Content', result);
 					return result;
 				} catch (error) {
 					return status('Bad Request', {
-						error:
-							error instanceof Error ? error.message : 'Unknown KV key',
+						error: error instanceof Error ? error.message : 'Unknown KV key',
 					});
 				}
 			},
@@ -46,8 +42,7 @@ export function createKvPlugin(
 					return { status: 'set' as const, key: params.key };
 				} catch (error) {
 					return status('Bad Request', {
-						error:
-							error instanceof Error ? error.message : 'Unknown KV key',
+						error: error instanceof Error ? error.message : 'Unknown KV key',
 					});
 				}
 			},
@@ -66,8 +61,7 @@ export function createKvPlugin(
 					return { status: 'deleted' as const, key: params.key };
 				} catch (error) {
 					return status('Bad Request', {
-						error:
-							error instanceof Error ? error.message : 'Unknown KV key',
+						error: error instanceof Error ? error.message : 'Unknown KV key',
 					});
 				}
 			},

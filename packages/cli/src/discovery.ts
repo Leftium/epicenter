@@ -158,9 +158,13 @@ export async function discoverWorkspaces(home: string): Promise<{
 			discovered.push({
 				id: dirent.name,
 				type: isSymlink ? 'linked' : 'installed',
-				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				path: isSymlink
+					? await readlink(fullPath).catch(() => fullPath)
+					: fullPath,
 				status: 'error',
-				error: isSymlink ? 'symlink target not found or missing config' : 'missing epicenter.config.ts',
+				error: isSymlink
+					? 'symlink target not found or missing config'
+					: 'missing epicenter.config.ts',
 			});
 			continue;
 		}
@@ -180,7 +184,9 @@ export async function discoverWorkspaces(home: string): Promise<{
 			discovered.push({
 				id: client.id,
 				type: isSymlink ? 'linked' : 'installed',
-				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				path: isSymlink
+					? await readlink(fullPath).catch(() => fullPath)
+					: fullPath,
 				status: 'ok',
 			});
 		} catch (err) {
@@ -188,7 +194,9 @@ export async function discoverWorkspaces(home: string): Promise<{
 			discovered.push({
 				id: dirent.name,
 				type: isSymlink ? 'linked' : 'installed',
-				path: isSymlink ? await readlink(fullPath).catch(() => fullPath) : fullPath,
+				path: isSymlink
+					? await readlink(fullPath).catch(() => fullPath)
+					: fullPath,
 				status: 'error',
 				error: err instanceof Error ? err.message : String(err),
 			});

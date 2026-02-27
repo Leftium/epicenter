@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { Argv } from 'yargs';
-import { formatYargsOptions, output, outputError } from '../format-output';
 import { loadClientFromPath } from '../discovery';
+import { formatYargsOptions, output, outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
 export function buildExportCommand(home: string) {

@@ -3,16 +3,16 @@ import type { Argv } from 'yargs';
 import yargs from 'yargs';
 import { createApiClient } from './api-client';
 import { buildActionCommand } from './command-builder';
-import { buildKvCommand } from './commands/kv-commands';
-import { buildTablesCommand } from './commands/meta-commands';
-import { buildTableCommand } from './commands/table-commands';
-import { buildWorkspacesCommand } from './commands/workspaces-command';
 import { buildAddCommand } from './commands/add-command';
 import { buildExportCommand } from './commands/export-command';
 import { buildInstallCommand } from './commands/install-command';
+import { buildKvCommand } from './commands/kv-commands';
 import { buildLsCommand } from './commands/ls-command';
+import { buildTablesCommand } from './commands/meta-commands';
 import { buildRunCommand } from './commands/run-command';
+import { buildTableCommand } from './commands/table-commands';
 import { buildUninstallCommand } from './commands/uninstall-command';
+import { buildWorkspacesCommand } from './commands/workspaces-command';
 import { discoverAllWorkspaces, discoverWorkspaces } from './discovery';
 import { resolveEpicenterHome } from './paths';
 
@@ -59,7 +59,8 @@ function buildServeCommand() {
 				})
 				.option('dir', {
 					type: 'string' as const,
-					description: 'Directory to scan for workspace configs (deprecated: use epicenter add <path> instead)',
+					description:
+						'Directory to scan for workspace configs (deprecated: use epicenter add <path> instead)',
 					array: true,
 					deprecated: true,
 				})
@@ -70,7 +71,12 @@ function buildServeCommand() {
 					description:
 						'Restart server when workspace config files change (uses bun --watch)',
 				}),
-		handler: async (argv: { port: number; home?: string; dir?: string[]; watch: boolean }) => {
+		handler: async (argv: {
+			port: number;
+			home?: string;
+			dir?: string[];
+			watch: boolean;
+		}) => {
 			if (argv.watch) {
 				// Re-exec with bun --watch, stripping --watch/-w to avoid recursion
 				const args = process.argv.filter((a) => a !== '--watch' && a !== '-w');
@@ -85,7 +91,9 @@ function buildServeCommand() {
 			let sources: Awaited<ReturnType<typeof discoverWorkspaces>>['sources'];
 
 			if (argv.dir) {
-				console.warn('Warning: --dir is deprecated. Use "epicenter add <path>" to register workspaces.\n');
+				console.warn(
+					'Warning: --dir is deprecated. Use "epicenter add <path>" to register workspaces.\n',
+				);
 				({ clients, sources } = await discoverAllWorkspaces(argv.dir));
 			} else {
 				const home = resolveEpicenterHome(argv.home);
@@ -133,7 +141,15 @@ export function createCLI() {
 			const home = resolveEpicenterHome();
 
 			// Tier 1: commands that don't need a running server
-			const tier1Commands = ['serve', 'add', 'ls', 'install', 'run', 'uninstall', 'export'];
+			const tier1Commands = [
+				'serve',
+				'add',
+				'ls',
+				'install',
+				'run',
+				'uninstall',
+				'export',
+			];
 			if (tier1Commands.includes(argv[0] ?? '')) {
 				const cli = yargs()
 					.scriptName('epicenter')

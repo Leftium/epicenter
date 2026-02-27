@@ -1,7 +1,6 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import { collectActionPaths } from './actions';
-import { createActionsPlugin } from './actions';
 import { Elysia } from 'elysia';
+import { collectActionPaths, createActionsPlugin } from './actions';
 import { createKvPlugin } from './kv';
 import { createTablesPlugin } from './tables';
 

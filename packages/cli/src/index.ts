@@ -6,4 +6,4 @@ export {
 	resolveWorkspace,
 	type WorkspaceResolution,
 } from './discovery';
-export { resolveEpicenterHome, workspacesDir, cacheDir } from './paths';
+export { cacheDir, resolveEpicenterHome, workspacesDir } from './paths';

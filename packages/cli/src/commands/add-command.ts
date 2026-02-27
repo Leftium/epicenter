@@ -1,8 +1,8 @@
 import { lstat, symlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { Argv } from 'yargs';
-import { output, outputError } from '../format-output';
 import { loadClientFromPath } from '../discovery';
+import { output, outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
 export function buildAddCommand(home: string) {

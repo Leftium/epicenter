@@ -15,39 +15,46 @@ function resolveTable(
 	return (workspace.tables as Record<string, TableHelper<BaseRow>>)[tableName];
 }
 
-/**
- * Create an Elysia plugin that exposes tables as REST CRUD endpoints.
- *
- * Uses parameterized routes so Eden Treaty can infer the full type chain.
- * The caller mounts this under `/:workspaceId` prefix.
- */
 export function createTablesPlugin(
 	workspaces: Record<string, AnyWorkspaceClient>,
 ) {
-	return new Elysia({ prefix: '/:workspaceId/tables' })
-		.get(
-			'/:tableName',
+	const tableNames = new Set<string>();
+	for (const workspace of Object.values(workspaces)) {
+		for (const name of Object.keys(workspace.definitions.tables)) {
+			tableNames.add(name);
+		}
+	}
+
+	const router = new Elysia({ prefix: '/:workspaceId/tables' });
+
+	for (const tableName of tableNames) {
+		router.get(
+			`/${tableName}`,
 			({ params, status }) => {
 				const tableHelper = resolveTable(
 					workspaces,
 					params.workspaceId,
-					params.tableName,
+					tableName,
 				);
 				if (!tableHelper)
 					return status('Not Found', { error: 'Table not found' });
 				return tableHelper.getAllValid();
 			},
 			{
-				detail: { description: 'List all rows in a table', tags: ['tables'] },
+				detail: {
+					description: `List all rows in the ${tableName} table`,
+					tags: [tableName, 'tables'],
+				},
 			},
-		)
-		.get(
-			'/:tableName/:id',
+		);
+
+		router.get(
+			`/${tableName}/:id`,
 			({ params, status }) => {
 				const tableHelper = resolveTable(
 					workspaces,
 					params.workspaceId,
-					params.tableName,
+					tableName,
 				);
 				if (!tableHelper)
 					return status('Not Found', { error: 'Table not found' });
@@ -58,16 +65,20 @@ export function createTablesPlugin(
 				return result;
 			},
 			{
-				detail: { description: 'Get row by ID', tags: ['tables'] },
+				detail: {
+					description: `Get a row by ID from the ${tableName} table`,
+					tags: [tableName, 'tables'],
+				},
 			},
-		)
-		.put(
-			'/:tableName/:id',
+		);
+
+		router.put(
+			`/${tableName}/:id`,
 			({ params, body, status }) => {
 				const tableHelper = resolveTable(
 					workspaces,
 					params.workspaceId,
-					params.tableName,
+					tableName,
 				);
 				if (!tableHelper)
 					return status('Not Found', { error: 'Table not found' });
@@ -79,18 +90,19 @@ export function createTablesPlugin(
 			},
 			{
 				detail: {
-					description: 'Create or replace row by ID',
-					tags: ['tables'],
+					description: `Create or replace a row by ID in the ${tableName} table`,
+					tags: [tableName, 'tables'],
 				},
 			},
-		)
-		.patch(
-			'/:tableName/:id',
+		);
+
+		router.patch(
+			`/${tableName}/:id`,
 			({ params, body, status }) => {
 				const tableHelper = resolveTable(
 					workspaces,
 					params.workspaceId,
-					params.tableName,
+					tableName,
 				);
 				if (!tableHelper)
 					return status('Not Found', { error: 'Table not found' });
@@ -105,25 +117,32 @@ export function createTablesPlugin(
 			},
 			{
 				detail: {
-					description: 'Partial update row by ID',
-					tags: ['tables'],
+					description: `Partially update a row by ID in the ${tableName} table`,
+					tags: [tableName, 'tables'],
 				},
 			},
-		)
-		.delete(
-			'/:tableName/:id',
+		);
+
+		router.delete(
+			`/${tableName}/:id`,
 			({ params, status }) => {
 				const tableHelper = resolveTable(
 					workspaces,
 					params.workspaceId,
-					params.tableName,
+					tableName,
 				);
 				if (!tableHelper)
 					return status('Not Found', { error: 'Table not found' });
 				return tableHelper.delete(params.id);
 			},
 			{
-				detail: { description: 'Delete row by ID', tags: ['tables'] },
+				detail: {
+					description: `Delete a row by ID from the ${tableName} table`,
+					tags: [tableName, 'tables'],
+				},
 			},
 		);
+	}
+
+	return router;
 }

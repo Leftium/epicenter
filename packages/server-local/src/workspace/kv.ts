@@ -1,22 +1,25 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 
-/**
- * Create an Elysia plugin that exposes KV store as REST endpoints.
- *
- * Uses parameterized routes so Eden Treaty can infer the full type chain.
- * The caller mounts this under `/:workspaceId` prefix.
- */
 export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
-	return new Elysia({ prefix: '/:workspaceId/kv' })
-		.get(
-			'/:key',
+	const kvKeys = new Set<string>();
+	for (const workspace of Object.values(workspaces)) {
+		for (const name of Object.keys(workspace.definitions.kv)) {
+			kvKeys.add(name);
+		}
+	}
+
+	const router = new Elysia({ prefix: '/:workspaceId/kv' });
+
+	for (const key of kvKeys) {
+		router.get(
+			`/${key}`,
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
 					return status('Not Found', { error: 'Workspace not found' });
 				try {
-					const result = workspace.kv.get(params.key);
+					const result = workspace.kv.get(key);
 					if (result.status === 'not_found') return status('Not Found', result);
 					if (result.status === 'invalid')
 						return status('Unprocessable Content', result);
@@ -28,18 +31,22 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 				}
 			},
 			{
-				detail: { description: 'Get KV value by key', tags: ['kv'] },
+				detail: {
+					description: `Get the value of the ${key} KV entry`,
+					tags: [key, 'kv'],
+				},
 			},
-		)
-		.put(
-			'/:key',
+		);
+
+		router.put(
+			`/${key}`,
 			({ params, body, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
 					return status('Not Found', { error: 'Workspace not found' });
 				try {
-					workspace.kv.set(params.key, body as never);
-					return { status: 'set' as const, key: params.key };
+					workspace.kv.set(key, body as never);
+					return { status: 'set' as const, key };
 				} catch (error) {
 					return status('Bad Request', {
 						error: error instanceof Error ? error.message : 'Unknown KV key',
@@ -47,18 +54,22 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 				}
 			},
 			{
-				detail: { description: 'Set KV value by key', tags: ['kv'] },
+				detail: {
+					description: `Set the value of the ${key} KV entry`,
+					tags: [key, 'kv'],
+				},
 			},
-		)
-		.delete(
-			'/:key',
+		);
+
+		router.delete(
+			`/${key}`,
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
 					return status('Not Found', { error: 'Workspace not found' });
 				try {
-					workspace.kv.delete(params.key);
-					return { status: 'deleted' as const, key: params.key };
+					workspace.kv.delete(key);
+					return { status: 'deleted' as const, key };
 				} catch (error) {
 					return status('Bad Request', {
 						error: error instanceof Error ? error.message : 'Unknown KV key',
@@ -66,7 +77,13 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 				}
 			},
 			{
-				detail: { description: 'Delete KV entry by key', tags: ['kv'] },
+				detail: {
+					description: `Delete the ${key} KV entry`,
+					tags: [key, 'kv'],
+				},
 			},
 		);
+	}
+
+	return router;
 }

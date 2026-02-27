@@ -8,8 +8,11 @@ import { buildTablesCommand } from './commands/meta-commands';
 import { buildTableCommand } from './commands/table-commands';
 import { buildWorkspacesCommand } from './commands/workspaces-command';
 import { buildAddCommand } from './commands/add-command';
+import { buildExportCommand } from './commands/export-command';
 import { buildInstallCommand } from './commands/install-command';
 import { buildLsCommand } from './commands/ls-command';
+import { buildRunCommand } from './commands/run-command';
+import { buildUninstallCommand } from './commands/uninstall-command';
 import { discoverAllWorkspaces, discoverWorkspaces } from './discovery';
 import { resolveEpicenterHome } from './paths';
 
@@ -130,14 +133,17 @@ export function createCLI() {
 			const home = resolveEpicenterHome();
 
 			// Tier 1: commands that don't need a running server
-			const tier1Commands = ['serve', 'add', 'ls', 'install'];
+			const tier1Commands = ['serve', 'add', 'ls', 'install', 'run', 'uninstall', 'export'];
 			if (tier1Commands.includes(argv[0] ?? '')) {
 				const cli = yargs()
 					.scriptName('epicenter')
 					.command(buildServeCommand() as any)
 					.command(buildAddCommand(home) as any)
+					.command(buildExportCommand(home) as any)
 					.command(buildInstallCommand(home) as any)
 					.command(buildLsCommand(home) as any)
+					.command(buildRunCommand(home) as any)
+					.command(buildUninstallCommand(home) as any)
 					.help()
 					.version()
 					.strict();

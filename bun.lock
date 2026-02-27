@@ -299,9 +299,11 @@
         "@elysiajs/eden": "^1.4.8",
         "@epicenter/server": "workspace:*",
         "@epicenter/workspace": "workspace:*",
+        "jsrepo": "^3.6.1",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
+        "yjs": "^13.6.29",
       },
       "devDependencies": {
         "@types/yargs": "catalog:",

@@ -475,12 +475,12 @@ New command group for authenticating with a remote server.
 **Files to create**:
 - `packages/cli/src/commands/auth-command.ts`
 
-- [ ] **7.1** Create `auth-command.ts` exporting `buildAuthCommand(home: string)`
-- [ ] **7.2** `auth login` subcommand: `--remote <url>` flag (or read from stored auth), prompt for email/password, call `POST /auth/sign-in/email`, store token via `saveAuth()`
-- [ ] **7.3** `auth logout` subcommand: call `POST /auth/sign-out` if token exists, then `clearAuth()`
-- [ ] **7.4** `auth status` subcommand: call `GET /auth/get-session` with stored token, display user info and session validity
-- [ ] **7.5** If no `--remote` flag and no stored remote URL, error with helpful message
-- [ ] **7.6** Use `createHttpClient(remoteUrl)` for all remote calls (not Eden)
+- [x] **7.1** Create `auth-command.ts` exporting `buildAuthCommand(home: string)`
+- [x] **7.2** `auth login` subcommand: `--remote <url>` flag (or read from stored auth), prompt for email/password, call `POST /api/auth/sign-in/email`, store token via `saveAuth()`
+- [x] **7.3** `auth logout` subcommand: call `POST /api/auth/sign-out` if token exists, then `clearAuth()`
+- [x] **7.4** `auth status` subcommand: call `GET /api/auth/get-session` with stored token, display user info and session validity
+- [x] **7.5** If no `--remote` flag and no stored remote URL, error with helpful message
+- [x] **7.6** Use `createHttpClient(remoteUrl)` for all remote calls (not Eden)
 
 ### Step 8: Create `data-command.ts` — Workspace Data Operations
 
@@ -496,15 +496,17 @@ Merge `table-commands.ts`, `kv-commands.ts`, `meta-commands.ts`, `workspaces-com
 - `packages/cli/src/commands/workspaces-command.ts`
 - `packages/cli/src/command-builder.ts`
 
-- [ ] **8.1** Create `data-command.ts` exporting `buildDataCommand(home: string, serverUrl: string)`
-- [ ] **8.2** First positional arg is workspace ID. Fetch workspace metadata from `GET /workspaces/{id}` via `createHttpClient`
-- [ ] **8.3** `tables` subcommand: list table names from metadata
-- [ ] **8.4** `<table> list|get|set|update|delete` subcommands: migrate from `table-commands.ts`, use `createHttpClient` instead of Eden
-- [ ] **8.5** `kv get|set|delete` subcommands: migrate from `kv-commands.ts`, use `createHttpClient`
-- [ ] **8.6** `action <path> [json]` subcommand: migrate from `command-builder.ts`, convert dot-notation to slashes, auto-detect GET vs POST
+- [x] **8.1** Create `data-command.ts` exporting `buildDataCommand(serverUrl: string)`
+  > **Note**: Removed `home` param — not needed since data commands use HTTP client only
+- [x] **8.2** First positional arg is workspace ID
+- [x] **8.3** `tables` subcommand: list table names via HTTP
+- [x] **8.4** `<table> list|get|set|update|delete` subcommands: migrated from `table-commands.ts`, uses `createHttpClient`
+- [x] **8.5** `kv get|set|delete` subcommands: migrated from `kv-commands.ts`, uses `createHttpClient`
+- [x] **8.6** `action <path> [json]` subcommand: migrated from `command-builder.ts`, converts dot-notation to slashes
 - [ ] **8.7** Delete the four original command files and `command-builder.ts`
-- [ ] **8.8** Use `parseJsonInput` for mutations (unchanged behavior)
-- [ ] **8.9** `assertServerRunning()` with clear error message before any data command
+  > **Note**: Deferred to Wave 4 (cli.ts rewrite)
+- [x] **8.8** Use `parseJsonInput` for mutations (unchanged behavior)
+- [x] **8.9** `assertServerRunning()` with clear error message before any data command
 
 ### Step 9: Rewrite `cli.ts` — Clean Dispatch
 

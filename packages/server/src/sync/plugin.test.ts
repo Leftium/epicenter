@@ -17,6 +17,7 @@ import { createSyncProvider } from '@epicenter/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import type { AuthConfig } from './auth';
+import { tokenAuth } from './auth';
 import { createSyncPlugin } from './plugin';
 
 // ============================================================================
@@ -598,7 +599,7 @@ describe('sync plugin REST document update', () => {
 
 describe('sync plugin REST auth', () => {
 	test('returns 401 without Authorization header when auth is configured', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 
 		try {
 			const res = await fetch(ctx.httpUrl('/rooms/'));
@@ -610,7 +611,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('returns 401 with wrong Bearer token', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 
 		try {
 			const res = await fetch(ctx.httpUrl('/rooms/'), {
@@ -624,7 +625,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('works with correct Bearer token', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 		const room = uniqueRoom();
 
 		try {
@@ -667,7 +668,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('ignores token query param for REST routes (Bearer header only)', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 
 		try {
 			const queryTokenRes = await fetch(ctx.httpUrl('/rooms/?token=secret'));
@@ -710,7 +711,7 @@ describe('sync plugin auth', () => {
 	}
 
 	test('rejects connection without token when auth is required', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 
 		try {
 			const room = uniqueRoom();
@@ -732,7 +733,7 @@ describe('sync plugin auth', () => {
 	});
 
 	test('rejects connection with wrong token', async () => {
-		const ctx = startTestServer({ auth: { token: 'correct-token' } });
+		const ctx = startTestServer({ auth: tokenAuth('correct-token') });
 
 		try {
 			const room = uniqueRoom();
@@ -755,7 +756,7 @@ describe('sync plugin auth', () => {
 	});
 
 	test('accepts connection with correct token', async () => {
-		const ctx = startTestServer({ auth: { token: 'secret' } });
+		const ctx = startTestServer({ auth: tokenAuth('secret') });
 
 		try {
 			const room = uniqueRoom();

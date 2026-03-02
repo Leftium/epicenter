@@ -4,13 +4,28 @@ export const CLOSE_UNAUTHORIZED = 4401;
 /**
  * Auth configuration for the sync plugin.
  *
- * - Omit entirely for open mode (no auth, any client connects)
- * - `{ token: string }` for shared token mode (direct comparison)
- * - `{ verify: fn }` for custom verification (e.g. JWT validation)
+ * - `openAuth()` — open mode (no auth, any client connects)
+ * - `tokenAuth(secret)` — shared token mode (direct comparison)
+ * - `verifyAuth(fn)` — custom verification (e.g. JWT validation)
  */
 export type AuthConfig =
-	| { token: string }
-	| { verify: (token: string) => boolean | Promise<boolean> };
+	| { mode: 'open' }
+	| { mode: 'token'; token: string }
+	| { mode: 'verify'; verify: (token: string) => boolean | Promise<boolean> };
+
+/** Open mode: accept all connections without any token. */
+export const openAuth = (): AuthConfig => ({ mode: 'open' });
+
+/** Token mode: accept connections that present an exact matching token. */
+export const tokenAuth = (token: string): AuthConfig => ({
+	mode: 'token',
+	token,
+});
+
+/** Verify mode: delegate auth to a custom function (e.g. JWT validation). */
+export const verifyAuth = (
+	verify: (token: string) => boolean | Promise<boolean>,
+): AuthConfig => ({ mode: 'verify', verify });
 
 /**
  * Validate an auth token against the configured auth mode.
@@ -18,18 +33,21 @@ export type AuthConfig =
  * @returns true if the connection should be accepted, false if rejected
  */
 export async function validateAuth(
-	config: AuthConfig | undefined,
+	config: AuthConfig,
 	token: string | undefined,
 ): Promise<boolean> {
-	// Open mode — no auth configured, accept everyone
-	if (!config) return true;
-
-	// Token is required when auth is configured
-	if (!token) return false;
-
-	if ('token' in config) {
-		return config.token === token;
+	switch (config.mode) {
+		case 'open':
+			return true;
+		case 'token':
+			return token !== undefined && config.token === token;
+		case 'verify':
+			return token !== undefined && (await config.verify(token));
+		default: {
+			const _exhaustive: never = config;
+			throw new Error(
+				`Unknown auth mode: ${(_exhaustive as AuthConfig & { mode: string }).mode}`,
+			);
+		}
 	}
-
-	return config.verify(token);
 }

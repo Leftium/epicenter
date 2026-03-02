@@ -6,4 +6,5 @@
  */
 
 export type { AuthConfig } from './auth';
+export { openAuth, tokenAuth, verifyAuth } from './auth';
 export { createSyncPlugin, type SyncPluginConfig } from './plugin';

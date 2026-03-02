@@ -7,7 +7,12 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { type AuthConfig, CLOSE_UNAUTHORIZED, validateAuth } from './auth';
+import {
+	type AuthConfig,
+	CLOSE_UNAUTHORIZED,
+	openAuth,
+	validateAuth,
+} from './auth';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -140,7 +145,7 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 	const restAuth = new Elysia().guard({
 		async beforeHandle({ headers, status }) {
 			const token = extractBearerToken(headers.authorization);
-			const authorized = await validateAuth(config?.auth, token);
+			const authorized = await validateAuth(config?.auth ?? openAuth(), token);
 			if (!authorized) {
 				return status('Unauthorized', 'Unauthorized');
 			}
@@ -196,7 +201,7 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 
 				// Auth check — extract ?token from query params
 				const token = ws.data.query.token;
-				const authorized = await validateAuth(config?.auth, token);
+				const authorized = await validateAuth(config?.auth ?? openAuth(), token);
 
 				if (!authorized) {
 					ws.close(CLOSE_UNAUTHORIZED, 'Unauthorized');

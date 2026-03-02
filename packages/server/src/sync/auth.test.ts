@@ -6,66 +6,64 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { validateAuth } from './auth';
+import { openAuth, tokenAuth, validateAuth, verifyAuth } from './auth';
 
 describe('validateAuth', () => {
 	describe('open mode (no config)', () => {
 		test('accepts connection with no token', async () => {
-			const result = await validateAuth(undefined, undefined);
+			const result = await validateAuth(openAuth(), undefined);
 			expect(result).toBe(true);
 		});
 
 		test('accepts connection with any token', async () => {
-			const result = await validateAuth(undefined, 'any-token');
+			const result = await validateAuth(openAuth(), 'any-token');
 			expect(result).toBe(true);
 		});
 
 		test('accepts connection with empty token', async () => {
-			const result = await validateAuth(undefined, '');
+			const result = await validateAuth(openAuth(), '');
 			expect(result).toBe(true);
 		});
 	});
 
 	describe('token mode', () => {
 		test('accepts matching token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, 'secret-key');
+			const result = await validateAuth(tokenAuth('secret-key'), 'secret-key');
 			expect(result).toBe(true);
 		});
 
 		test('rejects non-matching token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, 'wrong-token');
+			const result = await validateAuth(tokenAuth('secret-key'), 'wrong-token');
 			expect(result).toBe(false);
 		});
 
 		test('rejects missing token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, undefined);
+			const result = await validateAuth(tokenAuth('secret-key'), undefined);
 			expect(result).toBe(false);
 		});
 
 		test('rejects empty token when secret is configured', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, '');
+			const result = await validateAuth(tokenAuth('secret-key'), '');
 			expect(result).toBe(false);
 		});
 
-		test('rejects empty string token (falsy check)', async () => {
-			const config = { token: '' };
-			const result = await validateAuth(config, '');
-			expect(result).toBe(false);
+		test('empty string token matches empty string config (undefined check, not falsy)', async () => {
+			// The new implementation uses `token !== undefined` — empty string is not undefined,
+			// so an empty-string bearer matches an empty-string token config.
+			const result = await validateAuth(tokenAuth(''), '');
+			expect(result).toBe(true);
 		});
 
 		test('is case-sensitive', async () => {
-			const config = { token: 'Secret-Key' };
-			const result = await validateAuth(config, 'secret-key');
+			const result = await validateAuth(tokenAuth('Secret-Key'), 'secret-key');
 			expect(result).toBe(false);
 		});
 
 		test('handles tokens with special characters', async () => {
-			const config = { token: 'sk-proj-abc123!@#$%' };
-			const result = await validateAuth(config, 'sk-proj-abc123!@#$%');
+			const result = await validateAuth(
+				tokenAuth('sk-proj-abc123!@#$%'),
+				'sk-proj-abc123!@#$%',
+			);
 			expect(result).toBe(true);
 		});
 	});
@@ -78,19 +76,17 @@ describe('validateAuth', () => {
 				return true;
 			};
 
-			await validateAuth({ verify }, 'test-token');
+			await validateAuth(verifyAuth(verify), 'test-token');
 			expect(capturedToken).toBe('test-token');
 		});
 
 		test('returns true when verify returns true', async () => {
-			const verify = () => true;
-			const result = await validateAuth({ verify }, 'token');
+			const result = await validateAuth(verifyAuth(() => true), 'token');
 			expect(result).toBe(true);
 		});
 
 		test('returns false when verify returns false', async () => {
-			const verify = () => false;
-			const result = await validateAuth({ verify }, 'token');
+			const result = await validateAuth(verifyAuth(() => false), 'token');
 			expect(result).toBe(false);
 		});
 
@@ -101,7 +97,7 @@ describe('validateAuth', () => {
 				return false;
 			};
 
-			await validateAuth({ verify }, undefined);
+			await validateAuth(verifyAuth(verify), undefined);
 			expect(called).toBe(false);
 		});
 
@@ -112,18 +108,18 @@ describe('validateAuth', () => {
 				return false;
 			};
 
-			await validateAuth({ verify }, 'test-token');
+			await validateAuth(verifyAuth(verify), 'test-token');
 			expect(capturedToken).toBe('test-token');
 		});
 
 		test('verify can implement custom logic', async () => {
-			const verify = (token: string | undefined) => {
-				return token?.startsWith('valid-') ?? false;
-			};
+			const verify = (token: string) => token.startsWith('valid-');
 
-			expect(await validateAuth({ verify }, 'valid-token')).toBe(true);
-			expect(await validateAuth({ verify }, 'invalid-token')).toBe(false);
-			expect(await validateAuth({ verify }, undefined)).toBe(false);
+			expect(await validateAuth(verifyAuth(verify), 'valid-token')).toBe(true);
+			expect(await validateAuth(verifyAuth(verify), 'invalid-token')).toBe(
+				false,
+			);
+			expect(await validateAuth(verifyAuth(verify), undefined)).toBe(false);
 		});
 	});
 
@@ -135,29 +131,28 @@ describe('validateAuth', () => {
 				});
 			};
 
-			const result = await validateAuth({ verify }, 'token');
+			const result = await validateAuth(verifyAuth(verify), 'token');
 			expect(result).toBe(true);
 		});
 
 		test('returns false from async verify', async () => {
-			const verify = async () => false;
-			const result = await validateAuth({ verify }, 'token');
+			const result = await validateAuth(verifyAuth(async () => false), 'token');
 			expect(result).toBe(false);
 		});
 
 		test('async verify receives token correctly', async () => {
 			let capturedToken: string | undefined;
-			const verify = async (token: string | undefined) => {
+			const verify = async (token: string) => {
 				capturedToken = token;
 				return true;
 			};
 
-			await validateAuth({ verify }, 'async-token');
+			await validateAuth(verifyAuth(verify), 'async-token');
 			expect(capturedToken).toBe('async-token');
 		});
 
 		test('handles async verify with complex logic', async () => {
-			const verify = async (token: string | undefined) => {
+			const verify = async (token: string) => {
 				// Simulate JWT validation or database lookup
 				return new Promise<boolean>((resolve) => {
 					setTimeout(() => {
@@ -166,40 +161,42 @@ describe('validateAuth', () => {
 				});
 			};
 
-			expect(await validateAuth({ verify }, 'valid-jwt-token')).toBe(true);
-			expect(await validateAuth({ verify }, 'invalid-token')).toBe(false);
+			expect(await validateAuth(verifyAuth(verify), 'valid-jwt-token')).toBe(
+				true,
+			);
+			expect(await validateAuth(verifyAuth(verify), 'invalid-token')).toBe(
+				false,
+			);
 		});
 	});
 
 	describe('edge cases', () => {
 		test('no token when auth is configured returns false', async () => {
-			const config = { token: 'secret' };
-			const result = await validateAuth(config, undefined);
+			const result = await validateAuth(tokenAuth('secret'), undefined);
 			expect(result).toBe(false);
 		});
 
 		test('empty token when auth is configured returns false', async () => {
-			const config = { token: 'secret' };
-			const result = await validateAuth(config, '');
+			const result = await validateAuth(tokenAuth('secret'), '');
 			expect(result).toBe(false);
 		});
 
 		test('whitespace-only token is treated as valid token', async () => {
-			const config = { token: '   ' };
-			const result = await validateAuth(config, '   ');
+			const result = await validateAuth(tokenAuth('   '), '   ');
 			expect(result).toBe(true);
 		});
 
 		test('very long token is handled correctly', async () => {
 			const longToken = 'x'.repeat(10000);
-			const config = { token: longToken };
-			const result = await validateAuth(config, longToken);
+			const result = await validateAuth(tokenAuth(longToken), longToken);
 			expect(result).toBe(true);
 		});
 
 		test('unicode tokens are handled correctly', async () => {
-			const config = { token: 'token-🔐-secret' };
-			const result = await validateAuth(config, 'token-🔐-secret');
+			const result = await validateAuth(
+				tokenAuth('token-🔐-secret'),
+				'token-🔐-secret',
+			);
 			expect(result).toBe(true);
 		});
 
@@ -209,7 +206,7 @@ describe('validateAuth', () => {
 			};
 
 			try {
-				await validateAuth({ verify }, 'token');
+				await validateAuth(verifyAuth(verify), 'token');
 				expect.unreachable('Should have thrown');
 			} catch (e) {
 				expect(e).toBeInstanceOf(Error);

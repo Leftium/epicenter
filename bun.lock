@@ -287,11 +287,14 @@
         "epicenter": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/server": "workspace:*",
+        "@epicenter/server-local": "workspace:*",
+        "@epicenter/server-remote": "workspace:*",
         "@epicenter/workspace": "workspace:*",
+        "jsrepo": "^3.6.1",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
+        "yjs": "^13.6.29",
       },
       "devDependencies": {
         "@types/yargs": "catalog:",
@@ -376,8 +379,48 @@
       "name": "@epicenter/server",
       "version": "0.0.1",
       "dependencies": {
+        "elysia": "^1.2.25",
+        "lib0": "catalog:",
+        "wellcrafted": "catalog:",
+        "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/server-local": {
+      "name": "@epicenter/server-local",
+      "version": "0.0.1",
+      "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/server": "workspace:*",
+        "elysia": "^1.2.25",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "arktype": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "yjs": "catalog:",
+      },
+    },
+    "packages/server-remote": {
+      "name": "@epicenter/server-remote",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/server": "workspace:*",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
         "@tanstack/ai-gemini": "^0.5.0",
@@ -385,20 +428,13 @@
         "@tanstack/ai-openai": "^0.5.0",
         "better-auth": "^1.4.19",
         "elysia": "^1.2.25",
-        "lib0": "catalog:",
-        "typebox": "catalog:",
         "wellcrafted": "catalog:",
-        "y-protocols": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/sync": "workspace:*",
-        "@epicenter/tab-manager": "workspace:*",
         "@types/bun": "catalog:",
-        "arktype": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@epicenter/workspace": "workspace:*",
         "yjs": "catalog:",
       },
     },
@@ -686,6 +722,10 @@
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
     "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
+
+    "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
+
+    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

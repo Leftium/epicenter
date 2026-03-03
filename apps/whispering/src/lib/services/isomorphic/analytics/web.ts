@@ -1,5 +1,4 @@
 import { init, trackEvent } from '@aptabase/web';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import type { AnalyticsService } from './types';
 import { AnalyticsError } from './types';
@@ -15,9 +14,7 @@ export function createAnalyticsServiceWeb(): AnalyticsService {
 					await trackEvent(type, properties);
 				},
 				catch: (error) =>
-					AnalyticsError.Service({
-						message: `Failed to log analytics event: ${extractErrorMessage(error)}`,
-					}),
+					AnalyticsError.LogEventFailed({ cause: error }),
 			}),
 	};
 }

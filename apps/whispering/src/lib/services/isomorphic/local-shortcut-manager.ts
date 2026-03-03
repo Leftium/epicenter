@@ -1,6 +1,10 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
@@ -11,14 +15,19 @@ import {
 } from '$lib/constants/keyboard';
 import { IS_MACOS } from '$lib/constants/platform';
 
-/**
- * Error type for local shortcut service operations.
- * This error is returned when shortcut registration, unregistration, or other
- * local shortcut operations fail. Uses a tagged error pattern for type safety
- * and better error discrimination in Result types.
- */
 const LocalShortcutError = defineErrors({
-	Service: () => ({ message: 'Local shortcut operation failed' }),
+	RegisterFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to register local shortcut: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	UnregisterFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to unregister local shortcut: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	UnregisterAllFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to unregister all local shortcuts: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 type LocalShortcutError = InferErrors<typeof LocalShortcutError>;
 

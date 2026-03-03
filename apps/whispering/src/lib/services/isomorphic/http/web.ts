@@ -22,7 +22,7 @@ export function createHttpServiceWeb(): HttpService {
 
 			if (!response.ok) {
 				return HttpError.Response({
-					status: response.status,
+					response,
 					body: await response.json(),
 				});
 			}

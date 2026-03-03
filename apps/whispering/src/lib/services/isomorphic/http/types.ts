@@ -7,13 +7,13 @@ export const HttpError = defineErrors({
 		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	Response: ({ status, body }: {
-		status: number;
+	Response: ({ response, body }: {
+		response: { status: number };
 		/** The parsed response body from the HTTP error response. */
 		body: unknown;
 	}) => ({
-		message: `HTTP ${status}: ${extractErrorMessage(body)}`,
-		status,
+		message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+		status: response.status,
 		body,
 	}),
 	Parse: ({ cause }: { cause: unknown }) => ({

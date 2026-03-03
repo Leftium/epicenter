@@ -92,19 +92,19 @@ const RecorderError = defineErrors({
 // Usage — no arguments needed
 return RecorderError.Busy();
 
-// Variant with fields — fields are flat on the error object
+// Variant with derived fields — constructor extracts from raw input
 const HttpError = defineErrors({
-  Response: ({ status, body }: { status: number; body: unknown }) => ({
-    message: `HTTP ${status}: ${extractErrorMessage(body)}`,
-    status,
+  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
+    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+    status: response.status,
     body,
   }),
 });
 
-// Usage — provide fields, message auto-computes
-return HttpError.Response({ status: 401, body: { error: 'Unauthorized' } });
+// Usage — pass raw objects, constructor derives fields
+return HttpError.Response({ response, body: await response.json() });
 // error.message → "HTTP 401: Unauthorized"
-// error.status  → 401 (flat on the object)
+// error.status  → 401 (derived from response, flat on the object)
 // error.name    → "Response"
 ```
 
@@ -125,9 +125,9 @@ const HttpError = defineErrors({
     message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
     cause,
   }),
-  Response: ({ status, body }: { status: number; body: unknown }) => ({
-    message: `HTTP ${status}: ${extractErrorMessage(body)}`,
-    status,
+  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
+    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+    status: response.status,
     body,
   }),
   Parse: ({ cause }: { cause: unknown }) => ({

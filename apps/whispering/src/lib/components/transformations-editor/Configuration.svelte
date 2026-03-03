@@ -28,9 +28,11 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type {
+		Transformation,
+		TransformationStep,
+	} from '$lib/services/isomorphic/db';
 	import { generateDefaultTransformationStep } from '$lib/services/isomorphic/db';
-	import type { TransformationStep } from '$lib/services/isomorphic/db';
 
 	// Derived labels for select triggers
 	const stepTypeLabel = (type: string) =>
@@ -42,10 +44,7 @@
 		$props();
 
 	/** Update a single field on a step by index. */
-	function updateStep(
-		index: number,
-		patch: Partial<TransformationStep>,
-	) {
+	function updateStep(index: number, patch: Partial<TransformationStep>) {
 		transformation = {
 			...transformation,
 			steps: transformation.steps.map((s, i) =>
@@ -320,10 +319,7 @@
 												</Select.Trigger>
 												<Select.Content>
 													{#each INFERENCE.OpenAI.models as model}
-														<Select.Item
-															value={model}
-															label={model}
-														/>
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -354,10 +350,7 @@
 												</Select.Trigger>
 												<Select.Content>
 													{#each INFERENCE.Groq.models as model}
-														<Select.Item
-															value={model}
-															label={model}
-														/>
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -388,10 +381,7 @@
 												</Select.Trigger>
 												<Select.Content>
 													{#each INFERENCE.Anthropic.models as model}
-														<Select.Item
-															value={model}
-															label={model}
-														/>
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -422,10 +412,7 @@
 												</Select.Trigger>
 												<Select.Content>
 													{#each INFERENCE.Google.models as model}
-														<Select.Item
-															value={model}
-															label={model}
-														/>
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>

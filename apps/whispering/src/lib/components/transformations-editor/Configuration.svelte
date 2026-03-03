@@ -23,13 +23,7 @@
 		OpenRouterApiKeyInput,
 	} from '$lib/components/settings';
 	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/database';
-	import {
-		ANTHROPIC_INFERENCE_MODEL_OPTIONS,
-		GOOGLE_INFERENCE_MODEL_OPTIONS,
-		GROQ_INFERENCE_MODEL_OPTIONS,
-		INFERENCE_PROVIDER_OPTIONS,
-		OPENAI_INFERENCE_MODEL_OPTIONS,
-	} from '$lib/constants/inference';
+	import { INFERENCE, INFERENCE_PROVIDER_OPTIONS } from '$lib/constants/inference';
 	import type { Transformation } from '$lib/services/isomorphic/db';
 	import { generateDefaultTransformationStep } from '$lib/services/isomorphic/db';
 
@@ -38,14 +32,7 @@
 		TRANSFORMATION_STEP_TYPE_OPTIONS.find((o) => o.value === type)?.label;
 	const providerLabel = (provider: string) =>
 		INFERENCE_PROVIDER_OPTIONS.find((o) => o.value === provider)?.label;
-	const openaiModelLabel = (model: string) =>
-		OPENAI_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const groqModelLabel = (model: string) =>
-		GROQ_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const anthropicModelLabel = (model: string) =>
-		ANTHROPIC_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const googleModelLabel = (model: string) =>
-		GOOGLE_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
+	const modelLabel = (model: string) => model;
 
 	let { transformation = $bindable() }: { transformation: Transformation } =
 		$props();
@@ -371,17 +358,17 @@
 													id="prompt_transform.inference.provider.OpenAI.model"
 													class="w-full"
 												>
-													{openaiModelLabel(
+													{modelLabel(
 														step[
 															'prompt_transform.inference.provider.OpenAI.model'
 														],
 													) ?? 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each OPENAI_INFERENCE_MODEL_OPTIONS as item}
+													{#each INFERENCE.OpenAI.models as model}
 														<Select.Item
-															value={item.value}
-															label={item.label}
+															value={model}
+															label={model}
 														/>
 													{/each}
 												</Select.Content>
@@ -420,17 +407,17 @@
 													id="prompt_transform.inference.provider.Groq.model"
 													class="w-full"
 												>
-													{groqModelLabel(
+													{modelLabel(
 														step[
 															'prompt_transform.inference.provider.Groq.model'
 														],
 													) ?? 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each GROQ_INFERENCE_MODEL_OPTIONS as item}
+													{#each INFERENCE.Groq.models as model}
 														<Select.Item
-															value={item.value}
-															label={item.label}
+															value={model}
+															label={model}
 														/>
 													{/each}
 												</Select.Content>
@@ -469,17 +456,17 @@
 													id="prompt_transform.inference.provider.Anthropic.model"
 													class="w-full"
 												>
-													{anthropicModelLabel(
+													{modelLabel(
 														step[
 															'prompt_transform.inference.provider.Anthropic.model'
 														],
 													) ?? 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each ANTHROPIC_INFERENCE_MODEL_OPTIONS as item}
+													{#each INFERENCE.Anthropic.models as model}
 														<Select.Item
-															value={item.value}
-															label={item.label}
+															value={model}
+															label={model}
 														/>
 													{/each}
 												</Select.Content>
@@ -518,17 +505,17 @@
 													id="prompt_transform.inference.provider.Google.model"
 													class="w-full"
 												>
-													{googleModelLabel(
+													{modelLabel(
 														step[
 															'prompt_transform.inference.provider.Google.model'
 														],
 													) ?? 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each GOOGLE_INFERENCE_MODEL_OPTIONS as item}
+													{#each INFERENCE.Google.models as model}
 														<Select.Item
-															value={item.value}
-															label={item.label}
+															value={model}
+															label={model}
 														/>
 													{/each}
 												</Select.Content>

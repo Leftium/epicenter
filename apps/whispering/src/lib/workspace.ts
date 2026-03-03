@@ -12,10 +12,7 @@ import { type } from 'arktype';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
-import { OPENAI_INFERENCE_MODELS } from '$lib/constants/inference/openai-models';
-import { GROQ_INFERENCE_MODELS } from '$lib/constants/inference/groq-models';
-import { ANTHROPIC_INFERENCE_MODELS } from '$lib/constants/inference/anthropic-models';
-import { GOOGLE_INFERENCE_MODELS } from '$lib/constants/inference/google-models';
+import { INFERENCE } from '$lib/constants/inference';
 import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/openai';
 import { GROQ_MODELS } from '$lib/services/isomorphic/transcription/cloud/groq';
 import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/elevenlabs';
@@ -62,19 +59,19 @@ const transformationStepBase = type({
 const inferenceProvider = type.or(
 	{
 		'inference.provider': "'OpenAI'",
-		'inference.model': type.enumerated(...OPENAI_INFERENCE_MODELS),
+		'inference.model': type.enumerated(...INFERENCE.OpenAI.models),
 	},
 	{
 		'inference.provider': "'Groq'",
-		'inference.model': type.enumerated(...GROQ_INFERENCE_MODELS),
+		'inference.model': type.enumerated(...INFERENCE.Groq.models),
 	},
 	{
 		'inference.provider': "'Anthropic'",
-		'inference.model': type.enumerated(...ANTHROPIC_INFERENCE_MODELS),
+		'inference.model': type.enumerated(...INFERENCE.Anthropic.models),
 	},
 	{
 		'inference.provider': "'Google'",
-		'inference.model': type.enumerated(...GOOGLE_INFERENCE_MODELS),
+		'inference.model': type.enumerated(...INFERENCE.Google.models),
 	},
 	{
 		'inference.provider': "'OpenRouter'",

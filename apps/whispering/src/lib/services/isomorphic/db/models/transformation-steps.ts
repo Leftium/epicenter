@@ -1,13 +1,7 @@
 import { type } from 'arktype';
 import { nanoid } from 'nanoid/non-secure';
 import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/database';
-import {
-	ANTHROPIC_INFERENCE_MODELS,
-	GOOGLE_INFERENCE_MODELS,
-	GROQ_INFERENCE_MODELS,
-	INFERENCE_PROVIDER_IDS,
-	OPENAI_INFERENCE_MODELS,
-} from '$lib/constants/inference';
+import { INFERENCE, INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 
 /**
  * The current version of the TransformationStep schema.
@@ -32,16 +26,16 @@ export const TransformationStepV1 = type({
 		...INFERENCE_PROVIDER_IDS,
 	),
 	'prompt_transform.inference.provider.OpenAI.model': type.enumerated(
-		...OPENAI_INFERENCE_MODELS,
+		...INFERENCE.OpenAI.models,
 	),
 	'prompt_transform.inference.provider.Groq.model': type.enumerated(
-		...GROQ_INFERENCE_MODELS,
+		...INFERENCE.Groq.models,
 	),
 	'prompt_transform.inference.provider.Anthropic.model': type.enumerated(
-		...ANTHROPIC_INFERENCE_MODELS,
+		...INFERENCE.Anthropic.models,
 	),
 	'prompt_transform.inference.provider.Google.model': type.enumerated(
-		...GOOGLE_INFERENCE_MODELS,
+		...INFERENCE.Google.models,
 	),
 	// OpenRouter model is a free string (user can enter any model)
 	'prompt_transform.inference.provider.OpenRouter.model': 'string',

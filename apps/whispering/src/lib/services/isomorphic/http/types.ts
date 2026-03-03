@@ -7,7 +7,11 @@ export const HttpError = defineErrors({
 		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
+	Response: ({ status, bodyMessage }: {
+		status: number;
+		/** The parsed body text from the HTTP response, if available. Not all error responses include a readable body. */
+		bodyMessage?: string;
+	}) => ({
 		message: bodyMessage ? `HTTP ${status}: ${bodyMessage}` : `HTTP ${status} response`,
 		status,
 		bodyMessage,

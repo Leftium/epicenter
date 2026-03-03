@@ -1,18 +1,20 @@
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { nanoid } from 'nanoid/non-secure';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { asShellCommand, CommandServiceLive } from './command';
 import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
 
-export const { FfmpegServiceErr, FfmpegServiceError } =
-	createTaggedError('FfmpegServiceError').withMessage(
-		() => 'An FFmpeg operation failed',
-	);
-
-export type FfmpegServiceError = ReturnType<typeof FfmpegServiceError>;
+export const FfmpegError = defineErrors({
+	Service: ({ operation, cause }: { operation: string; cause: string }) => ({
+		message: `Failed to ${operation}: ${cause}`,
+		operation,
+		cause,
+	}),
+});
+export type FfmpegError = InferErrors<typeof FfmpegError>;
 
 export const FfmpegServiceLive = {
 	/**
@@ -30,8 +32,8 @@ export const FfmpegServiceLive = {
 					return result;
 				},
 				catch: (error) =>
-					FfmpegServiceErr({
-						message: `Unable to determine if FFmpeg is installed through shell. ${extractErrorMessage(error)}`,
+					FfmpegError.Service({
+						operation: 'check FFmpeg installation via shell', cause: extractErrorMessage(error),
 					}),
 			});
 
@@ -75,8 +77,8 @@ export const FfmpegServiceLive = {
 					const { error: verifyError } = await tryAsync({
 						try: () => FsServiceLive.pathToBlob(inputPath),
 						catch: (error) =>
-							FfmpegServiceErr({
-								message: `Temp file not accessible: ${extractErrorMessage(error)}`,
+							FfmpegError.Service({
+								operation: 'verify temp file accessibility', cause: extractErrorMessage(error),
 							}),
 					});
 					if (verifyError) throw new Error(verifyError.message);
@@ -134,8 +136,8 @@ export const FfmpegServiceLive = {
 				}
 			},
 			catch: (error) =>
-				FfmpegServiceErr({
-					message: `Audio compression failed: ${extractErrorMessage(error)}`,
+				FfmpegError.Service({
+					operation: 'compress audio', cause: extractErrorMessage(error),
 				}),
 		});
 	},

@@ -2,7 +2,7 @@ import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import type { HttpService } from '.';
-import { ConnectionErr, ParseErr, ResponseErr } from './types';
+import { HttpError } from './types';
 
 export function createHttpServiceWeb(): HttpService {
 	return {
@@ -15,16 +15,16 @@ export function createHttpServiceWeb(): HttpService {
 						headers,
 					}),
 				catch: (error) =>
-					ConnectionErr({
-						message: `Failed to establish connection: ${extractErrorMessage(error)}`,
+					HttpError.Connection({
+						cause: extractErrorMessage(error),
 					}),
 			});
 			if (responseError) return Err(responseError);
 
 			if (!response.ok) {
-				return ResponseErr({
-					message: extractErrorMessage(await response.json()),
-					context: { status: response.status },
+				return HttpError.Response({
+					status: response.status,
+					bodyMessage: extractErrorMessage(await response.json()),
 				});
 			}
 
@@ -40,8 +40,8 @@ export function createHttpServiceWeb(): HttpService {
 					return result.value as StandardSchemaV1.InferOutput<typeof schema>;
 				},
 				catch: (error) =>
-					ParseErr({
-						message: `Failed to parse response: ${extractErrorMessage(error)}`,
+					HttpError.Parse({
+						cause: extractErrorMessage(error),
 					}),
 			});
 			return parseResult;

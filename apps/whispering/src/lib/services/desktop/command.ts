@@ -1,13 +1,20 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 import type { Brand } from 'wellcrafted/brand';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 
-export const { CommandServiceError, CommandServiceErr } = createTaggedError(
-	'CommandServiceError',
-).withMessage(() => 'Command execution failed');
-export type CommandServiceError = ReturnType<typeof CommandServiceError>;
+export const CommandError = defineErrors({
+	Service: ({ operation, cause }: {
+		operation: 'execute' | 'spawn';
+		cause: string;
+	}) => ({
+		message: `Failed to ${operation} command: ${cause}`,
+		operation,
+		cause,
+	}),
+});
+export type CommandError = InferErrors<typeof CommandError>;
 
 /**
  * Branded type for shell commands that should be executed
@@ -45,8 +52,9 @@ export const CommandServiceLive = {
 			},
 			catch: (error) => {
 				console.error('[TS] execute: error:', error);
-				return CommandServiceErr({
-					message: 'Failed to execute command',
+				return CommandError.Service({
+					operation: 'execute',
+					cause: extractErrorMessage(error),
 				});
 			},
 		});
@@ -82,8 +90,9 @@ export const CommandServiceLive = {
 			},
 			catch: (error) => {
 				console.error('[TS] spawn: error:', error);
-				return CommandServiceErr({
-					message: `Failed to spawn command: ${extractErrorMessage(error)}`,
+				return CommandError.Service({
+					operation: 'spawn',
+					cause: extractErrorMessage(error),
 				});
 			},
 		});

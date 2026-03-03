@@ -6,7 +6,7 @@ import {
 } from '@tauri-apps/plugin-global-shortcut';
 import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, type InferError, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
@@ -21,15 +21,37 @@ import {
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
 
-const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError(
-	'InvalidAcceleratorError',
-).withMessage(() => 'Invalid keyboard accelerator');
-type InvalidAcceleratorError = ReturnType<typeof InvalidAcceleratorError>;
-const { GlobalShortcutServiceError, GlobalShortcutServiceErr } =
-	createTaggedError('GlobalShortcutServiceError').withMessage(
-		() => 'Global shortcut registration failed',
-	);
-type GlobalShortcutServiceError = ReturnType<typeof GlobalShortcutServiceError>;
+const ShortcutError = defineErrors({
+	InvalidAccelerator: (input: {
+		reason: 'invalid_format' | 'no_key_code' | 'multiple_key_codes' | 'generated_invalid';
+		accelerator?: string;
+	}) => {
+		const messages = {
+			invalid_format: `Invalid accelerator format: '${input.accelerator}'. Must follow Electron accelerator specification.`,
+			no_key_code: 'No valid key code found in pressed keys',
+			multiple_key_codes: 'Multiple key codes not allowed in accelerator',
+			generated_invalid: `Generated invalid accelerator: ${input.accelerator}`,
+		} as const;
+		return { message: messages[input.reason], ...input };
+	},
+
+	Service: ({ operation, accelerator, cause }: {
+		operation: 'register' | 'unregister' | 'unregisterAll';
+		accelerator?: string;
+		cause: string;
+	}) => ({
+		message: operation === 'unregisterAll'
+			? `Failed to unregister all global shortcuts: ${cause}`
+			: `Failed to ${operation} global shortcut '${accelerator}': ${cause}`,
+		operation,
+		accelerator,
+		cause,
+	}),
+});
+
+type ShortcutError = InferErrors<typeof ShortcutError>;
+type InvalidAcceleratorError = InferError<typeof ShortcutError.InvalidAccelerator>;
+type GlobalShortcutServiceError = InferError<typeof ShortcutError.Service>;
 
 /**
  * A type that represents a global shortcut accelerator.
@@ -60,8 +82,9 @@ export const GlobalShortcutManagerLive = {
 		if (unregisterError) return Err(unregisterError);
 
 		if (!isValidElectronAccelerator(accelerator)) {
-			return InvalidAcceleratorErr({
-				message: `Invalid accelerator format: '${accelerator}'. Must follow Electron accelerator specification.`,
+			return ShortcutError.InvalidAccelerator({
+				reason: 'invalid_format',
+				accelerator,
 			});
 		}
 
@@ -73,8 +96,10 @@ export const GlobalShortcutManagerLive = {
 					}
 				}),
 			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(error)}`,
+				ShortcutError.Service({
+					operation: 'register',
+					accelerator,
+					cause: extractErrorMessage(error),
 				}),
 		});
 		/**
@@ -104,8 +129,10 @@ export const GlobalShortcutManagerLive = {
 		const { error: unregisterError } = await tryAsync({
 			try: () => tauriUnregister(accelerator),
 			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(error)}`,
+				ShortcutError.Service({
+					operation: 'unregister',
+					accelerator,
+					cause: extractErrorMessage(error),
 				}),
 		});
 		if (unregisterError) return Err(unregisterError);
@@ -121,8 +148,9 @@ export const GlobalShortcutManagerLive = {
 		const { error: unregisterAllError } = await tryAsync({
 			try: () => tauriUnregisterAll(),
 			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to unregister all global shortcuts: ${extractErrorMessage(error)}`,
+				ShortcutError.Service({
+					operation: 'unregisterAll',
+					cause: extractErrorMessage(error),
 				}),
 		});
 		if (unregisterAllError) return Err(unregisterAllError);
@@ -185,13 +213,13 @@ export function pressedKeysToTauriAccelerator(
 
 	// Must have exactly one key code
 	if (keyCodes.length === 0) {
-		return InvalidAcceleratorErr({
-			message: 'No valid key code found in pressed keys',
+		return ShortcutError.InvalidAccelerator({
+			reason: 'no_key_code',
 		});
 	}
 	if (keyCodes.length > 1) {
-		return InvalidAcceleratorErr({
-			message: 'Multiple key codes not allowed in accelerator',
+		return ShortcutError.InvalidAccelerator({
+			reason: 'multiple_key_codes',
 		});
 	}
 
@@ -205,8 +233,9 @@ export function pressedKeysToTauriAccelerator(
 
 	// Final validation
 	if (!isValidElectronAccelerator(accelerator)) {
-		return InvalidAcceleratorErr({
-			message: `Generated invalid accelerator: ${accelerator}`,
+		return ShortcutError.InvalidAccelerator({
+			reason: 'generated_invalid',
+			accelerator,
 		});
 	}
 

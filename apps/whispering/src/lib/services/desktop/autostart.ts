@@ -1,11 +1,18 @@
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 
-export const { AutostartServiceError, AutostartServiceErr } = createTaggedError(
-	'AutostartServiceError',
-).withMessage(() => 'Autostart operation failed');
-export type AutostartServiceError = ReturnType<typeof AutostartServiceError>;
+export const AutostartError = defineErrors({
+	Service: ({ operation, cause }: {
+		operation: 'check' | 'enable' | 'disable';
+		cause: string;
+	}) => ({
+		message: `Failed to ${operation} autostart: ${cause}`,
+		operation,
+		cause,
+	}),
+});
+export type AutostartError = InferErrors<typeof AutostartError>;
 
 /**
  * Auto-start service for desktop platforms.
@@ -22,8 +29,9 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => isEnabled(),
 			catch: (error) =>
-				AutostartServiceErr({
-					message: `Failed to check autostart status: ${extractErrorMessage(error)}`,
+				AutostartError.Service({
+					operation: 'check',
+					cause: extractErrorMessage(error),
 				}),
 		}),
 
@@ -32,8 +40,9 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => enable(),
 			catch: (error) =>
-				AutostartServiceErr({
-					message: `Failed to enable autostart: ${extractErrorMessage(error)}`,
+				AutostartError.Service({
+					operation: 'enable',
+					cause: extractErrorMessage(error),
 				}),
 		}),
 
@@ -42,8 +51,9 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => disable(),
 			catch: (error) =>
-				AutostartServiceErr({
-					message: `Failed to disable autostart: ${extractErrorMessage(error)}`,
+				AutostartError.Service({
+					operation: 'disable',
+					cause: extractErrorMessage(error),
 				}),
 		}),
 };

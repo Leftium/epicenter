@@ -538,12 +538,14 @@ For each file:
 
 ## Implementation order
 
-1. **Update wellcrafted**: `bun update wellcrafted` to `0.33.0`
-2. **Migrate grouped errors first** (biggest win from namespacing):
-   - `http/types.ts` (3 errors → `HttpError` with 3 variants)
-   - `global-shortcut-manager.ts` (2 errors → `ShortcutError` with 2 variants)
-3. **Migrate services with fields + sealed message** (definition + call site changes):
-   - `autostart.ts`, `command.ts`, `ffmpeg.ts`, `fs.ts`, `permissions.ts`, `tray.ts`, `device-stream.ts`
+1. [x] **Update wellcrafted**: `bun update wellcrafted` to `0.33.0`
+2. [x] **Migrate grouped errors first** (biggest win from namespacing):
+   - [x] `http/types.ts` (3 errors → `HttpError` with 3 variants) + consumers `desktop.ts`, `web.ts`, `index.ts`
+   - [x] `global-shortcut-manager.ts` (2 errors → `ShortcutError` with 2 variants)
+3. [x] **Migrate services with fields + sealed message** (definition + call site changes):
+   - [x] `autostart.ts`, `command.ts`, `ffmpeg.ts`, `fs.ts`, `permissions.ts`, `tray.ts`, `device-stream.ts`
+   - [x] `os/types.ts` (not in original spec — discovered during audit)
+   - [x] `local-shortcut-manager.ts` (not in original spec — discovered during audit)
 4. **Migrate bare errors** (definition + call site changes):
    - All the `({ message }) => ({ message })` conversions
 5. **Migrate packages**:

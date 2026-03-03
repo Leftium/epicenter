@@ -1,14 +1,25 @@
 import { basename } from '@tauri-apps/api/path';
 import { readFile } from '@tauri-apps/plugin-fs';
 import mime from 'mime';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 
-export const { FsServiceError, FsServiceErr } =
-	createTaggedError('FsServiceError').withMessage(
-		() => 'File system operation failed',
-	);
-export type FsServiceError = ReturnType<typeof FsServiceError>;
+export const FsError = defineErrors({
+	Service: ({ operation, paths, cause }: {
+		operation: string;
+		paths: string | string[];
+		cause: string;
+	}) => {
+		const pathStr = Array.isArray(paths) ? paths.join(', ') : paths;
+		return {
+			message: `Failed to ${operation}: ${pathStr}: ${cause}`,
+			operation,
+			paths,
+			cause,
+		};
+	},
+});
+export type FsError = InferErrors<typeof FsError>;
 
 export const FsServiceLive = {
 	/**
@@ -19,8 +30,8 @@ export const FsServiceLive = {
 		tryAsync({
 			try: () => createBlobFromPath(path),
 			catch: (error) =>
-				FsServiceErr({
-					message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(error)}`,
+				FsError.Service({
+					operation: 'read file as Blob', paths: path, cause: extractErrorMessage(error),
 				}),
 		}),
 
@@ -32,8 +43,8 @@ export const FsServiceLive = {
 		tryAsync({
 			try: () => createFileFromPath(path),
 			catch: (error) =>
-				FsServiceErr({
-					message: `Failed to read file as File: ${path}: ${extractErrorMessage(error)}`,
+				FsError.Service({
+					operation: 'read file as File', paths: path, cause: extractErrorMessage(error),
 				}),
 		}),
 
@@ -45,8 +56,10 @@ export const FsServiceLive = {
 		tryAsync({
 			try: () => Promise.all(paths.map(createFileFromPath)),
 			catch: (error) =>
-				FsServiceErr({
-					message: `Failed to read files: ${paths.join(', ')}: ${extractErrorMessage(error)}`,
+				FsError.Service({
+					operation: 'read files',
+					paths,
+					cause: extractErrorMessage(error),
 				}),
 		}),
 };

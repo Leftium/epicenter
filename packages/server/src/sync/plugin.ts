@@ -7,7 +7,7 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { type AuthConfig, CLOSE_UNAUTHORIZED, validateAuth } from './auth';
+import { type AuthConfig, validateAuth } from './auth';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -191,17 +191,14 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 				token: t.Optional(t.String()),
 			}),
 
+			async beforeHandle({ query, status }) {
+				if (!config?.auth) return; // open mode — skip
+				const authorized = await validateAuth(config.auth, query.token);
+				if (!authorized) return status(401);
+			},
+
 			async open(ws) {
 				const roomId = ws.data.params.room;
-
-				// Auth check — extract ?token from query params
-				const token = ws.data.query.token;
-				const authorized = await validateAuth(config?.auth, token);
-
-				if (!authorized) {
-					ws.close(CLOSE_UNAUTHORIZED, 'Unauthorized');
-					return;
-				}
 
 				console.log(`[Sync] Client connected to room: ${roomId}`);
 

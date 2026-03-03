@@ -4,10 +4,9 @@ import type { ExtensionFactory } from '../workspace/types';
 /**
  * Sync extension configuration.
  *
- * Supports three auth modes:
- * - **Mode 1 (Open)**: Just `url` — no auth (localhost, Tailscale, LAN)
- * - **Mode 2 (Shared Secret)**: `url` + `token` — static token
- * - **Mode 3 (External JWT)**: `url` + `getToken` — dynamic token refresh
+ * Supports two auth modes:
+ * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
+ * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
  * Persistence is handled separately — add a persistence extension before sync
  * in the `.withExtension()` chain. The sync extension waits for all prior
@@ -22,17 +21,7 @@ import type { ExtensionFactory } from '../workspace/types';
  *   }))
  * ```
  *
- * @example Static token (self-hosted)
- * ```typescript
- * createWorkspace(definition)
- *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({
- *     url: 'ws://my-server:3913/rooms/{id}',
- *     token: 'my-shared-secret',
- *   }))
- * ```
- *
- * @example Dynamic token (cloud)
+ * @example Authenticated mode (cloud)
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
@@ -55,13 +44,9 @@ export type SyncExtensionConfig = {
 	 */
 	url: string | ((workspaceId: string) => string);
 
-	/** Static token for Mode 2 auth. Mutually exclusive with getToken. */
-	token?: string;
-
 	/**
-	 * Dynamic token fetcher for Mode 3 auth. Called on each connect/reconnect.
+	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
 	 * Receives the workspace ID as argument.
-	 * Mutually exclusive with token.
 	 */
 	getToken?: (workspaceId: string) => Promise<string>;
 };
@@ -103,9 +88,8 @@ export function createSyncExtension(
 		let provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: resolvedUrl,
-			token: config.token,
 			getToken: config.getToken
-				? () => config.getToken?.(workspaceId)
+				? () => config.getToken!(workspaceId)
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,
@@ -140,7 +124,6 @@ export function createSyncExtension(
 			reconnect(
 				newConfig: {
 					url?: string;
-					token?: string;
 					getToken?: () => Promise<string>;
 				} = {},
 			) {
@@ -148,7 +131,6 @@ export function createSyncExtension(
 				provider = createSyncProvider({
 					doc: ydoc,
 					url: newConfig.url ?? resolvedUrl,
-					token: newConfig.token,
 					getToken: newConfig.getToken,
 					connect: true,
 					awareness: awareness.raw,

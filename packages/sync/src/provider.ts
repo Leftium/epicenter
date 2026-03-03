@@ -438,7 +438,7 @@ export function createSyncProvider({
 				}
 			}
 
-			// Force token refresh for next round (Mode 3 auth)
+			// Force token refresh for next round (authenticated mode)
 			if (getToken) {
 				cachedToken = null;
 			}

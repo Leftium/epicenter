@@ -102,19 +102,25 @@ The first commit tells future developers WHY the code exists. The second makes t
 
 ## Pull Request Guidelines
 
-### Motivation First
+### WHAT First, Then WHY
 
-Every PR description MUST start with WHY this change exists. Not what files changed, not how it works—WHY.
+Every PR description MUST open with a crisp one-sentence summary of WHAT changed, then immediately explain WHY. The WHAT grounds the reader; the WHY gives them the motivation.
 
 **Good PR opening**:
 
+> Redesigns the `createTaggedError` builder: flat `.withFields()` API replaces nested `.withContext()`/`.withCause()`, `.withMessage()` is optional and seals the message.
+>
+> Analysis of 321 error call sites revealed every error is always all-or-nothing on message ownership. The old API allowed overriding `.withMessage()` at the call site, which masked design problems rather than solving them.
+
+**Bad opening** (why without what):
+
 > Users were getting logged out mid-upload on large files. The session refresh only triggered on navigation, not during background activity like uploads.
 
-**Bad PR opening**:
+**Bad opening** (what without why):
 
 > This PR adds a keepalive call to the upload handler and updates the session refresh logic.
 
-The reader should understand the PROBLEM before they see the SOLUTION.
+The reader should understand WHAT changed before they understand WHY — but they need both.
 
 ### Code Examples Are Mandatory for API Changes
 
@@ -448,24 +454,28 @@ To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="fle
 
 For PRs that change APIs, storage structures, or architectural patterns, use this section order:
 
-1. **Introductory Paragraphs (1-2)**: What the change does and why it exists. Include breaking change notice if applicable. End with a **one-sentence decision summary**: "We chose X over Y because Z."
+1. **Opening sentence**: A single crisp sentence summarizing WHAT changed — what was added, removed, or redesigned. This grounds the reader before the motivation.
 
-2. **API Migration**: Before/after code examples showing the new usage. Mandatory for any API change.
+2. **Why paragraph**: WHY this change exists. What problem does analysis reveal? What was the old design masking? End with a **one-sentence decision summary** if applicable: "We chose X over Y because Z."
 
-3. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
+3. **Change bullets**: A short bullet list of the specific changes — new APIs, removed patterns, behavioral differences. Bullets complement the prose here; they don't replace it.
 
-4. **Technical Details**: Extension points, type definitions, configuration formats—with code examples.
+4. **API Migration**: Before/after code examples showing the new usage. Mandatory for any API change.
 
-5. **Rationale**: Why this approach was chosen. What the old approach was designed for, why it didn't work in practice, what the new approach enables.
+5. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
 
-6. **Future Work**: What could be re-added later, what's intentionally deferred.
+6. **Technical Details**: Extension points, type definitions, configuration formats — with code examples.
 
-7. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end.
+7. **"Why X?" sections**: Use a named `### Why X?` heading for each significant design decision that needs justification. Write as direct statements, not hedged observations.
+
+8. **Future Work**: What could be re-added later, what's intentionally deferred.
+
+9. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end. Most PRs don't need one.
 
 **Key principles**:
 
 - **Visual-first**: Each section should lead with code or ASCII diagrams; prose explains the visuals
-- Code snippets and ASCII art are the most scannable—feature them prominently
+- Code snippets and ASCII art are the most scannable — feature them prominently
 - Rationale is prose-only (no visual needed); it explains the thinking
 - Skip the "Changes" section entirely, or make it minimal at the end
 
@@ -517,11 +527,12 @@ This doubles down on Svelte's philosophy of writing less, more intuitive code wh
 - **Listing files changed**: Never enumerate which files were modified. GitHub's "Files changed" tab already shows this; the PR description should explain WHY, not WHAT files
 - **"Changes" sections at the top**: If you need a changes summary, put it at the very end and keep it minimal. Most PRs don't need one.
 - **Test plans**: Skip unless specifically requested. Tests should be in the code, not described in prose.
-- Bullet points or structured lists (in simple PRs)
-- Section headers like "## Summary" or "## Changes Made"
+- **Section headers like "## Summary" or "## Changes Made"**
+- Bullet points or structured lists as a substitute for explanatory prose (bullets for the change list are fine)
 - Marketing language or excessive formatting
 - Corporate language: "This PR enhances our solution by leveraging..."
 - Marketing speak: "game-changing", "revolutionary", "seamless"
+- Clichés like "first principles"
 - Dramatic hyperbole: "feels like an eternity", "pain point", "excruciating" — stick to facts ("saves 150ms") not drama
 - Over-explaining simple changes
 - Apologetic tone for reasonable decisions

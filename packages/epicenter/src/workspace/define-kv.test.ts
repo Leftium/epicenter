@@ -107,7 +107,7 @@ describe('defineKv', () => {
 					_v: '2',
 				}),
 			).migrate((v) => {
-				if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: 2 as const };
+				if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: 2 };
 				return v;
 			});
 
@@ -166,7 +166,7 @@ describe('defineKv', () => {
 			).migrate((v) => {
 				switch (v._v) {
 					case 1:
-						return { mode: v.mode, fontSize: 14, _v: 2 as const };
+						return { mode: v.mode, fontSize: 14, _v: 2 };
 					case 2:
 						return v;
 				}
@@ -195,7 +195,7 @@ describe('defineKv', () => {
 			const alreadyLatest = theme.migrate({
 				mode: 'system',
 				fontSize: 16,
-				_v: 2 as const,
+				_v: 2,
 			});
 			expect(alreadyLatest).toEqual({
 				mode: 'system',

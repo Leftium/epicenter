@@ -258,3 +258,147 @@ Replaced `.version()` builder chaining with variadic rest parameters on both `de
 ### Follow-up Work
 
 - Open question 1 (update `workspace-api` skill docs) deferred — not blocking.
+
+---
+
+## Addendum: JSON Serializability Constraint
+
+**Date:** 2026-03-03
+**Status:** Implemented
+**Prerequisite:** `wellcrafted@^0.34.0` (adds `wellcrafted/json` export with `JsonValue` and `JsonObject`)
+
+### Motivation
+
+Table rows and KV values are stored in Yjs CRDTs, which serialize to JSON. Nothing currently prevents a schema from declaring non-JSON-safe types (e.g., `Date`, `Map`, `Set`, `undefined`, functions). This creates a class of bugs where data passes TypeScript checks but corrupts silently at runtime during serialization.
+
+### Approach
+
+Constrain the schema types at the `defineTable` and `defineKv` call sites so that:
+
+1. **`defineTable` schemas** must output types extending `BaseRow & JsonObject` — i.e., `{ id: string; _v: number }` plus all other fields must be `JsonValue` (string, number, boolean, null, or nested arrays/objects of the same).
+2. **`defineKv` schemas** must output types extending `JsonValue` — KV values can be primitives, arrays, or objects, but must be JSON-serializable.
+
+### Types from `wellcrafted/json`
+
+```typescript
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+type JsonObject = Record<string, JsonValue>;
+```
+
+### Changes
+
+#### 1. `types.ts` — `BaseRow` intersection
+
+```typescript
+import type { JsonObject } from 'wellcrafted/json';
+export type { JsonObject, JsonValue } from 'wellcrafted/json';
+
+// Before
+export type BaseRow = { id: string; _v: number };
+
+// After — all fields must be JsonValue
+export type BaseRow = { id: string; _v: number } & JsonObject;
+```
+
+This propagates automatically. Every constraint using `CombinedStandardSchema<BaseRow>` (in `defineTable`, `TableDefinitionWithDocBuilder`, `TableDefinition`) now requires JSON-safe output types. No changes needed in `define-table.ts` — it already constrains via `BaseRow`.
+
+#### 2. `define-kv.ts` — `JsonValue` constraint
+
+```typescript
+import type { JsonValue } from 'wellcrafted/json';
+
+// Before
+export function defineKv<TSchema extends CombinedStandardSchema>(schema: TSchema): ...
+export function defineKv<const TVersions extends [CombinedStandardSchema, ...]>(...versions: TVersions): ...
+
+// After
+export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(schema: TSchema): ...
+export function defineKv<const TVersions extends [CombinedStandardSchema<JsonValue>, ...]>(...versions: TVersions): ...
+```
+
+#### 3. `index.ts` — Re-export `JsonValue` and `JsonObject`
+
+```typescript
+export type { JsonObject, JsonValue } from './types.js';
+```
+
+#### 4. `package.json` — Bump wellcrafted
+
+```json
+"wellcrafted": "^0.34.0"
+```
+
+### What this rejects (correctly)
+
+```typescript
+// ❌ Date is not JsonValue
+defineTable(type({ id: 'string', _v: '1', createdAt: 'Date' }));
+
+// ❌ undefined is not JsonValue (optional fields produce T | undefined)
+defineTable(type({ id: 'string', _v: '1', 'name?': 'string' }));
+
+// ❌ Map is not JsonValue
+defineKv(type('Map<string, string>'));
+```
+
+### What this accepts (correctly)
+
+```typescript
+// ✅ All primitives + nested objects/arrays
+defineTable(type({ id: 'string', _v: '1', title: 'string', views: 'number', active: 'boolean' }));
+
+// ✅ Nested JSON objects
+defineTable(type({ id: 'string', _v: '1', metadata: '{ tags: string[], priority: number }' }));
+
+// ✅ KV with primitive value
+defineKv(type('string'));
+
+// ✅ KV with nullable object
+defineKv(type('{ mode: string, fontSize: number } | null'));
+```
+
+### Edge Case: Optional Fields
+
+`{ name?: string }` produces `string | undefined` in TypeScript's output type. `undefined` is not a `JsonValue`. This is **intentionally rejected** — Yjs stores can't represent `undefined` (JSON has no `undefined`). Use `null` instead: `{ name: 'string | null' }`.
+
+### Impact Assessment
+
+**Production code**: All existing schemas use JSON-safe types (strings, numbers, booleans, nested objects). No breakage expected.
+
+**Test files**: May need minor updates if any test schemas use non-JSON types. Most test schemas use `string`, `number`, `boolean` — all `JsonValue`.
+
+### Implementation Plan
+
+#### Wave 4: JSON Serializability Constraint
+
+- [x] **4.1** Bump `wellcrafted` to `^0.34.0` in root `package.json` catalog and run `bun install`
+- [x] **4.2** Update `types.ts`: import `JsonObject` from `wellcrafted/json`, re-export `JsonValue` and `JsonObject`, intersect `BaseRow` with `JsonObject`
+- [x] **4.3** Update `define-kv.ts`: import `JsonValue` from `wellcrafted/json`, constrain all overloads to `CombinedStandardSchema<JsonValue>`
+- [x] **4.4** Update `index.ts`: add `JsonObject` and `JsonValue` to the re-exports from `types.js`
+
+#### Wave 4.5: Fix `createTableHelper` Variance Issue
+
+The `& JsonObject` intersection on `BaseRow` exposed a TypeScript variance issue in `createTableHelper`. The generic `TVersions extends readonly CombinedStandardSchema<BaseRow>[]` forced the `migrate` function into a contravariant position — `(row: SpecificRow) => SpecificRow` can't satisfy `(row: BaseRow) => BaseRow`. Fixed by making the generic operate on the full definition type instead:
+
+```typescript
+// Before — variance-unfriendly
+function createTableHelper<TVersions extends readonly CombinedStandardSchema<BaseRow>[]>(
+  ykv: YKeyValueLww<unknown>,
+  definition: TableDefinition<TVersions>,
+): TableHelper<InferTableRow<TableDefinition<TVersions>>>
+
+// After — variance-friendly
+function createTableHelper<TTableDefinition extends TableDefinition<any>>(
+  ykv: YKeyValueLww<unknown>,
+  definition: TTableDefinition,
+): TableHelper<InferTableRow<TTableDefinition>>
+```
+
+- [x] **4.5.1** Refactor `createTableHelper` generic from `TVersions` to `TTableDefinition extends TableDefinition<any>`
+- [x] **4.5.2** Remove `as const` assertions from migrate return values in all test files (no longer needed)
+
+#### Wave 5: Verify
+
+- [x] **5.1** Run `bun run typecheck` — confirm no new type errors from the constraint
+- [x] **5.2** Run `bun test` — confirm all tests still pass
+- [x] **5.3** Run `bun run lint` — fix any issues

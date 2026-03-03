@@ -108,7 +108,7 @@ describe('describeWorkspace', () => {
 
 		const posts = defineTable(v1, v2).migrate((row) => {
 			if (row._v === 2) return row;
-			return { ...row, views: 0, _v: 2 as const };
+			return { ...row, views: 0, _v: 2 };
 		});
 
 		const client = createWorkspace({

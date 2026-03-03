@@ -73,7 +73,7 @@ describe('defineTable', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
 				return row;
 			});
 
@@ -100,7 +100,7 @@ describe('defineTable', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
 				return row;
 			});
 
@@ -127,7 +127,7 @@ describe('defineTable', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
 				return row;
 			});
 
@@ -152,7 +152,7 @@ describe('defineTable', () => {
 				type({ id: 'string', title: 'string', _v: '1' }),
 				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
 				return row;
 			});
 
@@ -193,7 +193,7 @@ describe('defineTable', () => {
 			).migrate((row) => {
 				switch (row._v) {
 					case 1:
-						return { ...row, views: 0, _v: 2 as const };
+						return { ...row, views: 0, _v: 2 };
 					case 2:
 						return row;
 				}
@@ -234,7 +234,7 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: 2 as const,
+				_v: 2,
 			});
 			expect(alreadyLatest).toEqual({
 				id: '1',
@@ -382,8 +382,8 @@ describe('defineTable', () => {
 			const files = defineTable(
 				type({ id: 'string', updatedAt: 'number', _v: '1' }),
 			);
-			// @ts-expect-error guid key must exist on the row schema
 			files.withDocument('content', {
+				// @ts-expect-error guid key must exist on the row schema
 				guid: 'missing',
 				updatedAt: 'updatedAt',
 			});

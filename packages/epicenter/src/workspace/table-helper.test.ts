@@ -555,7 +555,7 @@ describe('createTableHelper', () => {
 				type({ id: 'string', name: 'string', _v: '1' }),
 				type({ id: 'string', name: 'string', age: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, age: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, age: 0, _v: 2 };
 				return row;
 			});
 			const helper = createTableHelper(ykv, definition);
@@ -578,7 +578,7 @@ describe('createTableHelper', () => {
 				type({ id: 'string', name: 'string', _v: '1' }),
 				type({ id: 'string', name: 'string', age: 'number', _v: '2' }),
 			).migrate((row) => {
-				if (row._v === 1) return { ...row, age: 0, _v: 2 as const };
+				if (row._v === 1) return { ...row, age: 0, _v: 2 };
 				return row;
 			});
 			const helper = createTableHelper(ykv, definition);

@@ -4,13 +4,11 @@
 	import * as Select from '@epicenter/ui/select';
 	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
+	import { type TranscriptionServiceId } from '$lib/constants/transcription';
 	import {
-		TRANSCRIPTION_SERVICE_IDS,
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
 	} from '$lib/services/isomorphic/transcription/registry';
-
-	type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
 
 	let {
 		id = 'transcription-service',

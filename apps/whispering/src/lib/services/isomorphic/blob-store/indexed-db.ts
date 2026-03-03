@@ -1,20 +1,33 @@
 import { openDB } from 'idb';
 import type { BlobStore } from './types.js';
 
-interface BlobRecord {
+/**
+ * Shape of a blob entry persisted in IndexedDB.
+ *
+ * Blobs are stored as raw `ArrayBuffer` rather than `Blob` because Safari has
+ * well-documented issues with Blob storage in IndexedDB — silent data loss,
+ * Private Browsing failures, and periodic erasure. Converting to `ArrayBuffer`
+ * on write and back to `Blob` on read sidesteps all of these.
+ *
+ * The `id` field doubles as the IDB key (`keyPath: 'id'`), so every record
+ * is addressable by a simple string lookup.
+ *
+ * @see https://bugs.webkit.org/show_bug.cgi?id=188438 — Safari IndexedDB Blob bugs
+ */
+type BlobRecord = {
 	id: string;
 	arrayBuffer: ArrayBuffer;
 	mimeType: string;
-}
+};
 
 /**
- * IndexedDB-backed blob store.
+ * Creates an IndexedDB-backed {@link BlobStore}.
  *
- * Stores audio as ArrayBuffer (not Blob) to avoid Safari's well-documented
- * issues with Blob storage in IndexedDB — including silent data loss,
- * Private Browsing failures, and periodic erasure.
+ * Each blob is persisted as a {@link BlobRecord} — an `ArrayBuffer` + MIME
+ * type pair keyed by a string ID. See `BlobRecord` for why `ArrayBuffer` is
+ * used instead of `Blob`.
  *
- * @see https://bugs.webkit.org/show_bug.cgi?id=188438
+ * @see https://bugs.webkit.org/show_bug.cgi?id=188438 — Safari IndexedDB Blob bugs
  */
 export function createIndexedDbBlobStore({
 	dbName,

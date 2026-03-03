@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { trySync } from 'wellcrafted/result';
 
 type ParseErrorReason<TSchema extends StandardSchemaV1> =
@@ -169,16 +169,22 @@ export function createPersistedState<TSchema extends StandardSchemaV1>({
 	};
 }
 
-const { ParseJsonErr } = createTaggedError('ParseJsonError').withMessage(
-	() => 'Failed to parse JSON',
-);
+const ParseError = defineErrors({
+	Json: ({ value, parseError }: { value: string; parseError: string }) => ({
+		message: `Failed to parse JSON for value "${value.slice(0, 100)}...": ${parseError}`,
+		value,
+		parseError,
+	}),
+});
+type ParseError = InferErrors<typeof ParseError>;
 
 function parseJson(value: string) {
 	return trySync({
 		try: () => JSON.parse(value) as unknown,
 		catch: (e) =>
-			ParseJsonErr({
-				message: `Failed to parse JSON for value "${value.slice(0, 100)}...": ${extractErrorMessage(e)}`,
+			ParseError.Json({
+				value,
+				parseError: extractErrorMessage(e),
 			}),
 	});
 }

@@ -1,17 +1,18 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
-type ExtensionErrorContext = {
-	tableName?: string;
-	rowId?: string;
-	filename?: string;
-	filePath?: string;
-	directory?: string;
-	operation?: string;
-};
-
-export const { ExtensionError, ExtensionErr } = createTaggedError(
-	'ExtensionError',
-)
-	.withContext<ExtensionErrorContext | undefined>()
-	.withMessage(() => 'An extension operation failed');
-export type ExtensionError = ReturnType<typeof ExtensionError>;
+export const ExtensionError = defineErrors({
+	Operation: (input: {
+		tableName?: string;
+		rowId?: string;
+		filename?: string;
+		filePath?: string;
+		directory?: string;
+		operation?: string;
+	}) => ({
+		message: input.operation
+			? `Extension operation '${input.operation}' failed`
+			: 'An extension operation failed',
+		...input,
+	}),
+});
+export type ExtensionError = InferErrors<typeof ExtensionError>;

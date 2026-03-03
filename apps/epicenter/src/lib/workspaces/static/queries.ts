@@ -1,12 +1,13 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { addStaticWorkspace, listStaticWorkspaces } from './service';
 import type { StaticWorkspaceEntry } from './types';
 
-const { StaticWorkspaceErr } = createTaggedError(
-	'StaticWorkspaceError',
-).withMessage(() => 'Static workspace operation failed');
+const StaticWorkspaceError = defineErrors({
+	Failed: ({ message }: { message: string }) => ({ message }),
+});
+type StaticWorkspaceError = InferErrors<typeof StaticWorkspaceError>;
 
 const staticWorkspaceKeys = {
 	all: ['static-workspaces'] as const,
@@ -38,7 +39,7 @@ export const staticWorkspaces = {
 				});
 				return Ok(entry);
 			} catch (error) {
-				return StaticWorkspaceErr({ message: String(error) });
+				return StaticWorkspaceError.Failed({ message: String(error) });
 			}
 		},
 	}),

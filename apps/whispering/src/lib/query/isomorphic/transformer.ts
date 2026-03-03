@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid/non-secure';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {
@@ -19,10 +19,23 @@ import { settings } from '$lib/state/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
 
-const { TransformServiceError, TransformServiceErr } = createTaggedError(
-	'TransformServiceError',
-).withMessage(() => 'Transform operation failed');
-type TransformServiceError = ReturnType<typeof TransformServiceError>;
+export const TransformError = defineErrors({
+	Service: ({ operation, message }: {
+		operation:
+			| 'validate_input'
+			| 'validate_steps'
+			| 'db_create_run'
+			| 'db_add_step'
+			| 'db_fail_step'
+			| 'db_complete_step'
+			| 'db_complete_run';
+		message: string;
+	}) => ({
+		message,
+		operation,
+	}),
+});
+export type TransformError = InferErrors<typeof TransformError>;
 
 const transformerKeys = {
 	transformInput: ['transformer', 'transformInput'] as const,
@@ -311,17 +324,18 @@ async function runTransformation({
 }): Promise<
 	Result<
 		TransformationRunCompleted | TransformationRunFailed,
-		TransformServiceError
+		TransformError
 	>
 > {
 	if (!input.trim()) {
-		return TransformServiceErr({
-			message: 'Empty input. Please enter some text to transform',
+		return TransformError.Service({
+			operation: 'validate_input', message: 'Empty input. Please enter some text to transform',
 		});
 	}
 
 	if (transformation.steps.length === 0) {
-		return TransformServiceErr({
+		return TransformError.Service({
+			operation: 'validate_steps',
 			message:
 				'No steps configured. Please add at least one transformation step',
 		});
@@ -342,8 +356,8 @@ async function runTransformation({
 		await services.db.runs.create(transformationRun);
 
 	if (createTransformationRunError)
-		return TransformServiceErr({
-			message: 'Unable to start transformation run',
+		return TransformError.Service({
+			operation: 'db_create_run', message: 'Unable to start transformation run',
 		});
 
 	let currentInput = input;
@@ -358,8 +372,8 @@ async function runTransformation({
 		});
 
 		if (addTransformationStepRunError)
-			return TransformServiceErr({
-				message: 'Unable to initialize transformation step',
+			return TransformError.Service({
+				operation: 'db_add_step', message: 'Unable to initialize transformation step',
 			});
 
 		const handleStepResult = await handleStep({
@@ -377,8 +391,8 @@ async function runTransformation({
 				handleStepResult.error,
 			);
 			if (markTransformationRunAndRunStepAsFailedError)
-				return TransformServiceErr({
-					message: 'Unable to save failed transformation step result',
+				return TransformError.Service({
+					operation: 'db_fail_step', message: 'Unable to save failed transformation step result',
 				});
 			return Ok(markedFailedTransformationRun);
 		}
@@ -393,8 +407,8 @@ async function runTransformation({
 			);
 
 		if (markTransformationRunStepAsCompletedError)
-			return TransformServiceErr({
-				message: 'Unable to save completed transformation step result',
+			return TransformError.Service({
+				operation: 'db_complete_step', message: 'Unable to save completed transformation step result',
 			});
 
 		currentInput = handleStepOutput;
@@ -406,8 +420,8 @@ async function runTransformation({
 	} = await services.db.runs.complete(transformationRun, currentInput);
 
 	if (markTransformationRunAsCompletedError)
-		return TransformServiceErr({
-			message: 'Unable to save completed transformation run',
+		return TransformError.Service({
+			operation: 'db_complete_run', message: 'Unable to save completed transformation run',
 		});
 	return Ok(markedCompletedTransformationRun);
 }

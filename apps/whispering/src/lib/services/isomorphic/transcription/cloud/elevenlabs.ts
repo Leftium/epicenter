@@ -1,5 +1,5 @@
 import { ElevenLabsClient } from 'elevenlabs';
-import { tryAsync, type Result } from 'wellcrafted/result';
+import { type Result, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import type { Settings } from '$lib/settings';
 
@@ -67,7 +67,10 @@ export const ElevenlabsTranscriptionServiceLive = {
 				const transcription = await client.speechToText.convert({
 					file: audioBlob,
 					model_id: options.modelName,
-					language_code: options.outputLanguage !== 'auto' ? options.outputLanguage : undefined,
+					language_code:
+						options.outputLanguage !== 'auto'
+							? options.outputLanguage
+							: undefined,
 					tag_audio_events: false,
 					diarize: true,
 				});
@@ -76,7 +79,8 @@ export const ElevenlabsTranscriptionServiceLive = {
 			catch: (error) =>
 				WhisperingErr({
 					title: '🔧 Transcription Failed',
-					description: 'Unable to complete the transcription using ElevenLabs. This may be due to a service issue or unsupported audio format. Please try again.',
+					description:
+						'Unable to complete the transcription using ElevenLabs. This may be due to a service issue or unsupported audio format. Please try again.',
 					action: { type: 'more-details', error },
 				}),
 		});

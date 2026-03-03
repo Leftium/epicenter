@@ -398,8 +398,7 @@ export function createDbServiceWeb({
 							({ serializedAudio, ...recording }) => recording,
 						);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -415,8 +414,7 @@ export function createDbServiceWeb({
 						const { serializedAudio, ...recording } = latestRecording;
 						return recording;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -427,8 +425,7 @@ export function createDbServiceWeb({
 							.where('transcriptionStatus')
 							.equals('TRANSCRIBING' satisfies Recording['transcriptionStatus'])
 							.primaryKeys(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -441,8 +438,7 @@ export function createDbServiceWeb({
 						const { serializedAudio, ...recording } = maybeRecording;
 						return recording;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -463,8 +459,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						await db.recordings.bulkAdd(dbRecordings);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -489,8 +484,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						await db.recordings.put(dbRecording);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (updateRecordingError) return Err(updateRecordingError);
 				return Ok(recordingWithTimestamp);
@@ -503,8 +497,7 @@ export function createDbServiceWeb({
 				const ids = recordings.map((r) => r.id);
 				return tryAsync({
 					try: () => db.recordings.bulkDelete(ids),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -529,8 +522,7 @@ export function createDbServiceWeb({
 					case 'limit-count': {
 						const { data: count, error: countError } = await tryAsync({
 							try: () => db.recordings.count(),
-							catch: (error) =>
-								DbError.QueryFailed({ cause: error }),
+							catch: (error) => DbError.QueryFailed({ cause: error }),
 						});
 						if (countError) return Err(countError);
 						if (count === 0) return Ok(undefined);
@@ -547,8 +539,7 @@ export function createDbServiceWeb({
 									.primaryKeys();
 								await db.recordings.bulkDelete(idsToDelete);
 							},
-							catch: (error) =>
-								DbError.MutationFailed({ cause: error }),
+							catch: (error) => DbError.MutationFailed({ cause: error }),
 						});
 					}
 				}
@@ -572,8 +563,7 @@ export function createDbServiceWeb({
 						);
 						return blob;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -605,8 +595,7 @@ export function createDbServiceWeb({
 
 						return objectUrl;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -621,16 +610,14 @@ export function createDbServiceWeb({
 			clear: async () => {
 				return tryAsync({
 					try: () => db.recordings.clear(),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
 			getCount: async () => {
 				return tryAsync({
 					try: () => db.recordings.count(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		}, // End of recordings namespace
@@ -639,8 +626,7 @@ export function createDbServiceWeb({
 			getAll: async () => {
 				return tryAsync({
 					try: () => db.transformations.toArray(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -651,8 +637,7 @@ export function createDbServiceWeb({
 							(await db.transformations.get(id)) ?? null;
 						return maybeTransformation;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -664,8 +649,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						await db.transformations.bulkAdd(transformations);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -677,8 +661,7 @@ export function createDbServiceWeb({
 				} satisfies Transformation;
 				const { error: updateTransformationError } = await tryAsync({
 					try: () => db.transformations.put(transformationWithTimestamp),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (updateTransformationError) return Err(updateTransformationError);
 				return Ok(transformationWithTimestamp);
@@ -693,24 +676,21 @@ export function createDbServiceWeb({
 						const ids = transformations.map((t) => t.id);
 						await db.transformations.bulkDelete(ids);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
 			clear: async () => {
 				return tryAsync({
 					try: () => db.transformations.clear(),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
 			getCount: async () => {
 				return tryAsync({
 					try: () => db.transformations.count(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		}, // End of transformations namespace
@@ -722,8 +702,7 @@ export function createDbServiceWeb({
 						const runs = await db.transformationRuns.toArray();
 						return runs ?? [];
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -733,8 +712,7 @@ export function createDbServiceWeb({
 					error: getTransformationRunByIdError,
 				} = await tryAsync({
 					try: () => db.transformationRuns.where('id').equals(id).first(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 				if (getTransformationRunByIdError)
 					return Err(getTransformationRunByIdError);
@@ -758,8 +736,7 @@ export function createDbServiceWeb({
 								new Date(a.startedAt).getTime(),
 						);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -779,8 +756,7 @@ export function createDbServiceWeb({
 								new Date(a.startedAt).getTime(),
 						);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -790,8 +766,7 @@ export function createDbServiceWeb({
 					try: async () => {
 						await db.transformationRuns.bulkAdd(runs);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -813,8 +788,7 @@ export function createDbServiceWeb({
 
 				const { error: addStepRunToTransformationRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(updatedRun),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (addStepRunToTransformationRunError)
 					return Err(addStepRunToTransformationRunError);
@@ -847,8 +821,7 @@ export function createDbServiceWeb({
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(failedRun),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (updateTransformationStepRunError)
 					return Err(updateTransformationStepRunError);
@@ -878,8 +851,7 @@ export function createDbServiceWeb({
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(updatedRun),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (updateTransformationStepRunError)
 					return Err(updateTransformationStepRunError);
@@ -900,8 +872,7 @@ export function createDbServiceWeb({
 
 				const { error: updateTransformationStepRunError } = await tryAsync({
 					try: () => db.transformationRuns.put(completedRun),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 				if (updateTransformationStepRunError)
 					return Err(updateTransformationStepRunError);
@@ -916,24 +887,21 @@ export function createDbServiceWeb({
 						const runIds = runs.map((run) => run.id);
 						await db.transformationRuns.bulkDelete(runIds);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
 			clear: async () => {
 				return tryAsync({
 					try: () => db.transformationRuns.clear(),
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
 			getCount: async () => {
 				return tryAsync({
 					try: () => db.transformationRuns.count(),
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		}, // End of runs namespace

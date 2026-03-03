@@ -140,8 +140,7 @@ export function createFileSystemDb(): DbService {
 
 						return validRecordings;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -155,8 +154,7 @@ export function createFileSystemDb(): DbService {
 						// biome-ignore lint/style/noNonNullAssertion: length check above guarantees at least one element
 						return recordings.at(0)!;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -170,8 +168,7 @@ export function createFileSystemDb(): DbService {
 							.filter((r) => r.transcriptionStatus === 'TRANSCRIBING')
 							.map((r) => r.id);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -196,8 +193,7 @@ export function createFileSystemDb(): DbService {
 
 						return markdownToRecording({ frontMatter, body });
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -236,8 +232,7 @@ export function createFileSystemDb(): DbService {
 							}),
 						);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -273,8 +268,7 @@ export function createFileSystemDb(): DbService {
 
 						return recordingWithTimestamp;
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -304,8 +298,7 @@ export function createFileSystemDb(): DbService {
 						// Single FFI call to delete all files in parallel
 						await bulkDeleteFiles(pathsToDelete);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -327,8 +320,7 @@ export function createFileSystemDb(): DbService {
 								const toDelete = recordings.slice(maxCount);
 								await this.delete(toDelete);
 							},
-							catch: (error) =>
-								DbError.MutationFailed({ cause: error }),
+							catch: (error) => DbError.MutationFailed({ cause: error }),
 						});
 					}
 				}
@@ -358,8 +350,7 @@ export function createFileSystemDb(): DbService {
 
 						return blob;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -385,8 +376,7 @@ export function createFileSystemDb(): DbService {
 						// The Tauri backend handles URL decoding automatically
 						return assetUrl;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -410,8 +400,7 @@ export function createFileSystemDb(): DbService {
 						// Single FFI call to delete all files in parallel
 						await bulkDeleteFiles(pathsToDelete);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -424,8 +413,7 @@ export function createFileSystemDb(): DbService {
 						});
 						return count;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},
@@ -464,8 +452,7 @@ export function createFileSystemDb(): DbService {
 							(t): t is Transformation => t !== null,
 						);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -488,8 +475,7 @@ export function createFileSystemDb(): DbService {
 
 						return validated;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -513,8 +499,7 @@ export function createFileSystemDb(): DbService {
 							}),
 						);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -539,8 +524,7 @@ export function createFileSystemDb(): DbService {
 
 						return transformationWithTimestamp;
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -555,8 +539,7 @@ export function createFileSystemDb(): DbService {
 						);
 						await bulkDeleteFiles(pathsToDelete);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -570,8 +553,7 @@ export function createFileSystemDb(): DbService {
 							await mkdir(transformationsPath, { recursive: true });
 						}
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -582,8 +564,7 @@ export function createFileSystemDb(): DbService {
 						if (error) throw error;
 						return transformations.length;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},
@@ -621,8 +602,7 @@ export function createFileSystemDb(): DbService {
 						// Filter out any invalid entries
 						return runs.filter((run) => run !== null);
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -647,8 +627,7 @@ export function createFileSystemDb(): DbService {
 
 						return validated;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -694,8 +673,7 @@ export function createFileSystemDb(): DbService {
 
 						return runs;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -741,8 +719,7 @@ export function createFileSystemDb(): DbService {
 
 						return runs;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -763,8 +740,7 @@ export function createFileSystemDb(): DbService {
 							}),
 						);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -797,8 +773,7 @@ export function createFileSystemDb(): DbService {
 
 						return newTransformationStepRun;
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -836,8 +811,7 @@ export function createFileSystemDb(): DbService {
 
 						return failedRun;
 					},
-					catch: (e) =>
-						DbError.MutationFailed({ cause: e }),
+					catch: (e) => DbError.MutationFailed({ cause: e }),
 				});
 			},
 
@@ -872,8 +846,7 @@ export function createFileSystemDb(): DbService {
 
 						return updatedRun;
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -900,8 +873,7 @@ export function createFileSystemDb(): DbService {
 
 						return completedRun;
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -914,8 +886,7 @@ export function createFileSystemDb(): DbService {
 						);
 						await bulkDeleteFiles(pathsToDelete);
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -929,8 +900,7 @@ export function createFileSystemDb(): DbService {
 							await mkdir(runsPath, { recursive: true });
 						}
 					},
-					catch: (error) =>
-						DbError.MutationFailed({ cause: error }),
+					catch: (error) => DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -941,8 +911,7 @@ export function createFileSystemDb(): DbService {
 						if (error) throw error;
 						return runs.length;
 					},
-					catch: (error) =>
-						DbError.QueryFailed({ cause: error }),
+					catch: (error) => DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},

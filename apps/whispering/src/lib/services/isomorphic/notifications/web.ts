@@ -75,8 +75,7 @@ export function createNotificationServiceWeb(): NotificationService {
 						};
 					}
 				},
-				catch: (error) =>
-					NotificationError.SendFailed({ cause: error }),
+				catch: (error) => NotificationError.SendFailed({ cause: error }),
 			});
 
 			if (error) return Err(error);

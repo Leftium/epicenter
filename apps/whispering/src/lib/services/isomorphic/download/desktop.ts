@@ -14,8 +14,7 @@ export function createDownloadServiceDesktop(): DownloadService {
 					save({
 						filters: [{ name, extensions: [extension] }],
 					}),
-				catch: (error) =>
-					DownloadError.SaveDialogFailed({ cause: error }),
+				catch: (error) => DownloadError.SaveDialogFailed({ cause: error }),
 			});
 			if (saveError) return Err(saveError);
 			if (path === null) {
@@ -26,8 +25,7 @@ export function createDownloadServiceDesktop(): DownloadService {
 					const contents = new Uint8Array(await blob.arrayBuffer());
 					await writeFile(path, contents);
 				},
-				catch: (error) =>
-					DownloadError.WriteFailed({ cause: error }),
+				catch: (error) => DownloadError.WriteFailed({ cause: error }),
 			});
 			if (writeError) return Err(writeError);
 			return Ok(undefined);

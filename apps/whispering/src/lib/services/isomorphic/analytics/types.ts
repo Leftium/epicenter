@@ -1,4 +1,8 @@
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/isomorphic/transcription/registry';
 

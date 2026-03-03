@@ -530,8 +530,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 					const fileExists = await exists(pathToCleanup);
 					if (fileExists) await remove(pathToCleanup);
 				},
-				catch: (error) =>
-					RecorderError.FileDeleteFailed({ cause: error }),
+				catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
 			});
 
 			if (removeError) {

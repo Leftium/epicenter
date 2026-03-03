@@ -14,8 +14,7 @@ export function createAnalyticsServiceDesktop(): AnalyticsService {
 						props: properties,
 					});
 				},
-				catch: (error) =>
-					AnalyticsError.LogEventFailed({ cause: error }),
+				catch: (error) => AnalyticsError.LogEventFailed({ cause: error }),
 			}),
 	};
 }

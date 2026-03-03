@@ -64,13 +64,7 @@ export const RecorderError = defineErrors({
 		message: `Failed to get recorder state: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	InvokeFailed: ({
-		command,
-		cause,
-	}: {
-		command: string;
-		cause: unknown;
-	}) => ({
+	InvokeFailed: ({ command, cause }: { command: string; cause: unknown }) => ({
 		message: `Tauri invoke '${command}' failed: ${extractErrorMessage(cause)}`,
 		command,
 		cause,

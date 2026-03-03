@@ -31,8 +31,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 		const { data: activeNotifications, error: activeNotificationsError } =
 			await tryAsync({
 				try: async () => await active(),
-				catch: (error) =>
-					NotificationError.ListActiveFailed({ cause: error }),
+				catch: (error) => NotificationError.ListActiveFailed({ cause: error }),
 			});
 		if (activeNotificationsError) return Err(activeNotificationsError);
 		const matchingActiveNotification = activeNotifications.find(
@@ -41,8 +40,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 		if (matchingActiveNotification) {
 			const { error: removeActiveError } = await tryAsync({
 				try: async () => await removeActive([matchingActiveNotification]),
-				catch: (error) =>
-					NotificationError.RemoveFailed({ id, cause: error }),
+				catch: (error) => NotificationError.RemoveFailed({ id, cause: error }),
 			});
 			if (removeActiveError) return Err(removeActiveError);
 		}
@@ -78,8 +76,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 						});
 					}
 				},
-				catch: (error) =>
-					NotificationError.SendFailed({ cause: error }),
+				catch: (error) => NotificationError.SendFailed({ cause: error }),
 			});
 			if (notifyError) return Err(notifyError);
 			return Ok(idStringified);

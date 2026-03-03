@@ -1,6 +1,7 @@
 import { createHttpServiceDesktop } from './desktop';
 import { createHttpServiceWeb } from './web';
 
+export { customFetch } from './tauri-fetch';
 // Re-export both types and factory functions
 export type {
 	ConnectionError,
@@ -9,7 +10,6 @@ export type {
 	ResponseError,
 } from './types';
 export { HttpError } from './types';
-export { customFetch } from './tauri-fetch';
 
 export const HttpServiceLive = window.__TAURI_INTERNALS__
 	? createHttpServiceDesktop()

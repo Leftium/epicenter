@@ -4,7 +4,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, isErr, Ok, trySync, type Result } from 'wellcrafted/result';
+import { Err, isErr, Ok, type Result, trySync } from 'wellcrafted/result';
 import type { InferenceProviderId } from '$lib/constants/inference/providers';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {

@@ -6,7 +6,7 @@ on:
     paths:
       - 'apps/whispering/**'
       - 'packages/**'
-      - '.github/workflows/preview-deployment.yml'
+      - '.github/workflows/deploy.preview.yml'
 
 concurrency:
   group: preview-${{ github.ref }}

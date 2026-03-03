@@ -18,8 +18,8 @@ enum HttpError {
     #[error("Failed to connect: {cause}")]
     Connection { cause: String },
 
-    #[error("HTTP {status}")]
-    Response { status: u16, body_message: Option<String> },
+    #[error("HTTP {status}: {body}")]
+    Response { status: u16, body: String },
 
     #[error("Failed to parse response body: {cause}")]
     Parse { cause: String },
@@ -29,9 +29,10 @@ enum HttpError {
 A few things are happening here that are easy to miss if you have not worked in Rust:
 
 - `HttpError` is the namespace. The variants — `Connection`, `Response`, `Parse` — live under it. They are short, one-word names because the enum name already gives the context.
-- Each variant is a struct with named fields. `Connection` carries a `cause`. `Response` carries a `status` and an optional `body_message`. The fields are part of the type.
+- Each variant is a struct with named fields. `Connection` carries a `cause`. `Response` carries a `status` and `body`. The fields are part of the type — and they are exactly what you pass at the call site.
 - The `#[error("...")]` annotation defines the human-readable display string for each variant. It can interpolate fields by name with `{cause}`, `{status}`, etc.
 - You construct a value like `HttpError::Connection { cause: "timeout".into() }`. You discriminate with `match`.
+- **The variant's fields ARE the constructor inputs.** There is no factory function, no transformation step. You pass exactly what the variant stores.
 
 That is the whole pattern. A single type, short variant names under a descriptive namespace, typed fields per variant, and a display message co-located with the definition.
 
@@ -40,21 +41,22 @@ That is the whole pattern. A single type, short variant names under a descriptiv
 Here is the same type with `defineErrors`:
 
 ```typescript
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 
 const HttpError = defineErrors({
-  Connection: ({ cause }: { cause: string }) => ({
-    message: `Failed to connect: ${cause}`,
+  Connection: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to connect: ${extractErrorMessage(cause)}`,
     cause,
   }),
 
-  Response: ({ status }: { status: number; bodyMessage?: string }) => ({
-    message: `HTTP ${status}`,
-    status,
+  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
+    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+    status: response.status,
+    body,
   }),
 
-  Parse: ({ cause }: { cause: string }) => ({
-    message: `Failed to parse response body: ${cause}`,
+  Parse: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
     cause,
   }),
 });
@@ -64,14 +66,16 @@ type HttpError = InferErrors<typeof HttpError>;
 
 Read it out loud next to the Rust version. The structure is nearly identical. `HttpError` is the namespace. `Connection`, `Response`, `Parse` are short variant names. Each variant's fields are typed inline. The message sits right next to its definition.
 
+But look at `Response`. In Rust, the variant stores `status: u16` and `body: String` — and the call site passes exactly those fields. In TypeScript, the factory accepts a `response` object and a raw `body`, then *derives* `status` from `response.status` and formats `body` through `extractErrorMessage`. The stored fields differ from the constructor inputs. That is something Rust cannot do — and it is the key advantage of factory functions over struct literals.
+
 ## What Maps 1:1
 
 | Rust concept | TypeScript equivalent |
 |---|---|
 | `enum HttpError` | `const HttpError = defineErrors(...)` |
-| `Connection { cause: String }` | `Connection: ({ cause }: { cause: string }) => (...)` |
-| `#[error("Failed: {cause}")]` | `` message: `Failed: ${cause}` `` |
-| `HttpError::Connection { cause: "timeout".into() }` | `HttpError.Connection({ cause: "timeout" })` |
+| `Connection { cause: String }` | `Connection: ({ cause }: { cause: unknown }) => (...)` |
+| `#[error("Failed: {cause}")]` | `` message: `Failed: ${extractErrorMessage(cause)}` `` |
+| `HttpError::Connection { cause: "timeout".into() }` | `HttpError.Connection({ cause: error })` |
 | `match error { Connection { cause } => ... }` | `switch (error.name) { case 'Connection': ... }` |
 | `fn handle(err: HttpError)` | `function handle(err: HttpError)` |
 
@@ -79,7 +83,7 @@ Construction side by side:
 
 ```
 Rust: HttpError::Connection { cause: "timeout".into() }
-TS:   HttpError.Connection({ cause: "timeout" })
+TS:   HttpError.Connection({ cause: error })
 ```
 
 Discrimination side by side:
@@ -108,9 +112,29 @@ The `name` field on each error object is the discriminant. It is stamped automat
 
 The mapping is not perfect. TypeScript is a different language with different constraints. Here is where the two diverge and the reasoning behind each difference.
 
-**Factory functions instead of struct literals.** In Rust, `HttpError::Connection { cause: "timeout".into() }` is a struct literal — you are directly constructing a value of the `Connection` variant type. TypeScript has no equivalent syntax. So `defineErrors` gives you factory functions instead: `HttpError.Connection({ cause: "timeout" })`. The call site looks nearly identical. You get the same namespace-dot-variant pattern. The only difference is the parentheses.
+**Factory functions instead of struct literals.** In Rust, `HttpError::Connection { cause: "timeout".into() }` is a struct literal — you are directly constructing a value of the `Connection` variant type. The variant's fields are the constructor inputs. There is no transformation step; you pass exactly what gets stored.
 
-**Template literals instead of proc macros.** Rust's `#[error("Failed to connect: {cause}")]` is a compile-time format string powered by a procedural macro. TypeScript has no proc macros. Template literals — `` `Failed to connect: ${cause}` `` — are the natural equivalent. They run at construction time rather than compile time, but the result is the same: a human-readable message derived from the variant's fields.
+TypeScript has no struct literal syntax, so `defineErrors` gives you factory functions instead: `HttpError.Connection({ cause: error })`. The call site looks nearly identical — same namespace-dot-variant pattern, just parentheses instead of braces.
+
+But factory functions are not just a syntactic workaround. They unlock something Rust struct literals cannot do: **the constructor inputs can differ from the stored fields.** The factory accepts raw inputs and derives what gets stored. Compare:
+
+```rust
+// Rust — you must extract .status() at the call site because
+// struct literals store exactly what you pass
+HttpError::Response { status: response.status(), body: extract_body(&response) }
+```
+
+```typescript
+// TypeScript — the factory accepts the raw response and derives status internally
+HttpError.Response({ response, body: await response.json() })
+// stores: { status: response.status, body, message: `HTTP ${response.status}: ...` }
+```
+
+In Rust, if you want `status: u16` on the variant but you have a `Response` object, you extract `.status()` at the call site. There is nowhere else to do it. In TypeScript, the factory function is that "somewhere else." It accepts raw inputs, calls `extractErrorMessage`, pulls `.status` off the response, and composes the message — all in one place. The call site just hands over what it has.
+
+This is not just a syntactic difference. It is a design principle: **constructors accept raw inputs, derive stored fields.** Call sites should pass objects as-is; the factory owns the decomposition and formatting.
+
+**Template literals instead of proc macros.** Rust's `#[error("Failed to connect: {cause}")]` is a compile-time format string powered by a procedural macro. TypeScript has no proc macros. Template literals — `` `Failed to connect: ${extractErrorMessage(cause)}` `` — are the natural equivalent. They run at construction time rather than compile time, but the result is the same: a human-readable message derived from the variant's fields.
 
 **`Err<...>` wrapping instead of direct returns.** In Rust, a function returning `Result<T, HttpError>` just returns the error variant directly. Rust's `?` operator and return type tell the compiler which side of the Result you are on. TypeScript does not have that. `defineErrors` factories always return `Err<...>` — an object shaped `{ ok: false, error: ... }` — so that `trySync` and `tryAsync` can tell errors apart from successful values without any ambiguity.
 
@@ -121,6 +145,7 @@ The mapping is not perfect. TypeScript is a different language with different co
 | Difference | Rust | TypeScript | Why |
 |---|---|---|---|
 | Construction | Struct literal | Factory call | TS has no struct literals |
+| Input → stored fields | Identical (no transformation) | Can differ (factory derives fields) | Factory functions can transform |
 | Message format | Compile-time proc macro | Runtime template literal | TS has no proc macros |
 | Return type | Returns enum variant directly | Returns `Err<...>` wrapper | No `?` operator in TS |
 | Immutability | Ownership model | `Object.freeze` + `Readonly` | No ownership in TS |

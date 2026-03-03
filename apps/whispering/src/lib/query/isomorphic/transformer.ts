@@ -4,7 +4,8 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
+import { Err, isErr, Ok, type Result, trySync } from 'wellcrafted/result';
+import type { InferenceProviderId } from '$lib/constants/inference/providers';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {
 	WhisperingErr,
@@ -12,6 +13,7 @@ import {
 	type WhisperingResult,
 } from '$lib/result';
 import { services } from '$lib/services';
+import type { CompletionService } from '$lib/services/isomorphic/completion/types';
 import type {
 	Transformation,
 	TransformationRunCompleted,
@@ -19,9 +21,66 @@ import type {
 	TransformationRunRunning,
 	TransformationStep,
 } from '$lib/services/isomorphic/db';
+import type { Settings } from '$lib/settings';
 import { settings } from '$lib/state/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
+
+type ProviderEntry = {
+	service: CompletionService;
+	getApiKey: (s: Settings) => string;
+	getModel: (step: TransformationStep) => string;
+	getBaseUrl?: (step: TransformationStep, s: Settings) => string;
+};
+
+/** Maps each provider to its service + config extractors. Explicit type ensures exhaustiveness. */
+const completionProviderRegistry: Record<InferenceProviderId, ProviderEntry> = {
+	OpenAI: {
+		service: services.completions.openai,
+		getApiKey: (s) => s['apiKeys.openai'],
+		getModel: (step) =>
+			step['prompt_transform.inference.provider.OpenAI.model'],
+	},
+	Groq: {
+		service: services.completions.groq,
+		getApiKey: (s) => s['apiKeys.groq'],
+		getModel: (step) => step['prompt_transform.inference.provider.Groq.model'],
+	},
+	Anthropic: {
+		service: services.completions.anthropic,
+		getApiKey: (s) => s['apiKeys.anthropic'],
+		getModel: (step) =>
+			step['prompt_transform.inference.provider.Anthropic.model'],
+	},
+	Google: {
+		service: services.completions.google,
+		getApiKey: (s) => s['apiKeys.google'],
+		getModel: (step) =>
+			step['prompt_transform.inference.provider.Google.model'],
+	},
+	OpenRouter: {
+		service: services.completions.openrouter,
+		getApiKey: (s) => s['apiKeys.openrouter'],
+		getModel: (step) =>
+			step['prompt_transform.inference.provider.OpenRouter.model'],
+	},
+	Custom: {
+		service: services.completions.custom,
+		getApiKey: (s) => s['apiKeys.custom'],
+		getModel: (step) =>
+			step['prompt_transform.inference.provider.Custom.model']?.trim(),
+		getBaseUrl: (step, s) => {
+			// baseUrl is per-step because local LLM setups often have multiple endpoints
+			// (Ollama, LM Studio, llama.cpp) running on different ports
+			const stepBaseUrl =
+				step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
+			// Fall back to global default from Settings → API Keys → Custom section
+			const defaultBaseUrl = s['completion.custom.baseUrl']?.trim();
+			// Use || so empty string falls back to next value (cleared field = use default)
+			return stepBaseUrl || defaultBaseUrl || '';
+		},
+	},
+};
 
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
@@ -163,12 +222,14 @@ async function handleStep({
 			const useRegex = step['find_replace.useRegex'];
 
 			if (useRegex) {
-				try {
-					const regex = new RegExp(findText, 'g');
-					return Ok(input.replace(regex, replaceText));
-				} catch (error) {
-					return Err(`Invalid regex pattern: ${extractErrorMessage(error)}`);
-				}
+				return trySync({
+					try: () => {
+						const regex = new RegExp(findText, 'g');
+						return input.replace(regex, replaceText);
+					},
+					catch: (error) =>
+						Err(`Invalid regex pattern: ${extractErrorMessage(error)}`),
+				});
 			}
 
 			return Ok(input.replaceAll(findText, replaceText));
@@ -185,124 +246,17 @@ async function handleStep({
 				{ input },
 			);
 
-			switch (provider) {
-				case 'OpenAI': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.openai.complete({
-							apiKey: settings.value['apiKeys.openai'],
-							systemPrompt,
-							userPrompt,
-							model: step['prompt_transform.inference.provider.OpenAI.model'],
-						});
+			const entry = completionProviderRegistry[provider];
+			const { data, error } = await entry.service.complete({
+				apiKey: entry.getApiKey(settings.value),
+				model: entry.getModel(step),
+				baseUrl: entry.getBaseUrl?.(step, settings.value),
+				systemPrompt,
+				userPrompt,
+			});
 
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Groq': {
-					const model = step['prompt_transform.inference.provider.Groq.model'];
-					const { data: completionResponse, error: completionError } =
-						await services.completions.groq.complete({
-							apiKey: settings.value['apiKeys.groq'],
-							model,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Anthropic': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.anthropic.complete({
-							apiKey: settings.value['apiKeys.anthropic'],
-							model:
-								step['prompt_transform.inference.provider.Anthropic.model'],
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Google': {
-					const { data: completion, error: completionError } =
-						await services.completions.google.complete({
-							apiKey: settings.value['apiKeys.google'],
-							model: step['prompt_transform.inference.provider.Google.model'],
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completion);
-				}
-
-				case 'OpenRouter': {
-					const { data: completionResponse, error: completionError } =
-						await services.completions.openrouter.complete({
-							apiKey: settings.value['apiKeys.openrouter'],
-							model:
-								step['prompt_transform.inference.provider.OpenRouter.model'],
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				case 'Custom': {
-					const model =
-						step['prompt_transform.inference.provider.Custom.model']?.trim();
-
-					// baseUrl is per-step because local LLM setups often have multiple endpoints
-					// (Ollama, LM Studio, llama.cpp) running on different ports
-					const stepBaseUrl =
-						step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
-					// Fall back to global default from Settings → API Keys → Custom section
-					const defaultBaseUrl =
-						settings.value['completion.custom.baseUrl']?.trim();
-					// Use || so empty string falls back to next value (cleared field = use default)
-					const baseUrl = stepBaseUrl || defaultBaseUrl || '';
-
-					// API key is global because most local endpoints don't require auth
-					const { data: completionResponse, error: completionError } =
-						await services.completions.custom.complete({
-							apiKey: settings.value['apiKeys.custom'],
-							model,
-							baseUrl,
-							systemPrompt,
-							userPrompt,
-						});
-
-					if (completionError) {
-						return Err(completionError.message);
-					}
-
-					return Ok(completionResponse);
-				}
-
-				default:
-					return Err(`Unsupported provider: ${provider}`);
-			}
+			if (error) return Err(error.message);
+			return Ok(data);
 		}
 
 		default:

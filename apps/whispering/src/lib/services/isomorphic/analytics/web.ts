@@ -13,8 +13,7 @@ export function createAnalyticsServiceWeb(): AnalyticsService {
 					const { type, ...properties } = event;
 					await trackEvent(type, properties);
 				},
-				catch: (error) =>
-					AnalyticsError.LogEventFailed({ cause: error }),
+				catch: (error) => AnalyticsError.LogEventFailed({ cause: error }),
 			}),
 	};
 }

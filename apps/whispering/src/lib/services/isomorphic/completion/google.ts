@@ -23,7 +23,10 @@ export const GoogleCompletionServiceLive: CompletionService = {
 			},
 			catch: (error): Err<CompletionError> => {
 				if (error instanceof GoogleGenerativeAIFetchError) {
-					return CompletionError.Http({ status: error.status ?? 0, cause: error });
+					return CompletionError.Http({
+						status: error.status ?? 0,
+						cause: error,
+					});
 				}
 				throw error;
 			},

@@ -72,6 +72,7 @@
 	import DOMPurify from 'dompurify';
 	import { marked } from 'marked';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { Err, tryAsync } from 'wellcrafted/result';
 	import { rpc } from '$lib/query';
 
 	const GITHUB_RELEASES_URL =
@@ -92,38 +93,41 @@
 
 		updateDialog.setError(null);
 
-		try {
-			let downloaded = 0;
-			let contentLength = 0;
+		let downloaded = 0;
+		let contentLength = 0;
 
-			await updateDialog.update.downloadAndInstall((event) => {
-				switch (event.event) {
-					case 'Started':
-						contentLength = event.data.contentLength ?? 0;
-						updateDialog.updateProgress(0, contentLength);
-						break;
-					case 'Progress':
-						downloaded += event.data.chunkLength;
-						updateDialog.updateProgress(downloaded, contentLength);
-						break;
-					case 'Finished':
-						rpc.notify.success({
-							title: 'Update installed successfully!',
-							description: 'Restart Whispering to apply the update.',
-							action: {
-								type: 'button',
-								label: 'Restart Whispering',
-								onClick: () => relaunch(),
-							},
-						});
-						break;
-				}
-			});
-		} catch (err) {
-			updateDialog.setError(extractErrorMessage(err));
+		const { error } = await tryAsync({
+			try: () =>
+				updateDialog.update!.downloadAndInstall((event) => {
+					switch (event.event) {
+						case 'Started':
+							contentLength = event.data.contentLength ?? 0;
+							updateDialog.updateProgress(0, contentLength);
+							break;
+						case 'Progress':
+							downloaded += event.data.chunkLength;
+							updateDialog.updateProgress(downloaded, contentLength);
+							break;
+						case 'Finished':
+							rpc.notify.success({
+								title: 'Update installed successfully!',
+								description: 'Restart Whispering to apply the update.',
+								action: {
+									type: 'button',
+									label: 'Restart Whispering',
+									onClick: () => relaunch(),
+								},
+							});
+							break;
+					}
+				}),
+			catch: (error) => Err(extractErrorMessage(error)),
+		});
+		if (error) {
+			updateDialog.setError(error);
 			rpc.notify.error({
 				title: 'Failed to install update',
-				description: extractErrorMessage(err),
+				description: error,
 			});
 		}
 	}

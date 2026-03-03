@@ -17,8 +17,7 @@ export function createDownloadServiceWeb(): DownloadService {
 					document.body.removeChild(a);
 					URL.revokeObjectURL(url);
 				},
-				catch: (error) =>
-					DownloadError.BrowserDownloadFailed({ cause: error }),
+				catch: (error) => DownloadError.BrowserDownloadFailed({ cause: error }),
 			}),
 	};
 }

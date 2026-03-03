@@ -271,8 +271,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			const { filePath } = audioRecording;
 			const { error: removeError } = await tryAsync({
 				try: () => remove(filePath),
-				catch: (error) =>
-					RecorderError.FileDeleteFailed({ cause: error }),
+				catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
 			});
 			if (removeError)
 				sendStatus({
@@ -307,7 +306,6 @@ export const CpalRecorderServiceLive: RecorderService = {
 async function invoke<T>(command: string, args?: Record<string, unknown>) {
 	return tryAsync({
 		try: async () => await tauriInvoke<T>(command, args),
-		catch: (error) =>
-			RecorderError.InvokeFailed({ command, cause: error }),
+		catch: (error) => RecorderError.InvokeFailed({ command, cause: error }),
 	});
 }

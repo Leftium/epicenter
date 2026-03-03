@@ -1,5 +1,9 @@
 import type { Options as TauriNotificationOptions } from '@tauri-apps/plugin-notification';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 /**

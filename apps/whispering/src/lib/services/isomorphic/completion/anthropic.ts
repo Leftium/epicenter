@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { customFetch } from '$lib/services/isomorphic/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
@@ -8,8 +9,8 @@ export function createAnthropicCompletionService(): CompletionService {
 		async complete({ apiKey, model, systemPrompt, userPrompt }) {
 			const client = new Anthropic({
 				apiKey,
-				// Enable browser usage
 				dangerouslyAllowBrowser: true,
+				fetch: customFetch,
 			});
 			// Call Anthropic API
 			const { data: completion, error: anthropicApiError } = await tryAsync({

@@ -1,7 +1,7 @@
 # Split Sub-Discriminant Error Variants
 
 **Created**: 2026-03-02
-**Status**: In Progress
+**Status**: Implemented
 **Depends on**: `20260302T000000-define-errors-api-redesign.md` (defineErrors v2 must be in place)
 **Scope**: 7 `defineErrors` definitions that use string literal union fields as sub-discriminants
 
@@ -489,3 +489,20 @@ Each file is independent. Suggested order (smallest to largest):
 6. [x] `transformer.ts` — 7 call sites
 
 Verify after each file: `bun run typecheck` must pass.
+
+## Review
+
+**Completed**: 2026-03-02
+**Branch**: braden-w/review-service-errors
+
+### Summary
+
+All 7 `defineErrors` variants across 6 files were split from sub-discriminant patterns into first-class variants. Each variant now has exactly the fields it needs — no optional fields, no switch/lookup tables in constructors. One consumer (`GlobalKeyboardShortcutRecorder.svelte`) was updated to match on the new variant names.
+
+### Deviations from Spec
+
+- None. Implementation matched the spec exactly.
+
+### Follow-up Work
+
+- None identified.

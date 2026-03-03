@@ -117,7 +117,7 @@ export type TableDefinition<
 		id: string;
 		_v: number;
 	}>[],
-	TDocuments extends Record<string, DocumentConfig> = Record<string, never>,
+	TDocuments extends Record<string, DocumentConfig> = {},
 > = {
 	schema: CombinedStandardSchema<
 		unknown,
@@ -238,6 +238,19 @@ export type StringKeysOf<TRow> = {
 export type NumberKeysOf<TRow> = {
 	[K in keyof TRow & string]: TRow[K] extends number ? K : never;
 }[keyof TRow & string];
+
+/**
+ * Collect all column names already claimed as `guid` or `updatedAt` by prior
+ * `.withDocument()` calls. Subsequent calls cannot reuse these columns,
+ * preventing two documents from sharing a GUID (storage collision) or
+ * racing on the same `updatedAt` timestamp.
+ *
+ * Requires `{}` (not `Record<string, never>`) as the initial empty `TDocuments`,
+ * so that `keyof {}` = `never` and the union resolves cleanly.
+ */
+export type ClaimedDocumentColumns<
+	TDocuments extends Record<string, DocumentConfig>,
+> = TDocuments[keyof TDocuments]['guid'] | TDocuments[keyof TDocuments]['updatedAt'];
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.

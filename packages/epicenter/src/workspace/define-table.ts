@@ -43,6 +43,7 @@ import type { CombinedStandardSchema } from '../shared/standard-schema/types.js'
 import { createUnionSchema } from './schema-union.js';
 import type {
 	BaseRow,
+	ClaimedDocumentColumns,
 	DocumentConfig,
 	LastSchema,
 	NumberKeysOf,
@@ -70,6 +71,9 @@ type TableDefinitionWithDocBuilder<
 	 * The name becomes a property under `client.documents.{tableName}` at runtime.
 	 *
 	 * Chainable — call multiple times for tables with multiple documents.
+	 * Each call claims its `guid` and `updatedAt` columns exclusively — subsequent
+	 * calls cannot reuse columns already bound to a prior document. This prevents
+	 * two documents from sharing a GUID (which would cause storage collisions).
 	 *
 	 * @param name - The document name (becomes `client.documents.{tableName}[name]`)
 	 * @param config - Column mapping: `guid` (string column) and `updatedAt` (number column)
@@ -80,7 +84,7 @@ type TableDefinitionWithDocBuilder<
 	 *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 	 * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
 	 *
-	 * // Multiple documents
+	 * // Multiple documents — each must use unique columns
 	 * const notes = defineTable(
 	 *   type({ id: 'string', bodyDocId: 'string', coverDocId: 'string',
 	 *          bodyUpdatedAt: 'number', coverUpdatedAt: 'number', _v: '1' }),
@@ -91,11 +95,17 @@ type TableDefinitionWithDocBuilder<
 	 */
 	withDocument<
 		TName extends string,
-		TGuid extends StringKeysOf<
-			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		TGuid extends Exclude<
+			StringKeysOf<
+				StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+			>,
+			ClaimedDocumentColumns<TDocuments>
 		>,
-		TUpdatedAt extends NumberKeysOf<
-			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		TUpdatedAt extends Exclude<
+			NumberKeysOf<
+				StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+			>,
+			ClaimedDocumentColumns<TDocuments>
 		>,
 		// Defaults to `never` when no tags are passed. This flows into
 		// DocumentConfig<..., never>, making `tags: readonly never[]` (only accepts `[]`).
@@ -137,7 +147,7 @@ type TableBuilder<TVersions extends CombinedStandardSchema<BaseRow>[]> = {
 		fn: (
 			row: StandardSchemaV1.InferOutput<TVersions[number]>,
 		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
+	): TableDefinitionWithDocBuilder<TVersions, {}>;
 };
 
 /**
@@ -153,7 +163,7 @@ type TableBuilder<TVersions extends CombinedStandardSchema<BaseRow>[]> = {
  */
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema: TSchema,
-): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
+): TableDefinitionWithDocBuilder<[TSchema], {}>;
 
 /**
  * Creates a table definition builder for multiple versions with migrations.
@@ -188,16 +198,16 @@ export function defineTable(): TableBuilder<[]>;
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema?: TSchema,
 ):
-	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
+	| TableDefinitionWithDocBuilder<[TSchema], {}>
 	| TableBuilder<[]> {
 	if (schema) {
 		return attachDocumentBuilder({
 			schema,
 			migrate: (row: unknown) => row as BaseRow,
-			documents: {} as Record<string, never>,
+			documents: {} as {},
 		}) as unknown as TableDefinitionWithDocBuilder<
 			[TSchema],
-			Record<string, never>
+			{}
 		>;
 	}
 

@@ -394,10 +394,52 @@ describe('defineTable', () => {
 			const files = defineTable(
 				type({ id: 'string', updatedAt: 'number', _v: '1' }),
 			);
-			// @ts-expect-error guid key must exist on the row schema
 			files.withDocument('content', {
+				// @ts-expect-error guid key must exist on the row schema
 				guid: 'missing',
 				updatedAt: 'updatedAt',
+			});
+		});
+
+		test('rejects reusing a guid column claimed by a prior withDocument', () => {
+			const notes = defineTable(
+				type({
+					id: 'string',
+					bodyDocId: 'string',
+					coverDocId: 'string',
+					bodyUpdatedAt: 'number',
+					coverUpdatedAt: 'number',
+					_v: '1',
+				}),
+			).withDocument('body', {
+				guid: 'bodyDocId',
+				updatedAt: 'bodyUpdatedAt',
+			});
+			notes.withDocument('cover', {
+				// @ts-expect-error bodyDocId is already claimed by the 'body' document
+				guid: 'bodyDocId',
+				updatedAt: 'coverUpdatedAt',
+			});
+		});
+
+		test('rejects reusing an updatedAt column claimed by a prior withDocument', () => {
+			const notes = defineTable(
+				type({
+					id: 'string',
+					bodyDocId: 'string',
+					coverDocId: 'string',
+					bodyUpdatedAt: 'number',
+					coverUpdatedAt: 'number',
+					_v: '1',
+				}),
+			).withDocument('body', {
+				guid: 'bodyDocId',
+				updatedAt: 'bodyUpdatedAt',
+			});
+			notes.withDocument('cover', {
+				guid: 'coverDocId',
+				// @ts-expect-error bodyUpdatedAt is already claimed by the 'body' document
+				updatedAt: 'bodyUpdatedAt',
 			});
 		});
 	});

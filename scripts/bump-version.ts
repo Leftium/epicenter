@@ -1,78 +1,79 @@
 #!/usr/bin/env node
 
 /**
- * @fileoverview Version bumping utility for Whispering monorepo
+ * @fileoverview Version stamping utility for the Epicenter monorepo.
  *
- * This script updates version numbers across all necessary files in the project:
- * - Root package.json
- * - App package.json
- * - Tauri configuration
- * - Cargo.toml
- * - Cargo.lock (via cargo update)
- * - packages/constants/src/versions.ts
+ * Stamps a version number into all package.json, tauri.conf.json, Cargo.toml,
+ * and the VERSION constant. Discovers files via glob — no hardcoded list.
+ *
+ * Git operations (commit, tag, push) are handled by CI, not this script.
  *
  * Usage: bun run bump-version <new-version>
- * Example: bun run bump-version 7.0.1
+ * Example: bun run bump-version 8.0.0
  */
 
 import { join } from 'node:path';
-import { $ } from 'bun';
+import { Glob } from 'bun';
 
-/** Extract new version from command line arguments */
 const newVersion = process.argv[2];
 if (!newVersion) {
-	console.error('Usage: node scripts/bump-version.js <new-version>');
-	console.error('Example: node scripts/bump-version.js 6.6.0');
+	console.error('Usage: bun run bump-version <new-version>');
+	console.error('Example: bun run bump-version 8.0.0');
 	process.exit(1);
 }
 
-/**
- * Validate semantic version format
- * Ensures version follows X.Y.Z pattern where X, Y, Z are numbers
- */
 if (!/^\d+\.\d+\.\d+$/.test(newVersion)) {
 	console.error(
-		'Invalid version format. Use semantic versioning (e.g., 6.6.0)',
+		'Invalid version format. Use semantic versioning (e.g., 8.0.0)',
 	);
 	process.exit(1);
 }
 
-/**
- * Configuration for files that need version updates
- */
-const files = [
-	{ path: 'package.json', type: 'json' },
-	{ path: 'apps/whispering/package.json', type: 'json' },
-	{ path: 'apps/whispering/src-tauri/tauri.conf.json', type: 'json' },
-	{ path: 'apps/whispering/src-tauri/Cargo.toml', type: 'toml' },
-	{ path: 'packages/constants/src/versions.ts', type: 'ts' },
-] satisfies { path: string; type: 'json' | 'toml' | 'ts' }[];
+const root = process.cwd();
 
-/** Track the current version before updating */
+/** Collect files to stamp via globs. */
+async function collectFiles() {
+	const patterns: { glob: string; type: 'json' | 'toml' }[] = [
+		{ glob: 'package.json', type: 'json' },
+		{ glob: 'apps/*/package.json', type: 'json' },
+		{ glob: 'packages/*/package.json', type: 'json' },
+		{ glob: 'apps/*/src-tauri/tauri.conf.json', type: 'json' },
+		{ glob: 'apps/*/src-tauri/Cargo.toml', type: 'toml' },
+	];
+
+	const files: { path: string; type: 'json' | 'toml' }[] = [];
+
+	for (const { glob: pattern, type } of patterns) {
+		const glob = new Glob(pattern);
+		for await (const match of glob.scan({ cwd: root })) {
+			files.push({ path: match, type });
+		}
+	}
+
+	return files;
+}
+
+const files = await collectFiles();
+
+/** Track the current version before updating. */
 let oldVersion: string | null = null;
 
-/**
- * Process each file and update its version
- */
 for (const { path, type } of files) {
-	const fullPath = join(process.cwd(), path);
+	const fullPath = join(root, path);
 	const file = Bun.file(fullPath);
 	const content = await file.text();
 
 	switch (type) {
 		case 'json': {
-			// Handle JSON files (package.json, tauri.conf.json)
 			const json = JSON.parse(content);
 			if (!oldVersion && json.version) {
 				oldVersion = json.version;
 			}
 			json.version = newVersion;
-			// Preserve formatting with tabs and trailing newline
 			await Bun.write(fullPath, `${JSON.stringify(json, null, '\t')}\n`);
 			break;
 		}
 		case 'toml': {
-			// Handle TOML files (Cargo.toml) with regex replacement
 			const versionRegex = /^version\s*=\s*"[\d.]+"/m;
 			const match = content.match(versionRegex);
 			if (match && !oldVersion) {
@@ -85,89 +86,43 @@ for (const { path, type } of files) {
 			await Bun.write(fullPath, updated);
 			break;
 		}
-		case 'ts': {
-			// Handle TypeScript files (versions.ts) with regex replacement
-			const versionRegex = /whispering:\s*'[\d.]+'/;
-			const match = content.match(versionRegex);
-			if (match && !oldVersion) {
-				oldVersion = match[0].match(/'([\d.]+)'/)?.[1] ?? null;
-			}
-			const updated = content.replace(
-				versionRegex,
-				`whispering: '${newVersion}'`,
-			);
-			await Bun.write(fullPath, updated);
-			break;
-		}
 	}
 
-	console.log(`✅ Updated ${path}`);
+	console.log(`Updated ${path}`);
 }
 
-/**
- * Update Cargo.lock by running cargo update
- */
-try {
-	console.log('\n🔄 Updating Cargo.lock...');
-	await $`cd apps/whispering/src-tauri && cargo update -p whispering`;
-	console.log('✅ Updated Cargo.lock');
-} catch (error) {
-	console.error('❌ Failed to update Cargo.lock:', extractErrorMessage(error));
-	console.log(
-		'   You may need to run: cd apps/whispering/src-tauri && cargo update -p whispering',
-	);
+/** Stamp the VERSION constant in packages/constants/src/versions.ts */
+const versionsPath = join(root, 'packages/constants/src/versions.ts');
+const versionsFile = Bun.file(versionsPath);
+const versionsContent = await versionsFile.text();
+const updatedVersions = versionsContent.replace(
+	/VERSION\s*=\s*'[\d.]+'/,
+	`VERSION = '${newVersion}'`,
+);
+await Bun.write(versionsPath, updatedVersions);
+console.log('Updated packages/constants/src/versions.ts');
+
+/** Update Cargo.lock for each Tauri app. */
+const cargoTomls = files.filter((f) => f.type === 'toml');
+for (const { path } of cargoTomls) {
+	const tauriDir = join(root, path, '..');
+	const packageName = path.split('/')[1]; // apps/{name}/src-tauri/Cargo.toml → {name}
+	try {
+		console.log(`\nUpdating Cargo.lock for ${packageName}...`);
+		const proc = Bun.spawn(['cargo', 'update', '-p', packageName], {
+			cwd: tauriDir,
+			stdout: 'inherit',
+			stderr: 'inherit',
+		});
+		await proc.exited;
+		console.log(`Updated Cargo.lock for ${packageName}`);
+	} catch (error) {
+		console.error(
+			`Failed to update Cargo.lock for ${packageName}:`,
+			error instanceof Error ? error.message : String(error),
+		);
+		console.log(`  You may need to run: cd ${tauriDir} && cargo update -p ${packageName}`);
+	}
 }
 
-/**
- * Display summary
- */
-console.log(`\n📦 Version bumped from ${oldVersion} to ${newVersion}`);
-
-/**
- * Commit the version changes
- */
-try {
-	console.log('\n📝 Committing version changes...');
-	await $`git add -A`;
-	await $`git commit -m "chore: bump version to ${newVersion}"`;
-	console.log('✅ Committed changes');
-} catch (error) {
-	console.error('❌ Failed to commit changes:', extractErrorMessage(error));
-	process.exit(1);
-}
-
-/**
- * Create git tag with v prefix (force overwrite if exists)
- */
-try {
-	console.log('\n🏷️  Creating git tag...');
-	// Force create tag locally (overwrites if exists)
-	await $`git tag -f v${newVersion}`;
-	console.log(`✅ Created tag v${newVersion}`);
-} catch (error) {
-	console.error('❌ Failed to create tag:', extractErrorMessage(error));
-	process.exit(1);
-}
-
-/**
- * Push to remote (both commits and tags)
- * Force push tag to overwrite if it exists on remote
- */
-try {
-	console.log('\n⬆️  Pushing to remote...');
-	await $`git push`;
-	await $`git push origin v${newVersion} --force`;
-	console.log('✅ Pushed to remote');
-} catch (error) {
-	console.error('❌ Failed to push to remote:', extractErrorMessage(error));
-	process.exit(1);
-}
-
-console.log(`\n🎉 Release ${newVersion} complete!`);
-
-/**
- * Extract error message from unknown error type
- */
-function extractErrorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
+console.log(`\nVersion bumped from ${oldVersion} to ${newVersion}`);

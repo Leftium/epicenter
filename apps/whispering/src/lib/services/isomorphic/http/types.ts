@@ -1,10 +1,10 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { defineErrors, type InferError, type InferErrors } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferError, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 export const HttpError = defineErrors({
-	Connection: ({ cause }: { cause: string }) => ({
-		message: `Failed to connect to the server: ${cause}`,
+	Connection: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
@@ -12,8 +12,8 @@ export const HttpError = defineErrors({
 		status,
 		bodyMessage,
 	}),
-	Parse: ({ cause }: { cause: string }) => ({
-		message: `Failed to parse response body: ${cause}`,
+	Parse: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });

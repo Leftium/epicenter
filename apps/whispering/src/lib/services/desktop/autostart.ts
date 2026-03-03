@@ -5,9 +5,9 @@ import { tryAsync } from 'wellcrafted/result';
 export const AutostartError = defineErrors({
 	Service: ({ operation, cause }: {
 		operation: 'check' | 'enable' | 'disable';
-		cause: string;
+		cause: unknown;
 	}) => ({
-		message: `Failed to ${operation} autostart: ${cause}`,
+		message: `Failed to ${operation} autostart: ${extractErrorMessage(cause)}`,
 		operation,
 		cause,
 	}),
@@ -31,7 +31,7 @@ export const AutostartServiceLive = {
 			catch: (error) =>
 				AutostartError.Service({
 					operation: 'check',
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		}),
 
@@ -42,7 +42,7 @@ export const AutostartServiceLive = {
 			catch: (error) =>
 				AutostartError.Service({
 					operation: 'enable',
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		}),
 
@@ -53,7 +53,7 @@ export const AutostartServiceLive = {
 			catch: (error) =>
 				AutostartError.Service({
 					operation: 'disable',
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		}),
 };

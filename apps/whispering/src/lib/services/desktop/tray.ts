@@ -3,8 +3,7 @@ import { resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { exit } from '@tauri-apps/plugin-process';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 // import { commandCallbacks } from '$lib/commands';
 import { tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
@@ -14,8 +13,8 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 const TRAY_ID = 'whispering-tray';
 
 const TrayError = defineErrors({
-	SetIcon: ({ cause }: { cause: string }) => ({
-		message: `Failed to set tray icon: ${cause}`,
+	SetIcon: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to set tray icon: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -33,7 +32,7 @@ export const TrayIconServiceLive = {
 			},
 			catch: (error) =>
 				TrayError.SetIcon({
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		}),
 };

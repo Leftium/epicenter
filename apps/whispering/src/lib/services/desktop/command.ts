@@ -7,9 +7,9 @@ import { Err, Ok, tryAsync } from 'wellcrafted/result';
 export const CommandError = defineErrors({
 	Service: ({ operation, cause }: {
 		operation: 'execute' | 'spawn';
-		cause: string;
+		cause: unknown;
 	}) => ({
-		message: `Failed to ${operation} command: ${cause}`,
+		message: `Failed to ${operation} command: ${extractErrorMessage(cause)}`,
 		operation,
 		cause,
 	}),
@@ -54,7 +54,7 @@ export const CommandServiceLive = {
 				console.error('[TS] execute: error:', error);
 				return CommandError.Service({
 					operation: 'execute',
-					cause: extractErrorMessage(error),
+					cause: error,
 				});
 			},
 		});
@@ -92,7 +92,7 @@ export const CommandServiceLive = {
 				console.error('[TS] spawn: error:', error);
 				return CommandError.Service({
 					operation: 'spawn',
-					cause: extractErrorMessage(error),
+					cause: error,
 				});
 			},
 		});

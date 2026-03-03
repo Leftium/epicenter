@@ -16,7 +16,7 @@ export function createHttpServiceWeb(): HttpService {
 					}),
 				catch: (error) =>
 					HttpError.Connection({
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 			if (responseError) return Err(responseError);
@@ -41,7 +41,7 @@ export function createHttpServiceWeb(): HttpService {
 				},
 				catch: (error) =>
 					HttpError.Parse({
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 			return parseResult;

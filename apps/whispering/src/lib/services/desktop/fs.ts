@@ -8,11 +8,11 @@ export const FsError = defineErrors({
 	Service: ({ operation, paths, cause }: {
 		operation: string;
 		paths: string | string[];
-		cause: string;
+		cause: unknown;
 	}) => {
 		const pathStr = Array.isArray(paths) ? paths.join(', ') : paths;
 		return {
-			message: `Failed to ${operation}: ${pathStr}: ${cause}`,
+			message: `Failed to ${operation}: ${pathStr}: ${extractErrorMessage(cause)}`,
 			operation,
 			paths,
 			cause,
@@ -31,7 +31,7 @@ export const FsServiceLive = {
 			try: () => createBlobFromPath(path),
 			catch: (error) =>
 				FsError.Service({
-					operation: 'read file as Blob', paths: path, cause: extractErrorMessage(error),
+					operation: 'read file as Blob', paths: path, cause: error,
 				}),
 		}),
 
@@ -44,7 +44,7 @@ export const FsServiceLive = {
 			try: () => createFileFromPath(path),
 			catch: (error) =>
 				FsError.Service({
-					operation: 'read file as File', paths: path, cause: extractErrorMessage(error),
+					operation: 'read file as File', paths: path, cause: error,
 				}),
 		}),
 
@@ -59,7 +59,7 @@ export const FsServiceLive = {
 				FsError.Service({
 					operation: 'read files',
 					paths,
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		}),
 };

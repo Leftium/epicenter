@@ -38,11 +38,11 @@ const ShortcutError = defineErrors({
 	Service: ({ operation, accelerator, cause }: {
 		operation: 'register' | 'unregister' | 'unregisterAll';
 		accelerator?: string;
-		cause: string;
+		cause: unknown;
 	}) => ({
 		message: operation === 'unregisterAll'
-			? `Failed to unregister all global shortcuts: ${cause}`
-			: `Failed to ${operation} global shortcut '${accelerator}': ${cause}`,
+			? `Failed to unregister all global shortcuts: ${extractErrorMessage(cause)}`
+			: `Failed to ${operation} global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
 		operation,
 		accelerator,
 		cause,
@@ -99,7 +99,7 @@ export const GlobalShortcutManagerLive = {
 				ShortcutError.Service({
 					operation: 'register',
 					accelerator,
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		});
 		/**
@@ -132,7 +132,7 @@ export const GlobalShortcutManagerLive = {
 				ShortcutError.Service({
 					operation: 'unregister',
 					accelerator,
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		});
 		if (unregisterError) return Err(unregisterError);
@@ -150,7 +150,7 @@ export const GlobalShortcutManagerLive = {
 			catch: (error) =>
 				ShortcutError.Service({
 					operation: 'unregisterAll',
-					cause: extractErrorMessage(error),
+					cause: error,
 				}),
 		});
 		if (unregisterAllError) return Err(unregisterAllError);

@@ -8,8 +8,8 @@ import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
 
 export const FfmpegError = defineErrors({
-	Service: ({ operation, cause }: { operation: string; cause: string }) => ({
-		message: `Failed to ${operation}: ${cause}`,
+	Service: ({ operation, cause }: { operation: string; cause: unknown }) => ({
+		message: `Failed to ${operation}: ${extractErrorMessage(cause)}`,
 		operation,
 		cause,
 	}),
@@ -33,7 +33,7 @@ export const FfmpegServiceLive = {
 				},
 				catch: (error) =>
 					FfmpegError.Service({
-						operation: 'check FFmpeg installation via shell', cause: extractErrorMessage(error),
+						operation: 'check FFmpeg installation via shell', cause: error,
 					}),
 			});
 
@@ -78,7 +78,7 @@ export const FfmpegServiceLive = {
 						try: () => FsServiceLive.pathToBlob(inputPath),
 						catch: (error) =>
 							FfmpegError.Service({
-								operation: 'verify temp file accessibility', cause: extractErrorMessage(error),
+								operation: 'verify temp file accessibility', cause: error,
 							}),
 					});
 					if (verifyError) throw new Error(verifyError.message);
@@ -137,7 +137,7 @@ export const FfmpegServiceLive = {
 			},
 			catch: (error) =>
 				FfmpegError.Service({
-					operation: 'compress audio', cause: extractErrorMessage(error),
+					operation: 'compress audio', cause: error,
 				}),
 		});
 	},

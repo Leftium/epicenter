@@ -1,5 +1,4 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { IS_MACOS } from '$lib/constants/platform';
 
@@ -7,9 +6,9 @@ export const PermissionsError = defineErrors({
 	Service: ({ action, permissionType, cause }: {
 		action: 'check' | 'request';
 		permissionType: 'accessibility' | 'microphone';
-		cause: string;
+		cause: unknown;
 	}) => ({
-		message: `Failed to ${action} ${permissionType} permissions: ${cause}`,
+		message: `Failed to ${action} ${permissionType} permissions: ${extractErrorMessage(cause)}`,
 		action,
 		permissionType,
 		cause,
@@ -33,7 +32,7 @@ export const PermissionsServiceLive = {
 					PermissionsError.Service({
 						action: 'check',
 						permissionType: 'accessibility',
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 		},
@@ -52,7 +51,7 @@ export const PermissionsServiceLive = {
 					PermissionsError.Service({
 						action: 'request',
 						permissionType: 'accessibility',
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 		},
@@ -73,7 +72,7 @@ export const PermissionsServiceLive = {
 					PermissionsError.Service({
 						action: 'check',
 						permissionType: 'microphone',
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 		},
@@ -92,7 +91,7 @@ export const PermissionsServiceLive = {
 					PermissionsError.Service({
 						action: 'request',
 						permissionType: 'microphone',
-						cause: extractErrorMessage(error),
+						cause: error,
 					}),
 			});
 		},

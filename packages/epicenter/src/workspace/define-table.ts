@@ -30,11 +30,10 @@
  *   }
  * });
  *
- * // Variadic with document config
+ * // Shorthand with document config (multiple documents)
  * const notes = defineTable(
  *   type({ id: 'string', bodyDocId: 'string', bodyUpdatedAt: 'number', _v: '1' }),
- * ).migrate((row) => row)
- *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' });
+ * ).withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' });
  * ```
  */
 

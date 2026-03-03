@@ -1,4 +1,4 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Settings } from '$lib/settings';
 import type {
@@ -10,40 +10,39 @@ import type {
 	TransformationStepRun,
 } from './models';
 
-export const { DbServiceError, DbServiceErr } =
-	createTaggedError('DbServiceError').withMessage(
-		() => 'A database operation failed',
-	);
-export type DbServiceError = ReturnType<typeof DbServiceError>;
+export const DbError = defineErrors({
+	Service: ({ message }: { message: string }) => ({ message }),
+});
+export type DbError = InferErrors<typeof DbError>;
 
 type RecordingWithAudio = { recording: Recording; audio: Blob };
 
 export type DbService = {
 	recordings: {
-		getAll(): Promise<Result<Recording[], DbServiceError>>;
-		getLatest(): Promise<Result<Recording | null, DbServiceError>>;
-		getTranscribingIds(): Promise<Result<string[], DbServiceError>>;
-		getById(id: string): Promise<Result<Recording | null, DbServiceError>>;
+		getAll(): Promise<Result<Recording[], DbError>>;
+		getLatest(): Promise<Result<Recording | null, DbError>>;
+		getTranscribingIds(): Promise<Result<string[], DbError>>;
+		getById(id: string): Promise<Result<Recording | null, DbError>>;
 		create(
 			params: RecordingWithAudio | RecordingWithAudio[],
-		): Promise<Result<void, DbServiceError>>;
-		update(recording: Recording): Promise<Result<Recording, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
+		update(recording: Recording): Promise<Result<Recording, DbError>>;
 		delete(
 			recording: Recording | Recording[],
-		): Promise<Result<void, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
 		cleanupExpired(params: {
 			recordingRetentionStrategy: Settings['database.recordingRetentionStrategy'];
 			maxRecordingCount: Settings['database.maxRecordingCount'];
-		}): Promise<Result<void, DbServiceError>>;
-		clear(): Promise<Result<void, DbServiceError>>;
-		getCount(): Promise<Result<number, DbServiceError>>;
+		}): Promise<Result<void, DbError>>;
+		clear(): Promise<Result<void, DbError>>;
+		getCount(): Promise<Result<number, DbError>>;
 
 		/**
 		 * Get audio blob by recording ID. Fetches audio on-demand.
 		 * - Desktop: Reads file from predictable path using services.fs.pathToBlob()
 		 * - Web: Fetches from IndexedDB by ID, converts serializedAudio to Blob
 		 */
-		getAudioBlob(recordingId: string): Promise<Result<Blob, DbServiceError>>;
+		getAudioBlob(recordingId: string): Promise<Result<Blob, DbError>>;
 
 		/**
 		 * Get audio playback URL. Creates and caches URL.
@@ -52,7 +51,7 @@ export type DbService = {
 		 */
 		ensureAudioPlaybackUrl(
 			recordingId: string,
-		): Promise<Result<string, DbServiceError>>;
+		): Promise<Result<string, DbError>>;
 
 		/**
 		 * Revoke audio URL if cached. Cleanup method.
@@ -62,59 +61,59 @@ export type DbService = {
 		revokeAudioUrl(recordingId: string): void;
 	};
 	transformations: {
-		getAll(): Promise<Result<Transformation[], DbServiceError>>;
-		getById(id: string): Promise<Result<Transformation | null, DbServiceError>>;
+		getAll(): Promise<Result<Transformation[], DbError>>;
+		getById(id: string): Promise<Result<Transformation | null, DbError>>;
 		create(
 			transformation: Transformation | Transformation[],
-		): Promise<Result<void, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
 		update(
 			transformation: Transformation,
-		): Promise<Result<Transformation, DbServiceError>>;
+		): Promise<Result<Transformation, DbError>>;
 		delete(
 			transformation: Transformation | Transformation[],
-		): Promise<Result<void, DbServiceError>>;
-		clear(): Promise<Result<void, DbServiceError>>;
-		getCount(): Promise<Result<number, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
+		clear(): Promise<Result<void, DbError>>;
+		getCount(): Promise<Result<number, DbError>>;
 	};
 	runs: {
-		getAll(): Promise<Result<TransformationRun[], DbServiceError>>;
+		getAll(): Promise<Result<TransformationRun[], DbError>>;
 		getById(
 			id: string,
-		): Promise<Result<TransformationRun | null, DbServiceError>>;
+		): Promise<Result<TransformationRun | null, DbError>>;
 		getByTransformationId(
 			transformationId: string,
-		): Promise<Result<TransformationRun[], DbServiceError>>;
+		): Promise<Result<TransformationRun[], DbError>>;
 		getByRecordingId(
 			recordingId: string,
-		): Promise<Result<TransformationRun[], DbServiceError>>;
+		): Promise<Result<TransformationRun[], DbError>>;
 		create(
 			run: TransformationRun | TransformationRun[],
-		): Promise<Result<void, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
 		addStep(
 			run: TransformationRun,
 			step: {
 				id: string;
 				input: string;
 			},
-		): Promise<Result<TransformationStepRun, DbServiceError>>;
+		): Promise<Result<TransformationStepRun, DbError>>;
 		failStep(
 			run: TransformationRun,
 			stepRunId: string,
 			error: string,
-		): Promise<Result<TransformationRunFailed, DbServiceError>>;
+		): Promise<Result<TransformationRunFailed, DbError>>;
 		completeStep(
 			run: TransformationRun,
 			stepRunId: string,
 			output: string,
-		): Promise<Result<TransformationRun, DbServiceError>>;
+		): Promise<Result<TransformationRun, DbError>>;
 		complete(
 			run: TransformationRun,
 			output: string,
-		): Promise<Result<TransformationRunCompleted, DbServiceError>>;
+		): Promise<Result<TransformationRunCompleted, DbError>>;
 		delete(
 			run: TransformationRun | TransformationRun[],
-		): Promise<Result<void, DbServiceError>>;
-		clear(): Promise<Result<void, DbServiceError>>;
-		getCount(): Promise<Result<number, DbServiceError>>;
+		): Promise<Result<void, DbError>>;
+		clear(): Promise<Result<void, DbError>>;
+		getCount(): Promise<Result<number, DbError>>;
 	};
 };

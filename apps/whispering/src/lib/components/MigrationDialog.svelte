@@ -13,11 +13,8 @@
 		generateDefaultTransformation,
 		generateDefaultTransformationStep,
 	} from '$lib/services/isomorphic/db/models';
-	import type {
-		DbService,
-		DbServiceError,
-	} from '$lib/services/isomorphic/db/types';
-	import { DbServiceErr } from '$lib/services/isomorphic/db/types';
+	import type { DbService } from '$lib/services/isomorphic/db/types';
+	import { DbError } from '$lib/services/isomorphic/db/types';
 	import { createDbServiceWeb } from '$lib/services/isomorphic/db/web';
 	import { DownloadServiceLive } from '$lib/services/isomorphic/download';
 
@@ -521,7 +518,7 @@
 			indexedDb: DbService;
 			fileSystemDb: DbService;
 			onProgress: (message: string) => void;
-		}): Promise<Result<MigrationResult, DbServiceError>> {
+		}): Promise<Result<MigrationResult, DbError>> {
 			const startTime = performance.now();
 
 			return tryAsync({
@@ -668,7 +665,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbServiceErr({
+					throw DbError.Service({
 						message: 'Failed to migrate recordings',
 					});
 				},
@@ -687,7 +684,7 @@
 			indexedDb: DbService;
 			fileSystemDb: DbService;
 			onProgress: (message: string) => void;
-		}): Promise<Result<MigrationResult, DbServiceError>> {
+		}): Promise<Result<MigrationResult, DbError>> {
 			const startTime = performance.now();
 
 			return tryAsync({
@@ -820,7 +817,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbServiceErr({
+					throw DbError.Service({
 						message: 'Failed to migrate transformations',
 					});
 				},
@@ -839,7 +836,7 @@
 			indexedDb: DbService;
 			fileSystemDb: DbService;
 			onProgress: (message: string) => void;
-		}): Promise<Result<MigrationResult, DbServiceError>> {
+		}): Promise<Result<MigrationResult, DbError>> {
 			const startTime = performance.now();
 
 			return tryAsync({
@@ -972,7 +969,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbServiceErr({
+					throw DbError.Service({
 						message: 'Failed to migrate transformation runs',
 					});
 				},
@@ -1000,7 +997,7 @@
 						runs: number;
 					};
 				},
-				DbServiceError
+				DbError
 			>
 		> {
 			return tryAsync({
@@ -1034,7 +1031,7 @@
 					};
 				},
 				catch: (error) => {
-					throw DbServiceErr({
+					throw DbError.Service({
 						message: 'Failed to get migration counts',
 					});
 				},

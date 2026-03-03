@@ -20,8 +20,7 @@ import { FsServiceLive } from '$lib/services/desktop/fs';
 import {
 	type FfmpegRecordingParams,
 	type RecorderService,
-	RecorderServiceErr,
-	type RecorderServiceError,
+	RecorderError,
 } from '$lib/services/isomorphic/recorder/types';
 import {
 	asDeviceIdentifier,
@@ -245,7 +244,7 @@ if (sessionState.value) {
 }
 
 const enumerateDevices = async (): Promise<
-	Result<Device[], RecorderServiceError>
+	Result<Device[], RecorderError>
 > => {
 	// Build platform-specific commands
 	const command = asShellCommand(FFMPEG_ENUMERATE_DEVICES_COMMAND);
@@ -253,7 +252,7 @@ const enumerateDevices = async (): Promise<
 	const { data: result, error: executeError } =
 		await CommandServiceLive.execute(command);
 	if (executeError) {
-		return RecorderServiceErr({
+		return RecorderError.Service({
 			message: 'Failed to enumerate recording devices',
 		});
 	}
@@ -264,7 +263,7 @@ const enumerateDevices = async (): Promise<
 	const devices = parseDevices(output);
 
 	if (devices.length === 0) {
-		return RecorderServiceErr({
+		return RecorderError.Service({
 			message: 'No recording devices found',
 		});
 	}
@@ -278,7 +277,7 @@ const enumerateDevices = async (): Promise<
  */
 export const FfmpegRecorderServiceLive: RecorderService = {
 	getRecorderState: async (): Promise<
-		Result<WhisperingRecordingState, RecorderServiceError>
+		Result<WhisperingRecordingState, RecorderError>
 	> => {
 		return Ok(sessionState.value ? 'RECORDING' : 'IDLE');
 	},
@@ -295,7 +294,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 			outputOptions,
 		}: FfmpegRecordingParams,
 		{ sendStatus },
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
+	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
 		// Stop any existing recording
 		await clearSession();
 
@@ -305,13 +304,13 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 
 		const acquireDevice = (): Result<
 			DeviceAcquisitionOutcome,
-			RecorderServiceError
+			RecorderError
 		> => {
 			const deviceIds = devices.map((d) => d.id);
 			const fallbackDeviceId = deviceIds.at(0);
 
 			if (!fallbackDeviceId) {
-				return RecorderServiceErr({
+				return RecorderError.Service({
 					message: selectedDeviceId
 						? "We couldn't find the selected microphone. Make sure it's connected and try again!"
 						: "We couldn't find any microphones. Make sure they're connected and try again!",
@@ -384,7 +383,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 
 		if (startError) {
 			// The spawn function already caught the FFmpeg error and extracted the message
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: 'Failed to start recording',
 			});
 		}
@@ -405,11 +404,11 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<Blob, RecorderServiceError>> => {
+	}): Promise<Result<Blob, RecorderError>> => {
 		const child = getCurrentChild();
 		const session = sessionState.value;
 		if (!child || !session) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: 'No active recording to stop',
 			});
 		}
@@ -437,7 +436,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 				}
 			},
 			catch: (error) =>
-				RecorderServiceErr({
+				RecorderError.Service({
 					message: `Failed to stop FFmpeg process: ${extractErrorMessage(error)}`,
 				}),
 		});
@@ -504,14 +503,14 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 			await FsServiceLive.pathToBlob(outputPath);
 
 		if (readError) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: 'Unable to read recording file',
 			});
 		}
 
 		// Validate the blob has actual content
 		if (!blob || blob.size === 0) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: 'Recording file is empty',
 			});
 		}
@@ -521,7 +520,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 
 	cancelRecording: async ({
 		sendStatus,
-	}): Promise<Result<CancelRecordingResult, RecorderServiceError>> => {
+	}): Promise<Result<CancelRecordingResult, RecorderError>> => {
 		const session = sessionState.value;
 		if (!session) {
 			return Ok({ status: 'no-recording' });
@@ -546,7 +545,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 					if (fileExists) await remove(pathToCleanup);
 				},
 				catch: (error) =>
-					RecorderServiceErr({
+					RecorderError.Service({
 						message: `Failed to delete recording file: ${extractErrorMessage(error)}`,
 					}),
 			});

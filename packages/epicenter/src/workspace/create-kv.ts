@@ -10,16 +10,16 @@
  * // Shorthand for single version
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  *
- * // Builder pattern for multiple versions with migration
- * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'", _v: '1' }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }))
- *   .migrate((v) => {
- *     switch (v._v) {
- *       case 1: return { ...v, fontSize: 14, _v: 2 };
- *       case 2: return v;
- *     }
- *   });
+ * // Variadic for multiple versions with migration
+ * const theme = defineKv(
+ *   type({ mode: "'light' | 'dark'", _v: '1' }),
+ *   type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }),
+ * ).migrate((v) => {
+ *   switch (v._v) {
+ *     case 1: return { ...v, fontSize: 14, _v: 2 };
+ *     case 2: return v;
+ *   }
+ * });
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
  * const kv = createKv(ydoc, { sidebar, theme });

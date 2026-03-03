@@ -5,11 +5,15 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+
+// Re-export JSON types for consumers
+export type { JsonObject, JsonValue } from 'wellcrafted/json';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -21,10 +25,13 @@ import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
  * - `id`: Unique identifier for row lookup and identity
  * - `_v`: Schema version number for tracking which version this row conforms to
  *
+ * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
+ * This guarantees data stored in Yjs can be safely serialized/deserialized.
+ *
  * All table rows extend this base shape. Used as a constraint in generic types
  * to ensure rows have the required fields for versioning and identification.
  */
-export type BaseRow = { id: string; _v: number };
+export type BaseRow = { id: string; _v: number } & JsonObject;
 
 /** A row that passed validation. */
 export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
@@ -107,7 +114,7 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
 		: T[number];
 
 /**
- * A table definition created by defineTable().version().migrate()
+ * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  * @typeParam TDocuments - Record of named document configs declared via `.withDocument()`
@@ -372,7 +379,7 @@ export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * A KV definition created by defineKv().version().migrate()
+ * A KV definition created by `defineKv(schema)` or `defineKv(v1, v2, ...).migrate(fn)`
  *
  * @typeParam TVersions - Tuple of schema versions
  */

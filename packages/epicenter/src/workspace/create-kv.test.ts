@@ -62,9 +62,9 @@ describe('createKv', () => {
 				type({ mode: "'light' | 'dark'" }),
 				type({ mode: "'light' | 'dark'", fontSize: 'number' }),
 			).migrate((v) => {
-					if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-					return v;
-				}),
+				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+				return v;
+			}),
 		});
 
 		// Simulate old data

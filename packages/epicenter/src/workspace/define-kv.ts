@@ -88,7 +88,11 @@ export function defineKv<TSchema extends CombinedStandardSchema>(
  * ```
  */
 export function defineKv<
-	const TVersions extends [CombinedStandardSchema, CombinedStandardSchema, ...CombinedStandardSchema[]],
+	const TVersions extends [
+		CombinedStandardSchema,
+		CombinedStandardSchema,
+		...CombinedStandardSchema[],
+	],
 >(
 	...versions: TVersions
 ): {
@@ -107,7 +111,7 @@ export function defineKv<TSchema extends CombinedStandardSchema>(
 			migrate(
 				fn: (value: unknown) => unknown,
 			): KvDefinition<CombinedStandardSchema[]>;
-		} {
+	  } {
 	if (arguments.length === 0) {
 		throw new Error('defineKv() requires at least one schema argument');
 	}

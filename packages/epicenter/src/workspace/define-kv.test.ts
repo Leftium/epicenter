@@ -107,8 +107,7 @@ describe('defineKv', () => {
 					_v: '2',
 				}),
 			).migrate((v) => {
-				if (!('_v' in v))
-					return { mode: v.mode, fontSize: 14, _v: 2 as const };
+				if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: 2 as const };
 				return v;
 			});
 

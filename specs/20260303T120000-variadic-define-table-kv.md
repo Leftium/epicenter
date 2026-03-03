@@ -1,7 +1,7 @@
 # Variadic `defineTable` / `defineKv` — Replace `.version()` Chaining with Rest Parameters
 
 **Date:** 2026-03-03
-**Status:** In Progress
+**Status:** Implemented
 **Author:** braden
 **Branch:** `braden-w/variadic-define-table-kv`
 
@@ -186,9 +186,12 @@ defineKv(
 
 ### Wave 3: Verify
 
-- [ ] **3.1** Run `bun test` across the workspace to confirm all tests pass
-- [ ] **3.2** Run `bun run typecheck` to confirm no type errors
-- [ ] **3.3** Run `bun run lint` and fix any issues
+- [x] **3.1** Run `bun test` across the workspace to confirm all tests pass
+  > **Note**: 200/201 pass. The 1 failure (`factory throw in workspace cleans up prior extensions in LIFO order`) is pre-existing on main.
+- [x] **3.2** Run `bun run typecheck` to confirm no type errors
+  > **Note**: All type errors are pre-existing. Our changes fixed 3 files (create-kv.test.ts, define-kv.test.ts, describe-workspace.test.ts).
+- [x] **3.3** Run `bun run lint` and fix any issues
+  > **Note**: Pre-existing lint warnings/errors unrelated to our changes. Applied formatting to our changed files.
 
 ## Edge Cases
 
@@ -238,3 +241,20 @@ defineKv(
 - `packages/epicenter/src/workspace/schema-union.ts` — `createUnionSchema` (unchanged)
 - `packages/epicenter/src/workspace/define-table.test.ts` — primary test file for multi-version
 - `packages/epicenter/src/workspace/define-kv.test.ts` — primary test file for multi-version KV
+
+## Review
+
+**Completed**: 2026-03-03
+**Branch**: `braden-w/variadic-define-table-kv`
+
+### Summary
+
+Replaced `.version()` builder chaining with variadic rest parameters on both `defineTable` and `defineKv`. Removed `TableBuilder` and `KvBuilder` types entirely. All 6 test files with `.version()` chains were mechanically transformed. `create-workspace.test.ts` needed no changes (already single-arg shorthand only). Zero production code changes required.
+
+### Deviations from Spec
+
+- Added zero-arg runtime guard (`arguments.length === 0` throw) to both `defineTable` and `defineKv` — the original builder threw lazily in `.migrate()`, but with the new API a zero-arg call would silently return a migrate-able object with no schemas.
+
+### Follow-up Work
+
+- Open question 1 (update `workspace-api` skill docs) deferred — not blocking.

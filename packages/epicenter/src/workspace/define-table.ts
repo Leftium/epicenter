@@ -163,9 +163,7 @@ export function defineTable<
 	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
 };
 
-export function defineTable<
-	TSchema extends CombinedStandardSchema<BaseRow>,
->(
+export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	...args: [TSchema, ...CombinedStandardSchema<BaseRow>[]]
 ):
 	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
@@ -176,11 +174,9 @@ export function defineTable<
 				CombinedStandardSchema<BaseRow>[],
 				Record<string, never>
 			>;
-		} {
+	  } {
 	if (arguments.length === 0) {
-		throw new Error(
-			'defineTable() requires at least one schema argument',
-		);
+		throw new Error('defineTable() requires at least one schema argument');
 	}
 
 	if (arguments.length === 1) {

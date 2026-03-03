@@ -264,11 +264,10 @@ describe('defineTable', () => {
 					modifiedAt: 'number',
 					_v: '1',
 				}),
-			)
-				.withDocument('content', {
-					guid: 'docId',
-					updatedAt: 'modifiedAt',
-				});
+			).withDocument('content', {
+				guid: 'docId',
+				updatedAt: 'modifiedAt',
+			});
 
 			expect(notes.documents.content.guid).toBe('docId');
 			expect(notes.documents.content.updatedAt).toBe('modifiedAt');

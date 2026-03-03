@@ -92,21 +92,6 @@ export const INFERENCE = {
 
 export type InferenceProviderId = keyof typeof INFERENCE;
 
-const toOptions = <T extends string>(models: readonly T[]) =>
-	models.map((model) => ({ value: model, label: model }));
-
-export const OPENAI_INFERENCE_MODELS = INFERENCE.OpenAI.models;
-export const OPENAI_INFERENCE_MODEL_OPTIONS = toOptions(OPENAI_INFERENCE_MODELS);
-
-export const GROQ_INFERENCE_MODELS = INFERENCE.Groq.models;
-export const GROQ_INFERENCE_MODEL_OPTIONS = toOptions(GROQ_INFERENCE_MODELS);
-
-export const ANTHROPIC_INFERENCE_MODELS = INFERENCE.Anthropic.models;
-export const ANTHROPIC_INFERENCE_MODEL_OPTIONS = toOptions(ANTHROPIC_INFERENCE_MODELS);
-
-export const GOOGLE_INFERENCE_MODELS = INFERENCE.Google.models;
-export const GOOGLE_INFERENCE_MODEL_OPTIONS = toOptions(GOOGLE_INFERENCE_MODELS);
-
 /** Convenience array for `type.enumerated(...INFERENCE_PROVIDER_IDS)` in schemas. */
 export const INFERENCE_PROVIDER_IDS = Object.keys(
 	INFERENCE,

@@ -1,7 +1,7 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
 import { listenWithFallback } from '@epicenter/server';
-import type { AuthConfig } from '@epicenter/server/sync';
+import type { VerifyToken } from '@epicenter/server/sync';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
@@ -49,7 +49,7 @@ export type LocalServerConfig = {
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
 		/** Auth for sync endpoints. Omit for open mode (no auth). */
-		auth?: AuthConfig;
+		auth?: VerifyToken;
 
 		/** Called when a new sync room is created on demand. */
 		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;

@@ -16,7 +16,7 @@ import type { SyncProvider, SyncStatus } from '@epicenter/sync';
 import { createSyncProvider } from '@epicenter/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
-import type { AuthConfig } from './auth';
+import type { VerifyToken } from './auth';
 import { createSyncPlugin } from './plugin';
 
 // ============================================================================
@@ -36,7 +36,7 @@ function uniqueRoom(): string {
  * Uses the sync plugin directly (no createLocalServer dependency)
  * to keep @epicenter/server free of cyclic deps.
  */
-function startTestServer(syncConfig?: { auth?: AuthConfig }) {
+function startTestServer(syncConfig?: { auth?: VerifyToken }) {
 	const app = new Elysia()
 		.use(new Elysia({ prefix: '/rooms' }).use(createSyncPlugin(syncConfig)))
 		.get('/', () => ({ status: 'ok' }));
@@ -598,7 +598,7 @@ describe('sync plugin REST document update', () => {
 
 describe('sync plugin REST auth', () => {
 	test('returns 401 without Authorization header when auth is configured', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 
 		try {
 			const res = await fetch(ctx.httpUrl('/rooms/'));
@@ -610,7 +610,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('returns 401 with wrong Bearer token', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 
 		try {
 			const res = await fetch(ctx.httpUrl('/rooms/'), {
@@ -624,7 +624,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('works with correct Bearer token', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 		const room = uniqueRoom();
 
 		try {
@@ -667,7 +667,7 @@ describe('sync plugin REST auth', () => {
 	});
 
 	test('ignores token query param for REST routes (Bearer header only)', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 
 		try {
 			const queryTokenRes = await fetch(ctx.httpUrl('/rooms/?token=secret'));
@@ -710,7 +710,7 @@ describe('sync plugin auth', () => {
 	}
 
 	test('rejects connection without token when auth is required', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 
 		try {
 			const room = uniqueRoom();
@@ -732,7 +732,7 @@ describe('sync plugin auth', () => {
 	});
 
 	test('rejects connection with wrong token', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'correct-token' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'correct-token' });
 
 		try {
 			const room = uniqueRoom();
@@ -755,7 +755,7 @@ describe('sync plugin auth', () => {
 	});
 
 	test('accepts connection with correct token', async () => {
-		const ctx = startTestServer({ auth: { verify: (t: string) => t === 'secret' } });
+		const ctx = startTestServer({ auth: (t: string) => t === 'secret' });
 
 		try {
 			const room = uniqueRoom();

@@ -1,5 +1,4 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import type { HttpService } from '.';
 import { HttpError } from './types';
@@ -24,7 +23,7 @@ export function createHttpServiceWeb(): HttpService {
 			if (!response.ok) {
 				return HttpError.Response({
 					status: response.status,
-					bodyMessage: extractErrorMessage(await response.json()),
+					body: await response.json(),
 				});
 			}
 

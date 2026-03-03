@@ -1,6 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import { fetch } from '@tauri-apps/plugin-http';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import type { HttpService } from '.';
 import { HttpError } from './types';
@@ -25,7 +24,7 @@ export function createHttpServiceDesktop(): HttpService {
 			if (!response.ok) {
 				return HttpError.Response({
 					status: response.status,
-					bodyMessage: extractErrorMessage(await response.json()),
+					body: await response.json(),
 				});
 			}
 

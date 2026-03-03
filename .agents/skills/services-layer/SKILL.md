@@ -94,10 +94,10 @@ return RecorderError.Busy();
 
 // Variant with fields — fields are flat on the error object
 const HttpError = defineErrors({
-  Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
-    message: bodyMessage ? `HTTP ${status}: ${bodyMessage}` : `HTTP ${status} response`,
+  Response: ({ status, body }: { status: number; body?: unknown }) => ({
+    message: body ? `HTTP ${status}: ${extractErrorMessage(body)}` : `HTTP ${status} response`,
     status,
-    bodyMessage,
+    body,
   }),
 });
 
@@ -125,10 +125,10 @@ const HttpError = defineErrors({
     message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
     cause,
   }),
-  Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
-    message: bodyMessage ? `HTTP ${status}: ${bodyMessage}` : `HTTP ${status} response`,
+  Response: ({ status, body }: { status: number; body?: unknown }) => ({
+    message: body ? `HTTP ${status}: ${extractErrorMessage(body)}` : `HTTP ${status} response`,
     status,
-    bodyMessage,
+    body,
   }),
   Parse: ({ cause }: { cause: unknown }) => ({
     message: `Failed to parse response body: ${extractErrorMessage(cause)}`,

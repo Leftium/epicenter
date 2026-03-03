@@ -106,6 +106,8 @@ const Admin = type({
 
 The `"..."` key spreads all properties from the referenced type into the new object definition. Conflicting keys in the outer object override the spread type (same as `.merge()`).
 
+**Constraint**: The `"..."` key must be the first key in the object. Arktype throws `ParseError: Spread operator may only be used as the first key` otherwise. Prefer `.merge()` when you need more flexibility.
+
 ### Spread key in unions
 
 ```typescript
@@ -227,6 +229,53 @@ const tabGroupColor =
 ```
 
 Both work when used as a value inside `type({...})` object literals (arktype coerces strings). But only the `type()`-wrapped version is a first-class `Type` that works in all positions.
+
+## `type.enumerated()` — Derive Unions from Const Arrays
+
+Use `type.enumerated()` to create string literal unions from existing `as const` arrays. This keeps the workspace schema in sync with app constants automatically.
+
+```typescript
+import { type } from 'arktype';
+
+const RECORDING_MODES = ['manual', 'vad', 'upload'] as const;
+
+// Spread the const array into type.enumerated()
+const recordingMode = type.enumerated(...RECORDING_MODES);
+// Equivalent to: type("'manual' | 'vad' | 'upload'")
+```
+
+### Extracting from rich object arrays
+
+When constants are objects with a `name` or `id` field, map first:
+
+```typescript
+const OPENAI_TRANSCRIPTION_MODELS = [
+	{ name: 'whisper-1', description: '...', cost: '$0.36/hour' },
+	{ name: 'gpt-4o-transcribe', description: '...', cost: '$0.36/hour' },
+] as const;
+
+const openaiModel = type.enumerated(
+	...OPENAI_TRANSCRIPTION_MODELS.map((m) => m.name),
+);
+```
+
+### In discriminated unions
+
+Combine with `base.merge(type.or(...))` to build unions where each variant's model field derives from its constant array:
+
+```typescript
+const transcriptionConfig = type.or(
+	{ service: "'OpenAI'", model: type.enumerated(...OPENAI_MODELS.map((m) => m.name)) },
+	{ service: "'Groq'", model: type.enumerated(...GROQ_MODELS.map((m) => m.name)) },
+	{ service: "'whispercpp'" },  // local — no model field
+);
+```
+
+### Why derive from constants
+
+- **Single source of truth**: Model lists are maintained in one place — the constant arrays
+- **Auto-sync**: Adding a model to the array automatically updates the workspace schema
+- **No string drift**: Impossible for the schema to list models that don't exist in the app
 
 ## Anti-Patterns
 

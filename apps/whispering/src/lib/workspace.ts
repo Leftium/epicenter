@@ -7,6 +7,21 @@ import {
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 
+// ── Constant imports ─────────────────────────────────────────────────────────
+
+import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
+import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
+import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
+import { OPENAI_INFERENCE_MODELS } from '$lib/constants/inference/openai-models';
+import { GROQ_INFERENCE_MODELS } from '$lib/constants/inference/groq-models';
+import { ANTHROPIC_INFERENCE_MODELS } from '$lib/constants/inference/anthropic-models';
+import { GOOGLE_INFERENCE_MODELS } from '$lib/constants/inference/google-models';
+import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/openai';
+import { GROQ_MODELS } from '$lib/services/isomorphic/transcription/cloud/groq';
+import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/elevenlabs';
+import { DEEPGRAM_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/deepgram';
+import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/mistral';
+
 // ── Tables ────────────────────────────────────────────────────────────────────
 
 const recordings = defineTable(
@@ -43,55 +58,58 @@ const transformationStepBase = type({
 });
 
 // Inference provider discriminated union — exact model literals per provider.
-// OpenAI/Groq/Anthropic/Google have enum models; OpenRouter/Custom are free-text.
-const inferenceProvider = type({
-	'inference.provider': "'OpenAI'",
-	'inference.model':
-		"'gpt-5' | 'gpt-5-mini' | 'gpt-4.1' | 'gpt-4.1-mini' | 'gpt-4.1-nano' | 'gpt-4o' | 'gpt-4o-mini' | 'o3' | 'o3-pro' | 'o3-mini' | 'o4-mini'",
-})
-	.or({
+// OpenAI/Groq/Anthropic/Google derive from constant arrays; OpenRouter/Custom are free-text.
+const inferenceProvider = type.or(
+	{
+		'inference.provider': "'OpenAI'",
+		'inference.model': type.enumerated(...OPENAI_INFERENCE_MODELS),
+	},
+	{
 		'inference.provider': "'Groq'",
-		'inference.model':
-			"'gemma2-9b-it' | 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant' | 'deepseek-r1-distill-llama-70b' | 'qwen-qwq-32b'",
-	})
-	.or({
+		'inference.model': type.enumerated(...GROQ_INFERENCE_MODELS),
+	},
+	{
 		'inference.provider': "'Anthropic'",
-		'inference.model':
-			"'claude-sonnet-4-5' | 'claude-haiku-4-5' | 'claude-opus-4-1' | 'claude-sonnet-4-0' | 'claude-opus-4-0' | 'claude-3-7-sonnet-latest' | 'claude-3-5-haiku-latest'",
-	})
-	.or({
+		'inference.model': type.enumerated(...ANTHROPIC_INFERENCE_MODELS),
+	},
+	{
 		'inference.provider': "'Google'",
-		'inference.model':
-			"'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite-preview-06-17' | 'gemini-pro-latest' | 'gemini-flash-latest' | 'gemini-flash-lite-latest'",
-	})
-	.or({
+		'inference.model': type.enumerated(...GOOGLE_INFERENCE_MODELS),
+	},
+	{
 		'inference.provider': "'OpenRouter'",
 		'inference.model': 'string',
-	})
-	.or({
+	},
+	{
 		'inference.provider': "'Custom'",
 		'inference.model': 'string',
 		'inference.baseUrl': 'string',
-	});
+	},
+);
 
-// Prompt transform: LLM completion with provider selection + prompt templates
-const promptTransformStep = transformationStepBase
-	.and({ type: "'prompt_transform'" })
-	.and(inferenceProvider)
-	.and({
-		systemPromptTemplate: 'string',
-		userPromptTemplate: 'string',
-	});
+// Prompt transform: inference provider union merged with prompt-specific fields.
+// .merge() distributes — each provider branch gets the prompt fields.
+const promptTransformVariant = inferenceProvider.merge({
+	type: "'prompt_transform'",
+	systemPromptTemplate: 'string',
+	userPromptTemplate: 'string',
+});
 
 // Find & replace: regex or literal text substitution
-const findReplaceStep = transformationStepBase.and({
+const findReplaceVariant = type({
 	type: "'find_replace'",
 	findText: 'string',
 	replaceText: 'string',
 	useRegex: 'boolean',
 });
 
-const transformationSteps = defineTable(promptTransformStep.or(findReplaceStep));
+// Transformation steps: base merged with discriminated step type union.
+// .merge() distributes over the union — each branch gets the base fields.
+const transformationSteps = defineTable(
+	transformationStepBase.merge(
+		type.or(promptTransformVariant, findReplaceVariant),
+	),
+);
 
 const transformationRuns = defineTable(
 	type({
@@ -158,10 +176,8 @@ const output = {
 
 // UI preferences
 const ui = {
-	'ui.alwaysOnTop': defineKv(
-		type("'Never' | 'Always' | 'When Recording' | 'When Recording and Transcribing'"),
-	),
-	'ui.layoutMode': defineKv(type("'sidebar' | 'nav-items'")),
+	'ui.alwaysOnTop': defineKv(type.enumerated(...ALWAYS_ON_TOP_MODES)),
+	'ui.layoutMode': defineKv(type.enumerated(...LAYOUT_MODES)),
 } as const;
 
 // Data retention
@@ -172,36 +188,45 @@ const dataRetention = {
 
 // Recording mode (user preference, not hardware-specific)
 const recording = {
-	'recording.mode': defineKv(type("'manual' | 'vad' | 'upload'")),
+	'recording.mode': defineKv(type.enumerated(...RECORDING_MODES)),
 } as const;
 
 // Transcription service + model selection as a discriminated union.
-// Cloud services include model (syncs across devices). Local/self-hosted
-// services omit model (paths and IDs are device-specific, stay in localStorage).
-const transcriptionConfig = type({
-	service: "'OpenAI'",
-	model: "'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe'",
-})
-	.or({
+// Cloud services derive model enums from their constant arrays.
+// Local/self-hosted services omit model (paths and IDs are device-specific,
+// stay in localStorage).
+const transcriptionConfig = type.or(
+	{
+		service: "'OpenAI'",
+		model: type.enumerated(...OPENAI_TRANSCRIPTION_MODELS.map((m) => m.name)),
+	},
+	{
 		service: "'Groq'",
-		model: "'whisper-large-v3' | 'whisper-large-v3-turbo'",
-	})
-	.or({
+		model: type.enumerated(...GROQ_MODELS.map((m) => m.name)),
+	},
+	{
 		service: "'ElevenLabs'",
-		model: "'scribe_v2' | 'scribe_v1' | 'scribe_v1_experimental'",
-	})
-	.or({
+		model: type.enumerated(
+			...ELEVENLABS_TRANSCRIPTION_MODELS.map((m) => m.name),
+		),
+	},
+	{
 		service: "'Deepgram'",
-		model: "'nova-3' | 'nova-2' | 'nova' | 'enhanced' | 'base'",
-	})
-	.or({
+		model: type.enumerated(
+			...DEEPGRAM_TRANSCRIPTION_MODELS.map((m) => m.name),
+		),
+	},
+	{
 		service: "'Mistral'",
-		model: "'voxtral-mini-latest' | 'voxtral-small-latest'",
-	})
-	.or({ service: "'whispercpp'" })
-	.or({ service: "'parakeet'" })
-	.or({ service: "'moonshine'" })
-	.or({ service: "'speaches'" });
+		model: type.enumerated(
+			...MISTRAL_TRANSCRIPTION_MODELS.map((m) => m.name),
+		),
+	},
+	{ service: "'whispercpp'" },
+	{ service: "'parakeet'" },
+	{ service: "'moonshine'" },
+	{ service: "'speaches'" },
+);
 
 // Transcription settings — service config is a discriminated union,
 // shared preferences (prompt, temperature, etc.) are independent KVs.

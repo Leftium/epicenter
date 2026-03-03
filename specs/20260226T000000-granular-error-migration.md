@@ -7,6 +7,8 @@
 **Supersedes**: `20260225T000000-tagged-error-redesign.md` (draft)
 **Scope**: All service error migrations in apps/whispering and apps/epicenter
 
+> **⚠️ Note on `extractErrorMessage` at call sites**: This spec shows `extractErrorMessage(error)` being called at call sites and embedded in message strings. The current pattern passes raw `cause: error` to constructors and calls `extractErrorMessage(cause)` inside the constructor's message template. See the `services-layer` skill for the updated pattern.
+
 ## Summary
 
 Migrate service errors from monolithic `{ message: "..." }` patterns to the final `createTaggedError` API: flat fields, sealed `.withMessage()` for predictable messages, and call-site `message` for dynamic errors.

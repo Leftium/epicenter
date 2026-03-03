@@ -6,6 +6,8 @@
 **Partially supersedes**: `20260226T000000-granular-error-migration.md` (definition-site patterns only; the per-service granularity decisions in that spec remain valid)
 **Scope**: All error definitions in apps/whispering, apps/epicenter, packages/epicenter, packages/svelte-utils
 
+> **⚠️ Note on `cause` pattern**: This spec was written when `cause` was typed as `string` and call sites used `extractErrorMessage(error)`. The current pattern types `cause` as `unknown` and calls `extractErrorMessage(cause)` inside the constructor's message template. Call sites pass `{ cause: error }` (the raw caught error). See `20260302T200000-split-sub-discriminant-errors.md` and the `services-layer` skill for the updated pattern.
+
 ## Summary
 
 Once wellcrafted publishes `defineErrors` v2, migrate all 24 error definitions in this monorepo from `createTaggedError` builder chains to Rust-style namespaced `defineErrors`. This migration touches **both definition sites AND call sites** — every `FooServiceErr({...})` becomes `FooError.Variant({...})`.
@@ -33,8 +35,8 @@ const HttpError = defineErrors({
   // defineErrors stamps `name` from the key (e.g., 'Connection'),
   // freezes the result, and returns Err<...> directly.
 
-  Connection: ({ cause }: { cause: string }) => ({
-    message: `Failed to connect to the server: ${cause}`,
+  Connection: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
     cause,
   }),
 
@@ -44,8 +46,8 @@ const HttpError = defineErrors({
     bodyMessage,
   }),
 
-  Parse: ({ cause }: { cause: string }) => ({
-    message: `Failed to parse response body: ${cause}`,
+  Parse: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
     cause,
   }),
 });
@@ -103,10 +105,10 @@ AutostartServiceErr({ operation: 'check', cause: extractErrorMessage(error) })
 ResponseErr({ status: 404 })
 ConnectionErr({ cause: extractErrorMessage(error) })
 
-// AFTER (v2 / defineErrors namespaced):
-AutostartError.Service({ operation: 'check', cause: extractErrorMessage(error) })
+// AFTER (v2 / defineErrors namespaced — cause: unknown, extractErrorMessage in constructor):
+AutostartError.Service({ operation: 'check', cause: error })
 HttpError.Response({ status: 404 })
-HttpError.Connection({ cause: extractErrorMessage(error) })
+HttpError.Connection({ cause: error })
 ```
 
 ### Discrimination changes

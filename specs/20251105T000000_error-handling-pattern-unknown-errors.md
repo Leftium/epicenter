@@ -1,7 +1,9 @@
 # Error Handling Pattern for Unknown Errors in trySync/tryAsync
 
 **Created**: 2025-11-05
-**Status**: Implemented
+**Status**: ~~Implemented~~ **SUPERSEDED**
+
+> **⚠️ SUPERSEDED**: This spec's guidance is outdated. The current pattern is the **opposite**: error constructors should accept `cause: unknown` (the raw caught error), and call `extractErrorMessage(cause)` inside the constructor's message template. Call sites pass `{ cause: error }`, not a pre-extracted string. See the `error-handling` and `services-layer` skills for current guidance.
 
 ## Overview
 

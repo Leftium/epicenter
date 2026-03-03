@@ -2,6 +2,8 @@
 
 Based on [PR #99](https://github.com/wellcrafted-dev/wellcrafted/pull/99) — the `createTaggedError` redesign with flat fields and sealed `.withMessage()`.
 
+> **⚠️ Note on `cause` and `underlyingError` patterns**: This spec was written when `cause`/`underlyingError` were typed as `string` and call sites used `extractErrorMessage(error)`. The current pattern types `cause` as `unknown` and calls `extractErrorMessage(cause)` inside the constructor's message template. Call sites pass `{ cause: error }` (the raw caught error). See the `services-layer` skill for the updated pattern.
+
 ## Key API Changes from PR #99
 
 - `.withContext<T>()` → `.withFields<T>()` (fields flat on error, not nested)

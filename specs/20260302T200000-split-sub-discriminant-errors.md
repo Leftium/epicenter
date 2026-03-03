@@ -178,25 +178,25 @@ const DeviceStreamError = defineErrors({
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 ```
 
-**After:**
+**After (further refined — optional keys eliminated):**
 ```typescript
 const DeviceStreamError = defineErrors({
-  PermissionDenied: ({ underlyingError }: { underlyingError?: string }) => ({
-    message: `We need permission to see your microphones. Check your browser settings and try again.${underlyingError ? ` ${underlyingError}` : ''}`,
-    underlyingError,
+  PermissionDenied: ({ cause }: { cause: unknown }) => ({
+    message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(cause)}`,
+    cause,
   }),
-  DeviceConnectionFailed: ({ deviceId, underlyingError }: { deviceId: string; underlyingError?: string }) => ({
-    message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.${underlyingError ? ` ${underlyingError}` : ''}`,
-    deviceId, underlyingError,
+  DeviceConnectionFailed: ({ deviceId, cause }: { deviceId: string; cause: unknown }) => ({
+    message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions. ${extractErrorMessage(cause)}`,
+    deviceId, cause,
   }),
   EnumerationFailed: () => ({
     message: 'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
   }),
-  NoDevicesAvailable: ({ hadPreferredDevice }: { hadPreferredDevice?: boolean }) => ({
-    message: hadPreferredDevice
-      ? "We couldn't connect to any microphones. Make sure they're plugged in and try again!"
-      : "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
-    hadPreferredDevice,
+  NoDevicesFound: () => ({
+    message: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
+  }),
+  PreferredDeviceUnavailable: () => ({
+    message: "We couldn't connect to any microphones. Make sure they're plugged in and try again!",
   }),
 });
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
@@ -211,13 +211,18 @@ DeviceStreamError.Service({ errorKind: 'enumeration_failed' })
 DeviceStreamError.Service({ errorKind: 'no_devices_available', hadPreferredDevice: false })
 
 // After
-DeviceStreamError.PermissionDenied({ underlyingError: extractErrorMessage(error) })
-DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, underlyingError: extractErrorMessage(error) })
+DeviceStreamError.PermissionDenied({ cause: error })
+DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, cause: error })
 DeviceStreamError.EnumerationFailed()
-DeviceStreamError.NoDevicesAvailable({ hadPreferredDevice: false })
+DeviceStreamError.NoDevicesFound()
+// or
+DeviceStreamError.PreferredDeviceUnavailable()
 ```
 
-**Note:** `deviceId` is now required on `DeviceConnectionFailed` (the only variant that uses it) instead of optional on the mega-union.
+**Notes:**
+- `deviceId` is now required on `DeviceConnectionFailed` (the only variant that uses it) instead of optional on the mega-union.
+- `underlyingError?: string` was renamed to `cause: unknown` and made required — all call sites were already passing it.
+- `NoDevicesAvailable({ hadPreferredDevice?: boolean })` was split into `NoDevicesFound()` and `PreferredDeviceUnavailable()` — the boolean was a sub-discriminant controlling the message.
 
 ---
 
@@ -505,4 +510,8 @@ All 7 `defineErrors` variants across 6 files were split from sub-discriminant pa
 
 ### Follow-up Work
 
-- None identified.
+- **Optional key elimination pass** (completed): After splitting sub-discriminants, a second pass eliminated remaining optional keys:
+  - `underlyingError?: string` → `cause: unknown` (required) — all call sites already passed it
+  - `hadPreferredDevice?: boolean` → split `NoDevicesAvailable` into `NoDevicesFound` + `PreferredDeviceUnavailable`
+  - `ExtensionError.Operation` (all-optional grab bag) → split into `TableOperation`, `FileOperation`, `DirectoryOperation` with required fields
+  - `HttpError.Response.bodyMessage?: string` — kept optional with JSDoc (genuine enrichment data)

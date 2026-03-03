@@ -162,35 +162,39 @@ export function defineTable<
 	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
 };
 
-export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
-	...args: [TSchema, ...CombinedStandardSchema<BaseRow>[]]
-):
-	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
-	| {
-			migrate(
-				fn: (row: unknown) => unknown,
-			): TableDefinitionWithDocBuilder<
-				CombinedStandardSchema<BaseRow>[],
-				Record<string, never>
-			>;
-	  } {
-	if (arguments.length === 0) {
+/**
+ * Fallback overload — provides a human-readable error when schema constraints aren't met.
+ *
+ * TypeScript tries overloads in order. When the valid overloads above fail (schema
+ * doesn't extend BaseRow), this catch-all fires and surfaces a clear error message
+ * instead of an inscrutable structural diff.
+ */
+export function defineTable(
+	schema: "defineTable() error: Each schema must output BaseRow ({ id: string; _v: number } & JsonObject). Add 'id: string' and '_v: number' to your schema.",
+	...rest: unknown[]
+): never;
+
+export function defineTable(
+	first: CombinedStandardSchema | string,
+	...rest: unknown[]
+): unknown {
+	if (first === undefined) {
 		throw new Error('defineTable() requires at least one schema argument');
 	}
 
-	if (arguments.length === 1) {
-		const schema = args[0];
-		return attachDocumentBuilder({
-			schema,
-			migrate: (row: unknown) => row as BaseRow,
-			documents: {} as Record<string, never>,
-		}) as unknown as TableDefinitionWithDocBuilder<
-			[TSchema],
-			Record<string, never>
-		>;
+	if (typeof first === 'string') {
+		throw new Error(first);
 	}
 
-	const versions = args as CombinedStandardSchema[];
+	if (rest.length === 0) {
+		return attachDocumentBuilder({
+			schema: first,
+			migrate: (row: unknown) => row as BaseRow,
+			documents: {} as Record<string, never>,
+		});
+	}
+
+	const versions = [first, ...rest] as CombinedStandardSchema[];
 
 	return {
 		migrate(fn: (row: unknown) => unknown) {

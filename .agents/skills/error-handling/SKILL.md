@@ -12,9 +12,7 @@ metadata:
 
 When handling errors that can be gracefully recovered from, use `trySync` (for synchronous code) or `tryAsync` (for asynchronous code) from wellcrafted instead of traditional try-catch blocks. This provides better type safety and explicit error handling.
 
-> **Related Skills**: See `create-tagged-error` skill for the full `createTaggedError` API. See `services-layer` skill for service patterns (including the two `.withMessage()` modes). See `query-layer` skill for error transformation to `WhisperingError`.
->
-> **`.withMessage()` modes**: Without `.withMessage()`, `message` is required at call sites (e.g., `ServiceErr({ message: '...' })`). With `.withMessage()`, the message is sealed by the template and not in the input type (e.g., `RecorderBusyErr()`). See `services-layer` skill for details.
+> **Related Skills**: See `services-layer` skill for `defineErrors` patterns and service architecture. See `query-layer` skill for error transformation to `WhisperingError`.
 
 ### The Pattern
 
@@ -54,10 +52,8 @@ const syncResult = trySync({
 	catch: (error) => {
 		// For recoverable errors, return Ok with fallback value
 		return Ok('fallback-value');
-		// For unrecoverable errors, return Err
-		return ServiceErr({
-			message: `Operation failed: ${extractErrorMessage(error)}`,
-		});
+		// For unrecoverable errors, pass the raw cause — the constructor handles extractErrorMessage
+		return MyServiceError.OperationFailed({ cause: error });
 	},
 });
 ```
@@ -70,7 +66,17 @@ const syncResult = trySync({
 4. **Match return types** - If the try block returns `T`, the catch should return `Ok<T>` for graceful handling
 5. **Use Ok(undefined) for void** - When the function returns void, use `Ok(undefined)` in the catch
 6. **Return Err for propagation** - Use custom error constructors that return `Err` when you want to propagate the error
-7. **CRITICAL: Wrap destructured errors with Err()** - When you destructure `{ data, error }` from tryAsync/trySync, the `error` variable is the raw error value, NOT wrapped in `Err`. You must wrap it before returning:
+7. **Transform cause in the constructor, not the call site** - When wrapping a caught error, pass the raw error as `cause: unknown` and let the `defineErrors` constructor call `extractErrorMessage(cause)` inside its message template. Don't call `extractErrorMessage` at the call site. This centralizes message extraction where the message is composed:
+
+```typescript
+// ✅ GOOD: cause: error at call site, extractErrorMessage in constructor
+catch: (error) => MyServiceError.OperationFailed({ cause: error })
+
+// ❌ BAD: extractErrorMessage at call site, string passed to constructor
+catch: (error) => MyServiceError.OperationFailed({ underlyingError: extractErrorMessage(error) })
+```
+
+8. **CRITICAL: Wrap destructured errors with Err()** - When you destructure `{ data, error }` from tryAsync/trySync, the `error` variable is the raw error value, NOT wrapped in `Err`. You must wrap it before returning:
 
 ```typescript
 // WRONG - error is just the raw TaggedError, not a Result
@@ -129,12 +135,11 @@ const { data: content } = await tryAsync({
 });
 
 // EITHER: Error propagation (works with both)
+// Pass the raw caught error as cause — the defineErrors constructor calls extractErrorMessage
 const { data, error } = await tryAsync({
 	try: () => criticalOperation(),
 	catch: (error) =>
-		ServiceErr({
-			message: `Critical operation failed: ${extractErrorMessage(error)}`,
-		}),
+		MyServiceError.OperationFailed({ cause: error }),
 });
 if (error) return Err(error);
 ```
@@ -166,13 +171,11 @@ if (error) return Err(error);
 **Wrap only the specific operation that can fail.** This captures the error boundary precisely and makes code easier to reason about.
 
 ```typescript
-// ✅ GOOD: Wrap only the risky operation
+// ✅ GOOD: Wrap only the risky operation, pass raw cause to constructor
 const { data: stream, error: streamError } = await tryAsync({
 	try: () => navigator.mediaDevices.getUserMedia({ audio: true }),
 	catch: (error) =>
-		DeviceStreamServiceErr({
-			message: `Microphone access failed: ${extractErrorMessage(error)}`,
-		}),
+		DeviceStreamError.PermissionDenied({ cause: error }),
 });
 
 if (streamError) return Err(streamError);
@@ -249,9 +252,7 @@ const { data: mediaRecorder, error: recorderError } = trySync({
 		return recorder;
 	},
 	catch: (error) =>
-		RecorderServiceErr({
-			message: `Failed to initialize recorder: ${extractErrorMessage(error)}`,
-		}),
+		RecorderServiceError.InitFailed({ cause: error }),
 });
 ```
 
@@ -260,7 +261,7 @@ const { data: mediaRecorder, error: recorderError } = trySync({
 **Minimal wrap with immediate return:**
 
 ```typescript
-// From device-stream.ts
+// From device-stream.ts — cause: error at call site, extractErrorMessage in constructor
 async function getStreamForDeviceIdentifier(
 	deviceIdentifier: DeviceIdentifier,
 ) {
@@ -272,9 +273,7 @@ async function getStreamForDeviceIdentifier(
 			return stream;
 		},
 		catch: (error) =>
-			DeviceStreamServiceErr({
-				message: `Unable to connect to microphone. ${extractErrorMessage(error)}`,
-			}),
+			DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, cause: error }),
 	});
 }
 ```
@@ -298,9 +297,7 @@ startRecording: async (params, { sendStatus }) => {
   // Second try block - create recorder
   const { data: mediaRecorder, error: recorderError } = trySync({
     try: () => new MediaRecorder(stream, { bitsPerSecond: bitrate }),
-    catch: (error) => RecorderServiceErr({
-      message: `Failed to initialize recorder. ${extractErrorMessage(error)}`,
-    }),
+    catch: (error) => RecorderServiceError.InitFailed({ cause: error }),
   });
 
   if (recorderError) {

@@ -532,6 +532,7 @@ const RecorderError = defineErrors({
 6. **Use defineErrors namespaces** - Group related errors under a single namespace
 7. **Derive types with InferError/InferErrors** - Not `ReturnType`
 8. **Split discriminated union inputs** - Each variant gets its own name and shape
+9. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
 
 ## References
 

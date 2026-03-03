@@ -1,4 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+	GoogleGenerativeAI,
+	GoogleGenerativeAIFetchError,
+} from '@google/generative-ai';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
@@ -18,8 +21,12 @@ export const GoogleCompletionServiceLive: CompletionService = {
 				const { response } = await model.generateContent(combinedPrompt);
 				return response.text();
 			},
-			catch: (error) =>
-				CompletionError.Http({ status: 0, cause: error }),
+			catch: (error): Err<CompletionError> => {
+				if (error instanceof GoogleGenerativeAIFetchError) {
+					return CompletionError.Http({ status: error.status ?? 0, cause: error });
+				}
+				throw error;
+			},
 		});
 
 		if (completionError) return Err(completionError);

@@ -708,7 +708,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 			tags: ['research', 'important', 'draft', 'long-form'],
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-			_v: 1,
+			_v: 1 as const,
 		};
 	}
 
@@ -918,7 +918,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['research', 'important', 'draft', 'long-form'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
-				_v: 1,
+				_v: 1 as const,
 			};
 		}
 
@@ -1029,7 +1029,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['tag1', 'tag2'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
-				_v: 1,
+				_v: 1 as const,
 			};
 		}
 
@@ -1127,7 +1127,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['work', 'notes'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
-				_v: 1,
+				_v: 1 as const,
 			};
 		}
 
@@ -1228,7 +1228,7 @@ describe('heavy text rows: size and tombstone analysis', () => {
 				tags: ['active'],
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
-				_v: 1,
+				_v: 1 as const,
 			};
 		}
 

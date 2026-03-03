@@ -428,15 +428,11 @@ import { createTables, createKv } from 'epicenter/static';
 const ydoc = provider.ydoc; // From WebsocketProvider or similar
 
 const tables = createTables(ydoc, {
-	posts: defineTable()
-		.version(type({ id: 'string', title: 'string' }))
-		.migrate((row) => row),
+	posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 });
 
 const kv = createKv(ydoc, {
-	theme: defineKv()
-		.version(type({ mode: "'light' | 'dark'" }))
-		.migrate((v) => v),
+	theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
 });
 
 // Use normally
@@ -496,9 +492,7 @@ if (invalid.length > 0) {
 The API is fully typed with generics. Types are inferred from your definitions:
 
 ```typescript
-const posts = defineTable()
-	.version(type({ id: 'string', title: 'string', views: 'number' }))
-	.migrate((row) => row);
+const posts = defineTable(type({ id: 'string', title: 'string', views: 'number', _v: '1' }));
 
 const workspace = defineWorkspace({
 	id: 'my-app',
@@ -623,18 +617,8 @@ Tables are isolated. Each gets its own Y.Array:
 const workspace = defineWorkspace({
 	id: 'notes-app',
 	tables: {
-		notebooks: defineTable()
-			.version(type({ id: 'string', name: 'string' }))
-			.migrate((row) => row),
-		notes: defineTable()
-			.version(
-				type({
-					id: 'string',
-					notebookId: 'string',
-					content: 'string',
-				}),
-			)
-			.migrate((row) => row),
+		notebooks: defineTable(type({ id: 'string', name: 'string', _v: '1' })),
+		notes: defineTable(type({ id: 'string', notebookId: 'string', content: 'string', _v: '1' })),
 	},
 });
 

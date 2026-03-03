@@ -239,9 +239,7 @@ type TableDefinition<TRow extends { id: string }> = {
 
 ```typescript
 // When there's only one version, migrate just returns the row
-const simpleTable = defineTable('simple')
-  .version(type({ id: 'string', name: 'string' }))
-  .migrate((row) => row);
+const simpleTable = defineTable(type({ id: 'string', name: 'string', _v: '1' }));
 ```
 
 ### Design Decision: Why `.version().migrate()` API Shape?
@@ -568,64 +566,39 @@ import { type } from 'arktype';
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Table: posts (3 versions)
-const posts = defineTable('posts')
-  .version(type({
-    id: 'string',
-    title: 'string',
-    content: 'string',
-  }))
-  .version(type({
-    id: 'string',
-    title: 'string',
-    content: 'string',
-    views: 'number',
-    publishedAt: 'string | null',
-  }))
-  .version(type({
-    id: 'string',
-    title: 'string',
-    content: 'string',
-    views: 'number',
-    publishedAt: 'string | null',
-    tags: 'string[]',
-  }))
-  .migrate((row) => {
-    // V1 → V3
-    if (!('views' in row)) {
-      return { ...row, views: 0, publishedAt: null, tags: [] };
-    }
-    // V2 → V3
-    if (!('tags' in row)) {
-      return { ...row, tags: [] };
-    }
-    // V3 → V3
-    return row;
-  });
+const posts = defineTable(
+  type({ id: 'string', title: 'string', content: 'string', _v: '1' }),
+  type({ id: 'string', title: 'string', content: 'string', views: 'number', publishedAt: 'string | null', _v: '2' }),
+  type({ id: 'string', title: 'string', content: 'string', views: 'number', publishedAt: 'string | null', tags: 'string[]', _v: '3' }),
+).migrate((row) => {
+  // V1 → V3
+  if (row._v === 1) {
+    return { ...row, views: 0, publishedAt: null, tags: [], _v: 3 as const };
+  }
+  // V2 → V3
+  if (row._v === 2) {
+    return { ...row, tags: [], _v: 3 as const };
+  }
+  // V3 → V3
+  return row;
+});
 
 // Table: users (1 version - no migration needed)
-const users = defineTable('users')
-  .version(type({
-    id: 'string',
-    email: 'string',
-    name: 'string',
-  }))
-  .migrate((row) => row);
+const users = defineTable(type({ id: 'string', email: 'string', name: 'string', _v: '1' }));
 
 // KV: theme (2 versions)
-const theme = defineKv('theme')
-  .version(type({ mode: "'light' | 'dark'" }))
-  .version(type({ mode: "'light' | 'dark' | 'system'", accentColor: 'string' }))
-  .migrate((v) => {
-    if (!('accentColor' in v)) {
-      return { ...v, accentColor: '#3b82f6' };
-    }
-    return v;
-  });
+const theme = defineKv(
+  type({ mode: "'light' | 'dark'", _v: '1' }),
+  type({ mode: "'light' | 'dark' | 'system'", accentColor: 'string', _v: '2' }),
+).migrate((v) => {
+  if (v._v === 1) {
+    return { ...v, accentColor: '#3b82f6', _v: 2 as const };
+  }
+  return v;
+});
 
 // KV: sidebar (1 version)
-const sidebar = defineKv('sidebar')
-  .version(type({ collapsed: 'boolean', width: 'number' }))
-  .migrate((v) => v);
+const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number', _v: '1' }));
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BIND TO Y.DOC

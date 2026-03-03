@@ -58,13 +58,13 @@ describe('createKv', () => {
 	test('migrates old data on read', () => {
 		const ydoc = new Y.Doc();
 		const kv = createKv(ydoc, {
-			theme: defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.version(type({ mode: "'light' | 'dark'", fontSize: 'number' }))
-				.migrate((v) => {
-					if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-					return v;
-				}),
+			theme: defineKv(
+				type({ mode: "'light' | 'dark'" }),
+				type({ mode: "'light' | 'dark'", fontSize: 'number' }),
+			).migrate((v) => {
+				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
+				return v;
+			}),
 		});
 
 		// Simulate old data

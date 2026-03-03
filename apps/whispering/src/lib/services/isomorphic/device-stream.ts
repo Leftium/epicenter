@@ -11,23 +11,23 @@ import type {
 import { asDeviceIdentifier } from '$lib/services/types';
 
 const DeviceStreamError = defineErrors({
-	PermissionDenied: ({ underlyingError }: { underlyingError?: string }) => ({
-		message: `We need permission to see your microphones. Check your browser settings and try again.${underlyingError ? ` ${underlyingError}` : ''}`,
-		underlyingError,
+	PermissionDenied: ({ cause }: { cause: unknown }) => ({
+		message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(cause)}`,
+		cause,
 	}),
-	DeviceConnectionFailed: ({ deviceId, underlyingError }: { deviceId: string; underlyingError?: string }) => ({
-		message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.${underlyingError ? ` ${underlyingError}` : ''}`,
+	DeviceConnectionFailed: ({ deviceId, cause }: { deviceId: string; cause: unknown }) => ({
+		message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions. ${extractErrorMessage(cause)}`,
 		deviceId,
-		underlyingError,
+		cause,
 	}),
 	EnumerationFailed: () => ({
 		message: 'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
 	}),
-	NoDevicesAvailable: ({ hadPreferredDevice }: { hadPreferredDevice?: boolean }) => ({
-		message: hadPreferredDevice
-			? "We couldn't connect to any microphones. Make sure they're plugged in and try again!"
-			: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
-		hadPreferredDevice,
+	NoDevicesFound: () => ({
+		message: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
+	}),
+	PreferredDeviceUnavailable: () => ({
+		message: "We couldn't connect to any microphones. Make sure they're plugged in and try again!",
 	}),
 });
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
@@ -47,7 +47,7 @@ async function hasExistingAudioPermission(): Promise<boolean> {
 				return permissionStatus;
 			},
 			catch: (error) =>
-				DeviceStreamError.PermissionDenied({ underlyingError: extractErrorMessage(error) }),
+				DeviceStreamError.PermissionDenied({ cause: error }),
 		});
 		if (!error) return permissionStatus.state === 'granted';
 	}
@@ -83,7 +83,7 @@ export async function enumerateDevices(): Promise<
 			}));
 		},
 		catch: (error) =>
-			DeviceStreamError.PermissionDenied({ underlyingError: extractErrorMessage(error) }),
+			DeviceStreamError.PermissionDenied({ cause: error }),
 	});
 }
 
@@ -112,7 +112,7 @@ async function getStreamForDeviceIdentifier(
 			return stream;
 		},
 		catch: (error) =>
-			DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, underlyingError: extractErrorMessage(error) }),
+			DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, cause: error }),
 	});
 }
 
@@ -182,14 +182,16 @@ export async function getRecordingStream({
 			}
 		}
 
-		return DeviceStreamError.NoDevicesAvailable({ hadPreferredDevice: false });
+		return DeviceStreamError.NoDevicesFound();
 	};
 
 	// Get fallback stream
 	const { data: fallbackStreamData, error: getFallbackStreamError } =
 		await getFirstAvailableStream();
 	if (getFallbackStreamError) {
-		return DeviceStreamError.NoDevicesAvailable({ hadPreferredDevice: selectedDeviceId !== null });
+		return selectedDeviceId
+			? DeviceStreamError.PreferredDeviceUnavailable()
+			: DeviceStreamError.NoDevicesFound();
 	}
 
 	// Return the stream with appropriate device outcome

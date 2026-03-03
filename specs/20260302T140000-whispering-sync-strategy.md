@@ -43,7 +43,7 @@ Sync is configured by a single server URL. If a URL is set, sync is on — the c
 Replace Whispering's flat file / IndexedDB storage with Yjs-backed workspace tables. The schema is **normalized** — every entity type gets its own table. Embedded arrays (`Transformation.steps[]`, `TransformationRun.stepRuns[]`) are extracted into separate tables with foreign keys.
 
 ```typescript
-// whispering/epicenter.config.ts
+// whispering/src/lib/workspace.ts
 import { createWorkspace, defineWorkspace, defineTable, defineKv } from '@epicenter/workspace';
 import { type } from 'arktype';
 
@@ -699,7 +699,7 @@ For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `room
 
 ### Phase 1: Workspace Data Model
 
-- [x] Create `whispering/epicenter.config.ts` with 5 normalized table definitions + synced settings KV
+- [x] Create `whispering/src/lib/workspace.ts` with 5 normalized table definitions + synced settings KV + persistence extension
 - [x] Implement `BlobStore` interface with `createFileSystemBlobStore(basePath)` and `createIndexedDbBlobStore(dbName)` factories
 - [x] Replace `DbService` (Dexie/filesystem) with `@epicenter/workspace` table helpers + `BlobStore` for audio
 - [x] Migrate existing CRUD calls to workspace table methods (normalizing steps/stepRuns out of parent records into their own tables)
@@ -752,14 +752,14 @@ Create a new `DbService` implementation at `apps/whispering/src/lib/services/iso
 - TransformationRuns + StepRuns: same normalization — `runs.stepRuns[]` reconstructed from `tables.transformationStepRuns` by `transformationRunId`
 - Multi-table mutations (`addStep`, `failStep`, `completeStep`, `complete`) wrapped in `Y.Doc.transact()` for atomicity
 - Audio methods (`getAudioBlob`, `ensureAudioPlaybackUrl`, `revokeAudioUrl`) delegate to BlobStore
-- Also create `apps/whispering/src/lib/services/isomorphic/db/workspace-client.ts` for workspace initialization (create workspace client, chain persistence extension, export the live instance)
+- Import the live workspace client from `$lib/workspace` (schema + persistence already wired there)
 - Update `apps/whispering/src/lib/services/isomorphic/db/index.ts` to use the new workspace-backed implementation
 
 **Files to read first:**
 - `apps/whispering/src/lib/services/isomorphic/db/types.ts` — the DbService interface
 - `apps/whispering/src/lib/services/isomorphic/db/web.ts` — reference implementation (IndexedDB)
 - `apps/whispering/src/lib/services/isomorphic/db/desktop.ts` — dual-read facade pattern
-- `apps/whispering/src/lib/epicenter.config.ts` — workspace schema (created in Wave 1)
+- `apps/whispering/src/lib/workspace.ts` — workspace schema + live client with persistence (created in Wave 1)
 - `packages/epicenter/src/workspace/` — workspace client API (createWorkspace, table operations)
 
 ### Wave 3: Settings Split (sequential — touches shared settings module)
@@ -812,7 +812,7 @@ Build one-time leave-in-place migration from old storage to workspace tables.
 - When `syncUrl` is `null`: no sync extension
 - When `syncUrl` is set: `createSyncExtension({ url: syncUrl, getToken })` with `getToken` from Better Auth session
 - Create `authClient` dynamically from the sync server URL
-- **File to modify:** `apps/whispering/src/lib/services/isomorphic/db/workspace-client.ts` (created in Wave 2)
+- **File to modify:** `apps/whispering/src/lib/workspace.ts` (conditionally chain sync extension based on `syncUrl`)
 
 **Task 5.3:** Connection status + saving indicators
 - Connection status: connected / disconnected / syncing (uses sync provider state)

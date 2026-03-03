@@ -1,4 +1,5 @@
 import { createWorkspace, defineWorkspace, defineTable, defineKv } from '@epicenter/workspace';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 
 const recordings = defineTable(type({
@@ -142,4 +143,4 @@ export default createWorkspace(defineWorkspace({
 		transformationStepRuns,
 	},
 	kv: { syncedSettings },
-}));
+})).withExtension('persistence', indexeddbPersistence);

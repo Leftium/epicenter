@@ -26,49 +26,6 @@ describe('validateAuth', () => {
 		});
 	});
 
-	describe('token mode', () => {
-		test('accepts matching token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, 'secret-key');
-			expect(result).toBe(true);
-		});
-
-		test('rejects non-matching token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, 'wrong-token');
-			expect(result).toBe(false);
-		});
-
-		test('rejects missing token', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, undefined);
-			expect(result).toBe(false);
-		});
-
-		test('rejects empty token when secret is configured', async () => {
-			const config = { token: 'secret-key' };
-			const result = await validateAuth(config, '');
-			expect(result).toBe(false);
-		});
-
-		test('rejects empty string token (falsy check)', async () => {
-			const config = { token: '' };
-			const result = await validateAuth(config, '');
-			expect(result).toBe(false);
-		});
-
-		test('is case-sensitive', async () => {
-			const config = { token: 'Secret-Key' };
-			const result = await validateAuth(config, 'secret-key');
-			expect(result).toBe(false);
-		});
-
-		test('handles tokens with special characters', async () => {
-			const config = { token: 'sk-proj-abc123!@#$%' };
-			const result = await validateAuth(config, 'sk-proj-abc123!@#$%');
-			expect(result).toBe(true);
-		});
-	});
 
 	describe('verify mode (sync function)', () => {
 		test('calls verify function with token', async () => {
@@ -173,33 +130,33 @@ describe('validateAuth', () => {
 
 	describe('edge cases', () => {
 		test('no token when auth is configured returns false', async () => {
-			const config = { token: 'secret' };
-			const result = await validateAuth(config, undefined);
+			const verify = (t: string) => t === 'secret';
+			const result = await validateAuth({ verify }, undefined);
 			expect(result).toBe(false);
 		});
 
 		test('empty token when auth is configured returns false', async () => {
-			const config = { token: 'secret' };
-			const result = await validateAuth(config, '');
+			const verify = (t: string) => t === 'secret';
+			const result = await validateAuth({ verify }, '');
 			expect(result).toBe(false);
 		});
 
 		test('whitespace-only token is treated as valid token', async () => {
-			const config = { token: '   ' };
-			const result = await validateAuth(config, '   ');
+			const verify = (t: string) => t === '   ';
+			const result = await validateAuth({ verify }, '   ');
 			expect(result).toBe(true);
 		});
 
 		test('very long token is handled correctly', async () => {
 			const longToken = 'x'.repeat(10000);
-			const config = { token: longToken };
-			const result = await validateAuth(config, longToken);
+			const verify = (t: string) => t === longToken;
+			const result = await validateAuth({ verify }, longToken);
 			expect(result).toBe(true);
 		});
 
 		test('unicode tokens are handled correctly', async () => {
-			const config = { token: 'token-🔐-secret' };
-			const result = await validateAuth(config, 'token-🔐-secret');
+			const verify = (t: string) => t === 'token-🔐-secret';
+			const result = await validateAuth({ verify }, 'token-🔐-secret');
 			expect(result).toBe(true);
 		});
 

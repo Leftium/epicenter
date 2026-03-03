@@ -5,15 +5,15 @@ export const CLOSE_UNAUTHORIZED = 4401;
  * Auth configuration for the sync plugin.
  *
  * - Omit entirely for open mode (no auth, any client connects)
- * - `{ token: string }` for shared token mode (direct comparison)
  * - `{ verify: fn }` for custom verification (e.g. JWT validation)
  */
-export type AuthConfig =
-	| { token: string }
-	| { verify: (token: string) => boolean | Promise<boolean> };
+export type AuthConfig = { verify: (token: string) => boolean | Promise<boolean> };
 
 /**
  * Validate an auth token against the configured auth mode.
+ *
+ * - Open mode: no config provided, connection accepted
+ * - Verify mode: calls the verify function with the provided token
  *
  * @returns true if the connection should be accepted, false if rejected
  */
@@ -26,10 +26,6 @@ export async function validateAuth(
 
 	// Token is required when auth is configured
 	if (!token) return false;
-
-	if ('token' in config) {
-		return config.token === token;
-	}
 
 	return config.verify(token);
 }

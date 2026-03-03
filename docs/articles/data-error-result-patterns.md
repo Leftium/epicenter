@@ -26,10 +26,8 @@ import { tryAsync, Ok, Err } from 'wellcrafted/result';
 
 const { data, error } = await tryAsync({
 	try: () => fetchUser(id),
-	catch: (e) =>
-		UserServiceErr({
-			message: `Failed to fetch user: ${extractErrorMessage(e)}`,
-		}),
+	catch: (error) =>
+		UserServiceError.FetchFailed({ id, cause: error }),
 });
 
 if (error) return Err(error);
@@ -114,7 +112,7 @@ type KvGetResult<TValue> =
 
 ## Pattern 3: Error Variants with Typed Fields
 
-Binary at top level, but error can have multiple variants with typed fields via `.withFields()`.
+Binary at top level, but error can have multiple variants with typed fields via `defineErrors`.
 
 ```
                     ┌─────────────┐
@@ -140,27 +138,32 @@ Binary at top level, but error can have multiple variants with typed fields via 
 **When to use**: Binary success/failure, but failures have multiple causes with different typed fields.
 
 ```typescript
-// From http/types.ts - Error hierarchy with flat fields
-export const { ConnectionError, ConnectionErr } =
-	createTaggedError('ConnectionError')
-		.withMessage(() => 'Failed to connect to the server');
+// From http/types.ts - Error hierarchy with defineErrors
+const HttpError = defineErrors({
+	Connection: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
+		message: bodyMessage ? `HTTP ${status}: ${bodyMessage}` : `HTTP ${status} response`,
+		status,
+		bodyMessage,
+	}),
+	Parse: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
-export const { ResponseError, ResponseErr } = createTaggedError('ResponseError')
-	.withFields<{ status: number }>()
-	.withMessage(({ status }) => `HTTP ${status} response`);
-
-export const { ParseError, ParseErr } = createTaggedError('ParseError')
-	.withMessage(() => 'Failed to parse response body');
-
-// Union type for all HTTP errors
-export type HttpServiceError = ConnectionError | ResponseError | ParseError;
+// Union type for the whole namespace
+type HttpError = InferErrors<typeof HttpError>;
 
 // Usage - still binary at top level
 const { data, error } = await httpService.post({ url, body, schema });
 
 if (error) {
-	// Can narrow by error tag
-	if (error.name === 'ResponseError') {
+	// Can narrow by error name
+	if (error.name === 'Response') {
 		console.log('HTTP status:', error.status); // flat, type-safe access
 	}
 	return Err(error);
@@ -170,26 +173,27 @@ if (error) {
 **Another example** - Row validation errors with rich fields:
 
 ```typescript
-// Error with typed fields and sealed message
-export const { RowValidationError, RowValidationErr } = createTaggedError(
-	'RowValidationError',
-)
-	.withFields<{
+// Error with typed fields and computed message
+const ValidationError = defineErrors({
+	RowValidation: ({ tableName, id, errors, summary }: {
 		tableName: string;
 		id: string;
 		errors: ArkErrors;
 		summary: string;
-	}>()
-	.withMessage(
-		({ id, tableName }) =>
-			`Row '${id}' in table '${tableName}' failed validation`,
-	);
+	}) => ({
+		message: `Row '${id}' in table '${tableName}' failed validation`,
+		tableName,
+		id,
+		errors,
+		summary,
+	}),
+});
 
-// Usage in table-helper.ts — fields are flat, message is sealed by template
+// Usage in table-helper.ts — fields are flat, message is computed by template
 return {
 	status: 'invalid',
 	id,
-	error: RowValidationError({
+	error: ValidationError.RowValidation({
 		tableName,
 		id,
 		errors: result,

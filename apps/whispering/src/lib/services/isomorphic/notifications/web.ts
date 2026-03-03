@@ -41,22 +41,7 @@ export function createNotificationServiceWeb(): NotificationService {
 
 			// Try extension first if available
 			if (await detectExtension()) {
-				// Extension notification path (for future implementation)
-				// const extensionOptions = toExtensionNotification(options);
-				// const { error } = await tryAsync({
-				//   try: async () => {
-				//     await extension.createNotification({
-				//       ...extensionOptions,
-				//       notificationId,
-				//     });
-				//   },
-				//   catch: (error) => ({
-				//     name: 'NotificationServiceError' as const,
-				//     message: 'Failed to send extension notification',
-				//     cause: error,
-				//   }),
-				// });
-				// if (!error) return Ok(notificationId);
+				// Future: Extension notification support
 			}
 
 			// Browser notification fallback

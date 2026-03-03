@@ -208,15 +208,15 @@ All implementations expose the same `DbService` interface:
 ```typescript
 type DbService = {
 	recordings: {
-		getAll: () => Promise<Result<Recording[], DbServiceError>>;
-		getById: (id: string) => Promise<Result<Recording | null, DbServiceError>>;
+		getAll: () => Promise<Result<Recording[], DbError>>;
+		getById: (id: string) => Promise<Result<Recording | null, DbError>>;
 		create: (
 			recording: Recording,
-		) => Promise<Result<Recording, DbServiceError>>;
+		) => Promise<Result<Recording, DbError>>;
 		update: (
 			recording: Recording,
-		) => Promise<Result<Recording, DbServiceError>>;
-		delete: (id: string) => Promise<Result<void, DbServiceError>>;
+		) => Promise<Result<Recording, DbError>>;
+		delete: (id: string) => Promise<Result<void, DbError>>;
 	};
 	// ... other stores
 };

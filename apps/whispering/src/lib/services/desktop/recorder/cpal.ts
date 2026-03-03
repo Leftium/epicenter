@@ -321,6 +321,8 @@ async function invoke<T>(command: string, args?: Record<string, unknown>) {
 	return tryAsync({
 		try: async () => await tauriInvoke<T>(command, args),
 		catch: (error) =>
-			Err({ name: 'TauriInvokeError', command, error } as const),
+			RecorderError.Service({
+				message: `Tauri invoke '${command}' failed: ${extractErrorMessage(error)}`,
+			}),
 	});
 }

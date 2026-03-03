@@ -65,12 +65,16 @@ Use Grep, Glob, and LS to find relevant files
 
 ```typescript
 // Actual code example
+const Error = defineErrors({
+  Service: { message: string; cause?: unknown },
+});
+
 export function exampleService() {
   return {
-    async doThing(input: Input): Promise<Result<Output, ServiceErr>> {
+    async doThing(input: Input): Promise<Result<Output, typeof Error.Service>> {
       const { data, error } = await tryAsync({
         try: () => performOperation(input),
-        catch: (e) => ServiceErr({ message: 'Operation failed', cause: e }),
+        catch: (e) => Error.Service({ message: 'Operation failed', cause: e }),
       });
       if (error) return Err(error);
       return Ok(data);

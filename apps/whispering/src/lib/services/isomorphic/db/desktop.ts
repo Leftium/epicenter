@@ -39,8 +39,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting all recordings from both sources',
 					});
 				}
@@ -94,8 +93,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message:
 							'Error getting transcribing recording ids from both sources',
 					});
@@ -130,8 +128,7 @@ export function createDbServiceDesktop({
 				// If both failed, return an error only if both actually errored
 				// (not just returned null/undefined)
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting recording by id from both sources',
 					});
 				}
@@ -160,8 +157,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error deleting recording(s) from both sources',
 					});
 				}
@@ -179,8 +175,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error cleaning up expired recordings from both sources',
 					});
 				}
@@ -209,8 +204,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting audio blob from both sources',
 					});
 				}
@@ -240,8 +234,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting audio playback URL from both sources',
 					});
 				}
@@ -265,8 +258,7 @@ export function createDbServiceDesktop({
 
 				// Return error only if both failed
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error clearing recordings from both sources',
 					});
 				}
@@ -290,8 +282,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting all transformations from both sources',
 					});
 				}
@@ -333,8 +324,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error only if both actually errored
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting transformation by id from both sources',
 					});
 				}
@@ -364,8 +354,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error deleting transformation(s) from both sources',
 					});
 				}
@@ -383,8 +372,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error clearing transformations from both sources',
 					});
 				}
@@ -409,8 +397,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting all transformation runs from both sources',
 					});
 				}
@@ -452,8 +439,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error only if both actually errored
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message: 'Error getting transformation run by id from both sources',
 					});
 				}
@@ -471,8 +457,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message:
 							'Error getting transformation runs by transformation id from both sources',
 					});
@@ -512,8 +497,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return Err({
-						name: 'Service' as const,
+					return DbError.Service({
 						message:
 							'Error getting transformation runs by recording id from both sources',
 					});

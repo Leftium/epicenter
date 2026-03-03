@@ -1,130 +1,187 @@
 ---
 name: create-tagged-error
-description: How to define and use createTaggedError from wellcrafted. Use when creating new error types, updating error definitions, or reviewing error patterns. Covers withMessage (required terminal step), withContext, withCause, discriminated unions, and call site patterns.
+description: How to define and use defineErrors from wellcrafted. Use when creating new error types, updating error definitions, or reviewing error patterns. Covers variant factories, extractErrorMessage for cause, InferErrors/InferError for types, and call site patterns.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
-# createTaggedError
+# defineErrors
 
 ## Import
 
 ```typescript
-import { createTaggedError } from 'wellcrafted/error';
+import {
+  defineErrors,
+  extractErrorMessage,
+  type InferErrors,
+  type InferError,
+} from 'wellcrafted/error';
 ```
 
 ## Core Rules
 
-1. `.withMessage(fn)` is **always required** — you cannot get factories without it
-2. `.withMessage(fn)` is **always last** — nothing chains after it
-3. `.withContext()` and `.withCause()` can appear in any order before `.withMessage()`
-4. Factory input: provide `context`/`cause`, **not** `message` (message is auto-computed)
-5. `message` is an optional override at call sites only
-6. Context must be `JsonObject` — no `Date`, `Error` instances, functions, or class instances
-7. Split monolithic errors into discriminated unions — 2–5 errors per service, each named by failure mode
-8. Use `ReturnType<typeof FooError>` to extract the type
+1. All variants for a service live in **one `defineErrors` call** — never spread them across multiple calls
+2. The factory function **returns `{ message, ...fields }`** — that is the entire API; no `.withMessage()`, `.withContext()`, or `.withCause()` chains
+3. **`cause: unknown`** is just a field like any other — accept it in the input and forward it in the return object
+4. **Call `extractErrorMessage(cause)` inside the factory**, never at the call site
+5. Each call like `MyError.Variant({ ... })` **returns `Err(...)` automatically** — no separate `FooErr` pair
+6. **Shadow the const with a same-name type** using `InferErrors` — `const FooError` / `type FooError`
+7. Use `InferError<typeof FooError.Variant>` to extract a single variant's type when needed
+8. Aim for 2–5 variants per service, each named by failure mode
 
 ## Patterns
 
-### 1. Simple error — static message
+### 1. Simple variant — no input, static message
 
 ```typescript
-const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
-  .withMessage(() => 'A recording is already in progress');
-
-RecorderBusyErr({});
-type RecorderBusyError = ReturnType<typeof RecorderBusyError>;
-```
-
-### 2. Error with context — message computed from structured data
-
-```typescript
-const { DbNotFoundError, DbNotFoundErr } = createTaggedError('DbNotFoundError')
-  .withContext<{ table: string; id: string }>()
-  .withMessage(({ context }) => `${context.table} '${context.id}' not found`);
-
-DbNotFoundErr({ context: { table: 'users', id: '123' } });
-// error.message → "users '123' not found"
-type DbNotFoundError = ReturnType<typeof DbNotFoundError>;
-```
-
-### 3. Error with optional context
-
-```typescript
-const { LogError, LogErr } = createTaggedError('LogError')
-  .withContext<{ file: string; line: number } | undefined>()
-  .withMessage(({ context }) =>
-    context ? `Parse failed at ${context.file}:${context.line}` : 'Parse failed'
-  );
-
-LogErr({});
-LogErr({ context: { file: 'app.ts', line: 42 } });
-type LogError = ReturnType<typeof LogError>;
-```
-
-### 4. Error with cause
-
-```typescript
-const { ServiceError, ServiceErr } = createTaggedError('ServiceError')
-  .withContext<{ operation: string }>()
-  .withCause<DbNotFoundError | undefined>()
-  .withMessage(({ context, cause }) =>
-    cause
-      ? `Operation '${context.operation}' failed: ${cause.message}`
-      : `Operation '${context.operation}' failed`
-  );
-
-type ServiceError = ReturnType<typeof ServiceError>;
-```
-
-### 5. Message override at call site (one-off cases)
-
-```typescript
-DbNotFoundErr({
-  message: 'The recording you are looking for has been deleted',
-  context: { table: 'recordings', id: '123' },
+export const RecorderError = defineErrors({
+  AlreadyRecording: () => ({
+    message: 'A recording is already in progress',
+  }),
 });
+export type RecorderError = InferErrors<typeof RecorderError>;
+
+// Call site
+return RecorderError.AlreadyRecording();
 ```
 
-## Discriminated Unions
-
-Prefer specific, named errors over one monolithic error per service. Aim for 2–5 errors per service, each named by failure mode.
+### 2. Variant with structured fields — message computed from input
 
 ```typescript
-const { RecorderBusyError, RecorderBusyErr } = createTaggedError('RecorderBusyError')
-  .withMessage(() => 'A recording is already in progress');
+export const DbError = defineErrors({
+  NotFound: ({ table, id }: { table: string; id: string }) => ({
+    message: `${table} '${id}' not found`,
+    table,
+    id,
+  }),
+});
+export type DbError = InferErrors<typeof DbError>;
 
-const { RecorderPermissionError, RecorderPermissionErr } = createTaggedError('RecorderPermissionError')
-  .withContext<{ device: string }>()
-  .withMessage(({ context }) => `Microphone permission denied for ${context.device}`);
+// Call site
+return DbError.NotFound({ table: 'users', id: '123' });
+// error.message → "users '123' not found"
+// error.table   → "users"
+// error.id      → "123"
+```
 
-const { RecorderDeviceError, RecorderDeviceErr } = createTaggedError('RecorderDeviceError')
-  .withContext<{ deviceId: string }>()
-  .withMessage(({ context }) => `Failed to acquire stream from device '${context.deviceId}'`);
+### 3. Variant with cause — extractErrorMessage inside the factory
 
-type RecorderServiceError = RecorderBusyError | RecorderPermissionError | RecorderDeviceError;
+```typescript
+import { extractErrorMessage } from 'wellcrafted/error';
+
+export const FfmpegError = defineErrors({
+  Service: ({ operation, cause }: { operation: string; cause: unknown }) => ({
+    message: `Failed to ${operation}: ${extractErrorMessage(cause)}`,
+    operation,
+    cause,
+  }),
+});
+export type FfmpegError = InferErrors<typeof FfmpegError>;
+
+// Call site — pass the raw caught error, never call extractErrorMessage here
+catch: (error) => FfmpegError.Service({ operation: 'compress audio', cause: error }),
+```
+
+### 4. Multiple variants in one object — discriminated union built-in
+
+```typescript
+export const DeviceStreamError = defineErrors({
+  PermissionDenied: ({ cause }: { cause: unknown }) => ({
+    message: `Microphone permission denied. ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  DeviceConnectionFailed: ({
+    deviceId,
+    cause,
+  }: {
+    deviceId: string;
+    cause: unknown;
+  }) => ({
+    message: `Unable to connect to device '${deviceId}'. ${extractErrorMessage(cause)}`,
+    deviceId,
+    cause,
+  }),
+  NoDevicesFound: () => ({
+    message: "No microphones found. Check your connections and try again.",
+  }),
+});
+export type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
+// DeviceStreamError is automatically the union of all three variants
+
+// Extracting a single variant type
+type NoDevicesFoundError = InferError<typeof DeviceStreamError.NoDevicesFound>;
+```
+
+### 5. Simple service error — pass-through message from caller
+
+```typescript
+export const RecorderError = defineErrors({
+  Service: ({ message }: { message: string }) => ({ message }),
+});
+export type RecorderError = InferErrors<typeof RecorderError>;
+
+// Call site
+return RecorderError.Service({ message: 'Already recording.' });
+```
+
+## Type Extraction
+
+```typescript
+// Full union type for all variants
+type MyServiceError = InferErrors<typeof MyServiceError>;
+
+// Single variant type
+type NotFoundError = InferError<typeof MyServiceError.NotFound>;
 ```
 
 ## Anti-Patterns
 
 ```typescript
-// WRONG — missing .withMessage()
-const { FooError } = createTaggedError('FooError'); // TS error!
+// WRONG — old createTaggedError API
+import { createTaggedError } from 'wellcrafted/error';
+const { FooError, FooErr } = createTaggedError('FooError')
+  .withContext<{ id: string }>()
+  .withMessage(({ context }) => `Not found: ${context.id}`);
 
-// WRONG — message as primary factory input (old API)
-FooErr({ message: 'Something failed' });
+// WRONG — calling extractErrorMessage at the call site
+catch: (error) => MyError.Failed({ message: extractErrorMessage(error) });
+// CORRECT — pass raw cause, call extractErrorMessage inside the factory
+catch: (error) => MyError.Failed({ cause: error });
 
-// WRONG — chaining after .withMessage()
-createTaggedError('FooError').withMessage(() => 'x').withContext<{}>(); // TS error
+// WRONG — one defineErrors per variant (defeats the namespace grouping)
+const BusyError = defineErrors({ BusyError: () => ({ message: 'Busy' }) });
+const PermError = defineErrors({ PermError: () => ({ message: 'No perm' }) });
+// CORRECT — all variants for a service in one call
+const RecorderError = defineErrors({
+  Busy: () => ({ message: 'A recording is already in progress' }),
+  PermissionDenied: () => ({ message: 'Microphone permission denied' }),
+});
 
-// WRONG — Date in context (not JSON-serializable)
-.withContext<{ createdAt: Date }>()
+// WRONG — using ReturnType instead of InferErrors
+type FooError = ReturnType<typeof FooError>;
+// CORRECT
+type FooError = InferErrors<typeof FooError>;
 
-// WRONG — monolithic error
-const { RecorderServiceError } = createTaggedError('RecorderServiceError')
-  .withMessage(() => 'Recorder error'); // Too vague — split by failure mode
+// WRONG — using separate Err/FooErr pair (old API)
+FooErr({ context: { id: '1' } });
+// CORRECT — each variant call returns Err(...) automatically
+FooError.NotFound({ id: '1' });
 
-// CORRECT — always extract type via ReturnType
-type DbNotFoundError = ReturnType<typeof DbNotFoundError>;
+// WRONG — monolithic single-variant error for a service with many failure modes
+const RecorderError = defineErrors({
+  Error: ({ message }: { message: string }) => ({ message }), // Too vague
+});
+// CORRECT — split by failure mode
+const RecorderError = defineErrors({
+  AlreadyRecording: () => ({ message: 'A recording is already in progress' }),
+  PermissionDenied: ({ cause }: { cause: unknown }) => ({
+    message: `Microphone permission denied. ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  DeviceNotFound: ({ deviceId }: { deviceId: string }) => ({
+    message: `Device not found: ${deviceId}`,
+    deviceId,
+  }),
+});
 ```

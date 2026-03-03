@@ -1,8 +1,7 @@
 <script module lang="ts">
-	import { createFileSystemDb } from '$lib/services/isomorphic/db/file-system';
-	import { createDbServiceWeb } from '$lib/services/isomorphic/db/web';
 	import { nanoid } from 'nanoid/non-secure';
-	import { Ok, tryAsync, type Result } from 'wellcrafted/result';
+	import { Ok, type Result, tryAsync } from 'wellcrafted/result';
+	import { createFileSystemDb } from '$lib/services/isomorphic/db/file-system';
 	import type {
 		Recording,
 		RecordingStoredInIndexedDB,
@@ -14,12 +13,13 @@
 		generateDefaultTransformation,
 		generateDefaultTransformationStep,
 	} from '$lib/services/isomorphic/db/models';
-	import { DownloadServiceLive } from '$lib/services/isomorphic/download';
 	import type {
 		DbService,
 		DbServiceError,
 	} from '$lib/services/isomorphic/db/types';
 	import { DbServiceErr } from '$lib/services/isomorphic/db/types';
+	import { createDbServiceWeb } from '$lib/services/isomorphic/db/web';
+	import { DownloadServiceLive } from '$lib/services/isomorphic/download';
 
 	/**
 	 * Result of a migration operation
@@ -1291,10 +1291,12 @@
 							<p class="font-medium">IndexedDB:</p>
 							<ul class="ml-4 list-disc text-muted-foreground">
 								<li>
-									{migrationDialog.counts.indexedDb.recordings} recordings
+									{migrationDialog.counts.indexedDb.recordings}
+									recordings
 								</li>
 								<li>
-									{migrationDialog.counts.indexedDb.transformations} transformations
+									{migrationDialog.counts.indexedDb.transformations}
+									transformations
 								</li>
 								<li>{migrationDialog.counts.indexedDb.runs} runs</li>
 							</ul>
@@ -1303,10 +1305,12 @@
 							<p class="font-medium">File System:</p>
 							<ul class="ml-4 list-disc text-muted-foreground">
 								<li>
-									{migrationDialog.counts.fileSystem.recordings} recordings
+									{migrationDialog.counts.fileSystem.recordings}
+									recordings
 								</li>
 								<li>
-									{migrationDialog.counts.fileSystem.transformations} transformations
+									{migrationDialog.counts.fileSystem.transformations}
+									transformations
 								</li>
 								<li>{migrationDialog.counts.fileSystem.runs} runs</li>
 							</ul>
@@ -1350,7 +1354,8 @@
 							<div>
 								<p class="font-medium">Recordings:</p>
 								<p class="text-muted-foreground">
-									Total: {r.total} | Succeeded: {r.succeeded} | Failed: {r.failed}
+									Total: {r.total} | Succeeded: {r.succeeded} | Failed:
+									{r.failed}
 									| Skipped: {r.skipped} | Duration: {r.duration.toFixed(2)}s
 								</p>
 							</div>
@@ -1360,7 +1365,8 @@
 							<div>
 								<p class="font-medium">Transformations:</p>
 								<p class="text-muted-foreground">
-									Total: {t.total} | Succeeded: {t.succeeded} | Failed: {t.failed}
+									Total: {t.total} | Succeeded: {t.succeeded} | Failed:
+									{t.failed}
 									| Skipped: {t.skipped} | Duration: {t.duration.toFixed(2)}s
 								</p>
 							</div>
@@ -1370,7 +1376,8 @@
 							<div>
 								<p class="font-medium">Transformation Runs:</p>
 								<p class="text-muted-foreground">
-									Total: {r.total} | Succeeded: {r.succeeded} | Failed: {r.failed}
+									Total: {r.total} | Succeeded: {r.succeeded} | Failed:
+									{r.failed}
 									| Skipped: {r.skipped} | Duration: {r.duration.toFixed(2)}s
 								</p>
 							</div>

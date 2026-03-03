@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import { type VariantProps, tv } from 'tailwind-variants';
+	import { tv, type VariantProps } from 'tailwind-variants';
 
 	export const copyableVariants = tv({
 		base: 'relative whitespace-normal rounded p-4 pr-12 text-sm',
@@ -18,9 +18,9 @@
 </script>
 
 <script lang="ts">
+	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { cn } from '@epicenter/ui/utils';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { CopyButton } from '@epicenter/ui/copy-button';
 
 	const {
 		copyableText,

@@ -1,4 +1,4 @@
-import type { TableHelper } from '@epicenter/hq';
+import type { TableHelper } from '@epicenter/workspace';
 import type { FileId, FileRow } from './types.js';
 
 export type FsErrorCode =
@@ -94,12 +94,12 @@ export function disambiguateNames(rows: FileRow[]): Map<string, string> {
 
 	for (const [name, group] of byName) {
 		if (group.length === 1) {
-			result.set(group[0]!.id, name);
+			result.set(group[0]?.id, name);
 			continue;
 		}
 		// Sort by createdAt — earliest keeps clean name
 		group.sort((a, b) => a.createdAt - b.createdAt);
-		result.set(group[0]!.id, name);
+		result.set(group[0]?.id, name);
 		for (let i = 1; i < group.length; i++) {
 			const row = group[i]!;
 			const dotIndex = name.lastIndexOf('.');

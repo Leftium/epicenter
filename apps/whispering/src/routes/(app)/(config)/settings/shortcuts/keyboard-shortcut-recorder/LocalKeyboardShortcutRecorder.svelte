@@ -3,13 +3,13 @@
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
 	import {
-		type CommandId,
 		arrayToShortcutString,
+		type CommandId,
 	} from '$lib/services/isomorphic/local-shortcut-manager';
 	import { settings } from '$lib/state/settings.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
+	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
 
 	const {
 		command,

@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { describeWorkspace } from '@epicenter/hq';
+ * import { describeWorkspace } from '@epicenter/workspace';
  *
  * const descriptor = describeWorkspace(client);
  * console.log(JSON.stringify(descriptor, null, 2));
@@ -25,7 +25,7 @@
  */
 
 import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
-import type { JsonSchema } from 'arktype';
+import type { TSchema } from 'typebox';
 import { iterateActions } from '../shared/actions.js';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema.js';
 import type { AnyWorkspaceClient } from './types.js';
@@ -34,19 +34,9 @@ import type { AnyWorkspaceClient } from './types.js';
 // DESCRIPTOR TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-/** Descriptor for a single table — name is the key in the parent record. */
-export type TableDescriptor = {
-	schema: JsonSchema;
-};
-
-/** Descriptor for a single KV store — name is the key in the parent record. */
-export type KvDescriptor = {
-	schema: JsonSchema;
-};
-
-/** Descriptor for a single awareness field — name is the key in the parent record. */
-export type AwarenessDescriptor = {
-	schema: JsonSchema;
+/** Descriptor for a schema-bearing definition (table, KV store, or awareness field). */
+export type SchemaDescriptor = {
+	schema: Record<string, unknown>;
 };
 
 /** Descriptor for a single action (query or mutation). */
@@ -54,27 +44,46 @@ export type ActionDescriptor = {
 	path: string[];
 	type: 'query' | 'mutation';
 	description?: string;
-	input?: JsonSchema;
+	input?: TSchema;
 };
 
 /**
  * A portable, JSON-serializable descriptor of a workspace.
  *
- * Every schema field is guaranteed to be a `JsonSchema` (never undefined) —
+ * Every schema field is guaranteed to be a JSON Schema object (never undefined) —
  * the `CombinedStandardSchema` type constraint on definitions ensures this.
  * Action inputs are optional since some actions have no input.
  */
 export type WorkspaceDescriptor = {
 	id: string;
-	tables: Record<string, TableDescriptor>;
-	kv: Record<string, KvDescriptor>;
-	awareness: Record<string, AwarenessDescriptor>;
+	tables: Record<string, SchemaDescriptor>;
+	kv: Record<string, SchemaDescriptor>;
+	awareness: Record<string, SchemaDescriptor>;
 	actions: ActionDescriptor[];
 };
 
 // ════════════════════════════════════════════════════════════════════════════
 // IMPLEMENTATION
 // ════════════════════════════════════════════════════════════════════════════
+
+/** Convert a record of Standard Schema entries into a record of JSON Schema descriptors. */
+function describeSchemas(
+	entries: Record<
+		string,
+		StandardJSONSchemaV1 | { schema: StandardJSONSchemaV1 }
+	>,
+): Record<string, SchemaDescriptor> {
+	return Object.fromEntries(
+		Object.entries(entries).map(([name, entry]) => [
+			name,
+			{
+				schema: standardSchemaToJsonSchema(
+					'schema' in entry ? entry.schema : entry,
+				),
+			},
+		]),
+	);
+}
 
 /**
  * Produce a portable, JSON-serializable descriptor of a workspace.
@@ -104,58 +113,25 @@ export type WorkspaceDescriptor = {
 export function describeWorkspace(
 	client: AnyWorkspaceClient,
 ): WorkspaceDescriptor {
-	const tables: Record<string, TableDescriptor> = {};
-	for (const [name, def] of Object.entries(client.definitions.tables) as [
-		string,
-		{ schema: StandardJSONSchemaV1 },
-	][]) {
-		tables[name] = {
-			schema: standardSchemaToJsonSchema(def.schema),
-		};
-	}
-
-	const kv: Record<string, KvDescriptor> = {};
-	for (const [name, def] of Object.entries(client.definitions.kv) as [
-		string,
-		{ schema: StandardJSONSchemaV1 },
-	][]) {
-		kv[name] = {
-			schema: standardSchemaToJsonSchema(def.schema),
-		};
-	}
-
-	const awareness: Record<string, AwarenessDescriptor> = {};
-	for (const [name, schema] of Object.entries(client.definitions.awareness) as [
-		string,
-		StandardJSONSchemaV1,
-	][]) {
-		awareness[name] = {
-			schema: standardSchemaToJsonSchema(schema),
-		};
-	}
-
 	const actions: ActionDescriptor[] = [];
 	if (client.actions) {
 		for (const [action, path] of iterateActions(client.actions)) {
-			const descriptor: ActionDescriptor = {
+			actions.push({
 				path,
 				type: action.type,
-			};
-			if (action.description !== undefined) {
-				descriptor.description = action.description;
-			}
-			if (action.input !== undefined) {
-				descriptor.input = standardSchemaToJsonSchema(action.input);
-			}
-			actions.push(descriptor);
+				...(action.description !== undefined && {
+					description: action.description,
+				}),
+				...(action.input !== undefined && { input: action.input }),
+			});
 		}
 	}
 
 	return {
 		id: client.id,
-		tables,
-		kv,
-		awareness,
+		tables: describeSchemas(client.definitions.tables),
+		kv: describeSchemas(client.definitions.kv),
+		awareness: describeSchemas(client.definitions.awareness),
 		actions,
 	};
 }

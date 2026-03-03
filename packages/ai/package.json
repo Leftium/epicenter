@@ -12,9 +12,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
-		"@tanstack/ai": "^0.5.1",
-		"@standard-schema/spec": "catalog:"
+		"@epicenter/workspace": "workspace:*",
+		"@tanstack/ai": "^0.5.1"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"

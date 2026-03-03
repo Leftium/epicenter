@@ -1,230 +1,211 @@
 # Epicenter Server
 
-Expose your workspace tables as REST APIs and WebSocket sync endpoints.
+Two server constructors — `createRemoteServer` and `createLocalServer` — implementing a three-tier topology where all workspace knowledge lives on local servers and the remote server knows nothing about workspace schemas.
 
-## What This Does
+## Three-Tier Topology
 
-Epicenter uses a two-tier server architecture to handle local data and cloud coordination:
+```
+Remote Server (cloud)
+  - Better Auth (sessions, JWT, JWKS)
+  - AI proxy (injects env var API keys, keys never leave remote server)
+  - AI streaming (SSE chat for all providers via /ai/chat)
+  - Yjs relay (/rooms — EPHEMERAL Y.Docs, pure relay, NO persistence)
 
-1. **Local Server** (`createLocalServer`): Runs on your device (often as a Tauri sidecar). It provides fast, sub-millisecond sync between your UI and local Y.Doc, and exposes your workspace tables via REST.
-2. **Hub Server** (`createHubServer`): Runs in the cloud or on a central home server. It acts as the primary sync relay between all your devices and provides centralized services like AI streaming, authentication, and API key management.
+  Does NOT have: workspace configs, extensions, actions, any persistence
 
-The key difference from running scripts:
+        ^
+        | cross-device Yjs sync + AI requests
+        |
 
-- **Scripts**: Client is alive only during the `using` block, then auto-disposed.
-- **Server**: Clients stay alive until you manually stop the server (Ctrl+C).
+Local Server A (Device 1)          Local Server B (Device 2)
+  - Workspace CRUD                   - Workspace CRUD
+  - Extensions (FS projections)      - Extensions (FS projections)
+  - Actions                          - Actions
+  - Persisted Y.Docs                 - Persisted Y.Docs
+  - Local Yjs relay (SPA <-> Y.Doc)  - Local Yjs relay (SPA <-> Y.Doc)
+  - Validates auth against remote     - Validates auth against remote
 
-## Quick Start
+  Does NOT have: AI streaming, auth issuance, API keys
 
-### Local Server (Workspace CRUD + Sync)
+        ^                                  ^
+        | sub-ms WebSocket sync            | sub-ms WebSocket sync
+        |                                  |
+
+SPA / WebView A                    SPA / WebView B
+```
+
+### Sync Scopes
+
+1. **Local relay** (`/rooms` on local server): SPA Y.Doc <-> server's persisted Y.Doc, same machine, sub-millisecond latency.
+2. **Remote relay** (`/rooms` on remote server): cross-device sync between local servers (Phase 4, enabled with `--hub` flag).
+
+### Auth Flow
+
+The remote server issues sessions via Better Auth. Local servers validate tokens by calling the remote server's `/auth/get-session` — they never issue sessions themselves.
+
+### AI Flow
+
+All AI requests go to the remote server's `/ai/chat`. The remote server injects API keys from its environment and streams back to the caller. API keys never leave the remote server.
+
+---
+
+## Remote Server
+
+The remote server is a stateless coordination layer. Its Y.Docs are ephemeral and schema-agnostic — it has no knowledge of what data those documents contain. Workspace schemas, table definitions, and business logic live entirely on local servers.
+
+**What it does:**
+- Issues and validates sessions (Better Auth, JWT, JWKS endpoint)
+- Relays Yjs sync between devices (`/rooms`)
+- Proxies AI requests with server-side API keys (`/ai/chat`, `/proxy/:provider/*`)
+- Streams AI responses back to callers (SSE)
+
+**What it does NOT do:**
+- Persist Y.Docs (rooms are evicted when empty)
+- Know anything about workspace schemas, tables, or extensions
+- Store workspace configurations or action definitions
+- Issue commands to local servers
 
 ```typescript
-import {
-	defineWorkspace,
-	createWorkspace,
-	id,
-	text,
-} from '@epicenter/hq/static';
+import { createRemoteServer } from '@epicenter/server';
+
+const remote = createRemoteServer({ port: 3914 });
+remote.start();
+```
+
+### Remote Server Routes
+
+```
+/                        - Discovery root
+/rooms/                  - Active rooms (ephemeral)
+/rooms/{roomId}          - WebSocket sync relay
+/ai/chat                 - AI streaming (SSE)
+/auth/*                  - Better Auth endpoints
+/proxy/{provider}/*      - AI provider proxy (env var keys)
+```
+
+### Remote Server Config
+
+```typescript
+type RemoteServerConfig = {
+  /** Port to listen on. Defaults to 3913 (or PORT env var). */
+  port?: number;
+  /** Better Auth configuration for session-based auth. */
+  auth?: AuthPluginConfig;
+  /** Sync plugin options. */
+  sync?: {
+    auth?: AuthConfig;
+    onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
+    onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
+  };
+};
+```
+
+---
+
+## Local Server
+
+The local server is where all workspace knowledge lives. It owns the persisted Y.Docs, understands the workspace schema, and exposes tables and actions over HTTP. The SPA connects to the local server for all reads and writes.
+
+**What it does:**
+- Persists Y.Docs to disk
+- Serves workspace tables as REST CRUD endpoints
+- Runs workspace actions
+- Hosts extensions (e.g. filesystem projections)
+- Relays Yjs between the SPA and local Y.Doc (`/rooms`)
+- Validates auth tokens by calling the remote server
+
+**What it does NOT do:**
+- Issue sessions or JWTs
+- Hold AI API keys or stream AI responses
+- Run cross-device sync directly (that goes through the remote server)
+
+```typescript
+import { defineWorkspace, createWorkspace, id, text } from '@epicenter/workspace/static';
 import { createLocalServer } from '@epicenter/server';
 
-// 1. Define workspace
 const blogWorkspace = defineWorkspace({
-	id: 'blog',
-	tables: {
-		posts: { id: id(), title: text() },
-	},
+  id: 'blog',
+  tables: {
+    posts: { id: id(), title: text() },
+  },
 });
 
-// 2. Create client
 const blogClient = createWorkspace(blogWorkspace);
 
-// 3. Create and start local server
-const server = createLocalServer({ clients: [blogClient], port: 3913 });
+const server = createLocalServer({
+  clients: [blogClient],
+  port: 3913,
+  hubUrl: 'https://remote.example.com', // omit for open/dev mode
+});
 server.start();
 ```
 
-Now your tables are available as REST endpoints:
-
-- `GET http://localhost:3913/workspaces/blog/tables/posts`
-- `POST http://localhost:3913/workspaces/blog/tables/posts`
-
-### Hub Server (Sync Relay + AI + Auth)
-
-```typescript
-import { createHubServer } from '@epicenter/server';
-
-// Start a minimal hub for development
-const hub = createHubServer({ port: 3914 });
-hub.start();
-```
-
-## API
-
-### `createLocalServer(config)`
-
-The local server exposes workspace tables and actions. It's designed to run close to the data.
-
-**Signature:**
-
-```typescript
-function createLocalServer(config: LocalServerConfig): Server;
-
-type LocalServerConfig = {
-	/** Workspace clients to expose via REST CRUD and action endpoints. */
-	clients: AnyWorkspaceClient[];
-	/** Port to listen on. Defaults to 3913 (or PORT env var). */
-	port?: number;
-	/** Hub URL for session token validation. Omit for open mode. */
-	hubUrl?: string;
-	/** CORS allowed origins. Default: ['tauri://localhost'] */
-	allowedOrigins?: string[];
-	/** Sync plugin options. */
-	sync?: {
-		auth?: AuthConfig;
-		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
-		onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
-	};
-};
-```
-
-### `createHubServer(config)`
-
-The hub is the coordination point for the ecosystem. It handles sync relaying, AI proxying, and authentication.
-
-**Signature:**
-
-```typescript
-function createHubServer(config: HubServerConfig): Server;
-
-type HubServerConfig = {
-	/** Port to listen on. Defaults to 3913 (or PORT env var). */
-	port?: number;
-	/** Better Auth configuration for session-based auth. */
-	auth?: AuthPluginConfig;
-	/** Sync plugin options. */
-	sync?: {
-		auth?: AuthConfig;
-		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
-		onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
-	};
-};
-```
-
-### Server Methods
-
-Both server types return a consistent interface:
-
-```typescript
-const server = createLocalServer({ clients: [blogClient] });
-
-server.app; // Underlying Elysia instance
-server.start(); // Start the HTTP server
-await server.stop(); // Stop server and cleanup resources
-```
-
-## Composable Plugins
-
-The servers are built from modular Elysia plugins.
-
-#### `@epicenter/server/sync` (Shared)
-
-Provides document synchronization (WebSocket real-time sync + HTTP document state access). Used by both Hub and Local servers.
-
-| Method        | Route    | Description                                                     |
-| ------------- | -------- | --------------------------------------------------------------- |
-| `GET`         | `/`      | List active rooms with connection counts                        |
-| `WS/GET/POST` | `/:room` | Real-time sync (WS), document state (GET), apply updates (POST) |
-
-#### `createWorkspacePlugin(clients)` (Local Only)
-
-Exposes the RESTful tables and actions for the provided clients.
-
-```typescript
-import { createWorkspacePlugin } from '@epicenter/server/workspace';
-
-const app = new Elysia().use(createWorkspacePlugin([blogClient])).listen(3913);
-```
-
-#### `createAIPlugin(config)` (Hub Only)
-
-Provides AI streaming and proxying capabilities.
-
-## Deployment Modes
-
-### Local Server Composition
-
-`createLocalServer()` composes local-first features:
+Tables are immediately available:
 
 ```
-createLocalServer()
-├── Sync Plugin        → /rooms/:room           (Local sync relay)
-├── Workspace Plugin   → /workspaces/:id/...    (REST CRUD + Actions)
-└── CORS + Auth        (Tauri-only protection)
+GET  http://localhost:3913/workspaces/blog/tables/posts
+POST http://localhost:3913/workspaces/blog/tables/posts
 ```
 
-### Hub Server Composition
-
-`createHubServer()` composes coordination features:
-
-```
-createHubServer()
-├── Sync Plugin        → /rooms/:room           (Cloud sync relay)
-├── AI Plugin          → /ai/...                (Streaming)
-├── Auth Plugin        → /auth/...              (Better Auth)
-└── Proxy Plugin       → /proxy/:provider/*     (AI provider proxy, env var keys)
-```
-
-## URL Hierarchy
-
-### Local Server
+### Local Routes
 
 ```
 /                                              - Discovery root
 /rooms/                                        - Active rooms
-/rooms/{workspaceId}                           - WebSocket sync
+/rooms/{workspaceId}                           - WebSocket sync (SPA <-> Y.Doc)
 /workspaces/{workspaceId}/tables/{table}       - RESTful table CRUD
+/workspaces/{workspaceId}/tables/{table}/{id}  - Single row
 /workspaces/{workspaceId}/actions/{action}     - Workspace actions
 ```
 
-### Hub Server
-
-```
-/                                              - Discovery root
-/rooms/                                        - Active rooms
-/rooms/{roomId}                                - WebSocket sync relay
-/ai/chat                                       - AI streaming endpoint
-/auth/*                                        - Better Auth endpoints
-/proxy/{provider}/*                            - AI provider proxy (env var keys)
-```
-
-## WebSocket Sync
-
-The server's primary real-time feature is WebSocket-based Y.Doc synchronization.
-
-### Client Connection
-
-Clients connect to:
-
-```
-ws://host:3913/rooms/{workspaceId}
-```
-
-The recommended client is `@epicenter/sync` (via `createSyncExtension` from `@epicenter/hq/extensions/sync`):
+### Local Config
 
 ```typescript
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
-
-const client = createClient(definition.id)
-	.withDefinition(definition)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: 'ws://localhost:3913/rooms/{id}',
-		}),
-	);
+type LocalServerConfig = {
+  /** Workspace clients to expose via REST CRUD and action endpoints. */
+  clients: AnyWorkspaceClient[];
+  /** Port to listen on. Defaults to 3913 (or PORT env var). */
+  port?: number;
+  /** Remote server URL for session token validation. Omit for open mode. */
+  hubUrl?: string;
+  /** CORS allowed origins. Default: ['tauri://localhost'] */
+  allowedOrigins?: string[];
+  /** Sync plugin options. */
+  sync?: {
+    auth?: AuthConfig;
+    onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
+    onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
+  };
+};
 ```
 
-### Protocol
+---
+
+## Server Interface
+
+Both constructors return the same interface:
+
+```typescript
+server.app;        // Underlying Elysia instance
+server.start();    // Start the HTTP server
+await server.stop(); // Stop server and clean up resources
+```
+
+---
+
+## WebSocket Sync Protocol
+
+Clients connect to `/rooms/{workspaceId}` on either the local or remote server. The recommended client is `createSyncExtension` from `@epicenter/workspace/extensions/sync`:
+
+```typescript
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+
+const client = createClient(definition.id)
+  .withDefinition(definition)
+  .withExtension('sync', createSyncExtension({
+    url: 'ws://localhost:3913/rooms/{id}',
+  }));
+```
 
 The sync plugin implements the y-websocket protocol with one custom extension:
 
@@ -235,95 +216,93 @@ The sync plugin implements the y-websocket protocol with one custom extension:
 | QUERY_AWARENESS | 3   | Client → Server          | Request current awareness states              |
 | SYNC_STATUS     | 102 | Client → Server → Client | Heartbeat + `hasLocalChanges` tracking        |
 
-**MESSAGE_SYNC_STATUS (102)**: The client sends its local version counter. The server echoes the raw bytes back unchanged. This enables the client to know when all local changes have reached the server, powering "Saving..." / "Saved" UI.
+**SYNC_STATUS (102):** The client sends its local version counter; the server echoes the bytes back unchanged. Powers "Saving..." / "Saved" UI indicators.
 
-### Room Management
+### Room Eviction
 
-Each workspace ID or room name maps to a room. When the last client disconnects, a **60-second eviction timer** starts. If no new client connects within that window, the room is destroyed and its resources released.
+When the last client disconnects, a 60-second eviction timer starts. If no client reconnects in that window, the room is destroyed. On the remote server, this means the Y.Doc is gone permanently — it has no backing storage.
 
-## CLI Usage
+---
 
-Each server mode has its own entry point:
+## Composable Plugins
 
-```bash
-# Start hub server (sync relay + AI + auth)
-bun run src/start-hub.ts
+The servers are built from modular Elysia plugins you can use directly:
 
-# Start local server (sync relay + workspace CRUD, no AI)
-bun run src/start-local.ts
+```
+createLocalServer()
+├── Sync Plugin        → /rooms/:room           (local relay)
+├── Workspace Plugin   → /workspaces/:id/...    (REST CRUD + actions)
+└── CORS + Auth        (Tauri-only protection)
+
+createRemoteServer()
+├── Sync Plugin        → /rooms/:room           (cross-device relay, ephemeral)
+├── AI Plugin          → /ai/...                (streaming)
+├── Auth Plugin        → /auth/...              (Better Auth)
+└── Proxy Plugin       → /proxy/:provider/*     (AI provider proxy)
 ```
 
-The `serve` command in the Epicenter CLI uses `createLocalServer` to expose your local workspaces.
+```typescript
+import { createWorkspacePlugin } from '@epicenter/server/workspace';
+
+// Use workspace plugin standalone in your own Elysia app
+const app = new Elysia().use(createWorkspacePlugin([blogClient])).listen(3913);
+```
+
+---
+
+## RESTful Tables
+
+| Method   | Path                                          | Description         |
+| -------- | --------------------------------------------- | ------------------- |
+| `GET`    | `/workspaces/{workspace}/tables/{table}`      | List all valid rows |
+| `GET`    | `/workspaces/{workspace}/tables/{table}/{id}` | Get row by ID       |
+| `POST`   | `/workspaces/{workspace}/tables/{table}`      | Create or upsert    |
+| `PUT`    | `/workspaces/{workspace}/tables/{table}/{id}` | Update row fields   |
+| `DELETE` | `/workspaces/{workspace}/tables/{table}/{id}` | Delete row          |
+
+**Success:** `{ "data": { "id": "123", "title": "Hello" } }`
+
+**Error:** `{ "error": { "message": "What went wrong" } }`
+
+---
 
 ## Server vs Scripts
 
-### Use Scripts (Direct Client)
+Use a direct client (script) for one-off operations; use the server for long-running services.
 
 ```typescript
+// Script: client disposed after the block
 {
-	await using client = createWorkspace(blogWorkspace);
-	client.tables.posts.upsert({ id: '1', title: 'Hello' });
+  await using client = createWorkspace(blogWorkspace);
+  client.tables.posts.upsert({ id: '1', title: 'Hello' });
 }
-```
 
-**Good for:** One-off migrations, data imports, CLI tools.
-
-### Use Server (HTTP Wrapper)
-
-```typescript
+// Server: client lives until server.stop()
 const client = createWorkspace(blogWorkspace);
 const server = createLocalServer({ clients: [client] });
 server.start();
 ```
 
-**Good for:** Web applications, API backends, real-time collaboration.
-
-### Running Scripts While Server is Active
-
-Use the HTTP API instead of creating another client to avoid storage conflicts:
+If a server is already running, use its HTTP API instead of opening a second client (avoids storage conflicts):
 
 ```typescript
 await fetch('http://localhost:3913/workspaces/blog/tables/posts', {
-	method: 'POST',
-	headers: { 'Content-Type': 'application/json' },
-	body: JSON.stringify({ id: '1', title: 'New Post' }),
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: '1', title: 'New Post' }),
 });
 ```
 
-## RESTful Tables (Local Server)
+---
 
-Tables are automatically exposed as CRUD endpoints on the local server:
+## CLI
 
-| Method   | Path                                          | Description          |
-| -------- | --------------------------------------------- | -------------------- |
-| `GET`    | `/workspaces/{workspace}/tables/{table}`      | List all valid rows  |
-| `GET`    | `/workspaces/{workspace}/tables/{table}/{id}` | Get single row by ID |
-| `POST`   | `/workspaces/{workspace}/tables/{table}`      | Create or upsert row |
-| `PUT`    | `/workspaces/{workspace}/tables/{table}/{id}` | Update row fields    |
-| `DELETE` | `/workspaces/{workspace}/tables/{table}/{id}` | Delete row           |
+```bash
+# Start remote server (sync relay + AI + auth)
+bun run src/start-hub.ts
 
-### Response Format
-
-**Success:**
-
-```json
-{ "data": { "id": "123", "title": "Hello" } }
+# Start local server (sync relay + workspace CRUD)
+bun run src/start-local.ts
 ```
 
-**Error:**
-
-```json
-{ "error": { "message": "What went wrong" } }
-```
-
-## Lifecycle Management
-
-```typescript
-const server = createLocalServer({ clients: [blogClient] });
-
-// Start the server
-server.start();
-
-// Stop manually or wire up to SIGINT/SIGTERM:
-await server.stop(); // Stops server, cleans up all clients and resources
-```
+The `serve` command in the Epicenter CLI uses `createLocalServer` internally.

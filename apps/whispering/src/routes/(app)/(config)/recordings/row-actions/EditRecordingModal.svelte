@@ -1,17 +1,17 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@epicenter/ui/button';
-	import * as Modal from '@epicenter/ui/modal';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
-	import { Textarea } from '@epicenter/ui/textarea';
-	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/isomorphic/db';
-	import { services } from '$lib/services';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import EditIcon from '@lucide/svelte/icons/pencil';
+	import * as Modal from '@epicenter/ui/modal';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { Textarea } from '@epicenter/ui/textarea';
+	import EditIcon from '@lucide/svelte/icons/pencil';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { rpc } from '$lib/query';
+	import { services } from '$lib/services';
+	import type { Recording } from '$lib/services/isomorphic/db';
 
 	const updateRecording = createMutation(
 		() => rpc.db.recordings.update.options,

@@ -1,4 +1,4 @@
-# Subpath Exports for @epicenter/HQ
+# Subpath Exports for @epicenter/workspace
 
 ## Context
 
@@ -22,7 +22,7 @@ Looking at the codebase structure, I see several distinct modules:
 
 ## Decision: Clear Separation by Purpose
 
-**Main barrel (`@epicenter/hq`)**: Export everything from `core/`
+**Main barrel (`@epicenter/workspace`)**: Export everything from `core/`
 - All core functionality (workspace, schema, actions, epicenter, db, errors)
 - Everything needed to define and use workspaces
 - Principle: If it's in `core/`, it's fundamental API
@@ -66,7 +66,7 @@ Looking at the codebase structure, I see several distinct modules:
 ## Proposed Export Structure
 
 ```typescript
-// @epicenter/hq (main barrel - everything in core/)
+// @epicenter/workspace (main barrel - everything in core/)
 - Workspace: defineWorkspace, createWorkspaceClient
 - Epicenter: defineEpicenter, createEpicenterClient
 - Schema: id, text, date, ytext, boolean, etc.
@@ -77,21 +77,21 @@ Looking at the codebase structure, I see several distinct modules:
 - Errors: IndexErr, EpicenterOperationError, IndexError
 - Drizzle re-exports: eq, ne, gt, lt, and, or, sql, etc.
 
-// @epicenter/hq/indexes/markdown (markdown index utilities)
+// @epicenter/workspace/indexes/markdown (markdown index utilities)
 - MarkdownIndexErr, MarkdownIndexError
 - MarkdownIndexConfig type
 - Helper functions for custom serializers/deserializers
 
-// @epicenter/hq/indexes/sqlite (sqlite index utilities)
+// @epicenter/workspace/indexes/sqlite (sqlite index utilities)
 - SQLite-specific types and utilities (if any)
 - Custom query helpers (if any)
 
-// @epicenter/hq/providers (already exists)
+// @epicenter/workspace/providers (already exists)
 - setupPersistence
 
-// @epicenter/hq/cli (already exists)
-// @epicenter/hq/desktop (already exists)
-// @epicenter/hq/web (already exists)
+// @epicenter/workspace/cli (already exists)
+// @epicenter/workspace/desktop (already exists)
+// @epicenter/workspace/web (already exists)
 ```
 
 ## Changes Required
@@ -167,8 +167,8 @@ import { isDateWithTimezoneString } from '../../../packages/epicenter/src/core/s
 import { MarkdownIndexErr } from '../../../packages/epicenter/src/indexes/markdown';
 
 // After:
-import { isDateWithTimezoneString } from '@epicenter/hq';
-import { MarkdownIndexErr } from '@epicenter/hq/providers/markdown';
+import { isDateWithTimezoneString } from '@epicenter/workspace';
+import { MarkdownIndexErr } from '@epicenter/workspace/providers/markdown';
 ```
 
 ## Alternative: Everything in Main Barrel
@@ -184,7 +184,7 @@ export type { MarkdownIndexConfig } from './indexes/markdown';
 
 Then consumers would import:
 ```typescript
-import { isDateWithTimezoneString, MarkdownIndexErr } from '@epicenter/hq';
+import { isDateWithTimezoneString, MarkdownIndexErr } from '@epicenter/workspace';
 ```
 
 **Downsides**:
@@ -201,8 +201,8 @@ import { isDateWithTimezoneString, MarkdownIndexErr } from '@epicenter/hq';
 
 This approach provides:
 1. **Clear mental model**: Everything in `core/` directory = everything in main barrel
-2. **Simple imports**: Core functionality is all `@epicenter/hq`
-3. **Index utilities isolated**: Advanced customization uses `@epicenter/hq/indexes/*`
+2. **Simple imports**: Core functionality is all `@epicenter/workspace`
+3. **Index utilities isolated**: Advanced customization uses `@epicenter/workspace/indexes/*`
 4. **Natural boundaries**: File structure matches export structure
 5. **Consistency**: Follows pattern already established with platform exports
 
@@ -231,8 +231,8 @@ The key insight: `core/` contains the fundamental API, `indexes/` contains imple
 
 **Consumer Updates:**
 - ✅ Updated `EpicenterHQ/workspaces/email.ts` to use new imports:
-  - `isDateWithTimezoneString` from `@epicenter/hq`
-  - `MarkdownIndexErr` from `@epicenter/hq/indexes/markdown`
+  - `isDateWithTimezoneString` from `@epicenter/workspace`
+  - `MarkdownIndexErr` from `@epicenter/workspace/indexes/markdown`
 
 **Verification:**
 - ✅ Typecheck passes with no import errors (TS2307)
@@ -267,13 +267,13 @@ packages/epicenter/src/
 ### Export Map
 
 ```typescript
-@epicenter/hq                    // Everything in core/ (workspace, schema, db, etc.)
-@epicenter/hq/indexes/markdown   // Markdown index utilities
-@epicenter/hq/indexes/sqlite     // SQLite index utilities
-@epicenter/hq/providers          // Provider utilities (already existed)
-@epicenter/hq/cli                // CLI tools (already existed)
-@epicenter/hq/desktop            // Desktop-specific (already existed)
-@epicenter/hq/web                // Web-specific (already existed)
+@epicenter/workspace                    // Everything in core/ (workspace, schema, db, etc.)
+@epicenter/workspace/indexes/markdown   // Markdown index utilities
+@epicenter/workspace/indexes/sqlite     // SQLite index utilities
+@epicenter/workspace/providers          // Provider utilities (already existed)
+@epicenter/workspace/cli                // CLI tools (already existed)
+@epicenter/workspace/desktop            // Desktop-specific (already existed)
+@epicenter/workspace/web                // Web-specific (already existed)
 ```
 
 ### Key Insights

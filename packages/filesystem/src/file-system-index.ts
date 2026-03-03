@@ -1,4 +1,4 @@
-import type { TableHelper } from '@epicenter/hq';
+import type { TableHelper } from '@epicenter/workspace';
 import type { FileId, FileRow } from './types.js';
 import { disambiguateNames } from './validation.js';
 
@@ -101,7 +101,7 @@ function computePath(
 	}
 
 	if (depth >= MAX_DEPTH) return null; // Circular reference or unreasonably deep
-	return '/' + parts.join('/');
+	return `/${parts.join('/')}`;
 }
 
 /** Build path indexes for all active rows */

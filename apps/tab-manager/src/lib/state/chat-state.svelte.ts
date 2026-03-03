@@ -35,7 +35,7 @@
  * ```
  */
 
-import { generateId } from '@epicenter/hq';
+import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,
@@ -51,16 +51,15 @@ import {
 	type Provider,
 } from '$lib/ai/providers';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { tabManagerClientTools } from '$lib/ai/tools/client';
-import { allServerToolDefinitions } from '$lib/ai/tools/definitions';
 import { toUiMessage } from '$lib/ai/ui-message';
-import { getHubServerUrl } from '$lib/state/settings';
-import type {
-	ChatMessageId,
-	Conversation,
-	ConversationId,
+import { getRemoteServerUrl } from '$lib/state/settings';
+import {
+	actionContext,
+	type ChatMessageId,
+	type Conversation,
+	type ConversationId,
+	workspaceClient,
 } from '$lib/workspace';
-import { popupWorkspace } from '$lib/workspace-popup';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -79,19 +78,19 @@ const DEFAULT_STREAM_STATE: StreamState = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hub Server URL Cache
+// Remote Server URL Cache
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Cached hub server URL for synchronous access.
+ * Cached remote server URL for synchronous access.
  *
  * `fetchServerSentEvents` requires a synchronous URL getter (`string | (() => string)`).
  * We initialize with the default and update asynchronously from settings.
- * AI chat routes through the hub server (auth + AI + keys), not the local server.
+ * AI chat routes through the remote server (auth + AI + keys), not the local server.
  */
-let hubUrlCache = 'http://127.0.0.1:3913';
-void getHubServerUrl().then((url) => {
-	hubUrlCache = url;
+let remoteServerUrlCache = 'http://127.0.0.1:3913';
+void getRemoteServerUrl().then((url) => {
+	remoteServerUrlCache = url;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,7 +105,7 @@ function createAiChatState() {
 
 	/** Read all conversations sorted by most recently updated first. */
 	const readAllConversations = (): Conversation[] =>
-		popupWorkspace.tables.conversations
+		workspaceClient.tables.conversations
 			.getAllValid()
 			.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -122,7 +121,7 @@ function createAiChatState() {
 		if (conversations.length > 0) return undefined;
 		const id = generateConversationId();
 		const now = Date.now();
-		popupWorkspace.tables.conversations.set({
+		workspaceClient.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
@@ -142,7 +141,7 @@ function createAiChatState() {
 		conversationId: ConversationId,
 		patch: Partial<Omit<Conversation, 'id'>>,
 	) {
-		popupWorkspace.tables.conversations.update(conversationId, {
+		workspaceClient.tables.conversations.update(conversationId, {
 			...patch,
 			updatedAt: Date.now(),
 		});
@@ -150,7 +149,7 @@ function createAiChatState() {
 
 	/** Load persisted messages for a conversation from Y.Doc. */
 	function loadMessages(conversationId: ConversationId) {
-		return popupWorkspace.tables.chatMessages
+		return workspaceClient.tables.chatMessages
 			.filter((m) => m.conversationId === conversationId)
 			.sort((a, b) => a.createdAt - b.createdAt)
 			.map(toUiMessage);
@@ -195,9 +194,9 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: tabManagerClientTools,
+			tools: actionContext.tools,
 			connection: fetchServerSentEvents(
-				() => `${hubUrlCache}/ai/chat`,
+				() => `${remoteServerUrlCache}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
 					return {
@@ -206,7 +205,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: allServerToolDefinitions,
+							tools: actionContext.definitions,
 						},
 					};
 				},
@@ -227,7 +226,7 @@ function createAiChatState() {
 				streamStore.set(conversationId, { ...current, status });
 			},
 			onFinish: (message) => {
-				popupWorkspace.tables.chatMessages.set({
+				workspaceClient.tables.chatMessages.set({
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
@@ -348,7 +347,7 @@ function createAiChatState() {
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = popupWorkspace.tables.chatMessages
+				const msgs = workspaceClient.tables.chatMessages
 					.filter((m) => m.conversationId === conversationId)
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
@@ -362,7 +361,7 @@ function createAiChatState() {
 					.map((p) => p.content ?? '')
 					.join('')
 					.trim();
-				return text.length > 60 ? text.slice(0, 60) + '\u2026' : text;
+				return text.length > 60 ? `${text.slice(0, 60)}\u2026` : text;
 			},
 
 			// ── Actions ──
@@ -381,7 +380,7 @@ function createAiChatState() {
 					id: userMessageId,
 				});
 
-				popupWorkspace.tables.chatMessages.set({
+				workspaceClient.tables.chatMessages.set({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
@@ -403,7 +402,7 @@ function createAiChatState() {
 				const msgs = messageStore.get(conversationId) ?? [];
 				const lastMessage = msgs.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					popupWorkspace.tables.chatMessages.delete(
+					workspaceClient.tables.chatMessages.delete(
 						lastMessage.id as string as ChatMessageId,
 					);
 				}
@@ -486,14 +485,14 @@ function createAiChatState() {
 
 	// ── Observers ────────────────────────────────────────────────────
 
-	popupWorkspace.tables.conversations.observe(() => {
+	workspaceClient.tables.conversations.observe(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 	});
 
 	reconcileHandles();
 
-	void popupWorkspace.whenReady.then(() => {
+	void workspaceClient.whenReady.then(() => {
 		conversations = readAllConversations();
 		reconcileHandles();
 		const newId = ensureDefaultConversation();
@@ -502,7 +501,7 @@ function createAiChatState() {
 		}
 	});
 
-	popupWorkspace.tables.chatMessages.observe(() => {
+	workspaceClient.tables.chatMessages.observe(() => {
 		refreshFromDoc(activeConversationId);
 	});
 
@@ -518,7 +517,7 @@ function createAiChatState() {
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
-		popupWorkspace.tables.conversations.set({
+		workspaceClient.tables.conversations.set({
 			id,
 			title: opts?.title ?? 'New Chat',
 			parentId: opts?.parentId,
@@ -543,18 +542,18 @@ function createAiChatState() {
 	function deleteConversation(conversationId: ConversationId) {
 		destroyConversation(conversationId);
 
-		const msgs = popupWorkspace.tables.chatMessages
+		const msgs = workspaceClient.tables.chatMessages
 			.getAllValid()
 			.filter((m) => m.conversationId === conversationId);
-		popupWorkspace.batch(() => {
+		workspaceClient.batch(() => {
 			for (const m of msgs) {
-				popupWorkspace.tables.chatMessages.delete(m.id);
+				workspaceClient.tables.chatMessages.delete(m.id);
 			}
-			popupWorkspace.tables.conversations.delete(conversationId);
+			workspaceClient.tables.conversations.delete(conversationId);
 		});
 
 		if (activeConversationId === conversationId) {
-			const remaining = popupWorkspace.tables.conversations
+			const remaining = workspaceClient.tables.conversations
 				.getAllValid()
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];

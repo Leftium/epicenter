@@ -58,7 +58,7 @@ import {
 	integer,
 	boolean,
 	setting,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 
 const whispering = workspace('epicenter.whispering')
 	// Version 1: Initial schema (no callback - this IS the base)

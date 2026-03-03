@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn, type WithElementRef } from '#/utils.js';
 	import type { Snippet } from 'svelte';
 	import type { HTMLAnchorAttributes } from 'svelte/elements';
+	import { cn, type WithElementRef } from '#/utils.js';
 
 	let {
 		ref = $bindable(null),
@@ -37,7 +37,5 @@
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
-	<a bind:this={ref} {...mergedProps}>
-		{@render children?.()}
-	</a>
+	<a bind:this={ref} {...mergedProps}> {@render children?.()} </a>
 {/if}

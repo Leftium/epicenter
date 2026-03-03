@@ -1,4 +1,4 @@
-import type { Documents } from '@epicenter/hq';
+import type { Documents } from '@epicenter/workspace';
 import { parseSheetFromCsv } from './sheet-helpers.js';
 import { createTimeline } from './timeline-helpers.js';
 import type { FileId, FileRow } from './types.js';
@@ -64,10 +64,10 @@ export function createContentHelpers(
 
 			if (typeof data === 'string') {
 				if (tl.currentMode === 'sheet') {
-					const columns = tl.currentEntry!.get('columns') as import('yjs').Map<
+					const columns = tl.currentEntry?.get('columns') as import('yjs').Map<
 						import('yjs').Map<string>
 					>;
-					const rows = tl.currentEntry!.get('rows') as import('yjs').Map<
+					const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
 						import('yjs').Map<string>
 					>;
 					ydoc.transact(() => {
@@ -80,7 +80,7 @@ export function createContentHelpers(
 						parseSheetFromCsv(data, columns, rows);
 					});
 				} else if (tl.currentMode === 'text') {
-					const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
+					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
 					ydoc.transact(() => {
 						ytext.delete(0, ytext.length);
 						ytext.insert(0, data);
@@ -100,11 +100,11 @@ export function createContentHelpers(
 			const tl = createTimeline(ydoc);
 
 			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry!.get('content') as import('yjs').Text;
+				const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
 				ydoc.transact(() => ytext.insert(ytext.length, data));
 			} else if (tl.currentMode === 'binary') {
 				const existing = new TextDecoder().decode(
-					tl.currentEntry!.get('content') as Uint8Array,
+					tl.currentEntry?.get('content') as Uint8Array,
 				);
 				ydoc.transact(() => tl.pushText(existing + data));
 			} else {
@@ -116,11 +116,11 @@ export function createContentHelpers(
 			if (updated.currentMode === 'text') {
 				return new TextEncoder().encode(
 					(
-						updated.currentEntry!.get('content') as import('yjs').Text
+						updated.currentEntry?.get('content') as import('yjs').Text
 					).toString(),
 				).byteLength;
 			}
-			return (updated.currentEntry!.get('content') as Uint8Array).byteLength;
+			return (updated.currentEntry?.get('content') as Uint8Array).byteLength;
 		},
 	};
 }

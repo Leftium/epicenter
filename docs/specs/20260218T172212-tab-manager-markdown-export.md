@@ -195,8 +195,8 @@ _No tab groups_
 **File:** `apps/tab-manager-markdown/src/index.ts`
 
 ```typescript
-import { createWorkspace } from '@epicenter/hq/static';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
+import { createWorkspace } from '@epicenter/workspace/static';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { definition } from '@epicenter/tab-manager/workspace';
 import { createExporter } from './exporter';
 
@@ -413,7 +413,7 @@ function generateSummary(data: {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/tab-manager": "workspace:*",
 		"yjs": "^13.6.27"
 	},

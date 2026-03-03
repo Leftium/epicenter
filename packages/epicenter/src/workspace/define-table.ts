@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { defineTable } from '@epicenter/hq';
+ * import { defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * // Shorthand for single version

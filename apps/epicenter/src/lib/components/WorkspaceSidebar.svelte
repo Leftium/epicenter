@@ -1,26 +1,26 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
-	import { page } from '$app/state';
-	import * as Sidebar from '@epicenter/ui/sidebar';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Collapsible from '@epicenter/ui/collapsible';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Popover from '@epicenter/ui/popover';
-	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { cn } from '@epicenter/ui/utils';
-	import { createTableDialog } from '$lib/components/CreateTableDialog.svelte';
-	import { createSettingDialog } from '$lib/components/CreateSettingDialog.svelte';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { rpc } from '$lib/query';
-	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import TableIcon from '@lucide/svelte/icons/table-2';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import PlusIcon from '@lucide/svelte/icons/plus';
+	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import LayoutGridIcon from '@lucide/svelte/icons/layout-grid';
-	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
+	import PlusIcon from '@lucide/svelte/icons/plus';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import TableIcon from '@lucide/svelte/icons/table-2';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { createSettingDialog } from '$lib/components/CreateSettingDialog.svelte';
+	import { createTableDialog } from '$lib/components/CreateTableDialog.svelte';
+	import { rpc } from '$lib/query';
 
 	const workspaceId = $derived(page.params.id);
 
@@ -225,7 +225,7 @@
 														src={table.icon.url}
 														alt=""
 														class="size-4 object-contain"
-													/>
+													>
 												{:else}
 													<TableIcon />
 												{/if}

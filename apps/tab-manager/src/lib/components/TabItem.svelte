@@ -1,21 +1,21 @@
 <script lang="ts">
-	import { browserState } from '$lib/state/browser-state.svelte';
-	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-	import type { Tab } from '$lib/workspace';
-	import { getDomain } from '$lib/utils/format';
-	import TabFavicon from './TabFavicon.svelte';
-	import XIcon from '@lucide/svelte/icons/x';
-	import PinIcon from '@lucide/svelte/icons/pin';
-	import PinOffIcon from '@lucide/svelte/icons/pin-off';
-	import Volume2Icon from '@lucide/svelte/icons/volume-2';
-	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
-	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import CopyIcon from '@lucide/svelte/icons/copy';
-	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
 	import { Button } from '@epicenter/ui/button';
 	import * as Item from '@epicenter/ui/item';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { cn } from '@epicenter/ui/utils';
+	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import PinIcon from '@lucide/svelte/icons/pin';
+	import PinOffIcon from '@lucide/svelte/icons/pin-off';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import Volume2Icon from '@lucide/svelte/icons/volume-2';
+	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
+	import XIcon from '@lucide/svelte/icons/x';
+	import { browserState } from '$lib/state/browser-state.svelte';
+	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
+	import { getDomain } from '$lib/utils/format';
+	import type { Tab } from '$lib/workspace';
+	import TabFavicon from './TabFavicon.svelte';
 
 	let { tab }: { tab: Tab } = $props();
 
@@ -36,9 +36,7 @@
 			{...props}
 			onclick={() => browserState.actions.activate(tabId)}
 		>
-			<Item.Media>
-				<TabFavicon src={tab.favIconUrl} />
-			</Item.Media>
+			<Item.Media> <TabFavicon src={tab.favIconUrl} /> </Item.Media>
 
 			<Item.Content>
 				<Item.Title>
@@ -71,9 +69,7 @@
 						</Tooltip.Content>
 					</Tooltip.Root>
 				{:else}
-					<Item.Description class="truncate">
-						{domain}
-					</Item.Description>
+					<Item.Description class="truncate"> {domain} </Item.Description>
 				{/if}
 			</Item.Content>
 

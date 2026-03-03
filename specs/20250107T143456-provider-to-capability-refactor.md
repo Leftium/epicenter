@@ -171,7 +171,7 @@ This is a breaking change for users of the Epicenter library:
 
 1. `withProviders()` → `withCapabilities()`
 2. `client.providers` → `client.capabilities`
-3. `@epicenter/hq/providers/*` → `@epicenter/hq/capabilities/*`
+3. `@epicenter/workspace/providers/*` → `@epicenter/workspace/capabilities/*`
 4. `sqliteProvider` → `sqlite`
 5. `markdownProvider` → `markdown`
 6. `createWebsocketSyncProvider` → `websocketSync`
@@ -181,9 +181,9 @@ This is a breaking change for users of the Epicenter library:
 
 ```typescript
 // Before
-import { setupPersistence } from '@epicenter/hq/providers/persistence';
-import { sqliteProvider } from '@epicenter/hq/providers/sqlite';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { setupPersistence } from '@epicenter/workspace/providers/persistence';
+import { sqliteProvider } from '@epicenter/workspace/providers/sqlite';
+import { createWebsocketSyncProvider } from '@epicenter/workspace/providers/websocket-sync';
 
 const client = await workspace
   .withProviders({
@@ -196,9 +196,9 @@ const client = await workspace
 client.providers.sqlite.db.select()...
 
 // After
-import { persistence } from '@epicenter/hq/capabilities/persistence';
-import { sqlite } from '@epicenter/hq/capabilities/sqlite';
-import { websocketSync } from '@epicenter/hq/capabilities/websocket-sync';
+import { persistence } from '@epicenter/workspace/capabilities/persistence';
+import { sqlite } from '@epicenter/workspace/capabilities/sqlite';
+import { websocketSync } from '@epicenter/workspace/capabilities/websocket-sync';
 
 const client = await workspace
   .withCapabilities({

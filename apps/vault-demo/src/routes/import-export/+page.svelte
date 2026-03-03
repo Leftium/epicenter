@@ -9,7 +9,7 @@
 		<h2>Import</h2>
 		<div style="margin-top: 0.5rem;">
 			<!-- Supports both directory selection and multi-file selection -->
-			<input type="file" name="files[]" multiple webkitdirectory />
+			<input type="file" name="files[]" multiple webkitdirectory>
 		</div>
 		<div style="margin-top: 0.5rem;">
 			<button type="submit" disabled={importBundle.pending > 0}>Import</button>
@@ -23,18 +23,19 @@
 	</form>
 </section>
 
-<hr />
+<hr>
 
 <section>
 	<h2>Export</h2>
 	<div style="margin-top: 0.5rem;">
 		<a href="/import-export/export" download>
-			<button> Export All (.ZIP)</button>
+			<button>Export All (.ZIP)</button>
 		</a>
 	</div>
 </section>
 
 <p>
-	<a href="/">Back to Home</a> ·
+	<a href="/">Back to Home</a>
+	·
 	<a href="/reddit-upload">Go to Reddit Upload</a>
 </p>

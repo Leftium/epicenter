@@ -6,7 +6,7 @@
  * Epicenter workspace.
  */
 
-import { defineTable, defineWorkspace } from '@epicenter/hq';
+import { defineTable, defineWorkspace } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 const recordings = defineTable(

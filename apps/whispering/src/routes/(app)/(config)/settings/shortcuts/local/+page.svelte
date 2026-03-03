@@ -1,16 +1,14 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
-	import { rpc } from '$lib/query';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import { rpc } from '$lib/query';
+	import { settings } from '$lib/state/settings.svelte';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
-	import { settings } from '$lib/state/settings.svelte';
 </script>
 
-<svelte:head>
-	<title>Local Shortcuts - Whispering</title>
-</svelte:head>
+<svelte:head> <title>Local Shortcuts - Whispering</title> </svelte:head>
 
 <section>
 	<div

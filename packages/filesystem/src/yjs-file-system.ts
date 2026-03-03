@@ -1,4 +1,4 @@
-import type { Documents, TableHelper } from '@epicenter/hq';
+import type { Documents, TableHelper } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import {
 	type ContentHelpers,
@@ -228,7 +228,7 @@ export function createYjsFileSystem(
 				const parts = abs.split('/').filter(Boolean);
 				let currentPath = '';
 				for (const part of parts) {
-					currentPath += '/' + part;
+					currentPath += `/${part}`;
 					if (tree.exists(currentPath)) {
 						const existingId = tree.lookupId(currentPath);
 						if (existingId) {

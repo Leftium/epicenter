@@ -1,6 +1,6 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
 
 export async function getStaticPaths() {
 	const posts = await getCollection('blog');
@@ -29,13 +29,11 @@ const { Content } = await post.render();
 					>
 				</div>
 				<time class="text-sm text-gray-500"
-					>{
-						post.data.pubDate.toLocaleDateString('en-US', {
+					>{post.data.pubDate.toLocaleDateString('en-US', {
 							year: 'numeric',
 							month: 'long',
 							day: 'numeric',
-						})
-					}</time
+						})}</time
 				>
 				<h1 class="text-4xl font-semibold text-gray-900 mt-2 mb-8">
 					{post.data.title}

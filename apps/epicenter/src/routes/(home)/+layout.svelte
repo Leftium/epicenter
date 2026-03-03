@@ -12,8 +12,6 @@
 			<Sidebar.Trigger />
 			<h1 class="text-sm font-medium">Workspaces</h1>
 		</header>
-		<main class="flex-1 p-4">
-			{@render children()}
-		</main>
+		<main class="flex-1 p-4">{@render children()}</main>
 	</Sidebar.Inset>
 </Sidebar.Provider>

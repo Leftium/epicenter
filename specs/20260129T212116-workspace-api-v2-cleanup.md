@@ -148,7 +148,7 @@ Run full test suite to ensure nothing breaks.
 ### Before
 
 ```typescript
-import { defineWorkspace, createClient, createHeadDoc } from '@epicenter/hq';
+import { defineWorkspace, createClient, createHeadDoc } from '@epicenter/workspace';
 
 const definition = defineWorkspace({
   name: 'Blog',
@@ -165,7 +165,7 @@ const client = createClient(head)
 ### After
 
 ```typescript
-import { defineWorkspace, createCellWorkspace, createHeadDoc } from '@epicenter/hq';
+import { defineWorkspace, createCellWorkspace, createHeadDoc } from '@epicenter/workspace';
 
 const definition = defineWorkspace({
   name: 'Blog',

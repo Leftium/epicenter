@@ -969,8 +969,9 @@ export type { Extension } from './lifecycle.js';
 /**
  * Context passed to workspace extension factories.
  *
- * Flat object containing workspace resources alongside chain state. Extension
- * factories destructure what they need directly:
+ * This is a `WorkspaceClient` minus `destroy` and `[Symbol.asyncDispose]` —
+ * extension factories receive the full client surface but don't control
+ * the workspace's lifecycle. They return their own lifecycle hooks instead.
  *
  * ```typescript
  * .withExtension('persistence', ({ ydoc }) => { ... })
@@ -982,30 +983,6 @@ export type { Extension } from './lifecycle.js';
  * sequence initialization (e.g., wait for persistence before connecting sync).
  *
  * `extensions` provides typed access to prior extensions' exports.
- *
- * Does NOT include `destroy` or `[Symbol.asyncDispose]` — factories return
- * their own lifecycle hooks, they don't control the workspace's.
- *
- * @typeParam TId - Workspace identifier type
- * @typeParam TTableDefinitions - Map of table definitions for this workspace
- * @typeParam TKvDefinitions - Map of KV definitions for this workspace
- * @typeParam TAwarenessDefinitions - Map of awareness field definitions for this workspace
- * @typeParam TExtensions - Accumulated extension outputs from previous `.withExtension()` calls
- *
- * @example
- * ```typescript
- * .withExtension('sync', ({ ydoc, awareness, whenReady, extensions }) => {
- *   // Access prior extension exports
- *   extensions.persistence.clearData();
- *
- *   // Wait for ALL prior extensions before connecting
- *   const whenReady = (async () => {
- *     await whenReady;
- *     provider.connect();
- *   })();
- *   return { provider, whenReady, destroy: () => provider.destroy() };
- * })
- * ```
  */
 export type ExtensionContext<
 	TId extends string = string,
@@ -1013,32 +990,16 @@ export type ExtensionContext<
 	TKvDefinitions extends KvDefinitions = KvDefinitions,
 	TAwarenessDefinitions extends AwarenessDefinitions = AwarenessDefinitions,
 	TExtensions extends Record<string, unknown> = Record<string, unknown>,
-> = {
-	/** Workspace identifier */
-	id: TId;
-	/** The underlying Y.Doc instance */
-	ydoc: Y.Doc;
-	/** Workspace definitions for introspection */
-	definitions: {
-		tables: TTableDefinitions;
-		kv: TKvDefinitions;
-		awareness: TAwarenessDefinitions;
-	};
-	/** Typed table helpers — pure CRUD, no document management */
-	tables: TablesHelper<TTableDefinitions>;
-	/** Document managers — only tables with `.withDocument()` appear here */
-	documents: DocumentsHelper<TTableDefinitions>;
-	/** Typed KV helper */
-	kv: KvHelper<TKvDefinitions>;
-	/** Typed awareness helper */
-	awareness: AwarenessHelper<TAwarenessDefinitions>;
-	/** Execute multiple operations atomically in a single Y.js transaction. */
-	batch: (fn: () => void) => void;
-	/** Composite promise from all prior extensions' whenReady. */
-	whenReady: Promise<void>;
-	/** Exports from previously registered extensions (typed). */
-	extensions: TExtensions;
-};
+> = Omit<
+	WorkspaceClient<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions,
+		TExtensions
+	>,
+	'destroy' | typeof Symbol.asyncDispose
+>;
 
 /**
  * Factory function that creates an extension.
@@ -1164,7 +1125,10 @@ export type WorkspaceClient<
 
 /**
  * Type alias for any workspace client (used for duck-typing in CLI/server).
- * Includes optional actions property since clients may or may not have actions attached.
+ *
+ * Uses `WorkspaceClient & { actions?: Actions }` rather than `WorkspaceClientWithActions`
+ * because `WorkspaceClientWithActions` requires `actions: TActions` (non-optional) —
+ * it can't express "might or might not have actions."
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional variance-friendly type
 export type AnyWorkspaceClient = WorkspaceClient<any, any, any, any, any> & {

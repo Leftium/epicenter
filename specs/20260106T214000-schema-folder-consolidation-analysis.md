@@ -69,7 +69,7 @@ If we moved `runtime/` into `fields/`, then `providers/` and `converters/` would
 **File**: `examples/content-hub/scripts/02-transform-dates.ts`
 
 ```typescript
-import { isDateWithTimezoneString, isIsoDateTimeString } from '@epicenter/hq';
+import { isDateWithTimezoneString, isIsoDateTimeString } from '@epicenter/workspace';
 //                                  ^^^^^^^^^^^^^^^^^^^ REMOVED
 ```
 

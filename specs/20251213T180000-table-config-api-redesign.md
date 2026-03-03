@@ -411,7 +411,7 @@ The new `defineSerializer()` builder provides bidirectional type flow:
 - `TParsed`: Inferred from parser return → provided to fromContent's parsed param
 
 ```typescript
-import { defineSerializer } from '@epicenter/hq/providers/markdown';
+import { defineSerializer } from '@epicenter/workspace/providers/markdown';
 
 // Basic usage
 const serializer = defineSerializer<MySchema>()

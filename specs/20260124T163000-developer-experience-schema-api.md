@@ -583,7 +583,7 @@ The best migration system is one where:
 
 ```typescript
 import { type } from 'arktype';
-import { defineStore } from '@epicenter/hq';
+import { defineStore } from '@epicenter/workspace';
 
 // Define your types using ArkType
 const Recording = type({
@@ -638,7 +638,7 @@ If developers prefer Zod, Valibot, or other libraries:
 
 ```typescript
 import { z } from 'zod';
-import { defineStore, fromStandardSchema } from '@epicenter/hq';
+import { defineStore, fromStandardSchema } from '@epicenter/workspace';
 
 const Recording = z.object({
   id: z.string(),
@@ -819,7 +819,7 @@ const store = defineStore('whispering')
 When you need to rename, retype, or restructure:
 
 ```typescript
-import { createMigration } from '@epicenter/hq';
+import { createMigration } from '@epicenter/workspace';
 
 // Step 1: Define migration
 const migrationV2 = createMigration({
@@ -1169,7 +1169,7 @@ store.kv.observe('theme', (value) => {
 
 ```typescript
 import { type } from 'arktype';
-import { defineStore, createClient } from '@epicenter/hq';
+import { defineStore, createClient } from '@epicenter/workspace';
 
 // ============================================
 // SCHEMA DEFINITION

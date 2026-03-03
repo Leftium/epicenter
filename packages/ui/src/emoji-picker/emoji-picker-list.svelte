@@ -1,15 +1,15 @@
 <script lang="ts">
-	import * as Command from '../command';
-	import { Command as CommandPrimitive } from 'bits-ui';
 	import data, { type EmojiMartData } from '@emoji-mart/data';
+	import { Command as CommandPrimitive } from 'bits-ui';
+	import * as Command from '../command';
 	import * as casing from '../utils/casing';
-	import type { EmojiPickerListProps } from './types';
+	import { cn } from '../utils.js';
 	import {
 		makeValue,
 		parseValue,
 		useEmojiPickerList,
 	} from './emoji-picker.svelte.js';
-	import { cn } from '../utils.js';
+	import type { EmojiPickerListProps } from './types';
 
 	let {
 		ref = $bindable(null),

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { Button } from '@epicenter/ui/button';
 	import { CopyButton } from '@epicenter/ui/copy-button';
-	import * as Modal from '@epicenter/ui/modal';
 	import * as InputGroup from '@epicenter/ui/input-group';
+	import * as Modal from '@epicenter/ui/modal';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import { createCopyFn } from '$lib/utils/createCopyFn';
 
 	/**
 	 * A generic text preview component that displays text in a readonly textarea

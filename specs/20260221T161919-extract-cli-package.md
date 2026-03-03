@@ -1,4 +1,4 @@
-# Extract CLI from @epicenter/hq into packages/cli
+# Extract CLI from @epicenter/workspace into packages/cli
 
 ## Goal
 
@@ -8,7 +8,7 @@ Move `packages/epicenter/src/cli/` into a standalone `packages/cli/` package (`@
 
 1. **Dependency cleanup**: `yargs` (+ `@types/yargs`) is a CLI-only dependency polluting the core library
 2. **Logical separation**: The CLI is already semi-separated (`./cli` subpath export, own README)
-3. **Architecture clarity**: Keeps `@epicenter/hq` focused on the workspace runtime
+3. **Architecture clarity**: Keeps `@epicenter/workspace` focused on the workspace runtime
 4. **Monorepo hygiene**: Clear boundaries between runtime and tooling packages
 
 ## Current State Analysis
@@ -42,7 +42,7 @@ src/cli/
 
 ### Import Dependencies (Files Requiring Rewiring)
 
-Only **2 files** import from `@epicenter/hq` internals:
+Only **2 files** import from `@epicenter/workspace` internals:
 
 1. **discovery.ts**
    ```typescript
@@ -51,7 +51,7 @@ Only **2 files** import from `@epicenter/hq` internals:
    import type { AnyWorkspaceClient } from '../workspace/types';
    
    // Target
-   import type { ProjectDir, AnyWorkspaceClient } from '@epicenter/hq';
+   import type { ProjectDir, AnyWorkspaceClient } from '@epicenter/workspace';
    ```
 
 2. **command-builder.ts**
@@ -62,7 +62,7 @@ Only **2 files** import from `@epicenter/hq` internals:
    import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
    
    // Target
-   import { type Actions, iterateActions, standardSchemaToJsonSchema } from '@epicenter/hq';
+   import { type Actions, iterateActions, standardSchemaToJsonSchema } from '@epicenter/workspace';
    ```
 
 ### Test Files (cli.test.ts, command-builder.test.ts, json-schema-to-yargs.test.ts)
@@ -76,7 +76,7 @@ Same import pattern as their source files.
 
 ## Implementation Steps
 
-### Step 1: Export standardSchemaToJsonSchema from @epicenter/hq
+### Step 1: Export standardSchemaToJsonSchema from @epicenter/workspace
 
 **File**: `packages/epicenter/src/index.ts`
 
@@ -129,7 +129,7 @@ packages/cli/
     "epicenter": "./src/bin.ts"
   },
   "dependencies": {
-    "@epicenter/hq": "workspace:*",
+    "@epicenter/workspace": "workspace:*",
     "wellcrafted": "catalog:",
     "yargs": "catalog:"
   },
@@ -153,7 +153,7 @@ import type { ProjectDir } from '../shared/types';
 import type { AnyWorkspaceClient } from '../workspace/types';
 
 // TO:
-import type { ProjectDir, AnyWorkspaceClient } from '@epicenter/hq';
+import type { ProjectDir, AnyWorkspaceClient } from '@epicenter/workspace';
 ```
 
 **command-builder.ts**:
@@ -164,12 +164,12 @@ import { iterateActions } from '../shared/actions';
 import { standardSchemaToJsonSchema } from '../shared/standard-schema/to-json-schema';
 
 // TO:
-import { type Actions, iterateActions, standardSchemaToJsonSchema } from '@epicenter/hq';
+import { type Actions, iterateActions, standardSchemaToJsonSchema } from '@epicenter/workspace';
 ```
 
 **Test files** (cli.test.ts, command-builder.test.ts, json-schema-to-yargs.test.ts):
 - Same import rewiring pattern as source files
-- Any `../shared/*` imports → `@epicenter/hq`
+- Any `../shared/*` imports → `@epicenter/workspace`
 
 ### Step 6: Clean Up packages/epicenter/
 
@@ -227,7 +227,7 @@ All should pass with no type errors or missing imports.
 
 ## Todo List
 
-- [ ] Export standardSchemaToJsonSchema from @epicenter/hq
+- [ ] Export standardSchemaToJsonSchema from @epicenter/workspace
 - [ ] Create packages/cli/ directory structure
 - [ ] Create packages/cli/package.json
 - [ ] Create packages/cli/tsconfig.json
@@ -264,7 +264,7 @@ All changes are isolated — no complex merge conflicts expected.
 
 ## Notes
 
-- The CLI doesn't import from other @epicenter/* packages at the code level (only @epicenter/hq)
+- The CLI doesn't import from other @epicenter/* packages at the code level (only @epicenter/workspace)
 - Dynamic imports like `await import('@epicenter/server')` will continue to work (that's the design)
 - No changes to the bin entry point — just moved to a new location
 - The workspace ID convention ("epicenter.config.ts") remains unchanged

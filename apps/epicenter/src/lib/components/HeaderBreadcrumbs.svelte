@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { page } from '$app/state';
-	import { createQuery } from '@tanstack/svelte-query';
 	import * as Breadcrumb from '@epicenter/ui/breadcrumb';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { page } from '$app/state';
 	import { rpc } from '$lib/query';
 
 	const workspaceId = $derived(page.params.id);

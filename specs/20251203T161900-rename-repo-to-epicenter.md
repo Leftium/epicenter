@@ -9,7 +9,7 @@ Migrate all packages from `@repo/*` scope to `@epicenter/*` scope and set approp
 | Package | Current Name | Private? |
 |---------|--------------|----------|
 | packages/ui | `@repo/ui` | - |
-| packages/epicenter | `@epicenter/hq` | - |
+| packages/epicenter | `@epicenter/workspace` | - |
 | packages/config | `@repo/config` | true |
 | packages/svelte-utils | `@repo/svelte-utils` | true |
 | packages/constants | `@repo/constants` | - |
@@ -26,7 +26,7 @@ Migrate all packages from `@repo/*` scope to `@epicenter/*` scope and set approp
 | Package | New Name | Private? | Rationale |
 |---------|----------|----------|-----------|
 | packages/ui | `@epicenter/ui` | true | Internal design system |
-| packages/epicenter | `@epicenter/hq` | - | Public SDK |
+| packages/epicenter | `@epicenter/workspace` | - | Public SDK |
 | packages/config | `@epicenter/config` | true | Internal build configs |
 | packages/svelte-utils | `@epicenter/svelte-utils` | true | Internal utilities |
 | packages/constants | `@epicenter/constants` | true | Internal constants |
@@ -97,4 +97,4 @@ Renamed all packages from `@repo/*` scope to `@epicenter/*`:
 ### Notes
 
 - The `private: true` flag prevents accidental npm publishing; all packages remain open source on GitHub
-- Packages marked as public (`@epicenter/hq`, `@epicenter/vault-core`, `@epicenter/code`) are intended for npm publishing
+- Packages marked as public (`@epicenter/workspace`, `@epicenter/vault-core`, `@epicenter/code`) are intended for npm publishing

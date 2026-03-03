@@ -54,7 +54,7 @@ import {
 	createWorkspaceClient,
 	defineQuery,
 	defineMutation,
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 
 export default createWorkspaceClient({

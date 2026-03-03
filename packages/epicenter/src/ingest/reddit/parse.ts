@@ -86,7 +86,7 @@ export async function parseRedditZip(
 
 		// Find the file (may be in root or subdirectory)
 		const entry = Object.entries(files).find(
-			([name]) => name === csvFile || name.endsWith('/' + csvFile),
+			([name]) => name === csvFile || name.endsWith(`/${csvFile}`),
 		);
 
 		if (!entry) {

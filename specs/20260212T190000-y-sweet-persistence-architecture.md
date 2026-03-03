@@ -99,8 +99,8 @@ The extension mirrors the provider's API. Instead of a `mode` discriminant wrapp
 // Consumer API:
 
 // Web — IndexedDB persistence + sync:
-import { indexeddbPersistence } from '@epicenter/hq/extensions/persistence/web';
-import { directAuth, ySweetSync } from '@epicenter/hq/extensions/y-sweet-sync';
+import { indexeddbPersistence } from '@epicenter/workspace/extensions/persistence/web';
+import { directAuth, ySweetSync } from '@epicenter/workspace/extensions/y-sweet-sync';
 
 createWorkspace(def).withExtensions({
 	sync: ySweetSync({
@@ -110,7 +110,7 @@ createWorkspace(def).withExtensions({
 });
 
 // Desktop — filesystem persistence + sync:
-import { filesystemPersistence } from '@epicenter/hq/extensions/persistence/desktop';
+import { filesystemPersistence } from '@epicenter/workspace/extensions/persistence/desktop';
 
 createWorkspace(def).withExtensions({
 	sync: ySweetSync({

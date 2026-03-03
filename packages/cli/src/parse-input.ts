@@ -88,6 +88,7 @@ export function readStdinSync(): string | undefined {
 		const buf = Buffer.alloc(1024);
 		let bytesRead: number;
 
+		// biome-ignore lint/suspicious/noAssignInExpressions: idiomatic read loop
 		while ((bytesRead = readSync(fd, buf, 0, buf.length, null)) > 0) {
 			chunks.push(buf.subarray(0, bytesRead));
 		}

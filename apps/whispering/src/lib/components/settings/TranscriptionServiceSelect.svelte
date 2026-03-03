@@ -1,13 +1,13 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
 	import { Label } from '@epicenter/ui/label';
 	import * as Select from '@epicenter/ui/select';
-	import { Badge } from '@epicenter/ui/badge';
 	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
 	import {
+		TRANSCRIPTION_SERVICE_IDS,
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
-		TRANSCRIPTION_SERVICE_IDS,
 	} from '$lib/services/isomorphic/transcription/registry';
 
 	type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
@@ -90,9 +90,7 @@
 					{#each localServices as service}
 						<Select.Item value={service.id} label={service.name}>
 							<div class="flex items-start gap-3 py-1">
-								<div class="mt-0.5">
-									{@render renderServiceIcon(service)}
-								</div>
+								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
 										<span class="font-medium">{service.name}</span>
@@ -119,9 +117,7 @@
 					{#each cloudServices as service}
 						<Select.Item value={service.id} label={service.name}>
 							<div class="flex items-start gap-3 py-1">
-								<div class="mt-0.5">
-									{@render renderServiceIcon(service)}
-								</div>
+								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
 										<span class="font-medium">{service.name}</span>
@@ -134,9 +130,11 @@
 									{/if}
 									{#if service.location === 'cloud' && service.models.length > 0}
 										<div class="text-xs text-muted-foreground mt-1">
-											{service.models.length} model{service.models.length > 1
+											{service.models.length}
+											model{service.models.length > 1
 												? 's'
-												: ''} available
+												: ''}
+											available
 										</div>
 									{/if}
 								</div>
@@ -155,9 +153,7 @@
 					{#each selfHostedServices as service}
 						<Select.Item value={service.id} label={service.name}>
 							<div class="flex items-start gap-3 py-1">
-								<div class="mt-0.5">
-									{@render renderServiceIcon(service)}
-								</div>
+								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
 										<span class="font-medium">{service.name}</span>

@@ -283,9 +283,9 @@ TablesFunction APIs:
 
 ### Migration Notes
 
-Apps using `createWorkspace` from `@epicenter/hq/dynamic` will break. They should:
+Apps using `createWorkspace` from `@epicenter/workspace/dynamic` will break. They should:
 
 1. Use `createTables` directly for table operations
-2. Or use `@epicenter/hq/static` for the full workspace API with versioning support
+2. Or use `@epicenter/workspace/static` for the full workspace API with versioning support
 
 No data migration utility was created (Phase 4 was optional). Existing Y.Doc data using nested Y.Map will need to be recreated.

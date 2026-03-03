@@ -17,7 +17,8 @@
 		"postinstall": "wxt prepare"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/ai": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@tanstack/ai": "^0.5.1",
@@ -29,6 +30,7 @@
 		"@tanstack/ai-svelte": "^0.5.4",
 		"@wxt-dev/storage": "^1.2.6",
 		"arktype": "catalog:",
+		"typebox": "catalog:",
 		"clsx": "catalog:",
 		"marked": "^17.0.3",
 		"tailwind-merge": "catalog:",

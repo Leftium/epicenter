@@ -1,23 +1,21 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
+	import * as Field from '@epicenter/ui/field';
+	import * as Tabs from '@epicenter/ui/tabs';
 	import {
 		AnthropicApiKeyInput,
+		CustomEndpointInput,
+		DeepgramApiKeyInput,
 		ElevenLabsApiKeyInput,
 		GoogleApiKeyInput,
 		GroqApiKeyInput,
 		MistralApiKeyInput,
-		DeepgramApiKeyInput,
 		OpenAiApiKeyInput,
 		OpenRouterApiKeyInput,
-		CustomEndpointInput,
 	} from '$lib/components/settings';
-	import { Badge } from '@epicenter/ui/badge';
-	import * as Field from '@epicenter/ui/field';
-	import * as Tabs from '@epicenter/ui/tabs';
 </script>
 
-<svelte:head>
-	<title>API Keys - Whispering</title>
-</svelte:head>
+<svelte:head> <title>API Keys - Whispering</title> </svelte:head>
 
 <Field.Set>
 	<Field.Legend>API Keys</Field.Legend>

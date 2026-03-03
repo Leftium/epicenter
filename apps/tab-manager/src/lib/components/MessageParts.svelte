@@ -1,13 +1,14 @@
 <script lang="ts">
-	import { marked } from 'marked';
-	import ToolCallPart from './ToolCallPart.svelte';
-	import ToolResultPart from './ToolResultPart.svelte';
-	import ThinkingPart from './ThinkingPart.svelte';
 	import type {
 		MessagePart,
-		ToolCallPart as ToolCallPartType,
+		ToolCallPart as TanStackToolCallPart,
 		ToolResultPart as ToolResultPartType,
 	} from '@tanstack/ai-client';
+	import { marked } from 'marked';
+	import type { WorkspaceTools } from '$lib/workspace';
+	import ThinkingPart from './ThinkingPart.svelte';
+	import ToolCallPart from './ToolCallPart.svelte';
+	import ToolResultPart from './ToolResultPart.svelte';
 
 	let {
 		parts,
@@ -28,7 +29,7 @@
 	{#if part.type === 'text'}
 		<div class="prose prose-sm">{@html renderMarkdown(part.content)}</div>
 	{:else if part.type === 'tool-call'}
-		<ToolCallPart part={part as ToolCallPartType} />
+		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} />
 	{:else if part.type === 'tool-result'}
 		<ToolResultPart part={part as ToolResultPartType} />
 	{:else if part.type === 'thinking'}

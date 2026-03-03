@@ -1,10 +1,10 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { page } from '$app/state';
 	import { rpc } from '$lib/query';
-	import { createQuery } from '@tanstack/svelte-query';
-	import * as Empty from '@epicenter/ui/empty';
-	import { Button } from '@epicenter/ui/button';
-	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 
 	const workspaceId = $derived(page.params.id);
 

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { Link } from '@epicenter/ui/link';
 	import { Separator } from '@epicenter/ui/separator';
-	import { rpc } from '$lib/query';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import SidebarNav from './SidebarNav.svelte';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
+	import SidebarNav from './SidebarNav.svelte';
 
 	let { children } = $props();
 
@@ -56,7 +56,8 @@
 							rel="noopener noreferrer"
 						>
 							{latestVersion}
-						</Link>).
+						</Link>
+						).
 					{:else}
 						{@const { version } = v}
 						Customize your experience for Whispering {version}.
@@ -92,11 +93,7 @@
 	</div>
 	<Separator class="my-6" />
 	<div class="flex flex-col space-y-8 lg:flex-row lg:gap-8">
-		<aside class="lg:w-1/6">
-			<SidebarNav />
-		</aside>
-		<main class="flex-1 p-1.5 lg:max-w-3xl">
-			{@render children()}
-		</main>
+		<aside class="lg:w-1/6"><SidebarNav /></aside>
+		<main class="flex-1 p-1.5 lg:max-w-3xl">{@render children()}</main>
 	</div>
 </main>

@@ -41,7 +41,7 @@ By the documented convention, these should be called `FieldDefinition`. But that
 
 The UI package has a `Field` Svelte component, but:
 
-- Different packages (`@epicenter/ui` vs `@epicenter/hq`)
+- Different packages (`@epicenter/ui` vs `@epicenter/workspace`)
 - Different namespaces (runtime value vs TypeScript type)
 - TypeScript distinguishes type imports from value imports
 

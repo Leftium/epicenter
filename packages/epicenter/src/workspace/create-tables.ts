@@ -4,7 +4,7 @@
  * @example
  * ```typescript
  * import * as Y from 'yjs';
- * import { createTables, defineTable } from '@epicenter/hq';
+ * import { createTables, defineTable } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * // Shorthand for single version

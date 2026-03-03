@@ -36,7 +36,7 @@ Use the existing regex patterns from `packages/epicenter/src/core/schema/regex.t
 
 ## Implementation Plan
 
-- [ ] Import regex patterns from `@epicenter/hq/core/schema/regex`
+- [ ] Import regex patterns from `@epicenter/workspace/core/schema/regex`
 - [ ] Create validation helper function `isValidIsoDateTime(value: unknown): boolean`
 - [ ] Create check helper function `isAlreadyTransformed(value: unknown): boolean`
 - [ ] Update transformation logic to validate before transforming
@@ -70,10 +70,10 @@ Successfully added validation to the date transformation script using centralize
 1. **Added `isIsoDateTimeString` helper function** (`packages/epicenter/src/core/schema/date-with-timezone.ts:128-131`)
    - Type guard to check if a value is a valid ISO 8601 datetime string
    - Uses `ISO_DATETIME_REGEX` for validation
-   - Exported from `@epicenter/hq` for reuse
+   - Exported from `@epicenter/workspace` for reuse
 
 2. **Updated transformation script** (`examples/content-hub/scripts/02-transform-dates.ts`)
-   - Imports `isIsoDateTimeString` and `isDateWithTimezoneString` from `@epicenter/hq`
+   - Imports `isIsoDateTimeString` and `isDateWithTimezoneString` from `@epicenter/workspace`
    - Validates date fields before transformation
    - Skips already-transformed dates (with pipe separator)
    - Reports invalid date values with field name and value

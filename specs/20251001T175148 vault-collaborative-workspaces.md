@@ -46,7 +46,7 @@ Each workspace can be synchronized across multiple users via Yjs and a WebSocket
 ```typescript
 import { runPlugin } from '@epicenter/vault';
 import * as Y from 'yjs';
-import { createWebsocketSyncProvider } from '@epicenter/hq/providers/websocket-sync';
+import { createWebsocketSyncProvider } from '@epicenter/workspace/providers/websocket-sync';
 
 // Load workspace config
 const workspace = await import('./users/epicenter.config.ts');

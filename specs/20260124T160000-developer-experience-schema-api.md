@@ -84,7 +84,7 @@ const recordingsTable = defineTable({
 
 ```typescript
 // Option B: Keep current factory syntax (familiar, metadata inline)
-import { table, id, text, select, integer } from '@epicenter/hq';
+import { table, id, text, select, integer } from '@epicenter/workspace';
 
 const recordingsTable = table({
   name: 'Recordings',
@@ -232,7 +232,7 @@ Your existing specs establish the right pattern:
 #### Defining a Versioned Workspace
 
 ```typescript
-import { defineWorkspace, table, id, text, select, integer, setting } from '@epicenter/hq';
+import { defineWorkspace, table, id, text, select, integer, setting } from '@epicenter/workspace';
 
 // Version 1: Initial schema
 const whisperingV1 = {
@@ -695,7 +695,7 @@ import {
   table,
   setting,
   id, text, select, integer, boolean, date, tags, richtext
-} from '@epicenter/hq';
+} from '@epicenter/workspace';
 
 export const myWorkspace = defineWorkspace({
   id: 'my.workspace',

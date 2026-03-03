@@ -9,7 +9,7 @@
  * - tags: additional tagging (string)
  */
 
-import { defineTable, defineWorkspace } from '@epicenter/hq';
+import { defineTable, defineWorkspace } from '@epicenter/workspace';
 import { type } from 'arktype';
 
 const entries = defineTable(

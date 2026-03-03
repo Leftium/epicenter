@@ -8,7 +8,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
 		"@epicenter/tab-manager": "workspace:*",
 		"yjs": "^13.6.27"
 	},

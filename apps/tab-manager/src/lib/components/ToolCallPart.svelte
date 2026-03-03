@@ -1,63 +1,36 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
-	import CollapsibleSection from './CollapsibleSection.svelte';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import type { ToolName } from '$lib/ai/tools/definitions';
+	import { actionContext, type WorkspaceTools } from '$lib/workspace';
+	import CollapsibleSection from './CollapsibleSection.svelte';
 
 	let {
 		part,
 	}: {
-		part: TanStackToolCallPart;
+		part: TanStackToolCallPart<WorkspaceTools>;
 	} = $props();
 
-	const toolLabels: Record<ToolName, { active: string; done: string }> = {
-		searchTabs: { active: 'Searching tabs', done: 'Searched tabs' },
-		listTabs: { active: 'Listing tabs', done: 'Listed tabs' },
-		listWindows: { active: 'Listing windows', done: 'Listed windows' },
-		listDevices: { active: 'Listing devices', done: 'Listed devices' },
-		countByDomain: { active: 'Counting domains', done: 'Counted domains' },
-		closeTabs: { active: 'Closing tabs', done: 'Closed tabs' },
-		openTab: { active: 'Opening tab', done: 'Opened tab' },
-		activateTab: { active: 'Activating tab', done: 'Activated tab' },
-		saveTabs: { active: 'Saving tabs', done: 'Saved tabs' },
-		groupTabs: { active: 'Grouping tabs', done: 'Grouped tabs' },
-		pinTabs: { active: 'Pinning tabs', done: 'Pinned tabs' },
-		muteTabs: { active: 'Muting tabs', done: 'Muted tabs' },
-		reloadTabs: { active: 'Reloading tabs', done: 'Reloaded tabs' },
-	};
-
-	const hasOutput = $derived(part.output != null);
-	const isRunning = $derived(
-		!hasOutput &&
-			['awaiting-input', 'input-streaming', 'input-complete'].includes(
-				part.state,
-			),
-	);
+	const isRunning = $derived(part.output == null);
 	const isFailed = $derived(
-		part.output &&
-			typeof part.output === 'object' &&
+		typeof part.output === 'object' &&
 			part.output !== null &&
 			'error' in part.output,
 	);
-	const displayName = $derived.by(() => {
-		const labels = toolLabels[part.name as ToolName];
-		if (!labels) return part.name;
-		return isRunning ? labels.active : labels.done;
+	const label = $derived(actionContext.getLabel(part.name));
+	const displayName = $derived(isRunning ? label.active : label.done);
+	const badgeVariant = $derived.by(() => {
+		if (isFailed) return 'status.failed';
+		if (isRunning) return 'status.running';
+		return 'status.completed';
 	});
-	const badgeVariant = $derived(
-		isFailed
-			? ('status.failed' as const)
-			: isRunning
-				? ('status.running' as const)
-				: ('status.completed' as const),
-	);
 </script>
 
 {#snippet codeBlock(text: string)}
 	<pre
-		class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]">{text}</pre>
+		class="mt-0.5 whitespace-pre-wrap break-all font-mono text-[11px]"
+	>{text}</pre>
 {/snippet}
 
 <div class="flex flex-col gap-1 py-1">
@@ -67,9 +40,7 @@
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
-		<Badge variant={badgeVariant}>
-			{displayName}{isRunning ? '…' : ''}
-		</Badge>
+		<Badge variant={badgeVariant}> {displayName}{isRunning ? '…' : ''} </Badge>
 	</div>
 
 	<CollapsibleSection label="Details" contentClass="bg-muted/50">

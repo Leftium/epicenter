@@ -17,9 +17,9 @@
  * ONE-WAY sync: Y.Doc → Markdown only (read-only export)
  */
 
-import { createWorkspace } from '@epicenter/hq';
-import { createSyncExtension } from '@epicenter/hq/extensions/sync';
 import { definition } from '@epicenter/tab-manager/workspace';
+import { createWorkspace } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { createMarkdownPersistenceExtension } from './markdown-persistence-extension';
 
 console.log('Tab Manager Markdown Exporter starting...');

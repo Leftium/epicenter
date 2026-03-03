@@ -7,10 +7,14 @@
 		"epicenter": "./src/bin.ts"
 	},
 	"dependencies": {
-		"@epicenter/hq": "workspace:*",
-		"@epicenter/server": "workspace:*",
+		"@epicenter/server-local": "workspace:*",
+		"@epicenter/server-remote": "workspace:*",
+		"@epicenter/workspace": "workspace:*",
+		"jsrepo": "^3.6.1",
+		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
-		"yargs": "catalog:"
+		"yargs": "catalog:",
+		"yjs": "^13.6.29"
 	},
 	"devDependencies": {
 		"@types/yargs": "catalog:",

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
 	import { cubicInOut } from 'svelte/easing';
 	import { crossfade } from 'svelte/transition';
+	import { page } from '$app/state';
 
 	const items = [
 		{ title: 'General', href: '/settings' },
@@ -61,9 +61,7 @@
 					out:receive={{ key: 'active-sidebar-tab' }}
 				></div>
 			{/if}
-			<span class="relative z-10">
-				{item.title}
-			</span>
+			<span class="relative z-10"> {item.title} </span>
 		</Button>
 	{/each}
 </nav>

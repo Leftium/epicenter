@@ -12,7 +12,7 @@
  *
  * @example
  * ```typescript
- * import { createDocuments, createTables, defineTable } from '@epicenter/hq';
+ * import { createDocuments, createTables, defineTable } from '@epicenter/workspace';
  * import * as Y from 'yjs';
  * import { type } from 'arktype';
  *
@@ -59,7 +59,7 @@ import type {
  *
  * @example
  * ```typescript
- * import { DOCUMENTS_ORIGIN } from '@epicenter/hq';
+ * import { DOCUMENTS_ORIGIN } from '@epicenter/workspace';
  *
  * client.tables.files.observe((changedIds, transaction) => {
  *   if (transaction.origin === DOCUMENTS_ORIGIN) {
@@ -273,7 +273,7 @@ export function createDocuments<TRow extends BaseRow>(
 				const errors: unknown[] = [];
 				for (let i = destroys.length - 1; i >= 0; i--) {
 					try {
-						const result = destroys[i]!();
+						const result = destroys[i]?.();
 						if (result instanceof Promise) {
 							result.catch(() => {}); // Fire and forget in sync context
 						}
@@ -332,7 +332,7 @@ export function createDocuments<TRow extends BaseRow>(
 								const errors: unknown[] = [];
 								for (let i = destroys.length - 1; i >= 0; i--) {
 									try {
-										await destroys[i]!();
+										await destroys[i]?.();
 									} catch (cleanupErr) {
 										errors.push(cleanupErr);
 									}
@@ -372,7 +372,7 @@ export function createDocuments<TRow extends BaseRow>(
 			const extensions = Object.values(entry.extensions);
 			for (let i = extensions.length - 1; i >= 0; i--) {
 				try {
-					await extensions[i]!.destroy();
+					await extensions[i]?.destroy();
 				} catch (err) {
 					errors.push(err);
 				}
@@ -398,7 +398,7 @@ export function createDocuments<TRow extends BaseRow>(
 				const extensions = Object.values(entry.extensions);
 				for (let i = extensions.length - 1; i >= 0; i--) {
 					try {
-						await extensions[i]!.destroy();
+						await extensions[i]?.destroy();
 					} catch (err) {
 						errors.push(err);
 					}

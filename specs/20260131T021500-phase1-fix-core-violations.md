@@ -76,7 +76,7 @@ ls packages/epicenter/src/dynamic/workspace/node.ts
 **Acceptance Criteria**:
 
 - [ ] `package.json` points to correct file
-- [ ] Import `from '@epicenter/hq/node'` resolves correctly
+- [ ] Import `from '@epicenter/workspace/node'` resolves correctly
 
 ---
 

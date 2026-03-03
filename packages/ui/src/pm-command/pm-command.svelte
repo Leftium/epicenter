@@ -28,14 +28,14 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '#/utils.js';
-	import type { Command, Agent } from 'package-manager-detector';
-	import { resolveCommand } from 'package-manager-detector/commands';
-	import CopyButton from '#/copy-button/copy-button.svelte';
 	import ClipboardIcon from '@lucide/svelte/icons/clipboard';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import * as Tooltip from '#/tooltip';
+	import type { Agent, Command } from 'package-manager-detector';
+	import { resolveCommand } from 'package-manager-detector/commands';
+	import CopyButton from '#/copy-button/copy-button.svelte';
 	import * as Tabs from '#/tabs';
+	import * as Tooltip from '#/tooltip';
+	import { cn } from '#/utils.js';
 
 	let {
 		variant = 'default',

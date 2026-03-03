@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
 	import * as Empty from '@epicenter/ui/empty';
-	import { Button } from '@epicenter/ui/button';
-	import MessageParts from './MessageParts.svelte';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import type { UIMessage } from '@tanstack/ai-svelte';
+	import MessageParts from './MessageParts.svelte';
 
 	let {
 		messages,

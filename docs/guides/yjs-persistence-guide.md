@@ -37,7 +37,7 @@ Epicenter uses a provider pattern for persisting your YJS document. Providers ar
 
 ### Desktop Persistence with `setupPersistence`
 
-For desktop applications (Tauri, Electron, Bun), use the built-in `setupPersistence` provider from `@epicenter/hq/providers/desktop`. This provider:
+For desktop applications (Tauri, Electron, Bun), use the built-in `setupPersistence` provider from `@epicenter/workspace/providers/desktop`. This provider:
 
 - Automatically saves to `.epicenter/providers/persistence/{workspaceId}.yjs` in your project directory
 - Loads existing state on startup
@@ -47,9 +47,9 @@ For desktop applications (Tauri, Electron, Bun), use the built-in `setupPersiste
 **Example**: Using the built-in provider
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { setupPersistence } from '@epicenter/hq/providers/desktop';
-import { text, ytext } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers/desktop';
+import { text, ytext } from '@epicenter/workspace';
 
 const blogWorkspace = defineWorkspace({
 	id: 'blog',
@@ -77,9 +77,9 @@ const blogWorkspace = defineWorkspace({
 For web applications, you'll need to create a custom provider using `y-indexeddb`:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { text, ytext } from '@epicenter/hq';
-import type { Provider } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
+import { text, ytext } from '@epicenter/workspace';
+import type { Provider } from '@epicenter/workspace';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
 // Create a web persistence provider
@@ -125,13 +125,13 @@ The only difference is WHERE you save (filesystem vs IndexedDB). You can abstrac
 
 ```typescript
 // persistence.desktop.ts
-import type { Provider } from '@epicenter/hq';
-export { setupPersistence } from '@epicenter/hq/providers/desktop';
+import type { Provider } from '@epicenter/workspace';
+export { setupPersistence } from '@epicenter/workspace/providers/desktop';
 ```
 
 ```typescript
 // persistence.web.ts
-import type { Provider } from '@epicenter/hq';
+import type { Provider } from '@epicenter/workspace';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
 export const setupPersistence: Provider = ({ ydoc }) => {
@@ -146,7 +146,7 @@ export const setupPersistence: Provider = ({ ydoc }) => {
 
 ```typescript
 // epicenter.config.ts
-import { defineWorkspace } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
 // Import the right one based on your platform
 import { setupPersistence } from './persistence.desktop';
 // or
@@ -166,7 +166,7 @@ const workspace = defineWorkspace({
 
 ```typescript
 // persistence.ts
-import type { Provider } from '@epicenter/hq';
+import type { Provider } from '@epicenter/workspace';
 
 export const setupPersistence: Provider = ({ ydoc }) => {
 	// Detect environment - for runtime detection, choose a default
@@ -197,8 +197,8 @@ The provider pattern in Epicenter offers several advantages:
 Each workspace gets its own file, automatically named by workspace ID:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { setupPersistence } from '@epicenter/hq/providers/desktop';
+import { defineWorkspace } from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 
 // Workspace A → saves to .epicenter/providers/persistence/workspace-a.yjs
 const workspaceA = defineWorkspace({
@@ -226,9 +226,9 @@ Both workspaces share the `.epicenter/providers/persistence/` directory but have
 You can use multiple providers on the same workspace:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { setupPersistence } from '@epicenter/hq/providers/desktop';
-import type { Provider } from '@epicenter/hq';
+import { defineWorkspace } from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers/desktop';
+import type { Provider } from '@epicenter/workspace';
 import { WebrtcProvider } from 'y-webrtc';
 
 // Create a sync provider
@@ -261,7 +261,7 @@ const workspace = defineWorkspace({
 If you need custom save behavior, create your own provider:
 
 ```typescript
-import type { Provider } from '@epicenter/hq';
+import type { Provider } from '@epicenter/workspace';
 import * as Y from 'yjs';
 
 const customPersistence: Provider = async ({ id, ydoc }) => {
@@ -308,8 +308,8 @@ const customPersistence: Provider = async ({ id, ydoc }) => {
 For tests, you can conditionally exclude persistence providers:
 
 ```typescript
-import { defineWorkspace } from '@epicenter/hq';
-import { setupPersistence } from '@epicenter/hq/providers/desktop';
+import { defineWorkspace } from '@epicenter/workspace';
+import { setupPersistence } from '@epicenter/workspace/providers/desktop';
 
 const isTest = process.env.NODE_ENV === 'test';
 
@@ -327,7 +327,7 @@ const workspace = defineWorkspace({
 
 1. **YJS is your source of truth** - All data lives in a YJS document
 2. **Use the provider pattern** - Add `setupPersistence` to the `providers` object
-3. **Desktop**: Use `@epicenter/hq/providers/desktop` for filesystem persistence
+3. **Desktop**: Use `@epicenter/workspace/providers/desktop` for filesystem persistence
 4. **Web**: Create a custom provider with `y-indexeddb` for IndexedDB persistence
 5. **Cross-platform is easy** - Same provider interface works everywhere
 6. **Composable**: Combine multiple providers (persistence + sync) on the same workspace

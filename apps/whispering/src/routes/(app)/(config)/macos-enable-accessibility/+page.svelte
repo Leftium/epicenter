@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
 	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import CheckIcon from '@lucide/svelte/icons/check';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
-	import { desktopServices } from '$lib/services';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { toast } from 'svelte-sonner';
+	import { goto } from '$app/navigation';
+	import { desktopServices } from '$lib/services';
 	import { asShellCommand } from '$lib/services/desktop/command';
 	import type { PageData } from './$types';
-	import { goto } from '$app/navigation';
 
 	let { data } = $props();
 	const isAccessibilityGranted = $derived(data.isAccessibilityGranted);
@@ -58,9 +58,7 @@
 	}
 </script>
 
-<svelte:head>
-	<title>MacOS Accessibility</title>
-</svelte:head>
+<svelte:head> <title>MacOS Accessibility</title> </svelte:head>
 
 <main class="flex flex-1 items-center justify-center">
 	<Card.Root class="w-full max-w-2xl">
@@ -83,7 +81,14 @@
 						src="https://www.youtube.com/embed/FJRktNkr1Fs"
 						title="macOS Accessibility Settings Guide"
 						frameborder="0"
-						allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+						allow="
+							accelerometer;
+							autoplay;
+							clipboard-write;
+							encrypted-media;
+							gyroscope;
+							picture-in-picture;
+						"
 						allowfullscreen
 					></iframe>
 				{:else}
@@ -107,19 +112,23 @@
 					class="text-muted-foreground list-inside list-decimal space-y-1 text-sm leading-7"
 				>
 					<li>
-						Go to <span class="text-primary font-semibold tracking-tight">
+						Go to
+						<span class="text-primary font-semibold tracking-tight">
 							System Settings > Privacy & Security > Accessibility
-						</span> or click the button below.
+						</span>
+						or click the button below.
 					</li>
 
 					<li>
-						Click on <span class="text-primary font-semibold tracking-tight"
+						Click on
+						<span class="text-primary font-semibold tracking-tight"
 							>🎙️ Whispering</span
-						> and remove it using the minus icon (-).
+						>
+						and remove it using the minus icon (-).
 					</li>
 					<li>
-						Re-add Whispering by pressing the plus icon (+) and selecting <span
-							class="text-primary font-semibold tracking-tight"
+						Re-add Whispering by pressing the plus icon (+) and selecting
+						<span class="text-primary font-semibold tracking-tight"
 							>🎙️ Whispering.app</span
 						>
 					</li>

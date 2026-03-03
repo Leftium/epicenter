@@ -1,6 +1,6 @@
 ---
-import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
 
 const posts = (await getCollection('blog')).sort(
 	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
@@ -26,8 +26,7 @@ const posts = (await getCollection('blog')).sort(
 
 			<section>
 				<ul class="space-y-12">
-					{
-						posts.map((post) => (
+					{posts.map((post) => (
 							<li>
 								<article>
 									<time class="text-sm text-gray-500">
@@ -48,8 +47,7 @@ const posts = (await getCollection('blog')).sort(
 									<p class="text-gray-600">{post.data.description}</p>
 								</article>
 							</li>
-						))
-					}
+						))}
 				</ul>
 			</section>
 		</div>

@@ -9,7 +9,7 @@
  *
  * @example
  * ```typescript
- * import { createWorkspace, defineTable, defineKv } from '@epicenter/hq';
+ * import { createWorkspace, defineTable, defineKv } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
  * // Tables: shorthand for single version
@@ -124,9 +124,7 @@ export { createTables } from './create-tables.js';
 
 export type {
 	ActionDescriptor,
-	AwarenessDescriptor,
-	KvDescriptor,
-	TableDescriptor,
+	SchemaDescriptor,
 	WorkspaceDescriptor,
 } from './describe-workspace.js';
 export { describeWorkspace } from './describe-workspace.js';

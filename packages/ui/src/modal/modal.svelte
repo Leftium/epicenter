@@ -20,11 +20,7 @@
 </script>
 
 {#if modal.view === 'desktop'}
-	<Dialog.Root bind:open {...rest}>
-		{@render children?.()}
-	</Dialog.Root>
+	<Dialog.Root bind:open {...rest}> {@render children?.()} </Dialog.Root>
 {:else}
-	<Drawer.Root bind:open {...rest}>
-		{@render children?.()}
-	</Drawer.Root>
+	<Drawer.Root bind:open {...rest}> {@render children?.()} </Drawer.Root>
 {/if}

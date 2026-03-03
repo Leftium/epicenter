@@ -442,7 +442,7 @@ import {
 	table,
 	id,
 	text,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 
 // 1. Create HeadDoc for epoch management
 const headDoc = createHeadDoc({
@@ -519,7 +519,7 @@ import {
 	createWorkspace,
 	createHeadDoc,
 	defineWorkspace,
-} from '@epicenter/hq/dynamic';
+} from '@epicenter/workspace/dynamic';
 
 test('table operations work without extensions', () => {
 	// Minimal HeadDoc (in-memory, no persistence)
@@ -696,7 +696,7 @@ Static uses `capabilities`, dynamic uses `extensions`. Should we unify?
 
 ```typescript
 // Before
-import { createWorkspaceDoc, WorkspaceDoc } from '@epicenter/hq';
+import { createWorkspaceDoc, WorkspaceDoc } from '@epicenter/workspace';
 const workspace: WorkspaceDoc = createWorkspaceDoc({
   headDoc,
   tables: [...],
@@ -705,7 +705,7 @@ const workspace: WorkspaceDoc = createWorkspaceDoc({
 });
 
 // After
-import { createWorkspace, WorkspaceClient } from '@epicenter/hq';
+import { createWorkspace, WorkspaceClient } from '@epicenter/workspace';
 const workspace: WorkspaceClient = createWorkspace({
   headDoc,
   definition: { name: 'Blog', tables: [...], kv: [...] },

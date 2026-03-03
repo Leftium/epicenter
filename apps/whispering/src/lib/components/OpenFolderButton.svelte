@@ -22,8 +22,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import { rpc } from '$lib/query';
 	import { Ok, tryAsync } from 'wellcrafted/result';
+	import { rpc } from '$lib/query';
 
 	type Props = {
 		/**

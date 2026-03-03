@@ -83,7 +83,7 @@ Using `@wxt-dev/storage` for cleaner storage with auto-initialization:
 
 ```typescript
 import { storage } from '@wxt-dev/storage';
-import { generateId } from '@epicenter/hq';
+import { generateId } from '@epicenter/workspace';
 
 /**
  * Device ID storage item.

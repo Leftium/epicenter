@@ -1,119 +1,192 @@
-/**
- * JSON Schema To Yargs Tests
- *
- * These tests verify conversion from JSON Schema field metadata into yargs option
- * definitions used by CLI command builders. They ensure requiredness, option types,
- * and enum choices are preserved during translation.
- *
- * Key behaviors:
- * - Maps schema property types and required flags to yargs options
- * - Handles optional fields, literal unions, arrays, and non-object schemas
- */
 import { describe, expect, test } from 'bun:test';
-import { standardSchemaToJsonSchema } from '@epicenter/hq';
-import { type } from 'arktype';
+import Type from 'typebox';
 import { jsonSchemaToYargsOptions } from './json-schema-to-yargs';
 
 describe('jsonSchemaToYargsOptions', () => {
-	test('converts string field to string option', () => {
-		const schema = type({ title: 'string' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.title).toBeDefined();
-		expect(options.title?.type).toBe('string');
-		expect(options.title?.demandOption).toBe(true);
-	});
-
-	test('converts number field to number option', () => {
-		const schema = type({ count: 'number' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.count).toBeDefined();
-		expect(options.count?.type).toBe('number');
-		expect(options.count?.demandOption).toBe(true);
-	});
-
-	test('converts integer field to number option', () => {
-		const schema = type({ count: 'number.integer' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.count).toBeDefined();
-		expect(options.count?.type).toBe('number');
-	});
-
-	test('converts boolean field to boolean option', () => {
-		const schema = type({ published: 'boolean' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.published).toBeDefined();
-		expect(options.published?.type).toBe('boolean');
-		expect(options.published?.demandOption).toBe(true);
-	});
-
-	test('converts optional field to non-required option', () => {
-		const schema = type({ 'title?': 'string' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.title).toBeDefined();
-		expect(options.title?.type).toBe('string');
-		expect(options.title?.demandOption).toBe(false);
-	});
-
-	test('converts string literal union to choices', () => {
-		const schema = type({ status: "'draft' | 'published' | 'archived'" });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.status).toBeDefined();
-		expect(options.status?.type).toBe('string');
-		expect(options.status?.choices).toContain('draft');
-		expect(options.status?.choices).toContain('published');
-		expect(options.status?.choices).toContain('archived');
-		expect(options.status?.choices).toHaveLength(3);
-	});
-
-	test('converts array field to array option', () => {
-		const schema = type({ tags: 'string[]' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
-
-		expect(options.tags).toBeDefined();
-		expect(options.tags?.type).toBe('array');
-	});
-
-	test('converts required and optional fields in one schema object', () => {
-		const schema = type({
-			title: 'string',
-			count: 'number',
-			'published?': 'boolean',
+	describe('type mapping', () => {
+		test('string field', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ title: Type.String() }),
+			);
+			expect(options.title).toMatchObject({
+				type: 'string',
+				demandOption: true,
+			});
 		});
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
 
-		expect(Object.keys(options)).toHaveLength(3);
-		expect(options.title?.type).toBe('string');
-		expect(options.title?.demandOption).toBe(true);
-		expect(options.count?.type).toBe('number');
-		expect(options.count?.demandOption).toBe(true);
-		expect(options.published?.type).toBe('boolean');
-		expect(options.published?.demandOption).toBe(false);
+		test('number field', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ count: Type.Number() }),
+			);
+			expect(options.count).toMatchObject({
+				type: 'number',
+				demandOption: true,
+			});
+		});
+
+		test('integer maps to number', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ count: Type.Integer() }),
+			);
+			expect(options.count?.type).toBe('number');
+		});
+
+		test('boolean field', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ published: Type.Boolean() }),
+			);
+			expect(options.published).toMatchObject({
+				type: 'boolean',
+				demandOption: true,
+			});
+		});
+
+		test('array field', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ tags: Type.Array(Type.String()) }),
+			);
+			expect(options.tags?.type).toBe('array');
+		});
+
+		test('optional field is not required', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ title: Type.Optional(Type.String()) }),
+			);
+			expect(options.title).toMatchObject({
+				type: 'string',
+				demandOption: false,
+			});
+		});
+
+		test('nested object field has no yargs type', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ metadata: Type.Object({ nested: Type.String() }) }),
+			);
+			expect(options.metadata?.type).toBeUndefined();
+			expect(options.metadata?.demandOption).toBe(true);
+		});
 	});
 
-	test('returns empty object for non-object schema', () => {
-		const options = jsonSchemaToYargsOptions({ type: 'string' });
-		expect(options).toEqual({});
+	describe('choices extraction', () => {
+		test('string literal union becomes choices', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({
+					status: Type.Union([
+						Type.Literal('draft'),
+						Type.Literal('published'),
+						Type.Literal('archived'),
+					]),
+				}),
+			);
+			expect(options.status).toMatchObject({
+				type: 'string',
+				choices: ['draft', 'published', 'archived'],
+			});
+		});
+
+		test('nullable literal union skips null variant', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({
+					status: Type.Union([
+						Type.Literal('active'),
+						Type.Literal('inactive'),
+						Type.Null(),
+					]),
+				}),
+			);
+			expect(options.status?.choices).toEqual(['active', 'inactive']);
+		});
+
+		test('single literal becomes single-element choices', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ mode: Type.Literal('readonly') }),
+			);
+			expect(options.mode).toMatchObject({
+				type: 'string',
+				choices: ['readonly'],
+			});
+		});
+
+		test('string enum becomes choices', () => {
+			enum Status {
+				Draft = 'draft',
+				Published = 'published',
+			}
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ status: Type.Enum(Status) }),
+			);
+			expect(options.status?.choices).toEqual(['draft', 'published']);
+			expect(options.status?.type).toBe('string');
+		});
+
+		test('numeric enum becomes number choices', () => {
+			enum Priority {
+				Low = 0,
+				Medium = 1,
+				High = 2,
+			}
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ priority: Type.Enum(Priority) }),
+			);
+			expect(options.priority?.choices).toEqual([0, 1, 2]);
+			expect(options.priority?.type).toBe('number');
+		});
+
+		test('union with non-literal variants has no choices', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({
+					value: Type.Union([Type.String(), Type.Number()]),
+				}),
+			);
+			expect(options.value?.choices).toBeUndefined();
+		});
 	});
 
-	test('leaves yargs description undefined when schema has no descriptions', () => {
-		const schema = type({ title: 'string' });
-		const jsonSchema = standardSchemaToJsonSchema(schema);
-		const options = jsonSchemaToYargsOptions(jsonSchema);
+	describe('metadata propagation', () => {
+		test('passes through description', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ title: Type.String({ description: 'The page title' }) }),
+			);
+			expect(options.title?.description).toBe('The page title');
+		});
 
-		expect(options.title?.description).toBeUndefined();
+		test('description is undefined when not provided', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ title: Type.String() }),
+			);
+			expect(options.title?.description).toBeUndefined();
+		});
+
+		test('passes through default value', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({ count: Type.Optional(Type.Number({ default: 10 })) }),
+			);
+			expect(options.count?.default).toBe(10);
+			expect(options.count?.demandOption).toBe(false);
+		});
+	});
+
+	describe('edge cases', () => {
+		test('non-object schema returns empty options', () => {
+			expect(jsonSchemaToYargsOptions({ type: 'string' })).toEqual({});
+		});
+
+		test('empty object schema returns empty options', () => {
+			expect(jsonSchemaToYargsOptions(Type.Object({}))).toEqual({});
+		});
+
+		test('mixed required and optional fields', () => {
+			const options = jsonSchemaToYargsOptions(
+				Type.Object({
+					title: Type.String(),
+					count: Type.Number(),
+					published: Type.Optional(Type.Boolean()),
+				}),
+			);
+			expect(Object.keys(options)).toHaveLength(3);
+			expect(options.title?.demandOption).toBe(true);
+			expect(options.count?.demandOption).toBe(true);
+			expect(options.published?.demandOption).toBe(false);
+		});
 	});
 });

@@ -1,4 +1,4 @@
-import type { TableHelper } from '@epicenter/hq';
+import type { TableHelper } from '@epicenter/workspace';
 import {
 	createFileSystemIndex,
 	type FileSystemIndex,

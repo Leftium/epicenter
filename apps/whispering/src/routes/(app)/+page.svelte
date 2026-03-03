@@ -1,7 +1,20 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import {
+		ACCEPT_AUDIO,
+		ACCEPT_VIDEO,
+		FileDropZone,
+		MEGABYTE,
+	} from '@epicenter/ui/file-drop-zone';
+	import * as Kbd from '@epicenter/ui/kbd';
+	import { Link } from '@epicenter/ui/link';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import { createQuery } from '@tanstack/svelte-query';
+	import type { UnlistenFn } from '@tauri-apps/api/event';
+	import { onDestroy, onMount } from 'svelte';
 	import { commandCallbacks } from '$lib/commands';
-	import NavItems from '$lib/components/NavItems.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
+	import NavItems from '$lib/components/NavItems.svelte';
 	import {
 		CompressionSelector,
 		TranscriptionSelector,
@@ -16,23 +29,10 @@
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { rpc } from '$lib/query';
-	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { desktopServices, services } from '$lib/services';
 	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import { Button } from '@epicenter/ui/button';
-	import {
-		ACCEPT_AUDIO,
-		ACCEPT_VIDEO,
-		FileDropZone,
-		MEGABYTE,
-	} from '@epicenter/ui/file-drop-zone';
-	import * as Kbd from '@epicenter/ui/kbd';
-	import { Link } from '@epicenter/ui/link';
-	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import { createQuery } from '@tanstack/svelte-query';
-	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { onDestroy, onMount } from 'svelte';
 
 	const getRecorderStateQuery = createQuery(
 		() => rpc.recorder.getRecorderState.options,
@@ -161,9 +161,7 @@
 	});
 </script>
 
-<svelte:head>
-	<title>Whispering</title>
-</svelte:head>
+<svelte:head> <title>Whispering</title> </svelte:head>
 
 <div
 	class="flex flex-1 flex-col items-center justify-center gap-4 w-full max-w-md mx-auto px-4"
@@ -179,13 +177,11 @@
 
 	<ToggleGroup.Root
 		type="single"
-		bind:value={
-			() => settings.value['recording.mode'],
+		bind:value={() => settings.value['recording.mode'],
 			(mode) => {
 				if (!mode) return;
 				settings.switchRecordingMode(mode);
-			}
-		}
+			}}
 		class="w-full"
 	>
 		{#each availableModes as option}
@@ -327,7 +323,8 @@
 		{#if settings.value['recording.mode'] === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
-				{' '}<Link
+				{' '}
+				<Link
 					tooltip="Go to local shortcut in settings"
 					href="/settings/shortcuts/local"
 				>
@@ -336,13 +333,15 @@
 							settings.value['shortcuts.local.toggleManualRecording'],
 						)}</Kbd.Root
 					>
-				</Link>{' '}
+				</Link>
+				{' '}
 				to start recording here.
 			</p>
 			{#if window.__TAURI_INTERNALS__}
 				<p class="text-foreground/75 text-sm">
 					Press
-					{' '}<Link
+					{' '}
+					<Link
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts/global"
 					>
@@ -351,14 +350,16 @@
 								settings.value['shortcuts.global.toggleManualRecording'],
 							)}</Kbd.Root
 						>
-					</Link>{' '}
+					</Link>
+					{' '}
 					to start recording anywhere.
 				</p>
 			{/if}
 		{:else if settings.value['recording.mode'] === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
-				{' '}<Link
+				{' '}
+				<Link
 					tooltip="Go to local shortcut in settings"
 					href="/settings/shortcuts/local"
 				>
@@ -367,7 +368,8 @@
 							settings.value['shortcuts.local.toggleVadRecording'],
 						)}</Kbd.Root
 					>
-				</Link>{' '}
+				</Link>
+				{' '}
 				to start a voice activated session.
 			</p>
 		{:else if settings.value['recording.mode'] === 'upload'}
@@ -377,7 +379,8 @@
 			{#if window.__TAURI_INTERNALS__}
 				<p class="text-foreground/75 text-sm">
 					Press
-					{' '}<Link
+					{' '}
+					<Link
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts/global"
 					>
@@ -386,7 +389,8 @@
 								settings.value['shortcuts.global.toggleManualRecording'],
 							)}</Kbd.Root
 						>
-					</Link>{' '}
+					</Link>
+					{' '}
 					to start recording instead.
 				</p>
 			{/if}

@@ -6,9 +6,9 @@
  * after filtering for this device and checking TTL.
  */
 
-import type { TableHelper } from '@epicenter/hq';
-import { generateId } from '@epicenter/hq';
-import type { Command, DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
+import type { TableHelper } from '@epicenter/workspace';
+import { generateId } from '@epicenter/workspace';
+import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
 
 /**

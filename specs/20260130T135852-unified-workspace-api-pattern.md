@@ -59,7 +59,7 @@ They need:
 ### Static Workspace
 
 ```typescript
-import { defineWorkspace, defineTable, defineKv } from '@epicenter/hq/static';
+import { defineWorkspace, defineTable, defineKv } from '@epicenter/workspace/static';
 import { type } from 'arktype';
 
 // ═══════════════════════════════════════════════════════════════
@@ -98,7 +98,7 @@ const client = workspace.create({
 ### Grid Workspace
 
 ```typescript
-import { createGridWorkspace } from '@epicenter/hq/grid';
+import { createGridWorkspace } from '@epicenter/workspace/grid';
 
 // ═══════════════════════════════════════════════════════════════
 // Step 1: Define workspace schema (ID is NOT in definition)

@@ -1,19 +1,19 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
-	import * as Kbd from '@epicenter/ui/kbd';
 	import { Input } from '@epicenter/ui/input';
+	import * as Kbd from '@epicenter/ui/kbd';
 	import * as Popover from '@epicenter/ui/popover';
-	import {
-		getShortcutDisplayLabel,
-		type KeyboardEventSupportedKey,
-	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '$lib/constants/platform';
 	import { cn } from '@epicenter/ui/utils';
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import XIcon from '@lucide/svelte/icons/x';
+	import {
+		getShortcutDisplayLabel,
+		type KeyboardEventSupportedKey,
+	} from '$lib/constants/keyboard';
+	import { IS_MACOS } from '$lib/constants/platform';
 	import { type KeyRecorder } from './create-key-recorder.svelte';
 
 	const {

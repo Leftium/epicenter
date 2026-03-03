@@ -12,9 +12,7 @@
 {#if pathSegments.length > 0}
 	<Breadcrumb.Root>
 		<Breadcrumb.List>
-			<Breadcrumb.Item>
-				<Breadcrumb.Link>/</Breadcrumb.Link>
-			</Breadcrumb.Item>
+			<Breadcrumb.Item> <Breadcrumb.Link>/</Breadcrumb.Link> </Breadcrumb.Item>
 			{#each pathSegments as segment, i (i)}
 				<Breadcrumb.Separator />
 				<Breadcrumb.Item>

@@ -1,26 +1,26 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
-	import * as Select from '@epicenter/ui/select';
 	import { Input } from '@epicenter/ui/input';
-	import { SAMPLE_RATE_OPTIONS } from '$lib/constants/audio';
-	import { PATHS } from '$lib/constants/paths';
-	import { PLATFORM_TYPE } from '$lib/constants/platform';
-	import { settings } from '$lib/state/settings.svelte';
-	import { rpc } from '$lib/query';
+	import * as Select from '@epicenter/ui/select';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { join } from '@tauri-apps/api/path';
 	import { nanoid } from 'nanoid/non-secure';
-	import { Button } from '@epicenter/ui/button';
-	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import { SAMPLE_RATE_OPTIONS } from '$lib/constants/audio';
+	import { PATHS } from '$lib/constants/paths';
+	import { PLATFORM_TYPE } from '$lib/constants/platform';
+	import { rpc } from '$lib/query';
 	import {
 		buildFfmpegCommand,
-		formatDeviceForPlatform,
-		getFileExtensionFromFfmpegOptions,
 		FFMPEG_DEFAULT_DEVICE_IDENTIFIER,
 		FFMPEG_DEFAULT_GLOBAL_OPTIONS,
 		FFMPEG_DEFAULT_INPUT_OPTIONS,
 		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
+		formatDeviceForPlatform,
+		getFileExtensionFromFfmpegOptions,
 	} from '$lib/services/desktop/recorder/ffmpeg';
+	import { settings } from '$lib/state/settings.svelte';
 
 	// Generate realistic recording ID for preview
 	const SAMPLE_RECORDING_ID = nanoid();
@@ -284,15 +284,13 @@
 						<Field.Label for="ffmpeg-format">Format</Field.Label>
 						<Select.Root
 							type="single"
-							bind:value={
-								() => selected.format,
+							bind:value={() => selected.format,
 								(value) => {
 									if (value) {
 										selected = { ...selected, format: value };
 										rebuildOutputOptionsFromSelections();
 									}
-								}
-							}
+								}}
 						>
 							<Select.Trigger id="ffmpeg-format" class="w-full">
 								{formatLabel ?? 'Select format'}
@@ -311,15 +309,13 @@
 						<Field.Label for="ffmpeg-sample-rate">Sample Rate</Field.Label>
 						<Select.Root
 							type="single"
-							bind:value={
-								() => selected.sampleRate,
+							bind:value={() => selected.sampleRate,
 								(value) => {
 									if (value) {
 										selected = { ...selected, sampleRate: value };
 										rebuildOutputOptionsFromSelections();
 									}
-								}
-							}
+								}}
 						>
 							<Select.Trigger id="ffmpeg-sample-rate" class="w-full">
 								{sampleRateLabel ?? 'Sample rate'}
@@ -340,15 +336,13 @@
 							<Field.Label for="ffmpeg-quality">Quality</Field.Label>
 							<Select.Root
 								type="single"
-								bind:value={
-									() => selected.quality,
+								bind:value={() => selected.quality,
 									(value) => {
 										if (value) {
 											selected = { ...selected, quality: value };
 											rebuildOutputOptionsFromSelections();
 										}
-									}
-								}
+									}}
 							>
 								<Select.Trigger id="ffmpeg-quality" class="w-full">
 									{qualityLabel ?? 'Quality'}
@@ -368,15 +362,13 @@
 							<Field.Label for="ffmpeg-bitrate">Bitrate</Field.Label>
 							<Select.Root
 								type="single"
-								bind:value={
-									() => selected.bitrate,
+								bind:value={() => selected.bitrate,
 									(value) => {
 										if (value) {
 											selected = { ...selected, bitrate: value };
 											rebuildOutputOptionsFromSelections();
 										}
-									}
-								}
+									}}
 							>
 								<Select.Trigger id="ffmpeg-bitrate" class="w-full">
 									{bitrateLabel ?? 'Bitrate'}
@@ -460,9 +452,11 @@
 							</p>
 							<div>
 								Common: <code class="px-1 rounded bg-muted">-ac 1</code> (mono),
-								<code class="px-1 rounded bg-muted">-t 60</code> (60s limit)
+								<code class="px-1 rounded bg-muted">-t 60</code>
+								(60s limit)
 								{#if PLATFORM_TYPE === 'windows'}
-									, <code class="px-1 rounded bg-muted"
+									,
+									<code class="px-1 rounded bg-muted"
 										>-audio_buffer_size 20</code
 									>
 									(low latency)
@@ -535,7 +529,8 @@
 					<div class="flex items-start gap-2">
 						<span class="text-muted-foreground shrink-0">Output:</span>
 						<code class="text-primary">
-							{AUDIO_FORMATS[selected.format].extension} • {selected.sampleRate}Hz{selected.format ===
+							{AUDIO_FORMATS[selected.format].extension}
+							• {selected.sampleRate}Hz{selected.format ===
 							'ogg'
 								? ` • Q${selected.quality}`
 								: selected.format !== 'wav'

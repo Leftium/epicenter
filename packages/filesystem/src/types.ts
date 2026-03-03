@@ -1,4 +1,9 @@
-import { type Guid, generateGuid, generateId, type Id } from '@epicenter/hq';
+import {
+	type Guid,
+	generateGuid,
+	generateId,
+	type Id,
+} from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type * as Y from 'yjs';
@@ -29,7 +34,7 @@ export type TimelineEntry =
 /** Content modes supported by timeline entries */
 export type ContentMode = TimelineEntry['type'];
 
-import type { InferTableRow } from '@epicenter/hq';
+import type { InferTableRow } from '@epicenter/workspace';
 import type { filesTable } from './file-table.js';
 
 /** Branded file identifier — a Guid that is specifically a file ID */

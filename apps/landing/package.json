@@ -9,7 +9,6 @@
 		"preview": "astro preview",
 		"astro": "astro",
 		"deploy": "bun run build && wrangler pages deploy",
-		"lint": "eslint .",
 		"typecheck": "astro check && svelte-check"
 	},
 	"dependencies": {

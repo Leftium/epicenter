@@ -3,6 +3,9 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import * as Modal from '@epicenter/ui/modal';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import HelpCircle from '@lucide/svelte/icons/help-circle';
 	import {
 		ACCELERATOR_SECTIONS,
 		CommandOrAlt,
@@ -11,9 +14,6 @@
 		OPTION_DEAD_KEYS,
 	} from '$lib/constants/keyboard';
 	import { IS_MACOS } from '$lib/constants/platform';
-	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
-	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import HelpCircle from '@lucide/svelte/icons/help-circle';
 
 	let { type }: { type: 'local' | 'global' } = $props();
 	let dialogOpen = $state(false);
@@ -58,12 +58,15 @@
 	<Modal.Content class="sm:max-w-3xl">
 		<Modal.Header>
 			<Modal.Title>
-				{isLocal ? 'Local' : 'Global'} Shortcut Format Guide
+				{isLocal ? 'Local' : 'Global'}
+				Shortcut Format Guide
 			</Modal.Title>
 			<Modal.Description>
-				Learn how to format keyboard shortcuts for {isLocal
+				Learn how to format keyboard shortcuts for
+				{isLocal
 					? 'in-app'
-					: 'system-wide'} use.
+					: 'system-wide'}
+				use.
 			</Modal.Description>
 		</Modal.Header>
 
@@ -72,7 +75,8 @@
 			<div class="rounded-lg bg-muted p-4">
 				<p class="text-sm">
 					Use <code class="font-mono text-xs">modifier+key</code> format or just
-					<code class="font-mono text-xs">key</code> for single keys.
+					<code class="font-mono text-xs">key</code>
+					for single keys.
 				</p>
 				{#if isLocal}
 					<p class="text-sm text-muted-foreground mt-1">

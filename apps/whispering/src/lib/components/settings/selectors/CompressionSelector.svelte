@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { CompressionBody } from '$lib/components/settings';
-	import * as Popover from '@epicenter/ui/popover';
 	import { Button } from '@epicenter/ui/button';
-	import { Separator } from '@epicenter/ui/separator';
 	import { useCombobox } from '@epicenter/ui/hooks';
-	import { settings } from '$lib/state/settings.svelte';
+	import * as Popover from '@epicenter/ui/popover';
+	import { Separator } from '@epicenter/ui/separator';
 	import { cn } from '@epicenter/ui/utils';
-	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import PackageIcon from '@lucide/svelte/icons/package';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import { goto } from '$app/navigation';
+	import { CompressionBody } from '$lib/components/settings';
+	import { settings } from '$lib/state/settings.svelte';
+	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
 	let { class: className }: { class?: string } = $props();
 
@@ -56,9 +56,7 @@
 	</Popover.Trigger>
 
 	<Popover.Content class="sm:w-[36rem] max-h-[40vh] overflow-auto p-0">
-		<div class="p-4">
-			<CompressionBody />
-		</div>
+		<div class="p-4"><CompressionBody /></div>
 		<Separator />
 		<Button
 			variant="ghost"

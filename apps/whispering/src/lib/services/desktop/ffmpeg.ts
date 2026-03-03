@@ -1,7 +1,11 @@
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { exists, remove, writeFile } from '@tauri-apps/plugin-fs';
 import { nanoid } from 'nanoid/non-secure';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { asShellCommand, CommandServiceLive } from './command';
 import { FsServiceLive } from './fs';
@@ -33,7 +37,8 @@ export const FfmpegServiceLive = {
 				},
 				catch: (error) =>
 					FfmpegError.Service({
-						operation: 'check FFmpeg installation via shell', cause: error,
+						operation: 'check FFmpeg installation via shell',
+						cause: error,
 					}),
 			});
 
@@ -78,7 +83,8 @@ export const FfmpegServiceLive = {
 						try: () => FsServiceLive.pathToBlob(inputPath),
 						catch: (error) =>
 							FfmpegError.Service({
-								operation: 'verify temp file accessibility', cause: error,
+								operation: 'verify temp file accessibility',
+								cause: error,
 							}),
 					});
 					if (verifyError) throw new Error(verifyError.message);
@@ -137,7 +143,8 @@ export const FfmpegServiceLive = {
 			},
 			catch: (error) =>
 				FfmpegError.Service({
-					operation: 'compress audio', cause: error,
+					operation: 'compress audio',
+					cause: error,
 				}),
 		});
 	},

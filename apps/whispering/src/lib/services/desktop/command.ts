@@ -1,7 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 import type { Brand } from 'wellcrafted/brand';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 
 export const CommandError = defineErrors({

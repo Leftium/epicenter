@@ -1,5 +1,10 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { defineErrors, extractErrorMessage, type InferError, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferError,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 export const HttpError = defineErrors({
@@ -7,7 +12,10 @@ export const HttpError = defineErrors({
 		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	Response: ({ response, body }: {
+	Response: ({
+		response,
+		body,
+	}: {
 		response: { status: number };
 		/** The parsed response body from the HTTP error response. */
 		body: unknown;
@@ -43,7 +51,5 @@ export type HttpService = {
 		body: BodyInit | FormData;
 		schema: TSchema;
 		headers?: Record<string, string>;
-	}) => Promise<
-		Result<StandardSchemaV1.InferOutput<TSchema>, HttpError>
-	>;
+	}) => Promise<Result<StandardSchemaV1.InferOutput<TSchema>, HttpError>>;
 };

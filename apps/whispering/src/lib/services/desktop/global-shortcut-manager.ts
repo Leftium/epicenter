@@ -6,7 +6,12 @@ import {
 } from '@tauri-apps/plugin-global-shortcut';
 import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
-import { defineErrors, type InferError, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferError,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
@@ -36,12 +41,24 @@ const ShortcutError = defineErrors({
 		message: `Generated invalid accelerator: ${accelerator}`,
 		accelerator,
 	}),
-	RegisterFailed: ({ accelerator, cause }: { accelerator: string; cause: unknown }) => ({
+	RegisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
 		message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
 		accelerator,
 		cause,
 	}),
-	UnregisterFailed: ({ accelerator, cause }: { accelerator: string; cause: unknown }) => ({
+	UnregisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
 		message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
 		accelerator,
 		cause,
@@ -146,8 +163,7 @@ export const GlobalShortcutManagerLive = {
 	async unregisterAll(): Promise<Result<void, GlobalShortcutServiceError>> {
 		const { error: unregisterAllError } = await tryAsync({
 			try: () => tauriUnregisterAll(),
-			catch: (error) =>
-				ShortcutError.UnregisterAllFailed({ cause: error }),
+			catch: (error) => ShortcutError.UnregisterAllFailed({ cause: error }),
 		});
 		if (unregisterAllError) return Err(unregisterAllError);
 		return Ok(undefined);

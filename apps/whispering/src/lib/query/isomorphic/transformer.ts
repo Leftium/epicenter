@@ -1,5 +1,9 @@
 import { nanoid } from 'nanoid/non-secure';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {
@@ -315,17 +319,19 @@ async function runTransformation({
 	transformation: Transformation;
 	recordingId: string | null;
 }): Promise<
-	Result<
-		TransformationRunCompleted | TransformationRunFailed,
-		TransformError
-	>
+	Result<TransformationRunCompleted | TransformationRunFailed, TransformError>
 > {
 	if (!input.trim()) {
-		return TransformError.InvalidInput({ message: 'Empty input. Please enter some text to transform' });
+		return TransformError.InvalidInput({
+			message: 'Empty input. Please enter some text to transform',
+		});
 	}
 
 	if (transformation.steps.length === 0) {
-		return TransformError.NoSteps({ message: 'No steps configured. Please add at least one transformation step' });
+		return TransformError.NoSteps({
+			message:
+				'No steps configured. Please add at least one transformation step',
+		});
 	}
 
 	const transformationRun = {
@@ -343,7 +349,9 @@ async function runTransformation({
 		await services.db.runs.create(transformationRun);
 
 	if (createTransformationRunError)
-		return TransformError.DbCreateRunFailed({ message: 'Unable to start transformation run' });
+		return TransformError.DbCreateRunFailed({
+			message: 'Unable to start transformation run',
+		});
 
 	let currentInput = input;
 
@@ -357,7 +365,9 @@ async function runTransformation({
 		});
 
 		if (addTransformationStepRunError)
-			return TransformError.DbAddStepFailed({ message: 'Unable to initialize transformation step' });
+			return TransformError.DbAddStepFailed({
+				message: 'Unable to initialize transformation step',
+			});
 
 		const handleStepResult = await handleStep({
 			input: currentInput,
@@ -374,7 +384,9 @@ async function runTransformation({
 				handleStepResult.error,
 			);
 			if (markTransformationRunAndRunStepAsFailedError)
-				return TransformError.DbFailStepFailed({ message: 'Unable to save failed transformation step result' });
+				return TransformError.DbFailStepFailed({
+					message: 'Unable to save failed transformation step result',
+				});
 			return Ok(markedFailedTransformationRun);
 		}
 
@@ -388,7 +400,9 @@ async function runTransformation({
 			);
 
 		if (markTransformationRunStepAsCompletedError)
-			return TransformError.DbCompleteStepFailed({ message: 'Unable to save completed transformation step result' });
+			return TransformError.DbCompleteStepFailed({
+				message: 'Unable to save completed transformation step result',
+			});
 
 		currentInput = handleStepOutput;
 	}
@@ -399,6 +413,8 @@ async function runTransformation({
 	} = await services.db.runs.complete(transformationRun, currentInput);
 
 	if (markTransformationRunAsCompletedError)
-		return TransformError.DbCompleteRunFailed({ message: 'Unable to save completed transformation run' });
+		return TransformError.DbCompleteRunFailed({
+			message: 'Unable to save completed transformation run',
+		});
 	return Ok(markedCompletedTransformationRun);
 }

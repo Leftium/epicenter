@@ -1,2 +1,2 @@
 // Re-export types for convenience
-export type { RecorderService, RecorderError } from './types';
+export type { RecorderError, RecorderService } from './types';

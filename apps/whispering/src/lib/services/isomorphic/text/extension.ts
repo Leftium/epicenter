@@ -1,6 +1,6 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
-import { type TextService, TextError } from './types';
+import { TextError, type TextService } from './types';
 
 export function createTextServiceExtension(): TextService {
 	return {

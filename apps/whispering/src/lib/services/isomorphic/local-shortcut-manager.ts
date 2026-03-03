@@ -227,9 +227,7 @@ export const LocalShortcutManagerLive = {
 	 * This function is idempotent - it can be safely called even if the shortcut
 	 * with the given ID doesn't exist or has already been unregistered.
 	 */
-	async unregister(
-		id: CommandId,
-	): Promise<Result<void, LocalShortcutError>> {
+	async unregister(id: CommandId): Promise<Result<void, LocalShortcutError>> {
 		shortcuts.delete(id);
 		return Ok(undefined);
 	},

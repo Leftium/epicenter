@@ -68,9 +68,7 @@ export type RecorderService = {
 	 * Get the current recorder state
 	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
 	 */
-	getRecorderState(): Promise<
-		Result<WhisperingRecordingState, RecorderError>
-	>;
+	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers

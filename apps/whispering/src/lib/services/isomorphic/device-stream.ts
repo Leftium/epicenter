@@ -1,5 +1,8 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS } from '$lib/constants/audio';
 import type {
@@ -15,19 +18,28 @@ const DeviceStreamError = defineErrors({
 		message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	DeviceConnectionFailed: ({ deviceId, cause }: { deviceId: string; cause: unknown }) => ({
+	DeviceConnectionFailed: ({
+		deviceId,
+		cause,
+	}: {
+		deviceId: string;
+		cause: unknown;
+	}) => ({
 		message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions. ${extractErrorMessage(cause)}`,
 		deviceId,
 		cause,
 	}),
 	EnumerationFailed: () => ({
-		message: 'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
+		message:
+			'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
 	}),
 	NoDevicesFound: () => ({
-		message: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
+		message:
+			"Hmm... We couldn't find any microphones to use. Check your connections and try again!",
 	}),
 	PreferredDeviceUnavailable: () => ({
-		message: "We couldn't connect to any microphones. Make sure they're plugged in and try again!",
+		message:
+			"We couldn't connect to any microphones. Make sure they're plugged in and try again!",
 	}),
 });
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
@@ -46,8 +58,7 @@ async function hasExistingAudioPermission(): Promise<boolean> {
 				});
 				return permissionStatus;
 			},
-			catch: (error) =>
-				DeviceStreamError.PermissionDenied({ cause: error }),
+			catch: (error) => DeviceStreamError.PermissionDenied({ cause: error }),
 		});
 		if (!error) return permissionStatus.state === 'granted';
 	}
@@ -82,8 +93,7 @@ export async function enumerateDevices(): Promise<
 				label: device.label,
 			}));
 		},
-		catch: (error) =>
-			DeviceStreamError.PermissionDenied({ cause: error }),
+		catch: (error) => DeviceStreamError.PermissionDenied({ cause: error }),
 	});
 }
 
@@ -112,7 +122,10 @@ async function getStreamForDeviceIdentifier(
 			return stream;
 		},
 		catch: (error) =>
-			DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, cause: error }),
+			DeviceStreamError.DeviceConnectionFailed({
+				deviceId: deviceIdentifier,
+				cause: error,
+			}),
 	});
 }
 
@@ -170,8 +183,7 @@ export async function getRecordingStream({
 	> => {
 		const { data: devices, error: enumerateDevicesError } =
 			await enumerateDevices();
-		if (enumerateDevicesError)
-			return DeviceStreamError.EnumerationFailed();
+		if (enumerateDevicesError) return DeviceStreamError.EnumerationFailed();
 
 		for (const device of devices) {
 			const { data: stream, error } = await getStreamForDeviceIdentifier(

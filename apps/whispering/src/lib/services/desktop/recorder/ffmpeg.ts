@@ -19,8 +19,8 @@ import {
 import { FsServiceLive } from '$lib/services/desktop/fs';
 import {
 	type FfmpegRecordingParams,
-	type RecorderService,
 	RecorderError,
+	type RecorderService,
 } from '$lib/services/isomorphic/recorder/types';
 import {
 	asDeviceIdentifier,
@@ -243,9 +243,7 @@ if (sessionState.value) {
 	clearSession();
 }
 
-const enumerateDevices = async (): Promise<
-	Result<Device[], RecorderError>
-> => {
+const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	// Build platform-specific commands
 	const command = asShellCommand(FFMPEG_ENUMERATE_DEVICES_COMMAND);
 

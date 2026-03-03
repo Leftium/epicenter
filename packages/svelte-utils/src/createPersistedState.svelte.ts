@@ -1,5 +1,9 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { trySync } from 'wellcrafted/result';
 
 type ParseErrorReason<TSchema extends StandardSchemaV1> =

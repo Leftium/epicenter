@@ -27,9 +27,7 @@ export type DbService = {
 			params: RecordingWithAudio | RecordingWithAudio[],
 		): Promise<Result<void, DbError>>;
 		update(recording: Recording): Promise<Result<Recording, DbError>>;
-		delete(
-			recording: Recording | Recording[],
-		): Promise<Result<void, DbError>>;
+		delete(recording: Recording | Recording[]): Promise<Result<void, DbError>>;
 		cleanupExpired(params: {
 			recordingRetentionStrategy: Settings['database.recordingRetentionStrategy'];
 			maxRecordingCount: Settings['database.maxRecordingCount'];
@@ -77,9 +75,7 @@ export type DbService = {
 	};
 	runs: {
 		getAll(): Promise<Result<TransformationRun[], DbError>>;
-		getById(
-			id: string,
-		): Promise<Result<TransformationRun | null, DbError>>;
+		getById(id: string): Promise<Result<TransformationRun | null, DbError>>;
 		getByTransformationId(
 			transformationId: string,
 		): Promise<Result<TransformationRun[], DbError>>;

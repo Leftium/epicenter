@@ -1,7 +1,7 @@
 import { createNotificationServiceDesktop } from './desktop';
 import { createNotificationServiceWeb } from './web';
 
-export type { NotificationService, NotificationError } from './types';
+export type { NotificationError, NotificationService } from './types';
 
 /**
  * Low-level notification service for OS-level notifications

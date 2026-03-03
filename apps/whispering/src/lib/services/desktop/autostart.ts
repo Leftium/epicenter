@@ -1,5 +1,9 @@
 import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 
 export const AutostartError = defineErrors({
@@ -32,24 +36,21 @@ export const AutostartServiceLive = {
 	isEnabled: () =>
 		tryAsync({
 			try: () => isEnabled(),
-			catch: (error) =>
-				AutostartError.CheckFailed({ cause: error }),
+			catch: (error) => AutostartError.CheckFailed({ cause: error }),
 		}),
 
 	/** Enable autostart so Whispering launches on system login. */
 	enable: () =>
 		tryAsync({
 			try: () => enable(),
-			catch: (error) =>
-				AutostartError.EnableFailed({ cause: error }),
+			catch: (error) => AutostartError.EnableFailed({ cause: error }),
 		}),
 
 	/** Disable autostart so Whispering does not launch on system login. */
 	disable: () =>
 		tryAsync({
 			try: () => disable(),
-			catch: (error) =>
-				AutostartError.DisableFailed({ cause: error }),
+			catch: (error) => AutostartError.DisableFailed({ cause: error }),
 		}),
 };
 

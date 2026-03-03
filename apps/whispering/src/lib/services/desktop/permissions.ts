@@ -1,4 +1,8 @@
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { IS_MACOS } from '$lib/constants/platform';
 
@@ -34,8 +38,7 @@ export const PermissionsServiceLive = {
 					);
 					return await checkAccessibilityPermission();
 				},
-				catch: (error) =>
-					PermissionsError.CheckAccessibility({ cause: error }),
+				catch: (error) => PermissionsError.CheckAccessibility({ cause: error }),
 			});
 		},
 
@@ -66,8 +69,7 @@ export const PermissionsServiceLive = {
 					);
 					return await checkMicrophonePermission();
 				},
-				catch: (error) =>
-					PermissionsError.CheckMicrophone({ cause: error }),
+				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
 			});
 		},
 
@@ -81,8 +83,7 @@ export const PermissionsServiceLive = {
 					);
 					return await requestMicrophonePermission();
 				},
-				catch: (error) =>
-					PermissionsError.RequestMicrophone({ cause: error }),
+				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
 			});
 		},
 	},

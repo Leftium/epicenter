@@ -14,8 +14,8 @@ import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
 } from '$lib/services/types';
-import { RecorderError } from './types';
 import type { NavigatorRecordingParams, RecorderService } from './types';
+import { RecorderError } from './types';
 
 type ActiveRecording = {
 	recordingId: string;

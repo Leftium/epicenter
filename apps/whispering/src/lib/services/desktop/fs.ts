@@ -1,11 +1,19 @@
 import { basename } from '@tauri-apps/api/path';
 import { readFile } from '@tauri-apps/plugin-fs';
 import mime from 'mime';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 
 export const FsError = defineErrors({
-	Service: ({ operation, paths, cause }: {
+	Service: ({
+		operation,
+		paths,
+		cause,
+	}: {
 		operation: string;
 		paths: string | string[];
 		cause: unknown;
@@ -31,7 +39,9 @@ export const FsServiceLive = {
 			try: () => createBlobFromPath(path),
 			catch: (error) =>
 				FsError.Service({
-					operation: 'read file as Blob', paths: path, cause: error,
+					operation: 'read file as Blob',
+					paths: path,
+					cause: error,
 				}),
 		}),
 
@@ -44,7 +54,9 @@ export const FsServiceLive = {
 			try: () => createFileFromPath(path),
 			catch: (error) =>
 				FsError.Service({
-					operation: 'read file as File', paths: path, cause: error,
+					operation: 'read file as File',
+					paths: path,
+					cause: error,
 				}),
 		}),
 

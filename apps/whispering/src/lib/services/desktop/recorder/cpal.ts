@@ -9,8 +9,8 @@ import type {
 import { FsServiceLive } from '$lib/services/desktop/fs';
 import {
 	type CpalRecordingParams,
-	type RecorderService,
 	RecorderError,
+	type RecorderService,
 } from '$lib/services/isomorphic/recorder/types';
 import {
 	asDeviceIdentifier,
@@ -31,9 +31,7 @@ type AudioRecording = {
 /**
  * Enumerates available recording devices from the system.
  */
-const enumerateDevices = async (): Promise<
-	Result<Device[], RecorderError>
-> => {
+const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const { data: deviceNames, error: enumerateRecordingDevicesError } =
 		await invoke<string[]>('enumerate_recording_devices');
 	if (enumerateRecordingDevicesError) {

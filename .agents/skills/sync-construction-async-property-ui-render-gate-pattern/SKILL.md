@@ -143,6 +143,19 @@ await provider.whenSynced; // Wait when you need to
 
 They never block construction. The async work is always deferred to a property you can await.
 
+## Alternate Pattern: Await in Every Method
+
+Alternatively, you can skip the `whenReady` property entirely and hide the initialization await inside each method. The canonical example is [idb](https://github.com/jakearchibald/idb):
+
+```typescript
+const dbPromise = openDB('keyval-store', 1, { upgrade(db) { db.createObjectStore('keyval') } });
+
+export async function get(key) { return (await dbPromise).get('keyval', key); }
+export async function set(key, val) { return (await dbPromise).put('keyval', val, key); }
+```
+
+Use `whenReady` when your client has sync methods that depend on initialized state. Use await-in-every-method when every method is async anyway (like database access). See the [idb await-in-every-method article](/docs/articles/idb-await-every-method-pattern.md) for a deeper comparison.
+
 ## Related Patterns
 
 - [Lazy Singleton](../lazy-singleton/SKILL.md) — when you need race-condition-safe lazy initialization
@@ -151,4 +164,5 @@ They never block construction. The async work is always deferred to a property y
 ## References
 
 - [Full article](/docs/articles/sync-construction-async-property-ui-render-gate-pattern.md) — detailed explanation with diagrams
-- [Comprehensive guide](/docs/articles/sync-client-initialization.md) — 480-line deep dive
+- [Comprehensive guide](/docs/articles/sync-client-initialization.md) — 480-line deep dive with idb example
+- [idb await-in-every-method](/docs/articles/idb-await-every-method-pattern.md) — the sibling pattern for purely async APIs

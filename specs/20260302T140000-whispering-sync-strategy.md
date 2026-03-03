@@ -1,14 +1,15 @@
 # Whispering Sync Strategy: Multi-Device Synchronization via server-remote
 
 **Date**: 2026-03-02
+**Updated**: 2026-03-03
 **Status**: Draft
-**Builds on**: [20260219T200000-deployment-targets-research.md](./20260219T200000-deployment-targets-research.md), [20260222T195645-network-topology-multi-server-architecture.md](./20260222T195645-network-topology-multi-server-architecture.md)
+**Builds on**: [20260219T200000-deployment-targets-research.md](./20260219T200000-deployment-targets-research.md), [20260222T195645-network-topology-multi-server-architecture.md](./20260222T195645-network-topology-multi-server-architecture.md), [20260303T120000-two-mode-auth-with-centralized-oauth.md](./20260303T120000-two-mode-auth-with-centralized-oauth.md)
 
 ## Overview
 
 Whispering is a local-first speech-to-text app. Today it stores all data on-device (filesystem on desktop, IndexedDB on web) with zero networking beyond external transcription API calls. This spec adds optional multi-device sync via `server-remote`, using the `@epicenter/workspace` API as the data layer.
 
-Three sync modes with progressive disclosure: off (default), self-hosted (URL + optional token), or Epicenter Cloud (Better Auth login). The server binary is the same in all cases — configuration determines the auth boundary.
+Sync is configured by a single server URL. If a URL is set, sync is on — the client connects via `createSyncExtension` and authenticates with a Better Auth session token. If the URL is absent, sync is off and Whispering works exactly as today. The default URL points to Epicenter Cloud; users who self-host just change it to their own server. Both self-hosted and cloud use the same `server-remote` binary with the same Better Auth sessions — the only difference is who runs the server.
 
 ## Current State
 
@@ -311,128 +312,130 @@ Only metadata syncs. A recording may exist on device A with audio, and on device
 
 Future: A separate blob sync mechanism (R2 upload, presigned URLs) could sync audio across devices. Out of scope for this spec.
 
-### Three Sync Modes
+### Sync Configuration
 
-Whispering stores its sync preference in localStorage as a simple discriminated union. This is an **application-level config** (not a library type) — it drives whether and how the sync extension is chained:
+> **Updated 2026-03-03**: The original spec had three sync modes (off / self-hosted with token / cloud with Better Auth) as a discriminated union. This was based on the assumption that self-hosted servers wouldn't use Better Auth. That assumption was wrong — the [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md) removed static token auth entirely, and the [network topology spec](./20260222T195645-network-topology-multi-server-architecture.md) established that both self-hosted and cloud use Better Auth. Since the auth flow is now identical regardless of who runs the server, the three-mode discriminated union collapses to a single nullable URL.
+
+Sync config is a single field in localStorage:
 
 ```typescript
 // Stored in localStorage, used by workspace-client.ts to decide extension wiring
-type SyncConfig =
-  | { mode: 'off' }
-  | { mode: 'self-hosted'; url: string; token?: string }
-  | { mode: 'cloud' }
+// null = sync off, string = sync to this server URL
+syncUrl: string | null
 ```
 
-The underlying library type is `SyncExtensionConfig` (`@epicenter/workspace`), which only has `url` and `getToken?`. Whispering maps its config to the library type at workspace initialization:
-- `off` → don't chain the sync extension
-- `self-hosted` → `createSyncExtension({ url, getToken: token ? async () => token : undefined })`
-- `cloud` → `createSyncExtension({ url: 'wss://sync.epicenter.so/rooms/{id}', getToken: async (id) => session.token })`
-
-#### Mode 1: Off (Default)
-
-Whispering works exactly as today. Local persistence only. The `sync` extension is not chained.
+**Default cloud URL** is a constant in the codebase:
 
 ```typescript
+const EPICENTER_CLOUD_URL = 'wss://sync.epicenter.so/rooms/{id}';
+```
+
+The mapping to the library type (`SyncExtensionConfig`) is trivial:
+
+```typescript
+// When syncUrl is null — no sync
 config.withExtension('persistence', indexeddbPersistence)
 // No sync extension
-```
 
-#### Mode 2: Self-Hosted
-
-User runs `server-remote` on their own machine, LAN, or VPS. Pastes the URL into Whispering settings. Optional shared token for basic access control.
-
-```typescript
+// When syncUrl is set (cloud or self-hosted — same wiring)
 config
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({
-    url: 'ws://my-server:3913/rooms/{id}',
-    getToken: async () => 'optional-shared-secret',  // omit for open mode
-  }))
-```
-
-**Server-remote runs in relay-only mode** (configured programmatically):
-```typescript
-// No auth (LAN/VPN)
-createRemoteServer({ port: 3913 })
-
-// With token verification
-createRemoteServer({
-  port: 3913,
-  sync: { verifyToken: (token) => token === 'my-secret' },
-})
-```
-
-No database needed. No Better Auth. No SQLite. Pure ephemeral Yjs relay.
-
-#### Mode 3: Epicenter Cloud
-
-User signs in with an Epicenter account. Session token managed automatically via Better Auth. Connects to hosted infrastructure (`sync.epicenter.so`).
-
-```typescript
-config
-  .withExtension('persistence', indexeddbPersistence)
-  .withExtension('sync', createSyncExtension({
-    url: 'wss://sync.epicenter.so/rooms/{id}',
-    getToken: async (workspaceId) => {
+    url: syncUrl,
+    getToken: async () => {
       const session = await authClient.getSession();
       return session.token;
     },
   }))
 ```
 
-**Cloud runs with full auth:**
-- Better Auth for sessions (email/password, OAuth)
-- 1 Durable Object per workspace (hibernatable WebSockets)
-- User isolation (rooms namespaced by userId)
-- Session tokens with 7-day expiry, auto-refresh
+The `authClient` is configured with the same base URL as the sync server. When the user signs into their self-hosted server or Epicenter Cloud, they get a Better Auth session. The session token is passed to the sync extension via `getToken`. There is no separate auth flow for self-hosted vs cloud — both use Better Auth sessions, email/password signup, and optional OAuth.
+
+#### Why a Nullable URL Instead of a Discriminated Union
+
+The original spec used `{ mode: 'off' } | { mode: 'self-hosted'; url; token? } | { mode: 'cloud' }`. This made sense when the modes had fundamentally different auth mechanisms:
+
+- Self-hosted: no auth or static shared token (now removed)
+- Cloud: Better Auth with sessions and OAuth
+
+After the two-mode-auth change, self-hosted and cloud are architecturally identical:
+- Both run `createRemoteServer({ auth: {...} })` with Better Auth
+- Both use session tokens for sync verification (auto-wired)
+- Both require the user to sign in
+
+The only difference is the URL. A discriminated union with three variants that all do the same thing except for one string field is needless complexity. A nullable URL captures the entire state space:
+
+| `syncUrl` value | Behavior |
+|---|---|
+| `null` | Sync off. Local persistence only. No account needed. |
+| `'wss://sync.epicenter.so/rooms/{id}'` | Epicenter Cloud. Sign in at `sync.epicenter.so`. |
+| `'ws://192.168.1.42:3913/rooms/{id}'` | Self-hosted. Sign in at `192.168.1.42:3913`. |
+
+The UI can still present this as a friendly toggle (see Settings UI below), but the underlying data model is just one nullable string.
+
+#### Server-Remote Configuration
+
+Both self-hosted and cloud deployments use the same `createRemoteServer()` factory with Better Auth:
+
+```typescript
+import { createRemoteServer } from '@epicenter/server-remote';
+
+// Self-hosted — user runs this on their own machine/VPS/LAN
+createRemoteServer({
+  port: 3913,
+  auth: {
+    database: './data/auth.db',
+    secret: process.env.BETTER_AUTH_SECRET!,
+    trustedOrigins: ['tauri://localhost', 'http://localhost:5173'],
+  },
+})
+
+// Cloud — same factory, different config
+createRemoteServer({
+  port: 3913,
+  auth: {
+    database: './data/auth.db',
+    secret: process.env.BETTER_AUTH_SECRET!,
+    trustedOrigins: ['https://whispering.epicenter.so'],
+    socialProviders: { google: {...}, github: {...} },
+  },
+})
+```
+
+When `config.auth` is provided, `createRemoteServer()` auto-wires sync verification from Better Auth sessions — no explicit `sync.verifyToken` needed. The server validates the session token on every WebSocket connection and REST request automatically.
+
+> **Note**: `createRemoteServer({ port: 3913 })` with no `auth` config still works as an open relay for development. But production deployments (self-hosted or cloud) should always configure `auth`.
 
 ### Settings UI
 
+> **Updated 2026-03-03**: Simplified from three-mode radio buttons to a toggle + URL field. The old UI had separate "Self-Hosted" and "Epicenter Cloud" modes with different auth flows (token input vs sign-in). Now both use Better Auth sign-in, so the distinction is just the server URL.
+
 ```
+── Sync off (default) ──
+
 ┌─────────────────────────────────────────────────┐
 │  Sync                                           │
 │                                                 │
-│  ┌──────────┐ ┌─────────────┐ ┌──────────────┐ │
-│  │   Off    │ │ Self-Hosted │ │  Epicenter   │ │
-│  │    ●     │ │             │ │    Cloud     │ │
-│  └──────────┘ └─────────────┘ └──────────────┘ │
+│  Enable sync                            [ off ] │
 │                                                 │
 │  Whispering data stays on this device.          │
-│  No sync, no account needed.                    │
+│  Turn on sync to access your recordings         │
+│  from any device.                               │
 └─────────────────────────────────────────────────┘
 
-── When "Self-Hosted" selected ──
+── Sync on, not signed in ──
 
 ┌─────────────────────────────────────────────────┐
 │  Sync                                           │
 │                                                 │
-│  ┌──────────┐ ┌─────────────┐ ┌──────────────┐ │
-│  │   Off    │ │ Self-Hosted │ │  Epicenter   │ │
-│  │          │ │      ●      │ │    Cloud     │ │
-│  └──────────┘ └─────────────┘ └──────────────┘ │
+│  Enable sync                            [  on ] │
 │                                                 │
 │  Server URL                                     │
 │  ┌─────────────────────────────────────────┐    │
-│  │ ws://192.168.1.42:3913                  │    │
+│  │ wss://sync.epicenter.so/rooms/{id}      │    │
 │  └─────────────────────────────────────────┘    │
-│                                                 │
-│  Token (optional)                               │
-│  ┌─────────────────────────────────────────┐    │
-│  │ ••••••••••••••••                        │    │
-│  └─────────────────────────────────────────┘    │
-│                                                 │
-│  Status: ● Connected · 2 peers online           │
-└─────────────────────────────────────────────────┘
-
-── When "Epicenter Cloud" selected ──
-
-┌─────────────────────────────────────────────────┐
-│  Sync                                           │
-│                                                 │
-│  ┌──────────┐ ┌─────────────┐ ┌──────────────┐ │
-│  │   Off    │ │ Self-Hosted │ │  Epicenter   │ │
-│  │          │ │             │ │  Cloud  ●    │ │
-│  └──────────┘ └─────────────┘ └──────────────┘ │
+│  Default: Epicenter Cloud. Change this URL      │
+│  to use your own server.                        │
 │                                                 │
 │  ┌─────────────────────────────────────────┐    │
 │  │          Sign in with Email             │    │
@@ -441,73 +444,90 @@ config
 │  │          Create Account                 │    │
 │  └─────────────────────────────────────────┘    │
 │                                                 │
-│  Your recordings sync across all your devices.  │
 │  Audio files stay local; metadata syncs.        │
 └─────────────────────────────────────────────────┘
 
-── When signed in ──
+── Sync on, self-hosted URL, not signed in ──
 
 ┌─────────────────────────────────────────────────┐
 │  Sync                                           │
 │                                                 │
+│  Enable sync                            [  on ] │
+│                                                 │
+│  Server URL                                     │
+│  ┌─────────────────────────────────────────┐    │
+│  │ ws://192.168.1.42:3913/rooms/{id}       │    │
+│  └─────────────────────────────────────────┘    │
+│                                                 │
+│  ┌─────────────────────────────────────────┐    │
+│  │          Sign in with Email             │    │
+│  └─────────────────────────────────────────┘    │
+│  ┌─────────────────────────────────────────┐    │
+│  │          Create Account                 │    │
+│  └─────────────────────────────────────────┘    │
+│                                                 │
+│  Sign in to your self-hosted server to          │
+│  start syncing.                                 │
+└─────────────────────────────────────────────────┘
+
+── Signed in and syncing ──
+
+┌─────────────────────────────────────────────────┐
+│  Sync                                           │
+│                                                 │
+│  Enable sync                            [  on ] │
+│                                                 │
 │  Signed in as braden@epicenter.so               │
+│  Server: sync.epicenter.so                      │
 │  Status: ● Synced · 3 devices                   │
 │                                                 │
-│  [Sign Out]   [Switch to Self-Hosted]           │
+│  [Sign Out]   [Change Server]                   │
 └─────────────────────────────────────────────────┘
 ```
 
-## Authentication: Layered Strategy
+The "Change Server" action reveals the URL field, pre-filled with the current URL. Changing the URL disconnects from the old server and prompts sign-in at the new one. The Yjs local state is the source of truth — the new server gets bootstrapped from the client's state on first connect (see "Switching Servers" under Constraints).
 
-### Why Self-Hosters Don't Need Better Auth
+## Authentication
 
-1. **Single-user scenario**: A self-hoster running on their home network or behind Tailscale/VPN has network-level auth already. Forcing account creation for one person syncing their own devices is hostile UX.
-2. **No database needed**: Token verification is a simple function (`verifyToken: (t) => t === 'secret'`). No SQLite, no session table, no migration.
-3. **Users control their own security**: Self-hosters typically run behind a reverse proxy (Caddy, nginx, Cloudflare Tunnel) with its own auth layer — which is more secure than Better Auth because it handles TLS, device attestation, and SSO.
-4. **Upgrade path is clean**: Switching from self-hosted-with-token to cloud-with-auth means changing the URL and signing in. No data migration.
+> **Updated 2026-03-03**: The original spec had a "Layered Strategy" with three tiers: open (no auth), static token (`verifyToken`), and Better Auth. The rationale was that self-hosters shouldn't need Better Auth. This was superseded by two changes:
+>
+> 1. **[Two-mode auth](./20260303T120000-two-mode-auth-with-centralized-oauth.md)** removed static token auth from the sync layer entirely. The `{ token: string }` mode in `packages/sync` and the `verifyToken` shortcut in `packages/server` are gone. Sync auth is now: open (no auth) or verify (a function).
+> 2. **[Network topology](./20260222T195645-network-topology-multi-server-architecture.md)** established that both self-hosted and cloud use Better Auth. The hub (now called "remote server") always runs Better Auth — even when self-hosted on a Raspberry Pi.
+>
+> The old "self-hosters don't need Better Auth" argument was reasonable but ultimately wrong. Better Auth adds one SQLite file and one environment variable (`BETTER_AUTH_SECRET`). In exchange, it gives session management, multi-device sign-in, and a clean upgrade path to OAuth. The alternative — static shared tokens — required users to manually distribute a secret to every device, had no expiry, no revocation, and no session visibility. Better Auth is less setup than managing shared secrets properly.
 
-### When Better Auth IS Needed
+### Unified Auth Model
 
-- Multi-tenant cloud service (user isolation)
-- Room namespacing (prevent user A from accessing user B's data)
-- Session management with expiry and refresh
-- OAuth/social login for frictionless onboarding
+All production `server-remote` deployments use Better Auth. The auth flow is identical regardless of who runs the server:
 
-### Auth Comparison
+1. User enters the server URL in Whispering settings
+2. Whispering creates a Better Auth client pointing at that URL
+3. User signs in (email/password, or OAuth if the server has it configured)
+4. Session token is stored client-side
+5. `createSyncExtension` passes the session token via `getToken`
+6. `server-remote` validates the token via `auth.api.getSession()` (auto-wired)
 
-| Concern | Open | verifyToken | Better Auth |
-|---|---|---|---|
-| Setup complexity | Zero | One function | Database + secret + origins |
-| User isolation | None | None (single tenant) | Per-user rooms |
-| Token management | N/A | Custom (static or dynamic) | Auto-expiry + refresh |
-| Database required | No | No | Yes (SQLite minimum) |
-| Best for | LAN/VPN/dev | Self-hosted with basic security | Multi-tenant cloud |
-| UX | Paste URL | Paste URL + token | Sign in / Create account |
+### Auth Comparison (Updated)
 
-### server-remote Configuration
+| Concern | Open (dev only) | Better Auth (self-hosted & cloud) |
+|---|---|---|
+| Setup complexity | Zero | SQLite file + `BETTER_AUTH_SECRET` env var |
+| User isolation | None | Per-user rooms (cloud) or single-user (self-hosted) |
+| Token management | N/A | Auto-expiry (7-day) + refresh |
+| Database required | No | Yes (SQLite) |
+| Best for | Local development | All production deployments |
+| UX | Just works | Sign in / Create account |
+| Multi-device | N/A | Session per device, all authenticated |
 
-All modes use the same `createRemoteServer()` factory. Configuration is programmatic — there are no CLI flags. Auth uses two primitives: `sync.verifyToken` (optional function) and `auth` (Better Auth config). When `auth` is provided but `sync.verifyToken` is not, sync auth is auto-wired from Better Auth sessions.
+### Why Better Auth Everywhere
 
-```typescript
-import { createRemoteServer } from '@epicenter/server-remote';
+The original spec argued self-hosters don't need auth because they have network-level security (Tailscale, VPN, reverse proxy). This is true for the network layer but misses the application layer:
 
-// Open relay (LAN/VPN) — no auth at all
-createRemoteServer({ port: 3913 })
-
-// Custom token verification
-createRemoteServer({
-  port: 3913,
-  sync: { verifyToken: (token) => token === 'my-secret' },
-})
-
-// Full (cloud) — Better Auth + auto-wired sync verification
-// When auth is provided without sync.verifyToken, sync tokens are
-// validated via auth.api.getSession() automatically.
-createRemoteServer({
-  port: 3913,
-  auth: { database: './data/auth.db', secret: process.env.BETTER_AUTH_SECRET!, trustedOrigins: ['https://app.example.com'] },
-})
-```
+1. **Device management**: Better Auth sessions give users visibility into which devices are connected. Without it, any process on the network can silently connect to the relay.
+2. **Consistent UX**: The sign-in flow is the same whether you point at `sync.epicenter.so` or `192.168.1.42:3913`. No mode-switching, no "paste a token" vs "sign in" bifurcation.
+3. **Upgrade path**: Moving from self-hosted to cloud (or vice versa) is just changing the URL and signing into the new server. The auth mechanism doesn't change.
+4. **Token lifecycle**: Static shared tokens have no expiry and no revocation. If a device is lost or compromised, there's no way to invalidate its access without changing the token on every other device. Better Auth sessions expire and can be revoked individually.
+5. **Minimal overhead**: `createRemoteServer({ auth: { database: './data/auth.db', secret: '...' } })` is one line. The SQLite file is ~50KB. First-time setup creates one admin account. This is less friction than securely managing shared secrets.
 
 ## Server Architecture: What's Already Built vs What's Needed
 
@@ -524,7 +544,7 @@ createRemoteServer({
 ### Already Built (packages/sync)
 
 - `createSyncProvider()` with supervisor loop architecture
-- Two auth modes: open (omit `getToken`) or dynamic `getToken: () => Promise<string>`
+- Two auth modes: open (omit `getToken`) or dynamic `getToken: () => Promise<string>` (static `token` field removed per [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md))
 - Token retry: 3 connection attempts per token, then forces `getToken()` refresh
 - `MESSAGE_SYNC_STATUS (102)` heartbeat — drives "Saving..." / "Saved" UI via `onLocalChanges()` callback
 - Exponential backoff reconnection (base 1.1, max coefficient 10, 500ms initial delay)
@@ -540,7 +560,7 @@ createRemoteServer({
 
 - `protocol.ts` — framework-agnostic encode/decode utilities (`MESSAGE_TYPE`, `encodeSyncStep1/2`, `encodeSyncUpdate`, `encodeSyncStatus`, `handleSyncMessage`)
 - `rooms.ts` — `createRoomManager()` with `join()`, `leave()`, `broadcast()`, `getDoc()`, 60s default eviction
-- `plugin.ts` — Elysia plugin wiring protocol + rooms + `verifyToken` auth (two modes: open or verify function)
+- `plugin.ts` — Elysia plugin wiring protocol + rooms + `verifyToken` auth (two modes: open or verify function; static token mode removed per [two-mode-auth spec](./20260303T120000-two-mode-auth-with-centralized-oauth.md))
 
 ### Needs Building
 
@@ -550,7 +570,7 @@ createRemoteServer({
 | `BlobStore` interface + implementations | Medium | Shared `get`/`put`/`delete`/`has` interface. `createFileSystemBlobStore(basePath)` for desktop, `createIndexedDbBlobStore(dbName)` for web. Decouples audio from the Yjs data layer. |
 | Data migration (existing → Yjs) | Medium | One-time leave-in-place migration with dialog. Reads via desktop dual-read facade (not raw filesystem). Collects validation failures instead of silent drops. Auto-fails in-progress runs. Moves web audio blobs from Dexie recording rows into standalone BlobStore. |
 | Settings split | Medium | Extract synced settings from the existing flat settings object into the workspace KV store. Local-only settings stay in localStorage. |
-| Sync settings UI | Medium | Three-mode toggle with URL/token/sign-in fields |
+| Sync settings UI | Medium | Toggle + URL field + Better Auth sign-in |
 | Room namespacing (cloud) | Low | Prefix room IDs with userId for multi-tenant isolation |
 | Cloudflare DO adapter | High | Wrap protocol.ts/rooms.ts in DurableObject class (Phase 3) |
 
@@ -656,6 +676,19 @@ On first launch with workspace integration:
 
 This is a key UX difference. Self-hosted is fine for "always have at least one device online" users. Cloud guarantees no data loss even if all devices are offline for weeks.
 
+### Switching Servers
+
+Changing the `syncUrl` (e.g. from self-hosted to cloud, or between two self-hosted instances) is safe because the client's local Yjs state is always the source of truth. The flow:
+
+1. User changes URL in settings → signs out of old server
+2. Sync extension calls `reconnect()` with the new URL
+3. User signs into the new server (Better Auth at the new URL)
+4. On first connect, Yjs sync protocol sends the client's full state vector
+5. New server (empty room) responds with nothing; client sends its full state
+6. New server now has the complete document
+
+No data migration needed. The old server's relay state is simply abandoned (it would have been evicted 60s after the last disconnect anyway for ephemeral relays).
+
 ### Server-Remote on Cloudflare: Runtime Mismatch
 
 server-remote uses Elysia (Bun-native). Cloudflare Workers use the `fetch` handler pattern. The sync protocol and room manager are already framework-agnostic, but the Elysia route wiring doesn't run on Workers.
@@ -680,22 +713,23 @@ For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `room
   - [ ] Show summary dialog with migrated/skipped/auto-failed counts
   - [ ] Old data left in place as backup; localStorage flag prevents re-import
 
-### Phase 2: Self-Hosted Sync
+### Phase 2: Sync (Self-Hosted & Cloud — Same Auth Flow)
 
-- [ ] Add sync settings UI (three-mode toggle)
-- [ ] Wire `createSyncExtension` when mode is `self-hosted`
+> **Updated 2026-03-03**: Phases 2 and 3 were originally separate (self-hosted with token, then cloud with Better Auth). Since both now use Better Auth, they're a single phase. The only Phase 3 work remaining is cloud-specific infrastructure (Durable Objects, room namespacing).
+
+- [ ] Add sync settings UI (toggle + URL field + Better Auth sign-in)
+- [ ] Wire `createSyncExtension` when `syncUrl` is set, with `getToken` from Better Auth session
+- [ ] Add Better Auth client creation from server URL (same client for self-hosted and cloud)
 - [ ] Add connection status indicator (connected, disconnected, syncing)
 - [ ] Add "Saving..." / "Saved" indicator using `MESSAGE_SYNC_STATUS` heartbeat
 - [ ] Test: two devices syncing via self-hosted server-remote on LAN
+- [ ] Test: two devices syncing via cloud, sign out / sign in, session expiry
 - [ ] Document: "How to self-host sync" guide
 
-### Phase 3: Epicenter Cloud
+### Phase 3: Cloud Infrastructure
 
-- [ ] Add Better Auth sign-in/sign-up UI in Whispering settings
-- [ ] Wire `createSyncExtension` with `getToken` from Better Auth session
 - [ ] Room namespacing: `userId:whispering` to isolate users
 - [ ] Build Cloudflare DO adapter for server-remote (or use existing relay with auth)
-- [ ] Test: two devices syncing via cloud, sign out / sign in, session expiry
 
 ### Phase 4: Polish
 
@@ -764,26 +798,25 @@ Build one-time leave-in-place migration from old storage to workspace tables.
 - Summary dialog after: migrated/skipped/auto-failed counts
 - "View Skipped Items" shows raw file paths / IDs
 
-### Wave 5: Sync Settings UI (parallel — Phase 2, independent UI work)
+### Wave 5: Sync Settings UI + Wiring (parallel — Phase 2, independent UI work)
 
-**Task 5.1:** Three-mode sync toggle in settings
-- Off (default): no sync extension chained
-- Self-Hosted: URL input + optional token input
-- Epicenter Cloud: placeholder for sign-in (Phase 3)
+> **Updated 2026-03-03**: Waves 5 and 6 merged. Since self-hosted and cloud use the same auth flow, there's no need for a separate "wire sync extension" wave — the wiring is the same regardless of the URL.
+
+**Task 5.1:** Sync toggle + URL field in settings
+- Toggle: enable/disable sync (`syncUrl: string | null` in localStorage)
+- URL field: pre-filled with `EPICENTER_CLOUD_URL`, editable for self-hosted
+- Better Auth sign-in/sign-up (same UI for both — the auth client targets the server URL)
 - Sync config stored in localStorage (device-specific, not workspace data)
 
-**Task 5.2:** Connection status + saving indicators
+**Task 5.2:** Wire `createSyncExtension` in workspace client
+- When `syncUrl` is `null`: no sync extension
+- When `syncUrl` is set: `createSyncExtension({ url: syncUrl, getToken })` with `getToken` from Better Auth session
+- Create `authClient` dynamically from the sync server URL
+- **File to modify:** `apps/whispering/src/lib/services/isomorphic/db/workspace-client.ts` (created in Wave 2)
+
+**Task 5.3:** Connection status + saving indicators
 - Connection status: connected / disconnected / syncing (uses sync provider state)
 - "Saving..." / "Saved" using `MESSAGE_SYNC_STATUS` heartbeat from `@epicenter/sync`
-
-### Wave 6: Wire Sync Extension (sequential — depends on Wave 5 config)
-
-Wire `createSyncExtension` in the workspace client based on the sync mode setting:
-- `off`: no sync extension
-- `self-hosted`: `createSyncExtension({ url, getToken: async () => token })` with URL/token from localStorage (omit `getToken` if no token configured)
-- `cloud`: `createSyncExtension({ url, getToken })` with Better Auth session (Phase 3 stub)
-
-**File to modify:** `apps/whispering/src/lib/services/isomorphic/db/workspace-client.ts` (created in Wave 2)
 
 ## Open Questions
 
@@ -791,23 +824,26 @@ Wire `createSyncExtension` in the workspace client based on the sync mode settin
 
 2. **Should the AI proxy on server-remote be usable by Whispering for transcription?** Whispering calls OpenAI Whisper, Groq, etc. for transcription. If server-remote has those API keys, Whispering could route transcription through `/proxy/:provider/*` instead of calling providers directly. This would let users avoid configuring API keys on every device. **Lean**: Yes, but Phase 3+. The proxy endpoint already exists. Whispering's HTTP service just needs an option to route through the proxy URL instead of directly to the provider.
 
-3. **How should the "connect to server-remote" flow work in the Tauri desktop app vs the web app?** Both need the same sync settings UI. **Lean**: localStorage for sync config on both platforms. It's device-specific config (the server URL itself), not workspace data.
+3. ~~**How should the "connect to server-remote" flow work in the Tauri desktop app vs the web app?**~~ **Resolved**: localStorage for `syncUrl` on both platforms. It's device-specific config (the server URL itself), not workspace data.
 
-4. **What happens when a user switches from self-hosted to cloud (or vice versa)?** Their local Yjs state is the source of truth. Switching the sync URL means the new server gets bootstrapped from the client's local state on first connect. No data loss, but the old server's relay state is abandoned. **Lean**: This just works — Yjs sync protocol handles it. Client sends its full state vector, new server responds with what it's missing (nothing, since it's fresh). Document this as expected behavior.
+4. **What happens when a user switches servers (e.g. self-hosted to cloud)?** Their local Yjs state is the source of truth. Switching the sync URL means the new server gets bootstrapped from the client's local state on first connect. No data loss, but the old server's relay state is abandoned. This just works — Yjs sync protocol handles it. Client sends its full state vector, new server responds with what it's missing (nothing, since it's fresh). The user signs out of the old server and signs into the new one.
+
+5. **Should self-hosted users need to create an account on their own server?** Yes — `createRemoteServer({ auth })` auto-seeds an admin account on first boot (see `seedAdminIfNeeded()` in the auth plugin). The self-hoster creates one account, signs in on all their devices. This is less friction than managing shared secrets and provides session visibility.
 
 ## References
 
 - `packages/epicenter/src/extensions/sync.ts` — `createSyncExtension` factory
-- `packages/sync/src/provider.ts` — WebSocket sync provider (open or `getToken` auth)
+- `packages/sync/src/provider.ts` — WebSocket sync provider (two modes: open or `getToken`)
 - `packages/server-remote/src/remote.ts` — `createRemoteServer()` factory with auto-wired auth
-- `packages/server-remote/src/auth/plugin.ts` — Better Auth integration + `auth` macro
+- `packages/server-remote/src/auth/plugin.ts` — Better Auth integration + `auth` macro + `seedAdminIfNeeded()`
 - `packages/server/src/sync/plugin.ts` — shared sync plugin (Elysia) with `verifyToken` option
 - `packages/server/src/sync/protocol.ts` — framework-agnostic y-websocket protocol
 - `packages/server/src/sync/rooms.ts` — room manager with eviction
-- `packages/server-remote/src/auth/plugin.ts` — Better Auth integration
 - `apps/whispering/ARCHITECTURE.md` — Whispering three-layer architecture
 - `apps/whispering/src/lib/services/isomorphic/db/` — current database service
 - `apps/whispering/src/lib/services/isomorphic/db/models/` — Recording, Transformation, TransformationRun types
 - `apps/whispering/src/lib/settings/settings.ts` — ~60+ key settings schema
 - `specs/20260219T200000-deployment-targets-research.md` — Bun vs CF Workers + DOs
-- `specs/20260222T195645-network-topology-multi-server-architecture.md` — three-tier topology
+- `specs/20260222T195645-network-topology-multi-server-architecture.md` — three-tier topology (both modes use Better Auth)
+- `specs/20260227T120000-server-package-split.md` — server → server/server-remote/server-local split
+- `specs/20260303T120000-two-mode-auth-with-centralized-oauth.md` — removed static token auth, simplified to open/verify

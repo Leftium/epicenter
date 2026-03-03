@@ -5,7 +5,11 @@ import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
-import { type AuthPluginConfig, createAuthPlugin } from './auth';
+import {
+	type AuthPluginConfig,
+	createAuthPlugin,
+	createBetterAuth,
+} from './auth';
 import { createProxyPlugin } from './proxy';
 
 export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
@@ -96,6 +100,26 @@ export type RemoteServerConfig = {
 export function createRemoteServer(config: RemoteServerConfig) {
 	const { sync } = config;
 
+	// Create Better Auth instance early so it can be shared between
+	// the auth plugin and the auto-wired sync verify function.
+	const auth = config.auth ? createBetterAuth(config.auth) : undefined;
+
+	// Auto-wire sync auth from Better Auth when auth is configured
+	// but sync.auth is not explicitly provided. This means
+	// createRemoteServer({ auth: {...} }) "just works" for sync auth.
+	const syncAuth: AuthConfig | undefined =
+		sync?.auth ??
+		(auth
+			? {
+					verify: async (token) => {
+						const session = await auth.api.getSession({
+							headers: new Headers({ authorization: `Bearer ${token}` }),
+						});
+						return session !== null;
+					},
+				}
+			: undefined);
+
 	/** Ephemeral Y.Docs for rooms (remote server is a pure relay, no pre-registered workspaces). */
 	const dynamicDocs = new Map<string, Y.Doc>();
 
@@ -122,7 +146,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 						}
 						return dynamicDocs.get(room);
 					},
-					auth: sync?.auth,
+					auth: syncAuth,
 					onRoomCreated: sync?.onRoomCreated,
 					onRoomEvicted: sync?.onRoomEvicted,
 				}),
@@ -135,9 +159,10 @@ export function createRemoteServer(config: RemoteServerConfig) {
 			mode: 'remote' as const,
 		}));
 
-	// Mount Better Auth when configured
-	if (config.auth) {
-		app.use(createAuthPlugin(config.auth));
+	// Mount Better Auth when configured — reuse the same instance
+	// created above for sync auth auto-wiring.
+	if (auth) {
+		app.use(createAuthPlugin(auth));
 	}
 
 	// Mount AI proxy unconditionally — reads API keys from env vars

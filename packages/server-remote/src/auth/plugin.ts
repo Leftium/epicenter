@@ -57,6 +57,25 @@ export type AuthPluginConfig = {
 		/** How often to extend session expiry on use, in seconds. Default: 1 day (86400). */
 		updateAge?: number;
 	};
+
+	/**
+	 * Email and password authentication configuration.
+	 *
+	 * Defaults to `{ enabled: true }` if not provided.
+	 */
+	emailAndPassword?: { enabled?: boolean; disableSignUp?: boolean };
+
+	/**
+	 * Social provider credentials keyed by provider name (e.g. `'github'`, `'google'`).
+	 *
+	 * @example
+	 * ```typescript
+	 * socialProviders: {
+	 *   github: { clientId: '...', clientSecret: '...' },
+	 * }
+	 * ```
+	 */
+	socialProviders?: Record<string, { clientId: string; clientSecret: string }>;
 };
 
 /**
@@ -85,13 +104,34 @@ export function createBetterAuth(config: AuthPluginConfig) {
 		trustedOrigins: config.trustedOrigins,
 		emailAndPassword: {
 			enabled: true,
+			...config.emailAndPassword,
 		},
+		socialProviders: config.socialProviders,
 		session: {
 			expiresIn: config.session?.expiresIn ?? 60 * 60 * 24 * 7, // 7 days
 			updateAge: config.session?.updateAge ?? 60 * 60 * 24, // 1 day
 		},
 		plugins: [bearer()],
 	});
+}
+
+/**
+ * Seed an admin user if `ADMIN_EMAIL` and `ADMIN_PASSWORD` env vars are set.
+ *
+ * Attempts sign-up and silently swallows errors — safe to call on every
+ * startup. If the user already exists, or if sign-up is disabled, nothing
+ * happens.
+ */
+export async function seedAdminIfNeeded(auth: ReturnType<typeof createBetterAuth>) {
+	const email = process.env.ADMIN_EMAIL;
+	const password = process.env.ADMIN_PASSWORD;
+	if (!email || !password) return;
+
+	try {
+		await auth.api.signUpEmail({ body: { email, password, name: 'Admin' } });
+	} catch {
+		// Already exists or signup disabled — fine
+	}
 }
 
 /**
@@ -134,8 +174,13 @@ export function createBetterAuth(config: AuthPluginConfig) {
  *   .listen(3913);
  * ```
  */
-export function createAuthPlugin(config: AuthPluginConfig) {
-	const auth = createBetterAuth(config);
+export function createAuthPlugin(
+	configOrAuth: AuthPluginConfig | ReturnType<typeof createBetterAuth>,
+) {
+	const auth =
+		'handler' in configOrAuth
+			? configOrAuth
+			: createBetterAuth(configOrAuth);
 
 	return new Elysia({ name: 'better-auth' }).mount(auth.handler).macro({
 		auth: {

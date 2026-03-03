@@ -19,8 +19,8 @@ Remove the token auth mode from sync auth, simplifying from three modes (open/to
 
 ### Wave 2: Server-remote auth enhancements
 
-- [ ] **2.1** `packages/server-remote/src/auth/plugin.ts` — Extend `AuthPluginConfig` with `emailAndPassword?: { enabled?: boolean; disableSignUp?: boolean }` and `socialProviders?: Record<string, { clientId: string; clientSecret: string }>`. Pass through to `betterAuth()`. Add `seedAdminIfNeeded()`.
-- [ ] **2.2** `packages/server-remote/src/remote.ts` — When `config.auth` is provided but `config.sync?.auth` is not, auto-create a `{ verify: async (token) => ... }` that calls `auth.api.getSession()`.
+- [x] **2.1** `packages/server-remote/src/auth/plugin.ts` — Extended `AuthPluginConfig` with `emailAndPassword` and `socialProviders`. Added `seedAdminIfNeeded()`. Made `createAuthPlugin` accept a pre-created auth instance to enable sharing.
+- [x] **2.2** `packages/server-remote/src/remote.ts` — Auto-wires `{ verify }` from Better Auth session when `config.auth` is set but `sync.auth` is not. Shares a single auth instance between the auth plugin and sync verify.
 
 ### Wave 3: Client-side sync simplification
 

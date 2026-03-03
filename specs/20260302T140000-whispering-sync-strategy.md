@@ -313,14 +313,20 @@ Future: A separate blob sync mechanism (R2 upload, presigned URLs) could sync au
 
 ### Three Sync Modes
 
-The client configuration uses `createSyncExtension` which already supports all three auth patterns:
+Whispering stores its sync preference in localStorage as a simple discriminated union. This is an **application-level config** (not a library type) — it drives whether and how the sync extension is chained:
 
 ```typescript
+// Stored in localStorage, used by workspace-client.ts to decide extension wiring
 type SyncConfig =
   | { mode: 'off' }
   | { mode: 'self-hosted'; url: string; token?: string }
-  | { mode: 'cloud'; getToken: (workspaceId: string) => Promise<string> }
+  | { mode: 'cloud' }
 ```
+
+The underlying library type is `SyncExtensionConfig` (`@epicenter/workspace`), which only has `url` and `getToken?`. Whispering maps its config to the library type at workspace initialization:
+- `off` → don't chain the sync extension
+- `self-hosted` → `createSyncExtension({ url, getToken: token ? async () => token : undefined })`
+- `cloud` → `createSyncExtension({ url: 'wss://sync.epicenter.so/rooms/{id}', getToken: async (id) => session.token })`
 
 #### Mode 1: Off (Default)
 
@@ -340,7 +346,7 @@ config
   .withExtension('persistence', indexeddbPersistence)
   .withExtension('sync', createSyncExtension({
     url: 'ws://my-server:3913/rooms/{id}',
-    token: 'optional-shared-secret',
+    getToken: async () => 'optional-shared-secret',  // omit for open mode
   }))
 ```
 
@@ -349,10 +355,10 @@ config
 // No auth (LAN/VPN)
 createRemoteServer({ port: 3913 })
 
-// With token
+// With token verification
 createRemoteServer({
   port: 3913,
-  sync: { auth: tokenAuth('my-secret') },
+  sync: { verifyToken: (token) => token === 'my-secret' },
 })
 ```
 
@@ -456,7 +462,7 @@ config
 ### Why Self-Hosters Don't Need Better Auth
 
 1. **Single-user scenario**: A self-hoster running on their home network or behind Tailscale/VPN has network-level auth already. Forcing account creation for one person syncing their own devices is hostile UX.
-2. **No database needed**: Token auth is a string comparison. No SQLite, no session table, no migration.
+2. **No database needed**: Token verification is a simple function (`verifyToken: (t) => t === 'secret'`). No SQLite, no session table, no migration.
 3. **Users control their own security**: Self-hosters typically run behind a reverse proxy (Caddy, nginx, Cloudflare Tunnel) with its own auth layer — which is more secure than Better Auth because it handles TLS, device attestation, and SSO.
 4. **Upgrade path is clean**: Switching from self-hosted-with-token to cloud-with-auth means changing the URL and signing in. No data migration.
 
@@ -469,37 +475,37 @@ config
 
 ### Auth Comparison
 
-| Concern | No Auth | Token | Better Auth |
+| Concern | Open | verifyToken | Better Auth |
 |---|---|---|---|
-| Setup complexity | Zero | One env var | Database + secret + origins |
+| Setup complexity | Zero | One function | Database + secret + origins |
 | User isolation | None | None (single tenant) | Per-user rooms |
-| Token management | N/A | Manual rotation | Auto-expiry + refresh |
+| Token management | N/A | Custom (static or dynamic) | Auto-expiry + refresh |
 | Database required | No | No | Yes (SQLite minimum) |
 | Best for | LAN/VPN/dev | Self-hosted with basic security | Multi-tenant cloud |
 | UX | Paste URL | Paste URL + token | Sign in / Create account |
 
 ### server-remote Configuration
 
-All three modes use the same `createRemoteServer()` factory. Configuration is programmatic — there are no CLI flags.
+All modes use the same `createRemoteServer()` factory. Configuration is programmatic — there are no CLI flags. Auth uses two primitives: `sync.verifyToken` (optional function) and `auth` (Better Auth config). When `auth` is provided but `sync.verifyToken` is not, sync auth is auto-wired from Better Auth sessions.
 
 ```typescript
 import { createRemoteServer } from '@epicenter/server-remote';
-import { openAuth, tokenAuth } from '@epicenter/server/sync/auth';
 
-// Open relay (LAN/VPN)
+// Open relay (LAN/VPN) — no auth at all
 createRemoteServer({ port: 3913 })
 
-// Token relay
+// Custom token verification
 createRemoteServer({
   port: 3913,
-  sync: { auth: tokenAuth('my-secret') },
+  sync: { verifyToken: (token) => token === 'my-secret' },
 })
 
-// Full (cloud) — Better Auth + token-verified sync
+// Full (cloud) — Better Auth + auto-wired sync verification
+// When auth is provided without sync.verifyToken, sync tokens are
+// validated via auth.api.getSession() automatically.
 createRemoteServer({
   port: 3913,
-  auth: { secret: process.env.BETTER_AUTH_SECRET!, ... },
-  sync: { auth: verifyAuth(async (token) => { /* validate session */ }) },
+  auth: { database: './data/auth.db', secret: process.env.BETTER_AUTH_SECRET!, trustedOrigins: ['https://app.example.com'] },
 })
 ```
 
@@ -508,23 +514,25 @@ createRemoteServer({
 ### Already Built (packages/server-remote)
 
 - `createRemoteServer({ auth?, sync? })` — configurable auth at both levels
+- Auto-wires Better Auth → sync verification when `auth` is provided without `sync.verifyToken`
 - Ephemeral Yjs relay via WebSocket (`/rooms/:room`)
 - REST snapshot/apply (`GET/POST /rooms/:room`)
-- Better Auth plugin (optional, mounts at `/auth/*`)
+- Better Auth plugin (optional, mounts at `/auth/*`) with Bearer plugin for API clients
 - AI proxy + streaming (`/ai/chat`, `/proxy/:provider/*`)
 - Ping/pong keepalive (30s), 60s room eviction
 
 ### Already Built (packages/sync)
 
 - `createSyncProvider()` with supervisor loop architecture
-- Three auth modes: open, static token, dynamic `getToken(workspaceId)`
+- Two auth modes: open (omit `getToken`) or dynamic `getToken: () => Promise<string>`
+- Token retry: 3 connection attempts per token, then forces `getToken()` refresh
 - `MESSAGE_SYNC_STATUS (102)` heartbeat — drives "Saving..." / "Saved" UI via `onLocalChanges()` callback
 - Exponential backoff reconnection (base 1.1, max coefficient 10, 500ms initial delay)
 - Browser online/offline event integration
 
 ### Already Built (packages/epicenter)
 
-- `createSyncExtension(config)` — waits for persistence, then connects
+- `createSyncExtension(config)` — waits for persistence, then connects; `reconnect()` for hot-swapping URLs
 - `defineTable`, `defineKv`, `defineWorkspace` — schema-first data model with `_v` versioning
 - Extension lifecycle (`whenReady`, `destroy`, ordered teardown)
 
@@ -532,8 +540,7 @@ createRemoteServer({
 
 - `protocol.ts` — framework-agnostic encode/decode utilities (`MESSAGE_TYPE`, `encodeSyncStep1/2`, `encodeSyncUpdate`, `encodeSyncStatus`, `handleSyncMessage`)
 - `rooms.ts` — `createRoomManager()` with `join()`, `leave()`, `broadcast()`, `getDoc()`, 60s default eviction
-- `auth.ts` — discriminated union `AuthConfig` (`openAuth()`, `tokenAuth(secret)`, `verifyAuth(fn)`) + `validateAuth()`
-- `plugin.ts` — Elysia plugin wiring protocol + rooms + auth together
+- `plugin.ts` — Elysia plugin wiring protocol + rooms + `verifyToken` auth (two modes: open or verify function)
 
 ### Needs Building
 
@@ -661,9 +668,9 @@ For the cloud tier, a separate DO adapter wraps the same `protocol.ts` and `room
 
 - [x] Create `whispering/epicenter.config.ts` with 5 normalized table definitions + synced settings KV
 - [x] Implement `BlobStore` interface with `createFileSystemBlobStore(basePath)` and `createIndexedDbBlobStore(dbName)` factories
-- [ ] Replace `DbService` (Dexie/filesystem) with `@epicenter/workspace` table helpers + `BlobStore` for audio
-- [ ] Migrate existing CRUD calls to workspace table methods (normalizing steps/stepRuns out of parent records into their own tables)
-- [ ] Wrap multi-table mutations (`addStep`, `failStep`, `completeStep`, `complete`) in `Y.Doc.transact()` for atomicity
+- [x] Replace `DbService` (Dexie/filesystem) with `@epicenter/workspace` table helpers + `BlobStore` for audio
+- [x] Migrate existing CRUD calls to workspace table methods (normalizing steps/stepRuns out of parent records into their own tables)
+- [x] Wrap multi-table mutations (`addStep`, `failStep`, `completeStep`, `complete`) in `Y.Doc.transact()` for atomicity
 - [ ] Split settings into synced (workspace KV) vs local (existing localStorage)
 - [ ] Write one-time leave-in-place migration with dialog UI:
   - [ ] Read via desktop dual-read facade (not raw filesystem) to catch IndexedDB-only records
@@ -773,7 +780,7 @@ Build one-time leave-in-place migration from old storage to workspace tables.
 
 Wire `createSyncExtension` in the workspace client based on the sync mode setting:
 - `off`: no sync extension
-- `self-hosted`: `createSyncExtension({ url, token })` with URL/token from localStorage
+- `self-hosted`: `createSyncExtension({ url, getToken: async () => token })` with URL/token from localStorage (omit `getToken` if no token configured)
 - `cloud`: `createSyncExtension({ url, getToken })` with Better Auth session (Phase 3 stub)
 
 **File to modify:** `apps/whispering/src/lib/services/isomorphic/db/workspace-client.ts` (created in Wave 2)
@@ -791,12 +798,12 @@ Wire `createSyncExtension` in the workspace client based on the sync mode settin
 ## References
 
 - `packages/epicenter/src/extensions/sync.ts` — `createSyncExtension` factory
-- `packages/sync/src/provider.ts` — WebSocket sync provider with three auth modes
-- `packages/server-remote/src/remote.ts` — `createRemoteServer()` factory
-- `packages/server/src/sync/plugin.ts` — shared sync plugin (Elysia)
+- `packages/sync/src/provider.ts` — WebSocket sync provider (open or `getToken` auth)
+- `packages/server-remote/src/remote.ts` — `createRemoteServer()` factory with auto-wired auth
+- `packages/server-remote/src/auth/plugin.ts` — Better Auth integration + `auth` macro
+- `packages/server/src/sync/plugin.ts` — shared sync plugin (Elysia) with `verifyToken` option
 - `packages/server/src/sync/protocol.ts` — framework-agnostic y-websocket protocol
 - `packages/server/src/sync/rooms.ts` — room manager with eviction
-- `packages/server/src/sync/auth.ts` — `openAuth()`, `tokenAuth()`, `verifyAuth()` factories
 - `packages/server-remote/src/auth/plugin.ts` — Better Auth integration
 - `apps/whispering/ARCHITECTURE.md` — Whispering three-layer architecture
 - `apps/whispering/src/lib/services/isomorphic/db/` — current database service

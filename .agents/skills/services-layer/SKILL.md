@@ -94,16 +94,16 @@ return RecorderError.Busy();
 
 // Variant with fields — fields are flat on the error object
 const HttpError = defineErrors({
-  Response: ({ status, body }: { status: number; body?: unknown }) => ({
-    message: body ? `HTTP ${status}: ${extractErrorMessage(body)}` : `HTTP ${status} response`,
+  Response: ({ status, body }: { status: number; body: unknown }) => ({
+    message: `HTTP ${status}: ${extractErrorMessage(body)}`,
     status,
     body,
   }),
 });
 
 // Usage — provide fields, message auto-computes
-return HttpError.Response({ status: 401 });
-// error.message → "HTTP 401 response"
+return HttpError.Response({ status: 401, body: { error: 'Unauthorized' } });
+// error.message → "HTTP 401: Unauthorized"
 // error.status  → 401 (flat on the object)
 // error.name    → "Response"
 ```
@@ -125,8 +125,8 @@ const HttpError = defineErrors({
     message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
     cause,
   }),
-  Response: ({ status, body }: { status: number; body?: unknown }) => ({
-    message: body ? `HTTP ${status}: ${extractErrorMessage(body)}` : `HTTP ${status} response`,
+  Response: ({ status, body }: { status: number; body: unknown }) => ({
+    message: `HTTP ${status}: ${extractErrorMessage(body)}`,
     status,
     body,
   }),

@@ -9,10 +9,10 @@ export const HttpError = defineErrors({
 	}),
 	Response: ({ status, body }: {
 		status: number;
-		/** The parsed response body, if available. Not all error responses include a readable body. */
-		body?: unknown;
+		/** The parsed response body from the HTTP error response. */
+		body: unknown;
 	}) => ({
-		message: body ? `HTTP ${status}: ${extractErrorMessage(body)}` : `HTTP ${status} response`,
+		message: `HTTP ${status}: ${extractErrorMessage(body)}`,
 		status,
 		body,
 	}),

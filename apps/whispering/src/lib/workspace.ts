@@ -34,29 +34,64 @@ const transformations = defineTable(
 	}),
 );
 
-const transformationSteps = defineTable(
-	type({
-		id: 'string',
-		transformationId: 'string',
-		order: 'number',
-		type: "'prompt_transform' | 'find_replace'",
-		'prompt_transform.inference.provider':
-			"'OpenAI' | 'Groq' | 'Anthropic' | 'Google' | 'OpenRouter' | 'Custom'",
-		'prompt_transform.inference.provider.OpenAI.model': 'string',
-		'prompt_transform.inference.provider.Groq.model': 'string',
-		'prompt_transform.inference.provider.Anthropic.model': 'string',
-		'prompt_transform.inference.provider.Google.model': 'string',
-		'prompt_transform.inference.provider.OpenRouter.model': 'string',
-		'prompt_transform.inference.provider.Custom.model': 'string',
-		'prompt_transform.inference.provider.Custom.baseUrl': 'string',
-		'prompt_transform.systemPromptTemplate': 'string',
-		'prompt_transform.userPromptTemplate': 'string',
-		'find_replace.findText': 'string',
-		'find_replace.replaceText': 'string',
-		'find_replace.useRegex': 'boolean',
-		_v: '1',
-	}),
-);
+// Shared base fields for all transformation step types
+const transformationStepBase = type({
+	id: 'string',
+	transformationId: 'string',
+	order: 'number',
+	_v: '1',
+});
+
+// Inference provider discriminated union — exact model literals per provider.
+// OpenAI/Groq/Anthropic/Google have enum models; OpenRouter/Custom are free-text.
+const inferenceProvider = type({
+	'inference.provider': "'OpenAI'",
+	'inference.model':
+		"'gpt-5' | 'gpt-5-mini' | 'gpt-4.1' | 'gpt-4.1-mini' | 'gpt-4.1-nano' | 'gpt-4o' | 'gpt-4o-mini' | 'o3' | 'o3-pro' | 'o3-mini' | 'o4-mini'",
+})
+	.or({
+		'inference.provider': "'Groq'",
+		'inference.model':
+			"'gemma2-9b-it' | 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant' | 'deepseek-r1-distill-llama-70b' | 'qwen-qwq-32b'",
+	})
+	.or({
+		'inference.provider': "'Anthropic'",
+		'inference.model':
+			"'claude-sonnet-4-5' | 'claude-haiku-4-5' | 'claude-opus-4-1' | 'claude-sonnet-4-0' | 'claude-opus-4-0' | 'claude-3-7-sonnet-latest' | 'claude-3-5-haiku-latest'",
+	})
+	.or({
+		'inference.provider': "'Google'",
+		'inference.model':
+			"'gemini-2.5-pro' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite-preview-06-17' | 'gemini-pro-latest' | 'gemini-flash-latest' | 'gemini-flash-lite-latest'",
+	})
+	.or({
+		'inference.provider': "'OpenRouter'",
+		'inference.model': 'string',
+	})
+	.or({
+		'inference.provider': "'Custom'",
+		'inference.model': 'string',
+		'inference.baseUrl': 'string',
+	});
+
+// Prompt transform: LLM completion with provider selection + prompt templates
+const promptTransformStep = transformationStepBase
+	.and({ type: "'prompt_transform'" })
+	.and(inferenceProvider)
+	.and({
+		systemPromptTemplate: 'string',
+		userPromptTemplate: 'string',
+	});
+
+// Find & replace: regex or literal text substitution
+const findReplaceStep = transformationStepBase.and({
+	type: "'find_replace'",
+	findText: 'string',
+	replaceText: 'string',
+	useRegex: 'boolean',
+});
+
+const transformationSteps = defineTable(promptTransformStep.or(findReplaceStep));
 
 const transformationRuns = defineTable(
 	type({
@@ -123,7 +158,9 @@ const output = {
 
 // UI preferences
 const ui = {
-	'ui.alwaysOnTop': defineKv(type("'Never' | 'Always' | 'While Recording'")),
+	'ui.alwaysOnTop': defineKv(
+		type("'Never' | 'Always' | 'When Recording' | 'When Recording and Transcribing'"),
+	),
 	'ui.layoutMode': defineKv(type("'sidebar' | 'nav-items'")),
 } as const;
 
@@ -135,22 +172,46 @@ const dataRetention = {
 
 // Recording mode (user preference, not hardware-specific)
 const recording = {
-	'recording.mode': defineKv(type("'manual' | 'vad'")),
+	'recording.mode': defineKv(type("'manual' | 'vad' | 'upload'")),
 } as const;
 
-// Transcription service & model selections (API keys do NOT sync)
+// Transcription service + model selection as a discriminated union.
+// Cloud services include model (syncs across devices). Local/self-hosted
+// services omit model (paths and IDs are device-specific, stay in localStorage).
+const transcriptionConfig = type({
+	service: "'OpenAI'",
+	model: "'whisper-1' | 'gpt-4o-transcribe' | 'gpt-4o-mini-transcribe'",
+})
+	.or({
+		service: "'Groq'",
+		model: "'whisper-large-v3' | 'whisper-large-v3-turbo'",
+	})
+	.or({
+		service: "'ElevenLabs'",
+		model: "'scribe_v2' | 'scribe_v1' | 'scribe_v1_experimental'",
+	})
+	.or({
+		service: "'Deepgram'",
+		model: "'nova-3' | 'nova-2' | 'nova' | 'enhanced' | 'base'",
+	})
+	.or({
+		service: "'Mistral'",
+		model: "'voxtral-mini-latest' | 'voxtral-small-latest'",
+	})
+	.or({ service: "'whispercpp'" })
+	.or({ service: "'parakeet'" })
+	.or({ service: "'moonshine'" })
+	.or({ service: "'speaches'" });
+
+// Transcription settings — service config is a discriminated union,
+// shared preferences (prompt, temperature, etc.) are independent KVs.
 const transcription = {
-	'transcription.service': defineKv(type('string')),
+	'transcription.config': defineKv(transcriptionConfig),
 	'transcription.language': defineKv(type('string')),
 	'transcription.prompt': defineKv(type('string')),
 	'transcription.temperature': defineKv(type('0 <= number <= 1')),
 	'transcription.compressionEnabled': defineKv(type('boolean')),
 	'transcription.compressionOptions': defineKv(type('string')),
-	'transcription.model.openai': defineKv(type('string')),
-	'transcription.model.elevenlabs': defineKv(type('string')),
-	'transcription.model.groq': defineKv(type('string')),
-	'transcription.model.deepgram': defineKv(type('string')),
-	'transcription.model.mistral': defineKv(type('string')),
 } as const;
 
 // Transformation selection

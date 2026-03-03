@@ -5,13 +5,11 @@
  */
 
 import type * as Y from 'yjs';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type {
 	YKeyValueLww,
 	YKeyValueLwwChange,
 } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type {
-	BaseRow,
 	DeleteResult,
 	GetResult,
 	InferTableRow,
@@ -26,12 +24,13 @@ import type {
  * Creates a TableHelper for a single table bound to a YKeyValue store.
  */
 export function createTableHelper<
-	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
+	TTableDefinition extends TableDefinition<any>,
 >(
 	ykv: YKeyValueLww<unknown>,
-	definition: TableDefinition<TVersions>,
-): TableHelper<InferTableRow<TableDefinition<TVersions>>> {
-	type TRow = InferTableRow<TableDefinition<TVersions>>;
+	definition: TTableDefinition,
+): TableHelper<InferTableRow<TTableDefinition>> {
+	type TRow = InferTableRow<TTableDefinition>;
 	/**
 	 * Parse and migrate a raw row value. Injects `id` into the input before validation.
 	 */

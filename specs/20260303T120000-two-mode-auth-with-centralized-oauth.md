@@ -24,5 +24,5 @@ Remove the token auth mode from sync auth, simplifying from three modes (open/to
 
 ### Wave 3: Client-side sync simplification
 
-- [ ] **3.1** `packages/sync/src/types.ts` — Remove `token?: string` from `SyncProviderConfig`. Keep `getToken`.
-- [ ] **3.2** `packages/sync/src/provider.ts` — Remove the `staticToken` code path (lines ~419-421). Remove `cachedToken = staticToken ?? null`.
+- [x] **3.1** `packages/sync/src/types.ts` — Removed `token?: string` from `SyncProviderConfig`. Updated JSDoc to two-mode auth.
+- [x] **3.2** `packages/sync/src/provider.ts` — Removed `staticToken` destructuring and code path. Also updated `provider.test.ts` and `plugin.test.ts` to use `getToken` instead of `token`.

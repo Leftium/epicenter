@@ -28,7 +28,7 @@ const MESSAGE_SYNC_STATUS = 102;
 // Timing Constants
 // ============================================================================
 
-/** Number of connection retries before refreshing the token (Mode 3 auth). */
+/** Number of connection retries before refreshing the token (authenticated mode). */
 const RETRIES_BEFORE_TOKEN_REFRESH = 3;
 
 /** Base delay before reconnecting after a failed connection attempt. */
@@ -68,16 +68,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * });
  * ```
  *
- * @example Static token (Mode 2)
- * ```typescript
- * const provider = createSyncProvider({
- *   doc: myDoc,
- *   url: 'ws://my-server:3913/rooms/blog',
- *   token: 'my-shared-secret',
- * });
- * ```
- *
- * @example Dynamic token (Mode 3)
+ * @example Authenticated mode
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
@@ -92,7 +83,6 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
 export function createSyncProvider({
 	doc,
 	url,
-	token: staticToken,
 	getToken,
 	connect: shouldConnect = true,
 	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
@@ -141,8 +131,8 @@ export function createSyncProvider({
 	/** Current backoff sleeper — can be woken by browser online events. */
 	let reconnectSleeper: Sleeper | null = null;
 
-	/** Cached token for Mode 3 auth. Cleared to force refresh. */
-	let cachedToken: string | null = staticToken ?? null;
+	/** Cached token for authenticated mode. Cleared to force refresh. */
+	let cachedToken: string | null = null;
 
 	// ========================================================================
 	// Event Listeners
@@ -416,8 +406,6 @@ export function createSyncProvider({
 					reconnectSleeper = null;
 					continue;
 				}
-			} else if (staticToken) {
-				token = staticToken;
 			}
 
 			if (runId !== myRunId) break;

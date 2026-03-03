@@ -741,7 +741,7 @@ describe('sync plugin auth', () => {
 			const provider = createSyncProvider({
 				doc,
 				url: ctx.wsUrl(room),
-				token: 'wrong-token',
+				getToken: async () => 'wrong-token',
 			});
 
 			try {
@@ -764,7 +764,7 @@ describe('sync plugin auth', () => {
 			const provider = createSyncProvider({
 				doc,
 				url: ctx.wsUrl(room),
-				token: 'secret',
+				getToken: async () => 'secret',
 			});
 
 			try {

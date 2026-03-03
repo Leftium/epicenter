@@ -4,7 +4,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { DownloadService } from '.';
-import { DownloadServiceErr } from './types';
+import { DownloadError } from './types';
 
 export function createDownloadServiceDesktop(): DownloadService {
 	return {
@@ -16,13 +16,13 @@ export function createDownloadServiceDesktop(): DownloadService {
 						filters: [{ name, extensions: [extension] }],
 					}),
 				catch: (error) =>
-					DownloadServiceErr({
+					DownloadError.Service({
 						message: `There was an error saving the recording using the Tauri Filesystem API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			});
 			if (saveError) return Err(saveError);
 			if (path === null) {
-				return DownloadServiceErr({
+				return DownloadError.Service({
 					message: 'Please specify a path to save the recording.',
 				});
 			}
@@ -32,7 +32,7 @@ export function createDownloadServiceDesktop(): DownloadService {
 					await writeFile(path, contents);
 				},
 				catch: (error) =>
-					DownloadServiceErr({
+					DownloadError.Service({
 						message: `There was an error saving the recording using the Tauri Filesystem API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			});

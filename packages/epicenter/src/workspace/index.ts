@@ -78,8 +78,7 @@ export {
 	iterateActions,
 } from '../shared/actions.js';
 // Error types
-export type { ExtensionError } from '../shared/errors.js';
-export { ExtensionErr } from '../shared/errors.js';
+export { ExtensionError } from '../shared/errors.js';
 // Lifecycle protocol
 export type {
 	DocumentContext,

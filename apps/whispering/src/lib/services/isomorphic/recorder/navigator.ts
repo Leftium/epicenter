@@ -14,12 +14,8 @@ import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
 } from '$lib/services/types';
-import type {
-	NavigatorRecordingParams,
-	RecorderService,
-	RecorderServiceError,
-} from './types';
-import { RecorderServiceErr } from './types';
+import type { NavigatorRecordingParams, RecorderService } from './types';
+import { RecorderError } from './types';
 
 type ActiveRecording = {
 	recordingId: string;
@@ -38,7 +34,7 @@ let activeRecording: ActiveRecording | null = null;
  */
 export const NavigatorRecorderServiceLive: RecorderService = {
 	getRecorderState: async (): Promise<
-		Result<WhisperingRecordingState, RecorderServiceError>
+		Result<WhisperingRecordingState, RecorderError>
 	> => {
 		return Ok(activeRecording ? 'RECORDING' : 'IDLE');
 	},
@@ -46,7 +42,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 	enumerateDevices: async () => {
 		const { data: devices, error } = await enumerateDevices();
 		if (error) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: error.message,
 			});
 		}
@@ -56,10 +52,10 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 	startRecording: async (
 		{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
 		{ sendStatus },
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
+	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
 		// Ensure we're not already recording
 		if (activeRecording) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message:
 					'A recording is already in progress. Please stop the current recording before starting a new one.',
 			});
@@ -74,7 +70,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		const { data: streamResult, error: acquireStreamError } =
 			await getRecordingStream({ selectedDeviceId, sendStatus });
 		if (acquireStreamError) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message: acquireStreamError.message,
 			});
 		}
@@ -87,7 +83,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 					bitsPerSecond: Number(bitrateKbps) * 1000,
 				}),
 			catch: (error) =>
-				RecorderServiceErr({
+				RecorderError.Service({
 					message: `Failed to initialize the audio recorder. This could be due to unsupported audio settings, microphone conflicts, or browser limitations. Please check your microphone is working and try adjusting your audio settings. ${extractErrorMessage(error)}`,
 				}),
 		});
@@ -125,9 +121,9 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<Blob, RecorderServiceError>> => {
+	}): Promise<Result<Blob, RecorderError>> => {
 		if (!activeRecording) {
-			return RecorderServiceErr({
+			return RecorderError.Service({
 				message:
 					'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
 			});
@@ -154,7 +150,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 					recording.mediaRecorder.stop();
 				}),
 			catch: (error) =>
-				RecorderServiceErr({
+				RecorderError.Service({
 					message: `Failed to properly stop and save the recording. This might be due to corrupted audio data, insufficient storage space, or a browser issue. Your recording data may be lost. ${extractErrorMessage(error)}`,
 				}),
 		});
@@ -173,7 +169,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 	cancelRecording: async ({
 		sendStatus,
-	}): Promise<Result<CancelRecordingResult, RecorderServiceError>> => {
+	}): Promise<Result<CancelRecordingResult, RecorderError>> => {
 		if (!activeRecording) {
 			return Ok({ status: 'no-recording' });
 		}

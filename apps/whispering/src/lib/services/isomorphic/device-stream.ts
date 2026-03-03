@@ -1,4 +1,8 @@
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS } from '$lib/constants/audio';
 import type {
@@ -9,10 +13,36 @@ import type {
 } from '$lib/services/types';
 import { asDeviceIdentifier } from '$lib/services/types';
 
-const { DeviceStreamServiceError, DeviceStreamServiceErr } = createTaggedError(
-	'DeviceStreamServiceError',
-);
-type DeviceStreamServiceError = ReturnType<typeof DeviceStreamServiceError>;
+const DeviceStreamError = defineErrors({
+	PermissionDenied: ({ cause }: { cause: unknown }) => ({
+		message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	DeviceConnectionFailed: ({
+		deviceId,
+		cause,
+	}: {
+		deviceId: string;
+		cause: unknown;
+	}) => ({
+		message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions. ${extractErrorMessage(cause)}`,
+		deviceId,
+		cause,
+	}),
+	EnumerationFailed: () => ({
+		message:
+			'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
+	}),
+	NoDevicesFound: () => ({
+		message:
+			"Hmm... We couldn't find any microphones to use. Check your connections and try again!",
+	}),
+	PreferredDeviceUnavailable: () => ({
+		message:
+			"We couldn't connect to any microphones. Make sure they're plugged in and try again!",
+	}),
+});
+type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 
 /**
  * Check if we already have microphone permissions granted.
@@ -28,10 +58,7 @@ async function hasExistingAudioPermission(): Promise<boolean> {
 				});
 				return permissionStatus;
 			},
-			catch: (error) =>
-				DeviceStreamServiceErr({
-					message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(error)}`,
-				}),
+			catch: (error) => DeviceStreamError.PermissionDenied({ cause: error }),
 		});
 		if (!error) return permissionStatus.state === 'granted';
 	}
@@ -42,7 +69,7 @@ async function hasExistingAudioPermission(): Promise<boolean> {
 }
 
 export async function enumerateDevices(): Promise<
-	Result<Device[], DeviceStreamServiceError>
+	Result<Device[], DeviceStreamError>
 > {
 	const hasPermission = await hasExistingAudioPermission();
 	if (!hasPermission) {
@@ -66,10 +93,7 @@ export async function enumerateDevices(): Promise<
 				label: device.label,
 			}));
 		},
-		catch: (error) =>
-			DeviceStreamServiceErr({
-				message: `We need permission to see your microphones. Check your browser settings and try again. ${extractErrorMessage(error)}`,
-			}),
+		catch: (error) => DeviceStreamError.PermissionDenied({ cause: error }),
 	});
 }
 
@@ -98,8 +122,9 @@ async function getStreamForDeviceIdentifier(
 			return stream;
 		},
 		catch: (error) =>
-			DeviceStreamServiceErr({
-				message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions. Please check that your microphone is connected, not being used elsewhere, and that you have granted microphone permissions. ${extractErrorMessage(error)}`,
+			DeviceStreamError.DeviceConnectionFailed({
+				deviceId: deviceIdentifier,
+				cause: error,
 			}),
 	});
 }
@@ -113,7 +138,7 @@ export async function getRecordingStream({
 }): Promise<
 	Result<
 		{ stream: MediaStream; deviceOutcome: DeviceAcquisitionOutcome },
-		DeviceStreamServiceError
+		DeviceStreamError
 	>
 > {
 	// Try preferred device first if specified
@@ -153,16 +178,12 @@ export async function getRecordingStream({
 	const getFirstAvailableStream = async (): Promise<
 		Result<
 			{ stream: MediaStream; deviceId: DeviceIdentifier },
-			DeviceStreamServiceError
+			DeviceStreamError
 		>
 	> => {
 		const { data: devices, error: enumerateDevicesError } =
 			await enumerateDevices();
-		if (enumerateDevicesError)
-			return DeviceStreamServiceErr({
-				message:
-					'Error enumerating recording devices and acquiring first available stream. Please make sure you have given permission to access your audio devices',
-			});
+		if (enumerateDevicesError) return DeviceStreamError.EnumerationFailed();
 
 		for (const device of devices) {
 			const { data: stream, error } = await getStreamForDeviceIdentifier(
@@ -173,21 +194,16 @@ export async function getRecordingStream({
 			}
 		}
 
-		return DeviceStreamServiceErr({
-			message: 'Unable to connect to any available microphone',
-		});
+		return DeviceStreamError.NoDevicesFound();
 	};
 
 	// Get fallback stream
 	const { data: fallbackStreamData, error: getFallbackStreamError } =
 		await getFirstAvailableStream();
 	if (getFallbackStreamError) {
-		const errorMessage = selectedDeviceId
-			? "We couldn't connect to any microphones. Make sure they're plugged in and try again!"
-			: "Hmm... We couldn't find any microphones to use. Check your connections and try again!";
-		return DeviceStreamServiceErr({
-			message: errorMessage,
-		});
+		return selectedDeviceId
+			? DeviceStreamError.PreferredDeviceUnavailable()
+			: DeviceStreamError.NoDevicesFound();
 	}
 
 	// Return the stream with appropriate device outcome

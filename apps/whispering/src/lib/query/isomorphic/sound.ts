@@ -2,7 +2,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
-import type { PlaySoundServiceError } from '$lib/services/isomorphic/sound';
+import type { SoundError } from '$lib/services/isomorphic/sound';
 import { settings } from '$lib/state/settings.svelte';
 
 const soundKeys = {
@@ -15,7 +15,7 @@ export const sound = {
 		mutationKey: soundKeys.playSoundIfEnabled,
 		mutationFn: async (
 			soundName: WhisperingSoundNames,
-		): Promise<Result<void, PlaySoundServiceError>> => {
+		): Promise<Result<void, SoundError>> => {
 			if (!settings.value[`sound.playOn.${soundName}`]) {
 				return Ok(undefined);
 			}

@@ -44,7 +44,7 @@ export const SpeachesTranscriptionServiceLive = {
 
 		if (postError) {
 			switch (postError.name) {
-				case 'ConnectionError': {
+				case 'Connection': {
 					return WhisperingErr({
 						title: '🌐 Connection Issue',
 						description:
@@ -53,11 +53,8 @@ export const SpeachesTranscriptionServiceLive = {
 					});
 				}
 
-				case 'ResponseError': {
-					const {
-						context: { status },
-						message,
-					} = postError;
+				case 'Response': {
+					const { status, message } = postError;
 
 					if (status === 401) {
 						return WhisperingErr({
@@ -127,7 +124,7 @@ export const SpeachesTranscriptionServiceLive = {
 					});
 				}
 
-				case 'ParseError':
+				case 'Parse':
 					return WhisperingErr({
 						title: '🔍 Response Error',
 						description:

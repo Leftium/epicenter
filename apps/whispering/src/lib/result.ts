@@ -1,4 +1,4 @@
-import type { TaggedError } from 'wellcrafted/error';
+import type { AnyTaggedError } from 'wellcrafted/error';
 import { Err, type Ok } from 'wellcrafted/result';
 import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
 
@@ -7,11 +7,9 @@ import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifi
  * with notification display options. This error type is designed to be user-facing,
  * providing both error details and UI presentation information.
  */
-export type WhisperingError = Omit<
-	TaggedError<'WhisperingError'>,
-	'message' | 'cause' | 'context'
-> &
-	Omit<UnifiedNotificationOptions, 'variant'> & {
+export type WhisperingError = {
+	readonly name: 'WhisperingError';
+} & Omit<UnifiedNotificationOptions, 'variant'> & {
 		severity: 'error' | 'warning';
 	};
 
@@ -26,7 +24,7 @@ type WhisperingErrorInput = Omit<
 	/** Explicit description text */
 	description?: string;
 	/** Service-layer error to adapt. If provided, error.message becomes description */
-	serviceError?: TaggedError<string>;
+	serviceError?: AnyTaggedError;
 };
 
 /**

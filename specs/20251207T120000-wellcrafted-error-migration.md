@@ -1,5 +1,7 @@
 # Well-Crafted Error Migration Plan
 
+> **Superseded**: This spec documents the v0.28.0 migration (`.withContext()`, `.withCause()`). The API has since been redesigned with flat `.withFields()` replacing `.withContext()`, `.withCause()` removed entirely, and `.withMessage()` sealing the message (no override). See `20260226T233600-tagged-error-minimal-design.md` for the current design and `20260226T000000-granular-error-migration.md` for the migration plan.
+
 ## Overview
 
 This document outlines the migration from the old `createTaggedError` API to the new v0.28.0 fluent API with explicit opt-in for `context` and `cause` properties.

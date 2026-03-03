@@ -1,5 +1,9 @@
 import { nanoid } from 'nanoid/non-secure';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {
@@ -19,10 +23,16 @@ import { settings } from '$lib/state/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';
 
-const { TransformServiceError, TransformServiceErr } = createTaggedError(
-	'TransformServiceError',
-);
-type TransformServiceError = ReturnType<typeof TransformServiceError>;
+export const TransformError = defineErrors({
+	InvalidInput: ({ message }: { message: string }) => ({ message }),
+	NoSteps: ({ message }: { message: string }) => ({ message }),
+	DbCreateRunFailed: ({ message }: { message: string }) => ({ message }),
+	DbAddStepFailed: ({ message }: { message: string }) => ({ message }),
+	DbFailStepFailed: ({ message }: { message: string }) => ({ message }),
+	DbCompleteStepFailed: ({ message }: { message: string }) => ({ message }),
+	DbCompleteRunFailed: ({ message }: { message: string }) => ({ message }),
+});
+export type TransformError = InferErrors<typeof TransformError>;
 
 const transformerKeys = {
 	transformInput: ['transformer', 'transformInput'] as const,
@@ -309,19 +319,16 @@ async function runTransformation({
 	transformation: Transformation;
 	recordingId: string | null;
 }): Promise<
-	Result<
-		TransformationRunCompleted | TransformationRunFailed,
-		TransformServiceError
-	>
+	Result<TransformationRunCompleted | TransformationRunFailed, TransformError>
 > {
 	if (!input.trim()) {
-		return TransformServiceErr({
+		return TransformError.InvalidInput({
 			message: 'Empty input. Please enter some text to transform',
 		});
 	}
 
 	if (transformation.steps.length === 0) {
-		return TransformServiceErr({
+		return TransformError.NoSteps({
 			message:
 				'No steps configured. Please add at least one transformation step',
 		});
@@ -342,7 +349,7 @@ async function runTransformation({
 		await services.db.runs.create(transformationRun);
 
 	if (createTransformationRunError)
-		return TransformServiceErr({
+		return TransformError.DbCreateRunFailed({
 			message: 'Unable to start transformation run',
 		});
 
@@ -358,7 +365,7 @@ async function runTransformation({
 		});
 
 		if (addTransformationStepRunError)
-			return TransformServiceErr({
+			return TransformError.DbAddStepFailed({
 				message: 'Unable to initialize transformation step',
 			});
 
@@ -377,7 +384,7 @@ async function runTransformation({
 				handleStepResult.error,
 			);
 			if (markTransformationRunAndRunStepAsFailedError)
-				return TransformServiceErr({
+				return TransformError.DbFailStepFailed({
 					message: 'Unable to save failed transformation step result',
 				});
 			return Ok(markedFailedTransformationRun);
@@ -393,7 +400,7 @@ async function runTransformation({
 			);
 
 		if (markTransformationRunStepAsCompletedError)
-			return TransformServiceErr({
+			return TransformError.DbCompleteStepFailed({
 				message: 'Unable to save completed transformation step result',
 			});
 
@@ -406,7 +413,7 @@ async function runTransformation({
 	} = await services.db.runs.complete(transformationRun, currentInput);
 
 	if (markTransformationRunAsCompletedError)
-		return TransformServiceErr({
+		return TransformError.DbCompleteRunFailed({
 			message: 'Unable to save completed transformation run',
 		});
 	return Ok(markedCompletedTransformationRun);

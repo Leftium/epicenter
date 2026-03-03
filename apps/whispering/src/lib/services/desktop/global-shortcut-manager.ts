@@ -6,7 +6,12 @@ import {
 } from '@tauri-apps/plugin-global-shortcut';
 import * as os from '@tauri-apps/plugin-os';
 import type { Brand } from 'wellcrafted/brand';
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferError,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
@@ -21,13 +26,59 @@ import {
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
 
-const { InvalidAcceleratorError, InvalidAcceleratorErr } = createTaggedError(
-	'InvalidAcceleratorError',
-);
-type InvalidAcceleratorError = ReturnType<typeof InvalidAcceleratorError>;
-const { GlobalShortcutServiceError, GlobalShortcutServiceErr } =
-	createTaggedError('GlobalShortcutServiceError');
-type GlobalShortcutServiceError = ReturnType<typeof GlobalShortcutServiceError>;
+const ShortcutError = defineErrors({
+	InvalidFormat: ({ accelerator }: { accelerator: string }) => ({
+		message: `Invalid accelerator format: '${accelerator}'. Must follow Electron accelerator specification.`,
+		accelerator,
+	}),
+	NoKeyCode: () => ({
+		message: 'No valid key code found in pressed keys',
+	}),
+	MultipleKeyCodes: () => ({
+		message: 'Multiple key codes not allowed in accelerator',
+	}),
+	GeneratedInvalid: ({ accelerator }: { accelerator: string }) => ({
+		message: `Generated invalid accelerator: ${accelerator}`,
+		accelerator,
+	}),
+	RegisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
+		accelerator,
+		cause,
+	}),
+	UnregisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
+		accelerator,
+		cause,
+	}),
+	UnregisterAllFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to unregister all global shortcuts: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+
+type ShortcutError = InferErrors<typeof ShortcutError>;
+type InvalidAcceleratorError =
+	| InferError<typeof ShortcutError.InvalidFormat>
+	| InferError<typeof ShortcutError.NoKeyCode>
+	| InferError<typeof ShortcutError.MultipleKeyCodes>
+	| InferError<typeof ShortcutError.GeneratedInvalid>;
+type GlobalShortcutServiceError =
+	| InferError<typeof ShortcutError.RegisterFailed>
+	| InferError<typeof ShortcutError.UnregisterFailed>
+	| InferError<typeof ShortcutError.UnregisterAllFailed>;
 
 /**
  * A type that represents a global shortcut accelerator.
@@ -58,9 +109,7 @@ export const GlobalShortcutManagerLive = {
 		if (unregisterError) return Err(unregisterError);
 
 		if (!isValidElectronAccelerator(accelerator)) {
-			return InvalidAcceleratorErr({
-				message: `Invalid accelerator format: '${accelerator}'. Must follow Electron accelerator specification.`,
-			});
+			return ShortcutError.InvalidFormat({ accelerator });
 		}
 
 		const { error: registerError } = await tryAsync({
@@ -71,9 +120,7 @@ export const GlobalShortcutManagerLive = {
 					}
 				}),
 			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(error)}`,
-				}),
+				ShortcutError.RegisterFailed({ accelerator, cause: error }),
 		});
 		/**
 		 * NOTE: We often get "RegisterEventHotKey failed for <key>" errors when
@@ -102,9 +149,7 @@ export const GlobalShortcutManagerLive = {
 		const { error: unregisterError } = await tryAsync({
 			try: () => tauriUnregister(accelerator),
 			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(error)}`,
-				}),
+				ShortcutError.UnregisterFailed({ accelerator, cause: error }),
 		});
 		if (unregisterError) return Err(unregisterError);
 		return Ok(undefined);
@@ -118,10 +163,7 @@ export const GlobalShortcutManagerLive = {
 	async unregisterAll(): Promise<Result<void, GlobalShortcutServiceError>> {
 		const { error: unregisterAllError } = await tryAsync({
 			try: () => tauriUnregisterAll(),
-			catch: (error) =>
-				GlobalShortcutServiceErr({
-					message: `Failed to unregister all global shortcuts: ${extractErrorMessage(error)}`,
-				}),
+			catch: (error) => ShortcutError.UnregisterAllFailed({ cause: error }),
 		});
 		if (unregisterAllError) return Err(unregisterAllError);
 		return Ok(undefined);
@@ -183,14 +225,10 @@ export function pressedKeysToTauriAccelerator(
 
 	// Must have exactly one key code
 	if (keyCodes.length === 0) {
-		return InvalidAcceleratorErr({
-			message: 'No valid key code found in pressed keys',
-		});
+		return ShortcutError.NoKeyCode();
 	}
 	if (keyCodes.length > 1) {
-		return InvalidAcceleratorErr({
-			message: 'Multiple key codes not allowed in accelerator',
-		});
+		return ShortcutError.MultipleKeyCodes();
 	}
 
 	// Sort modifiers in standard order for consistency
@@ -203,9 +241,7 @@ export function pressedKeysToTauriAccelerator(
 
 	// Final validation
 	if (!isValidElectronAccelerator(accelerator)) {
-		return InvalidAcceleratorErr({
-			message: `Generated invalid accelerator: ${accelerator}`,
-		});
+		return ShortcutError.GeneratedInvalid({ accelerator });
 	}
 
 	return Ok(accelerator);

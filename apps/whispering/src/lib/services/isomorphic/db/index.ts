@@ -16,8 +16,8 @@ export {
 	generateDefaultTransformation,
 	generateDefaultTransformationStep,
 } from './models';
-export type { DbService, DbServiceError } from './types';
-export { DbServiceErr } from './types';
+export type { DbService } from './types';
+export { DbError } from './types';
 
 export const DbServiceLive = window.__TAURI_INTERNALS__
 	? createDbServiceDesktop({ DownloadService: DownloadServiceLive })

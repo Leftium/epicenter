@@ -66,7 +66,10 @@
 
 			if (registerError) {
 				switch (registerError.name) {
-					case 'InvalidAcceleratorError':
+					case 'InvalidFormat':
+					case 'NoKeyCode':
+					case 'MultipleKeyCodes':
+					case 'GeneratedInvalid':
 						rpc.notify.error({
 							title: 'Invalid shortcut combination',
 							description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,

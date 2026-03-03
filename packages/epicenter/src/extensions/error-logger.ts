@@ -1,17 +1,15 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
-import type { TaggedError } from 'wellcrafted/error';
+import type { AnyTaggedError } from 'wellcrafted/error';
 import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 
 /**
  * Error type accepted by the logger.
- * Supports errors with optional context (Record<string, unknown> | undefined).
+ * Supports errors with an optional context property for structured metadata.
  */
-type LoggableError = TaggedError<
-	string,
-	Record<string, unknown> | undefined,
-	undefined
->;
+type LoggableError = AnyTaggedError & {
+	context?: Record<string, unknown>;
+};
 
 /**
  * Log entry format: timestamp + full tagged error

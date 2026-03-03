@@ -26,7 +26,8 @@ import { tryAsync, Ok, Err } from 'wellcrafted/result';
 
 const { data, error } = await tryAsync({
 	try: () => fetchUser(id),
-	catch: (e) => UserServiceErr({ message: 'Failed to fetch user', cause: e }),
+	catch: (error) =>
+		UserServiceError.FetchFailed({ id, cause: error }),
 });
 
 if (error) return Err(error);
@@ -109,9 +110,9 @@ type KvGetResult<TValue> =
 
 ---
 
-## Pattern 3: Nested Error Variants (withContext)
+## Pattern 3: Error Variants with Typed Fields
 
-Binary at top level, but error can have multiple variants via `.withContext()`.
+Binary at top level, but error can have multiple variants with typed fields via `defineErrors`.
 
 ```
                     ┌─────────────┐
@@ -134,59 +135,69 @@ Binary at top level, but error can have multiple variants via `.withContext()`.
                                   └──────────┘
 ```
 
-**When to use**: Binary success/failure, but failures have multiple causes with different context needs.
+**When to use**: Binary success/failure, but failures have multiple causes with different typed fields.
 
 ```typescript
-// From http/types.ts - Error hierarchy with context
-export const { ConnectionError, ConnectionErr } =
-	createTaggedError('ConnectionError');
+// From http/types.ts - Error hierarchy with defineErrors
+const HttpError = defineErrors({
+	Connection: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	Response: ({ status, bodyMessage }: { status: number; bodyMessage?: string }) => ({
+		message: bodyMessage ? `HTTP ${status}: ${bodyMessage}` : `HTTP ${status} response`,
+		status,
+		bodyMessage,
+	}),
+	Parse: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
-export const { ResponseError, ResponseErr } = createTaggedError(
-	'ResponseError',
-).withContext<{ status: number }>(); // ← nested context!
-
-export const { ParseError, ParseErr } = createTaggedError('ParseError');
-
-// Union type for all HTTP errors
-export type HttpServiceError = ConnectionError | ResponseError | ParseError;
+// Union type for the whole namespace
+type HttpError = InferErrors<typeof HttpError>;
 
 // Usage - still binary at top level
 const { data, error } = await httpService.post({ url, body, schema });
 
 if (error) {
-	// Can narrow by error tag
-	if (error._tag === 'ResponseError') {
-		console.log('HTTP status:', error.context.status); // type-safe access
+	// Can narrow by error name
+	if (error.name === 'Response') {
+		console.log('HTTP status:', error.status); // flat, type-safe access
 	}
 	return Err(error);
 }
 ```
 
-**Another example** - Row validation errors with rich context:
+**Another example** - Row validation errors with rich fields:
 
 ```typescript
-// Error with nested context
-export const { RowValidationError, RowValidationErr } = createTaggedError(
-	'RowValidationError',
-).withContext<{
-	tableName: string;
-	id: string;
-	errors: ArkErrors;
-	summary: string;
-}>();
+// Error with typed fields and computed message
+const ValidationError = defineErrors({
+	RowValidation: ({ tableName, id, errors, summary }: {
+		tableName: string;
+		id: string;
+		errors: ArkErrors;
+		summary: string;
+	}) => ({
+		message: `Row '${id}' in table '${tableName}' failed validation`,
+		tableName,
+		id,
+		errors,
+		summary,
+	}),
+});
 
-// Usage in table-helper.ts
+// Usage in table-helper.ts — fields are flat, message is computed by template
 return {
 	status: 'invalid',
 	id,
-	error: RowValidationError({
-		message: `Row '${id}' in table '${tableName}' failed validation`,
-		context: {
-			tableName,
-			id,
-			errors: result,
-			summary: result.summary,
-		},
+	error: ValidationError.RowValidation({
+		tableName,
+		id,
+		errors: result,
+		summary: result.summary,
 	}),
 };
 ```
@@ -199,7 +210,7 @@ return {
 | --------------------------------------- | --------------------- | ---------------------------------------------- |
 | Simple success/failure                  | Binary Result         | API calls, file I/O                            |
 | Multiple distinct outcomes, all "equal" | Discriminated Union   | `GetResult` (valid/invalid/not_found)          |
-| Binary outcome, but failures vary       | Nested Error Variants | `HttpServiceError` (connection/response/parse) |
+| Binary outcome, but failures vary       | Error Variants with Fields | `HttpServiceError` (connection/response/parse) |
 | CRUD operations with partial success    | Discriminated Union   | `UpdateManyResult` (all/partial/none applied)  |
 
 ## The Key Insight
@@ -209,7 +220,7 @@ return {
 - Cases need fundamentally different handling
 - No natural hierarchy (is "not found" really an "error"?)
 
-**Nested error variants** maintain binary success/failure but add structure to the failure case. Use when:
+**Error variants with typed fields** maintain binary success/failure but add structure to the failure case. Use when:
 
 - Success is clearly "the good case"
 - Failures are variations of "something went wrong"

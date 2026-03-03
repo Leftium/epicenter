@@ -11,8 +11,7 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
 import {
 	hashNanoidToNumber,
-	NotificationServiceErr,
-	type NotificationServiceError,
+	NotificationError,
 	toTauriNotification,
 } from './types';
 
@@ -29,12 +28,12 @@ export function createNotificationServiceDesktop(): NotificationService {
 	 */
 	const removeNotificationById = async (
 		id: number,
-	): Promise<Result<void, NotificationServiceError>> => {
+	): Promise<Result<void, NotificationError>> => {
 		const { data: activeNotifications, error: activeNotificationsError } =
 			await tryAsync({
 				try: async () => await active(),
 				catch: (error) =>
-					NotificationServiceErr({
+					NotificationError.Service({
 						message: `Unable to retrieve active desktop notifications: ${extractErrorMessage(error)}`,
 					}),
 			});
@@ -46,7 +45,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 			const { error: removeActiveError } = await tryAsync({
 				try: async () => await removeActive([matchingActiveNotification]),
 				catch: (error) =>
-					NotificationServiceErr({
+					NotificationError.Service({
 						message: `Unable to remove notification with id ${id}: ${extractErrorMessage(error)}`,
 					}),
 			});
@@ -85,7 +84,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 					}
 				},
 				catch: (error) =>
-					NotificationServiceErr({
+					NotificationError.Service({
 						message: `Could not send notification: ${extractErrorMessage(error)}`,
 					}),
 			});

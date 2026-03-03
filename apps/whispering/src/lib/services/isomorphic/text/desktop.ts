@@ -3,7 +3,7 @@ import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import type { TextService } from './types';
-import { TextServiceErr } from './types';
+import { TextError } from './types';
 
 export function createTextServiceDesktop(): TextService {
 	return {
@@ -14,7 +14,7 @@ export function createTextServiceDesktop(): TextService {
 					return text ?? null;
 				},
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error reading from the clipboard using the Tauri Clipboard Manager API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			}),
@@ -23,7 +23,7 @@ export function createTextServiceDesktop(): TextService {
 			tryAsync({
 				try: () => writeText(text),
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error copying to the clipboard using the Tauri Clipboard Manager API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			}),
@@ -32,7 +32,7 @@ export function createTextServiceDesktop(): TextService {
 			tryAsync({
 				try: () => invoke<void>('write_text', { text }),
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error writing the text. Please try pasting manually with Cmd/Ctrl+V. ${extractErrorMessage(error)}`,
 					}),
 			}),
@@ -41,7 +41,7 @@ export function createTextServiceDesktop(): TextService {
 			tryAsync({
 				try: () => invoke<void>('simulate_enter_keystroke'),
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error simulating the Enter keystroke. Please press Enter manually. ${extractErrorMessage(error)}`,
 					}),
 			}),

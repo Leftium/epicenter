@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { CompletionService } from './types';
-import { CompletionServiceErr } from './types';
+import { CompletionError } from './types';
 
 export const GoogleCompletionServiceLive: CompletionService = {
 	complete: async ({ apiKey, model: modelName, systemPrompt, userPrompt }) => {
@@ -20,7 +20,7 @@ export const GoogleCompletionServiceLive: CompletionService = {
 				return response.text();
 			},
 			catch: (error) =>
-				CompletionServiceErr({
+				CompletionError.Service({
 					message: `Google API Error: ${extractErrorMessage(error)}`,
 				}),
 		});
@@ -28,7 +28,7 @@ export const GoogleCompletionServiceLive: CompletionService = {
 		if (completionError) return Err(completionError);
 
 		if (!completion) {
-			return CompletionServiceErr({
+			return CompletionError.Service({
 				message: 'Google API returned an empty response',
 			});
 		}

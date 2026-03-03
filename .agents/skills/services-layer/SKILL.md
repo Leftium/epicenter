@@ -1,9 +1,9 @@
 ---
 name: services-layer
-description: Service layer patterns with createTaggedError, namespace exports, and Result types. Use when creating new services, defining domain-specific errors, or understanding the service architecture.
+description: Service layer patterns with defineErrors, namespace exports, and Result types. Use when creating new services, defining domain-specific errors, or understanding the service architecture.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '2.0'
 ---
 
 # Services Layer Patterns
@@ -37,86 +37,290 @@ Services follow a three-layer architecture: **Service** → **Query** → **UI**
 - **Testable**: Easy to unit test with mock parameters
 - **Consistent**: All return `Result<T, E>` types for uniform error handling
 
-## Creating Tagged Errors with createTaggedError
+## Creating Errors with defineErrors
 
-Every service defines domain-specific errors using `createTaggedError` from wellcrafted:
-
-```typescript
-import { createTaggedError } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-
-// Basic pattern - creates both constructor and Err helper
-export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError');
-type MyServiceError = ReturnType<typeof MyServiceError>;
-```
-
-### What createTaggedError Returns
-
-`createTaggedError('Name')` returns an object with two properties:
-
-1. **`NameError`** - Constructor function for creating error objects
-2. **`NameErr`** - Helper that wraps the error in `Err()` for direct return
+Every service defines domain-specific errors using `defineErrors` from wellcrafted. Errors are grouped into a namespace object where each key becomes a variant.
 
 ```typescript
-// These are equivalent:
-return Err(MyServiceError({ message: 'Something failed' }));
-return MyServiceErr({ message: 'Something failed' }); // Shorter form
-```
+import { defineErrors, type InferError, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-### Adding Typed Context with .withContext()
-
-For errors that need structured metadata (like HTTP status codes), chain `.withContext<T>()`:
-
-```typescript
-type ResponseContext = {
-	status: number; // HTTP status code
-};
-
-export const { ResponseError, ResponseErr } =
-	createTaggedError('ResponseError').withContext<ResponseContext>();
-
-// Usage: Include context when creating errors
-return ResponseErr({
-	message: 'Request failed',
-	context: { status: 401 }, // TypeScript enforces this shape
+// Namespace-style error definition
+const MyServiceError = defineErrors({
+  NotFound: ({ id }: { id: string }) => ({
+    message: `Resource '${id}' not found`,
+    id,
+  }),
+  InvalidInput: ({ field, reason }: { field: string; reason: string }) => ({
+    message: `Invalid input for '${field}': ${reason}`,
+    field,
+    reason,
+  }),
+  Unexpected: ({ cause }: { cause: unknown }) => ({
+    message: `Unexpected error: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
 });
+
+// Type derivation — shadow the const with a type of the same name
+type MyServiceError = InferErrors<typeof MyServiceError>;
+type NotFoundError = InferError<typeof MyServiceError.NotFound>;
+
+// Call sites — each variant returns Err<...> directly
+return MyServiceError.NotFound({ id: '123' });
+return MyServiceError.InvalidInput({ field: 'email', reason: 'must contain @' });
+return MyServiceError.Unexpected({ cause: error });
+```
+
+### How defineErrors Works
+
+`defineErrors({ ... })` takes an object of factory functions and returns a namespace object. Each key becomes a variant:
+
+- **`name` is auto-stamped** from the key (e.g., key `NotFound` → `error.name === 'NotFound'`)
+- **The factory function IS the message generator** — it returns `{ message, ...fields }`
+- **Each variant returns `Err<...>` directly** — no separate `FooErr` constructor needed
+- **Types use `InferError` / `InferErrors`** — not `ReturnType`
+
+```typescript
+// No-input variant (static message)
+const RecorderError = defineErrors({
+  Busy: () => ({
+    message: 'A recording is already in progress',
+  }),
+});
+
+// Usage — no arguments needed
+return RecorderError.Busy();
+
+// Variant with derived fields — constructor extracts from raw input
+const HttpError = defineErrors({
+  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
+    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+    status: response.status,
+    body,
+  }),
+});
+
+// Usage — pass raw objects, constructor derives fields
+return HttpError.Response({ response, body: await response.json() });
+// error.message → "HTTP 401: Unauthorized"
+// error.status  → 401 (derived from response, flat on the object)
+// error.name    → "Response"
 ```
 
 ### Error Type Examples from the Codebase
 
 ```typescript
-// Simple service error (most common)
-export const { RecorderServiceError, RecorderServiceErr } = createTaggedError(
-	'RecorderServiceError',
-);
+// Static message, no input needed
+const RecorderError = defineErrors({
+  Busy: () => ({
+    message: 'A recording is already in progress',
+  }),
+});
+RecorderError.Busy()
 
-// HTTP errors with status context
-export const { ResponseError, ResponseErr } = createTaggedError(
-	'ResponseError',
-).withContext<{ status: number }>();
+// Multiple related errors in a single namespace
+const HttpError = defineErrors({
+  Connection: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to connect to the server: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  Response: ({ response, body }: { response: { status: number }; body: unknown }) => ({
+    message: `HTTP ${response.status}: ${extractErrorMessage(body)}`,
+    status: response.status,
+    body,
+  }),
+  Parse: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to parse response body: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+});
 
-// Multiple related errors
-export const { ConnectionError, ConnectionErr } =
-	createTaggedError('ConnectionError');
-export const { ParseError, ParseErr } = createTaggedError('ParseError');
+// Union type for the whole namespace
+type HttpError = InferErrors<typeof HttpError>;
 
-// Combine into union type
-export type HttpServiceError = ConnectionError | ResponseError | ParseError;
+// Individual variant type
+type ConnectionError = InferError<typeof HttpError.Connection>;
 ```
+
+## Anti-Pattern: Discriminated Union Inputs
+
+**String literal unions inside error factory inputs are a code smell.** When a variant's input contains a field like `reason: 'a' | 'b' | 'c'` or `operation: 'x' | 'y' | 'z'`, you're creating a sub-discriminant that duplicates what `defineErrors` already provides at the top level.
+
+### The Problem
+
+```typescript
+// BAD: Sub-discriminant forces double narrowing and dishonest types
+const ShortcutError = defineErrors({
+  InvalidAccelerator: (input: {
+    reason: 'invalid_format' | 'no_key_code' | 'multiple_key_codes';
+    accelerator?: string;  // Optional because some reasons don't use it
+  }) => {
+    const messages = {
+      invalid_format: `Invalid format: '${input.accelerator}'`,
+      no_key_code: 'No valid key code found',
+      multiple_key_codes: 'Multiple key codes not allowed',
+    };
+    return { message: messages[input.reason], ...input };
+  },
+});
+```
+
+**Why this is bad:**
+1. **Double narrowing**: Consumers must narrow on `error.name` then on `error.reason`
+2. **Dishonest types**: `accelerator` is optional because some reasons don't need it, but the type doesn't express which ones do
+3. **Obscured intent**: The `reason` field is doing the discriminant's job — that's what variant names are for
+
+### The Fix: Split Into Separate Variants
+
+```typescript
+// GOOD: Each variant has exactly the fields it needs
+const ShortcutError = defineErrors({
+  InvalidFormat: ({ accelerator }: { accelerator: string }) => ({
+    message: `Invalid accelerator format: '${accelerator}'`,
+    accelerator,
+  }),
+  NoKeyCode: () => ({
+    message: 'No valid key code found in pressed keys',
+  }),
+  MultipleKeyCodes: () => ({
+    message: 'Multiple key codes not allowed in accelerator',
+  }),
+});
+```
+
+**Why this is better:**
+- **Single narrowing**: `error.name === 'NoKeyCode'` — done
+- **Honest types**: `InvalidFormat` requires `accelerator`, `NoKeyCode` takes nothing
+- **Self-documenting**: Variant names describe the error, no lookup table needed
+
+### When This Applies
+
+Split whenever you see:
+- `reason: 'a' | 'b' | 'c'` with a message lookup table
+- `operation: 'x' | 'y' | 'z'` with different messages per operation
+- `errorKind: ...` or `type: ...` acting as a sub-discriminant
+- Optional fields that exist because "some variants" don't use them
+
+The whole point of `defineErrors` is that each variant is a first-class citizen with its own name and shape. Collapsing them behind string unions saves a few lines of definition at the cost of weaker types and double-narrowing at every consumer.
+
+### Exception: When It's Genuinely One Error
+
+If the string literal truly is a *field* and not a sub-discriminant — e.g., the consumer doesn't switch on it — then it's fine:
+
+```typescript
+// OK: 'operation' is metadata for logging, not a sub-discriminant
+const FsError = defineErrors({
+  ReadFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to read '${path}': ${extractErrorMessage(cause)}`,
+    path,
+    cause,
+  }),
+  WriteFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to write '${path}': ${extractErrorMessage(cause)}`,
+    path,
+    cause,
+  }),
+});
+```
+
+## Anti-Pattern: Conditional Logic on Factory Inputs
+
+**If a variant constructor uses if/switch on its own input fields to decide the message or behavior, each branch should be its own variant.** This is a generalization of the string literal union rule above — any branching inside a constructor means multiple errors are hiding in one variant.
+
+### The Problem
+
+```typescript
+// BAD: Constructor branches on inputs — multiple errors hiding in one variant
+const FormError = defineErrors({
+  Validation: ({ field, value, receivedType }: {
+    field?: string;     // Optional because not every branch uses it
+    value?: string;     // Optional because not every branch uses it
+    receivedType?: string; // Optional because not every branch uses it
+  }) => ({
+    message: (() => {
+      if (field === 'email' && value) return `Invalid email address: '${value}'`;
+      if (field === 'password' && value)
+        return `Password too weak: must be at least 8 characters`;
+      if (field === 'confirmPassword')
+        return 'Passwords do not match';
+      if (receivedType) return `Invalid form data: expected string, got ${receivedType}`;
+      return 'Form submission failed';
+    })(),
+    field,
+    value,
+    receivedType,
+  }),
+});
+```
+
+**Symptoms:**
+1. **Dishonest optionals**: Fields are optional because no single call site uses them all — the type lies about what each error actually carries
+2. **Hidden branching**: Consumers must inspect fields beyond `name` to know the real error kind — `name === 'Validation'` tells you nothing
+3. **Untypeable messages**: The message depends on runtime field combinations, so TypeScript can't narrow to a specific message shape
+
+### The Fix: Flatten Each Branch Into Its Own Variant
+
+```typescript
+// GOOD: Each branch becomes its own variant with honest, required fields
+const FormError = defineErrors({
+  InvalidEmail: ({ value }: { value: string }) => ({
+    message: `Invalid email address: '${value}'`,
+    value,
+  }),
+  WeakPassword: () => ({
+    message: 'Password too weak: must be at least 8 characters',
+  }),
+  PasswordMismatch: () => ({
+    message: 'Passwords do not match',
+  }),
+  InvalidFormData: ({ receivedType }: { receivedType: string }) => ({
+    message: `Invalid form data: expected string, got ${receivedType}`,
+    receivedType,
+  }),
+  SubmissionFailed: () => ({
+    message: 'Form submission failed',
+  }),
+});
+```
+
+**Why this is better:**
+- **Honest types**: `InvalidEmail` requires `value`, `WeakPassword` takes nothing — no dishonest optionals
+- **Single narrowing**: `error.name === 'InvalidEmail'` tells you everything
+- **Typeable messages**: Each variant has a deterministic message shape
+
+### Rule of Thumb
+
+If the constructor branches on its inputs to decide the message, each branch should be its own variant. The branching *is* the evidence that you have multiple distinct errors collapsed into one.
+
+This applies to:
+- **If/else chains** in message construction (including IIFEs)
+- **Switch statements** on input fields
+- **Ternary expressions** that pick between fundamentally different messages
+- **Lookup tables** keyed on input fields (covered by the string literal union rule above)
+
+> See also: `docs/core/error-system.mdx` § "3b. Avoid Conditional Logic on Factory Inputs" for the canonical reference with full examples.
 
 ## Service Implementation Pattern
 
 ### Basic Service Structure
 
 ```typescript
-import { createTaggedError, extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-// 1. Define domain-specific error type
-export const { MyServiceError, MyServiceErr } =
-	createTaggedError('MyServiceError');
-type MyServiceError = ReturnType<typeof MyServiceError>;
+// 1. Define domain-specific errors as a namespace
+const MyServiceError = defineErrors({
+  InvalidParam: ({ param }: { param: string }) => ({
+    message: `${param} is required`,
+    param,
+  }),
+  OperationFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Operation failed: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+});
+type MyServiceError = InferErrors<typeof MyServiceError>;
 
 // 2. Create factory function that returns service object
 export function createMyService() {
@@ -127,18 +331,14 @@ export function createMyService() {
 		}): Promise<Result<OutputType, MyServiceError>> {
 			// Input validation
 			if (!options.param1) {
-				return MyServiceErr({
-					message: 'param1 is required',
-				});
+				return MyServiceError.InvalidParam({ param: 'param1' });
 			}
 
 			// Wrap risky operations with tryAsync
 			const { data, error } = await tryAsync({
 				try: () => riskyAsyncOperation(options),
 				catch: (error) =>
-					MyServiceErr({
-						message: `Operation failed: ${extractErrorMessage(error)}`,
-					}),
+					MyServiceError.OperationFailed({ cause: error }),
 			});
 
 			if (error) return Err(error);
@@ -156,6 +356,22 @@ export const MyServiceLive = createMyService();
 
 ```typescript
 // From apps/whispering/src/lib/services/isomorphic/recorder/navigator.ts
+
+const RecorderServiceError = defineErrors({
+  AlreadyRecording: () => ({
+    message: 'A recording is already in progress. Please stop the current recording.',
+  }),
+  StreamAcquisitionFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  InitFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to initialize recorder. ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+});
+type RecorderServiceError = InferErrors<typeof RecorderServiceError>;
+
 export function createNavigatorRecorderService(): RecorderService {
 	let activeRecording: ActiveRecording | null = null;
 
@@ -172,10 +388,7 @@ export function createNavigatorRecorderService(): RecorderService {
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
 			// Validate state
 			if (activeRecording) {
-				return RecorderServiceErr({
-					message:
-						'A recording is already in progress. Please stop the current recording.',
-				});
+				return RecorderServiceError.AlreadyRecording();
 			}
 
 			// Get stream (calls another service)
@@ -183,8 +396,8 @@ export function createNavigatorRecorderService(): RecorderService {
 				await getRecordingStream({ selectedDeviceId, sendStatus });
 
 			if (acquireStreamError) {
-				return RecorderServiceErr({
-					message: acquireStreamError.message,
+				return RecorderServiceError.StreamAcquisitionFailed({
+					cause: acquireStreamError,
 				});
 			}
 
@@ -195,9 +408,7 @@ export function createNavigatorRecorderService(): RecorderService {
 						bitsPerSecond: Number(bitrateKbps) * 1000,
 					}),
 				catch: (error) =>
-					RecorderServiceErr({
-						message: `Failed to initialize recorder. ${extractErrorMessage(error)}`,
-					}),
+					RecorderServiceError.InitFailed({ cause: error }),
 			});
 
 			if (recorderError) {
@@ -306,12 +517,20 @@ export type TextService = {
 
 ```typescript
 // services/isomorphic/text/desktop.ts
+const TextServiceError = defineErrors({
+  ClipboardWriteFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Clipboard write failed: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+});
+
 export function createTextServiceDesktop(): TextService {
 	return {
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => writeText(text), // Tauri API
-				catch: (error) => TextServiceErr({ message: 'Clipboard write failed' }),
+				catch: (error) =>
+					TextServiceError.ClipboardWriteFailed({ cause: error }),
 			}),
 	};
 }
@@ -322,7 +541,8 @@ export function createTextServiceWeb(): TextService {
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => navigator.clipboard.writeText(text), // Browser API
-				catch: (error) => TextServiceErr({ message: 'Clipboard write failed' }),
+				catch: (error) =>
+					TextServiceError.ClipboardWriteFailed({ cause: error }),
 			}),
 	};
 }
@@ -345,20 +565,37 @@ Write error messages that are:
 - **Actionable**: Suggest what the user can do
 - **Detailed**: Include technical details for debugging
 
+### Choosing the right approach
+
+- **No-input variants** for static messages (e.g., `Busy: () => ({ message: '...' })`)
+- **Field-based variants** when the message is computed from structured input
+- **Separate variants** when different error conditions need different fields (see Anti-Pattern section above)
+
 ```typescript
-// Good error messages
-return RecorderServiceErr({
-	message:
-		'Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.',
-});
+const RecorderError = defineErrors({
+  // Static message — no input needed
+  Busy: () => ({
+    message: 'A recording is already in progress',
+  }),
 
-return MyServiceErr({
-	message: `Failed to parse configuration file. Please check that ${filename} contains valid JSON.`,
-});
+  // Message computed from fields
+  HttpResponse: ({ status }: { status: number }) => ({
+    message: `HTTP ${status} response`,
+    status,
+  }),
 
-// Include technical details with extractErrorMessage
-return MyServiceErr({
-	message: `Database operation failed. ${extractErrorMessage(error)}`,
+  // Wrapping an unknown cause with context
+  MicrophoneUnavailable: ({ cause }: { cause: unknown }) => ({
+    message: `Unable to connect to the selected microphone: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+
+  // User-actionable message with file context
+  ConfigParseFailed: ({ filename, cause }: { filename: string; cause: unknown }) => ({
+    message: `Failed to parse configuration file. Please check that ${filename} contains valid JSON. ${extractErrorMessage(cause)}`,
+    filename,
+    cause,
+  }),
 });
 ```
 
@@ -369,7 +606,10 @@ return MyServiceErr({
 3. **Always return Result types** - Never throw errors
 4. **Use trySync/tryAsync** - See the error-handling skill for details
 5. **Export factory + Live instance** - Factory for testing, Live for production
-6. **Name errors consistently** - `{ServiceName}ServiceError` pattern
+6. **Use defineErrors namespaces** - Group related errors under a single namespace
+7. **Derive types with InferError/InferErrors** - Not `ReturnType`
+8. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
+9. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
 
 ## References
 

@@ -1,6 +1,6 @@
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
@@ -17,10 +17,10 @@ import { IS_MACOS } from '$lib/constants/platform';
  * local shortcut operations fail. Uses a tagged error pattern for type safety
  * and better error discrimination in Result types.
  */
-const { LocalShortcutServiceError } = createTaggedError(
-	'LocalShortcutServiceError',
-);
-type LocalShortcutServiceError = ReturnType<typeof LocalShortcutServiceError>;
+const LocalShortcutError = defineErrors({
+	Service: () => ({ message: 'Local shortcut operation failed' }),
+});
+type LocalShortcutError = InferErrors<typeof LocalShortcutError>;
 
 export type CommandId = string & Brand<'CommandId'>;
 
@@ -217,7 +217,7 @@ export const LocalShortcutManagerLive = {
 		keyCombination: KeyboardEventSupportedKey[];
 		callback: (state: ShortcutEventState) => void;
 		on: ShortcutEventState[];
-	}): Promise<Result<void, LocalShortcutServiceError>> {
+	}): Promise<Result<void, LocalShortcutError>> {
 		shortcuts.set(id, { keyCombination, callback, on });
 		return Ok(undefined);
 	},
@@ -227,9 +227,7 @@ export const LocalShortcutManagerLive = {
 	 * This function is idempotent - it can be safely called even if the shortcut
 	 * with the given ID doesn't exist or has already been unregistered.
 	 */
-	async unregister(
-		id: CommandId,
-	): Promise<Result<void, LocalShortcutServiceError>> {
+	async unregister(id: CommandId): Promise<Result<void, LocalShortcutError>> {
 		shortcuts.delete(id);
 		return Ok(undefined);
 	},
@@ -239,7 +237,7 @@ export const LocalShortcutManagerLive = {
 	 * This function is idempotent - it can be safely called even if no shortcuts
 	 * are currently registered.
 	 */
-	async unregisterAll(): Promise<Result<void, LocalShortcutServiceError>> {
+	async unregisterAll(): Promise<Result<void, LocalShortcutError>> {
 		shortcuts.clear();
 		return Ok(undefined);
 	},

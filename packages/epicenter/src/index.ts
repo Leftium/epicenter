@@ -48,8 +48,7 @@ export type {
 // ERROR TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { ExtensionError } from './shared/errors';
-export { ExtensionErr } from './shared/errors';
+export { ExtensionError } from './shared/errors';
 
 // ════════════════════════════════════════════════════════════════════════════
 // CORE TYPES

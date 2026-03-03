@@ -3,14 +3,20 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import { IS_MACOS } from '$lib/constants/platform';
 
 export const PermissionsError = defineErrors({
-	Service: ({ action, permissionType, cause }: {
-		action: 'check' | 'request';
-		permissionType: 'accessibility' | 'microphone';
-		cause: unknown;
-	}) => ({
-		message: `Failed to ${action} ${permissionType} permissions: ${extractErrorMessage(cause)}`,
-		action,
-		permissionType,
+	CheckAccessibility: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to check accessibility permissions: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	RequestAccessibility: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to request accessibility permissions: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	CheckMicrophone: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to check microphone permissions: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	RequestMicrophone: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to request microphone permissions: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -29,11 +35,7 @@ export const PermissionsServiceLive = {
 					return await checkAccessibilityPermission();
 				},
 				catch: (error) =>
-					PermissionsError.Service({
-						action: 'check',
-						permissionType: 'accessibility',
-						cause: error,
-					}),
+					PermissionsError.CheckAccessibility({ cause: error }),
 			});
 		},
 
@@ -48,11 +50,7 @@ export const PermissionsServiceLive = {
 					return await requestAccessibilityPermission();
 				},
 				catch: (error) =>
-					PermissionsError.Service({
-						action: 'request',
-						permissionType: 'accessibility',
-						cause: error,
-					}),
+					PermissionsError.RequestAccessibility({ cause: error }),
 			});
 		},
 	},
@@ -69,11 +67,7 @@ export const PermissionsServiceLive = {
 					return await checkMicrophonePermission();
 				},
 				catch: (error) =>
-					PermissionsError.Service({
-						action: 'check',
-						permissionType: 'microphone',
-						cause: error,
-					}),
+					PermissionsError.CheckMicrophone({ cause: error }),
 			});
 		},
 
@@ -88,11 +82,7 @@ export const PermissionsServiceLive = {
 					return await requestMicrophonePermission();
 				},
 				catch: (error) =>
-					PermissionsError.Service({
-						action: 'request',
-						permissionType: 'microphone',
-						cause: error,
-					}),
+					PermissionsError.RequestMicrophone({ cause: error }),
 			});
 		},
 	},

@@ -1,7 +1,7 @@
 # Split Sub-Discriminant Error Variants
 
 **Created**: 2026-03-02
-**Status**: Proposed
+**Status**: In Progress
 **Depends on**: `20260302T000000-define-errors-api-redesign.md` (defineErrors v2 must be in place)
 **Scope**: 7 `defineErrors` definitions that use string literal union fields as sub-discriminants
 
@@ -481,11 +481,11 @@ The only observable difference: error `.name` values change (e.g., `'InvalidAcce
 
 Each file is independent. Suggested order (smallest to largest):
 
-1. `command.ts` — 2 call sites
-2. `autostart.ts` — 3 call sites
-3. `permissions.ts` — 4 call sites
-4. `global-shortcut-manager.ts` — 7 call sites (both InvalidAccelerator and Service)
-5. `device-stream.ts` — 6 call sites
-6. `transformer.ts` — 7 call sites
+1. [x] `command.ts` — 2 call sites
+2. [x] `autostart.ts` — 3 call sites
+3. [x] `permissions.ts` — 4 call sites
+4. [ ] `global-shortcut-manager.ts` — 7 call sites (both InvalidAccelerator and Service)
+5. [ ] `device-stream.ts` — 6 call sites
+6. [ ] `transformer.ts` — 7 call sites
 
 Verify after each file: `bun run typecheck` must pass.

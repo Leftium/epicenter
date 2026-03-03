@@ -3,12 +3,16 @@ import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted
 import { tryAsync } from 'wellcrafted/result';
 
 export const AutostartError = defineErrors({
-	Service: ({ operation, cause }: {
-		operation: 'check' | 'enable' | 'disable';
-		cause: unknown;
-	}) => ({
-		message: `Failed to ${operation} autostart: ${extractErrorMessage(cause)}`,
-		operation,
+	CheckFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to check autostart: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	EnableFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to enable autostart: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	DisableFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to disable autostart: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -29,10 +33,7 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => isEnabled(),
 			catch: (error) =>
-				AutostartError.Service({
-					operation: 'check',
-					cause: error,
-				}),
+				AutostartError.CheckFailed({ cause: error }),
 		}),
 
 	/** Enable autostart so Whispering launches on system login. */
@@ -40,10 +41,7 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => enable(),
 			catch: (error) =>
-				AutostartError.Service({
-					operation: 'enable',
-					cause: error,
-				}),
+				AutostartError.EnableFailed({ cause: error }),
 		}),
 
 	/** Disable autostart so Whispering does not launch on system login. */
@@ -51,10 +49,7 @@ export const AutostartServiceLive = {
 		tryAsync({
 			try: () => disable(),
 			catch: (error) =>
-				AutostartError.Service({
-					operation: 'disable',
-					cause: error,
-				}),
+				AutostartError.DisableFailed({ cause: error }),
 		}),
 };
 

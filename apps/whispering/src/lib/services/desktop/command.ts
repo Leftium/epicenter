@@ -5,12 +5,12 @@ import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 
 export const CommandError = defineErrors({
-	Service: ({ operation, cause }: {
-		operation: 'execute' | 'spawn';
-		cause: unknown;
-	}) => ({
-		message: `Failed to ${operation} command: ${extractErrorMessage(cause)}`,
-		operation,
+	ExecuteFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to execute command: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SpawnFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to spawn command: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -52,10 +52,7 @@ export const CommandServiceLive = {
 			},
 			catch: (error) => {
 				console.error('[TS] execute: error:', error);
-				return CommandError.Service({
-					operation: 'execute',
-					cause: error,
-				});
+				return CommandError.ExecuteFailed({ cause: error });
 			},
 		});
 
@@ -90,10 +87,7 @@ export const CommandServiceLive = {
 			},
 			catch: (error) => {
 				console.error('[TS] spawn: error:', error);
-				return CommandError.Service({
-					operation: 'spawn',
-					cause: error,
-				});
+				return CommandError.SpawnFailed({ cause: error });
 			},
 		});
 

@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { Err, isErr, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { customFetch } from './fetch';
+import { customFetch } from '$lib/services/isomorphic/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 

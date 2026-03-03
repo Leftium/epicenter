@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { customFetch } from './fetch';
+import { customFetch } from '$lib/services/isomorphic/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 

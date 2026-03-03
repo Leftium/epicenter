@@ -9,6 +9,7 @@ export type {
 	ResponseError,
 } from './types';
 export { HttpError } from './types';
+export { customFetch } from './tauri-fetch';
 
 export const HttpServiceLive = window.__TAURI_INTERNALS__
 	? createHttpServiceDesktop()

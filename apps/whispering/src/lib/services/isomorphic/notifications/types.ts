@@ -1,5 +1,5 @@
 import type { Options as TauriNotificationOptions } from '@tauri-apps/plugin-notification';
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 /**
@@ -15,13 +15,10 @@ import type { Result } from 'wellcrafted/result';
  * - Extension (Future): Chrome extension API, full action support
  */
 
-export const { NotificationServiceError, NotificationServiceErr } =
-	createTaggedError('NotificationServiceError').withMessage(
-		() => 'Notification operation failed',
-	);
-export type NotificationServiceError = ReturnType<
-	typeof NotificationServiceError
->;
+export const NotificationError = defineErrors({
+	Service: ({ message }: { message: string }) => ({ message }),
+});
+export type NotificationError = InferErrors<typeof NotificationError>;
 
 /**
  * Link action for internal navigation
@@ -131,8 +128,8 @@ export type UnifiedNotificationOptions = {
 export type NotificationService = {
 	notify: (
 		options: UnifiedNotificationOptions,
-	) => Promise<Result<string, NotificationServiceError>>;
-	clear: (id: string) => Promise<Result<void, NotificationServiceError>>;
+	) => Promise<Result<string, NotificationError>>;
+	clear: (id: string) => Promise<Result<void, NotificationError>>;
 };
 
 /**

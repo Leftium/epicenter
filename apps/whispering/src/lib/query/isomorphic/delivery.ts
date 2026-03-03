@@ -2,7 +2,7 @@ import { Ok } from 'wellcrafted/result';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
 import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
-import type { TextServiceError } from '$lib/services/isomorphic/text';
+import type { TextError } from '$lib/services/isomorphic/text';
 import { settings } from '$lib/state/settings.svelte';
 import { rpc } from '..';
 
@@ -79,7 +79,7 @@ export const delivery = {
 				});
 
 			// Warns that automatic copy failed
-			const warnAutoCopyFailed = (error: TextServiceError) => {
+			const warnAutoCopyFailed = (error: TextError) => {
 				rpc.notify.warning({
 					title: "Couldn't copy to clipboard",
 					description: error.message,
@@ -89,9 +89,9 @@ export const delivery = {
 
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (
-				error: TextServiceError | WhisperingError,
+				error: TextError | WhisperingError,
 			) => {
-				if (error.name === 'TextServiceError') {
+				if (error.name === 'Service') {
 					rpc.notify.warning({
 						title: 'Unable to write to cursor automatically',
 						description: error.message,
@@ -267,7 +267,7 @@ export const delivery = {
 				});
 
 			// Warns that automatic copy failed
-			const warnAutoCopyFailed = (error: TextServiceError) => {
+			const warnAutoCopyFailed = (error: TextError) => {
 				rpc.notify.warning({
 					title: "Couldn't copy to clipboard",
 					description: error.message,
@@ -277,9 +277,9 @@ export const delivery = {
 
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (
-				error: TextServiceError | WhisperingError,
+				error: TextError | WhisperingError,
 			) => {
-				if (error.name === 'TextServiceError') {
+				if (error.name === 'Service') {
 					rpc.notify.error({
 						title: 'Error writing transformed text to cursor',
 						description: error.message,

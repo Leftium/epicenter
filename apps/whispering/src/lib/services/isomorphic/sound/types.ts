@@ -1,14 +1,14 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 
-export const { PlaySoundServiceError, PlaySoundServiceErr } = createTaggedError(
-	'PlaySoundServiceError',
-).withMessage(() => 'Sound playback failed');
-export type PlaySoundServiceError = ReturnType<typeof PlaySoundServiceError>;
+export const SoundError = defineErrors({
+	Play: ({ message }: { message: string }) => ({ message }),
+});
+export type SoundError = InferErrors<typeof SoundError>;
 
 export type PlaySoundService = {
 	playSound: (
 		soundName: WhisperingSoundNames,
-	) => Promise<Result<void, PlaySoundServiceError>>;
+	) => Promise<Result<void, SoundError>>;
 };

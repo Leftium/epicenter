@@ -1,12 +1,11 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/isomorphic/transcription/registry';
 
-const { AnalyticsServiceError, AnalyticsServiceErr } = createTaggedError(
-	'AnalyticsServiceError',
-).withMessage(() => 'Analytics operation failed');
-type AnalyticsServiceError = ReturnType<typeof AnalyticsServiceError>;
-export { AnalyticsServiceErr, AnalyticsServiceError };
+export const AnalyticsError = defineErrors({
+	Service: ({ message }: { message: string }) => ({ message }),
+});
+export type AnalyticsError = InferErrors<typeof AnalyticsError>;
 
 // Use the TranscriptionServiceId type directly
 type TranscriptionServiceId = (typeof TRANSCRIPTION_SERVICE_IDS)[number];
@@ -70,5 +69,5 @@ export type AnalyticsService = {
 	 * Send an event to the analytics provider.
 	 * Events are typed and validated at compile time.
 	 */
-	logEvent: (event: Event) => Promise<Result<void, AnalyticsServiceError>>;
+	logEvent: (event: Event) => Promise<Result<void, AnalyticsError>>;
 };

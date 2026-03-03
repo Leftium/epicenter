@@ -1,26 +1,24 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { MaybePromise, WhisperingError } from '$lib/result';
 
-const { TextServiceError, TextServiceErr } =
-	createTaggedError('TextServiceError').withMessage(
-		() => 'Text service operation failed',
-	);
-type TextServiceError = ReturnType<typeof TextServiceError>;
-export { TextServiceErr, TextServiceError };
+export const TextError = defineErrors({
+	Service: ({ message }: { message: string }) => ({ message }),
+});
+export type TextError = InferErrors<typeof TextError>;
 
 export type TextService = {
 	/**
 	 * Reads text from the system clipboard.
 	 * @returns The text content of the clipboard, or null if empty.
 	 */
-	readFromClipboard: () => Promise<Result<string | null, TextServiceError>>;
+	readFromClipboard: () => Promise<Result<string | null, TextError>>;
 
 	/**
 	 * Copies text to the system clipboard.
 	 * @param text The text to copy to the clipboard.
 	 */
-	copyToClipboard: (text: string) => Promise<Result<void, TextServiceError>>;
+	copyToClipboard: (text: string) => Promise<Result<void, TextError>>;
 
 	/**
 	 * Writes the provided text at the current cursor position.
@@ -36,7 +34,7 @@ export type TextService = {
 	 */
 	writeToCursor: (
 		text: string,
-	) => MaybePromise<Result<void, TextServiceError | WhisperingError>>;
+	) => MaybePromise<Result<void, TextError | WhisperingError>>;
 
 	/**
 	 * Simulates pressing the Enter/Return key.
@@ -45,5 +43,5 @@ export type TextService = {
 	 * Note: This is only supported on desktop (Tauri). Web browsers cannot simulate keystrokes
 	 * for security reasons.
 	 */
-	simulateEnterKeystroke: () => Promise<Result<void, TextServiceError>>;
+	simulateEnterKeystroke: () => Promise<Result<void, TextError>>;
 };

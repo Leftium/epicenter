@@ -60,16 +60,6 @@ export type OpenAiCompatibleConfig = {
 	 * @example { 'HTTP-Referer': 'https://myapp.com', 'X-Title': 'MyApp' }
 	 */
 	defaultHeaders?: Record<string, string>;
-
-	/**
-	 * Custom error messages for specific HTTP status codes.
-	 *
-	 * Allows providers to override default error messages with
-	 * provider-specific guidance (e.g., billing issues, service-specific errors).
-	 *
-	 * @example { 402: 'Insufficient credits. Please add credits to continue.' }
-	 */
-	statusMessageOverrides?: Partial<Record<number, string>>;
 };
 
 /**
@@ -95,15 +85,12 @@ export type OpenAiCompatibleConfig = {
  *   providerLabel: 'OpenAI',
  * });
  *
- * // Provider with custom headers and error messages
+ * // Provider with custom headers
  * const openrouter = createOpenAiCompatibleCompletionService({
  *   providerLabel: 'OpenRouter',
  *   defaultHeaders: {
  *     'HTTP-Referer': 'https://whispering.epicenter.so',
  *     'X-Title': 'Whispering',
- *   },
- *   statusMessageOverrides: {
- *     402: 'Insufficient credits in your OpenRouter account.',
  *   },
  * });
  * ```
@@ -146,10 +133,9 @@ export function createOpenAiCompatibleCompletionService(
 						return CompletionError.ConnectionFailed({ cause: error });
 					}
 					if (!(error instanceof OpenAI.APIError)) throw error;
-					const override = config.statusMessageOverrides?.[error.status];
 					return CompletionError.Http({
 						status: error.status,
-						cause: override ?? error,
+						cause: error,
 					});
 				},
 			});

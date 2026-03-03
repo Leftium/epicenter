@@ -1,6 +1,6 @@
 # Two-Mode Auth with Centralized OAuth
 
-**Status**: In Progress
+**Status**: Implemented
 **Branch**: braden-w/rm-token-auth
 
 ## Summary
@@ -26,3 +26,22 @@ Remove the token auth mode from sync auth, simplifying from three modes (open/to
 
 - [x] **3.1** `packages/sync/src/types.ts` — Removed `token?: string` from `SyncProviderConfig`. Updated JSDoc to two-mode auth.
 - [x] **3.2** `packages/sync/src/provider.ts` — Removed `staticToken` destructuring and code path. Also updated `provider.test.ts` and `plugin.test.ts` to use `getToken` instead of `token`.
+
+## Review
+
+**Completed**: 2026-03-03
+**Branch**: braden-w/rm-token-auth
+
+### Summary
+
+Simplified sync auth from three modes (open/token/verify) to two (open/verify) across server, server-remote, and sync packages. The server-remote package now auto-wires sync auth from Better Auth sessions, so `createRemoteServer({ auth: {...} })` just works without explicit sync auth config.
+
+### Deviations from Spec
+
+- The original task mentioned removing `tokenAuth()` factory functions and exports — these didn't exist in the codebase. The actual code used inline `{ token: string }` object literals, which were removed.
+- `createAuthPlugin` was extended to accept a pre-created Better Auth instance (not in the original spec) to avoid creating duplicate auth instances in `createRemoteServer`.
+- Client-side `token` field removal cascaded to `provider.test.ts` (not listed in the original spec).
+
+### Follow-up Work
+
+- Token broker endpoint (GET `/auth/connections/:provider` on server-remote) — separate PR as noted in spec Wave 4.

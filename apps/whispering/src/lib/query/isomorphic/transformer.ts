@@ -4,7 +4,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
+import { Err, isErr, Ok, trySync, type Result } from 'wellcrafted/result';
 import { defineMutation, queryClient } from '$lib/query/client';
 import {
 	WhisperingErr,
@@ -163,12 +163,13 @@ async function handleStep({
 			const useRegex = step['find_replace.useRegex'];
 
 			if (useRegex) {
-				try {
-					const regex = new RegExp(findText, 'g');
-					return Ok(input.replace(regex, replaceText));
-				} catch (error) {
-					return Err(`Invalid regex pattern: ${extractErrorMessage(error)}`);
-				}
+				return trySync({
+					try: () => {
+						const regex = new RegExp(findText, 'g');
+						return input.replace(regex, replaceText);
+					},
+					catch: (error) => Err(`Invalid regex pattern: ${extractErrorMessage(error)}`),
+				});
 			}
 
 			return Ok(input.replaceAll(findText, replaceText));

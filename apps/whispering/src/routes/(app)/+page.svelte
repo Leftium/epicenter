@@ -12,6 +12,8 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
+	import { extractErrorMessage } from 'wellcrafted/error';
+	import { Err, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import NavItems from '$lib/components/NavItems.svelte';
@@ -87,67 +89,71 @@
 	// Set up desktop drag and drop listener
 	onMount(async () => {
 		if (!window.__TAURI_INTERNALS__) return;
-		try {
-			const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-			const { extname } = await import('@tauri-apps/api/path');
+		const { error } = await tryAsync({
+			try: async () => {
+				const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+				const { extname } = await import('@tauri-apps/api/path');
 
-			const isAudio = async (path: string) =>
-				AUDIO_EXTENSIONS.includes(
-					(await extname(path)) as (typeof AUDIO_EXTENSIONS)[number],
-				);
-			const isVideo = async (path: string) =>
-				VIDEO_EXTENSIONS.includes(
-					(await extname(path)) as (typeof VIDEO_EXTENSIONS)[number],
-				);
-
-			unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
-				async (event) => {
-					if (settings.value['recording.mode'] !== 'upload') return;
-					if (event.payload.type !== 'drop' || event.payload.paths.length === 0)
-						return;
-
-					// Filter for audio/video files based on extension
-					const pathResults = await Promise.all(
-						event.payload.paths.map(async (path) => ({
-							path,
-							isValid: (await isAudio(path)) || (await isVideo(path)),
-						})),
+				const isAudio = async (path: string) =>
+					AUDIO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof AUDIO_EXTENSIONS)[number],
 					);
-					const validPaths = pathResults
-						.filter(({ isValid }) => isValid)
-						.map(({ path }) => path);
+				const isVideo = async (path: string) =>
+					VIDEO_EXTENSIONS.includes(
+						(await extname(path)) as (typeof VIDEO_EXTENSIONS)[number],
+					);
 
-					if (validPaths.length === 0) {
-						rpc.notify.warning({
-							title: '⚠️ No valid files',
-							description: 'Please drop audio or video files',
-						});
-						return;
-					}
+				unlistenDragDrop = await getCurrentWebview().onDragDropEvent(
+					async (event) => {
+						if (settings.value['recording.mode'] !== 'upload') return;
+						if (event.payload.type !== 'drop' || event.payload.paths.length === 0)
+							return;
 
-					await settings.switchRecordingMode('upload');
+						// Filter for audio/video files based on extension
+						const pathResults = await Promise.all(
+							event.payload.paths.map(async (path) => ({
+								path,
+								isValid: (await isAudio(path)) || (await isVideo(path)),
+							})),
+						);
+						const validPaths = pathResults
+							.filter(({ isValid }) => isValid)
+							.map(({ path }) => path);
 
-					// Convert file paths to File objects using the fs service
-					const { data: files, error } =
-						await desktopServices.fs.pathsToFiles(validPaths);
+						if (validPaths.length === 0) {
+							rpc.notify.warning({
+								title: '⚠️ No valid files',
+								description: 'Please drop audio or video files',
+							});
+							return;
+						}
 
-					if (error) {
-						rpc.notify.error({
-							title: '❌ Failed to read files',
-							description: error.message,
-						});
-						return;
-					}
+						await settings.switchRecordingMode('upload');
 
-					if (files.length > 0) {
-						await rpc.commands.uploadRecordings({ files });
-					}
-				},
-			);
-		} catch (error) {
+						// Convert file paths to File objects using the fs service
+						const { data: files, error } =
+							await desktopServices.fs.pathsToFiles(validPaths);
+
+						if (error) {
+							rpc.notify.error({
+								title: '❌ Failed to read files',
+								description: error.message,
+							});
+							return;
+						}
+
+						if (files.length > 0) {
+							await rpc.commands.uploadRecordings({ files });
+						}
+					},
+				);
+			},
+			catch: (error) => Err(error),
+		});
+		if (error) {
 			rpc.notify.error({
 				title: '❌ Failed to set up drag drop listener',
-				description: `${error}`,
+				description: extractErrorMessage(error),
 			});
 		}
 	});

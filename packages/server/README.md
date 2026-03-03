@@ -93,7 +93,7 @@ type RemoteServerConfig = {
   auth?: AuthPluginConfig;
   /** Sync plugin options. */
   sync?: {
-    auth?: AuthConfig;
+    auth?: VerifyToken;
     onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
     onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
   };
@@ -172,7 +172,7 @@ type LocalServerConfig = {
   allowedOrigins?: string[];
   /** Sync plugin options. */
   sync?: {
-    auth?: AuthConfig;
+    auth?: VerifyToken;
     onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
     onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
   };

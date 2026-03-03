@@ -1,5 +1,9 @@
 import type { Options as TauriNotificationOptions } from '@tauri-apps/plugin-notification';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 /**
@@ -16,7 +20,19 @@ import type { Result } from 'wellcrafted/result';
  */
 
 export const NotificationError = defineErrors({
-	Service: ({ message }: { message: string }) => ({ message }),
+	SendFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to send notification: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	ListActiveFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to retrieve active notifications: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	RemoveFailed: ({ id, cause }: { id: number; cause: unknown }) => ({
+		message: `Failed to remove notification with id ${id}: ${extractErrorMessage(cause)}`,
+		id,
+		cause,
+	}),
 });
 export type NotificationError = InferErrors<typeof NotificationError>;
 

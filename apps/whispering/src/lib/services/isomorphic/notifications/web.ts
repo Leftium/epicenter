@@ -1,5 +1,4 @@
 import { nanoid } from 'nanoid/non-secure';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
 import { NotificationError, toBrowserNotification } from './types';
@@ -41,22 +40,7 @@ export function createNotificationServiceWeb(): NotificationService {
 
 			// Try extension first if available
 			if (await detectExtension()) {
-				// Extension notification path (for future implementation)
-				// const extensionOptions = toExtensionNotification(options);
-				// const { error } = await tryAsync({
-				//   try: async () => {
-				//     await extension.createNotification({
-				//       ...extensionOptions,
-				//       notificationId,
-				//     });
-				//   },
-				//   catch: (error) => ({
-				//     name: 'NotificationServiceError' as const,
-				//     message: 'Failed to send extension notification',
-				//     cause: error,
-				//   }),
-				// });
-				// if (!error) return Ok(notificationId);
+				// Future: Extension notification support
 			}
 
 			// Browser notification fallback
@@ -91,10 +75,7 @@ export function createNotificationServiceWeb(): NotificationService {
 						};
 					}
 				},
-				catch: (error) =>
-					NotificationError.Service({
-						message: `Failed to send browser notification: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => NotificationError.SendFailed({ cause: error }),
 			});
 
 			if (error) return Err(error);

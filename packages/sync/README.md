@@ -39,9 +39,9 @@ provider.destroy();
 
 ## Auth Modes
 
-Three authentication modes, matching `@epicenter/server`'s auth configuration:
+Two authentication modes, matching `@epicenter/server`'s auth configuration:
 
-### Mode 1: Open (no auth)
+### Open (no auth)
 
 For localhost, Tailscale, LAN, or development:
 
@@ -52,21 +52,9 @@ const provider = createSyncProvider({
 });
 ```
 
-### Mode 2: Static Token
+### Authenticated
 
-A shared secret passed as a query parameter:
-
-```typescript
-const provider = createSyncProvider({
-	doc,
-	url: 'ws://my-server:3913/rooms/blog',
-	token: 'my-shared-secret',
-});
-```
-
-### Mode 3: Dynamic Token
-
-A function that fetches a fresh token on each connect/reconnect. Useful for JWTs with expiration:
+A function that fetches a fresh token on each connect/reconnect. For static tokens, wrap them: `getToken: async () => 'my-token'`.
 
 ```typescript
 const provider = createSyncProvider({
@@ -95,8 +83,7 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 | ---------------------- | ----------------------- | -------------------- | --------------------------------------------------------------- |
 | `doc`                  | `Y.Doc`                 | (required)           | The Yjs document to sync                                        |
 | `url`                  | `string`                | (required)           | WebSocket URL to connect to                                     |
-| `token`                | `string`                | —                    | Static auth token (Mode 2). Mutually exclusive with `getToken`  |
-| `getToken`             | `() => Promise<string>` | —                    | Dynamic token fetcher (Mode 3). Mutually exclusive with `token` |
+| `getToken`             | `() => Promise<string>` | —                    | Dynamic token fetcher for authenticated mode                    |
 | `connect`              | `boolean`               | `true`               | Whether to connect immediately                                  |
 | `awareness`            | `Awareness`             | `new Awareness(doc)` | External awareness instance for user presence                   |
 | `WebSocketConstructor` | `WebSocketConstructor`  | `WebSocket`          | Override for testing or non-browser environments                |

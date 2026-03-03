@@ -927,7 +927,7 @@ server.start();
 - Standard protocol: Compatible with any y-websocket client
 - `hasLocalChanges` tracking via MESSAGE_SYNC_STATUS (102) heartbeat extension
 - Built-in awareness: User presence/cursors work out of the box
-- Three auth modes: open, static token, dynamic token refresh
+- Two auth modes: open (no auth) and authenticated (dynamic token refresh)
 - No native modules: Pure JS, works with Bun
 
 See `@epicenter/sync` for the client-side provider API and `@epicenter/server` for the server-side sync plugin.

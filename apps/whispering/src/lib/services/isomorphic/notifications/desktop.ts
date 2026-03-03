@@ -6,7 +6,6 @@ import {
 	sendNotification,
 } from '@tauri-apps/plugin-notification';
 import { nanoid } from 'nanoid/non-secure';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
 import {
@@ -32,10 +31,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 		const { data: activeNotifications, error: activeNotificationsError } =
 			await tryAsync({
 				try: async () => await active(),
-				catch: (error) =>
-					NotificationError.Service({
-						message: `Unable to retrieve active desktop notifications: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => NotificationError.ListActiveFailed({ cause: error }),
 			});
 		if (activeNotificationsError) return Err(activeNotificationsError);
 		const matchingActiveNotification = activeNotifications.find(
@@ -44,10 +40,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 		if (matchingActiveNotification) {
 			const { error: removeActiveError } = await tryAsync({
 				try: async () => await removeActive([matchingActiveNotification]),
-				catch: (error) =>
-					NotificationError.Service({
-						message: `Unable to remove notification with id ${id}: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => NotificationError.RemoveFailed({ id, cause: error }),
 			});
 			if (removeActiveError) return Err(removeActiveError);
 		}
@@ -83,10 +76,7 @@ export function createNotificationServiceDesktop(): NotificationService {
 						});
 					}
 				},
-				catch: (error) =>
-					NotificationError.Service({
-						message: `Could not send notification: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => NotificationError.SendFailed({ cause: error }),
 			});
 			if (notifyError) return Err(notifyError);
 			return Ok(idStringified);

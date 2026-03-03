@@ -1,9 +1,16 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/isomorphic/transcription/registry';
 
 export const AnalyticsError = defineErrors({
-	Service: ({ message }: { message: string }) => ({ message }),
+	LogEventFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to log analytics event: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 export type AnalyticsError = InferErrors<typeof AnalyticsError>;
 

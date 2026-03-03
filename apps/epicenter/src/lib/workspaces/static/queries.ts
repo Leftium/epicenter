@@ -1,11 +1,18 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { addStaticWorkspace, listStaticWorkspaces } from './service';
 import type { StaticWorkspaceEntry } from './types';
 
 const StaticWorkspaceError = defineErrors({
-	Failed: ({ message }: { message: string }) => ({ message }),
+	AddFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to add static workspace: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 type StaticWorkspaceError = InferErrors<typeof StaticWorkspaceError>;
 
@@ -39,7 +46,7 @@ export const staticWorkspaces = {
 				});
 				return Ok(entry);
 			} catch (error) {
-				return StaticWorkspaceError.Failed({ message: String(error) });
+				return StaticWorkspaceError.AddFailed({ cause: error });
 			}
 		},
 	}),

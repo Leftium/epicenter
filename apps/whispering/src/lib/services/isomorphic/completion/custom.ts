@@ -12,13 +12,13 @@ export const CustomCompletionServiceLive =
 		getBaseUrl: (params) => params.baseUrl,
 		validateParams: (params) => {
 			if (!params.baseUrl) {
-				return CompletionError.Service({
-					message: 'Custom provider requires a base URL.',
+				return CompletionError.MissingParam({
+					param: 'Custom provider base URL',
 				});
 			}
 			if (!params.model) {
-				return CompletionError.Service({
-					message: 'Custom provider requires a model name.',
+				return CompletionError.MissingParam({
+					param: 'Custom provider model name',
 				});
 			}
 			return Ok(undefined);

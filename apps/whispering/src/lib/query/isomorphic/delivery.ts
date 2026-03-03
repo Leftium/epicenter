@@ -89,18 +89,15 @@ export const delivery = {
 
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
-				if (error.name === 'Service') {
-					rpc.notify.warning({
-						title: 'Unable to write to cursor automatically',
-						description: error.message,
-						action: { type: 'more-details', error },
-					});
-					return;
-				}
 				if (error.name === 'WhisperingError') {
 					rpc.notify[error.severity](error);
 					return;
 				}
+				rpc.notify.warning({
+					title: 'Unable to write to cursor automatically',
+					description: error.message,
+					action: { type: 'more-details', error },
+				});
 			};
 
 			// Show appropriate success notification based on what succeeded
@@ -275,18 +272,15 @@ export const delivery = {
 
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
-				if (error.name === 'Service') {
-					rpc.notify.error({
-						title: 'Error writing transformed text to cursor',
-						description: error.message,
-						action: { type: 'more-details', error },
-					});
-					return;
-				}
 				if (error.name === 'WhisperingError') {
 					rpc.notify[error.severity](error);
 					return;
 				}
+				rpc.notify.error({
+					title: 'Error writing transformed text to cursor',
+					description: error.message,
+					action: { type: 'more-details', error },
+				});
 			};
 
 			// Show appropriate success notification based on what succeeded

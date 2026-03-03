@@ -563,12 +563,12 @@ describe('createSyncProvider', () => {
 		provider.destroy();
 	});
 
-	test('static token is passed as query param', async () => {
+	test('getToken result is passed as query param', async () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
 			url: 'ws://test/sync',
-			token: 'my-secret',
+			getToken: async () => 'my-secret',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});

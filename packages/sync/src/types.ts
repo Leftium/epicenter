@@ -19,10 +19,9 @@ export type WebSocketConstructor = {
 /**
  * Configuration for creating a sync provider.
  *
- * Supports three auth modes:
- * - **Mode 1 (Open)**: Just `url` — no auth (localhost, Tailscale, LAN)
- * - **Mode 2 (Shared Secret)**: `url` + `token` — static token
- * - **Mode 3 (External JWT)**: `url` + `getToken` — dynamic token refresh
+ * Supports two auth modes:
+ * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
+ * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  */
 export type SyncProviderConfig = {
 	/** The Y.Doc to sync. */
@@ -31,12 +30,8 @@ export type SyncProviderConfig = {
 	/** WebSocket URL to connect to. */
 	url: string;
 
-	/** Static token for Mode 2 auth. Mutually exclusive with getToken. */
-	token?: string;
-
 	/**
-	 * Dynamic token fetcher for Mode 3 auth. Called on each connect/reconnect.
-	 * Mutually exclusive with token.
+	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
 	 */
 	getToken?: () => Promise<string>;
 
@@ -74,7 +69,7 @@ export type SyncStatus =
  * - Supervisor loop architecture (one loop decides, event handlers report)
  * - MESSAGE_SYNC_STATUS (102) heartbeat for `hasLocalChanges` and fast dead detection
  * - Exponential backoff with wakeable sleeper for browser online events
- * - Three-mode auth (open, static token, dynamic token refresh)
+ * - Two-mode auth (open, dynamic token refresh)
  */
 export type SyncProvider = {
 	/** Current connection status. */

@@ -1,11 +1,14 @@
 import { openapi } from '@elysiajs/openapi';
 import { listenWithFallback } from '@epicenter/server';
-import type { AuthConfig } from '@epicenter/server/sync';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
-import { type AuthPluginConfig, createAuthPlugin } from './auth';
+import {
+	type AuthPluginConfig,
+	createAuthPlugin,
+	createBetterAuth,
+} from './auth';
 import { createProxyPlugin } from './proxy';
 
 export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
@@ -30,7 +33,7 @@ export type RemoteServerConfig = {
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
 		/** Auth for sync endpoints. Omit for open mode (no auth). */
-		auth?: AuthConfig;
+		verifyToken?: (token: string) => boolean | Promise<boolean>;
 
 		/** Called when a new sync room is created on demand. */
 		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
@@ -96,6 +99,24 @@ export type RemoteServerConfig = {
 export function createRemoteServer(config: RemoteServerConfig) {
 	const { sync } = config;
 
+	// Create Better Auth instance early so it can be shared between
+	// the auth plugin and the auto-wired sync verify function.
+	const auth = config.auth ? createBetterAuth(config.auth) : undefined;
+
+	// Auto-wire sync auth from Better Auth when auth is configured
+	// but sync.verifyToken is not explicitly provided. This means
+	// createRemoteServer({ auth: {...} }) "just works" for sync auth.
+	const syncVerifyToken: ((token: string) => boolean | Promise<boolean>) | undefined =
+		sync?.verifyToken ??
+		(auth
+			? async (token: string) => {
+					const session = await auth.api.getSession({
+						headers: new Headers({ authorization: `Bearer ${token}` }),
+					});
+					return session !== null;
+				}
+			: undefined);
+
 	/** Ephemeral Y.Docs for rooms (remote server is a pure relay, no pre-registered workspaces). */
 	const dynamicDocs = new Map<string, Y.Doc>();
 
@@ -122,7 +143,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 						}
 						return dynamicDocs.get(room);
 					},
-					auth: sync?.auth,
+					verifyToken: syncVerifyToken,
 					onRoomCreated: sync?.onRoomCreated,
 					onRoomEvicted: sync?.onRoomEvicted,
 				}),
@@ -135,9 +156,10 @@ export function createRemoteServer(config: RemoteServerConfig) {
 			mode: 'remote' as const,
 		}));
 
-	// Mount Better Auth when configured
-	if (config.auth) {
-		app.use(createAuthPlugin(config.auth));
+	// Mount Better Auth when configured — reuse the same instance
+	// created above for sync auth auto-wiring.
+	if (auth) {
+		app.use(createAuthPlugin(auth));
 	}
 
 	// Mount AI proxy unconditionally — reads API keys from env vars

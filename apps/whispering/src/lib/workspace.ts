@@ -13,11 +13,7 @@ import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE } from '$lib/constants/inference';
-import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/openai';
-import { GROQ_MODELS } from '$lib/services/isomorphic/transcription/cloud/groq';
-import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/elevenlabs';
-import { DEEPGRAM_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/deepgram';
-import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/mistral';
+import { TRANSCRIPTION } from '$lib/constants/transcription';
 
 // ── Tables ────────────────────────────────────────────────────────────────────
 
@@ -195,28 +191,28 @@ const recording = {
 const transcriptionConfig = type.or(
 	{
 		service: "'OpenAI'",
-		model: type.enumerated(...OPENAI_TRANSCRIPTION_MODELS.map((m) => m.name)),
+		model: type.enumerated(...TRANSCRIPTION.OpenAI.models.map((m) => m.name)),
 	},
 	{
 		service: "'Groq'",
-		model: type.enumerated(...GROQ_MODELS.map((m) => m.name)),
+		model: type.enumerated(...TRANSCRIPTION.Groq.models.map((m) => m.name)),
 	},
 	{
 		service: "'ElevenLabs'",
 		model: type.enumerated(
-			...ELEVENLABS_TRANSCRIPTION_MODELS.map((m) => m.name),
+			...TRANSCRIPTION.ElevenLabs.models.map((m) => m.name),
 		),
 	},
 	{
 		service: "'Deepgram'",
 		model: type.enumerated(
-			...DEEPGRAM_TRANSCRIPTION_MODELS.map((m) => m.name),
+			...TRANSCRIPTION.Deepgram.models.map((m) => m.name),
 		),
 	},
 	{
 		service: "'Mistral'",
 		model: type.enumerated(
-			...MISTRAL_TRANSCRIPTION_MODELS.map((m) => m.name),
+			...TRANSCRIPTION.Mistral.models.map((m) => m.name),
 		),
 	},
 	{ service: "'whispercpp'" },

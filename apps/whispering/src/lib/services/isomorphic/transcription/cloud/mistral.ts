@@ -3,23 +3,6 @@ import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { Settings } from '$lib/settings';
-export const MISTRAL_TRANSCRIPTION_MODELS = [
-	{
-		name: 'voxtral-mini-latest',
-		description:
-			'API-optimized Voxtral Mini model delivering unparalleled cost and latency efficiency. Supports multilingual transcription with high accuracy.',
-		cost: '$0.12/hour',
-	},
-	{
-		name: 'voxtral-small-latest',
-		description:
-			'Voxtral Small model for higher accuracy and broader language support. Suitable for most transcription needs with a balance of cost and performance.',
-		cost: '$0.24/hour',
-	},
-] as const;
-
-export type MistralModel = (typeof MISTRAL_TRANSCRIPTION_MODELS)[number];
-
 const MAX_FILE_SIZE_MB = 25 as const;
 
 export const MistralTranscriptionServiceLive = {
@@ -30,7 +13,7 @@ export const MistralTranscriptionServiceLive = {
 			temperature: string;
 			outputLanguage: Settings['transcription.outputLanguage'];
 			apiKey: string;
-			modelName: (string & {}) | MistralModel['name'];
+			modelName: string;
 		},
 	): Promise<Result<string, WhisperingError>> {
 		// Pre-validate API key

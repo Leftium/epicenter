@@ -3,12 +3,6 @@ import { nanoid } from 'nanoid/non-secure';
 import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/database';
 import { INFERENCE, INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 
-/**
- * The current version of the TransformationStep schema.
- * Increment this when adding new fields or making breaking changes.
- */
-const CURRENT_TRANSFORMATION_STEP_VERSION = 2 as const;
-
 // ============================================================================
 // VERSION 1 (FROZEN)
 // ============================================================================
@@ -83,7 +77,8 @@ export type TransformationStepV2 = typeof TransformationStepV2.infer;
  * TransformationStep validator with automatic migration.
  * Accepts V1 or V2 and always outputs V2.
  */
-export const TransformationStep = TransformationStepV1.or(
+export const TransformationStep = type.or(
+	TransformationStepV1,
 	TransformationStepV2,
 ).pipe((step): TransformationStepV2 => {
 	if (step.version === 1) {
@@ -105,7 +100,7 @@ export type TransformationStep = TransformationStepV2;
 
 export function generateDefaultTransformationStep(): TransformationStep {
 	return {
-		version: CURRENT_TRANSFORMATION_STEP_VERSION,
+		version: 2,
 		id: nanoid(),
 		type: 'prompt_transform',
 		'prompt_transform.inference.provider': 'Google',

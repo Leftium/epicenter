@@ -141,50 +141,21 @@ export function createOpenAiCompatibleCompletionService(
 							{ role: 'user', content: params.userPrompt },
 						],
 					}),
-				catch: (error) => {
-					if (!(error instanceof OpenAI.APIError)) {
-						throw error;
+				catch: (error): Err<CompletionError> => {
+					if (!(error instanceof OpenAI.APIError)) throw error;
+					if (!error.status && error.name === 'APIConnectionError') {
+						return CompletionError.ConnectionFailed({ cause: error });
 					}
-					return Err(error);
+					const status = error.status ?? 0;
+					const override = config.statusMessageOverrides?.[status];
+					return CompletionError.Http({
+						status,
+						cause: override ?? error,
+					});
 				},
 			});
 
-			if (apiError) {
-				const { status, name } = apiError;
-
-				if (typeof status === 'number') {
-					const override = config.statusMessageOverrides?.[status];
-					if (override) {
-						return CompletionError.Api({ cause: override });
-					}
-				}
-
-				if (status === 400)
-					return CompletionError.BadRequest({ cause: apiError });
-
-				if (status === 401)
-					return CompletionError.Unauthorized({ cause: apiError });
-
-				if (status === 403)
-					return CompletionError.Forbidden({ cause: apiError });
-
-				if (status === 404)
-					return CompletionError.ModelNotFound({ cause: apiError });
-
-				if (status === 422)
-					return CompletionError.UnprocessableEntity({ cause: apiError });
-
-				if (status === 429)
-					return CompletionError.RateLimit({ cause: apiError });
-
-				if (status && status >= 500)
-					return CompletionError.ServerError({ cause: apiError });
-
-				if (!status && name === 'APIConnectionError')
-					return CompletionError.ConnectionFailed({ cause: apiError });
-
-				return CompletionError.Api({ cause: apiError });
-			}
+			if (apiError) return Err(apiError);
 
 			const responseText = completion.choices.at(0)?.message?.content;
 			if (!responseText) {

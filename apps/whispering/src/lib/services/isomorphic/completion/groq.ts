@@ -23,47 +23,16 @@ export const GroqCompletionServiceLive: CompletionService = {
 						{ role: 'user', content: userPrompt },
 					],
 				}),
-			catch: (error) => {
-				// Check if it's NOT a Groq API error
-				if (!(error instanceof Groq.APIError)) {
-					// This is an unexpected error type
-					throw error;
+			catch: (error): Err<CompletionError> => {
+				if (!(error instanceof Groq.APIError)) throw error;
+				if (!error.status && error.name === 'APIConnectionError') {
+					return CompletionError.ConnectionFailed({ cause: error });
 				}
-				// Return the error directly
-				return Err(error);
+				return CompletionError.Http({ status: error.status ?? 0, cause: error });
 			},
 		});
 
-		if (groqApiError) {
-			// Error handling follows https://www.npmjs.com/package/groq-sdk#error-handling
-			const { status, name } = groqApiError;
-
-			if (status === 400)
-				return CompletionError.BadRequest({ cause: groqApiError });
-
-			if (status === 401)
-				return CompletionError.Unauthorized({ cause: groqApiError });
-
-			if (status === 403)
-				return CompletionError.Forbidden({ cause: groqApiError });
-
-			if (status === 404)
-				return CompletionError.ModelNotFound({ cause: groqApiError });
-
-			if (status === 422)
-				return CompletionError.UnprocessableEntity({ cause: groqApiError });
-
-			if (status === 429)
-				return CompletionError.RateLimit({ cause: groqApiError });
-
-			if (status && status >= 500)
-				return CompletionError.ServerError({ cause: groqApiError });
-
-			if (!status && name === 'APIConnectionError')
-				return CompletionError.ConnectionFailed({ cause: groqApiError });
-
-			return CompletionError.Api({ cause: groqApiError });
-		}
+		if (groqApiError) return Err(groqApiError);
 
 		// Extract the response text
 		const responseText = completion.choices.at(0)?.message?.content;

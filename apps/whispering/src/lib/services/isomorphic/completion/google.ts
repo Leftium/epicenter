@@ -19,7 +19,7 @@ export const GoogleCompletionServiceLive: CompletionService = {
 				return response.text();
 			},
 			catch: (error) =>
-				CompletionError.Api({ cause: error }),
+				CompletionError.Http({ status: 0, cause: error }),
 		});
 
 		if (completionError) return Err(completionError);

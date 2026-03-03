@@ -1,5 +1,4 @@
 import { nanoid } from 'nanoid/non-secure';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { NotificationService, UnifiedNotificationOptions } from './types';
 import { NotificationError, toBrowserNotification } from './types';
@@ -77,9 +76,7 @@ export function createNotificationServiceWeb(): NotificationService {
 					}
 				},
 				catch: (error) =>
-					NotificationError.Service({
-						message: `Failed to send browser notification: ${extractErrorMessage(error)}`,
-					}),
+					NotificationError.SendFailed({ cause: error }),
 			});
 
 			if (error) return Err(error);

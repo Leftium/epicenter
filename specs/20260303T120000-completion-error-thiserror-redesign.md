@@ -100,24 +100,24 @@ const { data: completion, error: groqApiError } = await tryAsync({
 			],
 		}),
 	catch: (error) => {
-		if (!(error instanceof Groq.APIError)) throw error;
-		if (!error.status && error.name === 'APIConnectionError') {
+		if (error instanceof Groq.APIConnectionError) {
 			return CompletionError.ConnectionFailed({ cause: error });
 		}
-		return CompletionError.Http({ status: error.status ?? 0, cause: error });
+		if (!(error instanceof Groq.APIError)) throw error;
+		return CompletionError.Http({ status: error.status, cause: error });
 	},
 });
 
 if (groqApiError) return Err(groqApiError);
 ```
 
-The entire 30-line status mapping collapses into 2 branches inside the catch handler. No more destructuring `{ status, name }` after `tryAsync` — the mapping happens at the catch site.
+The entire 30-line status mapping collapses into 2 branches inside the catch handler. The `instanceof APIConnectionError` check comes first (since it's a subclass of `APIError`), and after that guard, TypeScript narrows `error.status` to `number` — no `?? 0` needed.
 
 ### 3. `anthropic.ts` — Same pattern as groq
 
 **Before (lines 34–63):** 30-line if-chain.
 
-**After:** Same 2-branch catch pattern. Replace `Anthropic.APIError` instanceof check, same `ConnectionFailed` vs `Http` split.
+**After:** Same 2-branch catch pattern. `instanceof Anthropic.APIConnectionError` first, then `instanceof Anthropic.APIError` guard. `error.status` narrows to `number` after the connection error early return.
 
 ### 4. `openai-compatible.ts` — Same pattern + status overrides
 
@@ -126,20 +126,19 @@ The entire 30-line status mapping collapses into 2 branches inside the catch han
 **After:**
 ```typescript
 catch: (error) => {
-	if (!(error instanceof OpenAI.APIError)) throw error;
-	if (!error.status && error.name === 'APIConnectionError') {
+	if (error instanceof OpenAI.APIConnectionError) {
 		return CompletionError.ConnectionFailed({ cause: error });
 	}
-	const status = error.status ?? 0;
-	const override = config.statusMessageOverrides?.[status];
+	if (!(error instanceof OpenAI.APIError)) throw error;
+	const override = config.statusMessageOverrides?.[error.status];
 	return CompletionError.Http({
-		status,
+		status: error.status,
 		cause: override ?? error,
 	});
 },
 ```
 
-Status override check moves into the catch handler. If override exists, it becomes the cause (producing a clean message). If not, the raw SDK error is the cause.
+The `instanceof APIConnectionError` check comes first — since it's a subclass of `APIError`, it must be caught before the general `APIError` guard. After the connection error early return, TypeScript narrows `error.status` to `number` (not `number | undefined`), eliminating the need for `?? 0`. Status override check uses `error.status` directly.
 
 ### 5. `google.ts` — No changes
 

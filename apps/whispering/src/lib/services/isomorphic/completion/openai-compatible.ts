@@ -142,14 +142,13 @@ export function createOpenAiCompatibleCompletionService(
 						],
 					}),
 				catch: (error): Err<CompletionError> => {
-					if (!(error instanceof OpenAI.APIError)) throw error;
-					if (!error.status && error.name === 'APIConnectionError') {
+					if (error instanceof OpenAI.APIConnectionError) {
 						return CompletionError.ConnectionFailed({ cause: error });
 					}
-					const status = error.status ?? 0;
-					const override = config.statusMessageOverrides?.[status];
+					if (!(error instanceof OpenAI.APIError)) throw error;
+					const override = config.statusMessageOverrides?.[error.status];
 					return CompletionError.Http({
-						status,
+						status: error.status,
 						cause: override ?? error,
 					});
 				},

@@ -21,11 +21,11 @@ export function createAnthropicCompletionService(): CompletionService {
 						max_tokens: 1024,
 					}),
 				catch: (error): Err<CompletionError> => {
-					if (!(error instanceof Anthropic.APIError)) throw error;
-					if (!error.status && error.name === 'APIConnectionError') {
+					if (error instanceof Anthropic.APIConnectionError) {
 						return CompletionError.ConnectionFailed({ cause: error });
 					}
-					return CompletionError.Http({ status: error.status ?? 0, cause: error });
+					if (!(error instanceof Anthropic.APIError)) throw error;
+					return CompletionError.Http({ status: error.status, cause: error });
 				},
 			});
 

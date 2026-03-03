@@ -24,11 +24,11 @@ export const GroqCompletionServiceLive: CompletionService = {
 					],
 				}),
 			catch: (error): Err<CompletionError> => {
-				if (!(error instanceof Groq.APIError)) throw error;
-				if (!error.status && error.name === 'APIConnectionError') {
+				if (error instanceof Groq.APIConnectionError) {
 					return CompletionError.ConnectionFailed({ cause: error });
 				}
-				return CompletionError.Http({ status: error.status ?? 0, cause: error });
+				if (!(error instanceof Groq.APIError)) throw error;
+				return CompletionError.Http({ status: error.status, cause: error });
 			},
 		});
 

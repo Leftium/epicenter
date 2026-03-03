@@ -79,13 +79,13 @@ catch: (error) => MyServiceError.OperationFailed({ underlyingError: extractError
 8. **CRITICAL: Wrap destructured errors with Err()** - When you destructure `{ data, error }` from tryAsync/trySync, the `error` variable is the raw error value, NOT wrapped in `Err`. You must wrap it before returning:
 
 ```typescript
-// WRONG - error is just the raw TaggedError, not a Result
+// WRONG - error is just the raw error value, not a Result
 const { data, error } = await tryAsync({...});
-if (error) return error; // TYPE ERROR: Returns TaggedError, not Result
+if (error) return error; // TYPE ERROR: Returns raw error, not Result
 
 // CORRECT - wrap with Err() to return a proper Result
 const { data, error } = await tryAsync({...});
-if (error) return Err(error); // Returns Err<TaggedError>
+if (error) return Err(error); // Returns Err<CustomError>
 ```
 
 This is different from returning the entire result object:
@@ -195,7 +195,7 @@ const { data, error } = await tryAsync({
 		await someOtherAsyncCall();
 		return processResults();
 	},
-	catch: (error) => GenericErr({ message: 'Something failed' }), // Too vague!
+	catch: (error) => Err(error), // Too vague! No specific error type
 });
 ```
 
@@ -252,7 +252,7 @@ const { data: mediaRecorder, error: recorderError } = trySync({
 		return recorder;
 	},
 	catch: (error) =>
-		RecorderServiceError.InitFailed({ cause: error }),
+		RecorderError.InitFailed({ cause: error }),
 });
 ```
 
@@ -284,7 +284,7 @@ async function getStreamForDeviceIdentifier(
 // From navigator.ts
 startRecording: async (params, { sendStatus }) => {
   if (activeRecording) {
-    return RecorderServiceErr({ message: 'Already recording.' });
+    return RecorderError.Service({ message: 'Already recording.' });
   }
 
   // First try block - get stream
@@ -297,7 +297,7 @@ startRecording: async (params, { sendStatus }) => {
   // Second try block - create recorder
   const { data: mediaRecorder, error: recorderError } = trySync({
     try: () => new MediaRecorder(stream, { bitsPerSecond: bitrate }),
-    catch: (error) => RecorderServiceError.InitFailed({ cause: error }),
+    catch: (error) => RecorderError.InitFailed({ cause: error }),
   });
 
   if (recorderError) {

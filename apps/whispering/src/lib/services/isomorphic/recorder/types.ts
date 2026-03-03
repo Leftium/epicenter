@@ -1,4 +1,8 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type {
 	CancelRecordingResult,
@@ -12,7 +16,65 @@ import type {
 } from '$lib/services/types';
 
 export const RecorderError = defineErrors({
-	Service: ({ message }: { message: string }) => ({ message }),
+	EnumerateDevices: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to enumerate recording devices: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	NoDevice: ({ message }: { message: string }) => ({
+		message,
+	}),
+	AlreadyRecording: () => ({
+		message:
+			'A recording is already in progress. Please stop the current recording before starting a new one.',
+	}),
+	NotRecording: ({ message }: { message: string }) => ({
+		message,
+	}),
+	InitFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	StartFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Unable to start recording: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	StopFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to stop recording: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	ReadFileFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Unable to read recording file: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	NoFilePath: () => ({
+		message: 'Recording file path not provided by method.',
+	}),
+	EmptyRecording: () => ({
+		message: 'Recording file is empty.',
+	}),
+	FileDeleteFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to delete recording file: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	GetStateFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to get recorder state: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	InvokeFailed: ({
+		command,
+		cause,
+	}: {
+		command: string;
+		cause: unknown;
+	}) => ({
+		message: `Tauri invoke '${command}' failed: ${extractErrorMessage(cause)}`,
+		command,
+		cause,
+	}),
 });
 export type RecorderError = InferErrors<typeof RecorderError>;
 

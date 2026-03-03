@@ -202,7 +202,13 @@ Services should **never** import or use `WhisperingError`. That transformation h
 import { WhisperingError } from '$lib/result';
 
 // ✅ CORRECT - Service uses its own error type
-type MyServiceError = TaggedError<'MyServiceError'>;
+const MyError = defineErrors({
+	Failed: ({ cause }: { cause: unknown }) => ({
+		message: `Operation failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+type MyError = InferErrors<typeof MyError>;
 ```
 
 The query layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
@@ -268,7 +274,7 @@ Never wrap an already-wrapped error. The query layer handles the single transfor
 ```typescript
 // ❌ BAD: Service returns tagged error, query wraps it, then UI wraps again
 if (error) {
-	const whisperingError = WhisperingErr({
+	const whisperingError = WhisperingError({
 		/* ... */
 	});
 	notify.error.execute({ ...whisperingError.error }); // Double wrapping!

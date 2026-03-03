@@ -10,18 +10,6 @@ export function createPlaySoundServiceWeb(): PlaySoundService {
 				await audioElements[soundName].play();
 				return Ok(undefined);
 			}
-			// const { error: playSoundError } = await extension.playSound({
-			// 	sound: soundName,
-			// });
-			// if (playSoundError) {
-			// 	return PlaySoundServiceErr(
-			// 		`We encountered an issue while playing the ${soundName} sound`,
-			// 		{
-			// 			context: { soundName },
-			// 			cause: playSoundError,
-			// 		}
-			// 	);
-			// }
 			return Ok(undefined);
 		},
 	};

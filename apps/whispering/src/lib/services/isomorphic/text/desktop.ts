@@ -1,6 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import type { TextService } from './types';
 import { TextError } from './types';
@@ -13,37 +12,25 @@ export function createTextServiceDesktop(): TextService {
 					const text = await readText();
 					return text ?? null;
 				},
-				catch: (error) =>
-					TextError.Service({
-						message: `There was an error reading from the clipboard using the Tauri Clipboard Manager API. Please try again. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.ClipboardRead({ cause: error }),
 			}),
 
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => writeText(text),
-				catch: (error) =>
-					TextError.Service({
-						message: `There was an error copying to the clipboard using the Tauri Clipboard Manager API. Please try again. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.ClipboardWrite({ cause: error }),
 			}),
 
 		writeToCursor: async (text) =>
 			tryAsync({
 				try: () => invoke<void>('write_text', { text }),
-				catch: (error) =>
-					TextError.Service({
-						message: `There was an error writing the text. Please try pasting manually with Cmd/Ctrl+V. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.WriteToCursor({ cause: error }),
 			}),
 
 		simulateEnterKeystroke: () =>
 			tryAsync({
 				try: () => invoke<void>('simulate_enter_keystroke'),
-				catch: (error) =>
-					TextError.Service({
-						message: `There was an error simulating the Enter keystroke. Please press Enter manually. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.SimulateKeystroke({ cause: error }),
 			}),
 	};
 }

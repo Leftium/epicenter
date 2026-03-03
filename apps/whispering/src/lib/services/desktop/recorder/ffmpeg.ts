@@ -250,9 +250,7 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const { data: result, error: executeError } =
 		await CommandServiceLive.execute(command);
 	if (executeError) {
-		return RecorderError.Service({
-			message: 'Failed to enumerate recording devices',
-		});
+		return RecorderError.EnumerateDevices({ cause: executeError });
 	}
 
 	// FFmpeg lists devices to stderr, not stdout
@@ -261,7 +259,7 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const devices = parseDevices(output);
 
 	if (devices.length === 0) {
-		return RecorderError.Service({
+		return RecorderError.NoDevice({
 			message: 'No recording devices found',
 		});
 	}
@@ -308,7 +306,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 			const fallbackDeviceId = deviceIds.at(0);
 
 			if (!fallbackDeviceId) {
-				return RecorderError.Service({
+				return RecorderError.NoDevice({
 					message: selectedDeviceId
 						? "We couldn't find the selected microphone. Make sure it's connected and try again!"
 						: "We couldn't find any microphones. Make sure they're connected and try again!",
@@ -380,10 +378,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 		);
 
 		if (startError) {
-			// The spawn function already caught the FFmpeg error and extracted the message
-			return RecorderError.Service({
-				message: 'Failed to start recording',
-			});
+			return RecorderError.StartFailed({ cause: startError });
 		}
 
 		// Store the PID and session info for recovery after refresh
@@ -406,7 +401,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 		const child = getCurrentChild();
 		const session = sessionState.value;
 		if (!child || !session) {
-			return RecorderError.Service({
+			return RecorderError.NotRecording({
 				message: 'No active recording to stop',
 			});
 		}
@@ -433,10 +428,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 					}, 1000);
 				}
 			},
-			catch: (error) =>
-				RecorderError.Service({
-					message: `Failed to stop FFmpeg process: ${extractErrorMessage(error)}`,
-				}),
+			catch: (error) => RecorderError.StopFailed({ cause: error }),
 		});
 
 		if (killError) {
@@ -501,16 +493,12 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 			await FsServiceLive.pathToBlob(outputPath);
 
 		if (readError) {
-			return RecorderError.Service({
-				message: 'Unable to read recording file',
-			});
+			return RecorderError.ReadFileFailed({ cause: readError });
 		}
 
 		// Validate the blob has actual content
 		if (!blob || blob.size === 0) {
-			return RecorderError.Service({
-				message: 'Recording file is empty',
-			});
+			return RecorderError.EmptyRecording();
 		}
 
 		return Ok(blob);
@@ -543,9 +531,7 @@ export const FfmpegRecorderServiceLive: RecorderService = {
 					if (fileExists) await remove(pathToCleanup);
 				},
 				catch: (error) =>
-					RecorderError.Service({
-						message: `Failed to delete recording file: ${extractErrorMessage(error)}`,
-					}),
+					RecorderError.FileDeleteFailed({ cause: error }),
 			});
 
 			if (removeError) {

@@ -1,4 +1,3 @@
-import { extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import { TextError, type TextService } from './types';
 
@@ -10,19 +9,13 @@ export function createTextServiceExtension(): TextService {
 					const text = await navigator.clipboard.readText();
 					return text || null;
 				},
-				catch: (error) =>
-					TextError.Service({
-						message: `Unable to read from clipboard: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.ClipboardRead({ cause: error }),
 			}),
 
 		copyToClipboard: (text) =>
 			tryAsync({
 				try: () => navigator.clipboard.writeText(text),
-				catch: (error) =>
-					TextError.Service({
-						message: `Unable to copy to clipboard: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.ClipboardWrite({ cause: error }),
 			}),
 
 		writeToCursor: (text) =>
@@ -32,16 +25,12 @@ export function createTextServiceExtension(): TextService {
 					await navigator.clipboard.writeText(text);
 					return writeTextToCursor(text);
 				},
-				catch: (error) =>
-					TextError.Service({
-						message: `Unable to write text at cursor position: ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => TextError.WriteToCursor({ cause: error }),
 			}),
 
 		simulateEnterKeystroke: async () =>
-			TextError.Service({
-				message:
-					'Simulating keystrokes is not supported in browser extensions for security reasons.',
+			TextError.NotSupported({
+				operation: 'Simulating keystrokes',
 			}),
 	};
 }

@@ -120,10 +120,7 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
  * @typeParam TDocuments - Record of named document configs declared via `.withDocument()`
  */
 export type TableDefinition<
-	TVersions extends readonly CombinedStandardSchema<{
-		id: string;
-		_v: number;
-	}>[],
+	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
 	TDocuments extends Record<string, DocumentConfig> = Record<string, never>,
 > = {
 	schema: CombinedStandardSchema<

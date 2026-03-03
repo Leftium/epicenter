@@ -40,6 +40,7 @@
  * ```
  */
 
+import type { JsonValue } from 'wellcrafted/json';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
@@ -48,6 +49,8 @@ import type { KvDefinition, LastSchema } from './types.js';
 /**
  * Creates a KV definition with a single schema version.
  *
+ * Schema output must be JSON-serializable (`JsonValue`).
+ *
  * For single-version definitions, TVersions is a single-element tuple.
  *
  * @example
@@ -55,7 +58,7 @@ import type { KvDefinition, LastSchema } from './types.js';
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
  * ```
  */
-export function defineKv<TSchema extends CombinedStandardSchema>(
+export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
 	schema: TSchema,
 ): KvDefinition<[TSchema]>;
 
@@ -89,9 +92,9 @@ export function defineKv<TSchema extends CombinedStandardSchema>(
  */
 export function defineKv<
 	const TVersions extends [
-		CombinedStandardSchema,
-		CombinedStandardSchema,
-		...CombinedStandardSchema[],
+		CombinedStandardSchema<JsonValue>,
+		CombinedStandardSchema<JsonValue>,
+		...CombinedStandardSchema<JsonValue>[],
 	],
 >(
 	...versions: TVersions
@@ -103,8 +106,8 @@ export function defineKv<
 	): KvDefinition<TVersions>;
 };
 
-export function defineKv<TSchema extends CombinedStandardSchema>(
-	...args: [TSchema, ...CombinedStandardSchema[]]
+export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
+	...args: [TSchema, ...CombinedStandardSchema<JsonValue>[]]
 ):
 	| KvDefinition<[TSchema]>
 	| {

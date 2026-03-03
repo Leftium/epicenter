@@ -11,6 +11,7 @@ import type {
 	YKeyValueLwwChange,
 } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type {
+	BaseRow,
 	DeleteResult,
 	GetResult,
 	InferTableRow,
@@ -25,10 +26,7 @@ import type {
  * Creates a TableHelper for a single table bound to a YKeyValue store.
  */
 export function createTableHelper<
-	TVersions extends readonly CombinedStandardSchema<{
-		id: string;
-		_v: number;
-	}>[],
+	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
 >(
 	ykv: YKeyValueLww<unknown>,
 	definition: TableDefinition<TVersions>,

@@ -152,15 +152,13 @@ describe('createTables', () => {
 	test('migrates old data on read', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				}),
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
+				return row;
+			}),
 		});
 
 		// Simulate writing old data by accessing the raw array
@@ -183,29 +181,25 @@ describe('migration scenarios', () => {
 	test('migrates three schema versions to latest', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						author: 'string | null',
-						_v: '3',
-					}),
-				)
-				.migrate((row) => {
-					if (row._v === 1) {
-						return { ...row, views: 0, author: null, _v: 3 as const };
-					}
-					if (row._v === 2) {
-						return { ...row, author: null, _v: 3 as const };
-					}
-					return row;
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					author: 'string | null',
+					_v: '3',
 				}),
+			).migrate((row) => {
+				if (row._v === 1) {
+					return { ...row, views: 0, author: null, _v: 3 as const };
+				}
+				if (row._v === 2) {
+					return { ...row, author: null, _v: 3 as const };
+				}
+				return row;
+			}),
 		});
 
 		// Insert v1 data directly
@@ -240,29 +234,25 @@ describe('migration scenarios', () => {
 	test('migrates three schema versions including tags field', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						tags: 'string[]',
-						_v: '3',
-					}),
-				)
-				.migrate((row) => {
-					if (row._v === 1) {
-						return { ...row, views: 0, tags: [], _v: 3 as const };
-					}
-					if (row._v === 2) {
-						return { ...row, tags: [], _v: 3 as const };
-					}
-					return row;
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					tags: 'string[]',
+					_v: '3',
 				}),
+			).migrate((row) => {
+				if (row._v === 1) {
+					return { ...row, views: 0, tags: [], _v: 3 as const };
+				}
+				if (row._v === 2) {
+					return { ...row, tags: [], _v: 3 as const };
+				}
+				return row;
+			}),
 		});
 
 		// Insert v1 data

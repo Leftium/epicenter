@@ -106,13 +106,13 @@ describe('describeWorkspace', () => {
 			_v: '2',
 		});
 
-		const posts = defineTable()
-			.version(v1)
-			.version(v2)
-			.migrate((row) => {
-				if (row._v === 2) return row;
-				return { ...row, views: 0, _v: 2 as const };
-			});
+		const posts = defineTable(
+			v1,
+			v2,
+		).migrate((row) => {
+			if (row._v === 2) return row;
+			return { ...row, views: 0, _v: 2 as const };
+		});
 
 		const client = createWorkspace({
 			id: 'multi-version',

@@ -143,13 +143,14 @@ defineKv(s1, s2, ...sN)                → { migrate(fn) → KvDefinition<TVersi
 
 Every `.version()` chain becomes variadic arguments. The migration functions stay identical.
 
-- [ ] **2.1** Update `packages/epicenter/src/workspace/define-table.test.ts`
-- [ ] **2.2** Update `packages/epicenter/src/workspace/define-kv.test.ts`
-- [ ] **2.3** Update `packages/epicenter/src/workspace/create-tables.test.ts`
-- [ ] **2.4** Update `packages/epicenter/src/workspace/create-kv.test.ts`
-- [ ] **2.5** Update `packages/epicenter/src/workspace/table-helper.test.ts`
-- [ ] **2.6** Update `packages/epicenter/src/workspace/describe-workspace.test.ts`
+- [x] **2.1** Update `packages/epicenter/src/workspace/define-table.test.ts`
+- [x] **2.2** Update `packages/epicenter/src/workspace/define-kv.test.ts`
+- [x] **2.3** Update `packages/epicenter/src/workspace/create-tables.test.ts`
+- [x] **2.4** Update `packages/epicenter/src/workspace/create-kv.test.ts`
+- [x] **2.5** Update `packages/epicenter/src/workspace/table-helper.test.ts`
+- [x] **2.6** Update `packages/epicenter/src/workspace/describe-workspace.test.ts`
 - [ ] **2.7** Update `packages/epicenter/src/workspace/create-workspace.test.ts`
+  > **Note**: No `.version()` chains found — file already uses single-arg shorthand only. No changes needed.
 
 **Transformation pattern for tests:**
 

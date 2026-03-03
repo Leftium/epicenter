@@ -108,6 +108,10 @@ export function defineKv<TSchema extends CombinedStandardSchema>(
 				fn: (value: unknown) => unknown,
 			): KvDefinition<CombinedStandardSchema[]>;
 		} {
+	if (arguments.length === 0) {
+		throw new Error('defineKv() requires at least one schema argument');
+	}
+
 	if (arguments.length === 1) {
 		const schema = args[0];
 		return {

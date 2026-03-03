@@ -665,9 +665,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbError.Service({
-						message: 'Failed to migrate recordings',
-					});
+					throw DbError.MigrationFailed({ cause: error });
 				},
 			});
 		}
@@ -817,9 +815,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbError.Service({
-						message: 'Failed to migrate transformations',
-					});
+					throw DbError.MigrationFailed({ cause: error });
 				},
 			});
 		}
@@ -969,9 +965,7 @@
 					onProgress(
 						`[Migration] ❌ Error: ${error instanceof Error ? error.message : String(error)}`,
 					);
-					throw DbError.Service({
-						message: 'Failed to migrate transformation runs',
-					});
+					throw DbError.MigrationFailed({ cause: error });
 				},
 			});
 		}
@@ -1031,9 +1025,7 @@
 					};
 				},
 				catch: (error) => {
-					throw DbError.Service({
-						message: 'Failed to get migration counts',
-					});
+					throw DbError.MigrationFailed({ cause: error });
 				},
 			});
 		}

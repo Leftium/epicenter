@@ -437,9 +437,7 @@ export const commands = {
 			);
 
 			if (validFiles.length === 0) {
-				return DbError.Service({
-					message: 'No valid audio or video files found.',
-				});
+				return DbError.NoValidFiles();
 			}
 
 			if (invalidFiles.length > 0) {

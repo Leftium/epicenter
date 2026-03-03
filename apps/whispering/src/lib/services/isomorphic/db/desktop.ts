@@ -39,9 +39,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting all recordings from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -93,10 +91,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message:
-							'Error getting transcribing recording ids from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -128,9 +123,7 @@ export function createDbServiceDesktop({
 				// If both failed, return an error only if both actually errored
 				// (not just returned null/undefined)
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting recording by id from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -157,9 +150,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error deleting recording(s) from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -175,9 +166,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error cleaning up expired recordings from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -204,9 +193,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting audio blob from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -234,9 +221,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting audio playback URL from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -258,9 +243,7 @@ export function createDbServiceDesktop({
 
 				// Return error only if both failed
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error clearing recordings from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				return Ok(undefined);
@@ -282,9 +265,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting all transformations from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -324,9 +305,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error only if both actually errored
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting transformation by id from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -354,9 +333,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error deleting transformation(s) from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -372,9 +349,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error clearing transformations from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -397,9 +372,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting all transformation runs from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -439,9 +412,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error only if both actually errored
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error getting transformation run by id from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Not found in either source (but no errors)
@@ -457,10 +428,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message:
-							'Error getting transformation runs by transformation id from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -497,10 +465,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message:
-							'Error getting transformation runs by recording id from both sources',
-					});
+					return DbError.QueryFailed({ cause: fsResult.error });
 				}
 
 				// Use data from successful sources (empty array for failed ones)
@@ -562,9 +527,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error deleting transformation run(s) from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded
@@ -580,9 +543,7 @@ export function createDbServiceDesktop({
 
 				// If both failed, return an error
 				if (fsResult.error && idbResult.error) {
-					return DbError.Service({
-						message: 'Error clearing transformation runs from both sources',
-					});
+					return DbError.MutationFailed({ cause: fsResult.error });
 				}
 
 				// Success if at least one succeeded

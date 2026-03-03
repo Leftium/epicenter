@@ -1,4 +1,4 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { Settings } from '$lib/settings';
 import type {
@@ -11,7 +11,21 @@ import type {
 } from './models';
 
 export const DbError = defineErrors({
-	Service: ({ message }: { message: string }) => ({ message }),
+	QueryFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to query database: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	MutationFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to write to database: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	MigrationFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Database migration failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	NoValidFiles: () => ({
+		message: 'No valid audio or video files found',
+	}),
 });
 export type DbError = InferErrors<typeof DbError>;
 

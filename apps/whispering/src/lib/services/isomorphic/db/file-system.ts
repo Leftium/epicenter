@@ -13,7 +13,6 @@ import { type } from 'arktype';
 import matter from 'gray-matter';
 import mime from 'mime';
 import { nanoid } from 'nanoid/non-secure';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
@@ -142,9 +141,7 @@ export function createFileSystemDb(): DbService {
 						return validRecordings;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting all recordings from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -159,9 +156,7 @@ export function createFileSystemDb(): DbService {
 						return recordings.at(0)!;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting latest recording from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -176,9 +171,7 @@ export function createFileSystemDb(): DbService {
 							.map((r) => r.id);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transcribing recording ids from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -204,9 +197,7 @@ export function createFileSystemDb(): DbService {
 						return markdownToRecording({ frontMatter, body });
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting recording by id from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -246,9 +237,7 @@ export function createFileSystemDb(): DbService {
 						);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error creating recording(s) in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -285,9 +274,7 @@ export function createFileSystemDb(): DbService {
 						return recordingWithTimestamp;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error updating recording in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -318,9 +305,7 @@ export function createFileSystemDb(): DbService {
 						await bulkDeleteFiles(pathsToDelete);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error deleting recording(s) from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -343,9 +328,7 @@ export function createFileSystemDb(): DbService {
 								await this.delete(toDelete);
 							},
 							catch: (error) =>
-								DbError.Service({
-									message: `Error cleaning up expired recordings: ${extractErrorMessage(error)}`,
-								}),
+								DbError.MutationFailed({ cause: error }),
 						});
 					}
 				}
@@ -376,9 +359,7 @@ export function createFileSystemDb(): DbService {
 						return blob;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting audio blob from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -405,9 +386,7 @@ export function createFileSystemDb(): DbService {
 						return assetUrl;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting audio playback URL from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -432,9 +411,7 @@ export function createFileSystemDb(): DbService {
 						await bulkDeleteFiles(pathsToDelete);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error clearing recordings from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -448,9 +425,7 @@ export function createFileSystemDb(): DbService {
 						return count;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting recordings count from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},
@@ -490,9 +465,7 @@ export function createFileSystemDb(): DbService {
 						);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting all transformations from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -516,9 +489,7 @@ export function createFileSystemDb(): DbService {
 						return validated;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformation by id from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -543,9 +514,7 @@ export function createFileSystemDb(): DbService {
 						);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error creating transformation(s) in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -571,9 +540,7 @@ export function createFileSystemDb(): DbService {
 						return transformationWithTimestamp;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error updating transformation in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -589,9 +556,7 @@ export function createFileSystemDb(): DbService {
 						await bulkDeleteFiles(pathsToDelete);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error deleting transformation(s) from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -606,9 +571,7 @@ export function createFileSystemDb(): DbService {
 						}
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error clearing transformations from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -620,9 +583,7 @@ export function createFileSystemDb(): DbService {
 						return transformations.length;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformations count from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},
@@ -661,9 +622,7 @@ export function createFileSystemDb(): DbService {
 						return runs.filter((run) => run !== null);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting all transformation runs from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -689,9 +648,7 @@ export function createFileSystemDb(): DbService {
 						return validated;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformation run by id from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -738,9 +695,7 @@ export function createFileSystemDb(): DbService {
 						return runs;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformation runs by transformation id from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -787,9 +742,7 @@ export function createFileSystemDb(): DbService {
 						return runs;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformation runs by recording id from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 
@@ -811,9 +764,7 @@ export function createFileSystemDb(): DbService {
 						);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error creating transformation run(s) in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -847,9 +798,7 @@ export function createFileSystemDb(): DbService {
 						return newTransformationStepRun;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error adding step to transformation run in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -888,9 +837,7 @@ export function createFileSystemDb(): DbService {
 						return failedRun;
 					},
 					catch: (e) =>
-						DbError.Service({
-							message: `Error failing step in transformation run in file system: ${extractErrorMessage(e)}`,
-						}),
+						DbError.MutationFailed({ cause: e }),
 				});
 			},
 
@@ -926,9 +873,7 @@ export function createFileSystemDb(): DbService {
 						return updatedRun;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error completing step in transformation run in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -956,9 +901,7 @@ export function createFileSystemDb(): DbService {
 						return completedRun;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error completing transformation run in file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -972,9 +915,7 @@ export function createFileSystemDb(): DbService {
 						await bulkDeleteFiles(pathsToDelete);
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error deleting transformation run(s) from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -989,9 +930,7 @@ export function createFileSystemDb(): DbService {
 						}
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error clearing transformation runs from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.MutationFailed({ cause: error }),
 				});
 			},
 
@@ -1003,9 +942,7 @@ export function createFileSystemDb(): DbService {
 						return runs.length;
 					},
 					catch: (error) =>
-						DbError.Service({
-							message: `Error getting transformation runs count from file system: ${extractErrorMessage(error)}`,
-						}),
+						DbError.QueryFailed({ cause: error }),
 				});
 			},
 		},

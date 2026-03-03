@@ -41,11 +41,7 @@ export type OpenAiCompatibleConfig = {
 	 * ```typescript
 	 * validateParams: (params) => {
 	 *   if (!params.baseUrl) {
-	 *     return CompletionError.Service({
-	 *       message: 'Base URL is required',
-	 *       context: { status: 400, name: 'MissingBaseUrl' },
-	 *       cause: null,
-	 *     });
+	 *     return CompletionError.MissingParam({ param: 'Base URL' });
 	 *   }
 	 *   return Ok(undefined);
 	 * }
@@ -154,92 +150,46 @@ export function createOpenAiCompatibleCompletionService(
 			});
 
 			if (apiError) {
-				const { status, name, message, error } = apiError;
+				const { status, name } = apiError;
 
 				if (typeof status === 'number') {
 					const override = config.statusMessageOverrides?.[status];
 					if (override) {
-						return CompletionError.Service({
-							message: override,
-						});
+						return CompletionError.Api({ cause: override });
 					}
 				}
 
-				if (status === 400) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Invalid request to ${config.providerLabel} API. ${error?.message ?? ''}`.trim(),
-					});
-				}
+				if (status === 400)
+					return CompletionError.BadRequest({ cause: apiError });
 
-				if (status === 401) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Your ${config.providerLabel} API key appears to be invalid or expired. Please update your API key in settings.`,
-					});
-				}
+				if (status === 401)
+					return CompletionError.Unauthorized({ cause: apiError });
 
-				if (status === 403) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Your ${config.providerLabel} account doesn't have access to this model or feature.`,
-					});
-				}
+				if (status === 403)
+					return CompletionError.Forbidden({ cause: apiError });
 
-				if (status === 404) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The requested model was not found on ${config.providerLabel}. Please check the model name.`,
-					});
-				}
+				if (status === 404)
+					return CompletionError.ModelNotFound({ cause: apiError });
 
-				if (status === 422) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The request was valid but ${config.providerLabel} cannot process it. Please check your parameters.`,
-					});
-				}
+				if (status === 422)
+					return CompletionError.UnprocessableEntity({ cause: apiError });
 
-				if (status === 429) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`${config.providerLabel} rate limit exceeded. Please try again later.`,
-					});
-				}
+				if (status === 429)
+					return CompletionError.RateLimit({ cause: apiError });
 
-				if (status && status >= 500) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The ${config.providerLabel} service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-					});
-				}
+				if (status && status >= 500)
+					return CompletionError.ServerError({ cause: apiError });
 
-				if (!status && name === 'APIConnectionError') {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Unable to connect to the ${config.providerLabel} service. This could be a network issue or temporary service interruption.`,
-					});
-				}
+				if (!status && name === 'APIConnectionError')
+					return CompletionError.ConnectionFailed({ cause: apiError });
 
-				return CompletionError.Service({
-					message:
-						message ??
-						`An unexpected error occurred with ${config.providerLabel}. Please try again.`,
-				});
+				return CompletionError.Api({ cause: apiError });
 			}
 
 			const responseText = completion.choices.at(0)?.message?.content;
 			if (!responseText) {
-				return CompletionError.Service({
-					message: `${config.providerLabel} API returned an empty response`,
+				return CompletionError.EmptyResponse({
+					providerLabel: config.providerLabel,
 				});
 			}
 

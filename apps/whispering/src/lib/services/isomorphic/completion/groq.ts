@@ -36,89 +36,40 @@ export const GroqCompletionServiceLive: CompletionService = {
 
 		if (groqApiError) {
 			// Error handling follows https://www.npmjs.com/package/groq-sdk#error-handling
-			const { status, name, message, error } = groqApiError;
+			const { status, name } = groqApiError;
 
-			// 400 - BadRequestError
-			if (status === 400) {
-				return CompletionError.Service({
-					message:
-						message ??
-						`Invalid request to Groq API. ${error?.message ?? ''}`.trim(),
-				});
-			}
+			if (status === 400)
+				return CompletionError.BadRequest({ cause: groqApiError });
 
-			// 401 - AuthenticationError
-			if (status === 401) {
-				return CompletionError.Service({
-					message:
-						message ??
-						'Your API key appears to be invalid or expired. Please update your API key in settings.',
-				});
-			}
+			if (status === 401)
+				return CompletionError.Unauthorized({ cause: groqApiError });
 
-			// 403 - PermissionDeniedError
-			if (status === 403) {
-				return CompletionError.Service({
-					message:
-						message ??
-						"Your account doesn't have access to this model or feature.",
-				});
-			}
+			if (status === 403)
+				return CompletionError.Forbidden({ cause: groqApiError });
 
-			// 404 - NotFoundError
-			if (status === 404) {
-				return CompletionError.Service({
-					message:
-						message ??
-						'The requested model was not found. Please check the model name.',
-				});
-			}
+			if (status === 404)
+				return CompletionError.ModelNotFound({ cause: groqApiError });
 
-			// 422 - UnprocessableEntityError
-			if (status === 422) {
-				return CompletionError.Service({
-					message:
-						message ??
-						'The request was valid but the server cannot process it. Please check your parameters.',
-				});
-			}
+			if (status === 422)
+				return CompletionError.UnprocessableEntity({ cause: groqApiError });
 
-			// 429 - RateLimitError
-			if (status === 429) {
-				return CompletionError.Service({
-					message: message ?? 'Too many requests. Please try again later.',
-				});
-			}
+			if (status === 429)
+				return CompletionError.RateLimit({ cause: groqApiError });
 
-			// >=500 - InternalServerError
-			if (status && status >= 500) {
-				return CompletionError.Service({
-					message:
-						message ??
-						`The Groq service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-				});
-			}
+			if (status && status >= 500)
+				return CompletionError.ServerError({ cause: groqApiError });
 
-			// Handle APIConnectionError (no status code)
-			if (!status && name === 'APIConnectionError') {
-				return CompletionError.Service({
-					message:
-						message ??
-						'Unable to connect to the Groq service. This could be a network issue or temporary service interruption.',
-				});
-			}
+			if (!status && name === 'APIConnectionError')
+				return CompletionError.ConnectionFailed({ cause: groqApiError });
 
-			// Catch-all for unexpected errors
-			return CompletionError.Service({
-				message: message ?? 'An unexpected error occurred. Please try again.',
-			});
+			return CompletionError.Api({ cause: groqApiError });
 		}
 
 		// Extract the response text
 		const responseText = completion.choices.at(0)?.message?.content;
 		if (!responseText) {
-			return CompletionError.Service({
-				message: 'Groq API returned an empty response',
+			return CompletionError.EmptyResponse({
+				providerLabel: 'Groq',
 			});
 		}
 

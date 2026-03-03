@@ -224,6 +224,83 @@ const FsError = defineErrors({
 });
 ```
 
+## Anti-Pattern: Conditional Logic on Factory Inputs
+
+**If a variant constructor uses if/switch on its own input fields to decide the message or behavior, each branch should be its own variant.** This is a generalization of the string literal union rule above — any branching inside a constructor means multiple errors are hiding in one variant.
+
+### The Problem
+
+```typescript
+// BAD: Constructor branches on inputs — multiple errors hiding in one variant
+const FormError = defineErrors({
+  Validation: ({ field, value, receivedType }: {
+    field?: string;     // Optional because not every branch uses it
+    value?: string;     // Optional because not every branch uses it
+    receivedType?: string; // Optional because not every branch uses it
+  }) => ({
+    message: (() => {
+      if (field === 'email' && value) return `Invalid email address: '${value}'`;
+      if (field === 'password' && value)
+        return `Password too weak: must be at least 8 characters`;
+      if (field === 'confirmPassword')
+        return 'Passwords do not match';
+      if (receivedType) return `Invalid form data: expected string, got ${receivedType}`;
+      return 'Form submission failed';
+    })(),
+    field,
+    value,
+    receivedType,
+  }),
+});
+```
+
+**Symptoms:**
+1. **Dishonest optionals**: Fields are optional because no single call site uses them all — the type lies about what each error actually carries
+2. **Hidden branching**: Consumers must inspect fields beyond `name` to know the real error kind — `name === 'Validation'` tells you nothing
+3. **Untypeable messages**: The message depends on runtime field combinations, so TypeScript can't narrow to a specific message shape
+
+### The Fix: Flatten Each Branch Into Its Own Variant
+
+```typescript
+// GOOD: Each branch becomes its own variant with honest, required fields
+const FormError = defineErrors({
+  InvalidEmail: ({ value }: { value: string }) => ({
+    message: `Invalid email address: '${value}'`,
+    value,
+  }),
+  WeakPassword: () => ({
+    message: 'Password too weak: must be at least 8 characters',
+  }),
+  PasswordMismatch: () => ({
+    message: 'Passwords do not match',
+  }),
+  InvalidFormData: ({ receivedType }: { receivedType: string }) => ({
+    message: `Invalid form data: expected string, got ${receivedType}`,
+    receivedType,
+  }),
+  SubmissionFailed: () => ({
+    message: 'Form submission failed',
+  }),
+});
+```
+
+**Why this is better:**
+- **Honest types**: `InvalidEmail` requires `value`, `WeakPassword` takes nothing — no dishonest optionals
+- **Single narrowing**: `error.name === 'InvalidEmail'` tells you everything
+- **Typeable messages**: Each variant has a deterministic message shape
+
+### Rule of Thumb
+
+If the constructor branches on its inputs to decide the message, each branch should be its own variant. The branching *is* the evidence that you have multiple distinct errors collapsed into one.
+
+This applies to:
+- **If/else chains** in message construction (including IIFEs)
+- **Switch statements** on input fields
+- **Ternary expressions** that pick between fundamentally different messages
+- **Lookup tables** keyed on input fields (covered by the string literal union rule above)
+
+> See also: `docs/core/error-system.mdx` § "3b. Avoid Conditional Logic on Factory Inputs" for the canonical reference with full examples.
+
 ## Service Implementation Pattern
 
 ### Basic Service Structure
@@ -531,7 +608,7 @@ const RecorderError = defineErrors({
 5. **Export factory + Live instance** - Factory for testing, Live for production
 6. **Use defineErrors namespaces** - Group related errors under a single namespace
 7. **Derive types with InferError/InferErrors** - Not `ReturnType`
-8. **Split discriminated union inputs** - Each variant gets its own name and shape
+8. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
 9. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
 
 ## References

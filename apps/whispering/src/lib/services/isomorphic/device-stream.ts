@@ -11,23 +11,24 @@ import type {
 import { asDeviceIdentifier } from '$lib/services/types';
 
 const DeviceStreamError = defineErrors({
-	Service: (input: {
-		errorKind: 'permission_denied' | 'device_connection_failed' | 'enumeration_failed' | 'no_devices_available';
-		underlyingError?: string;
-		deviceId?: string;
-		hadPreferredDevice?: boolean;
-	}) => {
-		const suffix = input.underlyingError ? ` ${input.underlyingError}` : '';
-		const messages = {
-			permission_denied: `We need permission to see your microphones. Check your browser settings and try again.${suffix}`,
-			device_connection_failed: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.${suffix}`,
-			enumeration_failed: 'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
-			no_devices_available: input.hadPreferredDevice
-				? "We couldn't connect to any microphones. Make sure they're plugged in and try again!"
-				: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
-		} as const;
-		return { message: messages[input.errorKind], ...input };
-	},
+	PermissionDenied: ({ underlyingError }: { underlyingError?: string }) => ({
+		message: `We need permission to see your microphones. Check your browser settings and try again.${underlyingError ? ` ${underlyingError}` : ''}`,
+		underlyingError,
+	}),
+	DeviceConnectionFailed: ({ deviceId, underlyingError }: { deviceId: string; underlyingError?: string }) => ({
+		message: `Unable to connect to the selected microphone. This could be because the device is already in use by another application, has been disconnected, or lacks proper permissions.${underlyingError ? ` ${underlyingError}` : ''}`,
+		deviceId,
+		underlyingError,
+	}),
+	EnumerationFailed: () => ({
+		message: 'Error enumerating recording devices. Please make sure you have given permission to access your audio devices.',
+	}),
+	NoDevicesAvailable: ({ hadPreferredDevice }: { hadPreferredDevice?: boolean }) => ({
+		message: hadPreferredDevice
+			? "We couldn't connect to any microphones. Make sure they're plugged in and try again!"
+			: "Hmm... We couldn't find any microphones to use. Check your connections and try again!",
+		hadPreferredDevice,
+	}),
 });
 type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 
@@ -46,10 +47,7 @@ async function hasExistingAudioPermission(): Promise<boolean> {
 				return permissionStatus;
 			},
 			catch: (error) =>
-				DeviceStreamError.Service({
-					errorKind: 'permission_denied',
-					underlyingError: extractErrorMessage(error),
-				}),
+				DeviceStreamError.PermissionDenied({ underlyingError: extractErrorMessage(error) }),
 		});
 		if (!error) return permissionStatus.state === 'granted';
 	}
@@ -85,10 +83,7 @@ export async function enumerateDevices(): Promise<
 			}));
 		},
 		catch: (error) =>
-			DeviceStreamError.Service({
-				errorKind: 'permission_denied',
-				underlyingError: extractErrorMessage(error),
-			}),
+			DeviceStreamError.PermissionDenied({ underlyingError: extractErrorMessage(error) }),
 	});
 }
 
@@ -117,11 +112,7 @@ async function getStreamForDeviceIdentifier(
 			return stream;
 		},
 		catch: (error) =>
-			DeviceStreamError.Service({
-				errorKind: 'device_connection_failed',
-				deviceId: deviceIdentifier,
-				underlyingError: extractErrorMessage(error),
-			}),
+			DeviceStreamError.DeviceConnectionFailed({ deviceId: deviceIdentifier, underlyingError: extractErrorMessage(error) }),
 	});
 }
 
@@ -180,9 +171,7 @@ export async function getRecordingStream({
 		const { data: devices, error: enumerateDevicesError } =
 			await enumerateDevices();
 		if (enumerateDevicesError)
-			return DeviceStreamError.Service({
-				errorKind: 'enumeration_failed',
-			});
+			return DeviceStreamError.EnumerationFailed();
 
 		for (const device of devices) {
 			const { data: stream, error } = await getStreamForDeviceIdentifier(
@@ -193,20 +182,14 @@ export async function getRecordingStream({
 			}
 		}
 
-		return DeviceStreamError.Service({
-			errorKind: 'no_devices_available',
-			hadPreferredDevice: false,
-		});
+		return DeviceStreamError.NoDevicesAvailable({ hadPreferredDevice: false });
 	};
 
 	// Get fallback stream
 	const { data: fallbackStreamData, error: getFallbackStreamError } =
 		await getFirstAvailableStream();
 	if (getFallbackStreamError) {
-		return DeviceStreamError.Service({
-			errorKind: 'no_devices_available',
-			hadPreferredDevice: selectedDeviceId !== null,
-		});
+		return DeviceStreamError.NoDevicesAvailable({ hadPreferredDevice: selectedDeviceId !== null });
 	}
 
 	// Return the stream with appropriate device outcome

@@ -1,7 +1,7 @@
 # Migrate to defineErrors v2 — Rust-style Namespaced Errors
 
 **Created**: 2026-03-02
-**Status**: Proposal
+**Status**: Implemented
 **Depends on**: wellcrafted `0.33.0` shipping `defineErrors` v2 (replaces `createTaggedError`)
 **Partially supersedes**: `20260226T000000-granular-error-migration.md` (definition-site patterns only; the per-service granularity decisions in that spec remain valid)
 **Scope**: All error definitions in apps/whispering, apps/epicenter, packages/epicenter, packages/svelte-utils
@@ -546,13 +546,16 @@ For each file:
    - [x] `autostart.ts`, `command.ts`, `ffmpeg.ts`, `fs.ts`, `permissions.ts`, `tray.ts`, `device-stream.ts`
    - [x] `os/types.ts` (not in original spec — discovered during audit)
    - [x] `local-shortcut-manager.ts` (not in original spec — discovered during audit)
-4. **Migrate bare errors** (definition + call site changes):
-   - All the `({ message }) => ({ message })` conversions
-5. **Migrate packages**:
-   - `packages/epicenter/src/shared/errors.ts`
-   - `packages/svelte-utils/src/createPersistedState.svelte.ts`
-6. **Migrate query layer**:
-   - `transformer.ts`
+4. [x] **Migrate bare errors** (definition + call site changes):
+   - [x] DbError, CompletionError, RecorderError (60+ call sites across 18 files)
+   - [x] TextError, AnalyticsError, NotificationError, DownloadError, SoundError (23 files)
+5. [x] **Migrate packages**:
+   - [x] `packages/epicenter/src/shared/errors.ts` (ExtensionError.Operation)
+   - [x] `packages/svelte-utils/src/createPersistedState.svelte.ts` (ParseError.Json)
+6. [x] **Migrate query layer**:
+   - [x] `transformer.ts` (TransformError.Service)
+   - [x] `dynamic/queries.ts` (WorkspaceError.Failed)
+   - [x] `static/queries.ts` (StaticWorkspaceError.Failed)
 
 ## Verification
 
@@ -573,3 +576,24 @@ For each file:
 - The per-service granularity decisions from `20260226T000000-granular-error-migration.md` (whether to split `RecorderServiceError` into `RecorderBusyError` + `RecorderStartError`, etc.) remain valid and are not affected by this API change. This spec only changes how errors are defined, not which errors exist.
 - **Errors are `Readonly` and `Object.freeze`d.** This is automatic.
 - **Every factory returns `Err<...>` directly.** No need for `Err()` wrapping at call sites.
+
+## Review
+
+**Completed**: 2026-03-02
+**Branch**: braden-w/review-service-errors
+
+### Summary
+
+Migrated all 24+ error definitions from `createTaggedError` builder chains to `defineErrors` v2 namespaced API. This included updating ~150+ call sites across 50+ files, fixing discrimination checks (`error.name === 'FooServiceError'` → `error.name === 'Variant'`), and updating all type references.
+
+### Deviations from Spec
+
+- **Two additional definition files discovered**: `os/types.ts` (OsError) and `local-shortcut-manager.ts` (LocalShortcutError) were not in the original spec but used `createTaggedError` and needed migration.
+- **`TaggedError` generic removed from wellcrafted 0.33.0**: `WhisperingError` in `result.ts` and `LoggableError` in `error-logger.ts` depended on `TaggedError<T>` which was removed. Fixed to use `AnyTaggedError` + explicit literal `name` type.
+- **`context` property removed**: The old `createTaggedError` wrapped fields in a `context` object. `defineErrors` v2 puts fields at the top level. Fixed `deepgram.ts` and `speaches.ts` which destructured `context: { status }` → now just `{ status }`.
+- **Discrimination in `delivery.ts`**: After migration, `TextError` has `name: 'Service'` which is less specific than the old `'TextServiceError'`. The narrowing still works correctly via discriminated union with `WhisperingError`'s literal `name: 'WhisperingError'`.
+
+### Follow-up Work
+
+- The `WhisperingError` pattern in `result.ts` still uses manual construction rather than `defineErrors`. Consider migrating it for consistency (out of scope — it doesn't use `createTaggedError`).
+- Pre-existing type errors in `packages/ui` (Record type args), `+page.svelte` (void/Promise mismatch), `packages/filesystem` (FileId), `apps/demo-mcp` (DrizzleDb) are unrelated to this migration.

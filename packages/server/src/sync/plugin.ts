@@ -7,7 +7,6 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import type { VerifyToken } from './auth';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -48,7 +47,7 @@ export type SyncPluginConfig = {
 	getDoc?: (roomId: string) => Y.Doc | undefined;
 
 	/** Verify a token. Omit for open mode (no auth). */
-	auth?: VerifyToken;
+	verifyToken?: (token: string) => boolean | Promise<boolean>;
 
 	/** Called when a room is created (first connection). Only fires in standalone mode (no getDoc). */
 	onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
@@ -137,7 +136,7 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 
 	// ── REST routes (Bearer auth) ──────────────────────────────────────────
 
-	const verifyToken = config?.auth;
+	const verifyToken = config?.verifyToken;
 
 	const restAuth = new Elysia().guard({
 		async beforeHandle({ headers, status }) {

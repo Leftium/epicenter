@@ -1,7 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
 import { listenWithFallback } from '@epicenter/server';
-import type { VerifyToken } from '@epicenter/server/sync';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
@@ -49,7 +48,7 @@ export type LocalServerConfig = {
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
 		/** Auth for sync endpoints. Omit for open mode (no auth). */
-		auth?: VerifyToken;
+		verifyToken?: (token: string) => boolean | Promise<boolean>;
 
 		/** Called when a new sync room is created on demand. */
 		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
@@ -203,7 +202,7 @@ export function createLocalServer(config: LocalServerConfig) {
 									return dynamicDocs.get(room);
 								}
 							: undefined,
-					auth: sync?.auth,
+					verifyToken: sync?.verifyToken,
 					onRoomCreated: sync?.onRoomCreated,
 					onRoomEvicted: sync?.onRoomEvicted,
 				}),

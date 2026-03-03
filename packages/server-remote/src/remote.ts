@@ -1,6 +1,5 @@
 import { openapi } from '@elysiajs/openapi';
 import { listenWithFallback } from '@epicenter/server';
-import type { VerifyToken } from '@epicenter/server/sync';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -34,7 +33,7 @@ export type RemoteServerConfig = {
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
 		/** Auth for sync endpoints. Omit for open mode (no auth). */
-		auth?: VerifyToken;
+		verifyToken?: (token: string) => boolean | Promise<boolean>;
 
 		/** Called when a new sync room is created on demand. */
 		onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
@@ -105,10 +104,10 @@ export function createRemoteServer(config: RemoteServerConfig) {
 	const auth = config.auth ? createBetterAuth(config.auth) : undefined;
 
 	// Auto-wire sync auth from Better Auth when auth is configured
-	// but sync.auth is not explicitly provided. This means
+	// but sync.verifyToken is not explicitly provided. This means
 	// createRemoteServer({ auth: {...} }) "just works" for sync auth.
-	const syncAuth: VerifyToken | undefined =
-		sync?.auth ??
+	const syncVerifyToken: ((token: string) => boolean | Promise<boolean>) | undefined =
+		sync?.verifyToken ??
 		(auth
 			? async (token: string) => {
 					const session = await auth.api.getSession({
@@ -144,7 +143,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 						}
 						return dynamicDocs.get(room);
 					},
-					auth: syncAuth,
+					verifyToken: syncVerifyToken,
 					onRoomCreated: sync?.onRoomCreated,
 					onRoomEvicted: sync?.onRoomEvicted,
 				}),

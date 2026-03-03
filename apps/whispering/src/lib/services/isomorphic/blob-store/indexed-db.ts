@@ -1,76 +1,61 @@
+import { openDB } from 'idb';
 import type { BlobStore } from './types.js';
 
-function openDb(dbName: string): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(dbName, 1);
-
-		request.onupgradeneeded = () => {
-			const db = request.result;
-			if (!db.objectStoreNames.contains('blobs')) {
-				db.createObjectStore('blobs', { keyPath: 'id' });
-			}
-		};
-
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
+interface BlobRecord {
+	id: string;
+	arrayBuffer: ArrayBuffer;
+	mimeType: string;
 }
 
-export function createIndexedDbBlobStore(dbName: string): BlobStore {
-	let dbPromise: Promise<IDBDatabase> | null = null;
-
-	function getDb(): Promise<IDBDatabase> {
-		if (!dbPromise) {
-			dbPromise = openDb(dbName);
-		}
-		return dbPromise;
-	}
-
-	async function transaction<T>(
-		mode: IDBTransactionMode,
-		fn: (store: IDBObjectStore) => IDBRequest<T>,
-	): Promise<T> {
-		const db = await getDb();
-		return new Promise<T>((resolve, reject) => {
-			const tx = db.transaction('blobs', mode);
-			const store = tx.objectStore('blobs');
-			const request = fn(store);
-			request.onsuccess = () => resolve(request.result);
-			request.onerror = () => reject(request.error);
-		});
-	}
+/**
+ * IndexedDB-backed blob store.
+ *
+ * Stores audio as ArrayBuffer (not Blob) to avoid Safari's well-documented
+ * issues with Blob storage in IndexedDB — including silent data loss,
+ * Private Browsing failures, and periodic erasure.
+ *
+ * @see https://bugs.webkit.org/show_bug.cgi?id=188438
+ */
+export function createIndexedDbBlobStore({
+	dbName,
+	storeName,
+}: {
+	dbName: string;
+	storeName: string;
+}): BlobStore {
+	const dbPromise = openDB(dbName, 1, {
+		upgrade(db) {
+			if (!db.objectStoreNames.contains(storeName)) {
+				db.createObjectStore(storeName, { keyPath: 'id' });
+			}
+		},
+	});
 
 	return {
 		async get(id) {
-			const record = await transaction('readonly', (store) =>
-				store.get(id),
-			);
+			const db = await dbPromise;
+			const record: BlobRecord | undefined = await db.get(storeName, id);
 			if (!record) return null;
 
-			const { arrayBuffer, blobType } = record as {
-				arrayBuffer: ArrayBuffer;
-				blobType: string;
-			};
-			const blob = new Blob([arrayBuffer], { type: blobType });
-			return { blob, mimeType: blobType };
+			const blob = new Blob([record.arrayBuffer], { type: record.mimeType });
+			return { blob, mimeType: record.mimeType };
 		},
 
 		async put(id, blob, mimeType) {
+			const db = await dbPromise;
 			const arrayBuffer = await blob.arrayBuffer();
-			await transaction('readwrite', (store) =>
-				store.put({ id, arrayBuffer, blobType: mimeType }),
-			);
+			await db.put(storeName, { id, arrayBuffer, mimeType } satisfies BlobRecord);
 		},
 
 		async delete(id) {
-			await transaction('readwrite', (store) => store.delete(id));
+			const db = await dbPromise;
+			await db.delete(storeName, id);
 		},
 
 		async has(id) {
-			const record = await transaction('readonly', (store) =>
-				store.get(id),
-			);
-			return record != null;
+			const db = await dbPromise;
+			const count = await db.count(storeName, id);
+			return count > 0;
 		},
 	};
 }

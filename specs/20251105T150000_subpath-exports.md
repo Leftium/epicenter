@@ -1,4 +1,4 @@
-# Subpath Exports for @epicenter/HQ
+# Subpath Exports for @epicenter/workspace
 
 ## Context
 

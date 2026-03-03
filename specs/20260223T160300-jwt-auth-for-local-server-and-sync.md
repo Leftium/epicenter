@@ -129,6 +129,14 @@ The sync provider's Mode 3 (`getToken` callback) supports dynamic token fetching
 
 The original spec proposed JWT to avoid hub roundtrips on the local server. However, if the local server doesn't need auth at all, there are no roundtrips to avoid. JWT adds complexity (JWKS, jose, token refresh, 15-minute TTL) for a problem that doesn't exist in our threat model.
 
+### Exception: Third-Party OAuth Flow (Cross-Origin)
+
+The "no JWT" decision above applies to first-party use: the Tauri app, local sidecar, and hub sync. These are same-origin or trusted-origin contexts where opaque session tokens work perfectly — the hub can always look up a session in its own database.
+
+Third-party hosted workspaces (e.g., `myapp.com` embedding Epicenter) are a different scenario. They're cross-origin with the hub, so cookies don't apply, and passing raw session tokens to third-party code would be a credential leak. The standard solution is OAuth: the hub acts as an identity provider, third-party apps are relying parties, and the authorization code flow naturally produces JWTs (`access_token`, `id_token`) scoped for cross-origin use. Better Auth's `oauthProvider` plugin handles this — it's a full OAuth 2.1/OIDC provider that issues JWTs signed with keys available at `/jwks`, verified by the hub on WebSocket upgrade for Yjs sync room access.
+
+This is not the same JWT complexity that was rejected. The rejected pattern was "issue JWTs so the local server can validate without hitting the hub" — that required `jose` on the sidecar, JWKS caching, token refresh, and TTL management for a threat model that didn't need it. The OAuth pattern is "the hub IS the identity provider, and third-party apps receive standard OAuth tokens." No local JWT validation, no `jose` dependency on the sidecar — the hub verifies its own tokens. See `specs/20260225T210000-workspace-apps-orchestrator.md`, section "Third-Party Auth Flow (Login with Epicenter)" for the full design.
+
 ## Design Decisions
 
 | Decision           | Choice                             | Rationale                                                                           |

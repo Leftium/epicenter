@@ -121,7 +121,7 @@ export const DeepgramTranscriptionServiceLive = {
 
 		if (postError) {
 			switch (postError.name) {
-				case 'ConnectionError': {
+				case 'Connection': {
 					return WhisperingErr({
 						title: '🌐 Connection Issue',
 						description:
@@ -130,11 +130,8 @@ export const DeepgramTranscriptionServiceLive = {
 					});
 				}
 
-				case 'ResponseError': {
-					const {
-						context: { status },
-						message,
-					} = postError;
+				case 'Response': {
+					const { status, message } = postError;
 
 					if (status === 400) {
 						return WhisperingErr({
@@ -213,7 +210,7 @@ export const DeepgramTranscriptionServiceLive = {
 					});
 				}
 
-				case 'ParseError':
+				case 'Parse':
 					return WhisperingErr({
 						title: '🔍 Response Error',
 						description:

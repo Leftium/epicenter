@@ -1,5 +1,7 @@
 # Error Handling Pattern for Whispering
 
+> **Partially superseded**: The 3-layer architecture (Service → Query → Command) is still valid. However, the `createTaggedError` API examples here predate the flat `.withFields()` redesign and sealed `.withMessage()`. See `20260226T233600-tagged-error-minimal-design.md` for the current API design and the `services-layer` skill for up-to-date examples.
+
 ## Overview
 This document defines the error handling pattern used throughout the Whispering codebase to ensure consistency and avoid redundant error wrapping.
 

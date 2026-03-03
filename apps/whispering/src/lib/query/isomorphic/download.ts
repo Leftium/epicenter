@@ -3,14 +3,14 @@ import { defineMutation } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/services/isomorphic/db';
-import type { DownloadServiceError } from '$lib/services/isomorphic/download';
+import type { DownloadError } from '$lib/services/isomorphic/download';
 
 export const download = {
 	downloadRecording: defineMutation({
 		mutationKey: ['download', 'downloadRecording'] as const,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<void, WhisperingError | DownloadServiceError>> => {
+		): Promise<Result<void, WhisperingError | DownloadError>> => {
 			// Fetch audio blob by ID
 			const { data: audioBlob, error: getAudioBlobError } =
 				await services.db.recordings.getAudioBlob(recording.id);

@@ -1,6 +1,6 @@
 import { Ok } from 'wellcrafted/result';
 import { createOpenAiCompatibleCompletionService } from './openai-compatible';
-import { CompletionServiceErr } from './types';
+import { CompletionError } from './types';
 
 /**
  * Custom completion service for local LLM endpoints (Ollama, LM Studio, llama.cpp, etc.)
@@ -12,12 +12,12 @@ export const CustomCompletionServiceLive =
 		getBaseUrl: (params) => params.baseUrl,
 		validateParams: (params) => {
 			if (!params.baseUrl) {
-				return CompletionServiceErr({
+				return CompletionError.Service({
 					message: 'Custom provider requires a base URL.',
 				});
 			}
 			if (!params.model) {
-				return CompletionServiceErr({
+				return CompletionError.Service({
 					message: 'Custom provider requires a model name.',
 				});
 			}

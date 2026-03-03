@@ -2,7 +2,7 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import OpenAI from 'openai';
 import { Err, isErr, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { CompletionService } from './types';
-import { CompletionServiceErr, type CompletionServiceError } from './types';
+import { CompletionError } from './types';
 
 const customFetch = window.__TAURI_INTERNALS__ ? tauriFetch : undefined;
 
@@ -35,13 +35,13 @@ export type OpenAiCompatibleConfig = {
 	 *
 	 * Use this to validate required parameters specific to your provider.
 	 * Return Ok(undefined) if validation passes, or an Err with a
-	 * CompletionServiceError if validation fails.
+	 * CompletionError if validation fails.
 	 *
 	 * @example
 	 * ```typescript
 	 * validateParams: (params) => {
 	 *   if (!params.baseUrl) {
-	 *     return CompletionServiceErr({
+	 *     return CompletionError.Service({
 	 *       message: 'Base URL is required',
 	 *       context: { status: 400, name: 'MissingBaseUrl' },
 	 *       cause: null,
@@ -53,7 +53,7 @@ export type OpenAiCompatibleConfig = {
 	 */
 	validateParams?: (
 		params: Parameters<CompletionService['complete']>[0],
-	) => Result<void, CompletionServiceError>;
+	) => Result<void, CompletionError>;
 
 	/**
 	 * HTTP headers to include with every request.
@@ -159,14 +159,14 @@ export function createOpenAiCompatibleCompletionService(
 				if (typeof status === 'number') {
 					const override = config.statusMessageOverrides?.[status];
 					if (override) {
-						return CompletionServiceErr({
+						return CompletionError.Service({
 							message: override,
 						});
 					}
 				}
 
 				if (status === 400) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`Invalid request to ${config.providerLabel} API. ${error?.message ?? ''}`.trim(),
@@ -174,7 +174,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status === 401) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`Your ${config.providerLabel} API key appears to be invalid or expired. Please update your API key in settings.`,
@@ -182,7 +182,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status === 403) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`Your ${config.providerLabel} account doesn't have access to this model or feature.`,
@@ -190,7 +190,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status === 404) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`The requested model was not found on ${config.providerLabel}. Please check the model name.`,
@@ -198,7 +198,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status === 422) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`The request was valid but ${config.providerLabel} cannot process it. Please check your parameters.`,
@@ -206,7 +206,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status === 429) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`${config.providerLabel} rate limit exceeded. Please try again later.`,
@@ -214,7 +214,7 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (status && status >= 500) {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`The ${config.providerLabel} service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
@@ -222,14 +222,14 @@ export function createOpenAiCompatibleCompletionService(
 				}
 
 				if (!status && name === 'APIConnectionError') {
-					return CompletionServiceErr({
+					return CompletionError.Service({
 						message:
 							message ??
 							`Unable to connect to the ${config.providerLabel} service. This could be a network issue or temporary service interruption.`,
 					});
 				}
 
-				return CompletionServiceErr({
+				return CompletionError.Service({
 					message:
 						message ??
 						`An unexpected error occurred with ${config.providerLabel}. Please try again.`,
@@ -238,7 +238,7 @@ export function createOpenAiCompatibleCompletionService(
 
 			const responseText = completion.choices.at(0)?.message?.content;
 			if (!responseText) {
-				return CompletionServiceErr({
+				return CompletionError.Service({
 					message: `${config.providerLabel} API returned an empty response`,
 				});
 			}

@@ -1,7 +1,7 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import type { TextService } from './types';
-import { TextServiceErr } from './types';
+import { TextError } from './types';
 
 export function createTextServiceWeb(): TextService {
 	return {
@@ -12,7 +12,7 @@ export function createTextServiceWeb(): TextService {
 					return text || null;
 				},
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error reading from the clipboard using the browser Clipboard API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			}),
@@ -21,7 +21,7 @@ export function createTextServiceWeb(): TextService {
 			const { error: copyError } = await tryAsync({
 				try: () => navigator.clipboard.writeText(text),
 				catch: (error) =>
-					TextServiceErr({
+					TextError.Service({
 						message: `There was an error copying to the clipboard using the browser Clipboard API. Please try again. ${extractErrorMessage(error)}`,
 					}),
 			});
@@ -38,14 +38,14 @@ export function createTextServiceWeb(): TextService {
 			// In web browsers, we cannot programmatically paste for security reasons
 			// We can copy the text to clipboard but the user must manually paste with Cmd/Ctrl+V
 			await navigator.clipboard.writeText(text);
-			return TextServiceErr({
+			return TextError.Service({
 				message:
 					'Text copied to clipboard. Automatic paste is not supported in web browsers for security reasons. Please paste manually using Cmd/Ctrl+V.',
 			});
 		},
 
 		simulateEnterKeystroke: async () =>
-			TextServiceErr({
+			TextError.Service({
 				message:
 					'Simulating keystrokes is not supported in web browsers for security reasons.',
 			}),

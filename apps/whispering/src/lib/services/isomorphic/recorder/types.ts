@@ -1,4 +1,4 @@
-import { createTaggedError } from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type {
 	CancelRecordingResult,
@@ -11,13 +11,10 @@ import type {
 	UpdateStatusMessageFn,
 } from '$lib/services/types';
 
-/**
- * Base error type for recorder services
- */
-export const { RecorderServiceError, RecorderServiceErr } = createTaggedError(
-	'RecorderServiceError',
-);
-export type RecorderServiceError = ReturnType<typeof RecorderServiceError>;
+export const RecorderError = defineErrors({
+	Service: ({ message }: { message: string }) => ({ message }),
+});
+export type RecorderError = InferErrors<typeof RecorderError>;
 
 /**
  * Base parameters shared across all methods
@@ -71,14 +68,12 @@ export type RecorderService = {
 	 * Get the current recorder state
 	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
 	 */
-	getRecorderState(): Promise<
-		Result<WhisperingRecordingState, RecorderServiceError>
-	>;
+	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers
 	 */
-	enumerateDevices(): Promise<Result<Device[], RecorderServiceError>>;
+	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
 
 	/**
 	 * Start a new recording session
@@ -88,19 +83,19 @@ export type RecorderService = {
 		callbacks: {
 			sendStatus: UpdateStatusMessageFn;
 		},
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>>;
+	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>>;
 
 	/**
 	 * Stop the current recording and return the audio blob
 	 */
 	stopRecording(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<Blob, RecorderServiceError>>;
+	}): Promise<Result<Blob, RecorderError>>;
 
 	/**
 	 * Cancel the current recording without saving
 	 */
 	cancelRecording(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<CancelRecordingResult, RecorderServiceError>>;
+	}): Promise<Result<CancelRecordingResult, RecorderError>>;
 };

@@ -9,7 +9,7 @@
 
 ## Summary
 
-Migrate service errors from monolithic `{ message: "..." }` patterns to the final `createTaggedError` API: flat fields, `.withMessage()` as an optional default, and call-site `message` for dynamic errors.
+Migrate service errors from monolithic `{ message: "..." }` patterns to the final `createTaggedError` API: flat fields, sealed `.withMessage()` for predictable messages, and call-site `message` for dynamic errors.
 
 This spec covers the **epicenter-side migration only**. The wellcrafted API redesign (flat `TaggedError`, `.withFields()`, no `.withCause()`) is specified in the wellcrafted repo's minimal design spec.
 
@@ -31,28 +31,27 @@ createTaggedError('ResponseError')
   .withMessage(({ context }) => `HTTP ${context.status}`)
 ResponseErr({ message: 'custom', context: { status: 404 } })
 
-// New: flat fields, message at call site or via optional default
+// New: flat fields, sealed message from template
 createTaggedError('ResponseError')
   .withFields<{ status: number }>()
   .withMessage(({ status }) => `HTTP ${status}`)
-ResponseErr({ status: 404 })                         // message: "HTTP 404"
-ResponseErr({ status: 404, message: 'Not found' })   // override
+ResponseErr({ status: 404 })  // message: "HTTP 404" — no message input exists
 ```
 
 The full API surface:
 
 ```typescript
 createTaggedError('XError')                                    → factory({ message })
-createTaggedError('XError').withMessage(fn)                    → factory() or factory({ message })
+createTaggedError('XError').withMessage(fn)                    → factory()
 createTaggedError('XError').withFields<F>()                    → factory({ message, ...fields })
-createTaggedError('XError').withFields<F>().withMessage(fn)    → factory({ ...fields }) or factory({ message, ...fields })
+createTaggedError('XError').withFields<F>().withMessage(fn)    → factory({ ...fields })
 ```
 
 - `.withContext()` → `.withFields()` (flat on the error object)
 - `.withCause()` → removed (use a typed field if needed)
-- `.withMessage()` is **optional** — provides a default message, not a required terminal step
+- `.withMessage()` is **optional** — when present, it **seals** the message (no override)
 - Without `.withMessage()`: `message` is required at the call site
-- With `.withMessage()`: `message` is optional (template provides default, call site can override)
+- With `.withMessage()`: `message` is NOT in the input type — the template owns it entirely
 
 ---
 
@@ -257,17 +256,19 @@ type CompletionServiceError =
 ```typescript
 // Before (in anthropic.ts, handling 401)
 CompletionServiceErr({ message: 'Invalid API key. Check your Anthropic API key.' })
-// After — statusCode is structured, message override for user-facing detail
-CompletionApiErr({ provider: 'Anthropic', statusCode: 401, message: 'Invalid API key. Check your Anthropic API key.' })
+// After — statusCode is structured, template computes message
+CompletionApiErr({ provider: 'Anthropic', statusCode: 401 })
+// message: "Anthropic API error (401)"
 
 // Before (in openai-compatible.ts, handling connection error)
 CompletionServiceErr({ message: `Failed to connect: ${extractErrorMessage(error)}` })
-// After — provider is structured, message override
-CompletionConnectionErr({ provider: providerName, message: `Failed to connect: ${extractErrorMessage(error)}` })
+// After — provider is structured, template computes message
+CompletionConnectionErr({ provider: providerName })
+// message: "Failed to connect to OpenAI"
 
 // Before (missing API key)
 CompletionServiceErr({ message: 'No API key configured for OpenAI.' })
-// After — provider is structured, message at call site (no .withMessage())
+// After — no .withMessage() on CompletionConfigError, message at call site
 CompletionConfigErr({ provider: 'OpenAI', message: 'No API key configured for OpenAI.' })
 ```
 
@@ -597,16 +598,15 @@ const { ParseJsonError, ParseJsonErr } = createTaggedError('ParseJsonError')
 Already uses the target pattern. Changes needed:
 - Convert `.withContext()` to `.withFields()` in definitions
 - Update template callbacks from `({ context })` to flat destructuring
-- Call sites that override `message` can keep doing so — the new API supports it natively
+- Review whether `.withMessage()` templates are sufficient for all call sites — if any call site currently overrides with a custom message, either the template needs to handle that case via fields, or that call site should use a different error type
 
 ```typescript
-// ConnectionErr() — static, uses default message
-// ConnectionErr({ message: '...' }) — override when call site has more context
-// ResponseErr({ status: 404 }) — computed from fields
-// ResponseErr({ status: 404, message: 'Not found' }) — override
+// ConnectionErr() — static, sealed message
+// ResponseErr({ status: 404 }) — computed from fields, sealed
+// ParseErr() — static, sealed message
 ```
 
-The HTTP service needs review: `ConnectionError` and `ParseError` currently have static messages but some call sites override with dynamic messages. With the new API, this works naturally — the default message serves most call sites, and the few that need more context pass `message` to override.
+The HTTP service needs review: `ConnectionError` and `ParseError` currently have static messages. If some call sites need different messages (e.g., connection errors with specific context), either add fields to the template or split into a separate error type. Message override is not available — `.withMessage()` seals the message.
 
 ---
 
@@ -646,3 +646,4 @@ After migration, update these skills:
 - Many existing error messages are user-facing and well-written. Preserve that quality — when converting to call-site `message`, keep the original message text.
 - The `type XServiceError = A | B | C` union must be exported and used in the service's return type signatures. Verify that `Result<T, XServiceError>` still works with the new union type in all service method signatures.
 - **For single-error services with all-dynamic messages**, the simplest form is `createTaggedError('XError')` with no `.withFields()` and no `.withMessage()`. Call sites pass `{ message: '...' }`. This is intentional — not every error needs typed fields.
+- **`.withMessage()` seals the message.** When `.withMessage()` is present, `message` is NOT in the factory input type. The template owns the message entirely. If a call site needs a different message than what the template produces, either: (a) add fields to make the template more expressive, or (b) use a different error type. Do not add a message override escape hatch.

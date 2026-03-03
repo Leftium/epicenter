@@ -1,7 +1,9 @@
 # Tagged Error Redesign: Break Up Monolithic Errors, Improve Payload Structure
 
 **Created**: 2026-02-25
-**Status**: Draft
+**Status**: Superseded by `20260226T233600-tagged-error-minimal-design.md` (wellcrafted) and `20260226T000000-granular-error-migration.md` (epicenter)
+
+> **Note**: This spec proposed `.withMessage()` as a required terminal step with optional `message` override. Both aspects were revised: `.withMessage()` is now optional, and when present it **seals** the message (no override). See the superseding specs for the final design.
 
 ## Problem
 

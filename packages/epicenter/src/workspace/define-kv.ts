@@ -106,34 +106,28 @@ export function defineKv<
 	): KvDefinition<TVersions>;
 };
 
-/**
- * Fallback overload — provides a human-readable error when schema constraints aren't met.
- *
- * TypeScript tries overloads in order. When the valid overloads above fail (schema
- * output isn't JSON-serializable), this catch-all fires and surfaces a clear error
- * message instead of an inscrutable structural diff.
- */
-export function defineKv(
-	schema: "defineKv() error: Schema output must be JSON-serializable (extend JsonValue). Ensure all field values are strings, numbers, booleans, null, arrays, or plain objects.",
-	...rest: unknown[]
-): never;
-
-export function defineKv(
-	first: CombinedStandardSchema | string,
-	...rest: unknown[]
-): unknown {
-	if (typeof first === 'string') {
-		throw new Error(first);
+export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
+	...args: [TSchema, ...CombinedStandardSchema<JsonValue>[]]
+):
+	| KvDefinition<[TSchema]>
+	| {
+			migrate(
+				fn: (value: unknown) => unknown,
+			): KvDefinition<CombinedStandardSchema[]>;
+	  } {
+	if (arguments.length === 0) {
+		throw new Error('defineKv() requires at least one schema argument');
 	}
 
-	if (rest.length === 0) {
+	if (arguments.length === 1) {
+		const schema = args[0];
 		return {
-			schema: first,
+			schema,
 			migrate: (v: unknown) => v,
-		};
+		} as KvDefinition<[TSchema]>;
 	}
 
-	const versions = [first, ...rest] as CombinedStandardSchema[];
+	const versions = args as CombinedStandardSchema[];
 
 	return {
 		migrate(fn: (value: unknown) => unknown) {

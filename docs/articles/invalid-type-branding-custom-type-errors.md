@@ -1,12 +1,12 @@
-# Your TypeScript Errors Don't Have to Suck
+# Custom Type Error Messages in TypeScript
 
-**TL;DR**: When your generic function has a constraint users commonly miss, add a fallback overload with a string literal parameter to show a clear error message. Zero type depth overhead, works with any schema library, and your users will actually understand what went wrong.
+Two patterns for replacing TypeScript's unreadable structural diffs with human-readable error messages when generic constraints fail.
 
 ---
 
-I was building the `defineTable()` API for Epicenter — a function that takes a schema and registers it as a versioned table. The constraint is simple: the schema output must include `id: string` and `_v: number`. We call this `BaseRow`.
+## The Problem
 
-When a user forgets those fields, they need to know exactly what to add. What they got instead looked like this:
+You write a generic function with a constraint. The constraint is reasonable. When someone violates it, TypeScript produces a wall of structural diffs that nobody can act on:
 
 ```
 Argument of type 'Type<{ title: string; }, {}>' is not assignable to
@@ -15,229 +15,135 @@ parameter of type 'CombinedStandardSchema<BaseRow>'.
   '{ "~standard": StandardSchemaV1.Props<BaseRow, BaseRow> &
   StandardJSONSchemaV1.Props<BaseRow, BaseRow>; }'.
     Types of property '"~standard"' are incompatible.
-      ... [15 more lines of structural diff]
+      ... [15 more lines]
 ```
 
-Nobody reads that. Nobody can act on it.
-
-This is a solvable problem.
+The fix is "add `id` and `_v` to your schema." TypeScript will never tell you that. But you can make it.
 
 ---
 
-## The Structural Diff Problem
+## Pattern 1: Conditional Type Branding
 
-`defineTable()` accepts any schema satisfying `CombinedStandardSchema<BaseRow>` — meaning the schema output must extend `{ id: string; _v: number } & JsonObject`. When the output doesn't match, TypeScript explains why `StandardSchemaV1.Props<{ title: string }, { title: string }>` is not assignable to `StandardSchemaV1.Props<BaseRow, BaseRow>`. That explanation is not for humans.
-
-```typescript
-// ❌ Fails with an incomprehensible structural diff
-const posts = defineTable(
-  type({ title: "string", content: "string" })
-  //    ^ Missing 'id: string' and '_v: number'
-);
-
-// ✅ This works
-const posts = defineTable(
-  type({ id: "string", title: "string", content: "string", _v: "1" })
-);
-```
-
-The gap between the error message and the fix is enormous.
-
----
-
-## The Classic Fix: Conditional Type Branding
-
-The standard pattern is conditional type branding. Write a helper type that resolves to either `T` or a descriptive string literal:
+Write a helper type that resolves to either `T` (valid) or a descriptive string literal (invalid):
 
 ```typescript
-type ValidateTableSchema<T extends CombinedStandardSchema> =
-  StandardSchemaV1.InferOutput<T> extends BaseRow
+type ValidateInput<T extends SomeSchema> =
+  InferOutput<T> extends RequiredShape
     ? T
-    : "defineTable() error: Schema must include 'id: string' and '_v: number' fields.";
+    : "createThing() error: Schema must include 'id: string' and 'version: number' fields.";
 
-export function defineTable<TSchema extends CombinedStandardSchema>(
-  schema: ValidateTableSchema<TSchema>,
-): TableDefinitionWithDocBuilder<[TSchema & CombinedStandardSchema<BaseRow>], Record<string, never>>;
+export function createThing<T extends SomeSchema>(
+  schema: ValidateInput<T>,
+): ThingDefinition<[T & SomeSchema<RequiredShape>]>;
 ```
 
-When the check fails, the error becomes:
+When the check fails, the parameter type resolves to a string literal. TypeScript reports:
 
 ```
 Argument of type 'Type<{ title: string; }>' is not assignable to
-parameter of type '"defineTable() error: Schema must include 'id: string' and '_v: number' fields."'
+parameter of type '"createThing() error: Schema must include 'id: string' and 'version: number' fields."'
 ```
 
-Readable. Actionable. The user sees exactly what to add.
+Single, clean error. The message IS the parameter type.
 
-### The Problem: TS2589
+### How it works
 
-We tried this. Every call site broke:
+1. Widen the generic constraint to `SomeSchema` (no type parameter) so TypeScript doesn't reject at the constraint level first
+2. The conditional type checks `InferOutput<T> extends RequiredShape`
+3. When valid: resolves to `T` — no change, everything works
+4. When invalid: resolves to a string literal — `T & string` is `never`, and the error shows the string
+
+### When it breaks
+
+This adds type instantiation depth. If your schemas are already deep (ArkType, Zod, StandardSchema), the conditional type + intersection in the return type can compound and trigger:
 
 ```
 error TS2589: Type instantiation is excessively deep and possibly infinite.
 ```
 
-ArkType's type machinery is already deep. `CombinedStandardSchema` wraps two standard schema specs. Adding a conditional type that inspects the inferred output, then intersects the result back into the return type, compounds the instantiation depth multiplicatively. TypeScript gave up before it could evaluate a single call.
+We hit this in practice. Every call site across 30+ test files broke. The conditional type itself is cheap, but the intersection `T & SomeSchema<RequiredShape>` in the return type feeds into other generic types that expand further.
+
+**Use when**: Your types are shallow and you've verified TS2589 doesn't fire.
 
 ---
 
-## The Fix That Actually Shipped: Fallback Overload
+## Pattern 2: Fallback Overload
 
-The insight: TypeScript tries overloads in order. Add a catch-all overload at the end with a string literal parameter. Users only hit it when all the valid overloads have already failed — and that last failure shows your message.
-
-Here is exactly what we shipped in Epicenter's `define-table.ts`:
+Keep your original overloads untouched. Add a catch-all overload before the implementation with a string literal parameter:
 
 ```typescript
-// Overload 1: Single schema (happy path)
-export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
-  schema: TSchema,
-): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
+// Overload 1: Happy path
+export function createThing<T extends SomeSchema<RequiredShape>>(
+  schema: T,
+): ThingDefinition<[T]>;
 
-// Overload 2: Multiple schemas for versioned migrations (happy path)
-export function defineTable<
-  const TVersions extends [
-    CombinedStandardSchema<BaseRow>,
-    CombinedStandardSchema<BaseRow>,
-    ...CombinedStandardSchema<BaseRow>[],
-  ],
->(
-  ...versions: TVersions
-): {
-  migrate(
-    fn: (row: StandardSchemaV1.InferOutput<TVersions[number]>) =>
-      StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-  ): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
-};
-
-// Overload 3: Fallback — fires when the valid overloads don't match
-export function defineTable(
-  schema: "defineTable() error: Each schema must output BaseRow ({ id: string; _v: number } & JsonObject). Add 'id: string' and '_v: number' to your schema.",
+// Overload 2: Fallback — custom error message
+export function createThing(
+  schema: "createThing() error: Schema must include 'id: string' and 'version: number' fields.",
   ...rest: unknown[]
 ): never;
 
-// Implementation signature — TypeScript never calls this directly
-export function defineTable(...args: unknown[]): unknown {
+// Implementation (not callable — TypeScript only tries declared overloads)
+export function createThing(
+  first: SomeSchema | string,
+  ...rest: unknown[]
+): unknown {
   // ...runtime logic
 }
 ```
 
-When a user passes a schema missing `id` and `_v`:
+TypeScript tries overloads in order. When the valid overload fails, it tries the fallback. The error shows:
 
 ```
 No overload matches this call.
-  Overload 1 of 3: ...
-    Argument of type 'Type<{ title: string; }>' is not assignable to
-    parameter of type 'CombinedStandardSchema<BaseRow>'.
-      [structural diff]
-
-  Overload 2 of 3: ...
+  Overload 1 of 2: ...
     [structural diff]
-
-  Overload 3 of 3: ...
-    Argument of type 'Type<{ title: string; }>' is not assignable to
-    parameter of type '"defineTable() error: Each schema must output
-    BaseRow ({ id: string; _v: number } & JsonObject). Add 'id: string'
-    and '_v: number' to your schema."'
+  Overload 2 of 2: ...
+    Argument of type '...' is not assignable to parameter of type
+    '"createThing() error: Schema must include ..."'
 ```
 
-Your eye goes straight to the last error. The fix is spelled out.
+### Trade-off
+
+The structural diff still shows (from overload 1). Your custom message appears alongside it, not instead of it. The error is noisier — two blocks instead of one.
+
+In practice, the structural diff often already surfaces the answer in its last line (e.g., `Type '{ name: string; }' is missing the following properties from type '{ id: string; _v: number; }': id, _v`). The fallback overload adds a clearer version of the same information but also adds visual noise.
+
+**Use when**: Your types are deep (ArkType, Zod, StandardSchema), conditional branding triggers TS2589, and you want zero risk of breaking inference.
 
 ---
 
-## Why This Works
-
-The fallback overload adds zero type instantiation depth. There is no conditional type, no intersection. The parameter is just a plain string literal. TypeScript checks "is this value assignable to this exact string?" — the answer is no, it reports the mismatch, done.
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  TypeScript tries overloads in order                     │
-│                                                          │
-│  Overload 1: CombinedStandardSchema<BaseRow>  ← fails   │
-│  Overload 2: CombinedStandardSchema<BaseRow>  ← fails   │
-│  Overload 3: "defineTable() error: ..."       ← fails   │
-│                                                          │
-│  "No overload matches this call"                         │
-│  Three errors listed. Last one is yours.                 │
-└──────────────────────────────────────────────────────────┘
-```
-
-The valid overloads above are completely untouched. Their generics, constraints, return types — all exactly as they were. You are adding a new last resort, not changing anything that works.
-
-The implementation signature at the bottom is never evaluated by TypeScript for callers. TypeScript only tries the declared overloads. The implementation just satisfies the compiler that a concrete function exists.
-
----
-
-## The Same Pattern in `defineKv()`
-
-We applied the same approach to `defineKv()`, which requires JSON-serializable output:
-
-```typescript
-// Happy path overloads...
-export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
-  schema: TSchema,
-): KvDefinition<[TSchema]>;
-
-// ... variadic overload ...
-
-// Fallback
-export function defineKv(
-  schema: "defineKv() error: Schema output must be JSON-serializable (extend JsonValue). Ensure all field values are strings, numbers, booleans, null, arrays, or plain objects.",
-  ...rest: unknown[]
-): never;
-```
-
-Same structure, different message. Four lines of code, every user who hits that constraint gets a clear path forward.
-
----
-
-## Trade-offs: When to Use Which
+## Trade-offs
 
 | | Conditional Type Branding | Fallback Overload |
 |---|---|---|
-| Errors shown | Single clean message | Multiple + yours at the end |
+| Error output | Single clean message | Structural diff + your message |
 | Type instantiation depth | Adds depth (can trigger TS2589) | Zero overhead |
-| Works with ArkType / Zod / deep schemas | Risky | Yes |
-| Original overloads changed | Yes | No |
+| Works with deep schema libs | Risky | Yes |
+| Original overloads changed | Yes (constraint widened) | No |
 | Inference risk | Higher | None |
-
-**Use conditional type branding when** your types are shallow, you have verified it does not trigger TS2589, and you want exactly one error message.
-
-**Use fallback overloads when** you are working with ArkType, Zod, StandardSchema, or any library that already uses significant type depth — or when you want zero risk of breaking inference.
-
-One honest note: fallback overloads produce three errors, not one. The useful message is last. Editors that collapse "No overload matches" errors may hide it by default. In practice, developers expand the error and scroll to the last item — but if your audience might give up after seeing three errors, conditional branding (when it works) is cleaner.
+| Implementation complexity | Conditional types + intersections | Extra overload + widened impl signature |
 
 ---
 
-## The Pattern Generalized
+## Writing the Error Message
 
-You can use this anywhere you have a function with a constraint that produces useless structural diffs:
+Three rules:
 
-```typescript
-// Happy path overloads
-export function myFunction<T extends ComplexConstraint>(value: T): ReturnType;
-export function myFunction<const T extends AnotherCase>(value: T): OtherReturn;
-
-// Fallback — add this right before the implementation
-export function myFunction(
-  value: "myFunction() error: [explain exactly what's wrong and how to fix it]",
-  ...rest: unknown[]
-): never;
-
-export function myFunction(...args: unknown[]): unknown {
-  // implementation
-}
-```
-
-Three rules for writing the error message string:
-
-1. **Name the function.** Users might be calling several similar functions.
-2. **State the constraint violated.** Not the TypeScript type — the human concept.
-3. **Tell them how to fix it.** "Add `id: string` and `_v: number`" beats "must extend BaseRow".
+1. **Name the function.** Users might be calling several similar functions. Start with `createThing() error:`.
+2. **State the constraint violated.** Not the TypeScript type — the human concept. "Schema must include" beats "must extend BaseRow".
+3. **Tell them how to fix it.** "Add `id: string` and `_v: number`" is actionable. "Must extend BaseRow" requires looking up what BaseRow is.
 
 ---
 
-## The Golden Rule
+## The Honest Assessment
 
-Keep the error message in the code that enforces the constraint. Not in a README. Not in a comment. In the type itself, where TypeScript will surface it automatically at the exact moment someone gets it wrong.
+Neither pattern is perfect.
 
-The fallback overload pattern costs you four lines of code and gives every user who hits that constraint a clear path forward. That is one of the best return-on-investment moves in API design.
+Conditional type branding gives the cleanest error but adds type depth that can break with deep schema libraries. You also have to widen the generic constraint and add intersections in the return type, which changes inference behavior.
+
+Fallback overloads add zero type depth but produce noisier errors. The custom message appears alongside the structural diff, not instead of it. And TypeScript may reorder overloads in the error display, so your message might not appear where you expect.
+
+For simple constraints with shallow types, conditional type branding is strictly better. For complex constraints with deep types (StandardSchema, ArkType, Zod), the fallback overload is the safer choice — if the added noise is worth the clearer message. Sometimes TypeScript's structural diff already gets there in the last line, and neither pattern is needed.
+
+Evaluate on a case-by-case basis. Try conditional branding first. If it triggers TS2589, fall back to the overload pattern. If the structural diff already surfaces the missing fields clearly, you might not need either.

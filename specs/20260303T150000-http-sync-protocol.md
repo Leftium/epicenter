@@ -534,7 +534,8 @@ Option A is recommended. The room manager loads from storage on room creation an
    > Deferred: server-local and server-remote now use createWsSyncPlugin (same behavior). HTTP plugin wiring deferred until client HTTP provider is ready.
 5. [x] **`createHttpSyncProvider`** — client-side fetch + poll timer
    > Implemented in `packages/sync/src/http-provider.ts` (~290 lines). V2 encoding throughout, adaptive polling (500ms-10s), 50ms update batching, visibility/online triggers, syncing guard against overlapping requests.
-6. [ ] **Two sync extensions** — `createWsSyncExtension` (rename existing) + `createHttpSyncExtension` (new)
+6. [x] **Two sync extensions** — `createWsSyncExtension` (rename existing) + `createHttpSyncExtension` (new)
    > Changed from single extension with `transport` option to two separate extensions for type safety.
+   > `createWsSyncExtension` in `sync.ts` (renamed, deprecated aliases kept). `createHttpSyncExtension` in `http-sync.ts` (new, wraps HTTP provider, no awareness, includes pollInterval config).
 7. [ ] **Compaction** — periodic `Y.mergeUpdatesV2`
 8. [ ] **Cloudflare Worker deployment** — `createHttpSyncPlugin` + KV storage backend

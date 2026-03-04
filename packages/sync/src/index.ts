@@ -6,3 +6,10 @@ export type {
 	SyncStatus,
 	WebSocketConstructor,
 } from './types';
+
+export { createHttpSyncProvider } from './http-provider';
+export type {
+	HttpSyncProvider,
+	HttpSyncProviderConfig,
+	HttpSyncStatus,
+} from './http-provider';

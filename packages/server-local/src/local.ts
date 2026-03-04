@@ -9,6 +9,85 @@ import { createRemoteSessionValidator } from './auth/local-auth';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
 
+/**
+ * Auth configuration for the local server.
+ *
+ * The local server is always a **consumer** of authentication — it never
+ * issues sessions or manages user accounts. Compare with {@link RemoteAuthConfig}
+ * in `@epicenter/server-remote`, which is the **source** of auth (issuing
+ * sessions via Better Auth or accepting a shared token).
+ *
+ * Three mutually exclusive modes:
+ *
+ * - **`none`** — No authentication. Relies on CORS origin restrictions
+ *   (default: `tauri://localhost`) as the security boundary. Use for the
+ *   Tauri sidecar or local development.
+ *
+ * - **`token`** — A single pre-shared secret, identical to the one configured
+ *   on the remote server. Everyone who knows the token can access the local
+ *   server. There are no user accounts — all authenticated requests are
+ *   treated as the same anonymous identity. Use for enterprise self-hosted
+ *   deployments. Pairs with `RemoteAuthConfig.mode: 'token'` on the remote
+ *   server — both sides share the same secret.
+ *
+ * - **`remote`** — Delegates authentication to the remote server by calling
+ *   its `GET /auth/get-session` endpoint with the Bearer token. Results are
+ *   cached with a configurable TTL. Use when the remote server runs Better
+ *   Auth (`RemoteAuthConfig.mode: 'betterAuth'`) and you want per-user
+ *   identity on the local server too.
+ *
+ * @example
+ * ```typescript
+ * // No auth (Tauri sidecar / development)
+ * createLocalServer({ clients: [], auth: { mode: 'none' } })
+ *
+ * // Shared token (enterprise — matches remote server's token)
+ * createLocalServer({ clients, auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! } })
+ *
+ * // Delegate to remote server (cloud deployment)
+ * createLocalServer({ clients, auth: { mode: 'remote', remoteUrl: 'https://remote.example.com' } })
+ * ```
+ */
+export type LocalAuthConfig =
+	| {
+			/** No authentication — relies on CORS origin restrictions only. */
+			mode: 'none';
+	  }
+	| {
+			/**
+			 * Pre-shared token authentication.
+			 *
+			 * The local server compares the Bearer token on each request to this
+			 * value. Must match the token configured on the remote server so that
+			 * the same credential works across both tiers.
+			 */
+			mode: 'token';
+
+			/** The pre-shared secret. Typically set via an environment variable. */
+			token: string;
+	  }
+	| {
+			/**
+			 * Delegate authentication to the remote server.
+			 *
+			 * The local server calls `{remoteUrl}/auth/get-session` with the
+			 * Bearer token and caches the result. Use when the remote server
+			 * runs Better Auth and you need per-user identity locally.
+			 */
+			mode: 'remote';
+
+			/** Remote server URL (e.g. `'https://remote.example.com'`). */
+			remoteUrl: string;
+
+			/**
+			 * Cache TTL in milliseconds for validated sessions.
+			 *
+			 * Default: 5 minutes (300000ms). The threat model is local process
+			 * isolation — a 5-minute stale window is acceptable for a localhost server.
+			 */
+			cacheTtlMs?: number;
+	  };
+
 export type LocalServerConfig = {
 	/**
 	 * Workspace clients to expose via REST CRUD and action endpoints.
@@ -27,15 +106,14 @@ export type LocalServerConfig = {
 	port?: number;
 
 	/**
-	 * Remote server URL for session token validation.
+	 * Authentication mode.
 	 *
-	 * When provided, the local server validates all requests by checking
-	 * the Bearer token against the remote server's `/auth/get-session` endpoint.
-	 * Results are cached with a 5-minute TTL.
+	 * Controls how the local server authenticates incoming requests.
+	 * Defaults to `{ mode: 'none' }` when omitted (open mode, no auth).
 	 *
-	 * Omit for open mode (no auth, development only).
+	 * @see {@link LocalAuthConfig} for the three available modes.
 	 */
-	remoteUrl?: string;
+	auth?: LocalAuthConfig;
 
 	/**
 	 * CORS allowed origins.
@@ -47,7 +125,13 @@ export type LocalServerConfig = {
 
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
-		/** Auth for sync endpoints. Omit for open mode (no auth). */
+		/**
+		 * Custom auth for sync endpoints. When omitted, sync auth is
+		 * auto-wired from the top-level `auth` config:
+		 * - `none` → no sync auth
+		 * - `token` → token comparison
+		 * - `remote` → delegates to remote server session validation
+		 */
 		verifyToken?: (token: string) => boolean | Promise<boolean>;
 
 		/** Called when a new sync room is created on demand. */
@@ -59,15 +143,32 @@ export type LocalServerConfig = {
 };
 
 /**
- * Create an Elysia plugin for auth guard (if remoteUrl configured).
+ * Create an Elysia plugin for auth guard based on the auth config.
  *
  * Separated into its own plugin so the type chain is not broken by conditionals.
  */
-function createAuthGuardPlugin(remoteUrl?: string) {
+function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
 	const plugin = new Elysia();
-	if (!remoteUrl) return plugin;
 
-	const validateSession = createRemoteSessionValidator({ remoteUrl });
+	if (authConfig.mode === 'none') return plugin;
+
+	if (authConfig.mode === 'token') {
+		plugin.onBeforeHandle({ as: 'global' }, ({ request, status, path }) => {
+			if (path === '/') return;
+			const header = request.headers.get('authorization');
+			const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+			if (token !== authConfig.token) {
+				return status(401, 'Unauthorized: Invalid token');
+			}
+		});
+		return plugin;
+	}
+
+	// mode === 'remote'
+	const validateSession = createRemoteSessionValidator({
+		remoteUrl: authConfig.remoteUrl,
+		cacheTtlMs: authConfig.cacheTtlMs,
+	});
 	plugin.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
 		if (path === '/') return;
 
@@ -126,10 +227,9 @@ function createAuthGuardPlugin(remoteUrl?: string) {
  * What the local server does NOT do:
  * - AI streaming: the SPA sends AI requests directly to the remote server's `/ai/chat`
  *   endpoint; the local server is not involved.
- * - Auth issuance: sessions and JWT/JWKS are issued exclusively by Better Auth
- *   on the remote server. The local server only validates tokens — it calls the remote server's
- *   `/auth/get-session` endpoint (configured via `remoteUrl`) and caches results
- *   for 5 minutes.
+ * - Auth issuance: sessions and JWT/JWKS are issued exclusively by the remote
+ *   server. The local server only validates tokens — either by comparing a
+ *   pre-shared token or by delegating to the remote server's `/auth/get-session`.
  *
  * Two sync scopes:
  * 1. Local relay (always active): SPA <-> local server on the same machine,
@@ -140,15 +240,21 @@ function createAuthGuardPlugin(remoteUrl?: string) {
  *
  * @example
  * ```typescript
- * // Local server with auth (production)
+ * // No auth (Tauri sidecar / development)
+ * createLocalServer({ clients: [] }).start();
+ *
+ * // Shared token (enterprise self-hosted)
  * createLocalServer({
  *   clients: [blogClient],
- *   remoteUrl: 'https://remote.example.com',
- *   allowedOrigins: ['tauri://localhost'],
+ *   auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! },
  * }).start();
  *
- * // Minimal local server (development, no auth)
- * createLocalServer({ clients: [] }).start();
+ * // Delegate to remote server (cloud deployment)
+ * createLocalServer({
+ *   clients: [blogClient],
+ *   auth: { mode: 'remote', remoteUrl: 'https://remote.example.com' },
+ *   allowedOrigins: ['tauri://localhost'],
+ * }).start();
  * ```
  */
 export function createLocalServer(config: LocalServerConfig) {
@@ -187,7 +293,7 @@ export function createLocalServer(config: LocalServerConfig) {
 				},
 			}),
 		)
-		.use(createAuthGuardPlugin(config.remoteUrl))
+		.use(createAuthGuardPlugin(config.auth ?? { mode: 'none' }))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
 				createSyncPlugin({

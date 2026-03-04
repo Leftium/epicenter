@@ -526,8 +526,10 @@ Option A is recommended. The room manager loads from storage on room creation an
 
 1. [x] **`SyncStorage` interface + in-memory implementation** — the storage foundation
    > Implemented in `packages/server/src/sync/storage.ts`. Includes `SyncStorage` interface, `encodeSyncRequest`/`decodeSyncRequest` binary framing, `stateVectorsEqual` utility, and `createMemorySyncStorage` factory. SQLite implementation deferred to when needed.
-2. [ ] **`createHttpSyncPlugin(storage)`** — unified POST endpoint + optional GET, backed by `SyncStorage`
-3. [ ] **`createWsSyncPlugin({ getDoc })`** — extract WS handler from existing plugin
+2. [x] **`createHttpSyncPlugin(storage)`** — unified POST endpoint + optional GET, backed by `SyncStorage`
+   > Implemented in `packages/server/src/sync/http-sync-plugin.ts`. Completely stateless — no Y.Doc, no room manager. Uses Elysia's `set.headers` pattern for binary responses.
+3. [x] **`createWsSyncPlugin({ getDoc })`** — extract WS handler from existing plugin
+   > Implemented in `packages/server/src/sync/ws-sync-plugin.ts`. Exact extraction of WS handler from plugin.ts. Includes GET `/` for room listing.
 4. [ ] **Wire room manager to `SyncStorage`** — reads from storage on join, writes on update
 5. [ ] **`createHttpSyncProvider`** — client-side fetch + poll timer (~50 lines)
 6. [ ] **Two sync extensions** — `createWsSyncExtension` (rename existing) + `createHttpSyncExtension` (new)

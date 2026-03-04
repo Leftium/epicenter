@@ -487,7 +487,10 @@ describe('createWorkspace', () => {
 					updatedAt: 'number',
 					_v: '1',
 				}),
-			).withDocument('content', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			const client = createWorkspace({
 				id: 'doc-test',
@@ -518,7 +521,10 @@ describe('createWorkspace', () => {
 					updatedAt: 'number',
 					_v: '1',
 				}),
-			).withDocument('content', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			const client = createWorkspace({
 				id: 'doc-ext-test',
@@ -607,7 +613,10 @@ describe('createWorkspace', () => {
 					updatedAt: 'number',
 					_v: '1',
 				}),
-			).withDocument('content', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			const client = createWorkspace({
 				id: 'doc-destroy-test',
@@ -631,7 +640,10 @@ describe('createWorkspace', () => {
 					updatedAt: 'number',
 					_v: '1',
 				}),
-			).withDocument('content', { guid: 'id', onUpdate: () => ({ updatedAt: Date.now() }) });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			const notesTable = defineTable(
 				type({
@@ -640,7 +652,10 @@ describe('createWorkspace', () => {
 					bodyUpdatedAt: 'number',
 					_v: '1',
 				}),
-			).withDocument('body', { guid: 'bodyDocId', onUpdate: () => ({ bodyUpdatedAt: Date.now() }) });
+			).withDocument('body', {
+				guid: 'bodyDocId',
+				onUpdate: () => ({ bodyUpdatedAt: Date.now() }),
+			});
 
 			const client = createWorkspace({
 				id: 'multi-doc-test',

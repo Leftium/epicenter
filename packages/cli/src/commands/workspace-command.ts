@@ -171,7 +171,12 @@ function buildWorkspaceInstallCommand(home: string) {
 				return;
 			}
 
-			const item = items.value[0]!;
+			const item = items.value[0];
+			if (!item) {
+				outputError('No items found');
+				process.exitCode = 1;
+				return;
+			}
 			const wsDir = join(workspacesDir(home), item.name);
 
 			// Check for existing

@@ -102,12 +102,13 @@ function countStructs(doc: Y.Doc): {
 	let deleted = 0;
 	let gc = 0;
 
-	// Access internal store structure
-	const store = (doc as any).store;
+	type YStruct = { deleted?: boolean; constructor: { name: string } };
+	type YStore = { clients: Map<number, YStruct[]> };
+	const store = (doc as Y.Doc & { store: YStore }).store;
 	for (const structs of store.clients.values()) {
 		for (const struct of structs) {
 			total++;
-			if ((struct as any).deleted) {
+			if (struct.deleted) {
 				deleted++;
 			}
 			if (struct.constructor.name === 'GC') {
@@ -211,7 +212,8 @@ function benchmarkMapPlain(
 	for (let u = 0; u < CONFIG.UPDATES_PER_ROW; u++) {
 		doc.transact(() => {
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
-				const existing = ymap.get(`row-${i}`)!;
+				const existing = ymap.get(`row-${i}`);
+				if (!existing) continue;
 				switch (strategy) {
 					case 'single-column':
 						ymap.set(`row-${i}`, singleColumnUpdate(existing));
@@ -373,7 +375,8 @@ function benchmarkMapYMap(
 	for (let u = 0; u < CONFIG.UPDATES_PER_ROW; u++) {
 		doc.transact(() => {
 			for (let i = 0; i < CONFIG.NUM_ROWS; i++) {
-				const row = ymap.get(`row-${i}`)!;
+				const row = ymap.get(`row-${i}`);
+				if (!row) continue;
 				switch (strategy) {
 					case 'single-column':
 						// Only update age - creates 1 tombstone
@@ -677,12 +680,15 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 
 	const mapPlainSingle = singleCol.find((r) =>
 		r.name.includes('Map<id, Plain'),
-	)!;
+	);
 	const mapYMapSingle = singleCol.find((r) =>
 		r.name.includes('Map<id, Y.Map'),
-	)!;
-	const mapPlainFull = fullRow.find((r) => r.name.includes('Map<id, Plain'))!;
-	const mapYMapFull = fullRow.find((r) => r.name.includes('Map<id, Y.Map'))!;
+	);
+	const mapPlainFull = fullRow.find((r) => r.name.includes('Map<id, Plain'));
+	const mapYMapFull = fullRow.find((r) => r.name.includes('Map<id, Y.Map'));
+	if (!mapPlainSingle || !mapYMapSingle || !mapPlainFull || !mapYMapFull) {
+		throw new Error('Missing benchmark results for map variants');
+	}
 
 	console.log('\n  Single Column Updates:');
 	console.log(
@@ -739,7 +745,10 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 		);
 
 		for (const on of gcOn) {
-			const off = gcOff.find((r) => r.name === on.name)!;
+			const off = gcOff.find((r) => r.name === on.name);
+			if (!off) {
+				throw new Error(`Missing GC-off result for ${on.name}`);
+			}
 			const reduction = 1 - on.sizes.afterRecreate / off.sizes.afterRecreate;
 			console.log(
 				`    ${on.name.padEnd(24)} ${formatBytes(off.sizes.afterRecreate)} → ${formatBytes(on.sizes.afterRecreate)} (${formatPercent(reduction)} reduction)`,

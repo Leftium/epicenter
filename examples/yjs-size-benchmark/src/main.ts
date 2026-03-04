@@ -23,21 +23,29 @@ let isRunning = false;
 let shouldStop = false;
 let totalRowsInserted = 0;
 
+function getRequiredElement<T extends Element>(id: string): T {
+	const element = document.getElementById(id);
+	if (!element) {
+		throw new Error(`Missing required element: ${id}`);
+	}
+	return element as T;
+}
+
 // DOM elements
 const elements = {
-	docSize: document.getElementById('docSize')!,
-	totalRows: document.getElementById('totalRows')!,
-	memoryUsage: document.getElementById('memoryUsage')!,
-	writeSpeed: document.getElementById('writeSpeed')!,
-	encodeTime: document.getElementById('encodeTime')!,
-	decodeTime: document.getElementById('decodeTime')!,
-	bytesPerRow: document.getElementById('bytesPerRow')!,
-	loadTime3g: document.getElementById('loadTime3g')!,
-	progressFill: document.getElementById('progressFill')!,
-	logContent: document.getElementById('logContent')!,
-	runBtn: document.getElementById('runBtn') as HTMLButtonElement,
-	stopBtn: document.getElementById('stopBtn') as HTMLButtonElement,
-	networkUrl: document.getElementById('network-url')!,
+	docSize: getRequiredElement<HTMLElement>('docSize'),
+	totalRows: getRequiredElement<HTMLElement>('totalRows'),
+	memoryUsage: getRequiredElement<HTMLElement>('memoryUsage'),
+	writeSpeed: getRequiredElement<HTMLElement>('writeSpeed'),
+	encodeTime: getRequiredElement<HTMLElement>('encodeTime'),
+	decodeTime: getRequiredElement<HTMLElement>('decodeTime'),
+	bytesPerRow: getRequiredElement<HTMLElement>('bytesPerRow'),
+	loadTime3g: getRequiredElement<HTMLElement>('loadTime3g'),
+	progressFill: getRequiredElement<HTMLElement>('progressFill'),
+	logContent: getRequiredElement<HTMLElement>('logContent'),
+	runBtn: getRequiredElement<HTMLButtonElement>('runBtn'),
+	stopBtn: getRequiredElement<HTMLButtonElement>('stopBtn'),
+	networkUrl: getRequiredElement<HTMLElement>('network-url'),
 };
 
 // Show network URL for phone access
@@ -67,7 +75,9 @@ function log(
 
 	// Keep only last 100 entries
 	while (elements.logContent.children.length > 100) {
-		elements.logContent.removeChild(elements.logContent.lastChild!);
+		const lastChild = elements.logContent.lastChild;
+		if (!lastChild) break;
+		elements.logContent.removeChild(lastChild);
 	}
 }
 

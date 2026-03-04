@@ -56,29 +56,31 @@ export const getNotes = query(async (): Promise<NoteView[]> => {
 /**
  * Form: create a new note directly via Drizzle insert.
  */
-export const createNote = form(CreateNoteInputSchema, async (input) => {
-	const { title, body, entity_links } = input;
-	const trimmed = title.trim();
-	if (trimmed.length === 0) throw new Error('title is required');
+export const createNote = form(
+	CreateNoteInputSchema,
+	async ({ title, body, entity_links }) => {
+		const trimmed = title.trim();
+		if (trimmed.length === 0) throw new Error('title is required');
 
-	const { db, tables } = getVault().getQueryInterface();
-	const notesTable = tables.example_notes.example_notes_items;
+		const { db, tables } = getVault().getQueryInterface();
+		const notesTable = tables.example_notes.example_notes_items;
 
-	const id = globalThis.crypto?.randomUUID();
+		const id = globalThis.crypto?.randomUUID();
 
-	await db.insert(notesTable).values({
-		id,
-		title: trimmed,
-		body: body,
-		// tags: [], // This isn't working, not sure if I need to make sure schema is synced
-		// Store entity_links as canonical JSON string (TEXT) to match schema/default "[]"
-		entity_links: JSON.stringify(entity_links),
-		created_at: new Date(),
-		public_id: null,
-	});
+		await db.insert(notesTable).values({
+			id,
+			title: trimmed,
+			body: body,
+			// tags: [], // This isn't working, not sure if I need to make sure schema is synced
+			// Store entity_links as canonical JSON string (TEXT) to match schema/default "[]"
+			entity_links: JSON.stringify(entity_links),
+			created_at: new Date(),
+			public_id: null,
+		});
 
-	return redirect(303, `/notes/${id}`);
-});
+		return redirect(303, `/notes/${id}`);
+	},
+);
 
 /**
  * Fetch a single note by id. Returns a NoteView or

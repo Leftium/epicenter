@@ -153,7 +153,8 @@ export type LocalServerConfig = {
  */
 function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
 	if (authConfig.mode === 'none') return new Elysia();
-	if (authConfig.mode === 'token') return createTokenGuardPlugin(authConfig.token);
+	if (authConfig.mode === 'token')
+		return createTokenGuardPlugin(authConfig.token);
 
 	// mode === 'remote'
 	const validateSession = createRemoteSessionValidator({
@@ -250,9 +251,13 @@ function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
  * }).start();
  * ```
  */
-export function createLocalServer(config: LocalServerConfig) {
-	const { clients, sync } = config;
-
+export function createLocalServer({
+	clients,
+	sync,
+	auth,
+	allowedOrigins,
+	port,
+}: LocalServerConfig) {
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
 	for (const client of clients) {
 		workspaces[client.id] = client;
@@ -269,7 +274,7 @@ export function createLocalServer(config: LocalServerConfig) {
 	const app = new Elysia()
 		.use(
 			cors({
-				origin: config.allowedOrigins ?? ['tauri://localhost'],
+				origin: allowedOrigins ?? ['tauri://localhost'],
 				credentials: true,
 				allowedHeaders: ['Content-Type', 'Authorization'],
 			}),
@@ -286,7 +291,7 @@ export function createLocalServer(config: LocalServerConfig) {
 				},
 			}),
 		)
-		.use(createAuthGuardPlugin(config.auth ?? { mode: 'none' }))
+		.use(createAuthGuardPlugin(auth ?? { mode: 'none' }))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
 				createWsSyncPlugin({
@@ -318,8 +323,7 @@ export function createLocalServer(config: LocalServerConfig) {
 			new Elysia({ prefix: '/workspaces' }).use(createWorkspacePlugin(clients)),
 		);
 
-	const preferredPort =
-		config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
+	const preferredPort = port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
 	return {
 		app,

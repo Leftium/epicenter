@@ -97,12 +97,13 @@ export const persistence = (
  *   }))
  * ```
  */
-export function filesystemPersistence(options: {
+export function filesystemPersistence({
+	filePath,
+}: {
 	filePath: string;
 }): (context: { ydoc: Y.Doc }) => Lifecycle {
 	return ({ ydoc }): Lifecycle => {
 		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
-		const { filePath } = options;
 
 		const updateHandler = () => {
 			if (saveTimeout) clearTimeout(saveTimeout);

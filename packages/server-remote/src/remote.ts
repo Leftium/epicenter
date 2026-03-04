@@ -1,8 +1,5 @@
 import { openapi } from '@elysiajs/openapi';
-import {
-	createTokenGuardPlugin,
-	listenWithFallback,
-} from '@epicenter/server';
+import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
 import { createWsSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -193,23 +190,26 @@ export type RemoteServerConfig = {
  * }).start();
  * ```
  */
-export function createRemoteServer(config: RemoteServerConfig) {
-	const { sync } = config;
-	const authConfig = config.auth ?? { mode: 'none' as const };
+export function createRemoteServer({
+	sync,
+	auth: authMode,
+	port,
+}: RemoteServerConfig) {
+	const authConfig = authMode ?? { mode: 'none' as const };
 
 	// Create Better Auth instance early so it can be shared between
 	// the auth plugin and the auto-wired sync verify function.
 	const auth =
-		authConfig.mode === 'betterAuth'
-			? createBetterAuth(authConfig)
-			: undefined;
+		authConfig.mode === 'betterAuth' ? createBetterAuth(authConfig) : undefined;
 
 	// Auto-wire sync auth from the top-level auth config when
 	// sync.verifyToken is not explicitly provided:
 	// - none     → no sync auth
 	// - token    → direct token comparison
 	// - betterAuth → session validation via auth.api.getSession()
-	const syncVerifyToken: ((token: string) => boolean | Promise<boolean>) | undefined =
+	const syncVerifyToken:
+		| ((token: string) => boolean | Promise<boolean>)
+		| undefined =
 		sync?.verifyToken ??
 		(authConfig.mode === 'token'
 			? (token: string) => token === authConfig.token
@@ -272,8 +272,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 	// Mount AI proxy unconditionally — reads API keys from env vars
 	app.use(createProxyPlugin());
 
-	const preferredPort =
-		config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
+	const preferredPort = port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
 	return {
 		app,

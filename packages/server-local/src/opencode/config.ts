@@ -91,11 +91,11 @@ export type GenerateConfigOptions = {
  * // }
  * ```
  */
-export function generateOpenCodeConfig(
-	options: GenerateConfigOptions,
-): OpenCodeConfig {
-	const { remoteUrl, sessionToken, providers = SUPPORTED_PROVIDERS } = options;
-
+export function generateOpenCodeConfig({
+	remoteUrl,
+	sessionToken,
+	providers = [...SUPPORTED_PROVIDERS],
+}: GenerateConfigOptions): OpenCodeConfig {
 	const providerEntries: Record<string, ProviderConfig> = {};
 
 	for (const provider of providers) {

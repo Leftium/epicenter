@@ -8,7 +8,6 @@
  * @see @epicenter/sync-core for the framework-agnostic handlers
  */
 
-import { Elysia } from 'elysia';
 import {
 	extractBearerToken,
 	handleHttpGetDoc,
@@ -16,6 +15,7 @@ import {
 	type SyncStorage,
 	type TokenVerifier,
 } from '@epicenter/sync-core';
+import { Elysia } from 'elysia';
 
 // ============================================================================
 // Configuration
@@ -40,9 +40,10 @@ export type HttpSyncPluginConfig = {
  * @param config - Storage backend and optional auth configuration
  * @returns Elysia plugin with POST /:room and GET /:room routes
  */
-export function createHttpSyncPlugin(config: HttpSyncPluginConfig) {
-	const { storage, verifyToken } = config;
-
+export function createHttpSyncPlugin({
+	storage,
+	verifyToken,
+}: HttpSyncPluginConfig) {
 	const restAuth = new Elysia().guard({
 		async beforeHandle({ headers, status }) {
 			if (!verifyToken) return;

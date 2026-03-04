@@ -106,7 +106,9 @@ export function createRemoteServer(config: RemoteServerConfig) {
 	// Auto-wire sync auth from Better Auth when auth is configured
 	// but sync.verifyToken is not explicitly provided. This means
 	// createRemoteServer({ auth: {...} }) "just works" for sync auth.
-	const syncVerifyToken: ((token: string) => boolean | Promise<boolean>) | undefined =
+	const syncVerifyToken:
+		| ((token: string) => boolean | Promise<boolean>)
+		| undefined =
 		sync?.verifyToken ??
 		(auth
 			? async (token: string) => {
@@ -179,7 +181,11 @@ export function createRemoteServer(config: RemoteServerConfig) {
 		 */
 		start() {
 			const actualPort = listenWithFallback(app, preferredPort);
-			return { ...app.server!, port: actualPort };
+			const server = app.server;
+			if (!server) {
+				throw new Error('Server not available after listen');
+			}
+			return { ...server, port: actualPort };
 		},
 
 		/**

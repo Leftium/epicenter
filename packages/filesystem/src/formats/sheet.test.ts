@@ -1,5 +1,5 @@
 /**
- * Sheet Helpers Tests
+ * Sheet Tests
  *
  * Verifies CSV parsing/serialization and row/column ordering utilities for sheet-mode
  * timeline entries. These tests keep spreadsheet behavior stable across import, export,
@@ -19,7 +19,7 @@ import {
 	reorderColumn,
 	reorderRow,
 	serializeSheetToCsv,
-} from './sheet-helpers.js';
+} from './sheet.js';
 
 function createSheetMaps() {
 	const ydoc = new Y.Doc();

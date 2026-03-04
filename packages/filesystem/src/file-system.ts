@@ -3,11 +3,13 @@ import type { IFileSystem } from 'just-bash';
 import {
 	type ContentHelpers,
 	createContentHelpers,
-} from './content-helpers.js';
-import { FileTree } from './file-tree.js';
-import { posixResolve } from './path-utils.js';
-import type { FileId, FileRow } from './types.js';
-import { disambiguateNames, FS_ERRORS } from './validation.js';
+} from './content/content.js';
+import { FS_ERRORS } from './errors.js';
+import type { FileId } from './ids.js';
+import { posixResolve } from './path.js';
+import type { FileRow } from './table.js';
+import { disambiguateNames } from './tree/naming.js';
+import { FileTree } from './tree/tree.js';
 
 /** Validate `fs` extends {@link IFileSystem} while preserving the full inferred type (avoids excess-property errors from `satisfies`). */
 function FileSystem<T extends IFileSystem>(fs: T): T {

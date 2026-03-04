@@ -1,7 +1,7 @@
 /**
- * Timeline Helpers Tests
+ * Timeline Tests
  *
- * Validates timeline helper behavior for sheet entries and CSV round-tripping.
+ * Validates timeline behavior for sheet entries and CSV round-tripping.
  * These tests ensure sheet-mode content can be appended to history and serialized predictably.
  *
  * Key behaviors:
@@ -11,7 +11,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline } from './timeline-helpers.js';
+import { createTimeline } from './timeline.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());

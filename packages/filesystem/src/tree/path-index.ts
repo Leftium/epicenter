@@ -1,6 +1,7 @@
 import type { TableHelper } from '@epicenter/workspace';
-import type { FileId, FileRow } from './types.js';
-import { disambiguateNames } from './validation.js';
+import type { FileId } from '../ids.js';
+import type { FileRow } from '../table.js';
+import { disambiguateNames } from './naming.js';
 
 const MAX_DEPTH = 50;
 

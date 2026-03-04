@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -71,10 +71,12 @@
 			"includes": ["**/*.svelte", "**/*.astro"],
 			"linter": {
 				"rules": {
-					"correctness": {
-						// Biome can't see template usage, so namespace imports appear unused
-						"noUnusedImports": "off"
-					},
+				"correctness": {
+					// Biome can't see template usage, so namespace imports appear unused
+					"noUnusedImports": "off",
+					// Biome can't see template usage, so template handlers look unused
+					"noUnusedVariables": "off"
+				},
 					"style": {
 						// Svelte runes are flagged as "const"-able
 						"useConst": "off",

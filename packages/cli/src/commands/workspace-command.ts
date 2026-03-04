@@ -1,4 +1,4 @@
-import type { Dirent } from 'node:fs';
+import type { Dirent, Stats } from 'node:fs';
 import {
 	lstat,
 	mkdir,
@@ -252,7 +252,7 @@ function buildWorkspaceUninstallCommand(home: string) {
 			const wsId = argv['workspace-id'];
 			const wsPath = join(workspacesDir(home), wsId);
 
-			let stat;
+			let stat: Stats;
 			try {
 				stat = await lstat(wsPath);
 			} catch {

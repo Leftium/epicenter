@@ -2,21 +2,23 @@ import * as Y from 'yjs';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet-helpers.js';
 import type { ContentMode } from './types.js';
 
+type TimelineEntry = Y.Map<unknown>;
+
 export type Timeline = {
 	/** Number of entries in the timeline. */
 	readonly length: number;
 	/** The most recent entry, or undefined if empty. O(1). */
-	readonly currentEntry: Y.Map<any> | undefined;
+	readonly currentEntry: TimelineEntry | undefined;
 	/** Content mode of the current entry, or undefined if empty. */
 	readonly currentMode: ContentMode | undefined;
 	/** Append a new text entry. Returns the Y.Map. */
-	pushText(content: string): Y.Map<any>;
+	pushText(content: string): TimelineEntry;
 	/** Append a new binary entry. Returns the Y.Map. */
-	pushBinary(data: Uint8Array): Y.Map<any>;
+	pushBinary(data: Uint8Array): TimelineEntry;
 	/** Append a new empty sheet entry. Returns the Y.Map. */
-	pushSheet(): Y.Map<any>;
+	pushSheet(): TimelineEntry;
 	/** Append a sheet entry populated from a CSV string. Returns the Y.Map. */
-	pushSheetFromCsv(csv: string): Y.Map<any>;
+	pushSheetFromCsv(csv: string): TimelineEntry;
 	/** Read the current entry as a string. Returns '' if empty. */
 	readAsString(): string;
 	/** Read the current entry as Uint8Array. Returns empty array if empty. */
@@ -24,9 +26,9 @@ export type Timeline = {
 };
 
 export function createTimeline(ydoc: Y.Doc): Timeline {
-	const timeline = ydoc.getArray<Y.Map<any>>('timeline');
+	const timeline = ydoc.getArray<TimelineEntry>('timeline');
 
-	function currentEntry(): Y.Map<any> | undefined {
+	function currentEntry(): TimelineEntry | undefined {
 		if (timeline.length === 0) return undefined;
 		return timeline.get(timeline.length - 1);
 	}
@@ -47,7 +49,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return currentMode();
 		},
 
-		pushText(content: string): Y.Map<any> {
+		pushText(content: string): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'text');
 			const ytext = new Y.Text();
@@ -57,7 +59,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
-		pushBinary(data: Uint8Array): Y.Map<any> {
+		pushBinary(data: Uint8Array): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'binary');
 			entry.set('content', data);
@@ -65,7 +67,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
-		pushSheet(): Y.Map<any> {
+		pushSheet(): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
 			entry.set('columns', new Y.Map());
@@ -74,7 +76,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
-		pushSheetFromCsv(csv: string): Y.Map<any> {
+		pushSheetFromCsv(csv: string): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
 			const columns = new Y.Map<Y.Map<string>>();

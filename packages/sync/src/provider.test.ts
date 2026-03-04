@@ -102,6 +102,15 @@ class MockWebSocket {
  */
 const MockWS = MockWebSocket as unknown as WebSocketConstructor;
 
+function getLastWebSocket(): MockWebSocket {
+	const ws = MockWebSocket.lastCreated;
+	expect(ws).toBeDefined();
+	if (!ws) {
+		throw new Error('Expected WebSocket to be created');
+	}
+	return ws;
+}
+
 // ============================================================================
 // Protocol Helpers
 // ============================================================================
@@ -218,7 +227,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 
 		// Simulate server accepting connection
 		ws.simulateOpen();
@@ -246,7 +255,7 @@ describe('createSyncProvider', () => {
 		});
 
 		await tick();
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -300,7 +309,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 
@@ -331,7 +340,7 @@ describe('createSyncProvider', () => {
 		// Unsubscribe after 'connecting'
 		unsub();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -355,7 +364,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -390,7 +399,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -430,7 +439,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -473,7 +482,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		ws.simulateOpen();
 		await tick();
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -540,7 +549,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws1 = MockWebSocket.lastCreated!;
+		const ws1 = getLastWebSocket();
 		ws1.simulateOpen();
 		await tick();
 		ws1.simulateMessage(buildSyncStep2Message(doc));
@@ -557,7 +566,7 @@ describe('createSyncProvider', () => {
 		expect(statuses).toContain('error');
 
 		// A new WebSocket should be created for reconnection
-		const ws2 = MockWebSocket.lastCreated!;
+		const ws2 = getLastWebSocket();
 		expect(ws2).not.toBe(ws1);
 
 		provider.destroy();
@@ -576,7 +585,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		const ws = MockWebSocket.lastCreated!;
+		const ws = getLastWebSocket();
 		expect(ws.url).toContain('token=my-secret');
 		// Token should NOT be passed as subprotocol — that leaks it
 		// into the Sec-WebSocket-Protocol header which proxies may log

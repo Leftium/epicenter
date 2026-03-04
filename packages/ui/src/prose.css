@@ -73,6 +73,10 @@
 		}
 	}
 
+	& :not(pre) > code {
+		@apply relative rounded bg-muted text-foreground px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold;
+	}
+
 	/* Code blocks */
 	& pre {
 		@apply bg-muted text-foreground rounded-md p-4 my-6 text-sm overflow-y-auto;
@@ -80,10 +84,6 @@
 		& code {
 			@apply bg-transparent text-inherit font-mono;
 		}
-	}
-
-	& :not(pre) > code {
-		@apply relative rounded bg-muted text-foreground px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold;
 	}
 
 	/* Tables */

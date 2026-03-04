@@ -69,7 +69,7 @@ const ShortcutError = defineErrors({
 	}),
 });
 
-type ShortcutError = InferErrors<typeof ShortcutError>;
+export type ShortcutError = InferErrors<typeof ShortcutError>;
 type InvalidAcceleratorError =
 	| InferError<typeof ShortcutError.InvalidFormat>
 	| InferError<typeof ShortcutError.NoKeyCode>

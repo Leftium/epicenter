@@ -298,9 +298,7 @@ function buildTableSubcommand(serverUrl: string) {
 					command: 'list',
 					describe: 'List all valid rows',
 					builder: (y: Argv) => y.options(formatYargsOptions()),
-					handler: async (
-						argv: WorkspaceArgv & { table: string },
-					) => {
+					handler: async (argv: WorkspaceArgv & { table: string }) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;

@@ -145,23 +145,15 @@ if (verdict100kResult === undefined) {
 } else {
 	const verdict100k = verdict100kResult.avgUpdate;
 	if (verdict100k < 1) {
-		console.log(
-			`\n✓ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`,
-		);
+		console.log(`\n✓ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`);
 		console.log('  This is sub-millisecond and totally fine for most UIs.');
 	} else if (verdict100k < 16) {
-		console.log(
-			`\n~ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`,
-		);
+		console.log(`\n~ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`);
 		console.log(
 			'  This is under one frame (16ms) - acceptable for most cases.',
 		);
 	} else {
-		console.log(
-			`\n⚠ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`,
-		);
-		console.log(
-			'  This exceeds one frame - may cause jank in rapid updates.',
-		);
+		console.log(`\n⚠ At 100k rows, updates take ~${verdict100k.toFixed(2)}ms`);
+		console.log('  This exceeds one frame - may cause jank in rapid updates.');
 	}
 }

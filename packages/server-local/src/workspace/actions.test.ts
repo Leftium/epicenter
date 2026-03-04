@@ -25,10 +25,7 @@ import { Elysia } from 'elysia';
 import Type from 'typebox';
 import { collectActionPaths, createActionsPlugin } from './actions';
 
-function makeWorkspaceWithActions(
-	id: string,
-	actions: () => Actions,
-) {
+function makeWorkspaceWithActions(id: string, actions: () => Actions) {
 	return createWorkspace(
 		defineWorkspace({
 			id,

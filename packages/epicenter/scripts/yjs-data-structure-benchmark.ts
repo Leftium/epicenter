@@ -681,9 +681,7 @@ function printAnalysis(allResults: BenchmarkResult[]) {
 	const mapPlainSingle = singleCol.find((r) =>
 		r.name.includes('Map<id, Plain'),
 	);
-	const mapYMapSingle = singleCol.find((r) =>
-		r.name.includes('Map<id, Y.Map'),
-	);
+	const mapYMapSingle = singleCol.find((r) => r.name.includes('Map<id, Y.Map'));
 	const mapPlainFull = fullRow.find((r) => r.name.includes('Map<id, Plain'));
 	const mapYMapFull = fullRow.find((r) => r.name.includes('Map<id, Y.Map'));
 	if (!mapPlainSingle || !mapYMapSingle || !mapPlainFull || !mapYMapFull) {

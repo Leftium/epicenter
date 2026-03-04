@@ -40,8 +40,8 @@
  * ```
  */
 
-import type { JsonValue } from 'wellcrafted/json';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { JsonValue } from 'wellcrafted/json';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { KvDefinition, LastSchema } from './types.js';

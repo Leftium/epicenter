@@ -24,31 +24,34 @@
 	} from '$lib/components/settings';
 	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/database';
 	import {
-		ANTHROPIC_INFERENCE_MODEL_OPTIONS,
-		GOOGLE_INFERENCE_MODEL_OPTIONS,
-		GROQ_INFERENCE_MODEL_OPTIONS,
+		INFERENCE,
 		INFERENCE_PROVIDER_OPTIONS,
-		OPENAI_INFERENCE_MODEL_OPTIONS,
+		type InferenceProviderId,
 	} from '$lib/constants/inference';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type {
+		Transformation,
+		TransformationStep,
+	} from '$lib/services/isomorphic/db';
 	import { generateDefaultTransformationStep } from '$lib/services/isomorphic/db';
 
 	// Derived labels for select triggers
 	const stepTypeLabel = (type: string) =>
 		TRANSFORMATION_STEP_TYPE_OPTIONS.find((o) => o.value === type)?.label;
 	const providerLabel = (provider: string) =>
-		INFERENCE_PROVIDER_OPTIONS.find((o) => o.value === provider)?.label;
-	const openaiModelLabel = (model: string) =>
-		OPENAI_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const groqModelLabel = (model: string) =>
-		GROQ_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const anthropicModelLabel = (model: string) =>
-		ANTHROPIC_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
-	const googleModelLabel = (model: string) =>
-		GOOGLE_INFERENCE_MODEL_OPTIONS.find((o) => o.value === model)?.label;
+		INFERENCE[provider as InferenceProviderId]?.label;
 
 	let { transformation = $bindable() }: { transformation: Transformation } =
 		$props();
+
+	/** Update a single field on a step by index. */
+	function updateStep(index: number, patch: Partial<TransformationStep>) {
+		transformation = {
+			...transformation,
+			steps: transformation.steps.map((s, i) =>
+				i === index ? { ...s, ...patch } : s,
+			),
+		};
+	}
 
 	function addStep() {
 		transformation = {
@@ -156,12 +159,7 @@
 									bind:value={() => step.type,
 										(value) => {
 											if (value) {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index ? { ...s, type: value } : s,
-													),
-												};
+												updateStep(index, { type: value });
 											}
 										}}
 								>
@@ -216,18 +214,7 @@
 											id="find_replace.findText"
 											value={step['find_replace.findText']}
 											oninput={(e) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'find_replace.findText':
-																		e.currentTarget.value,
-																}
-															: s,
-													),
-												};
+												updateStep(index, { 'find_replace.findText': e.currentTarget.value });
 											}}
 											placeholder="Text or pattern to search for in the transcript"
 										/>
@@ -240,18 +227,7 @@
 											id="find_replace.replaceText"
 											value={step['find_replace.replaceText']}
 											oninput={(e) => {
-												transformation = {
-													...transformation,
-													steps: transformation.steps.map((s, i) =>
-														i === index
-															? {
-																	...s,
-																	'find_replace.replaceText':
-																		e.currentTarget.value,
-																}
-															: s,
-													),
-												};
+												updateStep(index, { 'find_replace.replaceText': e.currentTarget.value });
 											}}
 											placeholder="Text to use as the replacement"
 										/>
@@ -268,17 +244,7 @@
 													id="find_replace.useRegex"
 													checked={step['find_replace.useRegex']}
 													onCheckedChange={(v) => {
-														transformation = {
-															...transformation,
-															steps: transformation.steps.map((s, i) =>
-																i === index
-																	? {
-																			...s,
-																			'find_replace.useRegex': v,
-																		}
-																	: s,
-															),
-														};
+														updateStep(index, { 'find_replace.useRegex': v });
 													}}
 												/>
 												<Field.Content>
@@ -307,18 +273,7 @@
 											bind:value={() => step['prompt_transform.inference.provider'],
 												(value) => {
 													if (value) {
-														transformation = {
-															...transformation,
-															steps: transformation.steps.map((s, i) =>
-																i === index
-																	? {
-																			...s,
-																			'prompt_transform.inference.provider':
-																				value,
-																		}
-																	: s,
-															),
-														};
+														updateStep(index, { 'prompt_transform.inference.provider': value });
 													}
 												}}
 										>
@@ -352,18 +307,7 @@
 														],
 													(value) => {
 														if (value) {
-															transformation = {
-																...transformation,
-																steps: transformation.steps.map((s, i) =>
-																	i === index
-																		? {
-																				...s,
-																				'prompt_transform.inference.provider.OpenAI.model':
-																					value,
-																			}
-																		: s,
-																),
-															};
+															updateStep(index, { 'prompt_transform.inference.provider.OpenAI.model': value });
 														}
 													}}
 											>
@@ -371,18 +315,11 @@
 													id="prompt_transform.inference.provider.OpenAI.model"
 													class="w-full"
 												>
-													{openaiModelLabel(
-														step[
-															'prompt_transform.inference.provider.OpenAI.model'
-														],
-													) ?? 'Select a model'}
+													{step['prompt_transform.inference.provider.OpenAI.model'] || 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each OPENAI_INFERENCE_MODEL_OPTIONS as item}
-														<Select.Item
-															value={item.value}
-															label={item.label}
-														/>
+													{#each INFERENCE.OpenAI.models as model}
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -401,18 +338,7 @@
 														],
 													(value) => {
 														if (value) {
-															transformation = {
-																...transformation,
-																steps: transformation.steps.map((s, i) =>
-																	i === index
-																		? {
-																				...s,
-																				'prompt_transform.inference.provider.Groq.model':
-																					value,
-																			}
-																		: s,
-																),
-															};
+															updateStep(index, { 'prompt_transform.inference.provider.Groq.model': value });
 														}
 													}}
 											>
@@ -420,18 +346,11 @@
 													id="prompt_transform.inference.provider.Groq.model"
 													class="w-full"
 												>
-													{groqModelLabel(
-														step[
-															'prompt_transform.inference.provider.Groq.model'
-														],
-													) ?? 'Select a model'}
+													{step['prompt_transform.inference.provider.Groq.model'] || 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each GROQ_INFERENCE_MODEL_OPTIONS as item}
-														<Select.Item
-															value={item.value}
-															label={item.label}
-														/>
+													{#each INFERENCE.Groq.models as model}
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -450,18 +369,7 @@
 														],
 													(value) => {
 														if (value) {
-															transformation = {
-																...transformation,
-																steps: transformation.steps.map((s, i) =>
-																	i === index
-																		? {
-																				...s,
-																				'prompt_transform.inference.provider.Anthropic.model':
-																					value,
-																			}
-																		: s,
-																),
-															};
+															updateStep(index, { 'prompt_transform.inference.provider.Anthropic.model': value });
 														}
 													}}
 											>
@@ -469,18 +377,11 @@
 													id="prompt_transform.inference.provider.Anthropic.model"
 													class="w-full"
 												>
-													{anthropicModelLabel(
-														step[
-															'prompt_transform.inference.provider.Anthropic.model'
-														],
-													) ?? 'Select a model'}
+													{step['prompt_transform.inference.provider.Anthropic.model'] || 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each ANTHROPIC_INFERENCE_MODEL_OPTIONS as item}
-														<Select.Item
-															value={item.value}
-															label={item.label}
-														/>
+													{#each INFERENCE.Anthropic.models as model}
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -499,18 +400,7 @@
 														],
 													(value) => {
 														if (value) {
-															transformation = {
-																...transformation,
-																steps: transformation.steps.map((s, i) =>
-																	i === index
-																		? {
-																				...s,
-																				'prompt_transform.inference.provider.Google.model':
-																					value,
-																			}
-																		: s,
-																),
-															};
+															updateStep(index, { 'prompt_transform.inference.provider.Google.model': value });
 														}
 													}}
 											>
@@ -518,18 +408,11 @@
 													id="prompt_transform.inference.provider.Google.model"
 													class="w-full"
 												>
-													{googleModelLabel(
-														step[
-															'prompt_transform.inference.provider.Google.model'
-														],
-													) ?? 'Select a model'}
+													{step['prompt_transform.inference.provider.Google.model'] || 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each GOOGLE_INFERENCE_MODEL_OPTIONS as item}
-														<Select.Item
-															value={item.value}
-															label={item.label}
-														/>
+													{#each INFERENCE.Google.models as model}
+														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
 											</Select.Root>
@@ -546,18 +429,7 @@
 													'prompt_transform.inference.provider.OpenRouter.model'
 												]}
 												oninput={(e) => {
-													transformation = {
-														...transformation,
-														steps: transformation.steps.map((s, i) =>
-															i === index
-																? {
-																		...s,
-																		'prompt_transform.inference.provider.OpenRouter.model':
-																			e.currentTarget.value,
-																	}
-																: s,
-														),
-													};
+													updateStep(index, { 'prompt_transform.inference.provider.OpenRouter.model': e.currentTarget.value });
 												}}
 												placeholder="Enter model name"
 											/>
@@ -575,18 +447,7 @@
 														'prompt_transform.inference.provider.Custom.baseUrl'
 													]}
 													oninput={(e) => {
-														transformation = {
-															...transformation,
-															steps: transformation.steps.map((s, i) =>
-																i === index
-																	? {
-																			...s,
-																			'prompt_transform.inference.provider.Custom.baseUrl':
-																				e.currentTarget.value,
-																		}
-																	: s,
-															),
-														};
+														updateStep(index, { 'prompt_transform.inference.provider.Custom.baseUrl': e.currentTarget.value });
 													}}
 													placeholder="http://localhost:11434/v1"
 												/>
@@ -606,18 +467,7 @@
 														'prompt_transform.inference.provider.Custom.model'
 													]}
 													oninput={(e) => {
-														transformation = {
-															...transformation,
-															steps: transformation.steps.map((s, i) =>
-																i === index
-																	? {
-																			...s,
-																			'prompt_transform.inference.provider.Custom.model':
-																				e.currentTarget.value,
-																		}
-																	: s,
-															),
-														};
+														updateStep(index, { 'prompt_transform.inference.provider.Custom.model': e.currentTarget.value });
 													}}
 													placeholder="llama3.2"
 												/>
@@ -641,18 +491,7 @@
 										id="prompt_transform.systemPromptTemplate"
 										value={step['prompt_transform.systemPromptTemplate']}
 										oninput={(e) => {
-											transformation = {
-												...transformation,
-												steps: transformation.steps.map((s, i) =>
-													i === index
-														? {
-																...s,
-																'prompt_transform.systemPromptTemplate':
-																	e.currentTarget.value,
-															}
-														: s,
-												),
-											};
+											updateStep(index, { 'prompt_transform.systemPromptTemplate': e.currentTarget.value });
 										}}
 										placeholder="Define the AI's role and expertise, e.g., 'You are an expert at formatting meeting notes. Structure the text into clear sections with bullet points.'"
 									/>
@@ -665,18 +504,7 @@
 										id="prompt_transform.userPromptTemplate"
 										value={step['prompt_transform.userPromptTemplate']}
 										oninput={(e) => {
-											transformation = {
-												...transformation,
-												steps: transformation.steps.map((s, i) =>
-													i === index
-														? {
-																...s,
-																'prompt_transform.userPromptTemplate':
-																	e.currentTarget.value,
-															}
-														: s,
-												),
-											};
+											updateStep(index, { 'prompt_transform.userPromptTemplate': e.currentTarget.value });
 										}}
 										placeholder="Tell the AI what to do with your text. Use {'{{input}}'} where you want your text to appear, e.g., 'Format this transcript into clear sections: {'{{input}}'}'"
 									/>

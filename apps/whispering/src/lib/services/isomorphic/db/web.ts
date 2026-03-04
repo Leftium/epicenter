@@ -23,6 +23,7 @@ import type {
 	TransformationStepRunRunning,
 	TransformationStepV2,
 	TransformationV1,
+	TransformationV2,
 } from './models';
 import type { DbService } from './types';
 import { DbError } from './types';
@@ -335,7 +336,7 @@ class WhisperingDatabase extends Dexie {
 								}));
 
 							await tx
-								.table<Transformation>('transformations')
+								.table<TransformationV2>('transformations')
 								.update(transformation.id, { steps: updatedSteps });
 						}
 					},

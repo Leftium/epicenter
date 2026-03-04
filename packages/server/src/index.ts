@@ -1,3 +1,4 @@
+export { createTokenGuardPlugin, extractBearerToken } from './auth';
 export {
 	createClientPresence,
 	createLocalPresence,

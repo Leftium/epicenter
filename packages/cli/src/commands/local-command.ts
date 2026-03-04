@@ -120,7 +120,9 @@ function buildLocalStartCommand(home: string) {
 			const server = createLocalServer({
 				clients,
 				port: argv.port,
-				...(argv.remote ? { remoteUrl: argv.remote } : {}),
+				...(argv.remote
+					? { auth: { mode: 'remote' as const, remoteUrl: argv.remote } }
+					: {}),
 			});
 			server.start();
 

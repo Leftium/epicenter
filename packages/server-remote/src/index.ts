@@ -4,4 +4,8 @@ export {
 	createBetterAuth,
 } from './auth';
 export { createProxyPlugin, type ProxyPluginConfig } from './proxy';
-export { createRemoteServer, type RemoteServerConfig } from './remote';
+export {
+	createRemoteServer,
+	type RemoteAuthConfig,
+	type RemoteServerConfig,
+} from './remote';

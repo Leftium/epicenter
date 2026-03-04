@@ -7,6 +7,7 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { extractBearerToken } from '../auth';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -17,18 +18,6 @@ import {
 	MESSAGE_TYPE,
 } from './protocol';
 import { createRoomManager } from './rooms';
-
-/**
- * Extract a Bearer token from the Authorization header.
- *
- * @returns The token string, or undefined if the header is missing or malformed.
- */
-function extractBearerToken(
-	authorization: string | undefined,
-): string | undefined {
-	if (!authorization?.startsWith('Bearer ')) return undefined;
-	return authorization.slice(7);
-}
 
 /** WebSocket close code for room not found (4000-4999 reserved for application use per RFC 6455). */
 const CLOSE_ROOM_NOT_FOUND = 4004;
@@ -194,7 +183,8 @@ export function createSyncPlugin(config?: SyncPluginConfig) {
 
 			async beforeHandle({ query, status }) {
 				if (!verifyToken) return;
-				if (!query.token || !(await verifyToken(query.token))) return status(401);
+				if (!query.token || !(await verifyToken(query.token)))
+					return status(401);
 			},
 
 			async open(ws) {

@@ -4,44 +4,6 @@ import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { HttpServiceLive } from '$lib/services/isomorphic/http';
 import type { Settings } from '$lib/settings';
 
-export const DEEPGRAM_TRANSCRIPTION_MODELS = [
-	{
-		name: 'nova-3',
-		description:
-			"Deepgram's most advanced speech-to-text model with superior accuracy and speed. Best for high-quality transcription needs.",
-		cost: '$0.0043/minute',
-	},
-	{
-		name: 'nova-2',
-		description: "Deepgram's previous best speech-to-text model.",
-		cost: '$0.0043/minute',
-	},
-	{
-		name: 'nova',
-		description:
-			'Deepgram Nova model with excellent accuracy and performance. Good balance of speed and quality.',
-		cost: '$0.0043/minute',
-	},
-	{
-		name: 'enhanced',
-		description:
-			'Enhanced general-purpose model with good accuracy for most use cases. Cost-effective option.',
-		cost: '$0.0025/minute',
-	},
-	{
-		name: 'base',
-		description:
-			'Base model for standard transcription needs. Most cost-effective option with reasonable accuracy.',
-		cost: '$0.0020/minute',
-	},
-] as const satisfies {
-	name: string;
-	description: string;
-	cost: string;
-}[];
-
-export type DeepgramModel = (typeof DEEPGRAM_TRANSCRIPTION_MODELS)[number];
-
 const MAX_FILE_SIZE_MB = 500 as const; // Deepgram supports larger files
 
 // Schema for Deepgram API response
@@ -64,7 +26,7 @@ export const DeepgramTranscriptionServiceLive = {
 			temperature: string;
 			outputLanguage: Settings['transcription.outputLanguage'];
 			apiKey: string;
-			modelName: (string & {}) | DeepgramModel['name'];
+			modelName: string;
 		},
 	): Promise<Result<string, WhisperingError>> {
 		// Pre-validation: Check API key

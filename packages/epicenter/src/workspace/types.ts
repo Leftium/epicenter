@@ -244,6 +244,21 @@ export type NumberKeysOf<TRow> = {
 }[keyof TRow & string];
 
 /**
+ * Collect all column names already claimed as `guid` or `updatedAt` by prior
+ * `.withDocument()` calls. Subsequent calls cannot reuse these columns,
+ * preventing two documents from sharing a GUID (storage collision) or
+ * racing on the same `updatedAt` timestamp.
+ *
+ * Requires `{}` (not `Record<string, never>`) as the initial empty `TDocuments`,
+ * so that `keyof {}` = `never` and the union resolves cleanly.
+ */
+export type ClaimedDocumentColumns<
+	TDocuments extends Record<string, DocumentConfig>,
+> =
+	| TDocuments[keyof TDocuments]['guid']
+	| TDocuments[keyof TDocuments]['updatedAt'];
+
+/**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
  * All operations are scoped to this specific document. Content methods

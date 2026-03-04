@@ -22,15 +22,10 @@
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
-	import { DEEPGRAM_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/deepgram';
-	import { ELEVENLABS_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/elevenlabs';
-	import { GROQ_MODELS } from '$lib/services/isomorphic/transcription/cloud/groq';
-	import { MISTRAL_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/mistral';
-	import { OPENAI_TRANSCRIPTION_MODELS } from '$lib/services/isomorphic/transcription/cloud/openai';
+	import { TRANSCRIPTION } from '$lib/constants/transcription';
 	import { MOONSHINE_MODELS } from '$lib/services/isomorphic/transcription/local/moonshine';
 	import { PARAKEET_MODELS } from '$lib/services/isomorphic/transcription/local/parakeet';
 	import { WHISPER_MODELS } from '$lib/services/isomorphic/transcription/local/whispercpp';
-	import { TRANSCRIPTION_SERVICE_CAPABILITIES } from '$lib/services/isomorphic/transcription/registry';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { hasNavigatorLocalTranscriptionIssue } from '$routes/(app)/_layout-utils/check-ffmpeg';
@@ -42,37 +37,36 @@
 	 * Used to conditionally disable UI fields that aren't supported by the service.
 	 */
 	const currentServiceCapabilities = $derived(
-		TRANSCRIPTION_SERVICE_CAPABILITIES[
-			settings.value['transcription.selectedTranscriptionService']
-		],
+		TRANSCRIPTION[settings.value['transcription.selectedTranscriptionService']]
+			.capabilities,
 	);
 
-	// Model options arrays
-	const openaiModelItems = OPENAI_TRANSCRIPTION_MODELS.map((model) => ({
+	// Model options arrays — derived from the single TRANSCRIPTION record
+	const openaiModelItems = TRANSCRIPTION.OpenAI.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const groqModelItems = GROQ_MODELS.map((model) => ({
+	const groqModelItems = TRANSCRIPTION.Groq.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const deepgramModelItems = DEEPGRAM_TRANSCRIPTION_MODELS.map((model) => ({
+	const deepgramModelItems = TRANSCRIPTION.Deepgram.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const mistralModelItems = MISTRAL_TRANSCRIPTION_MODELS.map((model) => ({
+	const mistralModelItems = TRANSCRIPTION.Mistral.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const elevenlabsModelItems = ELEVENLABS_TRANSCRIPTION_MODELS.map((model) => ({
+	const elevenlabsModelItems = TRANSCRIPTION.ElevenLabs.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,

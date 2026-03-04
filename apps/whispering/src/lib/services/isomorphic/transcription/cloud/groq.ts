@@ -4,22 +4,6 @@ import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { customFetch } from '$lib/services/isomorphic/http';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { Settings } from '$lib/settings';
-export const GROQ_MODELS = [
-	{
-		name: 'whisper-large-v3',
-		description:
-			'Best accuracy (10.3% WER) and full multilingual support, including translation. Recommended for error-sensitive applications requiring multilingual support.',
-		cost: '$0.111/hour',
-	},
-	{
-		name: 'whisper-large-v3-turbo',
-		description:
-			'Fast multilingual model with good accuracy (12% WER). Best price-to-performance ratio for multilingual applications.',
-		cost: '$0.04/hour',
-	},
-] as const;
-
-export type GroqModel = (typeof GROQ_MODELS)[number];
 
 const MAX_FILE_SIZE_MB = 25 as const;
 
@@ -31,7 +15,7 @@ export const GroqTranscriptionServiceLive = {
 			temperature: string;
 			outputLanguage: Settings['transcription.outputLanguage'];
 			apiKey: string;
-			modelName: (string & {}) | GroqModel['name'];
+			modelName: string;
 			baseURL?: string;
 		},
 	): Promise<Result<string, WhisperingError>> {

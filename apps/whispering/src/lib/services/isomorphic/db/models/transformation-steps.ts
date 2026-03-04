@@ -1,19 +1,7 @@
 import { type } from 'arktype';
 import { nanoid } from 'nanoid/non-secure';
 import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/database';
-import {
-	ANTHROPIC_INFERENCE_MODELS,
-	GOOGLE_INFERENCE_MODELS,
-	GROQ_INFERENCE_MODELS,
-	INFERENCE_PROVIDER_IDS,
-	OPENAI_INFERENCE_MODELS,
-} from '$lib/constants/inference';
-
-/**
- * The current version of the TransformationStep schema.
- * Increment this when adding new fields or making breaking changes.
- */
-const CURRENT_TRANSFORMATION_STEP_VERSION = 2 as const;
+import { INFERENCE, INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 
 // ============================================================================
 // VERSION 1 (FROZEN)
@@ -32,16 +20,16 @@ export const TransformationStepV1 = type({
 		...INFERENCE_PROVIDER_IDS,
 	),
 	'prompt_transform.inference.provider.OpenAI.model': type.enumerated(
-		...OPENAI_INFERENCE_MODELS,
+		...INFERENCE.OpenAI.models,
 	),
 	'prompt_transform.inference.provider.Groq.model': type.enumerated(
-		...GROQ_INFERENCE_MODELS,
+		...INFERENCE.Groq.models,
 	),
 	'prompt_transform.inference.provider.Anthropic.model': type.enumerated(
-		...ANTHROPIC_INFERENCE_MODELS,
+		...INFERENCE.Anthropic.models,
 	),
 	'prompt_transform.inference.provider.Google.model': type.enumerated(
-		...GOOGLE_INFERENCE_MODELS,
+		...INFERENCE.Google.models,
 	),
 	// OpenRouter model is a free string (user can enter any model)
 	'prompt_transform.inference.provider.OpenRouter.model': 'string',
@@ -89,19 +77,19 @@ export type TransformationStepV2 = typeof TransformationStepV2.infer;
  * TransformationStep validator with automatic migration.
  * Accepts V1 or V2 and always outputs V2.
  */
-export const TransformationStep = TransformationStepV1.or(
-	TransformationStepV2,
-).pipe((step): TransformationStepV2 => {
-	if (step.version === 1) {
-		return {
-			...step,
-			version: 2,
-			'prompt_transform.inference.provider.Custom.model': '',
-			'prompt_transform.inference.provider.Custom.baseUrl': '',
-		};
-	}
-	return step;
-});
+export const TransformationStep = type
+	.or(TransformationStepV1, TransformationStepV2)
+	.pipe((step): TransformationStepV2 => {
+		if (step.version === 1) {
+			return {
+				...step,
+				version: 2,
+				'prompt_transform.inference.provider.Custom.model': '',
+				'prompt_transform.inference.provider.Custom.baseUrl': '',
+			};
+		}
+		return step;
+	});
 
 export type TransformationStep = TransformationStepV2;
 
@@ -111,7 +99,7 @@ export type TransformationStep = TransformationStepV2;
 
 export function generateDefaultTransformationStep(): TransformationStep {
 	return {
-		version: CURRENT_TRANSFORMATION_STEP_VERSION,
+		version: 2,
 		id: nanoid(),
 		type: 'prompt_transform',
 		'prompt_transform.inference.provider': 'Google',

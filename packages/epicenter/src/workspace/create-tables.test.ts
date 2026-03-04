@@ -20,22 +20,22 @@ describe('createTables', () => {
 	test('set stores a row that get returns as valid', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'Hello' });
+		tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 
 		const result = tables.posts.get('1');
 		expect(result.status).toBe('valid');
 		if (result.status === 'valid') {
-			expect(result.row).toEqual({ id: '1', title: 'Hello' });
+			expect(result.row).toEqual({ id: '1', title: 'Hello', _v: 1 });
 		}
 	});
 
 	test('get returns not_found for missing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
 		const result = tables.posts.get('nonexistent');
@@ -45,11 +45,11 @@ describe('createTables', () => {
 	test('getAll returns all rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'First' });
-		tables.posts.set({ id: '2', title: 'Second' });
+		tables.posts.set({ id: '1', title: 'First', _v: 1 });
+		tables.posts.set({ id: '2', title: 'Second', _v: 1 });
 
 		const results = tables.posts.getAll();
 		expect(results).toHaveLength(2);
@@ -58,27 +58,27 @@ describe('createTables', () => {
 	test('getAllValid returns only valid rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'Valid' });
+		tables.posts.set({ id: '1', title: 'Valid', _v: 1 });
 
 		const rows = tables.posts.getAllValid();
 		expect(rows).toHaveLength(1);
-		expect(rows[0]).toEqual({ id: '1', title: 'Valid' });
+		expect(rows[0]).toEqual({ id: '1', title: 'Valid', _v: 1 });
 	});
 
 	test('filter returns matching rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
 			posts: defineTable(
-				type({ id: 'string', title: 'string', published: 'boolean' }),
+				type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
 			),
 		});
 
-		tables.posts.set({ id: '1', title: 'Draft', published: false });
-		tables.posts.set({ id: '2', title: 'Published', published: true });
-		tables.posts.set({ id: '3', title: 'Another Published', published: true });
+		tables.posts.set({ id: '1', title: 'Draft', published: false, _v: 1 });
+		tables.posts.set({ id: '2', title: 'Published', published: true, _v: 1 });
+		tables.posts.set({ id: '3', title: 'Another Published', published: true, _v: 1 });
 
 		const published = tables.posts.filter((row) => row.published);
 		expect(published).toHaveLength(2);
@@ -87,23 +87,23 @@ describe('createTables', () => {
 	test('find returns first matching row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'First' });
-		tables.posts.set({ id: '2', title: 'Second' });
+		tables.posts.set({ id: '1', title: 'First', _v: 1 });
+		tables.posts.set({ id: '2', title: 'Second', _v: 1 });
 
 		const found = tables.posts.find((row) => row.title === 'Second');
-		expect(found).toEqual({ id: '2', title: 'Second' });
+		expect(found).toEqual({ id: '2', title: 'Second', _v: 1 });
 	});
 
 	test('delete removes an existing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'Hello' });
+		tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
 		expect(tables.posts.has('1')).toBe(true);
 
 		const result = tables.posts.delete('1');
@@ -114,7 +114,7 @@ describe('createTables', () => {
 	test('delete returns not_found_locally for missing row', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
 		const result = tables.posts.delete('nonexistent');
@@ -124,13 +124,13 @@ describe('createTables', () => {
 	test('count reflects the current number of rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
 		expect(tables.posts.count()).toBe(0);
 
-		tables.posts.set({ id: '1', title: 'First' });
-		tables.posts.set({ id: '2', title: 'Second' });
+		tables.posts.set({ id: '1', title: 'First', _v: 1 });
+		tables.posts.set({ id: '2', title: 'Second', _v: 1 });
 
 		expect(tables.posts.count()).toBe(2);
 	});
@@ -138,11 +138,11 @@ describe('createTables', () => {
 	test('clear removes all rows', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
-		tables.posts.set({ id: '1', title: 'First' });
-		tables.posts.set({ id: '2', title: 'Second' });
+		tables.posts.set({ id: '1', title: 'First', _v: 1 });
+		tables.posts.set({ id: '2', title: 'Second', _v: 1 });
 		expect(tables.posts.count()).toBe(2);
 
 		tables.posts.clear();
@@ -152,15 +152,13 @@ describe('createTables', () => {
 	test('migrates old data on read', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				}),
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			}),
 		});
 
 		// Simulate writing old data by accessing the raw array
@@ -183,29 +181,25 @@ describe('migration scenarios', () => {
 	test('migrates three schema versions to latest', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						author: 'string | null',
-						_v: '3',
-					}),
-				)
-				.migrate((row) => {
-					if (row._v === 1) {
-						return { ...row, views: 0, author: null, _v: 3 as const };
-					}
-					if (row._v === 2) {
-						return { ...row, author: null, _v: 3 as const };
-					}
-					return row;
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					author: 'string | null',
+					_v: '3',
 				}),
+			).migrate((row) => {
+				if (row._v === 1) {
+					return { ...row, views: 0, author: null, _v: 3 };
+				}
+				if (row._v === 2) {
+					return { ...row, author: null, _v: 3 };
+				}
+				return row;
+			}),
 		});
 
 		// Insert v1 data directly
@@ -240,29 +234,25 @@ describe('migration scenarios', () => {
 	test('migrates three schema versions including tags field', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						tags: 'string[]',
-						_v: '3',
-					}),
-				)
-				.migrate((row) => {
-					if (row._v === 1) {
-						return { ...row, views: 0, tags: [], _v: 3 as const };
-					}
-					if (row._v === 2) {
-						return { ...row, tags: [], _v: 3 as const };
-					}
-					return row;
+			posts: defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					tags: 'string[]',
+					_v: '3',
 				}),
+			).migrate((row) => {
+				if (row._v === 1) {
+					return { ...row, views: 0, tags: [], _v: 3 };
+				}
+				if (row._v === 2) {
+					return { ...row, tags: [], _v: 3 };
+				}
+				return row;
+			}),
 		});
 
 		// Insert v1 data
@@ -283,7 +273,7 @@ describe('type errors', () => {
 	test('rejects rows missing required fields for table.set', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
 		// @ts-expect-error title is required by the posts schema
@@ -296,7 +286,7 @@ describe('type errors', () => {
 	test('rejects access to tables not defined in schema', () => {
 		const ydoc = new Y.Doc();
 		const tables = createTables(ydoc, {
-			posts: defineTable(type({ id: 'string', title: 'string' })),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		});
 
 		// @ts-expect-error comments table is not defined on this workspace

@@ -28,6 +28,7 @@ const OUTPUT_PATH = './stress-test-output.yjs';
 const eventDefinition = defineTable(
 	type({
 		id: 'string',
+		_v: '1',
 		type: "'command' | 'event'",
 		name: 'string',
 		payload: 'string',
@@ -87,6 +88,7 @@ async function main() {
 			for (let i = 0; i < EVENTS_PER_CYCLE; i++) {
 				tables.events.set({
 					id: generateId(i),
+					_v: 1,
 					type: i % 2 === 0 ? 'command' : 'event',
 					name: `action_${i}`,
 					payload: samplePayload,

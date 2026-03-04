@@ -73,12 +73,9 @@ const notesTable = defineTable(
 const tagsTable = defineTable(type({ id: 'string', label: 'string', _v: '1' }));
 
 // Multi-version table with doc
-const posts = defineTable()
-	.version(
-		type({ id: 'string', docId: 'string', modifiedAt: 'number', _v: '1' }),
-	)
-	.migrate((row) => row)
-	.withDocument('content', { guid: 'docId', updatedAt: 'modifiedAt' });
+const posts = defineTable(
+	type({ id: 'string', docId: 'string', modifiedAt: 'number', _v: '1' }),
+).withDocument('content', { guid: 'docId', updatedAt: 'modifiedAt' });
 ```
 
 ### Why this approach

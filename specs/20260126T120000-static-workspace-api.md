@@ -685,9 +685,7 @@ The layered API enables clean unit testing:
 import { defineTable } from 'epicenter/static';
 
 test('defineTable creates valid definition', () => {
-	const posts = defineTable()
-		.version(type({ id: 'string', title: 'string' }))
-		.migrate((row) => row);
+	const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 	// Verify schema validates correctly
 	const result = posts.schema['~standard'].validate({ id: '1', title: 'Hi' });
@@ -893,13 +891,8 @@ When there's only one version, you can pass the schema directly:
 
 ```typescript
 // Shorthand (single version)
-const posts = defineTable(type({ id: 'string', title: 'string' }));
-const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
-
-// Equivalent builder pattern
-const posts = defineTable()
-	.version(type({ id: 'string', title: 'string' }))
-	.migrate((row) => row);
+const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number', _v: '1' }));
 ```
 
 The shorthand:

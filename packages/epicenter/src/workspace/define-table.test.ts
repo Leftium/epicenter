@@ -1,7 +1,7 @@
 /**
  * defineTable Tests
  *
- * Verifies shorthand and builder-based table definitions, including multi-version schema migration.
+ * Verifies single-schema and variadic multi-version table definitions, including schema migration.
  * These tests ensure table contracts remain stable for runtime validation and for typed documents.
  *
  * Key behaviors:
@@ -54,7 +54,7 @@ describe('defineTable', () => {
 		});
 	});
 
-	describe('builder syntax', () => {
+	describe('variadic syntax', () => {
 		test('creates valid table definition with single version', () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
@@ -69,15 +69,13 @@ describe('defineTable', () => {
 		});
 
 		test('creates table definition with multiple versions that validates both', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// V1 data should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -98,15 +96,13 @@ describe('defineTable', () => {
 		});
 
 		test('migrate function upgrades old rows to latest version', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Migrate v1 to v2
 			const migrated = posts.migrate({
@@ -117,24 +113,23 @@ describe('defineTable', () => {
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('throws when no versions are defined', () => {
+		test('requires at least one schema argument', () => {
 			expect(() => {
-				defineTable().migrate((row) => row);
-			}).toThrow('defineTable() requires at least one .version() call');
+				// @ts-expect-error no arguments provided
+				defineTable();
+			}).toThrow();
 		});
 	});
 
 	describe('schema patterns', () => {
 		test('two version migration with _v discriminant', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Both versions should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -153,15 +148,13 @@ describe('defineTable', () => {
 		});
 
 		test('two version migration with _v', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Both versions should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -189,24 +182,22 @@ describe('defineTable', () => {
 		});
 
 		test('three-version migration uses switch and preserves latest rows', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						_v: '2',
-					}),
-				)
-				.migrate((row) => {
-					switch (row._v) {
-						case 1:
-							return { ...row, views: 0, _v: 2 as const };
-						case 2:
-							return row;
-					}
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					_v: '2',
+				}),
+			).migrate((row) => {
+				switch (row._v) {
+					case 1:
+						return { ...row, views: 0, _v: 2 };
+					case 2:
+						return row;
+				}
+			});
 
 			// V1 data should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -243,7 +234,7 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: 2 as const,
+				_v: 2,
 			});
 			expect(alreadyLatest).toEqual({
 				id: '1',
@@ -266,20 +257,17 @@ describe('defineTable', () => {
 		});
 
 		test('builder path adds documents to definition', () => {
-			const notes = defineTable()
-				.version(
-					type({
-						id: 'string',
-						docId: 'string',
-						modifiedAt: 'number',
-						_v: '1',
-					}),
-				)
-				.migrate((row) => row)
-				.withDocument('content', {
-					guid: 'docId',
-					updatedAt: 'modifiedAt',
-				});
+			const notes = defineTable(
+				type({
+					id: 'string',
+					docId: 'string',
+					modifiedAt: 'number',
+					_v: '1',
+				}),
+			).withDocument('content', {
+				guid: 'docId',
+				updatedAt: 'modifiedAt',
+			});
 
 			expect(notes.documents.content.guid).toBe('docId');
 			expect(notes.documents.content.updatedAt).toBe('modifiedAt');

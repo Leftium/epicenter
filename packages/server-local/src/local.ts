@@ -1,7 +1,7 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
 import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
-import { createSyncPlugin } from '@epicenter/server/sync';
+import { createWsSyncPlugin } from '@epicenter/server/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -289,7 +289,7 @@ export function createLocalServer(config: LocalServerConfig) {
 		.use(createAuthGuardPlugin(config.auth ?? { mode: 'none' }))
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
-				createSyncPlugin({
+				createWsSyncPlugin({
 					getDoc:
 						clients.length > 0
 							? (room) => {

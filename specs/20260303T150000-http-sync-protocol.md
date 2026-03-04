@@ -531,6 +531,7 @@ Option A is recommended. The room manager loads from storage on room creation an
 3. [x] **`createWsSyncPlugin({ getDoc })`** — extract WS handler from existing plugin
    > Implemented in `packages/server/src/sync/ws-sync-plugin.ts`. Exact extraction of WS handler from plugin.ts. Includes GET `/` for room listing.
 4. [ ] **Wire room manager to `SyncStorage`** — reads from storage on join, writes on update
+   > Deferred: server-local and server-remote now use createWsSyncPlugin (same behavior). HTTP plugin wiring deferred until client HTTP provider is ready.
 5. [ ] **`createHttpSyncProvider`** — client-side fetch + poll timer (~50 lines)
 6. [ ] **Two sync extensions** — `createWsSyncExtension` (rename existing) + `createHttpSyncExtension` (new)
    > Changed from single extension with `transport` option to two separate extensions for type safety.

@@ -13,6 +13,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@epicenter/sync-core": "workspace:*",
 		"elysia": "^1.2.25",
 		"lib0": "catalog:",
 		"wellcrafted": "catalog:",

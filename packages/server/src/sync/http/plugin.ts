@@ -1,27 +1,21 @@
 /**
  * HTTP Sync Plugin — Stateless Document Synchronization
  *
- * Elysia plugin for HTTP-based Yjs document sync. The server never instantiates
- * a Y.Doc — it stores opaque binary updates and uses pure Yjs utility functions
- * (mergeUpdatesV2, diffUpdateV2, encodeStateVectorFromUpdateV2) to compute diffs
- * directly from raw binary blobs.
+ * Thin Elysia wrapper around `@epicenter/sync-core` HTTP handlers.
+ * All sync logic is delegated to sync-core; this plugin handles
+ * Elysia-specific concerns (guard, route definitions, response mapping).
  *
- * Two endpoints:
- * - POST /:room — Unified sync (push update + pull diff in one round-trip)
- * - GET  /:room — Full snapshot (convenience endpoint)
- *
- * @see ./storage.ts for SyncStorage interface and binary frame encoding
- * @see ../ws/plugin.ts for the WebSocket sync plugin
+ * @see @epicenter/sync-core for the framework-agnostic handlers
  */
 
 import { Elysia } from 'elysia';
-import * as Y from 'yjs';
-import { extractBearerToken } from '../../auth';
 import {
+	extractBearerToken,
+	handleHttpGetDoc,
+	handleHttpSync,
 	type SyncStorage,
-	decodeSyncRequest,
-	stateVectorsEqual,
-} from './storage';
+	type TokenVerifier,
+} from '@epicenter/sync-core';
 
 // ============================================================================
 // Configuration
@@ -30,7 +24,7 @@ import {
 export type HttpSyncPluginConfig = {
 	storage: SyncStorage;
 	/** Verify a token. Omit for open mode (no auth). */
-	verifyToken?: (token: string) => boolean | Promise<boolean>;
+	verifyToken?: TokenVerifier;
 };
 
 // ============================================================================
@@ -40,8 +34,8 @@ export type HttpSyncPluginConfig = {
 /**
  * Creates an Elysia plugin for stateless HTTP document synchronization.
  *
- * Each request reads from storage, computes diffs using pure Yjs functions,
- * and responds — no in-memory Y.Doc, no room manager, no connection tracking.
+ * Each request delegates to sync-core handlers which read from storage,
+ * compute diffs using pure Yjs functions, and return results.
  *
  * @param config - Storage backend and optional auth configuration
  * @returns Elysia plugin with POST /:room and GET /:room routes
@@ -63,43 +57,23 @@ export function createHttpSyncPlugin(config: HttpSyncPluginConfig) {
 		restAuth
 			.post('/:room', async ({ params, request, set }) => {
 				const body = new Uint8Array(await request.arrayBuffer());
-				const { stateVector: clientSV, update } =
-					decodeSyncRequest(body);
+				const result = await handleHttpSync(storage, params.room, body);
 
-				// Push client update if present
-				if (update.byteLength > 0) {
-					await storage.appendUpdate(params.room, update);
+				set.status = result.status;
+				if (result.body) {
+					set.headers['content-type'] = 'application/octet-stream';
 				}
-
-				// Read all stored updates
-				const updates = await storage.getAllUpdates(params.room);
-				if (updates.length === 0) {
-					set.status = 304;
-					return;
-				}
-
-				const merged = Y.mergeUpdatesV2(updates);
-				const serverSV = Y.encodeStateVectorFromUpdateV2(merged);
-
-				// Client already up to date
-				if (stateVectorsEqual(serverSV, clientSV)) {
-					set.status = 304;
-					return;
-				}
-
-				const diff = Y.diffUpdateV2(merged, clientSV);
-				set.headers['content-type'] = 'application/octet-stream';
-				return diff;
+				return result.body;
 			})
 			.get('/:room', async ({ params, set, status }) => {
-				const updates = await storage.getAllUpdates(params.room);
-				if (updates.length === 0) {
+				const result = await handleHttpGetDoc(storage, params.room);
+
+				if (result.status === 404) {
 					return status('Not Found', `Document not found: ${params.room}`);
 				}
 
-				const merged = Y.mergeUpdatesV2(updates);
 				set.headers['content-type'] = 'application/octet-stream';
-				return merged;
+				return result.body;
 			}),
 	);
 }

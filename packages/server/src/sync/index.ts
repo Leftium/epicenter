@@ -13,5 +13,5 @@ export {
 	decodeSyncRequest,
 	encodeSyncRequest,
 	stateVectorsEqual,
-} from './http/storage';
+} from '@epicenter/sync-core';
 export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws/plugin';

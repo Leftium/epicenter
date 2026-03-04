@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
-import { listenWithFallback } from '@epicenter/server';
+import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
@@ -145,46 +145,39 @@ export type LocalServerConfig = {
 /**
  * Create an Elysia plugin for auth guard based on the auth config.
  *
+ * - `none`   → no-op plugin
+ * - `token`  → shared {@link createTokenGuardPlugin} from `@epicenter/server`
+ * - `remote` → delegates to remote server session validation
+ *
  * Separated into its own plugin so the type chain is not broken by conditionals.
  */
 function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
-	const plugin = new Elysia();
-
-	if (authConfig.mode === 'none') return plugin;
-
-	if (authConfig.mode === 'token') {
-		plugin.onBeforeHandle({ as: 'global' }, ({ request, status, path }) => {
-			if (path === '/') return;
-			const header = request.headers.get('authorization');
-			const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-			if (token !== authConfig.token) {
-				return status(401, 'Unauthorized: Invalid token');
-			}
-		});
-		return plugin;
-	}
+	if (authConfig.mode === 'none') return new Elysia();
+	if (authConfig.mode === 'token') return createTokenGuardPlugin(authConfig.token);
 
 	// mode === 'remote'
 	const validateSession = createRemoteSessionValidator({
 		remoteUrl: authConfig.remoteUrl,
 		cacheTtlMs: authConfig.cacheTtlMs,
 	});
-	plugin.onBeforeHandle({ as: 'global' }, async ({ request, status, path }) => {
-		if (path === '/') return;
+	return new Elysia().onBeforeHandle(
+		{ as: 'global' },
+		async ({ request, status, path }) => {
+			if (path === '/') return;
 
-		const authHeader = request.headers.get('authorization');
-		if (!authHeader?.startsWith('Bearer ')) {
-			return status(401, 'Unauthorized: Bearer token required');
-		}
+			const authHeader = request.headers.get('authorization');
+			if (!authHeader?.startsWith('Bearer ')) {
+				return status(401, 'Unauthorized: Bearer token required');
+			}
 
-		const token = authHeader.slice(7);
-		const result = await validateSession(token);
+			const token = authHeader.slice(7);
+			const result = await validateSession(token);
 
-		if (!result.valid) {
-			return status(401, 'Unauthorized: Invalid session token');
-		}
-	});
-	return plugin;
+			if (!result.valid) {
+				return status(401, 'Unauthorized: Invalid session token');
+			}
+		},
+	);
 }
 
 /**

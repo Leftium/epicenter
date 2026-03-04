@@ -1,5 +1,8 @@
 import { openapi } from '@elysiajs/openapi';
-import { listenWithFallback } from '@epicenter/server';
+import {
+	createTokenGuardPlugin,
+	listenWithFallback,
+} from '@epicenter/server';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -260,16 +263,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 
 	// Mount auth middleware based on mode.
 	if (authConfig.mode === 'token') {
-		// Token mode: global guard that compares Bearer token to the shared secret.
-		// The health check endpoint (GET /) is excluded so load balancers can probe.
-		app.onBeforeHandle({ as: 'global' }, ({ request, status, path }) => {
-			if (path === '/') return;
-			const header = request.headers.get('authorization');
-			const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
-			if (token !== authConfig.token) {
-				return status(401, 'Unauthorized: Invalid token');
-			}
-		});
+		app.use(createTokenGuardPlugin(authConfig.token));
 	} else if (auth) {
 		// Better Auth mode: mount session-based auth at /auth/*.
 		app.use(createAuthPlugin(auth));

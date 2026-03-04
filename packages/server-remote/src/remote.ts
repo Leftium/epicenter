@@ -1,8 +1,5 @@
 import { openapi } from '@elysiajs/openapi';
-import {
-	createTokenGuardPlugin,
-	listenWithFallback,
-} from '@epicenter/server';
+import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
 import { createSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -200,16 +197,16 @@ export function createRemoteServer(config: RemoteServerConfig) {
 	// Create Better Auth instance early so it can be shared between
 	// the auth plugin and the auto-wired sync verify function.
 	const auth =
-		authConfig.mode === 'betterAuth'
-			? createBetterAuth(authConfig)
-			: undefined;
+		authConfig.mode === 'betterAuth' ? createBetterAuth(authConfig) : undefined;
 
 	// Auto-wire sync auth from the top-level auth config when
 	// sync.verifyToken is not explicitly provided:
 	// - none     → no sync auth
 	// - token    → direct token comparison
 	// - betterAuth → session validation via auth.api.getSession()
-	const syncVerifyToken: ((token: string) => boolean | Promise<boolean>) | undefined =
+	const syncVerifyToken:
+		| ((token: string) => boolean | Promise<boolean>)
+		| undefined =
 		sync?.verifyToken ??
 		(authConfig.mode === 'token'
 			? (token: string) => token === authConfig.token

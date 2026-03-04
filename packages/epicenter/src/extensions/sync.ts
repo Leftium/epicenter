@@ -122,10 +122,7 @@ export function createSyncExtension(
 			 * ```
 			 */
 			reconnect(
-				newConfig: {
-					url?: string;
-					getToken?: () => Promise<string>;
-				} = {},
+				newConfig: { url?: string; getToken?: () => Promise<string> } = {},
 			) {
 				provider.destroy();
 				provider = createSyncProvider({

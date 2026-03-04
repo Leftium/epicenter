@@ -89,7 +89,7 @@ export function createSyncExtension(
 			doc: ydoc,
 			url: resolvedUrl,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken?.(workspaceId)
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,
@@ -122,10 +122,7 @@ export function createSyncExtension(
 			 * ```
 			 */
 			reconnect(
-				newConfig: {
-					url?: string;
-					getToken?: () => Promise<string>;
-				} = {},
+				newConfig: { url?: string; getToken?: () => Promise<string> } = {},
 			) {
 				provider.destroy();
 				provider = createSyncProvider({

@@ -40,8 +40,8 @@
  * ```
  */
 
-import type { JsonValue } from 'wellcrafted/json';
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { JsonValue } from 'wellcrafted/json';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import { createUnionSchema } from './schema-union.js';
 import type { KvDefinition, LastSchema } from './types.js';
@@ -115,11 +115,11 @@ export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
 				fn: (value: unknown) => unknown,
 			): KvDefinition<CombinedStandardSchema[]>;
 	  } {
-	if (arguments.length === 0) {
+	if (args.length === 0) {
 		throw new Error('defineKv() requires at least one schema argument');
 	}
 
-	if (arguments.length === 1) {
+	if (args.length === 1) {
 		const schema = args[0];
 		return {
 			schema,

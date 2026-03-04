@@ -174,11 +174,11 @@ export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 				Record<string, never>
 			>;
 	  } {
-	if (arguments.length === 0) {
+	if (args.length === 0) {
 		throw new Error('defineTable() requires at least one schema argument');
 	}
 
-	if (arguments.length === 1) {
+	if (args.length === 1) {
 		const schema = args[0];
 		return attachDocumentBuilder({
 			schema,

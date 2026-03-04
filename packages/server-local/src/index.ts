@@ -1,4 +1,4 @@
-export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
+export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
 export {
 	createRemoteSessionValidator,
 	type RemoteSessionValidatorConfig,

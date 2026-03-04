@@ -1,4 +1,4 @@
-import { SUPPORTED_PROVIDERS, type SupportedProvider } from '@epicenter/server';
+import { SUPPORTED_PROVIDERS, type SupportedProvider } from '@epicenter/server-elysia';
 
 /**
  * Provider API base URLs for the remote server proxy.

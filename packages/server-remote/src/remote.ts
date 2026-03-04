@@ -1,6 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
-import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
-import { createWsSyncPlugin } from '@epicenter/server/sync';
+import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server-elysia';
+import { createWsSyncPlugin } from '@epicenter/server-elysia/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
@@ -11,7 +11,7 @@ import {
 } from './auth';
 import { createProxyPlugin } from './proxy';
 
-export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server';
+export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
 
 /**
  * Auth configuration for the remote server.

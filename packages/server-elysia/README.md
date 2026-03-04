@@ -66,7 +66,7 @@ The remote server is a stateless coordination layer. Its Y.Docs are ephemeral an
 - Issue commands to local servers
 
 ```typescript
-import { createRemoteServer } from '@epicenter/server';
+import { createRemoteServer } from '@epicenter/server-elysia';
 
 const remote = createRemoteServer({ port: 3914 });
 remote.start();
@@ -121,7 +121,7 @@ The local server is where all workspace knowledge lives. It owns the persisted Y
 
 ```typescript
 import { defineWorkspace, createWorkspace, id, text } from '@epicenter/workspace/static';
-import { createLocalServer } from '@epicenter/server';
+import { createLocalServer } from '@epicenter/server-elysia';
 
 const blogWorkspace = defineWorkspace({
   id: 'blog',
@@ -242,7 +242,7 @@ createRemoteServer()
 ```
 
 ```typescript
-import { createWorkspacePlugin } from '@epicenter/server/workspace';
+import { createWorkspacePlugin } from '@epicenter/server-elysia/workspace';
 
 // Use workspace plugin standalone in your own Elysia app
 const app = new Elysia().use(createWorkspacePlugin([blogClient])).listen(3913);

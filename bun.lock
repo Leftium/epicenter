@@ -375,10 +375,11 @@
         "yjs": "catalog:",
       },
     },
-    "packages/server": {
-      "name": "@epicenter/server",
+    "packages/server-elysia": {
+      "name": "@epicenter/server-elysia",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/sync-core": "workspace:*",
         "elysia": "^1.2.25",
         "lib0": "catalog:",
         "wellcrafted": "catalog:",
@@ -399,7 +400,7 @@
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/server": "workspace:*",
+        "@epicenter/server-elysia": "workspace:*",
         "elysia": "^1.2.25",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -420,7 +421,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/server": "workspace:*",
+        "@epicenter/server-elysia": "workspace:*",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
         "@tanstack/ai-gemini": "^0.5.0",
@@ -470,6 +471,21 @@
       "dependencies": {
         "lib0": "catalog:",
         "y-protocols": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/sync-core": {
+      "name": "@epicenter/sync-core",
+      "version": "0.0.1",
+      "dependencies": {
+        "lib0": "catalog:",
+        "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -721,7 +737,7 @@
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
-    "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
+    "@epicenter/server-elysia": ["@epicenter/server-elysia@workspace:packages/server-elysia"],
 
     "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
 
@@ -732,6 +748,8 @@
     "@epicenter/svelte-utils": ["@epicenter/svelte-utils@workspace:packages/svelte-utils"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
+
+    "@epicenter/sync-core": ["@epicenter/sync-core@workspace:packages/sync-core"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

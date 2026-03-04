@@ -1,14 +1,24 @@
 # Platform-Agnostic Sync Primitives
 
-**Goal**: Extract framework-agnostic TypeScript primitives from `@epicenter/server` so the same sync logic can power both an Elysia/Bun deployment (local/remote self-hosted) and a Hono/Cloudflare Workers + Durable Objects deployment (cloud-hosted).
+**Goal**: Extract framework-agnostic TypeScript primitives from `@epicenter/server-elysia` (formerly `@epicenter/server`) so the same sync logic can power both an Elysia/Bun deployment (local/remote self-hosted) and a Hono/Cloudflare Workers + Durable Objects deployment (cloud-hosted).
 
-**Status**: Phase 1 Implemented (sync-core extraction + server refactor)
+**Status**: Phase 1 Implemented (sync-core extraction + server refactor + rename to `server-elysia`)
+
+### Dependency Graph
+
+```
+@epicenter/sync-core                  (pure: yjs + lib0 + y-protocols only)
+├── @epicenter/server-elysia          (Elysia plugins: sync, auth, discovery)
+│   ├── @epicenter/server-local       (local desktop server)
+│   └── @epicenter/server-remote      (self-hosted remote server)
+└── @epicenter/server-cloudflare      (Hono + Durable Objects) [Phase 2]
+```
 
 ---
 
 ## Problem
 
-Today, `@epicenter/server` tightly couples Yjs sync protocol logic with Elysia plugin construction. The protocol encoding (`protocol.ts`), room management (`rooms.ts`), and storage interface (`storage.ts`) are _almost_ framework-agnostic, but they live inside an Elysia-dependent package and some pieces (like the WS message handler in `ws/plugin.ts`) mix protocol dispatch with Elysia's `ws.sendBinary()` / `ws.raw` patterns.
+Previously, `@epicenter/server` (now `@epicenter/server-elysia`) tightly coupled Yjs sync protocol logic with Elysia plugin construction. The protocol encoding (`protocol.ts`), room management (`rooms.ts`), and storage interface (`storage.ts`) were _almost_ framework-agnostic, but they lived inside an Elysia-dependent package and some pieces (like the WS message handler in `ws/plugin.ts`) mixed protocol dispatch with Elysia's `ws.sendBinary()` / `ws.raw` patterns.
 
 This means:
 - We can't reuse the sync logic in a Cloudflare Durable Object (which uses `WebSocketPair` + `webSocketMessage()`)
@@ -51,9 +61,9 @@ This means:
 └─────────────────────────────────────────────────────────────────┘
           │                            │
           ▼                            ▼
-┌─────────────────────┐   ┌──────────────────────────────────┐
-│  @epicenter/server   │   │  @epicenter/server-cloudflare     │
-│  (Elysia/Bun)        │   │  (Hono + Durable Objects)         │
+┌──────────────────────────┐   ┌──────────────────────────────────┐
+│  @epicenter/server-elysia │   │  @epicenter/server-cloudflare     │
+│  (Elysia/Bun)             │   │  (Hono + Durable Objects)         │
 │                      │   │                                   │
 │  createWsSyncPlugin  │   │  Worker (Hono):                   │
 │  createHttpSyncPlugin│   │    - Auth middleware               │
@@ -73,13 +83,13 @@ This means:
 
 ### 1. `@epicenter/sync-core` — The New Package
 
-This package extracts everything that is currently framework-agnostic (or can be made so) from `@epicenter/server/src/sync/`.
+This package extracts everything that is currently framework-agnostic (or can be made so) from `@epicenter/server-elysia/src/sync/`.
 
 **Dependencies**: `yjs`, `y-protocols`, `lib0` only. Zero framework deps. Zero Node/Bun/CF-specific APIs.
 
 #### 1.1 `protocol.ts` — Move as-is
 
-The current `packages/server/src/sync/ws/protocol.ts` is already pure. Move it unchanged.
+The current `packages/server-elysia/src/sync/ws/protocol.ts` is already pure. Move it unchanged.
 
 Exports:
 - `MESSAGE_TYPE`, `SYNC_MESSAGE_TYPE`
@@ -91,7 +101,7 @@ Exports:
 
 #### 1.2 `storage.ts` — Move as-is
 
-The current `packages/server/src/sync/http/storage.ts` is already pure. Move it unchanged.
+The current `packages/server-elysia/src/sync/http/storage.ts` is already pure. Move it unchanged.
 
 Exports:
 - `SyncStorage` interface
@@ -344,16 +354,16 @@ packages/sync-core/
   package.json          # deps: yjs, y-protocols, lib0 only
   src/
     index.ts            # re-exports everything
-    protocol.ts         # moved from server/src/sync/ws/protocol.ts
-    rooms.ts            # moved from server/src/sync/ws/rooms.ts
-    storage.ts          # moved from server/src/sync/http/storage.ts
+    protocol.ts         # moved from server-elysia/src/sync/ws/protocol.ts
+    rooms.ts            # moved from server-elysia/src/sync/ws/rooms.ts
+    storage.ts          # moved from server-elysia/src/sync/http/storage.ts
     handlers.ts         # NEW — framework-agnostic handlers
     auth.ts             # pure token extraction + TokenVerifier type
 ```
 
-### 2. `@epicenter/server` — Elysia Adapter (Refactored)
+### 2. `@epicenter/server-elysia` — Elysia Adapter (Refactored)
 
-After extraction, this package becomes a thin Elysia wrapper around `@epicenter/sync-core`.
+After extraction, this package becomes a thin Elysia wrapper around `@epicenter/sync-core`. Renamed from `@epicenter/server` to make the framework explicit.
 
 **Dependencies**: `elysia`, `@epicenter/sync-core`
 
@@ -706,18 +716,18 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
 
 | File/Concern | Current Location | New Location | Notes |
 |---|---|---|---|
-| `protocol.ts` (WS encode/decode) | `server/src/sync/ws/protocol.ts` | `sync-core/src/protocol.ts` | Move as-is |
-| `rooms.ts` (room lifecycle) | `server/src/sync/ws/rooms.ts` | `sync-core/src/rooms.ts` | Move as-is |
-| `storage.ts` (SyncStorage + encode) | `server/src/sync/http/storage.ts` | `sync-core/src/storage.ts` | Move as-is |
-| WS message dispatch logic | `server/src/sync/ws/plugin.ts` (inline) | `sync-core/src/handlers.ts` | Extract from plugin |
-| HTTP sync logic | `server/src/sync/http/plugin.ts` (inline) | `sync-core/src/handlers.ts` | Extract from plugin |
-| `extractBearerToken` | `server/src/auth.ts` | `sync-core/src/auth.ts` | Move (pure function) |
+| `protocol.ts` (WS encode/decode) | `server-elysia/src/sync/ws/protocol.ts` | `sync-core/src/protocol.ts` | Move as-is |
+| `rooms.ts` (room lifecycle) | `server-elysia/src/sync/ws/rooms.ts` | `sync-core/src/rooms.ts` | Move as-is |
+| `storage.ts` (SyncStorage + encode) | `server-elysia/src/sync/http/storage.ts` | `sync-core/src/storage.ts` | Move as-is |
+| WS message dispatch logic | `server-elysia/src/sync/ws/plugin.ts` (inline) | `sync-core/src/handlers.ts` | Extract from plugin |
+| HTTP sync logic | `server-elysia/src/sync/http/plugin.ts` (inline) | `sync-core/src/handlers.ts` | Extract from plugin |
+| `extractBearerToken` | `server-elysia/src/auth.ts` | `sync-core/src/auth.ts` | Move (pure function) |
 | `TokenVerifier` type | implicit | `sync-core/src/auth.ts` | New explicit type |
-| `createTokenGuardPlugin` | `server/src/auth.ts` | `server/src/auth.ts` | Stays (Elysia-specific) |
+| `createTokenGuardPlugin` | `server-elysia/src/auth.ts` | `server-elysia/src/auth.ts` | Stays (Elysia-specific) |
 | `createAuthPlugin` (Better Auth) | `server-remote/src/auth/plugin.ts` | Stays | Elysia-specific |
-| `createWsSyncPlugin` | `server/src/sync/ws/plugin.ts` | `server/src/sync/ws/plugin.ts` | Refactor to call sync-core handlers |
-| `createHttpSyncPlugin` | `server/src/sync/http/plugin.ts` | `server/src/sync/http/plugin.ts` | Refactor to call sync-core handlers |
-| Discovery (awareness.ts) | `server/src/discovery/` | Stays | Already framework-agnostic, but Elysia-coupled for transport |
+| `createWsSyncPlugin` | `server-elysia/src/sync/ws/plugin.ts` | `server-elysia/src/sync/ws/plugin.ts` | Refactor to call sync-core handlers |
+| `createHttpSyncPlugin` | `server-elysia/src/sync/http/plugin.ts` | `server-elysia/src/sync/http/plugin.ts` | Refactor to call sync-core handlers |
+| Discovery (awareness.ts) | `server-elysia/src/discovery/` | Stays | Already framework-agnostic, but Elysia-coupled for transport |
 | Hono Worker + DO | doesn't exist | `server-cloudflare/` | New |
 
 ### 6. Migration Path
@@ -729,9 +739,10 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
    > **Note**: Added `handleHttpGetDoc` handler (not in original spec) for the GET /:room endpoint.
    > Removed `roomManager` param from `handleWsMessage` — adapter handles broadcast via return value.
 4. [x] Create `auth.ts` with `extractBearerToken` and `TokenVerifier`
-5. [x] Update `@epicenter/server` to depend on `@epicenter/sync-core` and import from it
+5. [x] Update `@epicenter/server-elysia` (formerly `@epicenter/server`) to depend on `@epicenter/sync-core` and import from it
 6. [x] Refactor `createWsSyncPlugin` and `createHttpSyncPlugin` to be thin wrappers
 7. [x] Verify all existing tests pass (70 sync-core unit + 14 plugin integration = 84 total)
+8. [x] Rename `@epicenter/server` → `@epicenter/server-elysia` to make framework explicit in package name
 
 **Phase 2: Add Cloudflare target**
 1. Create `packages/server-cloudflare/`
@@ -764,7 +775,7 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
 
 ### Summary
 
-Phase 1 extracted all framework-agnostic sync logic from `@epicenter/server` into a new `@epicenter/sync-core` package. The server package went from ~2300 lines of sync code to ~60 lines of thin Elysia wrappers that delegate to sync-core handlers. All 84 tests pass (70 unit + 14 integration).
+Phase 1 extracted all framework-agnostic sync logic from `@epicenter/server` into a new `@epicenter/sync-core` package and renamed `@epicenter/server` to `@epicenter/server-elysia` to make the framework dependency explicit. The server-elysia package went from ~2300 lines of sync code to ~60 lines of thin Elysia wrappers that delegate to sync-core handlers. All 84 tests pass (70 unit + 14 integration).
 
 ### Deviations from Spec
 

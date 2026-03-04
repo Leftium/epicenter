@@ -1,7 +1,7 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
-import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
-import { createWsSyncPlugin } from '@epicenter/server/sync';
+import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server-elysia';
+import { createWsSyncPlugin } from '@epicenter/server-elysia/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -146,7 +146,7 @@ export type LocalServerConfig = {
  * Create an Elysia plugin for auth guard based on the auth config.
  *
  * - `none`   → no-op plugin
- * - `token`  → shared {@link createTokenGuardPlugin} from `@epicenter/server`
+ * - `token`  → shared {@link createTokenGuardPlugin} from `@epicenter/server-elysia`
  * - `remote` → delegates to remote server session validation
  *
  * Separated into its own plugin so the type chain is not broken by conditionals.

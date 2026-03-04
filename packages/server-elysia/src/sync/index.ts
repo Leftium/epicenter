@@ -1,7 +1,7 @@
 /**
  * Sync plugin public API.
  *
- * This is the entry point for `@epicenter/server/sync`.
+ * This is the entry point for `@epicenter/server-elysia/sync`.
  * CRITICAL: This file must NOT import from `@epicenter/workspace` — it's the dependency firewall.
  */
 

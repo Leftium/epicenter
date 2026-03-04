@@ -36,7 +36,7 @@ import {
  *
  * @example
  * ```typescript
- * import { createAIPlugin } from '@epicenter/server/ai';
+ * import { createAIPlugin } from '@epicenter/server-elysia/ai';
  *
  * const app = new Elysia()
  *   .use(new Elysia({ prefix: '/ai' }).use(createAIPlugin()))

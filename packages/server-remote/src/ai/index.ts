@@ -1,7 +1,7 @@
 /**
  * AI plugin public API.
  *
- * This is the entry point for `@epicenter/server/ai`.
+ * This is the entry point for `@epicenter/server-elysia/ai`.
  */
 
 export {

@@ -12,9 +12,9 @@
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { filesTable } from './file-table.js';
-import { createTimeline } from './timeline-helpers.js';
-import { createYjsFileSystem, type YjsFileSystem } from './yjs-file-system.js';
+import { createTimeline } from './content/timeline.js';
+import { createYjsFileSystem, type YjsFileSystem } from './file-system.js';
+import { filesTable } from './table.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });
@@ -506,15 +506,11 @@ describe('sheet file support', () => {
 	test('readFile returns CSV for sheet-mode file', async () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
-		// Create file and push sheet entry via internal access
-		// Accessing internals to seed sheet mode for behavior coverage.
 		await fs.writeFile('/data.csv', 'placeholder');
 		const fileId = fs.lookupId('/data.csv');
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		const { createTimeline } = await import('./timeline-helpers.js');
-		// Replace text entry with sheet entry
 		handle.ydoc.transact(() => {
 			createTimeline(handle.ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
 		});
@@ -529,7 +525,6 @@ describe('sheet file support', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		const { createTimeline } = await import('./timeline-helpers.js');
 		handle.ydoc.transact(() => {
 			createTimeline(handle.ydoc).pushSheetFromCsv('A,B\n1,2\n');
 		});

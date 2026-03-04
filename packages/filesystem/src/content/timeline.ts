@@ -1,6 +1,6 @@
 import * as Y from 'yjs';
-import { parseSheetFromCsv, serializeSheetToCsv } from './sheet-helpers.js';
-import type { ContentMode } from './types.js';
+import { parseSheetFromCsv, serializeSheetToCsv } from '../formats/sheet.js';
+import type { ContentMode } from './entry-types.js';
 
 type TimelineEntry = Y.Map<unknown>;
 

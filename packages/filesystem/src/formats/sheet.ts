@@ -27,7 +27,7 @@ export function generateInitialOrders(count: number): number[] {
 }
 
 import * as Y from 'yjs';
-import { generateColumnId, generateRowId } from './types.js';
+import { generateColumnId, generateRowId } from '../ids.js';
 
 /**
  * Escape a CSV field value per RFC 4180.

@@ -11,12 +11,12 @@
  * - GET  /:room — Full snapshot (convenience endpoint)
  *
  * @see ./storage.ts for SyncStorage interface and binary frame encoding
- * @see ./plugin.ts for the WebSocket sync plugin
+ * @see ../ws/plugin.ts for the WebSocket sync plugin
  */
 
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
-import { extractBearerToken } from '../auth';
+import { extractBearerToken } from '../../auth';
 import {
 	type SyncStorage,
 	decodeSyncRequest,

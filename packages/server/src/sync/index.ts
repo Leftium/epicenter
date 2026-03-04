@@ -9,6 +9,7 @@ export { createHttpSyncPlugin, type HttpSyncPluginConfig } from './http-sync-plu
 export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws-sync-plugin';
 export {
 	type SyncStorage,
+	compactDoc,
 	createMemorySyncStorage,
 	decodeSyncRequest,
 	encodeSyncRequest,

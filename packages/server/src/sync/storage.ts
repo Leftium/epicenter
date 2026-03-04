@@ -15,6 +15,7 @@
 
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Storage Interface
@@ -165,4 +166,30 @@ export function createMemorySyncStorage(): SyncStorage {
 			docs.set(docId, [mergedUpdate]);
 		},
 	};
+}
+
+// ============================================================================
+// Compaction
+// ============================================================================
+
+/**
+ * Compact all stored updates for a document into a single merged snapshot.
+ *
+ * Reads all updates, merges them with `Y.mergeUpdatesV2` (a pure function —
+ * no Y.Doc instantiated), and replaces the update log with the single result.
+ * This keeps `getAllUpdates` fast and `diffUpdateV2` efficient.
+ *
+ * Safe to call at any time — concurrent reads will see either the old updates
+ * or the new compacted snapshot, both representing the same document state.
+ *
+ * @param storage - The SyncStorage instance to compact
+ * @param docId - Document to compact
+ * @returns True if compaction was performed, false if already compact (0-1 updates)
+ */
+export async function compactDoc(storage: SyncStorage, docId: string): Promise<boolean> {
+	const updates = await storage.getAllUpdates(docId);
+	if (updates.length <= 1) return false;
+	const merged = Y.mergeUpdatesV2(updates);
+	await storage.compact(docId, merged);
+	return true;
 }

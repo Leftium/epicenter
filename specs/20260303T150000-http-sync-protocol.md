@@ -3,7 +3,7 @@
 > Add stateless HTTP polling sync alongside the existing WebSocket sync.
 > Same CRDT guarantees, no server-side Y.Doc, deployable to stateless targets.
 
-## Status: In Progress
+## Status: Implemented
 
 ## Motivation
 
@@ -537,5 +537,31 @@ Option A is recommended. The room manager loads from storage on room creation an
 6. [x] **Two sync extensions** — `createWsSyncExtension` (rename existing) + `createHttpSyncExtension` (new)
    > Changed from single extension with `transport` option to two separate extensions for type safety.
    > `createWsSyncExtension` in `sync.ts` (renamed, deprecated aliases kept). `createHttpSyncExtension` in `http-sync.ts` (new, wraps HTTP provider, no awareness, includes pollInterval config).
-7. [ ] **Compaction** — periodic `Y.mergeUpdatesV2`
+7. [x] **Compaction** — `compactDoc()` utility using `Y.mergeUpdatesV2`
+   > Implemented in `packages/server/src/sync/storage.ts`. Pure function, no Y.Doc. Exported from `@epicenter/server/sync`.
 8. [ ] **Cloudflare Worker deployment** — `createHttpSyncPlugin` + KV storage backend
+   > Deferred: requires KV SyncStorage implementation and Cloudflare Worker setup.
+
+## Review
+
+**Completed**: 2026-03-04
+**Branch**: `braden-w/server-pkg-overview-v1`
+
+### Summary
+
+Implemented stateless HTTP polling sync alongside the existing WebSocket sync. The server stores opaque binary blobs and uses pure Yjs utility functions (no Y.Doc instantiation) to compute diffs. Two composable Elysia plugins (`createHttpSyncPlugin` + `createWsSyncPlugin`), a client-side HTTP polling provider with adaptive intervals, and two separate sync extensions for precise typing.
+
+### Deviations from Spec
+
+- **Two extensions instead of one**: The spec proposed a single `createSyncExtension` with a `transport: 'ws' | 'http' | 'auto'` option. Implemented as two separate extensions (`createWsSyncExtension` + `createHttpSyncExtension`) for precise types — no optional awareness, no runtime branching.
+- **SQLite SyncStorage deferred**: Only the in-memory implementation was built. SQLite implementation will be added when needed for persistent local server storage.
+- **Room manager not wired to SyncStorage**: The WS plugin continues using its existing `getDoc` pattern. Shared storage between HTTP and WS plugins (Option A from spec) deferred until both plugins are mounted on the same server.
+- **Cloudflare deployment deferred**: Requires a KV-backed SyncStorage implementation.
+
+### Follow-up Work
+
+- SQLite `SyncStorage` implementation for `server-local` persistent storage
+- Wire `createHttpSyncPlugin` into `server-remote` for stateless deployment
+- Shared storage between HTTP and WS plugins when both are active
+- Cloudflare Worker deployment with KV storage backend
+- Compaction scheduling (cron, update count threshold, or admin endpoint)

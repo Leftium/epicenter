@@ -509,7 +509,9 @@ describe('sheet file support', () => {
 		// Create file and push sheet entry via internal access
 		// Accessing internals to seed sheet mode for behavior coverage.
 		await fs.writeFile('/data.csv', 'placeholder');
-		const fileId = fs.lookupId('/data.csv')!;
+		const fileId = fs.lookupId('/data.csv');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		const { createTimeline } = await import('./timeline-helpers.js');
 		// Replace text entry with sheet entry
@@ -523,7 +525,9 @@ describe('sheet file support', () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
 		await fs.writeFile('/data.csv', 'placeholder');
-		const fileId = fs.lookupId('/data.csv')!;
+		const fileId = fs.lookupId('/data.csv');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		const { createTimeline } = await import('./timeline-helpers.js');
 		handle.ydoc.transact(() => {
@@ -612,7 +616,9 @@ describe('document integration', () => {
 
 		// Write a file to create both the row and the content doc
 		await fs.writeFile('/test.txt', 'hello world');
-		const fileId = fs.lookupId('/test.txt')!;
+		const fileId = fs.lookupId('/test.txt');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /test.txt to exist');
 
 		// Open the content doc — should get a handle
 		const handle1 = await documents.open(fileId);

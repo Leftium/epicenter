@@ -1,5 +1,10 @@
 import type { Argv } from 'yargs';
-import { formatYargsOptions, output, outputError } from '../format-output';
+import {
+	type FormatOptions,
+	formatYargsOptions,
+	output,
+	outputError,
+} from '../format-output';
 import { assertServerRunning, createHttpClient } from '../http-client';
 import { parseJsonInput, readStdinSync } from '../parse-input';
 
@@ -33,6 +38,9 @@ export function buildDataCommand(serverUrl: string) {
 	};
 }
 
+type FormatArgv = { format?: FormatOptions['format'] };
+type WorkspaceArgv = { workspace: string } & FormatArgv;
+
 // ---------------------------------------------------------------------------
 // tables — list table names
 // ---------------------------------------------------------------------------
@@ -41,8 +49,8 @@ function buildTablesSubcommand(serverUrl: string) {
 	return {
 		command: 'tables',
 		describe: 'List all table names',
-		builder: (yargs: any) => yargs.options(formatYargsOptions()),
-		handler: async (argv: any) => {
+		builder: (yargs: Argv) => yargs.options(formatYargsOptions()),
+		handler: async (argv: WorkspaceArgv) => {
 			await assertServerRunning(serverUrl);
 			const client = createHttpClient(serverUrl);
 			const workspaceId = argv.workspace;
@@ -51,7 +59,7 @@ function buildTablesSubcommand(serverUrl: string) {
 				const data = await client.get<string[]>(
 					`/workspaces/${workspaceId}/tables`,
 				);
-				output(data, { format: argv.format as any });
+				output(data, { format: argv.format });
 			} catch (err) {
 				outputError(String(err));
 				process.exitCode = 1;
@@ -68,20 +76,16 @@ function buildKvSubcommand(serverUrl: string) {
 	return {
 		command: 'kv <action>',
 		describe: 'Manage key-value store',
-		builder: (yargs: any) => {
+		builder: (yargs: Argv) => {
 			return yargs
 				.command({
 					command: 'get <key>',
 					describe: 'Get a value by key',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('key', { type: 'string', demandOption: true })
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						key: string;
-						format?: string;
-					}) => {
+					handler: async (argv: WorkspaceArgv & { key: string }) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -91,7 +95,7 @@ function buildKvSubcommand(serverUrl: string) {
 							const data = await client.get(
 								`/workspaces/${workspaceId}/kv/${key}`,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							const msg = String(err);
 							if (msg.includes('404')) {
@@ -106,7 +110,7 @@ function buildKvSubcommand(serverUrl: string) {
 				.command({
 					command: 'set <key> [value]',
 					describe: 'Set a value by key',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('key', { type: 'string', demandOption: true })
 							.positional('value', {
@@ -118,13 +122,13 @@ function buildKvSubcommand(serverUrl: string) {
 								description: 'Read value from file',
 							})
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						key: string;
-						value?: string;
-						file?: string;
-						format?: string;
-					}) => {
+					handler: async (
+						argv: WorkspaceArgv & {
+							key: string;
+							value?: string;
+							file?: string;
+						},
+					) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -159,10 +163,7 @@ function buildKvSubcommand(serverUrl: string) {
 
 						try {
 							await client.put(`/workspaces/${workspaceId}/kv/${key}`, value);
-							output(
-								{ status: 'set', key, value },
-								{ format: argv.format as any },
-							);
+							output({ status: 'set', key, value }, { format: argv.format });
 						} catch (err) {
 							outputError(String(err));
 							process.exitCode = 1;
@@ -173,15 +174,11 @@ function buildKvSubcommand(serverUrl: string) {
 					command: 'delete <key>',
 					aliases: ['reset'],
 					describe: 'Delete a value by key (reset to undefined)',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('key', { type: 'string', demandOption: true })
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						key: string;
-						format?: string;
-					}) => {
+					handler: async (argv: WorkspaceArgv & { key: string }) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -189,10 +186,7 @@ function buildKvSubcommand(serverUrl: string) {
 
 						try {
 							await client.delete(`/workspaces/${workspaceId}/kv/${key}`);
-							output(
-								{ status: 'deleted', key },
-								{ format: argv.format as any },
-							);
+							output({ status: 'deleted', key }, { format: argv.format });
 						} catch (err) {
 							outputError(String(err));
 							process.exitCode = 1;
@@ -213,7 +207,7 @@ function buildActionSubcommand(serverUrl: string) {
 	return {
 		command: 'action <path> [json]',
 		describe: 'Run an action (query or mutation)',
-		builder: (yargs: any) =>
+		builder: (yargs: Argv) =>
 			yargs
 				.positional('path', {
 					type: 'string',
@@ -233,7 +227,14 @@ function buildActionSubcommand(serverUrl: string) {
 					description: 'Force mutation (POST) even without input',
 					default: false,
 				}),
-		handler: async (argv: any) => {
+		handler: async (
+			argv: WorkspaceArgv & {
+				path: string;
+				json?: string;
+				file?: string;
+				mutation?: boolean;
+			},
+		) => {
 			await assertServerRunning(serverUrl);
 			const client = createHttpClient(serverUrl);
 			const workspaceId = argv.workspace;
@@ -249,7 +250,7 @@ function buildActionSubcommand(serverUrl: string) {
 
 			try {
 				if (hasInput || argv.mutation) {
-					let body: unknown = undefined;
+					let body: unknown;
 					if (hasInput) {
 						const result = parseJsonInput({
 							positional: argv.json,
@@ -286,7 +287,7 @@ function buildTableSubcommand(serverUrl: string) {
 	return {
 		command: '<table> <action>',
 		describe: 'Manage rows in a table',
-		builder: (yargs: any) => {
+		builder: (yargs: Argv) => {
 			return yargs
 				.positional('table', {
 					type: 'string',
@@ -296,12 +297,8 @@ function buildTableSubcommand(serverUrl: string) {
 				.command({
 					command: 'list',
 					describe: 'List all valid rows',
-					builder: (y: any) => y.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						table: string;
-						format?: string;
-					}) => {
+					builder: (y: Argv) => y.options(formatYargsOptions()),
+					handler: async (argv: WorkspaceArgv & { table: string }) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -311,7 +308,7 @@ function buildTableSubcommand(serverUrl: string) {
 							const data = await client.get(
 								`/workspaces/${workspaceId}/tables/${tableName}`,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							outputError(String(err));
 							process.exitCode = 1;
@@ -321,16 +318,13 @@ function buildTableSubcommand(serverUrl: string) {
 				.command({
 					command: 'get <id>',
 					describe: 'Get a row by ID',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('id', { type: 'string', demandOption: true })
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						table: string;
-						id: string;
-						format?: string;
-					}) => {
+					handler: async (
+						argv: WorkspaceArgv & { table: string; id: string },
+					) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -341,7 +335,7 @@ function buildTableSubcommand(serverUrl: string) {
 							const data = await client.get(
 								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							const msg = String(err);
 							if (msg.includes('404')) {
@@ -356,7 +350,7 @@ function buildTableSubcommand(serverUrl: string) {
 				.command({
 					command: 'set <id> [json]',
 					describe: 'Create or replace a row by ID',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('id', { type: 'string', demandOption: true })
 							.positional('json', {
@@ -368,14 +362,14 @@ function buildTableSubcommand(serverUrl: string) {
 								description: 'Read from file',
 							})
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						table: string;
-						id: string;
-						json?: string;
-						file?: string;
-						format?: string;
-					}) => {
+					handler: async (
+						argv: WorkspaceArgv & {
+							table: string;
+							id: string;
+							json?: string;
+							file?: string;
+						},
+					) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -401,7 +395,7 @@ function buildTableSubcommand(serverUrl: string) {
 								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
 								result.data,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							outputError(String(err));
 							process.exitCode = 1;
@@ -412,18 +406,18 @@ function buildTableSubcommand(serverUrl: string) {
 					command: 'update <id>',
 					describe:
 						'Partial update a row using flags (e.g., --title "New Title")',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('id', { type: 'string', demandOption: true })
 							.options(formatYargsOptions())
 							.strict(false),
-					handler: async (argv: {
-						workspace: string;
-						table: string;
-						id: string;
-						format?: string;
-						[key: string]: unknown;
-					}) => {
+					handler: async (
+						argv: WorkspaceArgv & {
+							table: string;
+							id: string;
+							[key: string]: unknown;
+						},
+					) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -472,7 +466,7 @@ function buildTableSubcommand(serverUrl: string) {
 								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
 								partial,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							const msg = String(err);
 							if (msg.includes('404')) {
@@ -487,16 +481,13 @@ function buildTableSubcommand(serverUrl: string) {
 				.command({
 					command: 'delete <id>',
 					describe: 'Delete a row by ID',
-					builder: (y: any) =>
+					builder: (y: Argv) =>
 						y
 							.positional('id', { type: 'string', demandOption: true })
 							.options(formatYargsOptions()),
-					handler: async (argv: {
-						workspace: string;
-						table: string;
-						id: string;
-						format?: string;
-					}) => {
+					handler: async (
+						argv: WorkspaceArgv & { table: string; id: string },
+					) => {
 						await assertServerRunning(serverUrl);
 						const client = createHttpClient(serverUrl);
 						const workspaceId = argv.workspace;
@@ -507,7 +498,7 @@ function buildTableSubcommand(serverUrl: string) {
 							const data = await client.delete(
 								`/workspaces/${workspaceId}/tables/${tableName}/${id}`,
 							);
-							output(data, { format: argv.format as any });
+							output(data, { format: argv.format });
 						} catch (err) {
 							outputError(String(err));
 							process.exitCode = 1;

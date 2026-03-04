@@ -219,7 +219,8 @@ export class YKeyValueLww<T> {
 
 		// First pass: find winners by timestamp
 		for (let i = 0; i < entries.length; i++) {
-			const entry = entries[i]!;
+			const entry = entries[i];
+			if (!entry) continue;
 			const existing = this.map.get(entry.key);
 
 			if (!existing) {

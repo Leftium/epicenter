@@ -100,8 +100,8 @@ export function createRemoteSessionValidator(
 		// Check cache
 		const cached = cache.get(token);
 		if (cached && Date.now() - cached.cachedAt < cacheTtlMs) {
-			return cached.valid
-				? { valid: true, user: cached.user! }
+			return cached.valid && cached.user
+				? { valid: true, user: cached.user }
 				: { valid: false };
 		}
 
@@ -142,8 +142,8 @@ export function createRemoteSessionValidator(
 		} catch {
 			// Remote server unreachable — check if we have a stale-but-valid cache entry
 			// This provides resilience when the remote server is temporarily down
-			if (cached?.valid) {
-				return { valid: true, user: cached.user! };
+			if (cached?.valid && cached.user) {
+				return { valid: true, user: cached.user };
 			}
 			return { valid: false };
 		}

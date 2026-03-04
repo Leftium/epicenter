@@ -507,7 +507,9 @@ describe('sheet file support', () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
 		await fs.writeFile('/data.csv', 'placeholder');
-		const fileId = fs.lookupId('/data.csv')!;
+		const fileId = fs.lookupId('/data.csv');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		handle.ydoc.transact(() => {
 			createTimeline(handle.ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
@@ -519,7 +521,9 @@ describe('sheet file support', () => {
 		const { fs, ws } = setup();
 		const documents = ws.documents.files.content;
 		await fs.writeFile('/data.csv', 'placeholder');
-		const fileId = fs.lookupId('/data.csv')!;
+		const fileId = fs.lookupId('/data.csv');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
 		handle.ydoc.transact(() => {
 			createTimeline(handle.ydoc).pushSheetFromCsv('A,B\n1,2\n');
@@ -607,7 +611,9 @@ describe('document integration', () => {
 
 		// Write a file to create both the row and the content doc
 		await fs.writeFile('/test.txt', 'hello world');
-		const fileId = fs.lookupId('/test.txt')!;
+		const fileId = fs.lookupId('/test.txt');
+		expect(fileId).toBeDefined();
+		if (!fileId) throw new Error('Expected /test.txt to exist');
 
 		// Open the content doc — should get a handle
 		const handle1 = await documents.open(fileId);

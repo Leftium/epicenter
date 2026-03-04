@@ -95,7 +95,9 @@ export function createYjsFileSystem(
 			tree.assertDirectory(id, abs);
 			const activeChildren = tree.activeChildren(id);
 			const displayNames = disambiguateNames(activeChildren);
-			return activeChildren.map((row) => displayNames.get(row.id)!).sort();
+			return activeChildren
+				.map((row) => displayNames.get(row.id) ?? row.name)
+				.sort();
 		},
 
 		async readdirWithFileTypes(path) {
@@ -106,7 +108,7 @@ export function createYjsFileSystem(
 			const displayNames = disambiguateNames(activeChildren);
 			return activeChildren
 				.map((row) => ({
-					name: displayNames.get(row.id)!,
+					name: displayNames.get(row.id) ?? row.name,
 					isFile: row.type === 'file',
 					isDirectory: row.type === 'folder',
 					isSymbolicLink: false,
@@ -126,7 +128,8 @@ export function createYjsFileSystem(
 					mode: 0o755,
 				};
 			}
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			return {
 				isFile: row.type === 'file',
@@ -153,7 +156,8 @@ export function createYjsFileSystem(
 
 		async readFile(path, _options?) {
 			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			return content.read(id);
@@ -161,7 +165,8 @@ export function createYjsFileSystem(
 
 		async readFileBuffer(path) {
 			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			return content.readBuffer(id);

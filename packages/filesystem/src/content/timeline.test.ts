@@ -51,7 +51,9 @@ describe('createTimeline - sheet entries', () => {
 	test('pushSheetFromCsv populates columns from header', () => {
 		const tl = setup();
 		tl.pushSheetFromCsv('Name,Age\nAlice,30\n');
-		const entry = tl.currentEntry!;
+		const entry = tl.currentEntry;
+		expect(entry).toBeDefined();
+		if (!entry) return;
 		const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
 		expect(columns.size).toBe(2);
 
@@ -63,7 +65,9 @@ describe('createTimeline - sheet entries', () => {
 	test('pushSheetFromCsv populates rows from data', () => {
 		const tl = setup();
 		tl.pushSheetFromCsv('Name,Age\nAlice,30\nBob,25\n');
-		const entry = tl.currentEntry!;
+		const entry = tl.currentEntry;
+		expect(entry).toBeDefined();
+		if (!entry) return;
 		const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
 		expect(rows.size).toBe(2);
 	});

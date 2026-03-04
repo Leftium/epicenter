@@ -173,8 +173,10 @@ function detectCycle(
 			// Find the node in the cycle with the latest updatedAt
 			const cycleStart = path.indexOf(currentId);
 			const cycleIds = path.slice(cycleStart);
+			if (cycleIds.length === 0) return;
 
-			let latestId = cycleIds[0]!;
+			let latestId = cycleIds[0];
+			if (!latestId) return;
 			let latestTime = 0;
 			for (const cid of cycleIds) {
 				const result = filesTable.get(cid);

@@ -57,7 +57,8 @@ export function disambiguateNames(rows: FileRow[]): Map<string, string> {
 		group.sort((a, b) => a.createdAt - b.createdAt);
 		result.set(group[0]!.id, name);
 		for (let i = 1; i < group.length; i++) {
-			const row = group[i]!;
+			const row = group[i];
+			if (!row) continue;
 			const dotIndex = name.lastIndexOf('.');
 			const hasExt = dotIndex > 0;
 			const base = hasExt ? name.slice(0, dotIndex) : name;

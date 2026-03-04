@@ -154,13 +154,15 @@ export type InferTableVersionUnion<T> = T extends {
 /**
  * A named document declared via `.withDocument()`.
  *
- * Maps a document concept (e.g., 'content') to two columns on the table:
+ * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback
+ * that fires when the content Y.Doc changes:
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
- * - `updatedAt`: The column to bump when the doc changes (must be a number column)
+ * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` — the fields
+ *   to write when the doc changes. Callers control both the value and which columns to update.
  * - `tags`: Optional tag literals for document extension targeting
  *
  * @typeParam TGuid - Literal string type of the guid column name
- * @typeParam TUpdatedAt - Literal string type of the updatedAt column name
+ * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
  * @typeParam TTags - Literal union of tag strings for document extension targeting.
  *   Defaults to `string` so bare `DocumentConfig` works as a wide constraint (accepts any tags).
  *   When `.withDocument()` is called without tags, `TTags` infers as `never` via the
@@ -169,11 +171,12 @@ export type InferTableVersionUnion<T> = T extends {
  */
 export type DocumentConfig<
 	TGuid extends string = string,
-	TUpdatedAt extends string = string,
+	TRow extends BaseRow = BaseRow,
 	TTags extends string = string,
 > = {
 	guid: TGuid;
-	updatedAt: TUpdatedAt;
+	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/**
 	 * Tag literals for document extension targeting.
 	 *
@@ -221,7 +224,7 @@ export type DocumentExtensionRegistration = {
  */
 export type ExtractAllDocumentTags<TTableDefs extends TableDefinitions> = {
 	[K in keyof TTableDefs]: TTableDefs[K] extends {
-		documents: Record<string, DocumentConfig<string, string, infer TTags>>;
+		documents: Record<string, DocumentConfig<string, BaseRow, infer TTags>>;
 	}
 		? TTags
 		: never;
@@ -236,27 +239,19 @@ export type StringKeysOf<TRow> = {
 }[keyof TRow & string];
 
 /**
- * Extract keys of `TRow` whose value type extends `number`.
- * Used to constrain the `updatedAt` parameter of `.withDocument()`.
- */
-export type NumberKeysOf<TRow> = {
-	[K in keyof TRow & string]: TRow[K] extends number ? K : never;
-}[keyof TRow & string];
-
-/**
- * Collect all column names already claimed as `guid` or `updatedAt` by prior
- * `.withDocument()` calls. Subsequent calls cannot reuse these columns,
- * preventing two documents from sharing a GUID (storage collision) or
- * racing on the same `updatedAt` timestamp.
+ * Collect all column names already claimed as `guid` by prior `.withDocument()` calls.
+ * Subsequent calls cannot reuse these columns, preventing two documents from sharing
+ * a GUID (which would cause storage collisions).
+ *
+ * With the `onUpdate` callback model, updatedAt columns are no longer claimed —
+ * multiple documents can write to the same column via their callbacks (last write wins).
  *
  * Requires `{}` (not `Record<string, never>`) as the initial empty `TDocuments`,
  * so that `keyof {}` = `never` and the union resolves cleanly.
  */
 export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
-> =
-	| TDocuments[keyof TDocuments]['guid']
-	| TDocuments[keyof TDocuments]['updatedAt'];
+> = TDocuments[keyof TDocuments]['guid'];
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.

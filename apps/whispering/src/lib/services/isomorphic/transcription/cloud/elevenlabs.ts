@@ -3,29 +3,6 @@ import { type Result, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import type { Settings } from '$lib/settings';
 
-export const ELEVENLABS_TRANSCRIPTION_MODELS = [
-	{
-		name: 'scribe_v2',
-		description:
-			'Latest flagship transcription model with 97% accuracy. Features speaker diarization (up to 48 speakers), entity detection, keyterm prompting, and dynamic audio tagging across 90+ languages.',
-		cost: '$0.40/hour',
-	},
-	{
-		name: 'scribe_v1',
-		description:
-			'Previous generation transcription model with 96.7% accuracy for English. Supports 99 languages with word-level timestamps and speaker diarization.',
-		cost: '$0.40/hour',
-	},
-	{
-		name: 'scribe_v1_experimental',
-		description:
-			'Experimental version of Scribe with latest features and improvements. May include cutting-edge capabilities but with potential instability.',
-		cost: '$0.40/hour',
-	},
-] as const;
-
-export type ElevenLabsModel = (typeof ELEVENLABS_TRANSCRIPTION_MODELS)[number];
-
 export const ElevenlabsTranscriptionServiceLive = {
 	transcribe: async (
 		audioBlob: Blob,
@@ -34,7 +11,7 @@ export const ElevenlabsTranscriptionServiceLive = {
 			temperature: string;
 			outputLanguage: Settings['transcription.outputLanguage'];
 			apiKey: string;
-			modelName: (string & {}) | ElevenLabsModel['name'];
+			modelName: string;
 		},
 	): Promise<Result<string, WhisperingError>> => {
 		if (!options.apiKey) {

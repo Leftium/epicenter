@@ -7,6 +7,7 @@ export {
 export {
 	createLocalServer,
 	type LocalApp,
+	type LocalAuthConfig,
 	type LocalServerConfig,
 } from './local';
 export { createWorkspacePlugin } from './workspace';

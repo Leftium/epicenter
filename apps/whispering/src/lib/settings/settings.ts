@@ -37,6 +37,10 @@ import {
 } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { SUPPORTED_LANGUAGES } from '$lib/constants/languages';
+import {
+	TRANSCRIPTION,
+	TRANSCRIPTION_SERVICE_IDS,
+} from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES, LAYOUT_MODES } from '$lib/constants/ui';
 import {
 	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
@@ -44,12 +48,6 @@ import {
 	FFMPEG_DEFAULT_INPUT_OPTIONS,
 	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
 } from '$lib/services/desktop/recorder/ffmpeg';
-import type { DeepgramModel } from '$lib/services/isomorphic/transcription/cloud/deepgram';
-import type { ElevenLabsModel } from '$lib/services/isomorphic/transcription/cloud/elevenlabs';
-import type { GroqModel } from '$lib/services/isomorphic/transcription/cloud/groq';
-import type { MistralModel } from '$lib/services/isomorphic/transcription/cloud/mistral';
-import type { OpenAIModel } from '$lib/services/isomorphic/transcription/cloud/openai';
-import { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/isomorphic/transcription/registry';
 import { asDeviceIdentifier, type DeviceIdentifier } from '$lib/services/types';
 
 // Helper to transform device identifiers
@@ -183,20 +181,45 @@ export const Settings = type({
 
 	// Service-specific settings
 	'transcription.openai.model': type('string')
-		.pipe((val) => val as (string & {}) | OpenAIModel['name'])
-		.default('gpt-4o-mini-transcribe' satisfies OpenAIModel['name']),
+		.pipe(
+			(val) =>
+				val as
+					| (string & {})
+					| (typeof TRANSCRIPTION.OpenAI.models)[number]['name'],
+		)
+		.default(TRANSCRIPTION.OpenAI.defaultModel),
 	'transcription.elevenlabs.model': type('string')
-		.pipe((val) => val as (string & {}) | ElevenLabsModel['name'])
-		.default('scribe_v1' satisfies ElevenLabsModel['name']),
+		.pipe(
+			(val) =>
+				val as
+					| (string & {})
+					| (typeof TRANSCRIPTION.ElevenLabs.models)[number]['name'],
+		)
+		.default(TRANSCRIPTION.ElevenLabs.defaultModel),
 	'transcription.groq.model': type('string')
-		.pipe((val) => val as (string & {}) | GroqModel['name'])
-		.default('whisper-large-v3-turbo' satisfies GroqModel['name']),
+		.pipe(
+			(val) =>
+				val as
+					| (string & {})
+					| (typeof TRANSCRIPTION.Groq.models)[number]['name'],
+		)
+		.default(TRANSCRIPTION.Groq.defaultModel),
 	'transcription.deepgram.model': type('string')
-		.pipe((val) => val as (string & {}) | DeepgramModel['name'])
-		.default('nova-3' satisfies DeepgramModel['name']),
+		.pipe(
+			(val) =>
+				val as
+					| (string & {})
+					| (typeof TRANSCRIPTION.Deepgram.models)[number]['name'],
+		)
+		.default(TRANSCRIPTION.Deepgram.defaultModel),
 	'transcription.mistral.model': type('string')
-		.pipe((val) => val as (string & {}) | MistralModel['name'])
-		.default('voxtral-mini-latest' satisfies MistralModel['name']),
+		.pipe(
+			(val) =>
+				val as
+					| (string & {})
+					| (typeof TRANSCRIPTION.Mistral.models)[number]['name'],
+		)
+		.default(TRANSCRIPTION.Mistral.defaultModel),
 	'transcription.speaches.baseUrl': "string = 'http://localhost:8000'",
 	'transcription.speaches.modelId': type('string').default(
 		'Systran/faster-distil-whisper-small.en',

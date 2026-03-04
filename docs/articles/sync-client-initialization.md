@@ -145,6 +145,27 @@ await client.save(data);
 
 You make construction synchronous by kicking off the initialization promise immediately, then every method awaits it before doing work. This is actually a pretty good pattern, and I'd recommend it in many cases. It lets you export a synchronous client that can be imported anywhere. The downside is verbosity: you have to remember to await the init promise in every single method you add.
 
+The most canonical example of this pattern in the wild is [idb](https://github.com/jakearchibald/idb), Jake Archibald's IndexedDB wrapper. The first usage example in the README stores the `openDB` promise at module scope and awaits it in every exported function:
+
+```typescript
+import { openDB } from 'idb';
+
+const dbPromise = openDB('keyval-store', 1, {
+	upgrade(db) {
+		db.createObjectStore('keyval');
+	},
+});
+
+export async function get(key) {
+	return (await dbPromise).get('keyval', key);
+}
+export async function set(key, val) {
+	return (await dbPromise).put('keyval', val, key);
+}
+```
+
+Re-awaiting a settled promise is essentially free (one microtick). The connection opens eagerly when `openDB` is called; by the time any method runs, it's usually already resolved.
+
 ### The Core Issue
 
 UI frameworks want synchronous access to things. You can't easily export and import an awaited value. Components need to access clients immediately, not after an await. All these workarounds are trying to paper over that fundamental mismatch.

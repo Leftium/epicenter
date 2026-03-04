@@ -14,8 +14,8 @@ import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { filesTable } from '../table.js';
 import { createYjsFileSystem } from '../file-system.js';
+import { filesTable } from '../table.js';
 import {
 	parseFrontmatter,
 	serializeMarkdownWithFrontmatter,

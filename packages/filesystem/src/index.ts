@@ -1,8 +1,8 @@
 // Content (document layer)
 export {
 	type ContentHelpers,
-	createContentHelpers,
 	type ContentMode,
+	createContentHelpers,
 	type SheetEntry,
 } from './content/index.js';
 
@@ -35,7 +35,7 @@ export { generateColumnId, generateFileId, generateRowId } from './ids.js';
 export { posixResolve } from './path.js';
 
 // Table
-export { filesTable, type ColumnDefinition, type FileRow } from './table.js';
+export { type ColumnDefinition, type FileRow, filesTable } from './table.js';
 
 // Tree (metadata layer)
 export {

@@ -5,10 +5,7 @@ import { generateFileId } from '../ids.js';
 import { posixResolve } from '../path.js';
 import type { FileRow } from '../table.js';
 import { assertUniqueName, validateName } from './naming.js';
-import {
-	createFileSystemIndex,
-	type FileSystemIndex,
-} from './path-index.js';
+import { createFileSystemIndex, type FileSystemIndex } from './path-index.js';
 
 /**
  * Metadata tree operations for a POSIX-like virtual filesystem.

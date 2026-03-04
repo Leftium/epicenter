@@ -13,11 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import type { FileId } from '../ids.js';
 import { filesTable } from '../table.js';
-import {
-	assertUniqueName,
-	disambiguateNames,
-	validateName,
-} from './naming.js';
+import { assertUniqueName, disambiguateNames, validateName } from './naming.js';
 
 const fid = (s: string) => s as FileId;
 

@@ -17,7 +17,10 @@
  * // Shorthand with document config
  * const files = defineTable(
  *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
- * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+ * ).withDocument('content', {
+ *   guid: 'id',
+ *   onUpdate: () => ({ updatedAt: Date.now() }),
+ * });
  *
  * // Variadic for multiple versions with migration
  * const posts = defineTable(
@@ -33,7 +36,10 @@
  * // Shorthand with document config (multiple documents)
  * const notes = defineTable(
  *   type({ id: 'string', bodyDocId: 'string', bodyUpdatedAt: 'number', _v: '1' }),
- * ).withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' });
+ * ).withDocument('body', {
+ *   guid: 'bodyDocId',
+ *   onUpdate: () => ({ bodyUpdatedAt: Date.now() }),
+ * });
  * ```
  */
 
@@ -45,7 +51,6 @@ import type {
 	ClaimedDocumentColumns,
 	DocumentConfig,
 	LastSchema,
-	NumberKeysOf,
 	StringKeysOf,
 	TableDefinition,
 } from './types.js';
@@ -66,40 +71,44 @@ type TableDefinitionWithDocBuilder<
 	/**
 	 * Declare a named document on this table.
 	 *
-	 * Maps a document concept (e.g., 'content') to a GUID column and an updatedAt column.
+	 * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback.
 	 * The name becomes a property under `client.documents.{tableName}` at runtime.
 	 *
 	 * Chainable — call multiple times for tables with multiple documents.
-	 * Each call claims its `guid` and `updatedAt` columns exclusively — subsequent
-	 * calls cannot reuse columns already bound to a prior document. This prevents
-	 * two documents from sharing a GUID (which would cause storage collisions).
+	 * Each call claims its `guid` column exclusively — subsequent calls cannot reuse
+	 * a GUID column already bound to a prior document (prevents storage collisions).
 	 *
 	 * @param name - The document name (becomes `client.documents.{tableName}[name]`)
-	 * @param config - Column mapping: `guid` (string column) and `updatedAt` (number column)
+	 * @param config - `guid` (string column), `onUpdate` (callback returning partial row), and optional `tags`
 	 *
 	 * @example
 	 * ```typescript
 	 * const files = defineTable(
 	 *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-	 * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+	 * ).withDocument('content', {
+	 *   guid: 'id',
+	 *   onUpdate: () => ({ updatedAt: Date.now() }),
+	 * });
 	 *
-	 * // Multiple documents — each must use unique columns
+	 * // Multiple documents — each must use a unique guid column
 	 * const notes = defineTable(
 	 *   type({ id: 'string', bodyDocId: 'string', coverDocId: 'string',
-	 *          bodyUpdatedAt: 'number', coverUpdatedAt: 'number', _v: '1' }),
+	 *          updatedAt: 'number', _v: '1' }),
 	 * )
-	 *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' })
-	 *   .withDocument('cover', { guid: 'coverDocId', updatedAt: 'coverUpdatedAt' });
+	 *   .withDocument('body', {
+	 *     guid: 'bodyDocId',
+	 *     onUpdate: () => ({ updatedAt: Date.now() }),
+	 *   })
+	 *   .withDocument('cover', {
+	 *     guid: 'coverDocId',
+	 *     onUpdate: () => ({ updatedAt: Date.now() }),
+	 *   });
 	 * ```
 	 */
 	withDocument<
 		TName extends string,
 		TGuid extends Exclude<
 			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
-			ClaimedDocumentColumns<TDocuments>
-		>,
-		TUpdatedAt extends Exclude<
-			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		// Defaults to `never` when no tags are passed. This flows into
@@ -109,12 +118,22 @@ type TableDefinitionWithDocBuilder<
 		name: TName,
 		config: {
 			guid: TGuid;
-			updatedAt: TUpdatedAt;
+			onUpdate: () => Partial<
+				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
+			>;
 			tags?: readonly TTags[];
 		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
-		TDocuments & Record<TName, DocumentConfig<TGuid, TUpdatedAt, TTags>>
+		TDocuments &
+			Record<
+				TName,
+				DocumentConfig<
+					TGuid,
+					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+					TTags
+				>
+			>
 	>;
 };
 
@@ -236,7 +255,11 @@ function attachDocumentBuilder<
 				...def,
 				documents: {
 					...def.documents,
-					[name]: { ...config, tags: config.tags ?? [] },
+					[name]: {
+						guid: config.guid,
+						onUpdate: config.onUpdate,
+						tags: config.tags ?? [],
+					},
 				},
 			});
 		},

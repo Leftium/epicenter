@@ -3,7 +3,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { cors } from 'hono/cors';
-import { auth } from './auth/server';
+import { auth } from './auth';
 import { createAuthMiddleware } from './auth/middleware';
 import { factory } from './env';
 import { createAiChatHandler } from './proxy/chat';

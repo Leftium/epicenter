@@ -1,5 +1,5 @@
 import { createFactory } from 'hono/factory';
-import type { auth } from './auth/server';
+import type { auth } from './auth';
 
 type ApiKeyBindings = {
 	OPENAI_API_KEY?: string;

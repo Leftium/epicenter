@@ -1,4 +1,4 @@
-import { auth } from './server';
+import { auth } from '../auth';
 import { factory } from '../env';
 
 export function createAuthMiddleware() {

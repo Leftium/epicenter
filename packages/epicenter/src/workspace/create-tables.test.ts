@@ -78,7 +78,12 @@ describe('createTables', () => {
 
 		tables.posts.set({ id: '1', title: 'Draft', published: false, _v: 1 });
 		tables.posts.set({ id: '2', title: 'Published', published: true, _v: 1 });
-		tables.posts.set({ id: '3', title: 'Another Published', published: true, _v: 1 });
+		tables.posts.set({
+			id: '3',
+			title: 'Another Published',
+			published: true,
+			_v: 1,
+		});
 
 		const published = tables.posts.filter((row) => row.published);
 		expect(published).toHaveLength(2);

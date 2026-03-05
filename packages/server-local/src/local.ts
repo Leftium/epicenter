@@ -153,7 +153,8 @@ export type LocalServerConfig = {
  */
 function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
 	if (authConfig.mode === 'none') return new Elysia();
-	if (authConfig.mode === 'token') return createTokenGuardPlugin(authConfig.token);
+	if (authConfig.mode === 'token')
+		return createTokenGuardPlugin(authConfig.token);
 
 	// mode === 'remote'
 	const validateSession = createRemoteSessionValidator({

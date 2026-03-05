@@ -35,7 +35,9 @@ function uniqueRoom(): string {
  * Uses the sync plugin directly (no createLocalServer dependency)
  * to keep @epicenter/server free of cyclic deps.
  */
-function startTestServer(syncConfig?: { verifyToken?: (token: string) => boolean | Promise<boolean> }) {
+function startTestServer(syncConfig?: {
+	verifyToken?: (token: string) => boolean | Promise<boolean>;
+}) {
 	const app = new Elysia()
 		.use(new Elysia({ prefix: '/rooms' }).use(createWsSyncPlugin(syncConfig)))
 		.get('/', () => ({ status: 'ok' }));
@@ -512,7 +514,9 @@ describe('ws sync plugin auth', () => {
 	});
 
 	test('rejects connection with wrong token', async () => {
-		const ctx = startTestServer({ verifyToken: (t: string) => t === 'correct-token' });
+		const ctx = startTestServer({
+			verifyToken: (t: string) => t === 'correct-token',
+		});
 
 		try {
 			const room = uniqueRoom();

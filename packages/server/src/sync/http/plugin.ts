@@ -8,7 +8,6 @@
  * @see @epicenter/sync-core for the framework-agnostic handlers
  */
 
-import { Elysia } from 'elysia';
 import {
 	extractBearerToken,
 	handleHttpGetDoc,
@@ -16,6 +15,7 @@ import {
 	type SyncStorage,
 	type TokenVerifier,
 } from '@epicenter/sync-core';
+import { Elysia } from 'elysia';
 
 // ============================================================================
 // Configuration

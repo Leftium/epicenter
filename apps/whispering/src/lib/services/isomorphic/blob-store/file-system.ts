@@ -1,9 +1,4 @@
-import {
-	readDir,
-	readFile,
-	remove,
-	writeFile,
-} from '@tauri-apps/plugin-fs';
+import { readDir, readFile, remove, writeFile } from '@tauri-apps/plugin-fs';
 import type { BlobStore } from './types.js';
 
 const EXTENSION_TO_MIME: Record<string, string> = {
@@ -64,10 +59,7 @@ export function createFileSystemBlobStore(basePath: string): BlobStore {
 		async put(id, blob, mimeType) {
 			const ext = extensionFromMime(mimeType);
 			const arrayBuffer = await blob.arrayBuffer();
-			await writeFile(
-				`${basePath}/${id}.${ext}`,
-				new Uint8Array(arrayBuffer),
-			);
+			await writeFile(`${basePath}/${id}.${ext}`, new Uint8Array(arrayBuffer));
 		},
 
 		async delete(id) {

@@ -302,10 +302,7 @@ export function createHttpSyncProvider({
 
 	function removeBrowserListeners() {
 		if (typeof document !== 'undefined') {
-			document.removeEventListener(
-				'visibilitychange',
-				handleVisibilityChange,
-			);
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 		}
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('online', handleOnline);

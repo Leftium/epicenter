@@ -17,18 +17,18 @@ import {
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import {
-	MESSAGE_TYPE,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncMessage,
+	MESSAGE_TYPE,
 } from './protocol';
 import type { createRoomManager } from './rooms';
 import {
-	type SyncStorage,
 	decodeSyncRequest,
+	type SyncStorage,
 	stateVectorsEqual,
 } from './storage';
 
@@ -166,9 +166,7 @@ export function handleWsMessage(
 				for (let i = 0; i < len; i++) {
 					const clientId = decoding.readVarUint(decoder2);
 					decoding.readVarUint(decoder2); // clock
-					const awarenessState = JSON.parse(
-						decoding.readVarString(decoder2),
-					);
+					const awarenessState = JSON.parse(decoding.readVarString(decoder2));
 					if (awarenessState === null) {
 						state.controlledClientIds.delete(clientId);
 					} else {

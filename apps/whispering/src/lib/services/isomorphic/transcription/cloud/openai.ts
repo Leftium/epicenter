@@ -5,7 +5,6 @@ import { customFetch } from '$lib/services/isomorphic/http';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { Settings } from '$lib/settings';
 
-
 const MAX_FILE_SIZE_MB = 25 as const;
 
 export const OpenaiTranscriptionServiceLive = {

@@ -95,15 +95,11 @@ type TableDefinitionWithDocBuilder<
 	withDocument<
 		TName extends string,
 		TGuid extends Exclude<
-			StringKeysOf<
-				StandardSchemaV1.InferOutput<LastSchema<TVersions>>
-			>,
+			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		TUpdatedAt extends Exclude<
-			NumberKeysOf<
-				StandardSchemaV1.InferOutput<LastSchema<TVersions>>
-			>,
+			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
 			ClaimedDocumentColumns<TDocuments>
 		>,
 		// Defaults to `never` when no tags are passed. This flows into

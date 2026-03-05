@@ -188,11 +188,7 @@ export type HubConfig = {
  * }).start();
  * ```
  */
-export function createHub({
-	sync,
-	auth: authMode,
-	port,
-}: HubConfig) {
+export function createHub({ sync, auth: authMode, port }: HubConfig) {
 	const authConfig = authMode ?? { mode: 'none' as const };
 
 	// Create Better Auth instance early so it can be shared between

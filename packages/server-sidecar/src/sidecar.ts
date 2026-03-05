@@ -1,6 +1,9 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
-import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server-elysia';
+import {
+	createTokenGuardPlugin,
+	listenWithFallback,
+} from '@epicenter/server-elysia';
 import { createWsSyncPlugin } from '@epicenter/server-elysia/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';

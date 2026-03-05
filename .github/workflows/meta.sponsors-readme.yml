@@ -3,7 +3,7 @@ name: Add Sponsors to README
 on:
   workflow_dispatch:
   schedule:
-    - cron: 30 15 * * 0-6
+    - cron: '30 15 * * *'
 
 permissions:
   contents: write

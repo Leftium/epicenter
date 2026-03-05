@@ -1,20 +1,49 @@
+import type { BetterAuthOptions } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { bearer, jwt } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 
-/** Plugins that affect the database schema. Shared between the runtime auth
- *  instance and the CLI config so `npx @better-auth/cli migrate` discovers
- *  the same tables the worker uses. */
-export const authPlugins = [
-	bearer(),
-	jwt(),
-	oauthProvider({
-		loginPage: '/sign-in',
-		consentPage: '/consent',
-		requirePKCE: true,
-		allowDynamicClientRegistration: true,
-	}),
-] as const;
+/**
+ * Schema-affecting config shared between the runtime auth instance and
+ * `auth.config.ts` (CLI migrations). Every option here influences the
+ * database schema — keep them in one place so `npx @better-auth/cli migrate`
+ * always matches what the worker actually uses.
+ *
+ * Runtime-only options (secondaryStorage, trustedOrigins, cookies, etc.)
+ * belong in `createAuth` below — they don't affect the schema.
+ */
+export const sharedAuthConfig = {
+	basePath: '/auth',
+	emailAndPassword: { enabled: true },
+	plugins: [
+		bearer(),
+		jwt({ disabledPaths: ['/token'] }),
+		oauthProvider({
+			loginPage: '/sign-in',
+			consentPage: '/consent',
+			requirePKCE: true,
+			allowDynamicClientRegistration: true,
+			trustedClients: [
+				{
+					clientId: 'epicenter-desktop',
+					name: 'Epicenter Desktop',
+					type: 'native',
+					redirectUrls: ['tauri://localhost/auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+				{
+					clientId: 'epicenter-mobile',
+					name: 'Epicenter Mobile',
+					type: 'native',
+					redirectUrls: ['epicenter://auth/callback'],
+					skipConsent: true,
+					metadata: {},
+				},
+			],
+		}),
+	],
+} satisfies Partial<BetterAuthOptions>;
 
 type AuthEnv = {
 	DATABASE_URL: string;
@@ -25,15 +54,13 @@ type AuthEnv = {
 
 export function createAuth(env: AuthEnv) {
 	const auth = betterAuth({
+		...sharedAuthConfig,
 		database: {
 			type: 'postgres',
 			url: env.DATABASE_URL,
 		},
 		baseURL: env.BETTER_AUTH_URL,
-		basePath: '/auth',
 		secret: env.BETTER_AUTH_SECRET,
-		emailAndPassword: { enabled: true },
-		plugins: [...authPlugins],
 		databaseHooks: {
 			session: {
 				delete: {

@@ -32,3 +32,8 @@ export {
 	type ConnectionId,
 	type ConnectionState,
 } from './sync';
+
+// Standalone adapter
+export { createRemoteHub } from './adapters/standalone/server';
+export type { StandaloneHubConfig } from './adapters/standalone/server';
+export type { StandaloneAuthConfig } from './adapters/standalone/auth';

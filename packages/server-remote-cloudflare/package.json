@@ -2,8 +2,8 @@
 	"name": "@epicenter/server-remote-cloudflare",
 	"version": "0.0.1",
 	"type": "module",
-	"main": "./src/worker.ts",
-	"types": "./src/worker.ts",
+	"main": "./src/app.ts",
+	"types": "./src/app.ts",
 	"license": "AGPL-3.0",
 	"scripts": {
 		"typecheck": "tsc --noEmit",

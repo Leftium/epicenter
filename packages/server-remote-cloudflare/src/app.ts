@@ -1,9 +1,16 @@
 import { createSharedApp } from '@epicenter/server-remote';
 import { getAuth } from './auth';
 
+export { YjsRoom } from './yjs-room';
+
 let app: ReturnType<typeof createSharedApp> | null = null;
 
-/** Lazy init — avoids global-scope I/O in Cloudflare Workers. */
+/**
+ * Lazy init — defers postgres/Hyperdrive connection to first request.
+ * Cloudflare Workers forbid async I/O at module scope, and Hyperdrive
+ * connection strings are per-request, so auth (which wraps postgres)
+ * must be created at request time.
+ */
 function getApp() {
 	if (app) return app;
 
@@ -12,8 +19,6 @@ function getApp() {
 		healthMeta: { runtime: 'cloudflare' },
 	});
 
-	// --- Sync rooms (forward to Durable Object) ---
-	// This is the only Cloudflare-specific route — all other routes are shared.
 	app.all('/rooms/:room', async (c) => {
 		const roomId = c.req.param('room');
 		const env = c.env as unknown as Cloudflare.Env;

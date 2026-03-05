@@ -1,5 +1,5 @@
 import { defineConfig } from 'drizzle-kit';
-import { env } from './src/env';
+import { env } from './tooling/env';
 
 export default defineConfig({
 	dialect: 'postgresql',

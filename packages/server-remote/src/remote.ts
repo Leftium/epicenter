@@ -1,6 +1,6 @@
 import { openapi } from '@elysiajs/openapi';
 import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server';
-import { createSyncPlugin } from '@epicenter/server/sync';
+import { createWsSyncPlugin } from '@epicenter/server/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createAIPlugin } from './ai';
@@ -238,7 +238,7 @@ export function createRemoteServer(config: RemoteServerConfig) {
 		)
 		.use(
 			new Elysia({ prefix: '/rooms' }).use(
-				createSyncPlugin({
+				createWsSyncPlugin({
 					getDoc: (room) => {
 						if (!dynamicDocs.has(room)) {
 							dynamicDocs.set(room, new Y.Doc());

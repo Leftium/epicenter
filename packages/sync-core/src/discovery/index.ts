@@ -1,4 +1,3 @@
-// Re-export from sync-core for backward compatibility
 export {
 	createClientPresence,
 	createLocalPresence,
@@ -7,4 +6,4 @@ export {
 	DISCOVERY_ROOM_ID,
 	type DiscoveryState,
 	getDiscoveredDevices,
-} from '@epicenter/sync-core';
+} from './awareness';

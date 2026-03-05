@@ -55,3 +55,22 @@ export {
 	handleHttpSync,
 	handleHttpGetDoc,
 } from './handlers';
+
+// Discovery (device discovery via Yjs Awareness)
+export {
+	createClientPresence,
+	createLocalPresence,
+	type DeviceCapability,
+	type DeviceType,
+	DISCOVERY_ROOM_ID,
+	type DiscoveryState,
+	getDiscoveredDevices,
+} from './discovery';
+
+// Providers (AI provider constants)
+export {
+	isSupportedProvider,
+	PROVIDER_ENV_VARS,
+	SUPPORTED_PROVIDERS,
+	type SupportedProvider,
+} from './providers';

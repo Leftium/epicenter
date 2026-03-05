@@ -431,7 +431,6 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
-        "@cloudflare/workers-types": "^4.20250803.0",
         "dotenv": "^17.3.1",
         "drizzle-kit": "catalog:",
         "typescript": "catalog:",
@@ -558,6 +557,9 @@
         "typescript": "catalog:",
       },
     },
+  },
+  "overrides": {
+    "@better-auth/core": "1.5.3",
   },
   "catalog": {
     "@better-auth/drizzle-adapter": "^1.5.3",

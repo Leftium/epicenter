@@ -53,7 +53,7 @@ const syncResult = trySync({
 		// For recoverable errors, return Ok with fallback value
 		return Ok('fallback-value');
 		// For unrecoverable errors, pass the raw cause — the constructor handles extractErrorMessage
-		return MyServiceError.OperationFailed({ cause: error });
+		return CompletionError.ConnectionFailed({ cause: error });
 	},
 });
 ```
@@ -70,10 +70,10 @@ const syncResult = trySync({
 
 ```typescript
 // ✅ GOOD: cause: error at call site, extractErrorMessage in constructor
-catch: (error) => MyServiceError.OperationFailed({ cause: error })
+catch: (error) => CompletionError.ConnectionFailed({ cause: error })
 
 // ❌ BAD: extractErrorMessage at call site, string passed to constructor
-catch: (error) => MyServiceError.OperationFailed({ underlyingError: extractErrorMessage(error) })
+catch: (error) => CompletionError.ConnectionFailed({ underlyingError: extractErrorMessage(error) })
 ```
 
 8. **CRITICAL: Wrap destructured errors with Err()** - When you destructure `{ data, error }` from tryAsync/trySync, the `error` variable is the raw error value, NOT wrapped in `Err`. You must wrap it before returning:
@@ -139,7 +139,7 @@ const { data: content } = await tryAsync({
 const { data, error } = await tryAsync({
 	try: () => criticalOperation(),
 	catch: (error) =>
-		MyServiceError.OperationFailed({ cause: error }),
+		CompletionError.ConnectionFailed({ cause: error }),
 });
 if (error) return Err(error);
 ```
@@ -284,7 +284,7 @@ async function getStreamForDeviceIdentifier(
 // From navigator.ts
 startRecording: async (params, { sendStatus }) => {
   if (activeRecording) {
-    return RecorderError.Service({ message: 'Already recording.' });
+    return RecorderError.AlreadyRecording();
   }
 
   // First try block - get stream

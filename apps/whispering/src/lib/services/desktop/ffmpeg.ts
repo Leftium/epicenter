@@ -12,9 +12,16 @@ import { FsServiceLive } from './fs';
 import { getFileExtensionFromFfmpegOptions } from './recorder/ffmpeg';
 
 export const FfmpegError = defineErrors({
-	Service: ({ operation, cause }: { operation: string; cause: unknown }) => ({
-		message: `Failed to ${operation}: ${extractErrorMessage(cause)}`,
-		operation,
+	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to check FFmpeg installation: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	VerifyFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to verify temp file accessibility: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	CompressFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to compress audio: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -36,10 +43,7 @@ export const FfmpegServiceLive = {
 					return result;
 				},
 				catch: (error) =>
-					FfmpegError.Service({
-						operation: 'check FFmpeg installation via shell',
-						cause: error,
-					}),
+					FfmpegError.InstallCheckFailed({ cause: error }),
 			});
 
 		if (shellFfmpegError) return Err(shellFfmpegError);
@@ -82,10 +86,7 @@ export const FfmpegServiceLive = {
 					const { error: verifyError } = await tryAsync({
 						try: () => FsServiceLive.pathToBlob(inputPath),
 						catch: (error) =>
-							FfmpegError.Service({
-								operation: 'verify temp file accessibility',
-								cause: error,
-							}),
+							FfmpegError.VerifyFailed({ cause: error }),
 					});
 					if (verifyError) throw new Error(verifyError.message);
 
@@ -141,11 +142,7 @@ export const FfmpegServiceLive = {
 					});
 				}
 			},
-			catch: (error) =>
-				FfmpegError.Service({
-					operation: 'compress audio',
-					cause: error,
-				}),
+			catch: (error) => FfmpegError.CompressFailed({ cause: error }),
 		});
 	},
 };

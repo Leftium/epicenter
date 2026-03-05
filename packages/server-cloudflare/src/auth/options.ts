@@ -1,7 +1,7 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
 import type { BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
  * Schema-affecting auth options shared between the runtime worker and the CLI.

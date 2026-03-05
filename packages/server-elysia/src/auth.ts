@@ -1,5 +1,5 @@
-import { Elysia } from 'elysia';
 import { extractBearerToken } from '@epicenter/sync-core';
+import { Elysia } from 'elysia';
 
 export { extractBearerToken };
 

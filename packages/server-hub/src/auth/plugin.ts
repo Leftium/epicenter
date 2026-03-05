@@ -122,7 +122,9 @@ export function createBetterAuth(config: AuthPluginConfig) {
  * startup. If the user already exists, or if sign-up is disabled, nothing
  * happens.
  */
-export async function seedAdminIfNeeded(auth: ReturnType<typeof createBetterAuth>) {
+export async function seedAdminIfNeeded(
+	auth: ReturnType<typeof createBetterAuth>,
+) {
 	const email = process.env.ADMIN_EMAIL;
 	const password = process.env.ADMIN_PASSWORD;
 	if (!email || !password) return;
@@ -178,9 +180,7 @@ export function createAuthPlugin(
 	configOrAuth: AuthPluginConfig | ReturnType<typeof createBetterAuth>,
 ) {
 	const auth =
-		'handler' in configOrAuth
-			? configOrAuth
-			: createBetterAuth(configOrAuth);
+		'handler' in configOrAuth ? configOrAuth : createBetterAuth(configOrAuth);
 
 	return new Elysia({ name: 'better-auth' }).mount(auth.handler).macro({
 		auth: {

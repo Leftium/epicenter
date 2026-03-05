@@ -16,8 +16,9 @@
  * @see src/auth/server.ts — runtime `createAuth()` factory
  * @see src/auth/options.ts — shared schema-affecting options
  */
-import { type } from 'arktype';
+
 import { neon } from '@neondatabase/serverless';
+import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';

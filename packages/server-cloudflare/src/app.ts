@@ -3,8 +3,8 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { cors } from 'hono/cors';
-import { auth } from './auth/server';
 import { createAuthMiddleware } from './auth/middleware';
+import { auth } from './auth/server';
 import { factory } from './env';
 import { createAiChatHandler } from './proxy/chat';
 import { createProxyHandler } from './proxy/passthrough';

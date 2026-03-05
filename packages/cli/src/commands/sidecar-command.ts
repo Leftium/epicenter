@@ -46,8 +46,7 @@ function buildSidecarStartCommand(home: string) {
 				})
 				.option('hub', {
 					type: 'string' as const,
-					description:
-						'Hub URL for sync and auth (e.g. wss://hub.example.com)',
+					description: 'Hub URL for sync and auth (e.g. wss://hub.example.com)',
 				})
 				.option('port', {
 					type: 'number' as const,

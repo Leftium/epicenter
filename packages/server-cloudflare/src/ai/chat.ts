@@ -3,7 +3,7 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Bindings } from '../worker';
+import type { Bindings } from '../env';
 import { factory } from '../factory';
 
 /** Provider API chat completion endpoints. */

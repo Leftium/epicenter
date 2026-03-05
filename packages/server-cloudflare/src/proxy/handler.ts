@@ -1,5 +1,5 @@
 import { isSupportedProvider, type SupportedProvider } from '@epicenter/sync-core';
-import type { Bindings } from '../worker';
+import type { Bindings } from '../env';
 import { factory } from '../factory';
 
 const PROVIDER_CONFIG: Record<

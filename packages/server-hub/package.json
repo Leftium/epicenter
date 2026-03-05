@@ -17,6 +17,7 @@
 	},
 	"dependencies": {
 		"@epicenter/server-elysia": "workspace:*",
+		"@epicenter/sync-core": "workspace:*",
 		"@elysiajs/openapi": "^1.4.11",
 		"@tanstack/ai": "^0.5.1",
 		"@tanstack/ai-anthropic": "^0.5.0",

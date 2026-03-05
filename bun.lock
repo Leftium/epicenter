@@ -400,6 +400,7 @@
       "dependencies": {
         "@elysiajs/openapi": "^1.4.11",
         "@epicenter/server-elysia": "workspace:*",
+        "@epicenter/sync-core": "workspace:*",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
         "@tanstack/ai-gemini": "^0.5.0",
@@ -424,6 +425,7 @@
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
         "@epicenter/server-elysia": "workspace:*",
+        "@epicenter/sync-core": "workspace:*",
         "elysia": "^1.2.25",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",

@@ -1,4 +1,4 @@
-import { PROVIDER_ENV_VARS, type SupportedProvider } from '@epicenter/server-elysia';
+import { PROVIDER_ENV_VARS, type SupportedProvider } from '@epicenter/sync-core';
 import type { AnyTextAdapter } from '@tanstack/ai';
 import {
 	type AnthropicChatModel,
@@ -13,7 +13,7 @@ export {
 	PROVIDER_ENV_VARS,
 	SUPPORTED_PROVIDERS,
 	type SupportedProvider,
-} from '@epicenter/server-elysia';
+} from '@epicenter/sync-core';
 
 /**
  * Create a TanStack AI text adapter for the given provider.

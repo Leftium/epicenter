@@ -6,7 +6,7 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
  * Schema-affecting config shared between the runtime auth instance and
- * `auth.config.ts` (CLI migrations). Every option here influences the
+ * `src/auth.ts` (CLI migrations). Every option here influences the
  * database schema — keep them in one place so `npx @better-auth/cli migrate`
  * always matches what the worker actually uses.
  *

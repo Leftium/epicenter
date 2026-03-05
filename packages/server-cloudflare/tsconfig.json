@@ -28,5 +28,5 @@
 
 		"types": ["@cloudflare/workers-types"]
 	},
-	"exclude": ["auth.config.ts"]
+	"exclude": ["src/auth.ts"]
 }

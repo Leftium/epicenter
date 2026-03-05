@@ -2,7 +2,7 @@
 // Reads DATABASE_URL from .env / environment — no Cloudflare bindings needed.
 // Spreads sharedAuthConfig so the CLI schema always matches the runtime worker.
 import { betterAuth } from 'better-auth';
-import { sharedAuthConfig } from './src/auth/better-auth';
+import { sharedAuthConfig } from './auth/better-auth';
 
 export const auth = betterAuth({
 	...sharedAuthConfig,

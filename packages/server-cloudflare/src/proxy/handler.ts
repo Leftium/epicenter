@@ -1,6 +1,6 @@
-import type { Context } from 'hono';
 import { isSupportedProvider, type SupportedProvider } from '@epicenter/sync-core';
-import type { AppEnv, Bindings } from '../worker';
+import type { Bindings } from '../worker';
+import { factory } from '../factory';
 
 const PROVIDER_CONFIG: Record<
 	SupportedProvider,
@@ -38,7 +38,7 @@ const PROVIDER_CONFIG: Record<
 };
 
 export function createProxyHandler() {
-	return async (c: Context<AppEnv>) => {
+	return factory.createHandlers(async (c) => {
 		const provider = c.req.param('provider') as string | undefined;
 		if (!provider || !isSupportedProvider(provider)) {
 			return c.json({ error: `Unknown provider: ${provider}` }, 400);
@@ -77,5 +77,5 @@ export function createProxyHandler() {
 					response.headers.get('content-type') ?? 'application/json',
 			},
 		});
-	};
+	});
 }

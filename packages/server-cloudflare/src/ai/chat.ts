@@ -1,10 +1,10 @@
-import type { Context } from 'hono';
 import {
 	isSupportedProvider,
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { AppEnv, Bindings } from '../worker';
+import type { Bindings } from '../worker';
+import { factory } from '../factory';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
@@ -27,7 +27,7 @@ const PROVIDER_AUTH: Record<
 };
 
 export function createAiChatHandler() {
-	return async (c: Context<AppEnv>) => {
+	return factory.createHandlers(async (c) => {
 		const body = await c.req.json<{
 			provider?: string;
 			model?: string;
@@ -79,5 +79,5 @@ export function createAiChatHandler() {
 					'text/event-stream',
 			},
 		});
-	};
+	});
 }

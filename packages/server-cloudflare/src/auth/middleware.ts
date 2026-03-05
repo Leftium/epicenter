@@ -10,7 +10,7 @@ export function createAuthMiddleware() {
 
 		if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-		const auth = c.get('auth');
+		const auth = c.var.auth;
 		const result = await auth.api.getSession({
 			headers: new Headers({ authorization: `Bearer ${token}` }),
 		});

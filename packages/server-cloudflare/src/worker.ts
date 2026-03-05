@@ -47,7 +47,7 @@ app.use('*', authService);
 // Skip CORS for WebSocket upgrades — Hono's CORS middleware modifies response
 // headers, which conflicts with the immutable 101 WebSocket upgrade response
 // returned from Durable Object stubs.
-app.use('*', async (c, next) => {
+const corsMiddleware = factory.createMiddleware(async (c, next) => {
 	if (c.req.header('upgrade') === 'websocket') return next();
 	return cors({
 		origin: (origin) => origin,
@@ -56,6 +56,7 @@ app.use('*', async (c, next) => {
 		allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 	})(c, next);
 });
+app.use('*', corsMiddleware);
 
 // --- Health / Discovery ---
 app.get('/', (c) =>
@@ -94,9 +95,9 @@ app.all('/rooms/:room', async (c) => {
 });
 
 // --- AI Chat (SSE streaming) ---
-app.post('/ai/chat', createAiChatHandler());
+app.post('/ai/chat', ...createAiChatHandler());
 
 // --- Provider Proxy ---
-app.all('/proxy/:provider/*', createProxyHandler());
+app.all('/proxy/:provider/*', ...createProxyHandler());
 
 export default app;

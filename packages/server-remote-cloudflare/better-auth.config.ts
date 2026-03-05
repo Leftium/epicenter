@@ -9,12 +9,12 @@
  * the shared `better-auth-base` — the single source of truth.
  */
 
-import { baseAuthConfig } from '../../auth/better-auth-base';
+import { baseAuthConfig } from '@epicenter/server-remote';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { env } from './env';
+import { env } from './src/env';
 
 const sql = postgres(env.DATABASE_URL);
 const db = drizzle(sql);

@@ -8,7 +8,7 @@
 	},
 	"dependencies": {
 		"@epicenter/server-local": "workspace:*",
-		"@epicenter/server-remote": "workspace:*",
+		"@epicenter/server-remote-standalone": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"jsrepo": "^3.6.1",
 		"typebox": "catalog:",

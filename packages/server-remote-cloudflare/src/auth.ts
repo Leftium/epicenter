@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { baseAuthConfig } from '../../auth/better-auth-base';
+import { baseAuthConfig } from '@epicenter/server-remote';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';

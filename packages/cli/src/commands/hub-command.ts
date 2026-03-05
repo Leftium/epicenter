@@ -1,6 +1,6 @@
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createRemoteHub } from '@epicenter/server-remote';
+import { createRemoteHub } from '@epicenter/server-remote-standalone';
 import type { Argv, CommandModule } from 'yargs';
 
 const DEFAULT_HUB_PORT = 3914;

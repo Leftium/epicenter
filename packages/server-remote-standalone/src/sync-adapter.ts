@@ -10,7 +10,7 @@ import {
 } from '@epicenter/sync-core';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
-import type { SharedEnv } from '../../types';
+import type { SharedEnv } from '@epicenter/server-remote';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 

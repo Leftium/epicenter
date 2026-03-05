@@ -1,4 +1,4 @@
-import { createSharedApp } from '../../app';
+import { createSharedApp } from '@epicenter/server-remote';
 import {
 	createStandaloneAuth,
 	type StandaloneAuthConfig,

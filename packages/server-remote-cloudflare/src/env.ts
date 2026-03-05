@@ -8,7 +8,7 @@
 import { type } from 'arktype';
 import { config } from 'dotenv';
 
-config({ path: new URL('.dev.vars', import.meta.url).pathname });
+config({ path: new URL('../.dev.vars', import.meta.url).pathname });
 
 const Env = type({
 	DATABASE_URL: 'string',

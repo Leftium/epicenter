@@ -9,33 +9,21 @@
 	},
 	"license": "AGPL-3.0",
 	"scripts": {
-		"typecheck": "tsc --noEmit",
-		"dev:cloudflare": "wrangler dev --config src/adapters/cloudflare/wrangler.toml",
-		"deploy:cloudflare": "wrangler deploy --config src/adapters/cloudflare/wrangler.toml",
-		"auth:generate": "bun x @better-auth/cli generate --yes --config ./src/adapters/cloudflare/better-auth.config.ts --output ./src/adapters/cloudflare/db/schema.ts",
-		"db:push": "drizzle-kit push --config src/adapters/cloudflare/drizzle.config.ts",
-		"db:generate": "drizzle-kit generate --config src/adapters/cloudflare/drizzle.config.ts",
-		"db:migrate": "drizzle-kit migrate --config src/adapters/cloudflare/drizzle.config.ts",
-		"db:studio": "drizzle-kit studio --config src/adapters/cloudflare/drizzle.config.ts",
-		"typegen": "wrangler types --config src/adapters/cloudflare/wrangler.toml"
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@better-auth/drizzle-adapter": "catalog:",
-		"@better-auth/oauth-provider": "catalog:",
 		"@epicenter/sync-core": "workspace:*",
-		"arktype": "catalog:",
-		"better-auth": "catalog:",
-		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
-		"postgres": "^3.4.8",
 		"y-protocols": "catalog:",
 		"yjs": "catalog:"
 	},
+	"peerDependencies": {
+		"@better-auth/oauth-provider": "catalog:",
+		"better-auth": "catalog:"
+	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20250803.0",
-		"dotenv": "^17.3.1",
-		"drizzle-kit": "catalog:",
-		"typescript": "catalog:",
-		"wrangler": "catalog:"
+		"@better-auth/oauth-provider": "catalog:",
+		"better-auth": "catalog:",
+		"typescript": "catalog:"
 	}
 }

@@ -1,8 +1,8 @@
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import type { AuthInstance } from '../../types';
-import { baseAuthConfig } from '../../auth/better-auth-base';
+import type { AuthInstance } from '@epicenter/server-remote';
+import { baseAuthConfig } from '@epicenter/server-remote';
 
 // ---------------------------------------------------------------------------
 // Auth mode types

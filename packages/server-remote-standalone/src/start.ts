@@ -2,9 +2,9 @@
  * Standalone hub entry point.
  *
  * Usage:
- *   bun packages/server-remote/src/adapters/standalone/start.ts
- *   AUTH_TOKEN=secret bun packages/server-remote/src/adapters/standalone/start.ts
- *   PORT=4000 bun packages/server-remote/src/adapters/standalone/start.ts
+ *   bun packages/server-remote-standalone/src/start.ts
+ *   AUTH_TOKEN=secret bun packages/server-remote-standalone/src/start.ts
+ *   PORT=4000 bun packages/server-remote-standalone/src/start.ts
  */
 
 import { createRemoteHub } from './server';

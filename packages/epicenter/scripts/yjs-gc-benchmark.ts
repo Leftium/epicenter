@@ -78,9 +78,15 @@ function benchmarkBadPattern(gc: boolean, operations: number): BenchmarkResult {
 	const root = doc.getMap('workspace');
 
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
+	if (recordIds.length === 0) {
+		throw new Error('No record IDs generated');
+	}
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		if (!recordId) {
+			throw new Error('Failed to pick a record ID');
+		}
 
 		// BAD: Create a brand new Y.Map every time we "update" a record
 		const newRecord = new Y.Map();
@@ -122,9 +128,15 @@ function benchmarkGoodPattern(
 	const root = doc.getMap('workspace');
 
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
+	if (recordIds.length === 0) {
+		throw new Error('No record IDs generated');
+	}
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		if (!recordId) {
+			throw new Error('Failed to pick a record ID');
+		}
 
 		// GOOD: Get existing Y.Map or create once, then update fields
 		let record = root.get(recordId) as Y.Map<unknown> | undefined;
@@ -169,9 +181,15 @@ function benchmarkFlatPattern(
 	const root = doc.getMap('workspace');
 
 	const recordIds = Array.from({ length: 100 }, (_, i) => `record-${i}`);
+	if (recordIds.length === 0) {
+		throw new Error('No record IDs generated');
+	}
 
 	for (let i = 0; i < operations; i++) {
-		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)]!;
+		const recordId = recordIds[Math.floor(Math.random() * recordIds.length)];
+		if (!recordId) {
+			throw new Error('Failed to pick a record ID');
+		}
 
 		// FLAT: Use composite keys instead of nested Y.Maps
 		root.set(`${recordId}:name`, `Name ${i}`);
@@ -263,8 +281,11 @@ async function runBenchmarks() {
 	}
 
 	for (const [name, benchResults] of grouped) {
-		const gcOff = benchResults.find((r) => !r.gcEnabled)!;
-		const gcOn = benchResults.find((r) => r.gcEnabled)!;
+		const gcOff = benchResults.find((r) => !r.gcEnabled);
+		const gcOn = benchResults.find((r) => r.gcEnabled);
+		if (!gcOff || !gcOn) {
+			throw new Error(`Missing GC variants for benchmark: ${name}`);
+		}
 		const reduction =
 			((gcOff.sizeBytes - gcOn.sizeBytes) / gcOff.sizeBytes) * 100;
 		const ratio = gcOff.sizeBytes / gcOn.sizeBytes;

@@ -22,7 +22,7 @@ const TrayError = defineErrors({
 		cause,
 	}),
 });
-type TrayError = InferErrors<typeof TrayError>;
+export type TrayError = InferErrors<typeof TrayError>;
 
 const trayPromise = initTray();
 

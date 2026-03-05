@@ -314,7 +314,8 @@ export class YKeyValue<T> {
 		const entries = yarray.toArray();
 		this.doc.transact(() => {
 			for (let i = entries.length - 1; i >= 0; i--) {
-				const entry = entries[i]!;
+				const entry = entries[i];
+				if (!entry) continue;
 				if (this.map.has(entry.key)) {
 					yarray.delete(i);
 				} else {
@@ -358,7 +359,8 @@ export class YKeyValue<T> {
 					i >= 0 && (addedEntriesByKey.size > 0 || keysToRemove.size > 0);
 					i--
 				) {
-					const currentEntry = allEntries[i]!;
+					const currentEntry = allEntries[i];
+					if (!currentEntry) continue;
 
 					if (keysToRemove.has(currentEntry.key)) {
 						keysToRemove.delete(currentEntry.key);

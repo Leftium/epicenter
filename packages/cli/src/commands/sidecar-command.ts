@@ -5,23 +5,23 @@ import { discoverWorkspaces, resolveWorkspace } from '../discovery';
 import { outputError } from '../format-output';
 import { workspacesDir } from '../paths';
 
-/** Default port for the local Epicenter server. */
+/** Default port for the Epicenter sidecar. */
 const DEFAULT_PORT = 3913;
 
 /**
- * Build the `local` command group with subcommands for managing the local Epicenter server.
+ * Build the `sidecar` command group with subcommands for managing the local Epicenter sidecar.
  * @param home - Epicenter home directory path.
- * @returns A yargs CommandModule for the `local` command.
+ * @returns A yargs CommandModule for the `sidecar` command.
  */
-export function buildLocalCommand(home: string): CommandModule {
+export function buildSidecarCommand(home: string): CommandModule {
 	return {
-		command: 'local <subcommand>',
-		describe: 'Manage the local Epicenter server',
+		command: 'sidecar <subcommand>',
+		describe: 'Manage the local Epicenter sidecar',
 		builder: (y: Argv) =>
 			y
-				.command(buildLocalStartCommand(home))
-				.command(buildLocalStatusCommand())
-				.command(buildLocalStopCommand(home))
+				.command(buildSidecarStartCommand(home))
+				.command(buildSidecarStatusCommand())
+				.command(buildSidecarStopCommand(home))
 				.demandCommand(1, 'Specify a subcommand: start, status, stop')
 				.strict(),
 		handler: () => {},
@@ -29,13 +29,13 @@ export function buildLocalCommand(home: string): CommandModule {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// local start
+// sidecar start
 // ═══════════════════════════════════════════════════════════════════════════
 
-function buildLocalStartCommand(home: string) {
+function buildSidecarStartCommand(home: string) {
 	return {
 		command: 'start',
-		describe: 'Start the local Epicenter server',
+		describe: 'Start the local Epicenter sidecar',
 		builder: (y: Argv) =>
 			y
 				.option('workspace', {
@@ -44,10 +44,10 @@ function buildLocalStartCommand(home: string) {
 					description:
 						'Load only this workspace ID (run single-workspace mode)',
 				})
-				.option('remote', {
+				.option('hub', {
 					type: 'string' as const,
 					description:
-						'Remote server URL for sync and auth (e.g. wss://remote.example.com)',
+						'Hub URL for sync and auth (e.g. wss://hub.example.com)',
 				})
 				.option('port', {
 					type: 'number' as const,
@@ -63,7 +63,7 @@ function buildLocalStartCommand(home: string) {
 				}),
 		handler: async (argv: {
 			workspace?: string;
-			remote?: string;
+			hub?: string;
 			port: number;
 			watch: boolean;
 		}) => {
@@ -77,7 +77,7 @@ function buildLocalStartCommand(home: string) {
 				return;
 			}
 
-			const { createLocalServer } = await import('@epicenter/server-local');
+			const { createSidecar } = await import('@epicenter/server-sidecar');
 
 			let clients: Awaited<ReturnType<typeof discoverWorkspaces>>['clients'];
 			let sources: Awaited<ReturnType<typeof discoverWorkspaces>>['sources'];
@@ -117,23 +117,23 @@ function buildLocalStartCommand(home: string) {
 				}
 			}
 
-			const server = createLocalServer({
+			const server = createSidecar({
 				clients,
 				port: argv.port,
-				...(argv.remote
-					? { auth: { mode: 'remote' as const, remoteUrl: argv.remote } }
+				...(argv.hub
+					? { auth: { mode: 'remote' as const, hubUrl: argv.hub } }
 					: {}),
 			});
 			server.start();
 
-			console.log(`\nEpicenter local server on http://localhost:${argv.port}`);
-			if (argv.remote) {
-				console.log(`Syncing to remote: ${argv.remote}`);
+			console.log(`\nEpicenter sidecar on http://localhost:${argv.port}`);
+			if (argv.hub) {
+				console.log(`Syncing to hub: ${argv.hub}`);
 			}
 			console.log(`API docs: http://localhost:${argv.port}/openapi\n`);
 
-			// Write PID file so `local stop` can signal this process
-			const pidFile = join(home, 'local.pid');
+			// Write PID file so `sidecar stop` can signal this process
+			const pidFile = join(home, 'sidecar.pid');
 			await writeFile(pidFile, String(process.pid), 'utf8');
 
 			const shutdown = async () => {
@@ -149,13 +149,13 @@ function buildLocalStartCommand(home: string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// local status
+// sidecar status
 // ═══════════════════════════════════════════════════════════════════════════
 
-function buildLocalStatusCommand() {
+function buildSidecarStatusCommand() {
 	return {
 		command: 'status',
-		describe: 'Show the status of the local Epicenter server',
+		describe: 'Show the status of the local Epicenter sidecar',
 		builder: (y: Argv) =>
 			y.option('port', {
 				type: 'number' as const,
@@ -170,8 +170,8 @@ function buildLocalStatusCommand() {
 				response = await fetch(url);
 			} catch {
 				console.error(
-					`No Epicenter local server running on http://localhost:${argv.port}.\n` +
-						`Start one with: epicenter local start`,
+					`No Epicenter sidecar running on http://localhost:${argv.port}.\n` +
+						`Start one with: epicenter sidecar start`,
 				);
 				process.exitCode = 1;
 				return;
@@ -193,7 +193,7 @@ function buildLocalStatusCommand() {
 			};
 
 			console.log(
-				`Server: ${info.name ?? 'Epicenter Local'} v${info.version ?? 'unknown'}`,
+				`Server: ${info.name ?? 'Epicenter Sidecar'} v${info.version ?? 'unknown'}`,
 			);
 			console.log(`Mode:   ${info.mode ?? 'unknown'}`);
 			console.log(`URL:    http://localhost:${argv.port}`);
@@ -211,16 +211,16 @@ function buildLocalStatusCommand() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// local stop
+// sidecar stop
 // ═══════════════════════════════════════════════════════════════════════════
 
-function buildLocalStopCommand(home: string) {
+function buildSidecarStopCommand(home: string) {
 	return {
 		command: 'stop',
-		describe: 'Stop the local Epicenter server',
+		describe: 'Stop the local Epicenter sidecar',
 		builder: (y: Argv) => y,
 		handler: async () => {
-			const pidFile = join(home, 'local.pid');
+			const pidFile = join(home, 'sidecar.pid');
 
 			let pid: number;
 			try {
@@ -232,7 +232,7 @@ function buildLocalStopCommand(home: string) {
 			} catch {
 				console.error(
 					`No PID file found at ${pidFile}.\n` +
-						`The local server may not be running, or was not started with "epicenter local start".`,
+						`The sidecar may not be running, or was not started with "epicenter sidecar start".`,
 				);
 				process.exitCode = 1;
 				return;
@@ -240,7 +240,7 @@ function buildLocalStopCommand(home: string) {
 
 			try {
 				process.kill(pid, 'SIGTERM');
-				console.log(`Sent SIGTERM to local server (PID ${pid}).`);
+				console.log(`Sent SIGTERM to sidecar (PID ${pid}).`);
 			} catch (err) {
 				const isNoSuchProcess =
 					err instanceof Error &&
@@ -254,7 +254,7 @@ function buildLocalStopCommand(home: string) {
 					await unlink(pidFile).catch(() => {});
 				} else {
 					console.error(
-						`Failed to stop server (PID ${pid}): ${err instanceof Error ? err.message : String(err)}`,
+						`Failed to stop sidecar (PID ${pid}): ${err instanceof Error ? err.message : String(err)}`,
 					);
 					process.exitCode = 1;
 				}

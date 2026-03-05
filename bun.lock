@@ -287,8 +287,8 @@
         "epicenter": "./src/bin.ts",
       },
       "dependencies": {
-        "@epicenter/server-local": "workspace:*",
-        "@epicenter/server-remote": "workspace:*",
+        "@epicenter/server-hub": "workspace:*",
+        "@epicenter/server-sidecar": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "jsrepo": "^3.6.1",
         "typebox": "catalog:",
@@ -394,30 +394,8 @@
         "yjs": "catalog:",
       },
     },
-    "packages/server-local": {
-      "name": "@epicenter/server-local",
-      "version": "0.0.1",
-      "dependencies": {
-        "@elysiajs/cors": "^1.4.1",
-        "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/server-elysia": "workspace:*",
-        "elysia": "^1.2.25",
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@epicenter/sync": "workspace:*",
-        "@types/bun": "catalog:",
-        "arktype": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@epicenter/workspace": "workspace:*",
-        "yjs": "catalog:",
-      },
-    },
-    "packages/server-remote": {
-      "name": "@epicenter/server-remote",
+    "packages/server-hub": {
+      "name": "@epicenter/server-hub",
       "version": "0.0.1",
       "dependencies": {
         "@elysiajs/openapi": "^1.4.11",
@@ -436,6 +414,28 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/server-sidecar": {
+      "name": "@epicenter/server-sidecar",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/cors": "^1.4.1",
+        "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/server-elysia": "workspace:*",
+        "elysia": "^1.2.25",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "arktype": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@epicenter/workspace": "workspace:*",
         "yjs": "catalog:",
       },
     },
@@ -739,9 +739,9 @@
 
     "@epicenter/server-elysia": ["@epicenter/server-elysia@workspace:packages/server-elysia"],
 
-    "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
+    "@epicenter/server-hub": ["@epicenter/server-hub@workspace:packages/server-hub"],
 
-    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
+    "@epicenter/server-sidecar": ["@epicenter/server-sidecar@workspace:packages/server-sidecar"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

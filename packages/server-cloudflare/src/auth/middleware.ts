@@ -1,4 +1,4 @@
-import { factory } from '../factory';
+import { factory } from '../env';
 
 export function createAuthMiddleware() {
 	return factory.createMiddleware(async (c, next) => {

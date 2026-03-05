@@ -3,11 +3,11 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { cors } from 'hono/cors';
-import { createAiChatHandler } from './ai/chat';
-import { createAuth } from './auth/better-auth';
+import { createAuth } from './auth/server';
 import { createAuthMiddleware } from './auth/middleware';
-import { factory } from './factory';
-import { createProxyHandler } from './proxy/handler';
+import { factory } from './env';
+import { createAiChatHandler } from './proxy/chat';
+import { createProxyHandler } from './proxy/passthrough';
 
 const app = factory.createApp();
 

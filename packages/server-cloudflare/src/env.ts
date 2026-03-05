@@ -1,5 +1,5 @@
 import { createFactory } from 'hono/factory';
-import type { createAuth } from './auth/better-auth';
+import type { createAuth } from './auth/server';
 
 type Bindings = {
 	DATABASE_URL: string;

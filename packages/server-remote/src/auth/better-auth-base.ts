@@ -35,4 +35,4 @@ export const baseAuthConfig = {
 			],
 		}),
 	],
-} satisfies Partial<BetterAuthOptions>;
+} as const satisfies Partial<BetterAuthOptions>;

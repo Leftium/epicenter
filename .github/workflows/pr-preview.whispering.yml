@@ -110,26 +110,18 @@ jobs:
       - name: Build frontend
         run: bun --filter @epicenter/whispering build
 
+      # Preview builds are unsigned: --no-sign skips Apple codesigning,
+      # Windows Authenticode, and Tauri updater signing. All bundle artifacts
+      # (.dmg, .AppImage, .deb, .msi, .exe) are still produced normally.
+      # This avoids exposing signing secrets in PR workflows (especially forks).
       - uses: tauri-apps/tauri-action@v0
         env:
           CI: true
           APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
-
-          # Code signing for macOS (same as release builds)
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-          # Tauri code signing (same as release builds)
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: 'apps/whispering'
           tagName: ''
-          args: ${{ matrix.args }}
+          args: '${{ matrix.args }} --no-sign'
 
       - name: Install FUSE for AppImage processing
         if: matrix.platform == 'ubuntu-22.04'

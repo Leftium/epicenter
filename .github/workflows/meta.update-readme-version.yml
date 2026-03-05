@@ -46,20 +46,31 @@ jobs:
 
       - name: Determine version
         id: get_version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" == "release" ]; then
+          if [ "$EVENT_NAME" == "release" ]; then
             # Extract version from release tag (remove 'v' prefix)
             VERSION=${GITHUB_REF_NAME#v}
           else
             # Use manually provided version for workflow_dispatch
-            VERSION=${{ inputs.version }}
+            VERSION="$INPUT_VERSION"
           fi
+
+          # Validate semver format
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format '$VERSION'. Expected: X.Y.Z"
+            exit 1
+          fi
+
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Updating README to version: $VERSION"
 
       - name: Update README download links
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
         run: |
-          VERSION=${{ steps.get_version.outputs.VERSION }}
 
           # Update the Whispering app README
           README_PATH="apps/whispering/README.md"
@@ -117,12 +128,14 @@ jobs:
 
       - name: Commit and push changes
         if: steps.check_changes.outputs.CHANGES_MADE == 'true'
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
           git add apps/whispering/README.md
-          git commit -m "chore: update README download links to v${{ steps.get_version.outputs.VERSION }}"
+          git commit -m "chore: update README download links to v${VERSION}"
 
           # Retry logic to handle race conditions (e.g., when other commits are pushed during workflow)
           MAX_RETRIES=3
@@ -144,9 +157,12 @@ jobs:
           exit 1
 
       - name: Summary
+        env:
+          CHANGES_MADE: ${{ steps.check_changes.outputs.CHANGES_MADE }}
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
         run: |
-          if [ "${{ steps.check_changes.outputs.CHANGES_MADE }}" == "true" ]; then
-            echo "✅ Successfully updated apps/whispering/README.md download links to version ${{ steps.get_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          if [ "$CHANGES_MADE" == "true" ]; then
+            echo "Successfully updated apps/whispering/README.md download links to version $VERSION" >> $GITHUB_STEP_SUMMARY
           else
-            echo "ℹ️ No updates needed - apps/whispering/README.md already has version ${{ steps.get_version.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+            echo "No updates needed - apps/whispering/README.md already has version $VERSION" >> $GITHUB_STEP_SUMMARY
           fi

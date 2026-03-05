@@ -7,14 +7,11 @@ on:
       - 'apps/whispering/**'
       - 'apps/landing/**'
       - 'packages/**'
-      - '.github/workflows/preview-deployment.yml'
+      - '.github/workflows/deploy.cloudflare-preview.yml'
 
 concurrency:
   group: preview-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  NODE_VERSION: '22'
 
 jobs:
   preview:
@@ -25,17 +22,12 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: 'package.json'
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -66,47 +58,23 @@ jobs:
           command: versions upload --preview-alias "pr-${{ github.event.pull_request.number }}" --tag "pr-${{ github.event.pull_request.number }}" --message "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
 
       - name: Comment on PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const whisperingUrl = '${{ steps.whispering.outputs.deployment-url }}';
-            const landingUrl = '${{ steps.landing.outputs.deployment-url }}';
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=$(cat <<'EOF'
+          ## Preview Deployment
 
-            const comment = `## Preview Deployment
+          | App | Preview URL |
+          |-----|-------------|
+          | Whispering | ${{ steps.whispering.outputs.deployment-url }} |
+          | Landing | ${{ steps.landing.outputs.deployment-url }} |
 
-            | App | Preview URL |
-            |-----|-------------|
-            | Whispering | ${whisperingUrl} |
-            | Landing | ${landingUrl} |
+          These previews update automatically with new commits to this PR.
+          No cleanup needed — previews are version aliases on the existing workers.
 
-            These previews update automatically with new commits to this PR.
-            No cleanup needed — previews are version aliases on the existing workers.
-
-            ---
-            <sub>Commit ${context.sha.substring(0, 7)}</sub>`;
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('Preview Deployment')
-            );
-
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: comment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: comment
-              });
-            }
+          ---
+          <sub>Commit ${{ github.event.pull_request.head.sha }}</sub>
+          EOF
+          )
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY" --edit-last || \
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"

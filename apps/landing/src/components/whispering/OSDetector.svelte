@@ -1,5 +1,5 @@
 <script>
-	import { VERSIONS } from '@epicenter/constants/versions';
+	import { VERSION } from '@epicenter/constants/versions';
 	import { Button } from '@epicenter/ui/button';
 	import { onMount } from 'svelte';
 
@@ -17,16 +17,16 @@
 			// But we check for common indicators
 			if (userAgent.includes('arm') || navigator.userAgent.includes('Apple')) {
 				platform = 'macOS (Apple Silicon)';
-				downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSIONS.whispering}/Whispering_${VERSIONS.whispering}_aarch64.dmg`;
+				downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSION}/Whispering_${VERSION}_aarch64.dmg`;
 				downloadText = 'Download Whispering for macOS';
 			} else {
 				platform = 'macOS (Intel)';
-				downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSIONS.whispering}/Whispering_${VERSIONS.whispering}_x64.dmg`;
+				downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSION}/Whispering_${VERSION}_x64.dmg`;
 				downloadText = 'Download Whispering for macOS';
 			}
 		} else if (userAgent.includes('win')) {
 			platform = 'Windows';
-			downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSIONS.whispering}/Whispering_${VERSIONS.whispering}_x64_en-US.msi`;
+			downloadUrl = `https://github.com/EpicenterHQ/epicenter/releases/download/v${VERSION}/Whispering_${VERSION}_x64_en-US.msi`;
 			downloadText = 'Download Whispering for Windows';
 		} else if (userAgent.includes('linux')) {
 			platform = 'Linux';

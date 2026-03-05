@@ -13,36 +13,42 @@ on:
 jobs:
   sync-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Get release tag
         id: get_tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.release_tag }}" ]; then
-            echo "tag=${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            echo "tag=$INPUT_TAG" >> $GITHUB_OUTPUT
           else
-            echo "tag=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+            echo "tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
           fi
 
       - name: Fetch source release information
         id: source_release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.get_tag.outputs.tag }}
         run: |
-          TAG="${{ steps.get_tag.outputs.tag }}"
           echo "Fetching release $TAG from EpicenterHQ/epicenter..."
-          
+
           # Get release info
-          RELEASE_JSON=$(gh api repos/EpicenterHQ/epicenter/releases/tags/$TAG)
-          
+          RELEASE_JSON=$(gh api "repos/EpicenterHQ/epicenter/releases/tags/$TAG")
+
           # Extract fields
           echo "name=$(echo "$RELEASE_JSON" | jq -r '.name')" >> $GITHUB_OUTPUT
           echo "body=$(echo "$RELEASE_JSON" | jq -r '.body' | base64 -w 0)" >> $GITHUB_OUTPUT
           echo "draft=$(echo "$RELEASE_JSON" | jq -r '.draft')" >> $GITHUB_OUTPUT
           echo "prerelease=$(echo "$RELEASE_JSON" | jq -r '.prerelease')" >> $GITHUB_OUTPUT
-          
+
           # Get asset URLs
           echo "$RELEASE_JSON" | jq -r '.assets[].browser_download_url' > asset_urls.txt
 
@@ -60,8 +66,8 @@ jobs:
         id: check_release
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+          TAG: ${{ steps.get_tag.outputs.tag }}
         run: |
-          TAG="${{ steps.get_tag.outputs.tag }}"
           if gh release view "$TAG" --repo braden-w/whispering >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Release $TAG already exists in braden-w/whispering"
@@ -74,49 +80,48 @@ jobs:
         if: steps.check_release.outputs.exists == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+          TAG: ${{ steps.get_tag.outputs.tag }}
         run: |
-          TAG="${{ steps.get_tag.outputs.tag }}"
           echo "Deleting existing release $TAG..."
           gh release delete "$TAG" --repo braden-w/whispering --yes
 
       - name: Create release in downstream repository
         env:
           GH_TOKEN: ${{ secrets.GH_ACTIONS_PAT }}
+          TAG: ${{ steps.get_tag.outputs.tag }}
+          RELEASE_NAME: ${{ steps.source_release.outputs.name }}
+          RELEASE_BODY_B64: ${{ steps.source_release.outputs.body }}
+          RELEASE_DRAFT: ${{ steps.source_release.outputs.draft }}
+          RELEASE_PRERELEASE: ${{ steps.source_release.outputs.prerelease }}
         run: |
-          TAG="${{ steps.get_tag.outputs.tag }}"
-          NAME="${{ steps.source_release.outputs.name }}"
-          BODY=$(echo "${{ steps.source_release.outputs.body }}" | base64 -d)
-          DRAFT="${{ steps.source_release.outputs.draft }}"
-          PRERELEASE="${{ steps.source_release.outputs.prerelease }}"
-          
-          # Build command
-          CMD="gh release create \"$TAG\" --repo braden-w/whispering --title \"$NAME\""
-          
-          # Add body as a file to handle special characters
-          echo "$BODY" > release_notes.md
-          CMD="$CMD --notes-file release_notes.md"
-          
-          # Add flags
-          if [ "$DRAFT" = "true" ]; then
-            CMD="$CMD --draft"
+          echo "$RELEASE_BODY_B64" | base64 -d > release_notes.md
+
+          ARGS=(
+            "$TAG"
+            --repo braden-w/whispering
+            --title "$RELEASE_NAME"
+            --notes-file release_notes.md
+          )
+
+          if [ "$RELEASE_DRAFT" = "true" ]; then
+            ARGS+=(--draft)
           fi
-          
-          if [ "$PRERELEASE" = "true" ]; then
-            CMD="$CMD --prerelease"
+
+          if [ "$RELEASE_PRERELEASE" = "true" ]; then
+            ARGS+=(--prerelease)
           fi
-          
-          # Add assets if any exist
+
           if [ -n "$(ls -A release-assets 2>/dev/null)" ]; then
-            CMD="$CMD release-assets/*"
+            ARGS+=(release-assets/*)
           fi
-          
-          echo "Creating release with command: $CMD"
-          eval "$CMD"
+
+          gh release create "${ARGS[@]}"
 
       - name: Summary
+        env:
+          TAG: ${{ steps.get_tag.outputs.tag }}
         run: |
-          TAG="${{ steps.get_tag.outputs.tag }}"
-          echo "## ✅ Release Synced Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Synced Successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Tag**: $TAG" >> $GITHUB_STEP_SUMMARY
           echo "- **Source**: [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter/releases/tag/$TAG)" >> $GITHUB_STEP_SUMMARY

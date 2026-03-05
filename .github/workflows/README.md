@@ -1,68 +1,85 @@
-# Cloudflare Workers Deployment
+# CI/CD Workflows
 
-CI/CD pipelines for deploying Whispering and Landing to Cloudflare Workers.
+All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We use **period-delimited prefixes** so they group naturally when sorted alphabetically. Periods are structural delimiters (category from name); hyphens are word separators within a segment.
+
+## Naming Convention
+
+| Prefix | Purpose | Scope |
+|---|---|---|
+| `release.{app}` | Tag-triggered desktop builds + GitHub Release | Per Tauri app (expensive 4-platform matrix) |
+| `pr-preview.{app}` | PR preview desktop builds | Per Tauri app (expensive 4-platform matrix) |
+| `deploy.{target}` | Web app deployment | All web apps together (cheap, fast) |
+| `ci.{name}` | Code quality checks | Whole repo |
+| `auto.{name}` | Automated repo maintenance | Whole repo |
+| `meta.{name}` | Repo housekeeping | Whole repo |
+
+Tauri desktop apps get **separate per-app workflows** because builds run a 4-platform matrix (macOS ARM, macOS Intel, Ubuntu, Windows) taking 20+ minutes. A PR touching only Whispering shouldn't trigger an Epicenter build.
+
+Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same build step.
 
 ## Workflows
 
-### `deploy-cloudflare.yml` — Production
+### Desktop Releases
 
-Triggers on push to `main` or manual dispatch.
+| File | Trigger | What it does |
+|---|---|---|
+| `release.whispering.yml` | `v*` tags, manual | Builds Whispering for 4 platforms, publishes to GitHub Releases as draft. Includes code signing, notarization, and release notes from `docs/release-notes/`. |
+| `pr-preview.whispering.yml` | Pull requests | Builds Whispering for 4 platforms, uploads as PR artifacts. Cancels previous builds via concurrency groups. |
 
-1. **Validate**: installs deps, type-checks, lints, builds all packages
-2. **Deploy**: uploads build artifacts to Cloudflare Workers via `wrangler deploy`
-3. **Notify**: posts deployment summary to GitHub and optionally Discord
+### Web Deployment (Cloudflare Workers)
 
-Both apps deploy in parallel after validation passes.
+| File | Trigger | What it does |
+|---|---|---|
+| `deploy.cloudflare.yml` | Push to `main`, manual | Validates (typecheck, lint, build), then deploys Whispering + Landing to Cloudflare Workers in parallel. Posts Discord notification. |
+| `deploy.cloudflare-preview.yml` | Pull requests touching `apps/whispering/**`, `apps/landing/**`, `packages/**` | Uploads preview versions via `wrangler versions upload --preview-alias`. Posts PR comment with preview URLs. No cleanup needed (aliases auto-expire at 1000). |
 
-### `preview-deployment.yml` — PR Previews
+### CI
 
-Triggers on pull requests that touch `apps/whispering/**`, `apps/landing/**`, or `packages/**`.
+| File | Trigger | What it does |
+|---|---|---|
+| `ci.format.yml` | Push, pull requests | Runs `bun run lint:check` and `bun run typecheck`. |
+| `ci.autofix.yml` | Push, pull requests | Runs `bun run format` and commits fixes back via autofix-ci. |
 
-Uses `wrangler versions upload --preview-alias` to create preview URLs without affecting production traffic. Preview aliases are retained automatically (up to 1000 per worker) — no cleanup workflow needed.
+### Automation
 
-Preview URLs follow the format: `<alias>-<worker-name>.<subdomain>.workers.dev`
+| File | Trigger | What it does |
+|---|---|---|
+| `auto.label-issues.yml` | Issues opened/edited | Uses Claude to auto-label issues by type, priority, platform, and area. |
 
-## Prerequisites
+### Meta
 
-### Cloudflare API Token
+| File | Trigger | What it does |
+|---|---|---|
+| `meta.sponsors-readme.yml` | Daily schedule, manual | Updates README sponsors section. |
+| `meta.sync-releases.yml` | Release published/edited, manual | Mirrors releases from EpicenterHQ/epicenter to braden-w/whispering (downstream). |
+| `meta.update-readme-version.yml` | Release published, manual | Updates download link versions in Whispering README via sed. |
 
-Generate at https://dash.cloudflare.com/profile/api-tokens with permissions:
-- **Account**: Workers Scripts:Edit
+### Uncategorized
 
-### GitHub Secrets (required)
+| File | Trigger | What it does |
+|---|---|---|
+| `claude.yml` | `@claude` mentions in issues/PRs | Runs Claude Code agent to respond. One-off, no prefix needed. |
 
-| Secret | Description |
-|--------|-------------|
-| `CLOUDFLARE_API_TOKEN` | API token with Workers Scripts:Edit |
-| `CLOUDFLARE_ACCOUNT_ID` | Found in Cloudflare dashboard sidebar |
+## Secrets Reference
 
-### GitHub Secrets (optional)
-
-| Secret | Description |
-|--------|-------------|
-| `DISCORD_WEBHOOK_URL` | Discord webhook for deployment notifications |
-
-## Workers Configuration
-
-Both apps are assets-only Workers (no server-side code, just static files):
-
-- **Whispering** (`apps/whispering/wrangler.jsonc`): SPA with `single-page-application` not-found handling
-- **Landing** (`apps/landing/wrangler.jsonc`): Static site with `404-page` not-found handling
-
-Both have `"preview_urls": true` to enable `--preview-alias` support.
+| Secret | Used by | Description |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare API token with Workers Scripts:Edit |
+| `CLOUDFLARE_ACCOUNT_ID` | `deploy.cloudflare`, `deploy.cloudflare-preview` | Cloudflare account ID |
+| `DISCORD_WEBHOOK_URL` | `deploy.cloudflare` | Discord webhook for deployment notifications (optional) |
+| `TAURI_SIGNING_PRIVATE_KEY` | `release.whispering`, `pr-preview.whispering` | Tauri update signing key |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Tauri signing key password |
+| `APPLE_CERTIFICATE` | `release.whispering`, `pr-preview.whispering` | macOS code signing certificate (base64) |
+| `APPLE_CERTIFICATE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | macOS certificate password |
+| `APPLE_SIGNING_IDENTITY` | `release.whispering`, `pr-preview.whispering` | macOS signing identity |
+| `APPLE_ID` | `release.whispering`, `pr-preview.whispering` | Apple ID for notarization |
+| `APPLE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Apple app-specific password |
+| `APPLE_TEAM_ID` | `release.whispering`, `pr-preview.whispering` | Apple Developer team ID |
+| `GH_ACTIONS_PAT` | `meta.sync-releases` | PAT for cross-repo release sync |
+| `ANTHROPIC_API_KEY` | `auto.label-issues`, `claude` | Anthropic API key for Claude |
 
 ## Rollback
 
-Revert the commit on `main` and push — the deploy workflow will redeploy the previous version.
+**Web apps**: Revert the commit on `main` and push, or for immediate rollback: `bunx wrangler rollback --name <worker-name>`.
 
-For immediate rollback without a new commit, use:
-```sh
-bunx wrangler rollback --name <worker-name>
-```
-
-## Troubleshooting
-
-- **"API token is invalid"**: verify token permissions and that it hasn't expired
-- **"Worker not found"**: ensure the worker name in `wrangler.jsonc` matches an existing worker, or let `wrangler deploy` create it
-- **Build fails**: run `bun run build` locally to reproduce
-- **Preview URL not appearing in PR comment**: check that `deployment-url` output is populated in the workflow logs
+**Desktop releases**: Delete the draft release and re-tag from an earlier commit.

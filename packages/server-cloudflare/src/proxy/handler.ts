@@ -1,16 +1,10 @@
-import { isSupportedProvider, type SupportedProvider } from '@epicenter/sync-core';
-import type { Bindings } from '../env';
+import {
+	isSupportedProvider,
+	type SupportedProvider,
+} from '@epicenter/sync-core';
 import { factory } from '../factory';
 
-const PROVIDER_CONFIG: Record<
-	SupportedProvider,
-	{
-		envKey: string;
-		baseUrl: string;
-		authHeader: string;
-		format: 'Bearer' | 'raw';
-	}
-> = {
+const PROVIDER_CONFIG = {
 	openai: {
 		envKey: 'OPENAI_API_KEY',
 		baseUrl: 'https://api.openai.com',
@@ -35,7 +29,15 @@ const PROVIDER_CONFIG: Record<
 		authHeader: 'authorization',
 		format: 'Bearer',
 	},
-};
+} as const satisfies Record<
+	SupportedProvider,
+	{
+		envKey: string;
+		baseUrl: string;
+		authHeader: string;
+		format: 'Bearer' | 'raw';
+	}
+>;
 
 export function createProxyHandler() {
 	return factory.createHandlers(async (c) => {
@@ -45,9 +47,7 @@ export function createProxyHandler() {
 		}
 
 		const config = PROVIDER_CONFIG[provider];
-		const apiKey = c.env[config.envKey as keyof Bindings] as
-			| string
-			| undefined;
+		const apiKey = c.env[config.envKey];
 		if (!apiKey) {
 			return c.json({ error: `${provider} not configured` }, 503);
 		}
@@ -59,8 +59,7 @@ export function createProxyHandler() {
 		// Clone headers, replace session token with real API key
 		const headers = new Headers(c.req.raw.headers);
 		headers.delete('authorization');
-		const value =
-			config.format === 'Bearer' ? `Bearer ${apiKey}` : apiKey;
+		const value = config.format === 'Bearer' ? `Bearer ${apiKey}` : apiKey;
 		headers.set(config.authHeader, value);
 
 		const response = await fetch(targetUrl, {

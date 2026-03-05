@@ -6,17 +6,12 @@
  */
 
 export {
-	createHttpSyncPlugin,
-	type HttpSyncPluginConfig,
-} from './http-sync-plugin';
-/** @deprecated Use `createWsSyncPlugin` instead. */
-export { createSyncPlugin, type SyncPluginConfig } from './plugin';
-export {
 	compactDoc,
 	createMemorySyncStorage,
 	decodeSyncRequest,
 	encodeSyncRequest,
 	type SyncStorage,
 	stateVectorsEqual,
-} from './storage';
-export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws-sync-plugin';
+} from '@epicenter/sync-core';
+export { createHttpSyncPlugin, type HttpSyncPluginConfig } from './http/plugin';
+export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws/plugin';

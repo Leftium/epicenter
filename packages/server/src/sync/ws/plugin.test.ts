@@ -1,5 +1,5 @@
 /**
- * Sync Plugin Integration Tests
+ * WS Sync Plugin Integration Tests
  *
  * Tests the full WebSocket sync flow using real Elysia servers
  * and real sync providers over actual WebSocket connections.
@@ -16,7 +16,7 @@ import type { SyncProvider, SyncStatus } from '@epicenter/sync';
 import { createSyncProvider } from '@epicenter/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
-import { createSyncPlugin } from './plugin';
+import { createWsSyncPlugin } from './plugin';
 
 // ============================================================================
 // Test Utilities
@@ -39,7 +39,7 @@ function startTestServer(syncConfig?: {
 	verifyToken?: (token: string) => boolean | Promise<boolean>;
 }) {
 	const app = new Elysia()
-		.use(new Elysia({ prefix: '/rooms' }).use(createSyncPlugin(syncConfig)))
+		.use(new Elysia({ prefix: '/rooms' }).use(createWsSyncPlugin(syncConfig)))
 		.get('/', () => ({ status: 'ok' }));
 	app.listen(0);
 	if (!app.server) {
@@ -67,7 +67,7 @@ function startIntegratedTestServer({
 }: {
 	getDoc: (roomId: string) => Y.Doc | undefined;
 }) {
-	const syncPlugin = createSyncPlugin({ getDoc });
+	const syncPlugin = createWsSyncPlugin({ getDoc });
 	const app = new Elysia().use(syncPlugin).get('/', () => ({ status: 'ok' }));
 	app.listen(0);
 	if (!app.server) {
@@ -197,17 +197,11 @@ function waitForLocalChanges(
 	});
 }
 
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-	const buffer = new ArrayBuffer(bytes.byteLength);
-	new Uint8Array(buffer).set(bytes);
-	return buffer;
-}
-
 // ============================================================================
 // Document Sync Tests
 // ============================================================================
 
-describe('sync plugin integration', () => {
+describe('ws sync plugin integration', () => {
 	let ctx: ReturnType<typeof startTestServer>;
 
 	beforeAll(() => {
@@ -386,7 +380,7 @@ describe('sync plugin integration', () => {
 	});
 });
 
-describe('sync plugin integrated mode', () => {
+describe('ws sync plugin integrated mode', () => {
 	test('closes with 4004 when getDoc returns undefined', async () => {
 		const ctx = startIntegratedTestServer({ getDoc: () => undefined });
 		const room = uniqueRoom();
@@ -407,10 +401,10 @@ describe('sync plugin integrated mode', () => {
 });
 
 // ============================================================================
-// REST Integration Tests
+// Room List Tests
 // ============================================================================
 
-describe('sync plugin REST room list', () => {
+describe('ws sync plugin room list', () => {
 	test('returns empty rooms array when no rooms are active', async () => {
 		const ctx = startTestServer();
 
@@ -472,224 +466,11 @@ describe('sync plugin REST room list', () => {
 	});
 });
 
-describe('sync plugin REST document snapshot', () => {
-	test('returns 404 when room does not exist', async () => {
-		const ctx = startTestServer();
-
-		try {
-			const room = uniqueRoom();
-			const res = await fetch(ctx.httpUrl(`/rooms/${room}`));
-			expect(res.status).toBe(404);
-			expect(await res.text()).toBe(`Room not found: ${room}`);
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('returns binary snapshot that can be applied to a fresh doc', async () => {
-		const ctx = startTestServer();
-		const room = uniqueRoom();
-		const writerDoc = new Y.Doc();
-		const provider = createSyncProvider({
-			doc: writerDoc,
-			url: ctx.wsUrl(room),
-		});
-
-		try {
-			await waitForStatus(provider, 'connected');
-			await waitForLocalChanges(provider, false);
-
-			writerDoc.getMap('data').set('from-ws', 'hello-rest');
-			expect(provider.hasLocalChanges).toBe(true);
-			await waitForLocalChanges(provider, false);
-
-			const res = await fetch(ctx.httpUrl(`/rooms/${room}`));
-			expect(res.status).toBe(200);
-			expect(res.headers.get('content-type')).toContain(
-				'application/octet-stream',
-			);
-
-			const update = new Uint8Array(await res.arrayBuffer());
-			expect(update.length).toBeGreaterThan(0);
-
-			const restoredDoc = new Y.Doc();
-			Y.applyUpdate(restoredDoc, update);
-			expect(restoredDoc.getMap('data').get('from-ws')).toBe('hello-rest');
-		} finally {
-			provider.destroy();
-			await ctx.server.stop();
-		}
-	});
-});
-
-describe('sync plugin REST document update', () => {
-	test('creates room on demand and update is visible to later WS clients', async () => {
-		const ctx = startTestServer();
-		const room = uniqueRoom();
-
-		try {
-			const sourceDoc = new Y.Doc();
-			sourceDoc.getMap('data').set('seed', 'from-rest');
-			const update = Y.encodeStateAsUpdate(sourceDoc);
-
-			const postRes = await fetch(ctx.httpUrl(`/rooms/${room}`), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/octet-stream' },
-				body: toArrayBuffer(update),
-			});
-
-			expect(postRes.status).toBe(200);
-			expect(await postRes.json()).toEqual({ ok: true });
-
-			const wsDoc = new Y.Doc();
-			const provider = createSyncProvider({ doc: wsDoc, url: ctx.wsUrl(room) });
-
-			try {
-				await waitForStatus(provider, 'connected');
-				const value = await waitForMapKey(wsDoc, 'data', 'seed');
-				expect(value).toBe('from-rest');
-			} finally {
-				provider.destroy();
-			}
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('returns 400 for empty body', async () => {
-		const ctx = startTestServer();
-		const room = uniqueRoom();
-
-		try {
-			const res = await fetch(ctx.httpUrl(`/rooms/${room}`), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/octet-stream' },
-				body: new ArrayBuffer(0),
-			});
-
-			expect(res.status).toBe(400);
-			expect(await res.text()).toBe('Empty update body');
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('returns 404 when getDoc rejects room in integrated mode', async () => {
-		const ctx = startIntegratedTestServer({ getDoc: () => undefined });
-		const room = uniqueRoom();
-
-		try {
-			const sourceDoc = new Y.Doc();
-			sourceDoc.getMap('data').set('ignored', 'value');
-			const update = Y.encodeStateAsUpdate(sourceDoc);
-
-			const res = await fetch(ctx.httpUrl(`/${room}`), {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/octet-stream' },
-				body: toArrayBuffer(update),
-			});
-
-			expect(res.status).toBe(404);
-			expect(await res.text()).toBe(`Room not found: ${room}`);
-		} finally {
-			ctx.app.stop();
-		}
-	});
-});
-
-describe('sync plugin REST auth', () => {
-	test('returns 401 without Authorization header when auth is configured', async () => {
-		const ctx = startTestServer({ verifyToken: (t: string) => t === 'secret' });
-
-		try {
-			const res = await fetch(ctx.httpUrl('/rooms/'));
-			expect(res.status).toBe(401);
-			expect(await res.text()).toBe('Unauthorized');
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('returns 401 with wrong Bearer token', async () => {
-		const ctx = startTestServer({ verifyToken: (t: string) => t === 'secret' });
-
-		try {
-			const res = await fetch(ctx.httpUrl('/rooms/'), {
-				headers: { Authorization: 'Bearer wrong' },
-			});
-			expect(res.status).toBe(401);
-			expect(await res.text()).toBe('Unauthorized');
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('works with correct Bearer token', async () => {
-		const ctx = startTestServer({ verifyToken: (t: string) => t === 'secret' });
-		const room = uniqueRoom();
-
-		try {
-			const sourceDoc = new Y.Doc();
-			sourceDoc.getMap('data').set('k', 'v');
-			const update = Y.encodeStateAsUpdate(sourceDoc);
-
-			const postRes = await fetch(ctx.httpUrl(`/rooms/${room}`), {
-				method: 'POST',
-				headers: {
-					Authorization: 'Bearer secret',
-					'Content-Type': 'application/octet-stream',
-				},
-				body: toArrayBuffer(update),
-			});
-			expect(postRes.status).toBe(200);
-
-			const getRes = await fetch(ctx.httpUrl('/rooms/'), {
-				headers: { Authorization: 'Bearer secret' },
-			});
-			expect(getRes.status).toBe(200);
-			expect(await getRes.json()).toEqual({
-				rooms: [{ id: room, connections: 0 }],
-			});
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('works without auth when no auth is configured', async () => {
-		const ctx = startTestServer();
-
-		try {
-			const res = await fetch(ctx.httpUrl('/rooms/'));
-			expect(res.status).toBe(200);
-			expect(await res.json()).toEqual({ rooms: [] });
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-
-	test('ignores token query param for REST routes (Bearer header only)', async () => {
-		const ctx = startTestServer({ verifyToken: (t: string) => t === 'secret' });
-
-		try {
-			const queryTokenRes = await fetch(ctx.httpUrl('/rooms/?token=secret'));
-			expect(queryTokenRes.status).toBe(401);
-
-			const headerRes = await fetch(ctx.httpUrl('/rooms/?token=wrong'), {
-				headers: { Authorization: 'Bearer secret' },
-			});
-			expect(headerRes.status).toBe(200);
-			expect(await headerRes.json()).toEqual({ rooms: [] });
-		} finally {
-			await ctx.server.stop();
-		}
-	});
-});
-
 // ============================================================================
-// Auth Tests (separate servers per test — different auth configs)
+// WS Auth Tests (separate servers per test — different auth configs)
 // ============================================================================
 
-describe('sync plugin auth', () => {
+describe('ws sync plugin auth', () => {
 	/**
 	 * Helper to assert a provider never reaches 'connected'.
 	 *

@@ -15,4 +15,4 @@ export {
 	type SupportedProvider,
 } from './providers';
 export { DEFAULT_PORT, listenWithFallback } from './server';
-export { createSyncPlugin, type SyncPluginConfig } from './sync';
+export { createWsSyncPlugin, type WsSyncPluginConfig } from './sync';

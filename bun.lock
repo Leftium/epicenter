@@ -380,6 +380,7 @@
       "name": "@epicenter/server",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/sync-core": "workspace:*",
         "elysia": "^1.2.25",
         "lib0": "catalog:",
         "wellcrafted": "catalog:",
@@ -471,6 +472,21 @@
       "dependencies": {
         "lib0": "catalog:",
         "y-protocols": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/sync-core": {
+      "name": "@epicenter/sync-core",
+      "version": "0.0.1",
+      "dependencies": {
+        "lib0": "catalog:",
+        "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -733,6 +749,8 @@
     "@epicenter/svelte-utils": ["@epicenter/svelte-utils@workspace:packages/svelte-utils"],
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
+
+    "@epicenter/sync-core": ["@epicenter/sync-core@workspace:packages/sync-core"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

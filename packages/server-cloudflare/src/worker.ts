@@ -1,5 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import {
+	oauthProviderOpenIdConfigMetadata,
+	oauthProviderAuthServerMetadata,
+} from '@better-auth/oauth-provider';
 import { createAuth } from './auth/better-auth';
 import { createAuthMiddleware } from './auth/middleware';
 import { createMigrateHandler } from './auth/migrate';
@@ -13,6 +17,7 @@ export type Bindings = {
 	YJS_ROOM: DurableObjectNamespace;
 	SESSION_KV: KVNamespace;
 	AUTH_SECRET: string;
+	BASE_URL?: string; // e.g. https://api.epicenter.so — OAuth issuer
 	OPENAI_API_KEY?: string;
 	ANTHROPIC_API_KEY?: string;
 	GEMINI_API_KEY?: string;
@@ -51,6 +56,16 @@ app.get('/', (c) =>
 app.on(['GET', 'POST'], '/auth/*', (c) => {
 	return createAuth(c.env).handler(c.req.raw);
 });
+
+// --- OAuth Discovery (must be at root, not under /auth) ---
+// Type assertion: createAuth() returns a generic Auth type that loses plugin-
+// specific API methods from the cache. The oauthProvider plugin adds these at runtime.
+app.get('/.well-known/openid-configuration', (c) =>
+	oauthProviderOpenIdConfigMetadata(createAuth(c.env) as never)(c.req.raw),
+);
+app.get('/.well-known/oauth-authorization-server', (c) =>
+	oauthProviderAuthServerMetadata(createAuth(c.env) as never)(c.req.raw),
+);
 
 // --- DB Migrations (protected, deploy-time only) ---
 app.post('/migrate', createMigrateHandler());

@@ -1,10 +1,12 @@
 import { betterAuth } from 'better-auth';
-import { bearer } from 'better-auth/plugins';
+import { bearer, jwt } from 'better-auth/plugins';
+import { oauthProvider } from '@better-auth/oauth-provider';
 
 type AuthEnv = {
 	DATABASE_URL: string;
 	SESSION_KV: KVNamespace;
 	AUTH_SECRET: string;
+	BASE_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
 };
 
 // Module-level cache. Cloudflare Workers reuse isolates across requests,
@@ -20,6 +22,7 @@ export function createAuth(env: AuthEnv) {
 			type: 'postgres',
 			url: env.DATABASE_URL,
 		},
+		baseURL: env.BASE_URL,
 		basePath: '/auth',
 		secret: env.AUTH_SECRET,
 		emailAndPassword: { enabled: true },
@@ -39,7 +42,28 @@ export function createAuth(env: AuthEnv) {
 				strategy: 'jwe',
 			},
 		},
-		plugins: [bearer()],
+		advanced: {
+			crossSubDomainCookies: {
+				enabled: true,
+				domain: 'epicenter.so',
+			},
+		},
+		trustedOrigins: [
+			'https://epicenter.so',
+			'https://app.epicenter.so',
+			'https://api.epicenter.so',
+			'tauri://localhost', // Tauri desktop app
+		],
+		plugins: [
+			bearer(),
+			jwt(),
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				allowDynamicClientRegistration: true,
+			}),
+		],
 		// Cloudflare KV as secondary storage for session caching.
 		// Bearer-token clients (mobile, Tauri) can't use cookieCache, so KV
 		// handles their session lookups at the edge (~5ms) instead of hitting

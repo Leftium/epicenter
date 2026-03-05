@@ -6,7 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # --- KV: Session cache (Better Auth SecondaryStorage) ---
 [[kv_namespaces]]
 binding = "SESSION_KV"
-id = "<your-kv-id>"
+id = "local-dev-placeholder" # Replace with real KV ID for production
 
 # --- Durable Objects ---
 [[durable_objects.bindings]]
@@ -17,6 +17,10 @@ class_name = "YjsRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["YjsRoom"]
+
+# --- Vars ---
+[vars]
+BASE_URL = "https://api.epicenter.so"
 
 # --- Secrets (set via `wrangler secret put`) ---
 # DATABASE_URL

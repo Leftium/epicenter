@@ -13,14 +13,14 @@ import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { authSchemaConfig } from './src/auth-base';
+import { baseAuthConfig } from './src/auth-base';
 import { env } from './src/env';
 
 const sql = neon(env.DATABASE_URL);
 const db = drizzle(sql);
 
 export const auth = betterAuth({
-	...authSchemaConfig,
+	...baseAuthConfig,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	secret: env.BETTER_AUTH_SECRET,
 });

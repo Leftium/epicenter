@@ -3,7 +3,7 @@ import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
-import { authSchemaConfig } from './auth-base';
+import { baseAuthConfig } from './auth-base';
 import { factory } from './hono';
 
 const sql = neon(env.DATABASE_URL);
@@ -11,7 +11,7 @@ const db = drizzle(sql);
 
 /** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
 export const auth = betterAuth({
-	...authSchemaConfig,
+	...baseAuthConfig,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	baseURL: env.BETTER_AUTH_URL,
 	secret: env.BETTER_AUTH_SECRET,

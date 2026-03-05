@@ -147,9 +147,6 @@ export type {
 	AwarenessState,
 	// Base row type
 	BaseRow,
-	// JSON types (re-exported from wellcrafted/json)
-	JsonObject,
-	JsonValue,
 	DeleteResult,
 	// Document types
 	DocumentConfig,
@@ -164,6 +161,9 @@ export type {
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
+	// JSON types (re-exported from wellcrafted/json)
+	JsonObject,
+	JsonValue,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,

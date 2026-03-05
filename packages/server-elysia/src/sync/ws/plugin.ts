@@ -1,4 +1,3 @@
-import { Elysia, t } from 'elysia';
 import {
 	type ConnectionState,
 	createRoomManager,
@@ -6,6 +5,7 @@ import {
 	handleWsMessage,
 	handleWsOpen,
 } from '@epicenter/sync-core';
+import { Elysia, t } from 'elysia';
 import type * as Y from 'yjs';
 
 /** Interval between server-initiated ping frames (ms). Detects dead clients. */
@@ -69,7 +69,8 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 			async beforeHandle({ query, status }) {
 				if (!verifyToken) return;
-				if (!query.token || !(await verifyToken(query.token))) return status(401);
+				if (!query.token || !(await verifyToken(query.token)))
+					return status(401);
 			},
 
 			async open(ws) {
@@ -79,8 +80,11 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 				const rawWs = ws.raw;
 
-				const result = handleWsOpen(roomManager, roomId, rawWs, (data: Uint8Array) =>
-					ws.sendBinary(data),
+				const result = handleWsOpen(
+					roomManager,
+					roomId,
+					rawWs,
+					(data: Uint8Array) => ws.sendBinary(data),
 				);
 
 				if (!result.ok) {
@@ -152,14 +156,21 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 				const result = handleWsMessage(data, state.syncState);
 
 				if (result.response) ws.sendBinary(result.response);
-				if (result.broadcast) roomManager.broadcast(state.syncState.roomId, result.broadcast, ws.raw);
+				if (result.broadcast)
+					roomManager.broadcast(
+						state.syncState.roomId,
+						result.broadcast,
+						ws.raw,
+					);
 			},
 
 			close(ws) {
 				const state = connectionState.get(ws.raw);
 				if (!state) return;
 
-				console.log(`[Sync] Client disconnected from room: ${state.syncState.roomId}`);
+				console.log(
+					`[Sync] Client disconnected from room: ${state.syncState.roomId}`,
+				);
 
 				// Clean up ping/pong keepalive
 				if (state.pingInterval) {

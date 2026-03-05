@@ -1,5 +1,8 @@
+import {
+	isSupportedProvider,
+	type SupportedProvider,
+} from '@epicenter/sync-core';
 import type { Context } from 'hono';
-import { isSupportedProvider, type SupportedProvider } from '@epicenter/sync-core';
 import type { Bindings, Variables } from '../worker';
 
 const PROVIDER_CONFIG: Record<
@@ -45,9 +48,7 @@ export function createProxyHandler() {
 		}
 
 		const config = PROVIDER_CONFIG[provider];
-		const apiKey = c.env[config.envKey as keyof Bindings] as
-			| string
-			| undefined;
+		const apiKey = c.env[config.envKey as keyof Bindings] as string | undefined;
 		if (!apiKey) {
 			return c.json({ error: `${provider} not configured` }, 503);
 		}
@@ -59,8 +60,7 @@ export function createProxyHandler() {
 		// Clone headers, replace session token with real API key
 		const headers = new Headers(c.req.raw.headers);
 		headers.delete('authorization');
-		const value =
-			config.format === 'Bearer' ? `Bearer ${apiKey}` : apiKey;
+		const value = config.format === 'Bearer' ? `Bearer ${apiKey}` : apiKey;
 		headers.set(config.authHeader, value);
 
 		const response = await fetch(targetUrl, {

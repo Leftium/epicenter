@@ -1,5 +1,5 @@
-import * as Y from 'yjs';
 import type { SyncStorage } from '@epicenter/sync-core';
+import * as Y from 'yjs';
 
 /**
  * SyncStorage implementation backed by Durable Object SQLite.

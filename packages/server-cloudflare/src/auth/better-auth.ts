@@ -1,6 +1,6 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { bearer, jwt } from 'better-auth/plugins';
-import { oauthProvider } from '@better-auth/oauth-provider';
 
 type AuthEnv = {
 	DATABASE_URL: string;

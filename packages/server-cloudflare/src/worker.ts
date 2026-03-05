@@ -1,13 +1,13 @@
+import {
+	oauthProviderAuthServerMetadata,
+	oauthProviderOpenIdConfigMetadata,
+} from '@better-auth/oauth-provider';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import {
-	oauthProviderOpenIdConfigMetadata,
-	oauthProviderAuthServerMetadata,
-} from '@better-auth/oauth-provider';
+import { createAiChatHandler } from './ai/chat';
 import { createAuth } from './auth/better-auth';
 import { createAuthMiddleware } from './auth/middleware';
 import { createMigrateHandler } from './auth/migrate';
-import { createAiChatHandler } from './ai/chat';
 import { createProxyHandler } from './proxy/handler';
 
 export { YjsRoom } from './sync/yjs-room';

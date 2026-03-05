@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { createAuth } from './better-auth';
 import type { Bindings } from '../worker';
+import { createAuth } from './better-auth';
 
 export function createMigrateHandler() {
 	return async (c: Context<{ Bindings: Bindings }>) => {
@@ -13,8 +13,9 @@ export function createMigrateHandler() {
 				runMigrations: () => Promise<void>;
 			}>;
 		};
-		const { toBeCreated, toBeAdded, runMigrations } =
-			await getMigrations(auth.options);
+		const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(
+			auth.options,
+		);
 
 		if (toBeCreated.length === 0 && toBeAdded.length === 0) {
 			return c.json({ message: 'No migrations needed' });

@@ -1,7 +1,7 @@
-import { createMiddleware } from 'hono/factory';
 import { extractBearerToken } from '@epicenter/sync-core';
-import { createAuth } from './better-auth';
+import { createMiddleware } from 'hono/factory';
 import type { Bindings, Variables } from '../worker';
+import { createAuth } from './better-auth';
 
 export function createAuthMiddleware() {
 	return createMiddleware<{ Bindings: Bindings; Variables: Variables }>(

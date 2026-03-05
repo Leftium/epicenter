@@ -1,17 +1,16 @@
-import type { Context } from 'hono';
 import {
 	isSupportedProvider,
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
+import type { Context } from 'hono';
 import type { Bindings, Variables } from '../worker';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
 	openai: 'https://api.openai.com/v1/chat/completions',
 	anthropic: 'https://api.anthropic.com/v1/messages',
-	gemini:
-		'https://generativelanguage.googleapis.com/v1beta/chat/completions',
+	gemini: 'https://generativelanguage.googleapis.com/v1beta/chat/completions',
 	grok: 'https://api.x.ai/v1/chat/completions',
 };
 
@@ -39,8 +38,7 @@ export function createAiChatHandler() {
 			return c.json({ error: `Unsupported provider: ${provider}` }, 400);
 		}
 
-		const envKey =
-			PROVIDER_ENV_VARS[provider] as keyof Bindings;
+		const envKey = PROVIDER_ENV_VARS[provider] as keyof Bindings;
 		const apiKey = c.env[envKey] as string | undefined;
 		if (!apiKey) {
 			return c.json(
@@ -75,8 +73,7 @@ export function createAiChatHandler() {
 			status: providerResponse.status,
 			headers: {
 				'content-type':
-					providerResponse.headers.get('content-type') ??
-					'text/event-stream',
+					providerResponse.headers.get('content-type') ?? 'text/event-stream',
 			},
 		});
 	};

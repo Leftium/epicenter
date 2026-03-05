@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       # NOTE: This workflow is a no-op until <!-- sponsors --><!-- sponsors -->
       # markers are added to README.md.

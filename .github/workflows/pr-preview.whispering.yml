@@ -62,7 +62,7 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Install create-dmg (macOS only)
         if: matrix.platform == 'macos-latest'
@@ -90,7 +90,7 @@ jobs:
           bun-version-file: "package.json"
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
@@ -185,7 +185,7 @@ jobs:
           fi
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: whispering-pr${{ github.event.pull_request.number }}-${{ steps.artifact.outputs.suffix }}
           path: |

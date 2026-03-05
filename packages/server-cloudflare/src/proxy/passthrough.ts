@@ -2,7 +2,7 @@ import {
 	isSupportedProvider,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import { factory } from '../env';
+import { factory } from '../hono';
 
 const PROVIDER_CONFIG = {
 	openai: {

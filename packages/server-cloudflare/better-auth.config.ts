@@ -4,7 +4,7 @@
  * Run via:
  *   bun run auth:generate  — generate Drizzle schema from Better Auth tables
  *
- * Loads `.dev.vars` via `src/cli-env.ts`.
+ * Loads `.dev.vars` via `src/env.ts`.
  * Schema-affecting options (basePath, plugins, emailAndPassword) come from
  * `src/auth-base.ts` — the single source of truth.
  */
@@ -14,13 +14,13 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { authSchemaConfig } from './src/auth-base';
-import { cliEnv } from './src/cli-env';
+import { env } from './src/env';
 
-const sql = neon(cliEnv.DATABASE_URL);
+const sql = neon(env.DATABASE_URL);
 const db = drizzle(sql);
 
 export const auth = betterAuth({
 	...authSchemaConfig,
 	database: drizzleAdapter(db, { provider: 'pg' }),
-	secret: cliEnv.BETTER_AUTH_SECRET,
+	secret: env.BETTER_AUTH_SECRET,
 });

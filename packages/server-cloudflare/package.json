@@ -12,7 +12,10 @@
 		"deploy": "wrangler deploy",
 		"typecheck": "tsc --noEmit",
 		"auth:generate": "bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ./src/db/schema.ts",
-		"auth:migrate": "bun x @better-auth/cli migrate --yes --config ./better-auth.config.ts",
+		"db:push": "drizzle-kit push",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "drizzle-kit migrate",
+		"db:studio": "drizzle-kit studio",
 		"typegen": "wrangler types"
 	},
 	"dependencies": {

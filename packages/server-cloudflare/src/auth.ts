@@ -4,7 +4,7 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { authSchemaConfig } from './auth-base';
-import { factory } from './env';
+import { factory } from './hono';
 
 const sql = neon(env.DATABASE_URL);
 const db = drizzle(sql);

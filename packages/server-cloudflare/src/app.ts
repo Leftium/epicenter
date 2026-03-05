@@ -4,7 +4,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { cors } from 'hono/cors';
 import { auth, createAuthMiddleware } from './auth';
-import { factory } from './env';
+import { factory } from './hono';
 import { createAiChatHandler } from './proxy/chat';
 import { createProxyHandler } from './proxy/passthrough';
 

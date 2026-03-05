@@ -1,9 +1,32 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 import type { MaybePromise, WhisperingError } from '$lib/result';
 
 export const TextError = defineErrors({
-	Service: ({ message }: { message: string }) => ({ message }),
+	ClipboardRead: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to read from clipboard: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	ClipboardWrite: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to write to clipboard: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	WriteToCursor: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to write text at cursor position: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	SimulateKeystroke: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to simulate keystroke: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	NotSupported: ({ operation }: { operation: string }) => ({
+		message: `${operation} is not supported in this environment for security reasons.`,
+		operation,
+	}),
 });
 export type TextError = InferErrors<typeof TextError>;
 

@@ -1,5 +1,5 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.4/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
@@ -73,7 +73,9 @@
 				"rules": {
 					"correctness": {
 						// Biome can't see template usage, so namespace imports appear unused
-						"noUnusedImports": "off"
+						"noUnusedImports": "off",
+						// Biome can't see template usage, so template handlers look unused
+						"noUnusedVariables": "off"
 					},
 					"style": {
 						// Svelte runes are flagged as "const"-able

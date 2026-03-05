@@ -2,7 +2,12 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "landing",
 	"compatibility_date": "2025-07-29",
-	"pages_build_output_dir": "dist",
+	"assets": {
+		"directory": "dist",
+		"not_found_handling": "404-page"
+	},
+	// Enable preview URLs for PR previews via `wrangler versions upload --preview-alias`
+	"preview_urls": true,
 	"observability": {
 		"enabled": true
 	}

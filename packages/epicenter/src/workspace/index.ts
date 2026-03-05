@@ -5,7 +5,7 @@
  * with versioned tables and KV stores.
  *
  * All table and KV schemas must include `_v: number` as a discriminant field.
- * Use shorthand for single versions, builder pattern for multiple versions with migrations.
+ * Use shorthand for single versions, variadic args for multiple versions with migrations.
  *
  * @example
  * ```typescript
@@ -15,30 +15,30 @@
  * // Tables: shorthand for single version
  * const users = defineTable(type({ id: 'string', email: 'string', _v: '1' }));
  *
- * // Tables: builder pattern for multiple versions with migration
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '1' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
- *   .migrate((row) => {
- *     switch (row._v) {
- *       case 1: return { ...row, views: 0, _v: 2 };
- *       case 2: return row;
- *     }
- *   });
+ * // Tables: variadic for multiple versions with migration
+ * const posts = defineTable(
+ *   type({ id: 'string', title: 'string', _v: '1' }),
+ *   type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+ * ).migrate((row) => {
+ *   switch (row._v) {
+ *     case 1: return { ...row, views: 0, _v: 2 };
+ *     case 2: return row;
+ *   }
+ * });
  *
  * // KV: shorthand for single version
  * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number', _v: '1' }));
  *
- * // KV: builder pattern for multiple versions with migration
- * const theme = defineKv()
- *   .version(type({ mode: "'light' | 'dark'", _v: '1' }))
- *   .version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }))
- *   .migrate((v) => {
- *     switch (v._v) {
- *       case 1: return { ...v, fontSize: 14, _v: 2 };
- *       case 2: return v;
- *     }
- *   });
+ * // KV: variadic for multiple versions with migration
+ * const theme = defineKv(
+ *   type({ mode: "'light' | 'dark'", _v: '1' }),
+ *   type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }),
+ * ).migrate((v) => {
+ *   switch (v._v) {
+ *     case 1: return { ...v, fontSize: 14, _v: 2 };
+ *     case 2: return v;
+ *   }
+ * });
  *
  * // Create client (synchronous, directly usable)
  * const client = createWorkspace({
@@ -161,6 +161,9 @@ export type {
 	InferKvValue,
 	InferTableRow,
 	InvalidRowResult,
+	// JSON types (re-exported from wellcrafted/json)
+	JsonObject,
+	JsonValue,
 	KvChange,
 	KvDefinition,
 	KvDefinitions,

@@ -162,7 +162,7 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
 1. **Use `defineErrors` namespaces**: Group related errors under a single namespace
 
    ```typescript
-   const RecorderServiceError = defineErrors({
+   const RecorderError = defineErrors({
      AlreadyRecording: () => ({
        message: 'A recording is already in progress. Please stop the current recording.',
      }),
@@ -171,17 +171,17 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
        cause,
      }),
    });
-   type RecorderServiceError = InferErrors<typeof RecorderServiceError>;
+   type RecorderError = InferErrors<typeof RecorderError>;
    ```
 
 2. **Accept `cause: unknown`, extract inside constructor**: Error constructors accept the raw caught error and call `extractErrorMessage(cause)` inside the message template. Call sites stay clean with `{ cause: error }`.
 
    ```typescript
    // ✅ GOOD: cause: error at call site, extractErrorMessage in constructor
-   catch: (error) => RecorderServiceError.InitFailed({ cause: error })
+   catch: (error) => RecorderError.InitFailed({ cause: error })
 
    // ❌ BAD: extractErrorMessage at call site, string passed to constructor
-   catch: (error) => RecorderServiceError.InitFailed({ underlyingError: extractErrorMessage(error) })
+   catch: (error) => RecorderError.InitFailed({ underlyingError: extractErrorMessage(error) })
    ```
 
 3. **Map Platform Errors**: Transform platform-specific errors
@@ -202,7 +202,13 @@ Services should **never** import or use `WhisperingError`. That transformation h
 import { WhisperingError } from '$lib/result';
 
 // ✅ CORRECT - Service uses its own error type
-type MyServiceError = TaggedError<'MyServiceError'>;
+const MyError = defineErrors({
+	Failed: ({ cause }: { cause: unknown }) => ({
+		message: `Operation failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+type MyError = InferErrors<typeof MyError>;
 ```
 
 The query layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
@@ -214,11 +220,11 @@ The query layer is responsible for transforming service errors into `WhisperingE
 ### Real-World Example: Recording Service Errors
 
 ```typescript
-const RecorderServiceError = defineErrors({
+const RecorderError = defineErrors({
 	AlreadyRecording: () => ({
 		message: 'A recording is already in progress. Please stop the current recording.',
 	}),
-	StreamAcquisitionFailed: ({ cause }: { cause: unknown }) => ({
+	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
@@ -227,23 +233,23 @@ const RecorderServiceError = defineErrors({
 		cause,
 	}),
 });
-type RecorderServiceError = InferErrors<typeof RecorderServiceError>;
+type RecorderError = InferErrors<typeof RecorderError>;
 
 export function createManualRecorderService() {
 	return {
 		startRecording: async (
 			recordingSettings,
 			{ sendStatus },
-		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
+		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
 			if (activeRecording) {
-				return RecorderServiceError.AlreadyRecording();
+				return RecorderError.AlreadyRecording();
 			}
 
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream(selectedDeviceId, sendStatus);
 
 			if (acquireStreamError) {
-				return RecorderServiceError.StreamAcquisitionFailed({
+				return RecorderError.StreamAcquisition({
 					cause: acquireStreamError,
 				});
 			}
@@ -268,7 +274,7 @@ Never wrap an already-wrapped error. The query layer handles the single transfor
 ```typescript
 // ❌ BAD: Service returns tagged error, query wraps it, then UI wraps again
 if (error) {
-	const whisperingError = WhisperingErr({
+	const whisperingError = WhisperingError({
 		/* ... */
 	});
 	notify.error.execute({ ...whisperingError.error }); // Double wrapping!

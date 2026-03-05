@@ -1,6 +1,10 @@
 import { appLocalDataDir, join } from '@tauri-apps/api/path';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import type { WorkspaceTemplate } from '$lib/templates';
@@ -17,7 +21,18 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const WorkspaceError = defineErrors({
-	Failed: ({ message }: { message: string }) => ({ message }),
+	NotFound: ({ workspaceId }: { workspaceId: string }) => ({
+		message: `Workspace "${workspaceId}" not found`,
+		workspaceId,
+	}),
+	NotImplemented: ({ feature }: { feature: string }) => ({
+		message: `${feature} is not yet implemented`,
+		feature,
+	}),
+	DirectoryAccessFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to open workspaces directory: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 export type WorkspaceError = InferErrors<typeof WorkspaceError>;
 
@@ -56,9 +71,7 @@ export const workspaces = {
 			queryFn: async () => {
 				const definition = await getWorkspace(workspaceId);
 				if (!definition) {
-					return WorkspaceError.Failed({
-						message: `Workspace "${workspaceId}" not found`,
-					});
+					return WorkspaceError.NotFound({ workspaceId });
 				}
 				return Ok(definition);
 			},
@@ -114,9 +127,7 @@ export const workspaces = {
 			});
 
 			if (!updated) {
-				return WorkspaceError.Failed({
-					message: `Workspace "${input.workspaceId}" not found`,
-				});
+				return WorkspaceError.NotFound({ workspaceId: input.workspaceId });
 			}
 
 			console.log(`[updateWorkspace] Updated workspace:`, {
@@ -143,9 +154,7 @@ export const workspaces = {
 			const deleted = await deleteWorkspace(id);
 
 			if (!deleted) {
-				return WorkspaceError.Failed({
-					message: `Workspace "${id}" not found`,
-				});
+				return WorkspaceError.NotFound({ workspaceId: id });
 			}
 
 			// Invalidate queries
@@ -168,9 +177,7 @@ export const workspaces = {
 				await revealItemInDir(workspacesPath);
 				return Ok(undefined);
 			} catch (error) {
-				return WorkspaceError.Failed({
-					message: `Failed to open workspaces directory: ${error}`,
-				});
+				return WorkspaceError.DirectoryAccessFailed({ cause: error });
 			}
 		},
 	}),
@@ -192,9 +199,7 @@ export const workspaces = {
 			description?: string;
 		}) => {
 			// TODO: Implement via updateWorkspaceDefinition
-			return WorkspaceError.Failed({
-				message: 'Adding tables is not yet implemented',
-			});
+			return WorkspaceError.NotImplemented({ feature: 'Adding tables' });
 		},
 	}),
 
@@ -205,9 +210,7 @@ export const workspaces = {
 		mutationKey: ['workspaces', 'removeTable'],
 		mutationFn: async (_input: { workspaceId: string; tableName: string }) => {
 			// TODO: Implement via updateWorkspaceDefinition
-			return WorkspaceError.Failed({
-				message: 'Removing tables is not yet implemented',
-			});
+			return WorkspaceError.NotImplemented({ feature: 'Removing tables' });
 		},
 	}),
 
@@ -222,9 +225,7 @@ export const workspaces = {
 			key: string;
 		}) => {
 			// TODO: Implement via updateWorkspaceDefinition
-			return WorkspaceError.Failed({
-				message: 'Adding KV entries is not yet implemented',
-			});
+			return WorkspaceError.NotImplemented({ feature: 'Adding KV entries' });
 		},
 	}),
 
@@ -235,9 +236,7 @@ export const workspaces = {
 		mutationKey: ['workspaces', 'removeKvEntry'],
 		mutationFn: async (_input: { workspaceId: string; key: string }) => {
 			// TODO: Implement via updateWorkspaceDefinition
-			return WorkspaceError.Failed({
-				message: 'Removing KV entries is not yet implemented',
-			});
+			return WorkspaceError.NotImplemented({ feature: 'Removing KV entries' });
 		},
 	}),
 };

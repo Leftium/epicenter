@@ -2,21 +2,21 @@ import { createSyncProvider, type SyncProvider } from '@epicenter/sync';
 import type { ExtensionFactory } from '../workspace/types';
 
 /**
- * Sync extension configuration.
+ * WebSocket sync extension configuration.
  *
  * Supports two auth modes:
  * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
  * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
  * Persistence is handled separately — add a persistence extension before sync
- * in the `.withExtension()` chain. The sync extension waits for all prior
- * extensions via `context.whenReady` before connecting the WebSocket.
+ * in the `.withExtension()` chain. The WebSocket sync extension waits for all
+ * prior extensions via `context.whenReady` before connecting the WebSocket.
  *
  * @example Open mode (local dev)
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({
+ *   .withExtension('sync', createWsSyncExtension({
  *     url: 'ws://localhost:3913/rooms/{id}',
  *   }))
  * ```
@@ -25,7 +25,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({
+ *   .withExtension('sync', createWsSyncExtension({
  *     url: 'wss://sync.epicenter.so/rooms/{id}',
  *     getToken: async (workspaceId) => {
  *       const res = await fetch('/api/sync/token', {
@@ -37,7 +37,7 @@ import type { ExtensionFactory } from '../workspace/types';
  *   }))
  * ```
  */
-export type SyncExtensionConfig = {
+export type WsSyncExtensionConfig = {
 	/**
 	 * WebSocket URL. Use `{id}` as a placeholder for the workspace ID,
 	 * or provide a function that receives the workspace ID and returns the URL.
@@ -52,7 +52,7 @@ export type SyncExtensionConfig = {
 };
 
 /**
- * Creates a sync extension that connects a WebSocket after prior extensions are ready.
+ * Creates a WebSocket sync extension that connects after prior extensions are ready.
  *
  * Lifecycle:
  * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
@@ -66,16 +66,15 @@ export type SyncExtensionConfig = {
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createSyncExtension({
+ *   .withExtension('sync', createWsSyncExtension({
  *     url: 'ws://localhost:3913/rooms/{id}',
  *   }))
  * ```
  */
-export function createSyncExtension(
-	config: SyncExtensionConfig,
+export function createWsSyncExtension(
+	config: WsSyncExtensionConfig,
 ): ExtensionFactory {
-	return (ctx) => {
-		const { ydoc, awareness } = ctx;
+	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
 		// Resolve URL — supports string with {id} placeholder or function
@@ -89,7 +88,7 @@ export function createSyncExtension(
 			doc: ydoc,
 			url: resolvedUrl,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken?.(workspaceId)
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,
@@ -99,7 +98,7 @@ export function createSyncExtension(
 		// This ensures the Y.Doc has local state loaded before syncing,
 		// giving an accurate state vector for the initial WebSocket handshake.
 		const whenReady = (async () => {
-			await ctx.whenReady;
+			await priorReady;
 			provider.connect();
 		})();
 
@@ -122,10 +121,7 @@ export function createSyncExtension(
 			 * ```
 			 */
 			reconnect(
-				newConfig: {
-					url?: string;
-					getToken?: () => Promise<string>;
-				} = {},
+				newConfig: { url?: string; getToken?: () => Promise<string> } = {},
 			) {
 				provider.destroy();
 				provider = createSyncProvider({
@@ -143,3 +139,8 @@ export function createSyncExtension(
 		};
 	};
 }
+
+/** @deprecated Use `createWsSyncExtension` instead. */
+export const createSyncExtension = createWsSyncExtension;
+/** @deprecated Use `WsSyncExtensionConfig` instead. */
+export type SyncExtensionConfig = WsSyncExtensionConfig;

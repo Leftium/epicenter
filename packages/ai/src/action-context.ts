@@ -60,14 +60,16 @@ type ActionNames<T extends Actions> = {
  */
 export function createActionContext<TActions extends Actions>(
 	actions: TActions,
-	options: {
+	{
+		labels,
+		...toolOptions
+	}: {
 		/** Exhaustive map of action name → label. Compile error if you miss one. */
 		labels: Record<ActionNames<TActions>, ActionLabel>;
 		/** If true, mutations will require user approval before executing. @default false */
 		requireApprovalForMutations?: boolean;
 	},
 ) {
-	const { labels, ...toolOptions } = options;
 	const tools = actionsToClientTools(actions, toolOptions);
 	const definitions = toDefinitions(tools);
 

@@ -69,14 +69,10 @@ import { type } from 'arktype';
 const workspace = defineWorkspace({
 	id: 'blog',
 	tables: {
-		posts: defineTable()
-			.version(type({ id: 'string', title: 'string', published: 'boolean' }))
-			.migrate((row) => row),
+		posts: defineTable(type({ id: 'string', title: 'string', published: 'boolean', _v: '1' })),
 	},
 	kv: {
-		theme: defineKv()
-			.version(type({ mode: "'light' | 'dark'" }))
-			.migrate((v) => v),
+		theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
 	},
 });
 

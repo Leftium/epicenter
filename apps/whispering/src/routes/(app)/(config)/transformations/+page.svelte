@@ -74,7 +74,7 @@
 			cell: ({ getValue }) =>
 				renderComponent(Badge, {
 					variant: 'id',
-					children: createRawSnippet((name) => ({
+					children: createRawSnippet((_name) => ({
 						render: () => getValue<string>(),
 					})),
 				}),
@@ -111,13 +111,13 @@
 
 	let sorting = createPersistedState({
 		key: 'whispering-transformations-data-table-sorting',
-		onParseError: (error) => [{ id: 'title', desc: false }],
+		onParseError: (_error) => [{ id: 'title', desc: false }],
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
 	});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let rowSelection = createPersistedState({
 		key: 'whispering-transformations-data-table-row-selection',
-		onParseError: (error) => ({}),
+		onParseError: (_error) => ({}),
 		schema: type('Record<string, boolean>'),
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });

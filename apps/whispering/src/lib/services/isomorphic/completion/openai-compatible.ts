@@ -1,10 +1,8 @@
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import OpenAI from 'openai';
 import { Err, isErr, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { customFetch } from '$lib/services/isomorphic/http';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
-
-const customFetch = window.__TAURI_INTERNALS__ ? tauriFetch : undefined;
 
 export type OpenAiCompatibleConfig = {
 	/**
@@ -41,11 +39,7 @@ export type OpenAiCompatibleConfig = {
 	 * ```typescript
 	 * validateParams: (params) => {
 	 *   if (!params.baseUrl) {
-	 *     return CompletionError.Service({
-	 *       message: 'Base URL is required',
-	 *       context: { status: 400, name: 'MissingBaseUrl' },
-	 *       cause: null,
-	 *     });
+	 *     return CompletionError.MissingParam({ param: 'Base URL' });
 	 *   }
 	 *   return Ok(undefined);
 	 * }
@@ -64,16 +58,6 @@ export type OpenAiCompatibleConfig = {
 	 * @example { 'HTTP-Referer': 'https://myapp.com', 'X-Title': 'MyApp' }
 	 */
 	defaultHeaders?: Record<string, string>;
-
-	/**
-	 * Custom error messages for specific HTTP status codes.
-	 *
-	 * Allows providers to override default error messages with
-	 * provider-specific guidance (e.g., billing issues, service-specific errors).
-	 *
-	 * @example { 402: 'Insufficient credits. Please add credits to continue.' }
-	 */
-	statusMessageOverrides?: Partial<Record<number, string>>;
 };
 
 /**
@@ -99,15 +83,12 @@ export type OpenAiCompatibleConfig = {
  *   providerLabel: 'OpenAI',
  * });
  *
- * // Provider with custom headers and error messages
+ * // Provider with custom headers
  * const openrouter = createOpenAiCompatibleCompletionService({
  *   providerLabel: 'OpenRouter',
  *   defaultHeaders: {
  *     'HTTP-Referer': 'https://whispering.epicenter.so',
  *     'X-Title': 'Whispering',
- *   },
- *   statusMessageOverrides: {
- *     402: 'Insufficient credits in your OpenRouter account.',
  *   },
  * });
  * ```
@@ -145,101 +126,24 @@ export function createOpenAiCompatibleCompletionService(
 							{ role: 'user', content: params.userPrompt },
 						],
 					}),
-				catch: (error) => {
-					if (!(error instanceof OpenAI.APIError)) {
-						throw error;
+				catch: (error): Err<CompletionError> => {
+					if (error instanceof OpenAI.APIConnectionError) {
+						return CompletionError.ConnectionFailed({ cause: error });
 					}
-					return Err(error);
+					if (!(error instanceof OpenAI.APIError)) throw error;
+					return CompletionError.Http({
+						status: error.status,
+						cause: error,
+					});
 				},
 			});
 
-			if (apiError) {
-				const { status, name, message, error } = apiError;
-
-				if (typeof status === 'number') {
-					const override = config.statusMessageOverrides?.[status];
-					if (override) {
-						return CompletionError.Service({
-							message: override,
-						});
-					}
-				}
-
-				if (status === 400) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Invalid request to ${config.providerLabel} API. ${error?.message ?? ''}`.trim(),
-					});
-				}
-
-				if (status === 401) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Your ${config.providerLabel} API key appears to be invalid or expired. Please update your API key in settings.`,
-					});
-				}
-
-				if (status === 403) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Your ${config.providerLabel} account doesn't have access to this model or feature.`,
-					});
-				}
-
-				if (status === 404) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The requested model was not found on ${config.providerLabel}. Please check the model name.`,
-					});
-				}
-
-				if (status === 422) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The request was valid but ${config.providerLabel} cannot process it. Please check your parameters.`,
-					});
-				}
-
-				if (status === 429) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`${config.providerLabel} rate limit exceeded. Please try again later.`,
-					});
-				}
-
-				if (status && status >= 500) {
-					return CompletionError.Service({
-						message:
-							message ??
-							`The ${config.providerLabel} service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-					});
-				}
-
-				if (!status && name === 'APIConnectionError') {
-					return CompletionError.Service({
-						message:
-							message ??
-							`Unable to connect to the ${config.providerLabel} service. This could be a network issue or temporary service interruption.`,
-					});
-				}
-
-				return CompletionError.Service({
-					message:
-						message ??
-						`An unexpected error occurred with ${config.providerLabel}. Please try again.`,
-				});
-			}
+			if (apiError) return Err(apiError);
 
 			const responseText = completion.choices.at(0)?.message?.content;
 			if (!responseText) {
-				return CompletionError.Service({
-					message: `${config.providerLabel} API returned an empty response`,
+				return CompletionError.EmptyResponse({
+					providerLabel: config.providerLabel,
 				});
 			}
 

@@ -1,8 +1,8 @@
 /**
- * defineTable() builder for creating versioned table definitions.
+ * defineTable() for creating versioned table definitions.
  *
  * All table schemas must include `_v: number` as a discriminant field.
- * Use shorthand for single-version tables, builder pattern for multiple versions with migrations.
+ * Use shorthand for single-version tables, variadic args for multiple versions with migrations.
  *
  * Optionally chain `.withDocument()` to declare named document configs on the table.
  *
@@ -17,24 +17,29 @@
  * // Shorthand with document config
  * const files = defineTable(
  *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
- * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+ * ).withDocument('content', {
+ *   guid: 'id',
+ *   onUpdate: () => ({ updatedAt: Date.now() }),
+ * });
  *
- * // Builder pattern for multiple versions with migration
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '1' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
- *   .migrate((row) => {
- *     switch (row._v) {
- *       case 1: return { ...row, views: 0, _v: 2 };
- *       case 2: return row;
- *     }
- *   });
+ * // Variadic for multiple versions with migration
+ * const posts = defineTable(
+ *   type({ id: 'string', title: 'string', _v: '1' }),
+ *   type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+ * ).migrate((row) => {
+ *   switch (row._v) {
+ *     case 1: return { ...row, views: 0, _v: 2 };
+ *     case 2: return row;
+ *   }
+ * });
  *
- * // Builder with document config
- * const notes = defineTable()
- *   .version(type({ id: 'string', bodyDocId: 'string', bodyUpdatedAt: 'number', _v: '1' }))
- *   .migrate((row) => row)
- *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' });
+ * // Shorthand with document config (multiple documents)
+ * const notes = defineTable(
+ *   type({ id: 'string', bodyDocId: 'string', bodyUpdatedAt: 'number', _v: '1' }),
+ * ).withDocument('body', {
+ *   guid: 'bodyDocId',
+ *   onUpdate: () => ({ bodyUpdatedAt: Date.now() }),
+ * });
  * ```
  */
 
@@ -43,9 +48,9 @@ import type { CombinedStandardSchema } from '../shared/standard-schema/types.js'
 import { createUnionSchema } from './schema-union.js';
 import type {
 	BaseRow,
+	ClaimedDocumentColumns,
 	DocumentConfig,
 	LastSchema,
-	NumberKeysOf,
 	StringKeysOf,
 	TableDefinition,
 } from './types.js';
@@ -66,36 +71,49 @@ type TableDefinitionWithDocBuilder<
 	/**
 	 * Declare a named document on this table.
 	 *
-	 * Maps a document concept (e.g., 'content') to a GUID column and an updatedAt column.
+	 * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback.
 	 * The name becomes a property under `client.documents.{tableName}` at runtime.
 	 *
 	 * Chainable — call multiple times for tables with multiple documents.
+	 * Each call claims its `guid` column exclusively — subsequent calls cannot reuse
+	 * a GUID column already bound to a prior document (prevents storage collisions).
 	 *
 	 * @param name - The document name (becomes `client.documents.{tableName}[name]`)
-	 * @param config - Column mapping: `guid` (string column) and `updatedAt` (number column)
+	 * @param config - `guid` (string column), `onUpdate` (callback returning partial row), and optional `tags`
 	 *
 	 * @example
 	 * ```typescript
 	 * const files = defineTable(
 	 *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-	 * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+	 * ).withDocument('content', {
+	 *   guid: 'id',
+	 *   onUpdate: () => ({ updatedAt: Date.now() }),
+	 * });
 	 *
-	 * // Multiple documents
+	 * // Multiple documents — each must use a unique guid column
 	 * const notes = defineTable(
 	 *   type({ id: 'string', bodyDocId: 'string', coverDocId: 'string',
-	 *          bodyUpdatedAt: 'number', coverUpdatedAt: 'number', _v: '1' }),
+	 *          updatedAt: 'number', _v: '1' }),
 	 * )
-	 *   .withDocument('body', { guid: 'bodyDocId', updatedAt: 'bodyUpdatedAt' })
-	 *   .withDocument('cover', { guid: 'coverDocId', updatedAt: 'coverUpdatedAt' });
+	 *   .withDocument('body', {
+	 *     guid: 'bodyDocId',
+	 *     onUpdate: () => ({ updatedAt: Date.now() }),
+	 *   })
+	 *   .withDocument('cover', {
+	 *     guid: 'coverDocId',
+	 *     onUpdate: () => ({ updatedAt: Date.now() }),
+	 *   });
 	 * ```
 	 */
 	withDocument<
 		TName extends string,
-		TGuid extends StringKeysOf<
-			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		TGuid extends Exclude<
+			StringKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
+			ClaimedDocumentColumns<TDocuments>
 		>,
-		TUpdatedAt extends NumberKeysOf<
-			StandardSchemaV1.InferOutput<LastSchema<TVersions>>
+		TUpdatedAt extends Exclude<
+			NumberKeysOf<StandardSchemaV1.InferOutput<LastSchema<TVersions>>>,
+			ClaimedDocumentColumns<TDocuments>
 		>,
 		// Defaults to `never` when no tags are passed. This flows into
 		// DocumentConfig<..., never>, making `tags: readonly never[]` (only accepts `[]`).
@@ -104,40 +122,23 @@ type TableDefinitionWithDocBuilder<
 		name: TName,
 		config: {
 			guid: TGuid;
-			updatedAt: TUpdatedAt;
+			onUpdate: () => Partial<
+				Omit<StandardSchemaV1.InferOutput<LastSchema<TVersions>>, 'id'>
+			>;
 			tags?: readonly TTags[];
 		},
 	): TableDefinitionWithDocBuilder<
 		TVersions,
-		TDocuments & Record<TName, DocumentConfig<TGuid, TUpdatedAt, TTags>>
+		TDocuments &
+			Record<
+				TName,
+				DocumentConfig<
+					TGuid,
+					StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+					TTags
+				>
+			>
 	>;
-};
-
-/**
- * Builder for defining table schemas with versioning support.
- *
- * @typeParam TVersions - Tuple of schema types added via .version() (single source of truth)
- */
-type TableBuilder<TVersions extends CombinedStandardSchema<BaseRow>[]> = {
-	/**
-	 * Add a schema version. Schema must include `{ id: string, _v: number }`.
-	 * The last version added becomes the "latest" schema shape.
-	 */
-	version<TSchema extends CombinedStandardSchema<BaseRow>>(
-		schema: TSchema,
-	): TableBuilder<[...TVersions, TSchema]>;
-
-	/**
-	 * Provide a migration function that normalizes any version to the latest.
-	 * This completes the table definition.
-	 *
-	 * @returns TableDefinition with TVersions tuple as the source of truth, plus `.withDocument()` chaining
-	 */
-	migrate(
-		fn: (
-			row: StandardSchemaV1.InferOutput<TVersions[number]>,
-		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
-	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
 };
 
 /**
@@ -153,44 +154,61 @@ type TableBuilder<TVersions extends CombinedStandardSchema<BaseRow>[]> = {
  */
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 	schema: TSchema,
-): TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>;
+): TableDefinitionWithDocBuilder<[TSchema], {}>;
 
 /**
- * Creates a table definition builder for multiple versions with migrations.
+ * Creates a table definition for multiple schema versions with migrations.
  *
- * Returns `TableBuilder<[]>` - an empty builder with no versions yet.
- * You must call `.version()` at least once before `.migrate()`.
- *
- * The return type evolves as you chain calls:
- * ```typescript
- * defineTable()                        // TableBuilder<[]>
- *   .version(schemaV1)                 // TableBuilder<[SchemaV1]>
- *   .version(schemaV2)                 // TableBuilder<[SchemaV1, SchemaV2]>
- *   .migrate(fn)                       // TableDefinitionWithDocBuilder<...>
- *   .withDocument('content', {...})    // TableDefinitionWithDocBuilder<..., { content: ... }>
- * ```
+ * Pass 2+ schemas as arguments, then call `.migrate()` on the result to provide
+ * a migration function that normalizes any version to the latest.
  *
  * @example
  * ```typescript
- * const posts = defineTable()
- *   .version(type({ id: 'string', title: 'string', _v: '1' }))
- *   .version(type({ id: 'string', title: 'string', views: 'number', _v: '2' }))
- *   .migrate((row) => {
- *     switch (row._v) {
- *       case 1: return { ...row, views: 0, _v: 2 };
- *       case 2: return row;
- *     }
- *   });
+ * const posts = defineTable(
+ *   type({ id: 'string', title: 'string', _v: '1' }),
+ *   type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+ * ).migrate((row) => {
+ *   switch (row._v) {
+ *     case 1: return { ...row, views: 0, _v: 2 };
+ *     case 2: return row;
+ *   }
+ * });
  * ```
  */
-export function defineTable(): TableBuilder<[]>;
+export function defineTable<
+	const TVersions extends [
+		CombinedStandardSchema<BaseRow>,
+		CombinedStandardSchema<BaseRow>,
+		...CombinedStandardSchema<BaseRow>[],
+	],
+>(
+	...versions: TVersions
+): {
+	migrate(
+		fn: (
+			row: StandardSchemaV1.InferOutput<TVersions[number]>,
+		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>,
+	): TableDefinitionWithDocBuilder<TVersions, Record<string, never>>;
+};
 
 export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
-	schema?: TSchema,
+	...args: [TSchema, ...CombinedStandardSchema<BaseRow>[]]
 ):
 	| TableDefinitionWithDocBuilder<[TSchema], Record<string, never>>
-	| TableBuilder<[]> {
-	if (schema) {
+	| {
+			migrate(
+				fn: (row: unknown) => unknown,
+			): TableDefinitionWithDocBuilder<
+				CombinedStandardSchema<BaseRow>[],
+				Record<string, never>
+			>;
+	  } {
+	if (args.length === 0) {
+		throw new Error('defineTable() requires at least one schema argument');
+	}
+
+	if (args.length === 1) {
+		const schema = args[0];
 		return attachDocumentBuilder({
 			schema,
 			migrate: (row: unknown) => row as BaseRow,
@@ -201,28 +219,20 @@ export function defineTable<TSchema extends CombinedStandardSchema<BaseRow>>(
 		>;
 	}
 
-	const versions: CombinedStandardSchema[] = [];
+	const versions = args as CombinedStandardSchema[];
 
-	const builder = {
-		version(versionSchema: CombinedStandardSchema) {
-			versions.push(versionSchema);
-			return builder;
-		},
-
+	return {
 		migrate(fn: (row: unknown) => unknown) {
-			if (versions.length === 0) {
-				throw new Error('defineTable() requires at least one .version() call');
-			}
-
 			return attachDocumentBuilder({
 				schema: createUnionSchema(versions),
 				migrate: fn,
 				documents: {},
 			});
 		},
-	};
-
-	return builder as unknown as TableBuilder<[]>;
+	} as unknown as TableDefinitionWithDocBuilder<
+		CombinedStandardSchema<BaseRow>[],
+		Record<string, never>
+	>;
 }
 
 /**
@@ -249,7 +259,11 @@ function attachDocumentBuilder<
 				...def,
 				documents: {
 					...def.documents,
-					[name]: { ...config, tags: config.tags ?? [] },
+					[name]: {
+						guid: config.guid,
+						onUpdate: config.onUpdate,
+						tags: config.tags ?? [],
+					},
 				},
 			});
 		},

@@ -5,11 +5,15 @@
  */
 
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import type { JsonObject } from 'wellcrafted/json';
 import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+
+// Re-export JSON types for consumers
+export type { JsonObject, JsonValue } from 'wellcrafted/json';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE RESULT TYPES - Building Blocks
@@ -21,10 +25,13 @@ import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
  * - `id`: Unique identifier for row lookup and identity
  * - `_v`: Schema version number for tracking which version this row conforms to
  *
+ * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
+ * This guarantees data stored in Yjs can be safely serialized/deserialized.
+ *
  * All table rows extend this base shape. Used as a constraint in generic types
  * to ensure rows have the required fields for versioning and identification.
  */
-export type BaseRow = { id: string; _v: number };
+export type BaseRow = { id: string; _v: number } & JsonObject;
 
 /** A row that passed validation. */
 export type ValidRowResult<TRow> = { status: 'valid'; row: TRow };
@@ -107,16 +114,13 @@ export type LastSchema<T extends readonly CombinedStandardSchema[]> =
 		: T[number];
 
 /**
- * A table definition created by defineTable().version().migrate()
+ * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`
  *
  * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  * @typeParam TDocuments - Record of named document configs declared via `.withDocument()`
  */
 export type TableDefinition<
-	TVersions extends readonly CombinedStandardSchema<{
-		id: string;
-		_v: number;
-	}>[],
+	TVersions extends readonly CombinedStandardSchema<BaseRow>[],
 	TDocuments extends Record<string, DocumentConfig> = Record<string, never>,
 > = {
 	schema: CombinedStandardSchema<
@@ -150,13 +154,15 @@ export type InferTableVersionUnion<T> = T extends {
 /**
  * A named document declared via `.withDocument()`.
  *
- * Maps a document concept (e.g., 'content') to two columns on the table:
+ * Maps a document concept (e.g., 'content') to a GUID column and an `onUpdate` callback
+ * that fires when the content Y.Doc changes:
  * - `guid`: The column storing the Y.Doc GUID (must be a string column)
- * - `updatedAt`: The column to bump when the doc changes (must be a number column)
+ * - `onUpdate`: Zero-argument callback returning `Partial<Omit<TRow, 'id'>>` — the fields
+ *   to write when the doc changes. Callers control both the value and which columns to update.
  * - `tags`: Optional tag literals for document extension targeting
  *
  * @typeParam TGuid - Literal string type of the guid column name
- * @typeParam TUpdatedAt - Literal string type of the updatedAt column name
+ * @typeParam TRow - The row type of the table (used to type-check `onUpdate` return)
  * @typeParam TTags - Literal union of tag strings for document extension targeting.
  *   Defaults to `string` so bare `DocumentConfig` works as a wide constraint (accepts any tags).
  *   When `.withDocument()` is called without tags, `TTags` infers as `never` via the
@@ -165,11 +171,12 @@ export type InferTableVersionUnion<T> = T extends {
  */
 export type DocumentConfig<
 	TGuid extends string = string,
-	TUpdatedAt extends string = string,
+	TRow extends BaseRow = BaseRow,
 	TTags extends string = string,
 > = {
 	guid: TGuid;
-	updatedAt: TUpdatedAt;
+	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	onUpdate: () => Partial<Omit<TRow, 'id'>>;
 	/**
 	 * Tag literals for document extension targeting.
 	 *
@@ -217,7 +224,7 @@ export type DocumentExtensionRegistration = {
  */
 export type ExtractAllDocumentTags<TTableDefs extends TableDefinitions> = {
 	[K in keyof TTableDefs]: TTableDefs[K] extends {
-		documents: Record<string, DocumentConfig<string, string, infer TTags>>;
+		documents: Record<string, DocumentConfig<string, BaseRow, infer TTags>>;
 	}
 		? TTags
 		: never;
@@ -232,12 +239,21 @@ export type StringKeysOf<TRow> = {
 }[keyof TRow & string];
 
 /**
- * Extract keys of `TRow` whose value type extends `number`.
- * Used to constrain the `updatedAt` parameter of `.withDocument()`.
+ * Collect all column names already claimed as `guid` by prior `.withDocument()` calls.
+ * Subsequent calls cannot reuse these columns, preventing two documents from sharing
+ * a GUID (which would cause storage collisions).
+ *
+ * With the `onUpdate` callback model, updatedAt columns are no longer claimed —
+ * multiple documents can write to the same column via their callbacks (last write wins).
+ *
+ * Requires `{}` (not `Record<string, never>`) as the initial empty `TDocuments`,
+ * so that `keyof {}` = `never` and the union resolves cleanly.
  */
-export type NumberKeysOf<TRow> = {
-	[K in keyof TRow & string]: TRow[K] extends number ? K : never;
-}[keyof TRow & string];
+export type ClaimedDocumentColumns<
+	TDocuments extends Record<string, DocumentConfig>,
+> =
+	| TDocuments[keyof TDocuments]['guid']
+	| TDocuments[keyof TDocuments]['updatedAt'];
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
@@ -372,7 +388,7 @@ export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * A KV definition created by defineKv().version().migrate()
+ * A KV definition created by `defineKv(schema)` or `defineKv(v1, v2, ...).migrate(fn)`
  *
  * @typeParam TVersions - Tuple of schema versions
  */

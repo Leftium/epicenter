@@ -1,6 +1,5 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { DownloadService } from '.';
@@ -15,26 +14,18 @@ export function createDownloadServiceDesktop(): DownloadService {
 					save({
 						filters: [{ name, extensions: [extension] }],
 					}),
-				catch: (error) =>
-					DownloadError.Service({
-						message: `There was an error saving the recording using the Tauri Filesystem API. Please try again. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => DownloadError.SaveDialogFailed({ cause: error }),
 			});
 			if (saveError) return Err(saveError);
 			if (path === null) {
-				return DownloadError.Service({
-					message: 'Please specify a path to save the recording.',
-				});
+				return DownloadError.SaveCancelled();
 			}
 			const { error: writeError } = await tryAsync({
 				try: async () => {
 					const contents = new Uint8Array(await blob.arrayBuffer());
 					await writeFile(path, contents);
 				},
-				catch: (error) =>
-					DownloadError.Service({
-						message: `There was an error saving the recording using the Tauri Filesystem API. Please try again. ${extractErrorMessage(error)}`,
-					}),
+				catch: (error) => DownloadError.WriteFailed({ cause: error }),
 			});
 			if (writeError) return Err(writeError);
 			return Ok(undefined);

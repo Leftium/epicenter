@@ -127,7 +127,7 @@ A critical responsibility of the query layer is transforming service-specific er
 
 The error handling follows a clear pattern across three layers:
 
-1. **Service Layer**: Returns domain-specific tagged errors (e.g., `RecorderServiceError`)
+1. **Service Layer**: Returns domain-specific errors using `defineErrors` pattern
 2. **Query Layer**: Wraps service errors into `WhisperingError` objects
 3. **UI Layer**: Uses `WhisperingError` directly without re-wrapping
 
@@ -135,7 +135,7 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
 
 ### How It Works
 
-Services return their own specific error types (e.g., `RecorderServiceError`, `CpalRecorderServiceError`), which contain detailed error information. The query layer transforms these into `WhisperingError` with UI-friendly formatting:
+Services return their own specific error types (defined with `defineErrors`), which contain detailed error information. The query layer transforms these into `WhisperingError` with UI-friendly formatting:
 
 ```typescript
 // From manualRecorder.ts - Error transformation in mutationFn
@@ -169,11 +169,13 @@ startRecording: defineMutation({
 
 ### The Pattern Explained
 
-1. **Service Layer**: Returns domain-specific errors (`TaggedError` types from WellCrafted)
+1. **Service Layer**: Returns domain-specific errors using `defineErrors`
 
    ```typescript
    // In manual-recorder.ts
-   type RecorderServiceError = TaggedError<'RecorderServiceError'>;
+   const { RecorderError } = defineErrors({
+   	RecorderError: {},
+   });
    ```
 
 2. **Query Layer**: Transforms to `WhisperingError` in `mutationFn`/`queryFn`
@@ -213,7 +215,7 @@ getRecorderState: defineQuery({
 			await services.cpalRecorder.getRecorderState();
 
 		if (getRecorderStateError) {
-			// Transform CpalRecorderServiceError → WhisperingError
+			// Transform CpalRecorderError → WhisperingError
 			return Err(
 				WhisperingError({
 					title: '❌ Failed to get recorder state',

@@ -1,38 +1,9 @@
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import OpenAI from 'openai';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { customFetch } from '$lib/services/isomorphic/http';
 import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
 import type { Settings } from '$lib/settings';
-
-const customFetch = window.__TAURI_INTERNALS__ ? tauriFetch : undefined;
-
-export const OPENAI_TRANSCRIPTION_MODELS = [
-	{
-		name: 'whisper-1',
-		description:
-			"OpenAI's flagship speech-to-text model with multilingual support. Reliable and accurate transcription for a wide variety of use cases.",
-		cost: '$0.36/hour',
-	},
-	{
-		name: 'gpt-4o-transcribe',
-		description:
-			'GPT-4o powered transcription with enhanced understanding and context. Best for complex audio requiring deep comprehension.',
-		cost: '$0.36/hour',
-	},
-	{
-		name: 'gpt-4o-mini-transcribe',
-		description:
-			'Cost-effective GPT-4o mini transcription model. Good balance of performance and cost for standard transcription needs.',
-		cost: '$0.18/hour',
-	},
-] as const satisfies {
-	name: OpenAI.Audio.AudioModel;
-	description: string;
-	cost: string;
-}[];
-
-export type OpenAIModel = (typeof OPENAI_TRANSCRIPTION_MODELS)[number];
 
 const MAX_FILE_SIZE_MB = 25 as const;
 
@@ -44,7 +15,7 @@ export const OpenaiTranscriptionServiceLive = {
 			temperature: string;
 			outputLanguage: Settings['transcription.outputLanguage'];
 			apiKey: string;
-			modelName: (string & {}) | OpenAIModel['name'];
+			modelName: string;
 			baseURL?: string;
 		},
 	): Promise<Result<string, WhisperingError>> {

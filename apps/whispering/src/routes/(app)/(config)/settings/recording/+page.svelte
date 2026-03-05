@@ -11,7 +11,7 @@
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { IS_LINUX, IS_MACOS, PLATFORM_TYPE } from '$lib/constants/platform';
-	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/services/isomorphic/transcription/registry';
+	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/constants/transcription';
 	import { settings } from '$lib/state/settings.svelte';
 	import {
 		COMPRESSION_RECOMMENDED_MESSAGE,

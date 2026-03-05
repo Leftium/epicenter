@@ -1,4 +1,4 @@
-import type { Dirent } from 'node:fs';
+import type { Dirent, Stats } from 'node:fs';
 import {
 	lstat,
 	mkdir,
@@ -171,7 +171,12 @@ function buildWorkspaceInstallCommand(home: string) {
 				return;
 			}
 
-			const item = items.value[0]!;
+			const item = items.value[0];
+			if (!item) {
+				outputError('No items found');
+				process.exitCode = 1;
+				return;
+			}
 			const wsDir = join(workspacesDir(home), item.name);
 
 			// Check for existing
@@ -252,7 +257,7 @@ function buildWorkspaceUninstallCommand(home: string) {
 			const wsId = argv['workspace-id'];
 			const wsPath = join(workspacesDir(home), wsId);
 
-			let stat;
+			let stat: Stats;
 			try {
 				stat = await lstat(wsPath);
 			} catch {

@@ -1,8 +1,15 @@
 import type { OsType } from '@tauri-apps/plugin-os';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 
 export const OsError = defineErrors({
-	Service: () => ({ message: 'OS service operation failed' }),
+	DetectionFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to detect OS type: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 export type OsError = InferErrors<typeof OsError>;
 

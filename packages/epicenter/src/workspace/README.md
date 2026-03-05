@@ -30,9 +30,7 @@ This codebase uses two prefixes consistently. `define*` is pure—no Y.Doc, no s
 
 ```typescript
 // Pure schema definitions
-const posts = defineTable()
-	.version(type({ id: 'string', title: 'string' }))
-	.migrate((row) => row);
+const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
 const workspace = defineWorkspace({ id: 'my-app', tables: { posts } });
 

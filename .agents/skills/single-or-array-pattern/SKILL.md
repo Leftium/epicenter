@@ -94,7 +94,7 @@ delete: async (recordingOrRecordings) => {
   const ids = recordings.map((r) => r.id);
   return tryAsync({
     try: () => db.recordings.bulkDelete(ids),
-    catch: (error) => DbServiceErr({ message: `Error deleting: ${error}` }),
+    catch: (error) => DbError.MutationFailed({ cause: error }),
   });
 },
 ```

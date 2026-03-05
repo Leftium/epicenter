@@ -1,0 +1,34 @@
+name = "epicenter-hub"
+main = "src/worker.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- KV: Session cache (Better Auth SecondaryStorage) ---
+[[kv_namespaces]]
+binding = "SESSION_KV"
+id = "local-dev-placeholder" # Replace with real KV ID for production
+
+# --- Durable Objects ---
+[[durable_objects.bindings]]
+name = "YJS_ROOM"
+class_name = "YjsRoom"
+
+# SQLite-backed DO — persistent storage survives hibernation.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["YjsRoom"]
+
+# --- Vars ---
+[vars]
+BETTER_AUTH_URL = "https://api.epicenter.so"
+
+# --- Hyperdrive: PlanetScale Postgres connection pool ---
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "<created-via-wrangler-cli>"
+localConnectionString = "postgres://braden@localhost:5432/epicenter"
+
+# --- Secrets (set via `wrangler secret put`) ---
+# BETTER_AUTH_SECRET
+# OPENAI_API_KEY
+# ANTHROPIC_API_KEY

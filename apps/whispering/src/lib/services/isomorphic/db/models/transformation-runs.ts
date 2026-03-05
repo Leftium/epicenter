@@ -37,9 +37,11 @@ export const TransformationStepRunFailed = type({
 export type TransformationStepRunFailed =
 	typeof TransformationStepRunFailed.infer;
 
-export const TransformationStepRun = TransformationStepRunRunning.or(
+export const TransformationStepRun = type.or(
+	TransformationStepRunRunning,
 	TransformationStepRunCompleted,
-).or(TransformationStepRunFailed);
+	TransformationStepRunFailed,
+);
 
 export type TransformationStepRun = typeof TransformationStepRun.infer;
 
@@ -97,8 +99,10 @@ export type TransformationRunFailed = typeof TransformationRunFailed.infer;
  * Represents an execution of a transformation, which can be run on either
  * a recording's transcribed text or arbitrary input text.
  */
-export const TransformationRun = TransformationRunRunning.or(
+export const TransformationRun = type.or(
+	TransformationRunRunning,
 	TransformationRunCompleted,
-).or(TransformationRunFailed);
+	TransformationRunFailed,
+);
 
 export type TransformationRun = typeof TransformationRun.infer;

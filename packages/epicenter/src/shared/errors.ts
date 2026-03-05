@@ -1,7 +1,7 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 export const ExtensionError = defineErrors({
-	TableOperation: ({
+	Table: ({
 		tableName,
 		rowId,
 		operation,
@@ -15,7 +15,7 @@ export const ExtensionError = defineErrors({
 		rowId,
 		operation,
 	}),
-	FileOperation: ({
+	File: ({
 		filename,
 		filePath,
 		operation,
@@ -29,7 +29,7 @@ export const ExtensionError = defineErrors({
 		filePath,
 		operation,
 	}),
-	DirectoryOperation: ({
+	Directory: ({
 		directory,
 		operation,
 	}: {

@@ -4,7 +4,7 @@
  * Creates a bidirectional link between a table and its associated content Y.Docs.
  * It:
  * 1. Manages Y.Doc creation and provider lifecycle for each content document
- * 2. Watches content documents → automatically bumps `updatedAt` on the row
+ * 2. Watches content documents → calls `onUpdate` callback and writes returned fields to the row
  * 3. Watches the table → automatically cleans up documents when rows are deleted
  *
  * Most users never call this directly — `createWorkspace()` wires it automatically
@@ -18,14 +18,17 @@
  *
  * const filesTable = defineTable(
  *   type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
- * ).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+ * ).withDocument('content', {
+ *   guid: 'id',
+ *   onUpdate: () => ({ updatedAt: Date.now() }),
+ * });
  *
  * const ydoc = new Y.Doc({ guid: 'my-workspace' });
  * const tables = createTables(ydoc, { files: filesTable });
  *
  * const contentDocuments = createDocuments({
  *   guidKey: 'id',
- *   updatedAtKey: 'updatedAt',
+ *   onUpdate: () => ({ updatedAt: Date.now() }),
  *   tableHelper: tables.files,
  *   ydoc,
  * });
@@ -126,9 +129,9 @@ export type CreateDocumentsConfig<TRow extends BaseRow> = {
 	id?: string;
 	/** Column name storing the Y.Doc GUID. */
 	guidKey: keyof TRow & string;
-	/** Column name to bump when the doc changes. */
-	updatedAtKey: keyof TRow & string;
-	/** The table helper — needed to bump updatedAt and observe row deletions. */
+	/** Called when the content Y.Doc changes. Return the fields to write to the row. */
+	onUpdate: () => Partial<Omit<TRow, 'id'>>;
+	/** The table helper — needed to update the row and observe row deletions. */
 	tableHelper: TableHelper<TRow>;
 	/** The workspace Y.Doc — needed for transact() when bumping updatedAt. */
 	ydoc: Y.Doc;
@@ -171,7 +174,7 @@ export function createDocuments<TRow extends BaseRow>(
 	const {
 		id = '',
 		guidKey,
-		updatedAtKey,
+		onUpdate,
 		tableHelper,
 		ydoc: workspaceYdoc,
 		documentExtensions = [],
@@ -293,11 +296,11 @@ export function createDocuments<TRow extends BaseRow>(
 				throw err;
 			}
 
-			// Attach updatedAt observer — fires when content doc changes.
+			// Attach onUpdate observer — fires when content doc changes.
 			// The Y.Doc 'update' handler receives (update, origin, doc, transaction).
 			// We use transaction.local to skip remote sync updates — only local edits
-			// should bump updatedAt. Remote devices receive the bumped value via
-			// workspace ydoc sync; redundant bumping would cause unnecessary churn.
+			// should trigger the callback. Remote devices receive the updated values via
+			// workspace ydoc sync; redundant writes would cause unnecessary churn.
 			const updateHandler = (
 				_update: Uint8Array,
 				origin: unknown,
@@ -306,15 +309,12 @@ export function createDocuments<TRow extends BaseRow>(
 			) => {
 				// Skip updates from the documents manager itself to avoid loops
 				if (origin === DOCUMENTS_ORIGIN) return;
-				// Skip remote updates — only local edits bump updatedAt
+				// Skip remote updates — only local edits trigger onUpdate
 				if (!transaction.local) return;
 
-				// Find the row that references this guid and bump updatedAt
-				// For guid === rowId (common case), we can update directly
+				// Call the user's onUpdate callback and write the returned fields
 				workspaceYdoc.transact(() => {
-					tableHelper.update(guid, {
-						[updatedAtKey]: Date.now(),
-					} as Partial<Omit<TRow, 'id'>>);
+					tableHelper.update(guid, onUpdate());
 				}, DOCUMENTS_ORIGIN);
 			};
 

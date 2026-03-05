@@ -1,5 +1,6 @@
 import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, tryAsync } from 'wellcrafted/result';
 import {
 	type UpdateInfo,
 	updateDialog,
@@ -7,21 +8,25 @@ import {
 import { rpc } from '$lib/query';
 
 export async function checkForUpdates() {
-	try {
-		const update = await (shouldUseMockUpdates() ? mockCheck() : check());
-		if (update) {
-			await rpc.notify.info({
-				title: `Update ${update.version} available`,
-				description: 'A new version of Whispering is available.',
-				action: {
-					type: 'button',
-					label: 'View Update',
-					onClick: () => updateDialog.open(update),
-				},
-				persist: true,
-			});
-		}
-	} catch (error) {
+	const { error } = await tryAsync({
+		try: async () => {
+			const update = await (shouldUseMockUpdates() ? mockCheck() : check());
+			if (update) {
+				await rpc.notify.info({
+					title: `Update ${update.version} available`,
+					description: 'A new version of Whispering is available.',
+					action: {
+						type: 'button',
+						label: 'View Update',
+						onClick: () => updateDialog.open(update),
+					},
+					persist: true,
+				});
+			}
+		},
+		catch: (error) => Err(error),
+	});
+	if (error) {
 		rpc.notify.error({
 			title: 'Failed to check for updates',
 			description: extractErrorMessage(error),

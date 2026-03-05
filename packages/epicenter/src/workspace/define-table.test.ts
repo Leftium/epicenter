@@ -1,7 +1,7 @@
 /**
  * defineTable Tests
  *
- * Verifies shorthand and builder-based table definitions, including multi-version schema migration.
+ * Verifies single-schema and variadic multi-version table definitions, including schema migration.
  * These tests ensure table contracts remain stable for runtime validation and for typed documents.
  *
  * Key behaviors:
@@ -54,7 +54,7 @@ describe('defineTable', () => {
 		});
 	});
 
-	describe('builder syntax', () => {
+	describe('variadic syntax', () => {
 		test('creates valid table definition with single version', () => {
 			const posts = defineTable(
 				type({ id: 'string', title: 'string', _v: '1' }),
@@ -69,15 +69,13 @@ describe('defineTable', () => {
 		});
 
 		test('creates table definition with multiple versions that validates both', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// V1 data should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -98,15 +96,13 @@ describe('defineTable', () => {
 		});
 
 		test('migrate function upgrades old rows to latest version', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Migrate v1 to v2
 			const migrated = posts.migrate({
@@ -117,24 +113,23 @@ describe('defineTable', () => {
 			expect(migrated).toEqual({ id: '1', title: 'Test', views: 0, _v: 2 });
 		});
 
-		test('throws when no versions are defined', () => {
+		test('requires at least one schema argument', () => {
 			expect(() => {
-				defineTable().migrate((row) => row);
-			}).toThrow('defineTable() requires at least one .version() call');
+				// @ts-expect-error no arguments provided
+				defineTable();
+			}).toThrow();
 		});
 	});
 
 	describe('schema patterns', () => {
 		test('two version migration with _v discriminant', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Both versions should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -153,15 +148,13 @@ describe('defineTable', () => {
 		});
 
 		test('two version migration with _v', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
-				)
-				.migrate((row) => {
-					if (row._v === 1) return { ...row, views: 0, _v: 2 as const };
-					return row;
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({ id: 'string', title: 'string', views: 'number', _v: '2' }),
+			).migrate((row) => {
+				if (row._v === 1) return { ...row, views: 0, _v: 2 };
+				return row;
+			});
 
 			// Both versions should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -189,24 +182,22 @@ describe('defineTable', () => {
 		});
 
 		test('three-version migration uses switch and preserves latest rows', () => {
-			const posts = defineTable()
-				.version(type({ id: 'string', title: 'string', _v: '1' }))
-				.version(
-					type({
-						id: 'string',
-						title: 'string',
-						views: 'number',
-						_v: '2',
-					}),
-				)
-				.migrate((row) => {
-					switch (row._v) {
-						case 1:
-							return { ...row, views: 0, _v: 2 as const };
-						case 2:
-							return row;
-					}
-				});
+			const posts = defineTable(
+				type({ id: 'string', title: 'string', _v: '1' }),
+				type({
+					id: 'string',
+					title: 'string',
+					views: 'number',
+					_v: '2',
+				}),
+			).migrate((row) => {
+				switch (row._v) {
+					case 1:
+						return { ...row, views: 0, _v: 2 };
+					case 2:
+						return row;
+				}
+			});
 
 			// V1 data should validate
 			const v1Result = posts.schema['~standard'].validate({
@@ -243,7 +234,7 @@ describe('defineTable', () => {
 				id: '1',
 				title: 'Test',
 				views: 5,
-				_v: 2 as const,
+				_v: 2,
 			});
 			expect(alreadyLatest).toEqual({
 				id: '1',
@@ -255,34 +246,36 @@ describe('defineTable', () => {
 	});
 
 	describe('withDocument', () => {
+		const noopUpdate = () => ({});
+
 		test('shorthand path adds documents to definition', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual([]);
 		});
 
 		test('builder path adds documents to definition', () => {
-			const notes = defineTable()
-				.version(
-					type({
-						id: 'string',
-						docId: 'string',
-						modifiedAt: 'number',
-						_v: '1',
-					}),
-				)
-				.migrate((row) => row)
-				.withDocument('content', {
-					guid: 'docId',
-					updatedAt: 'modifiedAt',
-				});
+			const notes = defineTable(
+				type({
+					id: 'string',
+					docId: 'string',
+					modifiedAt: 'number',
+					_v: '1',
+				}),
+			).withDocument('content', {
+				guid: 'docId',
+				onUpdate: () => ({ modifiedAt: Date.now() }),
+			});
 
 			expect(notes.documents.content.guid).toBe('docId');
-			expect(notes.documents.content.updatedAt).toBe('modifiedAt');
+			expect(typeof notes.documents.content.onUpdate).toBe('function');
 			expect(notes.documents.content.tags).toEqual([]);
 		});
 
@@ -292,24 +285,23 @@ describe('defineTable', () => {
 					id: 'string',
 					bodyDocId: 'string',
 					coverDocId: 'string',
-					bodyUpdatedAt: 'number',
-					coverUpdatedAt: 'number',
+					updatedAt: 'number',
 					_v: '1',
 				}),
 			)
 				.withDocument('body', {
 					guid: 'bodyDocId',
-					updatedAt: 'bodyUpdatedAt',
+					onUpdate: () => ({ updatedAt: Date.now() }),
 				})
 				.withDocument('cover', {
 					guid: 'coverDocId',
-					updatedAt: 'coverUpdatedAt',
+					onUpdate: () => ({ updatedAt: Date.now() }),
 				});
 
 			expect(notes.documents.body.guid).toBe('bodyDocId');
-			expect(notes.documents.body.updatedAt).toBe('bodyUpdatedAt');
+			expect(typeof notes.documents.body.onUpdate).toBe('function');
 			expect(notes.documents.cover.guid).toBe('coverDocId');
-			expect(notes.documents.cover.updatedAt).toBe('coverUpdatedAt');
+			expect(typeof notes.documents.cover.onUpdate).toBe('function');
 		});
 
 		test('table without withDocument keeps documents map empty', () => {
@@ -325,12 +317,12 @@ describe('defineTable', () => {
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
 				guid: 'id',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 				tags: ['persistent'],
 			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual(['persistent']);
 		});
 
@@ -339,19 +331,22 @@ describe('defineTable', () => {
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
 				guid: 'id',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 				tags: ['persistent', 'synced'] as const,
 			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual(['persistent', 'synced']);
 		});
 
 		test('withDocument without tags defaults to empty array', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: noopUpdate,
+			});
 
 			expect(files.documents.content.tags).toEqual([]);
 		});
@@ -359,7 +354,10 @@ describe('defineTable', () => {
 		test('withDocument preserves schema validation and migrate behavior', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			// Schema still works
 			const result = files.schema['~standard'].validate({
@@ -390,14 +388,45 @@ describe('defineTable', () => {
 			void _invalidRow;
 		});
 
-		test('rejects withDocument mappings that reference missing keys', () => {
+		test('rejects withDocument mappings that reference missing guid keys', () => {
 			const files = defineTable(
 				type({ id: 'string', updatedAt: 'number', _v: '1' }),
 			);
-			// @ts-expect-error guid key must exist on the row schema
 			files.withDocument('content', {
+				// @ts-expect-error guid key must exist on the row schema
 				guid: 'missing',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({}),
+			});
+		});
+
+		test('rejects reusing a guid column claimed by a prior withDocument', () => {
+			const notes = defineTable(
+				type({
+					id: 'string',
+					bodyDocId: 'string',
+					coverDocId: 'string',
+					updatedAt: 'number',
+					_v: '1',
+				}),
+			).withDocument('body', {
+				guid: 'bodyDocId',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
+			notes.withDocument('cover', {
+				// @ts-expect-error bodyDocId is already claimed by the 'body' document
+				guid: 'bodyDocId',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
+		});
+
+		test('onUpdate return type is checked against the row schema', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			);
+			files.withDocument('content', {
+				guid: 'id',
+				// @ts-expect-error nonExistent is not a column on the row
+				onUpdate: () => ({ nonExistent: 123 }),
 			});
 		});
 	});

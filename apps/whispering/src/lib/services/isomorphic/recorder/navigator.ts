@@ -1,4 +1,3 @@
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
 	type CancelRecordingResult,
@@ -42,9 +41,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 	enumerateDevices: async () => {
 		const { data: devices, error } = await enumerateDevices();
 		if (error) {
-			return RecorderError.Service({
-				message: error.message,
-			});
+			return RecorderError.EnumerateDevices({ cause: error });
 		}
 		return Ok(devices);
 	},
@@ -55,10 +52,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
 		// Ensure we're not already recording
 		if (activeRecording) {
-			return RecorderError.Service({
-				message:
-					'A recording is already in progress. Please stop the current recording before starting a new one.',
-			});
+			return RecorderError.AlreadyRecording();
 		}
 
 		sendStatus({
@@ -70,9 +64,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		const { data: streamResult, error: acquireStreamError } =
 			await getRecordingStream({ selectedDeviceId, sendStatus });
 		if (acquireStreamError) {
-			return RecorderError.Service({
-				message: acquireStreamError.message,
-			});
+			return RecorderError.StreamAcquisition({ cause: acquireStreamError });
 		}
 
 		const { stream, deviceOutcome } = streamResult;
@@ -82,10 +74,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 				new MediaRecorder(stream, {
 					bitsPerSecond: Number(bitrateKbps) * 1000,
 				}),
-			catch: (error) =>
-				RecorderError.Service({
-					message: `Failed to initialize the audio recorder. This could be due to unsupported audio settings, microphone conflicts, or browser limitations. Please check your microphone is working and try adjusting your audio settings. ${extractErrorMessage(error)}`,
-				}),
+			catch: (error) => RecorderError.InitFailed({ cause: error }),
 		});
 
 		if (recorderError) {
@@ -123,7 +112,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		sendStatus,
 	}): Promise<Result<Blob, RecorderError>> => {
 		if (!activeRecording) {
-			return RecorderError.Service({
+			return RecorderError.NotRecording({
 				message:
 					'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
 			});
@@ -149,10 +138,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 					});
 					recording.mediaRecorder.stop();
 				}),
-			catch: (error) =>
-				RecorderError.Service({
-					message: `Failed to properly stop and save the recording. This might be due to corrupted audio data, insufficient storage space, or a browser issue. Your recording data may be lost. ${extractErrorMessage(error)}`,
-				}),
+			catch: (error) => RecorderError.StopFailed({ cause: error }),
 		});
 
 		// Always clean up the stream

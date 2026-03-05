@@ -426,13 +426,9 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 
 ```typescript
 test('creates workspace with tables', () => {
-	const posts = defineTable()
-		.version(type({ id: 'string', title: 'string' }))
-		.migrate((row) => row);
+	const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-	const theme = defineKv()
-		.version(type({ mode: "'light' | 'dark'" }))
-		.migrate((v) => v);
+	const theme = defineKv(type({ mode: "'light' | 'dark'", _v: '1' }));
 
 	const workspace = defineWorkspace({
 		id: 'test-app',
@@ -451,14 +447,10 @@ test('creates workspace with tables', () => {
 	const workspace = defineWorkspace({
 		id: 'test-app',
 		tables: {
-			posts: defineTable()
-				.version(type({ id: 'string', title: 'string' }))
-				.migrate((row) => row),
+			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		},
 		kv: {
-			theme: defineKv()
-				.version(type({ mode: "'light' | 'dark'" }))
-				.migrate((v) => v),
+			theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
 		},
 	});
 

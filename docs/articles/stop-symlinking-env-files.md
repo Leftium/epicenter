@@ -58,12 +58,12 @@ import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { sharedAuthConfig } from './auth/server';
 
-const cliEnv = type({
+const CliEnv = type({
   DATABASE_URL: 'string',
   BETTER_AUTH_SECRET: 'string',
 });
 
-const env = cliEnv(process.env);
+const env = CliEnv(process.env);
 if (env instanceof type.errors) {
   throw new Error(
     `Missing env vars for Better Auth CLI. Run with --env-file=.dev.vars.\n${env.summary}`,
@@ -159,12 +159,12 @@ ln -s .dev.vars .env
 
 ```ts
 // auth.ts — validates env before anything else runs
-const cliEnv = type({
+const CliEnv = type({
   DATABASE_URL: 'string',
   BETTER_AUTH_SECRET: 'string',
 });
 
-const env = cliEnv(process.env);
+const env = CliEnv(process.env);
 if (env instanceof type.errors) {
   throw new Error(
     `Missing env vars for Better Auth CLI. Run with --env-file=.dev.vars.\n${env.summary}`,

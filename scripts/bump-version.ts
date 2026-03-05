@@ -121,7 +121,9 @@ for (const { path } of cargoTomls) {
 			`Failed to update Cargo.lock for ${packageName}:`,
 			error instanceof Error ? error.message : String(error),
 		);
-		console.log(`  You may need to run: cd ${tauriDir} && cargo update -p ${packageName}`);
+		console.log(
+			`  You may need to run: cd ${tauriDir} && cargo update -p ${packageName}`,
+		);
 	}
 }
 

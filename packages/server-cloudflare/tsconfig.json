@@ -27,6 +27,5 @@
 		"noPropertyAccessFromIndexSignature": false,
 
 		"types": ["@cloudflare/workers-types"]
-	},
-	"exclude": ["src/auth.ts"]
+	}
 }

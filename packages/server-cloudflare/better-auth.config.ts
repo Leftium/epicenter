@@ -6,7 +6,7 @@
  *   bun run auth:migrate   — apply pending migrations
  *   bun run auth:schema    — generate Drizzle schema from Better Auth tables
  *
- * These scripts load `.dev.vars` automatically via `--env-file`.
+ * Loads `.dev.vars` directly so scripts don't need `--env-file`.
  *
  * Schema-affecting options (basePath, plugins, emailAndPassword) are duplicated
  * from `src/auth.ts` — keep them in sync. Runtime-only options (KV caching,
@@ -14,14 +14,18 @@
  *
  * @see src/auth.ts — runtime singleton (source of truth)
  */
-import { type } from 'arktype';
+
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { neon } from '@neondatabase/serverless';
+import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { oauthProvider } from '@better-auth/oauth-provider';
+import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/neon-http';
+
+config({ path: '.dev.vars' });
 
 const CliEnv = type({
 	DATABASE_URL: 'string',

@@ -11,9 +11,9 @@
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
 		"typecheck": "tsc --noEmit",
-		"auth:generate": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts",
-		"auth:migrate": "bun --env-file=.dev.vars x @better-auth/cli migrate --config ./better-auth.config.ts",
-		"auth:schema": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"auth:generate": "bun x @better-auth/cli generate --config ./better-auth.config.ts",
+		"auth:migrate": "bun x @better-auth/cli migrate --config ./better-auth.config.ts",
+		"auth:schema": "bun x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts",
 		"typegen": "wrangler types"
 	},
 	"dependencies": {
@@ -29,6 +29,7 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"dotenv": "^17.3.1",
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
 		"wrangler": "^4"

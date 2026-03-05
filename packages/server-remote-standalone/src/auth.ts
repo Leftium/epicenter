@@ -1,8 +1,9 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
 import type { AuthInstance } from '@epicenter/server-remote';
-import { baseAuthConfig } from '@epicenter/server-remote';
+import { baseAuthConfig, trustedClients } from '@epicenter/server-remote';
 
 // ---------------------------------------------------------------------------
 // Auth mode types
@@ -143,12 +144,16 @@ function createBetterAuthInstance(config: {
 		secret: config.secret,
 		trustedOrigins: config.trustedOrigins,
 		socialProviders: config.socialProviders,
-		emailAndPassword: { enabled: true },
 		plugins: [
 			bearer(),
 			jwt(),
-			// The oauth provider plugin from baseAuthConfig is spread above
-			...baseAuthConfig.plugins,
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				allowDynamicClientRegistration: true,
+				trustedClients: [...trustedClients],
+			}),
 		],
 	});
 

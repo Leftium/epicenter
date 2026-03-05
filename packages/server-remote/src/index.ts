@@ -12,7 +12,7 @@ export type {
 } from './types';
 
 // Auth
-export { baseAuthConfig } from './auth/better-auth-base';
+export { baseAuthConfig, trustedClients } from './auth/better-auth-base';
 export { createAuthMiddleware } from './auth/middleware';
 
 // Proxy handlers

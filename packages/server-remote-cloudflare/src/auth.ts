@@ -1,15 +1,18 @@
 import { env } from 'cloudflare:workers';
-import { baseAuthConfig } from '@epicenter/server-remote';
+import { baseAuthConfig, trustedClients, type AuthInstance } from '@epicenter/server-remote';
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { bearer } from 'better-auth/plugins/bearer';
+import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './db/schema';
 
-let cached: ReturnType<typeof betterAuth> | null = null;
+let cached: AuthInstance | null = null;
 
 /** Lazy singleton — deferred to request time to avoid global-scope I/O. */
-export function getAuth() {
+export function getAuth(): AuthInstance {
 	if (cached) return cached;
 
 	const sql = postgres(env.HYPERDRIVE.connectionString);
@@ -20,6 +23,17 @@ export function getAuth() {
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BETTER_AUTH_URL,
 		secret: env.BETTER_AUTH_SECRET,
+		plugins: [
+			bearer(),
+			jwt(),
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				allowDynamicClientRegistration: true,
+				trustedClients: [...trustedClients],
+			}),
+		],
 		session: {
 			expiresIn: 60 * 60 * 24 * 7, // 7 days
 			updateAge: 60 * 60 * 24, // 1 day

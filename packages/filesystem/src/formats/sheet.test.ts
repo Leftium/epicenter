@@ -1,5 +1,5 @@
 /**
- * Sheet Helpers Tests
+ * Sheet Tests
  *
  * Verifies CSV parsing/serialization and row/column ordering utilities for sheet-mode
  * timeline entries. These tests keep spreadsheet behavior stable across import, export,
@@ -19,7 +19,7 @@ import {
 	reorderColumn,
 	reorderRow,
 	serializeSheetToCsv,
-} from './sheet-helpers.js';
+} from './sheet.js';
 
 function createSheetMaps() {
 	const ydoc = new Y.Doc();
@@ -156,9 +156,9 @@ describe('parseSheetFromCsv', () => {
 		expect(rows.size).toBe(2);
 
 		const colEntries = Array.from(columns.entries());
-		expect(colEntries[0]![1].get('name')).toBe('A');
-		expect(colEntries[1]![1].get('name')).toBe('B');
-		expect(colEntries[2]![1].get('name')).toBe('C');
+		expect(colEntries[0]?.[1].get('name')).toBe('A');
+		expect(colEntries[1]?.[1].get('name')).toBe('B');
+		expect(colEntries[2]?.[1].get('name')).toBe('C');
 	});
 
 	test('empty CSV leaves maps empty', () => {
@@ -261,7 +261,10 @@ describe('fractional indexing', () => {
 			expect(orders[i]).toBeGreaterThan(0);
 			expect(orders[i]).toBeLessThan(1);
 			if (i > 0) {
-				expect(orders[i]).toBeGreaterThan(orders[i - 1]!);
+				const previous = orders[i - 1];
+				if (previous !== undefined) {
+					expect(orders[i]).toBeGreaterThan(previous);
+				}
 			}
 		}
 	});

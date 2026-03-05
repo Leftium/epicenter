@@ -77,8 +77,8 @@ describe('YKeyValueLww', () => {
 			expect(firstEntry).toBeDefined();
 			expect(secondEntry).toBeDefined();
 			expect(thirdEntry).toBeDefined();
-			expect(firstEntry!.ts).toBeLessThan(secondEntry!.ts);
-			expect(secondEntry!.ts).toBeLessThan(thirdEntry!.ts);
+			expect(firstEntry?.ts).toBeLessThan(secondEntry?.ts);
+			expect(secondEntry?.ts).toBeLessThan(thirdEntry?.ts);
 		});
 	});
 

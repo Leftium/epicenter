@@ -14,5 +14,9 @@ export function listenWithFallback(
 	} catch {
 		app.listen(0);
 	}
-	return app.server!.port!;
+	const port = app.server?.port;
+	if (port === undefined) {
+		throw new Error('Server port is not available after listen');
+	}
+	return port;
 }

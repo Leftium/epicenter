@@ -183,7 +183,8 @@ export function createIndexLogger({ logPath }: IndexLoggerConfig): IndexLogger {
 		isDraining = true;
 
 		while (queue.length > 0) {
-			const entry = queue.shift()!;
+			const entry = queue.shift();
+			if (!entry) continue;
 
 			await tryAsync({
 				try: async () => {

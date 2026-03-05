@@ -1,9 +1,9 @@
 ---
-name: create-tagged-error
+name: define-errors
 description: How to define and use defineErrors from wellcrafted. Use when creating new error types, updating error definitions, or reviewing error patterns. Covers variant factories, extractErrorMessage for cause, InferErrors/InferError for types, and call site patterns.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # defineErrors
@@ -21,14 +21,15 @@ import {
 
 ## Core Rules
 
-1. All variants for a service live in **one `defineErrors` call** — never spread them across multiple calls
+1. All variants for a domain live in **one `defineErrors` call** — never spread them across multiple calls
 2. The factory function **returns `{ message, ...fields }`** — that is the entire API; no `.withMessage()`, `.withContext()`, or `.withCause()` chains
 3. **`cause: unknown`** is just a field like any other — accept it in the input and forward it in the return object
 4. **Call `extractErrorMessage(cause)` inside the factory**, never at the call site
 5. Each call like `MyError.Variant({ ... })` **returns `Err(...)` automatically** — no separate `FooErr` pair
 6. **Shadow the const with a same-name type** using `InferErrors` — `const FooError` / `type FooError`
 7. Use `InferError<typeof FooError.Variant>` to extract a single variant's type when needed
-8. Aim for 2–5 variants per service, each named by failure mode
+8. **Variant names describe the specific failure mode** — never use generic names like `Service`, `Error`, or `Failed`
+9. Aim for 2–5 variants per domain, each named by failure mode
 
 ## Patterns
 
@@ -71,16 +72,19 @@ return DbError.NotFound({ table: 'users', id: '123' });
 import { extractErrorMessage } from 'wellcrafted/error';
 
 export const FfmpegError = defineErrors({
-  Service: ({ operation, cause }: { operation: string; cause: unknown }) => ({
-    message: `Failed to ${operation}: ${extractErrorMessage(cause)}`,
-    operation,
+  CompressFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to compress audio: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  VerifyFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to verify temp file: ${extractErrorMessage(cause)}`,
     cause,
   }),
 });
 export type FfmpegError = InferErrors<typeof FfmpegError>;
 
 // Call site — pass the raw caught error, never call extractErrorMessage here
-catch: (error) => FfmpegError.Service({ operation: 'compress audio', cause: error }),
+catch: (error) => FfmpegError.CompressFailed({ cause: error }),
 ```
 
 ### 4. Multiple variants in one object — discriminated union built-in
@@ -113,26 +117,40 @@ export type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 type NoDevicesFoundError = InferError<typeof DeviceStreamError.NoDevicesFound>;
 ```
 
-### 5. Simple service error — pass-through message from caller
+### 5. Domain errors with specific operation failures
 
 ```typescript
-export const RecorderError = defineErrors({
-  Service: ({ message }: { message: string }) => ({ message }),
+export const FsError = defineErrors({
+  ReadFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to read '${path}': ${extractErrorMessage(cause)}`,
+    path,
+    cause,
+  }),
+  WriteFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to write '${path}': ${extractErrorMessage(cause)}`,
+    path,
+    cause,
+  }),
+  DeleteFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+    message: `Failed to delete '${path}': ${extractErrorMessage(cause)}`,
+    path,
+    cause,
+  }),
 });
-export type RecorderError = InferErrors<typeof RecorderError>;
+export type FsError = InferErrors<typeof FsError>;
 
 // Call site
-return RecorderError.Service({ message: 'Already recording.' });
+return FsError.ReadFailed({ path: '/tmp/foo.txt', cause: error });
 ```
 
 ## Type Extraction
 
 ```typescript
 // Full union type for all variants
-type MyServiceError = InferErrors<typeof MyServiceError>;
+type HttpError = InferErrors<typeof HttpError>;
 
 // Single variant type
-type NotFoundError = InferError<typeof MyServiceError.NotFound>;
+type ConnectionError = InferError<typeof HttpError.Connection>;
 ```
 
 ## Anti-Patterns
@@ -152,7 +170,7 @@ catch: (error) => MyError.Failed({ cause: error });
 // WRONG — one defineErrors per variant (defeats the namespace grouping)
 const BusyError = defineErrors({ BusyError: () => ({ message: 'Busy' }) });
 const PermError = defineErrors({ PermError: () => ({ message: 'No perm' }) });
-// CORRECT — all variants for a service in one call
+// CORRECT — all variants for a domain in one call
 const RecorderError = defineErrors({
   Busy: () => ({ message: 'A recording is already in progress' }),
   PermissionDenied: () => ({ message: 'Microphone permission denied' }),
@@ -168,11 +186,12 @@ FooErr({ context: { id: '1' } });
 // CORRECT — each variant call returns Err(...) automatically
 FooError.NotFound({ id: '1' });
 
-// WRONG — monolithic single-variant error for a service with many failure modes
+// WRONG — generic "Service" variant name (says nothing about the failure mode)
 const RecorderError = defineErrors({
-  Error: ({ message }: { message: string }) => ({ message }), // Too vague
+  Service: ({ message }: { message: string }) => ({ message }),
 });
-// CORRECT — split by failure mode
+// RecorderError.Service({ message: '...' }) — "Service" is not a failure mode
+// CORRECT — name each variant by what actually went wrong
 const RecorderError = defineErrors({
   AlreadyRecording: () => ({ message: 'A recording is already in progress' }),
   PermissionDenied: ({ cause }: { cause: unknown }) => ({
@@ -182,6 +201,44 @@ const RecorderError = defineErrors({
   DeviceNotFound: ({ deviceId }: { deviceId: string }) => ({
     message: `Device not found: ${deviceId}`,
     deviceId,
+  }),
+});
+
+// WRONG — generic catch-all with operation string (hides failure modes behind a parameter)
+const FfmpegError = defineErrors({
+  Service: ({ operation, cause }: { operation: string; cause: unknown }) => ({
+    message: `Failed to ${operation}: ${extractErrorMessage(cause)}`,
+    operation,
+    cause,
+  }),
+});
+// FfmpegError.Service({ operation: 'compress audio', cause }) — variant name is meaningless
+// CORRECT — each operation is its own variant
+const FfmpegError = defineErrors({
+  CompressFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to compress audio: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  VerifyFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to verify temp file: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+});
+
+// WRONG — monolithic single-variant error for a domain with many failure modes
+const RecorderError = defineErrors({
+  Error: ({ message }: { message: string }) => ({ message }), // Too vague
+});
+// CORRECT — split by failure mode
+const RecorderError = defineErrors({
+  AlreadyRecording: () => ({ message: 'A recording is already in progress' }),
+  InitFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to initialize recorder: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  StreamAcquisition: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
+    cause,
   }),
 });
 ```

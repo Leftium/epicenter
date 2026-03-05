@@ -1,5 +1,5 @@
 /**
- * Validation Tests
+ * Naming Tests
  *
  * Covers filename validation, duplicate-name checks, and deterministic disambiguation rules.
  * These tests guard filesystem naming constraints that are shared across tree and index operations.
@@ -11,14 +11,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
-import { filesTable } from './file-table.js';
-import type { FileId } from './types.js';
-import {
-	assertUniqueName,
-	disambiguateNames,
-	FS_ERRORS,
-	validateName,
-} from './validation.js';
+import type { FileId } from '../ids.js';
+import { filesTable } from '../table.js';
+import { assertUniqueName, disambiguateNames, validateName } from './naming.js';
 
 const fid = (s: string) => s as FileId;
 
@@ -45,15 +40,6 @@ function makeRow(
 		_v: 1 as const,
 	};
 }
-
-describe('FS_ERRORS', () => {
-	test('creates error with code property', () => {
-		const err = FS_ERRORS.ENOENT('/missing.txt');
-		expect(err.message).toBe('ENOENT: /missing.txt');
-		expect(err.code).toBe('ENOENT');
-		expect(err).toBeInstanceOf(Error);
-	});
-});
 
 describe('validateName', () => {
 	test('accepts normal filenames', () => {

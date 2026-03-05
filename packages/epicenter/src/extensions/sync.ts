@@ -89,7 +89,7 @@ export function createWsSyncExtension(
 			doc: ydoc,
 			url: resolvedUrl,
 			getToken: config.getToken
-				? () => config.getToken!(workspaceId)
+				? () => config.getToken?.(workspaceId)
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,

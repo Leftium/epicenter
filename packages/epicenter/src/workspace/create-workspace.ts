@@ -100,25 +100,27 @@ export function createWorkspace<
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
->(
-	config: WorkspaceDefinition<
-		TId,
-		TTableDefinitions,
-		TKvDefinitions,
-		TAwarenessDefinitions
-	>,
-): WorkspaceClientBuilder<
+>({
+	id,
+	tables: tablesDef,
+	kv: kvDef,
+	awareness: awarenessDef,
+}: WorkspaceDefinition<
+	TId,
+	TTableDefinitions,
+	TKvDefinitions,
+	TAwarenessDefinitions
+>): WorkspaceClientBuilder<
 	TId,
 	TTableDefinitions,
 	TKvDefinitions,
 	TAwarenessDefinitions,
 	Record<string, never>
 > {
-	const { id } = config;
 	const ydoc = new Y.Doc({ guid: id });
-	const tableDefs = (config.tables ?? {}) as TTableDefinitions;
-	const kvDefs = (config.kv ?? {}) as TKvDefinitions;
-	const awarenessDefs = (config.awareness ?? {}) as TAwarenessDefinitions;
+	const tableDefs = (tablesDef ?? {}) as TTableDefinitions;
+	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
+	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
 	const tables = createTables(ydoc, tableDefs);
 	const kv = createKv(ydoc, kvDefs);

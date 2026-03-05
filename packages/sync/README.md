@@ -1,6 +1,6 @@
 # Epicenter Sync
 
-Client-side Yjs sync provider for `@epicenter/server`.
+Client-side Yjs sync provider for `@epicenter/server-elysia`.
 
 ## What This Does
 
@@ -39,7 +39,7 @@ provider.destroy();
 
 ## Auth Modes
 
-Two authentication modes, matching `@epicenter/server`'s auth configuration:
+Two authentication modes, matching `@epicenter/server-elysia`'s auth configuration:
 
 ### Open (no auth)
 
@@ -185,5 +185,5 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ```
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.
-- **`@epicenter/server`**: The server that this provider connects to. Exposes `ws://host:port/rooms/{id}`.
+- **`@epicenter/server-elysia`**: The server that this provider connects to. Exposes `ws://host:port/rooms/{id}`.
 - **`@epicenter/workspace/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.

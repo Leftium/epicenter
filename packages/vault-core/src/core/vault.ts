@@ -238,9 +238,7 @@ export function createVault<TAdapters extends readonly Adapter[]>(
 
 			return files;
 		},
-		async importData(opts: ImportOptions) {
-			const { files, codec } = opts;
-
+		async importData({ files, codec }: ImportOptions) {
 			// Group files by detected adapter id and collect per-adapter detected tags from metadata
 			type Group = { files: Array<[string, File]>; detectedTag?: string };
 			const groups = new Map<string, Group>();

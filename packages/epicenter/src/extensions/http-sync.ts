@@ -77,8 +77,7 @@ export type HttpSyncExtensionConfig = {
 export function createHttpSyncExtension(
 	config: HttpSyncExtensionConfig,
 ): ExtensionFactory {
-	return (ctx) => {
-		const { ydoc } = ctx;
+	return ({ ydoc, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
 		// Resolve URL — supports string with {id} placeholder or function
@@ -103,7 +102,7 @@ export function createHttpSyncExtension(
 		// giving an accurate state vector for the initial HTTP handshake.
 		// Note: provider.connect() is async (performs initial sync round-trip).
 		const whenReady = (async () => {
-			await ctx.whenReady;
+			await priorReady;
 			await provider.connect();
 		})();
 

@@ -32,11 +32,10 @@ type WhisperingErrorInput = Omit<
  * - If serviceError provided and no description, uses serviceError.message
  * - If action is missing and serviceError provided, adds more-details action
  */
-function normalizeInput(
-	args: WhisperingErrorInput,
-): Omit<WhisperingError, 'name' | 'severity'> {
-	const { serviceError, ...rest } = args;
-
+function normalizeInput({
+	serviceError,
+	...rest
+}: WhisperingErrorInput): Omit<WhisperingError, 'name' | 'severity'> {
 	// Derive description from serviceError if not explicitly provided
 	const description = rest.description ?? serviceError?.message ?? '';
 

@@ -9,6 +9,16 @@
 
 // Auth
 export { extractBearerToken, type TokenVerifier } from './auth';
+// Discovery (device discovery via Yjs Awareness)
+export {
+	createClientPresence,
+	createLocalPresence,
+	type DeviceCapability,
+	type DeviceType,
+	DISCOVERY_ROOM_ID,
+	type DiscoveryState,
+	getDiscoveredDevices,
+} from './discovery';
 // Handlers (framework-agnostic request/message handlers)
 export {
 	type ConnectionId,
@@ -40,6 +50,13 @@ export {
 	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
 } from './protocol';
+// Providers (AI provider constants)
+export {
+	isSupportedProvider,
+	PROVIDER_ENV_VARS,
+	SUPPORTED_PROVIDERS,
+	type SupportedProvider,
+} from './providers';
 // Rooms (connection lifecycle)
 export { createRoomManager } from './rooms';
 // Storage (HTTP sync persistence)

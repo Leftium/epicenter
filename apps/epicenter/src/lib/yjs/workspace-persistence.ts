@@ -38,9 +38,7 @@ const FILE_NAMES = {
  *   .withExtension('persistence', (ctx) => workspacePersistence(ctx));
  * ```
  */
-export function workspacePersistence(ctx: ExtensionContext) {
-	const { ydoc, id } = ctx;
-
+export function workspacePersistence({ ydoc, id }: ExtensionContext) {
 	// For logging
 	const logPath = `workspaces/${id}`;
 

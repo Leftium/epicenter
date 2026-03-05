@@ -194,8 +194,7 @@ async function collectFilesFromRepo(
 // -------------------------------------------------------------
 // Import command (ZIP ingest via adapter ingestor)
 // -------------------------------------------------------------
-async function cmdImport(args: CLIArgs, adapterID: string) {
-	const { file, db } = args;
+async function cmdImport({ file, db }: CLIArgs, adapterID: string) {
 	if (!file) throw new Error('--file is required for import command');
 	if (!db) throw new Error('--db is required for import command');
 
@@ -233,13 +232,12 @@ async function cmdImport(args: CLIArgs, adapterID: string) {
 // -------------------------------------------------------------
 // Export DB -> Files (Markdown only)
 // -------------------------------------------------------------
-async function cmdExportFs(args: CLIArgs, adapterID: string) {
-	const { db } = args;
+async function cmdExportFs({ db, repo }: CLIArgs, adapterID: string) {
 	if (!db) throw new Error('--db is required for export-fs command');
 
 	const dbFile = resolveDbFile(db);
 	const dbUrl = toDbUrl(dbFile);
-	const repoDir = resolveRepoDir(args.repo);
+	const repoDir = resolveRepoDir(repo);
 
 	await ensureDirExists(dbFile);
 	const client = createClient({ url: dbUrl });
@@ -266,13 +264,12 @@ async function cmdExportFs(args: CLIArgs, adapterID: string) {
 // -------------------------------------------------------------
 // Import Files -> DB (Markdown only)
 // -------------------------------------------------------------
-async function cmdImportFs(args: CLIArgs, adapterID: string) {
-	const { db } = args;
+async function cmdImportFs({ db, repo }: CLIArgs, adapterID: string) {
 	if (!db) throw new Error('--db is required for import-fs command');
 
 	const dbFile = resolveDbFile(db);
 	const dbUrl = toDbUrl(dbFile);
-	const repoDir = resolveRepoDir(args.repo);
+	const repoDir = resolveRepoDir(repo);
 
 	await ensureDirExists(dbFile);
 	const client = createClient({ url: dbUrl });

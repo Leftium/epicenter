@@ -1,6 +1,7 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { betterAuth } from 'better-auth';
-import { bearer, jwt } from 'better-auth/plugins';
+import { bearer } from 'better-auth/plugins/bearer';
+import { jwt } from 'better-auth/plugins/jwt';
 import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
@@ -17,7 +18,7 @@ export const sharedAuthConfig = {
 	emailAndPassword: { enabled: true },
 	plugins: [
 		bearer(),
-		jwt({ disabledPaths: ['/token'] }),
+		jwt(),
 		oauthProvider({
 			loginPage: '/sign-in',
 			consentPage: '/consent',
@@ -61,30 +62,14 @@ export function createAuth(env: AuthEnv) {
 		},
 		baseURL: env.BETTER_AUTH_URL,
 		secret: env.BETTER_AUTH_SECRET,
-		databaseHooks: {
-			session: {
-				delete: {
-					after: async (session) => {
-						// Write a revocation marker so stale KV caches reject the
-						// token during the eventual-consistency window. KV docs say
-						// "60 seconds or more", so 5 min gives wide safety margin.
-						await env.SESSION_KV.put(
-							`revoked:${session.token}`,
-							'1',
-							{ expirationTtl: 300 },
-						);
-					},
-				},
-			},
-		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 7, // 7 days
 			updateAge: 60 * 60 * 24, // 1 day
-			// Keep storeSessionInDatabase as default (true). Sessions are written
-			// to both KV and Neon. This is critical for multi-device users: KV is
-			// eventually consistent (~60s propagation), so a user signing in on
-			// their phone (edge A) and immediately opening the desktop app (edge B)
-			// needs the Neon fallback during the propagation window.
+			// When secondaryStorage is set, Better Auth stores sessions there
+			// INSTEAD of the DB by default. Explicitly opt in to DB persistence
+			// so Neon acts as the authoritative fallback during KV's ~60s
+			// eventual-consistency propagation window (multi-device scenario).
+			storeSessionInDatabase: true,
 			cookieCache: {
 				enabled: true,
 				maxAge: 60 * 5, // 5 min — browser clients skip DB/KV entirely
@@ -100,9 +85,8 @@ export function createAuth(env: AuthEnv) {
 			},
 		},
 		trustedOrigins: [
+			'https://*.epicenter.so',
 			'https://epicenter.so',
-			'https://app.epicenter.so',
-			'https://api.epicenter.so',
 			'tauri://localhost', // Tauri desktop app
 		],
 		// Cloudflare KV as secondary storage for session caching.

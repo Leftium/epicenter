@@ -23,10 +23,13 @@ export type Bindings = {
 	GROK_API_KEY?: string;
 };
 
+type Auth = ReturnType<typeof createAuth>;
+type Session = Auth['$Infer']['Session'];
+
 export type Variables = {
-	auth: ReturnType<typeof createAuth>;
-	user: { id: string; name: string; email: string };
-	session: { id: string; token: string };
+	auth: Auth;
+	user: Session['user'];
+	session: Session['session'];
 };
 
 export type AppEnv = { Bindings: Bindings; Variables: Variables };

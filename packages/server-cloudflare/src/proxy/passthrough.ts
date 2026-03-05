@@ -2,18 +2,9 @@ import {
 	isSupportedProvider,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Context } from 'hono';
-import type { Bindings, Variables } from '../worker';
+import { factory } from '../env';
 
-const PROVIDER_CONFIG: Record<
-	SupportedProvider,
-	{
-		envKey: string;
-		baseUrl: string;
-		authHeader: string;
-		format: 'Bearer' | 'raw';
-	}
-> = {
+const PROVIDER_CONFIG = {
 	openai: {
 		envKey: 'OPENAI_API_KEY',
 		baseUrl: 'https://api.openai.com',
@@ -38,17 +29,25 @@ const PROVIDER_CONFIG: Record<
 		authHeader: 'authorization',
 		format: 'Bearer',
 	},
-};
+} as const satisfies Record<
+	SupportedProvider,
+	{
+		envKey: string;
+		baseUrl: string;
+		authHeader: string;
+		format: 'Bearer' | 'raw';
+	}
+>;
 
 export function createProxyHandler() {
-	return async (c: Context<{ Bindings: Bindings; Variables: Variables }>) => {
+	return factory.createHandlers(async (c) => {
 		const provider = c.req.param('provider') as string | undefined;
 		if (!provider || !isSupportedProvider(provider)) {
 			return c.json({ error: `Unknown provider: ${provider}` }, 400);
 		}
 
 		const config = PROVIDER_CONFIG[provider];
-		const apiKey = c.env[config.envKey as keyof Bindings] as string | undefined;
+		const apiKey = c.env[config.envKey];
 		if (!apiKey) {
 			return c.json({ error: `${provider} not configured` }, 503);
 		}
@@ -77,5 +76,5 @@ export function createProxyHandler() {
 					response.headers.get('content-type') ?? 'application/json',
 			},
 		});
-	};
+	});
 }

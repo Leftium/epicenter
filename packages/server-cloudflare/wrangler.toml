@@ -20,10 +20,10 @@ new_sqlite_classes = ["YjsRoom"]
 
 # --- Vars ---
 [vars]
-BASE_URL = "https://api.epicenter.so"
+BETTER_AUTH_URL = "https://api.epicenter.so"
 
 # --- Secrets (set via `wrangler secret put`) ---
 # DATABASE_URL
-# AUTH_SECRET
+# BETTER_AUTH_SECRET
 # OPENAI_API_KEY
 # ANTHROPIC_API_KEY

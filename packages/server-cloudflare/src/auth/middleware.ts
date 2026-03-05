@@ -1,28 +1,22 @@
-import { extractBearerToken } from '@epicenter/sync-core';
-import { createMiddleware } from 'hono/factory';
-import type { Bindings, Variables } from '../worker';
-import { createAuth } from './better-auth';
+import { factory } from '../env';
 
 export function createAuthMiddleware() {
-	return createMiddleware<{ Bindings: Bindings; Variables: Variables }>(
-		async (c, next) => {
-			// WebSocket: token in query string. HTTP: token in Authorization header.
-			const token =
-				c.req.query('token') ??
-				extractBearerToken(c.req.header('authorization'));
+	return factory.createMiddleware(async (c, next) => {
+		const auth = c.var.auth;
 
-			if (!token) return c.json({ error: 'Unauthorized' }, 401);
+		// WebSocket clients pass the token as a query param (no Authorization
+		// header on upgrade requests). Normalise into a Bearer header so
+		// Better Auth's bearer() plugin handles extraction uniformly.
+		const wsToken = c.req.query('token');
+		const headers = wsToken
+			? new Headers({ authorization: `Bearer ${wsToken}` })
+			: c.req.raw.headers;
 
-			const auth = createAuth(c.env);
-			const result = await auth.api.getSession({
-				headers: new Headers({ authorization: `Bearer ${token}` }),
-			});
+		const result = await auth.api.getSession({ headers });
+		if (!result) return c.json({ error: 'Unauthorized' }, 401);
 
-			if (!result) return c.json({ error: 'Unauthorized' }, 401);
-
-			c.set('user', result.user);
-			c.set('session', result.session);
-			await next();
-		},
-	);
+		c.set('user', result.user);
+		c.set('session', result.session);
+		await next();
+	});
 }

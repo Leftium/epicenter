@@ -29,9 +29,9 @@ export function isSupportedProvider(
 }
 
 /** Environment variable names for each provider's API key. */
-export const PROVIDER_ENV_VARS: Record<SupportedProvider, string> = {
+export const PROVIDER_ENV_VARS = {
 	openai: 'OPENAI_API_KEY',
 	anthropic: 'ANTHROPIC_API_KEY',
 	gemini: 'GEMINI_API_KEY',
 	grok: 'GROK_API_KEY',
-};
+} as const satisfies Record<SupportedProvider, string>;

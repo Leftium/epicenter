@@ -1,13 +1,22 @@
 ---
 name: better-auth-best-practices
-description: Skill for integrating Better Auth - the comprehensive TypeScript authentication framework.
+description: Configure Better Auth server and client, set up database adapters, manage sessions, add plugins, and handle environment variables. Use when users mention Better Auth, betterauth, auth.ts, or need to set up TypeScript authentication with email/password, OAuth, or plugin configuration.
 ---
 
 # Better Auth Integration Guide
 
 **Always consult [better-auth.com/docs](https://better-auth.com/docs) for code examples and latest API.**
 
-Better Auth is a TypeScript-first, framework-agnostic auth framework supporting email/password, OAuth, magic links, passkeys, and more via plugins.
+---
+
+## Setup Workflow
+
+1. Install: `npm install better-auth`
+2. Set env vars: `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL`
+3. Create `auth.ts` with database + config
+4. Create route handler for your framework
+5. Run `npx @better-auth/cli@latest migrate`
+6. Verify: call `GET /api/auth/ok` — should return `{ status: "ok" }`
 
 ---
 
@@ -127,48 +136,6 @@ NOT `from "better-auth/plugins"`.
 **Popular plugins:** `twoFactor`, `organization`, `passkey`, `magicLink`, `emailOtp`, `username`, `phoneNumber`, `admin`, `apiKey`, `bearer`, `jwt`, `multiSession`, `sso`, `oauthProvider`, `oidcProvider`, `openAPI`, `genericOAuth`.
 
 Client plugins go in `createAuthClient({ plugins: [...] })`.
-
----
-
-
-## Native App / Desktop Auth (Tauri, Electron, Expo)
-
-Cookies are unreliable in non-browser contexts (Tauri webview rejects `Secure` cookies from `tauri://`, split cookie jars between webview and Rust HTTP, debug/release inconsistencies).
-
-**Use the `bearer()` plugin.** It makes Better Auth work for native apps without changing server-side session logic:
-
-- `bearer()` adds `set-auth-token` response header to all auth responses
-- Sign-in/sign-up endpoints already return `{ token: session.token }` in the response body
-- The client extracts the token from the body or header, stores it locally
-- On subsequent requests: `Authorization: Bearer <token>` → bearer() converts to cookie internally → Better Auth validates normally
-
-**Client config for native apps:**
-```typescript
-const authClient = createAuthClient({
-  baseURL: 'https://hub.example.com',
-  fetchOptions: {
-    auth: {
-      type: 'Bearer',
-      token: () => localStorage.getItem('session-token') || '',
-    },
-  },
-});
-```
-
-**Token extraction on sign-in:**
-```typescript
-const { data } = await authClient.signIn.email({
-  email: 'user@example.com',
-  password: 'password',
-}, {
-  onSuccess: (ctx) => {
-    const token = ctx.response.headers.get('set-auth-token');
-    localStorage.setItem('session-token', token);
-  },
-});
-```
-
-**Key point:** bearer() handles opaque HMAC session tokens only. It does NOT validate JWTs. The `jwt()` plugin is separate and for issuing tokens to external services, not for native app auth.
 
 ---
 

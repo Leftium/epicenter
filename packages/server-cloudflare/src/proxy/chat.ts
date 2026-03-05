@@ -3,8 +3,7 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Context } from 'hono';
-import type { Bindings, Variables } from '../worker';
+import { factory } from '../env';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
@@ -26,7 +25,7 @@ const PROVIDER_AUTH: Record<
 };
 
 export function createAiChatHandler() {
-	return async (c: Context<{ Bindings: Bindings; Variables: Variables }>) => {
+	return factory.createHandlers(async (c) => {
 		const body = await c.req.json<{
 			provider?: string;
 			model?: string;
@@ -38,7 +37,7 @@ export function createAiChatHandler() {
 			return c.json({ error: `Unsupported provider: ${provider}` }, 400);
 		}
 
-		const envKey = PROVIDER_ENV_VARS[provider] as keyof Bindings;
+		const envKey = PROVIDER_ENV_VARS[provider];
 		const apiKey = c.env[envKey] as string | undefined;
 		if (!apiKey) {
 			return c.json(
@@ -76,5 +75,5 @@ export function createAiChatHandler() {
 					providerResponse.headers.get('content-type') ?? 'text/event-stream',
 			},
 		});
-	};
+	});
 }

@@ -1,65 +1,24 @@
-import { oauthProvider } from '@better-auth/oauth-provider';
-import type { BetterAuthOptions } from 'better-auth';
+import { env } from 'cloudflare:workers';
+import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
-import { bearer } from 'better-auth/plugins/bearer';
-import { jwt } from 'better-auth/plugins/jwt';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { drizzle } from 'drizzle-orm/neon-http';
+import { authOptions } from './options';
 
 /**
- * Schema-affecting config shared between the runtime auth instance and
- * `src/auth.ts` (CLI migrations). Every option here influences the
- * database schema — keep them in one place so `npx @better-auth/cli migrate`
- * always matches what the worker actually uses.
+ * Creates a Better Auth instance configured for the Cloudflare Workers runtime.
  *
- * Runtime-only options (secondaryStorage, trustedOrigins, cookies, etc.)
- * belong in `createAuth` below — they don't affect the schema.
+ * Spreads {@link authOptions} (schema-affecting config shared with the CLI) and
+ * layers on runtime-only options: Neon database via Drizzle adapter, Cloudflare
+ * KV session caching, cross-subdomain cookies, and trusted origins.
  */
-export const sharedAuthConfig = {
-	basePath: '/auth',
-	emailAndPassword: { enabled: true },
-	plugins: [
-		bearer(),
-		jwt(),
-		oauthProvider({
-			loginPage: '/sign-in',
-			consentPage: '/consent',
-			requirePKCE: true,
-			allowDynamicClientRegistration: true,
-			trustedClients: [
-				{
-					clientId: 'epicenter-desktop',
-					name: 'Epicenter Desktop',
-					type: 'native',
-					redirectUrls: ['tauri://localhost/auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: 'epicenter-mobile',
-					name: 'Epicenter Mobile',
-					type: 'native',
-					redirectUrls: ['epicenter://auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-			],
-		}),
-	],
-} satisfies Partial<BetterAuthOptions>;
+function createAuth() {
+	const sql = neon(env.DATABASE_URL);
+	const db = drizzle(sql);
 
-type AuthEnv = {
-	DATABASE_URL: string;
-	SESSION_KV: KVNamespace;
-	BETTER_AUTH_SECRET: string;
-	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
-};
-
-export function createAuth(env: AuthEnv) {
 	const auth = betterAuth({
-		...sharedAuthConfig,
-		database: {
-			type: 'postgres',
-			url: env.DATABASE_URL,
-		},
+		...authOptions,
+		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BETTER_AUTH_URL,
 		secret: env.BETTER_AUTH_SECRET,
 		session: {
@@ -106,3 +65,6 @@ export function createAuth(env: AuthEnv) {
 
 	return auth;
 }
+
+/** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
+export const auth = createAuth();

@@ -10,11 +10,18 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"auth:generate": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts",
+		"auth:migrate": "bun --env-file=.dev.vars x @better-auth/cli migrate --config ./better-auth.config.ts",
+		"auth:schema": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@better-auth/drizzle-adapter": "^1.5.3",
 		"@better-auth/oauth-provider": "^1.5.3",
+		"arktype": "catalog:",
 		"@epicenter/sync-core": "workspace:*",
+		"drizzle-orm": "catalog:",
 		"@neondatabase/serverless": "^0.10.0",
 		"better-auth": "^1.4.19",
 		"hono": "^4.7.0",
@@ -22,8 +29,8 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20250214.0",
+		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
-		"wrangler": "^3.114.0"
+		"wrangler": "^4"
 	}
 }

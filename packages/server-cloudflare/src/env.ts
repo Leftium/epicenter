@@ -1,27 +1,23 @@
 import { createFactory } from 'hono/factory';
-import type { createAuth } from './auth/server';
+import type { auth } from './auth/server';
 
-type Bindings = {
-	DATABASE_URL: string;
-	YJS_ROOM: DurableObjectNamespace;
-	SESSION_KV: KVNamespace;
-	BETTER_AUTH_SECRET: string;
-	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — OAuth issuer
+type ApiKeyBindings = {
 	OPENAI_API_KEY?: string;
 	ANTHROPIC_API_KEY?: string;
 	GEMINI_API_KEY?: string;
 	GROK_API_KEY?: string;
 };
 
-type Auth = ReturnType<typeof createAuth>;
-type Session = Auth['$Infer']['Session'];
+type Session = (typeof auth)['$Infer']['Session'];
 
 type Variables = {
-	auth: Auth;
 	user: Session['user'];
 	session: Session['session'];
 };
 
-export type AppEnv = { Bindings: Bindings; Variables: Variables };
+export type AppEnv = {
+	Bindings: Cloudflare.Env & ApiKeyBindings;
+	Variables: Variables;
+};
 
 export const factory = createFactory<AppEnv>();

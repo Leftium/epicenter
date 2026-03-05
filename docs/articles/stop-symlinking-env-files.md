@@ -116,6 +116,8 @@ export function createAuth(env: AuthEnv) {
 
 This matters because the CLI generates migrations based on your schema. If the CLI's config and the runtime's config ever diverge, your migrations won't match your actual tables. By sharing one source of truth, that problem can't happen.
 
+One recent simplification: since March 2025, `import { env } from "cloudflare:workers"` gives you module-level access to bindings. The runtime entry point can now be a top-level singleton (`export const auth = createAuth(env)`) instead of a per-request factory. The `--env-file` pattern and arktype validation for the CLI entry point are unchanged — the CLI still runs in Node/Bun, not Workers.
+
 Call it the **Split Entry Point Pattern**: one shared config for schema-affecting options, two entry points for the execution context.
 
 ```
@@ -198,3 +200,7 @@ If you're on a project where everyone is on macOS or Linux and symlinks always w
 > "If the CLI's config and the runtime's config ever diverge, your migrations won't match your actual tables. By sharing one source of truth, that problem can't happen."
 
 > "Name the env file in your scripts, not in your filesystem."
+
+---
+
+**Related:** [Better Auth Needs Two Entry Points in Serverless](./better-auth-needs-two-entry-points-in-serverless.md) dives deeper into the split entry point pattern and the module-level singleton update. [Hono Factory Pattern](./20260305T110000-hono-factory-pattern-type-safety.md) covers the type-safe middleware side of the same architecture.

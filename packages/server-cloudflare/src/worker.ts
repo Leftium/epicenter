@@ -6,7 +6,6 @@ import { cors } from 'hono/cors';
 import { createAiChatHandler } from './ai/chat';
 import { createAuth } from './auth/better-auth';
 import { createAuthMiddleware } from './auth/middleware';
-import { createMigrateHandler } from './auth/migrate';
 import { factory } from './factory';
 import { createProxyHandler } from './proxy/handler';
 
@@ -38,10 +37,11 @@ const app = factory.createApp();
 // Constructs auth per-request from env bindings and stashes it in c.var.
 // No module-level cache — fresh instance per request, per Better Auth's
 // serverless recommendation.
-app.use('*', async (c, next) => {
+const authService = factory.createMiddleware(async (c, next) => {
 	c.set('auth', createAuth(c.env));
 	return next();
 });
+app.use('*', authService);
 
 // --- CORS ---
 // Skip CORS for WebSocket upgrades — Hono's CORS middleware modifies response
@@ -66,26 +66,18 @@ app.get('/', (c) =>
 // Use app.on() instead of app.mount() — mount() strips the base path before
 // forwarding, which breaks Better Auth's internal routing when basePath is '/auth'.
 app.on(['GET', 'POST'], '/auth/*', (c) => {
-	return c.get('auth').handler(c.req.raw);
+	return c.var.auth.handler(c.req.raw);
 });
 
 // --- OAuth Discovery (must be at root, not under /auth) ---
 // Type assertion: createAuth() returns a generic Auth type that loses plugin-
 // specific API methods from the cache. The oauthProvider plugin adds these at runtime.
 app.get('/.well-known/openid-configuration', (c) =>
-	oauthProviderOpenIdConfigMetadata(c.get('auth') as never)(c.req.raw),
+	oauthProviderOpenIdConfigMetadata(c.var.auth as never)(c.req.raw),
 );
 app.get('/.well-known/oauth-authorization-server', (c) =>
-	oauthProviderAuthServerMetadata(c.get('auth') as never)(c.req.raw),
+	oauthProviderAuthServerMetadata(c.var.auth as never)(c.req.raw),
 );
-
-// --- DB Migrations (deploy-time only, protected by BETTER_AUTH_SECRET) ---
-app.post('/migrate', (c) => {
-	if (c.req.header('x-migrate-secret') !== c.env.BETTER_AUTH_SECRET) {
-		return c.json({ error: 'Unauthorized' }, 401);
-	}
-	return createMigrateHandler()(c);
-});
 
 // --- Auth middleware for protected routes ---
 const authGuard = createAuthMiddleware();

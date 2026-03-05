@@ -11,12 +11,7 @@ echo "=== 1. Health check ==="
 curl -s "$BASE/" | jq .
 
 echo ""
-echo "=== 2. Run migrations ==="
-curl -s -X POST "$BASE/migrate" \
-  -H "x-migrate-secret: I2EhbQto4NZT07/EBXEUo9jZiNenuvDMEbWfKSYcnNI=" | jq .
-
-echo ""
-echo "=== 3. Sign up ==="
+echo "=== 2. Sign up ==="
 SIGNUP_RESPONSE=$(curl -s -X POST "$BASE/auth/sign-up/email" \
   -H "Content-Type: application/json" \
   -d "{\"email\": \"$EMAIL\", \"password\": \"$PASSWORD\", \"name\": \"Test User\"}" \

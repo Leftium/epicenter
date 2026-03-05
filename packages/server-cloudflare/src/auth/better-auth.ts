@@ -2,6 +2,20 @@ import { betterAuth } from 'better-auth';
 import { bearer, jwt } from 'better-auth/plugins';
 import { oauthProvider } from '@better-auth/oauth-provider';
 
+/** Plugins that affect the database schema. Shared between the runtime auth
+ *  instance and the CLI config so `npx @better-auth/cli migrate` discovers
+ *  the same tables the worker uses. */
+export const authPlugins = [
+	bearer(),
+	jwt(),
+	oauthProvider({
+		loginPage: '/sign-in',
+		consentPage: '/consent',
+		requirePKCE: true,
+		allowDynamicClientRegistration: true,
+	}),
+] as const;
+
 type AuthEnv = {
 	DATABASE_URL: string;
 	SESSION_KV: KVNamespace;
@@ -19,6 +33,7 @@ export function createAuth(env: AuthEnv) {
 		basePath: '/auth',
 		secret: env.BETTER_AUTH_SECRET,
 		emailAndPassword: { enabled: true },
+		plugins: [...authPlugins],
 		databaseHooks: {
 			session: {
 				delete: {
@@ -62,16 +77,6 @@ export function createAuth(env: AuthEnv) {
 			'https://app.epicenter.so',
 			'https://api.epicenter.so',
 			'tauri://localhost', // Tauri desktop app
-		],
-		plugins: [
-			bearer(),
-			jwt(),
-			oauthProvider({
-				loginPage: '/sign-in',
-				consentPage: '/consent',
-				requirePKCE: true,
-				allowDynamicClientRegistration: true,
-			}),
 		],
 		// Cloudflare KV as secondary storage for session caching.
 		// Bearer-token clients (mobile, Tauri) can't use cookieCache, so KV

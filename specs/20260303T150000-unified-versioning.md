@@ -62,7 +62,7 @@ GitHub Actions requires all workflows to be flat files in `.github/workflows/` �
 |---|---|---|
 | `release.{app}.yml` | Tag-triggered build + publish | `release.whispering.yml`, `release.epicenter.yml` |
 | `pr-preview.{app}.yml` | PR preview artifacts | `pr-preview.whispering.yml`, `pr-preview.epicenter.yml` |
-| `deploy.{target}.yml` | Deployment | `deploy.cloudflare.yml`, `deploy.preview.yml` |
+| `deploy.{target}.yml` | Deployment | `deploy.cloudflare.yml`, `deploy.cloudflare-preview.yml` |
 | `ci.{name}.yml` | Linting, formatting, checks | `ci.autofix.yml`, `ci.format.yml` |
 | `auto.{name}.yml` | Automated repo maintenance | `auto.release.yml`, `auto.label-issues.yml` |
 | `meta.{name}.yml` | Repo meta tasks | `meta.sponsors-readme.yml`, `meta.update-readme-version.yml`, `meta.sync-releases.yml` |
@@ -203,7 +203,7 @@ jobs:
 |---|---|---|
 | `publish-tauri-releases.yml` | `release.whispering.yml` | `v*` tags |
 | `pr-preview-builds.yml` | `pr-preview.whispering.yml` | PRs touching `apps/whispering/**`, `packages/**` |
-| `preview-deployment.yml` | `deploy.preview.yml` | PRs (Cloudflare preview) |
+| `preview-deployment.yml` | `deploy.cloudflare-preview.yml` | PRs (Cloudflare preview) |
 | `autofix.yml` | `ci.autofix.yml` | PRs |
 | `format.yml` | `ci.format.yml` | PRs |
 | `auto-label-issues.yml` | `auto.label-issues.yml` | Issues |
@@ -229,7 +229,7 @@ Unchanged: `claude.yml`, `deploy.cloudflare.yml`.
 ### Wave 2: Workflow renames
 4. Rename `publish-tauri-releases.yml` → `release.whispering.yml`
 5. Rename `pr-preview-builds.yml` → `pr-preview.whispering.yml`, add path filters
-6. Rename `preview-deployment.yml` → `deploy.preview.yml`
+6. Rename `preview-deployment.yml` → `deploy.cloudflare-preview.yml`
 7. Rename `cleanup-preview.yml` → `deploy.cleanup-preview.yml`
 8. Rename `autofix.yml` → `ci.autofix.yml`
 9. Rename `format.yml` → `ci.format.yml`

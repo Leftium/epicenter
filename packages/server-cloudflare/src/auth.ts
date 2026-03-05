@@ -1,11 +1,9 @@
 import { env } from 'cloudflare:workers';
-import { oauthProvider } from '@better-auth/oauth-provider';
 import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { bearer } from 'better-auth/plugins/bearer';
-import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/neon-http';
+import { authSchemaConfig } from './auth-base';
 import { factory } from './env';
 
 const sql = neon(env.DATABASE_URL);
@@ -13,36 +11,7 @@ const db = drizzle(sql);
 
 /** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
 export const auth = betterAuth({
-	basePath: '/auth',
-	emailAndPassword: { enabled: true },
-	plugins: [
-		bearer(),
-		jwt(),
-		oauthProvider({
-			loginPage: '/sign-in',
-			consentPage: '/consent',
-			requirePKCE: true,
-			allowDynamicClientRegistration: true,
-			trustedClients: [
-				{
-					clientId: 'epicenter-desktop',
-					name: 'Epicenter Desktop',
-					type: 'native',
-					redirectUrls: ['tauri://localhost/auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-				{
-					clientId: 'epicenter-mobile',
-					name: 'Epicenter Mobile',
-					type: 'native',
-					redirectUrls: ['epicenter://auth/callback'],
-					skipConsent: true,
-					metadata: {},
-				},
-			],
-		}),
-	],
+	...authSchemaConfig,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	baseURL: env.BETTER_AUTH_URL,
 	secret: env.BETTER_AUTH_SECRET,

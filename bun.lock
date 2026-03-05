@@ -424,6 +424,7 @@
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/server-remote": "workspace:*",
         "@epicenter/sync-core": "workspace:*",
+        "@types/bun": "^1.3.10",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
@@ -557,9 +558,6 @@
         "typescript": "catalog:",
       },
     },
-  },
-  "overrides": {
-    "@better-auth/core": "1.5.3",
   },
   "catalog": {
     "@better-auth/drizzle-adapter": "^1.5.3",

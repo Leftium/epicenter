@@ -153,16 +153,9 @@ export type AppEnv = { Bindings: Cloudflare.Env; Variables: Variables };
 - [x] **src/app.ts**: Removed `authService` middleware entirely. Import `auth` singleton. All `c.var.auth` → `auth`.
 - [x] **src/auth/middleware.ts**: Import `auth` from `./server` instead of reading `c.var.auth`.
 
-### Wave 4: Verify proxy handlers
+### Wave 4: Verify proxy handlers ✅
 
-The proxy handlers (`chat.ts`, `passthrough.ts`) use `c.env[envKey]` for dynamic
-API key lookup. This is correct — they need per-request access to different env
-keys based on the requested provider. These should **keep using `c.env`** (which
-still works fine with the new setup).
-
-Alternatively, they could `import { env } from "cloudflare:workers"` and use
-`env[envKey]` directly, which would let us further shrink the `Bindings` type
-requirement on Hono. But this is optional and can be done later.
+- [x] Verified `chat.ts` and `passthrough.ts` use `c.env[envKey]` for dynamic API key lookup — no changes needed.
 
 ## File Change Summary
 
@@ -196,3 +189,24 @@ requirement on Hono. But this is optional and can be done later.
 5. Test proxy: `/proxy/openai/v1/chat/completions` with valid API key
 6. Test sync: WebSocket connection to `/rooms/:room`
 7. `bun run auth:generate` — CLI still works (uses `better-auth.config.ts`, unaffected)
+
+## Review
+
+**Status**: Implemented
+**Date**: 2026-03-05
+**Branch**: `braden-w/server-pkg-overview-v1`
+
+### Summary
+
+Upgraded wrangler 3→4, replaced per-request `createAuth(c.env)` with a module-level singleton using `import { env } from 'cloudflare:workers'`, and removed the `auth` threading middleware from Hono's variable system. The auth instance is now imported directly where needed.
+
+### Deviations from Spec
+
+- Removed `AuthEnv` type entirely instead of aligning it with `Cloudflare.Env` — the env import is already typed.
+- Added `ApiKeyBindings` intersection to `AppEnv` since wrangler.toml doesn't declare API key secrets (they're set via `wrangler secret put`).
+- Fixed `YjsRoom` constructor to use the generated `Env` type (was `Record<string, unknown>`) — not in original spec but required by wrangler 4's generated types.
+
+### Remaining Verification
+
+- [ ] `bun run dev` — manual smoke test
+- [ ] `bun run deploy --dry-run` — verify deployment compatibility

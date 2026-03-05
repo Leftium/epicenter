@@ -17,7 +17,15 @@ export type Variables = {
 
 /** Minimal environment shape that the shared routes require. */
 export type SharedEnv = {
-	Bindings: ApiKeyBindings & Record<string, unknown>;
+	Bindings: ApiKeyBindings;
+	Variables: Variables;
+};
+
+/** Environment shape with optional extra bindings merged in. */
+export type ServerEnv<
+	TExtraBindings extends object = {},
+> = {
+	Bindings: ApiKeyBindings & TExtraBindings;
 	Variables: Variables;
 };
 
@@ -35,9 +43,3 @@ export type AuthInstance = {
 	};
 };
 
-export type SharedAppConfig = {
-	/** Better Auth instance for handling auth routes and session validation. */
-	auth: AuthInstance;
-	/** Additional info for the health endpoint. */
-	healthMeta?: Record<string, unknown>;
-};

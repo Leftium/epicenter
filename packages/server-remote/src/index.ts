@@ -1,12 +1,12 @@
 // App factory
-export { createSharedApp } from './app';
+export { createServerFactory, createSharedApp } from './app';
 
 // Types
 export type {
 	ApiKeyBindings,
 	AuthInstance,
+	ServerEnv,
 	SessionResult,
-	SharedAppConfig,
 	SharedEnv,
 	Variables,
 } from './types';

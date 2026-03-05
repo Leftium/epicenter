@@ -1,9 +1,14 @@
-import { createSharedApp } from '@epicenter/server-remote';
+import {
+	createServerFactory,
+	createSharedApp,
+} from '@epicenter/server-remote';
 import { getAuth } from './auth';
 
 export { YjsRoom } from './yjs-room';
 
-let app: ReturnType<typeof createSharedApp> | null = null;
+const factory = createServerFactory<Cloudflare.Env>();
+
+let app: ReturnType<typeof factory.createApp> | null = null;
 
 /**
  * Lazy init — defers postgres/Hyperdrive connection to first request.
@@ -14,16 +19,28 @@ let app: ReturnType<typeof createSharedApp> | null = null;
 function getApp() {
 	if (app) return app;
 
-	app = createSharedApp({
-		auth: getAuth(),
+	const auth = getAuth();
+
+	const { app: sharedApp, createAuthGuard } = createSharedApp({
+		factory,
+		auth,
 		healthMeta: { runtime: 'cloudflare' },
 	});
 
+	app = factory.createApp();
+
+	// Mount shared routes (health, auth, OAuth discovery, AI chat, proxy)
+	app.route('/', sharedApp);
+
+	// Auth middleware for rooms — must be on the parent app since /rooms/:room
+	// is defined here, not in the shared sub-app.
+	app.use('/rooms/*', createAuthGuard());
+
+	// Sync rooms — forward to Durable Object
 	app.all('/rooms/:room', async (c) => {
 		const roomId = c.req.param('room');
-		const env = c.env as unknown as Cloudflare.Env;
-		const id = env.YJS_ROOM.idFromName(roomId);
-		const stub = env.YJS_ROOM.get(id);
+		const id = c.env.YJS_ROOM.idFromName(roomId);
+		const stub = c.env.YJS_ROOM.get(id);
 		return stub.fetch(c.req.raw);
 	});
 
@@ -31,7 +48,7 @@ function getApp() {
 }
 
 export default {
-	fetch(request: Request, env: unknown, ctx: ExecutionContext) {
-		return getApp().fetch(request, env as Record<string, unknown>, ctx);
+	fetch(request: Request, env: Cloudflare.Env, ctx: ExecutionContext) {
+		return getApp().fetch(request, env, ctx);
 	},
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Cloudflare.Env>;

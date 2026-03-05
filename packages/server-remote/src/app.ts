@@ -2,21 +2,54 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { createFactory, type Factory } from 'hono/factory';
 import { createAuthMiddleware } from './auth/middleware';
 import { handleAiChat } from './proxy/chat';
 import { handleProxy } from './proxy/passthrough';
-import type { SharedAppConfig, SharedEnv } from './types';
+import type { AuthInstance, ServerEnv, SharedEnv } from './types';
 
 /**
- * Creates a Hono app with shared routes (health, auth, AI chat, provider proxy).
+ * Creates a Hono factory with the shared env types merged with optional
+ * extra bindings. Just wraps `createFactory` — nothing else.
  *
- * Adapters (Cloudflare, standalone) call this and then mount their own
- * sync routes and any adapter-specific middleware.
+ * ```ts
+ * const factory = createServerFactory<Cloudflare.Env>();
+ * const app = factory.createApp(); // Hono<{ Bindings: ApiKeyBindings & Cloudflare.Env; Variables }>
+ * ```
  */
-export function createSharedApp(config: SharedAppConfig) {
-	const app = new Hono<SharedEnv>();
+export function createServerFactory<
+	TExtraBindings extends object = {},
+>() {
+	return createFactory<ServerEnv<TExtraBindings>>();
+}
+
+/**
+ * Creates a Hono sub-app with shared routes (health, auth, AI chat, provider proxy)
+ * and a pre-typed auth guard for consumer routes like `/rooms/*`.
+ *
+ * ```ts
+ * const factory = createServerFactory<Cloudflare.Env>();
+ * const { app: sharedApp, createAuthGuard } = createSharedApp({
+ *   factory,
+ *   auth: getAuth(),
+ *   healthMeta: { runtime: 'cloudflare' },
+ * });
+ * const app = factory.createApp();
+ * app.route('/', sharedApp);
+ * app.use('/rooms/*', createAuthGuard());
+ * ```
+ */
+export function createSharedApp<E extends SharedEnv>({
+	factory,
+	auth,
+	healthMeta,
+}: {
+	factory: Factory<E>;
+	auth: AuthInstance;
+	healthMeta?: Record<string, unknown>;
+}) {
+	const app = factory.createApp();
 
 	// --- CORS ---
 	// Skip CORS for WebSocket upgrades — Hono's CORS middleware modifies response
@@ -32,26 +65,23 @@ export function createSharedApp(config: SharedAppConfig) {
 	});
 
 	// --- Health / Discovery ---
-	app.get('/', (c) =>
-		c.json({ mode: 'hub', version: '0.1.0', ...config.healthMeta }),
-	);
+	app.get('/', (c) => c.json({ mode: 'hub', version: '0.1.0', ...healthMeta }));
 
 	// --- Better Auth ---
 	app.on(['GET', 'POST'], '/auth/*', (c) => {
-		return config.auth.handler(c.req.raw);
+		return auth.handler(c.req.raw);
 	});
 
 	// --- OAuth Discovery ---
 	app.get('/.well-known/openid-configuration/auth', (c) =>
-		oauthProviderOpenIdConfigMetadata(config.auth as never)(c.req.raw),
+		oauthProviderOpenIdConfigMetadata(auth as never)(c.req.raw),
 	);
 	app.get('/.well-known/oauth-authorization-server/auth', (c) =>
-		oauthProviderAuthServerMetadata(config.auth as never)(c.req.raw),
+		oauthProviderAuthServerMetadata(auth as never)(c.req.raw),
 	);
 
-	// --- Auth middleware for protected routes ---
-	const authGuard = createAuthMiddleware(config.auth);
-	app.use('/rooms/*', authGuard);
+	// --- Auth middleware for routes owned by this sub-app ---
+	const authGuard = createAuthMiddleware(auth);
 	app.use('/ai/*', authGuard);
 	app.use('/proxy/*', authGuard);
 
@@ -61,5 +91,10 @@ export function createSharedApp(config: SharedAppConfig) {
 	// --- Provider Proxy ---
 	app.all('/proxy/:provider/*', handleProxy);
 
-	return app;
+	return {
+		app,
+		createAuthGuard() {
+			return createAuthMiddleware(auth);
+		},
+	};
 }

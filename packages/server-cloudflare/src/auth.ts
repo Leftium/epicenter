@@ -1,10 +1,10 @@
 import { env } from 'cloudflare:workers';
+import { oauthProvider } from '@better-auth/oauth-provider';
 import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { oauthProvider } from '@better-auth/oauth-provider';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { factory } from './env';
 

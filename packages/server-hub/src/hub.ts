@@ -291,7 +291,11 @@ export function createHub({ sync, auth: authMode, port }: HubConfig) {
 		 */
 		start() {
 			const actualPort = listenWithFallback(app, preferredPort);
-			return { ...app.server!, port: actualPort };
+			const server = app.server;
+			if (!server) {
+				throw new Error('Server not available after listen');
+			}
+			return { ...server, port: actualPort };
 		},
 
 		/**

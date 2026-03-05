@@ -22,8 +22,13 @@ new_sqlite_classes = ["YjsRoom"]
 [vars]
 BETTER_AUTH_URL = "https://api.epicenter.so"
 
+# --- Hyperdrive: PlanetScale Postgres connection pool ---
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "<created-via-wrangler-cli>"
+localConnectionString = "postgres://braden@localhost:5432/epicenter"
+
 # --- Secrets (set via `wrangler secret put`) ---
-# DATABASE_URL
 # BETTER_AUTH_SECRET
 # OPENAI_API_KEY
 # ANTHROPIC_API_KEY

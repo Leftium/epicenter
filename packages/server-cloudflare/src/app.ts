@@ -3,9 +3,8 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { cors } from 'hono/cors';
-import { createAuthMiddleware } from './auth/middleware';
-import { auth } from './auth/server';
-import { factory } from './env';
+import { auth, createAuthMiddleware } from './auth';
+import { factory } from './hono';
 import { createAiChatHandler } from './proxy/chat';
 import { createProxyHandler } from './proxy/passthrough';
 
@@ -38,13 +37,14 @@ app.on(['GET', 'POST'], '/auth/*', (c) => {
 	return auth.handler(c.req.raw);
 });
 
-// --- OAuth Discovery (must be at root, not under /auth) ---
-// Type assertion: createAuth() returns a generic Auth type that loses plugin-
-// specific API methods from the cache. The oauthProvider plugin adds these at runtime.
-app.get('/.well-known/openid-configuration', (c) =>
+// --- OAuth Discovery ---
+// RFC 8414 path insertion: issuer path (/auth) is appended after the well-known
+// prefix, e.g. /.well-known/oauth-authorization-server/auth
+// Type assertion: oauthProvider plugin adds these methods at runtime.
+app.get('/.well-known/openid-configuration/auth', (c) =>
 	oauthProviderOpenIdConfigMetadata(auth as never)(c.req.raw),
 );
-app.get('/.well-known/oauth-authorization-server', (c) =>
+app.get('/.well-known/oauth-authorization-server/auth', (c) =>
 	oauthProviderAuthServerMetadata(auth as never)(c.req.raw),
 );
 

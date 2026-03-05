@@ -11,24 +11,27 @@
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
 		"typecheck": "tsc --noEmit",
-		"auth:generate": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts",
-		"auth:migrate": "bun --env-file=.dev.vars x @better-auth/cli migrate --config ./better-auth.config.ts",
-		"auth:schema": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"auth:generate": "bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"db:push": "drizzle-kit push",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "drizzle-kit migrate",
+		"db:studio": "drizzle-kit studio",
 		"typegen": "wrangler types"
 	},
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "^1.5.3",
 		"@better-auth/oauth-provider": "^1.5.3",
-		"arktype": "catalog:",
 		"@epicenter/sync-core": "workspace:*",
+		"arktype": "catalog:",
+		"better-auth": "^1.5.3",
 		"drizzle-orm": "catalog:",
-		"@neondatabase/serverless": "^0.10.0",
-		"better-auth": "^1.4.19",
 		"hono": "^4.7.0",
+		"postgres": "^3.4.8",
 		"y-protocols": "catalog:",
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"dotenv": "^17.3.1",
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
 		"wrangler": "^4"

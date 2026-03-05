@@ -1,23 +1,25 @@
-import { createFactory } from 'hono/factory';
-import type { auth } from './auth/server';
+/**
+ * Validated env for CLI scripts (drizzle-kit, better-auth CLI).
+ *
+ * Loads `.dev.vars` and validates with arktype. Import this instead of
+ * using `process.env` with non-null assertions.
+ */
 
-type ApiKeyBindings = {
-	OPENAI_API_KEY?: string;
-	ANTHROPIC_API_KEY?: string;
-	GEMINI_API_KEY?: string;
-	GROK_API_KEY?: string;
-};
+import { type } from 'arktype';
+import { config } from 'dotenv';
 
-type Session = (typeof auth)['$Infer']['Session'];
+config({ path: '.dev.vars' });
 
-type Variables = {
-	user: Session['user'];
-	session: Session['session'];
-};
+const Env = type({
+	DATABASE_URL: 'string',
+	BETTER_AUTH_SECRET: 'string',
+});
 
-export type AppEnv = {
-	Bindings: Cloudflare.Env & ApiKeyBindings;
-	Variables: Variables;
-};
+const parsed = Env(process.env);
+if (parsed instanceof type.errors) {
+	throw new Error(
+		`Missing env vars. Ensure .dev.vars has DATABASE_URL and BETTER_AUTH_SECRET.\n${parsed.summary}`,
+	);
+}
 
-export const factory = createFactory<AppEnv>();
+export const env = parsed;

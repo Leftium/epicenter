@@ -340,7 +340,7 @@ See [Cloudflare Hub Design](#cloudflare-hub-design) below for the full architect
 - [x] Package scaffolding (`@epicenter/server-cloudflare`, wrangler.toml, tsconfig)
 - [x] `DOSqliteSyncStorage` implementing `SyncStorage` with DO SQLite
 - [x] `YjsRoom` Durable Object with WebSocket Hibernation API
-- [x] Better Auth with Neon PG + KV session cache
+- [x] Better Auth with PlanetScale PG (Hyperdrive) + KV session cache
 - [x] Auth middleware (bearer token + query param)
 - [x] AI chat handler with SSE passthrough
 - [x] Provider proxy with key injection
@@ -375,7 +375,7 @@ The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with o
 │  POST  /migrate              → Better Auth PG migrations      │
 │                                                              │
 │  Bindings:                                                   │
-│    DATABASE_URL: string        (Neon PG → PlanetScale PG)   │
+│    HYPERDRIVE: Hyperdrive      (PlanetScale PG via Hyperdrive)│
 │    YJS_ROOM    : DurableObjectNamespace                      │
 │    SESSION_KV  : KVNamespace           (session cache)       │
 │    AUTH_SECRET  : string               (Better Auth secret)  │
@@ -418,25 +418,15 @@ This maps directly to the `RoomManager` concept from sync-core, but Cloudflare m
 - **No room routing logic**: each room ID maps 1:1 to a DO instance via `idFromName(roomId)`
 - **Isolation**: one misbehaving room can't affect others (unlike the current `Map<string, Y.Doc>` in `server-remote` where all rooms share a single process)
 
-### Auth Database: Neon PostgreSQL → PlanetScale Postgres
+### Auth Database: PlanetScale Postgres via Hyperdrive
+
+> **Note**: The original spec planned a Phase 1 (Neon) / Phase 2 (PlanetScale) migration path. Phase 1 was skipped — PlanetScale Postgres via Cloudflare Hyperdrive was adopted from day 1. See `specs/20260305T180000-neon-to-planetscale-hyperdrive.md` for the migration details.
 
 Better Auth uses Kysely internally and expects transaction support. [D1 does not support transactions](https://github.com/better-auth/better-auth/discussions/7487), which causes runtime failures in Better Auth's session and account management code. This is a [known unresolved issue](https://kemalyilmaz.com/blog/setting-up-better-auth-with-cloudflare-workers-d1-kysely/) with no clean workaround.
 
-**Options evaluated:**
+**PlanetScale Postgres** (GA September 2025) provides managed PostgreSQL with sharding, replication, and branching workflows. Cloudflare Hyperdrive proxies TCP connections from Workers with connection pooling, and its `localConnectionString` config routes `wrangler dev` to local Postgres — same driver code everywhere, zero conditional logic.
 
-| Option | Transactions | Workers compat | Complexity | Verdict |
-|---|---|---|---|---|
-| **D1** (SQLite) | No — breaks Better Auth | Best (native binding) | Lowest | Blocked by transaction issue |
-| **Neon PostgreSQL** | Yes | `@neondatabase/serverless` (HTTP/WS, no TCP) | Low — no Hyperdrive needed | **Phase 1** |
-| **PlanetScale Postgres** | Yes | Likely needs Hyperdrive (TCP) | Medium | **Phase 2** |
-| **Turso/libSQL** | Yes | `@libsql/client/web` (fetch) | Low | Works, but less common ecosystem |
-| **Supabase PostgreSQL** | Yes | Needs Hyperdrive (TCP) | Medium | Paying for features you don't use |
-
-**Phase 1 — Neon PostgreSQL** (launch): `@neondatabase/serverless` uses HTTP/WebSocket natively in Workers (no Hyperdrive needed), Better Auth has first-class Kysely support for Postgres, generous free tier (100 CU-hours, 0.5GB — more than enough for auth tables), and [acquired by Databricks](https://neon.com/blog) so not going anywhere. Existing credits available.
-
-**Phase 2 — PlanetScale Postgres** (scale): PlanetScale for Postgres reached GA in September 2025 and offers managed sharding, replication, and branching workflows. Migration from Neon is trivial — both are PostgreSQL, same dialect, same Better Auth adapter, same Kysely queries. The switch is just changing `DATABASE_URL` (and potentially adding Hyperdrive if PlanetScale requires TCP). No code changes, no schema changes.
-
-Both phases use the same `DATABASE_URL` secret binding, so the application code is database-agnostic by design.
+The driver is `postgres` (postgres.js) + `drizzle-orm/postgres-js`. The Worker uses `env.HYPERDRIVE.connectionString`; CLI tools use `DATABASE_URL` from `.dev.vars`.
 
 Edge latency is irrelevant here: KV session caching handles 99% of auth reads at sub-millisecond. The database is only hit on sign-up, sign-in, and session refresh.
 
@@ -444,7 +434,7 @@ Edge latency is irrelevant here: KV session caching handles 99% of auth reads at
 
 | Binding | Type | Purpose |
 |---|---|---|
-| `DATABASE_URL` | Secret | PostgreSQL connection string (Neon Phase 1, PlanetScale Phase 2) |
+| `HYPERDRIVE` | Binding | PlanetScale Postgres via Cloudflare Hyperdrive |
 | `YJS_ROOM` | `DurableObjectNamespace` | One DO per sync room |
 | `SESSION_KV` | `KVNamespace` | Better Auth `SecondaryStorage` — session cache with TTL |
 | `AUTH_SECRET` | Secret | Better Auth signing secret |
@@ -481,7 +471,7 @@ Dependencies:
     "@epicenter/sync-core": "workspace:*",
     "hono": "^4",
     "better-auth": "^1",
-    "@neondatabase/serverless": "^0.10",
+    "postgres": "^3.4",
     "yjs": "^13",
     "y-protocols": "^1"
   },
@@ -492,7 +482,7 @@ Dependencies:
 }
 ```
 
-No dependency on `server-elysia`, `elysia`, or `bun-types`. Phase 1 uses `@neondatabase/serverless` (HTTP/WebSocket, no TCP) for PostgreSQL connectivity from Workers — no Hyperdrive needed. Phase 2 swaps to PlanetScale Postgres (may require adding Hyperdrive for TCP).
+No dependency on `server-elysia`, `elysia`, or `bun-types`. Uses `postgres` (postgres.js) for PostgreSQL connectivity via Cloudflare Hyperdrive (TCP proxy with connection pooling). Local dev uses Hyperdrive's `localConnectionString` to connect directly to local Postgres.
 
 ### Worker Implementation
 
@@ -509,7 +499,7 @@ import { createProxyHandler } from './proxy/handler'
 import { YjsRoom } from './sync/yjs-room'
 
 type Bindings = {
-  DATABASE_URL: string
+  HYPERDRIVE: Hyperdrive
   YJS_ROOM: DurableObjectNamespace
   SESSION_KV: KVNamespace
   AUTH_SECRET: string
@@ -620,27 +610,26 @@ Note: `extractBearerToken` is already exported from `@epicenter/sync-core` — z
 ```typescript
 import { betterAuth } from 'better-auth'
 import { bearer } from 'better-auth/plugins'
-import { neon } from '@neondatabase/serverless'
+import postgres from 'postgres'
 
 // Module-level cache. Cloudflare Workers reuse isolates across requests,
 // so this avoids re-creating the auth instance on every request.
 let cached: { auth: ReturnType<typeof betterAuth>; cacheKey: string } | null = null
 
 export function createAuth(env: {
-  DATABASE_URL: string
+  HYPERDRIVE: Hyperdrive
   SESSION_KV: KVNamespace
   AUTH_SECRET: string
 }) {
   // Cache per isolate — env strings are stable within a Worker isolate
-  if (cached && cached.cacheKey === env.DATABASE_URL) return cached.auth
+  if (cached && cached.cacheKey === env.HYPERDRIVE.connectionString) return cached.auth
 
   const auth = betterAuth({
     database: {
       // Better Auth's built-in Kysely adapter supports PostgreSQL natively.
-      // Phase 1: Neon's @neondatabase/serverless uses HTTP (no Hyperdrive).
-      // Phase 2: PlanetScale Postgres — just swap DATABASE_URL.
+      // PlanetScale Postgres via Hyperdrive (TCP proxy with connection pooling).
       type: 'postgres',
-      url: env.DATABASE_URL,
+      url: env.HYPERDRIVE.connectionString,
     },
     basePath: '/auth',
     secret: env.AUTH_SECRET,
@@ -648,13 +637,21 @@ export function createAuth(env: {
     session: {
       expiresIn: 60 * 60 * 24 * 7,   // 7 days
       updateAge: 60 * 60 * 24,        // 1 day
+      // storeSessionInDatabase left as default (true) — see rationale below.
+      cookieCache: {
+        enabled: true,
+        maxAge: 60 * 5,               // 5 min
+        strategy: 'jwe',              // encrypted, not just signed
+      },
     },
     plugins: [
       bearer(),                   // enables Authorization: Bearer <token> (converts to cookie internally)
     ],
     // Cloudflare KV as secondary storage for session caching.
-    // Avoids hitting the database on every request. Better Auth's SecondaryStorage
-    // interface maps directly to KV's get/put/delete.
+    // Bearer-token clients (mobile, Tauri) can't use cookieCache, so KV
+    // handles their session lookups at the edge (~5ms) instead of hitting
+    // the database (~50-100ms). Browser clients benefit from cookieCache (zero
+    // lookup) with KV as fallback when the cookie expires.
     secondaryStorage: {
       get: (key) => env.SESSION_KV.get(key),
       set: (key, value, ttl) => env.SESSION_KV.put(key, value, {
@@ -664,16 +661,36 @@ export function createAuth(env: {
     },
   })
 
-  cached = { auth, cacheKey: env.DATABASE_URL }
+  cached = { auth, cacheKey: env.HYPERDRIVE.connectionString }
   return auth
 }
 ```
 
-The `SecondaryStorage` integration is important: without it, every authenticated request hits the database over HTTP. With KV caching, session lookups are sub-millisecond at the edge after the first request.
+#### Session Performance: Three-Tier Caching Strategy
+
+The hub serves three client types with different auth capabilities. The caching strategy is layered to optimize each:
+
+| Layer | Mechanism | Clients served | Lookup cost | Fallback |
+|---|---|---|---|---|
+| **L1: cookieCache (JWE)** | Encrypted session in `session_data` cookie | Browsers only | Zero (crypto verify) | L2 |
+| **L2: KV secondaryStorage** | Edge-cached session in Cloudflare KV | Mobile, Tauri, browser (cookie expired) | ~5ms edge read | L3 |
+| **L3: PlanetScale database** | Source of truth | Cache miss / cross-edge propagation | ~50-100ms | — |
+
+**Why cookieCache uses JWE**: The `jwt` and `compact` strategies produce signed but readable tokens — session data (user ID, email) would be visible in browser DevTools. `jwe` encrypts the payload using AES-256-CBC-HS512 with HKDF key derivation, so the cookie is opaque. The trade-off is slightly larger cookies (~200 bytes more), which is negligible.
+
+**Why `storeSessionInDatabase` stays `true`**: This is a multi-device sync app. A user might sign in on their phone (hitting Cloudflare edge in Frankfurt) and open the desktop app 10 seconds later (hitting edge in London). KV is eventually consistent with ~60 second propagation delay. Without the database fallback, the desktop app would get a 401 during the propagation window. Keeping database writes ensures the database fallback always has the session.
+
+**Why KV and not something else**: Better Auth's `secondaryStorage` interface is `get(key)`, `set(key, value, ttl)`, `delete(key)` — this maps 1:1 to Cloudflare KV. Alternatives considered:
+- **D1** (SQLite at edge): SQL is the wrong abstraction for key-value session data, adds query overhead
+- **Durable Objects**: Per-instance state, no global read caching, overkill for session lookup
+- **Upstash Redis**: Equivalent semantics but adds a separate vendor, separate bill, higher latency than edge-cached KV
+- **No cache**: Every bearer-token request hits the database (~50-100ms). Acceptable at low scale, expensive at high scale
+
+**Cost**: KV is included in the Workers Paid plan ($5/mo) with 10M reads/mo and 1M writes/mo. Session data is tiny (<1KB per key). At 1,000 DAU × 50 requests/day, monthly KV reads are ~1.5M — well within the included tier. The KV cost is effectively $0 while reducing database compute by ~99% for session-related queries.
 
 #### Migrations (`auth/migrate.ts`)
 
-Migrations can run programmatically via a worker endpoint, or locally via `npx @better-auth/cli migrate` (both Neon and PlanetScale Postgres are accessible from anywhere via connection string — no Worker runtime required).
+Migrations can run programmatically via a worker endpoint, or locally via `npx @better-auth/cli migrate` (PlanetScale Postgres is accessible from anywhere via connection string — no Worker runtime required).
 
 ```typescript
 import { createAuth } from './better-auth'
@@ -1137,7 +1154,6 @@ tag = "v1"
 new_sqlite_classes = ["YjsRoom"]
 
 # --- Secrets (set via `wrangler secret put`) ---
-# DATABASE_URL
 # AUTH_SECRET
 # OPENAI_API_KEY
 # ANTHROPIC_API_KEY
@@ -1164,15 +1180,13 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 
 1. **Create PostgreSQL + Cloudflare resources**:
    ```bash
-   # Phase 1: Neon (create at https://console.neon.tech)
-   # Connection string: postgres://<user>:<pass>@<host>.neon.tech/<db>?sslmode=require
-   #
-   # Phase 2: PlanetScale Postgres (create at https://planetscale.com)
-   # Connection string: postgres://<user>:<pass>@<host>.psdb.cloud/<db>?sslmode=require
-   # Just swap the DATABASE_URL secret — no code changes needed.
+   # PlanetScale Postgres (create at https://planetscale.com)
+   # Then create Hyperdrive config:
+   wrangler hyperdrive create epicenter-db \
+     --connection-string="postgres://USER:PASS@HOST:PORT/epicenter?sslmode=require"
+   # Paste returned ID into wrangler.toml
    #
    wrangler kv namespace create SESSION_KV
-   wrangler secret put DATABASE_URL       # PostgreSQL connection string
    wrangler secret put AUTH_SECRET
    wrangler secret put OPENAI_API_KEY
    wrangler secret put ANTHROPIC_API_KEY
@@ -1248,6 +1262,6 @@ The only potential issue: Cloudflare's `WebSocket.send()` accepts `string | Arra
 
 9. ~~**DO connection limit**: Cloudflare allows ~32,768 concurrent hibernatable WebSockets per DO. This is more than sufficient for workspace sync scenarios — no sharding needed.~~ **Resolved.**
 
-10. **Better Auth instance caching**: The current design caches the Better Auth instance at module level in the worker isolate. With HTTP-based PostgreSQL drivers (Neon's serverless driver, or PlanetScale's equivalent), there's no persistent connection to churn — each query is an independent HTTP request. The cache mainly avoids re-constructing the Better Auth config object. This is low-risk.
+10. **Better Auth instance caching**: The current design caches the Better Auth instance at module level in the worker isolate. With postgres.js over Hyperdrive (TCP proxied through Cloudflare), there's no persistent connection to churn — each query is an independent HTTP request. The cache mainly avoids re-constructing the Better Auth config object. This is low-risk.
 
 11. **Migrate endpoint security**: `POST /migrate` runs PostgreSQL schema migrations. In production this should be protected — either by a deploy secret, removed entirely and run via `npx @better-auth/cli migrate` locally against the connection string, or gated behind an admin token. The current spec leaves this open.

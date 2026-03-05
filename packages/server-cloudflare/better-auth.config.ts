@@ -2,45 +2,25 @@
  * CLI-only config for Better Auth schema tools.
  *
  * Run via:
- *   bun run auth:generate  — generate migration SQL
- *   bun run auth:migrate   — apply pending migrations
- *   bun run auth:schema    — generate Drizzle schema from Better Auth tables
+ *   bun run auth:generate  — generate Drizzle schema from Better Auth tables
  *
- * These scripts load `.dev.vars` automatically via `--env-file`.
- *
- * This file spreads {@link authOptions} (from `src/auth/options.ts`) so the
- * CLI schema always matches the runtime worker. Runtime-only options (KV
- * caching, cookies, trusted origins) are omitted — they don't affect the
- * database schema.
- *
- * @see src/auth/server.ts — runtime `createAuth()` factory
- * @see src/auth/options.ts — shared schema-affecting options
+ * Loads `.dev.vars` via `src/env.ts`.
+ * Schema-affecting options (basePath, plugins, emailAndPassword) come from
+ * `src/auth-base.ts` — the single source of truth.
  */
 
-import { neon } from '@neondatabase/serverless';
-import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { authOptions } from './src/auth/options';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import { baseAuthConfig } from './src/auth-base';
+import { env } from './src/env';
 
-const CliEnv = type({
-	DATABASE_URL: 'string',
-	BETTER_AUTH_SECRET: 'string',
-});
-
-const env = CliEnv(process.env);
-if (env instanceof type.errors) {
-	throw new Error(
-		`Missing env vars for Better Auth CLI. Run with --env-file=.dev.vars.\n${env.summary}`,
-	);
-}
-
-const sql = neon(env.DATABASE_URL);
+const sql = postgres(env.DATABASE_URL);
 const db = drizzle(sql);
 
 export const auth = betterAuth({
-	...authOptions,
+	...baseAuthConfig,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	secret: env.BETTER_AUTH_SECRET,
 });

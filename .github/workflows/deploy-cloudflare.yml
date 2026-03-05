@@ -155,27 +155,21 @@ jobs:
           name: landing-dist
           path: apps/landing/dist
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Workers
         id: deploy
         run: |
           cd apps/landing
 
-          # Deploy to Cloudflare Pages
-          DEPLOYMENT_OUTPUT=$(bunx wrangler pages deploy dist \
-            --project-name=landing \
-            --branch=main \
-            --commit-dirty=true \
-            --commit-hash=${{ github.sha }} \
-            --commit-message="${{ github.event.head_commit.message }}" 2>&1)
+          # Deploy to Cloudflare Workers (static assets)
+          DEPLOYMENT_OUTPUT=$(bunx wrangler deploy 2>&1)
 
           echo "$DEPLOYMENT_OUTPUT"
 
-          # Extract deployment URL from output
-          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -oE 'https://[a-z0-9-]+\.landing\.pages\.dev' | head -1)
+          # Extract deployment URL from output (look for workers.dev URL)
+          DEPLOYMENT_URL=$(echo "$DEPLOYMENT_OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.workers\.dev' | head -1)
 
           if [ -z "$DEPLOYMENT_URL" ]; then
-            # Fallback to production URL if extraction fails
-            DEPLOYMENT_URL="https://landing.pages.dev"
+            DEPLOYMENT_URL="https://landing.workers.dev"
           fi
 
           echo "deployment-url=$DEPLOYMENT_URL" >> $GITHUB_OUTPUT

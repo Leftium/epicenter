@@ -12,9 +12,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
-import { filesTable } from './file-table.js';
-import { FileTree } from './file-tree.js';
-import type { FileId } from './types.js';
+import type { FileId } from '../ids.js';
+import { filesTable } from '../table.js';
+import { FileTree } from './tree.js';
 
 function setup() {
 	const ws = createWorkspace({ id: 'test', tables: { files: filesTable } });

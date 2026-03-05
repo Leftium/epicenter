@@ -246,13 +246,18 @@ describe('defineTable', () => {
 	});
 
 	describe('withDocument', () => {
+		const noopUpdate = () => ({});
+
 		test('shorthand path adds documents to definition', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual([]);
 		});
 
@@ -266,11 +271,11 @@ describe('defineTable', () => {
 				}),
 			).withDocument('content', {
 				guid: 'docId',
-				updatedAt: 'modifiedAt',
+				onUpdate: () => ({ modifiedAt: Date.now() }),
 			});
 
 			expect(notes.documents.content.guid).toBe('docId');
-			expect(notes.documents.content.updatedAt).toBe('modifiedAt');
+			expect(typeof notes.documents.content.onUpdate).toBe('function');
 			expect(notes.documents.content.tags).toEqual([]);
 		});
 
@@ -280,24 +285,23 @@ describe('defineTable', () => {
 					id: 'string',
 					bodyDocId: 'string',
 					coverDocId: 'string',
-					bodyUpdatedAt: 'number',
-					coverUpdatedAt: 'number',
+					updatedAt: 'number',
 					_v: '1',
 				}),
 			)
 				.withDocument('body', {
 					guid: 'bodyDocId',
-					updatedAt: 'bodyUpdatedAt',
+					onUpdate: () => ({ updatedAt: Date.now() }),
 				})
 				.withDocument('cover', {
 					guid: 'coverDocId',
-					updatedAt: 'coverUpdatedAt',
+					onUpdate: () => ({ updatedAt: Date.now() }),
 				});
 
 			expect(notes.documents.body.guid).toBe('bodyDocId');
-			expect(notes.documents.body.updatedAt).toBe('bodyUpdatedAt');
+			expect(typeof notes.documents.body.onUpdate).toBe('function');
 			expect(notes.documents.cover.guid).toBe('coverDocId');
-			expect(notes.documents.cover.updatedAt).toBe('coverUpdatedAt');
+			expect(typeof notes.documents.cover.onUpdate).toBe('function');
 		});
 
 		test('table without withDocument keeps documents map empty', () => {
@@ -313,12 +317,12 @@ describe('defineTable', () => {
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
 				guid: 'id',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 				tags: ['persistent'],
 			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual(['persistent']);
 		});
 
@@ -327,19 +331,22 @@ describe('defineTable', () => {
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
 			).withDocument('content', {
 				guid: 'id',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 				tags: ['persistent', 'synced'] as const,
 			});
 
 			expect(files.documents.content.guid).toBe('id');
-			expect(files.documents.content.updatedAt).toBe('updatedAt');
+			expect(typeof files.documents.content.onUpdate).toBe('function');
 			expect(files.documents.content.tags).toEqual(['persistent', 'synced']);
 		});
 
 		test('withDocument without tags defaults to empty array', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: noopUpdate,
+			});
 
 			expect(files.documents.content.tags).toEqual([]);
 		});
@@ -347,7 +354,10 @@ describe('defineTable', () => {
 		test('withDocument preserves schema validation and migrate behavior', () => {
 			const files = defineTable(
 				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
-			).withDocument('content', { guid: 'id', updatedAt: 'updatedAt' });
+			).withDocument('content', {
+				guid: 'id',
+				onUpdate: () => ({ updatedAt: Date.now() }),
+			});
 
 			// Schema still works
 			const result = files.schema['~standard'].validate({
@@ -378,14 +388,14 @@ describe('defineTable', () => {
 			void _invalidRow;
 		});
 
-		test('rejects withDocument mappings that reference missing keys', () => {
+		test('rejects withDocument mappings that reference missing guid keys', () => {
 			const files = defineTable(
 				type({ id: 'string', updatedAt: 'number', _v: '1' }),
 			);
 			files.withDocument('content', {
 				// @ts-expect-error guid key must exist on the row schema
 				guid: 'missing',
-				updatedAt: 'updatedAt',
+				onUpdate: () => ({}),
 			});
 		});
 
@@ -395,39 +405,28 @@ describe('defineTable', () => {
 					id: 'string',
 					bodyDocId: 'string',
 					coverDocId: 'string',
-					bodyUpdatedAt: 'number',
-					coverUpdatedAt: 'number',
+					updatedAt: 'number',
 					_v: '1',
 				}),
 			).withDocument('body', {
 				guid: 'bodyDocId',
-				updatedAt: 'bodyUpdatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
 			notes.withDocument('cover', {
 				// @ts-expect-error bodyDocId is already claimed by the 'body' document
 				guid: 'bodyDocId',
-				updatedAt: 'coverUpdatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 			});
 		});
 
-		test('rejects reusing an updatedAt column claimed by a prior withDocument', () => {
-			const notes = defineTable(
-				type({
-					id: 'string',
-					bodyDocId: 'string',
-					coverDocId: 'string',
-					bodyUpdatedAt: 'number',
-					coverUpdatedAt: 'number',
-					_v: '1',
-				}),
-			).withDocument('body', {
-				guid: 'bodyDocId',
-				updatedAt: 'bodyUpdatedAt',
-			});
-			notes.withDocument('cover', {
-				guid: 'coverDocId',
-				// @ts-expect-error bodyUpdatedAt is already claimed by the 'body' document
-				updatedAt: 'bodyUpdatedAt',
+		test('onUpdate return type is checked against the row schema', () => {
+			const files = defineTable(
+				type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+			);
+			files.withDocument('content', {
+				guid: 'id',
+				// @ts-expect-error nonExistent is not a column on the row
+				onUpdate: () => ({ nonExistent: 123 }),
 			});
 		});
 	});

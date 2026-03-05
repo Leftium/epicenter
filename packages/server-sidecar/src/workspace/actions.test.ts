@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { AnyWorkspaceClient } from '@epicenter/workspace';
+import type { Actions, AnyWorkspaceClient } from '@epicenter/workspace';
 import {
 	createWorkspace,
 	defineMutation,
@@ -25,10 +25,7 @@ import { Elysia } from 'elysia';
 import Type from 'typebox';
 import { collectActionPaths, createActionsPlugin } from './actions';
 
-function makeWorkspaceWithActions(
-	id: string,
-	actions: () => Record<string, any>,
-) {
+function makeWorkspaceWithActions(id: string, actions: () => Actions) {
 	return createWorkspace(
 		defineWorkspace({
 			id,

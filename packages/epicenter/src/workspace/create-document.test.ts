@@ -42,7 +42,7 @@ function setup(
 	const { ydoc, tables } = setupTables();
 	const documents = createDocuments({
 		guidKey: 'id',
-		updatedAtKey: 'updatedAt',
+		onUpdate: () => ({ updatedAt: Date.now() }),
 		tableHelper: tables.files,
 		ydoc,
 		...overrides,
@@ -125,8 +125,8 @@ describe('createDocuments', () => {
 		});
 	});
 
-	describe('updatedAt auto-bump', () => {
-		test('content doc change bumps updatedAt on the row', async () => {
+	describe('onUpdate callback', () => {
+		test('content doc change invokes onUpdate and writes returned fields', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -146,7 +146,79 @@ describe('createDocuments', () => {
 			}
 		});
 
-		test('updatedAt bump uses DOCUMENTS_ORIGIN', async () => {
+		test('onUpdate callback return values are written to the row', async () => {
+			const customSchema = type({
+				id: 'string',
+				name: 'string',
+				updatedAt: 'number',
+				lastEditedBy: 'string',
+				_v: '1',
+			});
+			const ydoc = new Y.Doc({ guid: 'test-custom-onUpdate' });
+			const tables = createTables(ydoc, {
+				files: defineTable(customSchema),
+			});
+
+			const documents = createDocuments({
+				guidKey: 'id',
+				onUpdate: () => ({
+					updatedAt: 999,
+					lastEditedBy: 'test-user',
+				}),
+				tableHelper: tables.files,
+				ydoc,
+			});
+
+			tables.files.set({
+				id: 'f1',
+				name: 'test.txt',
+				updatedAt: 0,
+				lastEditedBy: '',
+				_v: 1,
+			});
+
+			const handle = await documents.open('f1');
+			handle.ydoc.getText('content').insert(0, 'hello');
+
+			const result = tables.files.get('f1');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.row.updatedAt).toBe(999);
+				expect(result.row.lastEditedBy).toBe('test-user');
+			}
+		});
+
+		test('onUpdate returning empty object is a no-op', async () => {
+			const ydoc = new Y.Doc({ guid: 'test-noop-onUpdate' });
+			const tables = createTables(ydoc, {
+				files: defineTable(fileSchema),
+			});
+
+			const documents = createDocuments({
+				guidKey: 'id',
+				onUpdate: () => ({}),
+				tableHelper: tables.files,
+				ydoc,
+			});
+
+			tables.files.set({
+				id: 'f1',
+				name: 'test.txt',
+				updatedAt: 0,
+				_v: 1,
+			});
+
+			const handle = await documents.open('f1');
+			handle.ydoc.getText('content').insert(0, 'hello');
+
+			const result = tables.files.get('f1');
+			expect(result.status).toBe('valid');
+			if (result.status === 'valid') {
+				expect(result.row.updatedAt).toBe(0); // unchanged
+			}
+		});
+
+		test('onUpdate bump uses DOCUMENTS_ORIGIN', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -166,7 +238,7 @@ describe('createDocuments', () => {
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});
 
-		test('remote update does NOT bump updatedAt', async () => {
+		test('remote update does NOT invoke onUpdate', async () => {
 			const { tables, documents } = setup();
 			tables.files.set({
 				id: 'f1',
@@ -324,7 +396,7 @@ describe('createDocuments', () => {
 
 			const documents = createDocuments({
 				guidKey: 'id',
-				updatedAtKey: 'updatedAt',
+				onUpdate: () => ({ updatedAt: Date.now() }),
 				tableHelper: tables.files,
 				ydoc: new Y.Doc({ guid: 'test' }),
 				onRowDeleted: (_documents, guid) => {

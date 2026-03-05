@@ -27,7 +27,7 @@ export function generateInitialOrders(count: number): number[] {
 }
 
 import * as Y from 'yjs';
-import { generateColumnId, generateRowId } from './types.js';
+import { generateColumnId, generateRowId } from '../ids.js';
 
 /**
  * Escape a CSV field value per RFC 4180.
@@ -225,7 +225,9 @@ export function parseSheetFromCsv(
 		colMap.set('kind', 'text');
 		colMap.set('width', '120');
 		colMap.set('order', String(columnOrders[i]));
-		columns.set(columnIds[i]!, colMap);
+		const columnId = columnIds[i];
+		if (!columnId) continue;
+		columns.set(columnId, colMap);
 	}
 
 	// Remaining rows are data
@@ -247,7 +249,9 @@ export function parseSheetFromCsv(
 			for (let j = 0; j < columnIds.length; j++) {
 				const cellValue = dataRow[j] ?? '';
 				if (cellValue) {
-					rowMap.set(columnIds[j]!, cellValue);
+					const columnId = columnIds[j];
+					if (!columnId) continue;
+					rowMap.set(columnId, cellValue);
 				}
 			}
 		}

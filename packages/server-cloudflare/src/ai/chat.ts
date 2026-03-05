@@ -4,7 +4,7 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Bindings, Variables } from '../worker';
+import type { AppEnv, Bindings } from '../worker';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
@@ -27,7 +27,7 @@ const PROVIDER_AUTH: Record<
 };
 
 export function createAiChatHandler() {
-	return async (c: Context<{ Bindings: Bindings; Variables: Variables }>) => {
+	return async (c: Context<AppEnv>) => {
 		const body = await c.req.json<{
 			provider?: string;
 			model?: string;

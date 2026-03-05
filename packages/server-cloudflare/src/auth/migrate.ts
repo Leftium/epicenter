@@ -1,10 +1,9 @@
+import type { AppEnv } from '../worker';
 import type { Context } from 'hono';
-import { createAuth } from './better-auth';
-import type { Bindings, Variables } from '../worker';
 
 export function createMigrateHandler() {
-	return async (c: Context<{ Bindings: Bindings; Variables: Variables }>) => {
-		const auth = createAuth(c.env);
+	return async (c: Context<AppEnv>) => {
+		const auth = c.get('auth');
 		// @ts-expect-error — better-auth/db/migration has no published types but works at runtime
 		const { getMigrations } = (await import('better-auth/db/migration')) as {
 			getMigrations: (options: unknown) => Promise<{

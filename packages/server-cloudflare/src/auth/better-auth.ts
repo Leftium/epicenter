@@ -9,14 +9,7 @@ type AuthEnv = {
 	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
 };
 
-// Module-level cache. Cloudflare Workers reuse isolates across requests,
-// so this avoids re-creating the auth instance on every request.
-let cached: { auth: ReturnType<typeof betterAuth>; cacheKey: string } | null =
-	null;
-
 export function createAuth(env: AuthEnv) {
-	if (cached && cached.cacheKey === env.DATABASE_URL) return cached.auth;
-
 	const auth = betterAuth({
 		database: {
 			type: 'postgres',
@@ -31,11 +24,12 @@ export function createAuth(env: AuthEnv) {
 				delete: {
 					after: async (session) => {
 						// Write a revocation marker so stale KV caches reject the
-						// token during the ~60s eventual-consistency window.
+						// token during the eventual-consistency window. KV docs say
+						// "60 seconds or more", so 5 min gives wide safety margin.
 						await env.SESSION_KV.put(
 							`revoked:${session.token}`,
 							'1',
-							{ expirationTtl: 120 },
+							{ expirationTtl: 300 },
 						);
 					},
 				},
@@ -94,6 +88,5 @@ export function createAuth(env: AuthEnv) {
 		},
 	});
 
-	cached = { auth, cacheKey: env.DATABASE_URL };
 	return auth;
 }

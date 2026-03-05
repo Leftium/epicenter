@@ -8,13 +8,13 @@ import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { addStaticWorkspace, listStaticWorkspaces } from './service';
 import type { StaticWorkspaceEntry } from './types';
 
-const StaticWorkspaceError = defineErrors({
+export const StaticWorkspaceError = defineErrors({
 	AddFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to add static workspace: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-type StaticWorkspaceError = InferErrors<typeof StaticWorkspaceError>;
+export type StaticWorkspaceError = InferErrors<typeof StaticWorkspaceError>;
 
 const staticWorkspaceKeys = {
 	all: ['static-workspaces'] as const,

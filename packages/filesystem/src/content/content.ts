@@ -1,7 +1,8 @@
 import type { Documents } from '@epicenter/workspace';
-import { parseSheetFromCsv } from './sheet-helpers.js';
-import { createTimeline } from './timeline-helpers.js';
-import type { FileId, FileRow } from './types.js';
+import { parseSheetFromCsv } from '../formats/sheet.js';
+import type { FileId } from '../ids.js';
+import type { FileRow } from '../table.js';
+import { createTimeline } from './timeline.js';
 
 /**
  * Content I/O backed by a {@link Documents}.

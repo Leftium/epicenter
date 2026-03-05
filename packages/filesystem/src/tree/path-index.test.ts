@@ -11,9 +11,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
-import { createFileSystemIndex } from './file-system-index.js';
-import { filesTable } from './file-table.js';
-import type { FileId } from './types.js';
+import type { FileId } from '../ids.js';
+import { filesTable } from '../table.js';
+import { createFileSystemIndex } from './path-index.js';
 
 const fid = (s: string) => s as FileId;
 

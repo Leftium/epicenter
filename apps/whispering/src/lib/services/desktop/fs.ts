@@ -9,23 +9,21 @@ import {
 import { tryAsync } from 'wellcrafted/result';
 
 export const FsError = defineErrors({
-	Service: ({
-		operation,
+	ReadBlobFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+	ReadFileFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Failed to read file as File: ${path}: ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+	ReadFilesFailed: ({ paths, cause }: { paths: string[]; cause: unknown }) => ({
+		message: `Failed to read files: ${paths.join(', ')}: ${extractErrorMessage(cause)}`,
 		paths,
 		cause,
-	}: {
-		operation: string;
-		paths: string | string[];
-		cause: unknown;
-	}) => {
-		const pathStr = Array.isArray(paths) ? paths.join(', ') : paths;
-		return {
-			message: `Failed to ${operation}: ${pathStr}: ${extractErrorMessage(cause)}`,
-			operation,
-			paths,
-			cause,
-		};
-	},
+	}),
 });
 export type FsError = InferErrors<typeof FsError>;
 
@@ -37,12 +35,7 @@ export const FsServiceLive = {
 	pathToBlob: (path: string) =>
 		tryAsync({
 			try: () => createBlobFromPath(path),
-			catch: (error) =>
-				FsError.Service({
-					operation: 'read file as Blob',
-					paths: path,
-					cause: error,
-				}),
+			catch: (error) => FsError.ReadBlobFailed({ path, cause: error }),
 		}),
 
 	/**
@@ -52,12 +45,7 @@ export const FsServiceLive = {
 	pathToFile: (path: string) =>
 		tryAsync({
 			try: () => createFileFromPath(path),
-			catch: (error) =>
-				FsError.Service({
-					operation: 'read file as File',
-					paths: path,
-					cause: error,
-				}),
+			catch: (error) => FsError.ReadFileFailed({ path, cause: error }),
 		}),
 
 	/**
@@ -67,12 +55,7 @@ export const FsServiceLive = {
 	pathsToFiles: (paths: string[]) =>
 		tryAsync({
 			try: () => Promise.all(paths.map(createFileFromPath)),
-			catch: (error) =>
-				FsError.Service({
-					operation: 'read files',
-					paths,
-					cause: error,
-				}),
+			catch: (error) => FsError.ReadFilesFailed({ paths, cause: error }),
 		}),
 };
 

@@ -175,7 +175,7 @@ export function createWorkspace<
 			const documents = createDocuments({
 				id,
 				guidKey: documentConfig.guid as keyof BaseRow & string,
-				updatedAtKey: documentConfig.updatedAt as keyof BaseRow & string,
+				onUpdate: documentConfig.onUpdate,
 				tableHelper,
 				ydoc,
 				documentExtensions: documentExtensionRegistrations,

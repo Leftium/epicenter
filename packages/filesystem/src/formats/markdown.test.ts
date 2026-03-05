@@ -1,5 +1,5 @@
 /**
- * Markdown Helpers Tests
+ * Markdown Tests
  *
  * Covers markdown/frontmatter parsing and Yjs conversion helpers used by markdown-mode
  * files. These tests protect fidelity between plain markdown content and structured Yjs
@@ -14,7 +14,8 @@ import { describe, expect, test } from 'bun:test';
 import { createWorkspace } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { filesTable } from './file-table.js';
+import { createYjsFileSystem } from '../file-system.js';
+import { filesTable } from '../table.js';
 import {
 	parseFrontmatter,
 	serializeMarkdownWithFrontmatter,
@@ -22,8 +23,7 @@ import {
 	updateYMapFromRecord,
 	updateYXmlFragmentFromString,
 	yMapToRecord,
-} from './markdown-helpers.js';
-import { createYjsFileSystem } from './yjs-file-system.js';
+} from './markdown.js';
 
 describe('parseFrontmatter', () => {
 	test('parseFrontmatter returns empty metadata when front matter is absent', () => {

@@ -42,8 +42,7 @@ export const FfmpegServiceLive = {
 					if (commandError) throw commandError;
 					return result;
 				},
-				catch: (error) =>
-					FfmpegError.InstallCheckFailed({ cause: error }),
+				catch: (error) => FfmpegError.InstallCheckFailed({ cause: error }),
 			});
 
 		if (shellFfmpegError) return Err(shellFfmpegError);
@@ -85,8 +84,7 @@ export const FfmpegServiceLive = {
 					// Verify file is accessible (forces OS flush on Windows)
 					const { error: verifyError } = await tryAsync({
 						try: () => FsServiceLive.pathToBlob(inputPath),
-						catch: (error) =>
-							FfmpegError.VerifyFailed({ cause: error }),
+						catch: (error) => FfmpegError.VerifyFailed({ cause: error }),
 					});
 					if (verifyError) throw new Error(verifyError.message);
 

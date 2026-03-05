@@ -19,13 +19,7 @@ export const FsError = defineErrors({
 		path,
 		cause,
 	}),
-	ReadFilesFailed: ({
-		paths,
-		cause,
-	}: {
-		paths: string[];
-		cause: unknown;
-	}) => ({
+	ReadFilesFailed: ({ paths, cause }: { paths: string[]; cause: unknown }) => ({
 		message: `Failed to read files: ${paths.join(', ')}: ${extractErrorMessage(cause)}`,
 		paths,
 		cause,

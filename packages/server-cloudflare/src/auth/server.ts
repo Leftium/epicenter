@@ -1,15 +1,9 @@
+import { env } from 'cloudflare:workers';
 import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { authOptions } from './options';
-
-type AuthEnv = {
-	DATABASE_URL: string;
-	SESSION_KV: KVNamespace;
-	BETTER_AUTH_SECRET: string;
-	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
-};
 
 /**
  * Creates a Better Auth instance configured for the Cloudflare Workers runtime.
@@ -17,11 +11,8 @@ type AuthEnv = {
  * Spreads {@link authOptions} (schema-affecting config shared with the CLI) and
  * layers on runtime-only options: Neon database via Drizzle adapter, Cloudflare
  * KV session caching, cross-subdomain cookies, and trusted origins.
- *
- * Called per-request in `app.ts` — no module-level cache, per Better Auth's
- * serverless recommendation.
  */
-export function createAuth(env: AuthEnv) {
+function createAuth() {
 	const sql = neon(env.DATABASE_URL);
 	const db = drizzle(sql);
 
@@ -74,3 +65,6 @@ export function createAuth(env: AuthEnv) {
 
 	return auth;
 }
+
+/** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
+export const auth = createAuth();

@@ -1,9 +1,8 @@
+import { auth } from './server';
 import { factory } from '../env';
 
 export function createAuthMiddleware() {
 	return factory.createMiddleware(async (c, next) => {
-		const auth = c.var.auth;
-
 		// WebSocket clients pass the token as a query param (no Authorization
 		// header on upgrade requests). Normalise into a Bearer header so
 		// Better Auth's bearer() plugin handles extraction uniformly.

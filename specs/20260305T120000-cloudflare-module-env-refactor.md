@@ -96,7 +96,7 @@ This means we can safely create a singleton auth instance at module level.
 - [x] Fixed `YjsRoom` constructor: `env: Record<string, unknown>` → `env: Env` (global `Env` from generated types).
   > **Note**: The generated `Cloudflare.Env` is missing optional API key secrets (OPENAI_API_KEY, etc.) since they're not declared in wrangler.toml. Will extend in Wave 2.
 
-### Wave 2: Module-level auth singleton
+### Wave 2: Module-level auth singleton ✅
 
 **src/auth/server.ts** — Change `createAuth` to accept the generated `Env` type
 (or keep `AuthEnv` as a subset). Export a singleton:
@@ -143,40 +143,15 @@ export type AppEnv = { Bindings: Bindings; Variables: Variables };
 export type AppEnv = { Bindings: Cloudflare.Env; Variables: Variables };
 ```
 
-### Wave 3: Simplify app.ts and consumers
+- [x] **src/auth/server.ts**: `createAuth` now uses `import { env } from 'cloudflare:workers'` — no parameter. Exports `auth` singleton.
+  > **Note**: Removed `AuthEnv` type entirely — `env` is already typed via `Cloudflare.Env`.
+- [x] **src/env.ts**: Replaced manual `Bindings` with `Cloudflare.Env & ApiKeyBindings`. Removed `auth` from `Variables`. `Session` type derived from exported `auth` singleton.
+  > **Note**: Added `ApiKeyBindings` extension for optional API key secrets not in wrangler.toml.
 
-**src/app.ts:**
+### Wave 3: Simplify app.ts and consumers ✅
 
-```typescript
-// Before
-import { createAuth } from './auth/server';
-const authService = factory.createMiddleware(async (c, next) => {
-    c.set('auth', createAuth(c.env));
-    return next();
-});
-app.use('*', authService);
-
-// After — delete the authService middleware entirely
-import { auth } from './auth/server';
-```
-
-Update all `c.var.auth` references to use the imported `auth` directly:
-
-- `app.ts:48` — `c.var.auth.handler(c.req.raw)` → `auth.handler(c.req.raw)`
-- `app.ts:55` — `oauthProviderOpenIdConfigMetadata(c.var.auth as never)` →
-  `oauthProviderOpenIdConfigMetadata(auth as never)`
-- `app.ts:58` — same pattern
-
-**src/auth/middleware.ts:**
-
-```typescript
-// Before
-const auth = c.var.auth;
-
-// After
-import { auth } from './server';
-// Use auth directly — no longer read from c.var
-```
+- [x] **src/app.ts**: Removed `authService` middleware entirely. Import `auth` singleton. All `c.var.auth` → `auth`.
+- [x] **src/auth/middleware.ts**: Import `auth` from `./server` instead of reading `c.var.auth`.
 
 ### Wave 4: Verify proxy handlers
 

@@ -26,6 +26,7 @@
 		"noUnusedParameters": true,
 		"noPropertyAccessFromIndexSignature": false,
 
-		"types": ["@cloudflare/workers-types"]
-	}
+		"types": []
+	},
+	"include": ["src", "worker-configuration.d.ts"]
 }

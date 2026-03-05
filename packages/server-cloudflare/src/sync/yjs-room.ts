@@ -26,7 +26,7 @@ export class YjsRoom extends DurableObject {
 	private roomManager!: ReturnType<typeof createRoomManager>;
 	private connectionStates: Map<WebSocket, ConnectionState>;
 
-	constructor(ctx: DurableObjectState, env: Record<string, unknown>) {
+	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		this.storage = new DOSqliteSyncStorage(ctx.storage);
 		this.connectionStates = new Map();

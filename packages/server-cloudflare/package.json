@@ -13,7 +13,8 @@
 		"typecheck": "tsc --noEmit",
 		"auth:generate": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts",
 		"auth:migrate": "bun --env-file=.dev.vars x @better-auth/cli migrate --config ./better-auth.config.ts",
-		"auth:schema": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts"
+		"auth:schema": "bun --env-file=.dev.vars x @better-auth/cli generate --config ./better-auth.config.ts --output ./src/db/schema.ts",
+		"typegen": "wrangler types"
 	},
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "^1.5.3",
@@ -28,9 +29,8 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20250214.0",
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
-		"wrangler": "^3.114.0"
+		"wrangler": "^4"
 	}
 }

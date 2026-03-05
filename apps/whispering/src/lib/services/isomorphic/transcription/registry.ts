@@ -32,7 +32,11 @@ type BaseTranscriptionService = {
 
 type CloudTranscriptionService = BaseTranscriptionService & {
 	location: 'cloud';
-	models: readonly { readonly name: string; readonly description: string; readonly cost: string }[];
+	models: readonly {
+		readonly name: string;
+		readonly description: string;
+		readonly cost: string;
+	}[];
 	defaultModel: string;
 	modelSettingKey: string;
 	apiKeyField: keyof Settings;

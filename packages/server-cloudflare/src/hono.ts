@@ -15,6 +15,9 @@ type Variables = {
 	session: Session['session'];
 };
 
-export type AppEnv = { Bindings: Cloudflare.Env & ApiKeyBindings; Variables: Variables };
+export type AppEnv = {
+	Bindings: Cloudflare.Env & ApiKeyBindings;
+	Variables: Variables;
+};
 
 export const factory = createFactory<AppEnv>();

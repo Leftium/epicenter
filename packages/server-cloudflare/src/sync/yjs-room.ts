@@ -1,14 +1,14 @@
 import { DurableObject } from 'cloudflare:workers';
-import * as Y from 'yjs';
 import {
-	handleWsOpen,
-	handleWsMessage,
-	handleWsClose,
-	handleHttpSync,
-	handleHttpGetDoc,
-	createRoomManager,
 	type ConnectionState,
+	createRoomManager,
+	handleHttpGetDoc,
+	handleHttpSync,
+	handleWsClose,
+	handleWsMessage,
+	handleWsOpen,
 } from '@epicenter/sync-core';
+import * as Y from 'yjs';
 import { DOSqliteSyncStorage } from './storage';
 
 type WsAttachment = {
@@ -209,10 +209,7 @@ export class YjsRoom extends DurableObject {
 		ws.close(code, reason);
 	}
 
-	override async webSocketError(
-		ws: WebSocket,
-		_error: unknown,
-	): Promise<void> {
+	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
 	}
 }

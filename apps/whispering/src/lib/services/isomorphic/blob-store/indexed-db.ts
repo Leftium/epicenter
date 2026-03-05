@@ -57,7 +57,11 @@ export function createIndexedDbBlobStore({
 		async put(id, blob, mimeType) {
 			const db = await dbPromise;
 			const arrayBuffer = await blob.arrayBuffer();
-			await db.put(storeName, { id, arrayBuffer, mimeType } satisfies BlobRecord);
+			await db.put(storeName, {
+				id,
+				arrayBuffer,
+				mimeType,
+			} satisfies BlobRecord);
 		},
 
 		async delete(id) {

@@ -77,20 +77,19 @@ export type TransformationStepV2 = typeof TransformationStepV2.infer;
  * TransformationStep validator with automatic migration.
  * Accepts V1 or V2 and always outputs V2.
  */
-export const TransformationStep = type.or(
-	TransformationStepV1,
-	TransformationStepV2,
-).pipe((step): TransformationStepV2 => {
-	if (step.version === 1) {
-		return {
-			...step,
-			version: 2,
-			'prompt_transform.inference.provider.Custom.model': '',
-			'prompt_transform.inference.provider.Custom.baseUrl': '',
-		};
-	}
-	return step;
-});
+export const TransformationStep = type
+	.or(TransformationStepV1, TransformationStepV2)
+	.pipe((step): TransformationStepV2 => {
+		if (step.version === 1) {
+			return {
+				...step,
+				version: 2,
+				'prompt_transform.inference.provider.Custom.model': '',
+				'prompt_transform.inference.provider.Custom.baseUrl': '',
+			};
+		}
+		return step;
+	});
 
 export type TransformationStep = TransformationStepV2;
 

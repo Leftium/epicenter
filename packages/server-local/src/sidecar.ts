@@ -14,8 +14,8 @@ import { collectActionPaths } from './workspace/actions';
  * Auth configuration for the sidecar.
  *
  * The sidecar is always a **consumer** of authentication — it never
- * issues sessions or manages user accounts. Compare with {@link HubAuthConfig}
- * in `@epicenter/server-hub`, which is the **source** of auth (issuing
+ * issues sessions or manages user accounts. Compare with `StandaloneAuthConfig`
+ * in `@epicenter/server-remote`, which is the **source** of auth (issuing
  * sessions via Better Auth or accepting a shared token).
  *
  * Three mutually exclusive modes:
@@ -147,7 +147,7 @@ export type SidecarConfig = {
  * Create an Elysia plugin for auth guard based on the auth config.
  *
  * - `none`   → no-op plugin
- * - `token`  → shared {@link createTokenGuardPlugin} from `@epicenter/server-elysia`
+ * - `token`  → shared {@link createTokenGuardPlugin}
  * - `remote` → delegates to hub session validation
  *
  * Separated into its own plugin so the type chain is not broken by conditionals.

@@ -33,7 +33,7 @@ function uniqueRoom(): string {
  * Start a test server on a random port (port 0).
  *
  * Uses the sync plugin directly (no createLocalServer dependency)
- * to keep @epicenter/server-elysia free of cyclic deps.
+ * to keep the test self-contained without cyclic deps.
  */
 function startTestServer(syncConfig?: {
 	verifyToken?: (token: string) => boolean | Promise<boolean>;

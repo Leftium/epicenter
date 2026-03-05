@@ -1,8 +1,9 @@
 # Server Package Consolidation
 
-**Status**: Draft
+**Status**: Implemented
 **Date**: 2026-03-05
 **Supersedes**: Parts of `20260304T120000-hub-sidecar-architecture.md` (package structure section)
+**Superseded by**: `20260305T180000-server-remote-adapter-architecture.md` (adapter hosting model — splits adapters into separate packages)
 
 ## Summary
 
@@ -322,41 +323,41 @@ Client-side package. No changes.
 - `packages/server-cloudflare/` deleted — all code now lives under `server-remote/src/adapters/cloudflare/`
 - `package.json` scripts use `--config` flags to point wrangler/drizzle-kit at the adapter subdirectory
 
-### Phase 2: Standalone adapter
+### Phase 2: Standalone adapter — DONE
 
-1. Create `src/adapters/standalone/`
-2. Implement `sync-adapter.ts` — Hono WebSocket upgrade using `sync-core`'s `createRoomManager` + handlers
-3. Port auth modes from `server-hub` (none/token/betterAuth) into standalone auth config
-4. Port AI chat and proxy routes (already shared from Phase 1)
-5. Implement `createRemoteHub()` factory
+1. ~~Create `src/adapters/standalone/`~~
+2. ~~Implement `sync-adapter.ts` — Hono WebSocket upgrade using `sync-core`'s `createRoomManager` + handlers~~
+3. ~~Port auth modes from `server-hub` (none/token/betterAuth) into standalone auth config~~
+4. ~~Port AI chat and proxy routes (already shared from Phase 1)~~
+5. ~~Implement `createRemoteHub()` factory~~
 
-**Acceptance**: `createRemoteHub({ auth: { mode: 'token', token: 'test' } })` starts and passes the same test suite as current `server-hub`.
+**Acceptance**: ~~`createRemoteHub({ auth: { mode: 'token', token: 'test' } })` starts and passes the same test suite as current `server-hub`.~~
 
-### Phase 3: Create `server-local` (rename + inline)
+### Phase 3: Create `server-local` (rename + inline) — DONE
 
-1. Rename `packages/server-sidecar/` → `packages/server-local/`
-2. Copy `server-elysia/src/sync/ws/plugin.ts` → `server-local/src/sync/ws-plugin.ts`
-3. Copy `server-elysia/src/sync/ws/plugin.test.ts` → `server-local/src/sync/ws-plugin.test.ts` (14 integration tests)
-4. Copy `server-elysia/src/auth.ts` → `server-local/src/auth/token-guard.ts`
-5. Copy `server-elysia/src/server.ts` → `server-local/src/server.ts`
-6. Update all imports in `server-local` to use local paths instead of `@epicenter/server-elysia`
-7. Update `sidecar.test.ts` — change `import { DEFAULT_PORT } from '@epicenter/server-elysia'` to local import
-8. Remove `@epicenter/server-elysia` from `server-local`'s dependencies
+1. ~~Rename `packages/server-sidecar/` → `packages/server-local/`~~
+2. ~~Copy `server-elysia/src/sync/ws/plugin.ts` → `server-local/src/sync/ws-plugin.ts`~~
+3. ~~Copy `server-elysia/src/sync/ws/plugin.test.ts` → `server-local/src/sync/ws-plugin.test.ts` (14 integration tests)~~
+4. ~~Copy `server-elysia/src/auth.ts` → `server-local/src/auth/token-guard.ts`~~
+5. ~~Copy `server-elysia/src/server.ts` → `server-local/src/server.ts`~~
+6. ~~Update all imports in `server-local` to use local paths instead of `@epicenter/server-elysia`~~
+7. ~~Update `sidecar.test.ts` — change `import { DEFAULT_PORT } from '@epicenter/server-elysia'` to local import~~
+8. ~~Remove `@epicenter/server-elysia` from `server-local`'s dependencies~~
 
-**Acceptance**: All existing sidecar tests pass (42 tests across 5 files). All 14 WS sync plugin tests pass. No import of `@epicenter/server-elysia` remains.
+**Acceptance**: ~~All existing sidecar tests pass (42 tests across 5 files). All 14 WS sync plugin tests pass. No import of `@epicenter/server-elysia` remains.~~
 
-### Phase 4: Update CLI + delete old packages
+### Phase 4: Update CLI + delete old packages — DONE
 
-1. Update `packages/cli/src/commands/hub-command.ts` — change `import { createHub } from '@epicenter/server-hub'` → `import { createRemoteHub } from '@epicenter/server-remote'`
-2. Update `packages/cli/src/commands/sidecar-command.ts` — change `import('@epicenter/server-sidecar')` → `import('@epicenter/server-local')`
-3. Update `packages/cli/package.json` — replace `@epicenter/server-hub` and `@epicenter/server-sidecar` with `@epicenter/server-remote` and `@epicenter/server-local`
-4. Delete `packages/server-elysia/`
-5. Delete `packages/server-hub/`
-6. Delete `packages/server-cloudflare/`
-7. Update workspace root `package.json` and any monorepo config
-8. Grep for any remaining references to deleted package names in comments, docstrings, and specs
+1. ~~Update `packages/cli/src/commands/hub-command.ts` — change `import { createHub } from '@epicenter/server-hub'` → `import { createRemoteHub } from '@epicenter/server-remote'`~~
+2. ~~Update `packages/cli/src/commands/sidecar-command.ts` — change `import('@epicenter/server-sidecar')` → `import('@epicenter/server-local')`~~
+3. ~~Update `packages/cli/package.json` — replace `@epicenter/server-hub` and `@epicenter/server-sidecar` with `@epicenter/server-remote` and `@epicenter/server-local`~~
+4. ~~Delete `packages/server-elysia/`~~
+5. ~~Delete `packages/server-hub/`~~
+6. ~~Delete `packages/server-cloudflare/`~~ (already deleted in Phase 1)
+7. ~~Update workspace root `package.json` and any monorepo config~~
+8. ~~Grep for any remaining references to deleted package names in comments, docstrings, and specs~~
 
-**Acceptance**: `bun install` succeeds. Full test suite passes (56+ tests). No references to deleted packages in source code.
+**Acceptance**: ~~`bun install` succeeds. Full test suite passes (56+ tests). No references to deleted packages in source code.~~
 
 ## Resolved Questions
 
@@ -408,3 +409,25 @@ No other packages, apps, CI configs, Dockerfiles, or tsconfig files reference th
 - **Changing the wire protocol**: The y-websocket-compatible protocol with tag-102 extension is unchanged.
 - **Changing the sidecar's behavior**: The sidecar does the same thing, just with inlined dependencies.
 - **Adding new features**: This is a pure reorganization. New capabilities (e.g., standalone SQLite persistence) are noted as open questions, not committed scope.
+
+## Implementation Review
+
+### What Was Done
+
+**Phase 1 (Complete):** Absorbed `server-cloudflare` into `server-remote/src/adapters/cloudflare/`. Shared Hono routes (`createSharedApp`, auth middleware, proxy handlers) live at the `server-remote` package root. The Cloudflare adapter lives under `src/adapters/cloudflare/` with `wrangler.toml`, Durable Objects, KV session storage, and Drizzle/PlanetScale config. Wrangler commands use `--config src/adapters/cloudflare/wrangler.toml`.
+
+**Phase 2 (Complete):** Built the standalone adapter at `src/adapters/standalone/` with `createRemoteHub()` factory, three auth modes (none/token/betterAuth), Bun WebSocket sync via sync-core's room manager, and admin user seeding.
+
+**Renamed:** `server-sidecar` → `server-local`, inlined `server-elysia` dependencies.
+
+### Architecture Revision: Adapter Hosting Model
+
+After implementing Phases 1-2, we identified friction with the nested adapter approach:
+
+1. Every wrangler command needs `--config` flags pointing at the nested `wrangler.toml`
+2. Self-hosters have to navigate into `src/adapters/standalone/` to find the entry point
+3. Mixed dependencies — Cloudflare and standalone deps share one `package.json`
+
+**Decision:** Split adapters into separate packages. See `20260305T180000-server-remote-adapter-architecture.md` for the full spec.
+
+Target: `server-remote` (shared core) + `server-remote-cloudflare` + `server-remote-standalone` as three workspace packages. Each adapter gets config files at package root, clean scripts, and isolated dependencies.

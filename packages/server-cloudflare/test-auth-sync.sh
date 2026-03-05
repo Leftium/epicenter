@@ -12,7 +12,8 @@ curl -s "$BASE/" | jq .
 
 echo ""
 echo "=== 2. Run migrations ==="
-curl -s -X POST "$BASE/migrate" | jq .
+curl -s -X POST "$BASE/migrate" \
+  -H "x-migrate-secret: I2EhbQto4NZT07/EBXEUo9jZiNenuvDMEbWfKSYcnNI=" | jq .
 
 echo ""
 echo "=== 3. Sign up ==="

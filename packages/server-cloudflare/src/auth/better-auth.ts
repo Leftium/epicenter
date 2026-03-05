@@ -5,8 +5,8 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 type AuthEnv = {
 	DATABASE_URL: string;
 	SESSION_KV: KVNamespace;
-	AUTH_SECRET: string;
-	BASE_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
+	BETTER_AUTH_SECRET: string;
+	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — needed for OAuth issuer
 };
 
 // Module-level cache. Cloudflare Workers reuse isolates across requests,
@@ -22,10 +22,25 @@ export function createAuth(env: AuthEnv) {
 			type: 'postgres',
 			url: env.DATABASE_URL,
 		},
-		baseURL: env.BASE_URL,
+		baseURL: env.BETTER_AUTH_URL,
 		basePath: '/auth',
-		secret: env.AUTH_SECRET,
+		secret: env.BETTER_AUTH_SECRET,
 		emailAndPassword: { enabled: true },
+		databaseHooks: {
+			session: {
+				delete: {
+					after: async (session) => {
+						// Write a revocation marker so stale KV caches reject the
+						// token during the ~60s eventual-consistency window.
+						await env.SESSION_KV.put(
+							`revoked:${session.token}`,
+							'1',
+							{ expirationTtl: 120 },
+						);
+					},
+				},
+			},
+		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 7, // 7 days
 			updateAge: 60 * 60 * 24, // 1 day

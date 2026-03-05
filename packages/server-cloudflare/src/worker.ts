@@ -16,9 +16,8 @@ export type Bindings = {
 	DATABASE_URL: string;
 	YJS_ROOM: DurableObjectNamespace;
 	SESSION_KV: KVNamespace;
-	AUTH_SECRET: string;
-	MIGRATE_SECRET: string;
-	BASE_URL?: string; // e.g. https://api.epicenter.so — OAuth issuer
+	BETTER_AUTH_SECRET: string;
+	BETTER_AUTH_URL?: string; // e.g. https://api.epicenter.so — OAuth issuer
 	OPENAI_API_KEY?: string;
 	ANTHROPIC_API_KEY?: string;
 	GEMINI_API_KEY?: string;
@@ -68,9 +67,9 @@ app.get('/.well-known/oauth-authorization-server', (c) =>
 	oauthProviderAuthServerMetadata(createAuth(c.env) as never)(c.req.raw),
 );
 
-// --- DB Migrations (deploy-time only, protected by shared secret) ---
+// --- DB Migrations (deploy-time only, protected by BETTER_AUTH_SECRET) ---
 app.post('/migrate', (c) => {
-	if (c.req.header('x-migrate-secret') !== c.env.MIGRATE_SECRET) {
+	if (c.req.header('x-migrate-secret') !== c.env.BETTER_AUTH_SECRET) {
 		return c.json({ error: 'Unauthorized' }, 401);
 	}
 	return createMigrateHandler()(c);

@@ -125,7 +125,8 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 			async beforeHandle({ query, status }) {
 				if (!verifyToken) return;
-				if (!query.token || !(await verifyToken(query.token))) return status(401);
+				if (!query.token || !(await verifyToken(query.token)))
+					return status(401);
 			},
 
 			async open(ws) {

@@ -5,16 +5,18 @@
  * CRITICAL: This file must NOT import from `@epicenter/workspace` — it's the dependency firewall.
  */
 
-export { createHttpSyncPlugin, type HttpSyncPluginConfig } from './http-sync-plugin';
-export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws-sync-plugin';
 export {
-	type SyncStorage,
+	createHttpSyncPlugin,
+	type HttpSyncPluginConfig,
+} from './http-sync-plugin';
+/** @deprecated Use `createWsSyncPlugin` instead. */
+export { createSyncPlugin, type SyncPluginConfig } from './plugin';
+export {
 	compactDoc,
 	createMemorySyncStorage,
 	decodeSyncRequest,
 	encodeSyncRequest,
+	type SyncStorage,
 	stateVectorsEqual,
 } from './storage';
-
-/** @deprecated Use `createWsSyncPlugin` instead. */
-export { createSyncPlugin, type SyncPluginConfig } from './plugin';
+export { createWsSyncPlugin, type WsSyncPluginConfig } from './ws-sync-plugin';

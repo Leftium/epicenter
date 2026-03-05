@@ -186,7 +186,10 @@ export function createMemorySyncStorage(): SyncStorage {
  * @param docId - Document to compact
  * @returns True if compaction was performed, false if already compact (0-1 updates)
  */
-export async function compactDoc(storage: SyncStorage, docId: string): Promise<boolean> {
+export async function compactDoc(
+	storage: SyncStorage,
+	docId: string,
+): Promise<boolean> {
 	const updates = await storage.getAllUpdates(docId);
 	if (updates.length <= 1) return false;
 	const merged = Y.mergeUpdatesV2(updates);

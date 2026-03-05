@@ -18,8 +18,8 @@ import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { extractBearerToken } from '../auth';
 import {
-	type SyncStorage,
 	decodeSyncRequest,
+	type SyncStorage,
 	stateVectorsEqual,
 } from './storage';
 
@@ -63,8 +63,7 @@ export function createHttpSyncPlugin(config: HttpSyncPluginConfig) {
 		restAuth
 			.post('/:room', async ({ params, request, set }) => {
 				const body = new Uint8Array(await request.arrayBuffer());
-				const { stateVector: clientSV, update } =
-					decodeSyncRequest(body);
+				const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 				// Push client update if present
 				if (update.byteLength > 0) {

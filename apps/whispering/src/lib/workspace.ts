@@ -9,11 +9,11 @@ import { type } from 'arktype';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
-import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE } from '$lib/constants/inference';
 import { TRANSCRIPTION } from '$lib/constants/transcription';
+import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
+import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 
 // ── Tables ────────────────────────────────────────────────────────────────────
 
@@ -205,15 +205,11 @@ const transcriptionConfig = type.or(
 	},
 	{
 		service: "'Deepgram'",
-		model: type.enumerated(
-			...TRANSCRIPTION.Deepgram.models.map((m) => m.name),
-		),
+		model: type.enumerated(...TRANSCRIPTION.Deepgram.models.map((m) => m.name)),
 	},
 	{
 		service: "'Mistral'",
-		model: type.enumerated(
-			...TRANSCRIPTION.Mistral.models.map((m) => m.name),
-		),
+		model: type.enumerated(...TRANSCRIPTION.Mistral.models.map((m) => m.name)),
 	},
 	{ service: "'whispercpp'" },
 	{ service: "'parakeet'" },

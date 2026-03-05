@@ -9,7 +9,7 @@ import {
 	handleWsOpen,
 } from '@epicenter/sync-core';
 import * as Y from 'yjs';
-import { DOSqliteSyncStorage } from './storage';
+import { DOSqliteUpdateLog } from './storage';
 
 type WsAttachment = {
 	controlledClientIds: number[];
@@ -22,13 +22,13 @@ type WsAttachment = {
  * pays zero compute when idle. One DO instance per room ID via `idFromName(roomId)`.
  */
 export class YjsRoom extends DurableObject {
-	private storage: DOSqliteSyncStorage;
+	private storage: DOSqliteUpdateLog;
 	private roomManager!: ReturnType<typeof createRoomManager>;
 	private connectionStates: Map<WebSocket, ConnectionState>;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.storage = new DOSqliteSyncStorage(ctx.storage);
+		this.storage = new DOSqliteUpdateLog(ctx.storage);
 		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
@@ -72,7 +72,7 @@ export class YjsRoom extends DurableObject {
 
 	private async loadOrCreateDoc(roomId: string): Promise<Y.Doc> {
 		const doc = new Y.Doc();
-		const updates = await this.storage.getAllUpdates(roomId);
+		const updates = await this.storage.readAll(roomId);
 		if (updates.length > 0) {
 			const merged = Y.mergeUpdatesV2(updates);
 			Y.applyUpdateV2(doc, merged);
@@ -80,7 +80,7 @@ export class YjsRoom extends DurableObject {
 
 		// Persist incremental updates to SQLite.
 		doc.on('updateV2', async (update: Uint8Array) => {
-			await this.storage.appendUpdate(roomId, update);
+			await this.storage.append(roomId, update);
 		});
 
 		return doc;

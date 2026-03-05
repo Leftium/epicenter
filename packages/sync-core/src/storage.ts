@@ -15,20 +15,19 @@
 
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
-import * as Y from 'yjs';
 
 // ============================================================================
 // Storage Interface
 // ============================================================================
 
 /**
- * Persistence layer for Yjs document updates.
+ * Append-only update log for Yjs document updates.
  *
  * Implementations store opaque binary blobs (Yjs updates) keyed by document ID.
  * The storage never interprets or parses the update contents — it simply
  * appends, reads, and compacts them.
  */
-export interface SyncStorage {
+export type UpdateLog = {
 	/**
 	 * Append a Yjs update for a document.
 	 *
@@ -38,7 +37,7 @@ export interface SyncStorage {
 	 * @param docId - Unique document identifier
 	 * @param update - Raw Yjs update bytes
 	 */
-	appendUpdate(docId: string, update: Uint8Array): Promise<void>;
+	append(docId: string, update: Uint8Array): Promise<void>;
 
 	/**
 	 * Read all stored updates (snapshot + deltas) for a document.
@@ -49,7 +48,7 @@ export interface SyncStorage {
 	 * @param docId - Unique document identifier
 	 * @returns Array of raw Yjs update bytes, empty array if document not found
 	 */
-	getAllUpdates(docId: string): Promise<Uint8Array[]>;
+	readAll(docId: string): Promise<Uint8Array[]>;
 
 	/**
 	 * Replace all updates with a single compacted snapshot.
@@ -60,8 +59,8 @@ export interface SyncStorage {
 	 * @param docId - Unique document identifier
 	 * @param mergedUpdate - Single Yjs update containing all document state
 	 */
-	compact(docId: string, mergedUpdate: Uint8Array): Promise<void>;
-}
+	replaceAll(docId: string, mergedUpdate: Uint8Array): Promise<void>;
+};
 
 // ============================================================================
 // Binary Frame Encoding/Decoding
@@ -137,19 +136,19 @@ export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
 // ============================================================================
 
 /**
- * Create an in-memory SyncStorage backed by a Map.
+ * Create an in-memory UpdateLog backed by a Map.
  *
  * Suitable for testing and for remote server deployments where documents
  * are ephemeral (e.g., collaboration sessions that don't outlive the process).
  * All data is lost when the process exits.
  *
- * @returns A SyncStorage instance using in-memory storage
+ * @returns An UpdateLog instance using in-memory storage
  */
-export function createMemorySyncStorage(): SyncStorage {
+export function createMemoryUpdateLog(): UpdateLog {
 	const docs = new Map<string, Uint8Array[]>();
 
 	return {
-		async appendUpdate(docId, update) {
+		async append(docId, update) {
 			let updates = docs.get(docId);
 			if (!updates) {
 				updates = [];
@@ -158,41 +157,13 @@ export function createMemorySyncStorage(): SyncStorage {
 			updates.push(update);
 		},
 
-		async getAllUpdates(docId) {
+		async readAll(docId) {
 			return docs.get(docId) ?? [];
 		},
 
-		async compact(docId, mergedUpdate) {
+		async replaceAll(docId, mergedUpdate) {
 			docs.set(docId, [mergedUpdate]);
 		},
 	};
 }
 
-// ============================================================================
-// Compaction
-// ============================================================================
-
-/**
- * Compact all stored updates for a document into a single merged snapshot.
- *
- * Reads all updates, merges them with `Y.mergeUpdatesV2` (a pure function —
- * no Y.Doc instantiated), and replaces the update log with the single result.
- * This keeps `getAllUpdates` fast and `diffUpdateV2` efficient.
- *
- * Safe to call at any time — concurrent reads will see either the old updates
- * or the new compacted snapshot, both representing the same document state.
- *
- * @param storage - The SyncStorage instance to compact
- * @param docId - Document to compact
- * @returns True if compaction was performed, false if already compact (0-1 updates)
- */
-export async function compactDoc(
-	storage: SyncStorage,
-	docId: string,
-): Promise<boolean> {
-	const updates = await storage.getAllUpdates(docId);
-	if (updates.length <= 1) return false;
-	const merged = Y.mergeUpdatesV2(updates);
-	await storage.compact(docId, merged);
-	return true;
-}

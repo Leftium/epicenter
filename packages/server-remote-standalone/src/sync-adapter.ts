@@ -1,16 +1,16 @@
+import type { SharedEnv } from '@epicenter/server-remote';
 import {
+	type ConnectionState,
 	createRoomManager,
 	handleHttpGetDoc,
 	handleHttpSync,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	type ConnectionState,
-	type SyncStorage,
+	type UpdateLog,
 } from '@epicenter/sync-core';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
-import type { SharedEnv } from '@epicenter/server-remote';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -48,13 +48,13 @@ export function mountSyncRoutes(
 
 	// Ephemeral — standalone hub doesn't persist sync data.
 	// HTTP sync routes use this no-op storage so the interface is satisfied.
-	const storage: SyncStorage = {
-		async appendUpdate() {},
-		async getAllUpdates() {
+	const storage = {
+		async append() {},
+		async readAll() {
 			return [];
 		},
-		async compact() {},
-	};
+		async replaceAll() {},
+	} satisfies UpdateLog;
 
 	// Ping/pong keepalive — track intervals per connection via WeakMap on ws.raw
 	const pingIntervals = new WeakMap<object, ReturnType<typeof setInterval>>();
@@ -115,11 +115,7 @@ export function mountSyncRoutes(
 						ws.send(messageResult.response as Uint8Array<ArrayBuffer>);
 					}
 					if (messageResult.broadcast) {
-						roomManager.broadcast(
-							state.roomId,
-							messageResult.broadcast,
-							raw,
-						);
+						roomManager.broadcast(state.roomId, messageResult.broadcast, raw);
 					}
 				},
 

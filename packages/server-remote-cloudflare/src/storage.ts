@@ -1,13 +1,13 @@
-import type { SyncStorage } from '@epicenter/sync-core';
+import type { UpdateLog } from '@epicenter/sync-core';
 import * as Y from 'yjs';
 
 /**
- * SyncStorage implementation backed by Durable Object SQLite.
+ * UpdateLog implementation backed by Durable Object SQLite.
  *
  * Uses the DO's built-in SQLite database for persistent Y.Doc update storage.
  * SQLite in Durable Objects is GA with 10GB per DO.
  */
-export class DOSqliteSyncStorage implements SyncStorage {
+export class DOSqliteUpdateLog implements UpdateLog {
 	private initialized = false;
 
 	constructor(private storage: DurableObjectStorage) {}
@@ -25,7 +25,7 @@ export class DOSqliteSyncStorage implements SyncStorage {
 		this.initialized = true;
 	}
 
-	async appendUpdate(docId: string, update: Uint8Array): Promise<void> {
+	async append(docId: string, update: Uint8Array): Promise<void> {
 		this.ensureTable();
 		this.storage.sql.exec(
 			'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
@@ -34,7 +34,7 @@ export class DOSqliteSyncStorage implements SyncStorage {
 		);
 	}
 
-	async getAllUpdates(docId: string): Promise<Uint8Array[]> {
+	async readAll(docId: string): Promise<Uint8Array[]> {
 		this.ensureTable();
 		const cursor = this.storage.sql.exec(
 			'SELECT data FROM updates WHERE doc_id = ? ORDER BY id',
@@ -43,7 +43,7 @@ export class DOSqliteSyncStorage implements SyncStorage {
 		return [...cursor].map((row) => new Uint8Array(row.data as ArrayBuffer));
 	}
 
-	async compact(docId: string, mergedUpdate: Uint8Array): Promise<void> {
+	async replaceAll(docId: string, mergedUpdate: Uint8Array): Promise<void> {
 		this.ensureTable();
 		this.storage.transactionSync(() => {
 			this.storage.sql.exec('DELETE FROM updates WHERE doc_id = ?', docId);
@@ -57,10 +57,10 @@ export class DOSqliteSyncStorage implements SyncStorage {
 
 	/** Compact all updates for a doc — called on last disconnect before hibernation. */
 	async compactAll(docId: string): Promise<void> {
-		const updates = await this.getAllUpdates(docId);
+		const updates = await this.readAll(docId);
 		if (updates.length <= 1) return;
 
 		const merged = Y.mergeUpdatesV2(updates);
-		await this.compact(docId, merged);
+		await this.replaceAll(docId, merged);
 	}
 }

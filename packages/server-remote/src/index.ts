@@ -22,13 +22,13 @@ export { handleProxy } from './proxy/passthrough';
 // Sync re-exports
 export {
 	createRoomManager,
-	createMemorySyncStorage,
+	createMemoryUpdateLog,
 	handleWsOpen,
 	handleWsMessage,
 	handleWsClose,
 	handleHttpSync,
 	handleHttpGetDoc,
-	type SyncStorage,
+	type UpdateLog,
 	type ConnectionId,
 	type ConnectionState,
 } from './sync';

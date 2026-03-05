@@ -21,12 +21,12 @@
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "^1.5.3",
 		"@better-auth/oauth-provider": "^1.5.3",
-		"arktype": "catalog:",
 		"@epicenter/sync-core": "workspace:*",
+		"arktype": "catalog:",
+		"better-auth": "^1.5.3",
 		"drizzle-orm": "catalog:",
-		"@neondatabase/serverless": "^0.10.0",
-		"better-auth": "^1.4.19",
 		"hono": "^4.7.0",
+		"postgres": "^3.4.8",
 		"y-protocols": "catalog:",
 		"yjs": "catalog:"
 	},

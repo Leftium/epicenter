@@ -9,14 +9,14 @@
  * `src/auth-base.ts` — the single source of truth.
  */
 
-import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { baseAuthConfig } from './src/auth-base';
 import { env } from './src/env';
 
-const sql = neon(env.DATABASE_URL);
+const sql = postgres(env.DATABASE_URL);
 const db = drizzle(sql);
 
 export const auth = betterAuth({

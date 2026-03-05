@@ -1,13 +1,13 @@
 import { env } from 'cloudflare:workers';
-import { neon } from '@neondatabase/serverless';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { drizzle } from 'drizzle-orm/neon-http';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
 import { baseAuthConfig } from './auth-base';
 import * as schema from './db/schema';
 import { factory } from './hono';
 
-const sql = neon(env.DATABASE_URL);
+const sql = postgres(env.HYPERDRIVE.connectionString);
 const db = drizzle(sql, { schema });
 
 /** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
@@ -21,7 +21,7 @@ export const auth = betterAuth({
 		updateAge: 60 * 60 * 24, // 1 day
 		// When secondaryStorage is set, Better Auth stores sessions there
 		// INSTEAD of the DB by default. Explicitly opt in to DB persistence
-		// so Neon acts as the authoritative fallback during KV's ~60s
+		// so the database acts as the authoritative fallback during KV's ~60s
 		// eventual-consistency propagation window (multi-device scenario).
 		storeSessionInDatabase: true,
 		cookieCache: {
@@ -46,8 +46,8 @@ export const auth = betterAuth({
 	// Cloudflare KV as secondary storage for session caching.
 	// Bearer-token clients (mobile, Tauri) can't use cookieCache, so KV
 	// handles their session lookups at the edge (~5ms) instead of hitting
-	// Neon (~50-100ms). Browser clients benefit from cookieCache (zero
-	// lookup) with KV as fallback when the cookie expires.
+	// the database (~50-100ms). Browser clients benefit from cookieCache
+	// (zero lookup) with KV as fallback when the cookie expires.
 	secondaryStorage: {
 		get: (key) => env.SESSION_KV.get(key),
 		set: (key, value, ttl) =>

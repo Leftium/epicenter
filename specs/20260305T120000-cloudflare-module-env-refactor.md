@@ -37,7 +37,7 @@ This means we can safely create a singleton auth instance at module level.
 ## Non-Goals
 
 - Changing the auth configuration itself (plugins, session settings, etc.).
-- Migrating from Neon/Drizzle to D1.
+- Migrating from PlanetScale/Drizzle to D1.
 - Changing the proxy handlers' use of `c.env` for API keys (they legitimately
   need per-request dynamic key lookup).
 
@@ -174,7 +174,7 @@ export type AppEnv = { Bindings: Cloudflare.Env; Variables: Variables };
 
 | Risk | Mitigation |
 |---|---|
-| `neon()` or `drizzle()` performs I/O during construction | Verified: `neon()` returns a SQL tagged template function, `drizzle()` wraps it. No I/O until a query executes. |
+| `postgres()` or `drizzle()` performs I/O during construction | Verified: `postgres()` returns a SQL tagged template function, `drizzle()` wraps it. No I/O until a query executes. |
 | `betterAuth()` eagerly connects | Verified: lazy initialization, no construction-time I/O. |
 | `wrangler types` output conflicts in monorepo | The `Cloudflare.Env` namespace is global/ambient. Only one worker in this monorepo, so no collision. |
 | `wrangler dev` doesn't resolve `cloudflare:workers` | `wrangler dev` runs the actual workerd runtime — `cloudflare:workers` is a built-in module, not a npm package. Should work. If issues arise in local dev, fall back to lazy init pattern: `let _auth; export const getAuth = () => _auth ??= createAuth(env);` |

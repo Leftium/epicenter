@@ -23,7 +23,7 @@ export function createHttpClient(baseUrl: string, token?: string): HttpClient {
 		body?: unknown,
 	): Promise<T> {
 		const headers: Record<string, string> = {};
-		if (token) headers['Authorization'] = `Bearer ${token}`;
+		if (token) headers.Authorization = `Bearer ${token}`;
 		if (body !== undefined) headers['Content-Type'] = 'application/json';
 
 		const response = await fetch(`${baseUrl}${path}`, {

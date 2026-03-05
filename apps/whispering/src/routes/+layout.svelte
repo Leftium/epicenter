@@ -57,9 +57,9 @@
 <style>
 	/* Override inspector button to bottom-center positioning */
 	:global(#svelte-inspector-host button) {
-		bottom: 16px !important;
-		left: 50% !important;
-		transform: translateX(-50%) !important;
-		right: auto !important;
+		bottom: 16px;
+		left: 50%;
+		transform: translateX(-50%);
+		right: auto;
 	}
 </style>

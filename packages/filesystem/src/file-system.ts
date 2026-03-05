@@ -3,11 +3,13 @@ import type { IFileSystem } from 'just-bash';
 import {
 	type ContentHelpers,
 	createContentHelpers,
-} from './content-helpers.js';
-import { FileTree } from './file-tree.js';
-import { posixResolve } from './path-utils.js';
-import type { FileId, FileRow } from './types.js';
-import { disambiguateNames, FS_ERRORS } from './validation.js';
+} from './content/content.js';
+import { FS_ERRORS } from './errors.js';
+import type { FileId } from './ids.js';
+import { posixResolve } from './path.js';
+import type { FileRow } from './table.js';
+import { disambiguateNames } from './tree/naming.js';
+import { FileTree } from './tree/tree.js';
 
 /** Validate `fs` extends {@link IFileSystem} while preserving the full inferred type (avoids excess-property errors from `satisfies`). */
 function FileSystem<T extends IFileSystem>(fs: T): T {
@@ -93,7 +95,9 @@ export function createYjsFileSystem(
 			tree.assertDirectory(id, abs);
 			const activeChildren = tree.activeChildren(id);
 			const displayNames = disambiguateNames(activeChildren);
-			return activeChildren.map((row) => displayNames.get(row.id)!).sort();
+			return activeChildren
+				.map((row) => displayNames.get(row.id) ?? row.name)
+				.sort();
 		},
 
 		async readdirWithFileTypes(path) {
@@ -104,7 +108,7 @@ export function createYjsFileSystem(
 			const displayNames = disambiguateNames(activeChildren);
 			return activeChildren
 				.map((row) => ({
-					name: displayNames.get(row.id)!,
+					name: displayNames.get(row.id) ?? row.name,
 					isFile: row.type === 'file',
 					isDirectory: row.type === 'folder',
 					isSymbolicLink: false,
@@ -124,7 +128,8 @@ export function createYjsFileSystem(
 					mode: 0o755,
 				};
 			}
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			return {
 				isFile: row.type === 'file',
@@ -151,7 +156,8 @@ export function createYjsFileSystem(
 
 		async readFile(path, _options?) {
 			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			return content.read(id);
@@ -159,7 +165,8 @@ export function createYjsFileSystem(
 
 		async readFileBuffer(path) {
 			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs)!;
+			const id = tree.resolveId(abs);
+			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			return content.readBuffer(id);

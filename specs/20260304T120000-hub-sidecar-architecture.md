@@ -2,7 +2,7 @@
 
 **Goal**: Establish a two-plane server architecture where the hub handles sync and identity, and the sidecar handles data and execution. Consolidate the current three server packages (`server-elysia`, `server-local`, `server-remote`) around this model.
 
-**Status**: In Progress
+**Status**: Phase 1 & 2 Complete
 
 > The hub is a sync and identity plane; the sidecar is the data and execution plane. Hosted users get your hub. Self-hosters can run their own hub. Enterprises can plug their own identity. The sidecar stays local and stable across all three tiers.
 
@@ -327,15 +327,24 @@ sidecar.start()
 
 1. [x] Move `discovery/` (directory: `index.ts` + `awareness.ts`) and `providers.ts` from `server-elysia` to `sync-core`
    > `server-elysia` re-exports from `sync-core` for backward compat until consumers are updated.
-2. Rename `server-remote` → `server-hub`, update factory to `createHub()`
-3. Rename `server-local` → `server-sidecar`, update factory to `createSidecar()`
-4. Add minimal `/auth/get-session` endpoint to token-mode hubs
-5. Update all workspace imports in consuming packages
-6. Verify all tests pass
+2. [x] Rename `server-remote` → `server-hub`, update factory to `createHub()`
+3. [x] Rename `server-local` → `server-sidecar`, update factory to `createSidecar()`
+4. [x] Add minimal `/auth/get-session` endpoint to token-mode hubs
+5. [x] Update all workspace imports in consuming packages
+6. [x] Verify all tests pass (115 pass)
 
 ### Phase 2: Cloudflare Hub (Hono + Durable Objects)
 
 See [Cloudflare Hub Design](#cloudflare-hub-design) below for the full architecture.
+
+- [x] Package scaffolding (`@epicenter/server-cloudflare`, wrangler.toml, tsconfig)
+- [x] `DOSqliteSyncStorage` implementing `SyncStorage` with DO SQLite
+- [x] `YjsRoom` Durable Object with WebSocket Hibernation API
+- [x] Better Auth with Neon PG + KV session cache
+- [x] Auth middleware (bearer token + query param)
+- [x] AI chat handler with SSE passthrough
+- [x] Provider proxy with key injection
+- [x] Hono worker entry point composing all routes
 
 ### Phase 3: Enterprise Auth
 

@@ -1,8 +1,8 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
 import type { BetterAuthOptions } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { oauthProvider } from '@better-auth/oauth-provider';
 
 /**
  * Schema-affecting config shared between the runtime auth instance and

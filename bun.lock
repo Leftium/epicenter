@@ -288,7 +288,7 @@
       },
       "dependencies": {
         "@epicenter/server-hub": "workspace:*",
-        "@epicenter/server-sidecar": "workspace:*",
+        "@epicenter/server-local": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "jsrepo": "^3.6.1",
         "typebox": "catalog:",
@@ -418,6 +418,28 @@
         "yjs": "catalog:",
       },
     },
+    "packages/server-local": {
+      "name": "@epicenter/server-local",
+      "version": "0.0.1",
+      "dependencies": {
+        "@elysiajs/cors": "^1.4.1",
+        "@elysiajs/openapi": "^1.4.11",
+        "@epicenter/sync-core": "workspace:*",
+        "elysia": "^1.2.25",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@epicenter/sync": "workspace:*",
+        "@types/bun": "catalog:",
+        "arktype": "catalog:",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "yjs": "catalog:",
+      },
+    },
     "packages/server-remote": {
       "name": "@epicenter/server-remote",
       "version": "0.0.1",
@@ -439,29 +461,6 @@
         "drizzle-kit": "catalog:",
         "typescript": "catalog:",
         "wrangler": "catalog:",
-      },
-    },
-    "packages/server-sidecar": {
-      "name": "@epicenter/server-sidecar",
-      "version": "0.0.1",
-      "dependencies": {
-        "@elysiajs/cors": "^1.4.1",
-        "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/server-elysia": "workspace:*",
-        "@epicenter/sync-core": "workspace:*",
-        "elysia": "^1.2.25",
-        "typebox": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@epicenter/sync": "workspace:*",
-        "@types/bun": "catalog:",
-        "arktype": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@epicenter/workspace": "workspace:*",
-        "yjs": "catalog:",
       },
     },
     "packages/shared": {
@@ -777,9 +776,9 @@
 
     "@epicenter/server-hub": ["@epicenter/server-hub@workspace:packages/server-hub"],
 
-    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
+    "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
 
-    "@epicenter/server-sidecar": ["@epicenter/server-sidecar@workspace:packages/server-sidecar"],
+    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

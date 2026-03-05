@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_PORT } from '@epicenter/server-elysia';
+import { DEFAULT_PORT } from './server';
 import {
 	createWorkspace,
 	defineQuery,

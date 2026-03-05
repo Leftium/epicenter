@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/server-sidecar",
+	"name": "@epicenter/server-local",
 	"version": "0.0.1",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
@@ -15,7 +15,6 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/server-elysia": "workspace:*",
 		"@epicenter/sync-core": "workspace:*",
 		"@elysiajs/cors": "^1.4.1",
 		"@elysiajs/openapi": "^1.4.11",

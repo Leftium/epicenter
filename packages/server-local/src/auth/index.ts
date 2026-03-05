@@ -2,4 +2,4 @@ export {
 	createHubSessionValidator,
 	type HubSessionValidatorConfig,
 	type SessionValidationResult,
-} from './sidecar-auth';
+} from './hub-validator';

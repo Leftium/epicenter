@@ -1,9 +1,9 @@
-export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
+export { DEFAULT_PORT, listenWithFallback } from './server';
 export {
 	createHubSessionValidator,
 	type HubSessionValidatorConfig,
 	type SessionValidationResult,
-} from './auth/sidecar-auth';
+} from './auth/hub-validator';
 export {
 	createSidecar,
 	type SidecarApp,

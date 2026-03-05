@@ -5,7 +5,7 @@ export {
 } from './auth';
 export { createProxyPlugin, type ProxyPluginConfig } from './proxy';
 export {
-	createRemoteServer,
-	type RemoteAuthConfig,
-	type RemoteServerConfig,
-} from './remote';
+	createHub,
+	type HubAuthConfig,
+	type HubConfig,
+} from './hub';

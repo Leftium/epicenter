@@ -1,5 +1,9 @@
 import { openapi } from '@elysiajs/openapi';
-import { createTokenGuardPlugin, listenWithFallback } from '@epicenter/server-elysia';
+import {
+	createTokenGuardPlugin,
+	extractBearerToken,
+	listenWithFallback,
+} from '@epicenter/server-elysia';
 import { createWsSyncPlugin } from '@epicenter/server-elysia/sync';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
@@ -14,11 +18,11 @@ import { createProxyPlugin } from './proxy';
 export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
 
 /**
- * Auth configuration for the remote server.
+ * Auth configuration for the hub server.
  *
- * The remote server is the **source** of authentication — it either issues
+ * The hub is the **source** of authentication — it either issues
  * sessions (Better Auth) or defines the shared token that all tiers accept.
- * Compare with {@link LocalAuthConfig} in `@epicenter/server-local`, which is
+ * Compare with {@link SidecarAuthConfig} in `@epicenter/server-sidecar`, which is
  * always a **consumer** of auth (validating tokens issued here or delegating
  * back to this server).
  *
@@ -32,24 +36,24 @@ export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
  *   requests are treated as the same anonymous identity. Use for enterprise
  *   self-hosted deployments where one team shares a server and doesn't need
  *   per-user identity. The token is sent as `Authorization: Bearer <token>`.
- *   Local servers use the same token (`LocalAuthConfig.mode: 'token'`).
+ *   Sidecars use the same token (`SidecarAuthConfig.mode: 'token'`).
  *
  * - **`betterAuth`** — Full user account management via Better Auth. Provides
  *   sign-up, sign-in, sessions, and social OAuth (GitHub, Google, etc.).
  *   Requires a database. Use for cloud deployments where per-user identity,
  *   audit trails, and OAuth integrations (e.g. GitHub, Spotify) are needed.
- *   Local servers can delegate to this via `LocalAuthConfig.mode: 'remote'`.
+ *   Sidecars can delegate to this via `SidecarAuthConfig.mode: 'remote'`.
  *
  * @example
  * ```typescript
  * // No auth (development)
- * createRemoteServer({ auth: { mode: 'none' } })
+ * createHub({ auth: { mode: 'none' } })
  *
  * // Shared token (enterprise self-hosted)
- * createRemoteServer({ auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! } })
+ * createHub({ auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! } })
  *
  * // Full user accounts (cloud)
- * createRemoteServer({
+ * createHub({
  *   auth: {
  *     mode: 'betterAuth',
  *     database: new Database('auth.db'),
@@ -59,7 +63,7 @@ export { DEFAULT_PORT, listenWithFallback } from '@epicenter/server-elysia';
  * })
  * ```
  */
-export type RemoteAuthConfig =
+export type HubAuthConfig =
 	| {
 			/** No authentication — all requests are accepted. */
 			mode: 'none';
@@ -92,7 +96,7 @@ export type RemoteAuthConfig =
 			mode: 'betterAuth';
 	  } & AuthPluginConfig);
 
-export type RemoteServerConfig = {
+export type HubConfig = {
 	/**
 	 * Preferred port to listen on.
 	 *
@@ -104,12 +108,12 @@ export type RemoteServerConfig = {
 	/**
 	 * Authentication mode.
 	 *
-	 * Controls how the remote server authenticates incoming requests.
+	 * Controls how the hub authenticates incoming requests.
 	 * Defaults to `{ mode: 'none' }` when omitted (open mode, no auth).
 	 *
-	 * @see {@link RemoteAuthConfig} for the three available modes.
+	 * @see {@link HubAuthConfig} for the three available modes.
 	 */
-	auth?: RemoteAuthConfig;
+	auth?: HubAuthConfig;
 
 	/** Sync plugin options (WebSocket rooms, auth, lifecycle hooks). */
 	sync?: {
@@ -131,13 +135,12 @@ export type RemoteServerConfig = {
 };
 
 /**
- * Create an Epicenter remote server.
+ * Create an Epicenter hub server.
  *
- * The remote server is the top tier in the three-tier topology: one cloud/hosted instance
- * shared by all devices. Local sidecar servers (one per device) connect outward
- * to the remote server for cross-device Yjs sync and AI requests.
+ * The hub is the sync and identity plane — one instance shared by all devices.
+ * Sidecars (one per device) connect to the hub for cross-device Yjs sync and AI requests.
  *
- *   Remote (cloud, one instance)
+ *   Hub (cloud/self-hosted, one instance)
  *   +--------------------------------------------------+
  *   |  - Better Auth: sessions, JWT, JWKS              |
  *   |  - AI proxy: API keys in env vars, never leave   |
@@ -146,40 +149,35 @@ export type RemoteServerConfig = {
  *   +--------------------------------------------------+
  *          |  cross-device Yjs sync      |  AI requests
  *          v                             v
- *   Local Server A (Device 1)    Local Server B (Device 2)
+ *   Sidecar A (Device 1)         Sidecar B (Device 2)
  *
- * What the remote server DOES:
+ * What the hub DOES:
  * - Issues and validates sessions via Better Auth (`/auth/*`)
- * - Proxies AI provider API keys so they never leave the remote server (`/proxy/*`)
+ * - Proxies AI provider API keys so they never leave the hub (`/proxy/*`)
  * - Streams AI completions from all providers via SSE (`/ai/chat`)
  * - Relays Yjs updates between clients via WebSocket rooms (`/rooms/*`)
  *
- * What the remote server does NOT do:
+ * What the hub does NOT do:
  * - Workspace CRUD (no configs, tables, or file projections)
  * - Extension or action execution
- * - Persistence of any kind — Y.Docs on the remote server are ephemeral; they are
+ * - Persistence of any kind — Y.Docs on the hub are ephemeral; they are
  *   created on demand when the first client joins a room and destroyed when
- *   the last client leaves. The local server holds the persisted source of truth.
- *
- * Cross-device sync (Phase 4, not yet wired):
- * Local servers will connect to the remote server as Yjs clients (via `--remote` flag),
- * so that edits on Device A propagate to Device B through the remote relay.
- * The remote server itself still holds no durable state; it is a pure relay.
+ *   the last client leaves. The sidecar holds the persisted source of truth.
  *
  * @example
  * ```typescript
  * import { Database } from 'bun:sqlite';
  *
  * // No auth (development)
- * createRemoteServer({}).start();
+ * createHub({}).start();
  *
  * // Shared token (enterprise self-hosted — no database needed)
- * createRemoteServer({
+ * createHub({
  *   auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! },
  * }).start();
  *
  * // Full user accounts (cloud deployment)
- * createRemoteServer({
+ * createHub({
  *   auth: {
  *     mode: 'betterAuth',
  *     database: new Database('auth.db'),
@@ -190,11 +188,11 @@ export type RemoteServerConfig = {
  * }).start();
  * ```
  */
-export function createRemoteServer({
+export function createHub({
 	sync,
 	auth: authMode,
 	port,
-}: RemoteServerConfig) {
+}: HubConfig) {
 	const authConfig = authMode ?? { mode: 'none' as const };
 
 	// Create Better Auth instance early so it can be shared between
@@ -222,7 +220,7 @@ export function createRemoteServer({
 					}
 				: undefined);
 
-	/** Ephemeral Y.Docs for rooms (remote server is a pure relay, no pre-registered workspaces). */
+	/** Ephemeral Y.Docs for rooms (hub is a pure relay, no pre-registered workspaces). */
 	const dynamicDocs = new Map<string, Y.Doc>();
 
 	const app = new Elysia()
@@ -231,10 +229,10 @@ export function createRemoteServer({
 				embedSpec: true,
 				documentation: {
 					info: {
-						title: 'Epicenter Remote API',
+						title: 'Epicenter Hub API',
 						version: '1.0.0',
 						description:
-							'Remote server — sync relay, AI streaming, and coordination.',
+							'Hub server — sync relay, AI streaming, and coordination.',
 					},
 				},
 			}),
@@ -256,14 +254,26 @@ export function createRemoteServer({
 		)
 		.use(new Elysia({ prefix: '/ai' }).use(createAIPlugin()))
 		.get('/', () => ({
-			name: 'Epicenter Remote',
+			name: 'Epicenter Hub',
 			version: '1.0.0',
-			mode: 'remote' as const,
+			mode: 'hub' as const,
 		}));
 
 	// Mount auth middleware based on mode.
 	if (authConfig.mode === 'token') {
 		app.use(createTokenGuardPlugin(authConfig.token));
+
+		// Token-mode hubs expose a minimal /auth/get-session endpoint so that
+		// sidecars can validate tokens uniformly against any hub, regardless
+		// of auth mode. Better Auth hubs get this for free.
+		app.get('/auth/get-session', ({ headers, set }) => {
+			const token = extractBearerToken(headers.authorization);
+			if (!token || token !== authConfig.token) {
+				set.status = 401;
+				return { error: 'Unauthorized' };
+			}
+			return { user: { id: 'token-user', name: 'Token User' } };
+		});
 	} else if (auth) {
 		// Better Auth mode: mount session-based auth at /auth/*.
 		app.use(createAuthPlugin(auth));

@@ -5,16 +5,16 @@ import { createWsSyncPlugin } from '@epicenter/server-elysia/sync';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
-import { createRemoteSessionValidator } from './auth/local-auth';
+import { createHubSessionValidator } from './auth/sidecar-auth';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
 
 /**
- * Auth configuration for the local server.
+ * Auth configuration for the sidecar.
  *
- * The local server is always a **consumer** of authentication — it never
- * issues sessions or manages user accounts. Compare with {@link RemoteAuthConfig}
- * in `@epicenter/server-remote`, which is the **source** of auth (issuing
+ * The sidecar is always a **consumer** of authentication — it never
+ * issues sessions or manages user accounts. Compare with {@link HubAuthConfig}
+ * in `@epicenter/server-hub`, which is the **source** of auth (issuing
  * sessions via Better Auth or accepting a shared token).
  *
  * Three mutually exclusive modes:
@@ -24,31 +24,31 @@ import { collectActionPaths } from './workspace/actions';
  *   Tauri sidecar or local development.
  *
  * - **`token`** — A single pre-shared secret, identical to the one configured
- *   on the remote server. Everyone who knows the token can access the local
- *   server. There are no user accounts — all authenticated requests are
+ *   on the hub. Everyone who knows the token can access the sidecar.
+ *   There are no user accounts — all authenticated requests are
  *   treated as the same anonymous identity. Use for enterprise self-hosted
- *   deployments. Pairs with `RemoteAuthConfig.mode: 'token'` on the remote
- *   server — both sides share the same secret.
+ *   deployments. Pairs with `HubAuthConfig.mode: 'token'` on the hub
+ *   — both sides share the same secret.
  *
- * - **`remote`** — Delegates authentication to the remote server by calling
+ * - **`remote`** — Delegates authentication to the hub by calling
  *   its `GET /auth/get-session` endpoint with the Bearer token. Results are
- *   cached with a configurable TTL. Use when the remote server runs Better
- *   Auth (`RemoteAuthConfig.mode: 'betterAuth'`) and you want per-user
- *   identity on the local server too.
+ *   cached with a configurable TTL. Use when the hub runs Better
+ *   Auth (`HubAuthConfig.mode: 'betterAuth'`) and you want per-user
+ *   identity on the sidecar too.
  *
  * @example
  * ```typescript
  * // No auth (Tauri sidecar / development)
- * createLocalServer({ clients: [], auth: { mode: 'none' } })
+ * createSidecar({ clients: [], auth: { mode: 'none' } })
  *
- * // Shared token (enterprise — matches remote server's token)
- * createLocalServer({ clients, auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! } })
+ * // Shared token (enterprise — matches hub's token)
+ * createSidecar({ clients, auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! } })
  *
- * // Delegate to remote server (cloud deployment)
- * createLocalServer({ clients, auth: { mode: 'remote', remoteUrl: 'https://remote.example.com' } })
+ * // Delegate to hub (cloud deployment)
+ * createSidecar({ clients, auth: { mode: 'remote', hubUrl: 'https://hub.example.com' } })
  * ```
  */
-export type LocalAuthConfig =
+export type SidecarAuthConfig =
 	| {
 			/** No authentication — relies on CORS origin restrictions only. */
 			mode: 'none';
@@ -57,8 +57,8 @@ export type LocalAuthConfig =
 			/**
 			 * Pre-shared token authentication.
 			 *
-			 * The local server compares the Bearer token on each request to this
-			 * value. Must match the token configured on the remote server so that
+			 * The sidecar compares the Bearer token on each request to this
+			 * value. Must match the token configured on the hub so that
 			 * the same credential works across both tiers.
 			 */
 			mode: 'token';
@@ -68,16 +68,16 @@ export type LocalAuthConfig =
 	  }
 	| {
 			/**
-			 * Delegate authentication to the remote server.
+			 * Delegate authentication to the hub.
 			 *
-			 * The local server calls `{remoteUrl}/auth/get-session` with the
-			 * Bearer token and caches the result. Use when the remote server
+			 * The sidecar calls `{hubUrl}/auth/get-session` with the
+			 * Bearer token and caches the result. Use when the hub
 			 * runs Better Auth and you need per-user identity locally.
 			 */
 			mode: 'remote';
 
-			/** Remote server URL (e.g. `'https://remote.example.com'`). */
-			remoteUrl: string;
+			/** Hub URL (e.g. `'https://hub.example.com'`). */
+			hubUrl: string;
 
 			/**
 			 * Cache TTL in milliseconds for validated sessions.
@@ -88,7 +88,7 @@ export type LocalAuthConfig =
 			cacheTtlMs?: number;
 	  };
 
-export type LocalServerConfig = {
+export type SidecarConfig = {
 	/**
 	 * Workspace clients to expose via REST CRUD and action endpoints.
 	 *
@@ -108,18 +108,18 @@ export type LocalServerConfig = {
 	/**
 	 * Authentication mode.
 	 *
-	 * Controls how the local server authenticates incoming requests.
+	 * Controls how the sidecar authenticates incoming requests.
 	 * Defaults to `{ mode: 'none' }` when omitted (open mode, no auth).
 	 *
-	 * @see {@link LocalAuthConfig} for the three available modes.
+	 * @see {@link SidecarAuthConfig} for the three available modes.
 	 */
-	auth?: LocalAuthConfig;
+	auth?: SidecarAuthConfig;
 
 	/**
 	 * CORS allowed origins.
 	 *
-	 * Default: `['tauri://localhost']` — only the Tauri webview can call the local server.
-	 * Add the remote server origin if it needs to reach it directly.
+	 * Default: `['tauri://localhost']` — only the Tauri webview can call the sidecar.
+	 * Add the hub origin if it needs to reach it directly.
 	 */
 	allowedOrigins?: string[];
 
@@ -130,7 +130,7 @@ export type LocalServerConfig = {
 		 * auto-wired from the top-level `auth` config:
 		 * - `none` → no sync auth
 		 * - `token` → token comparison
-		 * - `remote` → delegates to remote server session validation
+		 * - `remote` → delegates to hub session validation
 		 */
 		verifyToken?: (token: string) => boolean | Promise<boolean>;
 
@@ -147,18 +147,18 @@ export type LocalServerConfig = {
  *
  * - `none`   → no-op plugin
  * - `token`  → shared {@link createTokenGuardPlugin} from `@epicenter/server-elysia`
- * - `remote` → delegates to remote server session validation
+ * - `remote` → delegates to hub session validation
  *
  * Separated into its own plugin so the type chain is not broken by conditionals.
  */
-function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
+function createAuthGuardPlugin(authConfig: SidecarAuthConfig) {
 	if (authConfig.mode === 'none') return new Elysia();
 	if (authConfig.mode === 'token')
 		return createTokenGuardPlugin(authConfig.token);
 
 	// mode === 'remote'
-	const validateSession = createRemoteSessionValidator({
-		remoteUrl: authConfig.remoteUrl,
+	const validateSession = createHubSessionValidator({
+		hubUrl: authConfig.hubUrl,
 		cacheTtlMs: authConfig.cacheTtlMs,
 	});
 	return new Elysia().onBeforeHandle(
@@ -182,20 +182,20 @@ function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
 }
 
 /**
- * Create an Epicenter local server.
+ * Create an Epicenter sidecar.
  *
- * The local server is the middle tier in the three-tier topology: one sidecar
- * process per device (embedded in the Tauri app or run standalone). It sits
- * between the SPA/webview on the same machine and the shared remote server in the cloud.
+ * The sidecar is the data and execution plane — one process per device
+ * (embedded in the Tauri app or run standalone). It sits between the
+ * SPA/webview on the same machine and the shared hub in the cloud.
  *
- *   Remote Server (cloud)
+ *   Hub (cloud/self-hosted)
  *   +-----------------------------------------+
  *   |  Auth, AI proxy, AI streaming, Yjs relay |
  *   +-----------------------------------------+
- *          ^  cross-device Yjs sync (Phase 4)
+ *          ^  cross-device Yjs sync
  *          |  AI requests
  *          |
- *   Local Server (this process, one per device)
+ *   Sidecar (this process, one per device)
  *   +-----------------------------------------+
  *   |  - Workspace CRUD (REST + action routes) |
  *   |  - Extensions (filesystem projections)   |
@@ -207,7 +207,7 @@ function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
  *          v
  *   SPA / WebView (Tauri or browser)
  *
- * What the local server DOES:
+ * What the sidecar DOES:
  * - Workspace CRUD: read/write workspace configs, tables, and blobs (`/workspaces/*`)
  * - Extensions: filesystem projections exposed as workspace tables
  * - Actions: per-workspace HTTP endpoints generated from the workspace schema
@@ -218,46 +218,39 @@ function createAuthGuardPlugin(authConfig: LocalAuthConfig) {
  *   in-memory Y.Doc stays in sync with the server's persisted Y.Doc on the
  *   same machine (sub-millisecond round-trip).
  *
- * What the local server does NOT do:
- * - AI streaming: the SPA sends AI requests directly to the remote server's `/ai/chat`
- *   endpoint; the local server is not involved.
- * - Auth issuance: sessions and JWT/JWKS are issued exclusively by the remote
- *   server. The local server only validates tokens — either by comparing a
- *   pre-shared token or by delegating to the remote server's `/auth/get-session`.
- *
- * Two sync scopes:
- * 1. Local relay (always active): SPA <-> local server on the same machine,
- *    via `/rooms/*` WebSocket. Latency is sub-millisecond.
- * 2. Remote server sync (Phase 4, not yet wired): local server <-> remote server,
- *    enabled by the `--remote` flag. Propagates persisted Y.Doc updates across
- *    devices through the remote server's ephemeral Yjs relay.
+ * What the sidecar does NOT do:
+ * - AI streaming: the SPA sends AI requests directly to the hub's `/ai/chat`
+ *   endpoint; the sidecar is not involved.
+ * - Auth issuance: sessions and JWT/JWKS are issued exclusively by the hub.
+ *   The sidecar only validates tokens — either by comparing a pre-shared
+ *   token or by delegating to the hub's `/auth/get-session`.
  *
  * @example
  * ```typescript
  * // No auth (Tauri sidecar / development)
- * createLocalServer({ clients: [] }).start();
+ * createSidecar({ clients: [] }).start();
  *
  * // Shared token (enterprise self-hosted)
- * createLocalServer({
+ * createSidecar({
  *   clients: [blogClient],
  *   auth: { mode: 'token', token: process.env.EPICENTER_TOKEN! },
  * }).start();
  *
- * // Delegate to remote server (cloud deployment)
- * createLocalServer({
+ * // Delegate to hub (cloud deployment)
+ * createSidecar({
  *   clients: [blogClient],
- *   auth: { mode: 'remote', remoteUrl: 'https://remote.example.com' },
+ *   auth: { mode: 'remote', hubUrl: 'https://hub.example.com' },
  *   allowedOrigins: ['tauri://localhost'],
  * }).start();
  * ```
  */
-export function createLocalServer({
+export function createSidecar({
 	clients,
 	sync,
 	auth,
 	allowedOrigins,
 	port,
-}: LocalServerConfig) {
+}: SidecarConfig) {
 	const workspaces: Record<string, AnyWorkspaceClient> = {};
 	for (const client of clients) {
 		workspaces[client.id] = client;
@@ -313,9 +306,9 @@ export function createLocalServer({
 			),
 		)
 		.get('/', () => ({
-			name: 'Epicenter Local',
+			name: 'Epicenter Sidecar',
 			version: '1.0.0',
-			mode: 'local' as const,
+			mode: 'sidecar' as const,
 			workspaces: Object.keys(workspaces),
 			actions: allActionPaths,
 		}))
@@ -353,4 +346,4 @@ export function createLocalServer({
 	};
 }
 
-export type LocalApp = ReturnType<typeof createLocalServer>['app'];
+export type SidecarApp = ReturnType<typeof createSidecar>['app'];

@@ -1,20 +1,20 @@
 /**
- * Remote server entry point.
+ * Hub server entry point.
  *
- * Starts the Epicenter remote server — the coordination server that provides:
- * - Sync relay (primary) — all devices sync through the remote server
+ * Starts the Epicenter hub — the sync and identity plane that provides:
+ * - Sync relay (primary) — all devices sync through the hub
  * - AI streaming — all providers via SSE
- * - AI proxy — env var API keys, never leave the remote server
+ * - AI proxy — env var API keys, never leave the hub
  * - Better Auth — session-based authentication
  *
  * Usage:
- *   bun packages/server-remote/src/start.ts
- *   PORT=4000 bun packages/server-remote/src/start.ts
+ *   bun packages/server-hub/src/start.ts
+ *   PORT=4000 bun packages/server-hub/src/start.ts
  */
 
-import { createRemoteServer } from './remote';
+import { createHub } from './hub';
 
-const server = createRemoteServer({
+const server = createHub({
 	sync: {
 		onRoomCreated: (roomId) => console.log(`[Sync] Room created: ${roomId}`),
 		onRoomEvicted: (roomId) => console.log(`[Sync] Room evicted: ${roomId}`),
@@ -23,7 +23,7 @@ const server = createRemoteServer({
 
 const { port } = server.start();
 
-console.log(`Epicenter REMOTE server running on http://localhost:${port}`);
+console.log(`Epicenter HUB server running on http://localhost:${port}`);
 console.log(`  Sync:    ws://localhost:${port}/rooms/{room}`);
 console.log(`  AI:      POST http://localhost:${port}/ai/chat`);
 

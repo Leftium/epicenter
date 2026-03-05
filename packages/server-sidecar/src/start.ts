@@ -1,21 +1,21 @@
 /**
- * Local server entry point.
+ * Sidecar entry point.
  *
- * Starts the Epicenter local server — the per-device sidecar that provides:
+ * Starts the Epicenter sidecar — the per-device data and execution plane that provides:
  * - Sync relay (local) — fast sub-ms WebSocket sync between webview and Y.Doc
  * - Workspace API — RESTful CRUD for workspace tables, extensions, and actions
- *   (pass workspace clients to `createLocalServer` to activate these routes)
+ *   (pass workspace clients to `createSidecar` to activate these routes)
  *
- * The local server does NOT handle AI — all AI goes through the remote server.
+ * The sidecar does NOT handle AI — all AI goes through the hub.
  *
  * Usage:
- *   bun packages/server-local/src/start.ts
- *   PORT=4000 bun packages/server-local/src/start.ts
+ *   bun packages/server-sidecar/src/start.ts
+ *   PORT=4000 bun packages/server-sidecar/src/start.ts
  */
 
-import { createLocalServer } from './local';
+import { createSidecar } from './sidecar';
 
-const server = createLocalServer({
+const server = createSidecar({
 	clients: [],
 	sync: {
 		onRoomCreated: (roomId) => console.log(`[Sync] Room created: ${roomId}`),
@@ -25,9 +25,9 @@ const server = createLocalServer({
 
 const { port } = server.start();
 
-console.log(`Epicenter LOCAL server running on http://localhost:${port}`);
+console.log(`Epicenter SIDECAR running on http://localhost:${port}`);
 console.log(`  Sync:    ws://localhost:${port}/rooms/{room}`);
-console.log(`  (No AI — all AI goes through the remote server)`);
+console.log(`  (No AI — all AI goes through the hub)`);
 
 process.on('SIGINT', async () => {
 	console.log('\nShutting down...');

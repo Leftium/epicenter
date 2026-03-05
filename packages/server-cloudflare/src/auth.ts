@@ -4,10 +4,11 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { baseAuthConfig } from './auth-base';
+import * as schema from './db/schema';
 import { factory } from './hono';
 
 const sql = neon(env.DATABASE_URL);
-const db = drizzle(sql);
+const db = drizzle(sql, { schema });
 
 /** Module-level singleton — safe because `betterAuth()` defers all I/O to request time. */
 export const auth = betterAuth({

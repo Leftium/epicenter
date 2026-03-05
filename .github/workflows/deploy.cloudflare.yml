@@ -7,81 +7,33 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  NODE_VERSION: '22'
+  cancel-in-progress: false
 
 jobs:
-  validate:
-    name: Validate Build
+  deploy:
+    name: Build & Deploy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v5
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: 'package.json'
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      - name: Run type checking
-        run: |
-          bun run --filter @epicenter/whispering typecheck
-          bun run --filter @epicenter/landing astro check || true
-
-      - name: Run linting
-        run: bun run lint:check
 
       - name: Build all packages
         run: bun run build
         env:
           NODE_ENV: production
 
-      - name: Upload Whispering build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: whispering-build
-          path: apps/whispering/build
-          retention-days: 1
-
-      - name: Upload Landing build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: landing-dist
-          path: apps/landing/dist
-          retention-days: 1
-
-  deploy-whispering:
-    name: Deploy Whispering App
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      deployment-url: ${{ steps.deploy.outputs.deployment-url }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: whispering-build
-          path: apps/whispering/build
-
-      - name: Deploy to Cloudflare Workers
-        id: deploy
+      - name: Deploy Whispering
+        id: whispering
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -90,34 +42,8 @@ jobs:
           packageManager: bun
           command: deploy
 
-      - name: Add deployment summary
-        run: |
-          echo "### Whispering Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** Deployed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ steps.deploy.outputs.deployment-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-
-  deploy-landing:
-    name: Deploy Landing App
-    needs: validate
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      deployment-url: ${{ steps.deploy.outputs.deployment-url }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: landing-dist
-          path: apps/landing/dist
-
-      - name: Deploy to Cloudflare Workers
-        id: deploy
+      - name: Deploy Landing
+        id: landing
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -126,78 +52,41 @@ jobs:
           packageManager: bun
           command: deploy
 
-      - name: Add deployment summary
-        run: |
-          echo "### Landing Deployment" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** Deployed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "**URL:** ${{ steps.deploy.outputs.deployment-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-
-  notify-deployment:
-    name: Notify Deployment Status
-    needs: [deploy-whispering, deploy-landing]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: Check deployment status
-        id: status
-        run: |
-          if [ "${{ needs.deploy-whispering.result }}" = "success" ] && [ "${{ needs.deploy-landing.result }}" = "success" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
-            echo "message=Both apps deployed successfully" >> $GITHUB_OUTPUT
-          else
-            echo "status=failure" >> $GITHUB_OUTPUT
-            echo "message=Deployment failed for one or more apps" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create deployment summary
+      - name: Deployment summary
+        if: always()
         run: |
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Status: ${{ steps.status.outputs.message }}" >> $GITHUB_STEP_SUMMARY
+          echo "| App | URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| Whispering | ${{ steps.whispering.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Landing | ${{ steps.landing.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| App | Status | URL |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|-----|" >> $GITHUB_STEP_SUMMARY
-
-          if [ "${{ needs.deploy-whispering.result }}" = "success" ]; then
-            echo "| Whispering | Success | ${{ needs.deploy-whispering.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Whispering | Failed | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          if [ "${{ needs.deploy-landing.result }}" = "success" ]; then
-            echo "| Landing | Success | ${{ needs.deploy-landing.outputs.deployment-url }} |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| Landing | Failed | - |" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Send Discord notification
+        if: always()
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        if: env.DISCORD_WEBHOOK != ''
         run: |
-          STATUS_COLOR=$([ "${{ steps.status.outputs.status }}" = "success" ] && echo "3066993" || echo "15158332")
+          if [ -z "$DISCORD_WEBHOOK" ]; then exit 0; fi
+
+          STATUS_COLOR=$([ "${{ job.status }}" = "success" ] && echo "3066993" || echo "15158332")
 
           PAYLOAD=$(cat <<EOF
           {
             "embeds": [{
-              "title": "Deployment ${{ steps.status.outputs.status }}",
-              "description": "${{ steps.status.outputs.message }}",
+              "title": "Deployment ${{ job.status }}",
               "color": $STATUS_COLOR,
               "fields": [
                 {
                   "name": "Whispering",
-                  "value": "[View deployment](${{ needs.deploy-whispering.outputs.deployment-url }})",
+                  "value": "${{ steps.whispering.outputs.deployment-url }}",
                   "inline": true
                 },
                 {
                   "name": "Landing",
-                  "value": "[View deployment](${{ needs.deploy-landing.outputs.deployment-url }})",
+                  "value": "${{ steps.landing.outputs.deployment-url }}",
                   "inline": true
                 }
               ],

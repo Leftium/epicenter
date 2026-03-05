@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get release tag
         id: get_tag
@@ -85,33 +85,28 @@ jobs:
         run: |
           TAG="${{ steps.get_tag.outputs.tag }}"
           NAME="${{ steps.source_release.outputs.name }}"
-          BODY=$(echo "${{ steps.source_release.outputs.body }}" | base64 -d)
-          DRAFT="${{ steps.source_release.outputs.draft }}"
-          PRERELEASE="${{ steps.source_release.outputs.prerelease }}"
-          
-          # Build command
-          CMD="gh release create \"$TAG\" --repo braden-w/whispering --title \"$NAME\""
-          
-          # Add body as a file to handle special characters
-          echo "$BODY" > release_notes.md
-          CMD="$CMD --notes-file release_notes.md"
-          
-          # Add flags
-          if [ "$DRAFT" = "true" ]; then
-            CMD="$CMD --draft"
+          echo "${{ steps.source_release.outputs.body }}" | base64 -d > release_notes.md
+
+          ARGS=(
+            "$TAG"
+            --repo braden-w/whispering
+            --title "$NAME"
+            --notes-file release_notes.md
+          )
+
+          if [ "${{ steps.source_release.outputs.draft }}" = "true" ]; then
+            ARGS+=(--draft)
           fi
-          
-          if [ "$PRERELEASE" = "true" ]; then
-            CMD="$CMD --prerelease"
+
+          if [ "${{ steps.source_release.outputs.prerelease }}" = "true" ]; then
+            ARGS+=(--prerelease)
           fi
-          
-          # Add assets if any exist
+
           if [ -n "$(ls -A release-assets 2>/dev/null)" ]; then
-            CMD="$CMD release-assets/*"
+            ARGS+=(release-assets/*)
           fi
-          
-          echo "Creating release with command: $CMD"
-          eval "$CMD"
+
+          gh release create "${ARGS[@]}"
 
       - name: Summary
         run: |

@@ -17,6 +17,7 @@ export type Bindings = {
 	YJS_ROOM: DurableObjectNamespace;
 	SESSION_KV: KVNamespace;
 	AUTH_SECRET: string;
+	MIGRATE_SECRET: string;
 	BASE_URL?: string; // e.g. https://api.epicenter.so — OAuth issuer
 	OPENAI_API_KEY?: string;
 	ANTHROPIC_API_KEY?: string;
@@ -67,8 +68,13 @@ app.get('/.well-known/oauth-authorization-server', (c) =>
 	oauthProviderAuthServerMetadata(createAuth(c.env) as never)(c.req.raw),
 );
 
-// --- DB Migrations (protected, deploy-time only) ---
-app.post('/migrate', createMigrateHandler());
+// --- DB Migrations (deploy-time only, protected by shared secret) ---
+app.post('/migrate', (c) => {
+	if (c.req.header('x-migrate-secret') !== c.env.MIGRATE_SECRET) {
+		return c.json({ error: 'Unauthorized' }, 401);
+	}
+	return createMigrateHandler()(c);
+});
 
 // --- Auth middleware for protected routes ---
 const authGuard = createAuthMiddleware();

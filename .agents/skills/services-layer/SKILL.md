@@ -3,7 +3,7 @@ name: services-layer
 description: Service layer patterns with defineErrors, namespace exports, and Result types. Use when creating new services, defining domain-specific errors, or understanding the service architecture.
 metadata:
   author: epicenter
-  version: '2.0'
+  version: '3.0'
 ---
 
 # Services Layer Patterns
@@ -45,31 +45,30 @@ Every service defines domain-specific errors using `defineErrors` from wellcraft
 import { defineErrors, type InferError, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-// Namespace-style error definition
-const MyServiceError = defineErrors({
-  NotFound: ({ id }: { id: string }) => ({
-    message: `Resource '${id}' not found`,
-    id,
-  }),
-  InvalidInput: ({ field, reason }: { field: string; reason: string }) => ({
-    message: `Invalid input for '${field}': ${reason}`,
-    field,
-    reason,
-  }),
-  Unexpected: ({ cause }: { cause: unknown }) => ({
-    message: `Unexpected error: ${extractErrorMessage(cause)}`,
+// Namespace-style error definition — name describes the domain
+const CompletionError = defineErrors({
+  ConnectionFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Connection failed: ${extractErrorMessage(cause)}`,
     cause,
+  }),
+  EmptyResponse: ({ providerLabel }: { providerLabel: string }) => ({
+    message: `${providerLabel} API returned an empty response`,
+    providerLabel,
+  }),
+  MissingParam: ({ param }: { param: string }) => ({
+    message: `${param} is required`,
+    param,
   }),
 });
 
 // Type derivation — shadow the const with a type of the same name
-type MyServiceError = InferErrors<typeof MyServiceError>;
-type NotFoundError = InferError<typeof MyServiceError.NotFound>;
+type CompletionError = InferErrors<typeof CompletionError>;
+type ConnectionFailedError = InferError<typeof CompletionError.ConnectionFailed>;
 
 // Call sites — each variant returns Err<...> directly
-return MyServiceError.NotFound({ id: '123' });
-return MyServiceError.InvalidInput({ field: 'email', reason: 'must contain @' });
-return MyServiceError.Unexpected({ cause: error });
+return CompletionError.ConnectionFailed({ cause: error });
+return CompletionError.EmptyResponse({ providerLabel: 'OpenAI' });
+return CompletionError.MissingParam({ param: 'apiKey' });
 ```
 
 ### How defineErrors Works
@@ -309,47 +308,46 @@ This applies to:
 import { defineErrors, type InferErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
-// 1. Define domain-specific errors as a namespace
-const MyServiceError = defineErrors({
-  InvalidParam: ({ param }: { param: string }) => ({
-    message: `${param} is required`,
-    param,
+// 1. Define domain-specific errors — variant names describe failure modes
+const AutostartError = defineErrors({
+  CheckFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to check autostart: ${extractErrorMessage(cause)}`,
+    cause,
   }),
-  OperationFailed: ({ cause }: { cause: unknown }) => ({
-    message: `Operation failed: ${extractErrorMessage(cause)}`,
+  EnableFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to enable autostart: ${extractErrorMessage(cause)}`,
+    cause,
+  }),
+  DisableFailed: ({ cause }: { cause: unknown }) => ({
+    message: `Failed to disable autostart: ${extractErrorMessage(cause)}`,
     cause,
   }),
 });
-type MyServiceError = InferErrors<typeof MyServiceError>;
+type AutostartError = InferErrors<typeof AutostartError>;
 
 // 2. Create factory function that returns service object
-export function createMyService() {
+export function createAutostartService() {
 	return {
-		async doSomething(options: {
-			param1: string;
-			param2: number;
-		}): Promise<Result<OutputType, MyServiceError>> {
-			// Input validation
-			if (!options.param1) {
-				return MyServiceError.InvalidParam({ param: 'param1' });
-			}
-
-			// Wrap risky operations with tryAsync
-			const { data, error } = await tryAsync({
-				try: () => riskyAsyncOperation(options),
+		async isEnabled(): Promise<Result<boolean, AutostartError>> {
+			return tryAsync({
+				try: () => isEnabled(),
 				catch: (error) =>
-					MyServiceError.OperationFailed({ cause: error }),
+					AutostartError.CheckFailed({ cause: error }),
 			});
-
-			if (error) return Err(error);
-			return Ok(data);
+		},
+		async enable(): Promise<Result<void, AutostartError>> {
+			return tryAsync({
+				try: () => enable(),
+				catch: (error) =>
+					AutostartError.EnableFailed({ cause: error }),
+			});
 		},
 	};
 }
 
 // 3. Export the "Live" instance (production singleton)
-export type MyService = ReturnType<typeof createMyService>;
-export const MyServiceLive = createMyService();
+export type AutostartService = ReturnType<typeof createAutostartService>;
+export const AutostartServiceLive = createAutostartService();
 ```
 
 ### Real-World Example: Recorder Service
@@ -357,11 +355,11 @@ export const MyServiceLive = createMyService();
 ```typescript
 // From apps/whispering/src/lib/services/isomorphic/recorder/navigator.ts
 
-const RecorderServiceError = defineErrors({
+const RecorderError = defineErrors({
   AlreadyRecording: () => ({
     message: 'A recording is already in progress. Please stop the current recording.',
   }),
-  StreamAcquisitionFailed: ({ cause }: { cause: unknown }) => ({
+  StreamAcquisition: ({ cause }: { cause: unknown }) => ({
     message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
     cause,
   }),
@@ -370,14 +368,14 @@ const RecorderServiceError = defineErrors({
     cause,
   }),
 });
-type RecorderServiceError = InferErrors<typeof RecorderServiceError>;
+type RecorderError = InferErrors<typeof RecorderError>;
 
 export function createNavigatorRecorderService(): RecorderService {
 	let activeRecording: ActiveRecording | null = null;
 
 	return {
 		getRecorderState: async (): Promise<
-			Result<WhisperingRecordingState, RecorderServiceError>
+			Result<WhisperingRecordingState, RecorderError>
 		> => {
 			return Ok(activeRecording ? 'RECORDING' : 'IDLE');
 		},
@@ -385,10 +383,10 @@ export function createNavigatorRecorderService(): RecorderService {
 		startRecording: async (
 			params: NavigatorRecordingParams,
 			{ sendStatus },
-		): Promise<Result<DeviceAcquisitionOutcome, RecorderServiceError>> => {
+		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
 			// Validate state
 			if (activeRecording) {
-				return RecorderServiceError.AlreadyRecording();
+				return RecorderError.AlreadyRecording();
 			}
 
 			// Get stream (calls another service)
@@ -396,7 +394,7 @@ export function createNavigatorRecorderService(): RecorderService {
 				await getRecordingStream({ selectedDeviceId, sendStatus });
 
 			if (acquireStreamError) {
-				return RecorderServiceError.StreamAcquisitionFailed({
+				return RecorderError.StreamAcquisition({
 					cause: acquireStreamError,
 				});
 			}
@@ -408,7 +406,7 @@ export function createNavigatorRecorderService(): RecorderService {
 						bitsPerSecond: Number(bitrateKbps) * 1000,
 					}),
 				catch: (error) =>
-					RecorderServiceError.InitFailed({ cause: error }),
+					RecorderError.InitFailed({ cause: error }),
 			});
 
 			if (recorderError) {
@@ -507,9 +505,9 @@ For services that need different implementations per platform:
 ```typescript
 // services/isomorphic/text/types.ts
 export type TextService = {
-	readFromClipboard(): Promise<Result<string | null, TextServiceError>>;
-	copyToClipboard(text: string): Promise<Result<void, TextServiceError>>;
-	writeToCursor(text: string): Promise<Result<void, TextServiceError>>;
+	readFromClipboard(): Promise<Result<string | null, TextError>>;
+	copyToClipboard(text: string): Promise<Result<void, TextError>>;
+	writeToCursor(text: string): Promise<Result<void, TextError>>;
 };
 ```
 
@@ -517,7 +515,7 @@ export type TextService = {
 
 ```typescript
 // services/isomorphic/text/desktop.ts
-const TextServiceError = defineErrors({
+const TextError = defineErrors({
   ClipboardWriteFailed: ({ cause }: { cause: unknown }) => ({
     message: `Clipboard write failed: ${extractErrorMessage(cause)}`,
     cause,
@@ -530,7 +528,7 @@ export function createTextServiceDesktop(): TextService {
 			tryAsync({
 				try: () => writeText(text), // Tauri API
 				catch: (error) =>
-					TextServiceError.ClipboardWriteFailed({ cause: error }),
+					TextError.ClipboardWriteFailed({ cause: error }),
 			}),
 	};
 }
@@ -542,7 +540,7 @@ export function createTextServiceWeb(): TextService {
 			tryAsync({
 				try: () => navigator.clipboard.writeText(text), // Browser API
 				catch: (error) =>
-					TextServiceError.ClipboardWriteFailed({ cause: error }),
+					TextError.ClipboardWriteFailed({ cause: error }),
 			}),
 	};
 }
@@ -608,8 +606,9 @@ const RecorderError = defineErrors({
 5. **Export factory + Live instance** - Factory for testing, Live for production
 6. **Use defineErrors namespaces** - Group related errors under a single namespace
 7. **Derive types with InferError/InferErrors** - Not `ReturnType`
-8. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
-9. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
+8. **Variant names describe the failure mode** - Never use generic names like `Service`, `Error`, or `Failed`. The namespace provides domain context (`RecorderError`), so the variant must say *what went wrong* (`AlreadyRecording`, `InitFailed`, `StreamAcquisition`). `RecorderError.Service` is meaningless — `RecorderError.AlreadyRecording` tells you exactly what happened.
+9. **Split discriminated union inputs** - Each variant gets its own name and shape. If the constructor branches on its inputs (if/switch/ternary) to decide the message, each branch should be its own variant
+10. **Transform cause in the constructor, not the call site** - Accept `cause: unknown` and call `extractErrorMessage(cause)` inside the factory's message template. Call sites pass the raw error: `{ cause: error }`. This centralizes message extraction where the message is composed and keeps call sites clean.
 
 ## References
 

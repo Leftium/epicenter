@@ -1,12 +1,11 @@
 import type { TableHelper } from '@epicenter/workspace';
-import {
-	createFileSystemIndex,
-	type FileSystemIndex,
-} from './file-system-index.js';
-import { posixResolve } from './path-utils.js';
-import type { FileId, FileRow } from './types.js';
-import { generateFileId } from './types.js';
-import { assertUniqueName, FS_ERRORS, validateName } from './validation.js';
+import { FS_ERRORS } from '../errors.js';
+import type { FileId } from '../ids.js';
+import { generateFileId } from '../ids.js';
+import { posixResolve } from '../path.js';
+import type { FileRow } from '../table.js';
+import { assertUniqueName, validateName } from './naming.js';
+import { createFileSystemIndex, type FileSystemIndex } from './path-index.js';
 
 /**
  * Metadata tree operations for a POSIX-like virtual filesystem.

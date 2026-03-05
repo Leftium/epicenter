@@ -235,13 +235,13 @@
 
 	let sorting = createPersistedState({
 		key: 'whispering-recordings-data-table-sorting',
-		onParseError: (error) => [{ id: 'timestamp', desc: true }],
+		onParseError: (_error) => [{ id: 'timestamp', desc: true }],
 		schema: type({ desc: 'boolean', id: 'string' }).array(),
 	});
 	let columnFilters = $state<ColumnFiltersState>([]);
 	let columnVisibility = createPersistedState({
 		key: 'whispering-recordings-data-table-column-visibility',
-		onParseError: (error) => ({
+		onParseError: (_error) => ({
 			ID: false,
 			Title: false,
 			Subtitle: false,
@@ -252,7 +252,7 @@
 	});
 	let rowSelection = createPersistedState({
 		key: 'whispering-recordings-data-table-row-selection',
-		onParseError: (error) => ({}),
+		onParseError: (_error) => ({}),
 		schema: type('Record<string, boolean>'),
 	});
 	let pagination = $state<PaginationState>({ pageIndex: 0, pageSize: 10 });

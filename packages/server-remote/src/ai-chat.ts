@@ -63,21 +63,21 @@ export async function handleAiChat(c: Context<Env>) {
 
 	const provider = data?.provider;
 	if (!provider || !isSupportedProvider(provider)) {
-		return c.json(AiChatError.UnsupportedProvider({ provider }).error, 400);
+		return c.json(AiChatError.UnsupportedProvider({ provider }), 400);
 	}
 
 	const model = data?.model;
 	if (!model) {
-		return c.json(AiChatError.MissingModel().error, 400);
+		return c.json(AiChatError.MissingModel(), 400);
 	}
 
 	if (!Array.isArray(messages) || messages.length === 0) {
-		return c.json(AiChatError.MissingMessages().error, 400);
+		return c.json(AiChatError.MissingMessages(), 400);
 	}
 
 	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
-		return c.json(AiChatError.ProviderNotConfigured({ provider }).error, 503);
+		return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 	}
 
 	const adapter = createAdapter(provider, model, apiKey);

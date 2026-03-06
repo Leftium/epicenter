@@ -12,7 +12,7 @@ export const authMiddleware = factory.createMiddleware(async (c, next) => {
 		: c.req.raw.headers;
 
 	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json(AuthError.Unauthorized().error, 401);
+	if (!result) return c.json(AuthError.Unauthorized(), 401);
 
 	c.set('user', result.user);
 	c.set('session', result.session);

@@ -1,6 +1,6 @@
 import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createHub } from '@epicenter/server-hub';
+import { createRemoteHub } from '@epicenter/server-remote-standalone';
 import type { Argv, CommandModule } from 'yargs';
 
 const DEFAULT_HUB_PORT = 3914;
@@ -40,11 +40,11 @@ function buildHubStartCommand(home: string) {
 				description: 'Port to run the server on',
 			}),
 		handler: async (argv: { port: number }) => {
-			const server = createHub({ port: argv.port });
-			server.start();
+			const server = createRemoteHub({ port: argv.port });
+			const { port } = await server.start();
 
-			console.log(`\nEpicenter hub on http://localhost:${argv.port}`);
-			console.log(`API docs: http://localhost:${argv.port}/openapi\n`);
+			console.log(`\nEpicenter hub on http://localhost:${port}`);
+			console.log(`API docs: http://localhost:${port}/openapi\n`);
 
 			// Write PID file so `hub stop` can signal this process
 			const pidFile = join(home, 'hub.pid');

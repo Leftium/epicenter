@@ -1,0 +1,27 @@
+{
+	"name": "@epicenter/server-remote-standalone",
+	"version": "0.0.1",
+	"type": "module",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"license": "AGPL-3.0",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"dev": "bun --watch src/start.ts",
+		"start": "bun src/start.ts"
+	},
+	"dependencies": {
+		"@better-auth/oauth-provider": "catalog:",
+		"better-auth": "catalog:",
+		"@epicenter/server-remote": "workspace:*",
+		"@epicenter/sync-core": "workspace:*",
+		"hono": "catalog:",
+		"yjs": "catalog:"
+	},
+	"devDependencies": {
+		"typescript": "catalog:"
+	}
+}

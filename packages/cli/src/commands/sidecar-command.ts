@@ -76,7 +76,7 @@ function buildSidecarStartCommand(home: string) {
 				return;
 			}
 
-			const { createSidecar } = await import('@epicenter/server-sidecar');
+			const { createSidecar } = await import('@epicenter/server-local');
 
 			let clients: Awaited<ReturnType<typeof discoverWorkspaces>>['clients'];
 			let sources: Awaited<ReturnType<typeof discoverWorkspaces>>['sources'];

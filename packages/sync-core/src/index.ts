@@ -59,12 +59,11 @@ export {
 } from './providers';
 // Rooms (connection lifecycle)
 export { createRoomManager } from './rooms';
-// Storage (HTTP sync persistence)
+// Storage (Yjs update log)
 export {
-	compactDoc,
-	createMemorySyncStorage,
+	createMemoryUpdateLog,
 	decodeSyncRequest,
 	encodeSyncRequest,
-	type SyncStorage,
 	stateVectorsEqual,
+	type UpdateLog,
 } from './storage';

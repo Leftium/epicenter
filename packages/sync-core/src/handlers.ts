@@ -28,8 +28,8 @@ import {
 import type { createRoomManager } from './rooms';
 import {
 	decodeSyncRequest,
-	type SyncStorage,
 	stateVectorsEqual,
+	type UpdateLog,
 } from './storage';
 
 // ============================================================================
@@ -236,21 +236,21 @@ export function handleWsClose(
 /**
  * Handle an HTTP sync request (POST /:room).
  *
- * Stateless — no Y.Doc instantiated. Works with raw SyncStorage.
+ * Stateless — no Y.Doc instantiated. Works with raw UpdateLog.
  * Returns a result the adapter maps to an HTTP response.
  */
 export async function handleHttpSync(
-	storage: SyncStorage,
+	storage: UpdateLog,
 	roomId: string,
 	body: Uint8Array,
 ): Promise<{ status: 200 | 304; body?: Uint8Array }> {
 	const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 	if (update.byteLength > 0) {
-		await storage.appendUpdate(roomId, update);
+		await storage.append(roomId, update);
 	}
 
-	const updates = await storage.getAllUpdates(roomId);
+	const updates = await storage.readAll(roomId);
 	if (updates.length === 0) {
 		return { status: 304 };
 	}
@@ -272,10 +272,10 @@ export async function handleHttpSync(
  * Stateless — reads all updates from storage, merges them, returns the result.
  */
 export async function handleHttpGetDoc(
-	storage: SyncStorage,
+	storage: UpdateLog,
 	roomId: string,
 ): Promise<{ status: 200 | 404; body?: Uint8Array }> {
-	const updates = await storage.getAllUpdates(roomId);
+	const updates = await storage.readAll(roomId);
 	if (updates.length === 0) {
 		return { status: 404 };
 	}

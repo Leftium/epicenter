@@ -7,8 +7,8 @@
 		"epicenter": "./src/bin.ts"
 	},
 	"dependencies": {
-		"@epicenter/server-sidecar": "workspace:*",
-		"@epicenter/server-hub": "workspace:*",
+		"@epicenter/server-local": "workspace:*",
+		"@epicenter/server-remote-standalone": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"jsrepo": "^3.6.1",
 		"typebox": "catalog:",

@@ -1,9 +1,9 @@
-import { createMiddleware } from 'hono/factory';
-import type { AuthInstance, Env } from '../types';
+import { factory } from '../factory';
+import type { AuthInstance } from '../types';
 
 /** Creates auth middleware that validates sessions via the provided Better Auth instance. */
 export function createAuthMiddleware(auth: AuthInstance) {
-	return createMiddleware<Env>(async (c, next) => {
+	return factory.createMiddleware(async (c, next) => {
 		// WebSocket clients pass the token as a query param (no Authorization
 		// header on upgrade requests). Normalise into a Bearer header so
 		// Better Auth's bearer() plugin handles extraction uniformly.

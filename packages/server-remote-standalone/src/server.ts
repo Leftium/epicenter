@@ -1,13 +1,11 @@
-import { Hono } from 'hono';
 import {
 	corsMiddleware,
 	createAuthMiddleware,
 	createOAuthMetadataHandler,
 	createOidcConfigHandler,
+	factory,
 	handleAiChat,
 	handleProxy,
-	type ApiKeyBindings,
-	type Variables,
 } from '@epicenter/server-remote';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import type { StandaloneAuthConfig } from './auth';
@@ -21,8 +19,6 @@ declare const Bun: {
 		websocket: unknown;
 	}): { port: number; stop(): void };
 };
-
-type Env = { Bindings: ApiKeyBindings; Variables: Variables };
 
 export type StandaloneHubConfig = {
 	/** Authentication mode. Defaults to `{ mode: 'none' }`. */
@@ -75,7 +71,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	// --- Build the Hono app ---
 
 	const { auth, betterAuth } = createStandaloneAuth(authConfig);
-	const app = new Hono<Env>();
+	const app = factory.createApp();
 
 	// CORS (skips WebSocket upgrades)
 	app.use('*', corsMiddleware);

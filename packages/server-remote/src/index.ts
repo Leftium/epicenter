@@ -7,6 +7,9 @@ export type {
 	Variables,
 } from './types';
 
+// Factory
+export { factory } from './factory';
+
 // CORS
 export { corsMiddleware } from './cors';
 

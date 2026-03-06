@@ -8,6 +8,7 @@ import {
 	handleWsOpen,
 	type UpdateLog,
 } from '@epicenter/sync-core';
+import { type Env } from '@epicenter/server-remote';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import * as Y from 'yjs';
@@ -62,8 +63,7 @@ async function loadOrCreateDoc(
  * - `GET /rooms/:room/doc` — HTTP full doc fetch
  */
 export function mountSyncRoutes(
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	app: Hono<any>,
+	app: Hono<Env>,
 	config: SyncAdapterConfig,
 ) {
 	const { storage } = config;

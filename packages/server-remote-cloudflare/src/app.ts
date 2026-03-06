@@ -1,14 +1,21 @@
 import {
-	createServerFactory,
-	createSharedApp,
+	type ApiKeyBindings,
+	corsMiddleware,
+	createAuthMiddleware,
+	createOAuthMetadataHandler,
+	createOidcConfigHandler,
+	handleAiChat,
+	handleProxy,
+	type Variables,
 } from '@epicenter/server-remote';
+import { Hono } from 'hono';
 import { getAuth } from './auth';
 
 export { YjsRoom } from './yjs-room';
 
-const factory = createServerFactory<Cloudflare.Env>();
+type Env = { Bindings: ApiKeyBindings & Cloudflare.Env; Variables: Variables };
 
-let app: ReturnType<typeof factory.createApp> | null = null;
+let app: Hono<Env> | null = null;
 
 /**
  * Lazy init — defers postgres/Hyperdrive connection to first request.
@@ -20,21 +27,38 @@ function getApp() {
 	if (app) return app;
 
 	const auth = getAuth();
+	app = new Hono<Env>();
 
-	const { app: sharedApp, createAuthGuard } = createSharedApp({
-		factory,
-		auth,
-		healthMeta: { runtime: 'cloudflare' },
-	});
+	// CORS (skips WebSocket upgrades)
+	app.use('*', corsMiddleware);
 
-	app = factory.createApp();
+	// Health
+	app.get('/', (c) =>
+		c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
+	);
 
-	// Mount shared routes (health, auth, OAuth discovery, AI chat, proxy)
-	app.route('/', sharedApp);
+	// Auth
+	app.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw));
 
-	// Auth middleware for rooms — must be on the parent app since /rooms/:room
-	// is defined here, not in the shared sub-app.
-	app.use('/rooms/*', createAuthGuard());
+	// OAuth discovery
+	app.get(
+		'/.well-known/openid-configuration/auth',
+		createOidcConfigHandler(auth),
+	);
+	app.get(
+		'/.well-known/oauth-authorization-server/auth',
+		createOAuthMetadataHandler(auth),
+	);
+
+	// Auth guard for protected routes
+	const authGuard = createAuthMiddleware(auth);
+	app.use('/ai/*', authGuard);
+	app.use('/proxy/*', authGuard);
+	app.use('/rooms/*', authGuard);
+
+	// AI chat + provider proxy
+	app.post('/ai/chat', handleAiChat);
+	app.all('/proxy/:provider/*', handleProxy);
 
 	// Sync rooms — forward to Durable Object
 	app.all('/rooms/:room', async (c) => {

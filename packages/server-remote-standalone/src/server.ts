@@ -1,7 +1,18 @@
+import { Hono } from 'hono';
+import {
+	corsMiddleware,
+	createAuthMiddleware,
+	createOAuthMetadataHandler,
+	createOidcConfigHandler,
+	handleAiChat,
+	handleProxy,
+	type ApiKeyBindings,
+	type Variables,
+} from '@epicenter/server-remote';
+import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import type { StandaloneAuthConfig } from './auth';
-import { seedAdminIfNeeded } from './auth';
-import { createStandaloneApp } from './app';
-import { websocket } from './sync-adapter';
+import { BunSqliteUpdateLog } from './storage';
+import { mountSyncRoutes, websocket } from './sync-adapter';
 
 declare const Bun: {
 	serve(options: {
@@ -10,6 +21,8 @@ declare const Bun: {
 		websocket: unknown;
 	}): { port: number; stop(): void };
 };
+
+type Env = { Bindings: ApiKeyBindings; Variables: Variables };
 
 export type StandaloneHubConfig = {
 	/** Authentication mode. Defaults to `{ mode: 'none' }`. */
@@ -20,6 +33,12 @@ export type StandaloneHubConfig = {
 	 * If the port is taken, Bun.serve will throw — the caller should handle this.
 	 */
 	port?: number;
+
+	/**
+	 * Path to the SQLite database file for Yjs document persistence.
+	 * Defaults to `DATA_DIR` env var + `/sync.db`, or `./data/sync.db`.
+	 */
+	dbPath?: string;
 
 	/** Sync lifecycle hooks. */
 	sync?: {
@@ -34,7 +53,7 @@ export type StandaloneHubConfig = {
  *
  * Returns a Hono app and lifecycle methods (`start`, `stop`).
  * The `stop()` method calls `roomManager.destroy()` to clear all rooms,
- * timers, and Y.Docs.
+ * timers, and Y.Docs, and closes the SQLite database.
  *
  * @example
  * ```typescript
@@ -48,10 +67,51 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	const preferredPort =
 		config.port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
 
-	const { app, roomManager, betterAuth } = createStandaloneApp({
-		auth: authConfig,
-		sync: config.sync,
+	const dataDir = process.env.DATA_DIR ?? './data';
+	const dbPath = config.dbPath ?? `${dataDir}/sync.db`;
+
+	const storage = new BunSqliteUpdateLog(dbPath);
+
+	// --- Build the Hono app ---
+
+	const { auth, betterAuth } = createStandaloneAuth(authConfig);
+	const app = new Hono<Env>();
+
+	// CORS (skips WebSocket upgrades)
+	app.use('*', corsMiddleware);
+
+	// Health
+	app.get('/', (c) =>
+		c.json({ mode: 'hub', version: '0.1.0', runtime: 'standalone' }),
+	);
+
+	// Auth
+	app.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw));
+
+	// OAuth discovery
+	app.get('/.well-known/openid-configuration/auth', createOidcConfigHandler(auth));
+	app.get(
+		'/.well-known/oauth-authorization-server/auth',
+		createOAuthMetadataHandler(auth),
+	);
+
+	// Auth guard for protected routes
+	const authGuard = createAuthMiddleware(auth);
+	app.use('/ai/*', authGuard);
+	app.use('/proxy/*', authGuard);
+	app.use('/rooms/*', authGuard);
+
+	// AI chat + provider proxy
+	app.post('/ai/chat', handleAiChat);
+	app.all('/proxy/:provider/*', handleProxy);
+
+	// Sync (WebSocket + HTTP)
+	const { roomManager } = mountSyncRoutes(app, {
+		storage,
+		...config.sync,
 	});
+
+	// --- Lifecycle ---
 
 	let server: { port: number; stop(): void } | undefined;
 
@@ -59,7 +119,6 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 		app,
 
 		async start(): Promise<{ port: number }> {
-			// Seed admin user in betterAuth mode
 			if (betterAuth) {
 				await seedAdminIfNeeded(betterAuth);
 			}
@@ -75,6 +134,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 
 		async stop(): Promise<void> {
 			roomManager.destroy();
+			storage.close();
 			server?.stop();
 		},
 	};

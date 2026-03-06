@@ -1,19 +1,22 @@
-// App factory
-export { createServerFactory, createSharedApp } from './app';
-
 // Types
 export type {
 	ApiKeyBindings,
 	AuthInstance,
-	ServerEnv,
 	SessionResult,
 	SharedEnv,
 	Variables,
 } from './types';
 
+// CORS
+export { corsMiddleware } from './cors';
+
 // Auth
 export { baseAuthConfig, trustedClients } from './auth/better-auth-base';
 export { createAuthMiddleware } from './auth/middleware';
+export {
+	createOAuthMetadataHandler,
+	createOidcConfigHandler,
+} from './auth/oauth-discovery';
 
 // Proxy handlers
 export { handleAiChat } from './proxy/chat';

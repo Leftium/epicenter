@@ -15,17 +15,9 @@ export type Variables = {
 	session: SessionResult['session'];
 };
 
-/** Minimal environment shape that the shared routes require. */
+/** Minimal environment shape that the shared route handlers require. */
 export type SharedEnv = {
 	Bindings: ApiKeyBindings;
-	Variables: Variables;
-};
-
-/** Environment shape with optional extra bindings merged in. */
-export type ServerEnv<
-	TExtraBindings extends object = {},
-> = {
-	Bindings: ApiKeyBindings & TExtraBindings;
 	Variables: Variables;
 };
 

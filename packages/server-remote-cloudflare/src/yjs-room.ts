@@ -23,6 +23,12 @@ type WsAttachment = {
  * Uses the WebSocket Hibernation API so connections stay alive while the DO
  * pays zero compute when idle. One DO instance per room ID via `idFromName(roomId)`.
  */
+/** Max incoming WebSocket message size (5 MB). */
+const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
+
+/** Compact storage every 4 hours while connections are active. */
+const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
 export class YjsRoom extends DurableObject {
 	private storage: UpdateLog;
 	private roomManager!: ReturnType<typeof createRoomManager>;
@@ -103,6 +109,12 @@ export class YjsRoom extends DurableObject {
 
 		// HTTP sync: POST
 		if (request.method === 'POST') {
+			const contentLength = parseInt(
+				request.headers.get('content-length') ?? '0',
+			);
+			if (contentLength > MAX_MESSAGE_BYTES) {
+				return new Response('Payload too large', { status: 413 });
+			}
 			const body = new Uint8Array(await request.arrayBuffer());
 			const result = await handleHttpSync(this.storage, 'room', body);
 			if (!result.body) return new Response(null, { status: result.status });
@@ -155,6 +167,13 @@ export class YjsRoom extends DurableObject {
 			server.send(msg);
 		}
 
+		// Schedule periodic compaction if no alarm is already set.
+		this.ctx.storage.getAlarm().then((existing) => {
+			if (!existing) {
+				this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
+			}
+		});
+
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -166,6 +185,13 @@ export class YjsRoom extends DurableObject {
 	): Promise<void> {
 		const state = this.connectionStates.get(ws);
 		if (!state) return;
+
+		const byteLength =
+			message instanceof ArrayBuffer ? message.byteLength : message.length;
+		if (byteLength > MAX_MESSAGE_BYTES) {
+			ws.close(1009, 'Message too large');
+			return;
+		}
 
 		const data =
 			message instanceof ArrayBuffer
@@ -224,6 +250,16 @@ export class YjsRoom extends DurableObject {
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
+	}
+
+	/** Periodic compaction: merge accumulated updates into a single snapshot. */
+	override async alarm(): Promise<void> {
+		await compactUpdateLog(this.storage, 'room');
+
+		// Reschedule if there are still active connections.
+		if (this.ctx.getWebSockets().length > 0) {
+			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
+		}
 	}
 }
 

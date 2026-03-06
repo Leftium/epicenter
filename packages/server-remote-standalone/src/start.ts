@@ -8,7 +8,7 @@
  */
 
 import { mkdirSync } from 'node:fs';
-import type { StandaloneAuthConfig } from './auth';
+import type { StandaloneAuthConfig } from './server';
 import { createRemoteHub } from './server';
 
 function resolveAuthConfig(): StandaloneAuthConfig {

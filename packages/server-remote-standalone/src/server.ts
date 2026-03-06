@@ -1,4 +1,5 @@
 import {
+	oauthProvider,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
@@ -6,15 +7,178 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { MiddlewareHandler } from 'hono';
+import { betterAuth } from 'better-auth';
+import { bearer } from 'better-auth/plugins/bearer';
+import { jwt } from 'better-auth/plugins/jwt';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { handleAiChat } from './ai-chat';
-import type { StandaloneAuth, StandaloneAuthConfig } from './auth';
-import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';
 import { mountSyncRoutes, websocket } from './sync-adapter';
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+const trustedClients = [
+	{
+		clientId: 'epicenter-desktop',
+		name: 'Epicenter Desktop',
+		type: 'native',
+		redirectUrls: ['tauri://localhost/auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+	{
+		clientId: 'epicenter-mobile',
+		name: 'Epicenter Mobile',
+		type: 'native',
+		redirectUrls: ['epicenter://auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+] as const;
+
+export type StandaloneAuthConfig =
+	| { mode: 'none' }
+	| { mode: 'token'; token: string }
+	| {
+			mode: 'betterAuth';
+			/** Database connection (bun:sqlite Database or pg Pool). */
+			database: unknown;
+			/** Secret for signing session tokens. Falls back to BETTER_AUTH_SECRET or AUTH_SECRET env. */
+			secret?: string;
+			/** Trusted origins for CORS/CSRF validation. */
+			trustedOrigins?: string[];
+			/** Social OAuth provider credentials. */
+			socialProviders?: Record<
+				string,
+				{ clientId: string; clientSecret: string }
+			>;
+	  };
+
+function createBetterAuthInstance(config: {
+	database: unknown;
+	secret?: string;
+	trustedOrigins?: string[];
+	socialProviders?: Record<string, { clientId: string; clientSecret: string }>;
+}) {
+	const auth = betterAuth({
+		basePath: '/auth',
+		emailAndPassword: { enabled: true },
+		database: config.database as Parameters<typeof betterAuth>[0]['database'],
+		secret: config.secret,
+		trustedOrigins: config.trustedOrigins,
+		socialProviders: config.socialProviders,
+		plugins: [
+			bearer(),
+			jwt(),
+			oauthProvider({
+				loginPage: '/sign-in',
+				consentPage: '/consent',
+				requirePKCE: true,
+				allowDynamicClientRegistration: true,
+				trustedClients: [...trustedClients],
+			}),
+		],
+	});
+
+	return { auth, betterAuth: auth };
+}
+
+/** Inferred auth type from a real Better Auth instance with all plugins. */
+export type StandaloneAuth = ReturnType<
+	typeof createBetterAuthInstance
+>['auth'];
+
+function createNoneAuth() {
+	return {
+		handler: () => new Response('Not Found', { status: 404 }),
+		api: {
+			getSession: async () => ({
+				user: { id: 'anonymous', name: 'Anonymous', email: '' },
+				session: { id: 'anonymous' },
+			}),
+		},
+	} as unknown as StandaloneAuth;
+}
+
+function createTokenAuth(token: string) {
+	const handler = async (request: Request): Promise<Response> => {
+		const url = new URL(request.url);
+
+		if (url.pathname === '/auth/get-session' && request.method === 'GET') {
+			const authHeader = request.headers.get('authorization');
+			const bearerToken = authHeader?.startsWith('Bearer ')
+				? authHeader.slice(7)
+				: null;
+
+			if (bearerToken === token) {
+				return Response.json({
+					user: { id: 'token-user', name: 'Token User' },
+				});
+			}
+			return Response.json({ error: 'Unauthorized' }, { status: 401 });
+		}
+
+		return new Response('Not Found', { status: 404 });
+	};
+
+	return {
+		handler,
+		api: {
+			getSession: async ({ headers }: { headers: Headers }) => {
+				const authHeader = headers.get('authorization');
+				const bearerToken = authHeader?.startsWith('Bearer ')
+					? authHeader.slice(7)
+					: null;
+
+				if (bearerToken === token) {
+					return {
+						user: { id: 'token-user', name: 'Token User', email: '' },
+						session: { id: 'token-session' },
+					};
+				}
+				return null;
+			},
+		},
+	} as unknown as StandaloneAuth;
+}
+
+type AdminSeeder = {
+	api: {
+		signUpEmail: (opts: {
+			body: { email: string; password: string; name: string };
+		}) => Promise<unknown>;
+	};
+};
+
+function createStandaloneAuth(config: StandaloneAuthConfig): {
+	auth: StandaloneAuth;
+	betterAuth?: AdminSeeder;
+} {
+	switch (config.mode) {
+		case 'none':
+			return { auth: createNoneAuth() };
+		case 'token':
+			return { auth: createTokenAuth(config.token) };
+		case 'betterAuth':
+			return createBetterAuthInstance(config);
+	}
+}
+
+async function seedAdminIfNeeded(auth: AdminSeeder) {
+	const email = process.env.ADMIN_EMAIL;
+	const password = process.env.ADMIN_PASSWORD;
+	if (!email || !password) return;
+
+	try {
+		await auth.api.signUpEmail({ body: { email, password, name: 'Admin' } });
+	} catch {
+		// Already exists or signup disabled — fine
+	}
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,15 +190,12 @@ type ApiKeyBindings = {
 
 type Session = StandaloneAuth['$Infer']['Session'];
 
-type Variables = {
-	auth: StandaloneAuth;
-	user: Session['user'];
-	session: Session['session'];
-};
-
 type Env = {
 	Bindings: ApiKeyBindings;
-	Variables: Variables;
+	Variables: {
+		user: Session['user'];
+		session: Session['session'];
+	};
 };
 
 // ---------------------------------------------------------------------------
@@ -47,43 +208,6 @@ const AuthError = defineErrors({
 	}),
 });
 type AuthError = InferErrors<typeof AuthError>;
-
-// ---------------------------------------------------------------------------
-// Middleware
-// ---------------------------------------------------------------------------
-
-/**
- * CORS middleware that skips WebSocket upgrades.
- *
- * Hono's CORS middleware modifies response headers, which conflicts with
- * the immutable 101 WebSocket upgrade response.
- */
-const corsMiddleware: MiddlewareHandler<Env> = async (c, next) => {
-	if (c.req.header('upgrade') === 'websocket') return next();
-	return cors({
-		origin: (origin) => origin,
-		credentials: true,
-		allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
-		allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-	})(c, next);
-};
-
-/** Auth middleware that validates sessions via Better Auth on the context. */
-const authMiddleware: MiddlewareHandler<Env> = async (c, next) => {
-	const wsToken = c.req.query('token');
-	const headers = wsToken
-		? new Headers({ authorization: `Bearer ${wsToken}` })
-		: c.req.raw.headers;
-
-	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json(AuthError.Unauthorized(), 401);
-
-	c.set('user', result.user);
-	c.set('session', result.session);
-	await next();
-};
-
-const factory = createFactory<Env>();
 
 // ---------------------------------------------------------------------------
 // Config
@@ -148,18 +272,26 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	const dbPath = config.dbPath ?? `${dataDir}/sync.db`;
 
 	const storage = new BunSqliteUpdateLog(dbPath);
+	const { auth, betterAuth } = createStandaloneAuth(authConfig);
 
 	// --- Build the Hono app ---
 
-	const { auth, betterAuth } = createStandaloneAuth(authConfig);
-	const app = factory.createApp();
-
-	// CORS (skips WebSocket upgrades)
-	app.use('*', corsMiddleware);
-	app.use('*', async (c, next) => {
-		c.set('auth', auth);
-		await next();
+	const factory = createFactory<Env>({
+		initApp: (app) => {
+			// CORS — skip WebSocket upgrades (101 response headers are immutable)
+			app.use('*', async (c, next) => {
+				if (c.req.header('upgrade') === 'websocket') return next();
+				return cors({
+					origin: (origin) => origin,
+					credentials: true,
+					allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
+					allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+				})(c, next);
+			});
+		},
 	});
+
+	const app = factory.createApp();
 
 	// Health
 	app.get('/', (c) =>
@@ -179,10 +311,22 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 		oauthMeta(c.req.raw),
 	);
 
-	// Auth guard for protected routes
-	for (const path of ['/ai/*', '/rooms/*']) {
-		app.use(path, authMiddleware);
-	}
+	// Auth guard — references `auth` from closure, no context middleware needed
+	const authGuard = factory.createMiddleware(async (c, next) => {
+		const wsToken = c.req.query('token');
+		const headers = wsToken
+			? new Headers({ authorization: `Bearer ${wsToken}` })
+			: c.req.raw.headers;
+
+		const result = await auth.api.getSession({ headers });
+		if (!result) return c.json(AuthError.Unauthorized(), 401);
+
+		c.set('user', result.user);
+		c.set('session', result.session);
+		await next();
+	});
+	app.use('/ai/*', authGuard);
+	app.use('/rooms/*', authGuard);
 
 	// AI chat
 	app.post('/ai/chat', handleAiChat);

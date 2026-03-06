@@ -24,14 +24,17 @@ export { YjsRoom } from './yjs-room';
 // Types
 // ---------------------------------------------------------------------------
 
+type Auth = ReturnType<typeof createAuth>;
+type Session = Auth['$Infer']['Session'];
+
 export type Env = {
 	Bindings: {
 		[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
 	} & Cloudflare.Env;
 	Variables: {
-		auth: ReturnType<typeof createAuth>;
-		user: { id: string; name: string; email: string; [key: string]: unknown };
-		session: { id: string; [key: string]: unknown };
+		auth: Auth;
+		user: Session['user'];
+		session: Session['session'];
 	};
 };
 

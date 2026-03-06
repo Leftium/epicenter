@@ -24,15 +24,12 @@ type ApiKeyBindings = {
 	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
 };
 
-type SessionResult = {
-	user: { id: string; name: string; email: string; [key: string]: unknown };
-	session: { id: string; [key: string]: unknown };
-};
+type Session = StandaloneAuth['$Infer']['Session'];
 
 type Variables = {
 	auth: StandaloneAuth;
-	user: SessionResult['user'];
-	session: SessionResult['session'];
+	user: Session['user'];
+	session: Session['session'];
 };
 
 type Env = {

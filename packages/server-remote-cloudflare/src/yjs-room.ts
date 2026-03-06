@@ -22,6 +22,11 @@ type WsAttachment = {
  *
  * Uses the WebSocket Hibernation API so connections stay alive while the DO
  * pays zero compute when idle. One DO instance per room ID via `idFromName(roomId)`.
+ *
+ * Auth: Handled upstream by `authGuard` middleware in app.ts. The Worker
+ * validates the session (cookie or `?token=` query param for WebSocket) via
+ * Better Auth before forwarding to `stub.fetch()`. The DO itself does not
+ * re-validate — it trusts the Worker boundary.
  */
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
@@ -284,6 +289,9 @@ function createDoSqliteUpdateLog(
 				created_at INTEGER DEFAULT (unixepoch())
 			)
 		`);
+		storage.sql.exec(
+			'CREATE INDEX IF NOT EXISTS idx_updates_doc_id ON updates (doc_id)',
+		);
 		initialized = true;
 	}
 

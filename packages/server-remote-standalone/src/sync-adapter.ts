@@ -1,4 +1,4 @@
-import { type Env } from '@epicenter/server-remote';
+import { type Env } from './shared';
 import {
 	type ConnectionState,
 	createRoomManager,

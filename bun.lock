@@ -398,44 +398,24 @@
         "yjs": "catalog:",
       },
     },
-    "packages/server-remote": {
-      "name": "@epicenter/server-remote",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/sync-core": "workspace:*",
-        "@tanstack/ai": "^0.5.1",
-        "@tanstack/ai-anthropic": "^0.5.0",
-        "@tanstack/ai-gemini": "^0.5.0",
-        "@tanstack/ai-grok": "^0.5.0",
-        "@tanstack/ai-openai": "^0.5.0",
-        "hono": "catalog:",
-        "wellcrafted": "catalog:",
-        "y-protocols": "catalog:",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@better-auth/oauth-provider": "catalog:",
-        "better-auth": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "@better-auth/oauth-provider": "catalog:",
-        "better-auth": "catalog:",
-      },
-    },
     "packages/server-remote-cloudflare": {
       "name": "@epicenter/server-remote-cloudflare",
       "version": "0.0.1",
       "dependencies": {
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
-        "@epicenter/server-remote": "workspace:*",
         "@epicenter/sync-core": "workspace:*",
+        "@tanstack/ai": "^0.5.1",
+        "@tanstack/ai-anthropic": "^0.5.0",
+        "@tanstack/ai-gemini": "^0.5.0",
+        "@tanstack/ai-grok": "^0.5.0",
+        "@tanstack/ai-openai": "^0.5.0",
         "@types/bun": "^1.3.10",
         "better-auth": "catalog:",
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
         "postgres": "^3.4.8",
+        "wellcrafted": "catalog:",
         "yjs": "catalog:",
       },
       "devDependencies": {
@@ -450,10 +430,15 @@
       "version": "0.0.1",
       "dependencies": {
         "@better-auth/oauth-provider": "catalog:",
-        "@epicenter/server-remote": "workspace:*",
         "@epicenter/sync-core": "workspace:*",
+        "@tanstack/ai": "^0.5.1",
+        "@tanstack/ai-anthropic": "^0.5.0",
+        "@tanstack/ai-gemini": "^0.5.0",
+        "@tanstack/ai-grok": "^0.5.0",
+        "@tanstack/ai-openai": "^0.5.0",
         "better-auth": "catalog:",
         "hono": "catalog:",
+        "wellcrafted": "catalog:",
         "yjs": "catalog:",
       },
       "devDependencies": {
@@ -770,8 +755,6 @@
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 
     "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
-
-    "@epicenter/server-remote": ["@epicenter/server-remote@workspace:packages/server-remote"],
 
     "@epicenter/server-remote-cloudflare": ["@epicenter/server-remote-cloudflare@workspace:packages/server-remote-cloudflare"],
 

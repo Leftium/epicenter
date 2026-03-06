@@ -9,7 +9,7 @@
  * the shared `better-auth-base` — the single source of truth.
  */
 
-import { baseAuthConfig } from '@epicenter/server-remote';
+import { baseAuthConfig } from './src/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/postgres-js';

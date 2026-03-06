@@ -3,7 +3,7 @@ import {
 	type AuthWithOAuth,
 	baseAuthConfig,
 	trustedClients,
-} from '@epicenter/server-remote';
+} from './shared';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';

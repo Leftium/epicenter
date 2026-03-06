@@ -3,7 +3,7 @@ import {
 	type AuthWithOAuth,
 	baseAuthConfig,
 	trustedClients,
-} from '@epicenter/server-remote';
+} from './shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';

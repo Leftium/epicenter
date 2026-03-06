@@ -5,7 +5,7 @@ import {
 	handleAiChat,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
-} from '@epicenter/server-remote';
+} from './shared';
 import type { StandaloneAuthConfig } from './auth';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';

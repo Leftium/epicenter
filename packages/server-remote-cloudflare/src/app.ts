@@ -6,7 +6,7 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 	type Variables,
-} from '@epicenter/server-remote';
+} from './shared';
 import { createFactory } from 'hono/factory';
 import { createAuth } from './auth';
 

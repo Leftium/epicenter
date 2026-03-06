@@ -18,7 +18,7 @@
 
 import { storage } from '@wxt-dev/storage';
 
-const DEFAULT_SERVER_URL = 'http://127.0.0.1:3913';
+const DEFAULT_SERVER_URL = 'https://api.epicenter.so';
 
 /**
  * Local server URL storage item.

@@ -19,11 +19,14 @@ import {
 	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { getAuthToken } from '$lib/state/auth';
+import { getServerUrl } from '$lib/state/settings';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import type { JsonValue } from 'wellcrafted/json';
 import {
 	executeActivateTab,
 	executeCloseTabs,
@@ -449,7 +452,7 @@ const chatMessagesTable = defineTable(
 		id: ChatMessageId,
 		conversationId: ConversationId,
 		role: "'user' | 'assistant' | 'system'",
-		parts: 'unknown[]',
+		parts: type({} as type.cast<JsonValue[]>),
 		createdAt: 'number',
 		_v: '1',
 	}),
@@ -555,12 +558,23 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension(
-		'sync',
-		createSyncExtension({
-			url: 'ws://127.0.0.1:3913/rooms/{id}',
-		}),
-	)
+	.withExtension('sync', (() => {
+		// Cache server URL at module load (sync URL config is synchronous).
+		// Same pattern as chat-state.svelte.ts remoteServerUrlCache.
+		// http→ws and https→wss: the 's' is preserved by replacing only 'http'.
+		let serverUrlCache = 'wss://api.epicenter.so';
+		void getServerUrl().then((url) => {
+			serverUrlCache = url.replace(/^http/, 'ws');
+		});
+
+		return createWsSyncExtension({
+			url: (workspaceId) => `${serverUrlCache}/rooms/${workspaceId}`,
+			getToken: async () => {
+				const token = await getAuthToken();
+				return token ?? '';
+			},
+		});
+	})())
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({
@@ -821,6 +835,18 @@ export const actionContext = createActionContext(workspaceClient.actions, {
 
 export type WorkspaceTools = typeof actionContext.tools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
+
+/**
+ * Reconnect the sync extension with fresh auth credentials.
+ *
+ * Call after sign-in so the WebSocket reconnects with a valid token,
+ * or after sign-out to disconnect.
+ */
+export function reconnectSync() {
+	(
+		workspaceClient.extensions.sync as unknown as { reconnect: () => void }
+	).reconnect();
+}
 
 // Initialize workspace: set awareness + start command consumer
 void workspaceClient.whenReady.then(async () => {

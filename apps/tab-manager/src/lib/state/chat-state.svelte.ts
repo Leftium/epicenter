@@ -36,12 +36,8 @@
  */
 
 import { generateId } from '@epicenter/workspace';
-import {
-	ChatClient,
-	type ChatClientState,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-client';
+import { ChatClient, type ChatClientState, fetchServerSentEvents, type UIMessage } from '@tanstack/ai-client';
+import type { JsonValue } from 'wellcrafted/json';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	AVAILABLE_PROVIDERS,
@@ -230,7 +226,7 @@ function createAiChatState() {
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
-					parts: message.parts,
+					parts: message.parts as JsonValue[],
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 					_v: 1,
 				});

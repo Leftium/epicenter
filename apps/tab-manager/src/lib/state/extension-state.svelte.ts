@@ -1,26 +1,23 @@
 /**
- * Reactive Svelte 5 wrapper for `@wxt-dev/storage` items.
+ * Reactive Svelte 5 wrapper for extension storage with schema validation.
  *
- * Bridges the async extension storage API into synchronous, reactive
- * `$state` that can be read directly in templates and `$derived` blocks.
- *
- * - Initializes with the item's `fallback`, then async-loads the persisted value.
- * - External changes (popup, background, other tabs) sync via `.watch()`.
- * - Setter is optimistic: updates `$state` immediately, persists async.
+ * Bridges the async chrome.storage API into synchronous, reactive `$state`
+ * that can be read directly in templates and `$derived` blocks. Values are
+ * validated against a Standard Schema on every read from storage — invalid
+ * data silently falls back to the default.
  *
  * Follows Svelte 5 convention: `.current` accessor (same as `fromStore`,
  * `MediaQuery`, `ReactiveValue`).
  *
  * @example
  * ```typescript
- * import { storage } from '@wxt-dev/storage';
+ * import { type } from 'arktype';
  * import { createExtensionState } from './extension-state.svelte';
  *
- * const serverUrlItem = storage.defineItem<string>('local:serverUrl', {
+ * export const serverUrl = createExtensionState('local:serverUrl', {
  *   fallback: 'https://api.epicenter.so',
+ *   schema: type('string'),
  * });
- *
- * export const serverUrl = createExtensionState(serverUrlItem);
  *
  * // In a component:
  * // <p>{serverUrl.current}</p>
@@ -28,27 +25,54 @@
  * ```
  */
 
-import type { WxtStorageItem } from '@wxt-dev/storage';
+import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { type StorageItemKey, storage } from '@wxt-dev/storage';
 
 /**
- * Create a reactive Svelte 5 state backed by an extension storage item.
+ * Create a reactive Svelte 5 state backed by extension storage.
  *
- * The returned object exposes `.current` (get/set) and `.ready` (boolean).
- * The getter is tracked by Svelte's runtime; the setter is optimistic.
+ * The type is inferred from the schema. Values read from storage are
+ * validated — if they don't match the schema, the fallback is used
+ * (without writing it back to storage).
  */
-export function createExtensionState<T>(item: WxtStorageItem<T, Record<string, unknown>>) {
-	let value = $state<T>(item.fallback);
+export function createExtensionState<TSchema extends StandardSchemaV1>(
+	key: StorageItemKey,
+	{
+		fallback,
+		schema,
+	}: {
+		fallback: StandardSchemaV1.InferOutput<TSchema>;
+		schema: TSchema;
+	},
+) {
+	type T = StandardSchemaV1.InferOutput<TSchema>;
+
+	/**
+	 * Validate a value against the schema synchronously.
+	 * Returns the validated value on success, or `undefined` on failure.
+	 */
+	const validate = (raw: unknown): T | undefined => {
+		const result = schema['~standard'].validate(raw);
+		if (result instanceof Promise)
+			throw new TypeError('Async schemas not supported');
+		if (result.issues) return undefined;
+		return result.value;
+	};
+
+	const item = storage.defineItem<T>(key, { fallback });
+
+	let value = $state<T>(fallback);
 	let ready = $state(false);
 
-	// Async init — load persisted value, then mark ready.
+	// Async init — load persisted value, validate, then mark ready.
 	void item.getValue().then((persisted) => {
-		value = persisted;
+		value = validate(persisted) ?? fallback;
 		ready = true;
 	});
 
-	// Sync external changes from other extension contexts.
+	// Sync external changes from other extension contexts, with validation.
 	item.watch((newValue) => {
-		value = newValue;
+		value = validate(newValue) ?? fallback;
 	});
 
 	return {
@@ -61,6 +85,12 @@ export function createExtensionState<T>(item: WxtStorageItem<T, Record<string, u
 		set current(newValue: T) {
 			value = newValue;
 			void item.setValue(newValue);
+		},
+
+		/** Awaitable set — updates UI immediately, resolves when persisted. */
+		async set(newValue: T): Promise<void> {
+			value = newValue;
+			await item.setValue(newValue);
 		},
 
 		/** Whether the initial async load has completed. */

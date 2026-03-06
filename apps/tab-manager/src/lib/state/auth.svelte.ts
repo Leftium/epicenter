@@ -2,8 +2,8 @@
  * Auth state for the tab manager extension.
  *
  * Stores a Better Auth session token and cached user info in
- * chrome.storage.local via @wxt-dev/storage, exposed as reactive
- * Svelte 5 state via `createExtensionState`.
+ * chrome.storage.local, exposed as reactive Svelte 5 state via
+ * `createExtensionState` with schema validation.
  *
  * Sign-in flow:
  * 1. POST /auth/sign-in/email -> { token, user }
@@ -12,30 +12,18 @@
  * 4. Token read synchronously via authToken.current
  */
 
-import { storage } from '@wxt-dev/storage';
-import { remoteServerUrl } from './settings.svelte';
+import { type } from 'arktype';
 import { createExtensionState } from './extension-state.svelte';
+import { remoteServerUrl } from './settings.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Types
+// Schemas
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface AuthUser {
-	id: string;
-	email: string;
-	name?: string;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Storage Items
-// ─────────────────────────────────────────────────────────────────────────────
-
-const authTokenItem = storage.defineItem<string | null>('local:authToken', {
-	fallback: null,
-});
-
-const authUserItem = storage.defineItem<AuthUser | null>('local:authUser', {
-	fallback: null,
+const AuthUser = type({
+	id: 'string',
+	email: 'string',
+	'name?': 'string',
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,10 +31,16 @@ const authUserItem = storage.defineItem<AuthUser | null>('local:authUser', {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Reactive auth token. Read via `authToken.current`. */
-export const authToken = createExtensionState(authTokenItem);
+export const authToken = createExtensionState('local:authToken', {
+	fallback: null,
+	schema: type('string').or('null'),
+});
 
 /** Reactive auth user. Read via `authUser.current`. */
-export const authUser = createExtensionState(authUserItem);
+export const authUser = createExtensionState('local:authUser', {
+	fallback: null,
+	schema: AuthUser.or('null'),
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Actions
@@ -61,7 +55,7 @@ export const authUser = createExtensionState(authUserItem);
 export async function signIn(
 	email: string,
 	password: string,
-): Promise<AuthUser> {
+): Promise<typeof AuthUser.infer> {
 	const res = await fetch(`${remoteServerUrl.current}/auth/sign-in/email`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -73,11 +67,8 @@ export async function signIn(
 		throw new Error(`Sign-in failed (${res.status}): ${body}`);
 	}
 
-	const data: { token: string; user: AuthUser } = await res.json();
-	await Promise.all([
-		authTokenItem.setValue(data.token),
-		authUserItem.setValue(data.user),
-	]);
+	const data: { token: string; user: typeof AuthUser.infer } = await res.json();
+	await Promise.all([authToken.set(data.token), authUser.set(data.user)]);
 	return data.user;
 }
 
@@ -93,10 +84,7 @@ export async function signOut(): Promise<void> {
 		}).catch(() => {});
 	}
 
-	await Promise.all([
-		authTokenItem.setValue(null),
-		authUserItem.setValue(null),
-	]);
+	await Promise.all([authToken.set(null), authUser.set(null)]);
 }
 
 /**
@@ -105,7 +93,7 @@ export async function signOut(): Promise<void> {
  * Returns the user if the session is valid, or null (and clears storage)
  * if expired or invalid.
  */
-export async function checkSession(): Promise<AuthUser | null> {
+export async function checkSession(): Promise<typeof AuthUser.infer | null> {
 	const token = authToken.current;
 	if (!token) return null;
 
@@ -115,15 +103,12 @@ export async function checkSession(): Promise<AuthUser | null> {
 		});
 
 		if (!res.ok) {
-			await Promise.all([
-				authTokenItem.setValue(null),
-				authUserItem.setValue(null),
-			]);
+			await Promise.all([authToken.set(null), authUser.set(null)]);
 			return null;
 		}
 
-		const data: { user: AuthUser } = await res.json();
-		await authUserItem.setValue(data.user);
+		const data: { user: typeof AuthUser.infer } = await res.json();
+		await authUser.set(data.user);
 		return data.user;
 	} catch {
 		return null;

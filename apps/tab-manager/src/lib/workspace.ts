@@ -21,8 +21,8 @@ import {
 } from '@epicenter/workspace';
 import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { getAuthToken } from '$lib/state/auth';
-import { getServerUrl } from '$lib/state/settings';
+import { authToken } from '$lib/state/auth.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -558,23 +558,13 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('sync', (() => {
-		// Cache server URL at module load (sync URL config is synchronous).
-		// Same pattern as chat-state.svelte.ts remoteServerUrlCache.
-		// http→ws and https→wss: the 's' is preserved by replacing only 'http'.
-		let serverUrlCache = 'wss://api.epicenter.so';
-		void getServerUrl().then((url) => {
-			serverUrlCache = url.replace(/^http/, 'ws');
-		});
-
-		return createWsSyncExtension({
-			url: (workspaceId) => `${serverUrlCache}/rooms/${workspaceId}`,
-			getToken: async () => {
-				const token = await getAuthToken();
-				return token ?? '';
-			},
-		});
-	})())
+	.withExtension('sync', createWsSyncExtension({
+		url: (workspaceId) => {
+			const wsUrl = serverUrl.current.replace(/^http/, 'ws');
+			return `${wsUrl}/rooms/${workspaceId}`;
+		},
+		getToken: async () => authToken.current ?? '',
+	}))
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({

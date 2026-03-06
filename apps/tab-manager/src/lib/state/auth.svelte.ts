@@ -2,22 +2,22 @@
  * Auth state for the tab manager extension.
  *
  * Stores a Better Auth session token and cached user info in
- * chrome.storage.local via @wxt-dev/storage. Mirrors the CLI's
- * auth pattern (packages/cli/src/auth-store.ts) but uses extension
- * storage instead of the filesystem.
+ * chrome.storage.local via @wxt-dev/storage, exposed as reactive
+ * Svelte 5 state via `createExtensionState`.
  *
  * Sign-in flow:
- * 1. POST /auth/sign-in/email → { token, user }
+ * 1. POST /auth/sign-in/email -> { token, user }
  * 2. Store token + user in chrome.storage.local
- * 3. Sync extension reads token via getAuthToken() in its getToken callback
- * 4. Token passed as ?token=xyz on WebSocket upgrade
+ * 3. Reactive state auto-syncs via .watch()
+ * 4. Token read synchronously via authToken.current
  */
 
 import { storage } from '@wxt-dev/storage';
-import { getRemoteServerUrl } from './settings';
+import { remoteServerUrl } from './settings.svelte';
+import { createExtensionState } from './extension-state.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Storage Items
+// Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface AuthUser {
@@ -25,6 +25,10 @@ interface AuthUser {
 	email: string;
 	name?: string;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Storage Items
+// ─────────────────────────────────────────────────────────────────────────────
 
 const authTokenItem = storage.defineItem<string | null>('local:authToken', {
 	fallback: null,
@@ -35,31 +39,30 @@ const authUserItem = storage.defineItem<AuthUser | null>('local:authUser', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Public API
+// Reactive State
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Get the stored auth token, or null if not signed in. */
-export async function getAuthToken(): Promise<string | null> {
-	return authTokenItem.getValue();
-}
+/** Reactive auth token. Read via `authToken.current`. */
+export const authToken = createExtensionState(authTokenItem);
 
-/** Get the stored user info, or null if not signed in. */
-export async function getAuthUser(): Promise<AuthUser | null> {
-	return authUserItem.getValue();
-}
+/** Reactive auth user. Read via `authUser.current`. */
+export const authUser = createExtensionState(authUserItem);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Sign in with email and password.
  *
  * Calls Better Auth's email sign-in endpoint and stores the session token.
- * Returns the user on success, or throws on failure.
+ * Reactive state auto-updates via `.watch()`.
  */
 export async function signIn(
 	email: string,
 	password: string,
 ): Promise<AuthUser> {
-	const remoteUrl = await getRemoteServerUrl();
-	const res = await fetch(`${remoteUrl}/auth/sign-in/email`, {
+	const res = await fetch(`${remoteServerUrl.current}/auth/sign-in/email`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ email, password }),
@@ -80,12 +83,11 @@ export async function signIn(
 
 /** Sign out — clears stored token and user. */
 export async function signOut(): Promise<void> {
-	const remoteUrl = await getRemoteServerUrl();
-	const token = await getAuthToken();
+	const token = authToken.current;
 
 	// Best-effort server-side sign out
 	if (token) {
-		fetch(`${remoteUrl}/auth/sign-out`, {
+		fetch(`${remoteServerUrl.current}/auth/sign-out`, {
 			method: 'POST',
 			headers: { Authorization: `Bearer ${token}` },
 		}).catch(() => {});
@@ -104,12 +106,11 @@ export async function signOut(): Promise<void> {
  * if expired or invalid.
  */
 export async function checkSession(): Promise<AuthUser | null> {
-	const token = await getAuthToken();
+	const token = authToken.current;
 	if (!token) return null;
 
-	const remoteUrl = await getRemoteServerUrl();
 	try {
-		const res = await fetch(`${remoteUrl}/auth/get-session`, {
+		const res = await fetch(`${remoteServerUrl.current}/auth/get-session`, {
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
@@ -127,9 +128,4 @@ export async function checkSession(): Promise<AuthUser | null> {
 	} catch {
 		return null;
 	}
-}
-
-/** Watch for auth token changes. */
-export function watchAuthToken(callback: (token: string | null) => void) {
-	return authTokenItem.watch(callback);
 }

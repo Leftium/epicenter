@@ -2,6 +2,7 @@ import type { Action, Actions, AnyWorkspaceClient } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import Value from 'typebox/value';
+import { WorkspaceApiError } from './errors';
 
 /**
  * Resolve an action from a workspace's actions tree given a path.
@@ -74,20 +75,14 @@ export function createActionsPlugin(
 				async ({ params, query, status }) => {
 					const workspace = workspaces[params.workspaceId];
 					if (!workspace?.actions)
-						return status('Not Found', {
-							error: 'Workspace or actions not found',
-						});
+						return status('Not Found', WorkspaceApiError.ActionsNotConfigured().error);
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status('Not Found', {
-							error: `Action not found: ${actionPath}`,
-						});
+						return status('Not Found', WorkspaceApiError.ActionNotFound({ actionPath }).error);
 
 					if (action.type !== 'query')
-						return status('Bad Request', {
-							error: `Action "${actionPath}" is a mutation, use POST`,
-						});
+						return status('Bad Request', WorkspaceApiError.ActionWrongMethod({ actionPath, expected: 'POST' }).error);
 
 					if (action.input) {
 						if (!Value.Check(action.input, query))
@@ -113,20 +108,14 @@ export function createActionsPlugin(
 				async ({ params, body, status }) => {
 					const workspace = workspaces[params.workspaceId];
 					if (!workspace?.actions)
-						return status('Not Found', {
-							error: 'Workspace or actions not found',
-						});
+						return status('Not Found', WorkspaceApiError.ActionsNotConfigured().error);
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status('Not Found', {
-							error: `Action not found: ${actionPath}`,
-						});
+						return status('Not Found', WorkspaceApiError.ActionNotFound({ actionPath }).error);
 
 					if (action.type !== 'mutation')
-						return status('Bad Request', {
-							error: `Action "${actionPath}" is a query, use GET`,
-						});
+						return status('Bad Request', WorkspaceApiError.ActionWrongMethod({ actionPath, expected: 'GET' }).error);
 
 					if (action.input) {
 						if (!Value.Check(action.input, body))

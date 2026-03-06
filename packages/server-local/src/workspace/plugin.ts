@@ -1,6 +1,7 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import { collectActionPaths, createActionsPlugin } from './actions';
+import { WorkspaceApiError } from './errors';
 import { createKvPlugin } from './kv';
 import { createTablesPlugin } from './tables';
 
@@ -33,7 +34,7 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
-					return status('Not Found', { error: 'Workspace not found' });
+					return status('Not Found', WorkspaceApiError.WorkspaceNotFound().error);
 				return {
 					id: workspace.id,
 					tables: Object.keys(workspace.definitions.tables),

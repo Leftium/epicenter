@@ -177,7 +177,9 @@ function createBetterAuthInstance(config: {
 }
 
 /** Inferred auth type from a real Better Auth instance with all plugins. */
-export type StandaloneAuth = ReturnType<typeof createBetterAuthInstance>['auth'];
+export type StandaloneAuth = ReturnType<
+	typeof createBetterAuthInstance
+>['auth'];
 
 /**
  * Seed an admin user if ADMIN_EMAIL and ADMIN_PASSWORD env vars are set.

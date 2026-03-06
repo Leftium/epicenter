@@ -13,7 +13,7 @@ import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
 
 const AiChatError = defineErrors({
@@ -32,16 +32,15 @@ const AiChatError = defineErrors({
 		provider,
 	}),
 });
-type AiChatError = InferErrors<typeof AiChatError>;
 
-interface AiChatRequestBody {
+type AiChatRequestBody = {
 	messages: unknown[];
 	data?: {
 		provider?: string;
 		model?: string;
 		systemPrompt?: string;
 	};
-}
+};
 
 function getProviderApiKey(
 	env: Env['Bindings'],

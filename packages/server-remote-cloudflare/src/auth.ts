@@ -1,4 +1,3 @@
-import { env } from 'cloudflare:workers';
 import { baseAuthConfig, trustedClients, type AuthInstance } from '@epicenter/server-remote';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
@@ -9,16 +8,12 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './db/schema';
 
-let cached: AuthInstance | null = null;
-
-/** Lazy singleton — deferred to request time to avoid global-scope I/O. */
-export function getAuth(): AuthInstance {
-	if (cached) return cached;
-
+/** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
+export function createAuth(env: Cloudflare.Env): AuthInstance {
 	const sql = postgres(env.HYPERDRIVE.connectionString);
 	const db = drizzle(sql, { schema });
 
-	cached = betterAuth({
+	return betterAuth({
 		...baseAuthConfig,
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BETTER_AUTH_URL,
@@ -64,6 +59,4 @@ export function getAuth(): AuthInstance {
 			delete: (key: string) => env.SESSION_KV.delete(key),
 		},
 	});
-
-	return cached;
 }

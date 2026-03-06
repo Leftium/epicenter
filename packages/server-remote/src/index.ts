@@ -1,7 +1,6 @@
 // Types
 export type {
 	ApiKeyBindings,
-	AuthInstance,
 	SessionResult,
 	Env,
 	Variables,

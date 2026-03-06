@@ -10,8 +10,10 @@ export type SessionResult = {
 	session: { id: string; [key: string]: unknown };
 };
 
+import type { Auth } from 'better-auth';
+
 export type Variables = {
-	auth: AuthInstance;
+	auth: Auth;
 	user: SessionResult['user'];
 	session: SessionResult['session'];
 };
@@ -20,16 +22,4 @@ export type Variables = {
 export type Env = {
 	Bindings: ApiKeyBindings;
 	Variables: Variables;
-};
-
-/**
- * Structural type for the Better Auth instance.
- * Avoids importing `Auth` directly to prevent duplicate-package resolution
- * issues across workspace packages.
- */
-export type AuthInstance = {
-	handler: (request: Request) => Promise<Response> | Response;
-	api: {
-		getSession: (opts: { headers: Headers }) => Promise<SessionResult | null>;
-	};
 };

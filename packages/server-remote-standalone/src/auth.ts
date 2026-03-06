@@ -2,8 +2,8 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import type { AuthInstance } from '@epicenter/server-remote';
 import { baseAuthConfig, trustedClients } from '@epicenter/server-remote';
+import type { Auth } from 'better-auth';
 
 // ---------------------------------------------------------------------------
 // Auth mode types
@@ -32,7 +32,7 @@ export type StandaloneAuthConfig =
 // ---------------------------------------------------------------------------
 
 /**
- * Create an AuthInstance for the standalone adapter based on the configured mode.
+ * Create an Auth instance for the standalone adapter based on the configured mode.
  *
  * - `none`: all requests pass through, getSession always returns a placeholder
  * - `token`: pre-shared Bearer secret, getSession validates against it
@@ -47,7 +47,7 @@ type AdminSeeder = {
 };
 
 export function createStandaloneAuth(config: StandaloneAuthConfig): {
-	auth: AuthInstance;
+	auth: Auth;
 	betterAuth?: AdminSeeder;
 } {
 	switch (config.mode) {
@@ -64,7 +64,7 @@ export function createStandaloneAuth(config: StandaloneAuthConfig): {
 // None mode
 // ---------------------------------------------------------------------------
 
-function createNoneAuth(): AuthInstance {
+function createNoneAuth() {
 	return {
 		handler: () => new Response('Not Found', { status: 404 }),
 		api: {
@@ -73,14 +73,14 @@ function createNoneAuth(): AuthInstance {
 				session: { id: 'anonymous' },
 			}),
 		},
-	};
+	} as unknown as Auth;
 }
 
 // ---------------------------------------------------------------------------
 // Token mode
 // ---------------------------------------------------------------------------
 
-function createTokenAuth(token: string): AuthInstance {
+function createTokenAuth(token: string) {
 	const handler = async (request: Request): Promise<Response> => {
 		const url = new URL(request.url);
 
@@ -109,7 +109,7 @@ function createTokenAuth(token: string): AuthInstance {
 	return {
 		handler,
 		api: {
-			getSession: async ({ headers }) => {
+			getSession: async ({ headers }: { headers: Headers }) => {
 				const authHeader = headers.get('authorization');
 				const bearerToken = authHeader?.startsWith('Bearer ')
 					? authHeader.slice(7)
@@ -125,7 +125,7 @@ function createTokenAuth(token: string): AuthInstance {
 				return null;
 			},
 		},
-	};
+	} as unknown as Auth;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +157,7 @@ function createBetterAuthInstance(config: {
 		],
 	});
 
-	return { auth, betterAuth: auth };
+	return { auth: auth as unknown as Auth, betterAuth: auth };
 }
 
 /**

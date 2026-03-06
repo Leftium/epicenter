@@ -44,18 +44,12 @@ app.get('/.well-known/oauth-authorization-server/auth', (c) =>
 );
 
 // Auth guard for protected routes
-app.use('/ai/*', async (c, next) => {
-	const guard = createAuthMiddleware(c.var.auth);
-	return guard(c as never, next);
-});
-app.use('/proxy/*', async (c, next) => {
-	const guard = createAuthMiddleware(c.var.auth);
-	return guard(c as never, next);
-});
-app.use('/rooms/*', async (c, next) => {
-	const guard = createAuthMiddleware(c.var.auth);
-	return guard(c as never, next);
-});
+for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {
+	app.use(path, async (c, next) => {
+		const guard = createAuthMiddleware(c.var.auth);
+		return guard(c as never, next);
+	});
+}
 
 // AI chat + provider proxy
 app.post('/ai/chat', handleAiChat);

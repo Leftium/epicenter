@@ -1,8 +1,8 @@
+import type { Auth } from 'better-auth';
 import { factory } from '../factory';
-import type { AuthInstance } from '../types';
 
 /** Creates auth middleware that validates sessions via the provided Better Auth instance. */
-export function createAuthMiddleware(auth: AuthInstance) {
+export function createAuthMiddleware(auth: Auth) {
 	return factory.createMiddleware(async (c, next) => {
 		// WebSocket clients pass the token as a query param (no Authorization
 		// header on upgrade requests). Normalise into a Bearer header so

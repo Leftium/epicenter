@@ -1,5 +1,6 @@
-import { baseAuthConfig, trustedClients, type AuthInstance } from '@epicenter/server-remote';
+import { baseAuthConfig, trustedClients } from '@epicenter/server-remote';
 import { oauthProvider } from '@better-auth/oauth-provider';
+import type { Auth } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -9,7 +10,7 @@ import postgres from 'postgres';
 import * as schema from './db/schema';
 
 /** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
-export function createAuth(env: Cloudflare.Env): AuthInstance {
+export function createAuth(env: Cloudflare.Env): Auth {
 	const sql = postgres(env.HYPERDRIVE.connectionString);
 	const db = drizzle(sql, { schema });
 
@@ -58,5 +59,5 @@ export function createAuth(env: Cloudflare.Env): AuthInstance {
 				}),
 			delete: (key: string) => env.SESSION_KV.delete(key),
 		},
-	});
+	}) as unknown as Auth;
 }

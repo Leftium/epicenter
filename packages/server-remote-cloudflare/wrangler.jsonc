@@ -1,15 +1,16 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "epicenter-hub",
+	"name": "epicenter-remote",
 	"main": "src/app.ts",
-	"compatibility_date": "2025-01-01",
+	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
+	"send_metrics": false,
 
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---
 	"kv_namespaces": [
 		{
 			"binding": "SESSION_KV",
-			"id": "local-dev-placeholder" // Replace with real KV ID for production
+			"id": "local-dev-placeholder"
 		}
 	],
 
@@ -31,17 +32,12 @@
 		}
 	],
 
-	// --- Hyperdrive: PlanetScale Postgres connection pool ---
+	// --- Hyperdrive: Postgres connection pool ---
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
 			"id": "<created-via-wrangler-cli>",
-			"localConnectionString": "postgres://braden:password@localhost:5432/epicenter"
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	]
-
-	// --- Secrets (set via `wrangler secret put`) ---
-	// BETTER_AUTH_SECRET
-	// OPENAI_API_KEY
-	// ANTHROPIC_API_KEY
 }

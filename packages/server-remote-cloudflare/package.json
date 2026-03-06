@@ -30,13 +30,13 @@
 		"drizzle-orm": "catalog:",
 		"hono": "catalog:",
 		"postgres": "^3.4.8",
-		"smol-toml": "^1.6.0",
 		"wellcrafted": "catalog:",
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"dotenv": "^17.3.1",
 		"drizzle-kit": "catalog:",
+		"jsonc-parser": "^3.3.1",
 		"typescript": "catalog:",
 		"wrangler": "catalog:"
 	}

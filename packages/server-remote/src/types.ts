@@ -11,6 +11,7 @@ export type SessionResult = {
 };
 
 export type Variables = {
+	auth: AuthInstance;
 	user: SessionResult['user'];
 	session: SessionResult['session'];
 };
@@ -29,9 +30,6 @@ export type Env = {
 export type AuthInstance = {
 	handler: (request: Request) => Promise<Response> | Response;
 	api: {
-		getSession: (opts: {
-			headers: Headers;
-		}) => Promise<SessionResult | null>;
+		getSession: (opts: { headers: Headers }) => Promise<SessionResult | null>;
 	};
 };
-

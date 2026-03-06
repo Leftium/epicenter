@@ -9,16 +9,25 @@ import {
 	type Variables,
 } from '@epicenter/server-remote';
 import { Hono } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import { createAuth } from './auth';
 
 export { YjsRoom } from './yjs-room';
 
 type Env = { Bindings: ApiKeyBindings & Cloudflare.Env; Variables: Variables };
 
+const initAuth = createMiddleware<Env>(async (c, next) => {
+	c.set('auth', createAuth(c.env));
+	await next();
+});
+
 const app = new Hono<Env>();
 
 // CORS (skips WebSocket upgrades)
 app.use('*', corsMiddleware);
+
+// Init auth instance per-request (Hyperdrive clients must not be cached across requests)
+app.use('*', initAuth);
 
 // Health
 app.get('/', (c) =>
@@ -26,31 +35,27 @@ app.get('/', (c) =>
 );
 
 // Auth
-app.on(['GET', 'POST'], '/auth/*', (c) =>
-	createAuth(c.env).handler(c.req.raw),
-);
+app.on(['GET', 'POST'], '/auth/*', (c) => c.var.auth.handler(c.req.raw));
 
 // OAuth discovery
-app.get('/.well-known/openid-configuration/auth', (c) => {
-	const auth = createAuth(c.env);
-	return createOidcConfigHandler(auth)({ req: { raw: c.req.raw } });
-});
-app.get('/.well-known/oauth-authorization-server/auth', (c) => {
-	const auth = createAuth(c.env);
-	return createOAuthMetadataHandler(auth)({ req: { raw: c.req.raw } });
-});
+app.get('/.well-known/openid-configuration/auth', (c) =>
+	createOidcConfigHandler(c.var.auth)({ req: { raw: c.req.raw } }),
+);
+app.get('/.well-known/oauth-authorization-server/auth', (c) =>
+	createOAuthMetadataHandler(c.var.auth)({ req: { raw: c.req.raw } }),
+);
 
 // Auth guard for protected routes
 app.use('/ai/*', async (c, next) => {
-	const guard = createAuthMiddleware(createAuth(c.env));
+	const guard = createAuthMiddleware(c.var.auth);
 	return guard(c as never, next);
 });
 app.use('/proxy/*', async (c, next) => {
-	const guard = createAuthMiddleware(createAuth(c.env));
+	const guard = createAuthMiddleware(c.var.auth);
 	return guard(c as never, next);
 });
 app.use('/rooms/*', async (c, next) => {
-	const guard = createAuthMiddleware(createAuth(c.env));
+	const guard = createAuthMiddleware(c.var.auth);
 	return guard(c as never, next);
 });
 

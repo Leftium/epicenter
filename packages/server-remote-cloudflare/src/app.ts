@@ -8,26 +8,24 @@ import {
 	handleProxy,
 	type Variables,
 } from '@epicenter/server-remote';
-import { Hono } from 'hono';
-import { createMiddleware } from 'hono/factory';
+import { createFactory } from 'hono/factory';
 import { createAuth } from './auth';
 
 export { YjsRoom } from './yjs-room';
 
 type Env = { Bindings: ApiKeyBindings & Cloudflare.Env; Variables: Variables };
 
-const initAuth = createMiddleware<Env>(async (c, next) => {
-	c.set('auth', createAuth(c.env));
-	await next();
+const factory = createFactory<Env>({
+	initApp: (app) => {
+		app.use('*', corsMiddleware);
+		app.use('*', async (c, next) => {
+			c.set('auth', createAuth(c.env));
+			await next();
+		});
+	},
 });
 
-const app = new Hono<Env>();
-
-// CORS (skips WebSocket upgrades)
-app.use('*', corsMiddleware);
-
-// Init auth instance per-request (Hyperdrive clients must not be cached across requests)
-app.use('*', initAuth);
+const app = factory.createApp();
 
 // Health
 app.get('/', (c) =>

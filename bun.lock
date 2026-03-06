@@ -415,6 +415,7 @@
         "drizzle-orm": "catalog:",
         "hono": "catalog:",
         "postgres": "^3.4.8",
+        "smol-toml": "^1.6.0",
         "wellcrafted": "catalog:",
         "yjs": "catalog:",
       },

@@ -13,22 +13,26 @@
  * read it straight from `wrangler.toml` — the single source of truth.
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { type } from 'arktype';
 import { config } from 'dotenv';
+import { parse as parseTOML } from 'smol-toml';
 
-config({ path: new URL('../.dev.vars', import.meta.url).pathname });
+config({ path: fileURLToPath(new URL('../.dev.vars', import.meta.url)) });
 
 const HyperdriveEntry = type({ localConnectionString: 'string' });
 
 const WranglerToml = type('string')
-	.pipe((s) => Bun.TOML.parse(s))
+	.pipe((s) => parseTOML(s))
 	.to({
 		hyperdrive: [HyperdriveEntry, '...', HyperdriveEntry.array()],
 	});
 
-const tomlString = await Bun.file(
-	new URL('../wrangler.toml', import.meta.url),
-).text();
+const tomlString = readFileSync(
+	fileURLToPath(new URL('../wrangler.toml', import.meta.url)),
+	'utf-8',
+);
 
 const wranglerToml = WranglerToml.assert(tomlString);
 const DATABASE_URL = wranglerToml.hyperdrive[0].localConnectionString;

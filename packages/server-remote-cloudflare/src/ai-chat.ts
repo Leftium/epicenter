@@ -14,12 +14,7 @@ import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-
-type ApiKeyBindings = {
-	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
-};
-
-type Env = { Bindings: ApiKeyBindings };
+import type { Env } from './app';
 
 const AiChatError = defineErrors({
 	UnsupportedProvider: ({ provider }: { provider: string | undefined }) => ({
@@ -49,7 +44,7 @@ interface AiChatRequestBody {
 }
 
 function getProviderApiKey(
-	env: ApiKeyBindings,
+	env: Env['Bindings'],
 	provider: SupportedProvider,
 ): string | undefined {
 	return env[PROVIDER_ENV_VARS[provider]];

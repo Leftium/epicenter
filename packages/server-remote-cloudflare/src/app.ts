@@ -13,7 +13,6 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import postgres from 'postgres';
@@ -50,7 +49,10 @@ export type Variables = {
 	session: SessionResult['session'];
 };
 
-type Env = { Bindings: ApiKeyBindings & Cloudflare.Env; Variables: Variables };
+export type Env = {
+	Bindings: ApiKeyBindings & Cloudflare.Env;
+	Variables: Variables;
+};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -141,27 +143,31 @@ function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 }
 
 // ---------------------------------------------------------------------------
-// Middleware
+// Factory & Middleware
 // ---------------------------------------------------------------------------
 
-/**
- * CORS middleware that skips WebSocket upgrades.
- *
- * Hono's CORS middleware modifies response headers, which conflicts with
- * the immutable 101 WebSocket upgrade response.
- */
-const corsMiddleware: MiddlewareHandler<Env> = async (c, next) => {
-	if (c.req.header('upgrade') === 'websocket') return next();
-	return cors({
-		origin: (origin) => origin,
-		credentials: true,
-		allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
-		allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-	})(c, next);
-};
+const factory = createFactory<Env>({
+	initApp: (app) => {
+		// CORS — skip WebSocket upgrades (101 response headers are immutable)
+		app.use('*', async (c, next) => {
+			if (c.req.header('upgrade') === 'websocket') return next();
+			return cors({
+				origin: (origin) => origin,
+				credentials: true,
+				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
+				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+			})(c, next);
+		});
+		// Auth instance per-request (Hyperdrive clients must not be cached)
+		app.use('*', async (c, next) => {
+			c.set('auth', createAuth(c.env));
+			await next();
+		});
+	},
+});
 
-/** Auth middleware that validates sessions via Better Auth on the context. */
-const authMiddleware: MiddlewareHandler<Env> = async (c, next) => {
+/** Auth guard — validates sessions via Better Auth. */
+const authMiddleware = factory.createMiddleware(async (c, next) => {
 	const wsToken = c.req.query('token');
 	const headers = wsToken
 		? new Headers({ authorization: `Bearer ${wsToken}` })
@@ -173,16 +179,6 @@ const authMiddleware: MiddlewareHandler<Env> = async (c, next) => {
 	c.set('user', result.user);
 	c.set('session', result.session);
 	await next();
-};
-
-const factory = createFactory<Env>({
-	initApp: (app) => {
-		app.use('*', corsMiddleware);
-		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.env));
-			await next();
-		});
-	},
 });
 
 // ---------------------------------------------------------------------------

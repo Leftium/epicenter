@@ -3,7 +3,7 @@ export type {
 	ApiKeyBindings,
 	AuthInstance,
 	SessionResult,
-	SharedEnv,
+	Env,
 	Variables,
 } from './types';
 

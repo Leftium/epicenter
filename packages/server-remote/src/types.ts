@@ -16,7 +16,7 @@ export type Variables = {
 };
 
 /** Minimal environment shape that the shared route handlers require. */
-export type SharedEnv = {
+export type Env = {
 	Bindings: ApiKeyBindings;
 	Variables: Variables;
 };

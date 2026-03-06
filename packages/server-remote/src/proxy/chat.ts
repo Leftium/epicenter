@@ -4,7 +4,7 @@ import {
 	type SupportedProvider,
 } from '@epicenter/sync-core';
 import type { Context } from 'hono';
-import type { SharedEnv } from '../types';
+import type { Env } from '../types';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
@@ -25,7 +25,7 @@ const PROVIDER_AUTH: Record<
 	grok: { header: 'authorization', format: 'Bearer' },
 };
 
-export async function handleAiChat(c: Context<SharedEnv>) {
+export async function handleAiChat(c: Context<Env>) {
 	const body = await c.req.json<{
 		provider?: string;
 		model?: string;

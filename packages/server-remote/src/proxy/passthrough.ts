@@ -3,7 +3,7 @@ import {
 	type SupportedProvider,
 } from '@epicenter/sync-core';
 import type { Context } from 'hono';
-import type { SharedEnv } from '../types';
+import type { Env } from '../types';
 
 const PROVIDER_CONFIG = {
 	openai: {
@@ -40,7 +40,7 @@ const PROVIDER_CONFIG = {
 	}
 >;
 
-export async function handleProxy(c: Context<SharedEnv>) {
+export async function handleProxy(c: Context<Env>) {
 	const provider = c.req.param('provider') as string | undefined;
 	if (!provider || !isSupportedProvider(provider)) {
 		return c.json({ error: `Unknown provider: ${provider}` }, 400);

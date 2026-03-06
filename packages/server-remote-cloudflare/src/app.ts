@@ -14,8 +14,6 @@ import postgres from 'postgres';
 import { handleAiChat, validateAiChat } from './ai-chat';
 import * as schema from './db/schema';
 
-export { YjsRoom } from './yjs-room';
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -41,16 +39,21 @@ export type Env = {
 // Auth
 // ---------------------------------------------------------------------------
 
+/** Shared base config for Better Auth — used by both the runtime and the CLI schema tool. */
+export const BASE_AUTH_CONFIG = {
+	basePath: '/auth',
+	emailAndPassword: { enabled: true },
+} as const;
+
 /** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
 function createAuth(env: Cloudflare.Env) {
 	const sql = postgres(env.HYPERDRIVE.connectionString);
 	const db = drizzle(sql, { schema });
 
 	return betterAuth({
-		basePath: '/auth',
-		emailAndPassword: { enabled: true },
+		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
-		baseURL: env.BETTER_AUTH_URL,
+		baseURL: 'https://api.epicenter.so',
 		secret: env.BETTER_AUTH_SECRET,
 		plugins: [
 			bearer(),

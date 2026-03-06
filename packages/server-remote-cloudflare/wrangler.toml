@@ -18,10 +18,6 @@ class_name = "YjsRoom"
 tag = "v1"
 new_sqlite_classes = ["YjsRoom"]
 
-# --- Vars ---
-[vars]
-BETTER_AUTH_URL = "https://api.epicenter.so"
-
 # --- Hyperdrive: PlanetScale Postgres connection pool ---
 [[hyperdrive]]
 binding = "HYPERDRIVE"

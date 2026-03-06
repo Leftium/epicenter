@@ -1,26 +1,35 @@
-import { chat, toServerSentEventsResponse, type AnyTextAdapter } from '@tanstack/ai';
+import {
+	isSupportedProvider,
+	PROVIDER_ENV_VARS,
+	type SupportedProvider,
+} from '@epicenter/sync-core';
+import {
+	type AnyTextAdapter,
+	chat,
+	toServerSentEventsResponse,
+} from '@tanstack/ai';
 import { createAnthropicChat } from '@tanstack/ai-anthropic';
 import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
-import {
-	isSupportedProvider,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
 import type { Context } from 'hono';
+import { AiChatError } from './errors';
 import type { ApiKeyBindings, Env } from './types';
+
+interface AiChatRequestBody {
+	messages: unknown[];
+	data?: {
+		provider?: string;
+		model?: string;
+		systemPrompt?: string;
+	};
+}
 
 function getProviderApiKey(
 	env: ApiKeyBindings,
 	provider: SupportedProvider,
 ): string | undefined {
-	const map = {
-		openai: env.OPENAI_API_KEY,
-		anthropic: env.ANTHROPIC_API_KEY,
-		gemini: env.GEMINI_API_KEY,
-		grok: env.GROK_API_KEY,
-	} satisfies Record<SupportedProvider, string | undefined>;
-	return map[provider];
+	return env[PROVIDER_ENV_VARS[provider]];
 }
 
 /**
@@ -37,49 +46,47 @@ function createAdapter(
 	// Model names arrive as dynamic strings from the client — cast to `any`
 	// since the create* factories expect branded string literals.
 	const m = model as any;
-	let adapter: AnyTextAdapter;
 	switch (provider) {
 		case 'openai':
-			adapter = createOpenaiChat(m, apiKey);
-			break;
+			return createOpenaiChat(m, apiKey);
 		case 'anthropic':
-			adapter = createAnthropicChat(m, apiKey);
-			break;
+			return createAnthropicChat(m, apiKey);
 		case 'gemini':
-			adapter = createGeminiChat(m, apiKey);
-			break;
+			return createGeminiChat(m, apiKey);
 		case 'grok':
-			adapter = createGrokText(m, apiKey);
-			break;
+			return createGrokText(m, apiKey);
 	}
-	return adapter;
 }
 
 export async function handleAiChat(c: Context<Env>) {
-	const body = await c.req.json();
-	const { messages, data } = body;
+	const { messages, data } = (await c.req.json()) as AiChatRequestBody;
 
 	const provider = data?.provider;
 	if (!provider || !isSupportedProvider(provider)) {
-		return c.json({ error: `Unsupported provider: ${provider}` }, 400);
+		return c.json(AiChatError.UnsupportedProvider({ provider }).error, 400);
+	}
+
+	const model = data?.model;
+	if (!model) {
+		return c.json(AiChatError.MissingModel().error, 400);
+	}
+
+	if (!Array.isArray(messages) || messages.length === 0) {
+		return c.json(AiChatError.MissingMessages().error, 400);
 	}
 
 	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
-		return c.json({ error: `${provider} not configured` }, 503);
+		return c.json(AiChatError.ProviderNotConfigured({ provider }).error, 503);
 	}
 
-	const model = data?.model;
 	const adapter = createAdapter(provider, model, apiKey);
 	const abortController = new AbortController();
-
-	const systemPrompts: string[] = data?.systemPrompt
-		? [data.systemPrompt]
-		: [];
+	const systemPrompts = data?.systemPrompt ? [data.systemPrompt] : [];
 
 	const stream = chat({
 		adapter,
-		messages,
+		messages: messages as Parameters<typeof chat>[0]['messages'],
 		systemPrompts,
 		abortController,
 	});

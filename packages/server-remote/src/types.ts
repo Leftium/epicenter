@@ -1,8 +1,11 @@
+import {
+	PROVIDER_ENV_VARS,
+	type SupportedProvider,
+} from '@epicenter/sync-core';
+
+/** Derived from PROVIDER_ENV_VARS — adding a provider there auto-extends this. */
 export type ApiKeyBindings = {
-	OPENAI_API_KEY?: string;
-	ANTHROPIC_API_KEY?: string;
-	GEMINI_API_KEY?: string;
-	GROK_API_KEY?: string;
+	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
 };
 
 export type SessionResult = {

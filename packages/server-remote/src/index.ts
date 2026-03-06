@@ -11,22 +11,8 @@ export { authMiddleware } from './auth/middleware';
 export { corsMiddleware } from './cors';
 // Factory
 export { factory } from './factory';
-// Proxy handlers
-export { handleAiChat } from './proxy/chat';
-export { handleProxy } from './proxy/passthrough';
-// Sync re-exports
-export {
-	type ConnectionId,
-	type ConnectionState,
-	createMemoryUpdateLog,
-	createRoomManager,
-	handleHttpGetDoc,
-	handleHttpSync,
-	handleWsClose,
-	handleWsMessage,
-	handleWsOpen,
-	type UpdateLog,
-} from './sync';
+// AI chat handler
+export { handleAiChat } from './ai-chat';
 export type {
 	ApiKeyBindings,
 	AuthWithOAuth,

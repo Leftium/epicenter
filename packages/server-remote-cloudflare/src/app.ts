@@ -3,7 +3,6 @@ import {
 	authMiddleware,
 	corsMiddleware,
 	handleAiChat,
-	handleProxy,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 	type Variables,
@@ -44,13 +43,12 @@ app.get('/.well-known/oauth-authorization-server/auth', (c) =>
 );
 
 // Auth guard for protected routes
-for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {
+for (const path of ['/ai/*', '/rooms/*']) {
 	app.use(path, authMiddleware);
 }
 
-// AI chat + provider proxy
+// AI chat
 app.post('/ai/chat', handleAiChat);
-app.all('/proxy/:provider/*', handleProxy);
 
 // Sync rooms — forward to Durable Object
 app.all('/rooms/:room', async (c) => {

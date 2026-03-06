@@ -45,10 +45,12 @@ async function loadOrCreateDoc(
 	}
 
 	// Write-through: persist every mutation.
-	doc.on('updateV2', (update: Uint8Array) => {
-		storage.append(roomId, update).catch((err) => {
+	doc.on('updateV2', async (update: Uint8Array) => {
+		try {
+			await storage.append(roomId, update);
+		} catch (err) {
 			console.error(`[sync] Failed to persist update for room ${roomId}:`, err);
-		});
+		}
 	});
 
 	return doc;

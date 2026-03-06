@@ -36,12 +36,8 @@
  */
 
 import { generateId } from '@epicenter/workspace';
-import {
-	ChatClient,
-	type ChatClientState,
-	fetchServerSentEvents,
-	type UIMessage,
-} from '@tanstack/ai-client';
+import { ChatClient, type ChatClientState, fetchServerSentEvents, type UIMessage } from '@tanstack/ai-client';
+import type { JsonValue } from 'wellcrafted/json';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	AVAILABLE_PROVIDERS,
@@ -52,7 +48,7 @@ import {
 } from '$lib/ai/providers';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
-import { getRemoteServerUrl } from '$lib/state/settings';
+import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	actionContext,
 	type ChatMessageId,
@@ -77,21 +73,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 	status: 'ready',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Remote Server URL Cache
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Cached remote server URL for synchronous access.
- *
- * `fetchServerSentEvents` requires a synchronous URL getter (`string | (() => string)`).
- * We initialize with the default and update asynchronously from settings.
- * AI chat routes through the remote server (auth + AI + keys), not the local server.
- */
-let remoteServerUrlCache = 'http://127.0.0.1:3913';
-void getRemoteServerUrl().then((url) => {
-	remoteServerUrlCache = url;
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
@@ -196,7 +177,7 @@ function createAiChatState() {
 			initialMessages,
 			tools: actionContext.tools,
 			connection: fetchServerSentEvents(
-				() => `${remoteServerUrlCache}/ai/chat`,
+				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
 					return {
@@ -230,7 +211,7 @@ function createAiChatState() {
 					id: message.id as string as ChatMessageId,
 					conversationId,
 					role: 'assistant',
-					parts: message.parts,
+					parts: message.parts as JsonValue[],
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 					_v: 1,
 				});

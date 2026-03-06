@@ -6,6 +6,7 @@
 		type WorkspaceTemplateId,
 	} from '$lib/templates';
 	import { toKebabCase } from '$lib/utils/slug';
+	import { extractErrorMessage } from 'wellcrafted/error';
 
 	/**
 	 * Template selection state for the Select component.
@@ -164,12 +165,7 @@
 						await result;
 						isOpen = false;
 					} catch (e) {
-						error =
-							e instanceof Error
-								? e.message
-								: typeof e === 'object' && e !== null && 'message' in e
-									? String((e as { message: unknown }).message)
-									: 'Failed to create workspace';
+						error = extractErrorMessage(e);
 					} finally {
 						isPending = false;
 					}

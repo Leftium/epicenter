@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -141,6 +140,7 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
+        "@standard-schema/spec": "^1.1.0",
         "@tailwindcss/vite": "^4.1.8",
         "@types/node": "catalog:",
         "@wxt-dev/module-svelte": "^2.0.3",
@@ -403,7 +403,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/sync-core": "workspace:*",
+        "@tanstack/ai": "^0.5.1",
+        "@tanstack/ai-anthropic": "^0.5.0",
+        "@tanstack/ai-gemini": "^0.5.0",
+        "@tanstack/ai-grok": "^0.5.0",
+        "@tanstack/ai-openai": "^0.5.0",
         "hono": "catalog:",
+        "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
         "yjs": "catalog:",
       },

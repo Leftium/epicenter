@@ -1,4 +1,6 @@
 <script module lang="ts">
+	import { extractErrorMessage } from 'wellcrafted/error';
+
 	function createEditWorkspaceDialogState() {
 		let isOpen = $state(false);
 		let isPending = $state(false);
@@ -75,12 +77,7 @@
 						await result;
 						isOpen = false;
 					} catch (e) {
-						error =
-							e instanceof Error
-								? e.message
-								: typeof e === 'object' && e !== null && 'message' in e
-									? String((e as { message: unknown }).message)
-									: 'Failed to update workspace';
+						error = extractErrorMessage(e);
 					} finally {
 						isPending = false;
 					}

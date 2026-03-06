@@ -61,6 +61,7 @@ export {
 export { createRoomManager } from './rooms';
 // Storage (Yjs update log)
 export {
+	compactUpdateLog,
 	createMemoryUpdateLog,
 	decodeSyncRequest,
 	encodeSyncRequest,

@@ -15,10 +15,6 @@
 	}: {
 		parts: MessagePart[];
 	} = $props();
-
-	function renderMarkdown(content: string): string {
-		return marked.parse(content, { breaks: true, gfm: true }) as string;
-	}
 </script>
 
 {#snippet mediaPart(label: string)}
@@ -27,7 +23,9 @@
 
 {#each parts as part, i (i)}
 	{#if part.type === 'text'}
-		<div class="prose prose-sm">{@html renderMarkdown(part.content)}</div>
+		<div class="prose prose-sm">
+			{@html marked.parse(part.content, { breaks: true, gfm: true })}
+		</div>
 	{:else if part.type === 'tool-call'}
 		<ToolCallPart part={part as TanStackToolCallPart<WorkspaceTools>} />
 	{:else if part.type === 'tool-result'}

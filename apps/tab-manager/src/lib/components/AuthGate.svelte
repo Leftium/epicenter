@@ -1,0 +1,108 @@
+<script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import { Input } from '@epicenter/ui/input';
+	import type { Snippet } from 'svelte';
+	import { Err, tryAsync } from 'wellcrafted/result';
+	import { authToken, checkSession, signIn, signOut } from '$lib/state/auth.svelte';
+	import { reconnectSync } from '$lib/workspace';
+
+	let { children }: { children: Snippet } = $props();
+
+	type AuthState = 'checking' | 'signed-out' | 'signed-in';
+
+	let authState = $state<AuthState>('checking');
+	let email = $state('');
+	let password = $state('');
+	let error = $state('');
+	let loading = $state(false);
+
+	// Check session on mount
+	$effect(() => {
+		checkSession().then((user) => {
+			authState = user ? 'signed-in' : 'signed-out';
+		});
+	});
+
+	// React to token changes (e.g. cleared by another context)
+	$effect(() => {
+		if (!authToken.current && authState === 'signed-in') {
+			authState = 'signed-out';
+		}
+	});
+</script>
+
+{#if authState === 'checking'}
+	<div class="flex h-full items-center justify-center">
+		<p class="text-sm text-muted-foreground">Checking session…</p>
+	</div>
+{:else if authState === 'signed-out'}
+	<div class="flex h-full items-center justify-center p-6">
+		<form
+			onsubmit={async (e) => {
+				e.preventDefault();
+				error = '';
+				loading = true;
+				const { error: signInError } = await tryAsync({
+					try: () => signIn(email, password),
+					catch: (e) => Err(e instanceof Error ? e.message : 'Sign-in failed'),
+				});
+				if (signInError) {
+					error = signInError;
+				} else {
+					authState = 'signed-in';
+					password = '';
+					reconnectSync();
+				}
+				loading = false;
+			}}
+			class="w-full max-w-xs space-y-4"
+		>
+			<div class="space-y-1 text-center">
+				<h2 class="text-lg font-semibold">Sign in</h2>
+				<p class="text-sm text-muted-foreground">
+					Sign in to sync your tabs across devices.
+				</p>
+			</div>
+
+			{#if error}
+				<p class="text-sm text-destructive">{error}</p>
+			{/if}
+
+			<div class="space-y-3">
+				<Input
+					type="email"
+					placeholder="Email"
+					bind:value={email}
+					required
+					autocomplete="email"
+				/>
+				<Input
+					type="password"
+					placeholder="Password"
+					bind:value={password}
+					required
+					autocomplete="current-password"
+				/>
+			</div>
+
+			<Button type="submit" class="w-full" disabled={loading}>
+				{loading ? 'Signing in…' : 'Sign in'}
+			</Button>
+		</form>
+	</div>
+{:else}
+	{@render children()}
+	<div class="border-t px-3 py-2 flex items-center justify-end">
+		<Button
+			variant="ghost"
+			size="sm"
+			onclick={async () => {
+				await signOut();
+				authState = 'signed-out';
+				reconnectSync();
+			}}
+		>
+			Sign out
+		</Button>
+	</div>
+{/if}

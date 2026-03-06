@@ -131,13 +131,15 @@ export async function executeGroupTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	const groupId = await browser.tabs.group({ tabIds: nativeIds });
+	const groupId = await browser.tabs.group({
+		tabIds: nativeIds as [number, ...number[]],
+	});
 
 	if (title || color) {
-		const updateProps: browser.TabGroups.UpdateProperties = {};
+		const updateProps: Browser.tabGroups.UpdateProperties = {};
 		if (title) updateProps.title = title;
-		if (color) updateProps.color = color as browser.TabGroups.ColorEnum;
-		await browser.tabGroups.update(groupId, updateProps);
+		if (color) updateProps.color = color as `${Browser.tabGroups.Color}`;
+		await browser.tabGroups.update(groupId as number, updateProps);
 	}
 
 	return { groupId: String(groupId) };

@@ -1,6 +1,7 @@
 // Types
 export type {
 	ApiKeyBindings,
+	AuthWithOAuth,
 	SessionResult,
 	Env,
 	Variables,
@@ -16,9 +17,9 @@ export { corsMiddleware } from './cors';
 export { baseAuthConfig, trustedClients } from './auth/better-auth-base';
 export { authMiddleware } from './auth/middleware';
 export {
-	createOAuthMetadataHandler,
-	createOidcConfigHandler,
-} from './auth/oauth-discovery';
+	oauthProviderAuthServerMetadata,
+	oauthProviderOpenIdConfigMetadata,
+} from '@better-auth/oauth-provider';
 
 // Proxy handlers
 export { handleAiChat } from './proxy/chat';

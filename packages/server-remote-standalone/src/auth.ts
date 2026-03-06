@@ -2,8 +2,11 @@ import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { baseAuthConfig, trustedClients } from '@epicenter/server-remote';
-import type { Auth } from 'better-auth';
+import {
+	type AuthWithOAuth,
+	baseAuthConfig,
+	trustedClients,
+} from '@epicenter/server-remote';
 
 // ---------------------------------------------------------------------------
 // Auth mode types
@@ -47,7 +50,7 @@ type AdminSeeder = {
 };
 
 export function createStandaloneAuth(config: StandaloneAuthConfig): {
-	auth: Auth;
+	auth: AuthWithOAuth;
 	betterAuth?: AdminSeeder;
 } {
 	switch (config.mode) {
@@ -73,7 +76,7 @@ function createNoneAuth() {
 				session: { id: 'anonymous' },
 			}),
 		},
-	} as unknown as Auth;
+	} as unknown as AuthWithOAuth;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +128,7 @@ function createTokenAuth(token: string) {
 				return null;
 			},
 		},
-	} as unknown as Auth;
+	} as unknown as AuthWithOAuth;
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +160,7 @@ function createBetterAuthInstance(config: {
 		],
 	});
 
-	return { auth: auth as unknown as Auth, betterAuth: auth };
+	return { auth: auth as unknown as AuthWithOAuth, betterAuth: auth };
 }
 
 /**

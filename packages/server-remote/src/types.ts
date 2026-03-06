@@ -12,8 +12,16 @@ export type SessionResult = {
 
 import type { Auth } from 'better-auth';
 
+/** Auth instance with oauth-provider plugin APIs preserved. */
+export type AuthWithOAuth = Auth & {
+	api: {
+		getOpenIdConfig: (...args: unknown[]) => unknown;
+		getOAuthServerConfig: (...args: unknown[]) => unknown;
+	};
+};
+
 export type Variables = {
-	auth: Auth;
+	auth: AuthWithOAuth;
 	user: SessionResult['user'];
 	session: SessionResult['session'];
 };

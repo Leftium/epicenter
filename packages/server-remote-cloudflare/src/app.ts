@@ -2,10 +2,10 @@ import {
 	type ApiKeyBindings,
 	authMiddleware,
 	corsMiddleware,
-	createOAuthMetadataHandler,
-	createOidcConfigHandler,
 	handleAiChat,
 	handleProxy,
+	oauthProviderAuthServerMetadata,
+	oauthProviderOpenIdConfigMetadata,
 	type Variables,
 } from '@epicenter/server-remote';
 import { createFactory } from 'hono/factory';
@@ -37,10 +37,10 @@ app.on(['GET', 'POST'], '/auth/*', (c) => c.var.auth.handler(c.req.raw));
 
 // OAuth discovery
 app.get('/.well-known/openid-configuration/auth', (c) =>
-	createOidcConfigHandler(c.var.auth)({ req: { raw: c.req.raw } }),
+	oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
 );
 app.get('/.well-known/oauth-authorization-server/auth', (c) =>
-	createOAuthMetadataHandler(c.var.auth)({ req: { raw: c.req.raw } }),
+	oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
 // Auth guard for protected routes

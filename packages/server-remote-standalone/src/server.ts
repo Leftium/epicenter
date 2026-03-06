@@ -1,11 +1,11 @@
 import {
 	authMiddleware,
 	corsMiddleware,
-	createOAuthMetadataHandler,
-	createOidcConfigHandler,
 	factory,
 	handleAiChat,
 	handleProxy,
+	oauthProviderAuthServerMetadata,
+	oauthProviderOpenIdConfigMetadata,
 } from '@epicenter/server-remote';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import type { StandaloneAuthConfig } from './auth';
@@ -89,11 +89,10 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	app.on(['GET', 'POST'], '/auth/*', (c) => auth.handler(c.req.raw));
 
 	// OAuth discovery
-	app.get('/.well-known/openid-configuration/auth', createOidcConfigHandler(auth));
-	app.get(
-		'/.well-known/oauth-authorization-server/auth',
-		createOAuthMetadataHandler(auth),
-	);
+	const oidcConfig = oauthProviderOpenIdConfigMetadata(auth);
+	const oauthMeta = oauthProviderAuthServerMetadata(auth);
+	app.get('/.well-known/openid-configuration/auth', (c) => oidcConfig(c.req.raw));
+	app.get('/.well-known/oauth-authorization-server/auth', (c) => oauthMeta(c.req.raw));
 
 	// Auth guard for protected routes
 	for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {

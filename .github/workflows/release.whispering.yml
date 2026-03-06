@@ -21,24 +21,25 @@ jobs:
       - name: Delete existing release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           echo "Cleaning up assets for release: $TAG"
-          
+
           # Get release ID
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG --jq '.id' 2>/dev/null || echo "")
-          
+          RELEASE_ID=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id' 2>/dev/null || echo "")
+
           if [ -n "$RELEASE_ID" ]; then
             echo "Found release ID: $RELEASE_ID"
-            
+
             # Get all assets and delete them
-            ASSETS=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID/assets --jq '.[].id' 2>/dev/null || echo "")
-            
+            ASSETS=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --jq '.[].id' 2>/dev/null || echo "")
+
             for ASSET_ID in $ASSETS; do
               echo "Deleting asset: $ASSET_ID"
-              gh api -X DELETE repos/${{ github.repository }}/releases/assets/$ASSET_ID || true
+              gh api -X DELETE "repos/$REPO/releases/assets/$ASSET_ID" || true
             done
-            
+
             echo "Cleanup complete"
           else
             echo "No existing release found for $TAG, skipping cleanup"
@@ -73,7 +74,7 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
@@ -120,7 +121,7 @@ jobs:
 
       # Setup Node.js for compatibility
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: lts/*
 
@@ -151,27 +152,27 @@ jobs:
       - name: Process release notes
         id: release_notes
         shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
           # Look for release notes file matching the tag name (e.g., v7.0.0 -> docs/release-notes/v7.0.0.md)
           RELEASE_FILE="docs/release-notes/$TAG.md"
 
           if [ -f "$RELEASE_FILE" ]; then
             echo "Found release notes file: $RELEASE_FILE"
-
-            # Get full content for GitHub release page
             RELEASE_NOTES=$(cat "$RELEASE_FILE")
           else
             echo "No release notes file found at $RELEASE_FILE, using fallback"
-            # Fallback message if no release file exists
             RELEASE_NOTES="Whispering $TAG is now available. Check GitHub for the full changelog."
           fi
 
-          # Save output for use in later steps
-          # Using EOF delimiter to handle multi-line content
-          echo "RELEASE_NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Use random delimiter to prevent injection via release notes content
+          DELIMITER=$(openssl rand -hex 8)
+          {
+            echo "RELEASE_NOTES<<${DELIMITER}"
+            echo "$RELEASE_NOTES"
+            echo "${DELIMITER}"
+          } >> $GITHUB_OUTPUT
 
       # Main Tauri build and release action
       - uses: tauri-apps/tauri-action@v0

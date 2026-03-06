@@ -1,9 +1,9 @@
+import { oauthProvider } from '@better-auth/oauth-provider';
 import {
 	type AuthWithOAuth,
 	baseAuthConfig,
 	trustedClients,
 } from '@epicenter/server-remote';
-import { oauthProvider } from '@better-auth/oauth-provider';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';

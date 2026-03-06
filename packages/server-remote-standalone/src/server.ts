@@ -7,8 +7,8 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@epicenter/server-remote';
-import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import type { StandaloneAuthConfig } from './auth';
+import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';
 import { mountSyncRoutes, websocket } from './sync-adapter';
 
@@ -91,8 +91,12 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	// OAuth discovery
 	const oidcConfig = oauthProviderOpenIdConfigMetadata(auth);
 	const oauthMeta = oauthProviderAuthServerMetadata(auth);
-	app.get('/.well-known/openid-configuration/auth', (c) => oidcConfig(c.req.raw));
-	app.get('/.well-known/oauth-authorization-server/auth', (c) => oauthMeta(c.req.raw));
+	app.get('/.well-known/openid-configuration/auth', (c) =>
+		oidcConfig(c.req.raw),
+	);
+	app.get('/.well-known/oauth-authorization-server/auth', (c) =>
+		oauthMeta(c.req.raw),
+	);
 
 	// Auth guard for protected routes
 	for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {

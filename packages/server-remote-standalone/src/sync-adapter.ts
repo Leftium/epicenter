@@ -1,3 +1,4 @@
+import { type Env } from '@epicenter/server-remote';
 import {
 	type ConnectionState,
 	createRoomManager,
@@ -8,7 +9,6 @@ import {
 	handleWsOpen,
 	type UpdateLog,
 } from '@epicenter/sync-core';
-import { type Env } from '@epicenter/server-remote';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import * as Y from 'yjs';
@@ -62,10 +62,7 @@ async function loadOrCreateDoc(
  * - `POST /rooms/:room` — HTTP sync (push + pull)
  * - `GET /rooms/:room/doc` — HTTP full doc fetch
  */
-export function mountSyncRoutes(
-	app: Hono<Env>,
-	config: SyncAdapterConfig,
-) {
+export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 	const { storage } = config;
 
 	// Cache of loaded docs keyed by roomId so multiple WS connections

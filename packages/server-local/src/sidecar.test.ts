@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_PORT } from './server';
 import {
 	createWorkspace,
 	defineQuery,
@@ -7,6 +6,7 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
+import { DEFAULT_PORT } from './server';
 import { createSidecar } from './sidecar';
 
 describe('createSidecar', () => {

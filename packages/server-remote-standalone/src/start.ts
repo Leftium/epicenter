@@ -8,8 +8,8 @@
  */
 
 import { mkdirSync } from 'node:fs';
-import { createRemoteHub } from './server';
 import type { StandaloneAuthConfig } from './auth';
+import { createRemoteHub } from './server';
 
 function resolveAuthConfig(): StandaloneAuthConfig {
 	if (process.env.AUTH_TOKEN) {

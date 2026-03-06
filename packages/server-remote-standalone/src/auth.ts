@@ -1,12 +1,12 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import { betterAuth } from 'better-auth';
-import { bearer } from 'better-auth/plugins/bearer';
-import { jwt } from 'better-auth/plugins/jwt';
 import {
 	type AuthWithOAuth,
 	baseAuthConfig,
 	trustedClients,
 } from '@epicenter/server-remote';
+import { betterAuth } from 'better-auth';
+import { bearer } from 'better-auth/plugins/bearer';
+import { jwt } from 'better-auth/plugins/jwt';
 
 // ---------------------------------------------------------------------------
 // Auth mode types
@@ -89,10 +89,7 @@ function createTokenAuth(token: string) {
 
 		// Stub: GET /auth/get-session — validates the token and returns
 		// the canonical token-user shape that sidecars depend on.
-		if (
-			url.pathname === '/auth/get-session' &&
-			request.method === 'GET'
-		) {
+		if (url.pathname === '/auth/get-session' && request.method === 'GET') {
 			const authHeader = request.headers.get('authorization');
 			const bearerToken = authHeader?.startsWith('Bearer ')
 				? authHeader.slice(7)
@@ -167,9 +164,7 @@ function createBetterAuthInstance(config: {
  * Seed an admin user if ADMIN_EMAIL and ADMIN_PASSWORD env vars are set.
  * Silently no-ops if the user already exists.
  */
-export async function seedAdminIfNeeded(
-	auth: AdminSeeder,
-) {
+export async function seedAdminIfNeeded(auth: AdminSeeder) {
 	const email = process.env.ADMIN_EMAIL;
 	const password = process.env.ADMIN_PASSWORD;
 	if (!email || !password) return;

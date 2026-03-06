@@ -39,10 +39,7 @@ export async function handleAiChat(c: Context<Env>) {
 
 	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
-		return c.json(
-			{ error: `${provider} not configured` },
-			503,
-		);
+		return c.json({ error: `${provider} not configured` }, 503);
 	}
 
 	const chatUrl = PROVIDER_CHAT_URL[provider];

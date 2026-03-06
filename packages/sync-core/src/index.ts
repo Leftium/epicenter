@@ -64,6 +64,6 @@ export {
 	createMemoryUpdateLog,
 	decodeSyncRequest,
 	encodeSyncRequest,
-	type UpdateLog,
 	stateVectorsEqual,
+	type UpdateLog,
 } from './storage';

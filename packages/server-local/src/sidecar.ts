@@ -1,12 +1,12 @@
 import { cors } from '@elysiajs/cors';
 import { openapi } from '@elysiajs/openapi';
-import { createTokenGuardPlugin } from './auth/token-guard';
-import { listenWithFallback } from './server';
-import { createWsSyncPlugin } from './sync/ws-plugin';
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createHubSessionValidator } from './auth/hub-validator';
+import { createTokenGuardPlugin } from './auth/token-guard';
+import { listenWithFallback } from './server';
+import { createWsSyncPlugin } from './sync/ws-plugin';
 import { createWorkspacePlugin } from './workspace';
 import { collectActionPaths } from './workspace/actions';
 

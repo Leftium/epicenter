@@ -1,9 +1,9 @@
-export { DEFAULT_PORT, listenWithFallback } from './server';
 export {
 	createHubSessionValidator,
 	type HubSessionValidatorConfig,
 	type SessionValidationResult,
 } from './auth/hub-validator';
+export { DEFAULT_PORT, listenWithFallback } from './server';
 export {
 	createSidecar,
 	type SidecarApp,

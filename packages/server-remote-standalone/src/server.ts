@@ -2,15 +2,104 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import { Hono } from 'hono';
+import {
+	PROVIDER_ENV_VARS,
+	type SupportedProvider,
+} from '@epicenter/sync-core';
+import type { Auth } from 'better-auth';
+import type { MiddlewareHandler } from 'hono';
+import { cors } from 'hono/cors';
+import { createFactory } from 'hono/factory';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { handleAiChat } from './ai-chat';
 import type { StandaloneAuthConfig } from './auth';
-import { authMiddleware } from './auth-middleware';
-import { corsMiddleware } from './cors';
-import type { Env } from './types';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';
 import { mountSyncRoutes, websocket } from './sync-adapter';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type ApiKeyBindings = {
+	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
+};
+
+type SessionResult = {
+	user: { id: string; name: string; email: string; [key: string]: unknown };
+	session: { id: string; [key: string]: unknown };
+};
+
+/** Auth instance with oauth-provider plugin APIs preserved. */
+type AuthWithOAuth = Auth & {
+	api: {
+		getOpenIdConfig: (...args: unknown[]) => unknown;
+		getOAuthServerConfig: (...args: unknown[]) => unknown;
+	};
+};
+
+type Variables = {
+	auth: AuthWithOAuth;
+	user: SessionResult['user'];
+	session: SessionResult['session'];
+};
+
+type Env = {
+	Bindings: ApiKeyBindings;
+	Variables: Variables;
+};
+
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
+
+const AuthError = defineErrors({
+	Unauthorized: () => ({
+		message: 'Unauthorized',
+	}),
+});
+type AuthError = InferErrors<typeof AuthError>;
+
+// ---------------------------------------------------------------------------
+// Middleware
+// ---------------------------------------------------------------------------
+
+/**
+ * CORS middleware that skips WebSocket upgrades.
+ *
+ * Hono's CORS middleware modifies response headers, which conflicts with
+ * the immutable 101 WebSocket upgrade response.
+ */
+const corsMiddleware: MiddlewareHandler<Env> = async (c, next) => {
+	if (c.req.header('upgrade') === 'websocket') return next();
+	return cors({
+		origin: (origin) => origin,
+		credentials: true,
+		allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
+		allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+	})(c, next);
+};
+
+/** Auth middleware that validates sessions via Better Auth on the context. */
+const authMiddleware: MiddlewareHandler<Env> = async (c, next) => {
+	const wsToken = c.req.query('token');
+	const headers = wsToken
+		? new Headers({ authorization: `Bearer ${wsToken}` })
+		: c.req.raw.headers;
+
+	const result = await c.var.auth.api.getSession({ headers });
+	if (!result) return c.json(AuthError.Unauthorized(), 401);
+
+	c.set('user', result.user);
+	c.set('session', result.session);
+	await next();
+};
+
+const factory = createFactory<Env>();
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
 
 declare const Bun: {
 	serve(options: {
@@ -44,6 +133,10 @@ export type StandaloneHubConfig = {
 	};
 };
 
+// ---------------------------------------------------------------------------
+// Hub
+// ---------------------------------------------------------------------------
+
 /**
  * Create a standalone remote hub server.
  *
@@ -71,7 +164,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	// --- Build the Hono app ---
 
 	const { auth, betterAuth } = createStandaloneAuth(authConfig);
-	const app = new Hono<Env>();
+	const app = factory.createApp();
 
 	// CORS (skips WebSocket upgrades)
 	app.use('*', corsMiddleware);

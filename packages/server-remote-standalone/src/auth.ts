@@ -1,8 +1,39 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { AuthWithOAuth } from './types';
+import type { Auth } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Auth instance with oauth-provider plugin APIs preserved. */
+export type AuthWithOAuth = Auth & {
+	api: {
+		getOpenIdConfig: (...args: unknown[]) => unknown;
+		getOAuthServerConfig: (...args: unknown[]) => unknown;
+	};
+};
+
+const trustedClients = [
+	{
+		clientId: 'epicenter-desktop',
+		name: 'Epicenter Desktop',
+		type: 'native',
+		redirectUrls: ['tauri://localhost/auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+	{
+		clientId: 'epicenter-mobile',
+		name: 'Epicenter Mobile',
+		type: 'native',
+		redirectUrls: ['epicenter://auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+] as const;
 
 // ---------------------------------------------------------------------------
 // Auth mode types
@@ -83,8 +114,6 @@ function createTokenAuth(token: string) {
 	const handler = async (request: Request): Promise<Response> => {
 		const url = new URL(request.url);
 
-		// Stub: GET /auth/get-session — validates the token and returns
-		// the canonical token-user shape that sidecars depend on.
 		if (url.pathname === '/auth/get-session' && request.method === 'GET') {
 			const authHeader = request.headers.get('authorization');
 			const bearerToken = authHeader?.startsWith('Bearer ')
@@ -111,7 +140,6 @@ function createTokenAuth(token: string) {
 					? authHeader.slice(7)
 					: null;
 
-				// Also check query param (normalized by auth middleware for WS)
 				if (bearerToken === token) {
 					return {
 						user: { id: 'token-user', name: 'Token User', email: '' },
@@ -149,24 +177,7 @@ function createBetterAuthInstance(config: {
 				consentPage: '/consent',
 				requirePKCE: true,
 				allowDynamicClientRegistration: true,
-				trustedClients: [
-					{
-						clientId: 'epicenter-desktop',
-						name: 'Epicenter Desktop',
-						type: 'native',
-						redirectUrls: ['tauri://localhost/auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-mobile',
-						name: 'Epicenter Mobile',
-						type: 'native',
-						redirectUrls: ['epicenter://auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-				],
+				trustedClients: [...trustedClients],
 			}),
 		],
 	});

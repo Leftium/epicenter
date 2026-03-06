@@ -1,4 +1,3 @@
-import type { Env } from './types';
 import {
 	type ConnectionState,
 	createRoomManager,
@@ -64,7 +63,8 @@ async function loadOrCreateDoc(
  * - `POST /rooms/:room` — HTTP sync (push + pull)
  * - `GET /rooms/:room/doc` — HTTP full doc fetch
  */
-export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
+// biome-ignore lint/suspicious/noExplicitAny: Env shape is defined by the caller
+export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 	const { storage } = config;
 
 	// Cache of loaded docs keyed by roomId so multiple WS connections

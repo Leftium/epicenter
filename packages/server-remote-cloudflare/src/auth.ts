@@ -1,5 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { AuthWithOAuth } from './types';
+import type { Auth } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -7,6 +7,33 @@ import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './db/schema';
+
+/** Auth instance with oauth-provider plugin APIs preserved. */
+type AuthWithOAuth = Auth & {
+	api: {
+		getOpenIdConfig: (...args: unknown[]) => unknown;
+		getOAuthServerConfig: (...args: unknown[]) => unknown;
+	};
+};
+
+const trustedClients = [
+	{
+		clientId: 'epicenter-desktop',
+		name: 'Epicenter Desktop',
+		type: 'native',
+		redirectUrls: ['tauri://localhost/auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+	{
+		clientId: 'epicenter-mobile',
+		name: 'Epicenter Mobile',
+		type: 'native',
+		redirectUrls: ['epicenter://auth/callback'],
+		skipConsent: true,
+		metadata: {},
+	},
+] as const;
 
 /** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
 export function createAuth(env: Cloudflare.Env): AuthWithOAuth {
@@ -27,29 +54,12 @@ export function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 				consentPage: '/consent',
 				requirePKCE: true,
 				allowDynamicClientRegistration: true,
-				trustedClients: [
-					{
-						clientId: 'epicenter-desktop',
-						name: 'Epicenter Desktop',
-						type: 'native',
-						redirectUrls: ['tauri://localhost/auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-					{
-						clientId: 'epicenter-mobile',
-						name: 'Epicenter Mobile',
-						type: 'native',
-						redirectUrls: ['epicenter://auth/callback'],
-						skipConsent: true,
-						metadata: {},
-					},
-				],
+				trustedClients: [...trustedClients],
 			}),
 		],
 		session: {
-			expiresIn: 60 * 60 * 24 * 7, // 7 days
-			updateAge: 60 * 60 * 24, // 1 day
+			expiresIn: 60 * 60 * 24 * 7,
+			updateAge: 60 * 60 * 24,
 			storeSessionInDatabase: true,
 			cookieCache: {
 				enabled: true,

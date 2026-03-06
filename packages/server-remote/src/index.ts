@@ -13,19 +13,6 @@ export { corsMiddleware } from './cors';
 export { factory } from './factory';
 // AI chat handler
 export { handleAiChat } from './ai-chat';
-// Sync re-exports
-export {
-	type ConnectionId,
-	type ConnectionState,
-	createMemoryUpdateLog,
-	createRoomManager,
-	handleHttpGetDoc,
-	handleHttpSync,
-	handleWsClose,
-	handleWsMessage,
-	handleWsOpen,
-	type UpdateLog,
-} from './sync';
 export type {
 	ApiKeyBindings,
 	AuthWithOAuth,

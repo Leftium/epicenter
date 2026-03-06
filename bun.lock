@@ -447,6 +447,7 @@
         "@epicenter/sync-core": "workspace:*",
         "better-auth": "catalog:",
         "hono": "catalog:",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "typescript": "catalog:",

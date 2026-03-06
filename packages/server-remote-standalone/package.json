@@ -18,7 +18,8 @@
 		"better-auth": "catalog:",
 		"@epicenter/server-remote": "workspace:*",
 		"@epicenter/sync-core": "workspace:*",
-		"hono": "catalog:"
+		"hono": "catalog:",
+		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"typescript": "catalog:"

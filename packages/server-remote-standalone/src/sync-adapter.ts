@@ -1,4 +1,3 @@
-import type { SharedEnv } from '@epicenter/server-remote';
 import {
 	type ConnectionState,
 	createRoomManager,
@@ -11,18 +10,48 @@ import {
 } from '@epicenter/sync-core';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
+import * as Y from 'yjs';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 export { websocket };
 
 type SyncAdapterConfig = {
+	/** Persistence layer. Docs survive restarts when backed by real storage. */
+	storage: UpdateLog;
 	/** Sync hooks. */
 	onRoomCreated?: (roomId: string) => void;
 	onRoomEvicted?: (roomId: string) => void;
 	/** Eviction timeout in ms. Default: 60_000. */
 	evictionTimeout?: number;
 };
+
+/**
+ * Load a Y.Doc from the update log, or create a fresh one if no updates exist.
+ *
+ * Registers a write-through listener that appends every incremental update
+ * to the storage so state is never lost.
+ */
+async function loadOrCreateDoc(
+	storage: UpdateLog,
+	roomId: string,
+): Promise<Y.Doc> {
+	const doc = new Y.Doc();
+	const updates = await storage.readAll(roomId);
+	if (updates.length > 0) {
+		const merged = Y.mergeUpdatesV2(updates);
+		Y.applyUpdateV2(doc, merged);
+	}
+
+	// Write-through: persist every mutation.
+	doc.on('updateV2', (update: Uint8Array) => {
+		storage.append(roomId, update).catch((err) => {
+			console.error(`[sync] Failed to persist update for room ${roomId}:`, err);
+		});
+	});
+
+	return doc;
+}
 
 /**
  * Mount WebSocket and HTTP sync routes on a Hono app.
@@ -33,28 +62,55 @@ type SyncAdapterConfig = {
  * - `GET /rooms/:room/doc` — HTTP full doc fetch
  */
 export function mountSyncRoutes(
-	app: Hono<SharedEnv>,
-	config?: SyncAdapterConfig,
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	app: Hono<any>,
+	config: SyncAdapterConfig,
 ) {
-	const roomManager = createRoomManager({
-		evictionTimeout: config?.evictionTimeout,
-		onRoomCreated: config?.onRoomCreated
-			? (roomId) => config.onRoomCreated!(roomId)
-			: undefined,
-		onRoomEvicted: config?.onRoomEvicted
-			? (roomId) => config.onRoomEvicted!(roomId)
-			: undefined,
-	});
+	const { storage } = config;
 
-	// Ephemeral — standalone hub doesn't persist sync data.
-	// HTTP sync routes use this no-op storage so the interface is satisfied.
-	const storage = {
-		async append() {},
-		async readAll() {
-			return [];
+	// Cache of loaded docs keyed by roomId so multiple WS connections
+	// share the same doc and the same write-through listener.
+	const loadedDocs = new Map<string, Y.Doc>();
+
+	// In-flight load promises — prevents duplicate loads when concurrent
+	// WebSocket upgrades hit the same unloaded room.
+	const loadingDocs = new Map<string, Promise<Y.Doc>>();
+
+	async function getOrLoadDoc(roomId: string): Promise<Y.Doc> {
+		const existing = loadedDocs.get(roomId);
+		if (existing) return existing;
+
+		const inFlight = loadingDocs.get(roomId);
+		if (inFlight) return inFlight;
+
+		const promise = loadOrCreateDoc(storage, roomId).then((doc) => {
+			loadedDocs.set(roomId, doc);
+			loadingDocs.delete(roomId);
+			config.onRoomCreated?.(roomId);
+			return doc;
+		});
+		loadingDocs.set(roomId, promise);
+		return promise;
+	}
+
+	const roomManager = createRoomManager({
+		evictionTimeout: config.evictionTimeout,
+
+		getDoc: (roomId) => {
+			// getDoc is synchronous — the upgrade handler pre-loads the doc
+			// via getOrLoadDoc before onOpen fires.
+			return loadedDocs.get(roomId);
 		},
-		async replaceAll() {},
-	} satisfies UpdateLog;
+
+		onRoomEvicted: async (roomId, doc) => {
+			// Compact: encode the live doc state into a single snapshot.
+			const snapshot = Y.encodeStateAsUpdateV2(doc);
+			await storage.replaceAll(roomId, snapshot);
+			loadedDocs.delete(roomId);
+			doc.destroy();
+			config.onRoomEvicted?.(roomId);
+		},
+	});
 
 	// Ping/pong keepalive — track intervals per connection via WeakMap on ws.raw
 	const pingIntervals = new WeakMap<object, ReturnType<typeof setInterval>>();
@@ -68,8 +124,13 @@ export function mountSyncRoutes(
 		upgradeWebSocket((c) => {
 			const roomId = c.req.param('room')!;
 
+			// Pre-load the doc before the WS connection opens.
+			const docReady = getOrLoadDoc(roomId);
+
 			return {
-				onOpen(_evt, ws) {
+				async onOpen(_evt, ws) {
+					await docReady;
+
 					const raw = ws.raw!;
 
 					const send = (data: Uint8Array) => {
@@ -169,5 +230,17 @@ export function mountSyncRoutes(
 		});
 	});
 
-	return { roomManager };
+	return {
+		roomManager,
+
+		/** Compact all loaded docs before shutdown. */
+		async shutdown(): Promise<void> {
+			await Promise.allSettled(
+				[...loadedDocs.entries()].map(async ([roomId, doc]) => {
+					const snapshot = Y.encodeStateAsUpdateV2(doc);
+					await storage.replaceAll(roomId, snapshot);
+				}),
+			);
+		},
+	};
 }

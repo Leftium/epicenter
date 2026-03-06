@@ -7,6 +7,7 @@
  *   PORT=4000 bun packages/server-remote-standalone/src/start.ts
  */
 
+import { mkdirSync } from 'node:fs';
 import { createRemoteHub } from './server';
 import type { StandaloneAuthConfig } from './auth';
 
@@ -17,6 +18,10 @@ function resolveAuthConfig(): StandaloneAuthConfig {
 	// Could add betterAuth mode detection here via DATABASE_URL, etc.
 	return { mode: 'none' };
 }
+
+// Ensure the data directory exists for SQLite persistence.
+const dataDir = process.env.DATA_DIR ?? './data';
+mkdirSync(dataDir, { recursive: true });
 
 const hub = createRemoteHub({
 	auth: resolveAuthConfig(),

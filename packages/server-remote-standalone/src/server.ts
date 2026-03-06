@@ -106,7 +106,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	app.all('/proxy/:provider/*', handleProxy);
 
 	// Sync (WebSocket + HTTP)
-	const { roomManager } = mountSyncRoutes(app, {
+	const { roomManager, shutdown } = mountSyncRoutes(app, {
 		storage,
 		...config.sync,
 	});
@@ -133,6 +133,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 		},
 
 		async stop(): Promise<void> {
+			await shutdown();
 			roomManager.destroy();
 			storage.close();
 			server?.stop();

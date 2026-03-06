@@ -31,6 +31,8 @@ export {
 	type WsMessageResult,
 	type WsOpenResult,
 } from './handlers';
+// Re-export Awareness so consumers don't need a direct y-protocols dependency
+export { Awareness } from 'y-protocols/awareness';
 // Protocol (WS encode/decode)
 export {
 	type DecodedSyncMessage,

@@ -55,6 +55,12 @@ async function loadOrCreateDoc(
 	return doc;
 }
 
+/** Per-connection state: sync-core state + adapter-specific fields. */
+type AdapterConnectionState = {
+	syncState: ConnectionState;
+	roomId: string;
+};
+
 /**
  * Mount WebSocket and HTTP sync routes on a Hono app.
  *
@@ -115,7 +121,7 @@ export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 	const pingIntervals = new WeakMap<object, ReturnType<typeof setInterval>>();
 
 	// Per-connection state keyed by ws.raw (stable identity)
-	const connectionStates = new WeakMap<object, ConnectionState>();
+	const connectionStates = new WeakMap<object, AdapterConnectionState>();
 
 	// --- WebSocket upgrade route ---
 	app.get(
@@ -132,23 +138,27 @@ export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 
 					const raw = ws.raw!;
 
-					const send = (data: Uint8Array) => {
+					// Join the room to get doc + awareness
+					const room = roomManager.join(roomId, raw, (data) => {
 						ws.send(data as Uint8Array<ArrayBuffer>);
-					};
-
-					const result = handleWsOpen(roomManager, roomId, raw, send);
-					if (!result.ok) {
+					});
+					if (!room) {
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						(ws.close as any)(result.closeCode, result.closeReason);
+						(ws.close as any)(4004, `Room not found: ${roomId}`);
 						return;
 					}
 
-					// Register the update handler on the doc
-					result.state.doc.on('update', result.state.updateHandler);
-					connectionStates.set(raw, result.state);
+					const { initialMessages, state } = handleWsOpen(
+						room.doc,
+						room.awareness,
+						raw,
+						(data) => ws.send(data as Uint8Array<ArrayBuffer>),
+					);
+
+					connectionStates.set(raw, { syncState: state, roomId });
 
 					// Send initial messages
-					for (const msg of result.initialMessages) {
+					for (const msg of initialMessages) {
 						ws.send(msg as Uint8Array<ArrayBuffer>);
 					}
 
@@ -165,24 +175,24 @@ export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 
 				onMessage(evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					const data = new Uint8Array(evt.data as ArrayBuffer);
-					const messageResult = handleWsMessage(data, state);
+					const messageResult = handleWsMessage(data, conn.syncState);
 
 					if (messageResult.response) {
 						ws.send(messageResult.response as Uint8Array<ArrayBuffer>);
 					}
 					if (messageResult.broadcast) {
-						roomManager.broadcast(state.roomId, messageResult.broadcast, raw);
+						roomManager.broadcast(conn.roomId, messageResult.broadcast, raw);
 					}
 				},
 
 				onClose(_evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					// Clear ping interval
 					const interval = pingIntervals.get(raw);
@@ -190,20 +200,24 @@ export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 						clearInterval(interval);
 					}
 
-					handleWsClose(state, roomManager);
+					handleWsClose(conn.syncState);
+					roomManager.leave(conn.roomId, raw);
+					connectionStates.delete(raw);
 				},
 
 				onError(_evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					const interval = pingIntervals.get(raw);
 					if (interval) {
 						clearInterval(interval);
 					}
 
-					handleWsClose(state, roomManager);
+					handleWsClose(conn.syncState);
+					roomManager.leave(conn.roomId, raw);
+					connectionStates.delete(raw);
 				},
 			};
 		}),

@@ -1,8 +1,8 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+	Awareness,
 	type ConnectionState,
 	compactUpdateLog,
-	createRoomManager,
 	handleHttpGetDoc,
 	handleHttpSync,
 	handleWsClose,
@@ -17,14 +17,16 @@ type WsAttachment = {
 };
 
 /**
- * `sync-core` models WebSocket membership around room IDs.
- *
- * This adapter is different: one Durable Object instance already represents one
- * external room, and it hosts exactly one in-memory `Y.Doc`. We still pass a
- * room ID into the generic `sync-core` helpers, but that ID is purely an
- * adapter-internal slot key rather than the external `:room` route param.
+ * Storage key used by the UpdateLog. Since each DO instance hosts exactly one
+ * room (selected externally via `idFromName(roomId)`), we use a fixed key.
  */
-const DO_ROOM_SLOT_ID = 'durable-object-room';
+const DOC_ID = 'doc';
+
+/** Max incoming WebSocket message size (5 MB). */
+const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
+
+/** Compact storage every 4 hours while connections are active. */
+const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Durable Object that manages one external collaboration room.
@@ -40,15 +42,10 @@ const DO_ROOM_SLOT_ID = 'durable-object-room';
  * Better Auth before forwarding to `stub.fetch()`. The DO itself does not
  * re-validate — it trusts the Worker boundary.
  */
-/** Max incoming WebSocket message size (5 MB). */
-const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
-
-/** Compact storage every 4 hours while connections are active. */
-const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
-
 export class YjsRoom extends DurableObject {
 	private updateLog: UpdateLog;
-	private roomManager!: ReturnType<typeof createRoomManager>;
+	private doc!: Y.Doc;
+	private awareness!: Awareness;
 	private connectionStates: Map<WebSocket, ConnectionState>;
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -61,15 +58,11 @@ export class YjsRoom extends DurableObject {
 			new WebSocketRequestResponsePair('ping', 'pong'),
 		);
 
-		// Load the Y.Doc from SQLite and initialize the RoomManager synchronously
-		// inside blockConcurrencyWhile. This ensures the doc is ready before any
-		// fetch() or webSocketMessage() runs.
+		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
+		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
 		this.ctx.blockConcurrencyWhile(async () => {
-			const doc = await this.loadOrCreateDoc(DO_ROOM_SLOT_ID);
-
-			this.roomManager = createRoomManager({
-				getDoc: () => doc,
-			});
+			this.doc = await this.loadOrCreateDoc();
+			this.awareness = new Awareness(this.doc);
 
 			// On wake from hibernation, restore connection state from attachments.
 			for (const ws of this.ctx.getWebSockets()) {
@@ -83,26 +76,16 @@ export class YjsRoom extends DurableObject {
 						/* disconnected during wake */
 					}
 				};
-				const result = handleWsOpen(
-					this.roomManager,
-					DO_ROOM_SLOT_ID,
-					ws,
-					send,
-				);
-				if (result.ok) {
-					result.state.controlledClientIds = new Set(
-						attachment.controlledClientIds,
-					);
-					result.state.doc.on('update', result.state.updateHandler);
-					this.connectionStates.set(ws, result.state);
-				}
+				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
+				state.controlledClientIds = new Set(attachment.controlledClientIds);
+				this.connectionStates.set(ws, state);
 			}
 		});
 	}
 
-	private async loadOrCreateDoc(roomSlotId: string): Promise<Y.Doc> {
+	private async loadOrCreateDoc(): Promise<Y.Doc> {
 		const doc = new Y.Doc();
-		const updates = await this.updateLog.readAll(roomSlotId);
+		const updates = await this.updateLog.readAll(DOC_ID);
 		if (updates.length > 0) {
 			// Storage uses V2 format for better compression, while the wire
 			// protocol (y-protocols) uses V1. This is safe because Yjs fires
@@ -115,7 +98,7 @@ export class YjsRoom extends DurableObject {
 		// Note: storage.sql.exec is synchronous in DO SQLite, so the callback
 		// runs synchronously despite the event system.
 		doc.on('updateV2', (update: Uint8Array) => {
-			this.updateLog.append(roomSlotId, update);
+			this.updateLog.append(DOC_ID, update);
 		});
 
 		return doc;
@@ -139,11 +122,7 @@ export class YjsRoom extends DurableObject {
 				return new Response('Payload too large', { status: 413 });
 			}
 			const body = new Uint8Array(await request.arrayBuffer());
-			const result = await handleHttpSync(
-				this.updateLog,
-				DO_ROOM_SLOT_ID,
-				body,
-			);
+			const result = await handleHttpSync(this.updateLog, DOC_ID, body);
 			if (!result.body) return new Response(null, { status: result.status });
 			return new Response(result.body, {
 				status: result.status,
@@ -153,7 +132,7 @@ export class YjsRoom extends DurableObject {
 
 		// HTTP sync: GET (document snapshot)
 		if (request.method === 'GET') {
-			const result = await handleHttpGetDoc(this.updateLog, DO_ROOM_SLOT_ID);
+			const result = await handleHttpGetDoc(this.updateLog, DOC_ID);
 			if (!result.body) return new Response(null, { status: 404 });
 			return new Response(result.body, {
 				status: 200,
@@ -177,21 +156,14 @@ export class YjsRoom extends DurableObject {
 		this.ctx.acceptWebSocket(server);
 
 		const send = (data: Uint8Array) => server.send(data);
-		const result = handleWsOpen(
-			this.roomManager,
-			DO_ROOM_SLOT_ID,
+		const { initialMessages, state } = handleWsOpen(
+			this.doc,
+			this.awareness,
 			server,
 			send,
 		);
 
-		if (!result.ok) {
-			server.close(result.closeCode, result.closeReason);
-			return new Response(null, { status: 400 });
-		}
-
-		// Wire doc update broadcaster
-		result.state.doc.on('update', result.state.updateHandler);
-		this.connectionStates.set(server, result.state);
+		this.connectionStates.set(server, state);
 
 		// Persist empty attachment (no controlled client IDs yet)
 		server.serializeAttachment({
@@ -199,7 +171,7 @@ export class YjsRoom extends DurableObject {
 		} satisfies WsAttachment);
 
 		// Send initial sync messages (SyncStep1 + awareness states)
-		for (const msg of result.initialMessages) {
+		for (const msg of initialMessages) {
 			server.send(msg);
 		}
 
@@ -267,14 +239,14 @@ export class YjsRoom extends DurableObject {
 		const state = this.connectionStates.get(ws);
 		if (!state) return;
 
-		handleWsClose(state, this.roomManager);
+		handleWsClose(state);
 		this.connectionStates.delete(ws);
 
 		// Compact storage when last connection leaves.
 		// Safe from races: DO is single-threaded, so no new fetch() can run
 		// until this handler completes.
 		if (this.connectionStates.size === 0) {
-			await compactUpdateLog(this.updateLog, DO_ROOM_SLOT_ID);
+			await compactUpdateLog(this.updateLog, DOC_ID);
 		}
 
 		try {
@@ -290,7 +262,7 @@ export class YjsRoom extends DurableObject {
 
 	/** Periodic compaction: merge accumulated updates into a single snapshot. */
 	override async alarm(): Promise<void> {
-		await compactUpdateLog(this.updateLog, DO_ROOM_SLOT_ID);
+		await compactUpdateLog(this.updateLog, DOC_ID);
 
 		// Reschedule if there are still active connections.
 		if (this.ctx.getWebSockets().length > 0) {

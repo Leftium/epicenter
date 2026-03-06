@@ -21,12 +21,13 @@ import type { ExtensionFactory } from '../workspace/types';
  *   }))
  * ```
  *
- * @example Authenticated mode (cloud)
+ * @example Authenticated mode with HTTP bootstrap (cloud)
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createWsSyncExtension({
  *     url: 'wss://sync.epicenter.so/rooms/{id}',
+ *     snapshotUrl: 'https://sync.epicenter.so/rooms/{id}',
  *     getToken: async (workspaceId) => {
  *       const res = await fetch('/api/sync/token', {
  *         method: 'POST',
@@ -49,6 +50,17 @@ export type WsSyncExtensionConfig = {
 	 * Receives the workspace ID as argument.
 	 */
 	getToken?: (workspaceId: string) => Promise<string>;
+
+	/**
+	 * HTTP URL for initial state snapshot before WebSocket connect.
+	 *
+	 * When provided, fetches the full document via HTTP GET to pre-populate
+	 * the local Y.Doc, making the subsequent WebSocket syncStep2 tiny.
+	 * Use `{id}` as a placeholder for the workspace ID, or provide a function.
+	 *
+	 * Omit to skip the prefetch and use pure WebSocket sync.
+	 */
+	snapshotUrl?: string | ((workspaceId: string) => string);
 };
 
 /**
@@ -83,6 +95,12 @@ export function createWsSyncExtension(
 				? config.url(workspaceId)
 				: config.url.replace('{id}', workspaceId);
 
+		// Resolve snapshotUrl — supports string with {id} placeholder or function
+		const resolvedSnapshotUrl =
+			typeof config.snapshotUrl === 'function'
+				? config.snapshotUrl(workspaceId)
+				: config.snapshotUrl?.replace('{id}', workspaceId);
+
 		// Build provider — defer connection until prior extensions are ready
 		let provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
@@ -92,6 +110,7 @@ export function createWsSyncExtension(
 				: undefined,
 			connect: false,
 			awareness: awareness.raw,
+			snapshotUrl: resolvedSnapshotUrl,
 		});
 
 		// Wait for all prior extensions (persistence, etc.) then connect.
@@ -121,7 +140,11 @@ export function createWsSyncExtension(
 			 * ```
 			 */
 			reconnect(
-				newConfig: { url?: string; getToken?: () => Promise<string> } = {},
+				newConfig: {
+					url?: string;
+					getToken?: () => Promise<string>;
+					snapshotUrl?: string;
+				} = {},
 			) {
 				provider.destroy();
 				provider = createSyncProvider({
@@ -130,6 +153,7 @@ export function createWsSyncExtension(
 					getToken: newConfig.getToken,
 					connect: true,
 					awareness: awareness.raw,
+					snapshotUrl: newConfig.snapshotUrl ?? resolvedSnapshotUrl,
 				});
 			},
 			whenReady,

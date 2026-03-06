@@ -43,6 +43,17 @@ export type SyncProviderConfig = {
 
 	/** WebSocket constructor override for testing or non-browser environments. */
 	WebSocketConstructor?: WebSocketConstructor;
+
+	/**
+	 * HTTP URL for initial state snapshot before WebSocket connect.
+	 *
+	 * When provided, fetches the full document via HTTP GET and applies it
+	 * locally before opening the WebSocket. This makes the subsequent WebSocket
+	 * syncStep2 tiny (only changes since the GET), avoiding large-message issues.
+	 *
+	 * Omit to skip the prefetch and use pure WebSocket sync.
+	 */
+	snapshotUrl?: string;
 };
 
 /**

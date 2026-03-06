@@ -1,20 +1,19 @@
 import type { UpdateLog } from '@epicenter/sync-core';
-import * as Y from 'yjs';
 
 /**
- * UpdateLog implementation backed by Durable Object SQLite.
+ * Create an UpdateLog backed by Durable Object SQLite.
  *
  * Uses the DO's built-in SQLite database for persistent Y.Doc update storage.
  * SQLite in Durable Objects is GA with 10GB per DO.
  */
-export class DOSqliteUpdateLog implements UpdateLog {
-	private initialized = false;
+export function createDoSqliteUpdateLog(
+	storage: DurableObjectStorage,
+): UpdateLog {
+	let initialized = false;
 
-	constructor(private storage: DurableObjectStorage) {}
-
-	private ensureTable(): void {
-		if (this.initialized) return;
-		this.storage.sql.exec(`
+	function ensureTable() {
+		if (initialized) return;
+		storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS updates (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				doc_id TEXT NOT NULL,
@@ -22,45 +21,40 @@ export class DOSqliteUpdateLog implements UpdateLog {
 				created_at INTEGER DEFAULT (unixepoch())
 			)
 		`);
-		this.initialized = true;
+		initialized = true;
 	}
 
-	async append(docId: string, update: Uint8Array): Promise<void> {
-		this.ensureTable();
-		this.storage.sql.exec(
-			'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
-			docId,
-			update,
-		);
-	}
-
-	async readAll(docId: string): Promise<Uint8Array[]> {
-		this.ensureTable();
-		const cursor = this.storage.sql.exec(
-			'SELECT data FROM updates WHERE doc_id = ? ORDER BY id',
-			docId,
-		);
-		return [...cursor].map((row) => new Uint8Array(row.data as ArrayBuffer));
-	}
-
-	async replaceAll(docId: string, mergedUpdate: Uint8Array): Promise<void> {
-		this.ensureTable();
-		this.storage.transactionSync(() => {
-			this.storage.sql.exec('DELETE FROM updates WHERE doc_id = ?', docId);
-			this.storage.sql.exec(
+	return {
+		append(docId, update) {
+			ensureTable();
+			storage.sql.exec(
 				'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
 				docId,
-				mergedUpdate,
+				update,
 			);
-		});
-	}
+		},
 
-	/** Compact all updates for a doc — called on last disconnect before hibernation. */
-	async compactAll(docId: string): Promise<void> {
-		const updates = await this.readAll(docId);
-		if (updates.length <= 1) return;
+		readAll(docId) {
+			ensureTable();
+			const cursor = storage.sql.exec(
+				'SELECT data FROM updates WHERE doc_id = ? ORDER BY id',
+				docId,
+			);
+			return [...cursor].map(
+				(row) => new Uint8Array(row.data as ArrayBuffer),
+			);
+		},
 
-		const merged = Y.mergeUpdatesV2(updates);
-		await this.replaceAll(docId, merged);
-	}
+		replaceAll(docId, mergedUpdate) {
+			ensureTable();
+			storage.transactionSync(() => {
+				storage.sql.exec('DELETE FROM updates WHERE doc_id = ?', docId);
+				storage.sql.exec(
+					'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
+					docId,
+					mergedUpdate,
+				);
+			});
+		},
+	};
 }

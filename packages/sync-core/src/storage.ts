@@ -15,6 +15,7 @@
 
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Storage Interface
@@ -37,7 +38,7 @@ export type UpdateLog = {
 	 * @param docId - Unique document identifier
 	 * @param update - Raw Yjs update bytes
 	 */
-	append(docId: string, update: Uint8Array): Promise<void>;
+	append(docId: string, update: Uint8Array): void | Promise<void>;
 
 	/**
 	 * Read all stored updates (snapshot + deltas) for a document.
@@ -48,7 +49,7 @@ export type UpdateLog = {
 	 * @param docId - Unique document identifier
 	 * @returns Array of raw Yjs update bytes, empty array if document not found
 	 */
-	readAll(docId: string): Promise<Uint8Array[]>;
+	readAll(docId: string): Uint8Array[] | Promise<Uint8Array[]>;
 
 	/**
 	 * Replace all updates with a single compacted snapshot.
@@ -59,8 +60,20 @@ export type UpdateLog = {
 	 * @param docId - Unique document identifier
 	 * @param mergedUpdate - Single Yjs update containing all document state
 	 */
-	replaceAll(docId: string, mergedUpdate: Uint8Array): Promise<void>;
+	replaceAll(docId: string, mergedUpdate: Uint8Array): void | Promise<void>;
 };
+
+/** Compact all updates for a doc into a single merged blob. */
+export async function compactUpdateLog(
+	storage: UpdateLog,
+	docId: string,
+): Promise<void> {
+	const updates = await storage.readAll(docId);
+	if (updates.length <= 1) return;
+
+	const merged = Y.mergeUpdatesV2(updates);
+	await storage.replaceAll(docId, merged);
+}
 
 // ============================================================================
 // Binary Frame Encoding/Decoding
@@ -148,7 +161,7 @@ export function createMemoryUpdateLog(): UpdateLog {
 	const docs = new Map<string, Uint8Array[]>();
 
 	return {
-		async append(docId, update) {
+		append(docId, update) {
 			let updates = docs.get(docId);
 			if (!updates) {
 				updates = [];
@@ -157,11 +170,11 @@ export function createMemoryUpdateLog(): UpdateLog {
 			updates.push(update);
 		},
 
-		async readAll(docId) {
+		readAll(docId) {
 			return docs.get(docId) ?? [];
 		},
 
-		async replaceAll(docId, mergedUpdate) {
+		replaceAll(docId, mergedUpdate) {
 			docs.set(docId, [mergedUpdate]);
 		},
 	};

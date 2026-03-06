@@ -1,11 +1,10 @@
 import { Database } from 'bun:sqlite';
 import type { UpdateLog } from '@epicenter/sync-core';
-import * as Y from 'yjs';
 
 /**
  * UpdateLog implementation backed by bun:sqlite.
  *
- * Same schema as DOSqliteUpdateLog but uses Bun's SQLite driver.
+ * Same schema as createDoSqliteUpdateLog but uses Bun's SQLite driver.
  * The database file lives on disk so data survives process restarts.
  */
 export class BunSqliteUpdateLog implements UpdateLog {
@@ -37,31 +36,22 @@ export class BunSqliteUpdateLog implements UpdateLog {
 		);
 	}
 
-	async append(docId: string, update: Uint8Array): Promise<void> {
+	append(docId: string, update: Uint8Array): void {
 		this.stmtAppend.run({ $docId: docId, $data: update });
 	}
 
-	async readAll(docId: string): Promise<Uint8Array[]> {
+	readAll(docId: string): Uint8Array[] {
 		const rows = this.stmtReadAll.all({ $docId: docId }) as Array<{
 			data: Buffer;
 		}>;
 		return rows.map((row) => new Uint8Array(row.data));
 	}
 
-	async replaceAll(docId: string, mergedUpdate: Uint8Array): Promise<void> {
+	replaceAll(docId: string, mergedUpdate: Uint8Array): void {
 		this.db.transaction(() => {
 			this.stmtDelete.run({ $docId: docId });
 			this.stmtAppend.run({ $docId: docId, $data: mergedUpdate });
 		})();
-	}
-
-	/** Compact all updates for a doc into a single merged blob. */
-	async compactAll(docId: string): Promise<void> {
-		const updates = await this.readAll(docId);
-		if (updates.length <= 1) return;
-
-		const merged = Y.mergeUpdatesV2(updates);
-		await this.replaceAll(docId, merged);
 	}
 
 	close(): void {

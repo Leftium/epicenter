@@ -11,9 +11,8 @@ export { authMiddleware } from './auth/middleware';
 export { corsMiddleware } from './cors';
 // Factory
 export { factory } from './factory';
-// Proxy handlers
-export { handleAiChat } from './proxy/chat';
-export { handleProxy } from './proxy/passthrough';
+// AI chat handler
+export { handleAiChat } from './ai-chat';
 // Sync re-exports
 export {
 	type ConnectionId,

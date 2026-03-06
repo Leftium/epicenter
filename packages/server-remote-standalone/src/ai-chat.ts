@@ -13,8 +13,31 @@ import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
-import { AiChatError } from './errors';
-import type { ApiKeyBindings, Env } from './types';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+
+type ApiKeyBindings = {
+	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
+};
+
+type Env = { Bindings: ApiKeyBindings };
+
+const AiChatError = defineErrors({
+	UnsupportedProvider: ({ provider }: { provider: string | undefined }) => ({
+		message: `Unsupported provider: ${provider}`,
+		provider,
+	}),
+	MissingModel: () => ({
+		message: 'Missing model',
+	}),
+	MissingMessages: () => ({
+		message: 'Missing or empty messages',
+	}),
+	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
+		message: `${provider} not configured`,
+		provider,
+	}),
+});
+type AiChatError = InferErrors<typeof AiChatError>;
 
 interface AiChatRequestBody {
 	messages: unknown[];
@@ -43,8 +66,6 @@ function createAdapter(
 	model: string,
 	apiKey: string,
 ): AnyTextAdapter {
-	// Model names arrive as dynamic strings from the client — cast to `any`
-	// since the create* factories expect branded string literals.
 	const m = model as any;
 	switch (provider) {
 		case 'openai':

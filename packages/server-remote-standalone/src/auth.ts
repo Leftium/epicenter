@@ -1,9 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import {
-	type AuthWithOAuth,
-	baseAuthConfig,
-	trustedClients,
-} from './shared';
+import type { AuthWithOAuth } from './types';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
@@ -139,7 +135,8 @@ function createBetterAuthInstance(config: {
 	socialProviders?: Record<string, { clientId: string; clientSecret: string }>;
 }) {
 	const auth = betterAuth({
-		...baseAuthConfig,
+		basePath: '/auth',
+		emailAndPassword: { enabled: true },
 		database: config.database as Parameters<typeof betterAuth>[0]['database'],
 		secret: config.secret,
 		trustedOrigins: config.trustedOrigins,
@@ -152,7 +149,24 @@ function createBetterAuthInstance(config: {
 				consentPage: '/consent',
 				requirePKCE: true,
 				allowDynamicClientRegistration: true,
-				trustedClients: [...trustedClients],
+				trustedClients: [
+					{
+						clientId: 'epicenter-desktop',
+						name: 'Epicenter Desktop',
+						type: 'native',
+						redirectUrls: ['tauri://localhost/auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+					{
+						clientId: 'epicenter-mobile',
+						name: 'Epicenter Mobile',
+						type: 'native',
+						redirectUrls: ['epicenter://auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+				],
 			}),
 		],
 	});

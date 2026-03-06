@@ -1,12 +1,13 @@
 import {
-	authMiddleware,
-	corsMiddleware,
-	factory,
-	handleAiChat,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
-} from './shared';
+} from '@better-auth/oauth-provider';
+import { Hono } from 'hono';
+import { handleAiChat } from './ai-chat';
 import type { StandaloneAuthConfig } from './auth';
+import { authMiddleware } from './auth-middleware';
+import { corsMiddleware } from './cors';
+import type { Env } from './types';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';
 import { mountSyncRoutes, websocket } from './sync-adapter';
@@ -70,7 +71,7 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	// --- Build the Hono app ---
 
 	const { auth, betterAuth } = createStandaloneAuth(authConfig);
-	const app = factory.createApp();
+	const app = new Hono<Env>();
 
 	// CORS (skips WebSocket upgrades)
 	app.use('*', corsMiddleware);

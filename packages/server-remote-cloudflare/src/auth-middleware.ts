@@ -1,8 +1,15 @@
-import { AuthError } from '../errors';
-import { factory } from '../factory';
+import { defineErrors } from 'wellcrafted/error';
+import { createMiddleware } from 'hono/factory';
+import type { Env } from './types';
+
+const AuthError = defineErrors({
+	Unauthorized: () => ({
+		message: 'Unauthorized',
+	}),
+});
 
 /** Auth middleware that validates sessions via Better Auth on the context. */
-export const authMiddleware = factory.createMiddleware(async (c, next) => {
+export const authMiddleware = createMiddleware<Env>(async (c, next) => {
 	// WebSocket clients pass the token as a query param (no Authorization
 	// header on upgrade requests). Normalise into a Bearer header so
 	// Better Auth's bearer() plugin handles extraction uniformly.

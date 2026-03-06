@@ -1,9 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import {
-	type AuthWithOAuth,
-	baseAuthConfig,
-	trustedClients,
-} from './shared';
+import type { AuthWithOAuth } from './types';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -18,7 +14,8 @@ export function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 	const db = drizzle(sql, { schema });
 
 	return betterAuth({
-		...baseAuthConfig,
+		basePath: '/auth',
+		emailAndPassword: { enabled: true },
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BETTER_AUTH_URL,
 		secret: env.BETTER_AUTH_SECRET,
@@ -30,7 +27,24 @@ export function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 				consentPage: '/consent',
 				requirePKCE: true,
 				allowDynamicClientRegistration: true,
-				trustedClients: [...trustedClients],
+				trustedClients: [
+					{
+						clientId: 'epicenter-desktop',
+						name: 'Epicenter Desktop',
+						type: 'native',
+						redirectUrls: ['tauri://localhost/auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+					{
+						clientId: 'epicenter-mobile',
+						name: 'Epicenter Mobile',
+						type: 'native',
+						redirectUrls: ['epicenter://auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+				],
 			}),
 		],
 		session: {

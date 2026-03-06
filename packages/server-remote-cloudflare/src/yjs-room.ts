@@ -2,25 +2,17 @@ import { DurableObject } from 'cloudflare:workers';
 import {
 	Awareness,
 	type ConnectionState,
-	compactUpdateLog,
-	handleHttpGetDoc,
-	handleHttpSync,
+	decodeSyncRequest,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	type UpdateLog,
+	stateVectorsEqual,
 } from '@epicenter/sync-core';
 import * as Y from 'yjs';
 
 type WsAttachment = {
 	controlledClientIds: number[];
 };
-
-/**
- * Storage key used by the UpdateLog. Since each DO instance hosts exactly one
- * room (selected externally via `idFromName(roomId)`), we use a fixed key.
- */
-const DOC_ID = 'doc';
 
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
@@ -43,14 +35,14 @@ const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
  * re-validate — it trusts the Worker boundary.
  */
 export class YjsRoom extends DurableObject {
-	private updateLog: UpdateLog;
+	private sql: DurableObjectStorage['sql'];
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
 	private connectionStates: Map<WebSocket, ConnectionState>;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.updateLog = createDoSqliteUpdateLog(ctx.storage);
+		this.sql = ctx.storage.sql;
 		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
@@ -61,7 +53,8 @@ export class YjsRoom extends DurableObject {
 		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
 		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
 		this.ctx.blockConcurrencyWhile(async () => {
-			this.doc = await this.loadOrCreateDoc();
+			this.initSchema();
+			this.doc = this.loadDoc();
 			this.awareness = new Awareness(this.doc);
 
 			// On wake from hibernation, restore connection state from attachments.
@@ -83,65 +76,122 @@ export class YjsRoom extends DurableObject {
 		});
 	}
 
-	private async loadOrCreateDoc(): Promise<Y.Doc> {
+	// --- Storage: direct SQLite, one doc per DO ---
+
+	private initSchema(): void {
+		this.sql.exec(`
+			CREATE TABLE IF NOT EXISTS updates (
+				id INTEGER PRIMARY KEY AUTOINCREMENT,
+				data BLOB NOT NULL
+			)
+		`);
+		// Migrate from old schema that had doc_id and created_at columns.
+		// DROP COLUMN is safe on DO SQLite (uses modern SQLite ≥ 3.35).
+		try { this.sql.exec('ALTER TABLE updates DROP COLUMN doc_id'); } catch { /* already migrated */ }
+		try { this.sql.exec('ALTER TABLE updates DROP COLUMN created_at'); } catch { /* already migrated */ }
+		this.sql.exec('DROP INDEX IF EXISTS idx_updates_doc_id');
+	}
+
+	private loadDoc(): Y.Doc {
 		const doc = new Y.Doc();
-		const updates = await this.updateLog.readAll(DOC_ID);
-		if (updates.length > 0) {
-			// Storage uses V2 format for better compression, while the wire
-			// protocol (y-protocols) uses V1. This is safe because Yjs fires
-			// both `update` and `updateV2` events regardless of input format.
-			const merged = Y.mergeUpdatesV2(updates);
+		const rows = [
+			...this.sql.exec('SELECT data FROM updates ORDER BY id'),
+		];
+		if (rows.length > 0) {
+			const merged = Y.mergeUpdatesV2(
+				rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+			);
 			Y.applyUpdateV2(doc, merged);
 		}
 
 		// Persist incremental updates to SQLite.
-		// Note: storage.sql.exec is synchronous in DO SQLite, so the callback
+		// storage.sql.exec is synchronous in DO SQLite, so the callback
 		// runs synchronously despite the event system.
 		doc.on('updateV2', (update: Uint8Array) => {
-			this.updateLog.append(DOC_ID, update);
+			this.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
 		});
 
 		return doc;
 	}
 
-	// --- WebSocket upgrade (called from worker via stub.fetch) ---
+	private compact(): void {
+		const rows = [
+			...this.sql.exec('SELECT data FROM updates ORDER BY id'),
+		];
+		if (rows.length <= 1) return;
+
+		const merged = Y.mergeUpdatesV2(
+			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+		);
+		this.ctx.storage.transactionSync(() => {
+			this.sql.exec('DELETE FROM updates');
+			this.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
+		});
+	}
+
+	// --- HTTP handlers: use the live Y.Doc directly ---
 
 	override async fetch(request: Request): Promise<Response> {
-		// WebSocket upgrade
 		if (request.headers.get('Upgrade') === 'websocket') {
 			return this.handleWebSocketUpgrade();
 		}
 
-		// HTTP sync: POST
 		if (request.method === 'POST') {
-			const contentLength = parseInt(
-				request.headers.get('content-length') ?? '0',
-				10,
-			);
-			if (contentLength > MAX_MESSAGE_BYTES) {
-				return new Response('Payload too large', { status: 413 });
-			}
-			const body = new Uint8Array(await request.arrayBuffer());
-			const result = await handleHttpSync(this.updateLog, DOC_ID, body);
-			if (!result.body) return new Response(null, { status: result.status });
-			return new Response(result.body, {
-				status: result.status,
-				headers: { 'content-type': 'application/octet-stream' },
-			});
+			return this.handleHttpSync(request);
 		}
 
-		// HTTP sync: GET (document snapshot)
 		if (request.method === 'GET') {
-			const result = await handleHttpGetDoc(this.updateLog, DOC_ID);
-			if (!result.body) return new Response(null, { status: 404 });
-			return new Response(result.body, {
-				status: 200,
-				headers: { 'content-type': 'application/octet-stream' },
-			});
+			return this.handleHttpGetDoc();
 		}
 
 		return new Response('Method not allowed', { status: 405 });
 	}
+
+	/**
+	 * HTTP sync: decode client state vector + optional update, diff against
+	 * the live Y.Doc. Zero storage reads — the doc is always in memory.
+	 */
+	private async handleHttpSync(request: Request): Promise<Response> {
+		const contentLength = parseInt(
+			request.headers.get('content-length') ?? '0',
+			10,
+		);
+		if (contentLength > MAX_MESSAGE_BYTES) {
+			return new Response('Payload too large', { status: 413 });
+		}
+
+		const body = new Uint8Array(await request.arrayBuffer());
+		const { stateVector: clientSV, update } = decodeSyncRequest(body);
+
+		// Apply client's changes to the live doc (triggers updateV2 → persist)
+		if (update.byteLength > 0) {
+			Y.applyUpdateV2(this.doc, update, 'http');
+		}
+
+		const serverSV = Y.encodeStateVector(this.doc);
+		if (stateVectorsEqual(serverSV, clientSV)) {
+			return new Response(null, { status: 304 });
+		}
+
+		const diff = Y.encodeStateAsUpdateV2(this.doc, clientSV);
+		return new Response(diff, {
+			status: 200,
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	}
+
+	/** HTTP snapshot: encode the full doc state from memory. */
+	private handleHttpGetDoc(): Response {
+		const update = Y.encodeStateAsUpdateV2(this.doc);
+		// Empty doc (no meaningful content) returns the same as V2-encoded empty state.
+		// A brand-new Y.Doc still produces a valid (small) update, so always return 200.
+		return new Response(update, {
+			status: 200,
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	}
+
+	// --- WebSocket upgrade ---
 
 	private handleWebSocketUpgrade(): Response {
 		const pair = new WebSocketPair();
@@ -246,7 +296,7 @@ export class YjsRoom extends DurableObject {
 		// Safe from races: DO is single-threaded, so no new fetch() can run
 		// until this handler completes.
 		if (this.connectionStates.size === 0) {
-			await compactUpdateLog(this.updateLog, DOC_ID);
+			this.compact();
 		}
 
 		try {
@@ -262,69 +312,11 @@ export class YjsRoom extends DurableObject {
 
 	/** Periodic compaction: merge accumulated updates into a single snapshot. */
 	override async alarm(): Promise<void> {
-		await compactUpdateLog(this.updateLog, DOC_ID);
+		this.compact();
 
 		// Reschedule if there are still active connections.
 		if (this.ctx.getWebSockets().length > 0) {
 			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
 		}
 	}
-}
-
-/**
- * Create an UpdateLog backed by Durable Object SQLite.
- *
- * Uses the DO's built-in SQLite database for persistent Y.Doc update storage.
- * SQLite in Durable Objects is GA with 10GB per DO.
- */
-function createDoSqliteUpdateLog(storage: DurableObjectStorage): UpdateLog {
-	let initialized = false;
-
-	function ensureTable() {
-		if (initialized) return;
-		storage.sql.exec(`
-			CREATE TABLE IF NOT EXISTS updates (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				doc_id TEXT NOT NULL,
-				data BLOB NOT NULL,
-				created_at INTEGER DEFAULT (unixepoch())
-			)
-		`);
-		storage.sql.exec(
-			'CREATE INDEX IF NOT EXISTS idx_updates_doc_id ON updates (doc_id)',
-		);
-		initialized = true;
-	}
-
-	return {
-		append(docId, update) {
-			ensureTable();
-			storage.sql.exec(
-				'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
-				docId,
-				update,
-			);
-		},
-
-		readAll(docId) {
-			ensureTable();
-			const cursor = storage.sql.exec(
-				'SELECT data FROM updates WHERE doc_id = ? ORDER BY id',
-				docId,
-			);
-			return [...cursor].map((row) => new Uint8Array(row.data as ArrayBuffer));
-		},
-
-		replaceAll(docId, mergedUpdate) {
-			ensureTable();
-			storage.transactionSync(() => {
-				storage.sql.exec('DELETE FROM updates WHERE doc_id = ?', docId);
-				storage.sql.exec(
-					'INSERT INTO updates (doc_id, data) VALUES (?, ?)',
-					docId,
-					mergedUpdate,
-				);
-			});
-		},
-	};
 }

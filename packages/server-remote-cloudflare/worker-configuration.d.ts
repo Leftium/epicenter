@@ -10,6 +10,8 @@ declare namespace Cloudflare {
 		SESSION_KV: KVNamespace;
 		HYPERDRIVE: Hyperdrive;
 		BETTER_AUTH_SECRET: string;
+        OPENAI_API_KEY: string;
+        ANTHROPIC_API_KEY: string;
 		YJS_ROOM: DurableObjectNamespace /* YjsRoom */;
 	}
 }

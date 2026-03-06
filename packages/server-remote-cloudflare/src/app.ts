@@ -22,12 +22,7 @@ type Auth = ReturnType<typeof createAuth>;
 type Session = Auth['$Infer']['Session'];
 
 export type Env = {
-	Bindings: {
-		OPENAI_API_KEY?: string;
-		ANTHROPIC_API_KEY?: string;
-		GEMINI_API_KEY?: string;
-		GROK_API_KEY?: string;
-	} & Cloudflare.Env;
+	Bindings: Cloudflare.Env;
 	Variables: {
 		auth: Auth;
 		user: Session['user'];
@@ -46,7 +41,7 @@ export const BASE_AUTH_CONFIG = {
 } as const;
 
 /** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
-function createAuth(env: Cloudflare.Env) {
+function createAuth(env: Env['Bindings']) {
 	const sql = postgres(env.HYPERDRIVE.connectionString);
 	const db = drizzle(sql, { schema });
 

@@ -37,9 +37,9 @@
 		"required": [
 			"BETTER_AUTH_SECRET",
 			"OPENAI_API_KEY",
-			"ANTHROPIC_API_KEY",
-			"GEMINI_API_KEY",
-			"GROK_API_KEY"
+			"ANTHROPIC_API_KEY"
+			// "GEMINI_API_KEY",
+			// "GROK_API_KEY"
 		]
 	},
 

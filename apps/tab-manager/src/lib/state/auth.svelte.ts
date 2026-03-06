@@ -3,7 +3,7 @@
  *
  * Stores a Better Auth session token and cached user info in
  * chrome.storage.local, exposed as reactive Svelte 5 state via
- * `createExtensionState` with schema validation.
+ * `createStorageState` with schema validation.
  *
  * Sign-in flow:
  * 1. POST /auth/sign-in/email -> { token, user }
@@ -13,7 +13,7 @@
  */
 
 import { type } from 'arktype';
-import { createExtensionState } from './extension-state.svelte';
+import { createStorageState } from './storage-state.svelte';
 import { remoteServerUrl } from './settings.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,13 +31,13 @@ const AuthUser = type({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Reactive auth token. Read via `authToken.current`. */
-export const authToken = createExtensionState('local:authToken', {
+export const authToken = createStorageState('local:authToken', {
 	fallback: null,
 	schema: type('string').or('null'),
 });
 
 /** Reactive auth user. Read via `authUser.current`. */
-export const authUser = createExtensionState('local:authUser', {
+export const authUser = createStorageState('local:authUser', {
 	fallback: null,
 	schema: AuthUser.or('null'),
 });

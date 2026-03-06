@@ -12,9 +12,9 @@
  * @example
  * ```typescript
  * import { type } from 'arktype';
- * import { createExtensionState } from './extension-state.svelte';
+ * import { createStorageState } from './storage-state.svelte';
  *
- * export const serverUrl = createExtensionState('local:serverUrl', {
+ * export const serverUrl = createStorageState('local:serverUrl', {
  *   fallback: 'https://api.epicenter.so',
  *   schema: type('string'),
  * });
@@ -35,7 +35,7 @@ import { type StorageItemKey, storage } from '@wxt-dev/storage';
  * validated — if they don't match the schema, the fallback is used
  * (without writing it back to storage).
  */
-export function createExtensionState<TSchema extends StandardSchemaV1>(
+export function createStorageState<TSchema extends StandardSchemaV1>(
 	key: StorageItemKey,
 	{
 		fallback,

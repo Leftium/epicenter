@@ -21,18 +21,18 @@
  */
 
 import { type } from 'arktype';
-import { createExtensionState } from './extension-state.svelte';
+import { createStorageState } from './storage-state.svelte';
 
 const DEFAULT_SERVER_URL = 'https://api.epicenter.so';
 
 /** Reactive local server URL. */
-export const serverUrl = createExtensionState('local:serverUrl', {
+export const serverUrl = createStorageState('local:serverUrl', {
 	fallback: DEFAULT_SERVER_URL,
 	schema: type('string'),
 });
 
 /** Reactive remote server URL (AI, auth, keys). */
-export const remoteServerUrl = createExtensionState('local:remoteServerUrl', {
+export const remoteServerUrl = createStorageState('local:remoteServerUrl', {
 	fallback: DEFAULT_SERVER_URL,
 	schema: type('string'),
 });

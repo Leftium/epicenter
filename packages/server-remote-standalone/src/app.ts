@@ -3,10 +3,6 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import {
-	PROVIDER_ENV_VARS,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
@@ -185,7 +181,10 @@ async function seedAdminIfNeeded(auth: AdminSeeder) {
 // ---------------------------------------------------------------------------
 
 type ApiKeyBindings = {
-	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
+	OPENAI_API_KEY?: string;
+	ANTHROPIC_API_KEY?: string;
+	GEMINI_API_KEY?: string;
+	GROK_API_KEY?: string;
 };
 
 type Session = StandaloneAuth['$Infer']['Session'];

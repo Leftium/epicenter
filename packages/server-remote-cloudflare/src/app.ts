@@ -3,10 +3,6 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
-import {
-	PROVIDER_ENV_VARS,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -29,7 +25,10 @@ type Session = Auth['$Infer']['Session'];
 
 export type Env = {
 	Bindings: {
-		[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
+		OPENAI_API_KEY?: string;
+		ANTHROPIC_API_KEY?: string;
+		GEMINI_API_KEY?: string;
+		GROK_API_KEY?: string;
 	} & Cloudflare.Env;
 	Variables: {
 		auth: Auth;

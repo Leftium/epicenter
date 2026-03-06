@@ -1,9 +1,4 @@
 import {
-	isSupportedProvider,
-	PROVIDER_ENV_VARS,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
-import {
 	type AnyTextAdapter,
 	chat,
 	toServerSentEventsResponse,
@@ -15,6 +10,13 @@ import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
 import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
+
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok'] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+function isSupportedProvider(value: string): value is SupportedProvider {
+	return SUPPORTED_PROVIDERS.includes(value as SupportedProvider);
+}
 
 const AiChatError = defineErrors({
 	UnsupportedProvider: ({ provider }: { provider: string | undefined }) => ({
@@ -46,7 +48,16 @@ function getProviderApiKey(
 	env: Env['Bindings'],
 	provider: SupportedProvider,
 ): string | undefined {
-	return env[PROVIDER_ENV_VARS[provider]];
+	switch (provider) {
+		case 'openai':
+			return env.OPENAI_API_KEY;
+		case 'anthropic':
+			return env.ANTHROPIC_API_KEY;
+		case 'gemini':
+			return env.GEMINI_API_KEY;
+		case 'grok':
+			return env.GROK_API_KEY;
+	}
 }
 
 /**

@@ -1,7 +1,5 @@
-import {
-	SUPPORTED_PROVIDERS,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok'] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 
 /**
  * Provider API base URLs for the remote server proxy.

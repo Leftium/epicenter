@@ -50,13 +50,6 @@ export {
 	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
 } from './protocol';
-// Providers (AI provider constants)
-export {
-	isSupportedProvider,
-	PROVIDER_ENV_VARS,
-	SUPPORTED_PROVIDERS,
-	type SupportedProvider,
-} from './providers';
 // Rooms (connection lifecycle)
 export { createRoomManager } from './rooms';
 // Storage (Yjs update log)

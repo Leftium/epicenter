@@ -17,7 +17,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createWsSyncExtension({
- *     url: 'ws://localhost:3913/rooms/{id}',
+ *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```
  *
@@ -26,8 +26,8 @@ import type { ExtensionFactory } from '../workspace/types';
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
  *   .withExtension('sync', createWsSyncExtension({
- *     url: 'wss://sync.epicenter.so/rooms/{id}',
- *     snapshotUrl: 'https://sync.epicenter.so/rooms/{id}',
+ *     url: (id) => `wss://sync.epicenter.so/rooms/${id}`,
+ *     snapshotUrl: (id) => `https://sync.epicenter.so/rooms/${id}`,
  *     getToken: async (workspaceId) => {
  *       const res = await fetch('/api/sync/token', {
  *         method: 'POST',
@@ -39,15 +39,13 @@ import type { ExtensionFactory } from '../workspace/types';
  * ```
  */
 export type WsSyncExtensionConfig = {
-	/**
-	 * WebSocket URL. Use `{id}` as a placeholder for the workspace ID,
-	 * or provide a function that receives the workspace ID and returns the URL.
-	 */
-	url: string | ((workspaceId: string) => string);
+	/** WebSocket URL for the room. */
+	url: (workspaceId: string) => string;
 
 	/**
-	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
-	 * Receives the workspace ID as argument.
+	 * Token fetcher for authenticated mode. Called on each connect/reconnect.
+	 * The same token is used for both WebSocket (`?token=` query param) and
+	 * HTTP snapshot (`Authorization: Bearer` header).
 	 */
 	getToken?: (workspaceId: string) => Promise<string>;
 
@@ -56,11 +54,9 @@ export type WsSyncExtensionConfig = {
 	 *
 	 * When provided, fetches the full document via HTTP GET to pre-populate
 	 * the local Y.Doc, making the subsequent WebSocket syncStep2 tiny.
-	 * Use `{id}` as a placeholder for the workspace ID, or provide a function.
-	 *
 	 * Omit to skip the prefetch and use pure WebSocket sync.
 	 */
-	snapshotUrl?: string | ((workspaceId: string) => string);
+	snapshotUrl?: (workspaceId: string) => string;
 };
 
 /**
@@ -89,17 +85,8 @@ export function createWsSyncExtension(
 	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
-		// Resolve URL — supports string with {id} placeholder or function
-		const resolvedUrl =
-			typeof config.url === 'function'
-				? config.url(workspaceId)
-				: config.url.replace('{id}', workspaceId);
-
-		// Resolve snapshotUrl — supports string with {id} placeholder or function
-		const resolvedSnapshotUrl =
-			typeof config.snapshotUrl === 'function'
-				? config.snapshotUrl(workspaceId)
-				: config.snapshotUrl?.replace('{id}', workspaceId);
+		const resolvedUrl = config.url(workspaceId);
+		const resolvedSnapshotUrl = config.snapshotUrl?.(workspaceId);
 
 		// Build provider — defer connection until prior extensions are ready
 		let provider: SyncProvider = createSyncProvider({

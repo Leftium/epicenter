@@ -4,28 +4,25 @@ import {
 } from '@epicenter/sync-core';
 import type { Context } from 'hono';
 import type { Env } from '../types';
+import { getProviderApiKey } from './api-key';
 
 const PROVIDER_CONFIG = {
 	openai: {
-		envKey: 'OPENAI_API_KEY',
 		baseUrl: 'https://api.openai.com',
 		authHeader: 'authorization',
 		format: 'Bearer',
 	},
 	anthropic: {
-		envKey: 'ANTHROPIC_API_KEY',
 		baseUrl: 'https://api.anthropic.com',
 		authHeader: 'x-api-key',
 		format: 'raw',
 	},
 	gemini: {
-		envKey: 'GEMINI_API_KEY',
 		baseUrl: 'https://generativelanguage.googleapis.com',
 		authHeader: 'authorization',
 		format: 'Bearer',
 	},
 	grok: {
-		envKey: 'GROK_API_KEY',
 		baseUrl: 'https://api.x.ai',
 		authHeader: 'authorization',
 		format: 'Bearer',
@@ -33,7 +30,6 @@ const PROVIDER_CONFIG = {
 } as const satisfies Record<
 	SupportedProvider,
 	{
-		envKey: string;
 		baseUrl: string;
 		authHeader: string;
 		format: 'Bearer' | 'raw';
@@ -47,7 +43,7 @@ export async function handleProxy(c: Context<Env>) {
 	}
 
 	const config = PROVIDER_CONFIG[provider];
-	const apiKey = c.env[config.envKey] as string | undefined;
+	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
 		return c.json({ error: `${provider} not configured` }, 503);
 	}

@@ -1,10 +1,10 @@
 import {
 	isSupportedProvider,
-	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
 import type { Context } from 'hono';
 import type { Env } from '../types';
+import { getProviderApiKey } from './api-key';
 
 /** Provider API chat completion endpoints. */
 const PROVIDER_CHAT_URL: Record<SupportedProvider, string> = {
@@ -37,11 +37,10 @@ export async function handleAiChat(c: Context<Env>) {
 		return c.json({ error: `Unsupported provider: ${provider}` }, 400);
 	}
 
-	const envKey = PROVIDER_ENV_VARS[provider];
-	const apiKey = c.env[envKey] as string | undefined;
+	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
 		return c.json(
-			{ error: `${provider} not configured (missing ${String(envKey)})` },
+			{ error: `${provider} not configured` },
 			503,
 		);
 	}

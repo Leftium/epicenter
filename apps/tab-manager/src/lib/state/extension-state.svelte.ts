@@ -64,6 +64,19 @@ export function createExtensionState<TSchema extends StandardSchemaV1>(
 	let value = $state<T>(fallback);
 	let ready = $state(false);
 
+	/**
+	 * Number of writes we initiated that haven't resolved yet.
+	 *
+	 * chrome.storage fires `onChanged` for ALL writes — including our own.
+	 * Without this guard, the watch callback would echo our optimistic value
+	 * back (harmless but wasteful), or worse, revert the UI to a stale value
+	 * when rapid writes overlap (set "A" → set "B" → watch fires "A" → flicker).
+	 *
+	 * While writes are in-flight we suppress watch. Once the last write lands,
+	 * we re-read storage to pick up any external changes we missed.
+	 */
+	let writesInFlight = 0;
+
 	// Async init — load persisted value, validate, then mark ready.
 	void item.getValue().then((persisted) => {
 		value = validate(persisted) ?? fallback;
@@ -71,9 +84,25 @@ export function createExtensionState<TSchema extends StandardSchemaV1>(
 	});
 
 	// Sync external changes from other extension contexts, with validation.
+	// Suppressed while we have our own writes in-flight to avoid echo/flicker.
 	item.watch((newValue) => {
+		if (writesInFlight > 0) return;
 		value = validate(newValue) ?? fallback;
 	});
+
+	/** Persist a value and track the in-flight write. */
+	const writeToStorage = (newValue: T): Promise<void> => {
+		writesInFlight++;
+		return item.setValue(newValue).finally(() => {
+			writesInFlight--;
+			if (writesInFlight === 0) {
+				// Re-read to catch any external changes we suppressed.
+				void item.getValue().then((v) => {
+					value = validate(v) ?? fallback;
+				});
+			}
+		});
+	};
 
 	return {
 		/** Current reactive value. Starts as `fallback`, updates once loaded. */
@@ -81,16 +110,22 @@ export function createExtensionState<TSchema extends StandardSchemaV1>(
 			return value;
 		},
 
-		/** Optimistic set — updates UI immediately, persists async. */
+		/**
+		 * Optimistic set — updates the reactive `$state` immediately so Svelte
+		 * bindings reflect the change on the same tick, then persists async.
+		 */
 		set current(newValue: T) {
 			value = newValue;
-			void item.setValue(newValue);
+			void writeToStorage(newValue);
 		},
 
-		/** Awaitable set — updates UI immediately, resolves when persisted. */
+		/**
+		 * Awaitable set — updates UI immediately, resolves once persisted.
+		 * Useful when callers need to know the write completed.
+		 */
 		async set(newValue: T): Promise<void> {
 			value = newValue;
-			await item.setValue(newValue);
+			await writeToStorage(newValue);
 		},
 
 		/** Whether the initial async load has completed. */

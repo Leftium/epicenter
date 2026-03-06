@@ -4,6 +4,7 @@ import type {
 	TableHelper,
 } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
+import { WorkspaceApiError } from './errors';
 
 function resolveTable(
 	workspaces: Record<string, AnyWorkspaceClient>,
@@ -44,7 +45,7 @@ export function createTablesPlugin(
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', { error: 'Table not found' });
+					return status('Not Found', WorkspaceApiError.TableNotFound().error);
 				return tableHelper.getAllValid();
 			},
 			{
@@ -64,7 +65,7 @@ export function createTablesPlugin(
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', { error: 'Table not found' });
+					return status('Not Found', WorkspaceApiError.TableNotFound().error);
 				const result = tableHelper.get(params.id);
 				if (result.status === 'not_found') return status('Not Found', result);
 				if (result.status === 'invalid')
@@ -88,7 +89,7 @@ export function createTablesPlugin(
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', { error: 'Table not found' });
+					return status('Not Found', WorkspaceApiError.TableNotFound().error);
 				const result = tableHelper.parse(params.id, body);
 				if (result.status === 'invalid')
 					return status('Unprocessable Content', result);
@@ -112,7 +113,7 @@ export function createTablesPlugin(
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', { error: 'Table not found' });
+					return status('Not Found', WorkspaceApiError.TableNotFound().error);
 				const result = tableHelper.update(
 					params.id,
 					body as Record<string, unknown>,
@@ -139,7 +140,7 @@ export function createTablesPlugin(
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', { error: 'Table not found' });
+					return status('Not Found', WorkspaceApiError.TableNotFound().error);
 				return tableHelper.delete(params.id);
 			},
 			{

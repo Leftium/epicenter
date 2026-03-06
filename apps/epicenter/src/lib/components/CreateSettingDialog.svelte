@@ -1,5 +1,6 @@
 <script module lang="ts">
 	import { toSnakeCase } from '$lib/utils/slug';
+	import { extractErrorMessage } from 'wellcrafted/error';
 
 	export type CreateSettingDialogOptions = {
 		onConfirm: (data: { name: string; key: string }) => void | Promise<unknown>;
@@ -98,12 +99,7 @@
 						await result;
 						isOpen = false;
 					} catch (e) {
-						error =
-							e instanceof Error
-								? e.message
-								: typeof e === 'object' && e !== null && 'message' in e
-									? String((e as { message: unknown }).message)
-									: 'An error occurred';
+						error = extractErrorMessage(e);
 					} finally {
 						isPending = false;
 					}

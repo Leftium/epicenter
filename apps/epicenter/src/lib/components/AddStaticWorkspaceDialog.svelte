@@ -1,4 +1,6 @@
 <script lang="ts" module>
+	import { extractErrorMessage } from 'wellcrafted/error';
+
 	type AddStaticWorkspaceDialogOptions = {
 		onConfirm: (data: { id: string; name?: string }) => Promise<void>;
 	};
@@ -76,12 +78,7 @@
 					id = '';
 					name = '';
 				} catch (e) {
-					error =
-						e instanceof Error
-							? e.message
-							: typeof e === 'object' && e !== null && 'message' in e
-								? String((e as { message: unknown }).message)
-								: 'Failed to add workspace';
+					error = extractErrorMessage(e);
 				} finally {
 					isPending = false;
 				}

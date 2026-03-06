@@ -3,7 +3,6 @@ import {
 	corsMiddleware,
 	factory,
 	handleAiChat,
-	handleProxy,
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@epicenter/server-remote';
@@ -99,13 +98,12 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	);
 
 	// Auth guard for protected routes
-	for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {
+	for (const path of ['/ai/*', '/rooms/*']) {
 		app.use(path, authMiddleware);
 	}
 
-	// AI chat + provider proxy
+	// AI chat
 	app.post('/ai/chat', handleAiChat);
-	app.all('/proxy/:provider/*', handleProxy);
 
 	// Sync (WebSocket + HTTP)
 	const { roomManager, shutdown } = mountSyncRoutes(app, {

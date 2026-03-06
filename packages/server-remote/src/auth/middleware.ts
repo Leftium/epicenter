@@ -1,3 +1,4 @@
+import { AuthError } from '../errors';
 import { factory } from '../factory';
 
 /** Auth middleware that validates sessions via Better Auth on the context. */
@@ -11,7 +12,7 @@ export const authMiddleware = factory.createMiddleware(async (c, next) => {
 		: c.req.raw.headers;
 
 	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json({ error: 'Unauthorized' }, 401);
+	if (!result) return c.json(AuthError.Unauthorized(), 401);
 
 	c.set('user', result.user);
 	c.set('session', result.session);

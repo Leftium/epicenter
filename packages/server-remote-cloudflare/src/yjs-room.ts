@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import {
+	compactUpdateLog,
 	type ConnectionState,
 	createRoomManager,
 	handleHttpGetDoc,
@@ -7,9 +8,10 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
+	type UpdateLog,
 } from '@epicenter/sync-core';
 import * as Y from 'yjs';
-import { DOSqliteUpdateLog } from './storage';
+import { createDoSqliteUpdateLog } from './storage';
 
 type WsAttachment = {
 	controlledClientIds: number[];
@@ -22,13 +24,13 @@ type WsAttachment = {
  * pays zero compute when idle. One DO instance per room ID via `idFromName(roomId)`.
  */
 export class YjsRoom extends DurableObject {
-	private storage: DOSqliteUpdateLog;
+	private storage: UpdateLog;
 	private roomManager!: ReturnType<typeof createRoomManager>;
 	private connectionStates: Map<WebSocket, ConnectionState>;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.storage = new DOSqliteUpdateLog(ctx.storage);
+		this.storage = createDoSqliteUpdateLog(ctx.storage);
 		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
@@ -203,7 +205,7 @@ export class YjsRoom extends DurableObject {
 
 		// Compact storage when last connection leaves.
 		if (this.connectionStates.size === 0) {
-			await this.storage.compactAll('room');
+			await compactUpdateLog(this.storage, 'room');
 		}
 
 		ws.close(code, reason);

@@ -1,5 +1,6 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Elysia } from 'elysia';
+import { WorkspaceApiError } from './errors';
 
 /**
  * Create an Elysia plugin that exposes GET, PUT, and DELETE routes for all workspace KV entries.
@@ -23,7 +24,7 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
-					return status('Not Found', { error: 'Workspace not found' });
+					return status('Not Found', WorkspaceApiError.WorkspaceNotFound().error);
 				try {
 					const result = workspace.kv.get(key);
 					if (result.status === 'not_found') return status('Not Found', result);
@@ -31,9 +32,7 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 						return status('Unprocessable Content', result);
 					return result;
 				} catch (error) {
-					return status('Bad Request', {
-						error: error instanceof Error ? error.message : 'Unknown KV key',
-					});
+					return status('Bad Request', WorkspaceApiError.KvOperationFailed({ key, cause: error }).error);
 				}
 			},
 			{
@@ -49,14 +48,12 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 			({ params, body, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
-					return status('Not Found', { error: 'Workspace not found' });
+					return status('Not Found', WorkspaceApiError.WorkspaceNotFound().error);
 				try {
 					workspace.kv.set(key, body as never);
 					return { status: 'set' as const, key };
 				} catch (error) {
-					return status('Bad Request', {
-						error: error instanceof Error ? error.message : 'Unknown KV key',
-					});
+					return status('Bad Request', WorkspaceApiError.KvOperationFailed({ key, cause: error }).error);
 				}
 			},
 			{
@@ -72,14 +69,12 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
-					return status('Not Found', { error: 'Workspace not found' });
+					return status('Not Found', WorkspaceApiError.WorkspaceNotFound().error);
 				try {
 					workspace.kv.delete(key);
 					return { status: 'deleted' as const, key };
 				} catch (error) {
-					return status('Bad Request', {
-						error: error instanceof Error ? error.message : 'Unknown KV key',
-					});
+					return status('Bad Request', WorkspaceApiError.KvOperationFailed({ key, cause: error }).error);
 				}
 			},
 			{

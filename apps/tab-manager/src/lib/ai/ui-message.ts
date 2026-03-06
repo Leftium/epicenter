@@ -53,7 +53,7 @@ export function toUiMessage(message: ChatMessage): UIMessage {
 	return {
 		id: message.id,
 		role: message.role,
-		parts: message.parts as MessagePart[],
+		parts: message.parts as unknown as MessagePart[],
 		createdAt: new Date(message.createdAt),
 	};
 }

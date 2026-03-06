@@ -8,6 +8,7 @@ import {
 	handleWsOpen,
 	stateVectorsEqual,
 } from '@epicenter/sync-core';
+import { Ok, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 
 type WsAttachment = {
@@ -16,6 +17,9 @@ type WsAttachment = {
 
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
+
+/** DO SQLite BLOB row limit is 2 MB — leave headroom. */
+const MAX_COMPACTED_BYTES = 1.9 * 1024 * 1024;
 
 /** Compact storage every 4 hours while connections are active. */
 const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -62,18 +66,22 @@ export class YjsRoom extends DurableObject {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const send = (data: Uint8Array) => {
-					try {
-						ws.send(data);
-					} catch {
-						/* disconnected during wake */
-					}
-				};
+				const send = this.resilientSend(ws);
 				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
 				state.controlledClientIds = new Set(attachment.controlledClientIds);
 				this.connectionStates.set(ws, state);
 			}
 		});
+	}
+
+	/** Wrap ws.send so failures on dead connections are silently ignored. */
+	private resilientSend(ws: WebSocket) {
+		return (data: Uint8Array) => {
+			trySync({
+				try: () => ws.send(data),
+				catch: () => Ok(undefined),
+			});
+		};
 	}
 
 	// --- Storage: direct SQLite, one doc per DO ---
@@ -87,8 +95,14 @@ export class YjsRoom extends DurableObject {
 		`);
 		// Migrate from old schema that had doc_id and created_at columns.
 		// DROP COLUMN is safe on DO SQLite (uses modern SQLite ≥ 3.35).
-		try { this.sql.exec('ALTER TABLE updates DROP COLUMN doc_id'); } catch { /* already migrated */ }
-		try { this.sql.exec('ALTER TABLE updates DROP COLUMN created_at'); } catch { /* already migrated */ }
+		trySync({
+			try: () => this.sql.exec('ALTER TABLE updates DROP COLUMN doc_id'),
+			catch: () => Ok(undefined),
+		});
+		trySync({
+			try: () => this.sql.exec('ALTER TABLE updates DROP COLUMN created_at'),
+			catch: () => Ok(undefined),
+		});
 		this.sql.exec('DROP INDEX IF EXISTS idx_updates_doc_id');
 	}
 
@@ -114,15 +128,14 @@ export class YjsRoom extends DurableObject {
 		return doc;
 	}
 
+	/** Compact accumulated updates into a single snapshot from the live doc. */
 	private compact(): void {
-		const rows = [
-			...this.sql.exec('SELECT data FROM updates ORDER BY id'),
-		];
-		if (rows.length <= 1) return;
+		const rows = [...this.sql.exec('SELECT COUNT(*) as n FROM updates')];
+		if ((rows[0]?.n as number) <= 1) return;
 
-		const merged = Y.mergeUpdatesV2(
-			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-		);
+		const merged = Y.encodeStateAsUpdateV2(this.doc);
+		if (merged.byteLength > MAX_COMPACTED_BYTES) return;
+
 		this.ctx.storage.transactionSync(() => {
 			this.sql.exec('DELETE FROM updates');
 			this.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
@@ -183,8 +196,6 @@ export class YjsRoom extends DurableObject {
 	/** HTTP snapshot: encode the full doc state from memory. */
 	private handleHttpGetDoc(): Response {
 		const update = Y.encodeStateAsUpdateV2(this.doc);
-		// Empty doc (no meaningful content) returns the same as V2-encoded empty state.
-		// A brand-new Y.Doc still produces a valid (small) update, so always return 200.
 		return new Response(update, {
 			status: 200,
 			headers: { 'content-type': 'application/octet-stream' },
@@ -193,19 +204,14 @@ export class YjsRoom extends DurableObject {
 
 	// --- WebSocket upgrade ---
 
-	private handleWebSocketUpgrade(): Response {
+	private async handleWebSocketUpgrade(): Promise<Response> {
 		const pair = new WebSocketPair();
-		const client = pair[0];
-		const server = pair[1];
-
-		if (!client || !server) {
-			return new Response('Failed to create WebSocket pair', { status: 500 });
-		}
+		const [client, server] = [pair[0], pair[1]];
 
 		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
-		const send = (data: Uint8Array) => server.send(data);
+		const send = this.resilientSend(server);
 		const { initialMessages, state } = handleWsOpen(
 			this.doc,
 			this.awareness,
@@ -226,11 +232,10 @@ export class YjsRoom extends DurableObject {
 		}
 
 		// Schedule periodic compaction if no alarm is already set.
-		this.ctx.storage.getAlarm().then((existing) => {
-			if (!existing) {
-				this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
-			}
-		});
+		const existing = await this.ctx.storage.getAlarm();
+		if (!existing) {
+			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
+		}
 
 		return new Response(null, { status: 101, webSocket: client });
 	}
@@ -265,11 +270,10 @@ export class YjsRoom extends DurableObject {
 		if (result.broadcast) {
 			for (const [otherWs] of this.connectionStates) {
 				if (otherWs !== ws) {
-					try {
-						otherWs.send(result.broadcast);
-					} catch {
-						/* dead connection */
-					}
+					trySync({
+						try: () => otherWs.send(result.broadcast!),
+						catch: () => Ok(undefined),
+					});
 				}
 			}
 		}
@@ -299,11 +303,10 @@ export class YjsRoom extends DurableObject {
 			this.compact();
 		}
 
-		try {
-			ws.close(code, reason);
-		} catch {
-			/* already closed or errored */
-		}
+		trySync({
+			try: () => ws.close(code, reason),
+			catch: () => Ok(undefined),
+		});
 	}
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {

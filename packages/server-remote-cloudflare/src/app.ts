@@ -7,7 +7,7 @@ import {
 	type SupportedProvider,
 } from '@epicenter/sync-core';
 import type { Auth } from 'better-auth';
-import type { Context, MiddlewareHandler } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';

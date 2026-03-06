@@ -6,13 +6,12 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Auth } from 'better-auth';
 import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { handleAiChat } from './ai-chat';
-import type { StandaloneAuthConfig } from './auth';
+import type { StandaloneAuth, StandaloneAuthConfig } from './auth';
 import { createStandaloneAuth, seedAdminIfNeeded } from './auth';
 import { BunSqliteUpdateLog } from './storage';
 import { mountSyncRoutes, websocket } from './sync-adapter';
@@ -30,16 +29,8 @@ type SessionResult = {
 	session: { id: string; [key: string]: unknown };
 };
 
-/** Auth instance with oauth-provider plugin APIs preserved. */
-type AuthWithOAuth = Auth & {
-	api: {
-		getOpenIdConfig: (...args: unknown[]) => unknown;
-		getOAuthServerConfig: (...args: unknown[]) => unknown;
-	};
-};
-
 type Variables = {
-	auth: AuthWithOAuth;
+	auth: StandaloneAuth;
 	user: SessionResult['user'];
 	session: SessionResult['session'];
 };

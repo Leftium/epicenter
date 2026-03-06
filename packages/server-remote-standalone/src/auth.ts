@@ -1,5 +1,4 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import type { Auth } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
@@ -7,14 +6,6 @@ import { jwt } from 'better-auth/plugins/jwt';
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** Auth instance with oauth-provider plugin APIs preserved. */
-export type AuthWithOAuth = Auth & {
-	api: {
-		getOpenIdConfig: (...args: unknown[]) => unknown;
-		getOAuthServerConfig: (...args: unknown[]) => unknown;
-	};
-};
 
 const trustedClients = [
 	{
@@ -77,7 +68,7 @@ type AdminSeeder = {
 };
 
 export function createStandaloneAuth(config: StandaloneAuthConfig): {
-	auth: AuthWithOAuth;
+	auth: StandaloneAuth;
 	betterAuth?: AdminSeeder;
 } {
 	switch (config.mode) {
@@ -103,7 +94,7 @@ function createNoneAuth() {
 				session: { id: 'anonymous' },
 			}),
 		},
-	} as unknown as AuthWithOAuth;
+	} as unknown as StandaloneAuth;
 }
 
 // ---------------------------------------------------------------------------
@@ -149,7 +140,7 @@ function createTokenAuth(token: string) {
 				return null;
 			},
 		},
-	} as unknown as AuthWithOAuth;
+	} as unknown as StandaloneAuth;
 }
 
 // ---------------------------------------------------------------------------
@@ -182,8 +173,11 @@ function createBetterAuthInstance(config: {
 		],
 	});
 
-	return { auth: auth as unknown as AuthWithOAuth, betterAuth: auth };
+	return { auth, betterAuth: auth };
 }
+
+/** Inferred auth type from a real Better Auth instance with all plugins. */
+export type StandaloneAuth = ReturnType<typeof createBetterAuthInstance>['auth'];
 
 /**
  * Seed an admin user if ADMIN_EMAIL and ADMIN_PASSWORD env vars are set.

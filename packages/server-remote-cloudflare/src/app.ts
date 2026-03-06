@@ -7,7 +7,6 @@ import {
 	PROVIDER_ENV_VARS,
 	type SupportedProvider,
 } from '@epicenter/sync-core';
-import type { Auth } from 'better-auth';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -16,7 +15,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import postgres from 'postgres';
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { handleAiChat } from './ai-chat';
 import * as schema from './db/schema';
 
@@ -26,70 +24,23 @@ export { YjsRoom } from './yjs-room';
 // Types
 // ---------------------------------------------------------------------------
 
-type ApiKeyBindings = {
-	[K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string;
-};
-
-type SessionResult = {
+export type Variables = {
+	auth: ReturnType<typeof createAuth>;
 	user: { id: string; name: string; email: string; [key: string]: unknown };
 	session: { id: string; [key: string]: unknown };
 };
 
-/** Auth instance with oauth-provider plugin APIs preserved. */
-type AuthWithOAuth = Auth & {
-	api: {
-		getOpenIdConfig: (...args: unknown[]) => unknown;
-		getOAuthServerConfig: (...args: unknown[]) => unknown;
-	};
-};
-
-export type Variables = {
-	auth: AuthWithOAuth;
-	user: SessionResult['user'];
-	session: SessionResult['session'];
-};
-
 export type Env = {
-	Bindings: ApiKeyBindings & Cloudflare.Env;
+	Bindings: { [K in SupportedProvider as (typeof PROVIDER_ENV_VARS)[K]]?: string } & Cloudflare.Env;
 	Variables: Variables;
 };
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
-
-const AuthError = defineErrors({
-	Unauthorized: () => ({
-		message: 'Unauthorized',
-	}),
-});
-type AuthError = InferErrors<typeof AuthError>;
 
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
-const trustedClients = [
-	{
-		clientId: 'epicenter-desktop',
-		name: 'Epicenter Desktop',
-		type: 'native',
-		redirectUrls: ['tauri://localhost/auth/callback'],
-		skipConsent: true,
-		metadata: {},
-	},
-	{
-		clientId: 'epicenter-mobile',
-		name: 'Epicenter Mobile',
-		type: 'native',
-		redirectUrls: ['epicenter://auth/callback'],
-		skipConsent: true,
-		metadata: {},
-	},
-] as const;
-
 /** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
-function createAuth(env: Cloudflare.Env): AuthWithOAuth {
+function createAuth(env: Cloudflare.Env) {
 	const sql = postgres(env.HYPERDRIVE.connectionString);
 	const db = drizzle(sql, { schema });
 
@@ -107,7 +58,24 @@ function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 				consentPage: '/consent',
 				requirePKCE: true,
 				allowDynamicClientRegistration: true,
-				trustedClients: [...trustedClients],
+				trustedClients: [
+					{
+						clientId: 'epicenter-desktop',
+						name: 'Epicenter Desktop',
+						type: 'native',
+						redirectUrls: ['tauri://localhost/auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+					{
+						clientId: 'epicenter-mobile',
+						name: 'Epicenter Mobile',
+						type: 'native',
+						redirectUrls: ['epicenter://auth/callback'],
+						skipConsent: true,
+						metadata: {},
+					},
+				],
 			}),
 		],
 		session: {
@@ -139,11 +107,11 @@ function createAuth(env: Cloudflare.Env): AuthWithOAuth {
 				}),
 			delete: (key: string) => env.SESSION_KV.delete(key),
 		},
-	}) as unknown as AuthWithOAuth;
+	});
 }
 
 // ---------------------------------------------------------------------------
-// Factory & Middleware
+// Factory & App
 // ---------------------------------------------------------------------------
 
 const factory = createFactory<Env>({
@@ -166,25 +134,6 @@ const factory = createFactory<Env>({
 	},
 });
 
-/** Auth guard — validates sessions via Better Auth. */
-const authMiddleware = factory.createMiddleware(async (c, next) => {
-	const wsToken = c.req.query('token');
-	const headers = wsToken
-		? new Headers({ authorization: `Bearer ${wsToken}` })
-		: c.req.raw.headers;
-
-	const result = await c.var.auth.api.getSession({ headers });
-	if (!result) return c.json(AuthError.Unauthorized(), 401);
-
-	c.set('user', result.user);
-	c.set('session', result.session);
-	await next();
-});
-
-// ---------------------------------------------------------------------------
-// App
-// ---------------------------------------------------------------------------
-
 const app = factory.createApp();
 
 // Health
@@ -204,9 +153,21 @@ app.get('/.well-known/oauth-authorization-server/auth', (c) =>
 );
 
 // Auth guard for protected routes
-for (const path of ['/ai/*', '/rooms/*']) {
-	app.use(path, authMiddleware);
-}
+const authGuard = factory.createMiddleware(async (c, next) => {
+	const wsToken = c.req.query('token');
+	const headers = wsToken
+		? new Headers({ authorization: `Bearer ${wsToken}` })
+		: c.req.raw.headers;
+
+	const result = await c.var.auth.api.getSession({ headers });
+	if (!result) return c.json({ error: 'Unauthorized' }, 401);
+
+	c.set('user', result.user);
+	c.set('session', result.session);
+	await next();
+});
+app.use('/ai/*', authGuard);
+app.use('/rooms/*', authGuard);
 
 // AI chat
 app.post('/ai/chat', handleAiChat);

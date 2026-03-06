@@ -18,11 +18,6 @@
 		browserState.windows.filter((w) => w.focused).map((w) => w.id),
 	);
 
-	function toggleWindow(id: WindowCompositeId) {
-		if (expandedWindows.has(id)) expandedWindows.delete(id);
-		else expandedWindows.add(id);
-	}
-
 	// Flatten windows and tabs, respecting collapsed state
 	const flatItems = $derived(
 		browserState.windows.flatMap((window) => {
@@ -59,7 +54,10 @@
 				{@const isExpanded = expandedWindows.has(item.window.id)}
 				<button
 					type="button"
-					onclick={() => toggleWindow(item.window.id)}
+					onclick={() => {
+						if (expandedWindows.has(item.window.id)) expandedWindows.delete(item.window.id);
+						else expandedWindows.add(item.window.id);
+					}}
 					class="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm text-muted-foreground backdrop-blur transition hover:bg-muted/80"
 				>
 					<ChevronRightIcon

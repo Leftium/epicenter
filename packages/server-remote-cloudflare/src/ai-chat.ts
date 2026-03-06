@@ -1,5 +1,6 @@
 import {
 	type AnyTextAdapter,
+	type UIMessage,
 	chat,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
@@ -8,8 +9,13 @@ import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
+import { validator } from 'hono/validator';
 import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
+
+// ---------------------------------------------------------------------------
+// Providers
+// ---------------------------------------------------------------------------
 
 const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok'] as const;
 type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
@@ -17,32 +23,6 @@ type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
 function isSupportedProvider(value: string): value is SupportedProvider {
 	return SUPPORTED_PROVIDERS.includes(value as SupportedProvider);
 }
-
-const AiChatError = defineErrors({
-	UnsupportedProvider: ({ provider }: { provider: string | undefined }) => ({
-		message: `Unsupported provider: ${provider}`,
-		provider,
-	}),
-	MissingModel: () => ({
-		message: 'Missing model',
-	}),
-	MissingMessages: () => ({
-		message: 'Missing or empty messages',
-	}),
-	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
-		message: `${provider} not configured`,
-		provider,
-	}),
-});
-
-type AiChatRequestBody = {
-	messages: unknown[];
-	data?: {
-		provider?: string;
-		model?: string;
-		systemPrompt?: string;
-	};
-};
 
 function getProviderApiKey(
 	env: Env['Bindings'],
@@ -84,22 +64,85 @@ function createAdapter(
 	}
 }
 
-export async function handleAiChat(c: Context<Env>) {
-	const { messages, data } = (await c.req.json()) as AiChatRequestBody;
+// ---------------------------------------------------------------------------
+// Errors
+// ---------------------------------------------------------------------------
 
-	const provider = data?.provider;
-	if (!provider || !isSupportedProvider(provider)) {
-		return c.json(AiChatError.UnsupportedProvider({ provider }), 400);
+const AiChatError = defineErrors({
+	UnsupportedProvider: ({ provider }: { provider: string }) => ({
+		message: `Unsupported provider: ${provider}`,
+		provider,
+	}),
+	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
+		message: `${provider} not configured`,
+		provider,
+	}),
+});
+
+// ---------------------------------------------------------------------------
+// Validated request body
+// ---------------------------------------------------------------------------
+
+type AiChatBody = {
+	messages: Array<UIMessage>;
+	provider: SupportedProvider;
+	model: string;
+	systemPrompt: string | undefined;
+};
+
+/** Validates and normalizes the incoming JSON body before the handler runs. */
+export const validateAiChat = validator('json', (value, c) => {
+	if (typeof value !== 'object' || value === null) {
+		return c.json({ error: 'Request body must be a JSON object' }, 400);
 	}
 
-	const model = data?.model;
-	if (!model) {
-		return c.json(AiChatError.MissingModel(), 400);
-	}
+	const body = value as Record<string, unknown>;
+	const data = body.data as Record<string, unknown> | undefined;
 
+	// --- messages ---
+	const messages = body.messages;
 	if (!Array.isArray(messages) || messages.length === 0) {
-		return c.json(AiChatError.MissingMessages(), 400);
+		return c.json({ error: 'Missing or empty messages' }, 400);
 	}
+
+	// --- provider ---
+	const provider = data?.provider;
+	if (typeof provider !== 'string' || !isSupportedProvider(provider)) {
+		return c.json(
+			AiChatError.UnsupportedProvider({
+				provider: String(provider ?? 'undefined'),
+			}),
+			400,
+		);
+	}
+
+	// --- model ---
+	const model = data?.model;
+	if (typeof model !== 'string' || model.length === 0) {
+		return c.json({ error: 'Missing model' }, 400);
+	}
+
+	// --- systemPrompt (optional) ---
+	const systemPrompt = data?.systemPrompt;
+	if (systemPrompt !== undefined && typeof systemPrompt !== 'string') {
+		return c.json({ error: 'systemPrompt must be a string' }, 400);
+	}
+
+	return {
+		messages: messages as Array<UIMessage>,
+		provider,
+		model,
+		systemPrompt,
+	} satisfies AiChatBody;
+});
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
+
+export async function handleAiChat(c: Context<Env>) {
+	const { messages, provider, model, systemPrompt } =
+		c.req.valid('json' as never) as AiChatBody;
 
 	const apiKey = getProviderApiKey(c.env, provider);
 	if (!apiKey) {
@@ -108,12 +151,13 @@ export async function handleAiChat(c: Context<Env>) {
 
 	const adapter = createAdapter(provider, model, apiKey);
 	const abortController = new AbortController();
-	const systemPrompts = data?.systemPrompt ? [data.systemPrompt] : [];
 
 	const stream = chat({
 		adapter,
-		messages: messages as Parameters<typeof chat>[0]['messages'],
-		systemPrompts,
+		// UIMessage[] from the client — chat() internally normalizes to
+		// ModelMessage[] via convertMessagesToModelMessages.
+		messages: messages as unknown as Parameters<typeof chat>[0]['messages'],
+		systemPrompts: systemPrompt ? [systemPrompt] : [],
 		abortController,
 	});
 

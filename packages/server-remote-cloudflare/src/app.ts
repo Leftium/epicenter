@@ -11,7 +11,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import postgres from 'postgres';
-import { handleAiChat } from './ai-chat';
+import { handleAiChat, validateAiChat } from './ai-chat';
 import * as schema from './db/schema';
 
 export { YjsRoom } from './yjs-room';
@@ -172,7 +172,7 @@ app.use('/ai/*', authGuard);
 app.use('/rooms/*', authGuard);
 
 // AI chat
-app.post('/ai/chat', handleAiChat);
+app.post('/ai/chat', validateAiChat, handleAiChat);
 
 // Sync rooms — forward to Durable Object
 app.all('/rooms/:room', async (c) => {

@@ -76,13 +76,18 @@ export class YjsRoom extends DurableObject {
 		const doc = new Y.Doc();
 		const updates = await this.storage.readAll(roomId);
 		if (updates.length > 0) {
+			// Storage uses V2 format for better compression, while the wire
+			// protocol (y-protocols) uses V1. This is safe because Yjs fires
+			// both `update` and `updateV2` events regardless of input format.
 			const merged = Y.mergeUpdatesV2(updates);
 			Y.applyUpdateV2(doc, merged);
 		}
 
 		// Persist incremental updates to SQLite.
-		doc.on('updateV2', async (update: Uint8Array) => {
-			await this.storage.append(roomId, update);
+		// Note: storage.sql.exec is synchronous in DO SQLite, so the callback
+		// runs synchronously despite the event system.
+		doc.on('updateV2', (update: Uint8Array) => {
+			this.storage.append(roomId, update);
 		});
 
 		return doc;
@@ -204,11 +209,17 @@ export class YjsRoom extends DurableObject {
 		this.connectionStates.delete(ws);
 
 		// Compact storage when last connection leaves.
+		// Safe from races: DO is single-threaded, so no new fetch() can run
+		// until this handler completes.
 		if (this.connectionStates.size === 0) {
 			await compactUpdateLog(this.storage, 'room');
 		}
 
-		ws.close(code, reason);
+		try {
+			ws.close(code, reason);
+		} catch {
+			/* already closed or errored */
+		}
 	}
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {

@@ -1,7 +1,7 @@
 import {
 	type ApiKeyBindings,
+	authMiddleware,
 	corsMiddleware,
-	createAuthMiddleware,
 	createOAuthMetadataHandler,
 	createOidcConfigHandler,
 	handleAiChat,
@@ -45,10 +45,7 @@ app.get('/.well-known/oauth-authorization-server/auth', (c) =>
 
 // Auth guard for protected routes
 for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {
-	app.use(path, async (c, next) => {
-		const guard = createAuthMiddleware(c.var.auth);
-		return guard(c as never, next);
-	});
+	app.use(path, authMiddleware);
 }
 
 // AI chat + provider proxy

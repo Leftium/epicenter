@@ -1,6 +1,6 @@
 import {
+	authMiddleware,
 	corsMiddleware,
-	createAuthMiddleware,
 	createOAuthMetadataHandler,
 	createOidcConfigHandler,
 	factory,
@@ -75,6 +75,10 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 
 	// CORS (skips WebSocket upgrades)
 	app.use('*', corsMiddleware);
+	app.use('*', async (c, next) => {
+		c.set('auth', auth);
+		await next();
+	});
 
 	// Health
 	app.get('/', (c) =>
@@ -92,10 +96,9 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	);
 
 	// Auth guard for protected routes
-	const authGuard = createAuthMiddleware(auth);
-	app.use('/ai/*', authGuard);
-	app.use('/proxy/*', authGuard);
-	app.use('/rooms/*', authGuard);
+	for (const path of ['/ai/*', '/proxy/*', '/rooms/*']) {
+		app.use(path, authMiddleware);
+	}
 
 	// AI chat + provider proxy
 	app.post('/ai/chat', handleAiChat);

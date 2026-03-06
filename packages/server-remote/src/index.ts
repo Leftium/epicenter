@@ -14,7 +14,7 @@ export { corsMiddleware } from './cors';
 
 // Auth
 export { baseAuthConfig, trustedClients } from './auth/better-auth-base';
-export { createAuthMiddleware } from './auth/middleware';
+export { authMiddleware } from './auth/middleware';
 export {
 	createOAuthMetadataHandler,
 	createOidcConfigHandler,

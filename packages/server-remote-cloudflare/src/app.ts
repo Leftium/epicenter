@@ -192,10 +192,14 @@ app.post('/ai/chat', ...aiChatHandlers);
  * `stub.fetch()` since the 101 handshake requires HTTP semantics.
  */
 
+/** Resolve a user-scoped Durable Object stub for the given room. */
+function getRoomStub(c: { env: Env['Bindings']; var: Env['Variables']; req: { param: (k: string) => string } }) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
+	return c.env.YJS_ROOM.get(c.env.YJS_ROOM.idFromName(roomKey));
+}
+
 app.get('/rooms/:room', async (c) => {
-	const stub = c.env.YJS_ROOM.get(
-		c.env.YJS_ROOM.idFromName(c.req.param('room')),
-	);
+	const stub = getRoomStub(c);
 
 	// WebSocket upgrade — requires HTTP semantics for 101 response
 	if (c.req.header('upgrade') === 'websocket') {
@@ -215,9 +219,7 @@ app.post('/rooms/:room', async (c) => {
 		return c.body('Payload too large', 413);
 	}
 
-	const stub = c.env.YJS_ROOM.get(
-		c.env.YJS_ROOM.idFromName(c.req.param('room')),
-	);
+	const stub = getRoomStub(c);
 
 	// HTTP sync via RPC — returns diff or null (in sync → 304)
 	const diff = await stub.sync(body);

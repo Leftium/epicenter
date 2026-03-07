@@ -88,12 +88,17 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * Cost is also dramatically lower: DO SQLite row writes are $1/M vs R2's
  * $4.50/M for Class A operations.
  *
- * ## Auth
+ * ## Auth & room isolation
  *
  * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
  * the session (cookie or `?token=` query param for WebSocket) via Better Auth
  * before calling RPC methods or forwarding fetch. The DO itself does not
  * re-validate — it trusts the Worker boundary.
+ *
+ * Room names are user-scoped: the Worker prefixes `user:{userId}:` to the
+ * client-provided room name before calling `idFromName()`. This ensures each
+ * user's documents are isolated in separate DO instances, even if multiple
+ * users create documents with the same name (e.g., "tab-manager").
  */
 export class YjsRoom extends DurableObject {
 	private doc!: Y.Doc;

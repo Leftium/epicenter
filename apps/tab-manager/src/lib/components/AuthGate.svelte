@@ -57,35 +57,34 @@
 				}
 				loading = false;
 			}}
-			class="w-full max-w-xs space-y-4"
+			class="w-full max-w-xs"
 		>
-			<div class="space-y-1 text-center">
-				<h2 class="text-lg font-semibold">Sign in</h2>
-				<p class="text-sm text-muted-foreground">
-					Sign in to sync your tabs across devices.
-				</p>
-			</div>
+			<Field.Set>
+				<Field.Legend>Sign in</Field.Legend>
+				<Field.Description>Sign in to sync your tabs across devices.</Field.Description>
+				<Field.Separator />
 
-			{#if error}
-				<Alert.Root variant="destructive">
-					<Alert.Description>{error}</Alert.Description>
-				</Alert.Root>
-			{/if}
+				{#if error}
+					<Alert.Root variant="destructive">
+						<Alert.Description>{error}</Alert.Description>
+					</Alert.Root>
+				{/if}
 
-			<Field.Group>
-				<Field.Field>
-					<Field.Label for="email">Email</Field.Label>
-					<Input id="email" type="email" placeholder="Email" bind:value={email} required autocomplete="email" />
-				</Field.Field>
-				<Field.Field>
-					<Field.Label for="password">Password</Field.Label>
-					<Input id="password" type="password" placeholder="Password" bind:value={password} required autocomplete="current-password" />
-				</Field.Field>
-			</Field.Group>
+				<Field.Group>
+					<Field.Field>
+						<Field.Label for="email">Email</Field.Label>
+						<Input id="email" type="email" placeholder="Email" bind:value={email} required autocomplete="email" />
+					</Field.Field>
+					<Field.Field>
+						<Field.Label for="password">Password</Field.Label>
+						<Input id="password" type="password" placeholder="Password" bind:value={password} required autocomplete="current-password" />
+					</Field.Field>
+				</Field.Group>
 
-			<Button type="submit" class="w-full" disabled={loading}>
-				{loading ? 'Signing in…' : 'Sign in'}
-			</Button>
+				<Button type="submit" class="w-full" disabled={loading}>
+					{loading ? 'Signing in…' : 'Sign in'}
+				</Button>
+			</Field.Set>
 		</form>
 	</div>
 {:else}

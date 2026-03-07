@@ -15,14 +15,6 @@ type WsAttachment = {
 	controlledClientIds: number[];
 };
 
-type RoomDb = {
-	initSchema(): void;
-	selectAllUpdates(): Record<string, SqlStorageValue>[];
-	insertUpdate(data: Uint8Array): void;
-	countUpdates(): number;
-	replaceAllUpdates(data: Uint8Array): void;
-};
-
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
@@ -95,15 +87,13 @@ const COMPACTION_ROW_THRESHOLD = 500;
  * it trusts the Worker boundary.
  */
 export class YjsRoom extends DurableObject {
-	private db!: RoomDb;
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
+	private compact!: () => void;
 	private connectionStates: Map<WebSocket, ConnectionState>;
-	private updatesSinceCompaction = 0;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.db = createDb(ctx.storage);
 		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
@@ -114,104 +104,22 @@ export class YjsRoom extends DurableObject {
 		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
 		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
 		this.ctx.blockConcurrencyWhile(async () => {
-			this.db.initSchema();
-			this.doc = this.loadDoc();
-			this.awareness = new Awareness(this.doc);
+			const persisted = createPersistedDoc(ctx.storage);
+			this.doc = persisted.doc;
+			this.awareness = persisted.awareness;
+			this.compact = persisted.compact;
 
 			// On wake from hibernation, restore connection state from attachments.
 			for (const ws of this.ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const send = this.resilientSend(ws);
+				const send = resilientSend(ws);
 				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
 				state.controlledClientIds = new Set(attachment.controlledClientIds);
 				this.connectionStates.set(ws, state);
 			}
 		});
-	}
-
-	/** Wrap ws.send so failures on dead connections are silently ignored. */
-	private resilientSend(ws: WebSocket) {
-		return (data: Uint8Array) => {
-			trySync({
-				try: () => ws.send(data),
-				catch: () => Ok(undefined),
-			});
-		};
-	}
-
-	// --- Storage: direct SQLite, one doc per DO ---
-
-	/**
-	 * Reconstruct the Y.Doc from persisted updates on cold start.
-	 *
-	 * All rows are merged in one pass via `mergeUpdatesV2` then applied.
-	 * After compaction this is a single-row read; between compactions the
-	 * row count is bounded by {@link COMPACTION_ROW_THRESHOLD}. Logs a
-	 * warning when >10 rows are loaded so accumulation trends are visible.
-	 *
-	 * The `updateV2` listener persists every future update synchronously
-	 * and triggers compaction after {@link COMPACTION_ROW_THRESHOLD} updates
-	 * to prevent unbounded growth during long-lived sessions.
-	 */
-	private loadDoc(): Y.Doc {
-		const doc = new Y.Doc();
-		const rows = this.db.selectAllUpdates();
-
-		if (rows.length > 10) {
-			console.warn(`[YjsRoom] Cold start loading ${rows.length} update rows`);
-		}
-
-		if (rows.length > 0) {
-			const merged = Y.mergeUpdatesV2(
-				rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-			);
-			Y.applyUpdateV2(doc, merged);
-		}
-
-		// Persist incremental updates to SQLite.
-		// storage.sql.exec is synchronous in DO SQLite, so the callback
-		// runs synchronously despite the event system.
-		doc.on('updateV2', (update: Uint8Array) => {
-			this.db.insertUpdate(update);
-			this.updatesSinceCompaction++;
-			if (this.updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
-				this.compact();
-			}
-		});
-
-		return doc;
-	}
-
-	/**
-	 * Compact accumulated updates into a single snapshot from the live doc.
-	 *
-	 * Encodes the full doc state via `encodeStateAsUpdateV2` and atomically
-	 * replaces all rows. Safe from races because DOs are single-threaded.
-	 *
-	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
-	 * is skipped with a warning log. The counter resets to avoid re-attempting
-	 * `encodeStateAsUpdateV2` every 500 updates on a doc that's already over
-	 * the limit — the warning fires once per compaction cycle instead.
-	 */
-	private compact(): void {
-		const rowCount = this.db.countUpdates();
-		if (rowCount <= 1) return;
-
-		const merged = Y.encodeStateAsUpdateV2(this.doc);
-		if (merged.byteLength > MAX_COMPACTED_BYTES) {
-			console.warn(
-				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
-					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
-					`Compaction skipped. ${rowCount} update rows accumulating.`,
-			);
-			this.updatesSinceCompaction = 0;
-			return;
-		}
-
-		this.db.replaceAllUpdates(merged);
-		this.updatesSinceCompaction = 0;
 	}
 
 	// --- HTTP handlers: use the live Y.Doc directly ---
@@ -283,7 +191,7 @@ export class YjsRoom extends DurableObject {
 		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
-		const send = this.resilientSend(server);
+		const send = resilientSend(server);
 		const { initialMessages, state } = handleWsOpen(
 			this.doc,
 			this.awareness,
@@ -396,44 +304,117 @@ export class YjsRoom extends DurableObject {
 	}
 }
 
-/**
- * Thin data-access layer over the DO SQLite `updates` table.
- *
- * Keeps raw SQL out of YjsRoom's business logic. Every method maps to one
- * logical storage operation; `replaceAllUpdates` wraps the DELETE + INSERT
- * in a `transactionSync` for atomicity.
- */
-function createDb(storage: DurableObjectStorage): RoomDb {
-	const sql = storage.sql;
-	return {
-		/** Create the `updates` table if it doesn't exist. */
-		initSchema() {
-			sql.exec(`
-				CREATE TABLE IF NOT EXISTS updates (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					data BLOB NOT NULL
-				)
-			`);
-		},
-		/** Return all persisted update BLOBs in insertion order. */
-		selectAllUpdates() {
-			return [...sql.exec('SELECT data FROM updates ORDER BY id')];
-		},
-		/** Append a single Yjs update BLOB. */
-		insertUpdate(data: Uint8Array) {
-			sql.exec('INSERT INTO updates (data) VALUES (?)', data);
-		},
-		/** Return the number of rows in the `updates` table. */
-		countUpdates(): number {
-			const rows = [...sql.exec('SELECT COUNT(*) as n FROM updates')];
-			return rows[0]?.n as number;
-		},
-		/** Atomically replace all rows with a single compacted snapshot. */
-		replaceAllUpdates(data: Uint8Array) {
-			storage.transactionSync(() => {
-				sql.exec('DELETE FROM updates');
-				sql.exec('INSERT INTO updates (data) VALUES (?)', data);
-			});
-		},
+// --- Factory functions ---
+
+/** Wrap `ws.send` so failures on dead connections are silently ignored. */
+function resilientSend(ws: WebSocket) {
+	return (data: Uint8Array) => {
+		trySync({
+			try: () => ws.send(data),
+			catch: () => Ok(undefined),
+		});
 	};
+}
+
+/**
+ * SQLite-backed Y.Doc with awareness and automatic compaction.
+ *
+ * Owns the full doc persistence lifecycle:
+ *
+ * 1. **Schema init** — creates the `updates` table if absent.
+ * 2. **Cold-start load** — reads all update rows, merges via
+ *    `Y.mergeUpdatesV2`, and applies to a fresh `Y.Doc`. After compaction
+ *    this is a single-row read; between compactions at most
+ *    {@link COMPACTION_ROW_THRESHOLD} rows.
+ * 3. **Write-through** — an `updateV2` listener persists every incremental
+ *    update synchronously (DO SQLite is co-located, 0 ms) and triggers
+ *    compaction after {@link COMPACTION_ROW_THRESHOLD} updates.
+ * 4. **Compaction** — encodes the full doc state and atomically replaces
+ *    all rows. Skipped with a warning if the snapshot exceeds
+ *    {@link MAX_COMPACTED_BYTES}.
+ *
+ * The compaction counter is internal — callers just invoke `compact()` at
+ * disconnect or alarm boundaries without tracking update counts.
+ */
+function createPersistedDoc(storage: DurableObjectStorage) {
+	const sql = storage.sql;
+
+	// --- Schema ---
+
+	sql.exec(`
+		CREATE TABLE IF NOT EXISTS updates (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			data BLOB NOT NULL
+		)
+	`);
+
+	// --- Load ---
+
+	const doc = new Y.Doc();
+	const awareness = new Awareness(doc);
+	let updatesSinceCompaction = 0;
+
+	const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
+
+	if (rows.length > 10) {
+		console.warn(`[YjsRoom] Cold start loading ${rows.length} update rows`);
+	}
+
+	if (rows.length > 0) {
+		const merged = Y.mergeUpdatesV2(
+			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+		);
+		Y.applyUpdateV2(doc, merged);
+	}
+
+	// --- Compaction ---
+
+	/**
+	 * Merge accumulated updates into a single snapshot from the live doc.
+	 *
+	 * Encodes full state via `encodeStateAsUpdateV2` and atomically replaces
+	 * all rows. Safe from races because DOs are single-threaded.
+	 *
+	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
+	 * is skipped with a warning. The counter resets to avoid re-encoding every
+	 * {@link COMPACTION_ROW_THRESHOLD} updates on an oversized doc.
+	 */
+	function compact(): void {
+		const countRows = [
+			...sql.exec('SELECT COUNT(*) as n FROM updates'),
+		];
+		const rowCount = countRows[0]?.n as number;
+		if (rowCount <= 1) return;
+
+		const merged = Y.encodeStateAsUpdateV2(doc);
+		if (merged.byteLength > MAX_COMPACTED_BYTES) {
+			console.warn(
+				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
+					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
+					`Compaction skipped. ${rowCount} update rows accumulating.`,
+			);
+			updatesSinceCompaction = 0;
+			return;
+		}
+
+		storage.transactionSync(() => {
+			sql.exec('DELETE FROM updates');
+			sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
+		});
+		updatesSinceCompaction = 0;
+	}
+
+	// --- Write-through persistence ---
+
+	// storage.sql.exec is synchronous in DO SQLite, so the callback
+	// runs synchronously despite the event system.
+	doc.on('updateV2', (update: Uint8Array) => {
+		sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+		updatesSinceCompaction++;
+		if (updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
+			compact();
+		}
+	});
+
+	return { doc, awareness, compact };
 }

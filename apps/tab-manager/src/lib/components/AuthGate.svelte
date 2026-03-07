@@ -4,69 +4,39 @@
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { onMount, type Snippet } from 'svelte';
-	import { Err, tryAsync } from 'wellcrafted/result';
-	import { authToken, checkSession, signIn, signOut } from '$lib/state/auth.svelte';
+	import { authState } from '$lib/state/auth.svelte';
 	import { reconnectSync } from '$lib/workspace';
 
 	let { children }: { children: Snippet } = $props();
 
-	type AuthState = 'checking' | 'signed-out' | 'signed-in';
-
-	let authState = $state<AuthState>('checking');
-	let email = $state('');
-	let password = $state('');
-	let error = $state('');
-	let loading = $state(false);
-
-	// Check session on mount (one-time init — not a reactive effect)
 	onMount(() => {
-		checkSession().then((user) => {
-			authState = user ? 'signed-in' : 'signed-out';
-		});
+		authState.checkSession();
 
-		// Re-validate when sidepanel becomes visible after being hidden
 		const onVisibilityChange = () => {
-			if (document.visibilityState === 'visible' && authState === 'signed-in') {
-				checkSession().then((user) => {
-					if (!user) authState = 'signed-out';
-				});
+			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
+				authState.checkSession();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
 		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
-	// React to token changes (e.g. cleared by another extension context)
 	$effect(() => {
-		if (!authToken.current && authState === 'signed-in') {
-			authState = 'signed-out';
-		}
+		authState.reactToTokenCleared();
 	});
 </script>
 
-{#if authState === 'checking'}
+{#if authState.status === 'checking'}
 	<div class="flex h-full items-center justify-center">
 		<p class="text-sm text-muted-foreground">Checking session…</p>
 	</div>
-{:else if authState === 'signed-out'}
+{:else if authState.status === 'signed-out'}
 	<div class="flex h-full items-center justify-center p-6">
 		<form
 			onsubmit={async (e) => {
 				e.preventDefault();
-				error = '';
-				loading = true;
-				const { error: signInError } = await tryAsync({
-					try: () => signIn(email, password),
-					catch: (e) => Err(e instanceof Error ? e.message : 'Sign-in failed'),
-				});
-				if (signInError) {
-					error = signInError;
-				} else {
-					authState = 'signed-in';
-					password = '';
-					reconnectSync();
-				}
-				loading = false;
+				const { error } = await authState.signIn();
+				if (!error) reconnectSync();
 			}}
 			class="w-full max-w-xs"
 		>
@@ -75,25 +45,25 @@
 				<Field.Description>Sign in to sync your tabs across devices.</Field.Description>
 				<Field.Separator />
 
-				{#if error}
+				{#if authState.error}
 					<Alert.Root variant="destructive">
-						<Alert.Description>{error}</Alert.Description>
+						<Alert.Description>{authState.error}</Alert.Description>
 					</Alert.Root>
 				{/if}
 
 				<Field.Group>
 					<Field.Field>
 						<Field.Label for="email">Email</Field.Label>
-						<Input id="email" type="email" placeholder="Email" bind:value={email} required autocomplete="email" />
+						<Input id="email" type="email" placeholder="Email" bind:value={authState.email} required autocomplete="email" />
 					</Field.Field>
 					<Field.Field>
 						<Field.Label for="password">Password</Field.Label>
-						<Input id="password" type="password" placeholder="Password" bind:value={password} required autocomplete="current-password" />
+						<Input id="password" type="password" placeholder="Password" bind:value={authState.password} required autocomplete="current-password" />
 					</Field.Field>
 				</Field.Group>
 
-				<Button type="submit" class="w-full" disabled={loading}>
-					{loading ? 'Signing in…' : 'Sign in'}
+				<Button type="submit" class="w-full" disabled={authState.isSigningIn}>
+					{authState.isSigningIn ? 'Signing in…' : 'Sign in'}
 				</Button>
 			</Field.Set>
 		</form>
@@ -105,8 +75,7 @@
 			variant="ghost"
 			size="sm"
 			onclick={async () => {
-				await signOut();
-				authState = 'signed-out';
+				await authState.signOut();
 				reconnectSync();
 			}}
 		>

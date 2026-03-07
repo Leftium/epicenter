@@ -21,7 +21,7 @@ import {
 } from '@epicenter/workspace';
 import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { authToken } from '$lib/state/auth.svelte';
+import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
 import { type } from 'arktype';
 import Type from 'typebox';
@@ -563,7 +563,7 @@ export const workspaceClient = createWorkspace(
 			const wsUrl = serverUrl.current.replace(/^http/, 'ws');
 			return `${wsUrl}/rooms/${workspaceId}`;
 		},
-		getToken: async () => authToken.current ?? '',
+		getToken: async () => authState.token ?? '',
 	}))
 	.withActions(({ tables }) => ({
 		tabs: {

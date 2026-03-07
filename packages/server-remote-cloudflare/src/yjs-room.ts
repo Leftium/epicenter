@@ -19,11 +19,29 @@ type WsAttachment = {
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Max compacted snapshot size (1 MB). DO SQLite has a 2 MB per-row BLOB limit.
- * If a merged snapshot exceeds this, compaction is skipped and updates
- * accumulate as individual rows (each well under the limit).
+ * Max compacted snapshot size (2 MB). Cloudflare DO SQLite enforces a hard
+ * 2 MB per-row BLOB limit.
+ *
+ * On cold start, all update rows are merged into a single snapshot via
+ * `Y.mergeUpdatesV2`. If the merged result fits under this limit, all rows
+ * are atomically replaced with a single compacted row. This collapses
+ * thousands of tiny keystroke-level updates into one row, dramatically
+ * improving future cold-start load times.
+ *
+ * If the merged snapshot exceeds this limit, compaction is skipped and
+ * updates accumulate as individual rows — each well under 2 MB since
+ * individual updates are typically 20–100 bytes (keystrokes) or a few KB
+ * (pastes). This is unlikely in practice: a 2 MB Yjs document represents
+ * an enormous amount of rich text/structured data. And by the time a
+ * document reaches this size, prior cold starts will have already compacted
+ * everything up to that point into a single ~2 MB row, so the "tail" of
+ * uncompacted updates remains small.
+ *
+ * If this ever becomes a real issue, `Y.mergeUpdatesV2` is associative —
+ * a segmented compaction algorithm could split the update log into multiple
+ * sub-2 MB rows. But YAGNI for now.
  */
-const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
+const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
 /**
  * Durable Object that manages one external collaboration room.
@@ -47,7 +65,8 @@ const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
  *
  * ## Storage model
  *
- * Append-only update log in DO SQLite with opportunistic cold-start compaction.
+ * Append-only update log in DO SQLite with opportunistic cold-start
+ * compaction. See {@link MAX_COMPACTED_BYTES} for full details.
  *
  * - **Write path**: Every `Y.Doc` update is appended as a BLOB row via
  *   synchronous `sql.exec` (0 ms — co-located with compute, no network hop).
@@ -57,10 +76,7 @@ const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
  *   to a fresh `Y.Doc`. When multiple rows exist and the merged blob fits
  *   under {@link MAX_COMPACTED_BYTES}, atomically replaces all rows with a
  *   single merged snapshot. This collapses redundant insert+delete churn
- *   at zero extra encoding cost (we already merged for loading).
- * - **Compaction guard**: If the merged snapshot exceeds 1 MB, compaction
- *   is skipped and rows accumulate individually — each row stays well under
- *   the 2 MB per-row BLOB limit.
+ *   at zero extra encoding cost (we already computed `merged` for loading).
  *
  * ### Why DO SQLite over R2 or external storage
  *
@@ -97,7 +113,6 @@ export class YjsRoom extends DurableObject {
 		const { sql, transactionSync } = ctx.storage;
 
 		this.ctx.blockConcurrencyWhile(async () => {
-
 			// --- Schema ---
 			sql.exec(`
 				CREATE TABLE IF NOT EXISTS updates (
@@ -120,10 +135,7 @@ export class YjsRoom extends DurableObject {
 
 				// Compact: replace N rows with a single merged snapshot.
 				// Zero extra cost — we already computed `merged` for loading.
-				if (
-					rows.length > 1 &&
-					merged.byteLength <= MAX_COMPACTED_BYTES
-				) {
+				if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
 					transactionSync(() => {
 						sql.exec('DELETE FROM updates');
 						sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
@@ -325,4 +337,3 @@ function resilientSend(ws: WebSocket) {
 		});
 	};
 }
-

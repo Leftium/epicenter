@@ -20,9 +20,36 @@ import { createStorageState } from './storage-state.svelte';
 
 const AuthUser = type({
 	id: 'string',
+	createdAt: 'string',
+	updatedAt: 'string',
 	email: 'string',
-	'name?': 'string | undefined',
+	emailVerified: 'boolean',
+	name: 'string',
+	'image?': 'string | null',
 });
+
+type AuthUser = typeof AuthUser.infer;
+
+/** Convert a Better Auth user (Date | string dates) to our storage shape. */
+function toStorableUser(user: {
+	id: string;
+	createdAt: Date | string;
+	updatedAt: Date | string;
+	email: string;
+	emailVerified: boolean;
+	name: string;
+	image?: string | null;
+}): AuthUser {
+	return {
+		id: user.id,
+		createdAt: typeof user.createdAt === 'string' ? user.createdAt : user.createdAt.toISOString(),
+		updatedAt: typeof user.updatedAt === 'string' ? user.updatedAt : user.updatedAt.toISOString(),
+		email: user.email,
+		emailVerified: user.emailVerified,
+		name: user.name,
+		image: user.image ?? null,
+	};
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors
@@ -31,10 +58,6 @@ const AuthUser = type({
 export const AuthError = defineErrors({
 	SignInFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Sign-in failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	SignOutFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Sign-out failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -60,19 +83,29 @@ const authUser = createStorageState('local:authUser', {
 // Better Auth Client
 // ─────────────────────────────────────────────────────────────────────────────
 
-const client = createAuthClient({
-	baseURL: remoteServerUrl.current,
-	fetchOptions: {
-		auth: {
-			type: 'Bearer',
-			token: () => authToken.current ?? '',
+let cachedClient: ReturnType<typeof createAuthClient> | null = null;
+let cachedBaseUrl = '';
+
+function getClient() {
+	const url = remoteServerUrl.current;
+	if (cachedClient && url === cachedBaseUrl) return cachedClient;
+
+	cachedBaseUrl = url;
+	cachedClient = createAuthClient({
+		baseURL: url,
+		fetchOptions: {
+			auth: {
+				type: 'Bearer',
+				token: () => authToken.current ?? '',
+			},
+			onSuccess: (ctx) => {
+				const newToken = ctx.response?.headers.get('set-auth-token');
+				if (newToken) void authToken.set(newToken);
+			},
 		},
-		onSuccess: (ctx) => {
-			const newToken = ctx.response?.headers.get('set-auth-token');
-			if (newToken) void authToken.set(newToken);
-		},
-	},
-});
+	});
+	return cachedClient;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -126,13 +159,14 @@ function createAuthState() {
 
 			const result = await tryAsync({
 				try: async () => {
-					const { data, error: authError } = await client.signIn.email({
+					const { data, error: authError } = await getClient().signIn.email({
 						email,
 						password,
 					});
 					if (authError) throw new Error(authError.message ?? 'Sign-in failed');
-					await authUser.set(data.user);
-					return data.user;
+					const user = toStorableUser(data.user);
+					await authUser.set(user);
+					return user;
 				},
 				catch: (cause) => AuthError.SignInFailed({ cause }),
 			});
@@ -151,17 +185,10 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			status = 'signing-out';
-
-			const result = await tryAsync({
-				try: async () => {
-					await client.signOut().catch(() => {});
-					await clearState();
-				},
-				catch: (cause) => AuthError.SignOutFailed({ cause }),
-			});
-
+			await getClient().signOut().catch(() => {});
+			await clearState().catch(() => {});
 			status = 'signed-out';
-			return result;
+			return Ok(undefined);
 		},
 
 		/**
@@ -178,7 +205,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const { data, error: sessionError } = await client.getSession();
+			const { data, error: sessionError } = await getClient().getSession();
 
 			if (sessionError) {
 				// Network error (fetch threw) → trust cached user
@@ -200,11 +227,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const user = {
-				id: data.user.id,
-				email: data.user.email,
-				name: data.user.name,
-			};
+			const user = toStorableUser(data.user);
 			await authUser.set(user);
 			status = 'signed-in';
 			return Ok(user);
@@ -216,6 +239,7 @@ function createAuthState() {
 		 */
 		reactToTokenCleared() {
 			if (!authToken.current && status === 'signed-in') {
+				void authUser.set(null);
 				status = 'signed-out';
 			}
 		},

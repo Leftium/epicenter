@@ -3,6 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { onMount, type Snippet } from 'svelte';
 	import { authState } from '$lib/state/auth.svelte';
 	import { reconnectSync } from '$lib/workspace';
@@ -27,7 +28,8 @@
 </script>
 
 {#if authState.phase.status === 'checking'}
-	<div class="flex h-full items-center justify-center">
+	<div class="flex h-full items-center justify-center gap-2">
+		<Spinner class="size-4" />
 		<p class="text-sm text-muted-foreground">Checking session…</p>
 	</div>
 {:else if authState.phase.status === 'signed-out' || authState.phase.status === 'signing-in'}
@@ -64,7 +66,12 @@
 				</Field.Group>
 
 				<Button type="submit" class="w-full" disabled={phase.status === 'signing-in'}>
-					{phase.status === 'signing-in' ? 'Signing in…' : 'Sign in'}
+					{#if phase.status === 'signing-in'}
+						<Spinner class="size-4" />
+						Signing in…
+					{:else}
+						Sign in
+					{/if}
 				</Button>
 			</Field.Set>
 		</form>

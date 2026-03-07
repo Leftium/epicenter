@@ -19,6 +19,13 @@ type WsAttachment = {
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
 /**
+ * Max compacted snapshot size (1 MB). DO SQLite has a 2 MB per-row BLOB limit.
+ * If a merged snapshot exceeds this, compaction is skipped and updates
+ * accumulate as individual rows (each well under the limit).
+ */
+const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
+
+/**
  * Durable Object that manages one external collaboration room.
  *
  * Each Durable Object instance maps to one external room ID via
@@ -29,23 +36,20 @@ const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
  *
  * ## Storage model
  *
- * Pure append-only update log in DO SQLite — no compaction.
+ * Append-only update log in DO SQLite with opportunistic cold-start compaction.
  *
  * - **Write path**: Every `Y.Doc` update is appended as a BLOB row via
  *   synchronous `sql.exec` (0 ms — co-located with compute, no network hop).
  *   Each row is a tiny incremental update (~20–100 bytes per keystroke),
  *   well under the 2 MB per-row BLOB limit.
  * - **Cold start**: Reads all rows, merges with `Y.mergeUpdatesV2`, applies
- *   to a fresh `Y.Doc`. Even 10K rows of small updates merge in under a
- *   millisecond on co-located SQLite (no network hop, microsecond queries).
- *
- * ### Why no compaction
- *
- * DO SQLite has unlimited rows per table (bounded only by 10 GB storage
- * per DO). Individual Yjs updates are tiny, so row accumulation is not a
- * concern — 100K updates ≈ 10 MB. Compaction would try to cram the entire
- * doc into a single row, which risks hitting the 2 MB BLOB limit. Without
- * compaction, no individual row ever approaches that limit.
+ *   to a fresh `Y.Doc`. When multiple rows exist and the merged blob fits
+ *   under {@link MAX_COMPACTED_BYTES}, atomically replaces all rows with a
+ *   single merged snapshot. This collapses redundant insert+delete churn
+ *   at zero extra encoding cost (we already merged for loading).
+ * - **Compaction guard**: If the merged snapshot exceeds 1 MB, compaction
+ *   is skipped and rows accumulate individually — each row stays well under
+ *   the 2 MB per-row BLOB limit.
  *
  * ### Why DO SQLite over R2 or external storage
  *
@@ -96,17 +100,23 @@ export class YjsRoom extends DurableObject {
 
 			const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
 
-			if (rows.length > 10) {
-				console.warn(
-					`[YjsRoom] Cold start loading ${rows.length} update rows`,
-				);
-			}
-
 			if (rows.length > 0) {
 				const merged = Y.mergeUpdatesV2(
 					rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
 				);
 				Y.applyUpdateV2(this.doc, merged);
+
+				// Compact: replace N rows with a single merged snapshot.
+				// Zero extra cost — we already computed `merged` for loading.
+				if (
+					rows.length > 1 &&
+					merged.byteLength <= MAX_COMPACTED_BYTES
+				) {
+					ctx.storage.transactionSync(() => {
+						sql.exec('DELETE FROM updates');
+						sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
+					});
+				}
 			}
 
 			// --- Write-through persistence ---

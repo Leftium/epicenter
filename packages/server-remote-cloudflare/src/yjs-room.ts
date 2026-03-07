@@ -89,12 +89,11 @@ const COMPACTION_ROW_THRESHOLD = 500;
 export class YjsRoom extends DurableObject {
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
-	private compact!: () => void;
-	private connectionStates: Map<WebSocket, ConnectionState>;
+	private updatesSinceCompaction = 0;
+	private connectionStates = new Map<WebSocket, ConnectionState>();
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
 		this.ctx.setWebSocketAutoResponse(
@@ -104,10 +103,43 @@ export class YjsRoom extends DurableObject {
 		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
 		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
 		this.ctx.blockConcurrencyWhile(async () => {
-			const persisted = createPersistedDoc(ctx.storage);
-			this.doc = persisted.doc;
-			this.awareness = persisted.awareness;
-			this.compact = persisted.compact;
+			const sql = ctx.storage.sql;
+
+			// --- Schema ---
+			sql.exec(`
+				CREATE TABLE IF NOT EXISTS updates (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					data BLOB NOT NULL
+				)
+			`);
+
+			// --- Load ---
+			this.doc = new Y.Doc();
+			this.awareness = new Awareness(this.doc);
+
+			const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
+
+			if (rows.length > 10) {
+				console.warn(
+					`[YjsRoom] Cold start loading ${rows.length} update rows`,
+				);
+			}
+
+			if (rows.length > 0) {
+				const merged = Y.mergeUpdatesV2(
+					rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+				);
+				Y.applyUpdateV2(this.doc, merged);
+			}
+
+			// --- Write-through persistence ---
+			this.doc.on('updateV2', (update: Uint8Array) => {
+				sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+				this.updatesSinceCompaction++;
+				if (this.updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
+					this.compact();
+				}
+			});
 
 			// On wake from hibernation, restore connection state from attachments.
 			for (const ws of this.ctx.getWebSockets()) {
@@ -120,6 +152,40 @@ export class YjsRoom extends DurableObject {
 				this.connectionStates.set(ws, state);
 			}
 		});
+	}
+
+	/**
+	 * Merge accumulated updates into a single snapshot from the live doc.
+	 *
+	 * Encodes full state via `encodeStateAsUpdateV2` and atomically replaces
+	 * all rows. Safe from races because DOs are single-threaded.
+	 *
+	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
+	 * is skipped with a warning. The counter resets to avoid re-encoding every
+	 * {@link COMPACTION_ROW_THRESHOLD} updates on an oversized doc.
+	 */
+	private compact(): void {
+		const sql = this.ctx.storage.sql;
+		const countRows = [...sql.exec('SELECT COUNT(*) as n FROM updates')];
+		const rowCount = countRows[0]?.n as number;
+		if (rowCount <= 1) return;
+
+		const merged = Y.encodeStateAsUpdateV2(this.doc);
+		if (merged.byteLength > MAX_COMPACTED_BYTES) {
+			console.warn(
+				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
+					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
+					`Compaction skipped. ${rowCount} update rows accumulating.`,
+			);
+			this.updatesSinceCompaction = 0;
+			return;
+		}
+
+		this.ctx.storage.transactionSync(() => {
+			sql.exec('DELETE FROM updates');
+			sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
+		});
+		this.updatesSinceCompaction = 0;
 	}
 
 	// --- HTTP handlers: use the live Y.Doc directly ---
@@ -304,7 +370,7 @@ export class YjsRoom extends DurableObject {
 	}
 }
 
-// --- Factory functions ---
+// --- Helpers ---
 
 /** Wrap `ws.send` so failures on dead connections are silently ignored. */
 function resilientSend(ws: WebSocket) {
@@ -316,105 +382,3 @@ function resilientSend(ws: WebSocket) {
 	};
 }
 
-/**
- * SQLite-backed Y.Doc with awareness and automatic compaction.
- *
- * Owns the full doc persistence lifecycle:
- *
- * 1. **Schema init** — creates the `updates` table if absent.
- * 2. **Cold-start load** — reads all update rows, merges via
- *    `Y.mergeUpdatesV2`, and applies to a fresh `Y.Doc`. After compaction
- *    this is a single-row read; between compactions at most
- *    {@link COMPACTION_ROW_THRESHOLD} rows.
- * 3. **Write-through** — an `updateV2` listener persists every incremental
- *    update synchronously (DO SQLite is co-located, 0 ms) and triggers
- *    compaction after {@link COMPACTION_ROW_THRESHOLD} updates.
- * 4. **Compaction** — encodes the full doc state and atomically replaces
- *    all rows. Skipped with a warning if the snapshot exceeds
- *    {@link MAX_COMPACTED_BYTES}.
- *
- * The compaction counter is internal — callers just invoke `compact()` at
- * disconnect or alarm boundaries without tracking update counts.
- */
-function createPersistedDoc(storage: DurableObjectStorage) {
-	const sql = storage.sql;
-
-	// --- Schema ---
-
-	sql.exec(`
-		CREATE TABLE IF NOT EXISTS updates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			data BLOB NOT NULL
-		)
-	`);
-
-	// --- Load ---
-
-	const doc = new Y.Doc();
-	const awareness = new Awareness(doc);
-	let updatesSinceCompaction = 0;
-
-	const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
-
-	if (rows.length > 10) {
-		console.warn(`[YjsRoom] Cold start loading ${rows.length} update rows`);
-	}
-
-	if (rows.length > 0) {
-		const merged = Y.mergeUpdatesV2(
-			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-		);
-		Y.applyUpdateV2(doc, merged);
-	}
-
-	// --- Compaction ---
-
-	/**
-	 * Merge accumulated updates into a single snapshot from the live doc.
-	 *
-	 * Encodes full state via `encodeStateAsUpdateV2` and atomically replaces
-	 * all rows. Safe from races because DOs are single-threaded.
-	 *
-	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
-	 * is skipped with a warning. The counter resets to avoid re-encoding every
-	 * {@link COMPACTION_ROW_THRESHOLD} updates on an oversized doc.
-	 */
-	function compact(): void {
-		const countRows = [
-			...sql.exec('SELECT COUNT(*) as n FROM updates'),
-		];
-		const rowCount = countRows[0]?.n as number;
-		if (rowCount <= 1) return;
-
-		const merged = Y.encodeStateAsUpdateV2(doc);
-		if (merged.byteLength > MAX_COMPACTED_BYTES) {
-			console.warn(
-				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
-					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
-					`Compaction skipped. ${rowCount} update rows accumulating.`,
-			);
-			updatesSinceCompaction = 0;
-			return;
-		}
-
-		storage.transactionSync(() => {
-			sql.exec('DELETE FROM updates');
-			sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
-		});
-		updatesSinceCompaction = 0;
-	}
-
-	// --- Write-through persistence ---
-
-	// storage.sql.exec is synchronous in DO SQLite, so the callback
-	// runs synchronously despite the event system.
-	doc.on('updateV2', (update: Uint8Array) => {
-		sql.exec('INSERT INTO updates (data) VALUES (?)', update);
-		updatesSinceCompaction++;
-		if (updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
-			compact();
-		}
-	});
-
-	return { doc, awareness, compact };
-}

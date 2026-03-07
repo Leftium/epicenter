@@ -18,13 +18,23 @@ type WsAttachment = {
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
-/** DO SQLite BLOB row limit is 2 MB — leave headroom. */
+/**
+ * Max compacted snapshot size (1.9 MB). DO SQLite has a hard 2 MB BLOB-per-row
+ * limit; we leave 100 KB of headroom. For structured data without embedded
+ * images this holds ~500K–700K characters. If a doc exceeds this, compaction
+ * is skipped and updates accumulate as individual rows (with a warning log).
+ */
 const MAX_COMPACTED_BYTES = 1.9 * 1024 * 1024;
 
 /** Compact storage every 4 hours while connections are active. */
 const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
-/** Compact after this many incremental updates, even if connections remain active. */
+/**
+ * Compact after this many incremental updates, even if connections remain
+ * active. Matches y-websocket's `PREFERRED_TRIM_SIZE` of 500. Prevents
+ * unbounded row accumulation during long editing sessions where neither the
+ * disconnect trigger nor the 4-hour alarm fires.
+ */
 const COMPACTION_ROW_THRESHOLD = 500;
 
 /**
@@ -36,10 +46,45 @@ const COMPACTION_ROW_THRESHOLD = 500;
  * Uses the WebSocket Hibernation API so connections stay alive while the DO
  * pays zero compute when idle.
  *
- * Auth: Handled upstream by `authGuard` middleware in app.ts. The Worker
- * validates the session (cookie or `?token=` query param for WebSocket) via
- * Better Auth before forwarding to `stub.fetch()`. The DO itself does not
- * re-validate — it trusts the Worker boundary.
+ * ## Storage model
+ *
+ * Append-only update log in DO SQLite with periodic compaction:
+ *
+ * - **Write path**: Every `Y.Doc` update is appended as a BLOB row via
+ *   synchronous `sql.exec` (0 ms — co-located with compute, no network hop).
+ * - **Compaction**: Replaces all rows with a single full-state snapshot.
+ *   Triggered by (1) last client disconnect, (2) 4-hour alarm, or
+ *   (3) every {@link COMPACTION_ROW_THRESHOLD} updates during long sessions.
+ * - **Cold start**: Reads all rows, merges with `Y.mergeUpdatesV2`, applies
+ *   to a fresh `Y.Doc`. After compaction this is a single row; between
+ *   compactions it's at most ~500 incremental updates.
+ *
+ * ### Why DO SQLite over R2 or external storage
+ *
+ * DO SQLite writes are synchronous and co-located — every keystroke persists
+ * in the same event loop tick with zero network latency. R2 would add
+ * 5–20 ms per write or require a write buffer that risks data loss on crash.
+ * DO SQLite data is replicated to 5 follower machines (3-of-5 quorum) and
+ * batched to R2 internally, so durability matches or exceeds standalone R2.
+ * Cost is also dramatically lower: DO SQLite row writes are $1/M vs R2's
+ * $4.50/M for Class A operations.
+ *
+ * ### 2 MB BLOB ceiling
+ *
+ * DO SQLite has a 2 MB per-row BLOB limit. Documents exceeding 1.9 MB when
+ * compacted cannot be merged into a single row — compaction is skipped with
+ * a warning, and updates accumulate as individual rows. For structured data
+ * without embedded images (our use case), 1.9 MB holds ~500K–700K characters
+ * of text or thousands of structured entries. If logs show compaction being
+ * skipped, the upgrade path is SQLite row chunking (no new dependencies) or
+ * R2 overflow for the compacted snapshot.
+ *
+ * ## Auth
+ *
+ * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
+ * the session (cookie or `?token=` query param for WebSocket) via Better Auth
+ * before forwarding to `stub.fetch()`. The DO itself does not re-validate —
+ * it trusts the Worker boundary.
  */
 export class YjsRoom extends DurableObject {
 	private sql: DurableObjectStorage['sql'];
@@ -110,6 +155,18 @@ export class YjsRoom extends DurableObject {
 		this.sql.exec('DROP INDEX IF EXISTS idx_updates_doc_id');
 	}
 
+	/**
+	 * Reconstruct the Y.Doc from persisted updates on cold start.
+	 *
+	 * All rows are merged in one pass via `mergeUpdatesV2` then applied.
+	 * After compaction this is a single-row read; between compactions the
+	 * row count is bounded by {@link COMPACTION_ROW_THRESHOLD}. Logs a
+	 * warning when >10 rows are loaded so accumulation trends are visible.
+	 *
+	 * The `updateV2` listener persists every future update synchronously
+	 * and triggers compaction after {@link COMPACTION_ROW_THRESHOLD} updates
+	 * to prevent unbounded growth during long-lived sessions.
+	 */
 	private loadDoc(): Y.Doc {
 		const doc = new Y.Doc();
 		const rows = [
@@ -141,7 +198,17 @@ export class YjsRoom extends DurableObject {
 		return doc;
 	}
 
-	/** Compact accumulated updates into a single snapshot from the live doc. */
+	/**
+	 * Compact accumulated updates into a single snapshot from the live doc.
+	 *
+	 * Encodes the full doc state via `encodeStateAsUpdateV2` and atomically
+	 * replaces all rows. Safe from races because DOs are single-threaded.
+	 *
+	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
+	 * is skipped with a warning log. The counter resets to avoid re-attempting
+	 * `encodeStateAsUpdateV2` every 500 updates on a doc that's already over
+	 * the limit — the warning fires once per compaction cycle instead.
+	 */
 	private compact(): void {
 		const rows = [...this.sql.exec('SELECT COUNT(*) as n FROM updates')];
 		const rowCount = rows[0]?.n as number;

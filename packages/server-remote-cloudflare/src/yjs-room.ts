@@ -28,11 +28,22 @@ const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
 /**
  * Durable Object that manages one external collaboration room.
  *
- * Each Durable Object instance maps to one external room ID via
- * `idFromName(roomId)` and hosts a single in-memory `Y.Doc` for that room.
+ * Each instance maps to one room ID via `idFromName(roomId)` and hosts a
+ * single in-memory `Y.Doc`. Uses the WebSocket Hibernation API so connections
+ * stay alive while the DO pays zero compute when idle.
  *
- * Uses the WebSocket Hibernation API so connections stay alive while the DO
- * pays zero compute when idle.
+ * ## Worker → DO interface
+ *
+ * The Hono Worker in `app.ts` calls into this DO via two mechanisms:
+ *
+ * - **RPC** (`stub.sync()`, `stub.getDoc()`) — for HTTP sync and snapshot
+ *   bootstrap. Direct method calls avoid Request/Response serialization
+ *   overhead for binary payloads. The Worker handles HTTP concerns (status
+ *   codes, content-type headers); the DO handles only Yjs logic.
+ * - **fetch** (`stub.fetch(request)`) — for WebSocket upgrades only, since
+ *   the 101 Switching Protocols handshake requires HTTP request/response
+ *   semantics. After upgrade, all sync traffic flows through the Hibernation
+ *   API callbacks (`webSocketMessage`, `webSocketClose`, `webSocketError`).
  *
  * ## Storage model
  *
@@ -65,8 +76,8 @@ const MAX_COMPACTED_BYTES = 1 * 1024 * 1024;
  *
  * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
  * the session (cookie or `?token=` query param for WebSocket) via Better Auth
- * before forwarding to `stub.fetch()`. The DO itself does not re-validate —
- * it trusts the Worker boundary.
+ * before calling RPC methods or forwarding fetch. The DO itself does not
+ * re-validate — it trusts the Worker boundary.
  */
 export class YjsRoom extends DurableObject {
 	private doc!: Y.Doc;

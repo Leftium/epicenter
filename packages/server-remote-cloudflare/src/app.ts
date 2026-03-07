@@ -175,19 +175,34 @@ app.use('/rooms/*', authGuard);
 // AI chat
 app.post('/ai/chat', ...aiChatHandlers);
 
-// Sync rooms — Durable Object per room
-// WebSocket upgrades go through stub.fetch (HTTP semantics required for 101).
-// HTTP sync + snapshot use RPC — no Request/Response overhead for binary payloads.
+/**
+ * Sync rooms — one {@link YjsRoom} Durable Object per room.
+ *
+ * The Worker is the HTTP boundary; the DO is the Yjs brain. Communication
+ * uses two channels:
+ *
+ * | Route                      | Channel        | DO method       | Purpose                          |
+ * |----------------------------|----------------|-----------------|----------------------------------|
+ * | `GET  /rooms/:room` (ws)   | `stub.fetch()` | `fetch` → 101   | WebSocket upgrade (Hibernation)  |
+ * | `GET  /rooms/:room` (http) | RPC            | `stub.getDoc()` | Snapshot bootstrap (full state)  |
+ * | `POST /rooms/:room`        | RPC            | `stub.sync()`   | HTTP sync (state vector + diff)  |
+ *
+ * RPC is used for HTTP operations because it avoids Request/Response
+ * serialization for binary payloads. WebSocket upgrades must go through
+ * `stub.fetch()` since the 101 handshake requires HTTP semantics.
+ */
 
 app.get('/rooms/:room', async (c) => {
 	const stub = c.env.YJS_ROOM.get(
 		c.env.YJS_ROOM.idFromName(c.req.param('room')),
 	);
 
+	// WebSocket upgrade — requires HTTP semantics for 101 response
 	if (c.req.header('upgrade') === 'websocket') {
 		return stub.fetch(c.req.raw);
 	}
 
+	// Snapshot bootstrap via RPC — full doc state as binary
 	const update = await stub.getDoc();
 	return new Response(update, {
 		headers: { 'content-type': 'application/octet-stream' },
@@ -204,6 +219,7 @@ app.post('/rooms/:room', async (c) => {
 		c.env.YJS_ROOM.idFromName(c.req.param('room')),
 	);
 
+	// HTTP sync via RPC — returns diff or null (in sync → 304)
 	const diff = await stub.sync(body);
 
 	if (!diff) return c.body(null, 304);

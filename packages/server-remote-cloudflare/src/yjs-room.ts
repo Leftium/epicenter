@@ -188,8 +188,29 @@ export class YjsRoom extends DurableObject {
 		this.updatesSinceCompaction = 0;
 	}
 
-	// --- HTTP handlers: use the live Y.Doc directly ---
+	// --- Request dispatch ---
 
+	/**
+	 * Single entry point for all room requests, forwarded from the Hono Worker
+	 * via `stub.fetch(c.req.raw)`. Dispatches on transport/method:
+	 *
+	 * | Signal               | Handler                       | Purpose                                                       |
+	 * |----------------------|-------------------------------|---------------------------------------------------------------|
+	 * | `Upgrade: websocket` | {@link handleWebSocketUpgrade} | **Live sync** — persistent connection via Hibernation API.   |
+	 * |                      |                               | Receives incremental updates, broadcasts to peers, keeps      |
+	 * |                      |                               | awareness in sync. Connection survives DO hibernation.         |
+	 * | `POST`               | {@link handleHttpSync}        | **HTTP sync** — client sends state vector + optional update.  |
+	 * |                      |                               | Server applies update, diffs against live doc, returns missing |
+	 * |                      |                               | changes (or 304 if in sync). Used by HTTP polling provider.   |
+	 * | `GET`                | {@link handleHttpGetDoc}      | **Snapshot bootstrap** — full doc state as binary. Used by    |
+	 * |                      |                               | WebSocket provider's `snapshotUrl` prefetch to reduce initial  |
+	 * |                      |                               | sync payload size.                                            |
+	 *
+	 * **Why not sync-core's `handleHttpSync`/`handleHttpGetDoc`?**
+	 * Those are stateless — they read from an `UpdateLog` and merge on every
+	 * request. This DO always has the live `Y.Doc` in memory, so it works
+	 * directly with the resident doc. Same semantics, zero I/O overhead.
+	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
 			return this.handleWebSocketUpgrade();
@@ -207,8 +228,15 @@ export class YjsRoom extends DurableObject {
 	}
 
 	/**
-	 * HTTP sync: decode client state vector + optional update, diff against
-	 * the live Y.Doc. Zero storage reads — the doc is always in memory.
+	 * HTTP sync (POST).
+	 *
+	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
+	 * (encoded via `encodeSyncRequest` from sync-core).
+	 *
+	 * 1. Applies client update to the live doc (triggers `updateV2` → SQLite
+	 *    persist + broadcast to WebSocket peers).
+	 * 2. Compares state vectors — returns **304** if already in sync.
+	 * 3. Otherwise returns **200** with the binary diff the client is missing.
 	 */
 	private async handleHttpSync(request: Request): Promise<Response> {
 		const contentLength = parseInt(
@@ -239,7 +267,14 @@ export class YjsRoom extends DurableObject {
 		});
 	}
 
-	/** HTTP snapshot: encode the full doc state from memory. */
+	/**
+	 * Snapshot bootstrap (GET).
+	 *
+	 * Returns the full doc state as `application/octet-stream` via
+	 * `Y.encodeStateAsUpdateV2`. Clients apply this with `Y.applyUpdateV2`
+	 * to hydrate their local doc before opening a WebSocket, reducing the
+	 * amount of data exchanged during the initial sync handshake.
+	 */
 	private handleHttpGetDoc(): Response {
 		const update = Y.encodeStateAsUpdateV2(this.doc);
 		return new Response(update, {
@@ -248,8 +283,20 @@ export class YjsRoom extends DurableObject {
 		});
 	}
 
-	// --- WebSocket upgrade ---
-
+	/**
+	 * WebSocket upgrade (Upgrade: websocket).
+	 *
+	 * Accepts via the Hibernation API (`ctx.acceptWebSocket`) so the DO can
+	 * sleep while connections stay alive — zero compute cost when idle.
+	 *
+	 * On connect: sends SyncStep1 (server's state vector) + current awareness
+	 * states. The client responds with SyncStep2 (its missing updates) and the
+	 * sync handshake completes. Subsequent mutations flow as incremental
+	 * MESSAGE_SYNC updates, broadcast to all peers via {@link webSocketMessage}.
+	 *
+	 * Per-connection metadata (controlled awareness client IDs) is persisted
+	 * via `ws.serializeAttachment` to survive hibernation wake cycles.
+	 */
 	private async handleWebSocketUpgrade(): Promise<Response> {
 		const pair = new WebSocketPair();
 		const [client, server] = [pair[0], pair[1]];

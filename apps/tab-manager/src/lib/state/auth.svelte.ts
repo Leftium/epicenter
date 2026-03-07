@@ -21,7 +21,7 @@ import { createStorageState } from './storage-state.svelte';
 const AuthUser = type({
 	id: 'string',
 	email: 'string',
-	'name?': 'string',
+	'name?': 'string | undefined',
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -63,34 +63,6 @@ const authUser = createStorageState('local:authUser', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Better Auth Client
-// ─────────────────────────────────────────────────────────────────────────────
-
-let cachedClient: ReturnType<typeof createAuthClient> | null = null;
-let cachedBaseUrl = '';
-
-function getClient() {
-	const url = remoteServerUrl.current;
-	if (cachedClient && url === cachedBaseUrl) return cachedClient;
-
-	cachedBaseUrl = url;
-	cachedClient = createAuthClient({
-		baseURL: url,
-		fetchOptions: {
-			auth: {
-				type: 'Bearer',
-				token: () => authToken.current,
-			},
-			onSuccess: ({ response }) => {
-				const newToken = response.headers.get('set-auth-token');
-				if (newToken) void authToken.set(newToken);
-			},
-		},
-	});
-	return cachedClient;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -106,6 +78,22 @@ function createAuthState() {
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
+
+	const client = $derived(
+		createAuthClient({
+			baseURL: remoteServerUrl.current,
+			fetchOptions: {
+				auth: {
+					type: 'Bearer',
+					token: () => authToken.current,
+				},
+				onSuccess: ({ response }) => {
+					const newToken = response.headers.get('set-auth-token');
+					if (newToken) void authToken.set(newToken);
+				},
+			},
+		}),
+	);
 
 	async function clearState() {
 		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
@@ -147,7 +135,7 @@ function createAuthState() {
 
 			const result = await tryAsync({
 				try: async () => {
-					const { data, error: authError } = await getClient().signIn.email({
+					const { data, error: authError } = await client.signIn.email({
 						email,
 						password,
 					});
@@ -178,9 +166,7 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			status = 'signing-out';
-			await getClient()
-				.signOut()
-				.catch(() => {});
+			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
 			status = 'signed-out';
 			return Ok(undefined);
@@ -200,7 +186,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const { data, error: sessionError } = await getClient().getSession();
+			const { data, error: sessionError } = await client.getSession();
 
 			if (sessionError) {
 				const isAuthRejection =

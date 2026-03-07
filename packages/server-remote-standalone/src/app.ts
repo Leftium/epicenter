@@ -74,7 +74,7 @@ function createBetterAuthInstance(config: {
 				loginPage: '/sign-in',
 				consentPage: '/consent',
 				requirePKCE: true,
-				allowDynamicClientRegistration: true,
+				allowDynamicClientRegistration: false,
 				trustedClients: [...trustedClients],
 			}),
 		],
@@ -273,6 +273,12 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 	const storage = new BunSqliteUpdateLog(dbPath);
 	const { auth, betterAuth } = createStandaloneAuth(authConfig);
 
+	// Derive allowed CORS origins from auth config
+	const allowedOrigins =
+		authConfig.mode === 'betterAuth' && authConfig.trustedOrigins
+			? new Set([...authConfig.trustedOrigins, 'tauri://localhost'])
+			: null;
+
 	// --- Build the Hono app ---
 
 	const factory = createFactory<Env>({
@@ -281,7 +287,12 @@ export function createRemoteHub(config: StandaloneHubConfig = {}) {
 			app.use('*', async (c, next) => {
 				if (c.req.header('upgrade') === 'websocket') return next();
 				return cors({
-					origin: (origin) => origin,
+					origin: (origin) => {
+						// When no trustedOrigins configured (none/token mode), allow all
+						if (!allowedOrigins) return origin;
+						if (!origin) return origin;
+						return allowedOrigins.has(origin) ? origin : undefined;
+					},
 					credentials: true,
 					allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 					allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

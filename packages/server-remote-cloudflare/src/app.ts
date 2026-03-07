@@ -60,7 +60,7 @@ function createAuth(env: Env['Bindings']) {
 				loginPage: '/sign-in',
 				consentPage: '/consent',
 				requirePKCE: true,
-				allowDynamicClientRegistration: true,
+				allowDynamicClientRegistration: false,
 				trustedClients: [
 					{
 						clientId: 'epicenter-desktop',
@@ -123,7 +123,14 @@ const factory = createFactory<Env>({
 		app.use('*', async (c, next) => {
 			if (c.req.header('upgrade') === 'websocket') return next();
 			return cors({
-				origin: (origin) => origin,
+				origin: (origin) => {
+					if (!origin) return origin;
+					if (origin === 'https://epicenter.so') return origin;
+					if (origin.endsWith('.epicenter.so') && origin.startsWith('https://'))
+						return origin;
+					if (origin === 'tauri://localhost') return origin;
+					return undefined;
+				},
 				credentials: true,
 				allowHeaders: ['Content-Type', 'Authorization', 'Upgrade'],
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

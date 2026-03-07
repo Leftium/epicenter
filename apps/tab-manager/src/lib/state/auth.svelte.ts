@@ -77,19 +77,12 @@ const auth = createAuthClient({
  * Uses Better Auth's client to call the sign-in endpoint. The token is
  * captured from the `set-auth-token` response header via `onSuccess`.
  */
-export async function signIn(
-	email: string,
-	password: string,
-): Promise<typeof AuthUser.infer> {
+export async function signIn(email: string, password: string) {
 	const { data, error } = await auth.signIn.email({ email, password });
 
 	if (error) throw new Error(error.message ?? 'Sign-in failed');
 
-	const user = {
-		id: data.user.id,
-		email: data.user.email,
-		name: data.user.name,
-	};
+	const { user } = data;
 	await authUser.set(user);
 	return user;
 }

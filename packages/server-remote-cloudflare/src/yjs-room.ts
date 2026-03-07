@@ -94,8 +94,9 @@ export class YjsRoom extends DurableObject {
 
 		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
 		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
+		const { sql, transactionSync } = ctx.storage;
+
 		this.ctx.blockConcurrencyWhile(async () => {
-			const sql = ctx.storage.sql;
 
 			// --- Schema ---
 			sql.exec(`
@@ -123,7 +124,7 @@ export class YjsRoom extends DurableObject {
 					rows.length > 1 &&
 					merged.byteLength <= MAX_COMPACTED_BYTES
 				) {
-					ctx.storage.transactionSync(() => {
+					transactionSync(() => {
 						sql.exec('DELETE FROM updates');
 						sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
 					});

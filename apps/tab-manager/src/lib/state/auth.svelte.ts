@@ -66,18 +66,17 @@ const authUser = createStorageState('local:authUser', {
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-type AuthStatus =
-	| 'checking'
-	| 'signing-in'
-	| 'signing-out'
-	| 'signed-in'
-	| 'signed-out';
+type AuthPhase =
+	| { status: 'checking' }
+	| { status: 'signing-in' }
+	| { status: 'signing-out' }
+	| { status: 'signed-in' }
+	| { status: 'signed-out'; error?: string };
 
 function createAuthState() {
-	let status = $state<AuthStatus>('checking');
+	let phase = $state<AuthPhase>({ status: 'checking' });
 	let email = $state('');
 	let password = $state('');
-	let error = $state('');
 
 	const client = $derived(
 		createAuthClient({
@@ -100,8 +99,8 @@ function createAuthState() {
 	}
 
 	return {
-		get status(): AuthStatus {
-			return status;
+		get status() {
+			return phase.status;
 		},
 		get email() {
 			return email;
@@ -116,7 +115,7 @@ function createAuthState() {
 			password = value;
 		},
 		get error() {
-			return error;
+			return phase.status === 'signed-out' ? phase.error : undefined;
 		},
 		get user() {
 			return authUser.current;
@@ -130,8 +129,7 @@ function createAuthState() {
 		 * Manages loading/error state internally.
 		 */
 		async signIn() {
-			error = '';
-			status = 'signing-in';
+			phase = { status: 'signing-in' };
 
 			const result = await tryAsync({
 				try: async () => {
@@ -153,10 +151,9 @@ function createAuthState() {
 			});
 
 			if (result.error) {
-				error = result.error.message;
-				status = 'signed-out';
+				phase = { status: 'signed-out', error: result.error.message };
 			} else {
-				status = 'signed-in';
+				phase = { status: 'signed-in' };
 				password = '';
 			}
 
@@ -165,10 +162,10 @@ function createAuthState() {
 
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
-			status = 'signing-out';
+			phase = { status: 'signing-out' };
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
-			status = 'signed-out';
+			phase = { status: 'signed-out' };
 			return Ok(undefined);
 		},
 
@@ -182,7 +179,7 @@ function createAuthState() {
 		async checkSession() {
 			const token = authToken.current;
 			if (!token) {
-				status = 'signed-out';
+				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
@@ -195,19 +192,19 @@ function createAuthState() {
 				if (!isAuthRejection) {
 					// Network error or 5xx → trust cached user
 					const cached = authUser.current;
-					status = cached ? 'signed-in' : 'signed-out';
+					phase = cached ? { status: 'signed-in' } : { status: 'signed-out' };
 					return Ok(cached);
 				}
 
 				// 4xx → server explicitly rejected the token
 				await clearState();
-				status = 'signed-out';
+				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
 			if (!data) {
 				await clearState();
-				status = 'signed-out';
+				phase = { status: 'signed-out' };
 				return Ok(null);
 			}
 
@@ -218,7 +215,7 @@ function createAuthState() {
 				updatedAt: updatedAt.toISOString(),
 			} satisfies AuthUser;
 			await authUser.set(user);
-			status = 'signed-in';
+			phase = { status: 'signed-in' };
 			return Ok(user);
 		},
 
@@ -227,9 +224,9 @@ function createAuthState() {
 		 * Call this inside a $effect.
 		 */
 		reactToTokenCleared() {
-			if (!authToken.current && status === 'signed-in') {
+			if (!authToken.current && phase.status === 'signed-in') {
 				void authUser.set(undefined);
-				status = 'signed-out';
+				phase = { status: 'signed-out' };
 			}
 		},
 	};

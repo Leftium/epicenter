@@ -1,20 +1,20 @@
 /**
  * Auth state for the tab manager extension.
  *
- * Stores a Better Auth session token and cached user info in
- * chrome.storage.local, exposed as reactive Svelte 5 state via
- * `createStorageState` with schema validation.
+ * Uses Better Auth's vanilla client (`createAuthClient`) with a custom token
+ * bridge to `chrome.storage.local`. The client auto-injects Bearer tokens on
+ * every request and captures new tokens from the `set-auth-token` header.
  *
- * Sign-in flow:
- * 1. POST /auth/sign-in/email -> { token, user }
- * 2. Store token + user in chrome.storage.local
- * 3. Reactive state auto-syncs via .watch()
- * 4. Token read synchronously via authToken.current
+ * Token storage is handled by `createStorageState`, which provides:
+ * - Synchronous reads via `.current` (needed for the token getter)
+ * - Reactive cross-context sync via `chrome.storage.onChanged`
+ * - Schema validation on every read
  */
 
 import { type } from 'arktype';
-import { createStorageState } from './storage-state.svelte';
+import { createAuthClient } from 'better-auth/client';
 import { remoteServerUrl } from './settings.svelte';
+import { createStorageState } from './storage-state.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -43,74 +43,96 @@ export const authUser = createStorageState('local:authUser', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Better Auth Client
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Better Auth vanilla client.
+ *
+ * - `fetchOptions.auth.token` reads from `chrome.storage.local` synchronously
+ * - `fetchOptions.onSuccess` captures rotated tokens from `set-auth-token` header
+ * - `baseURL` uses the reactive `remoteServerUrl` fallback (stable for app lifetime)
+ */
+const auth = createAuthClient({
+	baseURL: remoteServerUrl.current,
+	fetchOptions: {
+		auth: {
+			type: 'Bearer',
+			token: () => authToken.current ?? '',
+		},
+		onSuccess: (ctx) => {
+			const newToken = ctx.response?.headers.get('set-auth-token');
+			if (newToken) void authToken.set(newToken);
+		},
+	},
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Actions
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Sign in with email and password.
  *
- * Calls Better Auth's email sign-in endpoint and stores the session token.
- * Reactive state auto-updates via `.watch()`.
+ * Uses Better Auth's client to call the sign-in endpoint. The token is
+ * captured from the `set-auth-token` response header via `onSuccess`.
  */
 export async function signIn(
 	email: string,
 	password: string,
 ): Promise<typeof AuthUser.infer> {
-	const res = await fetch(`${remoteServerUrl.current}/auth/sign-in/email`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ email, password }),
-	});
+	const { data, error } = await auth.signIn.email({ email, password });
 
-	if (!res.ok) {
-		const body = await res.text();
-		throw new Error(`Sign-in failed (${res.status}): ${body}`);
-	}
+	if (error) throw new Error(error.message ?? 'Sign-in failed');
 
-	const data: { token: string; user: typeof AuthUser.infer } = await res.json();
-	await Promise.all([authToken.set(data.token), authUser.set(data.user)]);
-	return data.user;
+	const user = {
+		id: data.user.id,
+		email: data.user.email,
+		name: data.user.name,
+	};
+	await authUser.set(user);
+	return user;
 }
 
-/** Sign out — clears stored token and user. */
+/** Sign out — server-side invalidation + clear local state. */
 export async function signOut(): Promise<void> {
-	const token = authToken.current;
-
-	// Best-effort server-side sign out
-	if (token) {
-		fetch(`${remoteServerUrl.current}/auth/sign-out`, {
-			method: 'POST',
-			headers: { Authorization: `Bearer ${token}` },
-		}).catch(() => {});
-	}
-
+	// Best-effort server-side sign-out (client handles Bearer injection)
+	await auth.signOut().catch(() => {});
 	await Promise.all([authToken.set(null), authUser.set(null)]);
 }
 
 /**
  * Validate the stored session against the server.
  *
- * Returns the user if the session is valid, or null (and clears storage)
- * if expired or invalid.
+ * Offline-aware: if the server is unreachable (network error), trusts
+ * the cached user rather than showing a sign-out screen. Only clears
+ * state on an explicit auth rejection (4xx).
  */
 export async function checkSession(): Promise<typeof AuthUser.infer | null> {
 	const token = authToken.current;
 	if (!token) return null;
 
-	try {
-		const res = await fetch(`${remoteServerUrl.current}/auth/get-session`, {
-			headers: { Authorization: `Bearer ${token}` },
-		});
+	const { data, error } = await auth.getSession();
 
-		if (!res.ok) {
-			await Promise.all([authToken.set(null), authUser.set(null)]);
-			return null;
-		}
+	if (error) {
+		// Network error (fetch threw) → trust cached user
+		if (!error.status) return authUser.current;
 
-		const data: { user: typeof AuthUser.infer } = await res.json();
-		await authUser.set(data.user);
-		return data.user;
-	} catch {
+		// Server explicitly rejected the token → clear state
+		await Promise.all([authToken.set(null), authUser.set(null)]);
 		return null;
 	}
+
+	if (!data) {
+		await Promise.all([authToken.set(null), authUser.set(null)]);
+		return null;
+	}
+
+	const user = {
+		id: data.user.id,
+		email: data.user.email,
+		name: data.user.name,
+	};
+	await authUser.set(user);
+	return user;
 }

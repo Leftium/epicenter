@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 	import { Err, tryAsync } from 'wellcrafted/result';
 	import { authToken, checkSession, signIn, signOut } from '$lib/state/auth.svelte';
 	import { reconnectSync } from '$lib/workspace';
@@ -18,14 +18,25 @@
 	let error = $state('');
 	let loading = $state(false);
 
-	// Check session on mount
-	$effect(() => {
+	// Check session on mount (one-time init — not a reactive effect)
+	onMount(() => {
 		checkSession().then((user) => {
 			authState = user ? 'signed-in' : 'signed-out';
 		});
+
+		// Re-validate when sidepanel becomes visible after being hidden
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible' && authState === 'signed-in') {
+				checkSession().then((user) => {
+					if (!user) authState = 'signed-out';
+				});
+			}
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
-	// React to token changes (e.g. cleared by another context)
+	// React to token changes (e.g. cleared by another extension context)
 	$effect(() => {
 		if (!authToken.current && authState === 'signed-in') {
 			authState = 'signed-out';

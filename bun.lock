@@ -130,6 +130,7 @@
         "@tanstack/ai-svelte": "^0.5.4",
         "@wxt-dev/storage": "^1.2.6",
         "arktype": "catalog:",
+        "better-auth": "catalog:",
         "clsx": "catalog:",
         "marked": "^17.0.3",
         "tailwind-merge": "catalog:",

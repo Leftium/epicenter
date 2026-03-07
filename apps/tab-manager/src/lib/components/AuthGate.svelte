@@ -1,5 +1,7 @@
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
+	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import type { Snippet } from 'svelte';
 	import { Err, tryAsync } from 'wellcrafted/result';
@@ -65,25 +67,21 @@
 			</div>
 
 			{#if error}
-				<p class="text-sm text-destructive">{error}</p>
+				<Alert.Root variant="destructive">
+					<Alert.Description>{error}</Alert.Description>
+				</Alert.Root>
 			{/if}
 
-			<div class="space-y-3">
-				<Input
-					type="email"
-					placeholder="Email"
-					bind:value={email}
-					required
-					autocomplete="email"
-				/>
-				<Input
-					type="password"
-					placeholder="Password"
-					bind:value={password}
-					required
-					autocomplete="current-password"
-				/>
-			</div>
+			<Field.Group>
+				<Field.Field>
+					<Field.Label for="email">Email</Field.Label>
+					<Input id="email" type="email" placeholder="Email" bind:value={email} required autocomplete="email" />
+				</Field.Field>
+				<Field.Field>
+					<Field.Label for="password">Password</Field.Label>
+					<Input id="password" type="password" placeholder="Password" bind:value={password} required autocomplete="current-password" />
+				</Field.Field>
+			</Field.Group>
 
 			<Button type="submit" class="w-full" disabled={loading}>
 				{loading ? 'Signing in…' : 'Sign in'}

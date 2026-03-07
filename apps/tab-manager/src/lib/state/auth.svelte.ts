@@ -108,7 +108,7 @@ function createAuthState() {
 	let error = $state('');
 
 	async function clearState() {
-		await Promise.all([authToken.set(null), authUser.set(null)]);
+		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
 	}
 
 	return {
@@ -239,7 +239,7 @@ function createAuthState() {
 		 */
 		reactToTokenCleared() {
 			if (!authToken.current && status === 'signed-in') {
-				void authUser.set(null);
+				void authUser.set(undefined);
 				status = 'signed-out';
 			}
 		},

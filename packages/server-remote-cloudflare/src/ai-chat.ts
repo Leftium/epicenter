@@ -1,6 +1,7 @@
 import { sValidator } from '@hono/standard-validator';
 import {
 	type AnyTextAdapter,
+	type ModelMessage,
 	chat,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
@@ -93,7 +94,7 @@ export const aiChatHandlers = factory.createHandlers(
 
 		const stream = chat({
 			adapter,
-			messages: messages as unknown as Parameters<typeof chat>[0]['messages'],
+			messages: messages as Array<ModelMessage>,
 			systemPrompts: data.systemPrompts,
 			temperature: data.temperature,
 			maxTokens: data.maxTokens,

@@ -142,17 +142,6 @@ export class YjsRoom extends DurableObject {
 				data BLOB NOT NULL
 			)
 		`);
-		// Migrate from old schema that had doc_id and created_at columns.
-		// DROP COLUMN is safe on DO SQLite (uses modern SQLite ≥ 3.35).
-		trySync({
-			try: () => this.sql.exec('ALTER TABLE updates DROP COLUMN doc_id'),
-			catch: () => Ok(undefined),
-		});
-		trySync({
-			try: () => this.sql.exec('ALTER TABLE updates DROP COLUMN created_at'),
-			catch: () => Ok(undefined),
-		});
-		this.sql.exec('DROP INDEX IF EXISTS idx_updates_doc_id');
 	}
 
 	/**

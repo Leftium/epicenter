@@ -14,7 +14,7 @@
 		authState.checkSession();
 
 		const onVisibilityChange = () => {
-			if (document.visibilityState === 'visible' && authState.phase.status === 'signed-in') {
+			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
 				authState.checkSession();
 			}
 		};
@@ -27,13 +27,12 @@
 	});
 </script>
 
-{#if authState.phase.status === 'checking'}
+{#if authState.status === 'checking'}
 	<div class="flex h-full items-center justify-center gap-2">
 		<Spinner class="size-4" />
 		<p class="text-sm text-muted-foreground">Checking session…</p>
 	</div>
-{:else if authState.phase.status === 'signed-out' || authState.phase.status === 'signing-in'}
-	{@const phase = authState.phase}
+{:else if authState.status === 'signed-out' || authState.status === 'signing-in'}
 	<div class="flex h-full items-center justify-center p-6">
 		<form
 			onsubmit={async (e) => {
@@ -48,9 +47,9 @@
 				<Field.Description>Sign in to sync your tabs across devices.</Field.Description>
 				<Field.Separator />
 
-				{#if phase.status === 'signed-out' && phase.error}
+				{#if authState.signInError}
 					<Alert.Root variant="destructive">
-						<Alert.Description>{phase.error}</Alert.Description>
+						<Alert.Description>{authState.signInError}</Alert.Description>
 					</Alert.Root>
 				{/if}
 
@@ -65,8 +64,8 @@
 					</Field.Field>
 				</Field.Group>
 
-				<Button type="submit" class="w-full" disabled={phase.status === 'signing-in'}>
-					{#if phase.status === 'signing-in'}
+				<Button type="submit" class="w-full" disabled={authState.status === 'signing-in'}>
+					{#if authState.status === 'signing-in'}
 						<Spinner class="size-4" />
 						Signing in…
 					{:else}

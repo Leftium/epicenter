@@ -66,7 +66,7 @@ const authUser = createStorageState('local:authUser', {
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type AuthPhase =
+type AuthPhase =
 	| { status: 'checking' }
 	| { status: 'signing-in' }
 	| { status: 'signing-out' }
@@ -99,8 +99,11 @@ function createAuthState() {
 	}
 
 	return {
-		get phase(): AuthPhase {
-			return phase;
+		get status() {
+			return phase.status;
+		},
+		get signInError(): string | undefined {
+			return phase.status === 'signed-out' ? phase.error : undefined;
 		},
 		get email() {
 			return email;

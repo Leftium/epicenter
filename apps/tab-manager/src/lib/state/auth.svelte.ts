@@ -24,8 +24,8 @@ import { createStorageState } from './storage-state.svelte';
 
 const AuthUser = type({
 	id: 'string',
-	createdAt: 'string',
-	updatedAt: 'string',
+	createdAt: 'string.date.iso',
+	updatedAt: 'string.date.iso',
 	email: 'string',
 	emailVerified: 'boolean',
 	name: 'string',
@@ -52,14 +52,14 @@ export type AuthError = InferErrors<typeof AuthError>;
 
 /** Reactive auth token. Read via `authToken.current`. */
 const authToken = createStorageState('local:authToken', {
-	fallback: null,
-	schema: type('string').or('null'),
+	fallback: undefined,
+	schema: type('string').or('undefined'),
 });
 
 /** Reactive auth user. Read via `authUser.current`. */
 const authUser = createStorageState('local:authUser', {
-	fallback: null,
-	schema: AuthUser.or('null'),
+	fallback: undefined,
+	schema: AuthUser.or('undefined'),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ function getClient() {
 		fetchOptions: {
 			auth: {
 				type: 'Bearer',
-				token: () => authToken.current ?? '',
+				token: () => authToken.current,
 			},
 			onSuccess: (ctx) => {
 				const newToken = ctx.response?.headers.get('set-auth-token');
@@ -155,14 +155,8 @@ function createAuthState() {
 					const { createdAt, updatedAt, ...rest } = data.user;
 					const user = {
 						...rest,
-						createdAt:
-							typeof createdAt === 'string'
-								? createdAt
-								: createdAt.toISOString(),
-						updatedAt:
-							typeof updatedAt === 'string'
-								? updatedAt
-								: updatedAt.toISOString(),
+						createdAt: createdAt.toISOString(),
+						updatedAt: updatedAt.toISOString(),
 					} satisfies AuthUser;
 					await authUser.set(user);
 					return user;
@@ -231,10 +225,8 @@ function createAuthState() {
 			const { createdAt, updatedAt, ...rest } = data.user;
 			const user = {
 				...rest,
-				createdAt:
-					typeof createdAt === 'string' ? createdAt : createdAt.toISOString(),
-				updatedAt:
-					typeof updatedAt === 'string' ? updatedAt : updatedAt.toISOString(),
+				createdAt: createdAt.toISOString(),
+				updatedAt: updatedAt.toISOString(),
 			} satisfies AuthUser;
 			await authUser.set(user);
 			status = 'signed-in';

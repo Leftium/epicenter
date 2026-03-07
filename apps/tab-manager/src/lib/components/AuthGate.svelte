@@ -30,7 +30,7 @@
 	<div class="flex h-full items-center justify-center">
 		<p class="text-sm text-muted-foreground">Checking session…</p>
 	</div>
-{:else if authState.status === 'signed-out'}
+{:else if authState.status === 'signed-out' || authState.status === 'signing-in'}
 	<div class="flex h-full items-center justify-center p-6">
 		<form
 			onsubmit={async (e) => {
@@ -62,8 +62,8 @@
 					</Field.Field>
 				</Field.Group>
 
-				<Button type="submit" class="w-full" disabled={authState.isSigningIn}>
-					{authState.isSigningIn ? 'Signing in…' : 'Sign in'}
+				<Button type="submit" class="w-full" disabled={authState.status === 'signing-in'}>
+					{authState.status === 'signing-in' ? 'Signing in…' : 'Sign in'}
 				</Button>
 			</Field.Set>
 		</form>

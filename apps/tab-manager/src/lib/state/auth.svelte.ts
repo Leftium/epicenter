@@ -37,10 +37,6 @@ export const AuthError = defineErrors({
 		message: `Sign-out failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	SessionCheckFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Session check failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 });
 export type AuthError = InferErrors<typeof AuthError>;
 
@@ -82,26 +78,21 @@ const client = createAuthClient({
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-type AuthStatus = 'checking' | 'signed-out' | 'signed-in';
+type AuthStatus = 'checking' | 'signing-in' | 'signing-out' | 'signed-in' | 'signed-out';
 
 function createAuthState() {
 	let status = $state<AuthStatus>('checking');
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
-	let isSigningIn = $state(false);
-	let isSigningOut = $state(false);
 
 	async function clearState() {
 		await Promise.all([authToken.set(null), authUser.set(null)]);
 	}
 
 	return {
-		get status() {
+		get status(): AuthStatus {
 			return status;
-		},
-		set status(value: AuthStatus) {
-			status = value;
 		},
 		get email() {
 			return email;
@@ -118,15 +109,6 @@ function createAuthState() {
 		get error() {
 			return error;
 		},
-		set error(value: string) {
-			error = value;
-		},
-		get isSigningIn() {
-			return isSigningIn;
-		},
-		get isSigningOut() {
-			return isSigningOut;
-		},
 		get user() {
 			return authUser.current;
 		},
@@ -140,7 +122,7 @@ function createAuthState() {
 		 */
 		async signIn() {
 			error = '';
-			isSigningIn = true;
+			status = 'signing-in';
 
 			const result = await tryAsync({
 				try: async () => {
@@ -157,18 +139,18 @@ function createAuthState() {
 
 			if (result.error) {
 				error = result.error.message;
+				status = 'signed-out';
 			} else {
 				status = 'signed-in';
 				password = '';
 			}
 
-			isSigningIn = false;
 			return result;
 		},
 
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
-			isSigningOut = true;
+			status = 'signing-out';
 
 			const result = await tryAsync({
 				try: async () => {
@@ -178,9 +160,7 @@ function createAuthState() {
 				catch: (cause) => AuthError.SignOutFailed({ cause }),
 			});
 
-			// Always transition to signed-out, even on error
 			status = 'signed-out';
-			isSigningOut = false;
 			return result;
 		},
 

@@ -19,25 +19,6 @@ type WsAttachment = {
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
 /**
- * Max compacted snapshot size (1.9 MB). DO SQLite has a hard 2 MB BLOB-per-row
- * limit; we leave 100 KB of headroom. For structured data without embedded
- * images this holds ~500K–700K characters. If a doc exceeds this, compaction
- * is skipped and updates accumulate as individual rows (with a warning log).
- */
-const MAX_COMPACTED_BYTES = 1.9 * 1024 * 1024;
-
-/** Compact storage every 4 hours while connections are active. */
-const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
-
-/**
- * Compact after this many incremental updates, even if connections remain
- * active. Matches y-websocket's `PREFERRED_TRIM_SIZE` of 500. Prevents
- * unbounded row accumulation during long editing sessions where neither the
- * disconnect trigger nor the 4-hour alarm fires.
- */
-const COMPACTION_ROW_THRESHOLD = 500;
-
-/**
  * Durable Object that manages one external collaboration room.
  *
  * Each Durable Object instance maps to one external room ID via
@@ -48,16 +29,23 @@ const COMPACTION_ROW_THRESHOLD = 500;
  *
  * ## Storage model
  *
- * Append-only update log in DO SQLite with periodic compaction:
+ * Pure append-only update log in DO SQLite — no compaction.
  *
  * - **Write path**: Every `Y.Doc` update is appended as a BLOB row via
  *   synchronous `sql.exec` (0 ms — co-located with compute, no network hop).
- * - **Compaction**: Replaces all rows with a single full-state snapshot.
- *   Triggered by (1) last client disconnect, (2) 4-hour alarm, or
- *   (3) every {@link COMPACTION_ROW_THRESHOLD} updates during long sessions.
+ *   Each row is a tiny incremental update (~20–100 bytes per keystroke),
+ *   well under the 2 MB per-row BLOB limit.
  * - **Cold start**: Reads all rows, merges with `Y.mergeUpdatesV2`, applies
- *   to a fresh `Y.Doc`. After compaction this is a single row; between
- *   compactions it's at most ~500 incremental updates.
+ *   to a fresh `Y.Doc`. Even 10K rows of small updates merge in under a
+ *   millisecond on co-located SQLite (no network hop, microsecond queries).
+ *
+ * ### Why no compaction
+ *
+ * DO SQLite has unlimited rows per table (bounded only by 10 GB storage
+ * per DO). Individual Yjs updates are tiny, so row accumulation is not a
+ * concern — 100K updates ≈ 10 MB. Compaction would try to cram the entire
+ * doc into a single row, which risks hitting the 2 MB BLOB limit. Without
+ * compaction, no individual row ever approaches that limit.
  *
  * ### Why DO SQLite over R2 or external storage
  *
@@ -69,16 +57,6 @@ const COMPACTION_ROW_THRESHOLD = 500;
  * Cost is also dramatically lower: DO SQLite row writes are $1/M vs R2's
  * $4.50/M for Class A operations.
  *
- * ### 2 MB BLOB ceiling
- *
- * DO SQLite has a 2 MB per-row BLOB limit. Documents exceeding 1.9 MB when
- * compacted cannot be merged into a single row — compaction is skipped with
- * a warning, and updates accumulate as individual rows. For structured data
- * without embedded images (our use case), 1.9 MB holds ~500K–700K characters
- * of text or thousands of structured entries. If logs show compaction being
- * skipped, the upgrade path is SQLite row chunking (no new dependencies) or
- * R2 overflow for the compacted snapshot.
- *
  * ## Auth
  *
  * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
@@ -89,7 +67,6 @@ const COMPACTION_ROW_THRESHOLD = 500;
 export class YjsRoom extends DurableObject {
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
-	private updatesSinceCompaction = 0;
 	private connectionStates = new Map<WebSocket, ConnectionState>();
 
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -135,10 +112,6 @@ export class YjsRoom extends DurableObject {
 			// --- Write-through persistence ---
 			this.doc.on('updateV2', (update: Uint8Array) => {
 				sql.exec('INSERT INTO updates (data) VALUES (?)', update);
-				this.updatesSinceCompaction++;
-				if (this.updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
-					this.compact();
-				}
 			});
 
 			// On wake from hibernation, restore connection state from attachments.
@@ -152,40 +125,6 @@ export class YjsRoom extends DurableObject {
 				this.connectionStates.set(ws, state);
 			}
 		});
-	}
-
-	/**
-	 * Merge accumulated updates into a single snapshot from the live doc.
-	 *
-	 * Encodes full state via `encodeStateAsUpdateV2` and atomically replaces
-	 * all rows. Safe from races because DOs are single-threaded.
-	 *
-	 * If the snapshot exceeds {@link MAX_COMPACTED_BYTES} (1.9 MB), compaction
-	 * is skipped with a warning. The counter resets to avoid re-encoding every
-	 * {@link COMPACTION_ROW_THRESHOLD} updates on an oversized doc.
-	 */
-	private compact(): void {
-		const sql = this.ctx.storage.sql;
-		const countRows = [...sql.exec('SELECT COUNT(*) as n FROM updates')];
-		const rowCount = countRows[0]?.n as number;
-		if (rowCount <= 1) return;
-
-		const merged = Y.encodeStateAsUpdateV2(this.doc);
-		if (merged.byteLength > MAX_COMPACTED_BYTES) {
-			console.warn(
-				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
-					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
-					`Compaction skipped. ${rowCount} update rows accumulating.`,
-			);
-			this.updatesSinceCompaction = 0;
-			return;
-		}
-
-		this.ctx.storage.transactionSync(() => {
-			sql.exec('DELETE FROM updates');
-			sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
-		});
-		this.updatesSinceCompaction = 0;
 	}
 
 	// --- Request dispatch ---
@@ -324,12 +263,6 @@ export class YjsRoom extends DurableObject {
 			server.send(msg);
 		}
 
-		// Schedule periodic compaction if no alarm is already set.
-		const existing = await this.ctx.storage.getAlarm();
-		if (!existing) {
-			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
-		}
-
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
@@ -389,13 +322,6 @@ export class YjsRoom extends DurableObject {
 		handleWsClose(state);
 		this.connectionStates.delete(ws);
 
-		// Compact storage when last connection leaves.
-		// Safe from races: DO is single-threaded, so no new fetch() can run
-		// until this handler completes.
-		if (this.connectionStates.size === 0) {
-			this.compact();
-		}
-
 		trySync({
 			try: () => ws.close(code, reason),
 			catch: () => Ok(undefined),
@@ -404,16 +330,6 @@ export class YjsRoom extends DurableObject {
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
-	}
-
-	/** Periodic compaction: merge accumulated updates into a single snapshot. */
-	override async alarm(): Promise<void> {
-		this.compact();
-
-		// Reschedule if there are still active connections.
-		if (this.ctx.getWebSockets().length > 0) {
-			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
-		}
 	}
 }
 

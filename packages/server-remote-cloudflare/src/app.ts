@@ -51,7 +51,7 @@ function createAuth(env: Env['Bindings']) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
-		baseURL: 'https://api.epicenter.so',
+		baseURL: env.BASE_URL,
 		secret: env.BETTER_AUTH_SECRET,
 		plugins: [
 			bearer(),

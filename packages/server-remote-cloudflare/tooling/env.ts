@@ -11,6 +11,9 @@
  * CLI tools (drizzle-kit, better-auth) can't use Hyperdrive bindings, so
  * they need a direct URL. Rather than duplicating it in `.dev.vars`, we
  * read it straight from `wrangler.jsonc` — the single source of truth.
+ *
+ * For production migrations, set `DATABASE_URL` env var to override:
+ *   DATABASE_URL="postgres://prod..." bun run db:migrate
  */
 
 import { readFileSync } from 'node:fs';
@@ -21,21 +24,26 @@ import { parse as parseJSONC } from 'jsonc-parser';
 
 config({ path: fileURLToPath(new URL('../.dev.vars', import.meta.url)) });
 
-const HyperdriveEntry = type({ localConnectionString: 'string' });
+function getDatabaseUrl(): string {
+	if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
 
-const WranglerConfig = type('string')
-	.pipe((s) => parseJSONC(s) as Record<string, unknown>)
-	.to({
-		hyperdrive: [HyperdriveEntry, '...', HyperdriveEntry.array()],
-	});
+	const HyperdriveEntry = type({ localConnectionString: 'string' });
+	const WranglerConfig = type('string')
+		.pipe((s) => parseJSONC(s) as Record<string, unknown>)
+		.to({
+			hyperdrive: [HyperdriveEntry, '...', HyperdriveEntry.array()],
+		});
 
-const jsoncString = readFileSync(
-	fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
-	'utf-8',
-);
+	const jsoncString = readFileSync(
+		fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
+		'utf-8',
+	);
 
-const wranglerConfig = WranglerConfig.assert(jsoncString);
-const DATABASE_URL = wranglerConfig.hyperdrive[0].localConnectionString;
+	return WranglerConfig.assert(jsoncString).hyperdrive[0]
+		.localConnectionString;
+}
+
+const DATABASE_URL = getDatabaseUrl();
 
 const { BETTER_AUTH_SECRET } = type({ BETTER_AUTH_SECRET: 'string' }).assert(
 	process.env,

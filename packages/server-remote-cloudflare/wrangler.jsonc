@@ -6,11 +6,22 @@
 	"compatibility_flags": ["nodejs_compat"],
 	"send_metrics": false,
 
+	// --- Custom domain: api.epicenter.so ---
+	"routes": [
+		{ "pattern": "api.epicenter.so/*", "zone_name": "epicenter.so" }
+	],
+
+	// --- Vars: non-secret config accessible via env ---
+	"vars": {
+		"BASE_URL": "https://api.epicenter.so"
+	},
+
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---
+	// Create with: bunx wrangler kv namespace create "epicenter-sessions"
 	"kv_namespaces": [
 		{
 			"binding": "SESSION_KV",
-			"id": "local-dev-placeholder"
+			"id": "<run: bunx wrangler kv namespace create epicenter-sessions>"
 		}
 	],
 
@@ -44,10 +55,11 @@
 	},
 
 	// --- Hyperdrive: Postgres connection pool ---
+	// Create with: bunx wrangler hyperdrive create epicenter-db --connection-string="postgres://..."
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "<created-via-wrangler-cli>",
+			"id": "<run: bunx wrangler hyperdrive create epicenter-db>",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	]

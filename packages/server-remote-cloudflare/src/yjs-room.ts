@@ -8,7 +8,7 @@ import {
 	handleWsOpen,
 	stateVectorsEqual,
 } from '@epicenter/sync-core';
-import { Ok, trySync } from 'wellcrafted/result';
+
 import * as Y from 'yjs';
 
 type WsAttachment = {
@@ -294,10 +294,7 @@ export class YjsRoom extends DurableObject {
 		if (result.broadcast) {
 			for (const [otherWs] of this.connectionStates) {
 				if (otherWs !== ws) {
-					trySync({
-						try: () => otherWs.send(result.broadcast!),
-						catch: () => Ok(undefined),
-					});
+					swallow(() => otherWs.send(result.broadcast!));
 				}
 			}
 		}
@@ -320,10 +317,7 @@ export class YjsRoom extends DurableObject {
 		handleWsClose(state);
 		this.connectionStates.delete(ws);
 
-		trySync({
-			try: () => ws.close(code, reason),
-			catch: () => Ok(undefined),
-		});
+		swallow(() => ws.close(code, reason));
 	}
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
@@ -333,12 +327,16 @@ export class YjsRoom extends DurableObject {
 
 // --- Helpers ---
 
+/** Silently ignore errors (e.g. dead WebSocket sends/closes). */
+function swallow(fn: () => void): void {
+	try {
+		fn();
+	} catch {
+		/* connection already dead */
+	}
+}
+
 /** Wrap `ws.send` so failures on dead connections are silently ignored. */
 function resilientSend(ws: WebSocket) {
-	return (data: Uint8Array) => {
-		trySync({
-			try: () => ws.send(data),
-			catch: () => Ok(undefined),
-		});
-	};
+	return (data: Uint8Array) => swallow(() => ws.send(data));
 }

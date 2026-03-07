@@ -137,7 +137,9 @@ export function createWsSyncExtension(
 				provider = createSyncProvider({
 					doc: ydoc,
 					url: newConfig.url ?? resolvedUrl,
-					getToken: newConfig.getToken,
+					getToken: newConfig.getToken ?? (config.getToken
+					? () => config.getToken!(workspaceId)
+					: undefined),
 					connect: true,
 					awareness: awareness.raw,
 					snapshotUrl: newConfig.snapshotUrl ?? resolvedSnapshotUrl,

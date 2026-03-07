@@ -15,6 +15,14 @@ type WsAttachment = {
 	controlledClientIds: number[];
 };
 
+type RoomDb = {
+	initSchema(): void;
+	selectAllUpdates(): Record<string, SqlStorageValue>[];
+	insertUpdate(data: Uint8Array): void;
+	countUpdates(): number;
+	replaceAllUpdates(data: Uint8Array): void;
+};
+
 /** Max incoming WebSocket message size (5 MB). */
 const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
@@ -87,7 +95,7 @@ const COMPACTION_ROW_THRESHOLD = 500;
  * it trusts the Worker boundary.
  */
 export class YjsRoom extends DurableObject {
-	private sql: DurableObjectStorage['sql'];
+	private db!: RoomDb;
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
 	private connectionStates: Map<WebSocket, ConnectionState>;
@@ -95,7 +103,7 @@ export class YjsRoom extends DurableObject {
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
-		this.sql = ctx.storage.sql;
+		this.db = createDb(ctx.storage);
 		this.connectionStates = new Map();
 
 		// Auto ping/pong without waking the DO.
@@ -106,7 +114,7 @@ export class YjsRoom extends DurableObject {
 		// Load the Y.Doc from SQLite synchronously inside blockConcurrencyWhile.
 		// This ensures the doc is ready before any fetch() or webSocketMessage() runs.
 		this.ctx.blockConcurrencyWhile(async () => {
-			this.initSchema();
+			this.db.initSchema();
 			this.doc = this.loadDoc();
 			this.awareness = new Awareness(this.doc);
 
@@ -135,15 +143,6 @@ export class YjsRoom extends DurableObject {
 
 	// --- Storage: direct SQLite, one doc per DO ---
 
-	private initSchema(): void {
-		this.sql.exec(`
-			CREATE TABLE IF NOT EXISTS updates (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				data BLOB NOT NULL
-			)
-		`);
-	}
-
 	/**
 	 * Reconstruct the Y.Doc from persisted updates on cold start.
 	 *
@@ -158,9 +157,7 @@ export class YjsRoom extends DurableObject {
 	 */
 	private loadDoc(): Y.Doc {
 		const doc = new Y.Doc();
-		const rows = [
-			...this.sql.exec('SELECT data FROM updates ORDER BY id'),
-		];
+		const rows = this.db.selectAllUpdates();
 
 		if (rows.length > 10) {
 			console.warn(`[YjsRoom] Cold start loading ${rows.length} update rows`);
@@ -177,7 +174,7 @@ export class YjsRoom extends DurableObject {
 		// storage.sql.exec is synchronous in DO SQLite, so the callback
 		// runs synchronously despite the event system.
 		doc.on('updateV2', (update: Uint8Array) => {
-			this.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+			this.db.insertUpdate(update);
 			this.updatesSinceCompaction++;
 			if (this.updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
 				this.compact();
@@ -199,8 +196,7 @@ export class YjsRoom extends DurableObject {
 	 * the limit — the warning fires once per compaction cycle instead.
 	 */
 	private compact(): void {
-		const rows = [...this.sql.exec('SELECT COUNT(*) as n FROM updates')];
-		const rowCount = rows[0]?.n as number;
+		const rowCount = this.db.countUpdates();
 		if (rowCount <= 1) return;
 
 		const merged = Y.encodeStateAsUpdateV2(this.doc);
@@ -214,10 +210,7 @@ export class YjsRoom extends DurableObject {
 			return;
 		}
 
-		this.ctx.storage.transactionSync(() => {
-			this.sql.exec('DELETE FROM updates');
-			this.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
-		});
+		this.db.replaceAllUpdates(merged);
 		this.updatesSinceCompaction = 0;
 	}
 
@@ -401,4 +394,46 @@ export class YjsRoom extends DurableObject {
 			await this.ctx.storage.setAlarm(Date.now() + COMPACTION_INTERVAL_MS);
 		}
 	}
+}
+
+/**
+ * Thin data-access layer over the DO SQLite `updates` table.
+ *
+ * Keeps raw SQL out of YjsRoom's business logic. Every method maps to one
+ * logical storage operation; `replaceAllUpdates` wraps the DELETE + INSERT
+ * in a `transactionSync` for atomicity.
+ */
+function createDb(storage: DurableObjectStorage): RoomDb {
+	const sql = storage.sql;
+	return {
+		/** Create the `updates` table if it doesn't exist. */
+		initSchema() {
+			sql.exec(`
+				CREATE TABLE IF NOT EXISTS updates (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					data BLOB NOT NULL
+				)
+			`);
+		},
+		/** Return all persisted update BLOBs in insertion order. */
+		selectAllUpdates() {
+			return [...sql.exec('SELECT data FROM updates ORDER BY id')];
+		},
+		/** Append a single Yjs update BLOB. */
+		insertUpdate(data: Uint8Array) {
+			sql.exec('INSERT INTO updates (data) VALUES (?)', data);
+		},
+		/** Return the number of rows in the `updates` table. */
+		countUpdates(): number {
+			const rows = [...sql.exec('SELECT COUNT(*) as n FROM updates')];
+			return rows[0]?.n as number;
+		},
+		/** Atomically replace all rows with a single compacted snapshot. */
+		replaceAllUpdates(data: Uint8Array) {
+			storage.transactionSync(() => {
+				sql.exec('DELETE FROM updates');
+				sql.exec('INSERT INTO updates (data) VALUES (?)', data);
+			});
+		},
+	};
 }

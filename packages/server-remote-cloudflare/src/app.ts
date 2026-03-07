@@ -14,6 +14,9 @@ import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
 import * as schema from './db/schema';
 
+// Re-export so wrangler types generates DurableObjectNamespace<YjsRoom>
+export { YjsRoom } from './yjs-room';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -172,12 +175,41 @@ app.use('/rooms/*', authGuard);
 // AI chat
 app.post('/ai/chat', ...aiChatHandlers);
 
-// Sync rooms — forward to Durable Object
-app.all('/rooms/:room', async (c) => {
-	const roomId = c.req.param('room');
-	const id = c.env.YJS_ROOM.idFromName(roomId);
-	const stub = c.env.YJS_ROOM.get(id);
-	return stub.fetch(c.req.raw);
+// Sync rooms — Durable Object per room
+// WebSocket upgrades go through stub.fetch (HTTP semantics required for 101).
+// HTTP sync + snapshot use RPC — no Request/Response overhead for binary payloads.
+
+app.get('/rooms/:room', async (c) => {
+	const stub = c.env.YJS_ROOM.get(
+		c.env.YJS_ROOM.idFromName(c.req.param('room')),
+	);
+
+	if (c.req.header('upgrade') === 'websocket') {
+		return stub.fetch(c.req.raw);
+	}
+
+	const update = await stub.getDoc();
+	return new Response(update, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+app.post('/rooms/:room', async (c) => {
+	const body = new Uint8Array(await c.req.arrayBuffer());
+	if (body.byteLength > 5 * 1024 * 1024) {
+		return c.body('Payload too large', 413);
+	}
+
+	const stub = c.env.YJS_ROOM.get(
+		c.env.YJS_ROOM.idFromName(c.req.param('room')),
+	);
+
+	const diff = await stub.sync(body);
+
+	if (!diff) return c.body(null, 304);
+	return new Response(diff, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
 });
 
 export default app;

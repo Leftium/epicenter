@@ -127,99 +127,58 @@ export class YjsRoom extends DurableObject {
 		});
 	}
 
-	// --- Request dispatch ---
+	// --- fetch: WebSocket upgrades only ---
 
 	/**
-	 * Single entry point for all room requests, forwarded from the Hono Worker
-	 * via `stub.fetch(c.req.raw)`. Dispatches on transport/method:
-	 *
-	 * | Signal               | Handler                       | Purpose                                                       |
-	 * |----------------------|-------------------------------|---------------------------------------------------------------|
-	 * | `Upgrade: websocket` | {@link handleWebSocketUpgrade} | **Live sync** — persistent connection via Hibernation API.   |
-	 * |                      |                               | Receives incremental updates, broadcasts to peers, keeps      |
-	 * |                      |                               | awareness in sync. Connection survives DO hibernation.         |
-	 * | `POST`               | {@link handleHttpSync}        | **HTTP sync** — client sends state vector + optional update.  |
-	 * |                      |                               | Server applies update, diffs against live doc, returns missing |
-	 * |                      |                               | changes (or 304 if in sync). Used by HTTP polling provider.   |
-	 * | `GET`                | {@link handleHttpGetDoc}      | **Snapshot bootstrap** — full doc state as binary. Used by    |
-	 * |                      |                               | WebSocket provider's `snapshotUrl` prefetch to reduce initial  |
-	 * |                      |                               | sync payload size.                                            |
-	 *
-	 * **Why not sync-core's `handleHttpSync`/`handleHttpGetDoc`?**
-	 * Those are stateless — they read from an `UpdateLog` and merge on every
-	 * request. This DO always has the live `Y.Doc` in memory, so it works
-	 * directly with the resident doc. Same semantics, zero I/O overhead.
+	 * Only handles WebSocket upgrades. HTTP operations (sync, snapshot) are
+	 * exposed as RPC methods called directly on the stub, avoiding the overhead
+	 * of constructing/parsing Request/Response objects for binary payloads.
 	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
 			return this.handleWebSocketUpgrade();
 		}
-
-		if (request.method === 'POST') {
-			return this.handleHttpSync(request);
-		}
-
-		if (request.method === 'GET') {
-			return this.handleHttpGetDoc();
-		}
-
 		return new Response('Method not allowed', { status: 405 });
 	}
 
+	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---
+
 	/**
-	 * HTTP sync (POST).
+	 * HTTP sync via RPC.
 	 *
 	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
 	 * (encoded via `encodeSyncRequest` from sync-core).
 	 *
 	 * 1. Applies client update to the live doc (triggers `updateV2` → SQLite
 	 *    persist + broadcast to WebSocket peers).
-	 * 2. Compares state vectors — returns **304** if already in sync.
-	 * 3. Otherwise returns **200** with the binary diff the client is missing.
+	 * 2. Compares state vectors — returns `null` if already in sync (caller
+	 *    maps to 304).
+	 * 3. Otherwise returns the binary diff the client is missing.
 	 */
-	private async handleHttpSync(request: Request): Promise<Response> {
-		const contentLength = parseInt(
-			request.headers.get('content-length') ?? '0',
-			10,
-		);
-		if (contentLength > MAX_MESSAGE_BYTES) {
-			return new Response('Payload too large', { status: 413 });
-		}
-
-		const body = new Uint8Array(await request.arrayBuffer());
+	async sync(body: Uint8Array): Promise<Uint8Array | null> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
-		// Apply client's changes to the live doc (triggers updateV2 → persist)
 		if (update.byteLength > 0) {
 			Y.applyUpdateV2(this.doc, update, 'http');
 		}
 
 		const serverSV = Y.encodeStateVector(this.doc);
 		if (stateVectorsEqual(serverSV, clientSV)) {
-			return new Response(null, { status: 304 });
+			return null;
 		}
 
-		const diff = Y.encodeStateAsUpdateV2(this.doc, clientSV);
-		return new Response(diff, {
-			status: 200,
-			headers: { 'content-type': 'application/octet-stream' },
-		});
+		return Y.encodeStateAsUpdateV2(this.doc, clientSV);
 	}
 
 	/**
-	 * Snapshot bootstrap (GET).
+	 * Snapshot bootstrap via RPC.
 	 *
-	 * Returns the full doc state as `application/octet-stream` via
-	 * `Y.encodeStateAsUpdateV2`. Clients apply this with `Y.applyUpdateV2`
-	 * to hydrate their local doc before opening a WebSocket, reducing the
-	 * amount of data exchanged during the initial sync handshake.
+	 * Returns the full doc state via `Y.encodeStateAsUpdateV2`. Clients apply
+	 * this with `Y.applyUpdateV2` to hydrate their local doc before opening a
+	 * WebSocket, reducing the initial sync payload size.
 	 */
-	private handleHttpGetDoc(): Response {
-		const update = Y.encodeStateAsUpdateV2(this.doc);
-		return new Response(update, {
-			status: 200,
-			headers: { 'content-type': 'application/octet-stream' },
-		});
+	async getDoc(): Promise<Uint8Array> {
+		return Y.encodeStateAsUpdateV2(this.doc);
 	}
 
 	/**

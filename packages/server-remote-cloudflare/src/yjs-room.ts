@@ -24,6 +24,9 @@ const MAX_COMPACTED_BYTES = 1.9 * 1024 * 1024;
 /** Compact storage every 4 hours while connections are active. */
 const COMPACTION_INTERVAL_MS = 4 * 60 * 60 * 1000;
 
+/** Compact after this many incremental updates, even if connections remain active. */
+const COMPACTION_ROW_THRESHOLD = 500;
+
 /**
  * Durable Object that manages one external collaboration room.
  *
@@ -43,6 +46,7 @@ export class YjsRoom extends DurableObject {
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
 	private connectionStates: Map<WebSocket, ConnectionState>;
+	private updatesSinceCompaction = 0;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -111,6 +115,11 @@ export class YjsRoom extends DurableObject {
 		const rows = [
 			...this.sql.exec('SELECT data FROM updates ORDER BY id'),
 		];
+
+		if (rows.length > 10) {
+			console.warn(`[YjsRoom] Cold start loading ${rows.length} update rows`);
+		}
+
 		if (rows.length > 0) {
 			const merged = Y.mergeUpdatesV2(
 				rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
@@ -123,6 +132,10 @@ export class YjsRoom extends DurableObject {
 		// runs synchronously despite the event system.
 		doc.on('updateV2', (update: Uint8Array) => {
 			this.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+			this.updatesSinceCompaction++;
+			if (this.updatesSinceCompaction >= COMPACTION_ROW_THRESHOLD) {
+				this.compact();
+			}
 		});
 
 		return doc;
@@ -131,15 +144,25 @@ export class YjsRoom extends DurableObject {
 	/** Compact accumulated updates into a single snapshot from the live doc. */
 	private compact(): void {
 		const rows = [...this.sql.exec('SELECT COUNT(*) as n FROM updates')];
-		if ((rows[0]?.n as number) <= 1) return;
+		const rowCount = rows[0]?.n as number;
+		if (rowCount <= 1) return;
 
 		const merged = Y.encodeStateAsUpdateV2(this.doc);
-		if (merged.byteLength > MAX_COMPACTED_BYTES) return;
+		if (merged.byteLength > MAX_COMPACTED_BYTES) {
+			console.warn(
+				`[YjsRoom] Doc snapshot is ${(merged.byteLength / 1024 / 1024).toFixed(2)}MB ` +
+					`(limit: ${(MAX_COMPACTED_BYTES / 1024 / 1024).toFixed(1)}MB). ` +
+					`Compaction skipped. ${rowCount} update rows accumulating.`,
+			);
+			this.updatesSinceCompaction = 0;
+			return;
+		}
 
 		this.ctx.storage.transactionSync(() => {
 			this.sql.exec('DELETE FROM updates');
 			this.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
 		});
+		this.updatesSinceCompaction = 0;
 	}
 
 	// --- HTTP handlers: use the live Y.Doc directly ---

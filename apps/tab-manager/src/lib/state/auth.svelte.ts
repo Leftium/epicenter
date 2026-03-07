@@ -9,7 +9,11 @@
 
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
@@ -25,31 +29,10 @@ const AuthUser = type({
 	email: 'string',
 	emailVerified: 'boolean',
 	name: 'string',
-	'image?': 'string | null',
+	'image?': 'string | null | undefined',
 });
 
 type AuthUser = typeof AuthUser.infer;
-
-/** Convert a Better Auth user (Date | string dates) to our storage shape. */
-function toStorableUser(user: {
-	id: string;
-	createdAt: Date | string;
-	updatedAt: Date | string;
-	email: string;
-	emailVerified: boolean;
-	name: string;
-	image?: string | null;
-}): AuthUser {
-	return {
-		id: user.id,
-		createdAt: typeof user.createdAt === 'string' ? user.createdAt : user.createdAt.toISOString(),
-		updatedAt: typeof user.updatedAt === 'string' ? user.updatedAt : user.updatedAt.toISOString(),
-		email: user.email,
-		emailVerified: user.emailVerified,
-		name: user.name,
-		image: user.image ?? null,
-	};
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Errors
@@ -111,7 +94,12 @@ function getClient() {
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
-type AuthStatus = 'checking' | 'signing-in' | 'signing-out' | 'signed-in' | 'signed-out';
+type AuthStatus =
+	| 'checking'
+	| 'signing-in'
+	| 'signing-out'
+	| 'signed-in'
+	| 'signed-out';
 
 function createAuthState() {
 	let status = $state<AuthStatus>('checking');
@@ -164,7 +152,18 @@ function createAuthState() {
 						password,
 					});
 					if (authError) throw new Error(authError.message ?? 'Sign-in failed');
-					const user = toStorableUser(data.user);
+					const { createdAt, updatedAt, ...rest } = data.user;
+					const user = {
+						...rest,
+						createdAt:
+							typeof createdAt === 'string'
+								? createdAt
+								: createdAt.toISOString(),
+						updatedAt:
+							typeof updatedAt === 'string'
+								? updatedAt
+								: updatedAt.toISOString(),
+					} satisfies AuthUser;
 					await authUser.set(user);
 					return user;
 				},
@@ -185,7 +184,9 @@ function createAuthState() {
 		/** Sign out — server-side invalidation + clear local state. */
 		async signOut() {
 			status = 'signing-out';
-			await getClient().signOut().catch(() => {});
+			await getClient()
+				.signOut()
+				.catch(() => {});
 			await clearState().catch(() => {});
 			status = 'signed-out';
 			return Ok(undefined);
@@ -227,7 +228,14 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const user = toStorableUser(data.user);
+			const { createdAt, updatedAt, ...rest } = data.user;
+			const user = {
+				...rest,
+				createdAt:
+					typeof createdAt === 'string' ? createdAt : createdAt.toISOString(),
+				updatedAt:
+					typeof updatedAt === 'string' ? updatedAt : updatedAt.toISOString(),
+			} satisfies AuthUser;
 			await authUser.set(user);
 			status = 'signed-in';
 			return Ok(user);

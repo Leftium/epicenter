@@ -81,8 +81,8 @@ function getClient() {
 				type: 'Bearer',
 				token: () => authToken.current,
 			},
-			onSuccess: (ctx) => {
-				const newToken = ctx.response?.headers.get('set-auth-token');
+			onSuccess: ({ response }) => {
+				const newToken = response.headers.get('set-auth-token');
 				if (newToken) void authToken.set(newToken);
 			},
 		},

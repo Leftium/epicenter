@@ -64,7 +64,12 @@ const aiChatBody = type({
 	data: {
 		provider: type.enumerated(...SUPPORTED_PROVIDERS),
 		model: 'string >= 1',
-		'systemPrompt?': 'string',
+		'systemPrompts?': 'string[] | undefined',
+		'temperature?': 'number | undefined',
+		'maxTokens?': 'number | undefined',
+		'topP?': 'number | undefined',
+		'metadata?': 'Record<string, unknown> | undefined',
+		'conversationId?': 'string | undefined',
 	},
 });
 
@@ -89,7 +94,12 @@ export const aiChatHandlers = factory.createHandlers(
 		const stream = chat({
 			adapter,
 			messages: messages as unknown as Parameters<typeof chat>[0]['messages'],
-			systemPrompts: data.systemPrompt ? [data.systemPrompt] : [],
+			systemPrompts: data.systemPrompts,
+			temperature: data.temperature,
+			maxTokens: data.maxTokens,
+			topP: data.topP,
+			metadata: data.metadata,
+			conversationId: data.conversationId,
 			abortController,
 		});
 

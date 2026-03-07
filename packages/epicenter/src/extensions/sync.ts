@@ -113,36 +113,22 @@ export function createWsSyncExtension(
 				return provider;
 			},
 			/**
-			 * Swap the sync rail (WebSocket target) without affecting other extensions.
+			 * Force an immediate disconnect + reconnect using the original config.
 			 *
-			 * Destroys the current provider, creates a new `SyncProvider` on the same
-			 * `Y.Doc`, and connects it. Other extensions (persistence, etc.) are untouched —
-			 * only the sync provider changes.
-			 *
-			 * @example
-			 * ```typescript
-			 * workspace.extensions.sync.reconnect({
-			 *   url: 'wss://cloud.example.com/rooms/my-workspace',
-			 * });
-			 * ```
+			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
+			 * reconnects with a fresh token from `getToken`.
 			 */
-			reconnect(
-				newConfig: {
-					url?: string;
-					getToken?: () => Promise<string>;
-					snapshotUrl?: string;
-				} = {},
-			) {
+			reconnect() {
 				provider.destroy();
 				provider = createSyncProvider({
 					doc: ydoc,
-					url: newConfig.url ?? resolvedUrl,
-					getToken: newConfig.getToken ?? (config.getToken
-					? () => config.getToken!(workspaceId)
-					: undefined),
+					url: resolvedUrl,
+					getToken: config.getToken
+						? () => config.getToken!(workspaceId)
+						: undefined,
 					connect: true,
 					awareness: awareness.raw,
-					snapshotUrl: newConfig.snapshotUrl ?? resolvedSnapshotUrl,
+					snapshotUrl: resolvedSnapshotUrl,
 				});
 			},
 			whenReady,
@@ -152,8 +138,3 @@ export function createWsSyncExtension(
 		};
 	};
 }
-
-/** @deprecated Use `createWsSyncExtension` instead. */
-export const createSyncExtension = createWsSyncExtension;
-/** @deprecated Use `WsSyncExtensionConfig` instead. */
-export type SyncExtensionConfig = WsSyncExtensionConfig;

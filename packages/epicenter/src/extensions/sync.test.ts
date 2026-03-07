@@ -13,7 +13,7 @@ import { describe, expect, test } from 'bun:test';
 import type { SyncProvider } from '@epicenter/sync';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createSyncExtension } from './sync';
+import { createWsSyncExtension } from './sync';
 
 /** The shape returned by the extension factory (flat). */
 type SyncExtensionResult = {
@@ -28,7 +28,7 @@ type SyncExtensionResult = {
 };
 
 type SyncExtensionFactoryClient = Parameters<
-	ReturnType<typeof createSyncExtension>
+	ReturnType<typeof createWsSyncExtension>
 >[0];
 
 /** Create a minimal mock context for the sync extension factory. */
@@ -40,12 +40,12 @@ function createMockClient(ydoc: Y.Doc) {
 	} as unknown as SyncExtensionFactoryClient; // Minimal mock — only properties the sync extension accesses are provided
 }
 
-describe('createSyncExtension', () => {
+describe('createWsSyncExtension', () => {
 	describe('reconnect', () => {
 		test('destroys old provider and creates new provider', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
-			const factory = createSyncExtension({
+			const factory = createWsSyncExtension({
 				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
@@ -76,7 +76,7 @@ describe('createSyncExtension', () => {
 		test('provider getter returns current provider after reconnect', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-getter' });
 
-			const factory = createSyncExtension({
+			const factory = createWsSyncExtension({
 				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
@@ -108,7 +108,7 @@ describe('createSyncExtension', () => {
 		test('destroy uses current provider after reconnect', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
 
-			const factory = createSyncExtension({
+			const factory = createWsSyncExtension({
 				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
@@ -130,7 +130,7 @@ describe('createSyncExtension', () => {
 	test('resolves URL callback with workspace ID', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
-		const factory = createSyncExtension({
+		const factory = createWsSyncExtension({
 			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
 		});
 
@@ -153,7 +153,7 @@ describe('createSyncExtension', () => {
 			resolveClientReady = resolve;
 		});
 
-		const factory = createSyncExtension({
+		const factory = createWsSyncExtension({
 			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 		});
 

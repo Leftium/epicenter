@@ -19,7 +19,7 @@
 
 import { definition } from '@epicenter/tab-manager/workspace';
 import { createWorkspace } from '@epicenter/workspace';
-import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { createMarkdownPersistenceExtension } from './markdown-persistence-extension';
 
 console.log('Tab Manager Markdown Exporter starting...');
@@ -34,7 +34,7 @@ const client = createWorkspace(definition)
 	)
 	.withExtension(
 		'sync',
-		createSyncExtension({
+		createWsSyncExtension({
 			url: (id) => `ws://localhost:3913/rooms/${id}`,
 		}),
 	);

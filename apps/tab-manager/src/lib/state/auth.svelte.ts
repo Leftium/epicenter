@@ -189,9 +189,9 @@ function createAuthState() {
 		/**
 		 * Validate the stored session against the server.
 		 *
-		 * Offline-aware: if the server is unreachable (network error), trusts
-		 * the cached user rather than showing a sign-out screen. Only clears
-		 * state on an explicit auth rejection (4xx).
+		 * Unreachable server (network error or 5xx) trusts the cached user
+		 * so offline/degraded users aren't logged out. Only an explicit auth
+		 * rejection (4xx) clears state.
 		 */
 		async checkSession() {
 			const token = authToken.current;
@@ -203,14 +203,17 @@ function createAuthState() {
 			const { data, error: sessionError } = await getClient().getSession();
 
 			if (sessionError) {
-				// Network error (fetch threw) → trust cached user
-				if (!sessionError.status) {
+				const isAuthRejection =
+					sessionError.status && sessionError.status < 500;
+
+				if (!isAuthRejection) {
+					// Network error or 5xx → trust cached user
 					const cached = authUser.current;
 					status = cached ? 'signed-in' : 'signed-out';
 					return Ok(cached);
 				}
 
-				// Server explicitly rejected the token → clear state
+				// 4xx → server explicitly rejected the token
 				await clearState();
 				status = 'signed-out';
 				return Ok(null);

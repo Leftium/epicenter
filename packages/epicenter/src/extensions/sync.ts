@@ -2,21 +2,21 @@ import { createSyncProvider, type SyncProvider } from '@epicenter/sync';
 import type { ExtensionFactory } from '../workspace/types';
 
 /**
- * WebSocket sync extension configuration.
+ * Sync extension configuration.
  *
  * Supports two auth modes:
  * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
  * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
  * Persistence is handled separately — add a persistence extension before sync
- * in the `.withExtension()` chain. The WebSocket sync extension waits for all
- * prior extensions via `context.whenReady` before connecting the WebSocket.
+ * in the `.withExtension()` chain. The sync extension waits for all prior
+ * extensions via `context.whenReady` before connecting.
  *
  * @example Open mode (local dev)
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createWsSyncExtension({
+ *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `ws://localhost:3913/rooms/${id}`,
  *   }))
  * ```
@@ -25,7 +25,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createWsSyncExtension({
+ *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `wss://sync.epicenter.so/rooms/${id}`,
  *     snapshotUrl: (id) => `https://sync.epicenter.so/rooms/${id}`,
  *     getToken: async (workspaceId) => {
@@ -38,7 +38,7 @@ import type { ExtensionFactory } from '../workspace/types';
  *   }))
  * ```
  */
-export type WsSyncExtensionConfig = {
+export type SyncExtensionConfig = {
 	/** WebSocket URL for the room. */
 	url: (workspaceId: string) => string;
 
@@ -60,27 +60,30 @@ export type WsSyncExtensionConfig = {
 };
 
 /**
- * Creates a WebSocket sync extension that connects after prior extensions are ready.
+ * Creates a sync extension that connects after prior extensions are ready.
+ *
+ * Uses WebSocket for real-time sync, with an optional HTTP snapshot prefetch
+ * (via `snapshotUrl`) to bootstrap the document before the WebSocket opens.
  *
  * Lifecycle:
  * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
- *   chained extensions (persistence, etc.) are ready. The WebSocket connects only after
+ *   chained extensions (persistence, etc.) are ready. The provider connects only after
  *   local state is loaded, ensuring an accurate state vector for the initial sync.
- * - **`whenReady`**: Resolves when the WebSocket connection is initiated (after prior
- *   extensions). The UI renders from local state immediately — connection status is
- *   reactive via `provider`.
+ * - **`whenReady`**: Resolves when the connection is initiated (after prior extensions).
+ *   The UI renders from local state immediately — connection status is reactive via
+ *   `provider`.
  *
  * @example
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
- *   .withExtension('sync', createWsSyncExtension({
+ *   .withExtension('sync', createSyncExtension({
  *     url: 'ws://localhost:3913/rooms/{id}',
  *   }))
  * ```
  */
-export function createWsSyncExtension(
-	config: WsSyncExtensionConfig,
+export function createSyncExtension(
+	config: SyncExtensionConfig,
 ): ExtensionFactory {
 	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;

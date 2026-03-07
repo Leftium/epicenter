@@ -19,7 +19,7 @@ import {
 	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
@@ -558,7 +558,7 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('sync', createWsSyncExtension({
+	.withExtension('sync', createSyncExtension({
 		url: (workspaceId) => {
 			const wsUrl = serverUrl.current.replace(/^http/, 'ws');
 			return `${wsUrl}/rooms/${workspaceId}`;

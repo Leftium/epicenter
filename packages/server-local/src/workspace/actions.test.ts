@@ -21,7 +21,6 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
-import { Elysia } from 'elysia';
 import Type from 'typebox';
 import { collectActionPaths, createActionsPlugin } from './actions';
 
@@ -41,7 +40,7 @@ function buildApp(clients: AnyWorkspaceClient[]) {
 	for (const client of clients) {
 		workspaces[client.id] = client;
 	}
-	return new Elysia().use(createActionsPlugin(workspaces));
+	return createActionsPlugin(workspaces);
 }
 
 describe('createActionsPlugin', () => {
@@ -51,7 +50,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/ping'),
 		);
 		const body = await response.json();
@@ -68,7 +67,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/posts/list'),
 		);
 		const body = await response.json();
@@ -83,7 +82,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/getStatus', { method: 'GET' }),
 		);
 
@@ -102,7 +101,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/doSomething', { method: 'POST' }),
 		);
 		const body = await response.json();
@@ -125,7 +124,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/create', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -148,7 +147,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/create', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -170,7 +169,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/asyncQuery'),
 		);
 		const body = await response.json();
@@ -191,7 +190,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/ws/actions/api/v1/users/list'),
 		);
 		const body = await response.json();
@@ -211,7 +210,7 @@ describe('createActionsPlugin', () => {
 		const app = buildApp([wsA, wsB]);
 
 		// Workspace B doesn't have 'ping'
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/b/actions/ping'),
 		);
 
@@ -228,10 +227,10 @@ describe('createActionsPlugin', () => {
 
 		const app = buildApp([wsA, wsB]);
 
-		const responseA = await app.handle(
+		const responseA = await app.fetch(
 			new Request('http://test/a/actions/ping'),
 		);
-		const responseB = await app.handle(
+		const responseB = await app.fetch(
 			new Request('http://test/b/actions/ping'),
 		);
 
@@ -245,7 +244,7 @@ describe('createActionsPlugin', () => {
 		}));
 
 		const app = buildApp([client]);
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/nonexistent/actions/ping'),
 		);
 

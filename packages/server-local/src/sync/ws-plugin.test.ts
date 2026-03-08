@@ -1,10 +1,10 @@
 /**
  * WS Sync Plugin Integration Tests
  *
- * Tests the full WebSocket sync flow using real Elysia servers
+ * Tests the full WebSocket sync flow using real Hono servers
  * and real sync providers over actual WebSocket connections.
  *
- * These tests verify the wiring between the Elysia plugin, room manager,
+ * These tests verify the wiring between the Hono app, room manager,
  * auth, and protocol layers — the exact integration path clients use.
  * Unit tests for individual building blocks live in their respective files.
  *
@@ -14,7 +14,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { SyncProvider, SyncStatus } from '@epicenter/sync-client';
 import { createSyncProvider } from '@epicenter/sync-client';
-import { Elysia } from 'elysia';
+import { Hono } from 'hono';
 import * as Y from 'yjs';
 import { createWsSyncPlugin } from './ws-plugin';
 
@@ -38,18 +38,16 @@ function uniqueRoom(): string {
 function startTestServer(syncConfig?: {
 	verifyToken?: (token: string) => boolean | Promise<boolean>;
 }) {
-	const app = new Elysia()
-		.use(new Elysia({ prefix: '/rooms' }).use(createWsSyncPlugin(syncConfig)))
-		.get('/', () => ({ status: 'ok' }));
-	app.listen(0);
-	if (!app.server) {
-		throw new Error('Failed to start test server');
-	}
-	const port = app.server.port;
+	const { syncApp, websocket } = createWsSyncPlugin(syncConfig);
+	const app = new Hono();
+	app.route('/rooms', syncApp);
+	app.get('/', (c) => c.json({ status: 'ok' }));
+	const server = Bun.serve({ port: 0, fetch: app.fetch, websocket });
+	const port = server.port;
 	return {
 		server: {
 			async stop() {
-				app.stop();
+				server.stop();
 			},
 		},
 		port,
@@ -67,15 +65,14 @@ function startIntegratedTestServer({
 }: {
 	getDoc: (roomId: string) => Y.Doc | undefined;
 }) {
-	const syncPlugin = createWsSyncPlugin({ getDoc });
-	const app = new Elysia().use(syncPlugin).get('/', () => ({ status: 'ok' }));
-	app.listen(0);
-	if (!app.server) {
-		throw new Error('Failed to start integrated test server');
-	}
-	const port = app.server.port;
+	const { syncApp, websocket } = createWsSyncPlugin({ getDoc });
+	const app = new Hono();
+	app.route('/', syncApp);
+	app.get('/', (c) => c.json({ status: 'ok' }));
+	const server = Bun.serve({ port: 0, fetch: app.fetch, websocket });
+	const port = server.port;
 	return {
-		app,
+		server,
 		port,
 		wsUrl(room: string) {
 			return `ws://localhost:${port}/${room}`;
@@ -395,7 +392,7 @@ describe('ws sync plugin integrated mode', () => {
 			expect(provider.status).toBe('error');
 		} finally {
 			provider.destroy();
-			ctx.app.stop();
+			ctx.server.stop();
 		}
 	});
 });
@@ -409,7 +406,7 @@ describe('ws sync plugin room list', () => {
 		const ctx = startTestServer();
 
 		try {
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({ rooms: [] });
 		} finally {
@@ -426,7 +423,7 @@ describe('ws sync plugin room list', () => {
 		try {
 			await waitForStatus(provider, 'connected');
 
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({
 				rooms: [{ id: room, connections: 1 }],
@@ -452,7 +449,7 @@ describe('ws sync plugin room list', () => {
 			await waitForStatus(p2, 'connected');
 			await waitForStatus(p3, 'connected');
 
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({
 				rooms: [{ id: room, connections: 3 }],

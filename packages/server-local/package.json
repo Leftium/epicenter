@@ -16,9 +16,8 @@
 	},
 	"dependencies": {
 		"@epicenter/sync-server": "workspace:*",
-		"@elysiajs/cors": "^1.4.1",
-		"@elysiajs/openapi": "^1.4.11",
-		"elysia": "^1.2.25",
+		"@hono/standard-validator": "^0.2.2",
+		"hono": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"y-protocols": "catalog:"

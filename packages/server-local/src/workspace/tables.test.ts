@@ -5,7 +5,6 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
-import { Elysia } from 'elysia';
 import { createTablesPlugin } from './tables';
 
 function setup() {
@@ -25,7 +24,7 @@ function setup() {
 		}),
 	);
 	const workspaces = { 'test-workspace': client };
-	const app = new Elysia().use(createTablesPlugin(workspaces));
+	const app = createTablesPlugin(workspaces);
 	return { client, app };
 }
 
@@ -46,7 +45,7 @@ describe('createTablesPlugin', () => {
 			_v: 1,
 		});
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts'),
 		);
 		const body = await response.json();
@@ -68,7 +67,7 @@ describe('createTablesPlugin', () => {
 			_v: 1,
 		});
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/post-1'),
 		);
 		const body = await response.json();
@@ -83,7 +82,7 @@ describe('createTablesPlugin', () => {
 	test('GET /:workspaceId/tables/:table/:id returns 404 for not_found', async () => {
 		const { app } = setup();
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/missing-id'),
 		);
 		const body = await response.json();
@@ -105,7 +104,7 @@ describe('createTablesPlugin', () => {
 			_v: 1;
 		});
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/broken'),
 		);
 		const body = await response.json();
@@ -123,7 +122,7 @@ describe('createTablesPlugin', () => {
 	test('PUT /:workspaceId/tables/:table/:id creates or replaces a row (200)', async () => {
 		const { client, app } = setup();
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/post-3', {
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
@@ -153,7 +152,7 @@ describe('createTablesPlugin', () => {
 			_v: 1,
 		});
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/post-1', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -176,7 +175,7 @@ describe('createTablesPlugin', () => {
 	test('PATCH /:workspaceId/tables/:table/:id returns 404 when row does not exist', async () => {
 		const { app } = setup();
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/missing-id', {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
@@ -202,7 +201,7 @@ describe('createTablesPlugin', () => {
 			_v: 1,
 		});
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/posts/post-1', {
 				method: 'DELETE',
 			}),
@@ -221,7 +220,7 @@ describe('createTablesPlugin', () => {
 	test('GET /:workspaceId/tables/:table returns 404 for unknown workspace', async () => {
 		const { app } = setup();
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/unknown-workspace/tables/posts'),
 		);
 
@@ -231,7 +230,7 @@ describe('createTablesPlugin', () => {
 	test('GET /:workspaceId/tables/:table returns 404 for unknown table', async () => {
 		const { app } = setup();
 
-		const response = await app.handle(
+		const response = await app.fetch(
 			new Request('http://test/test-workspace/tables/nonexistent'),
 		);
 

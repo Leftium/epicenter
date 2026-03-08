@@ -6,7 +6,7 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-} from '@epicenter/sync-server';
+} from './sync-handlers';
 import * as Y from 'yjs';
 
 type WsAttachment = {
@@ -161,8 +161,7 @@ export class WorkspaceRoom extends DurableObject {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const send = (data: Uint8Array) => swallow(() => ws.send(data));
-				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
+				const { state } = handleWsOpen(this.doc, this.awareness, ws);
 				// Populate the existing set (not replace) so the awareness event
 				// handler closure still references the same Set instance.
 				for (const id of attachment.controlledClientIds) {
@@ -244,12 +243,10 @@ export class WorkspaceRoom extends DurableObject {
 		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
-		const send = (data: Uint8Array) => swallow(() => server.send(data));
 		const { initialMessages, state } = handleWsOpen(
 			this.doc,
 			this.awareness,
 			server,
-			send,
 		);
 
 		this.connectionStates.set(server, state);

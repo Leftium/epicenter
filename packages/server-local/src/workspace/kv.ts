@@ -1,5 +1,6 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { WorkspaceApiError } from './errors';
 
 /**
@@ -19,7 +20,10 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 	const router = new Hono();
 
 	for (const key of kvKeys) {
-		router.get(`/:workspaceId/kv/${key}`, (c) => {
+		router.get(`/:workspaceId/kv/${key}`, describeRoute({
+			description: `Get the value of the ${key} KV entry`,
+			tags: [key, 'kv'],
+		}), (c) => {
 			const workspace = workspaces[c.req.param('workspaceId')];
 			if (!workspace)
 				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
@@ -33,7 +37,10 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 			}
 		});
 
-		router.put(`/:workspaceId/kv/${key}`, async (c) => {
+		router.put(`/:workspaceId/kv/${key}`, describeRoute({
+			description: `Set the value of the ${key} KV entry`,
+			tags: [key, 'kv'],
+		}), async (c) => {
 			const workspace = workspaces[c.req.param('workspaceId')];
 			if (!workspace)
 				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
@@ -46,7 +53,10 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 			}
 		});
 
-		router.delete(`/:workspaceId/kv/${key}`, (c) => {
+		router.delete(`/:workspaceId/kv/${key}`, describeRoute({
+			description: `Delete the ${key} KV entry`,
+			tags: [key, 'kv'],
+		}), (c) => {
 			const workspace = workspaces[c.req.param('workspaceId')];
 			if (!workspace)
 				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);

@@ -4,6 +4,7 @@ import type {
 	TableHelper,
 } from '@epicenter/workspace';
 import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { WorkspaceApiError } from './errors';
 
 function resolveTable(
@@ -36,7 +37,10 @@ export function createTablesPlugin(
 	const router = new Hono();
 
 	for (const tableName of tableNames) {
-		router.get(`/:workspaceId/tables/${tableName}`, (c) => {
+		router.get(`/:workspaceId/tables/${tableName}`, describeRoute({
+			description: `List all rows in the ${tableName} table`,
+			tags: [tableName, 'tables'],
+		}), (c) => {
 			const tableHelper = resolveTable(
 				workspaces,
 				c.req.param('workspaceId'),
@@ -47,7 +51,10 @@ export function createTablesPlugin(
 			return c.json(tableHelper.getAllValid());
 		});
 
-		router.get(`/:workspaceId/tables/${tableName}/:id`, (c) => {
+		router.get(`/:workspaceId/tables/${tableName}/:id`, describeRoute({
+			description: `Get a row by ID from the ${tableName} table`,
+			tags: [tableName, 'tables'],
+		}), (c) => {
 			const tableHelper = resolveTable(
 				workspaces,
 				c.req.param('workspaceId'),
@@ -61,7 +68,10 @@ export function createTablesPlugin(
 			return c.json(result);
 		});
 
-		router.put(`/:workspaceId/tables/${tableName}/:id`, async (c) => {
+		router.put(`/:workspaceId/tables/${tableName}/:id`, describeRoute({
+			description: `Create or replace a row by ID in the ${tableName} table`,
+			tags: [tableName, 'tables'],
+		}), async (c) => {
 			const tableHelper = resolveTable(
 				workspaces,
 				c.req.param('workspaceId'),
@@ -76,7 +86,10 @@ export function createTablesPlugin(
 			return c.json(result);
 		});
 
-		router.patch(`/:workspaceId/tables/${tableName}/:id`, async (c) => {
+		router.patch(`/:workspaceId/tables/${tableName}/:id`, describeRoute({
+			description: `Partially update a row by ID in the ${tableName} table`,
+			tags: [tableName, 'tables'],
+		}), async (c) => {
 			const tableHelper = resolveTable(
 				workspaces,
 				c.req.param('workspaceId'),
@@ -94,7 +107,10 @@ export function createTablesPlugin(
 			return c.json(result);
 		});
 
-		router.delete(`/:workspaceId/tables/${tableName}/:id`, (c) => {
+		router.delete(`/:workspaceId/tables/${tableName}/:id`, describeRoute({
+			description: `Delete a row by ID from the ${tableName} table`,
+			tags: [tableName, 'tables'],
+		}), (c) => {
 			const tableHelper = resolveTable(
 				workspaces,
 				c.req.param('workspaceId'),

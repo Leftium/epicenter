@@ -1,5 +1,6 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { collectActionPaths, createActionsPlugin } from './actions';
 import { WorkspaceApiError } from './errors';
 import { createKvPlugin } from './kv';
@@ -27,7 +28,10 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 	}
 
 	const app = new Hono()
-		.get('/:workspaceId', (c) => {
+		.get('/:workspaceId', describeRoute({
+			description: 'Get workspace metadata',
+			tags: ['workspaces'],
+		}), (c) => {
 			const workspace = workspaces[c.req.param('workspaceId')];
 			if (!workspace)
 				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);

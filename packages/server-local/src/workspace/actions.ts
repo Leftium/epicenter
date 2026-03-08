@@ -1,6 +1,7 @@
 import type { Action, Actions, AnyWorkspaceClient } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
 import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import Value from 'typebox/value';
 import { WorkspaceApiError } from './errors';
 
@@ -61,8 +62,14 @@ export function createActionsPlugin(
 	for (const [actionPath, types] of actionPaths) {
 		const routePath = `/:workspaceId/actions/${actionPath}`;
 
+		const segments = actionPath.split('/');
+		const namespaceTags = segments.length > 1 ? [segments[0] as string] : [];
+
 		if (types.has('query')) {
-			router.get(routePath, async (c) => {
+			router.get(routePath, describeRoute({
+				summary: actionPath.replace(/\//g, '.'),
+				tags: [...namespaceTags, 'query'],
+			}), async (c) => {
 				const workspaceId = c.req.param('workspaceId')!;
 				const workspace = workspaces[workspaceId];
 				if (!workspace?.actions)
@@ -86,7 +93,10 @@ export function createActionsPlugin(
 		}
 
 		if (types.has('mutation')) {
-			router.post(routePath, async (c) => {
+			router.post(routePath, describeRoute({
+				summary: actionPath.replace(/\//g, '.'),
+				tags: [...namespaceTags, 'mutation'],
+			}), async (c) => {
 				const workspaceId = c.req.param('workspaceId')!;
 				const workspace = workspaces[workspaceId];
 				if (!workspace?.actions)

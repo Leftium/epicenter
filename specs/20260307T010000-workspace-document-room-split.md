@@ -259,6 +259,28 @@ The client already creates content Y.Docs with `gc: false` (`create-document.ts`
 2. Snapshot list/restore UI in the editor
 3. Editor-layer diffing (CodeMirror `@codemirror/merge`, TipTap `prosemirror-recreate-steps`)
 
+## Room key namespacing decision
+
+We keep user-scoped room keys: `user:{userId}:{workspaceId}`. We evaluated two alternatives and rejected both.
+
+### Alternative 1: Org-scoped (`org:{orgId}:{workspaceId}`)
+
+The Vercel/Supabase/PlanetScale model: every resource belongs to an org, users always have a personal org. Better Auth's organization plugin provides members, roles, invitations, `activeOrganizationId` on session.
+
+Rejected because most Epicenter workspaces hold personal data. Whispering recordings, Entries, tab manager state: none of these should merge into a shared Y.Doc when two users are in the same org. Org-scoped would require a per-workspace `scope: 'user' | 'org'` flag, meaning you'd end up with `org:{orgId}:user:{userId}:{workspaceId}` for personal workspaces anyway. Two prefixing schemes instead of one, plus the org infrastructure overhead.
+
+### Alternative 2: Org as outer boundary (`org:{orgId}:user:{userId}:{workspaceId}`)
+
+Embeds org management in the application layer. Rejected because for self-hosted enterprise deployments, the server itself IS the org boundary. GitLab, Outline, and Mattermost all work this way: everyone who can authenticate to the server is implicitly in the org. No org table, no member table, no invitation flow. The deployment boundary provides the isolation that the org prefix would have provided.
+
+This means org/tenant management is a platform-layer concern for our cloud multi-tenant offering, not an app-layer concern. Adding it at the routing/deployment layer later doesn't require changing room key construction or the app's data model.
+
+### Chosen: User-scoped with future ACL sharing (Google Docs model)
+
+Every workspace has an owner. Room key is always `user:{ownerId}:{workspaceId}`. Sharing (when implemented) grants other users access to the owner's DO via an ACL table, without changing the room key. This matches Google Docs: every document has a globally unique identifier (the owner's room key), sharing is an access control concern, and "transfer ownership" means updating the ACL plus migrating the DO key.
+
+See `docs/articles/user-owned-rooms-not-org-scoped.md` for the full analysis.
+
 ## Risks and mitigations
 
 **Risk: `gc: false` docs grow large for heavily-edited documents.**

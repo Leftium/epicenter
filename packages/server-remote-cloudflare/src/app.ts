@@ -189,13 +189,41 @@ app.post('/ai/chat', ...aiChatHandlers);
 // Workspace routes — one WorkspaceRoom DO per room (gc: true)
 // ---------------------------------------------------------------------------
 
-/** Helper: get a WorkspaceRoom stub for the authenticated user's room. */
+/**
+ * Helper: get a WorkspaceRoom stub for the authenticated user's room.
+ *
+ * ## Room key namespacing: `user:{userId}:{room}`
+ *
+ * We use user-scoped room keys (Google Docs model) rather than org-scoped keys
+ * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
+ *
+ * Alternatives considered:
+ *
+ * - **Org-scoped (`org:{orgId}:{room}`)**: Evaluated for enterprise/self-hosted.
+ *   Problems: most workspaces (Whispering recordings, Entries) are personal data
+ *   that shouldn't merge into a shared Y.Doc. Org-scoped would require a
+ *   per-workspace `scope` flag anyway, adding complexity without simplifying.
+ *
+ * - **Org-scoped with personal sub-scope (`org:{orgId}:user:{userId}:{room}`)**:
+ *   Embeds org management in the app. For self-hosted enterprise, the deployment
+ *   itself IS the org boundary (like GitLab, Outline, Mattermost), so org tables
+ *   and Better Auth organization plugin are unnecessary overhead.
+ *
+ * Current scheme keeps the app auth-simple ("user has account, user accesses
+ * rooms") and works for both cloud and self-hosted without org infrastructure.
+ * When sharing is needed, it follows the Google Docs pattern: the owner's room
+ * key stays the same, an ACL table grants access to other users, and auth
+ * middleware checks "is this user the owner OR in the ACL?"
+ *
+ * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
+ * a tenant prefix added at the routing layer, not embedded in the app's data model.
+ */
 function getWorkspaceStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
 	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
 	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
 }
 
-/** Helper: get a DocumentRoom stub for the authenticated user's room. */
+/** Helper: get a DocumentRoom stub for the authenticated user's room. See {@link getWorkspaceStub} for namespacing rationale. */
 function getDocumentStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
 	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));

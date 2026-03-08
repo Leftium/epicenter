@@ -176,7 +176,11 @@ export class DocumentRoom extends DurableObject {
 
 				const send = (data: Uint8Array) => swallow(() => ws.send(data));
 				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
-				state.controlledClientIds = new Set(attachment.controlledClientIds);
+				// Populate the existing set (not replace) so the awareness event
+				// handler closure still references the same Set instance.
+				for (const id of attachment.controlledClientIds) {
+					state.controlledClientIds.add(id);
+				}
 				this.connectionStates.set(ws, state);
 			}
 		});

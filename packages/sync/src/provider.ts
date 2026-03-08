@@ -6,7 +6,6 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { createSleeper, type Sleeper } from './sleeper';
 import type {
@@ -24,6 +23,10 @@ const MESSAGE_SYNC = 0;
 const MESSAGE_AWARENESS = 1;
 const MESSAGE_QUERY_AWARENESS = 3;
 const MESSAGE_SYNC_STATUS = 102;
+
+const SYNC_STEP1 = 0;
+const SYNC_STEP2 = 1;
+const SYNC_UPDATE = 2;
 
 // ============================================================================
 // Timing Constants
@@ -56,6 +59,8 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
 
 /**
  * Creates a sync provider that connects a Y.Doc to a WebSocket sync server.
+ *
+ * Uses V2 encoding for all sync payloads (~40% smaller than V1).
  *
  * Uses a supervisor loop architecture where one loop owns all status transitions
  * and reconnection logic. Event handlers are reporters only — they resolve
@@ -295,11 +300,11 @@ export function createSyncProvider({
 	}
 
 	// ========================================================================
-	// Y.Doc Update Handler
+	// Y.Doc Update Handler (V2)
 	// ========================================================================
 
 	/**
-	 * Y.Doc `'update'` handler — broadcasts local mutations to the server.
+	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
 	 *
 	 * Uses itself as the `origin` sentinel: when the sync protocol applies
 	 * a remote update it passes `handleDocUpdate` as origin, so this handler
@@ -314,7 +319,8 @@ export function createSyncProvider({
 
 		const encoder = encoding.createEncoder();
 		encoding.writeVarUint(encoder, MESSAGE_SYNC);
-		syncProtocol.writeUpdate(encoder, update);
+		encoding.writeVarUint(encoder, SYNC_UPDATE);
+		encoding.writeVarUint8Array(encoder, update);
 		send(encoding.toUint8Array(encoder));
 
 		incrementLocalVersion();
@@ -535,10 +541,11 @@ export function createSyncProvider({
 		ws.onopen = () => {
 			setStatus('handshaking');
 
-			// Send sync step 1
+			// Send sync step 1 (state vector — same encoding for V1 and V2)
 			const encoder = encoding.createEncoder();
 			encoding.writeVarUint(encoder, MESSAGE_SYNC);
-			syncProtocol.writeSyncStep1(encoder, doc);
+			encoding.writeVarUint(encoder, SYNC_STEP1);
+			encoding.writeVarUint8Array(encoder, Y.encodeStateVector(doc));
 			send(encoding.toUint8Array(encoder));
 
 			// Send initial heartbeat probe
@@ -592,22 +599,34 @@ export function createSyncProvider({
 
 			switch (messageType) {
 				case MESSAGE_SYNC: {
-					const responseEncoder = encoding.createEncoder();
-					encoding.writeVarUint(responseEncoder, MESSAGE_SYNC);
-					const syncMessageType = syncProtocol.readSyncMessage(
-						decoder,
-						responseEncoder,
-						doc,
-						handleDocUpdate,
-					);
+					const syncType = decoding.readVarUint(decoder);
 
-					if (syncMessageType === syncProtocol.messageYjsSyncStep2) {
-						handshakeComplete = true;
-						setStatus('connected');
-					}
-
-					if (encoding.length(responseEncoder) > 1) {
-						send(encoding.toUint8Array(responseEncoder));
+					switch (syncType) {
+						case SYNC_STEP1: {
+							// Server sent its state vector — respond with V2 diff
+							const remoteSV = decoding.readVarUint8Array(decoder);
+							const diff = Y.encodeStateAsUpdateV2(doc, remoteSV);
+							const responseEncoder = encoding.createEncoder();
+							encoding.writeVarUint(responseEncoder, MESSAGE_SYNC);
+							encoding.writeVarUint(responseEncoder, SYNC_STEP2);
+							encoding.writeVarUint8Array(responseEncoder, diff);
+							send(encoding.toUint8Array(responseEncoder));
+							break;
+						}
+						case SYNC_STEP2: {
+							// Server sent V2 diff — apply it
+							const update = decoding.readVarUint8Array(decoder);
+							Y.applyUpdateV2(doc, update, handleDocUpdate);
+							handshakeComplete = true;
+							setStatus('connected');
+							break;
+						}
+						case SYNC_UPDATE: {
+							// Server broadcast a V2 update — apply it
+							const update = decoding.readVarUint8Array(decoder);
+							Y.applyUpdateV2(doc, update, handleDocUpdate);
+							break;
+						}
 					}
 					break;
 				}
@@ -667,7 +686,7 @@ export function createSyncProvider({
 	// Doc + Awareness Listeners (attach immediately)
 	// ========================================================================
 
-	doc.on('update', handleDocUpdate);
+	doc.on('updateV2', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
 	// ========================================================================
@@ -783,7 +802,7 @@ export function createSyncProvider({
 			// Synchronously set offline so callers see the status immediately
 			setStatus('offline');
 
-			doc.off('update', handleDocUpdate);
+			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 
 			removeAwarenessStates(awareness, [doc.clientID], 'window unload');

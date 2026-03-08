@@ -12,7 +12,6 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as encoding from 'lib0/encoding';
-import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { createSyncProvider } from './provider';
 import type { SyncStatus, WebSocketConstructor } from './types';
@@ -116,13 +115,15 @@ function getLastWebSocket(): MockWebSocket {
 // ============================================================================
 
 /**
- * Build a MESSAGE_SYNC message containing sync step 2 for a given doc.
+ * Build a MESSAGE_SYNC message containing sync step 2 (V2) for a given doc.
  * When the provider receives this, it transitions to 'connected'.
  */
 function buildSyncStep2Message(doc: Y.Doc): ArrayBuffer {
+	const SYNC_STEP2 = 1;
 	const encoder = encoding.createEncoder();
 	encoding.writeVarUint(encoder, MESSAGE_SYNC);
-	syncProtocol.writeSyncStep2(encoder, doc);
+	encoding.writeVarUint(encoder, SYNC_STEP2);
+	encoding.writeVarUint8Array(encoder, Y.encodeStateAsUpdateV2(doc));
 	return encoding.toUint8Array(encoder).buffer;
 }
 

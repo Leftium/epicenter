@@ -18,7 +18,6 @@
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import { type Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
-import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 
 // ============================================================================
@@ -88,11 +87,11 @@ export function decodeMessageType(data: Uint8Array): number {
  */
 export const SYNC_MESSAGE_TYPE = {
 	/** Initial handshake: "here's my state vector, what am I missing?" */
-	STEP1: syncProtocol.messageYjsSyncStep1,
+	STEP1: 0,
 	/** Response to STEP1: "here are the updates you're missing" */
-	STEP2: syncProtocol.messageYjsSyncStep2,
+	STEP2: 1,
 	/** Incremental document update broadcast */
-	UPDATE: syncProtocol.messageYjsUpdate,
+	UPDATE: 2,
 } as const;
 
 export type SyncMessageType =

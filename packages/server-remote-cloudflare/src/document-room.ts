@@ -8,13 +8,11 @@ import {
 	handleWsOpen,
 } from './sync-handlers';
 import * as Y from 'yjs';
+import { MAX_PAYLOAD_BYTES } from './constants';
 
 type WsAttachment = {
 	controlledClientIds: number[];
 };
-
-/** Max incoming WebSocket message size (5 MB). */
-const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Max compacted snapshot size (2 MB). Cloudflare DO SQLite enforces a hard
@@ -115,6 +113,8 @@ export class DocumentRoom extends DurableObject {
 	private doc!: Y.Doc;
 	private awareness!: Awareness;
 	private connectionStates = new Map<WebSocket, ConnectionState>();
+	/** State vector at time of last auto-save snapshot, used to dedup. */
+	private lastAutoSaveSV: Uint8Array | null = null;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -287,8 +287,18 @@ export class DocumentRoom extends DurableObject {
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}
 
-	/** Restore a past snapshot's state as the current doc. Saves a "Before restore" snapshot first. */
-	async restoreSnapshot(snapshotId: number): Promise<boolean> {
+	/**
+	 * Merge a past snapshot's content into the current doc.
+	 *
+	 * This is a CRDT forward-merge, not a destructive rollback. The snapshot's
+	 * content is re-applied as a new update, so the doc grows slightly as items
+	 * from the snapshot re-enter the struct store. All edits made after the
+	 * snapshot are preserved — they coexist with the restored content via CRDT
+	 * conflict resolution.
+	 *
+	 * Saves a "Before restore" safety snapshot before applying.
+	 */
+	async applySnapshot(snapshotId: number): Promise<boolean> {
 		const past = await this.getSnapshot(snapshotId);
 		if (!past) return false;
 
@@ -350,7 +360,7 @@ export class DocumentRoom extends DurableObject {
 
 		const byteLength =
 			message instanceof ArrayBuffer ? message.byteLength : message.length;
-		if (byteLength > MAX_MESSAGE_BYTES) {
+		if (byteLength > MAX_PAYLOAD_BYTES) {
 			ws.close(1009, 'Message too large');
 			return;
 		}
@@ -369,8 +379,8 @@ export class DocumentRoom extends DurableObject {
 		if (result.broadcast) {
 			const msg = result.broadcast;
 			for (const [otherWs] of this.connectionStates) {
-				if (otherWs !== ws) {
-					swallow(() => otherWs.send(msg));
+				if (otherWs !== ws && otherWs.readyState === WebSocket.OPEN) {
+					otherWs.send(msg);
 				}
 			}
 		}
@@ -395,9 +405,13 @@ export class DocumentRoom extends DurableObject {
 
 		swallow(() => ws.close(code, reason));
 
-		// Auto-save snapshot when the last client disconnects
+		// Auto-save snapshot when the last client disconnects, if doc changed
 		if (this.connectionStates.size === 0) {
-			this.saveSnapshot('Auto-save');
+			const currentSV = Y.encodeStateVector(this.doc);
+			if (!this.lastAutoSaveSV || !stateVectorsEqual(currentSV, this.lastAutoSaveSV)) {
+				this.lastAutoSaveSV = currentSV;
+				this.saveSnapshot('Auto-save');
+			}
 		}
 	}
 

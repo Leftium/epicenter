@@ -13,6 +13,7 @@ import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
@@ -266,7 +267,7 @@ app.post('/workspaces/:room', describeRoute({
 	tags: ['workspaces'],
 }), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
+	if (body.byteLength > MAX_PAYLOAD_BYTES) {
 		return c.body('Payload too large', 413);
 	}
 
@@ -301,7 +302,7 @@ app.post('/rooms/:room', describeRoute({
 	tags: ['rooms'],
 }), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
+	if (body.byteLength > MAX_PAYLOAD_BYTES) {
 		return c.body('Payload too large', 413);
 	}
 
@@ -339,7 +340,7 @@ app.post('/documents/:room', describeRoute({
 	tags: ['documents'],
 }), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
+	if (body.byteLength > MAX_PAYLOAD_BYTES) {
 		return c.body('Payload too large', 413);
 	}
 
@@ -385,13 +386,13 @@ app.get('/documents/:room/snapshots/:id', describeRoute({
 	});
 });
 
-app.post('/documents/:room/snapshots/:id/restore', describeRoute({
-	description: 'Restore a document from a snapshot',
+app.post('/documents/:room/snapshots/:id/apply', describeRoute({
+	description: 'Apply a past snapshot state into the current document (CRDT forward-merge)',
 	tags: ['documents', 'snapshots'],
 }), async (c) => {
 	const stub = getDocumentStub(c);
 	const snapshotId = Number(c.req.param('id'));
-	const ok = await stub.restoreSnapshot(snapshotId);
+	const ok = await stub.applySnapshot(snapshotId);
 	if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
 	return c.json({ ok: true });
 });

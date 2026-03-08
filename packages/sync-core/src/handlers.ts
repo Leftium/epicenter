@@ -52,6 +52,10 @@ export type ConnectionState = {
 	doc: Y.Doc;
 	awareness: Awareness;
 	updateHandler: (update: Uint8Array, origin: unknown) => void;
+	awarenessHandler: (
+		changes: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) => void;
 	controlledClientIds: Set<number>;
 	connId: ConnectionId;
 };
@@ -66,15 +70,15 @@ export type ConnectionState = {
  * The adapter calls this when a WebSocket connects. It returns:
  * - Messages to send to the client (sync step 1 + awareness states)
  * - A ConnectionState the adapter must store for the connection's lifetime
- * - An updateHandler that the adapter must register on doc.on('update')
  *
  * The adapter is responsible for:
  * - Resolving the doc/awareness for the room (via RoomManager, DO instance, etc.)
  * - Sending the initialMessages to the client
  * - Storing the ConnectionState (keyed however makes sense for the framework)
  *
- * The update handler is registered automatically on doc.on('update') and
- * cleaned up by handleWsClose.
+ * Registers two event handlers (cleaned up by handleWsClose):
+ * - doc.on('updateV2') — forwards V2 updates to this connection
+ * - awareness.on('update') — tracks which awareness client IDs this connection controls
  */
 export function handleWsOpen(
 	doc: Y.Doc,
@@ -96,17 +100,37 @@ export function handleWsOpen(
 		);
 	}
 
-	// Create and register update handler (cleaned up by handleWsClose)
+	// Forward V2 doc updates to this connection (cleaned up by handleWsClose)
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
 		if (origin === connId) return; // Don't echo back to sender
 		send(encodeSyncUpdate({ update }));
 	};
-	doc.on('update', updateHandler);
+	doc.on('updateV2', updateHandler);
+
+	// Track which awareness client IDs this connection controls, using
+	// the Awareness class's own event rather than manually parsing bytes.
+	// The origin parameter from applyAwarenessUpdate lets us attribute
+	// changes to the correct connection.
+	const awarenessHandler = (
+		{
+			added,
+			updated,
+			removed,
+		}: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) => {
+		if (origin !== connId) return;
+		for (const id of added) controlledClientIds.add(id);
+		for (const id of updated) controlledClientIds.add(id);
+		for (const id of removed) controlledClientIds.delete(id);
+	};
+	awareness.on('update', awarenessHandler);
 
 	const state: ConnectionState = {
 		doc,
 		awareness,
 		updateHandler,
+		awarenessHandler,
 		controlledClientIds,
 		connId,
 	};
@@ -139,25 +163,6 @@ export function handleWsMessage(
 
 		case MESSAGE_TYPE.AWARENESS: {
 			const update = decoding.readVarUint8Array(decoder);
-
-			// Track controlled client IDs (best-effort, errors swallowed)
-			try {
-				const decoder2 = decoding.createDecoder(update);
-				const len = decoding.readVarUint(decoder2);
-				for (let i = 0; i < len; i++) {
-					const clientId = decoding.readVarUint(decoder2);
-					decoding.readVarUint(decoder2); // clock
-					const awarenessState = JSON.parse(decoding.readVarString(decoder2));
-					if (awarenessState === null) {
-						state.controlledClientIds.delete(clientId);
-					} else {
-						state.controlledClientIds.add(clientId);
-					}
-				}
-			} catch {
-				/* best effort */
-			}
-
 			applyAwarenessUpdate(state.awareness, update, state.connId);
 			const broadcast = encodeAwareness({ update });
 			return { broadcast };
@@ -189,14 +194,15 @@ export function handleWsMessage(
 /**
  * Handle a WebSocket connection closing.
  *
- * Performs protocol-level cleanup: unregisters the update handler and
+ * Performs protocol-level cleanup: unregisters event handlers and
  * removes awareness states for this connection's controlled client IDs.
  *
  * The adapter is responsible for cleaning up any framework-specific state
  * (ping intervals, WeakMap entries, room manager leave, etc.).
  */
 export function handleWsClose(state: ConnectionState): void {
-	state.doc.off('update', state.updateHandler);
+	state.doc.off('updateV2', state.updateHandler);
+	state.awareness.off('update', state.awarenessHandler);
 
 	if (state.controlledClientIds.size > 0) {
 		removeAwarenessStates(

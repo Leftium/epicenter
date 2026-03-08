@@ -10,6 +10,7 @@ import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
+import { describeRoute } from 'hono-openapi';
 import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
 import * as schema from './db/schema';
@@ -148,18 +149,30 @@ const factory = createFactory<Env>({
 const app = factory.createApp();
 
 // Health
-app.get('/', (c) =>
+app.get('/', describeRoute({
+	description: 'Health check',
+	tags: ['health'],
+}), (c) =>
 	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
 // Auth
-app.on(['GET', 'POST'], '/auth/*', (c) => c.var.auth.handler(c.req.raw));
+app.on(['GET', 'POST'], '/auth/*', describeRoute({
+	description: 'Better Auth handler',
+	tags: ['auth'],
+}), (c) => c.var.auth.handler(c.req.raw));
 
 // OAuth discovery
-app.get('/.well-known/openid-configuration/auth', (c) =>
+app.get('/.well-known/openid-configuration/auth', describeRoute({
+	description: 'OpenID Connect discovery metadata',
+	tags: ['auth', 'oauth'],
+}), (c) =>
 	oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
 );
-app.get('/.well-known/oauth-authorization-server/auth', (c) =>
+app.get('/.well-known/oauth-authorization-server/auth', describeRoute({
+	description: 'OAuth authorization server metadata',
+	tags: ['auth', 'oauth'],
+}), (c) =>
 	oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
@@ -183,7 +196,10 @@ app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 
 // AI chat
-app.post('/ai/chat', ...aiChatHandlers);
+app.post('/ai/chat', describeRoute({
+	description: 'Stream AI chat completions via SSE',
+	tags: ['ai'],
+}), ...aiChatHandlers);
 
 // ---------------------------------------------------------------------------
 // Workspace routes — one WorkspaceRoom DO per room (gc: true)
@@ -229,7 +245,10 @@ function getDocumentStub(c: { var: { user: { id: string } }; env: Cloudflare.Env
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
 }
 
-app.get('/workspaces/:room', async (c) => {
+app.get('/workspaces/:room', describeRoute({
+	description: 'Get workspace doc or upgrade to WebSocket',
+	tags: ['workspaces'],
+}), async (c) => {
 	const stub = getWorkspaceStub(c);
 
 	if (c.req.header('upgrade') === 'websocket') {
@@ -242,7 +261,10 @@ app.get('/workspaces/:room', async (c) => {
 	});
 });
 
-app.post('/workspaces/:room', async (c) => {
+app.post('/workspaces/:room', describeRoute({
+	description: 'Sync workspace doc',
+	tags: ['workspaces'],
+}), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
 	if (body.byteLength > 5 * 1024 * 1024) {
 		return c.body('Payload too large', 413);
@@ -258,7 +280,10 @@ app.post('/workspaces/:room', async (c) => {
 });
 
 // /rooms/:room — temporary alias for /workspaces/:room during client rollout
-app.get('/rooms/:room', async (c) => {
+app.get('/rooms/:room', describeRoute({
+	description: 'Get workspace doc or upgrade to WebSocket (rooms alias)',
+	tags: ['rooms'],
+}), async (c) => {
 	const stub = getWorkspaceStub(c);
 
 	if (c.req.header('upgrade') === 'websocket') {
@@ -271,7 +296,10 @@ app.get('/rooms/:room', async (c) => {
 	});
 });
 
-app.post('/rooms/:room', async (c) => {
+app.post('/rooms/:room', describeRoute({
+	description: 'Sync workspace doc (rooms alias)',
+	tags: ['rooms'],
+}), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
 	if (body.byteLength > 5 * 1024 * 1024) {
 		return c.body('Payload too large', 413);
@@ -290,7 +318,10 @@ app.post('/rooms/:room', async (c) => {
 // Document routes — one DocumentRoom DO per room (gc: false, snapshots)
 // ---------------------------------------------------------------------------
 
-app.get('/documents/:room', async (c) => {
+app.get('/documents/:room', describeRoute({
+	description: 'Get document doc or upgrade to WebSocket',
+	tags: ['documents'],
+}), async (c) => {
 	const stub = getDocumentStub(c);
 
 	if (c.req.header('upgrade') === 'websocket') {
@@ -303,7 +334,10 @@ app.get('/documents/:room', async (c) => {
 	});
 });
 
-app.post('/documents/:room', async (c) => {
+app.post('/documents/:room', describeRoute({
+	description: 'Sync document doc',
+	tags: ['documents'],
+}), async (c) => {
 	const body = new Uint8Array(await c.req.arrayBuffer());
 	if (body.byteLength > 5 * 1024 * 1024) {
 		return c.body('Payload too large', 413);
@@ -319,20 +353,29 @@ app.post('/documents/:room', async (c) => {
 });
 
 // Snapshot endpoints for DocumentRoom
-app.post('/documents/:room/snapshots', async (c) => {
+app.post('/documents/:room/snapshots', describeRoute({
+	description: 'Save a document snapshot',
+	tags: ['documents', 'snapshots'],
+}), async (c) => {
 	const stub = getDocumentStub(c);
 	const body = await c.req.json<{ label?: string }>().catch(() => ({}) as { label?: string });
 	const result = await stub.saveSnapshot(body.label);
 	return c.json(result);
 });
 
-app.get('/documents/:room/snapshots', async (c) => {
+app.get('/documents/:room/snapshots', describeRoute({
+	description: 'List document snapshots',
+	tags: ['documents', 'snapshots'],
+}), async (c) => {
 	const stub = getDocumentStub(c);
 	const snapshots = await stub.listSnapshots();
 	return c.json(snapshots);
 });
 
-app.get('/documents/:room/snapshots/:id', async (c) => {
+app.get('/documents/:room/snapshots/:id', describeRoute({
+	description: 'Get a document snapshot by ID',
+	tags: ['documents', 'snapshots'],
+}), async (c) => {
 	const stub = getDocumentStub(c);
 	const snapshotId = Number(c.req.param('id'));
 	const data = await stub.getSnapshot(snapshotId);
@@ -342,7 +385,10 @@ app.get('/documents/:room/snapshots/:id', async (c) => {
 	});
 });
 
-app.post('/documents/:room/snapshots/:id/restore', async (c) => {
+app.post('/documents/:room/snapshots/:id/restore', describeRoute({
+	description: 'Restore a document from a snapshot',
+	tags: ['documents', 'snapshots'],
+}), async (c) => {
 	const stub = getDocumentStub(c);
 	const snapshotId = Number(c.req.param('id'));
 	const ok = await stub.restoreSnapshot(snapshotId);

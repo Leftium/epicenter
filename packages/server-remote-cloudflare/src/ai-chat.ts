@@ -44,22 +44,22 @@ export const aiChatHandlers = factory.createHandlers(
 	sValidator('json', aiChatBody),
 	async (c) => {
 		const { messages, data } = c.req.valid('json');
-		const { provider, model, ...chatOptions } = data;
+		const { provider, ...options } = data;
 
 		let adapter: AnyTextAdapter;
-		switch (provider) {
+		switch (data.provider) {
 			case 'openai': {
 				const apiKey = c.env.OPENAI_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
-				adapter = createOpenaiChat(model, apiKey);
+				adapter = createOpenaiChat(data.model, apiKey);
 				break;
 			}
 			case 'anthropic': {
 				const apiKey = c.env.ANTHROPIC_API_KEY;
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
-				adapter = createAnthropicChat(model, apiKey);
+				adapter = createAnthropicChat(data.model, apiKey);
 				break;
 			}
 		}
@@ -68,7 +68,7 @@ export const aiChatHandlers = factory.createHandlers(
 		const stream = chat({
 			adapter,
 			messages: messages as Array<ModelMessage>,
-			...chatOptions,
+			...options,
 			abortController,
 		});
 

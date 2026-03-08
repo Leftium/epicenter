@@ -129,34 +129,21 @@ export class DocumentRoom extends DurableObject {
 
 		this.ctx.blockConcurrencyWhile(async () => {
 			sql.exec(`
-				CREATE TABLE IF NOT EXISTS _schema_version (
-					version INTEGER PRIMARY KEY
+				CREATE TABLE IF NOT EXISTS updates (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					data BLOB NOT NULL,
+					created_at TEXT NOT NULL DEFAULT (datetime('now'))
 				)
 			`);
-			const { version } = sql
-				.exec<{ version: number }>(
-					'SELECT COALESCE(MAX(version), 0) as version FROM _schema_version',
-				)
-				.one();
 
-			if (version < 1) {
-				sql.exec(`
-					CREATE TABLE IF NOT EXISTS updates (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						data BLOB NOT NULL,
-						created_at TEXT NOT NULL DEFAULT (datetime('now'))
-					)
-				`);
-				sql.exec(`
-					CREATE TABLE IF NOT EXISTS snapshots (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						snapshot BLOB NOT NULL,
-						label TEXT,
-						created_at TEXT NOT NULL DEFAULT (datetime('now'))
-					)
-				`);
-				sql.exec('INSERT INTO _schema_version (version) VALUES (1)');
-			}
+			sql.exec(`
+				CREATE TABLE IF NOT EXISTS snapshots (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					snapshot BLOB NOT NULL,
+					label TEXT,
+					created_at TEXT NOT NULL DEFAULT (datetime('now'))
+				)
+			`);
 
 			this.doc = new Y.Doc({ gc: false });
 			this.awareness = new Awareness(this.doc);

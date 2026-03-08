@@ -127,25 +127,11 @@ export class WorkspaceRoom extends DurableObject {
 
 		this.ctx.blockConcurrencyWhile(async () => {
 			sql.exec(`
-				CREATE TABLE IF NOT EXISTS _schema_version (
-					version INTEGER PRIMARY KEY
+				CREATE TABLE IF NOT EXISTS updates (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					data BLOB NOT NULL
 				)
 			`);
-			const { version } = sql
-				.exec<{ version: number }>(
-					'SELECT COALESCE(MAX(version), 0) as version FROM _schema_version',
-				)
-				.one();
-
-			if (version < 1) {
-				sql.exec(`
-					CREATE TABLE IF NOT EXISTS updates (
-						id INTEGER PRIMARY KEY AUTOINCREMENT,
-						data BLOB NOT NULL
-					)
-				`);
-				sql.exec('INSERT INTO _schema_version (version) VALUES (1)');
-			}
 
 			this.doc = new Y.Doc();
 			this.awareness = new Awareness(this.doc);

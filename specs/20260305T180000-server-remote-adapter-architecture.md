@@ -1,7 +1,7 @@
 # Server Remote Adapter Architecture
 
 **Date**: 2026-03-05
-**Status**: Draft
+**Status**: Superseded by `20260307T000000-remove-server-remote-standalone.md`
 **Related**: `20260305T120000-server-package-consolidation.md`, `20260227T120000-server-package-split.md`
 
 ## Problem

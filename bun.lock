@@ -290,7 +290,6 @@
       },
       "dependencies": {
         "@epicenter/server-local": "workspace:*",
-        "@epicenter/server-remote-standalone": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "jsrepo": "^3.6.1",
         "typebox": "catalog:",
@@ -425,26 +424,6 @@
         "jsonc-parser": "^3.3.1",
         "typescript": "catalog:",
         "wrangler": "catalog:",
-      },
-    },
-    "packages/server-remote-standalone": {
-      "name": "@epicenter/server-remote-standalone",
-      "version": "0.0.1",
-      "dependencies": {
-        "@better-auth/oauth-provider": "catalog:",
-        "@epicenter/sync-core": "workspace:*",
-        "@tanstack/ai": "^0.5.1",
-        "@tanstack/ai-anthropic": "^0.5.0",
-        "@tanstack/ai-gemini": "^0.5.0",
-        "@tanstack/ai-grok": "^0.5.0",
-        "@tanstack/ai-openai": "^0.5.0",
-        "better-auth": "catalog:",
-        "hono": "catalog:",
-        "wellcrafted": "catalog:",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "typescript": "catalog:",
       },
     },
     "packages/shared": {
@@ -759,8 +738,6 @@
     "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
 
     "@epicenter/server-remote-cloudflare": ["@epicenter/server-remote-cloudflare@workspace:packages/server-remote-cloudflare"],
-
-    "@epicenter/server-remote-standalone": ["@epicenter/server-remote-standalone@workspace:packages/server-remote-standalone"],
 
     "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 

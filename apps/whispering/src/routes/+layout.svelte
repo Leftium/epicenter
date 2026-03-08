@@ -55,11 +55,13 @@
 <SvelteQueryDevtools client={queryClient} buttonPosition="bottom-right" />
 
 <style>
-	/* Override inspector button to bottom-center positioning */
+	/* Override inspector button to bottom-center, above sidebar (z-10).
+	   !important needed because the inspector sets inline styles via style= attribute. */
 	:global(#svelte-inspector-host button) {
-		bottom: 16px;
-		left: 50%;
-		transform: translateX(-50%);
-		right: auto;
+		bottom: 16px !important;
+		left: 50% !important;
+		transform: translateX(-50%) !important;
+		right: auto !important;
+		z-index: 20 !important;
 	}
 </style>

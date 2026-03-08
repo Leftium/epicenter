@@ -328,3 +328,62 @@ export function encodeQueryAwareness(): Uint8Array {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.QUERY_AWARENESS);
 	});
 }
+
+// ============================================================================
+// HTTP Sync Request Encoding (binary frame format for POST body)
+// ============================================================================
+
+/**
+ * Encode a sync request body (state vector + optional update).
+ *
+ * Wire format: two length-prefixed frames using lib0 varint encoding.
+ * The state vector frame is always present. The update frame is written
+ * as a zero-length byte array when no update is provided.
+ *
+ * @param stateVector - Client's Yjs state vector (tells server what client has)
+ * @param update - Optional Yjs update to push to the server
+ * @returns Encoded binary request body
+ */
+export function encodeSyncRequest(
+	stateVector: Uint8Array,
+	update?: Uint8Array,
+): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint8Array(encoder, stateVector);
+		encoding.writeVarUint8Array(encoder, update ?? new Uint8Array(0));
+	});
+}
+
+/**
+ * Decode a sync request body into state vector and optional update.
+ *
+ * Parses the two length-prefixed frames from an encoded sync request.
+ * The update field will be an empty Uint8Array (byteLength === 0) if
+ * the client had nothing to push.
+ *
+ * @param data - Raw sync request body bytes
+ * @returns Parsed state vector and update
+ * @throws Error if data is malformed or truncated
+ */
+export function decodeSyncRequest(data: Uint8Array): {
+	stateVector: Uint8Array;
+	update: Uint8Array;
+} {
+	const decoder = decoding.createDecoder(data);
+	const stateVector = decoding.readVarUint8Array(decoder);
+	const update = decoding.readVarUint8Array(decoder);
+	return { stateVector, update };
+}
+
+// ============================================================================
+// State Vector Utilities
+// ============================================================================
+
+/** Compare two state vectors for byte-level equality. */
+export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.byteLength !== b.byteLength) return false;
+	for (let i = 0; i < a.byteLength; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}

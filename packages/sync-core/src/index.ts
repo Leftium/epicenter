@@ -7,8 +7,8 @@
  * by any framework adapter (Elysia, Hono, Cloudflare Workers, etc.).
  */
 
-// Auth
-export { extractBearerToken, type TokenVerifier } from './auth';
+// Re-export Awareness so consumers don't need a direct y-protocols dependency
+export { Awareness } from 'y-protocols/awareness';
 // Discovery (device discovery via Yjs Awareness)
 export {
 	createClientPresence,
@@ -19,29 +19,27 @@ export {
 	type DiscoveryState,
 	getDiscoveredDevices,
 } from './discovery';
-// Handlers (framework-agnostic request/message handlers)
+// Handlers (framework-agnostic WS connection lifecycle)
 export {
 	type ConnectionId,
 	type ConnectionState,
-	handleHttpGetDoc,
-	handleHttpSync,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
 	type WsMessageResult,
 	type WsOpenResult,
 } from './handlers';
-// Re-export Awareness so consumers don't need a direct y-protocols dependency
-export { Awareness } from 'y-protocols/awareness';
-// Protocol (WS encode/decode)
+// Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
 	type DecodedSyncMessage,
 	decodeMessageType,
 	decodeSyncMessage,
+	decodeSyncRequest,
 	decodeSyncStatus,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
+	encodeSyncRequest,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncStep2,
@@ -51,15 +49,7 @@ export {
 	type MessageType,
 	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
+	stateVectorsEqual,
 } from './protocol';
 // Rooms (connection lifecycle)
 export { createRoomManager } from './rooms';
-// Storage (Yjs update log)
-export {
-	compactUpdateLog,
-	createMemoryUpdateLog,
-	decodeSyncRequest,
-	encodeSyncRequest,
-	stateVectorsEqual,
-	type UpdateLog,
-} from './storage';

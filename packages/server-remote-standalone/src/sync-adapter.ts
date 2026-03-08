@@ -1,16 +1,16 @@
 import {
 	type ConnectionState,
 	createRoomManager,
-	handleHttpGetDoc,
-	handleHttpSync,
+	decodeSyncRequest,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	type UpdateLog,
+	stateVectorsEqual,
 } from '@epicenter/sync-core';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import * as Y from 'yjs';
+import type { UpdateLog } from './storage';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -227,18 +227,40 @@ export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 	app.post('/rooms/:room', async (c) => {
 		const roomId = c.req.param('room');
 		const body = new Uint8Array(await c.req.arrayBuffer());
-		const result = await handleHttpSync(storage, roomId, body);
-		if (result.status === 304) return c.body(null, 304);
-		return c.body(result.body as Uint8Array<ArrayBuffer>, 200, {
+
+		const { stateVector: clientSV, update } = decodeSyncRequest(body);
+
+		if (update.byteLength > 0) {
+			await storage.append(roomId, update);
+		}
+
+		const updates = await storage.readAll(roomId);
+		if (updates.length === 0) {
+			return c.body(null, 304);
+		}
+
+		const merged = Y.mergeUpdatesV2(updates);
+		const serverSV = Y.encodeStateVectorFromUpdateV2(merged);
+
+		if (stateVectorsEqual(serverSV, clientSV)) {
+			return c.body(null, 304);
+		}
+
+		const diff = Y.diffUpdateV2(merged, clientSV);
+		return c.body(diff as Uint8Array<ArrayBuffer>, 200, {
 			'Content-Type': 'application/octet-stream',
 		});
 	});
 
 	app.get('/rooms/:room/doc', async (c) => {
 		const roomId = c.req.param('room');
-		const result = await handleHttpGetDoc(storage, roomId);
-		if (result.status === 404) return c.body(null, 404);
-		return c.body(result.body as Uint8Array<ArrayBuffer>, 200, {
+		const updates = await storage.readAll(roomId);
+		if (updates.length === 0) {
+			return c.body(null, 404);
+		}
+
+		const merged = Y.mergeUpdatesV2(updates);
+		return c.body(merged as Uint8Array<ArrayBuffer>, 200, {
 			'Content-Type': 'application/octet-stream',
 		});
 	});

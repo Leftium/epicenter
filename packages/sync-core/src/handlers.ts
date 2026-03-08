@@ -15,7 +15,7 @@ import {
 	applyAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -25,11 +25,6 @@ import {
 	handleSyncMessage,
 	MESSAGE_TYPE,
 } from './protocol';
-import {
-	decodeSyncRequest,
-	stateVectorsEqual,
-	type UpdateLog,
-} from './storage';
 
 // ============================================================================
 // Types
@@ -210,59 +205,4 @@ export function handleWsClose(state: ConnectionState): void {
 			null,
 		);
 	}
-}
-
-// ============================================================================
-// HTTP Sync Handler
-// ============================================================================
-
-/**
- * Handle an HTTP sync request (POST /:room).
- *
- * Stateless — no Y.Doc instantiated. Works with raw UpdateLog.
- * Returns a result the adapter maps to an HTTP response.
- */
-export async function handleHttpSync(
-	storage: UpdateLog,
-	roomId: string,
-	body: Uint8Array,
-): Promise<{ status: 200 | 304; body?: Uint8Array }> {
-	const { stateVector: clientSV, update } = decodeSyncRequest(body);
-
-	if (update.byteLength > 0) {
-		await storage.append(roomId, update);
-	}
-
-	const updates = await storage.readAll(roomId);
-	if (updates.length === 0) {
-		return { status: 304 };
-	}
-
-	const merged = Y.mergeUpdatesV2(updates);
-	const serverSV = Y.encodeStateVectorFromUpdateV2(merged);
-
-	if (stateVectorsEqual(serverSV, clientSV)) {
-		return { status: 304 };
-	}
-
-	const diff = Y.diffUpdateV2(merged, clientSV);
-	return { status: 200, body: diff };
-}
-
-/**
- * Handle an HTTP full document fetch (GET /:room).
- *
- * Stateless — reads all updates from storage, merges them, returns the result.
- */
-export async function handleHttpGetDoc(
-	storage: UpdateLog,
-	roomId: string,
-): Promise<{ status: 200 | 404; body?: Uint8Array }> {
-	const updates = await storage.readAll(roomId);
-	if (updates.length === 0) {
-		return { status: 404 };
-	}
-
-	const merged = Y.mergeUpdatesV2(updates);
-	return { status: 200, body: merged };
 }

@@ -12,7 +12,7 @@ type Room = {
 	evictionTimer?: ReturnType<typeof setTimeout>;
 };
 
-type RoomManagerConfig = {
+export type RoomManagerConfig = {
 	/**
 	 * Resolve a Y.Doc for a room. Called when a client connects.
 	 *

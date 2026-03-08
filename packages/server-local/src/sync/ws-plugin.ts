@@ -1,34 +1,19 @@
 import {
 	type ConnectionState,
-	createRoomManager,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
 } from '@epicenter/sync-core';
+import type { RoomManagerConfig } from './rooms';
+import { createRoomManager } from './rooms';
 import { Elysia, t } from 'elysia';
-import type * as Y from 'yjs';
 
 /** Interval between server-initiated ping frames (ms). Detects dead clients. */
 const PING_INTERVAL_MS = 30_000;
 
-export type WsSyncPluginConfig = {
-	/**
-	 * Resolve a Y.Doc for a room. Called when a client connects.
-	 *
-	 * - If provided and returns Y.Doc, use that doc for the room
-	 * - If provided and returns undefined, close with 4004 (room not found)
-	 * - If omitted, create a fresh Y.Doc on demand (standalone mode)
-	 */
-	getDoc?: (roomId: string) => Y.Doc | undefined;
-
+export type WsSyncPluginConfig = RoomManagerConfig & {
 	/** Verify a token. Omit for open mode (no auth). */
 	verifyToken?: (token: string) => boolean | Promise<boolean>;
-
-	/** Called when a room is created (first connection). Only fires in standalone mode (no getDoc). */
-	onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
-
-	/** Called when a room is evicted (60s after last connection leaves). */
-	onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
 };
 
 /** Per-connection state: sync-core state + adapter-specific fields. */
@@ -50,11 +35,7 @@ type ElysiaConnectionState = {
  * - `queueMicrotask` for deferred initial send (Elysia WS readiness)
  */
 export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
-	const roomManager = createRoomManager({
-		getDoc: config?.getDoc,
-		onRoomCreated: config?.onRoomCreated,
-		onRoomEvicted: config?.onRoomEvicted,
-	});
+	const roomManager = createRoomManager(config);
 
 	const connectionState = new WeakMap<object, ElysiaConnectionState>();
 

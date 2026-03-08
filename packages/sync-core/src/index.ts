@@ -41,5 +41,3 @@ export {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from './protocol';
-// Rooms (connection lifecycle)
-export { createRoomManager } from './rooms';

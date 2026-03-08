@@ -386,6 +386,7 @@
         "elysia": "^1.2.25",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
+        "y-protocols": "catalog:",
       },
       "devDependencies": {
         "@epicenter/sync": "workspace:*",

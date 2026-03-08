@@ -28,17 +28,25 @@
 	"durable_objects": {
 		"bindings": [
 			{
-				"name": "YJS_ROOM",
-				"class_name": "YjsRoom"
+				"name": "WORKSPACE_ROOM",
+				"class_name": "WorkspaceRoom"
+			},
+			{
+				"name": "DOCUMENT_ROOM",
+				"class_name": "DocumentRoom"
 			}
 		]
 	},
-
 	// SQLite-backed DO — persistent storage survives hibernation.
 	"migrations": [
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["YjsRoom"]
+		},
+		{
+			"tag": "v2",
+			"renamed_classes": [{ "from": "YjsRoom", "to": "WorkspaceRoom" }],
+			"new_sqlite_classes": ["DocumentRoom"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

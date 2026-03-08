@@ -44,11 +44,15 @@ const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
 /**
- * Durable Object that manages one external collaboration room.
+ * Shared Durable Object foundation for Yjs collaboration rooms.
  *
- * Each instance maps to one room ID via `idFromName(roomId)` and hosts a
- * single in-memory `Y.Doc`. Uses the WebSocket Hibernation API so connections
- * stay alive while the DO pays zero compute when idle.
+ * Manages a single in-memory `Y.Doc` backed by an append-only SQLite update
+ * log with cold-start compaction. Uses the WebSocket Hibernation API so
+ * connections stay alive while the DO pays zero compute when idle.
+ *
+ * Subclasses parameterize the `gc` setting:
+ * - {@link WorkspaceRoom}: `gc: true` — small, bounded docs for metadata
+ * - {@link DocumentRoom}: `gc: false` — preserves delete history for snapshots
  *
  * ## Worker → DO interface
  *
@@ -68,44 +72,17 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * Append-only update log in DO SQLite with opportunistic cold-start
  * compaction. See {@link MAX_COMPACTED_BYTES} for full details.
  *
- * - **Write path**: Every `Y.Doc` update is appended as a BLOB row via
- *   synchronous `sql.exec` (0 ms — co-located with compute, no network hop).
- *   Each row is a tiny incremental update (~20–100 bytes per keystroke),
- *   well under the 2 MB per-row BLOB limit.
- * - **Cold start**: Reads all rows, merges with `Y.mergeUpdatesV2`, applies
- *   to a fresh `Y.Doc`. When multiple rows exist and the merged blob fits
- *   under {@link MAX_COMPACTED_BYTES}, atomically replaces all rows with a
- *   single merged snapshot. This collapses redundant insert+delete churn
- *   at zero extra encoding cost (we already computed `merged` for loading).
- *
- * ### Why DO SQLite over R2 or external storage
- *
- * DO SQLite writes are synchronous and co-located — every keystroke persists
- * in the same event loop tick with zero network latency. R2 would add
- * 5–20 ms per write or require a write buffer that risks data loss on crash.
- * DO SQLite data is replicated to 5 follower machines (3-of-5 quorum) and
- * batched to R2 internally, so durability matches or exceeds standalone R2.
- * Cost is also dramatically lower: DO SQLite row writes are $1/M vs R2's
- * $4.50/M for Class A operations.
- *
  * ## Auth & room isolation
  *
- * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
- * the session (cookie or `?token=` query param for WebSocket) via Better Auth
- * before calling RPC methods or forwarding fetch. The DO itself does not
- * re-validate — it trusts the Worker boundary.
- *
- * Room names are user-scoped: the Worker prefixes `user:{userId}:` to the
- * client-provided room name before calling `idFromName()`. This ensures each
- * user's documents are isolated in separate DO instances, even if multiple
- * users create documents with the same name (e.g., "tab-manager").
+ * Handled upstream by `authGuard` middleware in app.ts. The DO itself does
+ * not re-validate — it trusts the Worker boundary.
  */
-export class YjsRoom extends DurableObject {
-	private doc!: Y.Doc;
-	private awareness!: Awareness;
+export class BaseYjsRoom extends DurableObject {
+	protected doc!: Y.Doc;
+	protected awareness!: Awareness;
 	private connectionStates = new Map<WebSocket, ConnectionState>();
 
-	constructor(ctx: DurableObjectState, env: Env) {
+	constructor(ctx: DurableObjectState, env: Env, options: { gc: boolean }) {
 		super(ctx, env);
 
 		// Auto ping/pong without waking the DO.
@@ -126,8 +103,10 @@ export class YjsRoom extends DurableObject {
 				)
 			`);
 
+			this.onInit();
+
 			// --- Load ---
-			this.doc = new Y.Doc();
+			this.doc = new Y.Doc({ gc: options.gc });
 			this.awareness = new Awareness(this.doc);
 
 			const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
@@ -166,13 +145,20 @@ export class YjsRoom extends DurableObject {
 		});
 	}
 
-	// --- fetch: WebSocket upgrades only ---
+	/**
+	 * Override to create additional SQLite tables or run setup logic.
+	 * Called inside `blockConcurrencyWhile` before the doc is loaded.
+	 */
+	protected onInit(): void {}
 
 	/**
-	 * Only handles WebSocket upgrades. HTTP operations (sync, snapshot) are
-	 * exposed as RPC methods called directly on the stub, avoiding the overhead
-	 * of constructing/parsing Request/Response objects for binary payloads.
+	 * Override to run logic when the last WebSocket disconnects.
+	 * Called after the connection state is cleaned up.
 	 */
+	protected onLastDisconnect(): void {}
+
+	// --- fetch: WebSocket upgrades only ---
+
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
 			return this.handleWebSocketUpgrade();
@@ -182,18 +168,6 @@ export class YjsRoom extends DurableObject {
 
 	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---
 
-	/**
-	 * HTTP sync via RPC.
-	 *
-	 * Binary body format: `[length-prefixed stateVector][length-prefixed update]`
-	 * (encoded via `encodeSyncRequest` from sync-core).
-	 *
-	 * 1. Applies client update to the live doc (triggers `updateV2` → SQLite
-	 *    persist + broadcast to WebSocket peers).
-	 * 2. Compares state vectors — returns `null` if already in sync (caller
-	 *    maps to 304).
-	 * 3. Otherwise returns the binary diff the client is missing.
-	 */
 	async sync(body: Uint8Array): Promise<Uint8Array | null> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
@@ -209,36 +183,14 @@ export class YjsRoom extends DurableObject {
 		return Y.encodeStateAsUpdateV2(this.doc, clientSV);
 	}
 
-	/**
-	 * Snapshot bootstrap via RPC.
-	 *
-	 * Returns the full doc state via `Y.encodeStateAsUpdateV2`. Clients apply
-	 * this with `Y.applyUpdateV2` to hydrate their local doc before opening a
-	 * WebSocket, reducing the initial sync payload size.
-	 */
 	async getDoc(): Promise<Uint8Array> {
 		return Y.encodeStateAsUpdateV2(this.doc);
 	}
 
-	/**
-	 * WebSocket upgrade (Upgrade: websocket).
-	 *
-	 * Accepts via the Hibernation API (`ctx.acceptWebSocket`) so the DO can
-	 * sleep while connections stay alive — zero compute cost when idle.
-	 *
-	 * On connect: sends SyncStep1 (server's state vector) + current awareness
-	 * states. The client responds with SyncStep2 (its missing updates) and the
-	 * sync handshake completes. Subsequent mutations flow as incremental
-	 * MESSAGE_SYNC updates, broadcast to all peers via {@link webSocketMessage}.
-	 *
-	 * Per-connection metadata (controlled awareness client IDs) is persisted
-	 * via `ws.serializeAttachment` to survive hibernation wake cycles.
-	 */
 	private async handleWebSocketUpgrade(): Promise<Response> {
 		const pair = new WebSocketPair();
 		const [client, server] = [pair[0], pair[1]];
 
-		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
 		const send = (data: Uint8Array) => swallow(() => server.send(data));
@@ -251,12 +203,10 @@ export class YjsRoom extends DurableObject {
 
 		this.connectionStates.set(server, state);
 
-		// Persist empty attachment (no controlled client IDs yet)
 		server.serializeAttachment({
 			controlledClientIds: [],
 		} satisfies WsAttachment);
 
-		// Send initial sync messages (SyncStep1 + awareness states)
 		for (const msg of initialMessages) {
 			server.send(msg);
 		}
@@ -318,6 +268,10 @@ export class YjsRoom extends DurableObject {
 		this.connectionStates.delete(ws);
 
 		swallow(() => ws.close(code, reason));
+
+		if (this.connectionStates.size === 0) {
+			this.onLastDisconnect();
+		}
 	}
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {

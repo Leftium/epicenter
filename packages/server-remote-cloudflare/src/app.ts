@@ -14,8 +14,9 @@ import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
 import * as schema from './db/schema';
 
-// Re-export so wrangler types generates DurableObjectNamespace<YjsRoom>
-export { YjsRoom } from './yjs-room';
+// Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
+export { WorkspaceRoom } from './workspace-room';
+export { DocumentRoom } from './document-room';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -178,37 +179,64 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 });
 app.use('/ai/*', authGuard);
 app.use('/rooms/*', authGuard);
+app.use('/workspaces/*', authGuard);
+app.use('/documents/*', authGuard);
 
 // AI chat
 app.post('/ai/chat', ...aiChatHandlers);
 
-/**
- * Sync rooms — one {@link YjsRoom} Durable Object per room.
- *
- * The Worker is the HTTP boundary; the DO is the Yjs brain. Communication
- * uses two channels:
- *
- * | Route                      | Channel        | DO method       | Purpose                          |
- * |----------------------------|----------------|-----------------|----------------------------------|
- * | `GET  /rooms/:room` (ws)   | `stub.fetch()` | `fetch` → 101   | WebSocket upgrade (Hibernation)  |
- * | `GET  /rooms/:room` (http) | RPC            | `stub.getDoc()` | Snapshot bootstrap (full state)  |
- * | `POST /rooms/:room`        | RPC            | `stub.sync()`   | HTTP sync (state vector + diff)  |
- *
- * RPC is used for HTTP operations because it avoids Request/Response
- * serialization for binary payloads. WebSocket upgrades must go through
- * `stub.fetch()` since the 101 handshake requires HTTP semantics.
- */
+// ---------------------------------------------------------------------------
+// Workspace routes — one WorkspaceRoom DO per room (gc: true)
+// ---------------------------------------------------------------------------
 
-app.get('/rooms/:room', async (c) => {
+/** Helper: get a WorkspaceRoom stub for the authenticated user's room. */
+function getWorkspaceStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
 	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
-	const stub = c.env.YJS_ROOM.get(c.env.YJS_ROOM.idFromName(roomKey));
+	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
+}
 
-	// WebSocket upgrade — requires HTTP semantics for 101 response
+/** Helper: get a DocumentRoom stub for the authenticated user's room. */
+function getDocumentStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
+	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
+}
+
+app.get('/workspaces/:room', async (c) => {
+	const stub = getWorkspaceStub(c);
+
 	if (c.req.header('upgrade') === 'websocket') {
 		return stub.fetch(c.req.raw);
 	}
 
-	// Snapshot bootstrap via RPC — full doc state as binary
+	const update = await stub.getDoc();
+	return new Response(update, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+app.post('/workspaces/:room', async (c) => {
+	const body = new Uint8Array(await c.req.arrayBuffer());
+	if (body.byteLength > 5 * 1024 * 1024) {
+		return c.body('Payload too large', 413);
+	}
+
+	const stub = getWorkspaceStub(c);
+	const diff = await stub.sync(body);
+
+	if (!diff) return c.body(null, 304);
+	return new Response(diff, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+// /rooms/:room — temporary alias for /workspaces/:room during client rollout
+app.get('/rooms/:room', async (c) => {
+	const stub = getWorkspaceStub(c);
+
+	if (c.req.header('upgrade') === 'websocket') {
+		return stub.fetch(c.req.raw);
+	}
+
 	const update = await stub.getDoc();
 	return new Response(update, {
 		headers: { 'content-type': 'application/octet-stream' },
@@ -221,16 +249,77 @@ app.post('/rooms/:room', async (c) => {
 		return c.body('Payload too large', 413);
 	}
 
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
-	const stub = c.env.YJS_ROOM.get(c.env.YJS_ROOM.idFromName(roomKey));
-
-	// HTTP sync via RPC — returns diff or null (in sync → 304)
+	const stub = getWorkspaceStub(c);
 	const diff = await stub.sync(body);
 
 	if (!diff) return c.body(null, 304);
 	return new Response(diff, {
 		headers: { 'content-type': 'application/octet-stream' },
 	});
+});
+
+// ---------------------------------------------------------------------------
+// Document routes — one DocumentRoom DO per room (gc: false, snapshots)
+// ---------------------------------------------------------------------------
+
+app.get('/documents/:room', async (c) => {
+	const stub = getDocumentStub(c);
+
+	if (c.req.header('upgrade') === 'websocket') {
+		return stub.fetch(c.req.raw);
+	}
+
+	const update = await stub.getDoc();
+	return new Response(update, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+app.post('/documents/:room', async (c) => {
+	const body = new Uint8Array(await c.req.arrayBuffer());
+	if (body.byteLength > 5 * 1024 * 1024) {
+		return c.body('Payload too large', 413);
+	}
+
+	const stub = getDocumentStub(c);
+	const diff = await stub.sync(body);
+
+	if (!diff) return c.body(null, 304);
+	return new Response(diff, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+// Snapshot endpoints for DocumentRoom
+app.post('/documents/:room/snapshots', async (c) => {
+	const stub = getDocumentStub(c);
+	const body = await c.req.json<{ label?: string }>().catch(() => ({}) as { label?: string });
+	const result = await stub.saveSnapshot(body.label);
+	return c.json(result);
+});
+
+app.get('/documents/:room/snapshots', async (c) => {
+	const stub = getDocumentStub(c);
+	const snapshots = await stub.listSnapshots();
+	return c.json(snapshots);
+});
+
+app.get('/documents/:room/snapshots/:id', async (c) => {
+	const stub = getDocumentStub(c);
+	const snapshotId = Number(c.req.param('id'));
+	const data = await stub.getSnapshot(snapshotId);
+	if (!data) return c.body('Snapshot not found', 404);
+	return new Response(data, {
+		headers: { 'content-type': 'application/octet-stream' },
+	});
+});
+
+app.post('/documents/:room/snapshots/:id/restore', async (c) => {
+	const stub = getDocumentStub(c);
+	const snapshotId = Number(c.req.param('id'));
+	const ok = await stub.restoreSnapshot(snapshotId);
+	if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
+	return c.json({ ok: true });
 });
 
 export default app;

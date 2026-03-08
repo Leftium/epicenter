@@ -43,11 +43,15 @@ function resolveProvider(
 	switch (provider) {
 		case 'openai': {
 			const apiKey = env.OPENAI_API_KEY;
-			return apiKey ? { apiKey, adapter: createOpenaiChat(model as any, apiKey) } : undefined;
+			return apiKey
+				? { apiKey, adapter: createOpenaiChat(model as any, apiKey) }
+				: undefined;
 		}
 		case 'anthropic': {
 			const apiKey = env.ANTHROPIC_API_KEY;
-			return apiKey ? { apiKey, adapter: createAnthropicChat(model as any, apiKey) } : undefined;
+			return apiKey
+				? { apiKey, adapter: createAnthropicChat(model as any, apiKey) }
+				: undefined;
 		}
 	}
 }

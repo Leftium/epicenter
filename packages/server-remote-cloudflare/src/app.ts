@@ -14,9 +14,9 @@ import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
 import * as schema from './db/schema';
 
+export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
 export { WorkspaceRoom } from './workspace-room';
-export { DocumentRoom } from './document-room';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -218,13 +218,21 @@ app.post('/ai/chat', ...aiChatHandlers);
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
-function getWorkspaceStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
+function getWorkspaceStub(c: {
+	var: { user: { id: string } };
+	env: Cloudflare.Env;
+	req: { param: (k: string) => string };
+}) {
 	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
 	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
 }
 
 /** Helper: get a DocumentRoom stub for the authenticated user's room. See {@link getWorkspaceStub} for namespacing rationale. */
-function getDocumentStub(c: { var: { user: { id: string } }; env: Cloudflare.Env; req: { param: (k: string) => string } }) {
+function getDocumentStub(c: {
+	var: { user: { id: string } };
+	env: Cloudflare.Env;
+	req: { param: (k: string) => string };
+}) {
 	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
 }
@@ -321,7 +329,9 @@ app.post('/documents/:room', async (c) => {
 // Snapshot endpoints for DocumentRoom
 app.post('/documents/:room/snapshots', async (c) => {
 	const stub = getDocumentStub(c);
-	const body = await c.req.json<{ label?: string }>().catch(() => ({}) as { label?: string });
+	const body = await c.req
+		.json<{ label?: string }>()
+		.catch(() => ({}) as { label?: string });
 	const result = await stub.saveSnapshot(body.label);
 	return c.json(result);
 });

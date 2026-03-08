@@ -157,20 +157,14 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 				if (result.response) ws.sendBinary(result.response);
 				if (result.broadcast)
-					roomManager.broadcast(
-						state.roomId,
-						result.broadcast,
-						ws.raw,
-					);
+					roomManager.broadcast(state.roomId, result.broadcast, ws.raw);
 			},
 
 			close(ws) {
 				const state = connectionState.get(ws.raw);
 				if (!state) return;
 
-				console.log(
-					`[Sync] Client disconnected from room: ${state.roomId}`,
-				);
+				console.log(`[Sync] Client disconnected from room: ${state.roomId}`);
 
 				// Clean up ping/pong keepalive
 				if (state.pingInterval) {

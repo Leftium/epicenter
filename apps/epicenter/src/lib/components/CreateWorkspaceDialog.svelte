@@ -1,4 +1,5 @@
 <script module lang="ts">
+	import { extractErrorMessage } from 'wellcrafted/error';
 	import {
 		WORKSPACE_TEMPLATE_BY_ID,
 		WORKSPACE_TEMPLATES,
@@ -6,7 +7,6 @@
 		type WorkspaceTemplateId,
 	} from '$lib/templates';
 	import { toKebabCase } from '$lib/utils/slug';
-	import { extractErrorMessage } from 'wellcrafted/error';
 
 	/**
 	 * Template selection state for the Select component.

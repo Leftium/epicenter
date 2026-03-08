@@ -36,9 +36,14 @@
  */
 
 import { generateId } from '@epicenter/workspace';
-import { ChatClient, type ChatClientState, fetchServerSentEvents, type UIMessage } from '@tanstack/ai-client';
-import type { JsonValue } from 'wellcrafted/json';
+import {
+	ChatClient,
+	type ChatClientState,
+	fetchServerSentEvents,
+	type UIMessage,
+} from '@tanstack/ai-client';
 import { SvelteMap } from 'svelte/reactivity';
+import type { JsonValue } from 'wellcrafted/json';
 import {
 	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
@@ -72,7 +77,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 	error: undefined,
 	status: 'ready',
 };
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory

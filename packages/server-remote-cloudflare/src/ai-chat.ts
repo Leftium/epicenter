@@ -16,34 +16,29 @@ import type { Env } from './app';
 // Providers
 // ---------------------------------------------------------------------------
 
-const SUPPORTED_PROVIDERS = ['openai', 'anthropic'] as const;
-type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+const providers = {
+	openai: {
+		apiKeyBinding: 'OPENAI_API_KEY',
+		createAdapter: createOpenaiChat,
+	},
+	anthropic: {
+		apiKeyBinding: 'ANTHROPIC_API_KEY',
+		createAdapter: createAnthropicChat,
+	},
+} as const satisfies Record<string, ProviderConfig>;
 
-function getProviderApiKey(
-	env: Env['Bindings'],
-	provider: SupportedProvider,
-): string | undefined {
-	switch (provider) {
-		case 'openai':
-			return env.OPENAI_API_KEY;
-		case 'anthropic':
-			return env.ANTHROPIC_API_KEY;
-	}
-}
+type StringBindingKey = {
+	[K in keyof Cloudflare.Env]: Cloudflare.Env[K] extends string ? K : never;
+}[keyof Cloudflare.Env];
 
-function createAdapter(
-	provider: SupportedProvider,
-	model: string,
-	apiKey: string,
-): AnyTextAdapter {
-	const m = model as any;
-	switch (provider) {
-		case 'openai':
-			return createOpenaiChat(m, apiKey);
-		case 'anthropic':
-			return createAnthropicChat(m, apiKey);
-	}
-}
+type ProviderConfig = {
+	apiKeyBinding: StringBindingKey;
+	createAdapter: (model: any, apiKey: string) => AnyTextAdapter;
+};
+
+type SupportedProvider = keyof typeof providers;
+
+const SUPPORTED_PROVIDERS = Object.keys(providers) as SupportedProvider[];
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -80,27 +75,24 @@ export const aiChatHandlers = factory.createHandlers(
 	sValidator('json', aiChatBody),
 	async (c) => {
 		const { messages, data } = c.req.valid('json');
+		const { provider, model, ...chatOptions } = data;
 
-		const apiKey = getProviderApiKey(c.env, data.provider);
+		const providerConfig: ProviderConfig = providers[provider];
+		const apiKey = c.env[providerConfig.apiKeyBinding];
 		if (!apiKey) {
 			return c.json(
-				AiChatError.ProviderNotConfigured({ provider: data.provider }),
+				AiChatError.ProviderNotConfigured({ provider }),
 				503,
 			);
 		}
 
-		const adapter = createAdapter(data.provider, data.model, apiKey);
+		const adapter = providerConfig.createAdapter(model as any, apiKey);
 		const abortController = new AbortController();
 
 		const stream = chat({
 			adapter,
 			messages: messages as Array<ModelMessage>,
-			systemPrompts: data.systemPrompts,
-			temperature: data.temperature,
-			maxTokens: data.maxTokens,
-			topP: data.topP,
-			metadata: data.metadata,
-			conversationId: data.conversationId,
+			...chatOptions,
 			abortController,
 		});
 

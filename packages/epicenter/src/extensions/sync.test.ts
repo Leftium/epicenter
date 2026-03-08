@@ -46,7 +46,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
 			const factory = createSyncExtension({
-				url: 'ws://localhost:8080/rooms/{id}',
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -77,7 +77,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-getter' });
 
 			const factory = createSyncExtension({
-				url: 'ws://localhost:8080/rooms/{id}',
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -109,7 +109,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
 
 			const factory = createSyncExtension({
-				url: 'ws://localhost:8080/rooms/{id}',
+				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -127,26 +127,7 @@ describe('createSyncExtension', () => {
 		});
 	});
 
-	test('resolves URL with {id} placeholder', () => {
-		const ydoc = new Y.Doc({ guid: 'my-workspace' });
-
-		const factory = createSyncExtension({
-			url: 'ws://localhost:3913/rooms/{id}',
-		});
-
-		// The factory creates a provider with connect: false, so no actual connection
-		const result = factory(
-			createMockClient(ydoc),
-		) as unknown as SyncExtensionResult;
-
-		// Provider should exist and be offline (not connected)
-		expect(result.provider).toBeDefined();
-		expect(result.provider.status).toBe('offline');
-
-		result.destroy();
-	});
-
-	test('resolves URL when url config is a function', () => {
+	test('resolves URL callback with workspace ID', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
 		const factory = createSyncExtension({
@@ -173,7 +154,7 @@ describe('createSyncExtension', () => {
 		});
 
 		const factory = createSyncExtension({
-			url: 'ws://localhost:8080/rooms/{id}',
+			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
 		});
 
 		const result = factory({

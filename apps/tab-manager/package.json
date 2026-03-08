@@ -20,6 +20,7 @@
 		"@epicenter/ai": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/ui": "workspace:*",
+		"better-auth": "catalog:",
 		"@lucide/svelte": "catalog:",
 		"@tanstack/ai": "^0.5.1",
 		"@tanstack/ai-anthropic": "^0.5.0",

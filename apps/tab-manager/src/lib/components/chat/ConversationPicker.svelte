@@ -120,9 +120,11 @@
 										<span class="text-[10px] text-muted-foreground"
 											>{formatRelativeTime(conv.updatedAt)}</span
 										>
-										<button
-											class="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-											onclick={(e) => {
+										<Button
+											variant="ghost-destructive"
+											size="icon-xs"
+											class="opacity-0 group-hover:opacity-100"
+											onclick={(e: MouseEvent) => {
 												e.stopPropagation();
 												e.preventDefault();
 												confirmationDialog.open({
@@ -134,7 +136,7 @@
 											}}
 										>
 											<TrashIcon class="size-3" />
-										</button>
+										</Button>
 									</span>
 								</span>
 								{@const preview = conv.lastMessagePreview}

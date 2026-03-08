@@ -1,5 +1,11 @@
 import { Database } from 'bun:sqlite';
-import type { UpdateLog } from '@epicenter/sync-core';
+
+/** Append-only update log for Yjs document updates. */
+export type UpdateLog = {
+	append(docId: string, update: Uint8Array): void | Promise<void>;
+	readAll(docId: string): Uint8Array[] | Promise<Uint8Array[]>;
+	replaceAll(docId: string, mergedUpdate: Uint8Array): void | Promise<void>;
+};
 
 /**
  * UpdateLog implementation backed by bun:sqlite.

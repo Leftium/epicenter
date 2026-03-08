@@ -1,0 +1,66 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "epicenter-remote",
+	"main": "src/app.ts",
+	"compatibility_date": "2026-03-06",
+	"compatibility_flags": ["nodejs_compat"],
+	"send_metrics": false,
+	// --- Custom domain: api.epicenter.so ---
+	"routes": [
+		{
+			"pattern": "api.epicenter.so/*",
+			"zone_name": "epicenter.so"
+		}
+	],
+	// --- Vars: non-secret config accessible via env ---
+	"vars": {
+		"BASE_URL": "https://api.epicenter.so"
+	},
+	// --- KV: Session cache (Better Auth SecondaryStorage) ---
+	// Create with: bunx wrangler kv namespace create "epicenter-sessions"
+	"kv_namespaces": [
+		{
+			"binding": "SESSION_KV",
+			"id": "a67bda23b98441bfa9f56c2ca2e8e1de"
+		}
+	],
+	// --- Durable Objects ---
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "WORKSPACE_ROOM",
+				"class_name": "WorkspaceRoom"
+			},
+			{
+				"name": "DOCUMENT_ROOM",
+				"class_name": "DocumentRoom"
+			}
+		]
+	},
+	// SQLite-backed DO — persistent storage survives hibernation.
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["WorkspaceRoom", "DocumentRoom"]
+		}
+	],
+	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---
+	"secrets": {
+		"required": [
+			"BETTER_AUTH_SECRET",
+			"OPENAI_API_KEY",
+			"ANTHROPIC_API_KEY"
+			// "GEMINI_API_KEY",
+			// "GROK_API_KEY"
+		]
+	},
+	// --- Hyperdrive: Postgres connection pool ---
+	// Create with: bunx wrangler hyperdrive create epicenter-db --connection-string="postgres://..."
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "f2f1b00fbbf5435887ea60cb1bc7f2c4",
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
+		}
+	]
+}

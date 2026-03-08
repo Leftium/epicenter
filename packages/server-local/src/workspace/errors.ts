@@ -1,4 +1,8 @@
-import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 
 export const WorkspaceApiError = defineErrors({
 	WorkspaceNotFound: () => ({
@@ -14,7 +18,10 @@ export const WorkspaceApiError = defineErrors({
 	ActionWrongMethod: ({
 		actionPath,
 		expected,
-	}: { actionPath: string; expected: 'GET' | 'POST' }) => ({
+	}: {
+		actionPath: string;
+		expected: 'GET' | 'POST';
+	}) => ({
 		message: `Action "${actionPath}" is a ${expected === 'GET' ? 'query, use GET' : 'mutation, use POST'}`,
 		actionPath,
 		expected,

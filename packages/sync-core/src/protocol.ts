@@ -4,6 +4,9 @@
  * Pure functions for encoding and decoding y-websocket protocol messages.
  * Separates protocol handling from transport (WebSocket handling).
  *
+ * All sync payloads use Yjs V2 encoding for ~40% smaller wire size.
+ * State vectors are version-independent (same format for V1 and V2).
+ *
  * Based on patterns from y-redis protocol.js:
  * - Message type constants as first-class exports
  * - Pure encoder/decoder functions
@@ -16,7 +19,7 @@ import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import { type Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
-import type * as Y from 'yjs';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Top-Level Message Types
@@ -74,7 +77,7 @@ export function decodeMessageType(data: Uint8Array): number {
 }
 
 // ============================================================================
-// Sync Protocol
+// Sync Protocol (V2 encoding)
 // ============================================================================
 
 /**
@@ -97,6 +100,7 @@ export type SyncMessageType =
 
 /**
  * Decoded sync message - discriminated union of the three sync sub-types.
+ * Update payloads are V2-encoded.
  */
 export type DecodedSyncMessage =
 	| { type: 'step1'; stateVector: Uint8Array }
@@ -111,18 +115,21 @@ export type DecodedSyncMessage =
  * that I'm missing?" The client responds with sync step 2 containing any
  * updates the server doesn't have.
  *
+ * State vector encoding is version-independent (same for V1 and V2).
+ *
  * @param options.doc - The Yjs document to get the state vector from
  * @returns Encoded message ready to send over WebSocket
  */
 export function encodeSyncStep1({ doc }: { doc: Y.Doc }): Uint8Array {
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
-		syncProtocol.writeSyncStep1(encoder, doc);
+		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP1);
+		encoding.writeVarUint8Array(encoder, Y.encodeStateVector(doc));
 	});
 }
 
 /**
- * Encodes a sync step 2 message containing the document diff.
+ * Encodes a sync step 2 message containing the full document state (V2).
  *
  * This is the response to sync step 1. It contains all updates that the
  * receiver is missing based on their state vector. After both sides exchange
@@ -134,7 +141,8 @@ export function encodeSyncStep1({ doc }: { doc: Y.Doc }): Uint8Array {
 export function encodeSyncStep2({ doc }: { doc: Y.Doc }): Uint8Array {
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
-		syncProtocol.writeSyncStep2(encoder, doc);
+		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP2);
+		encoding.writeVarUint8Array(encoder, Y.encodeStateAsUpdateV2(doc));
 	});
 }
 
@@ -145,7 +153,7 @@ export function encodeSyncStep2({ doc }: { doc: Y.Doc }): Uint8Array {
  * messages. These are incremental and can be applied in any order due to
  * Yjs's CRDT properties.
  *
- * @param options.update - The raw Yjs update bytes (from doc.on('update'))
+ * @param options.update - V2-encoded Yjs update bytes (from doc.on('updateV2'))
  * @returns Encoded message ready to send over WebSocket
  */
 export function encodeSyncUpdate({
@@ -155,7 +163,8 @@ export function encodeSyncUpdate({
 }): Uint8Array {
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
-		syncProtocol.writeUpdate(encoder, update);
+		encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.UPDATE);
+		encoding.writeVarUint8Array(encoder, update);
 	});
 }
 
@@ -163,7 +172,8 @@ export function encodeSyncUpdate({
  * Decodes a sync protocol message into its components.
  *
  * Pure decoder that returns the message type and payload without side effects.
- * Useful for testing, logging, and protocol inspection.
+ * Useful for testing, logging, and protocol inspection. Update payloads are
+ * V2-encoded.
  *
  * @param data - Raw message bytes
  * @returns Decoded message with type discriminator and payload
@@ -194,14 +204,13 @@ export function decodeSyncMessage(data: Uint8Array): DecodedSyncMessage {
 /**
  * Handles an incoming sync message and returns a response if needed.
  *
- * This wraps y-protocols' readSyncMessage which has a read-and-write pattern:
- * it reads the incoming message, applies it to the document, and potentially
- * writes a response to an encoder.
+ * Uses V2 encoding for all update payloads. Directly dispatches on
+ * the sync sub-message type instead of delegating to y-protocols.
  *
  * The sync protocol has three sub-message types:
- * - SyncStep1 (0): Client sends state vector, server responds with SyncStep2
- * - SyncStep2 (1): Contains document diff, no response needed
- * - Update (2): Incremental update, no response needed
+ * - SyncStep1 (0): Remote sends state vector → respond with V2 diff
+ * - SyncStep2 (1): Contains V2 document diff → apply, no response
+ * - Update (2): Incremental V2 update → apply, no response
  *
  * Only SyncStep1 triggers a response (SyncStep2 containing the diff).
  *
@@ -219,13 +228,27 @@ export function handleSyncMessage({
 	doc: Y.Doc;
 	origin: unknown;
 }): Uint8Array | null {
-	const encoder = encoding.createEncoder();
-	encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
-	syncProtocol.readSyncMessage(decoder, encoder, doc, origin);
+	const syncType = decoding.readVarUint(decoder);
 
-	// Only return if there's content beyond the message type byte.
-	// readSyncMessage only writes a response for SyncStep1 messages.
-	return encoding.length(encoder) > 1 ? encoding.toUint8Array(encoder) : null;
+	switch (syncType) {
+		case SYNC_MESSAGE_TYPE.STEP1: {
+			const remoteSV = decoding.readVarUint8Array(decoder);
+			const diff = Y.encodeStateAsUpdateV2(doc, remoteSV);
+			return encoding.encode((encoder) => {
+				encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC);
+				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP2);
+				encoding.writeVarUint8Array(encoder, diff);
+			});
+		}
+		case SYNC_MESSAGE_TYPE.STEP2:
+		case SYNC_MESSAGE_TYPE.UPDATE: {
+			const update = decoding.readVarUint8Array(decoder);
+			Y.applyUpdateV2(doc, update, origin);
+			return null;
+		}
+		default:
+			return null;
+	}
 }
 
 // ============================================================================
@@ -327,4 +350,63 @@ export function encodeQueryAwareness(): Uint8Array {
 	return encoding.encode((encoder) => {
 		encoding.writeVarUint(encoder, MESSAGE_TYPE.QUERY_AWARENESS);
 	});
+}
+
+// ============================================================================
+// HTTP Sync Request Encoding (binary frame format for POST body)
+// ============================================================================
+
+/**
+ * Encode a sync request body (state vector + optional update).
+ *
+ * Wire format: two length-prefixed frames using lib0 varint encoding.
+ * The state vector frame is always present. The update frame is written
+ * as a zero-length byte array when no update is provided.
+ *
+ * @param stateVector - Client's Yjs state vector (tells server what client has)
+ * @param update - Optional Yjs update to push to the server
+ * @returns Encoded binary request body
+ */
+export function encodeSyncRequest(
+	stateVector: Uint8Array,
+	update?: Uint8Array,
+): Uint8Array {
+	return encoding.encode((encoder) => {
+		encoding.writeVarUint8Array(encoder, stateVector);
+		encoding.writeVarUint8Array(encoder, update ?? new Uint8Array(0));
+	});
+}
+
+/**
+ * Decode a sync request body into state vector and optional update.
+ *
+ * Parses the two length-prefixed frames from an encoded sync request.
+ * The update field will be an empty Uint8Array (byteLength === 0) if
+ * the client had nothing to push.
+ *
+ * @param data - Raw sync request body bytes
+ * @returns Parsed state vector and update
+ * @throws Error if data is malformed or truncated
+ */
+export function decodeSyncRequest(data: Uint8Array): {
+	stateVector: Uint8Array;
+	update: Uint8Array;
+} {
+	const decoder = decoding.createDecoder(data);
+	const stateVector = decoding.readVarUint8Array(decoder);
+	const update = decoding.readVarUint8Array(decoder);
+	return { stateVector, update };
+}
+
+// ============================================================================
+// State Vector Utilities
+// ============================================================================
+
+/** Compare two state vectors for byte-level equality. */
+export function stateVectorsEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.byteLength !== b.byteLength) return false;
+	for (let i = 0; i < a.byteLength; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
 }

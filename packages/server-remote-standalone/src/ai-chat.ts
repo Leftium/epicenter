@@ -1,9 +1,4 @@
 import {
-	isSupportedProvider,
-	PROVIDER_ENV_VARS,
-	type SupportedProvider,
-} from '@epicenter/sync-core';
-import {
 	type AnyTextAdapter,
 	chat,
 	toServerSentEventsResponse,
@@ -13,8 +8,41 @@ import { createGeminiChat } from '@tanstack/ai-gemini';
 import { createGrokText } from '@tanstack/ai-grok';
 import { createOpenaiChat } from '@tanstack/ai-openai';
 import type { Context } from 'hono';
-import { AiChatError } from './errors';
-import type { ApiKeyBindings, Env } from './types';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'gemini', 'grok'] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+function isSupportedProvider(value: string): value is SupportedProvider {
+	return SUPPORTED_PROVIDERS.includes(value as SupportedProvider);
+}
+
+type ApiKeyBindings = {
+	OPENAI_API_KEY?: string;
+	ANTHROPIC_API_KEY?: string;
+	GEMINI_API_KEY?: string;
+	GROK_API_KEY?: string;
+};
+
+type Env = { Bindings: ApiKeyBindings };
+
+const AiChatError = defineErrors({
+	UnsupportedProvider: ({ provider }: { provider: string | undefined }) => ({
+		message: `Unsupported provider: ${provider}`,
+		provider,
+	}),
+	MissingModel: () => ({
+		message: 'Missing model',
+	}),
+	MissingMessages: () => ({
+		message: 'Missing or empty messages',
+	}),
+	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
+		message: `${provider} not configured`,
+		provider,
+	}),
+});
+type AiChatError = InferErrors<typeof AiChatError>;
 
 interface AiChatRequestBody {
 	messages: unknown[];
@@ -29,7 +57,16 @@ function getProviderApiKey(
 	env: ApiKeyBindings,
 	provider: SupportedProvider,
 ): string | undefined {
-	return env[PROVIDER_ENV_VARS[provider]];
+	switch (provider) {
+		case 'openai':
+			return env.OPENAI_API_KEY;
+		case 'anthropic':
+			return env.ANTHROPIC_API_KEY;
+		case 'gemini':
+			return env.GEMINI_API_KEY;
+		case 'grok':
+			return env.GROK_API_KEY;
+	}
 }
 
 /**
@@ -43,8 +80,6 @@ function createAdapter(
 	model: string,
 	apiKey: string,
 ): AnyTextAdapter {
-	// Model names arrive as dynamic strings from the client — cast to `any`
-	// since the create* factories expect branded string literals.
 	const m = model as any;
 	switch (provider) {
 		case 'openai':

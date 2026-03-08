@@ -1,6 +1,6 @@
 <script lang="ts">
 	import BrainIcon from '@lucide/svelte/icons/brain';
-	import CollapsibleSection from './CollapsibleSection.svelte';
+	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
 		content,

@@ -31,6 +31,15 @@ export type WsSyncPluginConfig = {
 	onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
 };
 
+/** Per-connection state: sync-core state + adapter-specific fields. */
+type ElysiaConnectionState = {
+	syncState: ConnectionState;
+	roomId: string;
+	sendPing: () => void;
+	pingInterval: ReturnType<typeof setInterval> | null;
+	pongReceived: boolean;
+};
+
 /**
  * Creates an Elysia plugin that provides Y.Doc synchronization over WebSocket.
  *
@@ -47,16 +56,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 		onRoomEvicted: config?.onRoomEvicted,
 	});
 
-	/** Elysia-specific per-connection state (ping/pong + sync-core state). */
-	const connectionState = new WeakMap<
-		object,
-		{
-			syncState: ConnectionState;
-			sendPing: () => void;
-			pingInterval: ReturnType<typeof setInterval> | null;
-			pongReceived: boolean;
-		}
-	>();
+	const connectionState = new WeakMap<object, ElysiaConnectionState>();
 
 	const verifyToken = config?.verifyToken;
 
@@ -80,27 +80,26 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 				const rawWs = ws.raw;
 
-				const result = handleWsOpen(
-					roomManager,
-					roomId,
+				// Join the room to get doc + awareness
+				const room = roomManager.join(roomId, rawWs, (data) =>
+					ws.sendBinary(data),
+				);
+				if (!room) {
+					console.log(`[Sync] Room not found: ${roomId}`);
+					ws.close(4004, `Room not found: ${roomId}`);
+					return;
+				}
+
+				const { initialMessages, state: syncState } = handleWsOpen(
+					room.doc,
+					room.awareness,
 					rawWs,
 					(data: Uint8Array) => ws.sendBinary(data),
 				);
 
-				if (!result.ok) {
-					console.log(`[Sync] Room not found: ${roomId}`);
-					ws.close(result.closeCode, result.closeReason);
-					return;
-				}
-
-				const { state: syncState } = result;
-
-				// Register update handler on doc
-				syncState.doc.on('update', syncState.updateHandler);
-
 				// Defer initial sync to next tick to ensure WebSocket is fully ready
 				queueMicrotask(() => {
-					for (const msg of result.initialMessages) {
+					for (const msg of initialMessages) {
 						ws.sendBinary(msg);
 					}
 				});
@@ -127,6 +126,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 				connectionState.set(rawWs, {
 					syncState,
+					roomId,
 					sendPing,
 					pingInterval,
 					pongReceived: true,
@@ -157,20 +157,14 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 				if (result.response) ws.sendBinary(result.response);
 				if (result.broadcast)
-					roomManager.broadcast(
-						state.syncState.roomId,
-						result.broadcast,
-						ws.raw,
-					);
+					roomManager.broadcast(state.roomId, result.broadcast, ws.raw);
 			},
 
 			close(ws) {
 				const state = connectionState.get(ws.raw);
 				if (!state) return;
 
-				console.log(
-					`[Sync] Client disconnected from room: ${state.syncState.roomId}`,
-				);
+				console.log(`[Sync] Client disconnected from room: ${state.roomId}`);
 
 				// Clean up ping/pong keepalive
 				if (state.pingInterval) {
@@ -178,7 +172,10 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 				}
 
 				// Delegate protocol cleanup to sync-core
-				handleWsClose(state.syncState, roomManager);
+				handleWsClose(state.syncState);
+
+				// Leave the room (triggers eviction timer if last connection)
+				roomManager.leave(state.roomId, ws.raw);
 
 				// Clean up Elysia-specific state
 				connectionState.delete(ws.raw);

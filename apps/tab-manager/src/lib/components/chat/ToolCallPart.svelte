@@ -4,7 +4,7 @@
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 	import { actionContext, type WorkspaceTools } from '$lib/workspace';
-	import CollapsibleSection from './CollapsibleSection.svelte';
+	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
 		part,

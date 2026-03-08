@@ -7,6 +7,7 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
+import * as Y from 'yjs';
 import { createSleeper, type Sleeper } from './sleeper';
 import type {
 	SyncProvider,
@@ -87,6 +88,7 @@ export function createSyncProvider({
 	connect: shouldConnect = true,
 	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
 	awareness = new Awareness(doc),
+	snapshotUrl,
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================
 	// Closure State
@@ -370,6 +372,42 @@ export function createSyncProvider({
 	}
 
 	// ========================================================================
+	// HTTP Snapshot Prefetch
+	// ========================================================================
+
+	/**
+	 * Fetch the full document snapshot via HTTP GET and apply it locally.
+	 *
+	 * Runs before the WebSocket connects so the subsequent syncStep2 is tiny
+	 * (only changes since the GET). On failure, falls through to WS-only sync.
+	 */
+	async function fetchSnapshot(token: string | undefined): Promise<void> {
+		if (!snapshotUrl) return;
+
+		try {
+			const headers: Record<string, string> = {};
+			if (token) {
+				headers['Authorization'] = `Bearer ${token}`;
+			}
+
+			const response = await fetch(snapshotUrl, { headers });
+
+			if (response.status === 404) return; // New/empty doc
+			if (!response.ok) {
+				console.warn(
+					`[SyncProvider] Snapshot prefetch failed: ${response.status}`,
+				);
+				return;
+			}
+
+			const data = new Uint8Array(await response.arrayBuffer());
+			Y.applyUpdateV2(doc, data, handleDocUpdate);
+		} catch (e) {
+			console.warn('[SyncProvider] Snapshot prefetch error', e);
+		}
+	}
+
+	// ========================================================================
 	// Supervisor Loop (THE core of the provider)
 	// ========================================================================
 
@@ -409,6 +447,14 @@ export function createSyncProvider({
 			}
 
 			if (runId !== myRunId) break;
+
+			// --- HTTP snapshot prefetch ---
+			// Fetch the full doc via GET before opening the WebSocket. This
+			// pre-populates the local Y.Doc so the WS syncStep2 is tiny.
+			if (snapshotUrl) {
+				await fetchSnapshot(token);
+				if (runId !== myRunId) break;
+			}
 
 			// --- Connection attempts (with token refresh after N retries) ---
 			for (let i = 0; i < RETRIES_BEFORE_TOKEN_REFRESH; i++) {

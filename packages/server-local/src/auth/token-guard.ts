@@ -1,7 +1,12 @@
-import { extractBearerToken } from '@epicenter/sync-core';
 import { Elysia } from 'elysia';
 
-export { extractBearerToken };
+/** Extract a Bearer token from an Authorization header value. */
+function extractBearerToken(
+	authorization: string | undefined,
+): string | undefined {
+	if (!authorization?.startsWith('Bearer ')) return undefined;
+	return authorization.slice(7);
+}
 
 /**
  * Create an Elysia plugin that guards all routes (except `GET /`) with a

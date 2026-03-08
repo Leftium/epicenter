@@ -15,7 +15,7 @@ import {
 	applyAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as Y from 'yjs';
+import type * as Y from 'yjs';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -25,12 +25,6 @@ import {
 	handleSyncMessage,
 	MESSAGE_TYPE,
 } from './protocol';
-import type { createRoomManager } from './rooms';
-import {
-	decodeSyncRequest,
-	stateVectorsEqual,
-	type UpdateLog,
-} from './storage';
 
 // ============================================================================
 // Types
@@ -40,15 +34,10 @@ import {
 export type ConnectionId = object;
 
 /** Result of handling a WS open event. */
-export type WsOpenResult =
-	| {
-			ok: true;
-			initialMessages: Uint8Array[];
-			doc: Y.Doc;
-			awareness: Awareness;
-			state: ConnectionState;
-	  }
-	| { ok: false; closeCode: number; closeReason: string };
+export type WsOpenResult = {
+	initialMessages: Uint8Array[];
+	state: ConnectionState;
+};
 
 /** Result of handling a single WS message. */
 export type WsMessageResult = {
@@ -60,10 +49,13 @@ export type WsMessageResult = {
 
 /** Per-connection state that the adapter must store. */
 export type ConnectionState = {
-	roomId: string;
 	doc: Y.Doc;
 	awareness: Awareness;
 	updateHandler: (update: Uint8Array, origin: unknown) => void;
+	awarenessHandler: (
+		changes: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) => void;
 	controlledClientIds: Set<number>;
 	connId: ConnectionId;
 };
@@ -78,29 +70,22 @@ export type ConnectionState = {
  * The adapter calls this when a WebSocket connects. It returns:
  * - Messages to send to the client (sync step 1 + awareness states)
  * - A ConnectionState the adapter must store for the connection's lifetime
- * - An updateHandler that the adapter must register on doc.on('update')
  *
  * The adapter is responsible for:
+ * - Resolving the doc/awareness for the room (via RoomManager, DO instance, etc.)
  * - Sending the initialMessages to the client
- * - Registering doc.on('update', state.updateHandler)
  * - Storing the ConnectionState (keyed however makes sense for the framework)
+ *
+ * Registers two event handlers (cleaned up by handleWsClose):
+ * - doc.on('updateV2') — forwards V2 updates to this connection
+ * - awareness.on('update') — tracks which awareness client IDs this connection controls
  */
 export function handleWsOpen(
-	roomManager: ReturnType<typeof createRoomManager>,
-	roomId: string,
+	doc: Y.Doc,
+	awareness: Awareness,
 	connId: ConnectionId,
 	send: (data: Uint8Array) => void,
 ): WsOpenResult {
-	const result = roomManager.join(roomId, connId, send);
-	if (!result) {
-		return {
-			ok: false,
-			closeCode: 4004,
-			closeReason: `Room not found: ${roomId}`,
-		};
-	}
-
-	const { doc, awareness } = result;
 	const controlledClientIds = new Set<number>();
 
 	// Build initial messages
@@ -115,22 +100,42 @@ export function handleWsOpen(
 		);
 	}
 
-	// Create update handler (adapter registers this on doc.on('update'))
+	// Forward V2 doc updates to this connection (cleaned up by handleWsClose)
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
 		if (origin === connId) return; // Don't echo back to sender
 		send(encodeSyncUpdate({ update }));
 	};
+	doc.on('updateV2', updateHandler);
+
+	// Track which awareness client IDs this connection controls, using
+	// the Awareness class's own event rather than manually parsing bytes.
+	// The origin parameter from applyAwarenessUpdate lets us attribute
+	// changes to the correct connection.
+	const awarenessHandler = (
+		{
+			added,
+			updated,
+			removed,
+		}: { added: number[]; updated: number[]; removed: number[] },
+		origin: unknown,
+	) => {
+		if (origin !== connId) return;
+		for (const id of added) controlledClientIds.add(id);
+		for (const id of updated) controlledClientIds.add(id);
+		for (const id of removed) controlledClientIds.delete(id);
+	};
+	awareness.on('update', awarenessHandler);
 
 	const state: ConnectionState = {
-		roomId,
 		doc,
 		awareness,
 		updateHandler,
+		awarenessHandler,
 		controlledClientIds,
 		connId,
 	};
 
-	return { ok: true, initialMessages, doc, awareness, state };
+	return { initialMessages, state };
 }
 
 /**
@@ -158,25 +163,6 @@ export function handleWsMessage(
 
 		case MESSAGE_TYPE.AWARENESS: {
 			const update = decoding.readVarUint8Array(decoder);
-
-			// Track controlled client IDs (best-effort, errors swallowed)
-			try {
-				const decoder2 = decoding.createDecoder(update);
-				const len = decoding.readVarUint(decoder2);
-				for (let i = 0; i < len; i++) {
-					const clientId = decoding.readVarUint(decoder2);
-					decoding.readVarUint(decoder2); // clock
-					const awarenessState = JSON.parse(decoding.readVarString(decoder2));
-					if (awarenessState === null) {
-						state.controlledClientIds.delete(clientId);
-					} else {
-						state.controlledClientIds.add(clientId);
-					}
-				}
-			} catch {
-				/* best effort */
-			}
-
 			applyAwarenessUpdate(state.awareness, update, state.connId);
 			const broadcast = encodeAwareness({ update });
 			return { broadcast };
@@ -208,15 +194,15 @@ export function handleWsMessage(
 /**
  * Handle a WebSocket connection closing.
  *
- * The adapter calls this during its close handler.
+ * Performs protocol-level cleanup: unregisters event handlers and
+ * removes awareness states for this connection's controlled client IDs.
+ *
  * The adapter is responsible for cleaning up any framework-specific state
- * (ping intervals, WeakMap entries, etc.) before or after calling this.
+ * (ping intervals, WeakMap entries, room manager leave, etc.).
  */
-export function handleWsClose(
-	state: ConnectionState,
-	roomManager: ReturnType<typeof createRoomManager>,
-): void {
-	state.doc.off('update', state.updateHandler);
+export function handleWsClose(state: ConnectionState): void {
+	state.doc.off('updateV2', state.updateHandler);
+	state.awareness.off('update', state.awarenessHandler);
 
 	if (state.controlledClientIds.size > 0) {
 		removeAwarenessStates(
@@ -225,61 +211,4 @@ export function handleWsClose(
 			null,
 		);
 	}
-
-	roomManager.leave(state.roomId, state.connId);
-}
-
-// ============================================================================
-// HTTP Sync Handler
-// ============================================================================
-
-/**
- * Handle an HTTP sync request (POST /:room).
- *
- * Stateless — no Y.Doc instantiated. Works with raw UpdateLog.
- * Returns a result the adapter maps to an HTTP response.
- */
-export async function handleHttpSync(
-	storage: UpdateLog,
-	roomId: string,
-	body: Uint8Array,
-): Promise<{ status: 200 | 304; body?: Uint8Array }> {
-	const { stateVector: clientSV, update } = decodeSyncRequest(body);
-
-	if (update.byteLength > 0) {
-		await storage.append(roomId, update);
-	}
-
-	const updates = await storage.readAll(roomId);
-	if (updates.length === 0) {
-		return { status: 304 };
-	}
-
-	const merged = Y.mergeUpdatesV2(updates);
-	const serverSV = Y.encodeStateVectorFromUpdateV2(merged);
-
-	if (stateVectorsEqual(serverSV, clientSV)) {
-		return { status: 304 };
-	}
-
-	const diff = Y.diffUpdateV2(merged, clientSV);
-	return { status: 200, body: diff };
-}
-
-/**
- * Handle an HTTP full document fetch (GET /:room).
- *
- * Stateless — reads all updates from storage, merges them, returns the result.
- */
-export async function handleHttpGetDoc(
-	storage: UpdateLog,
-	roomId: string,
-): Promise<{ status: 200 | 404; body?: Uint8Array }> {
-	const updates = await storage.readAll(roomId);
-	if (updates.length === 0) {
-		return { status: 404 };
-	}
-
-	const merged = Y.mergeUpdatesV2(updates);
-	return { status: 200, body: merged };
 }

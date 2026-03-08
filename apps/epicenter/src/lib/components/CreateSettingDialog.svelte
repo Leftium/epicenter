@@ -1,6 +1,6 @@
 <script module lang="ts">
-	import { toSnakeCase } from '$lib/utils/slug';
 	import { extractErrorMessage } from 'wellcrafted/error';
+	import { toSnakeCase } from '$lib/utils/slug';
 
 	export type CreateSettingDialogOptions = {
 		onConfirm: (data: { name: string; key: string }) => void | Promise<unknown>;

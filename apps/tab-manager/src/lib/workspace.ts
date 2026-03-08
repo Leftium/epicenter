@@ -19,10 +19,8 @@ import {
 	defineWorkspace,
 	type InferTableRow,
 } from '@epicenter/workspace';
-import { createWsSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { authToken } from '$lib/state/auth.svelte';
-import { serverUrl } from '$lib/state/settings.svelte';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -39,6 +37,8 @@ import {
 } from '$lib/commands/actions';
 import { startCommandConsumer } from '$lib/commands/consumer';
 import { getDeviceId } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -558,13 +558,16 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('sync', createWsSyncExtension({
-		url: (workspaceId) => {
-			const wsUrl = serverUrl.current.replace(/^http/, 'ws');
-			return `${wsUrl}/rooms/${workspaceId}`;
-		},
-		getToken: async () => authToken.current ?? '',
-	}))
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) => {
+				const wsUrl = serverUrl.current.replace(/^http/, 'ws');
+				return `${wsUrl}/rooms/${workspaceId}`;
+			},
+			getToken: async () => authState.token ?? '',
+		}),
+	)
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({

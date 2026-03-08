@@ -1,17 +1,16 @@
-import { type Env } from '@epicenter/server-remote';
 import {
 	type ConnectionState,
 	createRoomManager,
-	handleHttpGetDoc,
-	handleHttpSync,
+	decodeSyncRequest,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	type UpdateLog,
+	stateVectorsEqual,
 } from '@epicenter/sync-core';
 import type { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import * as Y from 'yjs';
+import type { UpdateLog } from './storage';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -56,6 +55,12 @@ async function loadOrCreateDoc(
 	return doc;
 }
 
+/** Per-connection state: sync-core state + adapter-specific fields. */
+type AdapterConnectionState = {
+	syncState: ConnectionState;
+	roomId: string;
+};
+
 /**
  * Mount WebSocket and HTTP sync routes on a Hono app.
  *
@@ -64,7 +69,8 @@ async function loadOrCreateDoc(
  * - `POST /rooms/:room` — HTTP sync (push + pull)
  * - `GET /rooms/:room/doc` — HTTP full doc fetch
  */
-export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
+// biome-ignore lint/suspicious/noExplicitAny: Env shape is defined by the caller
+export function mountSyncRoutes(app: Hono<any>, config: SyncAdapterConfig) {
 	const { storage } = config;
 
 	// Cache of loaded docs keyed by roomId so multiple WS connections
@@ -115,7 +121,7 @@ export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 	const pingIntervals = new WeakMap<object, ReturnType<typeof setInterval>>();
 
 	// Per-connection state keyed by ws.raw (stable identity)
-	const connectionStates = new WeakMap<object, ConnectionState>();
+	const connectionStates = new WeakMap<object, AdapterConnectionState>();
 
 	// --- WebSocket upgrade route ---
 	app.get(
@@ -132,23 +138,27 @@ export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 
 					const raw = ws.raw!;
 
-					const send = (data: Uint8Array) => {
+					// Join the room to get doc + awareness
+					const room = roomManager.join(roomId, raw, (data) => {
 						ws.send(data as Uint8Array<ArrayBuffer>);
-					};
-
-					const result = handleWsOpen(roomManager, roomId, raw, send);
-					if (!result.ok) {
+					});
+					if (!room) {
 						// eslint-disable-next-line @typescript-eslint/no-explicit-any
-						(ws.close as any)(result.closeCode, result.closeReason);
+						(ws.close as any)(4004, `Room not found: ${roomId}`);
 						return;
 					}
 
-					// Register the update handler on the doc
-					result.state.doc.on('update', result.state.updateHandler);
-					connectionStates.set(raw, result.state);
+					const { initialMessages, state } = handleWsOpen(
+						room.doc,
+						room.awareness,
+						raw,
+						(data) => ws.send(data as Uint8Array<ArrayBuffer>),
+					);
+
+					connectionStates.set(raw, { syncState: state, roomId });
 
 					// Send initial messages
-					for (const msg of result.initialMessages) {
+					for (const msg of initialMessages) {
 						ws.send(msg as Uint8Array<ArrayBuffer>);
 					}
 
@@ -165,24 +175,24 @@ export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 
 				onMessage(evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					const data = new Uint8Array(evt.data as ArrayBuffer);
-					const messageResult = handleWsMessage(data, state);
+					const messageResult = handleWsMessage(data, conn.syncState);
 
 					if (messageResult.response) {
 						ws.send(messageResult.response as Uint8Array<ArrayBuffer>);
 					}
 					if (messageResult.broadcast) {
-						roomManager.broadcast(state.roomId, messageResult.broadcast, raw);
+						roomManager.broadcast(conn.roomId, messageResult.broadcast, raw);
 					}
 				},
 
 				onClose(_evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					// Clear ping interval
 					const interval = pingIntervals.get(raw);
@@ -190,20 +200,24 @@ export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 						clearInterval(interval);
 					}
 
-					handleWsClose(state, roomManager);
+					handleWsClose(conn.syncState);
+					roomManager.leave(conn.roomId, raw);
+					connectionStates.delete(raw);
 				},
 
 				onError(_evt, ws) {
 					const raw = ws.raw!;
-					const state = connectionStates.get(raw);
-					if (!state) return;
+					const conn = connectionStates.get(raw);
+					if (!conn) return;
 
 					const interval = pingIntervals.get(raw);
 					if (interval) {
 						clearInterval(interval);
 					}
 
-					handleWsClose(state, roomManager);
+					handleWsClose(conn.syncState);
+					roomManager.leave(conn.roomId, raw);
+					connectionStates.delete(raw);
 				},
 			};
 		}),
@@ -213,18 +227,40 @@ export function mountSyncRoutes(app: Hono<Env>, config: SyncAdapterConfig) {
 	app.post('/rooms/:room', async (c) => {
 		const roomId = c.req.param('room');
 		const body = new Uint8Array(await c.req.arrayBuffer());
-		const result = await handleHttpSync(storage, roomId, body);
-		if (result.status === 304) return c.body(null, 304);
-		return c.body(result.body as Uint8Array<ArrayBuffer>, 200, {
+
+		const { stateVector: clientSV, update } = decodeSyncRequest(body);
+
+		if (update.byteLength > 0) {
+			await storage.append(roomId, update);
+		}
+
+		const updates = await storage.readAll(roomId);
+		if (updates.length === 0) {
+			return c.body(null, 304);
+		}
+
+		const merged = Y.mergeUpdatesV2(updates);
+		const serverSV = Y.encodeStateVectorFromUpdateV2(merged);
+
+		if (stateVectorsEqual(serverSV, clientSV)) {
+			return c.body(null, 304);
+		}
+
+		const diff = Y.diffUpdateV2(merged, clientSV);
+		return c.body(diff as Uint8Array<ArrayBuffer>, 200, {
 			'Content-Type': 'application/octet-stream',
 		});
 	});
 
 	app.get('/rooms/:room/doc', async (c) => {
 		const roomId = c.req.param('room');
-		const result = await handleHttpGetDoc(storage, roomId);
-		if (result.status === 404) return c.body(null, 404);
-		return c.body(result.body as Uint8Array<ArrayBuffer>, 200, {
+		const updates = await storage.readAll(roomId);
+		if (updates.length === 0) {
+			return c.body(null, 404);
+		}
+
+		const merged = Y.mergeUpdatesV2(updates);
+		return c.body(merged as Uint8Array<ArrayBuffer>, 200, {
 			'Content-Type': 'application/octet-stream',
 		});
 	});

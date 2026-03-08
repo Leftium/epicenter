@@ -34,7 +34,10 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 			({ params, status }) => {
 				const workspace = workspaces[params.workspaceId];
 				if (!workspace)
-					return status('Not Found', WorkspaceApiError.WorkspaceNotFound().error);
+					return status(
+						'Not Found',
+						WorkspaceApiError.WorkspaceNotFound().error,
+					);
 				return {
 					id: workspace.id,
 					tables: Object.keys(workspace.definitions.tables),

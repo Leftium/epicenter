@@ -6,7 +6,7 @@ import {
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncMessage,
-} from '@epicenter/sync-core';
+} from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {

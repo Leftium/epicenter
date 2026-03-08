@@ -15,7 +15,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/sync-core": "workspace:*",
+		"@epicenter/sync": "workspace:*",
 		"@elysiajs/cors": "^1.4.1",
 		"@elysiajs/openapi": "^1.4.11",
 		"elysia": "^1.2.25",
@@ -28,7 +28,7 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
-		"@epicenter/sync": "workspace:*",
+		"@epicenter/sync-client": "workspace:*",
 		"@types/bun": "catalog:",
 		"arktype": "catalog:",
 		"typescript": "catalog:"

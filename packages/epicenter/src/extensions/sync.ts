@@ -1,4 +1,4 @@
-import { createSyncProvider, type SyncProvider } from '@epicenter/sync';
+import { createSyncProvider, type SyncProvider } from '@epicenter/sync-client';
 import type { ExtensionFactory } from '../workspace/types';
 
 /**

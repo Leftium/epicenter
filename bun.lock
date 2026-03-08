@@ -323,7 +323,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@epicenter/sync": "workspace:*",
+        "@epicenter/sync-client": "workspace:*",
         "@sindresorhus/slugify": "^3.0.0",
         "@standard-schema/spec": "catalog:",
         "@tursodatabase/database": "^0.3.2",
@@ -382,14 +382,14 @@
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/sync-core": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "elysia": "^1.2.25",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "y-protocols": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/sync": "workspace:*",
+        "@epicenter/sync-client": "workspace:*",
         "@types/bun": "catalog:",
         "arktype": "catalog:",
         "typescript": "catalog:",
@@ -405,7 +405,7 @@
       "dependencies": {
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
-        "@epicenter/sync-core": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "@hono/standard-validator": "^0.2.2",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
@@ -455,18 +455,6 @@
     },
     "packages/sync": {
       "name": "@epicenter/sync",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/sync-core": "workspace:*",
-        "lib0": "catalog:",
-        "y-protocols": "catalog:",
-      },
-      "peerDependencies": {
-        "yjs": "catalog:",
-      },
-    },
-    "packages/sync-core": {
-      "name": "@epicenter/sync-core",
       "version": "0.0.1",
       "dependencies": {
         "lib0": "catalog:",
@@ -475,6 +463,18 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/sync-client": {
+      "name": "@epicenter/sync-client",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/sync": "workspace:*",
+        "lib0": "catalog:",
+        "y-protocols": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -747,7 +747,7 @@
 
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
-    "@epicenter/sync-core": ["@epicenter/sync-core@workspace:packages/sync-core"],
+    "@epicenter/sync-client": ["@epicenter/sync-client@workspace:packages/sync-client"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

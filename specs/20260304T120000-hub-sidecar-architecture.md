@@ -357,7 +357,7 @@ See [Cloudflare Hub Design](#cloudflare-hub-design) below for the full architect
 
 ## Cloudflare Hub Design
 
-The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with one Durable Object per sync room. It consumes `@epicenter/sync-core` handlers directly — no Elysia dependency.
+The Cloudflare hub is a Hono application deployed as a Cloudflare Worker, with one Durable Object per sync room. It consumes `@epicenter/sync` handlers directly — no Elysia dependency.
 
 ### System Topology
 
@@ -468,7 +468,7 @@ Dependencies:
 ```json
 {
   "dependencies": {
-    "@epicenter/sync-core": "workspace:*",
+    "@epicenter/sync": "workspace:*",
     "hono": "^4",
     "better-auth": "^1",
     "postgres": "^3.4",
@@ -578,7 +578,7 @@ Key design decisions:
 
 ```typescript
 import { createMiddleware } from 'hono/factory'
-import { extractBearerToken } from '@epicenter/sync-core'
+import { extractBearerToken } from '@epicenter/sync'
 import { createAuth } from './better-auth'
 
 export function createAuthMiddleware() {
@@ -603,7 +603,7 @@ export function createAuthMiddleware() {
 }
 ```
 
-Note: `extractBearerToken` is already exported from `@epicenter/sync-core` — zero new auth code needed.
+Note: `extractBearerToken` is already exported from `@epicenter/sync` — zero new auth code needed.
 
 #### Better Auth Factory (`auth/better-auth.ts`)
 
@@ -763,7 +763,7 @@ import {
   handleHttpGetDoc,
   createRoomManager,
   type ConnectionState,
-} from '@epicenter/sync-core'
+} from '@epicenter/sync'
 import { DOSqliteSyncStorage } from './storage'
 
 // Use `type` not `interface` — interfaces cause issues with Hono/DO type generics.
@@ -981,7 +981,7 @@ Implements `SyncStorage` from sync-core using the DO's built-in SQLite database.
 
 ```typescript
 import * as Y from 'yjs'
-import type { SyncStorage } from '@epicenter/sync-core'
+import type { SyncStorage } from '@epicenter/sync'
 
 export class DOSqliteSyncStorage implements SyncStorage {
   private initialized = false

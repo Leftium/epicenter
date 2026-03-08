@@ -1,24 +1,19 @@
 {
-	"name": "@epicenter/sync-core",
-	"version": "0.0.1",
+	"name": "@epicenter/sync-client",
+	"version": "0.1.0",
+	"description": "Yjs WebSocket sync provider with supervisor loop architecture.",
+	"license": "AGPL-3.0",
 	"main": "./src/index.ts",
 	"types": "./src/index.ts",
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"license": "AGPL-3.0",
-	"scripts": {
-		"typecheck": "tsc --noEmit"
-	},
 	"dependencies": {
+		"@epicenter/sync": "workspace:*",
 		"lib0": "catalog:",
 		"y-protocols": "catalog:"
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"
-	},
-	"devDependencies": {
-		"@types/bun": "catalog:",
-		"typescript": "catalog:"
 	}
 }

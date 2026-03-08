@@ -3,7 +3,7 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-} from '@epicenter/sync-core';
+} from '@epicenter/sync';
 import type { RoomManagerConfig } from './rooms';
 import { createRoomManager } from './rooms';
 import { Elysia, t } from 'elysia';
@@ -28,7 +28,7 @@ type ElysiaConnectionState = {
 /**
  * Creates an Elysia plugin that provides Y.Doc synchronization over WebSocket.
  *
- * Thin wrapper around `@epicenter/sync-core` handlers. All protocol logic
+ * Thin wrapper around `@epicenter/sync` handlers. All protocol logic
  * is delegated to sync-core; this plugin handles Elysia-specific concerns:
  * - WeakMap keyed on `ws.raw` (stable Bun ServerWebSocket reference)
  * - Ping/pong keepalive

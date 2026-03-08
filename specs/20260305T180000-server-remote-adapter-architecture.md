@@ -186,19 +186,19 @@ packages/
 ```
 server-remote-cloudflare
 ├── @epicenter/server-remote (workspace:*)
-├── @epicenter/sync-core (workspace:*)
+├── @epicenter/sync (workspace:*)
 ├── wrangler
 ├── drizzle-orm, drizzle-kit
 └── postgres
 
 server-remote-standalone
 ├── @epicenter/server-remote (workspace:*)
-├── @epicenter/sync-core (workspace:*)
+├── @epicenter/sync (workspace:*)
 ├── better-auth (for betterAuth mode)
 └── postgres (optional, for betterAuth mode)
 
 server-remote (shared core)
-├── @epicenter/sync-core (workspace:*)
+├── @epicenter/sync (workspace:*)
 ├── hono
 ├── better-auth (base config + types)
 └── arktype

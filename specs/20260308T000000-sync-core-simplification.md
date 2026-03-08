@@ -5,7 +5,7 @@
 
 ## Current State
 
-`@epicenter/sync-core` has three modules:
+`@epicenter/sync` has three modules:
 
 | Module | What it does | Used by server-local | Used by server-remote-cloudflare |
 |---|---|---|---|
@@ -15,7 +15,7 @@
 
 Other issues:
 - `package.json` exports `"./discovery"` pointing to `src/discovery/index.ts` — directory was deleted in `7d32c0a6b`
-- `@epicenter/sync` lists `@epicenter/sync-core` as a dependency but has zero imports from it (added on current branch, may be intentional for upcoming work — verify before removing)
+- `@epicenter/sync` lists `@epicenter/sync` as a dependency but has zero imports from it (added on current branch, may be intentional for upcoming work — verify before removing)
 
 ## Problem
 
@@ -40,7 +40,7 @@ Changes:
 - [x] 1. Move `sync-core/src/rooms.ts` → `server-local/src/sync/rooms.ts`
 - [x] 2. Move `sync-core/src/rooms.test.ts` → `server-local/src/sync/rooms.test.ts`
 - [x] 3. Remove `createRoomManager` export from `sync-core/src/index.ts`
-- [x] 4. Update `ws-plugin.ts` import from `'@epicenter/sync-core'` to `'./rooms'`
+- [x] 4. Update `ws-plugin.ts` import from `'@epicenter/sync'` to `'./rooms'`
 - [x] 5. Added `y-protocols` as direct dependency to `server-local/package.json`
   > rooms.ts imports from `y-protocols/awareness` — previously resolved transitively via sync-core, now needs explicit declaration.
 - [x] 6. `handlers.ts` and `protocol.ts` still use yjs/y-protocols, so those deps stay in sync-core
@@ -48,7 +48,7 @@ Changes:
 ### Wave 2: Clean up `sync-core` package.json
 
 - [x] 1. Remove the `"./discovery"` export (broken, points to deleted directory)
-- [x] 2. Verify whether `@epicenter/sync` actually needs the `@epicenter/sync-core` dependency
+- [x] 2. Verify whether `@epicenter/sync` actually needs the `@epicenter/sync` dependency
   > **Verified**: `@epicenter/sync` actively imports `encodeSyncUpdate`, `handleSyncMessage`, `encodeSyncStatus`, `encodeSyncStep2`, and `encodeSyncRequest` from sync-core. Dependency is real, kept.
 
 ### Wave 3 (optional): Collapse `WsSyncPluginConfig` duplication

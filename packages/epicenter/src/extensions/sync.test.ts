@@ -10,7 +10,7 @@
  * - URL configuration and whenReady lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
-import type { SyncProvider } from '@epicenter/sync';
+import type { SyncProvider } from '@epicenter/sync-client';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';

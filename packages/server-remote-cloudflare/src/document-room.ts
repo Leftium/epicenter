@@ -7,7 +7,7 @@ import {
 	handleWsMessage,
 	handleWsOpen,
 	stateVectorsEqual,
-} from '@epicenter/sync-core';
+} from '@epicenter/sync';
 import * as Y from 'yjs';
 
 type WsAttachment = {

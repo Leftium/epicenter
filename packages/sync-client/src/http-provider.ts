@@ -1,4 +1,4 @@
-import { encodeSyncRequest } from '@epicenter/sync-core';
+import { encodeSyncRequest } from '@epicenter/sync';
 import * as Y from 'yjs';
 
 // ============================================================================

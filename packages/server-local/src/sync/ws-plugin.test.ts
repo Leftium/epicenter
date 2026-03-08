@@ -12,8 +12,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { SyncProvider, SyncStatus } from '@epicenter/sync';
-import { createSyncProvider } from '@epicenter/sync';
+import type { SyncProvider, SyncStatus } from '@epicenter/sync-client';
+import { createSyncProvider } from '@epicenter/sync-client';
 import { Elysia } from 'elysia';
 import * as Y from 'yjs';
 import { createWsSyncPlugin } from './ws-plugin';

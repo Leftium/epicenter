@@ -9,16 +9,6 @@
 
 // Re-export Awareness so consumers don't need a direct y-protocols dependency
 export { Awareness } from 'y-protocols/awareness';
-// Discovery (device discovery via Yjs Awareness)
-export {
-	createClientPresence,
-	createLocalPresence,
-	type DeviceCapability,
-	type DeviceType,
-	DISCOVERY_ROOM_ID,
-	type DiscoveryState,
-	getDiscoveredDevices,
-} from './discovery';
 // Handlers (framework-agnostic WS connection lifecycle)
 export {
 	type ConnectionId,

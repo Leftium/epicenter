@@ -1,5 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
+import * as Y from 'yjs';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	Awareness,
 	type ConnectionState,
@@ -7,8 +9,6 @@ import {
 	handleWsMessage,
 	handleWsOpen,
 } from './sync-handlers';
-import * as Y from 'yjs';
-import { MAX_PAYLOAD_BYTES } from './constants';
 
 type WsAttachment = {
 	controlledClientIds: number[];
@@ -408,7 +408,10 @@ export class DocumentRoom extends DurableObject {
 		// Auto-save snapshot when the last client disconnects, if doc changed
 		if (this.connectionStates.size === 0) {
 			const currentSV = Y.encodeStateVector(this.doc);
-			if (!this.lastAutoSaveSV || !stateVectorsEqual(currentSV, this.lastAutoSaveSV)) {
+			if (
+				!this.lastAutoSaveSV ||
+				!stateVectorsEqual(currentSV, this.lastAutoSaveSV)
+			) {
 				this.lastAutoSaveSV = currentSV;
 				this.saveSnapshot('Auto-save');
 			}

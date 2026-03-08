@@ -3,6 +3,8 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
+import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
@@ -16,9 +18,10 @@ import { aiChatHandlers } from './ai-chat';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
+
+export { DocumentRoom } from './document-room';
 // Re-export so wrangler types generates DurableObjectNamespace<WorkspaceRoom|DocumentRoom>
 export { WorkspaceRoom } from './workspace-room';
-export { DocumentRoom } from './document-room';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -357,10 +360,10 @@ app.post('/documents/:room', describeRoute({
 app.post('/documents/:room/snapshots', describeRoute({
 	description: 'Save a document snapshot',
 	tags: ['documents', 'snapshots'],
-}), async (c) => {
+}), sValidator('json', type({ 'label?': 'string' })), async (c) => {
 	const stub = getDocumentStub(c);
-	const body = await c.req.json<{ label?: string }>().catch(() => ({}) as { label?: string });
-	const result = await stub.saveSnapshot(body.label);
+	const { label } = c.req.valid('json');
+	const result = await stub.saveSnapshot(label);
 	return c.json(result);
 });
 
@@ -376,10 +379,10 @@ app.get('/documents/:room/snapshots', describeRoute({
 app.get('/documents/:room/snapshots/:id', describeRoute({
 	description: 'Get a document snapshot by ID',
 	tags: ['documents', 'snapshots'],
-}), async (c) => {
+}), sValidator('param', type({ room: 'string', id: 'string.numeric' })), async (c) => {
 	const stub = getDocumentStub(c);
-	const snapshotId = Number(c.req.param('id'));
-	const data = await stub.getSnapshot(snapshotId);
+	const { id } = c.req.valid('param');
+	const data = await stub.getSnapshot(Number(id));
 	if (!data) return c.body('Snapshot not found', 404);
 	return new Response(data, {
 		headers: { 'content-type': 'application/octet-stream' },
@@ -389,10 +392,10 @@ app.get('/documents/:room/snapshots/:id', describeRoute({
 app.post('/documents/:room/snapshots/:id/apply', describeRoute({
 	description: 'Apply a past snapshot state into the current document (CRDT forward-merge)',
 	tags: ['documents', 'snapshots'],
-}), async (c) => {
+}), sValidator('param', type({ room: 'string', id: 'string.numeric' })), async (c) => {
 	const stub = getDocumentStub(c);
-	const snapshotId = Number(c.req.param('id'));
-	const ok = await stub.applySnapshot(snapshotId);
+	const { id } = c.req.valid('param');
+	const ok = await stub.applySnapshot(Number(id));
 	if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
 	return c.json({ ok: true });
 });

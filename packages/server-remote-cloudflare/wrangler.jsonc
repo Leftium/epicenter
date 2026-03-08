@@ -41,12 +41,7 @@
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["YjsRoom"]
-		},
-		{
-			"tag": "v2",
-			"renamed_classes": [{ "from": "YjsRoom", "to": "WorkspaceRoom" }],
-			"new_sqlite_classes": ["DocumentRoom"]
+			"new_sqlite_classes": ["WorkspaceRoom", "DocumentRoom"]
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---

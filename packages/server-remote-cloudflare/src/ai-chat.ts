@@ -1,8 +1,8 @@
 import { sValidator } from '@hono/standard-validator';
 import {
 	type AnyTextAdapter,
-	type ModelMessage,
 	chat,
+	type ModelMessage,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
 import { createAnthropicChat } from '@tanstack/ai-anthropic';
@@ -12,37 +12,7 @@ import { createFactory } from 'hono/factory';
 import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
 
-// ---------------------------------------------------------------------------
-// Providers
-// ---------------------------------------------------------------------------
-
-const providers = {
-	openai: {
-		apiKeyBinding: 'OPENAI_API_KEY',
-		createAdapter: createOpenaiChat,
-	},
-	anthropic: {
-		apiKeyBinding: 'ANTHROPIC_API_KEY',
-		createAdapter: createAnthropicChat,
-	},
-} as const satisfies Record<string, ProviderConfig>;
-
-type StringBindingKey = {
-	[K in keyof Cloudflare.Env]: Cloudflare.Env[K] extends string ? K : never;
-}[keyof Cloudflare.Env];
-
-type ProviderConfig = {
-	apiKeyBinding: StringBindingKey;
-	createAdapter: (model: any, apiKey: string) => AnyTextAdapter;
-};
-
-type SupportedProvider = keyof typeof providers;
-
-const SUPPORTED_PROVIDERS = Object.keys(providers) as SupportedProvider[];
-
-// ---------------------------------------------------------------------------
-// Errors
-// ---------------------------------------------------------------------------
+const SUPPORTED_PROVIDERS = ['openai', 'anthropic'] as const;
 
 const AiChatError = defineErrors({
 	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
@@ -50,10 +20,6 @@ const AiChatError = defineErrors({
 		provider,
 	}),
 });
-
-// ---------------------------------------------------------------------------
-// Validated request body & handler
-// ---------------------------------------------------------------------------
 
 const aiChatBody = type({
 	messages: 'object[] >= 1',
@@ -69,6 +35,23 @@ const aiChatBody = type({
 	},
 });
 
+function resolveProvider(
+	env: Cloudflare.Env,
+	provider: (typeof SUPPORTED_PROVIDERS)[number],
+	model: string,
+): { apiKey: string; adapter: AnyTextAdapter } | undefined {
+	switch (provider) {
+		case 'openai': {
+			const apiKey = env.OPENAI_API_KEY;
+			return apiKey ? { apiKey, adapter: createOpenaiChat(model as any, apiKey) } : undefined;
+		}
+		case 'anthropic': {
+			const apiKey = env.ANTHROPIC_API_KEY;
+			return apiKey ? { apiKey, adapter: createAnthropicChat(model as any, apiKey) } : undefined;
+		}
+	}
+}
+
 const factory = createFactory<Env>();
 
 export const aiChatHandlers = factory.createHandlers(
@@ -77,20 +60,14 @@ export const aiChatHandlers = factory.createHandlers(
 		const { messages, data } = c.req.valid('json');
 		const { provider, model, ...chatOptions } = data;
 
-		const providerConfig: ProviderConfig = providers[provider];
-		const apiKey = c.env[providerConfig.apiKeyBinding];
-		if (!apiKey) {
-			return c.json(
-				AiChatError.ProviderNotConfigured({ provider }),
-				503,
-			);
+		const resolved = resolveProvider(c.env, provider, model);
+		if (!resolved) {
+			return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 		}
 
-		const adapter = providerConfig.createAdapter(model as any, apiKey);
 		const abortController = new AbortController();
-
 		const stream = chat({
-			adapter,
+			adapter: resolved.adapter,
 			messages: messages as Array<ModelMessage>,
 			...chatOptions,
 			abortController,

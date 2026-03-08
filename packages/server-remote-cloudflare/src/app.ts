@@ -360,10 +360,10 @@ app.post('/documents/:room', describeRoute({
 app.post('/documents/:room/snapshots', describeRoute({
 	description: 'Save a document snapshot',
 	tags: ['documents', 'snapshots'],
-}), sValidator('json', type({ 'label?': 'string' })), async (c) => {
+}), sValidator('json', type({ label: 'string | null' })), async (c) => {
 	const stub = getDocumentStub(c);
 	const { label } = c.req.valid('json');
-	const result = await stub.saveSnapshot(label);
+	const result = await stub.saveSnapshot(label ?? undefined);
 	return c.json(result);
 });
 

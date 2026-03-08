@@ -24,7 +24,7 @@ import {
 	encodeSyncUpdate,
 	handleSyncMessage,
 	MESSAGE_TYPE,
-} from './protocol';
+} from '@epicenter/sync';
 
 // ============================================================================
 // Types

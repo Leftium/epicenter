@@ -20,6 +20,7 @@
 		"@better-auth/drizzle-adapter": "catalog:",
 		"@better-auth/oauth-provider": "catalog:",
 		"@epicenter/sync": "workspace:*",
+		"@epicenter/sync-server": "workspace:*",
 		"@hono/standard-validator": "^0.2.2",
 		"@tanstack/ai": "^0.5.1",
 		"@tanstack/ai-anthropic": "^0.5.0",

@@ -1,11 +1,12 @@
 import { DurableObject } from 'cloudflare:workers';
-import { Awareness, decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
+import { decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
 import {
+	Awareness,
 	type ConnectionState,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-} from '@epicenter/sync/server';
+} from '@epicenter/sync-server';
 import * as Y from 'yjs';
 
 type WsAttachment = {

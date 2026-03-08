@@ -382,7 +382,7 @@
       "dependencies": {
         "@elysiajs/cors": "^1.4.1",
         "@elysiajs/openapi": "^1.4.11",
-        "@epicenter/sync": "workspace:*",
+        "@epicenter/sync-server": "workspace:*",
         "elysia": "^1.2.25",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -406,6 +406,7 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/sync-server": "workspace:*",
         "@hono/standard-validator": "^0.2.2",
         "@tanstack/ai": "^0.5.1",
         "@tanstack/ai-anthropic": "^0.5.0",
@@ -475,6 +476,22 @@
         "@epicenter/sync": "workspace:*",
         "lib0": "catalog:",
         "y-protocols": "catalog:",
+      },
+      "peerDependencies": {
+        "yjs": "catalog:",
+      },
+    },
+    "packages/sync-server": {
+      "name": "@epicenter/sync-server",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/sync": "workspace:*",
+        "lib0": "catalog:",
+        "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -748,6 +765,8 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/sync-client": ["@epicenter/sync-client@workspace:packages/sync-client"],
+
+    "@epicenter/sync-server": ["@epicenter/sync-server@workspace:packages/sync-server"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
 

@@ -8,8 +8,6 @@
  * `@epicenter/sync/server` instead.
  */
 
-// Re-export Awareness so consumers don't need a direct y-protocols dependency
-export { Awareness } from 'y-protocols/awareness';
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
 	type DecodedSyncMessage,

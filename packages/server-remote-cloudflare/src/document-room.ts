@@ -231,7 +231,9 @@ export class DocumentRoom extends DurableObject {
 	// --- Snapshot RPCs ---
 
 	/** Save a lightweight metadata snapshot of the current doc state. */
-	async saveSnapshot(label?: string): Promise<{ id: number; createdAt: string }> {
+	async saveSnapshot(
+		label?: string,
+	): Promise<{ id: number; createdAt: string }> {
 		const snap = Y.snapshot(this.doc);
 		const encoded = Y.encodeSnapshot(snap);
 		const { sql } = this.ctx.storage;
@@ -246,10 +248,14 @@ export class DocumentRoom extends DurableObject {
 	}
 
 	/** List all snapshots (metadata only, no reconstruction). */
-	async listSnapshots(): Promise<Array<{ id: number; label: string | null; createdAt: string }>> {
+	async listSnapshots(): Promise<
+		Array<{ id: number; label: string | null; createdAt: string }>
+	> {
 		const { sql } = this.ctx.storage;
 		return [
-			...sql.exec('SELECT id, label, created_at FROM snapshots ORDER BY id DESC'),
+			...sql.exec(
+				'SELECT id, label, created_at FROM snapshots ORDER BY id DESC',
+			),
 		].map((row) => ({
 			id: row.id as number,
 			label: row.label as string | null,

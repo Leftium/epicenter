@@ -3,7 +3,7 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-} from '@epicenter/sync';
+} from '@epicenter/sync/server';
 import type { RoomManagerConfig } from './rooms';
 import { createRoomManager } from './rooms';
 import { Elysia, t } from 'elysia';

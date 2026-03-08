@@ -47,18 +47,36 @@ export type WsMessageResult = {
 	broadcast?: Uint8Array;
 };
 
-/** Per-connection state that the adapter must store. */
+/**
+ * Per-connection state that the adapter must store.
+ *
+ * Pass this object to `handleWsMessage` and `handleWsClose` — they use it
+ * to look up internal event handlers via a WeakMap. The adapter may read
+ * `controlledClientIds` (e.g. for Cloudflare hibernation serialization)
+ * but should not need to touch internal handler functions.
+ */
 export type ConnectionState = {
 	doc: Y.Doc;
 	awareness: Awareness;
+	controlledClientIds: Set<number>;
+	connId: ConnectionId;
+};
+
+/** Internal event handlers, hidden from consumers. */
+type ConnectionInternals = {
 	updateHandler: (update: Uint8Array, origin: unknown) => void;
 	awarenessHandler: (
 		changes: { added: number[]; updated: number[]; removed: number[] },
 		origin: unknown,
 	) => void;
-	controlledClientIds: Set<number>;
-	connId: ConnectionId;
 };
+
+/**
+ * Internal handler storage. Keyed on the ConnectionState object itself,
+ * so cleanup in handleWsClose can retrieve the handlers without exposing
+ * them in the public type.
+ */
+const connectionInternals = new WeakMap<ConnectionState, ConnectionInternals>();
 
 // ============================================================================
 // WebSocket Handlers
@@ -129,11 +147,11 @@ export function handleWsOpen(
 	const state: ConnectionState = {
 		doc,
 		awareness,
-		updateHandler,
-		awarenessHandler,
 		controlledClientIds,
 		connId,
 	};
+
+	connectionInternals.set(state, { updateHandler, awarenessHandler });
 
 	return { initialMessages, state };
 }
@@ -201,8 +219,12 @@ export function handleWsMessage(
  * (ping intervals, WeakMap entries, room manager leave, etc.).
  */
 export function handleWsClose(state: ConnectionState): void {
-	state.doc.off('updateV2', state.updateHandler);
-	state.awareness.off('update', state.awarenessHandler);
+	const internals = connectionInternals.get(state);
+	if (internals) {
+		state.doc.off('updateV2', internals.updateHandler);
+		state.awareness.off('update', internals.awarenessHandler);
+		connectionInternals.delete(state);
+	}
 
 	if (state.controlledClientIds.size > 0) {
 		removeAwarenessStates(

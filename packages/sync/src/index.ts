@@ -1,24 +1,15 @@
 /**
- * @epicenter/sync — Framework-Agnostic Sync Primitives
+ * @epicenter/sync — Yjs Sync Protocol Primitives
  *
- * Pure TypeScript. Zero framework deps. Only yjs + lib0 + y-protocols.
+ * Pure encode/decode functions for the y-websocket wire protocol.
+ * Zero framework deps. Only yjs + lib0 + y-protocols.
  *
- * This package provides the core sync protocol logic that can be consumed
- * by any framework adapter (Elysia, Hono, Cloudflare Workers, etc.).
+ * For server-side WebSocket lifecycle handlers, import from
+ * `@epicenter/sync/server` instead.
  */
 
 // Re-export Awareness so consumers don't need a direct y-protocols dependency
 export { Awareness } from 'y-protocols/awareness';
-// Handlers (framework-agnostic WS connection lifecycle)
-export {
-	type ConnectionId,
-	type ConnectionState,
-	handleWsClose,
-	handleWsMessage,
-	handleWsOpen,
-	type WsMessageResult,
-	type WsOpenResult,
-} from './handlers';
 // Protocol (encode/decode for WS messages and HTTP sync requests)
 export {
 	type DecodedSyncMessage,

@@ -10,18 +10,12 @@
  * - `hasLocalChanges` and listener callbacks reflect local edits and server echoes.
  */
 
+import { encodeSyncStatus, encodeSyncStep2 } from '@epicenter/sync-core';
 import { describe, expect, test } from 'bun:test';
 import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 import { createSyncProvider } from './provider';
 import type { SyncStatus, WebSocketConstructor } from './types';
-
-// ============================================================================
-// Constants (must match provider.ts)
-// ============================================================================
-
-const MESSAGE_SYNC = 0;
-const MESSAGE_SYNC_STATUS = 102;
 
 // ============================================================================
 // Mock WebSocket
@@ -114,32 +108,17 @@ function getLastWebSocket(): MockWebSocket {
 // Protocol Helpers
 // ============================================================================
 
-/**
- * Build a MESSAGE_SYNC message containing sync step 2 (V2) for a given doc.
- * When the provider receives this, it transitions to 'connected'.
- */
+/** Build a sync step 2 message. The provider transitions to 'connected' on receipt. */
 function buildSyncStep2Message(doc: Y.Doc): ArrayBuffer {
-	const SYNC_STEP2 = 1;
-	const encoder = encoding.createEncoder();
-	encoding.writeVarUint(encoder, MESSAGE_SYNC);
-	encoding.writeVarUint(encoder, SYNC_STEP2);
-	encoding.writeVarUint8Array(encoder, Y.encodeStateAsUpdateV2(doc));
-	return encoding.toUint8Array(encoder).buffer;
+	return encodeSyncStep2({ doc }).buffer as ArrayBuffer;
 }
 
-/**
- * Build a MESSAGE_SYNC_STATUS (102) echo with a specific version.
- * The provider uses this to update ackedVersion.
- */
+/** Build a MESSAGE_SYNC_STATUS (102) echo with a specific version. */
 function buildSyncStatusEchoMessage(version: number): ArrayBuffer {
-	const encoder = encoding.createEncoder();
-	encoding.writeVarUint(encoder, MESSAGE_SYNC_STATUS);
-
-	const versionEncoder = encoding.createEncoder();
-	encoding.writeVarUint(versionEncoder, version);
-	encoding.writeVarUint8Array(encoder, encoding.toUint8Array(versionEncoder));
-
-	return encoding.toUint8Array(encoder).buffer;
+	const payload = encoding.encode((encoder) => {
+		encoding.writeVarUint(encoder, version);
+	});
+	return encodeSyncStatus({ payload }).buffer as ArrayBuffer;
 }
 
 // ============================================================================

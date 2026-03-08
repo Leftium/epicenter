@@ -1,4 +1,4 @@
-import * as encoding from 'lib0/encoding';
+import { encodeSyncRequest } from '@epicenter/sync-core';
 import * as Y from 'yjs';
 
 // ============================================================================
@@ -39,25 +39,6 @@ export type HttpSyncProvider = {
 	onStatusChange(listener: (status: HttpSyncStatus) => void): () => void;
 	onLocalChanges(listener: (hasLocalChanges: boolean) => void): () => void;
 };
-
-// ============================================================================
-// Binary Framing
-// ============================================================================
-
-/**
- * Encode a sync request as two length-prefixed binary frames:
- * 1. State vector (what the client has)
- * 2. Update (what the client is pushing, or empty)
- */
-function encodeRequest(
-	stateVector: Uint8Array,
-	update?: Uint8Array,
-): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint8Array(encoder, stateVector);
-		encoding.writeVarUint8Array(encoder, update ?? new Uint8Array(0));
-	});
-}
 
 // ============================================================================
 // Factory Function
@@ -155,7 +136,7 @@ export function createHttpSyncProvider({
 	 */
 	async function sync(update?: Uint8Array): Promise<Response> {
 		const stateVector = Y.encodeStateVector(doc);
-		const body = encodeRequest(stateVector, update);
+		const body = encodeSyncRequest(stateVector, update);
 
 		const headers: Record<string, string> = {
 			'content-type': 'application/octet-stream',

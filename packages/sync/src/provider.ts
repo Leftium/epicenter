@@ -1,3 +1,12 @@
+import {
+	MESSAGE_TYPE,
+	encodeAwareness,
+	encodeAwarenessStates,
+	encodeSyncStatus,
+	encodeSyncStep1,
+	encodeSyncUpdate,
+	handleSyncMessage,
+} from '@epicenter/sync-core';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {
@@ -14,19 +23,6 @@ import type {
 	SyncStatus,
 	WebSocketConstructor,
 } from './types';
-
-// ============================================================================
-// Protocol Constants
-// ============================================================================
-
-const MESSAGE_SYNC = 0;
-const MESSAGE_AWARENESS = 1;
-const MESSAGE_QUERY_AWARENESS = 3;
-const MESSAGE_SYNC_STATUS = 102;
-
-const SYNC_STEP1 = 0;
-const SYNC_STEP2 = 1;
-const SYNC_UPDATE = 2;
 
 // ============================================================================
 // Timing Constants
@@ -277,14 +273,10 @@ export function createSyncProvider({
 	 * Wire format: `[102][varint-length payload][varint localVersion]`
 	 */
 	function sendSyncStatus() {
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_SYNC_STATUS);
-
-		const versionEncoder = encoding.createEncoder();
-		encoding.writeVarUint(versionEncoder, localVersion);
-		encoding.writeVarUint8Array(encoder, encoding.toUint8Array(versionEncoder));
-
-		send(encoding.toUint8Array(encoder));
+		const payload = encoding.encode((encoder) => {
+			encoding.writeVarUint(encoder, localVersion);
+		});
+		send(encodeSyncStatus({ payload }));
 		armConnectionTimeout();
 	}
 
@@ -317,11 +309,7 @@ export function createSyncProvider({
 		// Ignore updates that came from us (applied via the WebSocket)
 		if (origin === handleDocUpdate) return;
 
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_SYNC);
-		encoding.writeVarUint(encoder, SYNC_UPDATE);
-		encoding.writeVarUint8Array(encoder, update);
-		send(encoding.toUint8Array(encoder));
+		send(encodeSyncUpdate({ update }));
 
 		incrementLocalVersion();
 		sendSyncStatus();
@@ -345,13 +333,11 @@ export function createSyncProvider({
 		removed: number[];
 	}) {
 		const changedClients = added.concat(updated).concat(removed);
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
-		encoding.writeVarUint8Array(
-			encoder,
-			encodeAwarenessUpdate(awareness, changedClients),
+		send(
+			encodeAwareness({
+				update: encodeAwarenessUpdate(awareness, changedClients),
+			}),
 		);
-		send(encoding.toUint8Array(encoder));
 	}
 
 	// ========================================================================
@@ -541,25 +527,16 @@ export function createSyncProvider({
 		ws.onopen = () => {
 			setStatus('handshaking');
 
-			// Send sync step 1 (state vector — same encoding for V1 and V2)
-			const encoder = encoding.createEncoder();
-			encoding.writeVarUint(encoder, MESSAGE_SYNC);
-			encoding.writeVarUint(encoder, SYNC_STEP1);
-			encoding.writeVarUint8Array(encoder, Y.encodeStateVector(doc));
-			send(encoding.toUint8Array(encoder));
-
-			// Send initial heartbeat probe
+			send(encodeSyncStep1({ doc }));
 			sendSyncStatus();
 
-			// Broadcast our awareness state
 			if (awareness.getLocalState() !== null) {
-				const awarenessEncoder = encoding.createEncoder();
-				encoding.writeVarUint(awarenessEncoder, MESSAGE_AWARENESS);
-				encoding.writeVarUint8Array(
-					awarenessEncoder,
-					encodeAwarenessUpdate(awareness, [doc.clientID]),
+				send(
+					encodeAwarenessStates({
+						awareness,
+						clients: [doc.clientID],
+					}),
 				);
-				send(encoding.toUint8Array(awarenessEncoder));
 			}
 
 			resetHeartbeat();
@@ -598,40 +575,25 @@ export function createSyncProvider({
 			const messageType = decoding.readVarUint(decoder);
 
 			switch (messageType) {
-				case MESSAGE_SYNC: {
-					const syncType = decoding.readVarUint(decoder);
-
-					switch (syncType) {
-						case SYNC_STEP1: {
-							// Server sent its state vector — respond with V2 diff
-							const remoteSV = decoding.readVarUint8Array(decoder);
-							const diff = Y.encodeStateAsUpdateV2(doc, remoteSV);
-							const responseEncoder = encoding.createEncoder();
-							encoding.writeVarUint(responseEncoder, MESSAGE_SYNC);
-							encoding.writeVarUint(responseEncoder, SYNC_STEP2);
-							encoding.writeVarUint8Array(responseEncoder, diff);
-							send(encoding.toUint8Array(responseEncoder));
-							break;
-						}
-						case SYNC_STEP2: {
-							// Server sent V2 diff — apply it
-							const update = decoding.readVarUint8Array(decoder);
-							Y.applyUpdateV2(doc, update, handleDocUpdate);
-							handshakeComplete = true;
-							setStatus('connected');
-							break;
-						}
-						case SYNC_UPDATE: {
-							// Server broadcast a V2 update — apply it
-							const update = decoding.readVarUint8Array(decoder);
-							Y.applyUpdateV2(doc, update, handleDocUpdate);
-							break;
-						}
+				case MESSAGE_TYPE.SYNC: {
+					// handleSyncMessage reads sync sub-type, applies updates,
+					// and returns a step2 response for step1 requests.
+					const response = handleSyncMessage({
+						decoder,
+						doc,
+						origin: handleDocUpdate,
+					});
+					if (response) {
+						send(response);
+					} else if (!handshakeComplete) {
+						// First null response = server's step2 applied
+						handshakeComplete = true;
+						setStatus('connected');
 					}
 					break;
 				}
 
-				case MESSAGE_AWARENESS: {
+				case MESSAGE_TYPE.AWARENESS: {
 					applyAwarenessUpdate(
 						awareness,
 						decoding.readVarUint8Array(decoder),
@@ -640,21 +602,17 @@ export function createSyncProvider({
 					break;
 				}
 
-				case MESSAGE_QUERY_AWARENESS: {
-					const awarenessEncoder = encoding.createEncoder();
-					encoding.writeVarUint(awarenessEncoder, MESSAGE_QUERY_AWARENESS);
-					encoding.writeVarUint8Array(
-						awarenessEncoder,
-						encodeAwarenessUpdate(
+				case MESSAGE_TYPE.QUERY_AWARENESS: {
+					send(
+						encodeAwarenessStates({
 							awareness,
-							Array.from(awareness.getStates().keys()),
-						),
+							clients: Array.from(awareness.getStates().keys()),
+						}),
 					);
-					send(encoding.toUint8Array(awarenessEncoder));
 					break;
 				}
 
-				case MESSAGE_SYNC_STATUS: {
+				case MESSAGE_TYPE.SYNC_STATUS: {
 					serverSupports102 = true;
 					const payload = decoding.readVarUint8Array(decoder);
 					const versionDecoder = decoding.createDecoder(payload);

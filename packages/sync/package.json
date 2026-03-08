@@ -9,6 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@epicenter/sync-core": "workspace:*",
 		"lib0": "catalog:",
 		"y-protocols": "catalog:"
 	},

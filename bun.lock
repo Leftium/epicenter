@@ -456,6 +456,7 @@
       "name": "@epicenter/sync",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/sync-core": "workspace:*",
         "lib0": "catalog:",
         "y-protocols": "catalog:",
       },

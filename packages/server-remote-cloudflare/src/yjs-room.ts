@@ -158,7 +158,7 @@ export class YjsRoom extends DurableObject {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const send = resilientSend(ws);
+				const send = (data: Uint8Array) => swallow(() => ws.send(data));
 				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
 				state.controlledClientIds = new Set(attachment.controlledClientIds);
 				this.connectionStates.set(ws, state);
@@ -241,7 +241,7 @@ export class YjsRoom extends DurableObject {
 		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
-		const send = resilientSend(server);
+		const send = (data: Uint8Array) => swallow(() => server.send(data));
 		const { initialMessages, state } = handleWsOpen(
 			this.doc,
 			this.awareness,
@@ -334,9 +334,4 @@ function swallow(fn: () => void): void {
 	} catch {
 		/* connection already dead */
 	}
-}
-
-/** Wrap `ws.send` so failures on dead connections are silently ignored. */
-function resilientSend(ws: WebSocket) {
-	return (data: Uint8Array) => swallow(() => ws.send(data));
 }

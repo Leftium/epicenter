@@ -78,8 +78,10 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * - **Cold start**: Reads all rows, merges with `Y.mergeUpdatesV2`, applies
  *   to a fresh `Y.Doc`. When multiple rows exist and the merged blob fits
  *   under {@link MAX_COMPACTED_BYTES}, atomically replaces all rows with a
- *   single merged snapshot. This collapses redundant insert+delete churn
- *   at zero extra encoding cost (we already computed `merged` for loading).
+ *   single merged snapshot. Because `gc: true`, deleted items are replaced
+ *   by lightweight GC structs (~8 bytes each), so compaction genuinely
+ *   reduces both row count AND total byte size. This is free — we already
+ *   computed `merged` for loading.
  *
  * ### Why DO SQLite over R2 or external storage
  *

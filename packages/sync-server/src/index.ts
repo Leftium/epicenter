@@ -1,8 +1,8 @@
 /**
  * @epicenter/sync-server — Server-Side Sync Handlers
  *
- * Framework-agnostic WS connection lifecycle. Adapters (Elysia, Cloudflare Workers)
- * call these handlers and map the results to their transport layer.
+ * Framework-agnostic WS connection lifecycle. Adapters (Hono/Bun, Cloudflare
+ * Durable Objects) call these handlers and map the results to their transport.
  */
 export {
 	type ConnectionId,

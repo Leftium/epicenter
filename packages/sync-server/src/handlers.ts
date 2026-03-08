@@ -2,7 +2,7 @@
  * Framework-Agnostic Sync Handlers
  *
  * Pure functions that implement the sync protocol logic without any framework
- * coupling. Adapters (Elysia, Hono, Cloudflare Workers, etc.) call these
+ * coupling. Adapters (Hono/Bun, Cloudflare Durable Objects, etc.) call these
  * handlers and map the results to their transport layer.
  *
  * Pattern: bytes in → bytes out + side effects described by return values.
@@ -30,7 +30,12 @@ import {
 // Types
 // ============================================================================
 
-/** Opaque connection identity. Elysia uses ws.raw, CF uses WebSocket instance. */
+/**
+ * Stable identity token for a WebSocket connection, used for origin-based
+ * echo prevention (`===` comparison). Pass the raw WebSocket instance —
+ * e.g. `ws.raw` (Bun) or the server-side `WebSocket` from a `WebSocketPair`
+ * (Cloudflare). Any object works; only reference identity matters.
+ */
 export type ConnectionId = object;
 
 /** Result of handling a WS open event. */
@@ -205,6 +210,9 @@ export function handleWsMessage(
 		}
 
 		default:
+			// Forward-compatible: unknown message types are silently ignored.
+			// Yjs clients/servers routinely encounter extension types (e.g.
+			// SYNC_STATUS=102) they don't understand — silent drop is correct.
 			return {};
 	}
 }

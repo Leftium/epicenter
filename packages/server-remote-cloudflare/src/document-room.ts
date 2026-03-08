@@ -104,6 +104,11 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * client-provided room name before calling `idFromName()`. This ensures each
  * user's documents are isolated in separate DO instances, even if multiple
  * users create documents with the same name (e.g., "tab-manager").
+ *
+ * We chose user-scoped keys (Google Docs model) over org-scoped keys
+ * (Vercel/Supabase model) because most workspaces hold personal data.
+ * For enterprise self-hosted, the deployment itself is the org boundary.
+ * See `getWorkspaceStub` in app.ts for the full rationale.
  */
 export class DocumentRoom extends DurableObject {
 	private doc!: Y.Doc;
@@ -124,25 +129,39 @@ export class DocumentRoom extends DurableObject {
 
 		this.ctx.blockConcurrencyWhile(async () => {
 			sql.exec(`
-				CREATE TABLE IF NOT EXISTS updates (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					data BLOB NOT NULL
+				CREATE TABLE IF NOT EXISTS _schema_version (
+					version INTEGER PRIMARY KEY
 				)
 			`);
+			const { version } = sql
+				.exec<{ version: number }>(
+					'SELECT COALESCE(MAX(version), 0) as version FROM _schema_version',
+				)
+				.one();
 
-			sql.exec(`
-				CREATE TABLE IF NOT EXISTS snapshots (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					data BLOB NOT NULL,
-					label TEXT,
-					created_at TEXT NOT NULL DEFAULT (datetime('now'))
-				)
-			`);
+			if (version < 1) {
+				sql.exec(`
+					CREATE TABLE IF NOT EXISTS updates (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						data BLOB NOT NULL,
+						created_at TEXT NOT NULL DEFAULT (datetime('now'))
+					)
+				`);
+				sql.exec(`
+					CREATE TABLE IF NOT EXISTS snapshots (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						snapshot BLOB NOT NULL,
+						label TEXT,
+						created_at TEXT NOT NULL DEFAULT (datetime('now'))
+					)
+				`);
+				sql.exec('INSERT INTO _schema_version (version) VALUES (1)');
+			}
 
 			this.doc = new Y.Doc({ gc: false });
 			this.awareness = new Awareness(this.doc);
 
-			const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
+			const rows = sql.exec('SELECT data FROM updates ORDER BY id').toArray();
 
 			if (rows.length > 0) {
 				const merged = Y.mergeUpdatesV2(
@@ -237,13 +256,13 @@ export class DocumentRoom extends DurableObject {
 		const snap = Y.snapshot(this.doc);
 		const encoded = Y.encodeSnapshot(snap);
 		const { sql } = this.ctx.storage;
-		const row = [
-			...sql.exec(
-				'INSERT INTO snapshots (data, label) VALUES (?, ?) RETURNING id, created_at',
+		const row = sql
+			.exec(
+				'INSERT INTO snapshots (snapshot, label) VALUES (?, ?) RETURNING id, created_at',
 				encoded,
 				label ?? null,
-			),
-		][0]!;
+			)
+			.one();
 		return { id: row.id as number, createdAt: row.created_at as string };
 	}
 
@@ -252,26 +271,27 @@ export class DocumentRoom extends DurableObject {
 		Array<{ id: number; label: string | null; createdAt: string }>
 	> {
 		const { sql } = this.ctx.storage;
-		return [
-			...sql.exec(
-				'SELECT id, label, created_at FROM snapshots ORDER BY id DESC',
-			),
-		].map((row) => ({
-			id: row.id as number,
-			label: row.label as string | null,
-			createdAt: row.created_at as string,
-		}));
+		return sql
+			.exec('SELECT id, label, created_at FROM snapshots ORDER BY id DESC')
+			.toArray()
+			.map((row) => ({
+				id: row.id as number,
+				label: row.label as string | null,
+				createdAt: row.created_at as string,
+			}));
 	}
 
 	/** Reconstruct a past doc state from a snapshot. Returns full state as binary update. */
 	async getSnapshot(snapshotId: number): Promise<Uint8Array | null> {
 		const { sql } = this.ctx.storage;
-		const rows = [
-			...sql.exec('SELECT data FROM snapshots WHERE id = ?', snapshotId),
-		];
+		const rows = sql
+			.exec('SELECT snapshot FROM snapshots WHERE id = ?', snapshotId)
+			.toArray();
 		if (rows.length === 0) return null;
 
-		const snap = Y.decodeSnapshot(new Uint8Array(rows[0]!.data as ArrayBuffer));
+		const snap = Y.decodeSnapshot(
+			new Uint8Array(rows[0]!.snapshot as ArrayBuffer),
+		);
 		const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}
@@ -358,9 +378,10 @@ export class DocumentRoom extends DurableObject {
 		}
 
 		if (result.broadcast) {
+			const msg = result.broadcast;
 			for (const [otherWs] of this.connectionStates) {
 				if (otherWs !== ws) {
-					swallow(() => otherWs.send(result.broadcast!));
+					swallow(() => otherWs.send(msg));
 				}
 			}
 		}

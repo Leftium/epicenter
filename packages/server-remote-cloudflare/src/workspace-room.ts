@@ -102,6 +102,11 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * client-provided room name before calling `idFromName()`. This ensures each
  * user's documents are isolated in separate DO instances, even if multiple
  * users create documents with the same name (e.g., "tab-manager").
+ *
+ * We chose user-scoped keys (Google Docs model) over org-scoped keys
+ * (Vercel/Supabase model) because most workspaces hold personal data.
+ * For enterprise self-hosted, the deployment itself is the org boundary.
+ * See `getWorkspaceStub` in app.ts for the full rationale.
  */
 export class WorkspaceRoom extends DurableObject {
 	private doc!: Y.Doc;
@@ -122,16 +127,30 @@ export class WorkspaceRoom extends DurableObject {
 
 		this.ctx.blockConcurrencyWhile(async () => {
 			sql.exec(`
-				CREATE TABLE IF NOT EXISTS updates (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					data BLOB NOT NULL
+				CREATE TABLE IF NOT EXISTS _schema_version (
+					version INTEGER PRIMARY KEY
 				)
 			`);
+			const { version } = sql
+				.exec<{ version: number }>(
+					'SELECT COALESCE(MAX(version), 0) as version FROM _schema_version',
+				)
+				.one();
+
+			if (version < 1) {
+				sql.exec(`
+					CREATE TABLE IF NOT EXISTS updates (
+						id INTEGER PRIMARY KEY AUTOINCREMENT,
+						data BLOB NOT NULL
+					)
+				`);
+				sql.exec('INSERT INTO _schema_version (version) VALUES (1)');
+			}
 
 			this.doc = new Y.Doc();
 			this.awareness = new Awareness(this.doc);
 
-			const rows = [...sql.exec('SELECT data FROM updates ORDER BY id')];
+			const rows = sql.exec('SELECT data FROM updates ORDER BY id').toArray();
 
 			if (rows.length > 0) {
 				const merged = Y.mergeUpdatesV2(
@@ -283,9 +302,10 @@ export class WorkspaceRoom extends DurableObject {
 		}
 
 		if (result.broadcast) {
+			const msg = result.broadcast;
 			for (const [otherWs] of this.connectionStates) {
 				if (otherWs !== ws) {
-					swallow(() => otherWs.send(result.broadcast!));
+					swallow(() => otherWs.send(msg));
 				}
 			}
 		}

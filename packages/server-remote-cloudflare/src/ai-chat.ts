@@ -13,6 +13,17 @@ import { defineErrors } from 'wellcrafted/error';
 import type { Env } from './app';
 
 const SUPPORTED_PROVIDERS = ['openai', 'anthropic'] as const;
+type SupportedProvider = (typeof SUPPORTED_PROVIDERS)[number];
+
+interface ProviderConfig {
+	envKey: keyof Cloudflare.Env;
+	createAdapter: (model: any, apiKey: string) => AnyTextAdapter;
+}
+
+const PROVIDERS: Record<SupportedProvider, ProviderConfig> = {
+	openai: { envKey: 'OPENAI_API_KEY', createAdapter: createOpenaiChat },
+	anthropic: { envKey: 'ANTHROPIC_API_KEY', createAdapter: createAnthropicChat },
+};
 
 const AiChatError = defineErrors({
 	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
@@ -35,23 +46,6 @@ const aiChatBody = type({
 	},
 });
 
-function resolveProvider(
-	env: Cloudflare.Env,
-	provider: (typeof SUPPORTED_PROVIDERS)[number],
-	model: string,
-): { apiKey: string; adapter: AnyTextAdapter } | undefined {
-	switch (provider) {
-		case 'openai': {
-			const apiKey = env.OPENAI_API_KEY;
-			return apiKey ? { apiKey, adapter: createOpenaiChat(model as any, apiKey) } : undefined;
-		}
-		case 'anthropic': {
-			const apiKey = env.ANTHROPIC_API_KEY;
-			return apiKey ? { apiKey, adapter: createAnthropicChat(model as any, apiKey) } : undefined;
-		}
-	}
-}
-
 const factory = createFactory<Env>();
 
 export const aiChatHandlers = factory.createHandlers(
@@ -60,14 +54,15 @@ export const aiChatHandlers = factory.createHandlers(
 		const { messages, data } = c.req.valid('json');
 		const { provider, model, ...chatOptions } = data;
 
-		const resolved = resolveProvider(c.env, provider, model);
-		if (!resolved) {
+		const { envKey, createAdapter } = PROVIDERS[provider];
+		const apiKey = c.env[envKey] as string | undefined;
+		if (!apiKey) {
 			return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 		}
 
 		const abortController = new AbortController();
 		const stream = chat({
-			adapter: resolved.adapter,
+			adapter: createAdapter(model, apiKey),
 			messages: messages as Array<ModelMessage>,
 			...chatOptions,
 			abortController,

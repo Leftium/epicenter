@@ -69,11 +69,19 @@ const BACKOFF_BASE = 1.1;
 /** Maximum backoff multiplier to prevent excessively long waits. */
 const MAX_BACKOFF_COEFFICIENT = 10;
 
-/** Time without receiving any message before sending a heartbeat probe (MESSAGE_SYNC_STATUS). */
-const HEARTBEAT_IDLE_MS = 2_000;
+/**
+ * Time without receiving any message before sending a heartbeat probe.
+ *
+ * Set to 30s because Cloudflare's `setWebSocketAutoResponse` handles TCP-level
+ * ping/pong liveness without waking the Durable Object. This probe only fires
+ * when there are unacked local changes — it's for ack tracking, not liveness.
+ * During genuine idle (no local changes), no probe is sent and the DO stays
+ * hibernated.
+ */
+const HEARTBEAT_IDLE_MS = 30_000;
 
 /** Time after sending a heartbeat to wait for any response before closing the connection. */
-const HEARTBEAT_TIMEOUT_MS = 3_000;
+const HEARTBEAT_TIMEOUT_MS = 5_000;
 
 // ============================================================================
 // Factory Function
@@ -246,17 +254,20 @@ export function createSyncProvider({
 
 	/**
 	 * Reset the heartbeat idle timer. After {@link HEARTBEAT_IDLE_MS} of
-	 * silence (no messages sent or received), sends a MESSAGE_SYNC_STATUS
-	 * probe to check if the connection is still alive.
+	 * silence, sends a MESSAGE_SYNC_STATUS probe — but only when there are
+	 * unacked local changes. This avoids waking the Durable Object from
+	 * hibernation during genuine idle periods.
 	 *
-	 * Called on every incoming message and after the WebSocket opens, so
-	 * the timer only fires during genuine idle periods.
+	 * Liveness is handled by Cloudflare's `setWebSocketAutoResponse` ping/pong
+	 * which never wakes the DO.
 	 */
 	function resetHeartbeat() {
 		clearHeartbeat();
 		heartbeatHandle = setTimeout(() => {
-			sendSyncStatus();
 			heartbeatHandle = null;
+			if (ackedVersion !== localVersion) {
+				sendSyncStatus();
+			}
 		}, HEARTBEAT_IDLE_MS);
 	}
 
@@ -264,7 +275,9 @@ export function createSyncProvider({
 	 * Arm a timeout that closes the socket if no response arrives within
 	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
 	 *
-	 * Always arms — the Cloudflare backend always echoes MESSAGE_SYNC_STATUS.
+	 * Only armed when a SYNC_STATUS probe is actually sent (i.e., when there
+	 * are unacked local changes). The Cloudflare backend always echoes
+	 * SYNC_STATUS, so a missing response means the connection is dead.
 	 */
 	function armConnectionTimeout() {
 		if (connectionTimeoutHandle) return;

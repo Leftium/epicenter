@@ -1,4 +1,4 @@
-# Sync Client Simplification
+# Sync Client Simplification — Implemented
 
 > Drop SYNC_STATUS (102), use Cloudflare auto-response for liveness, simplify to 3-state status model.
 
@@ -309,3 +309,24 @@ When the "Saving.../Saved" UI is built, design a proper persistence-confirmed ac
 3. The ack message type can reuse tag 102 or use a new tag
 4. Deploy server first (adds handler), then client (starts sending) — the server's `default` case silently ignores unknown tags, so no coordination needed
 5. Add `hasLocalChanges` and `onLocalChanges` back to the provider API
+
+## Review
+
+**Completed**: 2026-03-09
+**Branch**: `braden-w/tab-mgr-sync-upgrade`
+
+### Summary
+
+Replaced the SYNC_STATUS (102) heartbeat/ack system with text ping/pong liveness detection using Cloudflare's `setWebSocketAutoResponse`. Provider reduced from ~745 to ~715 lines, closure state from 11 to 7 variables, status model from 5 to 3 states. Removed `hasLocalChanges`/`onLocalChanges` (zero consumers). Server-side SYNC_STATUS echo removed from both CF Durable Object and generic sync-server handlers.
+
+### Deviations from Spec
+
+- `sync-server/handlers.ts` was also cleaned up (spec only listed the CF handler) — it had identical SYNC_STATUS handling
+- `encodeSyncStatus`/`decodeSyncStatus` removed from protocol (spec said "remove encodeSyncStatus", decodeSyncStatus was also cleaned up)
+- `MESSAGE_TYPE.SYNC_STATUS = 102` constant kept for future ack protocol (spec said "optionally remove")
+- New liveness/visibility/offline behavior tests (spec items 3.6–3.8) deferred to follow-up
+
+### Follow-up Work
+
+- Add test coverage for text ping/pong liveness detection, visibilitychange handler, and handleOffline → close behavior
+- Design and implement persistence-confirmed ack for "Saving.../Saved" UI (see Future section above)

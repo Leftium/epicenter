@@ -2,14 +2,31 @@ import type { Awareness } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 
 /**
+ * Minimal WebSocket instance interface — only what the sync provider uses.
+ *
+ * By depending on this narrow interface instead of the full `WebSocket`,
+ * mocks and alternative implementations (Node.js `ws`, etc.) satisfy the
+ * type naturally without casts.
+ */
+export type WebSocketLike = {
+	readyState: number;
+	binaryType: string;
+	onopen: ((event: Event) => void) | null;
+	onclose: ((event: CloseEvent) => void) | null;
+	onmessage: ((event: MessageEvent) => void) | null;
+	onerror: ((event: Event) => void) | null;
+	send(data: ArrayBufferLike | Uint8Array): void;
+	close(): void;
+};
+
+/**
  * WebSocket constructor type for dependency injection.
  *
  * Allows swapping the WebSocket implementation for testing (mock)
  * or non-browser environments (e.g., `ws` package in Node.js).
  */
 export type WebSocketConstructor = {
-	new (url: string | URL, protocols?: string | string[]): WebSocket;
-	prototype: WebSocket;
+	new (url: string | URL, protocols?: string | string[]): WebSocketLike;
 	readonly CLOSED: number;
 	readonly CLOSING: number;
 	readonly CONNECTING: number;

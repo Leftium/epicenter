@@ -88,12 +88,7 @@ class MockWebSocket {
 	}
 }
 
-/**
- * Single cast point — MockWebSocket satisfies the constructor shape
- * but doesn't implement the full WebSocket interface (no addEventListener,
- * bufferedAmount, etc.). That's fine for unit tests.
- */
-const MockWS = MockWebSocket as unknown as WebSocketConstructor;
+const MockWS: WebSocketConstructor = MockWebSocket;
 
 function getLastWebSocket(): MockWebSocket {
 	const ws = MockWebSocket.lastCreated;

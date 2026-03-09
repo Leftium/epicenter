@@ -20,7 +20,7 @@ import type {
 	SyncProvider,
 	SyncProviderConfig,
 	SyncStatus,
-	WebSocketConstructor,
+	WebSocketLike,
 } from './types';
 
 // ============================================================================
@@ -113,7 +113,7 @@ export function createSyncProvider({
 	baseUrl,
 	getToken,
 	connect: shouldConnect = true,
-	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
+	WebSocketConstructor: WS = WebSocket,
 	awareness = new Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================
@@ -145,7 +145,7 @@ export function createSyncProvider({
 	let retries = 0;
 
 	/** Current WebSocket instance, or null. */
-	let websocket: WebSocket | null = null;
+	let websocket: WebSocketLike | null = null;
 
 	/** Heartbeat idle timer handle. */
 	let heartbeatHandle: ReturnType<typeof setTimeout> | null = null;

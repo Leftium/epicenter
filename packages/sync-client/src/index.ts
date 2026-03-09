@@ -4,4 +4,5 @@ export type {
 	SyncProviderConfig,
 	SyncStatus,
 	WebSocketConstructor,
+	WebSocketLike,
 } from './types';

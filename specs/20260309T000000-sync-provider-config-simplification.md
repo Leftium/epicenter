@@ -128,14 +128,15 @@ reconnect() {
 ### Wave 3: Consumer updates
 **Files:** `packages/epicenter/src/extensions/sync.ts`
 
-- [ ] **3.1** Convert HTTP URL → WS URL in the extension before passing to provider
-- [ ] **3.2** Remove `connect: false` / `connect: true` from both call sites
-- [ ] **3.3** Add explicit `provider.connect()` calls after construction
-- [ ] **3.4** Rename `baseUrl` → `url` in both call sites
+- [x] **3.1** Convert HTTP URL → WS URL in the extension before passing to provider
+- [x] **3.2** Remove `connect: false` / `connect: true` from both call sites
+- [x] **3.3** Add explicit `provider.connect()` calls after construction
+- [x] **3.4** Rename `baseUrl` → `url` in both call sites
 
 ### Wave 4: Test updates
 **Files:** `packages/sync-client/src/provider.test.ts`, `packages/server-local/src/sync/ws-plugin.test.ts`
 
-- [ ] **4.1** Update unit tests: `baseUrl` → `url`, `WebSocketConstructor` → `WebSocket`, remove `connect` param, add explicit `.connect()` where needed
-- [ ] **4.2** Update integration tests: pass `ws:`/`wss:` URLs instead of `http:` URLs
-- [ ] **4.3** Update any tests that assert auto-connect behavior to assert starts-disconnected
+- [x] **4.1** Update unit tests: `baseUrl` → `url`, remove `connect` param, add explicit `.connect()` where needed
+  > WebSocketConstructor already removed in a14008659
+- [x] **4.2** Update integration tests: pass `ws:`/`wss:` URLs instead of `http:` URLs
+- [x] **4.3** Update any tests that assert auto-connect behavior to assert starts-disconnected

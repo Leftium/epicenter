@@ -133,12 +133,11 @@ describe('createSyncProvider', () => {
 		globalThis.WebSocket = OriginalWebSocket;
 	});
 
-	test('initial state with connect: false', () => {
+	test('initial state is offline', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		expect(provider.status).toBe('offline');
@@ -146,14 +145,14 @@ describe('createSyncProvider', () => {
 		provider.destroy();
 	});
 
-	test('auto-connect transitions to connecting', async () => {
+	test('connect() transitions to connecting', async () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
+			url: 'ws://test/sync',
 		});
 
-		// Auto-connect is default — loop starts asynchronously
+		provider.connect();
 		await tick();
 
 		expect(provider.status).toBe('connecting');
@@ -166,8 +165,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		expect(provider.status).toBe('offline');
@@ -186,8 +184,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -217,9 +214,10 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
+			url: 'ws://test/sync',
 		});
 
+		provider.connect();
 		await tick();
 		const ws = getLastWebSocket();
 		ws.simulateOpen();
@@ -242,9 +240,10 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
+			url: 'ws://test/sync',
 		});
 
+		provider.connect();
 		await tick();
 		expect(provider.status).toBe('connecting');
 
@@ -264,8 +263,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -291,8 +289,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
@@ -321,8 +318,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -353,8 +349,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		provider.connect();
@@ -378,8 +373,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -414,16 +408,15 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
+			url: 'ws://test/sync',
 			getToken: async () => 'my-secret',
-			connect: false,
 		});
 
 		provider.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
-		// baseUrl http:// should be derived to ws://
+		// URL should be ws://
 		expect(ws.url).toMatch(/^ws:\/\//);
 		expect(ws.url).toContain('token=my-secret');
 		// Token should NOT be passed as subprotocol — that leaks it

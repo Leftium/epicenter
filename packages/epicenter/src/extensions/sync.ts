@@ -55,8 +55,7 @@ export type SyncExtensionConfig = {
 /**
  * Creates a sync extension that connects after prior extensions are ready.
  *
- * Uses WebSocket for real-time sync, with an HTTP snapshot prefetch
- * (via `baseUrl`) to bootstrap the document before the WebSocket opens.
+ * Uses WebSocket for real-time sync.
  *
  * Lifecycle:
  * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
@@ -82,15 +81,15 @@ export function createSyncExtension(
 		const workspaceId = ydoc.guid;
 
 		const resolvedBaseUrl = config.url(workspaceId);
+		const wsUrl = resolvedBaseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 
 		// Build provider — defer connection until prior extensions are ready
 		let provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
-			baseUrl: resolvedBaseUrl,
+			url: wsUrl,
 			getToken: config.getToken
 				? () => config.getToken!(workspaceId)
 				: undefined,
-			connect: false,
 			awareness: awareness.raw,
 		});
 
@@ -116,13 +115,13 @@ export function createSyncExtension(
 				provider.destroy();
 				provider = createSyncProvider({
 					doc: ydoc,
-					baseUrl: resolvedBaseUrl,
+					url: wsUrl,
 					getToken: config.getToken
 						? () => config.getToken!(workspaceId)
 						: undefined,
-					connect: true,
 					awareness: awareness.raw,
 				});
+				provider.connect();
 			},
 			whenReady,
 			destroy() {

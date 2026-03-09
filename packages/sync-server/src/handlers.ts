@@ -9,6 +9,16 @@
  * The adapter is responsible for actually sending bytes and managing connections.
  */
 
+import {
+	encodeAwareness,
+	encodeAwarenessStates,
+	encodeSyncStatus,
+	encodeSyncStep1,
+	encodeSyncUpdate,
+	handleSyncPayload,
+	MESSAGE_TYPE,
+	type SyncMessageType,
+} from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import {
 	type Awareness,
@@ -16,15 +26,6 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import {
-	encodeAwareness,
-	encodeAwarenessStates,
-	encodeSyncStatus,
-	encodeSyncStep1,
-	encodeSyncUpdate,
-	handleSyncMessage,
-	MESSAGE_TYPE,
-} from '@epicenter/sync';
 
 // ============================================================================
 // Types
@@ -176,8 +177,11 @@ export function handleWsMessage(
 
 	switch (messageType) {
 		case MESSAGE_TYPE.SYNC: {
-			const response = handleSyncMessage({
-				decoder,
+			const syncType = decoding.readVarUint(decoder);
+			const payload = decoding.readVarUint8Array(decoder);
+			const response = handleSyncPayload({
+				syncType: syncType as SyncMessageType,
+				payload,
 				doc: state.doc,
 				origin: state.connId,
 			});

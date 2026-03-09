@@ -23,8 +23,9 @@ import {
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
-	handleSyncMessage,
+	handleSyncPayload,
 	MESSAGE_TYPE,
+	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import {
@@ -175,8 +176,11 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					const response = handleSyncMessage({
-						decoder,
+					const syncType = decoding.readVarUint(decoder);
+					const payload = decoding.readVarUint8Array(decoder);
+					const response = handleSyncPayload({
+						syncType: syncType as SyncMessageType,
+						payload,
 						doc: state.doc,
 						origin: state.ws,
 					});

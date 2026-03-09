@@ -23,7 +23,7 @@ export {
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
-	handleSyncMessage,
+	handleSyncPayload,
 	MESSAGE_TYPE,
 	type MessageType,
 	SYNC_MESSAGE_TYPE,

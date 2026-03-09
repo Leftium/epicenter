@@ -1,11 +1,12 @@
 import {
-	MESSAGE_TYPE,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
-	handleSyncMessage,
+	handleSyncPayload,
+	MESSAGE_TYPE,
+	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
@@ -66,7 +67,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'ws://localhost:3913/rooms/blog',
+ *   url: 'ws://localhost:3913/workspaces/blog',
  * });
  * ```
  *
@@ -74,7 +75,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'wss://sync.epicenter.so/rooms/blog',
+ *   url: 'wss://sync.epicenter.so/workspaces/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
@@ -576,10 +577,11 @@ export function createSyncProvider({
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					// handleSyncMessage reads sync sub-type, applies updates,
-					// and returns a step2 response for step1 requests.
-					const response = handleSyncMessage({
-						decoder,
+					const syncType = decoding.readVarUint(decoder);
+					const payload = decoding.readVarUint8Array(decoder);
+					const response = handleSyncPayload({
+						syncType: syncType as SyncMessageType,
+						payload,
 						doc,
 						origin: handleDocUpdate,
 					});

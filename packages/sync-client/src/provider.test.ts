@@ -10,8 +10,8 @@
  * - `hasLocalChanges` and listener callbacks reflect local edits and server echoes.
  */
 
-import { encodeSyncStatus, encodeSyncStep2 } from '@epicenter/sync';
 import { describe, expect, test } from 'bun:test';
+import { encodeSyncStatus, encodeSyncStep2 } from '@epicenter/sync';
 import * as encoding from 'lib0/encoding';
 import * as Y from 'yjs';
 import { createSyncProvider } from './provider';

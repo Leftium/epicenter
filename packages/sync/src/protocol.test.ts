@@ -30,7 +30,7 @@ import {
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
-	handleSyncMessage,
+	handleSyncPayload,
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
@@ -163,25 +163,16 @@ describe('MESSAGE_SYNC', () => {
 		});
 	});
 
-	describe('handleSyncMessage', () => {
+	describe('handleSyncPayload', () => {
 		test('responds to sync step 1 with sync step 2', () => {
 			const serverDoc = createDoc((d) => {
 				d.getMap('data').set('server', 'content');
 			});
 			const clientDoc = createDoc();
 
-			// Build client's sync step 1 (V2 wire format)
-			const syncStep1Payload = encoding.encode((encoder) => {
-				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP1);
-				encoding.writeVarUint8Array(
-					encoder,
-					Y.encodeStateVector(clientDoc),
-				);
-			});
-
-			const decoder = decoding.createDecoder(syncStep1Payload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.STEP1,
+				payload: Y.encodeStateVector(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -202,18 +193,9 @@ describe('MESSAGE_SYNC', () => {
 				d.getMap('data').set('client', 'content');
 			});
 
-			// Build sync step 2 payload (V2 encoding)
-			const syncStep2Payload = encoding.encode((encoder) => {
-				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP2);
-				encoding.writeVarUint8Array(
-					encoder,
-					Y.encodeStateAsUpdateV2(clientDoc),
-				);
-			});
-
-			const decoder = decoding.createDecoder(syncStep2Payload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.STEP2,
+				payload: Y.encodeStateAsUpdateV2(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -227,14 +209,9 @@ describe('MESSAGE_SYNC', () => {
 				createDoc((d) => d.getMap('data').set('key', 'value')),
 			);
 
-			const updatePayload = encoding.encode((encoder) => {
-				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.UPDATE);
-				encoding.writeVarUint8Array(encoder, updateV2);
-			});
-
-			const decoder = decoding.createDecoder(updatePayload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.UPDATE,
+				payload: updateV2,
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -248,15 +225,9 @@ describe('MESSAGE_SYNC', () => {
 				d.getMap('data').set('key', 'value');
 			});
 
-			const updateV2 = Y.encodeStateAsUpdateV2(clientDoc);
-			const updatePayload = encoding.encode((encoder) => {
-				encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.UPDATE);
-				encoding.writeVarUint8Array(encoder, updateV2);
-			});
-
-			const decoder = decoding.createDecoder(updatePayload);
-			handleSyncMessage({
-				decoder,
+			handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.UPDATE,
+				payload: Y.encodeStateAsUpdateV2(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -569,16 +540,10 @@ describe('full sync protocol', () => {
 		});
 		const clientDoc = createDoc();
 
-		// Client sends sync step 1 (V2 wire format — state vector is version-independent)
-		const clientSyncStep1 = encoding.encode((encoder) => {
-			encoding.writeVarUint(encoder, SYNC_MESSAGE_TYPE.STEP1);
-			encoding.writeVarUint8Array(encoder, Y.encodeStateVector(clientDoc));
-		});
-
-		// Server handles and responds with sync step 2 (V2 update)
-		const decoder1 = decoding.createDecoder(clientSyncStep1);
-		const serverResponse = handleSyncMessage({
-			decoder: decoder1,
+		// Server handles client's state vector and responds with sync step 2 (V2 update)
+		const serverResponse = handleSyncPayload({
+			syncType: SYNC_MESSAGE_TYPE.STEP1,
+			payload: Y.encodeStateVector(clientDoc),
 			doc: serverDoc,
 			origin: 'client',
 		});

@@ -51,7 +51,7 @@ export type HttpSyncProvider = {
  * ```typescript
  * const provider = createHttpSyncProvider({
  *   doc: myDoc,
- *   url: 'http://localhost:3913/rooms/blog',
+ *   url: 'http://localhost:3913/workspaces/blog',
  * });
  * ```
  *
@@ -59,7 +59,7 @@ export type HttpSyncProvider = {
  * ```typescript
  * const provider = createHttpSyncProvider({
  *   doc: myDoc,
- *   url: 'https://sync.epicenter.so/rooms/blog',
+ *   url: 'https://sync.epicenter.so/workspaces/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;

@@ -18,11 +18,7 @@ import { createSyncExtension } from './sync';
 /** The shape returned by the extension factory (flat). */
 type SyncExtensionResult = {
 	provider: SyncProvider;
-	reconnect: (newConfig?: {
-		url?: string;
-		token?: string;
-		getToken?: () => Promise<string>;
-	}) => void;
+	reconnect: () => void;
 	whenReady: Promise<unknown>;
 	destroy: () => void;
 };
@@ -56,10 +52,8 @@ describe('createSyncExtension', () => {
 			const oldProvider = result.provider;
 			expect(oldProvider).toBeDefined();
 
-			// Reconnect with a different URL
-			result.reconnect({
-				url: 'http://cloud.example.com/rooms/test-doc',
-			});
+			// Reconnect — uses original config
+			result.reconnect();
 
 			// Old provider should be destroyed (offline)
 			expect(oldProvider.status).toBe('offline');
@@ -85,13 +79,9 @@ describe('createSyncExtension', () => {
 			) as unknown as SyncExtensionResult;
 
 			const firstProvider = result.provider;
-			result.reconnect({
-				url: 'http://server-2/rooms/test-doc-getter',
-			});
+			result.reconnect();
 			const secondProvider = result.provider;
-			result.reconnect({
-				url: 'http://server-3/rooms/test-doc-getter',
-			});
+			result.reconnect();
 			const thirdProvider = result.provider;
 
 			// Each reconnect should yield a different provider
@@ -115,9 +105,7 @@ describe('createSyncExtension', () => {
 			const result = factory(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
-			result.reconnect({
-				url: 'http://cloud.example.com/rooms/test-doc-destroy',
-			});
+			result.reconnect();
 
 			const currentProvider = result.provider;
 			result.destroy();

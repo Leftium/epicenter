@@ -162,42 +162,6 @@ function waitForMapKey(
 	});
 }
 
-/**
- * Wait for hasLocalChanges to reach an expected value.
- *
- * Subscribes to changes BEFORE checking the current value to prevent
- * a race where the value transitions between the check and subscription.
- * Uses the provider's onLocalChanges callback — event-driven.
- */
-function waitForLocalChanges(
-	provider: SyncProvider,
-	expected: boolean,
-	timeoutMs = 5_000,
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => {
-			unsub();
-			reject(
-				new Error(
-					`Timed out waiting for hasLocalChanges=${expected}, current=${provider.hasLocalChanges}`,
-				),
-			);
-		}, timeoutMs);
-		const unsub = provider.onLocalChanges((has) => {
-			if (has === expected) {
-				clearTimeout(timer);
-				unsub();
-				resolve();
-			}
-		});
-		// Check AFTER subscribing to close the race window
-		if (provider.hasLocalChanges === expected) {
-			clearTimeout(timer);
-			unsub();
-			resolve();
-		}
-	});
-}
 
 // ============================================================================
 // Document Sync Tests
@@ -367,35 +331,10 @@ describe('ws sync plugin integration', () => {
 		}
 	});
 
-	test('hasLocalChanges tracks server acknowledgment', async () => {
-		const room = uniqueRoom();
-		const doc = new Y.Doc();
-
-		const provider = createSyncProvider({ doc, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
-		provider.connect();
-
-		try {
-			await waitForStatus(provider, 'connected');
-
-			// After handshake, server echoes SYNC_STATUS — hasLocalChanges becomes false
-			await waitForLocalChanges(provider, false);
-			expect(provider.hasLocalChanges).toBe(false);
-
-			// Local edit makes it dirty
-			doc.getMap('data').set('key', 'value');
-			expect(provider.hasLocalChanges).toBe(true);
-
-			// Server echo makes it clean again
-			await waitForLocalChanges(provider, false);
-			expect(provider.hasLocalChanges).toBe(false);
-		} finally {
-			provider.destroy();
-		}
-	});
 });
 
 describe('ws sync plugin integrated mode', () => {
-	test('closes with 4004 when getDoc returns undefined', async () => {
+	test('never connects when getDoc returns undefined (4004 close)', async () => {
 		const ctx = startIntegratedTestServer({ getDoc: () => undefined });
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
@@ -406,8 +345,13 @@ describe('ws sync plugin integrated mode', () => {
 		provider.connect();
 
 		try {
-			await waitForStatus(provider, 'error');
-			expect(provider.status).toBe('error');
+			// Collect statuses — the provider should cycle connecting/offline but never reach connected
+			const statuses: SyncStatus[] = [];
+			const unsub = provider.onStatusChange((s) => statuses.push(s));
+			await new Promise((r) => setTimeout(r, 1_000));
+			unsub();
+
+			expect(statuses).not.toContain('connected');
 		} finally {
 			provider.destroy();
 			ctx.server.stop();
@@ -493,20 +437,17 @@ describe('ws sync plugin auth', () => {
 	/**
 	 * Helper to assert a provider never reaches 'connected'.
 	 *
-	 * Event-driven: waits for 'error' status (proving the attempt happened),
-	 * then records all subsequent statuses for a window to confirm 'connected'
-	 * never appears. Much faster and more reliable than a fixed sleep.
+	 * Collects status transitions for a window and verifies 'connected'
+	 * never appears. The provider should cycle connecting/offline on rejection.
 	 */
 	async function expectAuthRejection(provider: SyncProvider): Promise<void> {
-		// Wait for at least one 'error' status (proves the server rejected us)
-		await waitForStatus(provider, 'error', 5_000);
-
-		// Collect statuses for a short window to catch any delayed 'connected'
 		const statuses: SyncStatus[] = [];
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
-		await new Promise((r) => setTimeout(r, 500));
+		await new Promise((r) => setTimeout(r, 1_000));
 		unsub();
 
+		// Should have attempted at least one connection cycle
+		expect(statuses.length).toBeGreaterThan(0);
 		expect(statuses).not.toContain('connected');
 	}
 

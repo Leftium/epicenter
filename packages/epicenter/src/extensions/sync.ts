@@ -74,9 +74,17 @@ export type SyncExtensionConfig = {
  *   }))
  * ```
  */
+/** Exports available on `client.extensions.sync` after registration. */
+export type SyncExtensionExports = {
+	/** The current sync provider instance. Swapped on reconnect. */
+	readonly provider: SyncProvider;
+	/** Force disconnect + reconnect using the original config (e.g. after auth change). */
+	reconnect(): void;
+};
+
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): ExtensionFactory {
+): ExtensionFactory<SyncExtensionExports> {
 	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 

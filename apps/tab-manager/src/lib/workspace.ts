@@ -830,9 +830,7 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
  * or after sign-out to disconnect.
  */
 export function reconnectSync() {
-	(
-		workspaceClient.extensions.sync as unknown as { reconnect: () => void }
-	).reconnect();
+	workspaceClient.extensions.sync.reconnect();
 }
 
 // Initialize workspace: set awareness + start command consumer

@@ -76,9 +76,9 @@ export type SyncExtensionConfig = {
  */
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
-	/** The current sync provider instance. Swapped on reconnect. */
+	/** The sync provider instance. */
 	readonly provider: SyncProvider;
-	/** Force disconnect + reconnect using the original config (e.g. after auth change). */
+	/** Force disconnect + reconnect (e.g. after auth change). */
 	reconnect(): void;
 };
 
@@ -92,7 +92,7 @@ export function createSyncExtension(
 		const wsUrl = resolvedBaseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 
 		// Build provider — defer connection until prior extensions are ready
-		let provider: SyncProvider = createSyncProvider({
+		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
 			url: wsUrl,
 			getToken: config.getToken
@@ -110,25 +110,17 @@ export function createSyncExtension(
 		})();
 
 		return {
-			get provider() {
-				return provider;
-			},
+			provider,
 			/**
-			 * Force an immediate disconnect + reconnect using the original config.
+			 * Force an immediate disconnect + reconnect.
 			 *
 			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
-			 * reconnects with a fresh token from `getToken`.
+			 * reconnects with a fresh token from `getToken`. The supervisor loop
+			 * calls `getToken()` fresh on each connection attempt, so a simple
+			 * disconnect/connect cycle is sufficient.
 			 */
 			reconnect() {
-				provider.destroy();
-				provider = createSyncProvider({
-					doc: ydoc,
-					url: wsUrl,
-					getToken: config.getToken
-						? () => config.getToken!(workspaceId)
-						: undefined,
-					awareness: awareness.raw,
-				});
+				provider.disconnect();
 				provider.connect();
 			},
 			whenReady,

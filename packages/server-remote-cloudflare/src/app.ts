@@ -59,6 +59,12 @@ function createAuth(env: Env['Bindings']) {
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BASE_URL,
 		secret: env.BETTER_AUTH_SECRET,
+		socialProviders: {
+			google: {
+				clientId: env.GOOGLE_CLIENT_ID,
+				clientSecret: env.GOOGLE_CLIENT_SECRET,
+			},
+		},
 		plugins: [
 			bearer(),
 			jwt(),

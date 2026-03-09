@@ -3,15 +3,20 @@
  *
  * Inlined from the generic @epicenter/sync-server package. Narrowed to CF
  * WebSocket types — no framework-agnostic indirection, no WeakMap tricks.
+ *
+ * ## Error handling rationale (grounded in Yjs internals)
+ *
+ * `Y.applyUpdateV2` is resilient by design — it never throws on malformed
+ * data. Missing dependencies are stored in `doc.store.pendingStructs` and
+ * automatically retried when future updates arrive.
+ *
+ * However, `lib0/decoding` functions (readVarUint, readVarUint8Array) DO
+ * throw on buffer underflow, and `applyAwarenessUpdate` from y-protocols
+ * throws on malformed JSON. Since WebSocket messages are untrusted input,
+ * `handleWsMessage` wraps the decode+dispatch path with `trySync` to catch
+ * these at the system boundary.
  */
 
-import * as decoding from 'lib0/decoding';
-import {
-	type Awareness,
-	applyAwarenessUpdate,
-	removeAwarenessStates,
-} from 'y-protocols/awareness';
-import type * as Y from 'yjs';
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
@@ -21,8 +26,40 @@ import {
 	handleSyncMessage,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
+import * as decoding from 'lib0/decoding';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, trySync } from 'wellcrafted/result';
+import {
+	type Awareness,
+	applyAwarenessUpdate,
+	removeAwarenessStates,
+} from 'y-protocols/awareness';
+import type * as Y from 'yjs';
 
 export { Awareness } from 'y-protocols/awareness';
+
+// ============================================================================
+// Errors
+// ============================================================================
+
+/**
+ * Errors from the sync handler layer.
+ *
+ * `MessageDecode` covers all failures when processing untrusted WebSocket
+ * binary frames: lib0 buffer underflow (truncated messages), y-protocols
+ * awareness JSON parse errors, and any other decode-time exceptions.
+ */
+export const SyncHandlerError = defineErrors({
+	MessageDecode: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type SyncHandlerError = InferErrors<typeof SyncHandlerError>;
 
 // ============================================================================
 // Types
@@ -84,11 +121,10 @@ export function handleWsOpen(
 	// Forward V2 doc updates to this connection (skip echo via identity check)
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
 		if (origin === ws) return;
-		try {
-			ws.send(encodeSyncUpdate({ update }));
-		} catch {
-			/* connection already dead */
-		}
+		trySync({
+			try: () => ws.send(encodeSyncUpdate({ update })),
+			catch: () => Ok(undefined), // connection already dead
+		});
 	};
 	doc.on('updateV2', updateHandler);
 
@@ -123,70 +159,83 @@ export function handleWsOpen(
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Returns what the caller should send back / broadcast. The caller is
- * responsible for actually sending the bytes.
+ * Returns a `Result` — `Ok` with what the caller should send back / broadcast,
+ * or `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed.
+ *
+ * The `trySync` wrapper catches lib0 decoder throws (buffer underflow on
+ * truncated messages) and y-protocols awareness errors (malformed JSON).
+ * Yjs's own `applyUpdateV2` is resilient and won't throw — it stores
+ * unresolved dependencies in `doc.store.pendingStructs` automatically.
  */
-export function handleWsMessage(
-	data: Uint8Array,
-	state: ConnectionState,
-): WsMessageResult {
-	const decoder = decoding.createDecoder(data);
-	const messageType = decoding.readVarUint(decoder);
+export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
+	return trySync({
+		try: (): WsMessageResult => {
+			const decoder = decoding.createDecoder(data);
+			const messageType = decoding.readVarUint(decoder);
 
-	switch (messageType) {
-		case MESSAGE_TYPE.SYNC: {
-			const response = handleSyncMessage({
-				decoder,
-				doc: state.doc,
-				origin: state.ws,
-			});
-			return response ? { response } : {};
-		}
+			switch (messageType) {
+				case MESSAGE_TYPE.SYNC: {
+					const response = handleSyncMessage({
+						decoder,
+						doc: state.doc,
+						origin: state.ws,
+					});
+					return response ? { response } : {};
+				}
 
-		case MESSAGE_TYPE.AWARENESS: {
-			const update = decoding.readVarUint8Array(decoder);
-			applyAwarenessUpdate(state.awareness, update, state.ws);
-			return { broadcast: encodeAwareness({ update }) };
-		}
+				case MESSAGE_TYPE.AWARENESS: {
+					const update = decoding.readVarUint8Array(decoder);
+					applyAwarenessUpdate(state.awareness, update, state.ws);
+					return { broadcast: encodeAwareness({ update }) };
+				}
 
-		case MESSAGE_TYPE.QUERY_AWARENESS: {
-			const awarenessStates = state.awareness.getStates();
-			if (awarenessStates.size > 0) {
-				return {
-					response: encodeAwarenessStates({
-						awareness: state.awareness,
-						clients: Array.from(awarenessStates.keys()),
-					}),
-				};
+				case MESSAGE_TYPE.QUERY_AWARENESS: {
+					const awarenessStates = state.awareness.getStates();
+					if (awarenessStates.size > 0) {
+						return {
+							response: encodeAwarenessStates({
+								awareness: state.awareness,
+								clients: Array.from(awarenessStates.keys()),
+							}),
+						};
+					}
+					return {};
+				}
+
+				case MESSAGE_TYPE.SYNC_STATUS: {
+					const payload = decoding.readVarUint8Array(decoder);
+					return { response: encodeSyncStatus({ payload }) };
+				}
+
+				default:
+					return {};
 			}
-			return {};
-		}
-
-		case MESSAGE_TYPE.SYNC_STATUS: {
-			const payload = decoding.readVarUint8Array(decoder);
-			return { response: encodeSyncStatus({ payload }) };
-		}
-
-		default:
-			return {};
-	}
+		},
+		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),
+	});
 }
 
 /**
  * Clean up a closed WebSocket connection.
  *
  * Unregisters event handlers and removes awareness states for this
- * connection's controlled client IDs.
+ * connection's controlled client IDs. The `removeAwarenessStates` call
+ * is wrapped in `trySync` as a safety net — awareness cleanup should
+ * never prevent handler deregistration from completing.
  */
 export function handleWsClose(state: ConnectionState): void {
 	state.doc.off('updateV2', state.updateHandler);
 	state.awareness.off('update', state.awarenessHandler);
 
 	if (state.controlledClientIds.size > 0) {
-		removeAwarenessStates(
-			state.awareness,
-			Array.from(state.controlledClientIds),
-			null,
-		);
+		trySync({
+			try: () =>
+				removeAwarenessStates(
+					state.awareness,
+					Array.from(state.controlledClientIds),
+					null,
+				),
+			catch: () => Ok(undefined), // cleanup best-effort
+		});
 	}
 }

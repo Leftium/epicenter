@@ -281,7 +281,11 @@ export class WorkspaceRoom extends DurableObject {
 				? new Uint8Array(message)
 				: new TextEncoder().encode(message);
 
-		const result = handleWsMessage(data, state);
+		const { data: result, error } = handleWsMessage(data, state);
+		if (error) {
+			console.error(error.message);
+			return;
+		}
 
 		if (result.response) {
 			ws.send(result.response);

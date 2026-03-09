@@ -117,12 +117,13 @@ reconnect() {
 ### Wave 2: Provider implementation
 **Files:** `packages/sync-client/src/provider.ts`
 
-- [ ] **2.1** Update destructuring: `baseUrl` → `url`, `WebSocketConstructor: WS` → `WebSocket: WS`, remove `connect: shouldConnect`
-- [ ] **2.2** Track `ownsAwareness` flag based on whether `awareness` was passed in
-- [ ] **2.3** Remove auto-connect block (`if (shouldConnect) { ... }`)
-- [ ] **2.4** Replace `baseUrl` usage in `attemptConnection` with `url` (remove protocol swap)
-- [ ] **2.5** Update `destroy()` to only `removeAwarenessStates` when `ownsAwareness`
-- [ ] **2.6** Update JSDoc examples to show explicit `.connect()` and `ws:`/`wss:` URLs
+- [x] **2.1** Update destructuring: `baseUrl` → `url`, remove `connect: shouldConnect`
+  > WebSocketConstructor already removed in a14008659
+- [x] **2.2** Track `ownsAwareness` flag based on whether `awareness` was passed in
+- [x] **2.3** Remove auto-connect block (`if (shouldConnect) { ... }`)
+- [x] **2.4** Replace `baseUrl` usage in `attemptConnection` with `url` (remove protocol swap)
+- [x] **2.5** Update `destroy()` to only `removeAwarenessStates` when `ownsAwareness`
+- [x] **2.6** Update JSDoc examples to show explicit `.connect()` and `ws:`/`wss:` URLs
 
 ### Wave 3: Consumer updates
 **Files:** `packages/epicenter/src/extensions/sync.ts`

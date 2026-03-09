@@ -56,29 +56,28 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'http://localhost:3913/rooms/blog',
+ *   url: 'ws://localhost:3913/rooms/blog',
  * });
+ * provider.connect();
  * ```
  *
  * @example Authenticated mode
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
+ *   url: 'wss://sync.epicenter.so/rooms/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
  *   },
  * });
+ * provider.connect();
  * ```
  */
-export function createSyncProvider({
-	doc,
-	baseUrl,
-	getToken,
-	connect: shouldConnect = true,
-	awareness = new Awareness(doc),
-}: SyncProviderConfig): SyncProvider {
+export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
+	const { doc, url, getToken } = config;
+	const ownsAwareness = !config.awareness;
+	const awareness = config.awareness ?? new Awareness(doc);
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
@@ -248,8 +247,7 @@ export function createSyncProvider({
 		token: string | undefined,
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
-		// Derive WS URL from baseUrl (https: → wss:, http: → ws:)
-		let wsUrl = baseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+		let wsUrl = url;
 		if (token) {
 			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
@@ -384,15 +382,6 @@ export function createSyncProvider({
 	doc.on('updateV2', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
-	// --- Auto-connect ---
-
-	if (shouldConnect) {
-		desired = 'online';
-		manageWindowListeners('add');
-		const myRunId = runId;
-		connectRun = runLoop(myRunId);
-	}
-
 	return {
 		get status() {
 			return status.get();
@@ -430,7 +419,9 @@ export function createSyncProvider({
 			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
-			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
+			if (ownsAwareness) {
+				removeAwarenessStates(awareness, [doc.clientID], 'window unload');
+			}
 			status.clear();
 		},
 	};

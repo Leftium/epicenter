@@ -217,10 +217,10 @@ export function decodeSyncMessage(data: Uint8Array): DecodedSyncMessage {
 /**
  * Handle a decoded sync sub-message and return a response if needed.
  *
- * Pure-input alternative to y-protocols' `readSyncMessage` — accepts already-
+ * Pre-decoded alternative to y-protocols' `readSyncMessage` — accepts already-
  * decoded `syncType` and `payload` instead of a mutable lib0 decoder. The
  * caller reads these two fields from the decoder inline (consistent with how
- * AWARENESS and SYNC_STATUS cases are already handled).
+ * AWARENESS and SYNC_STATUS cases are already handled at every call site).
  *
  * Dispatches on the three sync sub-types (all V2 encoded):
  * - STEP1: `payload` is a state vector → responds with a V2 diff (STEP2)

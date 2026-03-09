@@ -12,7 +12,6 @@
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -206,11 +205,6 @@ export function handleWsMessage(
 				};
 			}
 			return {};
-		}
-
-		case MESSAGE_TYPE.SYNC_STATUS: {
-			const payload = decoding.readVarUint8Array(decoder);
-			return { response: encodeSyncStatus({ payload }) };
 		}
 
 		default:

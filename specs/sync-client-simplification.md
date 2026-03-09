@@ -272,11 +272,14 @@ destroy() {
 - [x] **1.13** Update `SyncStatus` type: 3 states
 
 ### Wave 2: Server-side cleanup
-**Files:** `packages/server-remote-cloudflare/src/sync-handlers.ts`, `packages/sync/src/protocol.ts`
+**Files:** `packages/server-remote-cloudflare/src/sync-handlers.ts`, `packages/sync-server/src/handlers.ts`, `packages/sync/src/protocol.ts`, `packages/sync/src/index.ts`
 
-1. Remove `MESSAGE_TYPE.SYNC_STATUS` case from `handleWsMessage`
-2. Remove `encodeSyncStatus` from `protocol.ts`
-3. Optionally remove `MESSAGE_TYPE.SYNC_STATUS = 102` constant (or keep for future use)
+- [x] **2.1** Remove `MESSAGE_TYPE.SYNC_STATUS` case from CF `handleWsMessage`
+- [x] **2.2** Remove `MESSAGE_TYPE.SYNC_STATUS` case from generic `handleWsMessage`
+  > **Note**: Spec only listed the CF handler, but `sync-server/handlers.ts` had identical SYNC_STATUS handling.
+- [x] **2.3** Remove `encodeSyncStatus` and `decodeSyncStatus` from `protocol.ts`
+- [x] **2.4** Remove `encodeSyncStatus` and `decodeSyncStatus` from `index.ts` exports
+- [x] **2.5** Keep `MESSAGE_TYPE.SYNC_STATUS = 102` constant for future ack protocol
 
 ### Wave 3: Test updates
 **Files:** `packages/sync-client/src/provider.test.ts`

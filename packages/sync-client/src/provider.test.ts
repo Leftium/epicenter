@@ -125,7 +125,7 @@ function buildSyncStatusEchoMessage(version: number): ArrayBuffer {
 // Utilities
 // ============================================================================
 
-const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
+const tick = (ms = 100) => new Promise((r) => setTimeout(r, ms));
 
 function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
 	const doc = new Y.Doc();
@@ -142,7 +142,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -159,7 +159,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			WebSocketConstructor: MockWS,
 		});
 
@@ -176,7 +176,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -197,7 +197,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -230,7 +230,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			WebSocketConstructor: MockWS,
 		});
 
@@ -256,7 +256,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			WebSocketConstructor: MockWS,
 		});
 
@@ -279,7 +279,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -307,7 +307,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -336,7 +336,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -371,7 +371,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -409,7 +409,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -452,7 +452,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -493,7 +493,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -519,7 +519,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			connect: false,
 			WebSocketConstructor: MockWS,
 		});
@@ -556,7 +556,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			url: 'ws://test/sync',
+			baseUrl: 'http://test/sync',
 			getToken: async () => 'my-secret',
 			connect: false,
 			WebSocketConstructor: MockWS,
@@ -566,6 +566,8 @@ describe('createSyncProvider', () => {
 		await tick();
 
 		const ws = getLastWebSocket();
+		// baseUrl http:// should be derived to ws://
+		expect(ws.url).toMatch(/^ws:\/\//);
 		expect(ws.url).toContain('token=my-secret');
 		// Token should NOT be passed as subprotocol — that leaks it
 		// into the Sec-WebSocket-Protocol header which proxies may log

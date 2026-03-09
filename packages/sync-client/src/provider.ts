@@ -17,7 +17,6 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-import { createSleeper, type Sleeper } from './sleeper';
 import type {
 	SyncProvider,
 	SyncProviderConfig,
@@ -26,17 +25,44 @@ import type {
 } from './types';
 
 // ============================================================================
-// Timing Constants
+// Helpers
 // ============================================================================
 
-/** Number of connection retries before refreshing the token (authenticated mode). */
-const RETRIES_BEFORE_TOKEN_REFRESH = 3;
+/** Convert an HTTP URL to a WebSocket URL (`https:` → `wss:`, `http:` → `ws:`). */
+function toWebSocketUrl(httpUrl: string): string {
+	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
+/** A cancellable timeout returned by {@link createSleeper}. */
+type Sleeper = {
+	/** Resolves when the timeout expires or `wake()` is called. */
+	promise: Promise<void>;
+	/** Resolves the promise immediately, clearing the pending timeout. */
+	wake(): void;
+};
+
+/** Creates a cancellable timeout that resolves after `timeout` ms, or immediately if `wake()` is called. */
+function createSleeper(timeout: number): Sleeper {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const handle = setTimeout(resolve, timeout);
+	return {
+		promise,
+		wake() {
+			clearTimeout(handle);
+			resolve();
+		},
+	};
+}
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Origin sentinel for sync updates — used to skip echoing remote changes back. */
+const SYNC_ORIGIN = Symbol('sync-provider');
 
 /** Base delay before reconnecting after a failed connection attempt. */
 const DELAY_MS_BEFORE_RECONNECT = 500;
-
-/** Base delay before retrying after a token refresh failure. */
-const DELAY_MS_BEFORE_RETRY_TOKEN_REFRESH = 3_000;
 
 /** Exponential backoff base factor. */
 const BACKOFF_BASE = 1.1;
@@ -67,7 +93,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'ws://localhost:3913/workspaces/blog',
+ *   baseUrl: 'http://localhost:3913/rooms/blog',
  * });
  * ```
  *
@@ -75,7 +101,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'wss://sync.epicenter.so/workspaces/blog',
+ *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
@@ -85,12 +111,11 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  */
 export function createSyncProvider({
 	doc,
-	url,
+	baseUrl,
 	getToken,
 	connect: shouldConnect = true,
 	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
 	awareness = new Awareness(doc),
-	snapshotUrl,
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================
 	// Closure State
@@ -117,9 +142,6 @@ export function createSyncProvider({
 	/** Last version the server acknowledged via MESSAGE_SYNC_STATUS echo. */
 	let ackedVersion = -1;
 
-	/** Whether the server has ever echoed a MESSAGE_SYNC_STATUS on this connection. */
-	let serverSupports102 = false;
-
 	/** Current retry count for exponential backoff. */
 	let retries = 0;
 
@@ -134,9 +156,6 @@ export function createSyncProvider({
 
 	/** Current backoff sleeper — can be woken by browser online events. */
 	let reconnectSleeper: Sleeper | null = null;
-
-	/** Cached token for authenticated mode. Cleared to force refresh. */
-	let cachedToken: string | null = null;
 
 	// ========================================================================
 	// Event Listeners
@@ -246,18 +265,11 @@ export function createSyncProvider({
 	 * Arm a timeout that closes the socket if no response arrives within
 	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
 	 *
-	 * Only arms when the server has previously responded to a MESSAGE_SYNC_STATUS
-	 * (i.e., `serverSupports102` is true). This prevents false-positive disconnects
-	 * from standard y-websocket servers that don't implement the 102 extension.
+	 * Always arms — the Cloudflare backend always echoes MESSAGE_SYNC_STATUS.
 	 */
 	function armConnectionTimeout() {
 		if (connectionTimeoutHandle) return;
-		// Only arm timeout if server supports 102 — otherwise we'd
-		// false-positive disconnect from standard y-websocket servers.
-		if (!serverSupports102) return;
 		connectionTimeoutHandle = setTimeout(() => {
-			// No response received — close the socket.
-			// The supervisor loop handles reconnection via the close promise.
 			websocket?.close();
 			connectionTimeoutHandle = null;
 		}, HEARTBEAT_TIMEOUT_MS);
@@ -299,16 +311,15 @@ export function createSyncProvider({
 	/**
 	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
 	 *
-	 * Uses itself as the `origin` sentinel: when the sync protocol applies
-	 * a remote update it passes `handleDocUpdate` as origin, so this handler
+	 * Uses {@link SYNC_ORIGIN} as the origin sentinel: when the sync protocol
+	 * applies a remote update it passes `SYNC_ORIGIN` as origin, so this handler
 	 * skips those to avoid echoing remote changes back to the server.
 	 *
 	 * After sending the update, bumps the local version and sends a
 	 * MESSAGE_SYNC_STATUS probe so the server can ack receipt.
 	 */
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
-		// Ignore updates that came from us (applied via the WebSocket)
-		if (origin === handleDocUpdate) return;
+		if (origin === SYNC_ORIGIN) return;
 
 		send(encodeSyncUpdate({ update }));
 
@@ -358,9 +369,6 @@ export function createSyncProvider({
 	 * the connection is truly dead, the timeout will close the socket.
 	 */
 	function handleOffline() {
-		// Immediately probe when browser reports offline.
-		// This accelerates discovering we're offline, but doesn't blindly
-		// trust the browser (it can be wrong, e.g. localhost connections).
 		sendSyncStatus();
 	}
 
@@ -371,19 +379,18 @@ export function createSyncProvider({
 	/**
 	 * Fetch the full document snapshot via HTTP GET and apply it locally.
 	 *
-	 * Runs before the WebSocket connects so the subsequent syncStep2 is tiny
-	 * (only changes since the GET). On failure, falls through to WS-only sync.
+	 * Uses `baseUrl` directly for the GET request. Runs before the WebSocket
+	 * connects so the subsequent syncStep2 is tiny (only changes since the GET).
+	 * On failure, falls through to WS-only sync.
 	 */
 	async function fetchSnapshot(token: string | undefined): Promise<void> {
-		if (!snapshotUrl) return;
-
 		try {
 			const headers: Record<string, string> = {};
 			if (token) {
 				headers['Authorization'] = `Bearer ${token}`;
 			}
 
-			const response = await fetch(snapshotUrl, { headers });
+			const response = await fetch(baseUrl, { headers });
 
 			if (response.status === 404) return; // New/empty doc
 			if (!response.ok) {
@@ -393,8 +400,12 @@ export function createSyncProvider({
 				return;
 			}
 
+			// Guard against HTML error pages from dev servers
+			const contentType = response.headers.get('content-type') ?? '';
+			if (!contentType.includes('application/octet-stream')) return;
+
 			const data = new Uint8Array(await response.arrayBuffer());
-			Y.applyUpdateV2(doc, data, handleDocUpdate);
+			Y.applyUpdateV2(doc, data, SYNC_ORIGIN);
 		} catch (e) {
 			console.warn('[SyncProvider] Snapshot prefetch error', e);
 		}
@@ -412,24 +423,24 @@ export function createSyncProvider({
 	 *
 	 * Event handlers (onclose, onerror, heartbeat timeout) ONLY resolve
 	 * promises. They never call connect() or set status.
+	 *
+	 * Single `while` loop — no inner retry loop, no token caching.
+	 * Calls `getToken()` fresh on each iteration.
 	 */
 	async function runLoop(myRunId: number) {
 		while (desired === 'online' && runId === myRunId) {
 			setStatus('connecting');
 
-			// --- Token acquisition ---
+			// --- Token acquisition (fresh each iteration) ---
 			let token: string | undefined;
 			if (getToken) {
 				try {
-					if (!cachedToken) {
-						cachedToken = await getToken();
-					}
-					token = cachedToken;
+					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
 					setStatus('error');
 					const timeout =
-						DELAY_MS_BEFORE_RETRY_TOKEN_REFRESH *
+						DELAY_MS_BEFORE_RECONNECT *
 						Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
 					retries += 1;
 					reconnectSleeper = createSleeper(timeout);
@@ -442,44 +453,30 @@ export function createSyncProvider({
 			if (runId !== myRunId) break;
 
 			// --- HTTP snapshot prefetch ---
-			// Fetch the full doc via GET before opening the WebSocket. This
-			// pre-populates the local Y.Doc so the WS syncStep2 is tiny.
-			if (snapshotUrl) {
-				await fetchSnapshot(token);
-				if (runId !== myRunId) break;
+			await fetchSnapshot(token);
+			if (runId !== myRunId) break;
+
+			// --- Single connection attempt ---
+			const result = await attemptConnection(token, myRunId);
+
+			if (runId !== myRunId) break;
+
+			if (result === 'connected') {
+				retries = 0;
 			}
 
-			// --- Connection attempts (with token refresh after N retries) ---
-			for (let i = 0; i < RETRIES_BEFORE_TOKEN_REFRESH; i++) {
-				if (runId !== myRunId || desired !== 'online') break;
+			if (result === 'cancelled') break;
 
-				const result = await attemptConnection(token, myRunId);
-
-				if (runId !== myRunId) break;
-
-				if (result === 'connected') {
-					// Successfully connected + ran until socket closed
-					retries = 0;
-				}
-
-				if (result === 'cancelled') break;
-
-				// Connection failed or closed — backoff and retry
-				if (desired === 'online' && runId === myRunId) {
-					setStatus('error');
-					const timeout =
-						DELAY_MS_BEFORE_RECONNECT *
-						Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
-					retries += 1;
-					reconnectSleeper = createSleeper(timeout);
-					await reconnectSleeper.promise;
-					reconnectSleeper = null;
-				}
-			}
-
-			// Force token refresh for next round (authenticated mode)
-			if (getToken) {
-				cachedToken = null;
+			// Connection failed or closed — backoff and retry
+			if (desired === 'online' && runId === myRunId) {
+				setStatus('error');
+				const timeout =
+					DELAY_MS_BEFORE_RECONNECT *
+					Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
+				retries += 1;
+				reconnectSleeper = createSleeper(timeout);
+				await reconnectSleeper.promise;
+				reconnectSleeper = null;
 			}
 		}
 
@@ -503,12 +500,11 @@ export function createSyncProvider({
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
 		setStatus('connecting');
-		serverSupports102 = false;
 
-		// Build URL with optional token query param
-		let wsUrl = url;
+		// Derive WS URL from baseUrl
+		let wsUrl = toWebSocketUrl(baseUrl);
 		if (token) {
-			const parsed = new URL(url);
+			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
 			wsUrl = parsed.toString();
 		}
@@ -554,7 +550,7 @@ export function createSyncProvider({
 				Array.from(awareness.getStates().keys()).filter(
 					(client) => client !== doc.clientID,
 				),
-				handleDocUpdate,
+				SYNC_ORIGIN,
 			);
 
 			websocket = null;
@@ -583,7 +579,7 @@ export function createSyncProvider({
 						syncType: syncType as SyncMessageType,
 						payload,
 						doc,
-						origin: handleDocUpdate,
+						origin: SYNC_ORIGIN,
 					});
 					if (response) {
 						send(response);
@@ -599,7 +595,7 @@ export function createSyncProvider({
 					applyAwarenessUpdate(
 						awareness,
 						decoding.readVarUint8Array(decoder),
-						handleDocUpdate,
+						SYNC_ORIGIN,
 					);
 					break;
 				}
@@ -615,7 +611,6 @@ export function createSyncProvider({
 				}
 
 				case MESSAGE_TYPE.SYNC_STATUS: {
-					serverSupports102 = true;
 					const payload = decoding.readVarUint8Array(decoder);
 					const versionDecoder = decoding.createDecoder(payload);
 					const version = decoding.readVarUint(versionDecoder);

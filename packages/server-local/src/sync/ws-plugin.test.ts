@@ -220,8 +220,8 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({ doc: doc1, baseUrl: ctx.httpUrl('/rooms/' + room) });
+		const p2 = createSyncProvider({ doc: doc2, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -242,8 +242,8 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({ doc: doc1, baseUrl: ctx.httpUrl('/rooms/' + room) });
+		const p2 = createSyncProvider({ doc: doc2, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -266,8 +266,8 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({ doc: doc1, baseUrl: ctx.httpUrl('/rooms/' + room) });
+		const p2 = createSyncProvider({ doc: doc2, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -293,7 +293,7 @@ describe('ws sync plugin integration', () => {
 		const room = uniqueRoom();
 		const doc1 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({ doc: doc1, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -304,7 +304,7 @@ describe('ws sync plugin integration', () => {
 			await new Promise((r) => setTimeout(r, 50));
 
 			const doc2 = new Y.Doc();
-			const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+			const p2 = createSyncProvider({ doc: doc2, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 			try {
 				await waitForStatus(p2, 'connected');
@@ -326,9 +326,9 @@ describe('ws sync plugin integration', () => {
 		const docA2 = new Y.Doc();
 		const docB = new Y.Doc();
 
-		const pA1 = createSyncProvider({ doc: docA1, url: ctx.wsUrl(roomA) });
-		const pA2 = createSyncProvider({ doc: docA2, url: ctx.wsUrl(roomA) });
-		const pB = createSyncProvider({ doc: docB, url: ctx.wsUrl(roomB) });
+		const pA1 = createSyncProvider({ doc: docA1, baseUrl: ctx.httpUrl('/rooms/' + roomA) });
+		const pA2 = createSyncProvider({ doc: docA2, baseUrl: ctx.httpUrl('/rooms/' + roomA) });
+		const pB = createSyncProvider({ doc: docB, baseUrl: ctx.httpUrl('/rooms/' + roomB) });
 
 		try {
 			await waitForStatus(pA1, 'connected');
@@ -355,7 +355,7 @@ describe('ws sync plugin integration', () => {
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
 
-		const provider = createSyncProvider({ doc, url: ctx.wsUrl(room) });
+		const provider = createSyncProvider({ doc, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(provider, 'connected');
@@ -384,7 +384,7 @@ describe('ws sync plugin integrated mode', () => {
 		const doc = new Y.Doc();
 		const provider = createSyncProvider({
 			doc,
-			url: ctx.wsUrl(room),
+			baseUrl: ctx.httpUrl('/rooms/' + room),
 		});
 
 		try {
@@ -418,7 +418,7 @@ describe('ws sync plugin room list', () => {
 		const ctx = startTestServer();
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
-		const provider = createSyncProvider({ doc, url: ctx.wsUrl(room) });
+		const provider = createSyncProvider({ doc, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(provider, 'connected');
@@ -440,9 +440,9 @@ describe('ws sync plugin room list', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		const doc3 = new Y.Doc();
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
-		const p3 = createSyncProvider({ doc: doc3, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({ doc: doc1, baseUrl: ctx.httpUrl('/rooms/' + room) });
+		const p2 = createSyncProvider({ doc: doc2, baseUrl: ctx.httpUrl('/rooms/' + room) });
+		const p3 = createSyncProvider({ doc: doc3, baseUrl: ctx.httpUrl('/rooms/' + room) });
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -497,7 +497,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 			});
 
 			try {
@@ -521,7 +521,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 				getToken: async () => 'wrong-token',
 			});
 
@@ -544,7 +544,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 				getToken: async () => 'secret',
 			});
 

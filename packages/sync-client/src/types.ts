@@ -20,15 +20,45 @@ export type WebSocketConstructor = {
  * Configuration for creating a sync provider.
  *
  * Supports two auth modes:
- * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
- * - **Authenticated**: `url` + `getToken` — dynamic token refresh
+ * - **Open**: Just `baseUrl` — no auth (localhost, Tailscale, LAN)
+ * - **Authenticated**: `baseUrl` + `getToken` — dynamic token refresh
+ *
+ * The provider derives the WebSocket URL automatically from the HTTP URL
+ * (`https:` → `wss:`, `http:` → `ws:`), and uses the same URL for the
+ * optional HTTP snapshot prefetch.
+ *
+ * @example Open mode (localhost, no auth)
+ * ```typescript
+ * const provider = createSyncProvider({
+ *   doc: myDoc,
+ *   baseUrl: 'http://localhost:3913/rooms/blog',
+ * });
+ * ```
+ *
+ * @example Authenticated mode
+ * ```typescript
+ * const provider = createSyncProvider({
+ *   doc: myDoc,
+ *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
+ *   getToken: async () => {
+ *     const res = await fetch('/api/sync/token');
+ *     return (await res.json()).token;
+ *   },
+ * });
+ * ```
  */
 export type SyncProviderConfig = {
 	/** The Y.Doc to sync. */
 	doc: Y.Doc;
 
-	/** WebSocket URL to connect to. */
-	url: string;
+	/**
+	 * HTTP base URL for the sync room.
+	 *
+	 * Used directly for the HTTP snapshot prefetch (GET request).
+	 * The WebSocket URL is derived automatically:
+	 * `https:` → `wss:`, `http:` → `ws:`.
+	 */
+	baseUrl: string;
 
 	/**
 	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
@@ -43,17 +73,6 @@ export type SyncProviderConfig = {
 
 	/** WebSocket constructor override for testing or non-browser environments. */
 	WebSocketConstructor?: WebSocketConstructor;
-
-	/**
-	 * HTTP URL for initial state snapshot before WebSocket connect.
-	 *
-	 * When provided, fetches the full document via HTTP GET and applies it
-	 * locally before opening the WebSocket. This makes the subsequent WebSocket
-	 * syncStep2 tiny (only changes since the GET), avoiding large-message issues.
-	 *
-	 * Omit to skip the prefetch and use pure WebSocket sync.
-	 */
-	snapshotUrl?: string;
 };
 
 /**

@@ -15,10 +15,11 @@ The heartbeat/ack system also has concrete bugs:
 
 ### Cloudflare Durable Objects
 - `setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"))` responds to **text** `"ping"` with `"pong"` **at the edge, without waking the DO**. Already configured in the constructor.
-- Binary messages always wake the DO. Text auto-response messages do not.
-- No documented idle timeout specifically for DO WebSocket connections. TCP keepalive fires at ~400s. The 100s CDN proxy timeout may or may not apply.
-- On DO crash/eviction: client gets close code 1006. On code deploy: all WebSocket connections are terminated immediately.
+- Messages matching the auto-response pair are handled at the edge without waking the DO. All other messages (binary or non-matching text) wake the DO. Since auto-response only matches text strings, binary messages inherently always wake the DO.
+- No documented idle timeout specifically for DO WebSocket connections. The ~100s CDN proxy read timeout is widely reported in community forums but not officially documented for DO WebSockets. The 400s figure is the HTTP keep-alive timeout from Cloudflare's connection limits docs, not TCP keepalive — unclear if it applies to WebSocket connections through DOs.
+- On DO crash: client gets close code 1006. With hibernation (which we use), eviction does NOT close WebSocket connections — they survive on Cloudflare's network. Without hibernation, eviction after 70-140s of inactivity terminates connections. On code deploy: all WebSocket connections are terminated immediately.
 - Max idle time without app-level heartbeats: uncertain and undocumented. **Must send heartbeats.**
+- **Local dev caveat:** `setWebSocketAutoResponse` has known bugs in `workerd` ([#1009](https://github.com/cloudflare/workerd/issues/1009), [#1259](https://github.com/cloudflare/workerd/issues/1259)). Tests relying on auto-response behavior may not work in local development.
 
 ### Browser WebSocket API
 - **Cannot** send or observe protocol-level ping/pong frames. Only application-level messages.
@@ -284,12 +285,14 @@ destroy() {
 ### Wave 3: Test updates
 **Files:** `packages/sync-client/src/provider.test.ts`
 
-1. Remove `hasLocalChanges` / `onLocalChanges` tests
-2. Remove SYNC_STATUS message construction helpers
-3. Update status transition tests (3 states, no `'handshaking'` or `'error'`)
-4. Add liveness detection tests (text ping/pong, liveness timeout)
-5. Add `visibilitychange` handling tests
-6. Add `handleOffline` → close behavior test
+- [x] **3.1** Remove `hasLocalChanges` / `onLocalChanges` tests
+- [x] **3.2** Remove SYNC_STATUS message construction helpers
+- [x] **3.3** Update status transition tests (3 states, no `'handshaking'` or `'error'`)
+- [x] **3.4** Update protocol.test.ts: remove MESSAGE_SYNC_STATUS describe block, encodeSyncStatus/decodeSyncStatus imports
+- [x] **3.5** Update sync-server handlers.test.ts: replace SYNC_STATUS echo test with silent-ignore test
+- [ ] **3.6** Add liveness detection tests (text ping/pong, liveness timeout) — deferred to follow-up
+- [ ] **3.7** Add `visibilitychange` handling tests — deferred to follow-up
+- [ ] **3.8** Add `handleOffline` → close behavior test — deferred to follow-up
 
 ### Wave 4: Extension + consumer updates
 **Files:** `packages/epicenter/src/extensions/sync.ts`, any consumers

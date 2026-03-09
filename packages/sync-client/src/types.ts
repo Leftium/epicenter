@@ -5,18 +5,14 @@ import type * as Y from 'yjs';
  * Configuration for creating a sync provider.
  *
  * Supports two auth modes:
- * - **Open**: Just `baseUrl` — no auth (localhost, Tailscale, LAN)
- * - **Authenticated**: `baseUrl` + `getToken` — dynamic token refresh
- *
- * The provider derives the WebSocket URL automatically from the HTTP URL
- * (`https:` → `wss:`, `http:` → `ws:`), and uses the same URL for the
- * optional HTTP snapshot prefetch.
+ * - **Open**: Just `url` — no auth (localhost, Tailscale, LAN)
+ * - **Authenticated**: `url` + `getToken` — dynamic token refresh
  *
  * @example Open mode (localhost, no auth)
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'http://localhost:3913/rooms/blog',
+ *   url: 'ws://localhost:3913/rooms/blog',
  * });
  * ```
  *
@@ -24,7 +20,7 @@ import type * as Y from 'yjs';
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
+ *   url: 'wss://sync.epicenter.so/rooms/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
@@ -36,24 +32,15 @@ export type SyncProviderConfig = {
 	/** The Y.Doc to sync. */
 	doc: Y.Doc;
 
-	/**
-	 * HTTP base URL for the sync room.
-	 *
-	 * Used directly for the HTTP snapshot prefetch (GET request).
-	 * The WebSocket URL is derived automatically:
-	 * `https:` → `wss:`, `http:` → `ws:`.
-	 */
-	baseUrl: string;
+	/** WebSocket URL for the sync room (ws: or wss:). */
+	url: string;
 
 	/**
 	 * Dynamic token fetcher for authenticated mode. Called on each connect/reconnect.
 	 */
 	getToken?: () => Promise<string>;
 
-	/** Whether to connect immediately. Defaults to true. */
-	connect?: boolean;
-
-	/** External awareness instance. Defaults to `new Awareness(doc)`. */
+	/** External awareness instance. If provided, destroy() will NOT remove its states. Defaults to `new Awareness(doc)`. */
 	awareness?: Awareness;
 };
 

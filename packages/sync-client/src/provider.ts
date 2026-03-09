@@ -26,11 +26,6 @@ import type {
 // Helpers
 // ============================================================================
 
-/** Convert an HTTP URL to a WebSocket URL (`https:` → `wss:`, `http:` → `ws:`). */
-function toWebSocketUrl(httpUrl: string): string {
-	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-}
-
 /** A cancellable timeout returned by {@link createSleeper}. */
 type Sleeper = {
 	/** Resolves when the timeout expires or `wake()` is called. */
@@ -76,6 +71,9 @@ const PING_INTERVAL_MS = 30_000;
 
 /** Time without any message before the connection is considered dead. */
 const LIVENESS_TIMEOUT_MS = 45_000;
+
+/** How often to check whether the liveness timeout has expired. */
+const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 
 // ============================================================================
 // Factory Function
@@ -277,7 +275,6 @@ export function createSyncProvider({
 					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
-					setStatus('connecting');
 					const timeout = backoffDelay(retries);
 					retries += 1;
 					reconnectSleeper = createSleeper(timeout);
@@ -330,10 +327,8 @@ export function createSyncProvider({
 		token: string | undefined,
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
-		setStatus('connecting');
-
-		// Derive WS URL from baseUrl
-		let wsUrl = toWebSocketUrl(baseUrl);
+		// Derive WS URL from baseUrl (https: → wss:, http: → ws:)
+		let wsUrl = baseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
 		if (token) {
 			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
@@ -379,7 +374,7 @@ export function createSyncProvider({
 				if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
 					ws.close();
 				}
-			}, 10_000);
+			}, LIVENESS_CHECK_INTERVAL_MS);
 
 			resolveOpen(true);
 		};

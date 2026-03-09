@@ -559,7 +559,7 @@ export const workspaceClient = createWorkspace(
 )
 	.withExtension('persistence', indexeddbPersistence)
 	.withExtension('sync', createSyncExtension({
-		url: (workspaceId) => `${serverUrl.current}/rooms/${workspaceId}`,
+		url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
 		getToken: async () => authState.token ?? '',
 	}))
 	.withActions(({ tables }) => ({

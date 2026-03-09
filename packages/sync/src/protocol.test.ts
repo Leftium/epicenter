@@ -18,7 +18,6 @@ import {
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 } from 'y-protocols/awareness';
-import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import {
 	decodeMessageType,
@@ -31,7 +30,7 @@ import {
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
-	handleSyncMessage,
+	handleSyncPayload,
 	MESSAGE_TYPE,
 	SYNC_MESSAGE_TYPE,
 } from './protocol';
@@ -55,15 +54,7 @@ describe('MESSAGE_TYPE constants', () => {
 });
 
 describe('SYNC_MESSAGE_TYPE constants', () => {
-	test('match y-protocols/sync values', () => {
-		// These values are derived from y-protocols and must match
-		expect(SYNC_MESSAGE_TYPE.STEP1).toBe(syncProtocol.messageYjsSyncStep1);
-		expect(SYNC_MESSAGE_TYPE.STEP2).toBe(syncProtocol.messageYjsSyncStep2);
-		expect(SYNC_MESSAGE_TYPE.UPDATE).toBe(syncProtocol.messageYjsUpdate);
-	});
-
 	test('have expected numeric values', () => {
-		// Document the actual values for clarity
 		expect(SYNC_MESSAGE_TYPE.STEP1).toBe(0);
 		expect(SYNC_MESSAGE_TYPE.STEP2).toBe(1);
 		expect(SYNC_MESSAGE_TYPE.UPDATE).toBe(2);
@@ -150,7 +141,7 @@ describe('MESSAGE_SYNC', () => {
 			const doc = createDoc();
 			let capturedUpdate: Uint8Array | null = null;
 
-			doc.on('update', (update: Uint8Array) => {
+			doc.on('updateV2', (update: Uint8Array) => {
 				capturedUpdate = update;
 			});
 			doc.getMap('data').set('key', 'value');
@@ -172,21 +163,16 @@ describe('MESSAGE_SYNC', () => {
 		});
 	});
 
-	describe('handleSyncMessage', () => {
+	describe('handleSyncPayload', () => {
 		test('responds to sync step 1 with sync step 2', () => {
 			const serverDoc = createDoc((d) => {
 				d.getMap('data').set('server', 'content');
 			});
 			const clientDoc = createDoc();
 
-			// Build client's sync step 1
-			const syncStep1Payload = encoding.encode((encoder) => {
-				syncProtocol.writeSyncStep1(encoder, clientDoc);
-			});
-
-			const decoder = decoding.createDecoder(syncStep1Payload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.STEP1,
+				payload: Y.encodeStateVector(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -207,14 +193,9 @@ describe('MESSAGE_SYNC', () => {
 				d.getMap('data').set('client', 'content');
 			});
 
-			// Build sync step 2 payload
-			const syncStep2Payload = encoding.encode((encoder) => {
-				syncProtocol.writeSyncStep2(encoder, clientDoc);
-			});
-
-			const decoder = decoding.createDecoder(syncStep2Payload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.STEP2,
+				payload: Y.encodeStateAsUpdateV2(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -224,17 +205,13 @@ describe('MESSAGE_SYNC', () => {
 
 		test('returns null for sync update (no response needed)', () => {
 			const serverDoc = createDoc();
-			const update = Y.encodeStateAsUpdate(
+			const updateV2 = Y.encodeStateAsUpdateV2(
 				createDoc((d) => d.getMap('data').set('key', 'value')),
 			);
 
-			const updatePayload = encoding.encode((encoder) => {
-				syncProtocol.writeUpdate(encoder, update);
-			});
-
-			const decoder = decoding.createDecoder(updatePayload);
-			const response = handleSyncMessage({
-				decoder,
+			const response = handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.UPDATE,
+				payload: updateV2,
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -248,14 +225,9 @@ describe('MESSAGE_SYNC', () => {
 				d.getMap('data').set('key', 'value');
 			});
 
-			const update = Y.encodeStateAsUpdate(clientDoc);
-			const updatePayload = encoding.encode((encoder) => {
-				syncProtocol.writeUpdate(encoder, update);
-			});
-
-			const decoder = decoding.createDecoder(updatePayload);
-			handleSyncMessage({
-				decoder,
+			handleSyncPayload({
+				syncType: SYNC_MESSAGE_TYPE.UPDATE,
+				payload: Y.encodeStateAsUpdateV2(clientDoc),
 				doc: serverDoc,
 				origin: 'test-client',
 			});
@@ -484,7 +456,7 @@ describe('decodeSyncMessage', () => {
 	test('decodes sync update message', () => {
 		const doc = createDoc();
 		let capturedUpdate: Uint8Array | null = null;
-		doc.on('update', (update: Uint8Array) => {
+		doc.on('updateV2', (update: Uint8Array) => {
 			capturedUpdate = update;
 		});
 		doc.getMap('test').set('key', 'value');
@@ -568,15 +540,10 @@ describe('full sync protocol', () => {
 		});
 		const clientDoc = createDoc();
 
-		// Client sends sync step 1
-		const clientSyncStep1 = encoding.encode((encoder) => {
-			syncProtocol.writeSyncStep1(encoder, clientDoc);
-		});
-
-		// Server handles and responds with sync step 2
-		const decoder1 = decoding.createDecoder(clientSyncStep1);
-		const serverResponse = handleSyncMessage({
-			decoder: decoder1,
+		// Server handles client's state vector and responds with sync step 2 (V2 update)
+		const serverResponse = handleSyncPayload({
+			syncType: SYNC_MESSAGE_TYPE.STEP1,
+			payload: Y.encodeStateVector(clientDoc),
 			doc: serverDoc,
 			origin: 'client',
 		});
@@ -586,15 +553,12 @@ describe('full sync protocol', () => {
 			throw new Error('Expected server sync response during handshake');
 		}
 
-		// Client applies server's response
-		const decoder2 = decoding.createDecoder(serverResponse);
-		decoding.readVarUint(decoder2); // skip MESSAGE_TYPE.SYNC
-		syncProtocol.readSyncMessage(
-			decoder2,
-			encoding.createEncoder(),
-			clientDoc,
-			'server',
-		);
+		// Client applies server's V2 response
+		const decoded = decodeSyncMessage(serverResponse);
+		expect(decoded.type).toBe('step2');
+		if (decoded.type === 'step2') {
+			Y.applyUpdateV2(clientDoc, decoded.update, 'server');
+		}
 
 		// Client should have server's content
 		expect(clientDoc.getMap('notes').get('note1')).toBe('Hello from server');
@@ -604,7 +568,7 @@ describe('full sync protocol', () => {
 		const doc1 = createDoc((d) => d.getMap('data').set('from1', 'value1'));
 		const doc2 = createDoc((d) => d.getMap('data').set('from2', 'value2'));
 
-		// Full bidirectional sync using Yjs pattern
+		// Full bidirectional sync using Yjs V2 pattern
 		syncDocs(doc1, doc2);
 
 		expect(doc1.getMap('data').get('from1')).toBe('value1');
@@ -617,9 +581,9 @@ describe('full sync protocol', () => {
 		const doc1 = createDoc();
 		const doc2 = createDoc();
 
-		// Capture updates from doc1
+		// Capture V2 updates from doc1
 		const updates: Uint8Array[] = [];
-		doc1.on('update', (update: Uint8Array) => {
+		doc1.on('updateV2', (update: Uint8Array) => {
 			updates.push(update);
 		});
 
@@ -628,9 +592,9 @@ describe('full sync protocol', () => {
 		doc1.getMap('data').set('key2', 'value2');
 		doc1.getArray('list').push(['item1', 'item2']);
 
-		// Apply to doc2
+		// Apply V2 updates to doc2
 		for (const update of updates) {
-			Y.applyUpdate(doc2, update);
+			Y.applyUpdateV2(doc2, update);
 		}
 
 		expect(doc2.getMap('data').get('key1')).toBe('value1');
@@ -703,10 +667,10 @@ function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
 	return doc;
 }
 
-/** Sync two documents bidirectionally (standard Yjs test pattern) */
+/** Sync two documents bidirectionally (standard Yjs test pattern, V2) */
 function syncDocs(doc1: Y.Doc, doc2: Y.Doc): void {
-	const state1 = Y.encodeStateAsUpdate(doc1);
-	const state2 = Y.encodeStateAsUpdate(doc2);
-	Y.applyUpdate(doc1, state2);
-	Y.applyUpdate(doc2, state1);
+	const state1 = Y.encodeStateAsUpdateV2(doc1);
+	const state2 = Y.encodeStateAsUpdateV2(doc2);
+	Y.applyUpdateV2(doc1, state2);
+	Y.applyUpdateV2(doc2, state1);
 }

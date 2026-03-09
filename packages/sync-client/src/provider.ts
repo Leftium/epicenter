@@ -1,3 +1,14 @@
+import {
+	encodeAwareness,
+	encodeAwarenessStates,
+	encodeSyncStatus,
+	encodeSyncStep1,
+	encodeSyncUpdate,
+	handleSyncPayload,
+	MESSAGE_TYPE,
+	SYNC_MESSAGE_TYPE,
+	type SyncMessageType,
+} from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {
@@ -6,49 +17,75 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as syncProtocol from 'y-protocols/sync';
-import * as Y from 'yjs';
-import { createSleeper, type Sleeper } from './sleeper';
 import type {
 	SyncProvider,
 	SyncProviderConfig,
 	SyncStatus,
-	WebSocketConstructor,
+	WebSocketLike,
 } from './types';
 
 // ============================================================================
-// Protocol Constants
+// Helpers
 // ============================================================================
 
-const MESSAGE_SYNC = 0;
-const MESSAGE_AWARENESS = 1;
-const MESSAGE_QUERY_AWARENESS = 3;
-const MESSAGE_SYNC_STATUS = 102;
+/** Convert an HTTP URL to a WebSocket URL (`https:` → `wss:`, `http:` → `ws:`). */
+function toWebSocketUrl(httpUrl: string): string {
+	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
+/** A cancellable timeout returned by {@link createSleeper}. */
+type Sleeper = {
+	/** Resolves when the timeout expires or `wake()` is called. */
+	promise: Promise<void>;
+	/** Resolves the promise immediately, clearing the pending timeout. */
+	wake(): void;
+};
+
+/** Compute exponential backoff with jitter: `min(baseDelay * 2^retries, maxDelay) * [0.5, 1.0)`. */
+function backoffDelay(retries: number): number {
+	const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
+	return exponential * (0.5 + Math.random() * 0.5);
+}
+
+/** Creates a cancellable timeout that resolves after `timeout` ms, or immediately if `wake()` is called. */
+function createSleeper(timeout: number): Sleeper {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	const handle = setTimeout(resolve, timeout);
+	return {
+		promise,
+		wake() {
+			clearTimeout(handle);
+			resolve();
+		},
+	};
+}
 
 // ============================================================================
-// Timing Constants
+// Constants
 // ============================================================================
 
-/** Number of connection retries before refreshing the token (authenticated mode). */
-const RETRIES_BEFORE_TOKEN_REFRESH = 3;
+/** Origin sentinel for sync updates — used to skip echoing remote changes back. */
+const SYNC_ORIGIN = Symbol('sync-provider');
 
 /** Base delay before reconnecting after a failed connection attempt. */
-const DELAY_MS_BEFORE_RECONNECT = 500;
+const BASE_DELAY_MS = 500;
 
-/** Base delay before retrying after a token refresh failure. */
-const DELAY_MS_BEFORE_RETRY_TOKEN_REFRESH = 3_000;
+/** Maximum delay between reconnection attempts. */
+const MAX_DELAY_MS = 30_000;
 
-/** Exponential backoff base factor. */
-const BACKOFF_BASE = 1.1;
-
-/** Maximum backoff multiplier to prevent excessively long waits. */
-const MAX_BACKOFF_COEFFICIENT = 10;
-
-/** Time without receiving any message before sending a heartbeat probe (MESSAGE_SYNC_STATUS). */
-const HEARTBEAT_IDLE_MS = 2_000;
+/**
+ * Time without receiving any message before sending a heartbeat probe.
+ *
+ * Set to 30s because Cloudflare's `setWebSocketAutoResponse` handles TCP-level
+ * ping/pong liveness without waking the Durable Object. This probe only fires
+ * when there are unacked local changes — it's for ack tracking, not liveness.
+ * During genuine idle (no local changes), no probe is sent and the DO stays
+ * hibernated.
+ */
+const HEARTBEAT_IDLE_MS = 30_000;
 
 /** Time after sending a heartbeat to wait for any response before closing the connection. */
-const HEARTBEAT_TIMEOUT_MS = 3_000;
+const HEARTBEAT_TIMEOUT_MS = 5_000;
 
 // ============================================================================
 // Factory Function
@@ -56,6 +93,8 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
 
 /**
  * Creates a sync provider that connects a Y.Doc to a WebSocket sync server.
+ *
+ * Uses V2 encoding for all sync payloads (~40% smaller than V1).
  *
  * Uses a supervisor loop architecture where one loop owns all status transitions
  * and reconnection logic. Event handlers are reporters only — they resolve
@@ -65,7 +104,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'ws://localhost:3913/rooms/blog',
+ *   baseUrl: 'http://localhost:3913/rooms/blog',
  * });
  * ```
  *
@@ -73,7 +112,7 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   url: 'wss://sync.epicenter.so/rooms/blog',
+ *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
@@ -83,12 +122,11 @@ const HEARTBEAT_TIMEOUT_MS = 3_000;
  */
 export function createSyncProvider({
 	doc,
-	url,
+	baseUrl,
 	getToken,
 	connect: shouldConnect = true,
-	WebSocketConstructor: WS = WebSocket as unknown as WebSocketConstructor,
+	WebSocketConstructor: WS = WebSocket,
 	awareness = new Awareness(doc),
-	snapshotUrl,
 }: SyncProviderConfig): SyncProvider {
 	// ========================================================================
 	// Closure State
@@ -115,14 +153,11 @@ export function createSyncProvider({
 	/** Last version the server acknowledged via MESSAGE_SYNC_STATUS echo. */
 	let ackedVersion = -1;
 
-	/** Whether the server has ever echoed a MESSAGE_SYNC_STATUS on this connection. */
-	let serverSupports102 = false;
-
 	/** Current retry count for exponential backoff. */
 	let retries = 0;
 
 	/** Current WebSocket instance, or null. */
-	let websocket: WebSocket | null = null;
+	let websocket: WebSocketLike | null = null;
 
 	/** Heartbeat idle timer handle. */
 	let heartbeatHandle: ReturnType<typeof setTimeout> | null = null;
@@ -132,9 +167,6 @@ export function createSyncProvider({
 
 	/** Current backoff sleeper — can be woken by browser online events. */
 	let reconnectSleeper: Sleeper | null = null;
-
-	/** Cached token for authenticated mode. Cleared to force refresh. */
-	let cachedToken: string | null = null;
 
 	// ========================================================================
 	// Event Listeners
@@ -226,17 +258,20 @@ export function createSyncProvider({
 
 	/**
 	 * Reset the heartbeat idle timer. After {@link HEARTBEAT_IDLE_MS} of
-	 * silence (no messages sent or received), sends a MESSAGE_SYNC_STATUS
-	 * probe to check if the connection is still alive.
+	 * silence, sends a MESSAGE_SYNC_STATUS probe — but only when there are
+	 * unacked local changes. This avoids waking the Durable Object from
+	 * hibernation during genuine idle periods.
 	 *
-	 * Called on every incoming message and after the WebSocket opens, so
-	 * the timer only fires during genuine idle periods.
+	 * Liveness is handled by Cloudflare's `setWebSocketAutoResponse` ping/pong
+	 * which never wakes the DO.
 	 */
 	function resetHeartbeat() {
 		clearHeartbeat();
 		heartbeatHandle = setTimeout(() => {
-			sendSyncStatus();
 			heartbeatHandle = null;
+			if (ackedVersion !== localVersion) {
+				sendSyncStatus();
+			}
 		}, HEARTBEAT_IDLE_MS);
 	}
 
@@ -244,18 +279,13 @@ export function createSyncProvider({
 	 * Arm a timeout that closes the socket if no response arrives within
 	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
 	 *
-	 * Only arms when the server has previously responded to a MESSAGE_SYNC_STATUS
-	 * (i.e., `serverSupports102` is true). This prevents false-positive disconnects
-	 * from standard y-websocket servers that don't implement the 102 extension.
+	 * Only armed when a SYNC_STATUS probe is actually sent (i.e., when there
+	 * are unacked local changes). The Cloudflare backend always echoes
+	 * SYNC_STATUS, so a missing response means the connection is dead.
 	 */
 	function armConnectionTimeout() {
 		if (connectionTimeoutHandle) return;
-		// Only arm timeout if server supports 102 — otherwise we'd
-		// false-positive disconnect from standard y-websocket servers.
-		if (!serverSupports102) return;
 		connectionTimeoutHandle = setTimeout(() => {
-			// No response received — close the socket.
-			// The supervisor loop handles reconnection via the close promise.
 			websocket?.close();
 			connectionTimeoutHandle = null;
 		}, HEARTBEAT_TIMEOUT_MS);
@@ -272,14 +302,10 @@ export function createSyncProvider({
 	 * Wire format: `[102][varint-length payload][varint localVersion]`
 	 */
 	function sendSyncStatus() {
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_SYNC_STATUS);
-
-		const versionEncoder = encoding.createEncoder();
-		encoding.writeVarUint(versionEncoder, localVersion);
-		encoding.writeVarUint8Array(encoder, encoding.toUint8Array(versionEncoder));
-
-		send(encoding.toUint8Array(encoder));
+		const payload = encoding.encode((encoder) => {
+			encoding.writeVarUint(encoder, localVersion);
+		});
+		send(encodeSyncStatus({ payload }));
 		armConnectionTimeout();
 	}
 
@@ -295,27 +321,23 @@ export function createSyncProvider({
 	}
 
 	// ========================================================================
-	// Y.Doc Update Handler
+	// Y.Doc Update Handler (V2)
 	// ========================================================================
 
 	/**
-	 * Y.Doc `'update'` handler — broadcasts local mutations to the server.
+	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
 	 *
-	 * Uses itself as the `origin` sentinel: when the sync protocol applies
-	 * a remote update it passes `handleDocUpdate` as origin, so this handler
+	 * Uses {@link SYNC_ORIGIN} as the origin sentinel: when the sync protocol
+	 * applies a remote update it passes `SYNC_ORIGIN` as origin, so this handler
 	 * skips those to avoid echoing remote changes back to the server.
 	 *
 	 * After sending the update, bumps the local version and sends a
 	 * MESSAGE_SYNC_STATUS probe so the server can ack receipt.
 	 */
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
-		// Ignore updates that came from us (applied via the WebSocket)
-		if (origin === handleDocUpdate) return;
+		if (origin === SYNC_ORIGIN) return;
 
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_SYNC);
-		syncProtocol.writeUpdate(encoder, update);
-		send(encoding.toUint8Array(encoder));
+		send(encodeSyncUpdate({ update }));
 
 		incrementLocalVersion();
 		sendSyncStatus();
@@ -339,13 +361,11 @@ export function createSyncProvider({
 		removed: number[];
 	}) {
 		const changedClients = added.concat(updated).concat(removed);
-		const encoder = encoding.createEncoder();
-		encoding.writeVarUint(encoder, MESSAGE_AWARENESS);
-		encoding.writeVarUint8Array(
-			encoder,
-			encodeAwarenessUpdate(awareness, changedClients),
+		send(
+			encodeAwareness({
+				update: encodeAwarenessUpdate(awareness, changedClients),
+			}),
 		);
-		send(encoding.toUint8Array(encoder));
 	}
 
 	// ========================================================================
@@ -365,46 +385,7 @@ export function createSyncProvider({
 	 * the connection is truly dead, the timeout will close the socket.
 	 */
 	function handleOffline() {
-		// Immediately probe when browser reports offline.
-		// This accelerates discovering we're offline, but doesn't blindly
-		// trust the browser (it can be wrong, e.g. localhost connections).
 		sendSyncStatus();
-	}
-
-	// ========================================================================
-	// HTTP Snapshot Prefetch
-	// ========================================================================
-
-	/**
-	 * Fetch the full document snapshot via HTTP GET and apply it locally.
-	 *
-	 * Runs before the WebSocket connects so the subsequent syncStep2 is tiny
-	 * (only changes since the GET). On failure, falls through to WS-only sync.
-	 */
-	async function fetchSnapshot(token: string | undefined): Promise<void> {
-		if (!snapshotUrl) return;
-
-		try {
-			const headers: Record<string, string> = {};
-			if (token) {
-				headers['Authorization'] = `Bearer ${token}`;
-			}
-
-			const response = await fetch(snapshotUrl, { headers });
-
-			if (response.status === 404) return; // New/empty doc
-			if (!response.ok) {
-				console.warn(
-					`[SyncProvider] Snapshot prefetch failed: ${response.status}`,
-				);
-				return;
-			}
-
-			const data = new Uint8Array(await response.arrayBuffer());
-			Y.applyUpdateV2(doc, data, handleDocUpdate);
-		} catch (e) {
-			console.warn('[SyncProvider] Snapshot prefetch error', e);
-		}
 	}
 
 	// ========================================================================
@@ -419,25 +400,23 @@ export function createSyncProvider({
 	 *
 	 * Event handlers (onclose, onerror, heartbeat timeout) ONLY resolve
 	 * promises. They never call connect() or set status.
+	 *
+	 * Single `while` loop — no inner retry loop, no token caching.
+	 * Calls `getToken()` fresh on each iteration.
 	 */
 	async function runLoop(myRunId: number) {
 		while (desired === 'online' && runId === myRunId) {
 			setStatus('connecting');
 
-			// --- Token acquisition ---
+			// --- Token acquisition (fresh each iteration) ---
 			let token: string | undefined;
 			if (getToken) {
 				try {
-					if (!cachedToken) {
-						cachedToken = await getToken();
-					}
-					token = cachedToken;
+					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
 					setStatus('error');
-					const timeout =
-						DELAY_MS_BEFORE_RETRY_TOKEN_REFRESH *
-						Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
+					const timeout = backoffDelay(retries);
 					retries += 1;
 					reconnectSleeper = createSleeper(timeout);
 					await reconnectSleeper.promise;
@@ -448,45 +427,25 @@ export function createSyncProvider({
 
 			if (runId !== myRunId) break;
 
-			// --- HTTP snapshot prefetch ---
-			// Fetch the full doc via GET before opening the WebSocket. This
-			// pre-populates the local Y.Doc so the WS syncStep2 is tiny.
-			if (snapshotUrl) {
-				await fetchSnapshot(token);
-				if (runId !== myRunId) break;
+			// --- Single connection attempt ---
+			const result = await attemptConnection(token, myRunId);
+
+			if (runId !== myRunId) break;
+
+			if (result === 'connected') {
+				retries = 0;
 			}
 
-			// --- Connection attempts (with token refresh after N retries) ---
-			for (let i = 0; i < RETRIES_BEFORE_TOKEN_REFRESH; i++) {
-				if (runId !== myRunId || desired !== 'online') break;
+			if (result === 'cancelled') break;
 
-				const result = await attemptConnection(token, myRunId);
-
-				if (runId !== myRunId) break;
-
-				if (result === 'connected') {
-					// Successfully connected + ran until socket closed
-					retries = 0;
-				}
-
-				if (result === 'cancelled') break;
-
-				// Connection failed or closed — backoff and retry
-				if (desired === 'online' && runId === myRunId) {
-					setStatus('error');
-					const timeout =
-						DELAY_MS_BEFORE_RECONNECT *
-						Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
-					retries += 1;
-					reconnectSleeper = createSleeper(timeout);
-					await reconnectSleeper.promise;
-					reconnectSleeper = null;
-				}
-			}
-
-			// Force token refresh for next round (authenticated mode)
-			if (getToken) {
-				cachedToken = null;
+			// Connection failed or closed — backoff and retry
+			if (desired === 'online' && runId === myRunId) {
+				setStatus('error');
+				const timeout = backoffDelay(retries);
+				retries += 1;
+				reconnectSleeper = createSleeper(timeout);
+				await reconnectSleeper.promise;
+				reconnectSleeper = null;
 			}
 		}
 
@@ -510,12 +469,11 @@ export function createSyncProvider({
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
 		setStatus('connecting');
-		serverSupports102 = false;
 
-		// Build URL with optional token query param
-		let wsUrl = url;
+		// Derive WS URL from baseUrl
+		let wsUrl = toWebSocketUrl(baseUrl);
 		if (token) {
-			const parsed = new URL(url);
+			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
 			wsUrl = parsed.toString();
 		}
@@ -535,24 +493,16 @@ export function createSyncProvider({
 		ws.onopen = () => {
 			setStatus('handshaking');
 
-			// Send sync step 1
-			const encoder = encoding.createEncoder();
-			encoding.writeVarUint(encoder, MESSAGE_SYNC);
-			syncProtocol.writeSyncStep1(encoder, doc);
-			send(encoding.toUint8Array(encoder));
-
-			// Send initial heartbeat probe
+			send(encodeSyncStep1({ doc }));
 			sendSyncStatus();
 
-			// Broadcast our awareness state
 			if (awareness.getLocalState() !== null) {
-				const awarenessEncoder = encoding.createEncoder();
-				encoding.writeVarUint(awarenessEncoder, MESSAGE_AWARENESS);
-				encoding.writeVarUint8Array(
-					awarenessEncoder,
-					encodeAwarenessUpdate(awareness, [doc.clientID]),
+				send(
+					encodeAwarenessStates({
+						awareness,
+						clients: [doc.clientID],
+					}),
 				);
-				send(encoding.toUint8Array(awarenessEncoder));
 			}
 
 			resetHeartbeat();
@@ -569,7 +519,7 @@ export function createSyncProvider({
 				Array.from(awareness.getStates().keys()).filter(
 					(client) => client !== doc.clientID,
 				),
-				handleDocUpdate,
+				SYNC_ORIGIN,
 			);
 
 			websocket = null;
@@ -591,52 +541,49 @@ export function createSyncProvider({
 			const messageType = decoding.readVarUint(decoder);
 
 			switch (messageType) {
-				case MESSAGE_SYNC: {
-					const responseEncoder = encoding.createEncoder();
-					encoding.writeVarUint(responseEncoder, MESSAGE_SYNC);
-					const syncMessageType = syncProtocol.readSyncMessage(
-						decoder,
-						responseEncoder,
+				case MESSAGE_TYPE.SYNC: {
+					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
+					const payload = decoding.readVarUint8Array(decoder);
+					const response = handleSyncPayload({
+						syncType,
+						payload,
 						doc,
-						handleDocUpdate,
-					);
-
-					if (syncMessageType === syncProtocol.messageYjsSyncStep2) {
+						origin: SYNC_ORIGIN,
+					});
+					if (response) {
+						send(response);
+					} else if (
+						!handshakeComplete &&
+						(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
+							syncType === SYNC_MESSAGE_TYPE.UPDATE)
+					) {
+						// Server's step2 (or an update during handshake) applied
 						handshakeComplete = true;
 						setStatus('connected');
 					}
-
-					if (encoding.length(responseEncoder) > 1) {
-						send(encoding.toUint8Array(responseEncoder));
-					}
 					break;
 				}
 
-				case MESSAGE_AWARENESS: {
+				case MESSAGE_TYPE.AWARENESS: {
 					applyAwarenessUpdate(
 						awareness,
 						decoding.readVarUint8Array(decoder),
-						handleDocUpdate,
+						SYNC_ORIGIN,
 					);
 					break;
 				}
 
-				case MESSAGE_QUERY_AWARENESS: {
-					const awarenessEncoder = encoding.createEncoder();
-					encoding.writeVarUint(awarenessEncoder, MESSAGE_QUERY_AWARENESS);
-					encoding.writeVarUint8Array(
-						awarenessEncoder,
-						encodeAwarenessUpdate(
+				case MESSAGE_TYPE.QUERY_AWARENESS: {
+					send(
+						encodeAwarenessStates({
 							awareness,
-							Array.from(awareness.getStates().keys()),
-						),
+							clients: Array.from(awareness.getStates().keys()),
+						}),
 					);
-					send(encoding.toUint8Array(awarenessEncoder));
 					break;
 				}
 
-				case MESSAGE_SYNC_STATUS: {
-					serverSupports102 = true;
+				case MESSAGE_TYPE.SYNC_STATUS: {
 					const payload = decoding.readVarUint8Array(decoder);
 					const versionDecoder = decoding.createDecoder(payload);
 					const version = decoding.readVarUint(versionDecoder);
@@ -667,7 +614,7 @@ export function createSyncProvider({
 	// Doc + Awareness Listeners (attach immediately)
 	// ========================================================================
 
-	doc.on('update', handleDocUpdate);
+	doc.on('updateV2', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
 	// ========================================================================
@@ -783,7 +730,7 @@ export function createSyncProvider({
 			// Synchronously set offline so callers see the status immediately
 			setStatus('offline');
 
-			doc.off('update', handleDocUpdate);
+			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 
 			removeAwarenessStates(awareness, [doc.clientID], 'window unload');

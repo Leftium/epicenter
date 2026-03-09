@@ -1,184 +1,167 @@
 import {
 	type ConnectionState,
-	createRoomManager,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-} from '@epicenter/sync-core';
-import { Elysia, t } from 'elysia';
-import type * as Y from 'yjs';
+} from '@epicenter/sync-server';
+import { Hono } from 'hono';
+import { websocket as bunWebsocketHandler, upgradeWebSocket } from 'hono/bun';
+import type { RoomManagerConfig } from './rooms';
+import { createRoomManager } from './rooms';
 
 /** Interval between server-initiated ping frames (ms). Detects dead clients. */
 const PING_INTERVAL_MS = 30_000;
 
-export type WsSyncPluginConfig = {
-	/**
-	 * Resolve a Y.Doc for a room. Called when a client connects.
-	 *
-	 * - If provided and returns Y.Doc, use that doc for the room
-	 * - If provided and returns undefined, close with 4004 (room not found)
-	 * - If omitted, create a fresh Y.Doc on demand (standalone mode)
-	 */
-	getDoc?: (roomId: string) => Y.Doc | undefined;
-
+export type WsSyncPluginConfig = RoomManagerConfig & {
 	/** Verify a token. Omit for open mode (no auth). */
 	verifyToken?: (token: string) => boolean | Promise<boolean>;
-
-	/** Called when a room is created (first connection). Only fires in standalone mode (no getDoc). */
-	onRoomCreated?: (roomId: string, doc: Y.Doc) => void;
-
-	/** Called when a room is evicted (60s after last connection leaves). */
-	onRoomEvicted?: (roomId: string, doc: Y.Doc) => void;
 };
 
 /** Per-connection state: sync-core state + adapter-specific fields. */
-type ElysiaConnectionState = {
+type SyncConnectionState = {
 	syncState: ConnectionState;
 	roomId: string;
-	sendPing: () => void;
 	pingInterval: ReturnType<typeof setInterval> | null;
 	pongReceived: boolean;
 };
 
 /**
- * Creates an Elysia plugin that provides Y.Doc synchronization over WebSocket.
+ * Creates a Hono sub-app and Bun websocket handler for Y.Doc sync over WebSocket.
  *
- * Thin wrapper around `@epicenter/sync-core` handlers. All protocol logic
- * is delegated to sync-core; this plugin handles Elysia-specific concerns:
- * - WeakMap keyed on `ws.raw` (stable Bun ServerWebSocket reference)
- * - Ping/pong keepalive
- * - `queueMicrotask` for deferred initial send (Elysia WS readiness)
+ * Returns `{ syncApp, websocket }`:
+ * - `syncApp` is mounted at `/rooms` by the sidecar
+ * - `websocket` must be passed to `Bun.serve({ websocket })` for WS support
  */
 export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
-	const roomManager = createRoomManager({
-		getDoc: config?.getDoc,
-		onRoomCreated: config?.onRoomCreated,
-		onRoomEvicted: config?.onRoomEvicted,
-	});
-
-	const connectionState = new WeakMap<object, ElysiaConnectionState>();
-
+	const roomManager = createRoomManager(config);
+	const connectionState = new WeakMap<object, SyncConnectionState>();
 	const verifyToken = config?.verifyToken;
 
-	return new Elysia()
-		.get('/', () => ({ rooms: roomManager.roomInfo() }))
-		.ws('/:room', {
-			query: t.Object({
-				token: t.Optional(t.String()),
-			}),
+	const app = new Hono();
 
-			async beforeHandle({ query, status }) {
-				if (!verifyToken) return;
-				if (!query.token || !(await verifyToken(query.token)))
-					return status(401);
-			},
+	app.get('/', (c) => c.json({ rooms: roomManager.roomInfo() }));
 
-			async open(ws) {
-				const roomId = ws.data.params.room;
+	app.get(
+		'/:room',
+		upgradeWebSocket((c) => {
+			const roomId = c.req.param('room')!;
+			const token = c.req.query('token');
 
-				console.log(`[Sync] Client connected to room: ${roomId}`);
-
-				const rawWs = ws.raw;
-
-				// Join the room to get doc + awareness
-				const room = roomManager.join(roomId, rawWs, (data) =>
-					ws.sendBinary(data),
-				);
-				if (!room) {
-					console.log(`[Sync] Room not found: ${roomId}`);
-					ws.close(4004, `Room not found: ${roomId}`);
-					return;
-				}
-
-				const { initialMessages, state: syncState } = handleWsOpen(
-					room.doc,
-					room.awareness,
-					rawWs,
-					(data: Uint8Array) => ws.sendBinary(data),
-				);
-
-				// Defer initial sync to next tick to ensure WebSocket is fully ready
-				queueMicrotask(() => {
-					for (const msg of initialMessages) {
-						ws.sendBinary(msg);
+			return {
+				async onOpen(_evt, ws) {
+					// Auth check
+					if (verifyToken) {
+						if (!token || !(await verifyToken(token))) {
+							ws.close(4001, 'Unauthorized');
+							return;
+						}
 					}
-				});
 
-				// Capture typed ping from ws.raw (stable reference)
-				const sendPing = () => ws.raw.ping();
+					const rawWs = ws.raw!;
+					const send = (data: Uint8Array) =>
+						ws.send(data as Uint8Array<ArrayBuffer>);
 
-				// Server-side ping/pong keepalive to detect dead clients
-				const pingInterval = setInterval(() => {
-					const state = connectionState.get(rawWs);
-					if (!state) return;
+					console.log(`[Sync] Client connected to room: ${roomId}`);
 
-					if (!state.pongReceived) {
-						console.log(
-							`[Sync] No pong received, closing dead connection in room: ${roomId}`,
-						);
-						ws.close();
+					const room = roomManager.join(roomId, rawWs, send);
+					if (!room) {
+						console.log(`[Sync] Room not found: ${roomId}`);
+						ws.close(4004, `Room not found: ${roomId}`);
 						return;
 					}
 
-					state.pongReceived = false;
-					state.sendPing();
-				}, PING_INTERVAL_MS);
+					const { initialMessages, state: syncState } = handleWsOpen(
+						room.doc,
+						room.awareness,
+						rawWs,
+						send,
+					);
 
-				connectionState.set(rawWs, {
-					syncState,
-					roomId,
-					sendPing,
-					pingInterval,
-					pongReceived: true,
-				});
-			},
+					// Defer initial sync to next tick to ensure WebSocket is fully ready
+					queueMicrotask(() => {
+						for (const msg of initialMessages) {
+							send(msg);
+						}
+					});
 
-			pong(ws) {
-				const state = connectionState.get(ws.raw);
-				if (state) {
-					state.pongReceived = true;
-				}
-			},
+					// Server-side ping/pong keepalive to detect dead clients
+					const pingInterval = setInterval(() => {
+						const state = connectionState.get(rawWs);
+						if (!state) return;
 
-			message(ws, message) {
-				const state = connectionState.get(ws.raw);
-				if (!state) return;
+						if (!state.pongReceived) {
+							console.log(
+								`[Sync] No pong received, closing dead connection in room: ${roomId}`,
+							);
+							ws.close();
+							return;
+						}
 
-				// Binary protocol — narrow the message to Uint8Array
-				if (
-					!(message instanceof ArrayBuffer) &&
-					!(message instanceof Uint8Array)
-				)
-					return;
-				const data =
-					message instanceof ArrayBuffer ? new Uint8Array(message) : message;
+						state.pongReceived = false;
+						// biome-ignore lint/suspicious/noExplicitAny: access raw Bun ServerWebSocket ping
+						(rawWs as any).ping();
+					}, PING_INTERVAL_MS);
 
-				const result = handleWsMessage(data, state.syncState);
+					connectionState.set(rawWs, {
+						syncState,
+						roomId,
+						pingInterval,
+						pongReceived: true,
+					});
+				},
 
-				if (result.response) ws.sendBinary(result.response);
-				if (result.broadcast)
-					roomManager.broadcast(state.roomId, result.broadcast, ws.raw);
-			},
+				onMessage(evt, ws) {
+					const rawWs = ws.raw!;
+					const state = connectionState.get(rawWs);
+					if (!state) return;
 
-			close(ws) {
-				const state = connectionState.get(ws.raw);
-				if (!state) return;
+					const message = evt.data;
+					if (
+						!(message instanceof ArrayBuffer) &&
+						!(message instanceof Uint8Array)
+					)
+						return;
+					const data =
+						message instanceof ArrayBuffer ? new Uint8Array(message) : message;
 
-				console.log(`[Sync] Client disconnected from room: ${state.roomId}`);
+					const result = handleWsMessage(data, state.syncState);
 
-				// Clean up ping/pong keepalive
-				if (state.pingInterval) {
-					clearInterval(state.pingInterval);
-				}
+					if (result.response)
+						ws.send(result.response as Uint8Array<ArrayBuffer>);
+					if (result.broadcast)
+						roomManager.broadcast(state.roomId, result.broadcast, rawWs);
+				},
 
-				// Delegate protocol cleanup to sync-core
-				handleWsClose(state.syncState);
+				onClose(_evt, ws) {
+					const rawWs = ws.raw!;
+					const state = connectionState.get(rawWs);
+					if (!state) return;
 
-				// Leave the room (triggers eviction timer if last connection)
-				roomManager.leave(state.roomId, ws.raw);
+					console.log(`[Sync] Client disconnected from room: ${state.roomId}`);
 
-				// Clean up Elysia-specific state
-				connectionState.delete(ws.raw);
-			},
-		});
+					if (state.pingInterval) {
+						clearInterval(state.pingInterval);
+					}
+
+					handleWsClose(state.syncState);
+					roomManager.leave(state.roomId, rawWs);
+					connectionState.delete(rawWs);
+				},
+			};
+		}),
+	);
+
+	// Extend Hono's websocket handler with pong support for keepalive
+	const extendedWebsocket = {
+		...bunWebsocketHandler,
+		// biome-ignore lint/suspicious/noExplicitAny: Bun websocket handler type
+		pong(ws: any) {
+			const state = connectionState.get(ws.raw ?? ws);
+			if (state) {
+				state.pongReceived = true;
+			}
+		},
+	};
+
+	return { syncApp: app, websocket: extendedWebsocket };
 }

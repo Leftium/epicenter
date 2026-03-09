@@ -1,21 +1,18 @@
 import { DurableObject } from 'cloudflare:workers';
+import { decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
+import * as Y from 'yjs';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	Awareness,
 	type ConnectionState,
-	decodeSyncRequest,
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	stateVectorsEqual,
-} from '@epicenter/sync-core';
-import * as Y from 'yjs';
+} from './sync-handlers';
 
 type WsAttachment = {
 	controlledClientIds: number[];
 };
-
-/** Max incoming WebSocket message size (5 MB). */
-const MAX_MESSAGE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Max compacted snapshot size (2 MB). Cloudflare DO SQLite enforces a hard
@@ -162,9 +159,12 @@ export class WorkspaceRoom extends DurableObject {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const send = (data: Uint8Array) => swallow(() => ws.send(data));
-				const { state } = handleWsOpen(this.doc, this.awareness, ws, send);
-				state.controlledClientIds = new Set(attachment.controlledClientIds);
+				const { state } = handleWsOpen(this.doc, this.awareness, ws);
+				// Populate the existing set (not replace) so the awareness event
+				// handler closure still references the same Set instance.
+				for (const id of attachment.controlledClientIds) {
+					state.controlledClientIds.add(id);
+				}
 				this.connectionStates.set(ws, state);
 			}
 		});
@@ -241,12 +241,10 @@ export class WorkspaceRoom extends DurableObject {
 		// Accept with Hibernation API — DO can sleep while connection stays alive
 		this.ctx.acceptWebSocket(server);
 
-		const send = (data: Uint8Array) => swallow(() => server.send(data));
 		const { initialMessages, state } = handleWsOpen(
 			this.doc,
 			this.awareness,
 			server,
-			send,
 		);
 
 		this.connectionStates.set(server, state);
@@ -273,7 +271,7 @@ export class WorkspaceRoom extends DurableObject {
 
 		const byteLength =
 			message instanceof ArrayBuffer ? message.byteLength : message.length;
-		if (byteLength > MAX_MESSAGE_BYTES) {
+		if (byteLength > MAX_PAYLOAD_BYTES) {
 			ws.close(1009, 'Message too large');
 			return;
 		}
@@ -283,7 +281,11 @@ export class WorkspaceRoom extends DurableObject {
 				? new Uint8Array(message)
 				: new TextEncoder().encode(message);
 
-		const result = handleWsMessage(data, state);
+		const { data: result, error } = handleWsMessage(data, state);
+		if (error) {
+			console.error(error.message);
+			return;
+		}
 
 		if (result.response) {
 			ws.send(result.response);
@@ -292,16 +294,18 @@ export class WorkspaceRoom extends DurableObject {
 		if (result.broadcast) {
 			const msg = result.broadcast;
 			for (const [otherWs] of this.connectionStates) {
-				if (otherWs !== ws) {
-					swallow(() => otherWs.send(msg));
+				if (otherWs !== ws && otherWs.readyState === WebSocket.OPEN) {
+					otherWs.send(msg);
 				}
 			}
 		}
 
-		// Persist updated controlledClientIds for hibernation survival
-		ws.serializeAttachment({
-			controlledClientIds: [...state.controlledClientIds],
-		} satisfies WsAttachment);
+		// Only persist when awareness client IDs actually changed
+		if (result.awarenessChanged) {
+			ws.serializeAttachment({
+				controlledClientIds: [...state.controlledClientIds],
+			} satisfies WsAttachment);
+		}
 	}
 
 	// --- Hibernation API callbacks ---

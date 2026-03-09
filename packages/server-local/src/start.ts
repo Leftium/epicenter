@@ -1,16 +1,11 @@
 /**
  * Sidecar entry point.
  *
- * Starts the Epicenter sidecar — the per-device data and execution plane that provides:
- * - Sync relay (local) — fast sub-ms WebSocket sync between webview and Y.Doc
- * - Workspace API — RESTful CRUD for workspace tables, extensions, and actions
- *   (pass workspace clients to `createSidecar` to activate these routes)
- *
- * The sidecar does NOT handle AI — all AI goes through the hub.
+ * Starts the Epicenter sidecar — the per-device data and execution plane.
  *
  * Usage:
- *   bun packages/server-sidecar/src/start.ts
- *   PORT=4000 bun packages/server-sidecar/src/start.ts
+ *   bun packages/server-local/src/start.ts
+ *   PORT=4000 bun packages/server-local/src/start.ts
  */
 
 import { createSidecar } from './sidecar';

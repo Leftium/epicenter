@@ -27,7 +27,7 @@ describe('createSidecar', () => {
 		const server = createSidecar({ clients: [client] });
 
 		try {
-			const response = await server.app.handle(new Request('http://test/'));
+			const response = await server.app.fetch(new Request('http://test/'));
 			const body = await response.json();
 
 			expect(response.status).toBe(200);
@@ -58,8 +58,8 @@ describe('createSidecar', () => {
 		const server = createSidecar({ clients: [client] });
 
 		try {
-			const response = await server.app.handle(
-				new Request('http://test/workspaces/tables-workspace/tables/posts/'),
+			const response = await server.app.fetch(
+				new Request('http://test/workspaces/tables-workspace/tables/posts'),
 			);
 			const body = await response.json();
 
@@ -94,7 +94,7 @@ describe('createSidecar', () => {
 		const server = createSidecar({ clients: [blogClient, docsClient] });
 
 		try {
-			const discoveryResponse = await server.app.handle(
+			const discoveryResponse = await server.app.fetch(
 				new Request('http://test/'),
 			);
 			const discoveryBody = await discoveryResponse.json();
@@ -102,11 +102,11 @@ describe('createSidecar', () => {
 			expect(discoveryResponse.status).toBe(200);
 			expect(discoveryBody.workspaces).toEqual(['blog', 'docs']);
 
-			const blogResponse = await server.app.handle(
-				new Request('http://test/workspaces/blog/tables/posts/'),
+			const blogResponse = await server.app.fetch(
+				new Request('http://test/workspaces/blog/tables/posts'),
 			);
-			const docsResponse = await server.app.handle(
-				new Request('http://test/workspaces/docs/tables/pages/'),
+			const docsResponse = await server.app.fetch(
+				new Request('http://test/workspaces/docs/tables/pages'),
 			);
 
 			expect(blogResponse.status).toBe(200);
@@ -138,7 +138,7 @@ describe('createSidecar', () => {
 		const server = createSidecar({ clients: [clientWithActions] });
 
 		try {
-			const response = await server.app.handle(new Request('http://test/'));
+			const response = await server.app.fetch(new Request('http://test/'));
 			const body = await response.json();
 
 			expect(response.status).toBe(200);
@@ -160,22 +160,20 @@ describe('createSidecar', () => {
 		);
 
 		const server = createSidecar({ clients: [client], port: 0 });
-		const runningServer = server.start();
+		const { server: bunServer, port } = server.start();
 		let didDestroyWorkspace = false;
 		client.ydoc.on('destroy', () => {
 			didDestroyWorkspace = true;
 		});
 
-		expect(runningServer).toBeDefined();
-		if (!runningServer) {
-			throw new Error('Expected start() to return a running server instance');
-		}
-		expect(runningServer.port).toBeGreaterThan(0);
+		expect(bunServer).toBeDefined();
+		expect(port).toBeGreaterThan(0);
 
-		const url = `http://localhost:${runningServer.port}/`;
+		const url = `http://localhost:${port}/`;
 		const response = await fetch(url);
 		expect(response.status).toBe(200);
 
+		bunServer.stop();
 		await server.stop();
 		expect(didDestroyWorkspace).toBe(true);
 	});

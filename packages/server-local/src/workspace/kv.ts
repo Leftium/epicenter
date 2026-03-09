@@ -1,12 +1,13 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import { Elysia } from 'elysia';
+import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { WorkspaceApiError } from './errors';
 
 /**
- * Create an Elysia plugin that exposes GET, PUT, and DELETE routes for all workspace KV entries.
+ * Create a Hono router that exposes GET, PUT, and DELETE routes for all workspace KV entries.
  * Registers one route per KV key found across all workspaces.
  * @param workspaces - Map of workspace ID to workspace client.
- * @returns An Elysia router scoped to `/:workspaceId/kv`.
+ * @returns A Hono router with routes under `/:workspaceId/kv`.
  */
 export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 	const kvKeys = new Set<string>();
@@ -16,90 +17,75 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 		}
 	}
 
-	const router = new Elysia({ prefix: '/:workspaceId/kv' });
+	const router = new Hono();
 
 	for (const key of kvKeys) {
 		router.get(
-			`/${key}`,
-			({ params, status }) => {
-				const workspace = workspaces[params.workspaceId];
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Get the value of the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			(c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
 				if (!workspace)
-					return status(
-						'Not Found',
-						WorkspaceApiError.WorkspaceNotFound().error,
-					);
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
 				try {
 					const result = workspace.kv.get(key);
-					if (result.status === 'not_found') return status('Not Found', result);
-					if (result.status === 'invalid')
-						return status('Unprocessable Content', result);
-					return result;
+					if (result.status === 'not_found') return c.json(result, 404);
+					if (result.status === 'invalid') return c.json(result, 422);
+					return c.json(result);
 				} catch (error) {
-					return status(
-						'Bad Request',
+					return c.json(
 						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
 					);
 				}
-			},
-			{
-				detail: {
-					description: `Get the value of the ${key} KV entry`,
-					tags: [key, 'kv'],
-				},
 			},
 		);
 
 		router.put(
-			`/${key}`,
-			({ params, body, status }) => {
-				const workspace = workspaces[params.workspaceId];
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Set the value of the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			async (c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
 				if (!workspace)
-					return status(
-						'Not Found',
-						WorkspaceApiError.WorkspaceNotFound().error,
-					);
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
 				try {
+					const body = await c.req.json();
 					workspace.kv.set(key, body as never);
-					return { status: 'set' as const, key };
+					return c.json({ status: 'set' as const, key });
 				} catch (error) {
-					return status(
-						'Bad Request',
+					return c.json(
 						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
 					);
 				}
-			},
-			{
-				detail: {
-					description: `Set the value of the ${key} KV entry`,
-					tags: [key, 'kv'],
-				},
 			},
 		);
 
 		router.delete(
-			`/${key}`,
-			({ params, status }) => {
-				const workspace = workspaces[params.workspaceId];
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Delete the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			(c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
 				if (!workspace)
-					return status(
-						'Not Found',
-						WorkspaceApiError.WorkspaceNotFound().error,
-					);
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
 				try {
 					workspace.kv.delete(key);
-					return { status: 'deleted' as const, key };
+					return c.json({ status: 'deleted' as const, key });
 				} catch (error) {
-					return status(
-						'Bad Request',
+					return c.json(
 						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
 					);
 				}
-			},
-			{
-				detail: {
-					description: `Delete the ${key} KV entry`,
-					tags: [key, 'kv'],
-				},
 			},
 		);
 	}

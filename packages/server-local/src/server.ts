@@ -1,22 +1,33 @@
+import type { Hono } from 'hono';
+
 export const DEFAULT_PORT = 3913;
 
 /**
- * Try to listen on the preferred port. If it's taken, let the OS pick one (port 0).
- *
- * Returns the actual port the server is listening on.
+ * Start a Hono app with Bun.serve, trying the preferred port first.
+ * Falls back to port 0 (OS-assigned) if the preferred port is taken.
  */
-export function listenWithFallback(
-	app: { listen: (port: number) => void; server: { port?: number } | null },
+export function serve(
+	app: Hono,
 	preferredPort: number,
-): number {
-	try {
-		app.listen(preferredPort);
-	} catch {
-		app.listen(0);
+	websocket?: Record<string, unknown>,
+): { server: ReturnType<typeof Bun.serve>; port: number } {
+	function start(port: number) {
+		// biome-ignore lint/suspicious/noExplicitAny: Bun.serve overload types are complex
+		const options: any = { port, fetch: app.fetch };
+		if (websocket) options.websocket = websocket;
+		return Bun.serve(options);
 	}
-	const port = app.server?.port;
+
+	let server: ReturnType<typeof Bun.serve>;
+	try {
+		server = start(preferredPort);
+	} catch {
+		server = start(0);
+	}
+
+	const port = server.port;
 	if (port === undefined) {
 		throw new Error('Server port is not available after listen');
 	}
-	return port;
+	return { server, port };
 }

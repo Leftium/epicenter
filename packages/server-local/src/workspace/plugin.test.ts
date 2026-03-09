@@ -6,7 +6,6 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
-import { Elysia } from 'elysia';
 import { createWorkspacePlugin } from './plugin';
 
 describe('createWorkspacePlugin', () => {
@@ -29,9 +28,9 @@ describe('createWorkspacePlugin', () => {
 			_v: 1,
 		});
 
-		const app = new Elysia().use(createWorkspacePlugin([client]));
-		const response = await app.handle(
-			new Request('http://test/blog/tables/posts/'),
+		const app = createWorkspacePlugin([client]);
+		const response = await app.fetch(
+			new Request('http://test/blog/tables/posts'),
 		);
 		const body = await response.json();
 
@@ -63,17 +62,15 @@ describe('createWorkspacePlugin', () => {
 		blogClient.tables.posts.set({ id: 'post-1', title: 'Blog Post', _v: 1 });
 		docsClient.tables.pages.set({ id: 'page-1', title: 'Docs Page', _v: 1 });
 
-		const app = new Elysia().use(
-			createWorkspacePlugin([blogClient, docsClient]),
-		);
+		const app = createWorkspacePlugin([blogClient, docsClient]);
 
-		const blogResponse = await app.handle(
-			new Request('http://test/blog/tables/posts/'),
+		const blogResponse = await app.fetch(
+			new Request('http://test/blog/tables/posts'),
 		);
 		const blogBody = await blogResponse.json();
 
-		const docsResponse = await app.handle(
-			new Request('http://test/docs/tables/pages/'),
+		const docsResponse = await app.fetch(
+			new Request('http://test/docs/tables/pages'),
 		);
 		const docsBody = await docsResponse.json();
 
@@ -97,8 +94,8 @@ describe('createWorkspacePlugin', () => {
 			}),
 		}));
 
-		const app = new Elysia().use(createWorkspacePlugin([client]));
-		const response = await app.handle(
+		const app = createWorkspacePlugin([client]);
+		const response = await app.fetch(
 			new Request('http://test/blog/actions/ping'),
 		);
 		const body = await response.json();
@@ -119,14 +116,14 @@ describe('createWorkspacePlugin', () => {
 
 		client.tables.notes.set({ id: 'note-1', title: 'Remember this', _v: 1 });
 
-		const app = new Elysia().use(createWorkspacePlugin([client]));
+		const app = createWorkspacePlugin([client]);
 
-		const tablesResponse = await app.handle(
-			new Request('http://test/notes/tables/notes/'),
+		const tablesResponse = await app.fetch(
+			new Request('http://test/notes/tables/notes'),
 		);
 		const tablesBody = await tablesResponse.json();
 
-		const actionsResponse = await app.handle(
+		const actionsResponse = await app.fetch(
 			new Request('http://test/notes/actions/ping'),
 		);
 		const actionsBody = await actionsResponse.text();

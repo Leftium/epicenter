@@ -1,6 +1,7 @@
 import type { Action, Actions, AnyWorkspaceClient } from '@epicenter/workspace';
 import { iterateActions } from '@epicenter/workspace';
-import { Elysia } from 'elysia';
+import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import Value from 'typebox/value';
 import { WorkspaceApiError } from './errors';
 
@@ -32,16 +33,16 @@ function resolveAction(
 }
 
 /**
- * Create an Elysia plugin for action endpoints.
+ * Create a Hono router for action endpoints.
  *
  * Registers per-action static routes at construction time by iterating over all
- * workspaces. Each route gets its own OpenAPI metadata (summary, tags).
+ * workspaces. Each route gets its own path.
  * Workspace resolution still happens at request time via :workspaceId param.
  */
 export function createActionsPlugin(
 	workspaces: Record<string, AnyWorkspaceClient>,
 ) {
-	const router = new Elysia({ prefix: '/:workspaceId/actions' });
+	const router = new Hono();
 
 	// Collect unique action shapes across all workspaces.
 	// Since workspaces may define the same action paths, we register
@@ -59,98 +60,94 @@ export function createActionsPlugin(
 	}
 
 	for (const [actionPath, types] of actionPaths) {
-		const routePath = `/${actionPath}`;
+		const routePath = `/:workspaceId/actions/${actionPath}`;
 
 		const segments = actionPath.split('/');
 		const namespaceTags = segments.length > 1 ? [segments[0] as string] : [];
 
 		if (types.has('query')) {
-			const detail = {
-				summary: actionPath.replace(/\//g, '.'),
-				tags: [...namespaceTags, 'query'],
-			};
-
 			router.get(
 				routePath,
-				async ({ params, query, status }) => {
-					const workspace = workspaces[params.workspaceId];
+				describeRoute({
+					summary: actionPath.replace(/\//g, '.'),
+					tags: [...namespaceTags, 'query'],
+				}),
+				async (c) => {
+					const workspaceId = c.req.param('workspaceId')!;
+					const workspace = workspaces[workspaceId];
 					if (!workspace?.actions)
-						return status(
-							'Not Found',
-							WorkspaceApiError.ActionsNotConfigured().error,
-						);
+						return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status(
-							'Not Found',
+						return c.json(
 							WorkspaceApiError.ActionNotFound({ actionPath }).error,
+							404,
 						);
 
 					if (action.type !== 'query')
-						return status(
-							'Bad Request',
+						return c.json(
 							WorkspaceApiError.ActionWrongMethod({
 								actionPath,
 								expected: 'POST',
 							}).error,
+							400,
 						);
 
 					if (action.input) {
+						const query = c.req.query();
 						if (!Value.Check(action.input, query))
-							return status('Unprocessable Content', {
-								errors: [...Value.Errors(action.input, query)],
-							});
-						return { data: await action(query) };
+							return c.json(
+								{ errors: [...Value.Errors(action.input, query)] },
+								422,
+							);
+						return c.json({ data: await action(query) });
 					}
-					return { data: await action() };
+					return c.json({ data: await action() });
 				},
-				{ detail },
 			);
 		}
 
 		if (types.has('mutation')) {
-			const detail = {
-				summary: actionPath.replace(/\//g, '.'),
-				tags: [...namespaceTags, 'mutation'],
-			};
-
 			router.post(
 				routePath,
-				async ({ params, body, status }) => {
-					const workspace = workspaces[params.workspaceId];
+				describeRoute({
+					summary: actionPath.replace(/\//g, '.'),
+					tags: [...namespaceTags, 'mutation'],
+				}),
+				async (c) => {
+					const workspaceId = c.req.param('workspaceId')!;
+					const workspace = workspaces[workspaceId];
 					if (!workspace?.actions)
-						return status(
-							'Not Found',
-							WorkspaceApiError.ActionsNotConfigured().error,
-						);
+						return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
 
 					const action = resolveAction(workspace.actions, actionPath);
 					if (!action)
-						return status(
-							'Not Found',
+						return c.json(
 							WorkspaceApiError.ActionNotFound({ actionPath }).error,
+							404,
 						);
 
 					if (action.type !== 'mutation')
-						return status(
-							'Bad Request',
+						return c.json(
 							WorkspaceApiError.ActionWrongMethod({
 								actionPath,
 								expected: 'GET',
 							}).error,
+							400,
 						);
 
 					if (action.input) {
+						const body = await c.req.json();
 						if (!Value.Check(action.input, body))
-							return status('Unprocessable Content', {
-								errors: [...Value.Errors(action.input, body)],
-							});
-						return { data: await action(body) };
+							return c.json(
+								{ errors: [...Value.Errors(action.input, body)] },
+								422,
+							);
+						return c.json({ data: await action(body) });
 					}
-					return { data: await action() };
+					return c.json({ data: await action() });
 				},
-				{ detail },
 			);
 		}
 	}

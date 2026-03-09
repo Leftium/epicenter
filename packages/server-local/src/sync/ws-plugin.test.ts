@@ -1,10 +1,10 @@
 /**
  * WS Sync Plugin Integration Tests
  *
- * Tests the full WebSocket sync flow using real Elysia servers
+ * Tests the full WebSocket sync flow using real Hono servers
  * and real sync providers over actual WebSocket connections.
  *
- * These tests verify the wiring between the Elysia plugin, room manager,
+ * These tests verify the wiring between the Hono app, room manager,
  * auth, and protocol layers — the exact integration path clients use.
  * Unit tests for individual building blocks live in their respective files.
  *
@@ -12,9 +12,9 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { SyncProvider, SyncStatus } from '@epicenter/sync';
-import { createSyncProvider } from '@epicenter/sync';
-import { Elysia } from 'elysia';
+import type { SyncProvider, SyncStatus } from '@epicenter/sync-client';
+import { createSyncProvider } from '@epicenter/sync-client';
+import { Hono } from 'hono';
 import * as Y from 'yjs';
 import { createWsSyncPlugin } from './ws-plugin';
 
@@ -38,18 +38,16 @@ function uniqueRoom(): string {
 function startTestServer(syncConfig?: {
 	verifyToken?: (token: string) => boolean | Promise<boolean>;
 }) {
-	const app = new Elysia()
-		.use(new Elysia({ prefix: '/rooms' }).use(createWsSyncPlugin(syncConfig)))
-		.get('/', () => ({ status: 'ok' }));
-	app.listen(0);
-	if (!app.server) {
-		throw new Error('Failed to start test server');
-	}
-	const port = app.server.port;
+	const { syncApp, websocket } = createWsSyncPlugin(syncConfig);
+	const app = new Hono();
+	app.route('/rooms', syncApp);
+	app.get('/', (c) => c.json({ status: 'ok' }));
+	const server = Bun.serve({ port: 0, fetch: app.fetch, websocket });
+	const port = server.port;
 	return {
 		server: {
 			async stop() {
-				app.stop();
+				server.stop();
 			},
 		},
 		port,
@@ -67,15 +65,14 @@ function startIntegratedTestServer({
 }: {
 	getDoc: (roomId: string) => Y.Doc | undefined;
 }) {
-	const syncPlugin = createWsSyncPlugin({ getDoc });
-	const app = new Elysia().use(syncPlugin).get('/', () => ({ status: 'ok' }));
-	app.listen(0);
-	if (!app.server) {
-		throw new Error('Failed to start integrated test server');
-	}
-	const port = app.server.port;
+	const { syncApp, websocket } = createWsSyncPlugin({ getDoc });
+	const app = new Hono();
+	app.route('/', syncApp);
+	app.get('/', (c) => c.json({ status: 'ok' }));
+	const server = Bun.serve({ port: 0, fetch: app.fetch, websocket });
+	const port = server.port;
 	return {
-		app,
+		server,
 		port,
 		wsUrl(room: string) {
 			return `ws://localhost:${port}/${room}`;
@@ -223,8 +220,14 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
+		const p2 = createSyncProvider({
+			doc: doc2,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -245,8 +248,14 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
+		const p2 = createSyncProvider({
+			doc: doc2,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -269,8 +278,14 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
+		const p2 = createSyncProvider({
+			doc: doc2,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -296,7 +311,10 @@ describe('ws sync plugin integration', () => {
 		const room = uniqueRoom();
 		const doc1 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -307,7 +325,10 @@ describe('ws sync plugin integration', () => {
 			await new Promise((r) => setTimeout(r, 50));
 
 			const doc2 = new Y.Doc();
-			const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
+			const p2 = createSyncProvider({
+				doc: doc2,
+				baseUrl: ctx.httpUrl('/rooms/' + room),
+			});
 
 			try {
 				await waitForStatus(p2, 'connected');
@@ -329,9 +350,18 @@ describe('ws sync plugin integration', () => {
 		const docA2 = new Y.Doc();
 		const docB = new Y.Doc();
 
-		const pA1 = createSyncProvider({ doc: docA1, url: ctx.wsUrl(roomA) });
-		const pA2 = createSyncProvider({ doc: docA2, url: ctx.wsUrl(roomA) });
-		const pB = createSyncProvider({ doc: docB, url: ctx.wsUrl(roomB) });
+		const pA1 = createSyncProvider({
+			doc: docA1,
+			baseUrl: ctx.httpUrl('/rooms/' + roomA),
+		});
+		const pA2 = createSyncProvider({
+			doc: docA2,
+			baseUrl: ctx.httpUrl('/rooms/' + roomA),
+		});
+		const pB = createSyncProvider({
+			doc: docB,
+			baseUrl: ctx.httpUrl('/rooms/' + roomB),
+		});
 
 		try {
 			await waitForStatus(pA1, 'connected');
@@ -358,7 +388,10 @@ describe('ws sync plugin integration', () => {
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
 
-		const provider = createSyncProvider({ doc, url: ctx.wsUrl(room) });
+		const provider = createSyncProvider({
+			doc,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(provider, 'connected');
@@ -387,7 +420,7 @@ describe('ws sync plugin integrated mode', () => {
 		const doc = new Y.Doc();
 		const provider = createSyncProvider({
 			doc,
-			url: ctx.wsUrl(room),
+			baseUrl: ctx.httpUrl('/rooms/' + room),
 		});
 
 		try {
@@ -395,7 +428,7 @@ describe('ws sync plugin integrated mode', () => {
 			expect(provider.status).toBe('error');
 		} finally {
 			provider.destroy();
-			ctx.app.stop();
+			ctx.server.stop();
 		}
 	});
 });
@@ -409,7 +442,7 @@ describe('ws sync plugin room list', () => {
 		const ctx = startTestServer();
 
 		try {
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({ rooms: [] });
 		} finally {
@@ -421,12 +454,15 @@ describe('ws sync plugin room list', () => {
 		const ctx = startTestServer();
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
-		const provider = createSyncProvider({ doc, url: ctx.wsUrl(room) });
+		const provider = createSyncProvider({
+			doc,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(provider, 'connected');
 
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({
 				rooms: [{ id: room, connections: 1 }],
@@ -443,16 +479,25 @@ describe('ws sync plugin room list', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		const doc3 = new Y.Doc();
-		const p1 = createSyncProvider({ doc: doc1, url: ctx.wsUrl(room) });
-		const p2 = createSyncProvider({ doc: doc2, url: ctx.wsUrl(room) });
-		const p3 = createSyncProvider({ doc: doc3, url: ctx.wsUrl(room) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
+		const p2 = createSyncProvider({
+			doc: doc2,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
+		const p3 = createSyncProvider({
+			doc: doc3,
+			baseUrl: ctx.httpUrl('/rooms/' + room),
+		});
 
 		try {
 			await waitForStatus(p1, 'connected');
 			await waitForStatus(p2, 'connected');
 			await waitForStatus(p3, 'connected');
 
-			const res = await fetch(ctx.httpUrl('/rooms/'));
+			const res = await fetch(ctx.httpUrl('/rooms'));
 			expect(res.status).toBe(200);
 			expect(await res.json()).toEqual({
 				rooms: [{ id: room, connections: 3 }],
@@ -500,7 +545,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 			});
 
 			try {
@@ -524,7 +569,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 				getToken: async () => 'wrong-token',
 			});
 
@@ -547,7 +592,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				url: ctx.wsUrl(room),
+				baseUrl: ctx.httpUrl('/rooms/' + room),
 				getToken: async () => 'secret',
 			});
 

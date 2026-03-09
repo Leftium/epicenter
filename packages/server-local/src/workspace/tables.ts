@@ -3,7 +3,8 @@ import type {
 	BaseRow,
 	TableHelper,
 } from '@epicenter/workspace';
-import { Elysia } from 'elysia';
+import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { WorkspaceApiError } from './errors';
 
 function resolveTable(
@@ -17,11 +18,11 @@ function resolveTable(
 }
 
 /**
- * Create an Elysia plugin that exposes CRUD routes for all workspace tables.
+ * Create a Hono router that exposes CRUD routes for all workspace tables.
  * Registers GET (list/get-by-id), PUT (create/replace), PATCH (partial update),
  * and DELETE routes for each table name found across all workspaces.
  * @param workspaces - Map of workspace ID to workspace client.
- * @returns An Elysia router scoped to `/:workspaceId/tables`.
+ * @returns A Hono router with routes under `/:workspaceId/tables`.
  */
 export function createTablesPlugin(
 	workspaces: Record<string, AnyWorkspaceClient>,
@@ -33,121 +34,110 @@ export function createTablesPlugin(
 		}
 	}
 
-	const router = new Elysia({ prefix: '/:workspaceId/tables' });
+	const router = new Hono();
 
 	for (const tableName of tableNames) {
 		router.get(
-			`/${tableName}`,
-			({ params, status }) => {
+			`/:workspaceId/tables/${tableName}`,
+			describeRoute({
+				description: `List all rows in the ${tableName} table`,
+				tags: [tableName, 'tables'],
+			}),
+			(c) => {
 				const tableHelper = resolveTable(
 					workspaces,
-					params.workspaceId,
+					c.req.param('workspaceId'),
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', WorkspaceApiError.TableNotFound().error);
-				return tableHelper.getAllValid();
-			},
-			{
-				detail: {
-					description: `List all rows in the ${tableName} table`,
-					tags: [tableName, 'tables'],
-				},
+					return c.json(WorkspaceApiError.TableNotFound().error, 404);
+				return c.json(tableHelper.getAllValid());
 			},
 		);
 
 		router.get(
-			`/${tableName}/:id`,
-			({ params, status }) => {
+			`/:workspaceId/tables/${tableName}/:id`,
+			describeRoute({
+				description: `Get a row by ID from the ${tableName} table`,
+				tags: [tableName, 'tables'],
+			}),
+			(c) => {
 				const tableHelper = resolveTable(
 					workspaces,
-					params.workspaceId,
+					c.req.param('workspaceId'),
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', WorkspaceApiError.TableNotFound().error);
-				const result = tableHelper.get(params.id);
-				if (result.status === 'not_found') return status('Not Found', result);
-				if (result.status === 'invalid')
-					return status('Unprocessable Content', result);
-				return result;
-			},
-			{
-				detail: {
-					description: `Get a row by ID from the ${tableName} table`,
-					tags: [tableName, 'tables'],
-				},
+					return c.json(WorkspaceApiError.TableNotFound().error, 404);
+				const result = tableHelper.get(c.req.param('id'));
+				if (result.status === 'not_found') return c.json(result, 404);
+				if (result.status === 'invalid') return c.json(result, 422);
+				return c.json(result);
 			},
 		);
 
 		router.put(
-			`/${tableName}/:id`,
-			({ params, body, status }) => {
+			`/:workspaceId/tables/${tableName}/:id`,
+			describeRoute({
+				description: `Create or replace a row by ID in the ${tableName} table`,
+				tags: [tableName, 'tables'],
+			}),
+			async (c) => {
 				const tableHelper = resolveTable(
 					workspaces,
-					params.workspaceId,
+					c.req.param('workspaceId'),
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', WorkspaceApiError.TableNotFound().error);
-				const result = tableHelper.parse(params.id, body);
-				if (result.status === 'invalid')
-					return status('Unprocessable Content', result);
+					return c.json(WorkspaceApiError.TableNotFound().error, 404);
+				const body = await c.req.json();
+				const result = tableHelper.parse(c.req.param('id'), body);
+				if (result.status === 'invalid') return c.json(result, 422);
 				tableHelper.set(result.row);
-				return result;
-			},
-			{
-				detail: {
-					description: `Create or replace a row by ID in the ${tableName} table`,
-					tags: [tableName, 'tables'],
-				},
+				return c.json(result);
 			},
 		);
 
 		router.patch(
-			`/${tableName}/:id`,
-			({ params, body, status }) => {
+			`/:workspaceId/tables/${tableName}/:id`,
+			describeRoute({
+				description: `Partially update a row by ID in the ${tableName} table`,
+				tags: [tableName, 'tables'],
+			}),
+			async (c) => {
 				const tableHelper = resolveTable(
 					workspaces,
-					params.workspaceId,
+					c.req.param('workspaceId'),
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', WorkspaceApiError.TableNotFound().error);
+					return c.json(WorkspaceApiError.TableNotFound().error, 404);
+				const body = await c.req.json();
 				const result = tableHelper.update(
-					params.id,
-					body as Record<string, unknown>,
+					c.req.param('id'),
+					body as Partial<Omit<BaseRow, 'id'>>,
 				);
-				if (result.status === 'not_found') return status('Not Found', result);
-				if (result.status === 'invalid')
-					return status('Unprocessable Content', result);
-				return result;
-			},
-			{
-				detail: {
-					description: `Partially update a row by ID in the ${tableName} table`,
-					tags: [tableName, 'tables'],
-				},
+				if (result.status === 'not_found') return c.json(result, 404);
+				if (result.status === 'invalid') return c.json(result, 422);
+				return c.json(result);
 			},
 		);
 
 		router.delete(
-			`/${tableName}/:id`,
-			({ params, status }) => {
+			`/:workspaceId/tables/${tableName}/:id`,
+			describeRoute({
+				description: `Delete a row by ID from the ${tableName} table`,
+				tags: [tableName, 'tables'],
+			}),
+			(c) => {
 				const tableHelper = resolveTable(
 					workspaces,
-					params.workspaceId,
+					c.req.param('workspaceId'),
 					tableName,
 				);
 				if (!tableHelper)
-					return status('Not Found', WorkspaceApiError.TableNotFound().error);
-				return tableHelper.delete(params.id);
-			},
-			{
-				detail: {
-					description: `Delete a row by ID from the ${tableName} table`,
-					tags: [tableName, 'tables'],
-				},
+					return c.json(WorkspaceApiError.TableNotFound().error, 404);
+				return c.json(tableHelper.delete(c.req.param('id')));
 			},
 		);
 	}

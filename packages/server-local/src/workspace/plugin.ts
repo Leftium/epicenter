@@ -1,24 +1,23 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
-import { Elysia } from 'elysia';
+import { Hono } from 'hono';
+import { describeRoute } from 'hono-openapi';
 import { collectActionPaths, createActionsPlugin } from './actions';
 import { WorkspaceApiError } from './errors';
 import { createKvPlugin } from './kv';
 import { createTablesPlugin } from './tables';
 
 /**
- * Create an Elysia plugin that bundles tables + KV + actions for workspace clients.
+ * Create a Hono app that bundles tables + KV + actions for workspace clients.
  *
  * Uses parameterized routes (`/:workspaceId/tables/:tableName`, etc.) so that
- * Eden Treaty can infer the full type chain. Workspace and table resolution
- * happens at request time via the workspaces map.
+ * workspace and table resolution happens at request time via the workspaces map.
  *
- * Mount under `/workspaces` (or any prefix) via Elysia:
+ * Mount under `/workspaces` (or any prefix) via Hono:
  *
  * @example
  * ```typescript
- * const app = new Elysia()
- *   .use(new Elysia({ prefix: '/workspaces' })
- *     .use(createWorkspacePlugin(clients)))
+ * const app = new Hono()
+ *   .route('/workspaces', createWorkspacePlugin(clients))
  *   .listen(3913);
  * ```
  */
@@ -28,33 +27,28 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 		workspaces[client.id] = client;
 	}
 
-	return new Elysia()
-		.get(
-			'/:workspaceId',
-			({ params, status }) => {
-				const workspace = workspaces[params.workspaceId];
-				if (!workspace)
-					return status(
-						'Not Found',
-						WorkspaceApiError.WorkspaceNotFound().error,
-					);
-				return {
-					id: workspace.id,
-					tables: Object.keys(workspace.definitions.tables),
-					kv: Object.keys(workspace.definitions.kv ?? {}),
-					actions: workspace.actions
-						? collectActionPaths(workspace.actions)
-						: [],
-				};
-			},
-			{
-				detail: {
-					description: 'Get workspace metadata',
-					tags: ['workspaces'],
-				},
-			},
-		)
-		.use(createTablesPlugin(workspaces))
-		.use(createKvPlugin(workspaces))
-		.use(createActionsPlugin(workspaces));
+	const app = new Hono().get(
+		'/:workspaceId',
+		describeRoute({
+			description: 'Get workspace metadata',
+			tags: ['workspaces'],
+		}),
+		(c) => {
+			const workspace = workspaces[c.req.param('workspaceId')];
+			if (!workspace)
+				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
+			return c.json({
+				id: workspace.id,
+				tables: Object.keys(workspace.definitions.tables),
+				kv: Object.keys(workspace.definitions.kv ?? {}),
+				actions: workspace.actions ? collectActionPaths(workspace.actions) : [],
+			});
+		},
+	);
+
+	app.route('/', createTablesPlugin(workspaces));
+	app.route('/', createKvPlugin(workspaces));
+	app.route('/', createActionsPlugin(workspaces));
+
+	return app;
 }

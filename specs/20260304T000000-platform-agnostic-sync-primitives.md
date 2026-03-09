@@ -7,7 +7,7 @@
 ### Dependency Graph
 
 ```
-@epicenter/sync-core                  (pure: yjs + lib0 + y-protocols only)
+@epicenter/sync                  (pure: yjs + lib0 + y-protocols only)
 ├── @epicenter/server-elysia          (Elysia plugins: sync, auth, discovery)
 │   ├── @epicenter/server-local       (local desktop server)
 │   └── @epicenter/server-remote      (self-hosted remote server)
@@ -30,7 +30,7 @@ This means:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    @epicenter/sync-core (NEW)                    │
+│                    @epicenter/sync (NEW)                    │
 │  Pure TypeScript. Zero framework deps. Only yjs + lib0 + y-protocols.    │
 │                                                                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
@@ -81,7 +81,7 @@ This means:
 
 ## Detailed Design
 
-### 1. `@epicenter/sync-core` — The New Package
+### 1. `@epicenter/sync` — The New Package
 
 This package extracts everything that is currently framework-agnostic (or can be made so) from `@epicenter/server-elysia/src/sync/`.
 
@@ -363,9 +363,9 @@ packages/sync-core/
 
 ### 2. `@epicenter/server-elysia` — Elysia Adapter (Refactored)
 
-After extraction, this package becomes a thin Elysia wrapper around `@epicenter/sync-core`. Renamed from `@epicenter/server` to make the framework explicit.
+After extraction, this package becomes a thin Elysia wrapper around `@epicenter/sync`. Renamed from `@epicenter/server` to make the framework explicit.
 
-**Dependencies**: `elysia`, `@epicenter/sync-core`
+**Dependencies**: `elysia`, `@epicenter/sync`
 
 #### 2.1 `createWsSyncPlugin` — Simplified
 
@@ -379,7 +379,7 @@ import { Elysia, t } from 'elysia';
 import {
   createRoomManager, handleWsOpen, handleWsMessage, handleWsClose,
   type ConnectionState, type TokenVerifier,
-} from '@epicenter/sync-core';
+} from '@epicenter/sync';
 
 export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
   const roomManager = createRoomManager(config);
@@ -448,7 +448,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 
 ```typescript
 import { Elysia } from 'elysia';
-import { extractBearerToken, handleHttpSync, type SyncStorage, type TokenVerifier } from '@epicenter/sync-core';
+import { extractBearerToken, handleHttpSync, type SyncStorage, type TokenVerifier } from '@epicenter/sync';
 
 export function createHttpSyncPlugin(config: { storage: SyncStorage; verifyToken?: TokenVerifier }) {
   return new Elysia()
@@ -483,7 +483,7 @@ export function createHttpSyncPlugin(config: { storage: SyncStorage; verifyToken
 
 ### 3. `@epicenter/server-cloudflare` — Hono + Durable Objects
 
-**Dependencies**: `hono`, `@epicenter/sync-core`, `@cloudflare/workers-types`
+**Dependencies**: `hono`, `@epicenter/sync`, `@cloudflare/workers-types`
 
 This is a new package. It has two parts:
 
@@ -496,7 +496,7 @@ The Worker handles:
 
 ```typescript
 import { Hono } from 'hono';
-import { extractBearerToken, handleHttpSync, type SyncStorage, type TokenVerifier } from '@epicenter/sync-core';
+import { extractBearerToken, handleHttpSync, type SyncStorage, type TokenVerifier } from '@epicenter/sync';
 
 type Env = {
   Bindings: {
@@ -552,7 +552,7 @@ Each DO instance IS one room. It uses sync-core handlers directly.
 import {
   handleWsOpen, handleWsMessage, handleWsClose,
   createRoomManager, type ConnectionState,
-} from '@epicenter/sync-core';
+} from '@epicenter/sync';
 
 export class YjsRoom implements DurableObject {
   private roomManager: ReturnType<typeof createRoomManager>;
@@ -637,7 +637,7 @@ export class YjsRoom implements DurableObject {
 #### 3.3 R2 SyncStorage Implementation
 
 ```typescript
-import { type SyncStorage } from '@epicenter/sync-core';
+import { type SyncStorage } from '@epicenter/sync';
 
 export function createR2SyncStorage(bucket: R2Bucket): SyncStorage {
   return {
@@ -739,7 +739,7 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
    > **Note**: Added `handleHttpGetDoc` handler (not in original spec) for the GET /:room endpoint.
    > Removed `roomManager` param from `handleWsMessage` — adapter handles broadcast via return value.
 4. [x] Create `auth.ts` with `extractBearerToken` and `TokenVerifier`
-5. [x] Update `@epicenter/server-elysia` (formerly `@epicenter/server`) to depend on `@epicenter/sync-core` and import from it
+5. [x] Update `@epicenter/server-elysia` (formerly `@epicenter/server`) to depend on `@epicenter/sync` and import from it
 6. [x] Refactor `createWsSyncPlugin` and `createHttpSyncPlugin` to be thin wrappers
 7. [x] Verify all existing tests pass (70 sync-core unit + 14 plugin integration = 84 total)
 8. [x] Rename `@epicenter/server` → `@epicenter/server-elysia` to make framework explicit in package name
@@ -754,7 +754,7 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
 
 ### 7. Open Questions
 
-1. **Package name**: ~~`sync-core` vs `sync-protocol` vs `sync-primitives`?~~ Resolved: `@epicenter/sync-core`. Clear distinction from `@epicenter/sync` (client-side provider).
+1. **Package name**: ~~`sync-core` vs `sync-protocol` vs `sync-primitives`?~~ Resolved: `@epicenter/sync`. Clear distinction from `@epicenter/sync` (client-side provider).
 
 2. **Discovery on Cloudflare**: The device discovery system piggybacks on WS sync rooms via `DISCOVERY_ROOM_ID`. On CF, this would be a dedicated DO. Worth supporting in the first pass or defer?
 
@@ -775,7 +775,7 @@ The key insight: **the sync-core package doesn't care how tokens are verified**.
 
 ### Summary
 
-Phase 1 extracted all framework-agnostic sync logic from `@epicenter/server` into a new `@epicenter/sync-core` package and renamed `@epicenter/server` to `@epicenter/server-elysia` to make the framework dependency explicit. The server-elysia package went from ~2300 lines of sync code to ~60 lines of thin Elysia wrappers that delegate to sync-core handlers. All 84 tests pass (70 unit + 14 integration).
+Phase 1 extracted all framework-agnostic sync logic from `@epicenter/server` into a new `@epicenter/sync` package and renamed `@epicenter/server` to `@epicenter/server-elysia` to make the framework dependency explicit. The server-elysia package went from ~2300 lines of sync code to ~60 lines of thin Elysia wrappers that delegate to sync-core handlers. All 84 tests pass (70 unit + 14 integration).
 
 ### Deviations from Spec
 

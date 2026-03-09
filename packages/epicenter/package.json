@@ -25,7 +25,7 @@
 		"@sindresorhus/slugify": "^3.0.0",
 		"@tursodatabase/database": "^0.3.2",
 		"@types/bun": "catalog:",
-		"@epicenter/sync": "workspace:*",
+		"@epicenter/sync-client": "workspace:*",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",
 		"chokidar": "^5.0.0",

@@ -3,15 +3,20 @@ import {
 	oauthProviderAuthServerMetadata,
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
+import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
+import { describeRoute } from 'hono-openapi';
 import postgres from 'postgres';
 import { aiChatHandlers } from './ai-chat';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 
 export { DocumentRoom } from './document-room';
@@ -148,19 +153,42 @@ const factory = createFactory<Env>({
 const app = factory.createApp();
 
 // Health
-app.get('/', (c) =>
-	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
+app.get(
+	'/',
+	describeRoute({
+		description: 'Health check',
+		tags: ['health'],
+	}),
+	(c) => c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
 // Auth
-app.on(['GET', 'POST'], '/auth/*', (c) => c.var.auth.handler(c.req.raw));
+app.on(
+	['GET', 'POST'],
+	'/auth/*',
+	describeRoute({
+		description: 'Better Auth handler',
+		tags: ['auth'],
+	}),
+	(c) => c.var.auth.handler(c.req.raw),
+);
 
 // OAuth discovery
-app.get('/.well-known/openid-configuration/auth', (c) =>
-	oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
+app.get(
+	'/.well-known/openid-configuration/auth',
+	describeRoute({
+		description: 'OpenID Connect discovery metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	(c) => oauthProviderOpenIdConfigMetadata(c.var.auth)(c.req.raw),
 );
-app.get('/.well-known/oauth-authorization-server/auth', (c) =>
-	oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
+app.get(
+	'/.well-known/oauth-authorization-server/auth',
+	describeRoute({
+		description: 'OAuth authorization server metadata',
+		tags: ['auth', 'oauth'],
+	}),
+	(c) => oauthProviderAuthServerMetadata(c.var.auth)(c.req.raw),
 );
 
 // Auth guard for protected routes
@@ -183,16 +211,21 @@ app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 
 // AI chat
-app.post('/ai/chat', ...aiChatHandlers);
+app.post(
+	'/ai/chat',
+	describeRoute({
+		description: 'Stream AI chat completions via SSE',
+		tags: ['ai'],
+	}),
+	...aiChatHandlers,
+);
 
 // ---------------------------------------------------------------------------
 // Workspace routes — one WorkspaceRoom DO per room (gc: true)
 // ---------------------------------------------------------------------------
 
 /**
- * Helper: get a WorkspaceRoom stub for the authenticated user's room.
- *
- * ## Room key namespacing: `user:{userId}:{room}`
+ * Room key namespacing: `user:{userId}:{room}`
  *
  * We use user-scoped room keys (Google Docs model) rather than org-scoped keys
  * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
@@ -218,146 +251,212 @@ app.post('/ai/chat', ...aiChatHandlers);
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
-function getWorkspaceStub(c: {
-	var: { user: { id: string } };
-	env: Cloudflare.Env;
-	req: { param: (k: string) => string };
-}) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
+
+/** Get a WorkspaceRoom DO stub for the authenticated user's room. */
+function getWorkspaceStub(c: Context<Env>) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
 	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
 }
 
-/** Helper: get a DocumentRoom stub for the authenticated user's room. See {@link getWorkspaceStub} for namespacing rationale. */
-function getDocumentStub(c: {
-	var: { user: { id: string } };
-	env: Cloudflare.Env;
-	req: { param: (k: string) => string };
-}) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
+/** Get a DocumentRoom DO stub for the authenticated user's room. */
+function getDocumentStub(c: Context<Env>) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
 }
 
-app.get('/workspaces/:room', async (c) => {
-	const stub = getWorkspaceStub(c);
+app.get(
+	'/workspaces/:room',
+	describeRoute({
+		description: 'Get workspace doc or upgrade to WebSocket',
+		tags: ['workspaces'],
+	}),
+	async (c) => {
+		const stub = getWorkspaceStub(c);
 
-	if (c.req.header('upgrade') === 'websocket') {
-		return stub.fetch(c.req.raw);
-	}
+		if (c.req.header('upgrade') === 'websocket') {
+			return stub.fetch(c.req.raw);
+		}
 
-	const update = await stub.getDoc();
-	return new Response(update, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		const update = await stub.getDoc();
+		return new Response(update, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
-app.post('/workspaces/:room', async (c) => {
-	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
-		return c.body('Payload too large', 413);
-	}
+app.post(
+	'/workspaces/:room',
+	describeRoute({
+		description: 'Sync workspace doc',
+		tags: ['workspaces'],
+	}),
+	async (c) => {
+		const body = new Uint8Array(await c.req.arrayBuffer());
+		if (body.byteLength > MAX_PAYLOAD_BYTES) {
+			return c.body('Payload too large', 413);
+		}
 
-	const stub = getWorkspaceStub(c);
-	const diff = await stub.sync(body);
+		const stub = getWorkspaceStub(c);
+		const diff = await stub.sync(body);
 
-	if (!diff) return c.body(null, 304);
-	return new Response(diff, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		if (!diff) return c.body(null, 304);
+		return new Response(diff, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
 // /rooms/:room — temporary alias for /workspaces/:room during client rollout
-app.get('/rooms/:room', async (c) => {
-	const stub = getWorkspaceStub(c);
+app.get(
+	'/rooms/:room',
+	describeRoute({
+		description: 'Get workspace doc or upgrade to WebSocket (rooms alias)',
+		tags: ['rooms'],
+	}),
+	async (c) => {
+		const stub = getWorkspaceStub(c);
 
-	if (c.req.header('upgrade') === 'websocket') {
-		return stub.fetch(c.req.raw);
-	}
+		if (c.req.header('upgrade') === 'websocket') {
+			return stub.fetch(c.req.raw);
+		}
 
-	const update = await stub.getDoc();
-	return new Response(update, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		const update = await stub.getDoc();
+		return new Response(update, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
-app.post('/rooms/:room', async (c) => {
-	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
-		return c.body('Payload too large', 413);
-	}
+app.post(
+	'/rooms/:room',
+	describeRoute({
+		description: 'Sync workspace doc (rooms alias)',
+		tags: ['rooms'],
+	}),
+	async (c) => {
+		const body = new Uint8Array(await c.req.arrayBuffer());
+		if (body.byteLength > MAX_PAYLOAD_BYTES) {
+			return c.body('Payload too large', 413);
+		}
 
-	const stub = getWorkspaceStub(c);
-	const diff = await stub.sync(body);
+		const stub = getWorkspaceStub(c);
+		const diff = await stub.sync(body);
 
-	if (!diff) return c.body(null, 304);
-	return new Response(diff, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		if (!diff) return c.body(null, 304);
+		return new Response(diff, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
 // ---------------------------------------------------------------------------
 // Document routes — one DocumentRoom DO per room (gc: false, snapshots)
 // ---------------------------------------------------------------------------
 
-app.get('/documents/:room', async (c) => {
-	const stub = getDocumentStub(c);
+app.get(
+	'/documents/:room',
+	describeRoute({
+		description: 'Get document doc or upgrade to WebSocket',
+		tags: ['documents'],
+	}),
+	async (c) => {
+		const stub = getDocumentStub(c);
 
-	if (c.req.header('upgrade') === 'websocket') {
-		return stub.fetch(c.req.raw);
-	}
+		if (c.req.header('upgrade') === 'websocket') {
+			return stub.fetch(c.req.raw);
+		}
 
-	const update = await stub.getDoc();
-	return new Response(update, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		const update = await stub.getDoc();
+		return new Response(update, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
-app.post('/documents/:room', async (c) => {
-	const body = new Uint8Array(await c.req.arrayBuffer());
-	if (body.byteLength > 5 * 1024 * 1024) {
-		return c.body('Payload too large', 413);
-	}
+app.post(
+	'/documents/:room',
+	describeRoute({
+		description: 'Sync document doc',
+		tags: ['documents'],
+	}),
+	async (c) => {
+		const body = new Uint8Array(await c.req.arrayBuffer());
+		if (body.byteLength > MAX_PAYLOAD_BYTES) {
+			return c.body('Payload too large', 413);
+		}
 
-	const stub = getDocumentStub(c);
-	const diff = await stub.sync(body);
+		const stub = getDocumentStub(c);
+		const diff = await stub.sync(body);
 
-	if (!diff) return c.body(null, 304);
-	return new Response(diff, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+		if (!diff) return c.body(null, 304);
+		return new Response(diff, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
 // Snapshot endpoints for DocumentRoom
-app.post('/documents/:room/snapshots', async (c) => {
-	const stub = getDocumentStub(c);
-	const body = await c.req
-		.json<{ label?: string }>()
-		.catch(() => ({}) as { label?: string });
-	const result = await stub.saveSnapshot(body.label);
-	return c.json(result);
-});
+app.post(
+	'/documents/:room/snapshots',
+	describeRoute({
+		description: 'Save a document snapshot',
+		tags: ['documents', 'snapshots'],
+	}),
+	sValidator('json', type({ label: 'string | null' })),
+	async (c) => {
+		const stub = getDocumentStub(c);
+		const { label } = c.req.valid('json');
+		const result = await stub.saveSnapshot(label ?? undefined);
+		return c.json(result);
+	},
+);
 
-app.get('/documents/:room/snapshots', async (c) => {
-	const stub = getDocumentStub(c);
-	const snapshots = await stub.listSnapshots();
-	return c.json(snapshots);
-});
+app.get(
+	'/documents/:room/snapshots',
+	describeRoute({
+		description: 'List document snapshots',
+		tags: ['documents', 'snapshots'],
+	}),
+	async (c) => {
+		const stub = getDocumentStub(c);
+		const snapshots = await stub.listSnapshots();
+		return c.json(snapshots);
+	},
+);
 
-app.get('/documents/:room/snapshots/:id', async (c) => {
-	const stub = getDocumentStub(c);
-	const snapshotId = Number(c.req.param('id'));
-	const data = await stub.getSnapshot(snapshotId);
-	if (!data) return c.body('Snapshot not found', 404);
-	return new Response(data, {
-		headers: { 'content-type': 'application/octet-stream' },
-	});
-});
+app.get(
+	'/documents/:room/snapshots/:id',
+	describeRoute({
+		description: 'Get a document snapshot by ID',
+		tags: ['documents', 'snapshots'],
+	}),
+	sValidator('param', type({ room: 'string', id: 'string.numeric' })),
+	async (c) => {
+		const stub = getDocumentStub(c);
+		const { id } = c.req.valid('param');
+		const data = await stub.getSnapshot(Number(id));
+		if (!data) return c.body('Snapshot not found', 404);
+		return new Response(data, {
+			headers: { 'content-type': 'application/octet-stream' },
+		});
+	},
+);
 
-app.post('/documents/:room/snapshots/:id/restore', async (c) => {
-	const stub = getDocumentStub(c);
-	const snapshotId = Number(c.req.param('id'));
-	const ok = await stub.restoreSnapshot(snapshotId);
-	if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
-	return c.json({ ok: true });
-});
+app.post(
+	'/documents/:room/snapshots/:id/apply',
+	describeRoute({
+		description:
+			'Apply a past snapshot state into the current document (CRDT forward-merge)',
+		tags: ['documents', 'snapshots'],
+	}),
+	sValidator('param', type({ room: 'string', id: 'string.numeric' })),
+	async (c) => {
+		const stub = getDocumentStub(c);
+		const { id } = c.req.valid('param');
+		const ok = await stub.applySnapshot(Number(id));
+		if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
+		return c.json({ ok: true });
+	},
+);
 
 export default app;

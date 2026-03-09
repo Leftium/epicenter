@@ -10,7 +10,7 @@
  * - URL configuration and whenReady lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
-import type { SyncProvider } from '@epicenter/sync';
+import type { SyncProvider } from '@epicenter/sync-client';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSyncExtension } from './sync';
@@ -46,7 +46,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
+				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -58,7 +58,7 @@ describe('createSyncExtension', () => {
 
 			// Reconnect with a different URL
 			result.reconnect({
-				url: 'ws://cloud.example.com/rooms/test-doc',
+				url: 'http://cloud.example.com/rooms/test-doc',
 			});
 
 			// Old provider should be destroyed (offline)
@@ -77,7 +77,7 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-getter' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
+				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
@@ -86,11 +86,11 @@ describe('createSyncExtension', () => {
 
 			const firstProvider = result.provider;
 			result.reconnect({
-				url: 'ws://server-2/rooms/test-doc-getter',
+				url: 'http://server-2/rooms/test-doc-getter',
 			});
 			const secondProvider = result.provider;
 			result.reconnect({
-				url: 'ws://server-3/rooms/test-doc-getter',
+				url: 'http://server-3/rooms/test-doc-getter',
 			});
 			const thirdProvider = result.provider;
 
@@ -109,14 +109,14 @@ describe('createSyncExtension', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
 
 			const factory = createSyncExtension({
-				url: (id: string) => `ws://localhost:8080/rooms/${id}`,
+				url: (id: string) => `http://localhost:8080/rooms/${id}`,
 			});
 
 			const result = factory(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 			result.reconnect({
-				url: 'ws://cloud.example.com/rooms/test-doc-destroy',
+				url: 'http://cloud.example.com/rooms/test-doc-destroy',
 			});
 
 			const currentProvider = result.provider;
@@ -131,7 +131,7 @@ describe('createSyncExtension', () => {
 		const ydoc = new Y.Doc({ guid: 'my-workspace' });
 
 		const factory = createSyncExtension({
-			url: (id) => `ws://localhost:3913/custom/${id}/ws`,
+			url: (id) => `http://localhost:3913/custom/${id}/ws`,
 		});
 
 		const result = factory(
@@ -154,7 +154,7 @@ describe('createSyncExtension', () => {
 		});
 
 		const factory = createSyncExtension({
-			url: (id: string) => `ws://localhost:8080/rooms/${id}`,
+			url: (id: string) => `http://localhost:8080/rooms/${id}`,
 		});
 
 		const result = factory({

@@ -2,13 +2,23 @@
  * Framework-Agnostic Sync Handlers
  *
  * Pure functions that implement the sync protocol logic without any framework
- * coupling. Adapters (Elysia, Hono, Cloudflare Workers, etc.) call these
+ * coupling. Adapters (Hono/Bun, Cloudflare Durable Objects, etc.) call these
  * handlers and map the results to their transport layer.
  *
  * Pattern: bytes in → bytes out + side effects described by return values.
  * The adapter is responsible for actually sending bytes and managing connections.
  */
 
+import {
+	encodeAwareness,
+	encodeAwarenessStates,
+	encodeSyncStatus,
+	encodeSyncStep1,
+	encodeSyncUpdate,
+	handleSyncPayload,
+	MESSAGE_TYPE,
+	type SyncMessageType,
+} from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
 import {
 	type Awareness,
@@ -16,21 +26,17 @@ import {
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
-import {
-	encodeAwareness,
-	encodeAwarenessStates,
-	encodeSyncStatus,
-	encodeSyncStep1,
-	encodeSyncUpdate,
-	handleSyncMessage,
-	MESSAGE_TYPE,
-} from './protocol';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-/** Opaque connection identity. Elysia uses ws.raw, CF uses WebSocket instance. */
+/**
+ * Stable identity token for a WebSocket connection, used for origin-based
+ * echo prevention (`===` comparison). Pass the raw WebSocket instance —
+ * e.g. `ws.raw` (Bun) or the server-side `WebSocket` from a `WebSocketPair`
+ * (Cloudflare). Any object works; only reference identity matters.
+ */
 export type ConnectionId = object;
 
 /** Result of handling a WS open event. */
@@ -47,18 +53,36 @@ export type WsMessageResult = {
 	broadcast?: Uint8Array;
 };
 
-/** Per-connection state that the adapter must store. */
+/**
+ * Per-connection state that the adapter must store.
+ *
+ * Pass this object to `handleWsMessage` and `handleWsClose` — they use it
+ * to look up internal event handlers via a WeakMap. The adapter may read
+ * `controlledClientIds` (e.g. for Cloudflare hibernation serialization)
+ * but should not need to touch internal handler functions.
+ */
 export type ConnectionState = {
 	doc: Y.Doc;
 	awareness: Awareness;
+	controlledClientIds: Set<number>;
+	connId: ConnectionId;
+};
+
+/** Internal event handlers, hidden from consumers. */
+type ConnectionInternals = {
 	updateHandler: (update: Uint8Array, origin: unknown) => void;
 	awarenessHandler: (
 		changes: { added: number[]; updated: number[]; removed: number[] },
 		origin: unknown,
 	) => void;
-	controlledClientIds: Set<number>;
-	connId: ConnectionId;
 };
+
+/**
+ * Internal handler storage. Keyed on the ConnectionState object itself,
+ * so cleanup in handleWsClose can retrieve the handlers without exposing
+ * them in the public type.
+ */
+const connectionInternals = new WeakMap<ConnectionState, ConnectionInternals>();
 
 // ============================================================================
 // WebSocket Handlers
@@ -129,11 +153,11 @@ export function handleWsOpen(
 	const state: ConnectionState = {
 		doc,
 		awareness,
-		updateHandler,
-		awarenessHandler,
 		controlledClientIds,
 		connId,
 	};
+
+	connectionInternals.set(state, { updateHandler, awarenessHandler });
 
 	return { initialMessages, state };
 }
@@ -153,8 +177,11 @@ export function handleWsMessage(
 
 	switch (messageType) {
 		case MESSAGE_TYPE.SYNC: {
-			const response = handleSyncMessage({
-				decoder,
+			const syncType = decoding.readVarUint(decoder);
+			const payload = decoding.readVarUint8Array(decoder);
+			const response = handleSyncPayload({
+				syncType: syncType as SyncMessageType,
+				payload,
 				doc: state.doc,
 				origin: state.connId,
 			});
@@ -187,6 +214,9 @@ export function handleWsMessage(
 		}
 
 		default:
+			// Forward-compatible: unknown message types are silently ignored.
+			// Yjs clients/servers routinely encounter extension types (e.g.
+			// SYNC_STATUS=102) they don't understand — silent drop is correct.
 			return {};
 	}
 }
@@ -201,8 +231,12 @@ export function handleWsMessage(
  * (ping intervals, WeakMap entries, room manager leave, etc.).
  */
 export function handleWsClose(state: ConnectionState): void {
-	state.doc.off('updateV2', state.updateHandler);
-	state.awareness.off('update', state.awarenessHandler);
+	const internals = connectionInternals.get(state);
+	if (internals) {
+		state.doc.off('updateV2', internals.updateHandler);
+		state.awareness.off('update', internals.awarenessHandler);
+		connectionInternals.delete(state);
+	}
 
 	if (state.controlledClientIds.size > 0) {
 		removeAwarenessStates(

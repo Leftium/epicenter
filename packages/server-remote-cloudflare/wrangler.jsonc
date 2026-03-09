@@ -15,7 +15,7 @@
 	// --- Vars: non-secret config accessible via env ---
 	"vars": {
 		"BASE_URL": "https://api.epicenter.so",
-		"GOOGLE_CLIENT_ID": "__REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID__"
+		"GOOGLE_CLIENT_ID": "702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com"
 	},
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---
 	// Create with: bunx wrangler kv namespace create "epicenter-sessions"

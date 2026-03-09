@@ -23,7 +23,8 @@ import { createStorageState } from './storage-state.svelte';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Public Google OAuth client ID (not a secret). */
-const GOOGLE_CLIENT_ID = '__REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID__';
+const GOOGLE_CLIENT_ID =
+	'702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas

@@ -290,10 +290,7 @@ export function createSyncProvider({
 			Promise.withResolvers<void>();
 		let handshakeComplete = false;
 
-		// Liveness state (scoped to this connection attempt)
-		let pingInterval: ReturnType<typeof setInterval> | null = null;
-		let livenessInterval: ReturnType<typeof setInterval> | null = null;
-		let lastMessageTime = Date.now();
+		const liveness = createLivenessMonitor(ws, WS);
 
 		ws.onopen = () => {
 			send(encodeSyncStep1({ doc }));
@@ -307,24 +304,12 @@ export function createSyncProvider({
 				);
 			}
 
-			lastMessageTime = Date.now();
-
-			pingInterval = setInterval(() => {
-				if (ws.readyState === WS.OPEN) ws.send('ping');
-			}, PING_INTERVAL_MS);
-
-			livenessInterval = setInterval(() => {
-				if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
-					ws.close();
-				}
-			}, LIVENESS_CHECK_INTERVAL_MS);
-
+			liveness.start();
 			resolveOpen(true);
 		};
 
 		ws.onclose = () => {
-			if (pingInterval) clearInterval(pingInterval);
-			if (livenessInterval) clearInterval(livenessInterval);
+			liveness.stop();
 
 			// Remove remote awareness states (keep our own)
 			removeAwarenessStates(
@@ -346,7 +331,7 @@ export function createSyncProvider({
 		};
 
 		ws.onmessage = (event: MessageEvent) => {
-			lastMessageTime = Date.now();
+			liveness.touch();
 
 			// Text "pong" from auto-response — liveness confirmed, nothing else to do
 			if (typeof event.data === 'string') return;
@@ -483,6 +468,52 @@ export function createSyncProvider({
 // ============================================================================
 // Helpers (hoisted — available throughout the module)
 // ============================================================================
+
+/**
+ * Creates a liveness monitor that detects dead WebSocket connections.
+ *
+ * Encapsulates the ping interval, liveness check interval, and last-message
+ * timestamp into a single unit. Call `start()` when the socket opens,
+ * `touch()` on every incoming message, and `stop()` on close.
+ *
+ * If no message arrives within {@link LIVENESS_TIMEOUT_MS}, the socket is closed.
+ */
+function createLivenessMonitor(
+	ws: WebSocketLike,
+	WS: { readonly OPEN: number },
+) {
+	let pingInterval: ReturnType<typeof setInterval> | null = null;
+	let livenessInterval: ReturnType<typeof setInterval> | null = null;
+	let lastMessageTime = 0;
+
+	return {
+		/** Begin sending pings and checking for staleness. */
+		start() {
+			lastMessageTime = Date.now();
+
+			pingInterval = setInterval(() => {
+				if (ws.readyState === WS.OPEN) ws.send('ping');
+			}, PING_INTERVAL_MS);
+
+			livenessInterval = setInterval(() => {
+				if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
+					ws.close();
+				}
+			}, LIVENESS_CHECK_INTERVAL_MS);
+		},
+
+		/** Record that a message was received. */
+		touch() {
+			lastMessageTime = Date.now();
+		},
+
+		/** Clear all intervals. */
+		stop() {
+			if (pingInterval) clearInterval(pingInterval);
+			if (livenessInterval) clearInterval(livenessInterval);
+		},
+	};
+}
 
 /**
  * Creates a backoff controller with exponential delay, jitter, and a wakeable sleeper.

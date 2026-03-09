@@ -27,11 +27,13 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 		workspaces[client.id] = client;
 	}
 
-	const app = new Hono()
-		.get('/:workspaceId', describeRoute({
+	const app = new Hono().get(
+		'/:workspaceId',
+		describeRoute({
 			description: 'Get workspace metadata',
 			tags: ['workspaces'],
-		}), (c) => {
+		}),
+		(c) => {
 			const workspace = workspaces[c.req.param('workspaceId')];
 			if (!workspace)
 				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
@@ -39,11 +41,10 @@ export function createWorkspacePlugin(clients: AnyWorkspaceClient[]) {
 				id: workspace.id,
 				tables: Object.keys(workspace.definitions.tables),
 				kv: Object.keys(workspace.definitions.kv ?? {}),
-				actions: workspace.actions
-					? collectActionPaths(workspace.actions)
-					: [],
+				actions: workspace.actions ? collectActionPaths(workspace.actions) : [],
 			});
-		});
+		},
+	);
 
 	app.route('/', createTablesPlugin(workspaces));
 	app.route('/', createKvPlugin(workspaces));

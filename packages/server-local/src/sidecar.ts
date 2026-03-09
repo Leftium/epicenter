@@ -159,11 +159,7 @@ export function createSidecar({
 
 		/** Start listening, falling back to an OS-assigned port if needed. */
 		start() {
-			const { server, port: actualPort } = serve(
-				app,
-				preferredPort,
-				websocket,
-			);
+			const { server, port: actualPort } = serve(app, preferredPort, websocket);
 			bunServer = server;
 			return { server, port: actualPort };
 		},

@@ -66,57 +66,89 @@ export function createActionsPlugin(
 		const namespaceTags = segments.length > 1 ? [segments[0] as string] : [];
 
 		if (types.has('query')) {
-			router.get(routePath, describeRoute({
-				summary: actionPath.replace(/\//g, '.'),
-				tags: [...namespaceTags, 'query'],
-			}), async (c) => {
-				const workspaceId = c.req.param('workspaceId')!;
-				const workspace = workspaces[workspaceId];
-				if (!workspace?.actions)
-					return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
+			router.get(
+				routePath,
+				describeRoute({
+					summary: actionPath.replace(/\//g, '.'),
+					tags: [...namespaceTags, 'query'],
+				}),
+				async (c) => {
+					const workspaceId = c.req.param('workspaceId')!;
+					const workspace = workspaces[workspaceId];
+					if (!workspace?.actions)
+						return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
 
-				const action = resolveAction(workspace.actions, actionPath);
-				if (!action)
-					return c.json(WorkspaceApiError.ActionNotFound({ actionPath }).error, 404);
+					const action = resolveAction(workspace.actions, actionPath);
+					if (!action)
+						return c.json(
+							WorkspaceApiError.ActionNotFound({ actionPath }).error,
+							404,
+						);
 
-				if (action.type !== 'query')
-					return c.json(WorkspaceApiError.ActionWrongMethod({ actionPath, expected: 'POST' }).error, 400);
+					if (action.type !== 'query')
+						return c.json(
+							WorkspaceApiError.ActionWrongMethod({
+								actionPath,
+								expected: 'POST',
+							}).error,
+							400,
+						);
 
-				if (action.input) {
-					const query = c.req.query();
-					if (!Value.Check(action.input, query))
-						return c.json({ errors: [...Value.Errors(action.input, query)] }, 422);
-					return c.json({ data: await action(query) });
-				}
-				return c.json({ data: await action() });
-			});
+					if (action.input) {
+						const query = c.req.query();
+						if (!Value.Check(action.input, query))
+							return c.json(
+								{ errors: [...Value.Errors(action.input, query)] },
+								422,
+							);
+						return c.json({ data: await action(query) });
+					}
+					return c.json({ data: await action() });
+				},
+			);
 		}
 
 		if (types.has('mutation')) {
-			router.post(routePath, describeRoute({
-				summary: actionPath.replace(/\//g, '.'),
-				tags: [...namespaceTags, 'mutation'],
-			}), async (c) => {
-				const workspaceId = c.req.param('workspaceId')!;
-				const workspace = workspaces[workspaceId];
-				if (!workspace?.actions)
-					return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
+			router.post(
+				routePath,
+				describeRoute({
+					summary: actionPath.replace(/\//g, '.'),
+					tags: [...namespaceTags, 'mutation'],
+				}),
+				async (c) => {
+					const workspaceId = c.req.param('workspaceId')!;
+					const workspace = workspaces[workspaceId];
+					if (!workspace?.actions)
+						return c.json(WorkspaceApiError.ActionsNotConfigured().error, 404);
 
-				const action = resolveAction(workspace.actions, actionPath);
-				if (!action)
-					return c.json(WorkspaceApiError.ActionNotFound({ actionPath }).error, 404);
+					const action = resolveAction(workspace.actions, actionPath);
+					if (!action)
+						return c.json(
+							WorkspaceApiError.ActionNotFound({ actionPath }).error,
+							404,
+						);
 
-				if (action.type !== 'mutation')
-					return c.json(WorkspaceApiError.ActionWrongMethod({ actionPath, expected: 'GET' }).error, 400);
+					if (action.type !== 'mutation')
+						return c.json(
+							WorkspaceApiError.ActionWrongMethod({
+								actionPath,
+								expected: 'GET',
+							}).error,
+							400,
+						);
 
-				if (action.input) {
-					const body = await c.req.json();
-					if (!Value.Check(action.input, body))
-						return c.json({ errors: [...Value.Errors(action.input, body)] }, 422);
-					return c.json({ data: await action(body) });
-				}
-				return c.json({ data: await action() });
-			});
+					if (action.input) {
+						const body = await c.req.json();
+						if (!Value.Check(action.input, body))
+							return c.json(
+								{ errors: [...Value.Errors(action.input, body)] },
+								422,
+							);
+						return c.json({ data: await action(body) });
+					}
+					return c.json({ data: await action() });
+				},
+			);
 		}
 	}
 

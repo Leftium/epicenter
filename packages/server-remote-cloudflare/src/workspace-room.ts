@@ -1,5 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { decodeSyncRequest, stateVectorsEqual } from '@epicenter/sync';
+import * as Y from 'yjs';
+import { MAX_PAYLOAD_BYTES } from './constants';
 import {
 	Awareness,
 	type ConnectionState,
@@ -7,8 +9,6 @@ import {
 	handleWsMessage,
 	handleWsOpen,
 } from './sync-handlers';
-import * as Y from 'yjs';
-import { MAX_PAYLOAD_BYTES } from './constants';
 
 type WsAttachment = {
 	controlledClientIds: number[];

@@ -558,10 +558,13 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
-	.withExtension('sync', createSyncExtension({
-		url: (workspaceId) => `${serverUrl.current}/rooms/${workspaceId}`,
-		getToken: async () => authState.token ?? '',
-	}))
+	.withExtension(
+		'sync',
+		createSyncExtension({
+			url: (workspaceId) => `${serverUrl.current}/rooms/${workspaceId}`,
+			getToken: async () => authState.token ?? '',
+		}),
+	)
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({

@@ -5,7 +5,7 @@ import {
 	handleWsOpen,
 } from '@epicenter/sync-server';
 import { Hono } from 'hono';
-import { upgradeWebSocket, websocket as bunWebsocketHandler } from 'hono/bun';
+import { websocket as bunWebsocketHandler, upgradeWebSocket } from 'hono/bun';
 import type { RoomManagerConfig } from './rooms';
 import { createRoomManager } from './rooms';
 
@@ -36,7 +36,6 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 	const roomManager = createRoomManager(config);
 	const connectionState = new WeakMap<object, SyncConnectionState>();
 	const verifyToken = config?.verifyToken;
-
 
 	const app = new Hono();
 
@@ -123,9 +122,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 					)
 						return;
 					const data =
-						message instanceof ArrayBuffer
-							? new Uint8Array(message)
-							: message;
+						message instanceof ArrayBuffer ? new Uint8Array(message) : message;
 
 					const result = handleWsMessage(data, state.syncState);
 
@@ -140,9 +137,7 @@ export function createWsSyncPlugin(config?: WsSyncPluginConfig) {
 					const state = connectionState.get(rawWs);
 					if (!state) return;
 
-					console.log(
-						`[Sync] Client disconnected from room: ${state.roomId}`,
-					);
+					console.log(`[Sync] Client disconnected from room: ${state.roomId}`);
 
 					if (state.pingInterval) {
 						clearInterval(state.pingInterval);

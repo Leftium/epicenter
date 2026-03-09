@@ -16,7 +16,6 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import * as Y from 'yjs';
 import type {
 	SyncProvider,
 	SyncProviderConfig,
@@ -373,45 +372,6 @@ export function createSyncProvider({
 	}
 
 	// ========================================================================
-	// HTTP Snapshot Prefetch
-	// ========================================================================
-
-	/**
-	 * Fetch the full document snapshot via HTTP GET and apply it locally.
-	 *
-	 * Uses `baseUrl` directly for the GET request. Runs before the WebSocket
-	 * connects so the subsequent syncStep2 is tiny (only changes since the GET).
-	 * On failure, falls through to WS-only sync.
-	 */
-	async function fetchSnapshot(token: string | undefined): Promise<void> {
-		try {
-			const headers: Record<string, string> = {};
-			if (token) {
-				headers['Authorization'] = `Bearer ${token}`;
-			}
-
-			const response = await fetch(baseUrl, { headers });
-
-			if (response.status === 404) return; // New/empty doc
-			if (!response.ok) {
-				console.warn(
-					`[SyncProvider] Snapshot prefetch failed: ${response.status}`,
-				);
-				return;
-			}
-
-			// Guard against HTML error pages from dev servers
-			const contentType = response.headers.get('content-type') ?? '';
-			if (!contentType.includes('application/octet-stream')) return;
-
-			const data = new Uint8Array(await response.arrayBuffer());
-			Y.applyUpdateV2(doc, data, SYNC_ORIGIN);
-		} catch (e) {
-			console.warn('[SyncProvider] Snapshot prefetch error', e);
-		}
-	}
-
-	// ========================================================================
 	// Supervisor Loop (THE core of the provider)
 	// ========================================================================
 
@@ -450,10 +410,6 @@ export function createSyncProvider({
 				}
 			}
 
-			if (runId !== myRunId) break;
-
-			// --- HTTP snapshot prefetch ---
-			await fetchSnapshot(token);
 			if (runId !== myRunId) break;
 
 			// --- Single connection attempt ---

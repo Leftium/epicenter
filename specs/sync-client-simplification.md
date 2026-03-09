@@ -297,8 +297,8 @@ destroy() {
 ### Wave 4: Extension + consumer updates
 **Files:** `packages/epicenter/src/extensions/sync.ts`, any consumers
 
-1. Update any references to removed `SyncStatus` values
-2. Update any references to `hasLocalChanges` / `onLocalChanges`
+- [x] **4.1** Update any references to removed `SyncStatus` values — none found in consumers
+- [x] **4.2** Update any references to `hasLocalChanges` / `onLocalChanges` — only README reference, updated
 
 ## Future: Adding Ack Tracking Back
 

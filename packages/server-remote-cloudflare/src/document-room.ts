@@ -389,10 +389,12 @@ export class DocumentRoom extends DurableObject {
 			}
 		}
 
-		// Persist updated controlledClientIds for hibernation survival
-		ws.serializeAttachment({
-			controlledClientIds: [...state.controlledClientIds],
-		} satisfies WsAttachment);
+		// Only persist when awareness client IDs actually changed
+		if (result.awarenessChanged) {
+			ws.serializeAttachment({
+				controlledClientIds: [...state.controlledClientIds],
+			} satisfies WsAttachment);
+		}
 	}
 
 	override async webSocketClose(

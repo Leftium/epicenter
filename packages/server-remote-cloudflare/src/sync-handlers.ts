@@ -86,6 +86,8 @@ export type WsMessageResult = {
 	response?: Uint8Array;
 	/** Message to broadcast to all OTHER connections. */
 	broadcast?: Uint8Array;
+	/** True when awareness state changed — caller should persist attachment. */
+	awarenessChanged?: boolean;
 };
 
 // ============================================================================
@@ -190,7 +192,7 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 				case MESSAGE_TYPE.AWARENESS: {
 					const update = decoding.readVarUint8Array(decoder);
 					applyAwarenessUpdate(state.awareness, update, state.ws);
-					return { broadcast: encodeAwareness({ update }) };
+					return { broadcast: encodeAwareness({ update }), awarenessChanged: true };
 				}
 
 				case MESSAGE_TYPE.QUERY_AWARENESS: {

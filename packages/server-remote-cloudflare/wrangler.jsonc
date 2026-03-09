@@ -5,11 +5,11 @@
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
 	"send_metrics": false,
-	// --- Custom domain: api.epicenter.so ---
+	// --- Custom domain: api.epicenter.so (auto-creates DNS record on deploy) ---
 	"routes": [
 		{
-			"pattern": "api.epicenter.so/*",
-			"zone_name": "epicenter.so"
+			"pattern": "api.epicenter.so",
+			"custom_domain": true
 		}
 	],
 	// --- Vars: non-secret config accessible via env ---

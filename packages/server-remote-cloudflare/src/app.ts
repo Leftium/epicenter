@@ -109,11 +109,18 @@ function createAuth(env: Env['Bindings']) {
 				domain: 'epicenter.so',
 			},
 		},
-		trustedOrigins: [
-			'https://*.epicenter.so',
-			'https://epicenter.so',
-			'tauri://localhost',
-		],
+		trustedOrigins: (request) => {
+			const origins = [
+				'https://*.epicenter.so',
+				'https://epicenter.so',
+				'tauri://localhost',
+			];
+			const origin = request?.headers.get('origin');
+			if (origin?.startsWith('chrome-extension://')) {
+				origins.push(origin);
+			}
+			return origins;
+		},
 		secondaryStorage: {
 			get: (key: string) => env.SESSION_KV.get(key),
 			set: (key: string, value: string, ttl?: number) =>

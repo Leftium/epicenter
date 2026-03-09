@@ -79,25 +79,6 @@ const authUser = createStorageState('local:authUser', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Convert Better Auth's Date fields to ISO strings for storage. */
-function parseUser<
-	T extends Omit<AuthUser, 'createdAt' | 'updatedAt'> & {
-		createdAt: Date;
-		updatedAt: Date;
-	},
->(raw: T): AuthUser {
-	const { createdAt, updatedAt, ...rest } = raw;
-	return {
-		...rest,
-		createdAt: createdAt.toISOString(),
-		updatedAt: updatedAt.toISOString(),
-	};
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -188,7 +169,7 @@ function createAuthState() {
 						password,
 					});
 					if (authError) throw new Error(authError.message ?? 'Sign-in failed');
-					const user = parseUser(data.user);
+					const user = serializeDates(data.user);
 					await authUser.set(user);
 					return user;
 				},
@@ -219,7 +200,7 @@ function createAuthState() {
 						name,
 					});
 					if (authError) throw new Error(authError.message ?? 'Sign-up failed');
-					const user = parseUser(data.user);
+					const user = serializeDates(data.user);
 					await authUser.set(user);
 					return user;
 				},
@@ -275,10 +256,13 @@ function createAuthState() {
 						idToken: { token: idToken, nonce },
 					});
 					if (authError)
-						throw new Error(authError.message ?? 'Google sign-in failed');
+						throw new Error(
+							authError.message ||
+								`Server error (${authError.status ?? 'unknown'})`,
+						);
 					if (!data || !('user' in data))
 						throw new Error('Unexpected response from server');
-					const user = parseUser(data.user);
+					const user = serializeDates(data.user);
 					await authUser.set(user);
 					return user;
 				},
@@ -355,7 +339,7 @@ function createAuthState() {
 				return Ok(null);
 			}
 
-			const user = parseUser(data.user);
+			const user = serializeDates(data.user);
 			await authUser.set(user);
 			phase = { status: 'signed-in' };
 			return Ok(user);
@@ -375,3 +359,17 @@ function createAuthState() {
 }
 
 export const authState = createAuthState();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Convert all `Date` properties in an object to ISO strings. */
+function serializeDates<T extends Record<string, unknown>>(obj: T) {
+	return Object.fromEntries(
+		Object.entries(obj).map(([key, value]) => [
+			key,
+			value instanceof Date ? value.toISOString() : value,
+		]),
+	) as { [K in keyof T]: T[K] extends Date ? string : T[K] };
+}

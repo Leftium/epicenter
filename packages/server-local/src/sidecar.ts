@@ -1,6 +1,7 @@
 import type { AnyWorkspaceClient } from '@epicenter/workspace';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { openAPIRouteHandler } from 'hono-openapi';
 import * as Y from 'yjs';
 import { createAuthMiddleware } from './middleware/auth';
 import { serve } from './server';
@@ -139,7 +140,19 @@ export function createSidecar({
 	app.route('/rooms', syncApp);
 	app.route('/workspaces', createWorkspacePlugin(clients));
 
+	// OpenAPI spec endpoint
+	app.get(
+		'/openapi',
+		openAPIRouteHandler(app, {
+			documentation: {
+				info: { title: 'Epicenter Sidecar API', version: '1.0.0' },
+			},
+		}),
+	);
+
 	const preferredPort = port ?? Number.parseInt(process.env.PORT ?? '3913', 10);
+
+	let bunServer: ReturnType<typeof Bun.serve> | null = null;
 
 	return {
 		app,
@@ -151,11 +164,14 @@ export function createSidecar({
 				preferredPort,
 				websocket,
 			);
+			bunServer = server;
 			return { server, port: actualPort };
 		},
 
 		/** Stop the HTTP server and destroy all workspace clients. */
 		async stop() {
+			bunServer?.stop();
+			bunServer = null;
 			await Promise.all(clients.map((c) => c.destroy()));
 			for (const doc of dynamicDocs.values()) doc.destroy();
 			dynamicDocs.clear();

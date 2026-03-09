@@ -10,6 +10,7 @@ The server-local package uses Elysia while server-remote-cloudflare uses Hono. T
 
 - Replace Elysia with Hono (including WebSocket via `upgradeWebSocket` from `hono/bun`)
 - Simplify auth to `AuthUser | null` instead of `SessionValidationResult` discriminated union
+- Add OpenAPI via `hono-openapi` with `describeRoute()` on all routes and `openAPIRouteHandler` at `GET /openapi`
 - Preserve the same public API shape (`createSidecar`, `SidecarConfig`, etc.)
 - Port all existing tests
 
@@ -90,14 +91,14 @@ Consumer to update: `packages/cli/src/commands/sidecar-command.ts` (only imports
 
 Rewrote the server-local package from Elysia to Hono. All 76 tests pass. The public API (`createSidecar`, `SidecarConfig`, etc.) is preserved. Auth was simplified from a discriminated union (`SessionValidationResult`) to `AuthUser | null` in a single middleware factory.
 
-### Deviations from Spec
+### Decisions & Deviations
 
-- **OpenAPI not added**: The spec mentioned adding `hono-openapi` + `@hono/standard-validator`, but the remote server doesn't use OpenAPI either. Skipped to keep parity. The `@hono/standard-validator` dep was added but not yet wired.
-- **WebSocket pong handling**: Hono's BunWebSocket adapter doesn't expose `pong` events. Solved by spreading the adapter's `websocket` object and adding a custom `pong` handler.
+- **OpenAPI via `hono-openapi`**: All workspace/kv/actions routes use `describeRoute()` for metadata. Spec served at `GET /openapi` via `openAPIRouteHandler`.
+- **WebSocket pong handling**: Hono's BunWebSocket adapter doesn't expose `pong` events ([honojs/hono#3969](https://github.com/honojs/hono/issues/3969)). Solved by spreading the adapter's `websocket` export and adding a custom `pong` handler.
 - **`serve()` replaces `listenWithFallback()`**: The new function takes the Hono app + optional websocket handler and returns `{ server, port }` instead of just the port.
-- **`stop()` no longer stops the HTTP server**: The Bun server returned from `start()` must be stopped separately. The `stop()` method now only handles client cleanup.
+- **`stop()` stores and stops the Bun server**: The server reference from `start()` is stored internally so `stop()` handles both HTTP shutdown and client cleanup.
+- **Cache eviction not added**: The auth session cache (`Map<token, CacheEntry>`) grows unbounded but in practice holds 1-2 entries (one per user session on a local server). Not worth the complexity.
 
 ### Follow-up Work
 
-- Wire `@hono/standard-validator` for request body validation on workspace routes
 - Consider adding `trimTrailingSlash()` middleware for production robustness

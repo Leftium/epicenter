@@ -1,7 +1,6 @@
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -10,7 +9,6 @@ import {
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
-import * as encoding from 'lib0/encoding';
 import {
 	Awareness,
 	applyAwarenessUpdate,
@@ -73,19 +71,11 @@ const BASE_DELAY_MS = 500;
 /** Maximum delay between reconnection attempts. */
 const MAX_DELAY_MS = 30_000;
 
-/**
- * Time without receiving any message before sending a heartbeat probe.
- *
- * Set to 30s because Cloudflare's `setWebSocketAutoResponse` handles TCP-level
- * ping/pong liveness without waking the Durable Object. This probe only fires
- * when there are unacked local changes — it's for ack tracking, not liveness.
- * During genuine idle (no local changes), no probe is sent and the DO stays
- * hibernated.
- */
-const HEARTBEAT_IDLE_MS = 30_000;
+/** Interval between text "ping" messages for liveness detection. */
+const PING_INTERVAL_MS = 30_000;
 
-/** Time after sending a heartbeat to wait for any response before closing the connection. */
-const HEARTBEAT_TIMEOUT_MS = 5_000;
+/** Time without any message before the connection is considered dead. */
+const LIVENESS_TIMEOUT_MS = 45_000;
 
 // ============================================================================
 // Factory Function
@@ -147,23 +137,11 @@ export function createSyncProvider({
 	/** Promise of the currently running supervisor loop, or null if idle. */
 	let connectRun: Promise<void> | null = null;
 
-	/** Local version counter — incremented on each local Y.Doc update. */
-	let localVersion = 0;
-
-	/** Last version the server acknowledged via MESSAGE_SYNC_STATUS echo. */
-	let ackedVersion = -1;
-
 	/** Current retry count for exponential backoff. */
 	let retries = 0;
 
 	/** Current WebSocket instance, or null. */
 	let websocket: WebSocketLike | null = null;
-
-	/** Heartbeat idle timer handle. */
-	let heartbeatHandle: ReturnType<typeof setTimeout> | null = null;
-
-	/** Heartbeat timeout timer handle (armed after probe sent). */
-	let connectionTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
 	/** Current backoff sleeper — can be woken by browser online events. */
 	let reconnectSleeper: Sleeper | null = null;
@@ -173,7 +151,6 @@ export function createSyncProvider({
 	// ========================================================================
 
 	const statusListeners = new Set<(status: SyncStatus) => void>();
-	const localChangesListeners = new Set<(hasLocalChanges: boolean) => void>();
 
 	/**
 	 * Transition the provider's observable status and notify all listeners.
@@ -188,125 +165,6 @@ export function createSyncProvider({
 		for (const listener of statusListeners) {
 			listener(newStatus);
 		}
-	}
-
-	/**
-	 * Notify listeners about a transition in the local changes state.
-	 *
-	 * Only called when `hasLocalChanges` actually toggles — not on every update.
-	 * This drives "Saving…" / "Saved" UI without spurious re-renders.
-	 */
-	function emitLocalChanges(hasChanges: boolean) {
-		for (const listener of localChangesListeners) {
-			listener(hasChanges);
-		}
-	}
-
-	// ========================================================================
-	// Version Tracking (hasLocalChanges)
-	// ========================================================================
-
-	/**
-	 * Bump the local version counter after a local Y.Doc mutation.
-	 *
-	 * Only emits a `localChanges(true)` event on the clean→dirty transition
-	 * (i.e., the first unacked change). Subsequent local edits before an ack
-	 * just bump the counter silently.
-	 */
-	function incrementLocalVersion() {
-		const wasClean = ackedVersion === localVersion;
-		localVersion += 1;
-		if (wasClean) {
-			emitLocalChanges(true);
-		}
-	}
-
-	/**
-	 * Record the latest version the server has acknowledged via MESSAGE_SYNC_STATUS.
-	 *
-	 * Uses `Math.max` to guard against out-of-order acks. Only emits
-	 * `localChanges(false)` when the acked version catches up to the local
-	 * version — the dirty→clean transition.
-	 */
-	function updateAckedVersion(version: number) {
-		version = Math.max(version, ackedVersion);
-		const willBecomeClean =
-			ackedVersion !== localVersion && version === localVersion;
-		ackedVersion = version;
-		if (willBecomeClean) {
-			emitLocalChanges(false);
-		}
-	}
-
-	// ========================================================================
-	// Heartbeat (MESSAGE_SYNC_STATUS = 102)
-	// ========================================================================
-
-	function clearHeartbeat() {
-		if (heartbeatHandle) {
-			clearTimeout(heartbeatHandle);
-			heartbeatHandle = null;
-		}
-	}
-
-	function clearConnectionTimeout() {
-		if (connectionTimeoutHandle) {
-			clearTimeout(connectionTimeoutHandle);
-			connectionTimeoutHandle = null;
-		}
-	}
-
-	/**
-	 * Reset the heartbeat idle timer. After {@link HEARTBEAT_IDLE_MS} of
-	 * silence, sends a MESSAGE_SYNC_STATUS probe — but only when there are
-	 * unacked local changes. This avoids waking the Durable Object from
-	 * hibernation during genuine idle periods.
-	 *
-	 * Liveness is handled by Cloudflare's `setWebSocketAutoResponse` ping/pong
-	 * which never wakes the DO.
-	 */
-	function resetHeartbeat() {
-		clearHeartbeat();
-		heartbeatHandle = setTimeout(() => {
-			heartbeatHandle = null;
-			if (ackedVersion !== localVersion) {
-				sendSyncStatus();
-			}
-		}, HEARTBEAT_IDLE_MS);
-	}
-
-	/**
-	 * Arm a timeout that closes the socket if no response arrives within
-	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
-	 *
-	 * Only armed when a SYNC_STATUS probe is actually sent (i.e., when there
-	 * are unacked local changes). The Cloudflare backend always echoes
-	 * SYNC_STATUS, so a missing response means the connection is dead.
-	 */
-	function armConnectionTimeout() {
-		if (connectionTimeoutHandle) return;
-		connectionTimeoutHandle = setTimeout(() => {
-			websocket?.close();
-			connectionTimeoutHandle = null;
-		}, HEARTBEAT_TIMEOUT_MS);
-	}
-
-	/**
-	 * Send a MESSAGE_SYNC_STATUS (102) frame containing the current local version.
-	 *
-	 * The server echoes this back, which serves two purposes:
-	 * 1. **Heartbeat** — proves the connection is alive (arms the timeout).
-	 * 2. **Ack tracking** — when the echoed version equals `localVersion`,
-	 *    we know all local changes have been persisted server-side.
-	 *
-	 * Wire format: `[102][varint-length payload][varint localVersion]`
-	 */
-	function sendSyncStatus() {
-		const payload = encoding.encode((encoder) => {
-			encoding.writeVarUint(encoder, localVersion);
-		});
-		send(encodeSyncStatus({ payload }));
-		armConnectionTimeout();
 	}
 
 	// ========================================================================
@@ -330,17 +188,10 @@ export function createSyncProvider({
 	 * Uses {@link SYNC_ORIGIN} as the origin sentinel: when the sync protocol
 	 * applies a remote update it passes `SYNC_ORIGIN` as origin, so this handler
 	 * skips those to avoid echoing remote changes back to the server.
-	 *
-	 * After sending the update, bumps the local version and sends a
-	 * MESSAGE_SYNC_STATUS probe so the server can ack receipt.
 	 */
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (origin === SYNC_ORIGIN) return;
-
 		send(encodeSyncUpdate({ update }));
-
-		incrementLocalVersion();
-		sendSyncStatus();
 	}
 
 	// ========================================================================
@@ -369,7 +220,7 @@ export function createSyncProvider({
 	}
 
 	// ========================================================================
-	// Browser Online/Offline Handlers
+	// Browser Online/Offline/Visibility Handlers
 	// ========================================================================
 
 	/** Wake the backoff sleeper immediately when the browser comes back online. */
@@ -378,14 +229,25 @@ export function createSyncProvider({
 	}
 
 	/**
-	 * Probe the connection when the browser reports going offline.
-	 *
-	 * Doesn't blindly trust the browser's offline event (it can be wrong,
-	 * e.g. localhost connections). Instead sends a heartbeat probe — if
-	 * the connection is truly dead, the timeout will close the socket.
+	 * Close the socket when the browser reports going offline.
+	 * False positives cause a cheap reconnect.
 	 */
 	function handleOffline() {
-		sendSyncStatus();
+		websocket?.close();
+	}
+
+	/**
+	 * Send an immediate ping when the tab becomes visible.
+	 *
+	 * Timer callbacks may have been throttled while backgrounded. The ping
+	 * triggers a "pong" response; if the connection is dead, the liveness
+	 * interval will detect the stale lastMessageTime and close the socket.
+	 */
+	function handleVisibilityChange() {
+		if (document.visibilityState !== 'visible') return;
+		if (websocket?.readyState === WS.OPEN) {
+			websocket.send('ping');
+		}
 	}
 
 	// ========================================================================
@@ -415,7 +277,7 @@ export function createSyncProvider({
 					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
-					setStatus('error');
+					setStatus('connecting');
 					const timeout = backoffDelay(retries);
 					retries += 1;
 					reconnectSleeper = createSleeper(timeout);
@@ -440,7 +302,7 @@ export function createSyncProvider({
 
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
-				setStatus('error');
+				setStatus('connecting');
 				const timeout = backoffDelay(retries);
 				retries += 1;
 				reconnectSleeper = createSleeper(timeout);
@@ -489,12 +351,14 @@ export function createSyncProvider({
 			Promise.withResolvers<void>();
 		let handshakeComplete = false;
 
+		// Liveness state (scoped to this connection attempt)
+		let pingInterval: ReturnType<typeof setInterval> | null = null;
+		let livenessInterval: ReturnType<typeof setInterval> | null = null;
+		let lastMessageTime = Date.now();
+
 		// --- Event handlers (REPORTERS ONLY) ---
 		ws.onopen = () => {
-			setStatus('handshaking');
-
 			send(encodeSyncStep1({ doc }));
-			sendSyncStatus();
 
 			if (awareness.getLocalState() !== null) {
 				send(
@@ -505,13 +369,24 @@ export function createSyncProvider({
 				);
 			}
 
-			resetHeartbeat();
+			lastMessageTime = Date.now();
+
+			pingInterval = setInterval(() => {
+				if (ws.readyState === WS.OPEN) ws.send('ping');
+			}, PING_INTERVAL_MS);
+
+			livenessInterval = setInterval(() => {
+				if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
+					ws.close();
+				}
+			}, 10_000);
+
 			resolveOpen(true);
 		};
 
 		ws.onclose = () => {
-			clearHeartbeat();
-			clearConnectionTimeout();
+			if (pingInterval) clearInterval(pingInterval);
+			if (livenessInterval) clearInterval(livenessInterval);
 
 			// Remove remote awareness states (keep our own)
 			removeAwarenessStates(
@@ -533,8 +408,10 @@ export function createSyncProvider({
 		};
 
 		ws.onmessage = (event: MessageEvent) => {
-			clearConnectionTimeout();
-			resetHeartbeat();
+			lastMessageTime = Date.now();
+
+			// Text "pong" from auto-response — liveness confirmed, nothing else to do
+			if (typeof event.data === 'string') return;
 
 			const data: Uint8Array = new Uint8Array(event.data);
 			const decoder = decoding.createDecoder(data);
@@ -557,7 +434,6 @@ export function createSyncProvider({
 						(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
-						// Server's step2 (or an update during handshake) applied
 						handshakeComplete = true;
 						setStatus('connected');
 					}
@@ -580,14 +456,6 @@ export function createSyncProvider({
 							clients: Array.from(awareness.getStates().keys()),
 						}),
 					);
-					break;
-				}
-
-				case MESSAGE_TYPE.SYNC_STATUS: {
-					const payload = decoding.readVarUint8Array(decoder);
-					const versionDecoder = decoding.createDecoder(payload);
-					const version = decoding.readVarUint(versionDecoder);
-					updateAckedVersion(version);
 					break;
 				}
 			}
@@ -621,19 +489,28 @@ export function createSyncProvider({
 	// Window Event Helpers
 	// ========================================================================
 
-	/** Attach browser online/offline listeners. No-ops in non-browser environments. */
+	/** Attach browser online/offline/visibility listeners. No-ops in non-browser environments. */
 	function addWindowListeners() {
 		if (typeof window !== 'undefined') {
 			window.addEventListener('offline', handleOffline);
 			window.addEventListener('online', handleOnline);
 		}
+		if (typeof document !== 'undefined') {
+			document.addEventListener('visibilitychange', handleVisibilityChange);
+		}
 	}
 
-	/** Detach browser online/offline listeners. No-ops in non-browser environments. */
+	/** Detach browser online/offline/visibility listeners. No-ops in non-browser environments. */
 	function removeWindowListeners() {
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('offline', handleOffline);
 			window.removeEventListener('online', handleOnline);
+		}
+		if (typeof document !== 'undefined') {
+			document.removeEventListener(
+				'visibilitychange',
+				handleVisibilityChange,
+			);
 		}
 	}
 
@@ -652,10 +529,6 @@ export function createSyncProvider({
 	return {
 		get status() {
 			return status;
-		},
-
-		get hasLocalChanges() {
-			return ackedVersion !== localVersion;
 		},
 
 		get awareness() {
@@ -703,42 +576,14 @@ export function createSyncProvider({
 		},
 
 		/**
-		 * Subscribe to local changes state changes. Returns unsubscribe function.
-		 */
-		onLocalChanges(listener: (hasLocalChanges: boolean) => void) {
-			localChangesListeners.add(listener);
-			return () => {
-				localChangesListeners.delete(listener);
-			};
-		},
-
-		/**
 		 * Clean up everything — disconnect, remove listeners, release resources.
 		 */
 		destroy() {
-			desired = 'offline';
-			runId++;
-			reconnectSleeper?.wake();
-
-			clearHeartbeat();
-			clearConnectionTimeout();
-
-			if (websocket) {
-				websocket.close();
-			}
-
-			// Synchronously set offline so callers see the status immediately
-			setStatus('offline');
-
+			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
-
 			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
-
-			removeWindowListeners();
-
 			statusListeners.clear();
-			localChangesListeners.clear();
 		},
 	};
 }

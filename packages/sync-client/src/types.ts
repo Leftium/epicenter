@@ -15,7 +15,7 @@ export type WebSocketLike = {
 	onclose: ((event: CloseEvent) => void) | null;
 	onmessage: ((event: MessageEvent) => void) | null;
 	onerror: ((event: Event) => void) | null;
-	send(data: ArrayBufferLike | Uint8Array): void;
+	send(data: ArrayBufferLike | Uint8Array | string): void;
 	close(): void;
 };
 
@@ -95,35 +95,25 @@ export type SyncProviderConfig = {
 /**
  * Connection status of the sync provider.
  *
- * Five-state model (vs y-websocket's three states):
+ * Three-state model:
  * - `offline` — Not connected, not trying to connect
- * - `connecting` — Attempting to open a WebSocket
- * - `handshaking` — WebSocket open, sync step 1/2 in progress
+ * - `connecting` — Attempting to open a WebSocket or performing handshake
  * - `connected` — Fully synced and communicating
- * - `error` — Connection failed, will retry after backoff
  */
-export type SyncStatus =
-	| 'offline'
-	| 'connecting'
-	| 'handshaking'
-	| 'connected'
-	| 'error';
+export type SyncStatus = 'offline' | 'connecting' | 'connected';
 
 /**
  * A sync provider instance returned by {@link createSyncProvider}.
  *
  * Manages a WebSocket connection to a Yjs sync server with:
  * - Supervisor loop architecture (one loop decides, event handlers report)
- * - MESSAGE_SYNC_STATUS (102) heartbeat for `hasLocalChanges` and fast dead detection
+ * - Text ping/pong liveness detection via Cloudflare auto-response
  * - Exponential backoff with wakeable sleeper for browser online events
  * - Two-mode auth (open, dynamic token refresh)
  */
 export type SyncProvider = {
 	/** Current connection status. */
 	readonly status: SyncStatus;
-
-	/** Whether there are unacknowledged local changes. */
-	readonly hasLocalChanges: boolean;
 
 	/** The awareness instance for user presence. */
 	readonly awareness: Awareness;
@@ -153,21 +143,6 @@ export type SyncProvider = {
 	 * ```
 	 */
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
-
-	/**
-	 * Subscribe to local changes state changes. Returns unsubscribe function.
-	 *
-	 * Fires when `hasLocalChanges` toggles between true and false.
-	 * Use this to show "Saving..." / "Saved" UI.
-	 *
-	 * @example
-	 * ```typescript
-	 * const unsub = provider.onLocalChanges((hasChanges) => {
-	 *   statusBar.text = hasChanges ? 'Saving...' : 'Saved';
-	 * });
-	 * ```
-	 */
-	onLocalChanges(listener: (hasLocalChanges: boolean) => void): () => void;
 
 	/**
 	 * Clean up everything — disconnect, remove listeners, release resources.

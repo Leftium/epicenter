@@ -6,6 +6,7 @@ import {
 	encodeSyncUpdate,
 	handleSyncPayload,
 	MESSAGE_TYPE,
+	SYNC_MESSAGE_TYPE,
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
@@ -541,18 +542,22 @@ export function createSyncProvider({
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(decoder);
+					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
 					const payload = decoding.readVarUint8Array(decoder);
 					const response = handleSyncPayload({
-						syncType: syncType as SyncMessageType,
+						syncType,
 						payload,
 						doc,
 						origin: SYNC_ORIGIN,
 					});
 					if (response) {
 						send(response);
-					} else if (!handshakeComplete) {
-						// First null response = server's step2 applied
+					} else if (
+						!handshakeComplete &&
+						(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
+							syncType === SYNC_MESSAGE_TYPE.UPDATE)
+					) {
+						// Server's step2 (or an update during handshake) applied
 						handshakeComplete = true;
 						setStatus('connected');
 					}

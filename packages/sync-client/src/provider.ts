@@ -40,6 +40,12 @@ type Sleeper = {
 	wake(): void;
 };
 
+/** Compute exponential backoff with jitter: `min(baseDelay * 2^retries, maxDelay) * [0.5, 1.0)`. */
+function backoffDelay(retries: number): number {
+	const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
+	return exponential * (0.5 + Math.random() * 0.5);
+}
+
 /** Creates a cancellable timeout that resolves after `timeout` ms, or immediately if `wake()` is called. */
 function createSleeper(timeout: number): Sleeper {
 	const { promise, resolve } = Promise.withResolvers<void>();
@@ -61,13 +67,10 @@ function createSleeper(timeout: number): Sleeper {
 const SYNC_ORIGIN = Symbol('sync-provider');
 
 /** Base delay before reconnecting after a failed connection attempt. */
-const DELAY_MS_BEFORE_RECONNECT = 500;
+const BASE_DELAY_MS = 500;
 
-/** Exponential backoff base factor. */
-const BACKOFF_BASE = 1.1;
-
-/** Maximum backoff multiplier to prevent excessively long waits. */
-const MAX_BACKOFF_COEFFICIENT = 10;
+/** Maximum delay between reconnection attempts. */
+const MAX_DELAY_MS = 30_000;
 
 /**
  * Time without receiving any message before sending a heartbeat probe.
@@ -412,9 +415,7 @@ export function createSyncProvider({
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
 					setStatus('error');
-					const timeout =
-						DELAY_MS_BEFORE_RECONNECT *
-						Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
+					const timeout = backoffDelay(retries);
 					retries += 1;
 					reconnectSleeper = createSleeper(timeout);
 					await reconnectSleeper.promise;
@@ -439,9 +440,7 @@ export function createSyncProvider({
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
 				setStatus('error');
-				const timeout =
-					DELAY_MS_BEFORE_RECONNECT *
-					Math.min(MAX_BACKOFF_COEFFICIENT, BACKOFF_BASE ** retries);
+				const timeout = backoffDelay(retries);
 				retries += 1;
 				reconnectSleeper = createSleeper(timeout);
 				await reconnectSleeper.promise;

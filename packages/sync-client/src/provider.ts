@@ -23,37 +23,6 @@ import type {
 } from './types';
 
 // ============================================================================
-// Helpers
-// ============================================================================
-
-/** A cancellable timeout returned by {@link createSleeper}. */
-type Sleeper = {
-	/** Resolves when the timeout expires or `wake()` is called. */
-	promise: Promise<void>;
-	/** Resolves the promise immediately, clearing the pending timeout. */
-	wake(): void;
-};
-
-/** Compute exponential backoff with jitter: `min(baseDelay * 2^retries, maxDelay) * [0.5, 1.0)`. */
-function backoffDelay(retries: number): number {
-	const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
-	return exponential * (0.5 + Math.random() * 0.5);
-}
-
-/** Creates a cancellable timeout that resolves after `timeout` ms, or immediately if `wake()` is called. */
-function createSleeper(timeout: number): Sleeper {
-	const { promise, resolve } = Promise.withResolvers<void>();
-	const handle = setTimeout(resolve, timeout);
-	return {
-		promise,
-		wake() {
-			clearTimeout(handle);
-			resolve();
-		},
-	};
-}
-
-// ============================================================================
 // Constants
 // ============================================================================
 
@@ -116,10 +85,6 @@ export function createSyncProvider({
 	WebSocketConstructor: WS = WebSocket,
 	awareness = new Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
-	// ========================================================================
-	// Closure State
-	// ========================================================================
-
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
@@ -135,18 +100,10 @@ export function createSyncProvider({
 	/** Promise of the currently running supervisor loop, or null if idle. */
 	let connectRun: Promise<void> | null = null;
 
-	/** Current retry count for exponential backoff. */
-	let retries = 0;
-
 	/** Current WebSocket instance, or null. */
 	let websocket: WebSocketLike | null = null;
 
-	/** Current backoff sleeper — can be woken by browser online events. */
-	let reconnectSleeper: Sleeper | null = null;
-
-	// ========================================================================
-	// Event Listeners
-	// ========================================================================
+	const backoff = createBackoff();
 
 	const statusListeners = new Set<(status: SyncStatus) => void>();
 
@@ -165,20 +122,12 @@ export function createSyncProvider({
 		}
 	}
 
-	// ========================================================================
-	// WebSocket Send Helper
-	// ========================================================================
-
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
 		if (websocket?.readyState === WS.OPEN) {
 			websocket.send(message);
 		}
 	}
-
-	// ========================================================================
-	// Y.Doc Update Handler (V2)
-	// ========================================================================
 
 	/**
 	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
@@ -191,10 +140,6 @@ export function createSyncProvider({
 		if (origin === SYNC_ORIGIN) return;
 		send(encodeSyncUpdate({ update }));
 	}
-
-	// ========================================================================
-	// Awareness Update Handler
-	// ========================================================================
 
 	/**
 	 * Awareness `'update'` handler — broadcasts local presence changes
@@ -217,13 +162,11 @@ export function createSyncProvider({
 		);
 	}
 
-	// ========================================================================
-	// Browser Online/Offline/Visibility Handlers
-	// ========================================================================
+	// --- Browser event handlers ---
 
-	/** Wake the backoff sleeper immediately when the browser comes back online. */
+	/** Wake the backoff sleeper so we reconnect immediately when the browser comes back online. */
 	function handleOnline() {
-		reconnectSleeper?.wake();
+		backoff.wake();
 	}
 
 	/**
@@ -248,9 +191,20 @@ export function createSyncProvider({
 		}
 	}
 
-	// ========================================================================
-	// Supervisor Loop (THE core of the provider)
-	// ========================================================================
+	/** Attach or detach browser online/offline/visibility listeners. */
+	function manageWindowListeners(action: 'add' | 'remove') {
+		const method =
+			action === 'add' ? 'addEventListener' : 'removeEventListener';
+		if (typeof window !== 'undefined') {
+			window[method]('offline', handleOffline);
+			window[method]('online', handleOnline);
+		}
+		if (typeof document !== 'undefined') {
+			document[method]('visibilitychange', handleVisibilityChange);
+		}
+	}
+
+	// --- Supervisor loop ---
 
 	/**
 	 * The supervisor loop is the SINGLE OWNER of:
@@ -275,11 +229,7 @@ export function createSyncProvider({
 					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
-					const timeout = backoffDelay(retries);
-					retries += 1;
-					reconnectSleeper = createSleeper(timeout);
-					await reconnectSleeper.promise;
-					reconnectSleeper = null;
+					await backoff.sleep();
 					continue;
 				}
 			}
@@ -292,7 +242,7 @@ export function createSyncProvider({
 			if (runId !== myRunId) break;
 
 			if (result === 'connected') {
-				retries = 0;
+				backoff.reset();
 			}
 
 			if (result === 'cancelled') break;
@@ -300,15 +250,10 @@ export function createSyncProvider({
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
 				setStatus('connecting');
-				const timeout = backoffDelay(retries);
-				retries += 1;
-				reconnectSleeper = createSleeper(timeout);
-				await reconnectSleeper.promise;
-				reconnectSleeper = null;
+				await backoff.sleep();
 			}
 		}
 
-		// Loop exiting — set offline if we were asked to disconnect
 		if (desired === 'offline') {
 			setStatus('offline');
 		}
@@ -339,7 +284,6 @@ export function createSyncProvider({
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
-		// --- Promises that event handlers resolve ---
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
 		const { promise: closePromise, resolve: resolveClose } =
@@ -351,7 +295,6 @@ export function createSyncProvider({
 		let livenessInterval: ReturnType<typeof setInterval> | null = null;
 		let lastMessageTime = Date.now();
 
-		// --- Event handlers (REPORTERS ONLY) ---
 		ws.onopen = () => {
 			send(encodeSyncStep1({ doc }));
 
@@ -414,7 +357,9 @@ export function createSyncProvider({
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
+					const syncType = decoding.readVarUint(
+						decoder,
+					) as SyncMessageType;
 					const payload = decoding.readVarUint8Array(decoder);
 					const response = handleSyncPayload({
 						syncType,
@@ -473,50 +418,16 @@ export function createSyncProvider({
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
-	// ========================================================================
-	// Doc + Awareness Listeners (attach immediately)
-	// ========================================================================
+	// --- Attach doc + awareness listeners ---
 
 	doc.on('updateV2', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
-	// ========================================================================
-	// Window Event Helpers
-	// ========================================================================
-
-	/** Attach browser online/offline/visibility listeners. No-ops in non-browser environments. */
-	function addWindowListeners() {
-		if (typeof window !== 'undefined') {
-			window.addEventListener('offline', handleOffline);
-			window.addEventListener('online', handleOnline);
-		}
-		if (typeof document !== 'undefined') {
-			document.addEventListener('visibilitychange', handleVisibilityChange);
-		}
-	}
-
-	/** Detach browser online/offline/visibility listeners. No-ops in non-browser environments. */
-	function removeWindowListeners() {
-		if (typeof window !== 'undefined') {
-			window.removeEventListener('offline', handleOffline);
-			window.removeEventListener('online', handleOnline);
-		}
-		if (typeof document !== 'undefined') {
-			document.removeEventListener(
-				'visibilitychange',
-				handleVisibilityChange,
-			);
-		}
-	}
-
-	// ========================================================================
-	// Public API
-	// ========================================================================
+	// --- Auto-connect ---
 
 	if (shouldConnect) {
-		// Auto-connect
 		desired = 'online';
-		addWindowListeners();
+		manageWindowListeners('add');
 		const myRunId = runId;
 		connectRun = runLoop(myRunId);
 	}
@@ -530,27 +441,19 @@ export function createSyncProvider({
 			return awareness;
 		},
 
-		/**
-		 * Start connecting. Idempotent — safe to call multiple times.
-		 * If a connect loop is already running, this is a no-op.
-		 */
 		connect() {
 			desired = 'online';
-			if (connectRun) return; // Loop already running
-			addWindowListeners();
+			if (connectRun) return;
+			manageWindowListeners('add');
 			const myRunId = runId;
 			connectRun = runLoop(myRunId);
 		},
 
-		/**
-		 * Stop connecting and close the socket.
-		 * Sets desired state to offline and wakes any sleeping backoff.
-		 */
 		disconnect() {
 			desired = 'offline';
 			runId++;
-			reconnectSleeper?.wake();
-			removeWindowListeners();
+			backoff.wake();
+			manageWindowListeners('remove');
 
 			if (websocket) {
 				websocket.close();
@@ -560,9 +463,6 @@ export function createSyncProvider({
 			setStatus('offline');
 		},
 
-		/**
-		 * Subscribe to status changes. Returns unsubscribe function.
-		 */
 		onStatusChange(listener: (status: SyncStatus) => void) {
 			statusListeners.add(listener);
 			return () => {
@@ -570,15 +470,62 @@ export function createSyncProvider({
 			};
 		},
 
-		/**
-		 * Clean up everything — disconnect, remove listeners, release resources.
-		 */
 		destroy() {
 			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
 			statusListeners.clear();
+		},
+	};
+}
+
+// ============================================================================
+// Helpers (hoisted — available throughout the module)
+// ============================================================================
+
+/**
+ * Creates a backoff controller with exponential delay, jitter, and a wakeable sleeper.
+ *
+ * Encapsulates retry count, delay computation, and the cancellable timeout
+ * into a single unit. The supervisor loop calls `sleep()` to wait, external
+ * events call `wake()` to interrupt, and successful connections call `reset()`.
+ */
+function createBackoff() {
+	let retries = 0;
+	let sleeper: { promise: Promise<void>; wake(): void } | null = null;
+
+	return {
+		/** Wait for the next backoff delay, then increment retries. */
+		async sleep() {
+			const exponential = Math.min(
+				BASE_DELAY_MS * 2 ** retries,
+				MAX_DELAY_MS,
+			);
+			const ms = exponential * (0.5 + Math.random() * 0.5);
+			retries += 1;
+
+			const { promise, resolve } = Promise.withResolvers<void>();
+			const handle = setTimeout(resolve, ms);
+			sleeper = {
+				promise,
+				wake() {
+					clearTimeout(handle);
+					resolve();
+				},
+			};
+			await promise;
+			sleeper = null;
+		},
+
+		/** Interrupt a pending sleep immediately. */
+		wake() {
+			sleeper?.wake();
+		},
+
+		/** Reset retry count after a successful connection. */
+		reset() {
+			retries = 0;
 		},
 	};
 }

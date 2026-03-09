@@ -101,6 +101,7 @@ function createAuthState() {
 	const client = $derived(
 		createAuthClient({
 			baseURL: remoteServerUrl.current,
+			basePath: '/auth',
 			fetchOptions: {
 				auth: {
 					type: 'Bearer',

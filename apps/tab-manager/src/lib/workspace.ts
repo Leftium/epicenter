@@ -21,8 +21,6 @@ import {
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
-import { authState } from '$lib/state/auth.svelte';
-import { serverUrl } from '$lib/state/settings.svelte';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -39,6 +37,8 @@ import {
 } from '$lib/commands/actions';
 import { startCommandConsumer } from '$lib/commands/consumer';
 import { getDeviceId } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants

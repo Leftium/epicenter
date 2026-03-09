@@ -14,12 +14,16 @@
 		authState.checkSession();
 
 		const onVisibilityChange = () => {
-			if (document.visibilityState === 'visible' && authState.status === 'signed-in') {
+			if (
+				document.visibilityState === 'visible' &&
+				authState.status === 'signed-in'
+			) {
 				authState.checkSession();
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+		return () =>
+			document.removeEventListener('visibilitychange', onVisibilityChange);
 	});
 
 	$effect(() => {
@@ -44,7 +48,9 @@
 		>
 			<Field.Set>
 				<Field.Legend>Sign in</Field.Legend>
-				<Field.Description>Sign in to sync your tabs across devices.</Field.Description>
+				<Field.Description
+					>Sign in to sync your tabs across devices.</Field.Description
+				>
 				<Field.Separator />
 
 				{#if authState.signInError}
@@ -56,15 +62,33 @@
 				<Field.Group>
 					<Field.Field>
 						<Field.Label for="email">Email</Field.Label>
-						<Input id="email" type="email" placeholder="Email" bind:value={authState.email} required autocomplete="email" />
+						<Input
+							id="email"
+							type="email"
+							placeholder="Email"
+							bind:value={authState.email}
+							required
+							autocomplete="email"
+						/>
 					</Field.Field>
 					<Field.Field>
 						<Field.Label for="password">Password</Field.Label>
-						<Input id="password" type="password" placeholder="Password" bind:value={authState.password} required autocomplete="current-password" />
+						<Input
+							id="password"
+							type="password"
+							placeholder="Password"
+							bind:value={authState.password}
+							required
+							autocomplete="current-password"
+						/>
 					</Field.Field>
 				</Field.Group>
 
-				<Button type="submit" class="w-full" disabled={authState.status === 'signing-in'}>
+				<Button
+					type="submit"
+					class="w-full"
+					disabled={authState.status === 'signing-in'}
+				>
 					{#if authState.status === 'signing-in'}
 						<Spinner class="size-4" />
 						Signing in…

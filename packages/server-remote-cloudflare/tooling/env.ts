@@ -39,8 +39,7 @@ function getDatabaseUrl(): string {
 		'utf-8',
 	);
 
-	return WranglerConfig.assert(jsoncString).hyperdrive[0]
-		.localConnectionString;
+	return WranglerConfig.assert(jsoncString).hyperdrive[0].localConnectionString;
 }
 
 const DATABASE_URL = getDatabaseUrl();

@@ -3,9 +3,9 @@
 	import * as Tabs from '@epicenter/ui/tabs';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
-	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import AuthGate from '$lib/components/AuthGate.svelte';
 	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
+	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import FlatTabList from '$lib/components/tabs/FlatTabList.svelte';
 	import SavedTabList from '$lib/components/tabs/SavedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';

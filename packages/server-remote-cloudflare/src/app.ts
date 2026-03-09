@@ -11,6 +11,7 @@ import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { cors } from 'hono/cors';
+import type { Context } from 'hono';
 import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
 import postgres from 'postgres';
@@ -224,9 +225,7 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * Helper: get a WorkspaceRoom stub for the authenticated user's room.
- *
- * ## Room key namespacing: `user:{userId}:{room}`
+ * Room key namespacing: `user:{userId}:{room}`
  *
  * We use user-scoped room keys (Google Docs model) rather than org-scoped keys
  * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
@@ -252,22 +251,16 @@ app.post(
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
-function getWorkspaceStub(c: {
-	var: { user: { id: string } };
-	env: Cloudflare.Env;
-	req: { param: (k: string) => string };
-}) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
+
+/** Get a WorkspaceRoom DO stub for the authenticated user's room. */
+function getWorkspaceStub(c: Context<Env>) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
 	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
 }
 
-/** Helper: get a DocumentRoom stub for the authenticated user's room. See {@link getWorkspaceStub} for namespacing rationale. */
-function getDocumentStub(c: {
-	var: { user: { id: string } };
-	env: Cloudflare.Env;
-	req: { param: (k: string) => string };
-}) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}` as const;
+/** Get a DocumentRoom DO stub for the authenticated user's room. */
+function getDocumentStub(c: Context<Env>) {
+	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
 }
 

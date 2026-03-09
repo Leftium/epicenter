@@ -168,7 +168,8 @@ function createAuthState() {
 						email,
 						password,
 					});
-					if (authError) throw new Error(authError.message ?? 'Sign-in failed');
+					if (authError)
+						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
 					await authUser.set(user);
 					return user;
@@ -199,7 +200,8 @@ function createAuthState() {
 						password,
 						name,
 					});
-					if (authError) throw new Error(authError.message ?? 'Sign-up failed');
+					if (authError)
+						throw new Error(authError.message ?? authError.statusText);
 					const user = serializeDates(data.user);
 					await authUser.set(user);
 					return user;
@@ -256,10 +258,7 @@ function createAuthState() {
 						idToken: { token: idToken, nonce },
 					});
 					if (authError)
-						throw new Error(
-							authError.message ||
-								`Server error (${authError.status ?? 'unknown'})`,
-						);
+						throw new Error(authError.message ?? authError.statusText);
 					if (!data || !('user' in data))
 						throw new Error('Unexpected response from server');
 					const user = serializeDates(data.user);

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	encodeAwareness,
-	encodeSyncStep1,
-	encodeSyncStatus,
 	encodeQueryAwareness,
+	encodeSyncStatus,
+	encodeSyncStep1,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
 import * as encoding from 'lib0/encoding';
@@ -153,7 +153,9 @@ describe('handleWsMessage', () => {
 		const { state } = handleWsOpen(doc, awareness, connId, () => {});
 
 		// Craft a message with an unknown type (99)
-		const msg = encoding.encode((encoder) => encoding.writeVarUint(encoder, 99));
+		const msg = encoding.encode((encoder) =>
+			encoding.writeVarUint(encoder, 99),
+		);
 		const result = handleWsMessage(msg, state);
 
 		expect(result).toEqual({});
@@ -166,9 +168,7 @@ describe('handleWsClose', () => {
 		const connId = {};
 		const sent: Uint8Array[] = [];
 
-		const { state } = handleWsOpen(doc, awareness, connId, (d) =>
-			sent.push(d),
-		);
+		const { state } = handleWsOpen(doc, awareness, connId, (d) => sent.push(d));
 
 		handleWsClose(state);
 

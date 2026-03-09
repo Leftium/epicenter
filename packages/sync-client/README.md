@@ -86,7 +86,6 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 | `getToken`             | `() => Promise<string>` | —                    | Dynamic token fetcher for authenticated mode                    |
 | `connect`              | `boolean`               | `true`               | Whether to connect immediately                                  |
 | `awareness`            | `Awareness`             | `new Awareness(doc)` | External awareness instance for user presence                   |
-| `WebSocketConstructor` | `WebSocketConstructor`  | `WebSocket`          | Override for testing or non-browser environments                |
 
 **Returns `SyncProvider`:**
 

@@ -15,12 +15,7 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type {
-	SyncProvider,
-	SyncProviderConfig,
-	SyncStatus,
-	WebSocketLike,
-} from './types';
+import type { SyncProvider, SyncProviderConfig, SyncStatus } from './types';
 
 // ============================================================================
 // Constants
@@ -82,7 +77,6 @@ export function createSyncProvider({
 	baseUrl,
 	getToken,
 	connect: shouldConnect = true,
-	WebSocketConstructor: WS = WebSocket,
 	awareness = new Awareness(doc),
 }: SyncProviderConfig): SyncProvider {
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
@@ -100,13 +94,13 @@ export function createSyncProvider({
 	let connectRun: Promise<void> | null = null;
 
 	/** Current WebSocket instance, or null. */
-	let websocket: WebSocketLike | null = null;
+	let websocket: WebSocket | null = null;
 
 	const backoff = createBackoff();
 
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
-		if (websocket?.readyState === WS.OPEN) {
+		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send(message);
 		}
 	}
@@ -168,7 +162,7 @@ export function createSyncProvider({
 	 */
 	function handleVisibilityChange() {
 		if (document.visibilityState !== 'visible') return;
-		if (websocket?.readyState === WS.OPEN) {
+		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send('ping');
 		}
 	}
@@ -262,7 +256,7 @@ export function createSyncProvider({
 			wsUrl = parsed.toString();
 		}
 
-		const ws = new WS(wsUrl);
+		const ws = new WebSocket(wsUrl);
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
@@ -272,7 +266,7 @@ export function createSyncProvider({
 			Promise.withResolvers<void>();
 		let handshakeComplete = false;
 
-		const liveness = createLivenessMonitor(ws, WS);
+		const liveness = createLivenessMonitor(ws);
 
 		ws.onopen = () => {
 			send(encodeSyncStep1({ doc }));
@@ -372,7 +366,7 @@ export function createSyncProvider({
 		const opened = await openPromise;
 		if (!opened || runId !== myRunId) {
 			// Socket failed to open or we were cancelled
-			if (ws.readyState !== WS.CLOSED && ws.readyState !== WS.CLOSING) {
+			if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
 				ws.close();
 			}
 			await closePromise;
@@ -496,10 +490,7 @@ function createStatusEmitter<T>(initial: T) {
  *
  * If no message arrives within {@link LIVENESS_TIMEOUT_MS}, the socket is closed.
  */
-function createLivenessMonitor(
-	ws: WebSocketLike,
-	WS: { readonly OPEN: number },
-) {
+function createLivenessMonitor(ws: WebSocket) {
 	let pingInterval: ReturnType<typeof setInterval> | null = null;
 	let livenessInterval: ReturnType<typeof setInterval> | null = null;
 	let lastMessageTime = 0;
@@ -510,7 +501,7 @@ function createLivenessMonitor(
 			lastMessageTime = Date.now();
 
 			pingInterval = setInterval(() => {
-				if (ws.readyState === WS.OPEN) ws.send('ping');
+				if (ws.readyState === WebSocket.OPEN) ws.send('ping');
 			}, PING_INTERVAL_MS);
 
 			livenessInterval = setInterval(() => {

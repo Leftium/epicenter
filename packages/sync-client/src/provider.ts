@@ -88,8 +88,7 @@ export function createSyncProvider({
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
-	/** Observable connection status. Set ONLY by the supervisor loop. */
-	let status: SyncStatus = 'offline';
+	const status = createStatusEmitter<SyncStatus>('offline');
 
 	/**
 	 * Monotonic counter bumped by disconnect(). The supervisor loop captures
@@ -104,23 +103,6 @@ export function createSyncProvider({
 	let websocket: WebSocketLike | null = null;
 
 	const backoff = createBackoff();
-
-	const statusListeners = new Set<(status: SyncStatus) => void>();
-
-	/**
-	 * Transition the provider's observable status and notify all listeners.
-	 *
-	 * This is the single place status is written — all transitions flow through
-	 * here so listeners get a consistent, deduplicated stream. No-ops when the
-	 * status hasn't actually changed.
-	 */
-	function setStatus(newStatus: SyncStatus) {
-		if (status === newStatus) return;
-		status = newStatus;
-		for (const listener of statusListeners) {
-			listener(newStatus);
-		}
-	}
 
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
@@ -220,7 +202,7 @@ export function createSyncProvider({
 	 */
 	async function runLoop(myRunId: number) {
 		while (desired === 'online' && runId === myRunId) {
-			setStatus('connecting');
+			status.set('connecting');
 
 			// --- Token acquisition (fresh each iteration) ---
 			let token: string | undefined;
@@ -249,13 +231,13 @@ export function createSyncProvider({
 
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
-				setStatus('connecting');
+				status.set('connecting');
 				await backoff.sleep();
 			}
 		}
 
 		if (desired === 'offline') {
-			setStatus('offline');
+			status.set('offline');
 		}
 
 		connectRun = null;
@@ -360,7 +342,7 @@ export function createSyncProvider({
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						setStatus('connected');
+						status.set('connected');
 					}
 					break;
 				}
@@ -419,7 +401,7 @@ export function createSyncProvider({
 
 	return {
 		get status() {
-			return status;
+			return status.get();
 		},
 
 		get awareness() {
@@ -445,22 +427,17 @@ export function createSyncProvider({
 			}
 
 			// Synchronously set offline so callers see the status immediately
-			setStatus('offline');
+			status.set('offline');
 		},
 
-		onStatusChange(listener: (status: SyncStatus) => void) {
-			statusListeners.add(listener);
-			return () => {
-				statusListeners.delete(listener);
-			};
-		},
+		onStatusChange: status.subscribe,
 
 		destroy() {
 			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
 			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
-			statusListeners.clear();
+			status.clear();
 		},
 	};
 }
@@ -468,6 +445,47 @@ export function createSyncProvider({
 // ============================================================================
 // Helpers (hoisted — available throughout the module)
 // ============================================================================
+
+/**
+ * Creates a deduplicated status emitter.
+ *
+ * Encapsulates a value and a listener set into a single unit. Calls to `set()`
+ * that don't change the value are no-ops, so listeners get a clean,
+ * deduplicated stream of transitions.
+ */
+function createStatusEmitter<T>(initial: T) {
+	let current = initial;
+	const listeners = new Set<(value: T) => void>();
+
+	return {
+		/** Read the current value. */
+		get() {
+			return current;
+		},
+
+		/** Transition to a new value and notify listeners. No-op if unchanged. */
+		set(value: T) {
+			if (current === value) return;
+			current = value;
+			for (const listener of listeners) {
+				listener(value);
+			}
+		},
+
+		/** Subscribe to value changes. Returns an unsubscribe function. */
+		subscribe(listener: (value: T) => void) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+
+		/** Remove all listeners. */
+		clear() {
+			listeners.clear();
+		},
+	};
+}
 
 /**
  * Creates a liveness monitor that detects dead WebSocket connections.

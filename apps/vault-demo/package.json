@@ -11,7 +11,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
-		"@epicenter/vault-core": "workspace:*",
+		"@epicenter/vault": "workspace:*",
 		"@sveltejs/adapter-auto": "^6.1.0",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",

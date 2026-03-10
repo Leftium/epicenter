@@ -1,4 +1,4 @@
-import { defineIngestor } from '@epicenter/vault-core';
+import { defineIngestor } from '@epicenter/vault';
 import { parseRedditExport as parse } from './parse';
 
 /**

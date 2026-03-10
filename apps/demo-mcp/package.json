@@ -15,7 +15,7 @@
 	},
 	"dependencies": {
 		"@libsql/client": "^0.11.0",
-		"@epicenter/vault-core": "workspace:*",
+		"@epicenter/vault": "workspace:*",
 		"drizzle-orm": "catalog:"
 	}
 }

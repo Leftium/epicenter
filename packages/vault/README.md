@@ -1,6 +1,6 @@
 ---
 
-# vault-core
+# vault
 
 > This represents a very early, proof-of-concept version of Vault Core. The API, features, architecture, applications, and more are all subject to significant change.
 > Take this as a sneak-peek into ongoing work, not a stable library.
@@ -18,12 +18,12 @@ Highlights
 
 Quick links
 
-- Vault constructor: [`createVault()`](packages/vault-core/src/core/vault.ts:31)
-- Import (multi-adapter): [`importData()`](packages/vault-core/src/core/vault.ts:176)
-- Export: [`exportData()`](packages/vault-core/src/core/vault.ts:116)
-- Ingest (adapter-owned parsers): [`ingestData()`](packages/vault-core/src/core/vault.ts:284)
-- Runtime traversal: [`getQueryInterface()`](packages/vault-core/src/core/vault.ts:317)
-- Adapter definition: [`defineAdapter`](packages/vault-core/src/core/adapter.ts:137)
+- Vault constructor: [`createVault()`](packages/vault/src/core/vault.ts:31)
+- Import (multi-adapter): [`importData()`](packages/vault/src/core/vault.ts:176)
+- Export: [`exportData()`](packages/vault/src/core/vault.ts:116)
+- Ingest (adapter-owned parsers): [`ingestData()`](packages/vault/src/core/vault.ts:284)
+- Runtime traversal: [`getQueryInterface()`](packages/vault/src/core/vault.ts:317)
+- Adapter definition: [`defineAdapter`](packages/vault/src/core/adapter.ts:137)
 
 ## Core concepts
 
@@ -34,7 +34,7 @@ Adapters
   - Versions and transforms for migrations
   - A Standard Schema validator (arktype-backed) for parsed dataset shapes
   - Optional ingestors for raw file formats
-- Table prefixing and primary keys are compile-time checked; see [`core/adapter.ts`](packages/vault-core/src/core/adapter.ts:86).
+- Table prefixing and primary keys are compile-time checked; see [`core/adapter.ts`](packages/vault/src/core/adapter.ts:86).
 - Adapters remain independent; the vault never couples their storage.
 
 Validation
@@ -42,16 +42,16 @@ Validation
 - During import and ingest, the vault runs a Standard Schema validator:
   - Import uses the adapter’s validator to validate the parsed dataset before table replacement
   - Ingest uses the adapter’s validator on the ingestor output
-- Failed validation aborts the operation with detailed path messages; see error formatting in [`runValidation`](packages/vault-core/src/core/vault.ts:44).
+- Failed validation aborts the operation with detailed path messages; see error formatting in [`runValidation`](packages/vault/src/core/vault.ts:44).
 
 Migrations
 
-- Before touching an adapter’s tables, the vault ensures its SQL migrations are applied via [`runStartupSqlMigrations`](packages/vault-core/src/core/vault.ts:37).
+- Before touching an adapter’s tables, the vault ensures its SQL migrations are applied via [`runStartupSqlMigrations`](packages/vault/src/core/vault.ts:37).
 - The export flow writes a per-adapter migration metadata file; import detects this metadata and records its tag.
 
 Codecs and format
 
-- A codec defines parse/stringify and normalization/denormalization rules; JSON is the default via [`jsonFormat`](packages/vault-core/src/codecs/json.ts:3).
+- A codec defines parse/stringify and normalization/denormalization rules; JSON is the default via [`jsonFormat`](packages/vault/src/codecs/json.ts:3).
 - Paths follow a deterministic convention (adapterId/tableName/pk.json) computed with the default convention used by export.
 
 Compatible DB
@@ -63,18 +63,18 @@ Compatible DB
 Construct
 
 - Create a vault bound to a DB instance and a set of adapters:
-  - [`createVault(options)`](packages/vault-core/src/core/vault.ts:31) where options include `database` (Drizzle-compatible) and `adapters` (array of adapter instances).
+  - [`createVault(options)`](packages/vault/src/core/vault.ts:31) where options include `database` (Drizzle-compatible) and `adapters` (array of adapter instances).
 
 Export
 
 - Export adapter data to a codec-normalized file bundle:
-  - [`exportData({ codec })`](packages/vault-core/src/core/vault.ts:116) returns `Map<string, File>`: `{ path -> File }`.
+  - [`exportData({ codec })`](packages/vault/src/core/vault.ts:116) returns `Map<string, File>`: `{ path -> File }`.
   - Exports all registered adapters by default; per-adapter migration metadata is included.
 
 Import (multi-adapter)
 
 - Import a mixed bundle of files; the vault auto-detects adapters based on path and processes each adapter independently:
-  - [`importData({ files, codec })`](packages/vault-core/src/core/vault.ts:176)
+  - [`importData({ files, codec })`](packages/vault/src/core/vault.ts:176)
     - `files`: Map of `path -> File` where path segments encode `adapterId/tableName/...`
     - `codec`: the codec used for decode/denormalize (e.g., `jsonFormat`)
   - For each detected adapter:
@@ -87,13 +87,13 @@ Import (multi-adapter)
 Ingest
 
 - Run adapter-owned parsers on raw files:
-  - [`ingestData({ adapter, file })`](packages/vault-core/src/core/vault.ts:284)
+  - [`ingestData({ adapter, file })`](packages/vault/src/core/vault.ts:284)
   - The vault selects the first ingestor that matches and validates the parsed dataset before replacement.
 
 Runtime traversal
 
 - Query at runtime and compose cross-adapter views in the app:
-  - [`getQueryInterface()`](packages/vault-core/src/core/vault.ts:317) returns `{ db, tables }`
+  - [`getQueryInterface()`](packages/vault/src/core/vault.ts:317) returns `{ db, tables }`
     - `db`: Drizzle-compatible DB
     - `tables`: map of `adapterId -> adapter.schema`, suitable for joins
 
@@ -121,7 +121,7 @@ Import bundle rules
 
 Minimal shape (TypeScript)
 
-- Use [`defineAdapter`](packages/vault-core/src/core/adapter.ts:137) to declare:
+- Use [`defineAdapter`](packages/vault/src/core/adapter.ts:137) to declare:
   - `id` (string), `schema` (prefixed Drizzle tables), `versions`, `transforms`,
   - Optionally `metadata` for documentation/UI
   - Optionally `ingestors` for external inputs

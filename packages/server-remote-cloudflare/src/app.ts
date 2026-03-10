@@ -59,6 +59,12 @@ function createAuth(env: Env['Bindings']) {
 		database: drizzleAdapter(db, { provider: 'pg' }),
 		baseURL: env.BASE_URL,
 		secret: env.BETTER_AUTH_SECRET,
+		socialProviders: {
+			google: {
+				clientId: env.GOOGLE_CLIENT_ID,
+				clientSecret: env.GOOGLE_CLIENT_SECRET,
+			},
+		},
 		plugins: [
 			bearer(),
 			jwt(),
@@ -103,11 +109,18 @@ function createAuth(env: Env['Bindings']) {
 				domain: 'epicenter.so',
 			},
 		},
-		trustedOrigins: [
-			'https://*.epicenter.so',
-			'https://epicenter.so',
-			'tauri://localhost',
-		],
+		trustedOrigins: (request) => {
+			const origins = [
+				'https://*.epicenter.so',
+				'https://epicenter.so',
+				'tauri://localhost',
+			];
+			const origin = request?.headers.get('origin');
+			if (origin?.startsWith('chrome-extension://')) {
+				origins.push(origin);
+			}
+			return origins;
+		},
 		secondaryStorage: {
 			get: (key: string) => env.SESSION_KV.get(key),
 			set: (key: string, value: string, ttl?: number) =>
@@ -206,7 +219,6 @@ const authGuard = factory.createMiddleware(async (c, next) => {
 	await next();
 });
 app.use('/ai/*', authGuard);
-app.use('/rooms/*', authGuard);
 app.use('/workspaces/*', authGuard);
 app.use('/documents/*', authGuard);
 
@@ -289,49 +301,6 @@ app.post(
 	describeRoute({
 		description: 'Sync workspace doc',
 		tags: ['workspaces'],
-	}),
-	async (c) => {
-		const body = new Uint8Array(await c.req.arrayBuffer());
-		if (body.byteLength > MAX_PAYLOAD_BYTES) {
-			return c.body('Payload too large', 413);
-		}
-
-		const stub = getWorkspaceStub(c);
-		const diff = await stub.sync(body);
-
-		if (!diff) return c.body(null, 304);
-		return new Response(diff, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-// /rooms/:room — temporary alias for /workspaces/:room during client rollout
-app.get(
-	'/rooms/:room',
-	describeRoute({
-		description: 'Get workspace doc or upgrade to WebSocket (rooms alias)',
-		tags: ['rooms'],
-	}),
-	async (c) => {
-		const stub = getWorkspaceStub(c);
-
-		if (c.req.header('upgrade') === 'websocket') {
-			return stub.fetch(c.req.raw);
-		}
-
-		const update = await stub.getDoc();
-		return new Response(update, {
-			headers: { 'content-type': 'application/octet-stream' },
-		});
-	},
-);
-
-app.post(
-	'/rooms/:room',
-	describeRoute({
-		description: 'Sync workspace doc (rooms alias)',
-		tags: ['rooms'],
 	}),
 	async (c) => {
 		const body = new Uint8Array(await c.req.arrayBuffer());

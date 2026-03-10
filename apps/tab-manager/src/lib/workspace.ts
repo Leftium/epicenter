@@ -561,7 +561,7 @@ export const workspaceClient = createWorkspace(
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (workspaceId) => `${serverUrl.current}/rooms/${workspaceId}`,
+			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
 			getToken: async () => authState.token ?? '',
 		}),
 	)
@@ -833,9 +833,7 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
  * or after sign-out to disconnect.
  */
 export function reconnectSync() {
-	(
-		workspaceClient.extensions.sync as unknown as { reconnect: () => void }
-	).reconnect();
+	workspaceClient.extensions.sync.reconnect();
 }
 
 // Initialize workspace: set awareness + start command consumer

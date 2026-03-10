@@ -55,8 +55,7 @@ export type SyncExtensionConfig = {
 /**
  * Creates a sync extension that connects after prior extensions are ready.
  *
- * Uses WebSocket for real-time sync, with an HTTP snapshot prefetch
- * (via `baseUrl`) to bootstrap the document before the WebSocket opens.
+ * Uses WebSocket for real-time sync.
  *
  * Lifecycle:
  * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
@@ -75,22 +74,32 @@ export type SyncExtensionConfig = {
  *   }))
  * ```
  */
+/** Exports available on `client.extensions.sync` after registration. */
+export type SyncExtensionExports = {
+	/** The sync provider instance. */
+	readonly provider: SyncProvider;
+	/** Force disconnect + reconnect (e.g. after auth change). */
+	reconnect(): void;
+};
+
 export function createSyncExtension(
 	config: SyncExtensionConfig,
-): ExtensionFactory {
+): ExtensionFactory<SyncExtensionExports> {
 	return ({ ydoc, awareness, whenReady: priorReady }) => {
 		const workspaceId = ydoc.guid;
 
 		const resolvedBaseUrl = config.url(workspaceId);
+		const wsUrl = resolvedBaseUrl
+			.replace(/^https:/, 'wss:')
+			.replace(/^http:/, 'ws:');
 
 		// Build provider — defer connection until prior extensions are ready
-		let provider: SyncProvider = createSyncProvider({
+		const provider: SyncProvider = createSyncProvider({
 			doc: ydoc,
-			baseUrl: resolvedBaseUrl,
+			url: wsUrl,
 			getToken: config.getToken
 				? () => config.getToken!(workspaceId)
 				: undefined,
-			connect: false,
 			awareness: awareness.raw,
 		});
 
@@ -103,26 +112,18 @@ export function createSyncExtension(
 		})();
 
 		return {
-			get provider() {
-				return provider;
-			},
+			provider,
 			/**
-			 * Force an immediate disconnect + reconnect using the original config.
+			 * Force an immediate disconnect + reconnect.
 			 *
 			 * Call after auth state changes (sign-in/sign-out) so the WebSocket
-			 * reconnects with a fresh token from `getToken`.
+			 * reconnects with a fresh token from `getToken`. The supervisor loop
+			 * calls `getToken()` fresh on each connection attempt, so a simple
+			 * disconnect/connect cycle is sufficient.
 			 */
 			reconnect() {
-				provider.destroy();
-				provider = createSyncProvider({
-					doc: ydoc,
-					baseUrl: resolvedBaseUrl,
-					getToken: config.getToken
-						? () => config.getToken!(workspaceId)
-						: undefined,
-					connect: true,
-					awareness: awareness.raw,
-				});
+				provider.disconnect();
+				provider.connect();
 			},
 			whenReady,
 			destroy() {

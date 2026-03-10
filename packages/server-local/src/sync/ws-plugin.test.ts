@@ -29,6 +29,11 @@ function uniqueRoom(): string {
 	return `test-room-${Date.now()}-${counter++}`;
 }
 
+/** Convert an HTTP URL to a WebSocket URL. */
+function wsUrl(httpUrl: string): string {
+	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+}
+
 /**
  * Start a test server on a random port (port 0).
  *
@@ -157,43 +162,6 @@ function waitForMapKey(
 	});
 }
 
-/**
- * Wait for hasLocalChanges to reach an expected value.
- *
- * Subscribes to changes BEFORE checking the current value to prevent
- * a race where the value transitions between the check and subscription.
- * Uses the provider's onLocalChanges callback — event-driven.
- */
-function waitForLocalChanges(
-	provider: SyncProvider,
-	expected: boolean,
-	timeoutMs = 5_000,
-): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => {
-			unsub();
-			reject(
-				new Error(
-					`Timed out waiting for hasLocalChanges=${expected}, current=${provider.hasLocalChanges}`,
-				),
-			);
-		}, timeoutMs);
-		const unsub = provider.onLocalChanges((has) => {
-			if (has === expected) {
-				clearTimeout(timer);
-				unsub();
-				resolve();
-			}
-		});
-		// Check AFTER subscribing to close the race window
-		if (provider.hasLocalChanges === expected) {
-			clearTimeout(timer);
-			unsub();
-			resolve();
-		}
-	});
-}
-
 // ============================================================================
 // Document Sync Tests
 // ============================================================================
@@ -222,12 +190,14 @@ describe('ws sync plugin integration', () => {
 
 		const p1 = createSyncProvider({
 			doc: doc1,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p1.connect();
 		const p2 = createSyncProvider({
 			doc: doc2,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p2.connect();
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -250,12 +220,14 @@ describe('ws sync plugin integration', () => {
 
 		const p1 = createSyncProvider({
 			doc: doc1,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p1.connect();
 		const p2 = createSyncProvider({
 			doc: doc2,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p2.connect();
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -280,12 +252,14 @@ describe('ws sync plugin integration', () => {
 
 		const p1 = createSyncProvider({
 			doc: doc1,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p1.connect();
 		const p2 = createSyncProvider({
 			doc: doc2,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p2.connect();
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -313,8 +287,9 @@ describe('ws sync plugin integration', () => {
 
 		const p1 = createSyncProvider({
 			doc: doc1,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p1.connect();
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -327,8 +302,9 @@ describe('ws sync plugin integration', () => {
 			const doc2 = new Y.Doc();
 			const p2 = createSyncProvider({
 				doc: doc2,
-				baseUrl: ctx.httpUrl('/rooms/' + room),
+				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 			});
+			p2.connect();
 
 			try {
 				await waitForStatus(p2, 'connected');
@@ -352,16 +328,19 @@ describe('ws sync plugin integration', () => {
 
 		const pA1 = createSyncProvider({
 			doc: docA1,
-			baseUrl: ctx.httpUrl('/rooms/' + roomA),
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomA)),
 		});
+		pA1.connect();
 		const pA2 = createSyncProvider({
 			doc: docA2,
-			baseUrl: ctx.httpUrl('/rooms/' + roomA),
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomA)),
 		});
+		pA2.connect();
 		const pB = createSyncProvider({
 			doc: docB,
-			baseUrl: ctx.httpUrl('/rooms/' + roomB),
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomB)),
 		});
+		pB.connect();
 
 		try {
 			await waitForStatus(pA1, 'connected');
@@ -383,49 +362,27 @@ describe('ws sync plugin integration', () => {
 			pB.destroy();
 		}
 	});
-
-	test('hasLocalChanges tracks server acknowledgment', async () => {
-		const room = uniqueRoom();
-		const doc = new Y.Doc();
-
-		const provider = createSyncProvider({
-			doc,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
-		});
-
-		try {
-			await waitForStatus(provider, 'connected');
-
-			// After handshake, server echoes SYNC_STATUS — hasLocalChanges becomes false
-			await waitForLocalChanges(provider, false);
-			expect(provider.hasLocalChanges).toBe(false);
-
-			// Local edit makes it dirty
-			doc.getMap('data').set('key', 'value');
-			expect(provider.hasLocalChanges).toBe(true);
-
-			// Server echo makes it clean again
-			await waitForLocalChanges(provider, false);
-			expect(provider.hasLocalChanges).toBe(false);
-		} finally {
-			provider.destroy();
-		}
-	});
 });
 
 describe('ws sync plugin integrated mode', () => {
-	test('closes with 4004 when getDoc returns undefined', async () => {
+	test('never connects when getDoc returns undefined (4004 close)', async () => {
 		const ctx = startIntegratedTestServer({ getDoc: () => undefined });
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		provider.connect();
 
 		try {
-			await waitForStatus(provider, 'error');
-			expect(provider.status).toBe('error');
+			// Collect statuses — the provider should cycle connecting/offline but never reach connected
+			const statuses: SyncStatus[] = [];
+			const unsub = provider.onStatusChange((s) => statuses.push(s));
+			await new Promise((r) => setTimeout(r, 1_000));
+			unsub();
+
+			expect(statuses).not.toContain('connected');
 		} finally {
 			provider.destroy();
 			ctx.server.stop();
@@ -456,8 +413,9 @@ describe('ws sync plugin room list', () => {
 		const doc = new Y.Doc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		provider.connect();
 
 		try {
 			await waitForStatus(provider, 'connected');
@@ -481,16 +439,19 @@ describe('ws sync plugin room list', () => {
 		const doc3 = new Y.Doc();
 		const p1 = createSyncProvider({
 			doc: doc1,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p1.connect();
 		const p2 = createSyncProvider({
 			doc: doc2,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p2.connect();
 		const p3 = createSyncProvider({
 			doc: doc3,
-			baseUrl: ctx.httpUrl('/rooms/' + room),
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 		});
+		p3.connect();
 
 		try {
 			await waitForStatus(p1, 'connected');
@@ -519,20 +480,18 @@ describe('ws sync plugin auth', () => {
 	/**
 	 * Helper to assert a provider never reaches 'connected'.
 	 *
-	 * Event-driven: waits for 'error' status (proving the attempt happened),
-	 * then records all subsequent statuses for a window to confirm 'connected'
-	 * never appears. Much faster and more reliable than a fixed sleep.
+	 * Subscribes before connect() so fast auth rejections still emit the
+	 * initial 'connecting' transition into the collected status list.
 	 */
 	async function expectAuthRejection(provider: SyncProvider): Promise<void> {
-		// Wait for at least one 'error' status (proves the server rejected us)
-		await waitForStatus(provider, 'error', 5_000);
-
-		// Collect statuses for a short window to catch any delayed 'connected'
 		const statuses: SyncStatus[] = [];
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
-		await new Promise((r) => setTimeout(r, 500));
+		provider.connect();
+		await new Promise((r) => setTimeout(r, 1_000));
 		unsub();
 
+		// Should have attempted at least one connection cycle
+		expect(statuses).toContain('connecting');
 		expect(statuses).not.toContain('connected');
 	}
 
@@ -545,7 +504,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				baseUrl: ctx.httpUrl('/rooms/' + room),
+				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 			});
 
 			try {
@@ -569,7 +528,7 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				baseUrl: ctx.httpUrl('/rooms/' + room),
+				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 				getToken: async () => 'wrong-token',
 			});
 
@@ -592,9 +551,10 @@ describe('ws sync plugin auth', () => {
 
 			const provider = createSyncProvider({
 				doc,
-				baseUrl: ctx.httpUrl('/rooms/' + room),
+				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 				getToken: async () => 'secret',
 			});
+			provider.connect();
 
 			try {
 				await waitForStatus(provider, 'connected');

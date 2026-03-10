@@ -655,6 +655,86 @@ When generating IDs with `generateId()` (which returns `Id`, a different brand),
 
 See the `static-workspace-api` skill for the full pattern and rules.
 
+# Extract Coupled `let` State Into Sub-Factories
+
+When a factory function accumulates `let` statements that are always read, written, and reset together, extract them into a sub-factory. The tell: two or three `let` declarations that move as a pack across multiple inner functions.
+
+## The Smell
+
+```typescript
+function createProvider(config) {
+  let retries = 0;
+  let reconnectSleeper: Sleeper | null = null;
+
+  async function runLoop() {
+    // ... 5-line backoff ceremony using retries + reconnectSleeper ...
+    // ... appears in TWO places ...
+  }
+
+  function handleOnline() {
+    reconnectSleeper?.wake(); // reaches into closure state
+  }
+
+  function handleSuccess() {
+    retries = 0; // reset scattered across the function
+  }
+}
+```
+
+`retries` and `reconnectSleeper` are one concept ("backoff") split across two `let` declarations, two inline ceremonies, and one external poke.
+
+## The Fix
+
+Pull coupled state into its own factory with named methods:
+
+```typescript
+function createBackoff() {
+  let retries = 0;
+  let sleeper: { promise: Promise<void>; wake(): void } | null = null;
+
+  return {
+    async sleep() { /* compute delay, create sleeper, await, cleanup */ },
+    wake() { sleeper?.wake(); },
+    reset() { retries = 0; },
+  };
+}
+```
+
+The parent factory replaces scattered `let` manipulation with named calls:
+
+```typescript
+function createProvider(config) {
+  const backoff = createBackoff();
+
+  async function runLoop() {
+    await backoff.sleep();     // was 5 duplicated lines
+  }
+
+  function handleOnline() {
+    backoff.wake();            // was reconnectSleeper?.wake()
+  }
+
+  function handleSuccess() {
+    backoff.reset();           // was retries = 0
+  }
+}
+```
+
+## When to Extract
+
+| Signal | Action |
+|---|---|
+| Two+ `let`s always set in the same function | Likely one concept |
+| Resetting one requires resetting the others | Definitely one concept |
+| An external caller reaches into one of them | The concept needs a public API |
+| The same multi-line ceremony appears twice | Extract and name it |
+
+## When NOT to Extract
+
+Don't extract `let` state that's deeply woven into control flow branching. If the variables are the loop's decision-making state (e.g., `desired`, `runId`, `connectRun` in a supervisor loop), extracting them just renames the complexity without reducing it. The test: do the call sites get simpler?
+
+See `docs/articles/let-packs-are-factories-waiting-to-be-named.md` for a full walkthrough with three extractions from a real sync provider.
+
 # Const Generic Array Inference
 
 Use `const T extends readonly T[]` to preserve literal types without requiring `as const` at call sites.

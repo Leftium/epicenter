@@ -35,7 +35,7 @@ const client = createWorkspace(definition)
 	.withExtension(
 		'sync',
 		createSyncExtension({
-			url: (id) => `ws://localhost:3913/rooms/${id}`,
+			url: (id) => `ws://localhost:3913/workspaces/${id}`,
 		}),
 	);
 

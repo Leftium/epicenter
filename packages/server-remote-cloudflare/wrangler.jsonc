@@ -1,20 +1,21 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "epicenter-remote",
+	"name": "api",
 	"main": "src/app.ts",
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
 	"send_metrics": false,
-	// --- Custom domain: api.epicenter.so ---
+	// --- Custom domain: api.epicenter.so (auto-creates DNS record on deploy) ---
 	"routes": [
 		{
-			"pattern": "api.epicenter.so/*",
-			"zone_name": "epicenter.so"
+			"pattern": "api.epicenter.so",
+			"custom_domain": true
 		}
 	],
 	// --- Vars: non-secret config accessible via env ---
 	"vars": {
-		"BASE_URL": "https://api.epicenter.so"
+		"BASE_URL": "https://api.epicenter.so",
+		"GOOGLE_CLIENT_ID": "702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com"
 	},
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---
 	// Create with: bunx wrangler kv namespace create "epicenter-sessions"
@@ -48,6 +49,7 @@
 	"secrets": {
 		"required": [
 			"BETTER_AUTH_SECRET",
+			"GOOGLE_CLIENT_SECRET",
 			"OPENAI_API_KEY",
 			"ANTHROPIC_API_KEY"
 			// "GEMINI_API_KEY",
@@ -59,7 +61,7 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "f2f1b00fbbf5435887ea60cb1bc7f2c4",
+			"id": "9a8d5b144dbe48cea927fa7790dce989",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
 	]

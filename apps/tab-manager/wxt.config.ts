@@ -11,7 +11,7 @@ export default defineConfig({
 	manifest: {
 		name: 'Tab Manager',
 		description: 'Manage browser tabs with Epicenter',
-		permissions: ['tabs', 'storage'],
+		permissions: ['tabs', 'storage', 'identity'],
 		// host_permissions needed for favicons and tab info
 		host_permissions: ['<all_urls>'],
 	},

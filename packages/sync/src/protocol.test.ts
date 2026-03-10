@@ -6,13 +6,11 @@
  * and end-to-end synchronization behavior under common and edge conditions.
  *
  * Key behaviors:
- * - Sync, awareness, and sync-status frames encode/decode with expected wire formats.
+ * - Sync and awareness frames encode/decode with expected wire formats.
  * - Handshake and incremental updates converge document state across peers.
  */
 
 import { describe, expect, test } from 'bun:test';
-import * as decoding from 'lib0/decoding';
-import * as encoding from 'lib0/encoding';
 import {
 	Awareness,
 	applyAwarenessUpdate,
@@ -22,11 +20,9 @@ import * as Y from 'yjs';
 import {
 	decodeMessageType,
 	decodeSyncMessage,
-	decodeSyncStatus,
 	encodeAwareness,
 	encodeAwarenessStates,
 	encodeQueryAwareness,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncStep2,
 	encodeSyncUpdate,
@@ -367,60 +363,6 @@ describe('MESSAGE_QUERY_AWARENESS', () => {
 
 		expect(message.length).toBe(1);
 		expect(message[0]).toBe(MESSAGE_TYPE.QUERY_AWARENESS);
-	});
-});
-
-// ============================================================================
-// MESSAGE_SYNC_STATUS Tests
-// ============================================================================
-
-describe('MESSAGE_SYNC_STATUS', () => {
-	test('encode → decode roundtrip preserves payload', () => {
-		// Simulate what the client sends: a varuint-encoded local version
-		const versionEncoder = encoding.createEncoder();
-		encoding.writeVarUint(versionEncoder, 42);
-		const payload = encoding.toUint8Array(versionEncoder);
-
-		const encoded = encodeSyncStatus({ payload });
-		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.SYNC_STATUS);
-
-		const decoded = decodeSyncStatus(encoded);
-		expect(decoded).toEqual(payload);
-	});
-
-	test('preserves large version numbers', () => {
-		const versionEncoder = encoding.createEncoder();
-		encoding.writeVarUint(versionEncoder, 999_999);
-		const payload = encoding.toUint8Array(versionEncoder);
-
-		const encoded = encodeSyncStatus({ payload });
-		const decoded = decodeSyncStatus(encoded);
-		expect(decoded).toEqual(payload);
-
-		// Verify the version can be read back
-		const decoder = decoding.createDecoder(decoded);
-		expect(decoding.readVarUint(decoder)).toBe(999_999);
-	});
-
-	test('handles empty payload', () => {
-		const payload = new Uint8Array(0);
-		const encoded = encodeSyncStatus({ payload });
-		const decoded = decodeSyncStatus(encoded);
-		expect(decoded).toEqual(payload);
-	});
-
-	test('decodeSyncStatus throws on non-SYNC_STATUS message', () => {
-		const doc = createDoc();
-		const syncMessage = encodeSyncStep1({ doc });
-		expect(() => decodeSyncStatus(syncMessage)).toThrow(
-			'Expected SYNC_STATUS message (102), got 0',
-		);
-	});
-
-	test('decodeMessageType correctly identifies SYNC_STATUS', () => {
-		const payload = new Uint8Array([1, 2, 3]);
-		const encoded = encodeSyncStatus({ payload });
-		expect(decodeMessageType(encoded)).toBe(MESSAGE_TYPE.SYNC_STATUS);
 	});
 });
 

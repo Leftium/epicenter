@@ -264,46 +264,6 @@ export function handleSyncPayload({
 }
 
 // ============================================================================
-// Sync Status Protocol (MESSAGE_SYNC_STATUS = 102)
-// ============================================================================
-
-/**
- * Encodes a MESSAGE_SYNC_STATUS message from a raw payload.
- *
- * The server uses this to echo the client's sync status payload back.
- * The payload is opaque bytes — the server never parses them.
- *
- * @param options.payload - Raw sync status bytes to echo back to the client
- * @returns Encoded message ready to send over WebSocket
- */
-export function encodeSyncStatus({
-	payload,
-}: {
-	payload: Uint8Array;
-}): Uint8Array {
-	return encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, MESSAGE_TYPE.SYNC_STATUS);
-		encoding.writeVarUint8Array(encoder, payload);
-	});
-}
-
-/**
- * Decodes a MESSAGE_SYNC_STATUS message and returns the raw payload.
- *
- * @param data - Raw message bytes (including the 102 type prefix)
- * @returns The sync status payload bytes
- * @throws Error if message is not a valid SYNC_STATUS message
- */
-export function decodeSyncStatus(data: Uint8Array): Uint8Array {
-	const decoder = decoding.createDecoder(data);
-	const messageType = decoding.readVarUint(decoder);
-	if (messageType !== MESSAGE_TYPE.SYNC_STATUS) {
-		throw new Error(`Expected SYNC_STATUS message (102), got ${messageType}`);
-	}
-	return decoding.readVarUint8Array(decoder);
-}
-
-// ============================================================================
 // Awareness Protocol
 // ============================================================================
 

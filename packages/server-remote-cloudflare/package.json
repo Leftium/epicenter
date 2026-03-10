@@ -7,14 +7,19 @@
 	"license": "AGPL-3.0",
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"dev": "wrangler dev",
+		"dev:local": "wrangler dev",
+		"dev:remote": "infisical run --watch --path=/api -- wrangler dev",
 		"deploy": "wrangler deploy",
 		"typegen": "wrangler types",
 		"auth:generate": "bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ./src/db/schema.ts",
-		"db:push": "drizzle-kit push --config drizzle.config.ts",
-		"db:generate": "drizzle-kit generate --config drizzle.config.ts",
-		"db:migrate": "drizzle-kit migrate --config drizzle.config.ts",
-		"db:studio": "drizzle-kit studio --config drizzle.config.ts"
+		"db:generate": "drizzle-kit generate",
+		"db:drop": "drizzle-kit drop",
+		"db:push:local": "drizzle-kit push",
+		"db:push:remote": "infisical run --path=/api -- drizzle-kit push",
+		"db:migrate:local": "drizzle-kit migrate",
+		"db:migrate:remote": "infisical run --path=/api -- drizzle-kit migrate",
+		"db:studio:local": "drizzle-kit studio",
+		"db:studio:remote": "infisical run --path=/api -- drizzle-kit studio"
 	},
 	"dependencies": {
 		"@better-auth/drizzle-adapter": "catalog:",

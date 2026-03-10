@@ -2,20 +2,18 @@
  * Sync Provider Tests
  *
  * Uses a mocked WebSocket to validate the provider supervisor loop without
- * requiring a real sync server. The suite focuses on lifecycle transitions,
- * reconnection behavior, and local-change acknowledgment tracking.
+ * requiring a real sync server. The suite focuses on lifecycle transitions
+ * and reconnection behavior.
  *
  * Key behaviors:
  * - Connection lifecycle transitions follow the expected status model.
- * - `hasLocalChanges` and listener callbacks reflect local edits and server echoes.
  */
 
-import { describe, expect, test } from 'bun:test';
-import { encodeSyncStatus, encodeSyncStep2 } from '@epicenter/sync';
-import * as encoding from 'lib0/encoding';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { encodeSyncStep2 } from '@epicenter/sync';
 import * as Y from 'yjs';
 import { createSyncProvider } from './provider';
-import type { SyncStatus, WebSocketConstructor } from './types';
+import type { SyncStatus } from './types';
 
 // ============================================================================
 // Mock WebSocket
@@ -48,7 +46,8 @@ class MockWebSocket {
 		MockWebSocket.lastCreated = this;
 	}
 
-	send(data: Uint8Array) {
+	send(data: Uint8Array | string) {
+		if (typeof data === 'string') return; // Text pings — ignore in mock
 		this.sentMessages.push(data);
 	}
 
@@ -88,8 +87,6 @@ class MockWebSocket {
 	}
 }
 
-const MockWS: WebSocketConstructor = MockWebSocket;
-
 function getLastWebSocket(): MockWebSocket {
 	const ws = MockWebSocket.lastCreated;
 	expect(ws).toBeDefined();
@@ -108,14 +105,6 @@ function buildSyncStep2Message(doc: Y.Doc): ArrayBuffer {
 	return encodeSyncStep2({ doc }).buffer as ArrayBuffer;
 }
 
-/** Build a MESSAGE_SYNC_STATUS (102) echo with a specific version. */
-function buildSyncStatusEchoMessage(version: number): ArrayBuffer {
-	const payload = encoding.encode((encoder) => {
-		encoding.writeVarUint(encoder, version);
-	});
-	return encodeSyncStatus({ payload }).buffer as ArrayBuffer;
-}
-
 // ============================================================================
 // Utilities
 // ============================================================================
@@ -132,33 +121,38 @@ function createDoc(init?: (doc: Y.Doc) => void): Y.Doc {
 // Tests
 // ============================================================================
 
+const OriginalWebSocket = globalThis.WebSocket;
+
 describe('createSyncProvider', () => {
-	test('initial state with connect: false', () => {
+	beforeEach(() => {
+		globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+		MockWebSocket.lastCreated = null;
+	});
+
+	afterEach(() => {
+		globalThis.WebSocket = OriginalWebSocket;
+	});
+
+	test('initial state is offline', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		expect(provider.status).toBe('offline');
-		// hasLocalChanges starts true: ackedVersion=-1, localVersion=0
-		// This is correct — no server has confirmed anything yet
-		expect(provider.hasLocalChanges).toBe(true);
 
 		provider.destroy();
 	});
 
-	test('auto-connect transitions to connecting', async () => {
+	test('connect() transitions to connecting', async () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
-		// Auto-connect is default — loop starts asynchronously
+		provider.connect();
 		await tick();
 
 		expect(provider.status).toBe('connecting');
@@ -171,9 +165,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		expect(provider.status).toBe('offline');
@@ -186,15 +178,13 @@ describe('createSyncProvider', () => {
 		provider.destroy();
 	});
 
-	test('status transitions: connecting → handshaking → connected', async () => {
+	test('status transitions: connecting → connected', async () => {
 		const doc = createDoc();
 		const statuses: SyncStatus[] = [];
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -209,7 +199,6 @@ describe('createSyncProvider', () => {
 		await tick();
 
 		expect(statuses).toContain('connecting');
-		expect(statuses).toContain('handshaking');
 
 		// Simulate server sending sync step 2 (handshake completion)
 		ws.simulateMessage(buildSyncStep2Message(doc));
@@ -225,10 +214,10 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
+		provider.connect();
 		await tick();
 		const ws = getLastWebSocket();
 		ws.simulateOpen();
@@ -251,10 +240,10 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
+		provider.connect();
 		await tick();
 		expect(provider.status).toBe('connecting');
 
@@ -274,9 +263,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -291,7 +278,7 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(statuses).toEqual(['connecting', 'handshaking', 'connected']);
+		expect(statuses).toEqual(['connecting', 'connected']);
 
 		provider.destroy();
 	});
@@ -302,9 +289,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
@@ -321,122 +306,8 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		// Should only have 'connecting' — unsubscribed before handshaking/connected
+		// Should only have 'connecting' — unsubscribed before connected
 		expect(statuses).toEqual(['connecting']);
-
-		provider.destroy();
-	});
-
-	test('hasLocalChanges tracks local edits and server ack', async () => {
-		const doc = createDoc();
-		const provider = createSyncProvider({
-			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
-		});
-
-		provider.connect();
-		await tick();
-
-		const ws = getLastWebSocket();
-		ws.simulateOpen();
-		await tick();
-		ws.simulateMessage(buildSyncStep2Message(doc));
-		await tick();
-
-		// Initially true (ackedVersion=-1 !== localVersion=0)
-		expect(provider.hasLocalChanges).toBe(true);
-
-		// Server acks version 0 → becomes clean
-		ws.simulateMessage(buildSyncStatusEchoMessage(0));
-		await tick();
-
-		expect(provider.hasLocalChanges).toBe(false);
-
-		// Make a local edit → localVersion=1, ackedVersion=0 → dirty
-		doc.getMap('test').set('key', 'value');
-
-		expect(provider.hasLocalChanges).toBe(true);
-
-		provider.destroy();
-	});
-
-	test('hasLocalChanges resets on sync status echo', async () => {
-		const doc = createDoc();
-		const provider = createSyncProvider({
-			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
-		});
-
-		provider.connect();
-		await tick();
-
-		const ws = getLastWebSocket();
-		ws.simulateOpen();
-		await tick();
-		ws.simulateMessage(buildSyncStep2Message(doc));
-		await tick();
-
-		// First, ack version 0 to get to clean state
-		ws.simulateMessage(buildSyncStatusEchoMessage(0));
-		await tick();
-		expect(provider.hasLocalChanges).toBe(false);
-
-		// Make a local edit — increments localVersion to 1
-		doc.getMap('test').set('key', 'value');
-		expect(provider.hasLocalChanges).toBe(true);
-
-		// Simulate server echoing sync status with version 1
-		ws.simulateMessage(buildSyncStatusEchoMessage(1));
-		await tick();
-
-		expect(provider.hasLocalChanges).toBe(false);
-
-		provider.destroy();
-	});
-
-	test('onLocalChanges listener fires on state changes', async () => {
-		const doc = createDoc();
-		const changes: boolean[] = [];
-
-		const provider = createSyncProvider({
-			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
-		});
-
-		provider.onLocalChanges((hasChanges) => changes.push(hasChanges));
-
-		provider.connect();
-		await tick();
-
-		const ws = getLastWebSocket();
-		ws.simulateOpen();
-		await tick();
-		ws.simulateMessage(buildSyncStep2Message(doc));
-		await tick();
-
-		// First ack version 0 to reach clean state
-		// This fires the listener with false (ackedVersion catches up)
-		ws.simulateMessage(buildSyncStatusEchoMessage(0));
-		await tick();
-		expect(changes).toContain(false);
-
-		// Clear to track new transitions
-		changes.length = 0;
-
-		// Local edit → hasLocalChanges goes true
-		doc.getMap('test').set('key', 'value');
-		expect(changes).toEqual([true]);
-
-		// Server echo version 1 → hasLocalChanges goes false
-		ws.simulateMessage(buildSyncStatusEchoMessage(1));
-		await tick();
-		expect(changes).toEqual([true, false]);
 
 		provider.destroy();
 	});
@@ -447,9 +318,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -472,14 +341,6 @@ describe('createSyncProvider', () => {
 		// (listeners are cleared in destroy)
 		statuses.length = 0;
 
-		// Making a doc edit should not fire localChanges listener either
-		// (doc.off was called in destroy)
-		doc.getMap('test').set('key', 'after-destroy');
-
-		// hasLocalChanges is based on version counters which still update
-		// via the doc listener, but after destroy the listener was removed.
-		// The internal localVersion shouldn't increment after destroy.
-
 		await tick(50);
 		provider.destroy();
 	});
@@ -488,9 +349,7 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		provider.connect();
@@ -514,9 +373,7 @@ describe('createSyncProvider', () => {
 
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
-			connect: false,
-			WebSocketConstructor: MockWS,
+			url: 'ws://test/sync',
 		});
 
 		provider.onStatusChange((s) => statuses.push(s));
@@ -537,8 +394,8 @@ describe('createSyncProvider', () => {
 		// Backoff is ~500ms base, so wait 700ms for reconnection attempt
 		await tick(700);
 
-		// Provider should attempt to reconnect — status goes through error → connecting
-		expect(statuses).toContain('error');
+		// Provider should attempt to reconnect
+		expect(statuses).toContain('connecting');
 
 		// A new WebSocket should be created for reconnection
 		const ws2 = getLastWebSocket();
@@ -551,17 +408,15 @@ describe('createSyncProvider', () => {
 		const doc = createDoc();
 		const provider = createSyncProvider({
 			doc,
-			baseUrl: 'http://test/sync',
+			url: 'ws://test/sync',
 			getToken: async () => 'my-secret',
-			connect: false,
-			WebSocketConstructor: MockWS,
 		});
 
 		provider.connect();
 		await tick();
 
 		const ws = getLastWebSocket();
-		// baseUrl http:// should be derived to ws://
+		// URL should be ws://
 		expect(ws.url).toMatch(/^ws:\/\//);
 		expect(ws.url).toContain('token=my-secret');
 		// Token should NOT be passed as subprotocol — that leaks it

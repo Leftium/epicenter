@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import {
 	encodeAwareness,
 	encodeQueryAwareness,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	MESSAGE_TYPE,
 } from '@epicenter/sync';
@@ -134,17 +133,18 @@ describe('handleWsMessage', () => {
 		expect(result.broadcast).toBeUndefined();
 	});
 
-	test('handles SYNC_STATUS by echoing payload', () => {
+	test('silently ignores SYNC_STATUS messages (removed feature)', () => {
 		const { doc, awareness } = setup();
 		const connId = {};
 		const { state } = handleWsOpen(doc, awareness, connId, () => {});
 
-		const payload = new Uint8Array([42]);
-		const msg = encodeSyncStatus({ payload });
+		// Craft a message with SYNC_STATUS type (102)
+		const msg = encoding.encode((encoder) =>
+			encoding.writeVarUint(encoder, 102),
+		);
 		const result = handleWsMessage(msg, state);
 
-		expect(result.response).toBeDefined();
-		expect(result.broadcast).toBeUndefined();
+		expect(result).toEqual({});
 	});
 
 	test('returns empty result for unknown message types', () => {

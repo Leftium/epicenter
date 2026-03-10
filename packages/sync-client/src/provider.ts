@@ -1,7 +1,6 @@
 import {
 	encodeAwareness,
 	encodeAwarenessStates,
-	encodeSyncStatus,
 	encodeSyncStep1,
 	encodeSyncUpdate,
 	handleSyncPayload,
@@ -10,55 +9,13 @@ import {
 	type SyncMessageType,
 } from '@epicenter/sync';
 import * as decoding from 'lib0/decoding';
-import * as encoding from 'lib0/encoding';
 import {
 	Awareness,
 	applyAwarenessUpdate,
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type {
-	SyncProvider,
-	SyncProviderConfig,
-	SyncStatus,
-	WebSocketLike,
-} from './types';
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/** Convert an HTTP URL to a WebSocket URL (`https:` → `wss:`, `http:` → `ws:`). */
-function toWebSocketUrl(httpUrl: string): string {
-	return httpUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
-}
-
-/** A cancellable timeout returned by {@link createSleeper}. */
-type Sleeper = {
-	/** Resolves when the timeout expires or `wake()` is called. */
-	promise: Promise<void>;
-	/** Resolves the promise immediately, clearing the pending timeout. */
-	wake(): void;
-};
-
-/** Compute exponential backoff with jitter: `min(baseDelay * 2^retries, maxDelay) * [0.5, 1.0)`. */
-function backoffDelay(retries: number): number {
-	const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
-	return exponential * (0.5 + Math.random() * 0.5);
-}
-
-/** Creates a cancellable timeout that resolves after `timeout` ms, or immediately if `wake()` is called. */
-function createSleeper(timeout: number): Sleeper {
-	const { promise, resolve } = Promise.withResolvers<void>();
-	const handle = setTimeout(resolve, timeout);
-	return {
-		promise,
-		wake() {
-			clearTimeout(handle);
-			resolve();
-		},
-	};
-}
+import type { SyncProvider, SyncProviderConfig, SyncStatus } from './types';
 
 // ============================================================================
 // Constants
@@ -73,19 +30,14 @@ const BASE_DELAY_MS = 500;
 /** Maximum delay between reconnection attempts. */
 const MAX_DELAY_MS = 30_000;
 
-/**
- * Time without receiving any message before sending a heartbeat probe.
- *
- * Set to 30s because Cloudflare's `setWebSocketAutoResponse` handles TCP-level
- * ping/pong liveness without waking the Durable Object. This probe only fires
- * when there are unacked local changes — it's for ack tracking, not liveness.
- * During genuine idle (no local changes), no probe is sent and the DO stays
- * hibernated.
- */
-const HEARTBEAT_IDLE_MS = 30_000;
+/** Interval between text "ping" messages for liveness detection. */
+const PING_INTERVAL_MS = 30_000;
 
-/** Time after sending a heartbeat to wait for any response before closing the connection. */
-const HEARTBEAT_TIMEOUT_MS = 5_000;
+/** Time without any message before the connection is considered dead. */
+const LIVENESS_TIMEOUT_MS = 45_000;
+
+/** How often to check whether the liveness timeout has expired. */
+const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 
 // ============================================================================
 // Factory Function
@@ -104,39 +56,32 @@ const HEARTBEAT_TIMEOUT_MS = 5_000;
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'http://localhost:3913/rooms/blog',
+ *   url: 'ws://localhost:3913/rooms/blog',
  * });
+ * provider.connect();
  * ```
  *
  * @example Authenticated mode
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
- *   baseUrl: 'https://sync.epicenter.so/rooms/blog',
+ *   url: 'wss://sync.epicenter.so/rooms/blog',
  *   getToken: async () => {
  *     const res = await fetch('/api/sync/token');
  *     return (await res.json()).token;
  *   },
  * });
+ * provider.connect();
  * ```
  */
-export function createSyncProvider({
-	doc,
-	baseUrl,
-	getToken,
-	connect: shouldConnect = true,
-	WebSocketConstructor: WS = WebSocket,
-	awareness = new Awareness(doc),
-}: SyncProviderConfig): SyncProvider {
-	// ========================================================================
-	// Closure State
-	// ========================================================================
-
+export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
+	const { doc, url, getToken } = config;
+	const ownsAwareness = !config.awareness;
+	const awareness = config.awareness ?? new Awareness(doc);
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
-	/** Observable connection status. Set ONLY by the supervisor loop. */
-	let status: SyncStatus = 'offline';
+	const status = createStatusEmitter<SyncStatus>('offline');
 
 	/**
 	 * Monotonic counter bumped by disconnect(). The supervisor loop captures
@@ -147,182 +92,17 @@ export function createSyncProvider({
 	/** Promise of the currently running supervisor loop, or null if idle. */
 	let connectRun: Promise<void> | null = null;
 
-	/** Local version counter — incremented on each local Y.Doc update. */
-	let localVersion = 0;
-
-	/** Last version the server acknowledged via MESSAGE_SYNC_STATUS echo. */
-	let ackedVersion = -1;
-
-	/** Current retry count for exponential backoff. */
-	let retries = 0;
-
 	/** Current WebSocket instance, or null. */
-	let websocket: WebSocketLike | null = null;
+	let websocket: WebSocket | null = null;
 
-	/** Heartbeat idle timer handle. */
-	let heartbeatHandle: ReturnType<typeof setTimeout> | null = null;
-
-	/** Heartbeat timeout timer handle (armed after probe sent). */
-	let connectionTimeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-	/** Current backoff sleeper — can be woken by browser online events. */
-	let reconnectSleeper: Sleeper | null = null;
-
-	// ========================================================================
-	// Event Listeners
-	// ========================================================================
-
-	const statusListeners = new Set<(status: SyncStatus) => void>();
-	const localChangesListeners = new Set<(hasLocalChanges: boolean) => void>();
-
-	/**
-	 * Transition the provider's observable status and notify all listeners.
-	 *
-	 * This is the single place status is written — all transitions flow through
-	 * here so listeners get a consistent, deduplicated stream. No-ops when the
-	 * status hasn't actually changed.
-	 */
-	function setStatus(newStatus: SyncStatus) {
-		if (status === newStatus) return;
-		status = newStatus;
-		for (const listener of statusListeners) {
-			listener(newStatus);
-		}
-	}
-
-	/**
-	 * Notify listeners about a transition in the local changes state.
-	 *
-	 * Only called when `hasLocalChanges` actually toggles — not on every update.
-	 * This drives "Saving…" / "Saved" UI without spurious re-renders.
-	 */
-	function emitLocalChanges(hasChanges: boolean) {
-		for (const listener of localChangesListeners) {
-			listener(hasChanges);
-		}
-	}
-
-	// ========================================================================
-	// Version Tracking (hasLocalChanges)
-	// ========================================================================
-
-	/**
-	 * Bump the local version counter after a local Y.Doc mutation.
-	 *
-	 * Only emits a `localChanges(true)` event on the clean→dirty transition
-	 * (i.e., the first unacked change). Subsequent local edits before an ack
-	 * just bump the counter silently.
-	 */
-	function incrementLocalVersion() {
-		const wasClean = ackedVersion === localVersion;
-		localVersion += 1;
-		if (wasClean) {
-			emitLocalChanges(true);
-		}
-	}
-
-	/**
-	 * Record the latest version the server has acknowledged via MESSAGE_SYNC_STATUS.
-	 *
-	 * Uses `Math.max` to guard against out-of-order acks. Only emits
-	 * `localChanges(false)` when the acked version catches up to the local
-	 * version — the dirty→clean transition.
-	 */
-	function updateAckedVersion(version: number) {
-		version = Math.max(version, ackedVersion);
-		const willBecomeClean =
-			ackedVersion !== localVersion && version === localVersion;
-		ackedVersion = version;
-		if (willBecomeClean) {
-			emitLocalChanges(false);
-		}
-	}
-
-	// ========================================================================
-	// Heartbeat (MESSAGE_SYNC_STATUS = 102)
-	// ========================================================================
-
-	function clearHeartbeat() {
-		if (heartbeatHandle) {
-			clearTimeout(heartbeatHandle);
-			heartbeatHandle = null;
-		}
-	}
-
-	function clearConnectionTimeout() {
-		if (connectionTimeoutHandle) {
-			clearTimeout(connectionTimeoutHandle);
-			connectionTimeoutHandle = null;
-		}
-	}
-
-	/**
-	 * Reset the heartbeat idle timer. After {@link HEARTBEAT_IDLE_MS} of
-	 * silence, sends a MESSAGE_SYNC_STATUS probe — but only when there are
-	 * unacked local changes. This avoids waking the Durable Object from
-	 * hibernation during genuine idle periods.
-	 *
-	 * Liveness is handled by Cloudflare's `setWebSocketAutoResponse` ping/pong
-	 * which never wakes the DO.
-	 */
-	function resetHeartbeat() {
-		clearHeartbeat();
-		heartbeatHandle = setTimeout(() => {
-			heartbeatHandle = null;
-			if (ackedVersion !== localVersion) {
-				sendSyncStatus();
-			}
-		}, HEARTBEAT_IDLE_MS);
-	}
-
-	/**
-	 * Arm a timeout that closes the socket if no response arrives within
-	 * {@link HEARTBEAT_TIMEOUT_MS} after a probe is sent.
-	 *
-	 * Only armed when a SYNC_STATUS probe is actually sent (i.e., when there
-	 * are unacked local changes). The Cloudflare backend always echoes
-	 * SYNC_STATUS, so a missing response means the connection is dead.
-	 */
-	function armConnectionTimeout() {
-		if (connectionTimeoutHandle) return;
-		connectionTimeoutHandle = setTimeout(() => {
-			websocket?.close();
-			connectionTimeoutHandle = null;
-		}, HEARTBEAT_TIMEOUT_MS);
-	}
-
-	/**
-	 * Send a MESSAGE_SYNC_STATUS (102) frame containing the current local version.
-	 *
-	 * The server echoes this back, which serves two purposes:
-	 * 1. **Heartbeat** — proves the connection is alive (arms the timeout).
-	 * 2. **Ack tracking** — when the echoed version equals `localVersion`,
-	 *    we know all local changes have been persisted server-side.
-	 *
-	 * Wire format: `[102][varint-length payload][varint localVersion]`
-	 */
-	function sendSyncStatus() {
-		const payload = encoding.encode((encoder) => {
-			encoding.writeVarUint(encoder, localVersion);
-		});
-		send(encodeSyncStatus({ payload }));
-		armConnectionTimeout();
-	}
-
-	// ========================================================================
-	// WebSocket Send Helper
-	// ========================================================================
+	const backoff = createBackoff();
 
 	/** Send a binary message if the WebSocket is open; silently no-ops otherwise. */
 	function send(message: Uint8Array) {
-		if (websocket?.readyState === WS.OPEN) {
+		if (websocket?.readyState === WebSocket.OPEN) {
 			websocket.send(message);
 		}
 	}
-
-	// ========================================================================
-	// Y.Doc Update Handler (V2)
-	// ========================================================================
 
 	/**
 	 * Y.Doc `'updateV2'` handler — broadcasts local mutations to the server.
@@ -330,22 +110,11 @@ export function createSyncProvider({
 	 * Uses {@link SYNC_ORIGIN} as the origin sentinel: when the sync protocol
 	 * applies a remote update it passes `SYNC_ORIGIN` as origin, so this handler
 	 * skips those to avoid echoing remote changes back to the server.
-	 *
-	 * After sending the update, bumps the local version and sends a
-	 * MESSAGE_SYNC_STATUS probe so the server can ack receipt.
 	 */
 	function handleDocUpdate(update: Uint8Array, origin: unknown) {
 		if (origin === SYNC_ORIGIN) return;
-
 		send(encodeSyncUpdate({ update }));
-
-		incrementLocalVersion();
-		sendSyncStatus();
 	}
-
-	// ========================================================================
-	// Awareness Update Handler
-	// ========================================================================
 
 	/**
 	 * Awareness `'update'` handler — broadcasts local presence changes
@@ -368,29 +137,49 @@ export function createSyncProvider({
 		);
 	}
 
-	// ========================================================================
-	// Browser Online/Offline Handlers
-	// ========================================================================
+	// --- Browser event handlers ---
 
-	/** Wake the backoff sleeper immediately when the browser comes back online. */
+	/** Wake the backoff sleeper so we reconnect immediately when the browser comes back online. */
 	function handleOnline() {
-		reconnectSleeper?.wake();
+		backoff.wake();
 	}
 
 	/**
-	 * Probe the connection when the browser reports going offline.
-	 *
-	 * Doesn't blindly trust the browser's offline event (it can be wrong,
-	 * e.g. localhost connections). Instead sends a heartbeat probe — if
-	 * the connection is truly dead, the timeout will close the socket.
+	 * Close the socket when the browser reports going offline.
+	 * False positives cause a cheap reconnect.
 	 */
 	function handleOffline() {
-		sendSyncStatus();
+		websocket?.close();
 	}
 
-	// ========================================================================
-	// Supervisor Loop (THE core of the provider)
-	// ========================================================================
+	/**
+	 * Send an immediate ping when the tab becomes visible.
+	 *
+	 * Timer callbacks may have been throttled while backgrounded. The ping
+	 * triggers a "pong" response; if the connection is dead, the liveness
+	 * interval will detect the stale lastMessageTime and close the socket.
+	 */
+	function handleVisibilityChange() {
+		if (document.visibilityState !== 'visible') return;
+		if (websocket?.readyState === WebSocket.OPEN) {
+			websocket.send('ping');
+		}
+	}
+
+	/** Attach or detach browser online/offline/visibility listeners. */
+	function manageWindowListeners(action: 'add' | 'remove') {
+		const method =
+			action === 'add' ? 'addEventListener' : 'removeEventListener';
+		if (typeof window !== 'undefined') {
+			window[method]('offline', handleOffline);
+			window[method]('online', handleOnline);
+		}
+		if (typeof document !== 'undefined') {
+			document[method]('visibilitychange', handleVisibilityChange);
+		}
+	}
+
+	// --- Supervisor loop ---
 
 	/**
 	 * The supervisor loop is the SINGLE OWNER of:
@@ -406,7 +195,7 @@ export function createSyncProvider({
 	 */
 	async function runLoop(myRunId: number) {
 		while (desired === 'online' && runId === myRunId) {
-			setStatus('connecting');
+			status.set('connecting');
 
 			// --- Token acquisition (fresh each iteration) ---
 			let token: string | undefined;
@@ -415,12 +204,7 @@ export function createSyncProvider({
 					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
-					setStatus('error');
-					const timeout = backoffDelay(retries);
-					retries += 1;
-					reconnectSleeper = createSleeper(timeout);
-					await reconnectSleeper.promise;
-					reconnectSleeper = null;
+					await backoff.sleep();
 					continue;
 				}
 			}
@@ -433,25 +217,20 @@ export function createSyncProvider({
 			if (runId !== myRunId) break;
 
 			if (result === 'connected') {
-				retries = 0;
+				backoff.reset();
 			}
 
 			if (result === 'cancelled') break;
 
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
-				setStatus('error');
-				const timeout = backoffDelay(retries);
-				retries += 1;
-				reconnectSleeper = createSleeper(timeout);
-				await reconnectSleeper.promise;
-				reconnectSleeper = null;
+				status.set('connecting');
+				await backoff.sleep();
 			}
 		}
 
-		// Loop exiting — set offline if we were asked to disconnect
 		if (desired === 'offline') {
-			setStatus('offline');
+			status.set('offline');
 		}
 
 		connectRun = null;
@@ -468,33 +247,27 @@ export function createSyncProvider({
 		token: string | undefined,
 		myRunId: number,
 	): Promise<'connected' | 'failed' | 'cancelled'> {
-		setStatus('connecting');
-
-		// Derive WS URL from baseUrl
-		let wsUrl = toWebSocketUrl(baseUrl);
+		let wsUrl = url;
 		if (token) {
 			const parsed = new URL(wsUrl);
 			parsed.searchParams.set('token', token);
 			wsUrl = parsed.toString();
 		}
 
-		const ws = new WS(wsUrl);
+		const ws = new WebSocket(wsUrl);
 		ws.binaryType = 'arraybuffer';
 		websocket = ws;
 
-		// --- Promises that event handlers resolve ---
 		const { promise: openPromise, resolve: resolveOpen } =
 			Promise.withResolvers<boolean>();
 		const { promise: closePromise, resolve: resolveClose } =
 			Promise.withResolvers<void>();
 		let handshakeComplete = false;
 
-		// --- Event handlers (REPORTERS ONLY) ---
-		ws.onopen = () => {
-			setStatus('handshaking');
+		const liveness = createLivenessMonitor(ws);
 
+		ws.onopen = () => {
 			send(encodeSyncStep1({ doc }));
-			sendSyncStatus();
 
 			if (awareness.getLocalState() !== null) {
 				send(
@@ -505,13 +278,12 @@ export function createSyncProvider({
 				);
 			}
 
-			resetHeartbeat();
+			liveness.start();
 			resolveOpen(true);
 		};
 
 		ws.onclose = () => {
-			clearHeartbeat();
-			clearConnectionTimeout();
+			liveness.stop();
 
 			// Remove remote awareness states (keep our own)
 			removeAwarenessStates(
@@ -533,8 +305,10 @@ export function createSyncProvider({
 		};
 
 		ws.onmessage = (event: MessageEvent) => {
-			clearConnectionTimeout();
-			resetHeartbeat();
+			liveness.touch();
+
+			// Text "pong" from auto-response — liveness confirmed, nothing else to do
+			if (typeof event.data === 'string') return;
 
 			const data: Uint8Array = new Uint8Array(event.data);
 			const decoder = decoding.createDecoder(data);
@@ -557,9 +331,8 @@ export function createSyncProvider({
 						(syncType === SYNC_MESSAGE_TYPE.STEP2 ||
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
-						// Server's step2 (or an update during handshake) applied
 						handshakeComplete = true;
-						setStatus('connected');
+						status.set('connected');
 					}
 					break;
 				}
@@ -582,14 +355,6 @@ export function createSyncProvider({
 					);
 					break;
 				}
-
-				case MESSAGE_TYPE.SYNC_STATUS: {
-					const payload = decoding.readVarUint8Array(decoder);
-					const versionDecoder = decoding.createDecoder(payload);
-					const version = decoding.readVarUint(versionDecoder);
-					updateAckedVersion(version);
-					break;
-				}
 			}
 		};
 
@@ -597,7 +362,10 @@ export function createSyncProvider({
 		const opened = await openPromise;
 		if (!opened || runId !== myRunId) {
 			// Socket failed to open or we were cancelled
-			if (ws.readyState !== WS.CLOSED && ws.readyState !== WS.CLOSING) {
+			if (
+				ws.readyState !== WebSocket.CLOSED &&
+				ws.readyState !== WebSocket.CLOSING
+			) {
 				ws.close();
 			}
 			await closePromise;
@@ -610,135 +378,183 @@ export function createSyncProvider({
 		return handshakeComplete ? 'connected' : 'failed';
 	}
 
-	// ========================================================================
-	// Doc + Awareness Listeners (attach immediately)
-	// ========================================================================
+	// --- Attach doc + awareness listeners ---
 
 	doc.on('updateV2', handleDocUpdate);
 	awareness.on('update', handleAwarenessUpdate);
 
-	// ========================================================================
-	// Window Event Helpers
-	// ========================================================================
-
-	/** Attach browser online/offline listeners. No-ops in non-browser environments. */
-	function addWindowListeners() {
-		if (typeof window !== 'undefined') {
-			window.addEventListener('offline', handleOffline);
-			window.addEventListener('online', handleOnline);
-		}
-	}
-
-	/** Detach browser online/offline listeners. No-ops in non-browser environments. */
-	function removeWindowListeners() {
-		if (typeof window !== 'undefined') {
-			window.removeEventListener('offline', handleOffline);
-			window.removeEventListener('online', handleOnline);
-		}
-	}
-
-	// ========================================================================
-	// Public API
-	// ========================================================================
-
-	if (shouldConnect) {
-		// Auto-connect
-		desired = 'online';
-		addWindowListeners();
-		const myRunId = runId;
-		connectRun = runLoop(myRunId);
-	}
-
 	return {
 		get status() {
-			return status;
-		},
-
-		get hasLocalChanges() {
-			return ackedVersion !== localVersion;
+			return status.get();
 		},
 
 		get awareness() {
 			return awareness;
 		},
 
-		/**
-		 * Start connecting. Idempotent — safe to call multiple times.
-		 * If a connect loop is already running, this is a no-op.
-		 */
 		connect() {
 			desired = 'online';
-			if (connectRun) return; // Loop already running
-			addWindowListeners();
+			if (connectRun) return;
+			manageWindowListeners('add');
 			const myRunId = runId;
 			connectRun = runLoop(myRunId);
 		},
 
-		/**
-		 * Stop connecting and close the socket.
-		 * Sets desired state to offline and wakes any sleeping backoff.
-		 */
 		disconnect() {
 			desired = 'offline';
 			runId++;
-			reconnectSleeper?.wake();
-			removeWindowListeners();
+			backoff.wake();
+			manageWindowListeners('remove');
 
 			if (websocket) {
 				websocket.close();
 			}
 
 			// Synchronously set offline so callers see the status immediately
-			setStatus('offline');
+			status.set('offline');
 		},
 
-		/**
-		 * Subscribe to status changes. Returns unsubscribe function.
-		 */
-		onStatusChange(listener: (status: SyncStatus) => void) {
-			statusListeners.add(listener);
-			return () => {
-				statusListeners.delete(listener);
-			};
-		},
+		onStatusChange: status.subscribe,
 
-		/**
-		 * Subscribe to local changes state changes. Returns unsubscribe function.
-		 */
-		onLocalChanges(listener: (hasLocalChanges: boolean) => void) {
-			localChangesListeners.add(listener);
-			return () => {
-				localChangesListeners.delete(listener);
-			};
-		},
-
-		/**
-		 * Clean up everything — disconnect, remove listeners, release resources.
-		 */
 		destroy() {
-			desired = 'offline';
-			runId++;
-			reconnectSleeper?.wake();
-
-			clearHeartbeat();
-			clearConnectionTimeout();
-
-			if (websocket) {
-				websocket.close();
-			}
-
-			// Synchronously set offline so callers see the status immediately
-			setStatus('offline');
-
+			this.disconnect();
 			doc.off('updateV2', handleDocUpdate);
 			awareness.off('update', handleAwarenessUpdate);
+			if (ownsAwareness) {
+				removeAwarenessStates(awareness, [doc.clientID], 'window unload');
+			}
+			status.clear();
+		},
+	};
+}
 
-			removeAwarenessStates(awareness, [doc.clientID], 'window unload');
+// ============================================================================
+// Helpers (hoisted — available throughout the module)
+// ============================================================================
 
-			removeWindowListeners();
+/**
+ * Creates a deduplicated status emitter.
+ *
+ * Encapsulates a value and a listener set into a single unit. Calls to `set()`
+ * that don't change the value are no-ops, so listeners get a clean,
+ * deduplicated stream of transitions.
+ */
+function createStatusEmitter<T>(initial: T) {
+	let current = initial;
+	const listeners = new Set<(value: T) => void>();
 
-			statusListeners.clear();
-			localChangesListeners.clear();
+	return {
+		/** Read the current value. */
+		get() {
+			return current;
+		},
+
+		/** Transition to a new value and notify listeners. No-op if unchanged. */
+		set(value: T) {
+			if (current === value) return;
+			current = value;
+			for (const listener of listeners) {
+				listener(value);
+			}
+		},
+
+		/** Subscribe to value changes. Returns an unsubscribe function. */
+		subscribe(listener: (value: T) => void) {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+
+		/** Remove all listeners. */
+		clear() {
+			listeners.clear();
+		},
+	};
+}
+
+/**
+ * Creates a liveness monitor that detects dead WebSocket connections.
+ *
+ * Encapsulates the ping interval, liveness check interval, and last-message
+ * timestamp into a single unit. Call `start()` when the socket opens,
+ * `touch()` on every incoming message, and `stop()` on close.
+ *
+ * If no message arrives within {@link LIVENESS_TIMEOUT_MS}, the socket is closed.
+ */
+function createLivenessMonitor(ws: WebSocket) {
+	let pingInterval: ReturnType<typeof setInterval> | null = null;
+	let livenessInterval: ReturnType<typeof setInterval> | null = null;
+	let lastMessageTime = 0;
+
+	return {
+		/** Begin sending pings and checking for staleness. */
+		start() {
+			lastMessageTime = Date.now();
+
+			pingInterval = setInterval(() => {
+				if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+			}, PING_INTERVAL_MS);
+
+			livenessInterval = setInterval(() => {
+				if (Date.now() - lastMessageTime > LIVENESS_TIMEOUT_MS) {
+					ws.close();
+				}
+			}, LIVENESS_CHECK_INTERVAL_MS);
+		},
+
+		/** Record that a message was received. */
+		touch() {
+			lastMessageTime = Date.now();
+		},
+
+		/** Clear all intervals. */
+		stop() {
+			if (pingInterval) clearInterval(pingInterval);
+			if (livenessInterval) clearInterval(livenessInterval);
+		},
+	};
+}
+
+/**
+ * Creates a backoff controller with exponential delay, jitter, and a wakeable sleeper.
+ *
+ * Encapsulates retry count, delay computation, and the cancellable timeout
+ * into a single unit. The supervisor loop calls `sleep()` to wait, external
+ * events call `wake()` to interrupt, and successful connections call `reset()`.
+ */
+function createBackoff() {
+	let retries = 0;
+	let sleeper: { promise: Promise<void>; wake(): void } | null = null;
+
+	return {
+		/** Wait for the next backoff delay, then increment retries. */
+		async sleep() {
+			const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
+			const ms = exponential * (0.5 + Math.random() * 0.5);
+			retries += 1;
+
+			const { promise, resolve } = Promise.withResolvers<void>();
+			const handle = setTimeout(resolve, ms);
+			sleeper = {
+				promise,
+				wake() {
+					clearTimeout(handle);
+					resolve();
+				},
+			};
+			await promise;
+			sleeper = null;
+		},
+
+		/** Interrupt a pending sleep immediately. */
+		wake() {
+			sleeper?.wake();
+		},
+
+		/** Reset retry count after a successful connection. */
+		reset() {
+			retries = 0;
 		},
 	};
 }

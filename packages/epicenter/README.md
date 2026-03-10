@@ -925,7 +925,7 @@ server.start();
 **Key properties:**
 
 - Standard protocol: Compatible with any y-websocket client
-- `hasLocalChanges` tracking via MESSAGE_SYNC_STATUS (102) heartbeat extension
+- Text ping/pong liveness detection via Cloudflare auto-response
 - Built-in awareness: User presence/cursors work out of the box
 - Two auth modes: open (no auth) and authenticated (dynamic token refresh)
 - No native modules: Pure JS, works with Bun

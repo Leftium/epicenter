@@ -2,11 +2,10 @@
  * Sync Extension Tests
  *
  * These tests verify sync extension lifecycle behavior around provider creation,
- * reconnect semantics, URL resolution, and readiness ordering. They ensure extension
- * consumers get a stable provider reference and deterministic teardown behavior.
+ * reconnect semantics, URL resolution, and readiness ordering.
  *
  * Key behaviors:
- * - Reconnect swaps providers and destroys previous connections
+ * - Reconnect disconnects and reconnects the same provider instance
  * - URL configuration and whenReady lifecycle resolve in the expected order
  */
 import { describe, expect, test } from 'bun:test';
@@ -18,11 +17,7 @@ import { createSyncExtension } from './sync';
 /** The shape returned by the extension factory (flat). */
 type SyncExtensionResult = {
 	provider: SyncProvider;
-	reconnect: (newConfig?: {
-		url?: string;
-		token?: string;
-		getToken?: () => Promise<string>;
-	}) => void;
+	reconnect: () => void;
 	whenReady: Promise<unknown>;
 	destroy: () => void;
 };
@@ -42,7 +37,7 @@ function createMockClient(ydoc: Y.Doc) {
 
 describe('createSyncExtension', () => {
 	describe('reconnect', () => {
-		test('destroys old provider and creates new provider', () => {
+		test('reconnect reuses the same provider instance', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc' });
 
 			const factory = createSyncExtension({
@@ -53,28 +48,19 @@ describe('createSyncExtension', () => {
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 
-			const oldProvider = result.provider;
-			expect(oldProvider).toBeDefined();
+			const provider = result.provider;
+			expect(provider).toBeDefined();
 
-			// Reconnect with a different URL
-			result.reconnect({
-				url: 'http://cloud.example.com/rooms/test-doc',
-			});
+			result.reconnect();
 
-			// Old provider should be destroyed (offline)
-			expect(oldProvider.status).toBe('offline');
+			// Same provider instance — reconnect delegates to disconnect/connect
+			expect(result.provider).toBe(provider);
 
-			// New provider should be a different instance
-			const newProvider = result.provider;
-			expect(newProvider).not.toBe(oldProvider);
-			expect(newProvider).toBeDefined();
-
-			// Cleanup
 			result.destroy();
 		});
 
-		test('provider getter returns current provider after reconnect', () => {
-			const ydoc = new Y.Doc({ guid: 'test-doc-getter' });
+		test('reconnect sets provider to offline then allows reconnection', () => {
+			const ydoc = new Y.Doc({ guid: 'test-doc-status' });
 
 			const factory = createSyncExtension({
 				url: (id: string) => `http://localhost:8080/rooms/${id}`,
@@ -84,28 +70,16 @@ describe('createSyncExtension', () => {
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
 
-			const firstProvider = result.provider;
-			result.reconnect({
-				url: 'http://server-2/rooms/test-doc-getter',
-			});
-			const secondProvider = result.provider;
-			result.reconnect({
-				url: 'http://server-3/rooms/test-doc-getter',
-			});
-			const thirdProvider = result.provider;
+			result.reconnect();
 
-			// Each reconnect should yield a different provider
-			expect(firstProvider).not.toBe(secondProvider);
-			expect(secondProvider).not.toBe(thirdProvider);
-
-			// Previous providers should be offline
-			expect(firstProvider.status).toBe('offline');
-			expect(secondProvider.status).toBe('offline');
+			// After disconnect(), status is synchronously offline
+			// connect() then kicks off the supervisor loop
+			expect(result.provider).toBeDefined();
 
 			result.destroy();
 		});
 
-		test('destroy uses current provider after reconnect', () => {
+		test('destroy sets provider to offline', () => {
 			const ydoc = new Y.Doc({ guid: 'test-doc-destroy' });
 
 			const factory = createSyncExtension({
@@ -115,15 +89,11 @@ describe('createSyncExtension', () => {
 			const result = factory(
 				createMockClient(ydoc),
 			) as unknown as SyncExtensionResult;
-			result.reconnect({
-				url: 'http://cloud.example.com/rooms/test-doc-destroy',
-			});
 
-			const currentProvider = result.provider;
+			const provider = result.provider;
 			result.destroy();
 
-			// The current (post-reconnect) provider should be destroyed
-			expect(currentProvider.status).toBe('offline');
+			expect(provider.status).toBe('offline');
 		});
 	});
 

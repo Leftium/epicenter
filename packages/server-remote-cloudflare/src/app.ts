@@ -42,23 +42,6 @@ export type Env = {
 };
 
 // ---------------------------------------------------------------------------
-// Database
-// ---------------------------------------------------------------------------
-
-/**
- * Creates a per-request pg.Client and Drizzle instance.
- *
- * Uses `pg.Client` (not `Pool`) because Hyperdrive IS the connection pool —
- * adding a client-side pool on top would be double-pooling.
- * The caller is responsible for `client.connect()` and `client.end()`.
- */
-function createDb(connectionString: string) {
-	const client = new pg.Client({ connectionString });
-	const db = drizzle(client, { schema });
-	return { client, db };
-}
-
-// ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
@@ -172,12 +155,14 @@ const factory = createFactory<Env>({
 			})(c, next);
 		});
 
-		// Layer 1: Database — pg.Client lifecycle (connect/end).
-		// Hyperdrive IS the pool, so we use a single Client per request.
+		// Layer 1: Database — per-request pg.Client lifecycle (connect/end).
+		// Uses Client (not Pool) because Hyperdrive IS the connection pool.
 		app.use('*', async (c, next) => {
-			const { client, db } = createDb(c.env.HYPERDRIVE.connectionString);
+			const client = new pg.Client({
+				connectionString: c.env.HYPERDRIVE.connectionString,
+			});
 			await client.connect();
-			c.set('db', db);
+			c.set('db', drizzle(client, { schema }));
 			try {
 				await next();
 			} finally {

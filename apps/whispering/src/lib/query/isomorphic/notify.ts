@@ -1,3 +1,4 @@
+import { gg } from '@leftium/gg';
 import { Ok } from 'wellcrafted/result';
 import { dev } from '$app/environment';
 import { notificationLog } from '$lib/components/NotificationLog.svelte';
@@ -20,19 +21,19 @@ const createNotifyMutation = (
 			if (dev) {
 				switch (variant) {
 					case 'error':
-						console.error('[Notify]', fullOptions);
+						gg(fullOptions).ns('[Notify]').error();
 						break;
 					case 'warning':
-						console.warn('[Notify]', fullOptions);
+						gg(fullOptions).ns('[Notify]').warn();
 						break;
 					case 'info':
-						console.info('[Notify]', fullOptions);
+						gg(fullOptions).ns('[Notify]').info();
 						break;
 					case 'loading':
-						console.info('[Notify]', fullOptions);
+						gg(fullOptions).ns('[Notify]').info();
 						break;
 					case 'success':
-						console.log('[Notify]', fullOptions);
+						gg(fullOptions).ns('[Notify]');
 						break;
 				}
 			}
@@ -52,7 +53,7 @@ const createNotifyMutation = (
 				const { error: notifyError } =
 					await services.notification.notify(fullOptions);
 				if (notifyError) {
-					console.error('[Notify] OS notification error:', notifyError);
+					gg('OS notification error:', notifyError).ns('[Notify]').error();
 				}
 			}
 

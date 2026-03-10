@@ -11,12 +11,7 @@
 	},
 	"exports": {
 		"./vite": "./src/vite.ts",
-		"./node": "./src/node.ts",
-		"./cloudflare": "./src/cloudflare.ts",
 		"./versions": "./src/versions.ts"
-	},
-	"dependencies": {
-		"arktype": "catalog:"
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",

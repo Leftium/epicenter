@@ -53,53 +53,13 @@ Good (direct, conversational):
 
 Parenthetical asides, dashes for emphasis, and sentence fragments are all fine when they serve clarity. "Stripping the JIT? Now your code runs 10-100x slower." reads better than a formally constructed alternative.
 
-## Numbered Bold Points for Multi-Part Arguments
+## Visual Elements Are Tools, Not Checkboxes
 
-When explaining WHY something is the case and there are multiple independent reasons, use numbered bold points. Each point gets a bold heading, a short explanation, and optionally a code block.
+ASCII diagrams, tables, and before/after code blocks are tools to reach for when they clarify something prose can't. They are not required ingredients.
 
-```
-**1. JavaScriptCore is monolithic (~40MB+ of the binary)**
+Use a diagram when showing flow or architecture that's hard to describe linearly. Use a table when there's a genuine comparison with 3+ items. Use before/after code when the contrast IS the point. Skip all of them when the article doesn't need them.
 
-It's Apple's JS engine. Bun doesn't own it. You can't remove "the parts
-you don't use" because it's a tightly coupled C++ codebase.
-
-**2. `eval()` and dynamic imports break static analysis**
-
-Go and Rust know at compile time exactly what functions are called.
-JavaScript doesn't:
-
-\`\`\`js
-const module = await import(userInput)
-\`\`\`
-
-**3. Node.js compatibility is a massive surface area**
-
-Bun promises Node compat. That means all of node:fs, node:http, etc.
-```
-
-This pattern works because each reason stands alone. The reader can skim the bold lines and get the gist, or read deeply on the ones that interest them. Reserve this for 3-5 reasons; fewer than 3 should just be prose, more than 5 needs consolidation.
-
-ASCII diagrams for architecture or flow:
-
-```
-Conversation          Spec File           Subagent
-    │                    │                   │
-    │  write context     │                   │
-    │───────────────────>│                   │
-    │                    │                   │
-    │                    │   read file       │
-    │                    │<──────────────────│
-    │                    │                   │
-    │                    │   fresh context   │
-    │                    │──────────────────>│
-```
-
-Tables for comparisons (skim-friendly, respect reader time):
-
-| Instead of                | Do this            |
-| ------------------------- | ------------------ |
-| Copy-pasting context      | Write to spec file |
-| Re-explaining each prompt | Pass the filename  |
+When you have multiple independent reasons for something, write them as regular prose with natural transitions. Don't use numbered bold headings (`**1. Bold heading**` followed by explanation)—that pattern is one of the most recognizable AI writing tells.
 
 ## Rhythm and Pacing
 
@@ -187,69 +147,26 @@ No space-dash-space: use colons, semicolons, or em dashes per writing-voice.
 
 No rigid template: structure should fit the content, not the other way around. Some articles need a "Problem/Solution" flow; others just show code and explain. Don't force sections.
 
-## Reference: Complete Article Skeleton
+## Articles Have Different Shapes
 
-This is NOT a template to follow mechanically. It's a reference showing what a well-paced 60-line article looks like. Your article's structure should fit its content.
+Don't follow a single template. Structure should fit the content. Some common shapes:
 
-````
-# Write Context to a File, Not a Prompt
+**Problem → fix** (short, practical): State the problem, show the code that fixes it, explain why. No diagrams, no tables, no extra sections. 30-50 lines.
 
-When a conversation spawns sub-agents, each one starts fresh. If your context
-lives only in the conversation, you'll re-explain it every time. Write it to a
-file instead.
+**Mechanism explainer** (medium): Explain how something works under the hood, alternating prose and code. Diagrams when the flow is non-obvious. 50-80 lines.
 
-```typescript
-// Instead of crafting a long prompt with embedded context:
-task({ prompt: `Here's the schema: ${schema}. Here's the migration plan: ${plan}. Now implement step 3...` })
+**Comparison or tradeoff analysis** (longer): Show two or more approaches with real code from each. A table can help here because the comparison IS the point. ASCII diagrams when architecture differs between approaches. 80-150 lines.
 
-// Write context to a spec file, then reference it:
-await writeFile('specs/migration-plan.md', context);
-task({ prompt: 'Read specs/migration-plan.md and implement step 3.' })
-```
-
-The spec file solves three problems at once. Sub-agents get full context without
-prompt bloat. The context doesn't drift between invocations because there's one
-source of truth. And you can read the file yourself to verify what agents are
-working from.
-
-```
-Conversation          Spec File           Sub-agent
-    │                    │                   │
-    │  write context     │                   │
-    │───────────────────>│                   │
-    │                    │   read file       │
-    │                    │<──────────────────│
-    │                    │   fresh context   │
-    │                    │──────────────────>│
-```
-
-This also changes how you think about agent prompts. Instead of "give the agent
-all the context it needs," the question becomes "does the spec file contain
-everything?" That's a better question because you can check it: open the file,
-read it, see if it's complete.
-
-| Without spec file             | With spec file              |
-| ----------------------------- | --------------------------- |
-| Context drifts per invocation | Single source of truth      |
-| Prompt grows with complexity  | Prompt stays short          |
-| Can't verify what agent sees  | Read the file yourself      |
-| Copy-paste between agents     | All agents read same file   |
-
-The overhead is one file write. The payoff is every sub-agent in the
-conversation working from the same, verifiable context.
-````
-
-Notice the pattern: opening insight → code showing the technique → prose explaining why → ASCII diagram showing the flow → table summarizing the comparison → one-sentence closing. Each prose section is 2-4 sentences. Each visual earns its place.
+The shape emerges from the content. If you find yourself adding a diagram or table to fill a perceived gap, you don't need it.
 
 ## What Makes Articles Good
 
 - Real code from real codebases, not abstract examples
-- ASCII diagrams that clarify architecture or data flow
-- One table that summarizes the key comparison
 - Tight prose that explains WHY, not WHAT (code shows WHAT)
-- Prose and visuals alternate every 2-4 sentences
+- Prose and visuals alternate naturally; neither dominates for long stretches
 - Opening paragraph delivers the insight, not a topic announcement
-- 30-80 lines for focused insight articles; comparison or analysis articles naturally run 80-150+ when showing code from multiple libraries
+- Visual elements (diagrams, tables) only when they earn their place
+- Length matches content: 30-50 lines for focused fixes, 80-150 for comparisons
 
 ## What Makes Articles Bad
 
@@ -258,6 +175,8 @@ Notice the pattern: opening insight → code showing the technique → prose exp
 - Abstract `foo`/`bar` code examples
 - Over-explaining self-explanatory code
 - Bold formatting scattered through body text
+- Numbered bold headings for multi-part arguments (`**1. Bold heading**` pattern)
+- Summary tables tacked on at the end that restate what the prose already said
 - Marketing language or AI giveaways
 - More than 4-5 sentences of prose without a visual break
 - Opening that announces the topic instead of delivering the insight

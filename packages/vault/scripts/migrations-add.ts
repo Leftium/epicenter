@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * POC migrations add script - moved to packages/vault-core/scripts
+ * POC migrations add script - moved to packages/vault/scripts
  * Runs relative to CWD and supports copying drizzle migration files if present.
  */
 
@@ -32,7 +32,7 @@ Optional:
 
 Examples:
   # Print-only (recommended): generates migration.sql and prints a ready-to-paste block
-  node packages/vault-core/scripts/migrations-add.poc.ts -a reddit -t 0002 -s 0002_forward_baseline
+  node packages/vault/scripts/migrations-add.poc.ts -a reddit -t 0002 -s 0002_forward_baseline
 `.trim(),
 	);
 }
@@ -269,7 +269,7 @@ async function main() {
 	const adapterDir = path.join(
 		root,
 		'packages',
-		'vault-core',
+		'vault',
 		'src',
 		'adapters',
 		adapter,

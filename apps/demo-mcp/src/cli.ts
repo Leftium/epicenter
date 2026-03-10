@@ -118,14 +118,11 @@ function toDbUrl(dbFileAbs: string): string {
 // Helpers to work with new core API
 // -------------------------------------------------------------
 async function findAdapter(adapterID: string): Promise<Adapter> {
-	const adaptersDir = path.resolve(
-		repoRoot,
-		'packages/vault-core/src/adapters',
-	);
+	const adaptersDir = path.resolve(repoRoot, 'packages/vault/src/adapters');
 	const keys = await fs.readdir(adaptersDir);
 	for (const key of keys) {
 		const modulePath = import.meta.resolve(
-			`../../../packages/vault-core/src/adapters/${key}`,
+			`../../../packages/vault/src/adapters/${key}`,
 		);
 		const mod = (await import(modulePath)) as Record<string, unknown>;
 		for (const func of Object.values(mod)) {

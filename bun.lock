@@ -196,7 +196,7 @@
         "@epicenter/svelte-utils": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@google/generative-ai": "^0.24.1",
-        "@leftium/gg": "0.0.52",
+        "@leftium/gg": "0.0.53",
         "@mistralai/mistralai": "^1.9.18",
         "@ricky0123/vad-web": "^0.0.24",
         "@standard-schema/spec": "catalog:",
@@ -942,7 +942,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@leftium/gg": ["@leftium/gg@0.0.52", "", { "dependencies": { "@sveltejs/acorn-typescript": "^1.0.9", "@tanstack/virtual-core": "^3.13.21", "acorn": "^8.16.0", "eruda": "^3.4.3", "esm-env": "^1.2.2", "launch-editor": "^2.13.1" }, "peerDependencies": { "svelte": "^5.0.0" }, "optionalPeers": ["svelte"] }, "sha512-QhO/0vLuHv3aPaxqiisTHazldRK8ed2eWKjmDGdGInsIB6c6UOg7TVSDNHZCuG6ZBz/75VSD+PjtoctPwv6TKQ=="],
+    "@leftium/gg": ["@leftium/gg@0.0.53", "", { "dependencies": { "@sveltejs/acorn-typescript": "^1.0.9", "@tanstack/virtual-core": "^3.13.21", "acorn": "^8.16.0", "eruda": "^3.4.3", "esm-env": "^1.2.2", "launch-editor": "^2.13.1" }, "peerDependencies": { "svelte": "^5.0.0" }, "optionalPeers": ["svelte"] }, "sha512-zVewdA9MjiQiFMe4HINRJJzviwUawZOhpUpCqtDNc2C0rjxE93XB/f+8XHlZbmC/fLlSMQGu3fvagwB4b7EYzg=="],
 
     "@libsql/client": ["@libsql/client@0.11.0", "", { "dependencies": { "@libsql/core": "^0.11.0", "@libsql/hrana-client": "^0.6.2", "js-base64": "^3.7.5", "libsql": "^0.4.4", "promise-limit": "^2.7.0" } }, "sha512-IkMxBFI43JXBRf4K57m6zeoa8M6u0FFEI11vHh4/ObTCZFk20wJNO9hRa1Zq1BeVDqABxMRf02HPAr02pC06bQ=="],
 

@@ -20,53 +20,74 @@ export function createKvPlugin(workspaces: Record<string, AnyWorkspaceClient>) {
 	const router = new Hono();
 
 	for (const key of kvKeys) {
-		router.get(`/:workspaceId/kv/${key}`, describeRoute({
-			description: `Get the value of the ${key} KV entry`,
-			tags: [key, 'kv'],
-		}), (c) => {
-			const workspace = workspaces[c.req.param('workspaceId')];
-			if (!workspace)
-				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
-			try {
-				const result = workspace.kv.get(key);
-				if (result.status === 'not_found') return c.json(result, 404);
-				if (result.status === 'invalid') return c.json(result, 422);
-				return c.json(result);
-			} catch (error) {
-				return c.json(WorkspaceApiError.KvOperationFailed({ key, cause: error }).error, 400);
-			}
-		});
+		router.get(
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Get the value of the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			(c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
+				if (!workspace)
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
+				try {
+					const result = workspace.kv.get(key);
+					if (result.status === 'not_found') return c.json(result, 404);
+					if (result.status === 'invalid') return c.json(result, 422);
+					return c.json(result);
+				} catch (error) {
+					return c.json(
+						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
+					);
+				}
+			},
+		);
 
-		router.put(`/:workspaceId/kv/${key}`, describeRoute({
-			description: `Set the value of the ${key} KV entry`,
-			tags: [key, 'kv'],
-		}), async (c) => {
-			const workspace = workspaces[c.req.param('workspaceId')];
-			if (!workspace)
-				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
-			try {
-				const body = await c.req.json();
-				workspace.kv.set(key, body as never);
-				return c.json({ status: 'set' as const, key });
-			} catch (error) {
-				return c.json(WorkspaceApiError.KvOperationFailed({ key, cause: error }).error, 400);
-			}
-		});
+		router.put(
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Set the value of the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			async (c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
+				if (!workspace)
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
+				try {
+					const body = await c.req.json();
+					workspace.kv.set(key, body as never);
+					return c.json({ status: 'set' as const, key });
+				} catch (error) {
+					return c.json(
+						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
+					);
+				}
+			},
+		);
 
-		router.delete(`/:workspaceId/kv/${key}`, describeRoute({
-			description: `Delete the ${key} KV entry`,
-			tags: [key, 'kv'],
-		}), (c) => {
-			const workspace = workspaces[c.req.param('workspaceId')];
-			if (!workspace)
-				return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
-			try {
-				workspace.kv.delete(key);
-				return c.json({ status: 'deleted' as const, key });
-			} catch (error) {
-				return c.json(WorkspaceApiError.KvOperationFailed({ key, cause: error }).error, 400);
-			}
-		});
+		router.delete(
+			`/:workspaceId/kv/${key}`,
+			describeRoute({
+				description: `Delete the ${key} KV entry`,
+				tags: [key, 'kv'],
+			}),
+			(c) => {
+				const workspace = workspaces[c.req.param('workspaceId')];
+				if (!workspace)
+					return c.json(WorkspaceApiError.WorkspaceNotFound().error, 404);
+				try {
+					workspace.kv.delete(key);
+					return c.json({ status: 'deleted' as const, key });
+				} catch (error) {
+					return c.json(
+						WorkspaceApiError.KvOperationFailed({ key, cause: error }).error,
+						400,
+					);
+				}
+			},
+		);
 	}
 
 	return router;

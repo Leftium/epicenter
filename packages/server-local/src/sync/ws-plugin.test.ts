@@ -437,17 +437,18 @@ describe('ws sync plugin auth', () => {
 	/**
 	 * Helper to assert a provider never reaches 'connected'.
 	 *
-	 * Collects status transitions for a window and verifies 'connected'
-	 * never appears. The provider should cycle connecting/offline on rejection.
+	 * Subscribes before connect() so fast auth rejections still emit the
+	 * initial 'connecting' transition into the collected status list.
 	 */
 	async function expectAuthRejection(provider: SyncProvider): Promise<void> {
 		const statuses: SyncStatus[] = [];
 		const unsub = provider.onStatusChange((s) => statuses.push(s));
+		provider.connect();
 		await new Promise((r) => setTimeout(r, 1_000));
 		unsub();
 
 		// Should have attempted at least one connection cycle
-		expect(statuses.length).toBeGreaterThan(0);
+		expect(statuses).toContain('connecting');
 		expect(statuses).not.toContain('connected');
 	}
 
@@ -462,7 +463,6 @@ describe('ws sync plugin auth', () => {
 				doc,
 				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 			});
-			provider.connect();
 
 			try {
 				await expectAuthRejection(provider);
@@ -488,7 +488,6 @@ describe('ws sync plugin auth', () => {
 				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
 				getToken: async () => 'wrong-token',
 			});
-			provider.connect();
 
 			try {
 				await expectAuthRejection(provider);

@@ -210,9 +210,7 @@ describe('createActionsPlugin', () => {
 		const app = buildApp([wsA, wsB]);
 
 		// Workspace B doesn't have 'ping'
-		const response = await app.fetch(
-			new Request('http://test/b/actions/ping'),
-		);
+		const response = await app.fetch(new Request('http://test/b/actions/ping'));
 
 		expect(response.status).toBe(404);
 	});

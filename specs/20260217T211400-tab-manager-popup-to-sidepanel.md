@@ -443,4 +443,4 @@ FlatTabList.svelte (flex height)     lib/workspace.ts
 - `apps/tab-manager/src/lib/workspace-popup.ts` — Works unchanged, optional rename later
 - Uniswap Extension (`Uniswap/interface`) — WXT + sidepanel reference implementation
 - Extension.js Svelte template — `openPanelOnActionClick` pattern with Firefox fallback
-- `docs/specs/20260213T015500-popup-reactive-state.md` — Previous spec (reactive state, already implemented)
+- `specs/20260213T015500-popup-reactive-state.md` — Previous spec (reactive state, already implemented)

@@ -1,6 +1,6 @@
 # Y.Doc Size Benchmark
 
-Interactive tool to test single Y.Doc size limits. Useful for understanding when a single-document architecture becomes problematic and validating the multi-doc approach in the [subdoc architecture spec](../../docs/specs/20260122T225052-subdoc-architecture.md).
+Interactive tool to test single Y.Doc size limits. Useful for understanding when a single-document architecture becomes problematic and validating the multi-doc approach in the [subdoc architecture spec](../../specs/20260122T225052-subdoc-architecture.md).
 
 ## Quick Start
 

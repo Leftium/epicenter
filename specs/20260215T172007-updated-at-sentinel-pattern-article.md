@@ -116,7 +116,7 @@ Each sentinel gets bumped independently when its corresponding content doc chang
 
 ## Deliverables
 
-- [x] Spec at `docs/specs/20260215T172007-updated-at-sentinel-pattern-article.md`
+- [x] Spec at `specs/20260215T172007-updated-at-sentinel-pattern-article.md`
 - [x] Article at `docs/articles/updated-at-sentinel-for-external-yjs-docs.md`
 
 ## Related

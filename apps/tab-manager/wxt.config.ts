@@ -11,6 +11,9 @@ export default defineConfig({
 	manifest: {
 		name: 'Tab Manager',
 		description: 'Manage browser tabs with Epicenter',
+		// Pins the extension ID to mkbnicfhpacdofmoocppnjjmdfmkkgda across all machines.
+		// Required for stable OAuth redirect URL with chrome.identity.
+		key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvc/CNEshfeHanSOPQlaQNi/k6Vu81LsrDyxqJEHWPzXa/a4Nk6EeQmSvWAl7YAhW0KGSJoMSGgT0QXh7A0ILCgXtIby4TfVdzlvRkLvhI6eU8iRLUgghvR4Uq9lFLt67uXMFoOQ3hRPxwVNSJqPL9BJv3iWArnaTx54Nl23uot7Xpnt+cDy8qzd8DVW751qKmVbcRgf8oKH67UdcfB1aPyQ64xs+R+P3qXAUdjwEAHDIaAJtEHFyqxIJLutpm9/ahXCyYydayK3atLWKo21M1AbkgClloDGT2CaBawaCG+YksAWrfkaO2WT/lTo0UI8HHcirXuEJuXR4DmyV7vBufwIDAQAB',
 		permissions: ['tabs', 'storage', 'identity'],
 		// host_permissions needed for favicons and tab info
 		host_permissions: ['<all_urls>'],

@@ -258,7 +258,7 @@ The fix will be validated with the next release (v7.7.2 or later):
 
 1. `apps/whispering/README.md` - Updated all download links to v7.7.1
 2. `.github/workflows/update-readme-version.yml` - Fixed patterns and added retry logic
-3. `docs/specs/20251107T105035-readme-version-workflow-fix.md` - This documentation
+3. `specs/20251107T105035-readme-version-workflow-fix.md` - This documentation
 
 ## Todo
 

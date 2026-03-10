@@ -191,7 +191,6 @@
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/shared": "workspace:*",
         "@epicenter/svelte-utils": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@google/generative-ai": "^0.24.1",
@@ -388,18 +387,6 @@
         "jsonc-parser": "^3.3.1",
         "typescript": "catalog:",
         "wrangler": "catalog:",
-      },
-    },
-    "packages/shared": {
-      "name": "@epicenter/shared",
-      "version": "0.0.0",
-      "dependencies": {
-        "@lucide/svelte": "catalog:",
-        "arktype": "catalog:",
-      },
-      "devDependencies": {
-        "@types/node": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/svelte-utils": {
@@ -754,8 +741,6 @@
     "@epicenter/server-local": ["@epicenter/server-local@workspace:packages/server-local"],
 
     "@epicenter/server-remote-cloudflare": ["@epicenter/server-remote-cloudflare@workspace:packages/server-remote-cloudflare"],
-
-    "@epicenter/shared": ["@epicenter/shared@workspace:packages/shared"],
 
     "@epicenter/svelte-utils": ["@epicenter/svelte-utils@workspace:packages/svelte-utils"],
 

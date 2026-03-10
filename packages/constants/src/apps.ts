@@ -29,14 +29,3 @@ export const createApps = (env: 'development' | 'production') => {
 		},
 	} as const;
 };
-
-/**
- * Derives all URLs from createApps and returns them as an array.
- *
- * Useful for:
- * - CORS configuration
- * - Security policies
- * - Any scenario requiring a list of all service endpoints
- */
-export const createAppUrls = (env: 'development' | 'production') =>
-	Object.values(createApps(env)).map((app) => app.URL);

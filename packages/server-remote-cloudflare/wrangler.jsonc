@@ -61,8 +61,12 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "9a8d5b144dbe48cea927fa7790dce989",
+			"id": "005e81db57f845f681cb9e27edec2809",
 			"localConnectionString": "postgres://postgres:postgres@localhost:5432/epicenter"
 		}
-	]
+	],
+	// Smart Placement: Run your Worker close to your database for lower latency
+	"placement": {
+		"region": "aws:us-east-2"
+	}
 }

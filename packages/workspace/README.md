@@ -1802,7 +1802,7 @@ If you're working on the Epicenter package, test it locally using `bun link`:
 bun install
 
 # One-time setup: Link the package globally
-cd packages/epicenter
+cd packages/workspace
 bun link
 
 # Now use from any directory
@@ -1811,7 +1811,7 @@ epicenter --help
 epicenter blog createPost --title "Test"
 
 # When done testing
-cd packages/epicenter
+cd packages/workspace
 bun unlink
 ```
 

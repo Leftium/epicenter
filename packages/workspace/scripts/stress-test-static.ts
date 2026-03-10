@@ -5,7 +5,7 @@
  * repeats for several cycles, then measures the final Y.Doc binary size
  * and writes it to disk as a .yjs file.
  *
- * Run: bun packages/epicenter/scripts/stress-test-static.ts
+ * Run: bun packages/workspace/scripts/stress-test-static.ts
  */
 
 import { unlinkSync } from 'node:fs';

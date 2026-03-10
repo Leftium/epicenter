@@ -6,7 +6,7 @@
 		"resolveJsonModule": true
 	},
 	"paths": {
-		"@epicenter/vault-core": ["../../packages/vault-core/src/index.ts"]
+		"@epicenter/vault": ["../../packages/vault/src/index.ts"]
 	},
 	"include": ["src/**/*.ts"]
 }

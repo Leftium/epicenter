@@ -1,4 +1,4 @@
-import type { AdapterMetadata } from '@epicenter/vault-core';
+import type { AdapterMetadata } from '@epicenter/vault';
 import type * as schema from './schema';
 
 export const metadata = {

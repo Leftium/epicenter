@@ -337,4 +337,4 @@ const workspace = defineWorkspace({
 - [YJS Documentation](https://docs.yjs.dev/)
 - [y-indexeddb Provider](https://github.com/yjs/y-indexeddb)
 - [Epicenter Handoff: YJS Persistence Rollout](../docs/handoff-yjs-persistence-rollout.md)
-- [Epicenter Examples](../packages/epicenter/examples/)
+- [Epicenter Examples](../packages/workspace/examples/)

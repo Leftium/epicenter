@@ -38,7 +38,7 @@ This adapter ships two kinds of migrations:
 How hosts run this (no node: imports required in core):
 
 - Startup SQL migrations (schema)
-  - Call `runStartupSqlMigrations(adapter.id, adapter.versions, db, reporter)` from `@repo/vault-core`
+  - Call `runStartupSqlMigrations(adapter.id, adapter.versions, db, reporter)` from `@epicenter/vault`
   - Pass the same Drizzle DB that Vault uses; core ensures the ledger tables exist and replays the embedded SQL
 
 - Data transforms + validation (content)

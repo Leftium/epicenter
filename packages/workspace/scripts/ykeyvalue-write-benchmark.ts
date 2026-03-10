@@ -1,7 +1,7 @@
 /**
  * Benchmark: Is YKeyValue's O(n) write fast enough for 100k rows?
  *
- * Run: bun packages/epicenter/scripts/ykeyvalue-write-benchmark.ts
+ * Run: bun packages/workspace/scripts/ykeyvalue-write-benchmark.ts
  */
 import * as Y from 'yjs';
 import {

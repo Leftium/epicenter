@@ -150,7 +150,7 @@ return {
 
 ## Real Example
 
-From `packages/epicenter/src/core/docs/head-doc.ts`:
+From `packages/workspace/src/core/docs/head-doc.ts`:
 
 ```typescript
 export function createHeadDoc(options: { workspaceId: string; ydoc?: Y.Doc }) {

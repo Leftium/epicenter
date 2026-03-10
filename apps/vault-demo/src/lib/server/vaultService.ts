@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
-import { createVault } from '@epicenter/vault-core';
-import { entityIndexAdapter } from '@epicenter/vault-core/adapters/entity-index';
-import { exampleNotesAdapter } from '@epicenter/vault-core/adapters/example-notes';
-import { redditAdapter } from '@epicenter/vault-core/adapters/reddit';
-import { jsonFormat } from '@epicenter/vault-core/codecs';
+import { createVault } from '@epicenter/vault';
+import { entityIndexAdapter } from '@epicenter/vault/adapters/entity-index';
+import { exampleNotesAdapter } from '@epicenter/vault/adapters/example-notes';
+import { redditAdapter } from '@epicenter/vault/adapters/reddit';
+import { jsonFormat } from '@epicenter/vault/codecs';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 
 // Ensure data directory and DB path exist (stable across CWDs)

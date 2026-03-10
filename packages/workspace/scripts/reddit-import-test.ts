@@ -3,7 +3,7 @@
 /**
  * Reddit Import Test Script
  *
- * Run with: bun packages/epicenter/scripts/reddit-import-test.ts [path-to-zip]
+ * Run with: bun packages/workspace/scripts/reddit-import-test.ts [path-to-zip]
  *
  * If no path provided, looks for reddit_export.zip in the project root.
  */

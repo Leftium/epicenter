@@ -7,7 +7,7 @@ Overview
   - Reddit GDPR upload with entity suggestions → user-curated Entity Index import
   - Notes creation with entity linking
   - Cross-adapter views: Dashboard, Entities, Notes
-- Adapters are independent; the app composes them through runtime joins exposed by [getQueryInterface()](packages/vault-core/src/core/vault.ts:317).
+- Adapters are independent; the app composes them through runtime joins exposed by [getQueryInterface()](packages/vault/src/core/vault.ts:317).
 
 Quick start (Bun)
 
@@ -26,37 +26,37 @@ Key flows
 
 - Import/Export
   - Visit /import-export
-  - Import: select a folder or multiple files exported by Vault and choose the adapter; the page calls [importData()](packages/vault-core/src/core/vault.ts:176) using [jsonFormat](packages/vault-core/src/codecs/json.ts:3).
-  - Export: click Export to get a list of files; download per file. The page uses [exportData()](packages/vault-core/src/core/vault.ts:116).
+  - Import: select a folder or multiple files exported by Vault and choose the adapter; the page calls [importData()](packages/vault/src/core/vault.ts:176) using [jsonFormat](packages/vault/src/codecs/json.ts:3).
+  - Export: click Export to get a list of files; download per file. The page uses [exportData()](packages/vault/src/core/vault.ts:116).
 
 - Reddit GDPR upload + suggestions → Entity Index import
   - Visit /reddit-upload
-  - Ingest a Reddit file via [ingestData()](packages/vault-core/src/core/vault.ts:284) with [redditAdapter()](packages/vault-core/src/adapters/reddit/src/adapter.ts:12).
+  - Ingest a Reddit file via [ingestData()](packages/vault/src/core/vault.ts:284) with [redditAdapter()](packages/vault/src/adapters/reddit/src/adapter.ts:12).
   - Click “Suggest entities” to scan imported rows using [apps/vault-demo/src/lib/extract/redditEntities.ts](apps/vault-demo/src/lib/extract/redditEntities.ts:1) with heuristics: subreddits r/..., users u/..., URL domains.
-  - Select entities and import into Entity Index via [importData()](packages/vault-core/src/core/vault.ts:176) using [entityIndexAdapter()](packages/vault-core/src/adapters/entity-index/src/adapter.ts:89) validator.
+  - Select entities and import into Entity Index via [importData()](packages/vault/src/core/vault.ts:176) using [entityIndexAdapter()](packages/vault/src/adapters/entity-index/src/adapter.ts:89) validator.
 
 - Notes creation + entity linking
   - Visit /notes/new
-  - Create a note with title, body, and pick entities to link; the page writes to Example Notes through [importData()](packages/vault-core/src/core/vault.ts:176) using [exampleNotesAdapter()](packages/vault-core/src/adapters/example-notes/src/adapter.ts:147).
-  - Visit /entities and click an entity; the detail shows occurrences and “Linked Notes”, parsed from the Notes adapter’s entity_links JSON column (see [packages/vault-core/src/adapters/example-notes/src/adapter.ts](packages/vault-core/src/adapters/example-notes/src/adapter.ts:1)).
+  - Create a note with title, body, and pick entities to link; the page writes to Example Notes through [importData()](packages/vault/src/core/vault.ts:176) using [exampleNotesAdapter()](packages/vault/src/adapters/example-notes/src/adapter.ts:147).
+  - Visit /entities and click an entity; the detail shows occurrences and “Linked Notes”, parsed from the Notes adapter’s entity_links JSON column (see [packages/vault/src/adapters/example-notes/src/adapter.ts](packages/vault/src/adapters/example-notes/src/adapter.ts:1)).
 
 - Dashboard
-  - Visit /dashboard to see per-adapter table row counts aggregated at runtime via [getQueryInterface()](packages/vault-core/src/core/vault.ts:317).
+  - Visit /dashboard to see per-adapter table row counts aggregated at runtime via [getQueryInterface()](packages/vault/src/core/vault.ts:317).
 
 Architecture notes
 
-- Vault wiring is centralized in [apps/vault-demo/src/lib/vault/client.ts](apps/vault-demo/src/lib/vault/client.ts:1) using [createVault()](packages/vault-core/src/core/vault.ts:31).
+- Vault wiring is centralized in [apps/vault-demo/src/lib/vault/client.ts](apps/vault-demo/src/lib/vault/client.ts:1) using [createVault()](packages/vault/src/core/vault.ts:31).
 - The demo uses an in-memory MockDrizzle at [apps/vault-demo/src/lib/vault/mockDrizzle.ts](apps/vault-demo/src/lib/vault/mockDrizzle.ts:1).
 - Adapters
-  - Reddit: [packages/vault-core/src/adapters/reddit/src/adapter.ts](packages/vault-core/src/adapters/reddit/src/adapter.ts:1)
-  - Entity Index: [packages/vault-core/src/adapters/entity-index/src/adapter.ts](packages/vault-core/src/adapters/entity-index/src/adapter.ts:1)
-  - Example Notes: [packages/vault-core/src/adapters/example-notes/src/adapter.ts](packages/vault-core/src/adapters/example-notes/src/adapter.ts:1)
+  - Reddit: [packages/vault/src/adapters/reddit/src/adapter.ts](packages/vault/src/adapters/reddit/src/adapter.ts:1)
+  - Entity Index: [packages/vault/src/adapters/entity-index/src/adapter.ts](packages/vault/src/adapters/entity-index/src/adapter.ts:1)
+  - Example Notes: [packages/vault/src/adapters/example-notes/src/adapter.ts](packages/vault/src/adapters/example-notes/src/adapter.ts:1)
 
 Data model highlights
 
 - Entity Index stores canonical entities and occurrences; they are user-curated in this demo, not auto-derived.
 - Example Notes stores notes with entity_links as a TEXT JSON array; validators (arktype) accept string[] and serialize to DB-ready JSON.
-- All export/import uses [jsonFormat](packages/vault-core/src/codecs/json.ts:3).
+- All export/import uses [jsonFormat](packages/vault/src/codecs/json.ts:3).
 
 Limitations
 
@@ -66,6 +66,6 @@ Limitations
 
 Test references
 
-- [packages/vault-core/tests/fixtures/entity-index-fixture.ts](packages/vault-core/tests/fixtures/entity-index-fixture.ts:1)
-- [packages/vault-core/tests/example-notes.spec.ts](packages/vault-core/tests/example-notes.spec.ts:1)
-- [packages/vault-core/tests/entity-index.spec.ts](packages/vault-core/tests/entity-index.spec.ts:1)
+- [packages/vault/tests/fixtures/entity-index-fixture.ts](packages/vault/tests/fixtures/entity-index-fixture.ts:1)
+- [packages/vault/tests/example-notes.spec.ts](packages/vault/tests/example-notes.spec.ts:1)
+- [packages/vault/tests/entity-index.spec.ts](packages/vault/tests/entity-index.spec.ts:1)

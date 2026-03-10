@@ -1,4 +1,4 @@
-import { defineAdapter } from '@epicenter/vault-core';
+import { defineAdapter } from '@epicenter/vault';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { AdapterMetadata } from '../../../core/adapter';
 import { entityIndexTransforms } from '../migrations/transforms';

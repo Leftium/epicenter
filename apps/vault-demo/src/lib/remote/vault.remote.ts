@@ -1,4 +1,4 @@
-import { redditAdapter } from '@epicenter/vault-core/adapters/reddit';
+import { redditAdapter } from '@epicenter/vault/adapters/reddit';
 import { form, query } from '$app/server';
 import {
 	ImportBundleInputSchema,

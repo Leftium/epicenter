@@ -1,51 +1,36 @@
 /**
- * Validated env for CLI scripts (drizzle-kit, better-auth CLI).
+ * Local database URL from `wrangler.jsonc` Hyperdrive config.
  *
- * Loads `.dev.vars` for secrets and derives `DATABASE_URL` from
- * `wrangler.jsonc`'s Hyperdrive `localConnectionString`.
+ * ## Database URL Strategy (3 layers)
  *
- * **Why derive from wrangler.jsonc?**
- * `localConnectionString` is Hyperdrive's local-dev-only substitute — in
- * production, the real connection string lives in Cloudflare's Hyperdrive
- * service and the worker reads it via `env.HYPERDRIVE.connectionString`.
- * CLI tools (drizzle-kit, better-auth) can't use Hyperdrive bindings, so
- * they need a direct URL. Rather than duplicating it in `.dev.vars`, we
- * read it straight from `wrangler.jsonc` — the single source of truth.
+ * | Layer      | Source                              | Permissions         | Used By                    |
+ * |------------|-------------------------------------|---------------------|----------------------------|
+ * | Local      | `wrangler.jsonc` localConnectionString | Full admin (local) | `db:push`, `db:studio`     |
+ * | Migration  | Infisical `DATABASE_URL`            | DDL + DML           | `db:migrate`               |
+ * | Runtime    | Hyperdrive `env.HYPERDRIVE`         | DML only (R/W)      | `app.ts` in production     |
  *
- * For production migrations, set `DATABASE_URL` env var to override:
- *   DATABASE_URL="postgres://prod..." bun run db:migrate
+ * This module only reads the local connection string from `wrangler.jsonc`.
+ * Call sites should load `.dev.vars` themselves and check `process.env.DATABASE_URL`
+ * for remote migration URLs before falling back to this constant.
  */
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type } from 'arktype';
-import { config } from 'dotenv';
 import { parse as parseJSONC } from 'jsonc-parser';
 
-config({ path: fileURLToPath(new URL('../.dev.vars', import.meta.url)) });
+const HyperdriveEntry = type({ localConnectionString: 'string' });
+const WranglerConfig = type('string')
+	.pipe((s) => parseJSONC(s) as Record<string, unknown>)
+	.to({
+		hyperdrive: [HyperdriveEntry, '...', HyperdriveEntry.array()],
+	});
 
-function getDatabaseUrl(): string {
-	if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-
-	const HyperdriveEntry = type({ localConnectionString: 'string' });
-	const WranglerConfig = type('string')
-		.pipe((s) => parseJSONC(s) as Record<string, unknown>)
-		.to({
-			hyperdrive: [HyperdriveEntry, '...', HyperdriveEntry.array()],
-		});
-
-	const jsoncString = readFileSync(
-		fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
-		'utf-8',
-	);
-
-	return WranglerConfig.assert(jsoncString).hyperdrive[0].localConnectionString;
-}
-
-const DATABASE_URL = getDatabaseUrl();
-
-const { BETTER_AUTH_SECRET } = type({ BETTER_AUTH_SECRET: 'string' }).assert(
-	process.env,
+const jsoncString = readFileSync(
+	fileURLToPath(new URL('../wrangler.jsonc', import.meta.url)),
+	'utf-8',
 );
 
-export const env = { BETTER_AUTH_SECRET, DATABASE_URL };
+/** Local database URL parsed from `wrangler.jsonc` Hyperdrive config. */
+export const LOCAL_DATABASE_URL =
+	WranglerConfig.assert(jsoncString).hyperdrive[0].localConnectionString;

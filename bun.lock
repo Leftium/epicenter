@@ -310,9 +310,6 @@
     "packages/constants": {
       "name": "@epicenter/constants",
       "version": "0.0.1",
-      "dependencies": {
-        "arktype": "catalog:",
-      },
       "devDependencies": {
         "@types/node": "catalog:",
         "typescript": "catalog:",

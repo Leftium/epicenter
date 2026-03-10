@@ -336,7 +336,7 @@ curl -fsSL https://bun.sh/install | bash
 - [x] CI/CD pipelines pass
 
 ## Migration Guide
-See `docs/specs/20250725T153000-pnpm-to-bun-migration.md` for detailed migration information.
+See `specs/20250725T153000-pnpm-to-bun-migration.md` for detailed migration information.
 EOF
 )"
 ```

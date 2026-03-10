@@ -162,9 +162,9 @@ Added terminology rename notes to all historical specs and docs that reference "
 | `specs/20260213T003200-suspended-tabs.md` | Note added, status → "Complete (terminology renamed)" |
 | `specs/20260213T103000-request-dispatch.md` | Note added |
 | `specs/20260212T132200-events-based-tab-management.md` | Note added |
-| `docs/specs/20260213T015500-popup-reactive-state.md` | Note added |
-| `docs/specs/20260213T105705-tab-manager-src-reorganization.md` | Note added |
-| `docs/specs/20260213T012108-browser-schema-camelcase-cleanup.md` | Note added |
+| `specs/20260213T015500-popup-reactive-state.md` | Note added |
+| `specs/20260213T105705-tab-manager-src-reorganization.md` | Note added |
+| `specs/20260213T012108-browser-schema-camelcase-cleanup.md` | Note added |
 | `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md` | Note added |
 | `docs/articles/when-tanstack-query-is-the-wrong-abstraction.md` | Note added |
 | `docs/articles/types-should-be-computed-not-declared.md` | Note added |

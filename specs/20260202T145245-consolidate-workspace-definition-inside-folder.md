@@ -58,8 +58,8 @@ These files already reference `definition.json` inside the folder:
 
 - `specs/20260117T004421-workspace-input-normalization.md` (original spec - correct)
 - `specs/20260119T150426-workspace-storage-architecture.md`
-- `docs/specs/20260123T102500-single-workspace-architecture.md`
-- `docs/specs/20260122T225052-subdoc-architecture.md`
+- `specs/20260123T102500-single-workspace-architecture.md`
+- `specs/20260122T225052-subdoc-architecture.md`
 
 ## Implementation Plan
 

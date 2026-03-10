@@ -482,7 +482,7 @@ await workspace.restoreSnapshot(snapshot);
 
 ## Code References
 
-- `packages/epicenter/src/dynamic/head-doc.ts` - HeadDoc implementation (may be archived)
+- `packages/workspace/src/dynamic/head-doc.ts` - HeadDoc implementation (may be archived)
 - `apps/epicenter/src/lib/docs/_archive/head.ts` - App-level wrapper (archived)
 - `apps/epicenter/src/lib/docs/_archive/head-persistence.ts` - Tauri persistence (archived)
 - `apps/epicenter/src/lib/docs/_archive/registry.ts` - Registry implementation (archived)

@@ -52,7 +52,7 @@ Think about effective search patterns:
 
 - **apps/whispering/**: Main Tauri desktop app (Svelte + TypeScript)
 - **packages/ui/**: Shared UI components (shadcn-svelte)
-- **packages/epicenter/**: Core TypeScript library
+- **packages/workspace/**: Core TypeScript library
 - **packages/db/**: Database layer (Drizzle ORM)
 - **apps/api/**: Backend API (HonoJS + tRPC)
 
@@ -80,7 +80,7 @@ Think about effective search patterns:
 - `apps/whispering/src/lib/config/feature.ts` - Feature config
 
 ### Type Definitions
-- `packages/epicenter/src/types/feature.ts` - Shared types
+- `packages/workspace/src/types/feature.ts` - Shared types
 
 ### Related Directories
 - `apps/whispering/src/lib/services/` - Contains X related files

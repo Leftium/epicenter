@@ -49,7 +49,7 @@ The `const` modifier is what preserves literal types. The `readonly` constraint 
 
 ## Real Examples
 
-From `packages/epicenter/src/core/schema/fields/factories.ts`:
+From `packages/workspace/src/core/schema/fields/factories.ts`:
 
 ```typescript
 export function table<const TFields extends readonly Field[]>({

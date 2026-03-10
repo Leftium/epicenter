@@ -180,7 +180,7 @@ Add these imports to `epicenter.config.ts`:
 import * as Y from 'yjs';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { defineEpicenter } from '../../packages/epicenter/src/index';
+import { defineEpicenter } from '../../packages/workspace/src/index';
 ```
 
 ### 3. Wrap Configuration
@@ -224,7 +224,7 @@ Ensure CLI script is available:
 ```json
 {
 	"scripts": {
-		"cli": "bun ../../packages/epicenter/src/cli/bin.ts"
+		"cli": "bun ../../packages/workspace/src/cli/bin.ts"
 	}
 }
 ```
@@ -299,7 +299,7 @@ import * as path from 'node:path';
 If not already present, ensure `defineEpicenter` is imported:
 
 ```typescript
-import { defineEpicenter } from '../../packages/epicenter/src/index';
+import { defineEpicenter } from '../../packages/workspace/src/index';
 ```
 
 #### Step 2: Add setupYDoc Callback
@@ -396,7 +396,7 @@ If `package.json` doesn't exist or lacks CLI scripts, create/update:
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {
-		"cli": "bun ../../packages/epicenter/src/cli/bin.ts"
+		"cli": "bun ../../packages/workspace/src/cli/bin.ts"
 	},
 	"dependencies": {
 		"@epicenter/workspace": "workspace:*"

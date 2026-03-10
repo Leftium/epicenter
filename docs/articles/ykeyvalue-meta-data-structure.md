@@ -211,7 +211,7 @@ See [Native Y.Map Storage Architecture](/specs/20260108T084500-ymap-native-stora
 
 - [yjs/y-utility](https://github.com/yjs/y-utility): The canonical implementation
 - [y-keyvalue.js source](https://github.com/yjs/y-utility/blob/main/y-keyvalue.js): See exactly how it works
-- [Epicenter's TypeScript implementation](https://github.com/EpicenterHQ/epicenter/blob/main/packages/epicenter/src/core/utils/y-keyvalue.ts): Our local TypeScript port with no external dependencies
+- [Epicenter's TypeScript implementation](https://github.com/EpicenterHQ/epicenter/blob/main/packages/workspace/src/core/utils/y-keyvalue.ts): Our local TypeScript port with no external dependencies
 - [PR #1217: Port YKeyValue to TypeScript](https://github.com/EpicenterHQ/epicenter/pull/1217): The implementation PR
 
   > YKeyValue (from yjs/y-utility) solves this by storing {key, val} pairs in a Y.Array. When you set a key, it deletes the old entry and appends a new one. Y.Array tombstones are positional and get cleaned up, while Y.Map tombstones retain per-key metadata forever. We ported YKeyValue to TypeScript with no external dependencies and now use it for both table rows and KV settings.

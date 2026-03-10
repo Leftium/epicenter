@@ -33,7 +33,7 @@ The deprecated alias is a real type alias; `WorkspaceSchema` and `TablesSchema` 
 
 ## Real Example
 
-From `packages/epicenter/src/core/schema/fields/types.ts`:
+From `packages/workspace/src/core/schema/fields/types.ts`:
 
 ```typescript
 export type TablesSchema = Record<string, TableSchema>;

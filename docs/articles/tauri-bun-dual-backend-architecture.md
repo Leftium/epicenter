@@ -199,7 +199,7 @@ Epicenter running at http://127.0.0.1:54321
 
 ## Why Bun Instead of Rust for the Server
 
-Yjs is a JavaScript library. The entire CRDT layer in `packages/epicenter/` is TypeScript. With a Bun server, the same Y.Doc code runs on both client and server: same sync protocol, same encoding, every Yjs plugin just works.
+Yjs is a JavaScript library. The entire CRDT layer in `packages/workspace/` is TypeScript. With a Bun server, the same Y.Doc code runs on both client and server: same sync protocol, same encoding, every Yjs plugin just works.
 
 With a Rust server, you'd use `yrs` (the Rust port). It's wire-compatible but a different implementation. Every Yjs extension used on the frontend would need a Rust equivalent on the server. That's a serialization boundary where there doesn't need to be one.
 

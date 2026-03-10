@@ -9,12 +9,12 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { cors } from 'hono/cors';
 import { createFactory } from 'hono/factory';
 import { describeRoute } from 'hono-openapi';
-import postgres from 'postgres';
+import pg from 'pg';
 import { aiChatHandlers } from './ai-chat';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
@@ -27,17 +27,36 @@ export { WorkspaceRoom } from './workspace-room';
 // Types
 // ---------------------------------------------------------------------------
 
+type Db = NodePgDatabase<typeof schema>;
 type Auth = ReturnType<typeof createAuth>;
 type Session = Auth['$Infer']['Session'];
 
 export type Env = {
 	Bindings: Cloudflare.Env;
 	Variables: {
+		db: Db;
 		auth: Auth;
 		user: Session['user'];
 		session: Session['session'];
 	};
 };
+
+// ---------------------------------------------------------------------------
+// Database
+// ---------------------------------------------------------------------------
+
+/**
+ * Creates a per-request pg.Client and Drizzle instance.
+ *
+ * Uses `pg.Client` (not `Pool`) because Hyperdrive IS the connection pool —
+ * adding a client-side pool on top would be double-pooling.
+ * The caller is responsible for `client.connect()` and `client.end()`.
+ */
+function createDb(connectionString: string) {
+	const client = new pg.Client({ connectionString });
+	const db = drizzle(client, { schema });
+	return { client, db };
+}
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -49,11 +68,8 @@ export const BASE_AUTH_CONFIG = {
 	emailAndPassword: { enabled: true },
 } as const;
 
-/** Creates a fresh auth instance per-request. Hyperdrive clients must not be cached across requests. */
-function createAuth(env: Env['Bindings']) {
-	const sql = postgres(env.HYPERDRIVE.connectionString);
-	const db = drizzle(sql, { schema });
-
+/** Creates a Better Auth instance using an already-connected Drizzle instance. */
+function createAuth(db: Db, env: Env['Bindings']) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -155,9 +171,23 @@ const factory = createFactory<Env>({
 				allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
 			})(c, next);
 		});
-		// Auth instance per-request (Hyperdrive clients must not be cached)
+
+		// Layer 1: Database — pg.Client lifecycle (connect/end).
+		// Hyperdrive IS the pool, so we use a single Client per request.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.env));
+			const { client, db } = createDb(c.env.HYPERDRIVE.connectionString);
+			await client.connect();
+			c.set('db', db);
+			try {
+				await next();
+			} finally {
+				c.executionCtx.waitUntil(client.end());
+			}
+		});
+
+		// Layer 2: Auth — pure, reads db from context.
+		app.use('*', async (c, next) => {
+			c.set('auth', createAuth(c.var.db, c.env));
 			await next();
 		});
 	},

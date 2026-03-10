@@ -161,9 +161,9 @@ const factory = createFactory<Env>({
 			const client = new pg.Client({
 				connectionString: c.env.HYPERDRIVE.connectionString,
 			});
-			await client.connect();
-			c.set('db', drizzle(client, { schema }));
 			try {
+				await client.connect();
+				c.set('db', drizzle(client, { schema }));
 				await next();
 			} finally {
 				c.executionCtx.waitUntil(client.end());

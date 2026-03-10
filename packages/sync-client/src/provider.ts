@@ -316,9 +316,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 
 			switch (messageType) {
 				case MESSAGE_TYPE.SYNC: {
-					const syncType = decoding.readVarUint(
-						decoder,
-					) as SyncMessageType;
+					const syncType = decoding.readVarUint(decoder) as SyncMessageType;
 					const payload = decoding.readVarUint8Array(decoder);
 					const response = handleSyncPayload({
 						syncType,
@@ -364,7 +362,10 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 		const opened = await openPromise;
 		if (!opened || runId !== myRunId) {
 			// Socket failed to open or we were cancelled
-			if (ws.readyState !== WebSocket.CLOSED && ws.readyState !== WebSocket.CLOSING) {
+			if (
+				ws.readyState !== WebSocket.CLOSED &&
+				ws.readyState !== WebSocket.CLOSING
+			) {
 				ws.close();
 			}
 			await closePromise;
@@ -529,10 +530,7 @@ function createBackoff() {
 	return {
 		/** Wait for the next backoff delay, then increment retries. */
 		async sleep() {
-			const exponential = Math.min(
-				BASE_DELAY_MS * 2 ** retries,
-				MAX_DELAY_MS,
-			);
+			const exponential = Math.min(BASE_DELAY_MS * 2 ** retries, MAX_DELAY_MS);
 			const ms = exponential * (0.5 + Math.random() * 0.5);
 			retries += 1;
 

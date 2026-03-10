@@ -89,7 +89,9 @@ export function createSyncExtension(
 		const workspaceId = ydoc.guid;
 
 		const resolvedBaseUrl = config.url(workspaceId);
-		const wsUrl = resolvedBaseUrl.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+		const wsUrl = resolvedBaseUrl
+			.replace(/^https:/, 'wss:')
+			.replace(/^http:/, 'ws:');
 
 		// Build provider — defer connection until prior extensions are ready
 		const provider: SyncProvider = createSyncProvider({

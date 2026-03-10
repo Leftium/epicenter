@@ -162,7 +162,6 @@ function waitForMapKey(
 	});
 }
 
-
 // ============================================================================
 // Document Sync Tests
 // ============================================================================
@@ -189,9 +188,15 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p1.connect();
-		const p2 = createSyncProvider({ doc: doc2, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p2 = createSyncProvider({
+			doc: doc2,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p2.connect();
 
 		try {
@@ -213,9 +218,15 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p1.connect();
-		const p2 = createSyncProvider({ doc: doc2, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p2 = createSyncProvider({
+			doc: doc2,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p2.connect();
 
 		try {
@@ -239,9 +250,15 @@ describe('ws sync plugin integration', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p1.connect();
-		const p2 = createSyncProvider({ doc: doc2, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p2 = createSyncProvider({
+			doc: doc2,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p2.connect();
 
 		try {
@@ -268,7 +285,10 @@ describe('ws sync plugin integration', () => {
 		const room = uniqueRoom();
 		const doc1 = new Y.Doc();
 
-		const p1 = createSyncProvider({ doc: doc1, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p1.connect();
 
 		try {
@@ -280,7 +300,10 @@ describe('ws sync plugin integration', () => {
 			await new Promise((r) => setTimeout(r, 50));
 
 			const doc2 = new Y.Doc();
-			const p2 = createSyncProvider({ doc: doc2, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+			const p2 = createSyncProvider({
+				doc: doc2,
+				url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+			});
 			p2.connect();
 
 			try {
@@ -303,11 +326,20 @@ describe('ws sync plugin integration', () => {
 		const docA2 = new Y.Doc();
 		const docB = new Y.Doc();
 
-		const pA1 = createSyncProvider({ doc: docA1, url: wsUrl(ctx.httpUrl('/rooms/' + roomA)) });
+		const pA1 = createSyncProvider({
+			doc: docA1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomA)),
+		});
 		pA1.connect();
-		const pA2 = createSyncProvider({ doc: docA2, url: wsUrl(ctx.httpUrl('/rooms/' + roomA)) });
+		const pA2 = createSyncProvider({
+			doc: docA2,
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomA)),
+		});
 		pA2.connect();
-		const pB = createSyncProvider({ doc: docB, url: wsUrl(ctx.httpUrl('/rooms/' + roomB)) });
+		const pB = createSyncProvider({
+			doc: docB,
+			url: wsUrl(ctx.httpUrl('/rooms/' + roomB)),
+		});
 		pB.connect();
 
 		try {
@@ -330,7 +362,6 @@ describe('ws sync plugin integration', () => {
 			pB.destroy();
 		}
 	});
-
 });
 
 describe('ws sync plugin integrated mode', () => {
@@ -380,7 +411,10 @@ describe('ws sync plugin room list', () => {
 		const ctx = startTestServer();
 		const room = uniqueRoom();
 		const doc = new Y.Doc();
-		const provider = createSyncProvider({ doc, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const provider = createSyncProvider({
+			doc,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		provider.connect();
 
 		try {
@@ -403,11 +437,20 @@ describe('ws sync plugin room list', () => {
 		const doc1 = new Y.Doc();
 		const doc2 = new Y.Doc();
 		const doc3 = new Y.Doc();
-		const p1 = createSyncProvider({ doc: doc1, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p1 = createSyncProvider({
+			doc: doc1,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p1.connect();
-		const p2 = createSyncProvider({ doc: doc2, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p2 = createSyncProvider({
+			doc: doc2,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p2.connect();
-		const p3 = createSyncProvider({ doc: doc3, url: wsUrl(ctx.httpUrl('/rooms/' + room)) });
+		const p3 = createSyncProvider({
+			doc: doc3,
+			url: wsUrl(ctx.httpUrl('/rooms/' + room)),
+		});
 		p3.connect();
 
 		try {

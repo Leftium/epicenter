@@ -18,7 +18,7 @@ The current implementation skips the crucial resolution step that converts relat
 
 ## Three-Layer Path Resolution Pattern
 
-From `docs/specs/20251103T175503 config-relative-path-resolution.md`:
+From `specs/20251103T175503 config-relative-path-resolution.md`:
 
 ```typescript
 /**

@@ -663,7 +663,7 @@ export function versionedTable<Name extends string>(name: Name) {
 ## Related Documents
 
 - `specs/20260116T082500-schema-migration-patterns.md` - Broader migration strategy
-- `docs/specs/20250528T000000-transformation-schema-versioning.md` - Whispering's current approach
+- `specs/20250528T000000-transformation-schema-versioning.md` - Whispering's current approach
 - `apps/whispering/src/lib/services/isomorphic/db/models/transformation-steps.ts` - Real implementation
 
 ---

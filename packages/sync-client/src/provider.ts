@@ -46,13 +46,36 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 /**
  * Creates a sync provider that connects a Y.Doc to a WebSocket sync server.
  *
+ * Handles cross-device sync via WebSocket. For same-browser cross-tab sync,
+ * use `broadcastChannelSync` from `@epicenter/workspace/extensions/sync/broadcast-channel`
+ * alongside this provider—they run in parallel safely (Yjs deduplicates).
+ *
  * Uses V2 encoding for all sync payloads (~40% smaller than V1).
  *
  * Uses a supervisor loop architecture where one loop owns all status transitions
- * and reconnection logic. Event handlers are reporters only — they resolve
+ * and reconnection logic. Event handlers are reporters only—they resolve
  * promises that the loop awaits, but never make reconnection decisions.
  *
- * @example Open mode (localhost, no auth)
+ * Most consumers use `createSyncExtension` from `@epicenter/workspace/extensions/sync`
+ * rather than this provider directly. The extension wraps this provider with
+ * workspace lifecycle management (waiting for persistence before connecting,
+ * auto-cleanup on destroy).
+ *
+ * @example Recommended: via workspace extension chain
+ * ```typescript
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ *
+ * createWorkspace(definition)
+ *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
+ *   .withExtension('sync', createSyncExtension({
+ *     url: (id) => `http://localhost:3913/rooms/${id}`,
+ *   }))
+ * ```
+ *
+ * @example Direct usage (open mode, no auth)
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,
@@ -61,7 +84,7 @@ const LIVENESS_CHECK_INTERVAL_MS = 10_000;
  * provider.connect();
  * ```
  *
- * @example Authenticated mode
+ * @example Direct usage (authenticated)
  * ```typescript
  * const provider = createSyncProvider({
  *   doc: myDoc,

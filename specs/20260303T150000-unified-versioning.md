@@ -1,6 +1,6 @@
 # Unified Versioning
 
-## Status: Waves 1-2 Implemented
+## Status: Waves 1-2 Implemented, Wave 3 In Progress (auto.release.yml created)
 
 ## Problem
 

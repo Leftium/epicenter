@@ -7,7 +7,7 @@
  * all sections in one scrollable view.
  *
  * Section expand/collapse works identically to how window expand/collapse
- * already works in `FlatTabList.svelte`—a `SvelteSet` tracks expanded
+ * already works in the original `FlatTabList`—a `SvelteSet` tracks expanded
  * sections, and `$derived` flatItems includes or excludes child items.
  *
  * @example

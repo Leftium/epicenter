@@ -309,44 +309,44 @@ function normalizeUrl(url: string): string {
 
 Merge the existing two views into one scrollable list. No new features—just restructure.
 
-- [ ] **1.1** Create `UnifiedTabList.svelte` — single VList with section headers for "Open Tabs" and "Saved for Later", using the `FlatItem` discriminated union. Reuses existing `TabItem.svelte` and per-item rendering from `SavedTabList`.
-- [ ] **1.2** Update `App.svelte` — replace the 3-tab Tabs.Root with the unified view. Remove Tabs component usage. Keep AI as a button/trigger (not rendered as content yet).
-- [ ] **1.3** Create `unified-view-state.svelte.ts` — manages expanded sections (`SvelteSet`), derives the flat item array from `browserState` + `savedTabState`. Follows the `createXxxState()` factory pattern.
-- [ ] **1.4** Add section header rendering in VList — collapsible headers for "Open Tabs (N)" and "Saved for Later (N)" with chevron toggle. Window headers remain as sub-collapsibles.
-- [ ] **1.5** Preserve existing "Restore All" / "Delete All" for saved tabs — move these to the saved section's header or a context menu.
+- [x] **1.1** Create `UnifiedTabList.svelte` — single VList with section headers for "Open Tabs" and "Saved for Later", using the `FlatItem` discriminated union. Reuses existing `TabItem.svelte` and per-item rendering from `SavedTabList`.
+- [x] **1.2** Update `App.svelte` — replace the 3-tab Tabs.Root with the unified view. Remove Tabs component usage. Keep AI as a button/trigger (not rendered as content yet).
+- [x] **1.3** Create `unified-view-state.svelte.ts` — manages expanded sections (`SvelteSet`), derives the flat item array from `browserState` + `savedTabState`. Follows the `createXxxState()` factory pattern.
+- [x] **1.4** Add section header rendering in VList — collapsible headers for "Open Tabs (N)" and "Saved for Later (N)" with chevron toggle. Window headers remain as sub-collapsibles.
+- [x] **1.5** Preserve existing "Restore All" / "Delete All" for saved tabs — move these to the saved section's header or a context menu.
 
 ### Phase 2: Instant Search Filter
 Add the search input with plain-text filtering. The input has ONE job: filter.
 
-- [ ] **2.1** Add search input + action buttons to the header area — replace the h1 "Tab Manager" with a search input flanked by `⌘` (command palette) and `⚡` (AI drawer) icon buttons. Show "Search tabs..." as placeholder.
-- [ ] **2.2** Wire filter into `unified-view-state` — when `searchQuery` is non-empty, filter `flatItems` by title/URL match (case-insensitive `includes`). Auto-expand all sections when filtering.
-- [ ] **2.3** Handle empty results — show inline "No matching tabs" state with a CTA: "✦ Ask AI about [query]" that opens the AI drawer with the query prefilled.
-- [ ] **2.4** Add hidden `/` shortcut — when input is empty and user types `/`, open the command palette (Phase 3) and clear the input. Power-user enhancement.
+- [x] **2.1** Add search input + action buttons to the header area — replace the h1 "Tab Manager" with a search input flanked by `⌘` (command palette) and `⚡` (AI drawer) icon buttons. Show "Search tabs..." as placeholder.
+- [x] **2.2** Wire filter into `unified-view-state` — when `searchQuery` is non-empty, filter `flatItems` by title/URL match (case-insensitive `includes`). Auto-expand all sections when filtering.
+- [x] **2.3** Handle empty results — show inline "No matching tabs" state with a CTA: "✦ Ask AI about [query]" that opens the AI drawer with the query prefilled.
+- [x] **2.4** Add hidden `/` shortcut — when input is empty and user types `/`, open the command palette (Phase 3) and clear the input. Power-user enhancement.
 ### Phase 3: Command Palette
 
 Add `⌘` button that opens a Command.Dialog overlay with quick actions.
 
-- [ ] **3.1** Create `quick-actions.ts` — registry of `QuickAction` objects with `id`, `label`, `execute`, `dangerous`. Start with `dedup` only.
-- [ ] **3.2** Create `CommandPalette.svelte` — uses `Command.Dialog`, `Command.Input`, `Command.List`, `Command.Item`, `Command.Group` from `@epicenter/ui/command`. Opens when `⌘` button is clicked (or `/` shortcut from Phase 2.4).
-- [ ] **3.3** Implement `dedup` — `findDuplicates()` logic + confirmation dialog + `browserState.actions.close()` for each duplicate.
-- [ ] **3.4** Add more commands — `close <domain>`, `group`, `sort`, `save-all`.
+- [x] **3.1** Create `quick-actions.ts` — registry of `QuickAction` objects with `id`, `label`, `execute`, `dangerous`. Start with `dedup` only.
+- [x] **3.2** Create `CommandPalette.svelte` — uses `Command.Dialog`, `Command.Input`, `Command.List`, `Command.Item`, `Command.Group` from `@epicenter/ui/command`. Opens when `⌘` button is clicked (or `/` shortcut from Phase 2.4).
+- [x] **3.3** Implement `dedup` — `findDuplicates()` logic + confirmation dialog + `browserState.actions.close()` for each duplicate.
+- [x] **3.4** Add more commands — `close <domain>`, `group`, `sort`, `save-all`.
 ### Phase 4: AI Drawer
 
 Add `⚡` button that opens a bottom sheet with the existing AI chat.
 
-- [ ] **4.1** Create `AiDrawer.svelte` — wrap existing `AiChat.svelte` in a `Sheet` or `Drawer` from `@epicenter/ui`. Triggered by the `⚡` button in the header (or `@` shortcut in empty input).
-- [ ] **4.2** Wire `@` shortcut — when input is empty and user types `@`, open the AI drawer and focus the AI chat input. Clear the search input.
-- [ ] **4.3** Wire empty-state CTA — the "Ask AI about [query]" link from Phase 2.3 opens the drawer with the query prefilled in the AI chat input.
-- [ ] **4.4** Ensure AI streams in background — when drawer is closed, active streams continue (already supported by `aiChatState`'s per-conversation `ChatClient`).
+- [x] **4.1** Create `AiDrawer.svelte` — wrap existing `AiChat.svelte` in a `Sheet` or `Drawer` from `@epicenter/ui`. Triggered by the `⚡` button in the header (or `@` shortcut in empty input).
+- [x] **4.2** Wire `@` shortcut — when input is empty and user types `@`, open the AI drawer and focus the AI chat input. Clear the search input.
+- [x] **4.3** Wire empty-state CTA — the "Ask AI about [query]" link from Phase 2.3 opens the drawer with the query prefilled in the AI chat input.
+- [x] **4.4** Ensure AI streams in background — when drawer is closed, active streams continue (already supported by `aiChatState`'s per-conversation `ChatClient`).
 ### Phase 5: Bookmarks
 
 Add permanent, non-consumable bookmarks.
 
-- [ ] **5.1** Add `BookmarkId` branded type and `bookmarksTable` to `workspace.ts`. Follow `savedTabsTable` pattern.
-- [ ] **5.2** Create `bookmark-state.svelte.ts` — follows `savedTabState` pattern: `createBookmarkState()` factory, Y.Doc observer, CRUD actions. Key difference: `open(bookmark)` calls `browser.tabs.create()` but does NOT delete the record.
-- [ ] **5.3** Add "Bookmark" action to `TabItem.svelte` — alongside existing "Save for later" button. Different icon (e.g. `StarIcon` vs `ArchiveIcon`).
-- [ ] **5.4** Add "Bookmarks" section to `UnifiedTabList` — new section header + bookmark items in the flat item array.
-- [ ] **5.5** Rename "Save for Later" icon from `BookmarkIcon` to `ArchiveIcon` or `InboxIcon` — fixes the current UX mismatch where the icon says "bookmark" but the behavior is "stash and close."
+- [x] **5.1** Add `BookmarkId` branded type and `bookmarksTable` to `workspace.ts`. Follow `savedTabsTable` pattern.
+- [x] **5.2** Create `bookmark-state.svelte.ts` — follows `savedTabState` pattern: `createBookmarkState()` factory, Y.Doc observer, CRUD actions. Key difference: `open(bookmark)` calls `browser.tabs.create()` but does NOT delete the record.
+- [x] **5.3** Add "Bookmark" action to `TabItem.svelte` — alongside existing "Save for later" button. Different icon (e.g. `StarIcon` vs `ArchiveIcon`).
+- [x] **5.4** Add "Bookmarks" section to `UnifiedTabList` — new section header + bookmark items in the flat item array.
+- [x] **5.5** Rename "Save for Later" icon from `BookmarkIcon` to `ArchiveIcon` or `InboxIcon` — fixes the current UX mismatch where the icon says "bookmark" but the behavior is "stash and close."
 
 ## Edge Cases
 
@@ -404,16 +404,16 @@ Add permanent, non-consumable bookmarks.
 
 ## Success Criteria
 
-- [ ] Side panel shows one unified scrollable view (no tab switcher)
-- [ ] Open tabs and saved tabs visible simultaneously with collapsible sections
-- [ ] Typing in search input instantly filters tabs by title/URL
-- [ ] `⌘` button opens command palette overlay with quick actions
-- [ ] `dedup` command removes duplicate tabs with confirmation
-- [ ] `⚡` button opens AI drawer without leaving the tab view
-- [ ] Hidden `/` and `@` shortcuts work in empty input for power users
-- [ ] Bookmarks persist after opening (not consumed like saved tabs)
+- [x] Side panel shows one unified scrollable view (no tab switcher)
+- [x] Open tabs and saved tabs visible simultaneously with collapsible sections
+- [x] Typing in search input instantly filters tabs by title/URL
+- [x] `⌘` button opens command palette overlay with quick actions
+- [x] `dedup` command removes duplicate tabs with confirmation
+- [x] `⚡` button opens AI drawer without leaving the tab view
+- [x] Hidden `/` and `@` shortcuts work in empty input for power users
+- [x] Bookmarks persist after opening (not consumed like saved tabs)
 - [ ] `bun run typecheck` passes in `apps/tab-manager/`
-- [ ] `bun run build` succeeds in `apps/tab-manager/`
+- [x] `bun run build` succeeds in `apps/tab-manager/`
 - [ ] VList performance is unchanged (no jank with 100+ tabs)
 
 ## References

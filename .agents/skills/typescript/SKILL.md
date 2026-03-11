@@ -131,6 +131,34 @@ When NOT to use switch: early returns for type narrowing are fine as sequential 
 
 See `docs/articles/switch-over-if-else-for-value-comparison.md` for rationale.
 
+## Record Lookup Over Nested Ternaries
+
+When an expression maps a finite set of known values to outputs, use a `satisfies Record` lookup instead of nested ternaries. This is the expression-level counterpart to "Switch Over If/Else": switch handles statements with side effects, record lookup handles value mappings.
+
+```typescript
+// Bad - nested ternary
+const tooltip = status === 'connected'
+	? 'Connected'
+	: status === 'connecting'
+		? 'Connecting…'
+		: 'Offline';
+
+// Good - record lookup with exhaustive type checking
+const tooltip = ({
+	connected: 'Connected',
+	connecting: 'Connecting…',
+	offline: 'Offline',
+} satisfies Record<SyncStatus, string>)[status];
+```
+
+`satisfies Record<SyncStatus, string>` gives you compile-time exhaustiveness: if `SyncStatus` gains a fourth value, TypeScript errors because the record is missing a key. Nested ternaries silently fall through to the else branch.
+
+`as const` is unnecessary here. `satisfies` already validates the shape and value types. `as const` would narrow values to literal types (`'Connected'` instead of `string`), which adds no value when the output is just rendered or passed as a string.
+
+When the record is used once, inline it. When it's shared or has 5+ entries, extract to a named constant.
+
+See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
+
 # Type Co-location Principles
 
 ## Never Use Generic Type Buckets

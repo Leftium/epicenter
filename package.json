@@ -14,7 +14,7 @@
 			"examples/*"
 		],
 		"catalog": {
-			"@types/node": "^22.18.10",
+			"@types/node": "^24.0.0",
 			"@types/bun": "latest",
 			"@types/yargs": "^17.0.35",
 			"typescript": "^5.9.3",
@@ -77,9 +77,9 @@
 		"@types/bun": "catalog:",
 		"@types/node": "catalog:",
 		"turbo": "catalog:",
-		"jsrepo": "^3.0.8"
+		"jsrepo": "^3.6.2"
 	},
 	"dependencies": {
-		"arktype": "^2.1.29"
+		"arktype": "^2.2.0"
 	}
 }

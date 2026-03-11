@@ -283,25 +283,26 @@ export class WorkspaceRoom extends DurableObject {
 				? new Uint8Array(message)
 				: new TextEncoder().encode(message);
 
-		const { data: result, error } = handleWsMessage(data, state);
+		const { data: effects, error } = handleWsMessage(data, state);
 		if (error) {
 			console.error(error.message);
 			return;
 		}
 
-		if (result.response) {
-			ws.send(result.response);
-		}
-
-		if (result.broadcast) {
-			safeBroadcast(this.connectionStates, ws, result.broadcast);
-		}
-
-		// Only persist when awareness client IDs actually changed
-		if (result.awarenessChanged) {
-			ws.serializeAttachment({
-				controlledClientIds: [...state.controlledClientIds],
-			} satisfies WsAttachment);
+		for (const effect of effects) {
+			switch (effect.type) {
+				case 'respond':
+					ws.send(effect.data);
+					break;
+				case 'broadcast':
+					safeBroadcast(this.connectionStates, ws, effect.data);
+					break;
+				case 'persistAttachment':
+					ws.serializeAttachment({
+						controlledClientIds: [...state.controlledClientIds],
+					} satisfies WsAttachment);
+					break;
+			}
 		}
 	}
 

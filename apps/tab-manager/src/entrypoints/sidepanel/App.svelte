@@ -5,17 +5,17 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import ZapIcon from '@lucide/svelte/icons/zap';
 	import XIcon from '@lucide/svelte/icons/x';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import ZapIcon from '@lucide/svelte/icons/zap';
+	import { onMount } from 'svelte';
 	import AiDrawer from '$lib/components/AiDrawer.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { reconnectSync } from '$lib/workspace';
-	import { onMount } from 'svelte';
 
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
@@ -70,7 +70,9 @@
 		>
 			<div class="flex items-center gap-2">
 				<div class="relative flex-1">
-					<SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+					<SearchIcon
+						class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+					/>
 					<Input
 						bind:ref={searchInputRef}
 						type="search"

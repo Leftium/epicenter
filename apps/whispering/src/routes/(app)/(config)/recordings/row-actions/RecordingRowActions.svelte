@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { Spinner } from '@epicenter/ui/spinner';

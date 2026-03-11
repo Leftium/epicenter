@@ -10,6 +10,7 @@
 		]
 	},
 	"exports": {
+		"./apps": "./src/apps.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts"
 	},

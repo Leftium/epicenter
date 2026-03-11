@@ -20,10 +20,11 @@
  * ```
  */
 
+import { createApps } from '@epicenter/constants/apps';
 import { type } from 'arktype';
 import { createStorageState } from './storage-state.svelte';
 
-const DEFAULT_SERVER_URL = 'https://api.epicenter.so';
+const DEFAULT_SERVER_URL = createApps('production').API.URL;
 
 /** Reactive local server URL. */
 export const serverUrl = createStorageState('local:serverUrl', {

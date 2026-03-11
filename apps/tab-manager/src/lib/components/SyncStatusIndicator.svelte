@@ -13,7 +13,7 @@
 	 */
 
 	import type { SyncStatus } from '@epicenter/sync-client';
-	import { workspaceClient } from '$lib/workspace';
+	import { reconnectSync, workspaceClient } from '$lib/workspace';
 
 	function createSyncStatus() {
 		let current = $state<SyncStatus>(
@@ -46,11 +46,11 @@
 			? 'Connected'
 			: syncStatus.current === 'connecting'
 				? 'Connecting…'
-				: 'Offline',
+				: 'Offline — click to reconnect',
 	);
 </script>
 
-<Button {tooltip} variant="ghost" size="icon-sm">
+<Button {tooltip} variant="ghost" size="icon-sm" onclick={reconnectSync}>
 	{#if syncStatus.current === 'connected'}
 		<Cloud class="size-4" />
 	{:else if syncStatus.current === 'connecting'}

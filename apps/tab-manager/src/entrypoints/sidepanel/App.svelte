@@ -29,7 +29,10 @@
 				<header
 					class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 pt-3 pb-0"
 				>
-					<h1 class="px-1 text-lg font-semibold">Tab Manager</h1>
+					<div class="flex items-center justify-between px-1">
+						<h1 class="text-lg font-semibold">Tab Manager</h1>
+						<SyncStatusIndicator />
+					</div>
 					<Tabs.List class="mt-2 w-full">
 						<Tabs.Trigger value="windows" class="flex-1 gap-1.5">
 							Tabs
@@ -66,11 +69,6 @@
 					<AiChat />
 				</Tabs.Content>
 			</Tabs.Root>
-			<footer
-				class="border-t px-3 py-1.5 flex items-center bg-background/95 backdrop-blur"
-			>
-				<SyncStatusIndicator />
-			</footer>
 		</main>
 	</Tooltip.Provider>
 </AuthGate>

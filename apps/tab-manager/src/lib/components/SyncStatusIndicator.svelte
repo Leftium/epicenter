@@ -4,7 +4,7 @@
 	 *
 	 * Reads the WebSocket sync provider's connection status and exposes it as
 	 * a Svelte 5 `$state` value. The provider fires `onStatusChange` on every
-	 * transition (`offline` → `connecting` → `connected`), and this module
+	 * transition (`offline` -> `connecting` -> `connected`), and this module
 	 * converts those callbacks into a reactive value the UI can bind to.
 	 *
 	 * Uses the same factory-function + singleton pattern as
@@ -36,33 +36,26 @@
 </script>
 
 <script lang="ts">
-	const label = $derived(
+	import { Button } from '@epicenter/ui/button';
+	import Cloud from '@lucide/svelte/icons/cloud';
+	import CloudOff from '@lucide/svelte/icons/cloud-off';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+
+	const tooltip = $derived(
 		syncStatus.current === 'connected'
 			? 'Connected'
 			: syncStatus.current === 'connecting'
-				? 'Connecting…'
+				? 'Connecting\u2026'
 				: 'Offline',
 	);
-
-	const dotColor = $derived(
-		syncStatus.current === 'connected'
-			? 'bg-emerald-500'
-			: syncStatus.current === 'connecting'
-				? 'bg-yellow-500'
-				: 'bg-muted-foreground/50',
-	);
-
-	const pulse = $derived(syncStatus.current === 'connecting');
 </script>
 
-<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-	<span class="relative flex size-2">
-		{#if pulse}
-			<span
-				class="absolute inline-flex h-full w-full animate-ping rounded-full {dotColor} opacity-75"
-			></span>
-		{/if}
-		<span class="relative inline-flex size-2 rounded-full {dotColor}"></span>
-	</span>
-	<span>{label}</span>
-</div>
+<Button {tooltip} variant="ghost" size="icon-sm">
+	{#if syncStatus.current === 'connected'}
+		<Cloud class="size-4" />
+	{:else if syncStatus.current === 'connecting'}
+		<LoaderCircle class="size-4 animate-spin" />
+	{:else}
+		<CloudOff class="size-4 text-destructive" />
+	{/if}
+</Button>

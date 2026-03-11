@@ -35,7 +35,7 @@
 		"arktype": "catalog:",
 		"typebox": "catalog:",
 		"clsx": "catalog:",
-		"marked": "^17.0.3",
+		"marked": "catalog:",
 		"tailwind-merge": "catalog:",
 		"virtua": "^0.48.5",
 		"wellcrafted": "catalog:",

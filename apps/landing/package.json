@@ -21,11 +21,11 @@
 		"astro": "^5.12.4",
 		"posthog-js": "^1.258.5",
 		"svelte": "catalog:",
-		"tailwindcss": "catalog:",
-		"typescript": "catalog:"
+		"tailwindcss": "catalog:"
 	},
 	"devDependencies": {
 		"@lucide/astro": "^0.536.0",
-		"@tailwindcss/typography": "catalog:"
+		"@tailwindcss/typography": "catalog:",
+		"typescript": "catalog:"
 	}
 }

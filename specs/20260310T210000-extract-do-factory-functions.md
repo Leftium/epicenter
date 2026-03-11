@@ -21,7 +21,7 @@ Create a single new file `room-helpers.ts` containing all three factories. Refac
 - [x] Delete duplicated `WsAttachment` type (now in room-helpers)
 - [x] Fix sync-handlers.test.ts to use new `SyncEffect[]` API
 - [x] Run existing sync-handlers tests — 22/22 pass
-- [x] Run typecheck — server-remote-cloudflare clean (pre-existing @epicenter/ai failure unrelated)
+- [x] Run typecheck — server-remote clean (pre-existing @epicenter/ai failure unrelated)
 - [x] Update spec with review
 
 ## Non-goals

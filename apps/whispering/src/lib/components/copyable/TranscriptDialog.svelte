@@ -26,6 +26,16 @@
 	 *   loading={true}
 	 * />
 	 * ```
+	 *
+	 * @example
+	 * ```svelte
+	 * <!-- With delete button -->
+	 * <TranscriptDialog
+	 *   recordingId={recording.id}
+	 *   transcribedText={recording.transcribedText}
+	 *   onDelete={() => handleDelete(recording)}
+	 * />
+	 * ```
 	 */
 	let {
 		/** The ID of the recording whose transcript is being displayed */
@@ -38,12 +48,15 @@
 		disabled = false,
 		/** Whether to show a loading spinner instead of copy button */
 		loading = false,
+		/** Optional callback to delete the recording. When provided, a delete button appears in the dialog footer. */
+		onDelete,
 	}: {
 		recordingId: string;
 		transcribedText: string;
 		rows?: number;
 		disabled?: boolean;
 		loading?: boolean;
+		onDelete?: () => void;
 	} = $props();
 </script>
 
@@ -55,4 +68,5 @@
 	{rows}
 	{disabled}
 	{loading}
+	{onDelete}
 />

@@ -12,7 +12,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import TrashIcon from '@lucide/svelte/icons/trash';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { slide } from 'svelte/transition';
 	import {
 		AnthropicApiKeyInput,

@@ -47,7 +47,7 @@
 	import { createRawSnippet } from 'svelte';
 	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import { TrashIcon } from '$lib/components/icons';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
@@ -185,6 +185,28 @@
 				return renderComponent(TranscriptDialog, {
 					recordingId: row.id,
 					transcribedText,
+					onDelete: () => {
+						confirmationDialog.open({
+							title: 'Delete recording',
+							description: 'Are you sure you want to delete this recording?',
+							confirm: { text: 'Delete', variant: 'destructive' },
+							onConfirm: async () => {
+								const { error } = await rpc.db.recordings.delete(row.original);
+								if (error) {
+									rpc.notify.error({
+										title: 'Failed to delete recording!',
+										description: 'Your recording could not be deleted.',
+										action: { type: 'more-details', error },
+									});
+									throw error;
+								}
+								rpc.notify.success({
+									title: 'Deleted recording!',
+									description: 'Your recording has been deleted.',
+								});
+							},
+						});
+					},
 				});
 			},
 		},

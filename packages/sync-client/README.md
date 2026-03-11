@@ -1,6 +1,6 @@
 # Epicenter Sync
 
-Client-side Yjs sync provider for `@epicenter/server-local`.
+Client-side Yjs sync provider for any y-websocket compatible server.
 
 ## What This Does
 
@@ -39,7 +39,7 @@ provider.destroy();
 
 ## Auth Modes
 
-Two authentication modes, matching `@epicenter/server-local`'s auth configuration:
+Two authentication modes:
 
 ### Open (no auth)
 
@@ -186,14 +186,14 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ## Relationship to Other Packages
 
 ```
-@epicenter/workspace                          @epicenter/server-local
- └─ extensions/sync.ts                  └─ sync/ws-plugin.ts (Elysia plugin)
+@epicenter/workspace                          Server (any y-websocket)
+ └─ extensions/sync.ts                  └─ WebSocket endpoint
      │                                      │
-     │  createSyncExtension()               │  createSyncPlugin()
-     │  - URL templating ({id})             │  - WebSocket endpoint
-     │  - Waits for persistence             │  - y-websocket protocol
-     │  - Lifecycle management              │  - MESSAGE_SYNC_STATUS echo
-     │                                      │  - Ping/pong keepalive
+     │  createSyncExtension()               │  y-websocket protocol
+     │  - URL templating ({id})             │  MESSAGE_SYNC_STATUS echo
+     │  - Waits for persistence             │  Ping/pong keepalive
+     │  - Lifecycle management              │
+     │                                      │
      └──── uses ────▶ @epicenter/sync ◀──── talks to ────┘
                       └─ createSyncProvider()
                       └─ Supervisor loop
@@ -201,5 +201,5 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ```
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.
-- **`@epicenter/server-local`**: The server that this provider connects to. Exposes `ws://host:port/rooms/{id}`.
+- **Server**: Any server exposing `ws://host:port/rooms/{id}` with y-websocket protocol (e.g., `server-remote-cloudflare`).
 - **`@epicenter/workspace/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.

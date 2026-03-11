@@ -430,4 +430,4 @@ After implementing Phases 1-2, we identified friction with the nested adapter ap
 
 **Decision:** Split adapters into separate packages. See `20260305T180000-server-remote-adapter-architecture.md` for the full spec.
 
-Target: `server-remote` (shared core) + `server-remote-cloudflare` + `server-remote-standalone` as three workspace packages. Each adapter gets config files at package root, clean scripts, and isolated dependencies.
+Target: `server-remote` (shared core) + `server-remote` + `server-remote-standalone` as three workspace packages. Each adapter gets config files at package root, clean scripts, and isolated dependencies.

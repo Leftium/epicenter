@@ -11,14 +11,20 @@ import type { ExtensionFactory } from '../workspace/types';
  * The `url` callback returns an HTTP base URL. The sync provider derives the
  * WebSocket URL automatically (`https:` → `wss:`, `http:` → `ws:`).
  *
- * Persistence is handled separately — add a persistence extension before sync
- * in the `.withExtension()` chain. The sync extension waits for all prior
- * extensions via `context.whenReady` before connecting.
+ * Chain last in the extension chain. Persistence loads local state first,
+ * BroadcastChannel handles instant cross-tab sync, then WebSocket connects
+ * for cross-device sync. The sync extension waits for all prior extensions
+ * via `context.whenReady` before connecting.
  *
- * @example Open mode (local dev)
+ * @example Recommended: persistence + BroadcastChannel + WebSocket
  * ```typescript
+ * import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+ * import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
+ * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+ *
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `http://localhost:3913/rooms/${id}`,
  *   }))
@@ -28,6 +34,7 @@ import type { ExtensionFactory } from '../workspace/types';
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `https://sync.epicenter.so/rooms/${id}`,
  *     getToken: async (workspaceId) => {
@@ -55,20 +62,24 @@ export type SyncExtensionConfig = {
 /**
  * Creates a sync extension that connects after prior extensions are ready.
  *
- * Uses WebSocket for real-time sync.
+ * Uses WebSocket for cross-device real-time sync. For same-browser cross-tab
+ * sync, use `broadcastChannelSync` — it provides sub-millisecond local sync
+ * without a server round-trip.
  *
  * Lifecycle:
  * - **Waits for prior extensions**: `context.whenReady` resolves when all previously
- *   chained extensions (persistence, etc.) are ready. The provider connects only after
- *   local state is loaded, ensuring an accurate state vector for the initial sync.
+ *   chained extensions (persistence, BroadcastChannel, etc.) are ready. The provider
+ *   connects only after local state is loaded, ensuring an accurate state vector for
+ *   the initial sync.
  * - **`whenReady`**: Resolves when the connection is initiated (after prior extensions).
  *   The UI renders from local state immediately — connection status is reactive via
  *   `provider`.
  *
- * @example
+ * @example Recommended: persistence + BroadcastChannel + WebSocket
  * ```typescript
  * createWorkspace(definition)
  *   .withExtension('persistence', indexeddbPersistence)
+ *   .withExtension('broadcast', broadcastChannelSync)
  *   .withExtension('sync', createSyncExtension({
  *     url: (id) => `http://localhost:3913/rooms/${id}`,
  *   }))

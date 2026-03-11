@@ -9,10 +9,9 @@
  *
  * ## Module structure
  *
- * - {@link BaseSyncRoom} — DO base class wiring the below together
- * - {@link createAutoSaveTracker} — dedup auto-save on last disconnect
  * - {@link createUpdateLog} — SQLite append-only update log + cold-start compaction
  * - {@link createConnectionHub} — WebSocket connection map + dispatch + broadcast
+ * - {@link BaseSyncRoom} — DO base class wiring the above together
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -62,7 +61,7 @@ type SyncRoomConfig = {
  * and connection management. Subclasses customize via {@link SyncRoomConfig}:
  *
  * - `gc` — Y.Doc garbage collection via {@link SyncRoomConfig}
- * - {@link BaseSyncRoom.registerDisconnectHandler} — register disconnect-time behavior (e.g. auto-save)
+ * - {@link BaseSyncRoom.initHub} — create connection hub with optional disconnect callback
  *
  * ## Worker → DO interface
  *
@@ -134,7 +133,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * can access it.
 	 */
 	private hub!: ConnectionHub;
-	private disconnectHandlers: (() => void)[] = [];
+	private awareness!: Awareness;
 
 	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig) {
 		super(ctx, env);
@@ -145,42 +144,39 @@ export class BaseSyncRoom extends DurableObject {
 
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: config.gc });
-			const awareness = new Awareness(this.doc);
+			this.awareness = new Awareness(this.doc);
 
 			const updateLog = createUpdateLog(ctx.storage);
 			updateLog.init(this.doc);
-
-			this.hub = createConnectionHub({
-				ctx,
-				doc: this.doc,
-				awareness,
-				onAllDisconnected: () => {
-					for (const handler of this.disconnectHandlers) handler();
-				},
-			});
-			this.hub.restoreHibernated();
 		});
 	}
 
 	/**
-	 * Register a callback to run when all WebSocket connections disconnect.
+	 * Create and register the WebSocket connection hub.
 	 *
-	 * Call during construction (after `super()`) to register disconnect-time
-	 * behavior like auto-save. The handler array is captured by reference in
-	 * the connection hub's closure, so handlers registered after hub creation
-	 * are still invoked at disconnect time. Handlers run in registration order.
+	 * Must be called by each subclass constructor after `super()`. Pass
+	 * `onAllDisconnected` to run cleanup when the last WebSocket client leaves.
+	 *
+	 * Safe to call after `super()` because the constructor hasn't returned yet,
+	 * so the Cloudflare runtime won't deliver any requests until initialization
+	 * is complete.
 	 *
 	 * @example
 	 * ```typescript
 	 * constructor(ctx: DurableObjectState, env: Env) {
 	 *   super(ctx, env, { gc: false });
-	 *   const autoSave = createAutoSaveTracker({ doc: this.doc, save: () => ... });
-	 *   this.registerDisconnectHandler(() => autoSave.checkAndSave());
+	 *   this.initHub({ onAllDisconnected: () => this.saveSnapshot('Auto-save') });
 	 * }
 	 * ```
 	 */
-	protected registerDisconnectHandler(handler: () => void) {
-		this.disconnectHandlers.push(handler);
+	protected initHub(options?: { onAllDisconnected?: () => void }) {
+		this.hub = createConnectionHub({
+			ctx: this.ctx,
+			doc: this.doc,
+			awareness: this.awareness,
+			onAllDisconnected: options?.onAllDisconnected,
+		});
+		this.hub.restoreHibernated();
 	}
 
 	// --- fetch: WebSocket upgrades only ---
@@ -258,56 +254,6 @@ export class BaseSyncRoom extends DurableObject {
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		this.hub.error(ws);
 	}
-}
-
-// ============================================================================
-// createAutoSaveTracker
-// ============================================================================
-
-/**
- * Create a tracker that auto-saves a snapshot when all clients disconnect,
- * but only if the document changed since the last save.
- *
- * Encapsulates the `lastAutoSaveSV` state + dedup comparison logic.
- * Wire as the `onAllDisconnected` callback of a connection hub.
- *
- * @example
- * ```typescript
- * const autoSave = createAutoSaveTracker({
- *   doc,
- *   save: () => this.saveSnapshot('Auto-save'),
- * });
- * const hub = createConnectionHub({
- *   ctx, doc, awareness,
- *   onAllDisconnected: autoSave.checkAndSave,
- * });
- * ```
- */
-export function createAutoSaveTracker({
-	doc,
-	save,
-}: {
-	doc: Y.Doc;
-	save: () => void;
-}) {
-	let lastSavedSv: Uint8Array | null = null;
-
-	return {
-		/**
-		 * Check if the document changed since the last save, and save if so.
-		 *
-		 * Compares the current state vector against the one recorded at the
-		 * last save. Uses `stateVectorsEqual` for a byte-level comparison
-		 * that avoids false positives from Yjs client ID reuse.
-		 */
-		checkAndSave() {
-			const currentSv = Y.encodeStateVector(doc);
-			if (!lastSavedSv || !stateVectorsEqual(currentSv, lastSavedSv)) {
-				lastSavedSv = currentSv;
-				save();
-			}
-		},
-	};
 }
 
 // ============================================================================

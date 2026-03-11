@@ -12,5 +12,6 @@ import { BaseSyncRoom } from './base-sync-room';
 export class WorkspaceRoom extends BaseSyncRoom {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env, { gc: true });
+		this.initHub();
 	}
 }

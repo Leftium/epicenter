@@ -1,5 +1,6 @@
+import { stateVectorsEqual } from '@epicenter/sync';
 import * as Y from 'yjs';
-import { BaseSyncRoom, createAutoSaveTracker } from './base-sync-room';
+import { BaseSyncRoom } from './base-sync-room';
 
 /**
  * Durable Object for content documents (`gc: false`).
@@ -8,7 +9,7 @@ import { BaseSyncRoom, createAutoSaveTracker } from './base-sync-room';
  * snapshots for version history. `Y.snapshot(doc)` returns a state vector +
  * delete set (~7 bytes to ~1.5 KB) that can reconstruct any past doc state
  * from the retained struct store. Auto-saves a snapshot when the last
- * WebSocket disconnects.
+ * WebSocket disconnects, but only if the document changed since the last save.
  */
 export class DocumentRoom extends BaseSyncRoom {
 	constructor(ctx: DurableObjectState, env: Env) {
@@ -23,12 +24,16 @@ export class DocumentRoom extends BaseSyncRoom {
 			)
 		`);
 
-		const autoSave = createAutoSaveTracker({
-			doc: this.doc,
-			save: () => this.saveSnapshot('Auto-save'),
+		let lastSavedSv: Uint8Array | null = null;
+		this.initHub({
+			onAllDisconnected: () => {
+				const currentSv = Y.encodeStateVector(this.doc);
+				if (!lastSavedSv || !stateVectorsEqual(currentSv, lastSavedSv)) {
+					lastSavedSv = currentSv;
+					this.saveSnapshot('Auto-save');
+				}
+			},
 		});
-
-		this.registerDisconnectHandler(() => autoSave.checkAndSave());
 	}
 
 	// --- Snapshot RPCs ---

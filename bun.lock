@@ -158,7 +158,7 @@
       "dependencies": {
         "@epicenter/tab-manager": "workspace:*",
         "@epicenter/workspace": "workspace:*",
-        "yjs": "^13.6.27",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -293,7 +293,7 @@
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
-        "yjs": "^13.6.29",
+        "yjs": "catalog:",
       },
       "devDependencies": {
         "@types/yargs": "catalog:",
@@ -327,6 +327,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -349,6 +350,7 @@
         "@types/bun": "catalog:",
         "arktype": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "@epicenter/workspace": "workspace:*",
@@ -412,6 +414,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -424,6 +427,9 @@
         "@epicenter/sync": "workspace:*",
         "lib0": "catalog:",
         "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -440,6 +446,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",

@@ -31,6 +31,7 @@
 		"@epicenter/sync-client": "workspace:*",
 		"@types/bun": "catalog:",
 		"arktype": "catalog:",
-		"typescript": "catalog:"
+		"typescript": "catalog:",
+		"yjs": "catalog:"
 	}
 }

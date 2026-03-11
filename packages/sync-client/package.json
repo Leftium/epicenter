@@ -15,5 +15,8 @@
 	},
 	"peerDependencies": {
 		"yjs": "catalog:"
+	},
+	"devDependencies": {
+		"yjs": "catalog:"
 	}
 }

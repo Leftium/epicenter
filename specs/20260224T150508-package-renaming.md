@@ -23,7 +23,7 @@ The monorepo has 16 packages under `packages/`:
 @epicenter/filesystem   → packages/filesystem/             ✓
 @epicenter/server       → packages/server/                 ✓
 @epicenter/server-local → packages/server-local/           ✓
-@epicenter/server-remote-cloudflare → packages/server-remote-cloudflare/ ✓
+@epicenter/server-remote → packages/server-remote/           ✓
 @epicenter/shared       → packages/shared/                 ← DEAD PACKAGE
 @epicenter/svelte-utils → packages/svelte-utils/           ✓
 @epicenter/sync         → packages/sync/                   ✓
@@ -46,7 +46,7 @@ Three problems remain:
 - npm name `@epicenter/hq` → `@epicenter/workspace` (done — `package.json` updated)
 - All `@epicenter/hq` import references replaced with `@epicenter/workspace` across the codebase (done — zero remaining references in `.ts` or `.json` files)
 - All `package.json` dependency references updated (done)
-- Server restructure (done differently than proposed — split into `server/`, `server-local/`, `server-remote-cloudflare/` instead of keeping as one package)
+- Server restructure (done differently than proposed — split into `server/`, `server-local/`, `server-remote/` instead of keeping as one package)
 
 ### Desired State
 
@@ -61,7 +61,7 @@ packages/
 ├── filesystem/      ← @epicenter/filesystem
 ├── server/          ← @epicenter/server
 ├── server-local/    ← @epicenter/server-local
-├── server-remote-cloudflare/ ← @epicenter/server-remote-cloudflare
+├── server-remote/       ← @epicenter/server-remote
 ├── svelte-utils/    ← @epicenter/svelte-utils
 ├── sync/            ← @epicenter/sync
 ├── sync-client/     ← @epicenter/sync-client
@@ -79,7 +79,7 @@ packages/
 | Singular `workspace` not `workspaces` | Singular | Package naming convention is singular (`@prisma/client`, `drizzle-orm`). |
 | Delete `@epicenter/shared` entirely | Delete | Zero imports in the entire codebase. The only export (`safeLookup`) is unused dead code. Not worth merging into `constants` — just delete it. |
 | Rename `@epicenter/vault-core` → `@epicenter/vault` | Do it | Drop phantom `-core` suffix. No parent `@epicenter/vault` package exists. |
-| Drop Phase 4 (server docs) from original spec | Drop | The server was already restructured into separate packages (`server/`, `server-local/`, `server-remote-cloudflare/`), which resolved the original concern about conflated responsibilities. |
+| Drop Phase 4 (server docs) from original spec | Drop | The server was already restructured into separate packages (`server/`, `server-local/`, `server-remote/`), which resolved the original concern about conflated responsibilities. |
 
 ## Implementation Plan
 

@@ -293,7 +293,9 @@ describe('applyMessage — AWARENESS', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data!.broadcast).toBeDefined();
-		expect(decodeMessageType(result.data!.broadcast!)).toBe(MESSAGE_TYPE.AWARENESS);
+		expect(decodeMessageType(result.data!.broadcast!)).toBe(
+			MESSAGE_TYPE.AWARENESS,
+		);
 		expect(result.data!.persistAttachment).toBe(true);
 	});
 
@@ -331,7 +333,9 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 
 		expect(result.error).toBeNull();
 		expect(result.data!.response).toBeDefined();
-		expect(decodeMessageType(result.data!.response!)).toBe(MESSAGE_TYPE.AWARENESS);
+		expect(decodeMessageType(result.data!.response!)).toBe(
+			MESSAGE_TYPE.AWARENESS,
+		);
 	});
 
 	test('returns empty result when no awareness states exist', () => {

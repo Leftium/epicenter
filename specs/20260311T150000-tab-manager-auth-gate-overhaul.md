@@ -295,9 +295,10 @@ User can sign in anytime via cloud icon popover.
 
 ### Phase 4: AI Chat Auth Prompt
 
-- [ ] **4.1** In `AiDrawer.svelte`, check `authState.status` before rendering chat
-- [ ] **4.2** When signed out, show a prompt: "Sign in to use AI chat" with a button that opens the sync popover or triggers auth directly
-- [ ] **4.3** When signed in, render chat normally (no change to existing behavior)
+- [x] **4.1** In `AiDrawer.svelte`, check `authState.status` before rendering chat
+- [x] **4.2** When signed out, show a prompt: "Sign in to use AI chat" with a button that opens the sync popover or triggers auth directly
+  > **Note**: Shows a centered Zap icon + "Sign in to use AI chat" message + Close button. Closes the drawer so the user can click the cloud icon to sign in.
+- [x] **4.3** When signed in, render chat normally (no change to existing behavior)
 
 ## Edge Cases
 

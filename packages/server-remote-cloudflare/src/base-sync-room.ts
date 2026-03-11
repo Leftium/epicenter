@@ -9,9 +9,8 @@
  *
  * ## Module structure
  *
- * - {@link initUpdateLog} — SQLite append-only update log + cold-start compaction
  * - {@link createConnectionHub} — WebSocket connection map + dispatch + broadcast
- * - {@link BaseSyncRoom} — DO base class wiring the above together
+ * - {@link BaseSyncRoom} — DO base class wiring persistence + connections together
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -79,7 +78,7 @@ type SyncRoomConfig = {
  * ## Storage model
  *
  * Append-only update log in DO SQLite with opportunistic cold-start
- * compaction. See {@link createUpdateLog} for full details.
+ * compaction. Initialized inside `blockConcurrencyWhile` in the constructor.
  *
  * ## Auth & room isolation
  *
@@ -145,7 +144,39 @@ export class BaseSyncRoom extends DurableObject {
 			this.doc = new Y.Doc({ gc: config.gc });
 			this.awareness = new Awareness(this.doc);
 
-			initUpdateLog(ctx.storage, this.doc);
+			// --- Update log: DDL + cold-start load + compaction + live persist ---
+
+			ctx.storage.sql.exec(`
+				CREATE TABLE IF NOT EXISTS updates (
+					id INTEGER PRIMARY KEY AUTOINCREMENT,
+					data BLOB NOT NULL
+				)
+			`);
+
+			const rows = ctx.storage.sql
+				.exec('SELECT data FROM updates ORDER BY id')
+				.toArray();
+
+			if (rows.length > 0) {
+				const merged = Y.mergeUpdatesV2(
+					rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+				);
+				Y.applyUpdateV2(this.doc, merged);
+
+				if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
+					ctx.storage.transactionSync(() => {
+						ctx.storage.sql.exec('DELETE FROM updates');
+						ctx.storage.sql.exec(
+							'INSERT INTO updates (data) VALUES (?)',
+							merged,
+						);
+					});
+				}
+			}
+
+			this.doc.on('updateV2', (update: Uint8Array) => {
+				ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+			});
 		});
 	}
 
@@ -274,56 +305,6 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 type WsAttachment = {
 	controlledClientIds: number[];
 };
-
-// ============================================================================
-// initUpdateLog
-// ============================================================================
-
-/**
- * Initialize an append-only Yjs update log backed by DO SQLite.
- *
- * Creates the table, loads persisted updates into the doc with opportunistic
- * cold-start compaction, and registers the live persist handler via
- * `doc.on('updateV2')`.
- *
- * Must be called inside `blockConcurrencyWhile` to ensure the doc is ready
- * before any `fetch()` or `webSocketMessage()` runs.
- *
- * @example
- * ```typescript
- * initUpdateLog(ctx.storage, doc);
- * ```
- */
-function initUpdateLog(storage: DurableObjectStorage, doc: Y.Doc) {
-	storage.sql.exec(`
-		CREATE TABLE IF NOT EXISTS updates (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			data BLOB NOT NULL
-		)
-	`);
-
-	const rows = storage.sql
-		.exec('SELECT data FROM updates ORDER BY id')
-		.toArray();
-
-	if (rows.length > 0) {
-		const merged = Y.mergeUpdatesV2(
-			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-		);
-		Y.applyUpdateV2(doc, merged);
-
-		if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
-			storage.transactionSync(() => {
-				storage.sql.exec('DELETE FROM updates');
-				storage.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
-			});
-		}
-	}
-
-	doc.on('updateV2', (update: Uint8Array) => {
-		storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
-	});
-}
 
 // ============================================================================
 // createConnectionHub

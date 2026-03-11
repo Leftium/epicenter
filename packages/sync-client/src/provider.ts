@@ -246,25 +246,22 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 				}
 			}
 
-			if (runId !== myRunId) break;
-
 			// --- Single connection attempt ---
 			const result = await attemptConnection(token, myRunId);
 
-			if (runId !== myRunId) break;
-
-			if (result === 'connected') {
-				backoff.reset();
-				lastError = undefined;
-			}
-
 			if (result === 'cancelled') break;
 
-			// Connection failed or closed — backoff and retry
+			if (result === 'connected') {
+				// Connection was live, then dropped — retry quickly
+				backoff.reset();
+				lastError = undefined;
+			} else {
+				// Never connected
+				lastError = { type: 'connection' };
+			}
+
+			// Backoff before retry (skip if cancelled externally)
 			if (desired === 'online' && runId === myRunId) {
-				if (result === 'failed') {
-					lastError = { type: 'connection' };
-				}
 				attempt += 1;
 				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();

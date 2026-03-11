@@ -235,6 +235,13 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 			if (getToken) {
 				try {
 					token = await getToken();
+					if (!token) {
+						lastError = { type: 'auth', error: new Error('No token available') };
+						status.set({ phase: 'connecting', attempt, lastError });
+						await backoff.sleep();
+						attempt += 1;
+						continue;
+					}
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
 					lastError = { type: 'auth', error: e };

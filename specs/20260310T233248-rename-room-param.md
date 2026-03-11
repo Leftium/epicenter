@@ -19,7 +19,7 @@ Rename `:room` to `:workspace` on workspace routes and `:document` on document r
 
 ## Changes
 
-### `packages/server-remote-cloudflare/src/app.ts`
+### `packages/server-remote/src/app.ts`
 
 - [x] Route params: `:room` -> `:workspace` (2 workspace routes) and `:document` (6 document routes)
 - [x] `getWorkspaceStub()`: `c.req.param('room')` -> `c.req.param('workspace')`, `roomKey` -> `doName`
@@ -29,7 +29,7 @@ Rename `:room` to `:workspace` on workspace routes and `:document` on document r
 - [x] Section comments: "per room" -> "per workspace" / "per document"
 - [x] Function JSDoc comments on `getWorkspaceStub` / `getDocumentStub`
 
-### `packages/server-remote-cloudflare/src/base-sync-room.ts`
+### `packages/server-remote/src/base-sync-room.ts`
 
 - [x] Class JSDoc: "Room names are user-scoped" -> "DO names are user-scoped", updated references
 

@@ -195,7 +195,7 @@ Connection = {
 ### Phase 5: Verify
 
 - [x] **5.1** Run `bun run typecheck` — no type errors
-- [x] **5.2** Run `bun test` in `packages/server-remote-cloudflare` — all green
+- [x] **5.2** Run `bun test` in `packages/server-remote` — all green
 - [x] **5.3** Verify no other packages import from `sync-handlers.ts` (it's internal to the CF package)
 
 ## Edge Cases
@@ -236,9 +236,9 @@ Connection = {
 
 ## References
 
-- `packages/server-remote-cloudflare/src/sync-handlers.ts` — primary target
-- `packages/server-remote-cloudflare/src/base-sync-room.ts` — main consumer (createConnectionHub)
-- `packages/server-remote-cloudflare/src/sync-handlers.test.ts` — tests to update
+- `packages/server-remote/src/sync-handlers.ts` — primary target
+- `packages/server-remote/src/base-sync-room.ts` — main consumer (createConnectionHub)
+- `packages/server-remote/src/sync-handlers.test.ts` — tests to update
 - `packages/sync/src/protocol.ts` — reference for destructured object convention
-- `packages/server-remote-cloudflare/src/workspace-room.ts` — subclass (verify unaffected)
-- `packages/server-remote-cloudflare/src/document-room.ts` — subclass (verify unaffected)
+- `packages/server-remote/src/workspace-room.ts` — subclass (verify unaffected)
+- `packages/server-remote/src/document-room.ts` — subclass (verify unaffected)

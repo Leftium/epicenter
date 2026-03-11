@@ -80,6 +80,8 @@ description: TypeScript code style, type co-location, naming conventions (includ
   	};
   }
   ```
+- **Prefer factory functions over classes**: Use `function createX() { return { ... } }` instead of `class X { ... }`. Closures provide structural privacy—everything above the return statement is private by position, everything inside it is the public API. Classes mix `private`/`protected`/public members in arbitrary order, forcing you to scan every member and check its modifier. See `docs/articles/closures-are-better-privacy-than-keywords.md` for rationale.
+
 
 ## Switch Over If/Else for Value Comparison
 

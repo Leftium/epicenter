@@ -157,6 +157,67 @@ const service = createService({ db, cache, http }, serviceOptions);
 service.method(methodOptions);
 ```
 
+## The Canonical Internal Shape
+
+The previous sections cover the external signature—`(deps, options?) → return { methods }`. This section covers what goes *inside* the function body. Every factory function follows a four-zone ordering:
+
+```typescript
+// Option A — destructure in the signature (preferred for small dep lists)
+function createSomething({ db, cache }: Deps, options?) {
+	const maxRetries = options?.maxRetries ?? 3;
+	// ...
+}
+
+// Option B — destructure in zone 1 (fine when you also need the deps object itself)
+function createSomething(deps: Deps, options?) {
+	const { db, cache } = deps;
+	const maxRetries = options?.maxRetries ?? 3;
+	// ...
+}
+```
+
+Both are valid. The point is that by the time you reach zone 2, all dependencies and config are bound to `const` names. The four zones:
+
+```typescript
+function createSomething({ db, cache }, options?) {
+	// Zone 1 — Immutable state (const from deps/options)
+	const maxRetries = options?.maxRetries ?? 3;
+
+	// Zone 2 — Mutable state (let declarations)
+	let connectionCount = 0;
+	let lastError: Error | null = null;
+
+	// Zone 3 — Private helpers
+	function resetState() {
+		connectionCount = 0;
+		lastError = null;
+	}
+
+	// Zone 4 — Public API (always last)
+	return {
+		connect() { ... },
+		disconnect() { ... },
+		get errorCount() { return connectionCount; },
+	};
+}
+```
+
+Zones 1 and 2 can merge when there's little state. Zone 3 is empty for small factories. But the return object is always last—it's the complete public API.
+
+### The `this` Decision Rule
+
+Inside the return object, public methods sometimes need to call other public methods. Use `this.method()` for that—method shorthand gives proper `this` binding.
+
+If a function is called both by return-object methods *and* by pre-return initialization logic, it belongs in zone 3 (private helpers). Call it directly by name; no `this` needed.
+
+| Where the function lives | How to call it |
+|---|---|
+| Return object (zone 4) | `this.method()` from sibling methods |
+| Private helper (zone 3) | Direct call by name: `helperFn()` |
+| Both zones need it | Keep in zone 3, call by name everywhere |
+
+See [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full rationale and real codebase examples.
+
 ## The Mental Model
 
 Think of it as a chain where each link:
@@ -186,3 +247,4 @@ See the full articles for more details:
 - [Stop Passing Clients as Arguments](../../docs/articles/stop-passing-clients-as-arguments.md) — practical guide
 - [The Factory Function Pattern](../../docs/articles/factory-function-pattern.md) — detailed explanation
 - [Factory Method Patterns](../../docs/articles/factory-method-patterns.md) — separating options and method patterns
+- [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) — internal anatomy and why closures beat class keywords

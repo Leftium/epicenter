@@ -20,7 +20,9 @@
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
 		authState.checkSession();
-		const unsubExternalSignIn = authState.onExternalSignIn(() => reconnectSync());
+		const unsubExternalSignIn = authState.onExternalSignIn(() =>
+			reconnectSync(),
+		);
 
 		const onVisibilityChange = () => {
 			if (

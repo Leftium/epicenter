@@ -19,7 +19,9 @@
 		{#if authState.status === 'signed-in'}
 			<div class="h-[60vh] px-4 pb-4"><AiChat /></div>
 		{:else}
-			<div class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4">
+			<div
+				class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4"
+			>
 				<ZapIcon class="size-8 text-muted-foreground" />
 				<p class="text-sm text-muted-foreground text-center">
 					Sign in to use AI chat

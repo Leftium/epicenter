@@ -9,13 +9,13 @@
 
 import { type } from 'arktype';
 import { createAuthClient } from 'better-auth/client';
+import { untrack } from 'svelte';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { untrack } from 'svelte';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -134,7 +134,11 @@ function createAuthState() {
 
 		// Token + user set externally (e.g. sign-in in another extension context).
 		$effect(() => {
-			if (authToken.current && authUser.current && phase.status === 'signed-out') {
+			if (
+				authToken.current &&
+				authUser.current &&
+				phase.status === 'signed-out'
+			) {
 				phase = { status: 'signed-in' };
 				untrack(() => {
 					for (const fn of externalSignInListeners) fn();

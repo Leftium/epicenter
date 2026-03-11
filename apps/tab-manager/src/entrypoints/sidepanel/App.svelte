@@ -14,9 +14,10 @@
 	import { authState } from '$lib/state/auth.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
+	import { reconnectSync } from '$lib/workspace';
 	import { onMount } from 'svelte';
 
-	// Auth initialization — check cached session on mount, react to external token clears
+	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
 		authState.checkSession();
 
@@ -35,6 +36,7 @@
 
 	$effect(() => {
 		authState.reactToTokenCleared();
+		if (authState.reactToTokenSet()) reconnectSync();
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

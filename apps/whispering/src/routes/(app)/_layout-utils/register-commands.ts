@@ -5,7 +5,7 @@ import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager'
 import {
 	type CommandId,
 	shortcutStringToArray,
-} from '$lib/services/isomorphic/local-shortcut-manager';
+} from '$lib/services/local-shortcut-manager';
 import { settings } from '$lib/state/settings.svelte';
 
 /**

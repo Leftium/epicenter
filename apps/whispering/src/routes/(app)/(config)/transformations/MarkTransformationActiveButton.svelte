@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import CheckCircleIcon from '@lucide/svelte/icons/check-circle';
 	import CircleIcon from '@lucide/svelte/icons/circle';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let {

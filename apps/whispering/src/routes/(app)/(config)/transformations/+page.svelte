@@ -35,7 +35,7 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import { type Transformation } from '$lib/services/isomorphic/db';
+	import { type Transformation } from '$lib/services/db';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CreateTransformationButton from './CreateTransformationButton.svelte';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';

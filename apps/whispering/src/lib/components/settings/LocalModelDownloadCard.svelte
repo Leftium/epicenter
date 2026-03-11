@@ -22,7 +22,7 @@
 	import {
 		isModelFileSizeValid,
 		type LocalModelConfig,
-	} from '$lib/services/isomorphic/transcription/local/types';
+	} from '$lib/services/transcription/local/types';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let {

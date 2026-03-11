@@ -14,7 +14,7 @@
 	import {
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
-	} from '$lib/services/isomorphic/transcription/registry';
+	} from '$lib/services/transcription/registry';
 	import {
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,

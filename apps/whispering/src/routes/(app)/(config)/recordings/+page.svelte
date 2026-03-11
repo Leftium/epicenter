@@ -51,8 +51,9 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/isomorphic/db';
+	import type { Recording } from '$lib/services/db';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
 	import { RecordingRowActions } from './row-actions';
@@ -533,32 +534,10 @@
 						tooltip="Delete selected recordings"
 						variant="outline"
 						size="icon"
-						onclick={() => {
-							confirmationDialog.open({
-								title: 'Delete recordings',
-								description:
-									'Are you sure you want to delete these recordings?',
-								confirm: { text: 'Delete', variant: 'destructive' },
-								onConfirm: async () => {
-									const { error } = await rpc.db.recordings.delete(
-										selectedRecordingRows.map(({ original }) => original),
-									);
-									if (error) {
-										rpc.notify.error({
-											title: 'Failed to delete recordings!',
-											description: 'Your recordings could not be deleted.',
-											action: { type: 'more-details', error },
-										});
-										throw error;
-									}
-									rpc.notify.success({
-										title: 'Deleted recordings!',
-										description:
-											'Your recordings have been deleted successfully.',
-									});
-								},
-							});
-						}}
+						onclick={() =>
+						recordingActions.deleteWithConfirmation(
+							selectedRecordingRows.map(({ original }) => original),
+						)}
 					>
 						<TrashIcon class="size-4" />
 					</Button>

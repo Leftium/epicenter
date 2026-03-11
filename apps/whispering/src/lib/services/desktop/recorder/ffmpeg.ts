@@ -21,7 +21,7 @@ import {
 	type FfmpegRecordingParams,
 	RecorderError,
 	type RecorderService,
-} from '$lib/services/isomorphic/recorder/types';
+} from '$lib/services/recorder/types';
 import {
 	asDeviceIdentifier,
 	type Device,

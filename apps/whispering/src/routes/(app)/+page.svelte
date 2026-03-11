@@ -15,6 +15,7 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Err, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
+	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import NavItems from '$lib/components/NavItems.svelte';
 	import {
@@ -309,6 +310,28 @@
 				rows={1}
 				disabled={!latestRecording.transcribedText.trim()}
 				loading={latestRecording.transcriptionStatus === 'TRANSCRIBING'}
+				onDelete={() => {
+					confirmationDialog.open({
+						title: 'Delete recording',
+						description: 'Are you sure you want to delete this recording?',
+						confirm: { text: 'Delete', variant: 'destructive' },
+						onConfirm: async () => {
+							const { error } = await rpc.db.recordings.delete(latestRecording);
+							if (error) {
+								rpc.notify.error({
+									title: 'Failed to delete recording!',
+									description: 'Your recording could not be deleted.',
+									action: { type: 'more-details', error },
+								});
+								throw error;
+							}
+							rpc.notify.success({
+								title: 'Deleted recording!',
+								description: 'Your recording has been deleted.',
+							});
+						},
+					});
+				}}
 			/>
 
 			{#if blobUrl}

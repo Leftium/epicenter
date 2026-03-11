@@ -1,6 +1,6 @@
 # Epicenter Sync
 
-Client-side Yjs sync provider for `@epicenter/server-local`.
+Client-side Yjs sync provider for any y-websocket compatible server.
 
 ## What This Does
 
@@ -25,7 +25,7 @@ const provider = createSyncProvider({
 
 // Provider connects automatically. Check status:
 provider.onStatusChange((status) => {
-	console.log('Sync status:', status);
+	console.log('Sync phase:', status.phase);
 });
 
 // Track whether local changes have reached the server:
@@ -39,7 +39,7 @@ provider.destroy();
 
 ## Auth Modes
 
-Two authentication modes, matching `@epicenter/server-local`'s auth configuration:
+Two authentication modes:
 
 ### Open (no auth)
 
@@ -91,7 +91,7 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 
 | Property / Method    | Type                                                     | Description                                            |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
-| `status`             | `SyncStatus` (readonly)                                  | Current connection status                              |
+| `status`             | `SyncStatus` (readonly)                                  | Current connection status (discriminated on `phase`)   |
 | `hasLocalChanges`    | `boolean` (readonly)                                     | Whether unacknowledged local changes exist             |
 | `awareness`          | `Awareness` (readonly)                                   | The awareness instance for user presence               |
 | `connect()`          | `() => void`                                             | Start connecting. Idempotent.                          |
@@ -102,27 +102,44 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 
 ## Connection Status Model
 
-Five states (compared to y-websocket's three):
+Three phases, discriminated as a union on `phase`:
+
+```typescript
+type SyncStatus =
+  | { phase: 'offline' }
+  | { phase: 'connecting'; attempt: number; lastError?: SyncError }
+  | { phase: 'connected' }
+
+type SyncError =
+  | { type: 'auth'; error: unknown }
+  | { type: 'connection' }
+```
 
 ```
-  ┌─────────┐    connect()    ┌────────────┐   ws.open    ┌──────────────┐
-  │ offline │ ──────────────▶ │ connecting │ ───────────▶ │ handshaking  │
-  └─────────┘                 └────────────┘              └──────────────┘
+  ┌─────────┐    connect()    ┌────────────┐   handshake   ┌───────────┐
+  │ offline │ ──────────────▶ │ connecting │ ────────────▶ │ connected │
+  └─────────┘                 └────────────┘               └───────────┘
        ▲                           ▲                            │
-       │ disconnect()              │ backoff                    │ sync step 2
-       │                           │                            ▼
-       │                      ┌─────────┐               ┌───────────┐
-       └───────────────────── │  error  │ ◀──────────── │ connected │
-                              └─────────┘   ws.close    └───────────┘
+       │ disconnect()              │ backoff                    │ ws.close
+       │                           │                            │
+       │                           └────────────────────────────┘
 ```
 
-| Status        | Meaning                                                 |
-| ------------- | ------------------------------------------------------- |
-| `offline`     | Not connected, not trying to connect                    |
-| `connecting`  | Opening a WebSocket (or fetching a token)               |
-| `handshaking` | WebSocket open, Yjs sync step 1/2 in progress           |
-| `connected`   | Fully synced and communicating                          |
-| `error`       | Connection failed, will retry after exponential backoff |
+| Phase          | Meaning                                                         |
+| -------------- | --------------------------------------------------------------- |
+| `offline`      | Not connected, not trying to connect                            |
+| `connecting`   | Opening a WebSocket, fetching a token, or performing handshake. Carries `attempt` (0 = first try) and optional `lastError` from last failure |
+| `connected`    | Fully synced and communicating                                  |
+
+The `connecting` phase carries error context so consumers can distinguish auth failures from network failures:
+
+```typescript
+provider.onStatusChange((status) => {
+  if (status.phase === 'connecting' && status.lastError?.type === 'auth') {
+    showMessage('Sign in again');
+  }
+});
+```
 
 ## `hasLocalChanges`
 
@@ -169,14 +186,14 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ## Relationship to Other Packages
 
 ```
-@epicenter/workspace                          @epicenter/server-local
- └─ extensions/sync.ts                  └─ sync/ws-plugin.ts (Elysia plugin)
+@epicenter/workspace                          Server (any y-websocket)
+ └─ extensions/sync.ts                  └─ WebSocket endpoint
      │                                      │
-     │  createSyncExtension()               │  createSyncPlugin()
-     │  - URL templating ({id})             │  - WebSocket endpoint
-     │  - Waits for persistence             │  - y-websocket protocol
-     │  - Lifecycle management              │  - MESSAGE_SYNC_STATUS echo
-     │                                      │  - Ping/pong keepalive
+     │  createSyncExtension()               │  y-websocket protocol
+     │  - URL templating ({id})             │  MESSAGE_SYNC_STATUS echo
+     │  - Waits for persistence             │  Ping/pong keepalive
+     │  - Lifecycle management              │
+     │                                      │
      └──── uses ────▶ @epicenter/sync ◀──── talks to ────┘
                       └─ createSyncProvider()
                       └─ Supervisor loop
@@ -184,5 +201,5 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ```
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.
-- **`@epicenter/server-local`**: The server that this provider connects to. Exposes `ws://host:port/rooms/{id}`.
+- **Server**: Any server exposing `ws://host:port/rooms/{id}` with y-websocket protocol (e.g., `server-remote-cloudflare`).
 - **`@epicenter/workspace/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.

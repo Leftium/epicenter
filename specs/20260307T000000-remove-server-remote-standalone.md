@@ -8,7 +8,7 @@
 
 We maintain two server-remote packages with diverging implementations:
 
-- **`server-remote-cloudflare`** — production, actively developed, has DocumentRoom snapshots, user-scoped room keys, Durable Objects, Better Auth with Postgres via Hyperdrive
+- **`server-remote`** — production, actively developed, has DocumentRoom snapshots, user-scoped room keys, Durable Objects, Better Auth with Postgres via Hyperdrive
 - **`server-remote-standalone`** — stale, simpler feature set, only used by `@epicenter/cli` hub commands
 
 Maintaining both is not worth the effort. The Cloudflare version is the canonical one. The standalone version should be removed now and rebuilt later — based on the Cloudflare version — when we actually need self-hosted deployments.
@@ -118,7 +118,7 @@ Update the status in:
 
 When rebuilding standalone support, we'll need to:
 
-1. Add a `src/standalone/` directory to `server-remote-cloudflare` (and rename the package to `server-remote`)
+1. Add a `src/standalone/` directory to `server-remote` (and rename the package to `server-remote`)
 2. Extract shared auth/CORS/AI-chat into `src/shared/`
 3. Re-implement the BunSqliteUpdateLog (or port to better-sqlite3 for Node.js compat)
 4. Re-implement the sync adapter using `createRoomManager` from sync-core

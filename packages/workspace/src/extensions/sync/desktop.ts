@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import * as Y from 'yjs';
@@ -9,20 +9,76 @@ import type { ExtensionContext } from '../../workspace/types.js';
  * Configuration for the persistence extension.
  */
 export type PersistenceConfig = {
-	/** Absolute path to the .yjs file for storing YJS state. */
+	/** Absolute path to the SQLite database file for storing YJS state. */
 	filePath: string;
 };
 
+/** Max compacted update size (2 MB). Matches the Cloudflare DO limit. */
+const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
+
 /**
- * YJS document persistence extension using the filesystem.
- * Stores the YDoc as a binary file.
+ * Compact the SQLite update log into a single row.
  *
- * **Platform**: Node.js/Desktop (Tauri, Electron, Bun)
+ * Encodes the current doc state via `Y.encodeStateAsUpdateV2` — produces
+ * smaller output than merging individual updates. No-ops if the log already
+ * has ≤ 1 row or the compacted blob exceeds 2 MB.
+ */
+function compactUpdateLog(db: Database, ydoc: Y.Doc): void {
+	const row = db.query('SELECT COUNT(*) as count FROM updates').get() as {
+		count: number;
+	};
+	if (row.count <= 1) return;
+
+	const compacted = Y.encodeStateAsUpdateV2(ydoc);
+	if (compacted.byteLength > MAX_COMPACTED_BYTES) return;
+
+	db.transaction(() => {
+		db.run('DELETE FROM updates');
+		db.run('INSERT INTO updates (data) VALUES (?)', [compacted]);
+	})();
+}
+
+/**
+ * Initialize a SQLite persistence database: create table, replay updates, compact.
+ *
+ * Shared setup logic used by both `persistence` and `filesystemPersistence`.
+ */
+function initPersistenceDb(filePath: string, ydoc: Y.Doc): Database {
+	const db = new Database(filePath);
+	db.run(
+		'CREATE TABLE IF NOT EXISTS updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)',
+	);
+
+	// Replay update log to reconstruct Y.Doc state
+	const rows = db.query('SELECT data FROM updates ORDER BY id').all() as {
+		data: Buffer;
+	}[];
+	for (const row of rows) {
+		Y.applyUpdateV2(ydoc, new Uint8Array(row.data));
+	}
+
+	// Compact on startup if the log has accumulated many rows
+	compactUpdateLog(db, ydoc);
+
+	return db;
+}
+
+/**
+ * YJS document persistence extension using SQLite append-log.
+ *
+ * Stores incremental Y.Doc updates in a SQLite database using the same
+ * append-only update log pattern as the Cloudflare Durable Object sync server.
+ * Each update is a tiny INSERT (O(update_size)), not a full doc re-encode.
+ *
+ * **Platform**: Desktop (Tauri, Bun)
  *
  * **How it works**:
  * 1. Creates parent directory if it doesn't exist
- * 2. Loads existing state from the specified filePath on startup
- * 3. Auto-saves to disk on every YJS update (synchronous to ensure data is persisted before process exits)
+ * 2. Opens/creates a SQLite database at the specified filePath
+ * 3. Replays stored updates to reconstruct Y.Doc state
+ * 4. Compacts the log on startup (many rows → 1 row)
+ * 5. Appends each incremental update as a new row
+ * 6. Compacts again on destroy (clean shutdown)
  *
  * @example
  * ```typescript
@@ -35,7 +91,7 @@ export type PersistenceConfig = {
  *
  * const workspace = createWorkspace({ id: 'blog', tables: {...} })
  *   .withExtension('persistence', (ctx) => persistence(ctx, {
- *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
+ *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.db`),
  *   }));
  * ```
  */
@@ -43,54 +99,46 @@ export const persistence = (
 	{ ydoc }: ExtensionContext,
 	{ filePath }: PersistenceConfig,
 ) => {
-	// Track async initialization via whenReady
+	let db: Database | null = null;
+
+	const updateHandler = (update: Uint8Array) => {
+		db?.run('INSERT INTO updates (data) VALUES (?)', [update]);
+	};
+
 	const whenReady = (async () => {
 		await mkdir(path.dirname(filePath), { recursive: true });
+		db = initPersistenceDb(filePath, ydoc);
 
-		// Try to load existing state from disk using Bun.file
-		// No need to check existence first - just try to read and handle failure
-		const file = Bun.file(filePath);
-		try {
-			// Use arrayBuffer() to get a fresh, non-shared buffer for Yjs
-			const savedState = await file.arrayBuffer();
-			// Convert to Uint8Array for Yjs
-			Y.applyUpdate(ydoc, new Uint8Array(savedState));
-			// console.log(`[Persistence] Loaded workspace from ${filePath}`);
-		} catch {
-			// File doesn't exist or couldn't be read - that's fine, we'll create it on first update
-			// console.log(`[Persistence] Creating new workspace at ${filePath}`);
-		}
-
-		// Auto-save on every update using synchronous write
-		// This ensures data is persisted before the process can exit
-		// The performance impact is minimal for typical YJS update sizes
-		ydoc.on('update', () => {
-			const state = Y.encodeStateAsUpdate(ydoc);
-			writeFileSync(filePath, state);
-		});
+		// Persist incremental updates — tiny INSERTs, not full doc re-encodes
+		ydoc.on('updateV2', updateHandler);
 	})();
 
-	return { whenReady };
+	return {
+		whenReady,
+		destroy() {
+			ydoc.off('updateV2', updateHandler);
+			if (db) {
+				compactUpdateLog(db, ydoc);
+				db.close();
+			}
+		},
+	};
 };
 
 /**
  * Filesystem persistence factory that returns a `Lifecycle`.
  *
- * Reads/writes a `.yjs` binary file using `Bun.file()` for read and
- * debounced `writeFileSync` for write.
+ * Uses SQLite append-log for efficient incremental persistence.
+ * Same pattern as the Cloudflare DO sync server.
  *
- * **Note**: This returns a raw `Lifecycle` (not an `Extension`), so it cannot
- * be used directly with `.withExtension()`. Use the `persistence` export above
- * for the extension-compatible version.
- *
- * @example With the persistence extension pattern
+ * @example
  * ```typescript
- * import { persistence } from '@epicenter/workspace/extensions/sync/desktop';
+ * import { filesystemPersistence } from '@epicenter/workspace/extensions/sync/desktop';
  * import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
  *
  * createWorkspace(definition)
- *   .withExtension('persistence', (ctx) => persistence(ctx, {
- *     filePath: join(epicenterDir, 'persistence', `${ctx.id}.yjs`),
+ *   .withExtension('persistence', filesystemPersistence({
+ *     filePath: join(epicenterDir, 'persistence', `workspace.db`),
  *   }))
  *   .withExtension('sync', createSyncExtension({
  *     url: 'ws://localhost:3913/rooms/{id}',
@@ -103,35 +151,26 @@ export function filesystemPersistence({
 	filePath: string;
 }): (context: { ydoc: Y.Doc }) => Lifecycle {
 	return ({ ydoc }): Lifecycle => {
-		let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+		let db: Database | null = null;
 
-		const updateHandler = () => {
-			if (saveTimeout) clearTimeout(saveTimeout);
-			saveTimeout = setTimeout(() => {
-				const state = Y.encodeStateAsUpdate(ydoc);
-				writeFileSync(filePath, state);
-			}, 500);
+		const updateHandler = (update: Uint8Array) => {
+			db?.run('INSERT INTO updates (data) VALUES (?)', [update]);
 		};
 
 		const whenReady = (async () => {
 			await mkdir(path.dirname(filePath), { recursive: true });
-
-			const file = Bun.file(filePath);
-			try {
-				const savedState = await file.arrayBuffer();
-				Y.applyUpdate(ydoc, new Uint8Array(savedState));
-			} catch {
-				// File doesn't exist — will be created on first update
-			}
-
-			ydoc.on('update', updateHandler);
+			db = initPersistenceDb(filePath, ydoc);
+			ydoc.on('updateV2', updateHandler);
 		})();
 
 		return {
 			whenReady,
 			destroy: () => {
-				if (saveTimeout) clearTimeout(saveTimeout);
-				ydoc.off('update', updateHandler);
+				ydoc.off('updateV2', updateHandler);
+				if (db) {
+					compactUpdateLog(db, ydoc);
+					db.close();
+				}
 			},
 		};
 	};

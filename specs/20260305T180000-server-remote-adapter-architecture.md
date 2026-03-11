@@ -62,7 +62,7 @@ packages/server-remote/
 
 ```
 packages/server-remote/                  # shared core library
-packages/server-remote-cloudflare/       # CF Worker — wrangler.toml at root
+packages/server-remote/       # CF Worker — wrangler.toml at root
 packages/server-remote-standalone/       # Node/Bun server — entry point at root
 ```
 
@@ -70,7 +70,7 @@ packages/server-remote-standalone/       # Node/Bun server — entry point at ro
 - Each deployable is its own package with config at the root. A self-hoster sees `server-remote-standalone/`, opens it, sees `package.json` with `bun run start`, `.env.example`, and a clear entry point.
 - `wrangler.toml` at package root — every wrangler command works without `--config`.
 - Dependencies are separated. CF adapter has `wrangler` and Workers types. Standalone has `postgres`. Neither pollutes the other.
-- CI/CD is clean — deploy the CF worker from `server-remote-cloudflare/`, deploy standalone from `server-remote-standalone/`.
+- CI/CD is clean — deploy the CF worker from `server-remote/`, deploy standalone from `server-remote-standalone/`.
 
 **Cons:**
 - Three packages instead of one. More `package.json` files, more workspace entries.
@@ -123,7 +123,7 @@ packages/server-remote/
 
 The primary user is a self-hoster who wants to deploy a remote hub. Their experience should be:
 
-1. Go to `packages/server-remote-standalone/` (or `server-remote-cloudflare/`)
+1. Go to `packages/server-remote-standalone/` (or `server-remote/`)
 2. See `package.json` with clear scripts (`dev`, `start`, `deploy`)
 3. Copy `.env.example` → `.env`, fill in credentials
 4. `bun run start` (standalone) or `bun run deploy` (Cloudflare)
@@ -153,7 +153,7 @@ packages/
 │       └── sync/
 │           └── index.ts                 # re-exports from sync-core
 │
-├── server-remote-cloudflare/            # @epicenter/server-remote-cloudflare
+├── server-remote/                       # @epicenter/server-remote
 │   ├── package.json                     # wrangler, @cloudflare/workers-types
 │   ├── wrangler.toml                    # at package root
 │   ├── .dev.vars                        # local dev secrets
@@ -184,7 +184,7 @@ packages/
 ### Package Dependencies
 
 ```
-server-remote-cloudflare
+server-remote
 ├── @epicenter/server-remote (workspace:*)
 ├── @epicenter/sync (workspace:*)
 ├── wrangler
@@ -206,7 +206,7 @@ server-remote (shared core)
 
 ### Package Scripts
 
-**server-remote-cloudflare:**
+**server-remote:**
 ```json
 {
   "scripts": {
@@ -236,10 +236,10 @@ Note how clean the scripts are. No `--config` paths. No `cd` into subdirectories
 
 ## Migration Steps
 
-### Phase 1: Create server-remote-cloudflare
+### Phase 1: Create server-remote
 
-1. Create `packages/server-remote-cloudflare/` with `package.json`
-2. Move `src/adapters/cloudflare/*` → `packages/server-remote-cloudflare/src/`
+1. Create `packages/server-remote/` with `package.json`
+2. Move `src/adapters/cloudflare/*` → `packages/server-remote/src/`
 3. Move `wrangler.toml` to package root, update `main` path
 4. Move `drizzle.config.ts`, `better-auth.config.ts`, `.dev.vars` to package root
 5. Update all imports from `../../app` → `@epicenter/server-remote`
@@ -290,12 +290,12 @@ After the split, each adapter package should have a clear README:
 - `betterAuth`: Full auth with database (production)
 ```
 
-**server-remote-cloudflare README:**
+**server-remote README:**
 ```
 # Epicenter Hub on Cloudflare Workers
 
 ## Deploy
-1. cd packages/server-remote-cloudflare
+1. cd packages/server-remote
 2. cp .dev.vars.example .dev.vars
 3. wrangler deploy
 4. wrangler secret put BETTER_AUTH_SECRET
@@ -307,4 +307,4 @@ After the split, each adapter package should have a clear README:
 
 2. **Should the standalone adapter package export its factory function?** Currently `index.ts` re-exports `createRemoteHub` from the standalone adapter. After the split, consumers would import from `@epicenter/server-remote-standalone`. If it's only used as a runnable entry point (not imported programmatically), it doesn't need to export anything — just have `start.ts`.
 
-3. **Naming: `server-remote-cloudflare` vs `server-cloudflare`?** The `server-remote-` prefix is verbose but makes the relationship clear. `server-cloudflare` is shorter but doesn't signal it's the remote hub (vs a hypothetical Cloudflare worker for something else). Decision: use `server-remote-cloudflare` for clarity.
+3. **Naming: `server-remote` vs `server-cloudflare`?** The `server-remote-` prefix is verbose but makes the relationship clear. `server-cloudflare` is shorter but doesn't signal it's the remote hub (vs a hypothetical Cloudflare worker for something else). Decision: use `server-remote` for clarity.

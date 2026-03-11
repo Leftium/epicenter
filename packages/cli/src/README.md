@@ -1,6 +1,6 @@
 # Epicenter CLI
 
-Manage workspace data and start the sync server.
+Manage workspace data from the command line.
 
 ## Command Structure
 
@@ -8,7 +8,6 @@ Manage workspace data and start the sync server.
 epicenter <table> <action>  # table operations (e.g., posts list)
 epicenter kv <action>       # key-value operations
 epicenter tables            # list table names
-epicenter serve             # start HTTP/WebSocket server
 ```
 
 ## Table Commands
@@ -58,14 +57,6 @@ epicenter users list --format json    # force JSON
 epicenter users list --format jsonl   # JSON lines
 ```
 
-## Server
-
-```bash
-epicenter serve              # default port 3913
-epicenter serve --port 8080  # custom port
-```
-
-Exposes REST API and WebSocket sync.
 
 ## Working Directory
 

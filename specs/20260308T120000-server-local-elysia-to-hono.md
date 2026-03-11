@@ -4,7 +4,7 @@
 
 ## Context
 
-The server-local package uses Elysia while server-remote-cloudflare uses Hono. This creates two different framework mental models, prevents middleware sharing, and means the auth validation layer (`hub-validator.ts`) is hand-rolled with code smells (redundant types, no cache eviction, manual response casting). Since server-local hasn't been deployed yet, this is the right time for a clean rewrite on Hono — same framework as the remote server.
+The server-local package uses Elysia while server-remote uses Hono. This creates two different framework mental models, prevents middleware sharing, and means the auth validation layer (`hub-validator.ts`) is hand-rolled with code smells (redundant types, no cache eviction, manual response casting). Since server-local hasn't been deployed yet, this is the right time for a clean rewrite on Hono — same framework as the remote server.
 
 ## Scope
 

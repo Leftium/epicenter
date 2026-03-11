@@ -31,7 +31,7 @@
 	import { type } from 'arktype';
 	import { createRawSnippet } from 'svelte';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { TrashIcon } from '$lib/components/icons';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';

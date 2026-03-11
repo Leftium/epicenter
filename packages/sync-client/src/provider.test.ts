@@ -140,7 +140,7 @@ describe('createSyncProvider', () => {
 			url: 'ws://test/sync',
 		});
 
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		provider.destroy();
 	});
@@ -155,7 +155,7 @@ describe('createSyncProvider', () => {
 		provider.connect();
 		await tick();
 
-		expect(provider.status).toBe('connecting');
+		expect(provider.status.phase).toBe('connecting');
 		expect(MockWebSocket.lastCreated).not.toBeNull();
 
 		provider.destroy();
@@ -168,12 +168,12 @@ describe('createSyncProvider', () => {
 			url: 'ws://test/sync',
 		});
 
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		provider.connect();
 		await tick();
 
-		expect(provider.status).toBe('connecting');
+		expect(provider.status.phase).toBe('connecting');
 
 		provider.destroy();
 	});
@@ -198,14 +198,14 @@ describe('createSyncProvider', () => {
 		ws.simulateOpen();
 		await tick();
 
-		expect(statuses).toContain('connecting');
+		expect(statuses.map((s) => s.phase)).toContain('connecting');
 
 		// Simulate server sending sync step 2 (handshake completion)
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status).toBe('connected');
-		expect(statuses).toContain('connected');
+		expect(provider.status.phase).toBe('connected');
+		expect(statuses.map((s) => s.phase)).toContain('connected');
 
 		provider.destroy();
 	});
@@ -225,11 +225,11 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status).toBe('connected');
+		expect(provider.status.phase).toBe('connected');
 
 		// disconnect() should synchronously set status
 		provider.disconnect();
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		// Clean up the close event
 		await tick();
@@ -245,14 +245,14 @@ describe('createSyncProvider', () => {
 
 		provider.connect();
 		await tick();
-		expect(provider.status).toBe('connecting');
+		expect(provider.status.phase).toBe('connecting');
 
 		provider.disconnect();
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		// Let any pending promises settle
 		await tick(50);
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		provider.destroy();
 	});
@@ -278,7 +278,8 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(statuses).toEqual(['connecting', 'connected']);
+		const phases = statuses.map((s) => s.phase);
+		expect(phases).toEqual(['connecting', 'connected']);
 
 		provider.destroy();
 	});
@@ -307,7 +308,8 @@ describe('createSyncProvider', () => {
 		await tick();
 
 		// Should only have 'connecting' — unsubscribed before connected
-		expect(statuses).toEqual(['connecting']);
+		const phases = statuses.map((s) => s.phase);
+		expect(phases).toEqual(['connecting']);
 
 		provider.destroy();
 	});
@@ -332,10 +334,10 @@ describe('createSyncProvider', () => {
 		ws.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status).toBe('connected');
+		expect(provider.status.phase).toBe('connected');
 
 		provider.destroy();
-		expect(provider.status).toBe('offline');
+		expect(provider.status.phase).toBe('offline');
 
 		// After destroy, status listener should not fire
 		// (listeners are cleared in destroy)
@@ -387,7 +389,7 @@ describe('createSyncProvider', () => {
 		ws1.simulateMessage(buildSyncStep2Message(doc));
 		await tick();
 
-		expect(provider.status).toBe('connected');
+		expect(provider.status.phase).toBe('connected');
 
 		// Simulate server closing the connection
 		ws1.simulateClose();
@@ -395,7 +397,8 @@ describe('createSyncProvider', () => {
 		await tick(700);
 
 		// Provider should attempt to reconnect
-		expect(statuses).toContain('connecting');
+		const phases = statuses.map((s) => s.phase);
+		expect(phases).toContain('connecting');
 
 		// A new WebSocket should be created for reconnection
 		const ws2 = getLastWebSocket();

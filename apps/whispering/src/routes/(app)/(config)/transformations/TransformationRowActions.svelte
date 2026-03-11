@@ -3,7 +3,7 @@
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { TrashIcon } from '$lib/components/icons';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
 	import EditTransformationModal from './EditTransformationModal.svelte';
 

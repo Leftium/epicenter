@@ -79,6 +79,37 @@ export type ConnectionState = {
 	) => void;
 };
 
+// ============================================================================
+// Broadcast Helpers
+// ============================================================================
+
+/** Silently ignore errors (e.g. dead WebSocket sends/closes). */
+export function swallow(fn: () => void): void {
+	try {
+		fn();
+	} catch {
+		/* connection already dead */
+	}
+}
+
+/**
+ * Broadcast a message to all connections except the sender.
+ *
+ * Each `send()` is wrapped individually so a dead socket can't abort
+ * the loop — remaining connections still receive the message.
+ */
+export function safeBroadcast(
+	connectionStates: Map<WebSocket, ConnectionState>,
+	sender: WebSocket,
+	msg: Uint8Array,
+): void {
+	for (const [ws] of connectionStates) {
+		if (ws !== sender && ws.readyState === WebSocket.OPEN) {
+			swallow(() => ws.send(msg));
+		}
+	}
+}
+
 /** Result of handling a single WS message. */
 export type WsMessageResult = {
 	/** Message to send back to the sender. */

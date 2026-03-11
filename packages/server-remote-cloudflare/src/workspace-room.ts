@@ -8,6 +8,8 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
+	safeBroadcast,
+	swallow,
 } from './sync-handlers';
 
 type WsAttachment = {
@@ -292,12 +294,7 @@ export class WorkspaceRoom extends DurableObject {
 		}
 
 		if (result.broadcast) {
-			const msg = result.broadcast;
-			for (const [otherWs] of this.connectionStates) {
-				if (otherWs !== ws && otherWs.readyState === WebSocket.OPEN) {
-					otherWs.send(msg);
-				}
-			}
+			safeBroadcast(this.connectionStates, ws, result.broadcast);
 		}
 
 		// Only persist when awareness client IDs actually changed
@@ -327,14 +324,5 @@ export class WorkspaceRoom extends DurableObject {
 
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
-	}
-}
-
-/** Silently ignore errors (e.g. dead WebSocket sends/closes). */
-function swallow(fn: () => void): void {
-	try {
-		fn();
-	} catch {
-		/* connection already dead */
 	}
 }

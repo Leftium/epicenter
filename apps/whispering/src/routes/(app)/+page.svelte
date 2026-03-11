@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
 		ACCEPT_AUDIO,
 		ACCEPT_VIDEO,
@@ -15,7 +16,6 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Err, tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import NavItems from '$lib/components/NavItems.svelte';
 	import {

@@ -25,10 +25,16 @@
  */
 
 import { SvelteSet } from 'svelte/reactivity';
+import { bookmarkState } from '$lib/state/bookmark-state.svelte';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-import { bookmarkState } from '$lib/state/bookmark-state.svelte';
-import type { Bookmark, SavedTab, Tab, Window, WindowCompositeId } from '$lib/workspace';
+import type {
+	Bookmark,
+	SavedTab,
+	Tab,
+	Window,
+	WindowCompositeId,
+} from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -49,7 +55,11 @@ export type FlatItem =
 
 function createUnifiedViewState() {
 	/** Which top-level sections are expanded. All expanded by default. */
-	const expandedSections = new SvelteSet<SectionId>(['open-tabs', 'saved', 'bookmarks']);
+	const expandedSections = new SvelteSet<SectionId>([
+		'open-tabs',
+		'saved',
+		'bookmarks',
+	]);
 
 	/**
 	 * Which windows are expanded within the open tabs section.

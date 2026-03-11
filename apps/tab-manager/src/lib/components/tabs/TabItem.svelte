@@ -8,13 +8,13 @@
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
-	import Volume2Icon from '@lucide/svelte/icons/volume-2';
 	import StarIcon from '@lucide/svelte/icons/star';
+	import Volume2Icon from '@lucide/svelte/icons/volume-2';
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import XIcon from '@lucide/svelte/icons/x';
+	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
-	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
 	import { getDomain } from '$lib/utils/format';
 	import type { Tab } from '$lib/workspace';
 	import TabFavicon from './TabFavicon.svelte';

@@ -43,7 +43,6 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/config": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@sveltejs/adapter-static": "catalog:",
         "@sveltejs/kit": "catalog:",
@@ -105,7 +104,6 @@
       "version": "0.0.1",
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250803.0",
-        "@epicenter/config": "workspace:*",
         "wrangler": "catalog:",
       },
     },
@@ -234,7 +232,6 @@
         "yjs": "catalog:",
       },
       "devDependencies": {
-        "@epicenter/config": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@sveltejs/adapter-static": "catalog:",
@@ -297,10 +294,6 @@
         "@types/yargs": "catalog:",
         "typescript": "catalog:",
       },
-    },
-    "packages/config": {
-      "name": "@epicenter/config",
-      "version": "0.0.1",
     },
     "packages/constants": {
       "name": "@epicenter/constants",
@@ -419,7 +412,6 @@
       },
       "devDependencies": {
         "@emoji-mart/data": "^1.2.1",
-        "@epicenter/config": "workspace:*",
         "@internationalized/date": "^3.10.0",
         "@types/node": "catalog:",
         "jsrepo": "catalog:",
@@ -719,8 +711,6 @@
     "@epicenter/app": ["@epicenter/app@workspace:apps/epicenter"],
 
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
-
-    "@epicenter/config": ["@epicenter/config@workspace:packages/config"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 

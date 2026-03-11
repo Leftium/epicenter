@@ -34,7 +34,6 @@
 	},
 	"devDependencies": {
 		"@emoji-mart/data": "^1.2.1",
-		"@epicenter/config": "workspace:*",
 		"@internationalized/date": "^3.10.0",
 		"@types/node": "catalog:",
 		"jsrepo": "catalog:",

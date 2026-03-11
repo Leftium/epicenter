@@ -10,7 +10,6 @@
 		"tail": "wrangler tail"
 	},
 	"devDependencies": {
-		"@epicenter/config": "workspace:*",
 		"@cloudflare/workers-types": "^4.20250803.0",
 		"wrangler": "catalog:"
 	}

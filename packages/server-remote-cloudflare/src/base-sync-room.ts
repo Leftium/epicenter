@@ -422,12 +422,11 @@ export class BaseSyncRoom extends DurableObject {
 			new WebSocketRequestResponsePair('ping', 'pong'),
 		);
 
-		const updateLog = createUpdateLog(ctx.storage);
-
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: config.gc });
 			const awareness = new Awareness(this.doc);
 
+			const updateLog = createUpdateLog(ctx.storage);
 			updateLog.init(this.doc);
 
 			this.hub = createConnectionHub({

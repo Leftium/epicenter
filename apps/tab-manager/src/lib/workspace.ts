@@ -88,6 +88,17 @@ export const SavedTabId = type('string').pipe(
 );
 
 /**
+ * Branded bookmark ID — nanoid generated when a URL is bookmarked.
+ *
+ * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
+ * bookmarked URL does NOT delete the record.
+ */
+export type BookmarkId = string & Brand<'BookmarkId'>;
+export const BookmarkId = type('string').pipe(
+	(s): BookmarkId => s as BookmarkId,
+);
+
+/**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
  *
  * Used as the primary key for conversations and as a foreign key in chat messages.
@@ -414,6 +425,27 @@ const savedTabsTable = defineTable(
 export type SavedTab = InferTableRow<typeof savedTabsTable>;
 
 /**
+ * Bookmarks — permanent, non-consumable URL references.
+ *
+ * Unlike saved tabs (which are deleted on restore), bookmarks persist
+ * indefinitely. Opening a bookmark creates a new browser tab but does NOT
+ * delete the record. Synced across devices via Y.Doc CRDT.
+ */
+const bookmarksTable = defineTable(
+	type({
+		id: BookmarkId, // nanoid, generated on bookmark
+		url: 'string', // The bookmarked URL
+		title: 'string', // Title at time of bookmark
+		'favIconUrl?': 'string | undefined', // Favicon URL (nullable)
+		'description?': 'string | undefined', // Optional user note
+		sourceDeviceId: DeviceId, // Device that created the bookmark
+		createdAt: 'number', // Timestamp (ms since epoch)
+		_v: '1',
+	}),
+);
+export type Bookmark = InferTableRow<typeof bookmarksTable>;
+
+/**
  * AI conversations — metadata for each chat thread.
  *
  * Each conversation has its own message history (linked via
@@ -552,6 +584,7 @@ export const workspaceClient = createWorkspace(
 			windows: windowsTable,
 			tabGroups: tabGroupsTable,
 			savedTabs: savedTabsTable,
+			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
 			chatMessages: chatMessagesTable,
 			commands: commandsTable,

@@ -3,16 +3,18 @@
 	import * as Item from '@epicenter/ui/item';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { cn } from '@epicenter/ui/utils';
-	import BookmarkIcon from '@lucide/svelte/icons/bookmark';
+	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PinOffIcon from '@lucide/svelte/icons/pin-off';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import Volume2Icon from '@lucide/svelte/icons/volume-2';
+	import StarIcon from '@lucide/svelte/icons/star';
 	import VolumeXIcon from '@lucide/svelte/icons/volume-x';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
+	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
 	import { getDomain } from '$lib/utils/format';
 	import type { Tab } from '$lib/workspace';
 	import TabFavicon from './TabFavicon.svelte';
@@ -149,7 +151,19 @@
 						savedTabState.actions.save(tab);
 					}}
 				>
-					<BookmarkIcon />
+					<ArchiveIcon />
+				</Button>
+
+				<Button
+					variant="ghost"
+					size="icon-xs"
+					tooltip="Bookmark"
+					onclick={(e: MouseEvent) => {
+						e.stopPropagation();
+						bookmarkState.actions.add(tab);
+					}}
+				>
+					<StarIcon />
 				</Button>
 
 				<Button

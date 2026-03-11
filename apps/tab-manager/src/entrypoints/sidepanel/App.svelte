@@ -1,23 +1,40 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import * as Tabs from '@epicenter/ui/tabs';
+	import { Input } from '@epicenter/ui/input';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import SearchIcon from '@lucide/svelte/icons/search';
+	import TerminalIcon from '@lucide/svelte/icons/terminal';
+	import ZapIcon from '@lucide/svelte/icons/zap';
+	import XIcon from '@lucide/svelte/icons/x';
 	import AuthGate from '$lib/components/AuthGate.svelte';
-	import AiChat from '$lib/components/chat/AiChat.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
-	import FlatTabList from '$lib/components/tabs/FlatTabList.svelte';
-	import SavedTabList from '$lib/components/tabs/SavedTabList.svelte';
+	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
-	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
+	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 
-	const totalTabs = $derived(
-		browserState.windows.reduce(
-			(sum, w) => sum + browserState.tabsByWindow(w.id).length,
-			0,
-		),
-	);
+	let searchInputRef = $state<HTMLInputElement | null>(null);
+	let commandPaletteOpen = $state(false);
+	let aiDrawerOpen = $state(false);
+	function handleSearchKeydown(e: KeyboardEvent) {
+		// "/" in empty input opens command palette
+		if (e.key === '/' && unifiedViewState.searchQuery === '') {
+			e.preventDefault();
+			commandPaletteOpen = true;
+		}
+		// "@" in empty input opens AI drawer (Phase 4)
+		if (e.key === '@' && unifiedViewState.searchQuery === '') {
+			e.preventDefault();
+			aiDrawerOpen = true;
+		}
+		// Escape clears search
+		if (e.key === 'Escape') {
+			unifiedViewState.searchQuery = '';
+			searchInputRef?.blur();
+		}
+	}
 </script>
 
 <AuthGate>
@@ -25,51 +42,67 @@
 		<main
 			class="h-full w-full overflow-hidden flex flex-col bg-background text-foreground"
 		>
-			<Tabs.Root value="windows" class="flex flex-col h-full">
-				<header
-					class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 pt-3 pb-0"
-				>
-					<div class="flex items-center justify-between px-1">
-						<h1 class="text-lg font-semibold">Tab Manager</h1>
-						<SyncStatusIndicator />
+			<header
+				class="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 px-3 py-2"
+			>
+				<div class="flex items-center gap-2">
+					<div class="relative flex-1">
+						<SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							bind:ref={searchInputRef}
+							type="search"
+							placeholder="Search tabs..."
+							bind:value={unifiedViewState.searchQuery}
+							onkeydown={handleSearchKeydown}
+							class="h-8 pl-8 pr-8 text-sm"
+						/>
+						{#if unifiedViewState.searchQuery}
+							<button
+								type="button"
+								class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+								onclick={() => {
+									unifiedViewState.searchQuery = '';
+									searchInputRef?.focus();
+								}}
+							>
+								<XIcon class="size-3.5" />
+							</button>
+						{/if}
 					</div>
-					<Tabs.List class="mt-2 w-full">
-						<Tabs.Trigger value="windows" class="flex-1 gap-1.5">
-							Tabs
-							<Badge variant="outline" class="ml-0.5">{totalTabs}</Badge>
-						</Tabs.Trigger>
-						<Tabs.Trigger value="saved" class="flex-1 gap-1.5">
-							Saved
-							{#if savedTabState.tabs.length}
-								<Badge variant="outline" class="ml-0.5">
-									{savedTabState.tabs.length}
-								</Badge>
-							{/if}
-						</Tabs.Trigger>
-						<Tabs.Trigger value="ai" class="flex-1 gap-1.5">
-							<SparklesIcon class="size-3.5" />
-							AI
-						</Tabs.Trigger>
-					</Tabs.List>
-				</header>
-				<!-- Gate on browser state seed so child components can read data synchronously -->
-				{#await browserState.whenReady}
-					<div class="flex-1 flex items-center justify-center">
-						<p class="text-sm text-muted-foreground">Loading tabs…</p>
-					</div>
-				{:then _}
-					<Tabs.Content value="windows" class="flex-1 min-h-0 mt-0">
-						<FlatTabList />
-					</Tabs.Content>
-					<Tabs.Content value="saved" class="flex-1 min-h-0 mt-0">
-						<SavedTabList />
-					</Tabs.Content>
-				{/await}
-				<Tabs.Content value="ai" class="flex-1 min-h-0 mt-0">
-					<AiChat />
-				</Tabs.Content>
-			</Tabs.Root>
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						tooltip="Commands"
+						onclick={() => {
+							commandPaletteOpen = true;
+						}}
+					>
+						<TerminalIcon />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon-xs"
+						tooltip="AI Chat"
+						onclick={() => {
+							aiDrawerOpen = true;
+						}}
+					>
+						<ZapIcon />
+					</Button>
+					<SyncStatusIndicator />
+				</div>
+			</header>
+			<!-- Gate on browser state seed so child components can read data synchronously -->
+			{#await browserState.whenReady}
+				<div class="flex-1 flex items-center justify-center">
+					<p class="text-sm text-muted-foreground">Loading tabs…</p>
+				</div>
+			{:then _}
+				<div class="flex-1 min-h-0"><UnifiedTabList /></div>
+			{/await}
 		</main>
 	</Tooltip.Provider>
 </AuthGate>
 <ConfirmationDialog />
+<CommandPalette bind:open={commandPaletteOpen} />
+<AiDrawer bind:open={aiDrawerOpen} />

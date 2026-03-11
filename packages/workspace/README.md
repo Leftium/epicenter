@@ -882,7 +882,7 @@ deserialize: ({ frontmatter, body, filename, table }) => {
 
 ### Sync Extension
 
-The sync extension enables real-time Y.Doc synchronization using the y-websocket protocol with `@epicenter/sync` as the underlying provider and `@epicenter/server-local` as the server. This is the recommended sync solution for Epicenter.
+The sync extension enables real-time Y.Doc synchronization using the y-websocket protocol with `@epicenter/sync` as the underlying provider. This is the recommended sync solution for Epicenter.
 
 **Setup:**
 
@@ -901,18 +901,7 @@ const client = createClient(definition.id)
 
 The `{id}` placeholder is replaced with the workspace ID automatically.
 
-**Server-side sync endpoint:**
-
-The Epicenter server (`@epicenter/server-local`) includes a sync endpoint at `/rooms/{workspaceId}`:
-
-```typescript
-import { createSidecar } from '@epicenter/server-local';
-
-const server = createServer(blogClient, { port: 3913 });
-server.start();
-
-// Clients connect to: ws://localhost:3913/rooms/blog
-````
+The `{id}` placeholder is replaced with the workspace ID automatically. Point the URL at any y-websocket compatible server (e.g., `server-remote-cloudflare`).
 
 **How it works:**
 
@@ -930,7 +919,7 @@ server.start();
 - Two auth modes: open (no auth) and authenticated (dynamic token refresh)
 - No native modules: Pure JS, works with Bun
 
-See `@epicenter/sync` for the client-side provider API and `@epicenter/server-local` for the server-side sync plugin.
+See `@epicenter/sync` for the client-side provider API.
 
 ### Multi-Device Sync Architecture
 

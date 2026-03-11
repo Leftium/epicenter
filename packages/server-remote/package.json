@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/server-remote-cloudflare",
+	"name": "@epicenter/server-remote",
 	"version": "0.0.1",
 	"type": "module",
 	"main": "./src/app.ts",

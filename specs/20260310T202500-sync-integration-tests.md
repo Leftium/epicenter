@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add integration tests for `sync-handlers.ts` in `packages/server-remote-cloudflare` to verify that both workspace and document sync endpoints correctly handle the Yjs sync protocol — handshake, incremental updates, awareness, and broadcast.
+Add integration tests for `sync-handlers.ts` in `packages/server-remote` to verify that both workspace and document sync endpoints correctly handle the Yjs sync protocol — handshake, incremental updates, awareness, and broadcast.
 
 ## Context
 
@@ -18,7 +18,7 @@ The Cloudflare `WebSocket` interface needed by sync-handlers: `.send()`, `.ready
 
 ## Todo
 
-- [x] Create `sync-handlers.test.ts` in `packages/server-remote-cloudflare/src/`
+- [x] Create `sync-handlers.test.ts` in `packages/server-remote/src/`
 - [x] Test `handleWsOpen` — returns SyncStep1 + awareness states
 - [x] Test `handleWsMessage` — SYNC messages (step1, step2, update)
 - [x] Test `handleWsMessage` — AWARENESS messages (apply + broadcast)
@@ -39,7 +39,7 @@ The Cloudflare `WebSocket` interface needed by sync-handlers: `.send()`, `.ready
 
 ### Changes made
 
-1. **`packages/server-remote-cloudflare/src/sync-handlers.test.ts`** (new) — 22 tests across 7 describe blocks:
+1. **`packages/server-remote/src/sync-handlers.test.ts`** (new) — 22 tests across 7 describe blocks:
    - `handleWsOpen` (5 tests): initial messages, awareness inclusion, handler registration, echo prevention
    - `handleWsMessage — SYNC` (3 tests): SyncStep1→Step2 response, Step2 apply, Update apply
    - `handleWsMessage — AWARENESS` (2 tests): broadcast + flag, state applied to shared instance
@@ -49,7 +49,7 @@ The Cloudflare `WebSocket` interface needed by sync-handlers: `.send()`, `.ready
    - `multi-client broadcast` (2 tests): update forwarding A→B, awareness broadcast
    - `full handshake convergence` (2 tests): one-way server→client sync, bidirectional merge
 
-2. **`packages/server-remote-cloudflare/package.json`** — added `"test": "bun test"` script
+2. **`packages/server-remote/package.json`** — added `"test": "bun test"` script
 
 ### Decisions
 

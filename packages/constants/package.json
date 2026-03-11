@@ -11,6 +11,7 @@
 	},
 	"exports": {
 		"./apps": "./src/apps.ts",
+		"./ports": "./src/ports.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts"
 	},

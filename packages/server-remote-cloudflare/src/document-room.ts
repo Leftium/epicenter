@@ -12,6 +12,8 @@ import { BaseSyncRoom } from './base-sync-room';
  * WebSocket disconnects, but only if the document changed since the last save.
  */
 export class DocumentRoom extends BaseSyncRoom {
+	private lastSavedSv: Uint8Array | null = null;
+
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env, { gc: false });
 
@@ -23,17 +25,14 @@ export class DocumentRoom extends BaseSyncRoom {
 				created_at TEXT NOT NULL DEFAULT (datetime('now'))
 			)
 		`);
+	}
 
-		let lastSavedSv: Uint8Array | null = null;
-		this.initHub({
-			onAllDisconnected: () => {
-				const currentSv = Y.encodeStateVector(this.doc);
-				if (!lastSavedSv || !stateVectorsEqual(currentSv, lastSavedSv)) {
-					lastSavedSv = currentSv;
-					this.saveSnapshot('Auto-save');
-				}
-			},
-		});
+	protected override onAllDisconnected(): void {
+		const currentSv = Y.encodeStateVector(this.doc);
+		if (!this.lastSavedSv || !stateVectorsEqual(currentSv, this.lastSavedSv)) {
+			this.lastSavedSv = currentSv;
+			this.saveSnapshot('Auto-save');
+		}
 	}
 
 	// --- Snapshot RPCs ---

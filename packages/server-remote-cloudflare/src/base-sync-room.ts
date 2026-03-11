@@ -9,7 +9,6 @@
  *
  * ## Module structure
  *
- * - {@link createConnectionHub} — WebSocket connection map + dispatch + broadcast
  * - {@link BaseSyncRoom} — DO base class wiring persistence + connections together
  */
 
@@ -58,7 +57,8 @@ type SyncRoomConfig = {
  * and connection management. Subclasses customize via {@link SyncRoomConfig}:
  *
  * - `gc` — Y.Doc garbage collection via {@link SyncRoomConfig}
- * - {@link BaseSyncRoom.initHub} — create connection hub with optional disconnect callback
+ * - {@link BaseSyncRoom.onAllDisconnected} — override to run cleanup when the
+ *   last WebSocket client leaves
  *
  * ## Worker → DO interface
  *
@@ -121,15 +121,10 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	protected doc!: Y.Doc;
 
-	/**
-	 * WebSocket connection hub managing upgrade, dispatch, and lifecycle.
-	 *
-	 * Set inside {@link initHub}, which each subclass must call after `super()`.
-	 * Safe because the Cloudflare runtime won't deliver requests until the
-	 * constructor (including the subclass portion) has fully returned.
-	 */
-	private hub!: ConnectionHub;
 	private awareness!: Awareness;
+
+	/** Active WebSocket connections and their per-connection sync state. */
+	private states = new Map<WebSocket, ConnectionState>();
 
 	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig) {
 		super(ctx, env);
@@ -163,35 +158,21 @@ export class BaseSyncRoom extends DurableObject {
 			this.doc.on('updateV2', (update: Uint8Array) => {
 				ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
 			});
-		});
-	}
 
-	/**
-	 * Create and register the WebSocket connection hub.
-	 *
-	 * Must be called by each subclass constructor after `super()`. Pass
-	 * `onAllDisconnected` to run cleanup when the last WebSocket client leaves.
-	 *
-	 * Safe to call after `super()` because the constructor hasn't returned yet,
-	 * so the Cloudflare runtime won't deliver any requests until initialization
-	 * is complete.
-	 *
-	 * @example
-	 * ```typescript
-	 * constructor(ctx: DurableObjectState, env: Env) {
-	 *   super(ctx, env, { gc: false });
-	 *   this.initHub({ onAllDisconnected: () => this.saveSnapshot('Auto-save') });
-	 * }
-	 * ```
-	 */
-	protected initHub(options?: { onAllDisconnected?: () => void }) {
-		this.hub = createConnectionHub({
-			ctx: this.ctx,
-			doc: this.doc,
-			awareness: this.awareness,
-			onAllDisconnected: options?.onAllDisconnected,
+			// --- Restore connections that survived hibernation ---
+			// Iterates ctx.getWebSockets(), deserializes each attachment to recover
+			// controlled awareness client IDs, and re-registers sync handlers.
+			for (const ws of ctx.getWebSockets()) {
+				const attachment = ws.deserializeAttachment() as WsAttachment | null;
+				if (!attachment) continue;
+
+				const { state } = handleWsOpen(this.doc, this.awareness, ws);
+				for (const id of attachment.controlledClientIds) {
+					state.controlledClientIds.add(id);
+				}
+				this.states.set(ws, state);
+			}
 		});
-		this.hub.restoreHibernated();
 	}
 
 	// --- fetch: WebSocket upgrades only ---
@@ -203,9 +184,45 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	override async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade') === 'websocket') {
-			return this.hub.upgrade();
+			return this.upgrade();
 		}
 		return new Response('Method not allowed', { status: 405 });
+	}
+
+	/**
+	 * Accept a WebSocket upgrade via the Hibernation API.
+	 *
+	 * Creates a `WebSocketPair`, registers the server side with the Cloudflare
+	 * runtime for hibernation, runs the initial Yjs sync handshake (SyncStep1 +
+	 * current awareness states), and returns the 101 Switching Protocols response.
+	 *
+	 * Cancels any pending compaction alarm — a new client just connected, so
+	 * compacting now would be wasteful.
+	 */
+	private upgrade(): Response {
+		void this.ctx.storage.deleteAlarm();
+
+		const pair = new WebSocketPair();
+		const [client, server] = [pair[0], pair[1]];
+
+		this.ctx.acceptWebSocket(server);
+
+		const { initialMessages, state } = handleWsOpen(
+			this.doc,
+			this.awareness,
+			server,
+		);
+		this.states.set(server, state);
+
+		server.serializeAttachment({
+			controlledClientIds: [],
+		} satisfies WsAttachment);
+
+		for (const msg of initialMessages) {
+			server.send(msg);
+		}
+
+		return new Response(null, { status: 101, webSocket: client });
 	}
 
 	// --- RPC methods (called via stub.sync() / stub.getDoc()) ---
@@ -250,25 +267,129 @@ export class BaseSyncRoom extends DurableObject {
 
 	// --- WebSocket lifecycle ---
 
+	/**
+	 * Handle an incoming WebSocket message.
+	 *
+	 * Validates payload size against {@link MAX_PAYLOAD_BYTES}, converts the
+	 * raw message to a `Uint8Array`, then delegates to `handleWsMessage` from
+	 * `sync-handlers.ts` for protocol decoding. Processes the returned effects
+	 * in order:
+	 *
+	 * - `respond` — send data back to the sender only
+	 * - `broadcast` — fan out to all other connected peers
+	 * - `persistAttachment` — serialize connection metadata to survive hibernation
+	 */
 	override async webSocketMessage(
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
-		this.hub.dispatch(ws, message);
+		const state = this.states.get(ws);
+		if (!state) return;
+
+		const byteLength =
+			message instanceof ArrayBuffer ? message.byteLength : message.length;
+		if (byteLength > MAX_PAYLOAD_BYTES) {
+			ws.close(1009, 'Message too large');
+			return;
+		}
+
+		const data =
+			message instanceof ArrayBuffer
+				? new Uint8Array(message)
+				: new TextEncoder().encode(message);
+
+		const { data: effects, error } = handleWsMessage(data, state);
+		if (error) {
+			console.error(error.message);
+			return;
+		}
+
+		for (const effect of effects) {
+			switch (effect.type) {
+				case 'respond':
+					ws.send(effect.data);
+					break;
+				case 'broadcast':
+					for (const [peer] of this.states) {
+						if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+							try {
+								peer.send(effect.data);
+							} catch {
+								/* Socket may have died between readyState check and send.
+								   Safe to ignore — the close event will fire and trigger
+								   proper cleanup via webSocketClose(). */
+							}
+						}
+					}
+					break;
+				case 'persistAttachment':
+					ws.serializeAttachment({
+						controlledClientIds: [...state.controlledClientIds],
+					} satisfies WsAttachment);
+					break;
+			}
+		}
 	}
 
+	/**
+	 * Clean up a closed WebSocket connection.
+	 *
+	 * Unregisters Yjs doc update and awareness event handlers via
+	 * `handleWsClose`, removes the connection from the states map, and
+	 * attempts to close the underlying socket (no-op if already closed by
+	 * the remote end).
+	 *
+	 * When the last connection leaves, calls {@link onAllDisconnected} for
+	 * subclass cleanup (e.g. auto-saving snapshots in `DocumentRoom`) and
+	 * schedules a deferred compaction alarm.
+	 */
 	override async webSocketClose(
 		ws: WebSocket,
 		code: number,
 		reason: string,
 		_wasClean: boolean,
 	): Promise<void> {
-		this.hub.close(ws, code, reason);
+		const state = this.states.get(ws);
+		if (!state) return;
+
+		handleWsClose(state);
+		this.states.delete(ws);
+
+		try {
+			ws.close(code, reason);
+		} catch {
+			/* Already closed by the remote end. Cleanup above (handler
+			   deregistration, awareness removal) completed regardless. */
+		}
+
+		if (this.states.size === 0) {
+			this.onAllDisconnected();
+			void this.ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
+		}
 	}
 
+	/**
+	 * Handle a WebSocket error by closing with status 1011 (Internal Error).
+	 *
+	 * Delegates to {@link webSocketClose} so the same cleanup path
+	 * (handler deregistration, awareness removal, compaction scheduling)
+	 * runs regardless of whether the socket closed cleanly or errored.
+	 */
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
-		this.hub.error(ws);
+		await this.webSocketClose(ws, 1011, 'WebSocket error', false);
 	}
+
+	/**
+	 * Hook called when the last WebSocket client disconnects.
+	 *
+	 * Override in subclasses to perform cleanup when all clients leave.
+	 * For example, `DocumentRoom` overrides this to auto-save a snapshot
+	 * if the document changed since the last save.
+	 *
+	 * Called before the compaction alarm is scheduled. The base
+	 * implementation is a no-op.
+	 */
+	protected onAllDisconnected(): void {}
 
 	// --- Alarm: deferred compaction ---
 
@@ -285,7 +406,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/alarms/ | Durable Objects Alarms}
 	 */
 	override async alarm(): Promise<void> {
-		if (this.hub.size > 0) return;
+		if (this.states.size > 0) return;
 		compactUpdateLog(this.ctx, this.doc);
 	}
 }
@@ -352,172 +473,4 @@ function compactUpdateLog(ctx: DurableObjectState, doc: Y.Doc): void {
 	});
 
 	console.log(`[compaction] ${rowCount} rows → ${compacted.byteLength} bytes`);
-}
-
-// ============================================================================
-// createConnectionHub
-// ============================================================================
-
-/** WebSocket connection hub returned by {@link createConnectionHub}. */
-type ConnectionHub = ReturnType<typeof createConnectionHub>;
-
-/**
- * Create a WebSocket connection hub that manages the full lifecycle:
- * upgrade, dispatch, broadcast, close, error, and hibernation restoration.
- *
- * Owns the `Map<WebSocket, ConnectionState>` — the only shared mutable state
- * in the DO's WebSocket handling. Delegates protocol logic to `sync-handlers.ts`.
- */
-function createConnectionHub({
-	ctx,
-	doc,
-	awareness,
-	onAllDisconnected,
-}: {
-	ctx: DurableObjectState;
-	doc: Y.Doc;
-	awareness: Awareness;
-	onAllDisconnected?: () => void;
-}) {
-	const states = new Map<WebSocket, ConnectionState>();
-
-	return {
-		/** Number of active WebSocket connections. */
-		get size() {
-			return states.size;
-		},
-
-		/**
-		 * Restore connections that survived hibernation.
-		 *
-		 * Iterates `ctx.getWebSockets()`, deserializes each attachment to recover
-		 * controlled awareness client IDs, and re-registers sync handlers.
-		 * Must be called inside `blockConcurrencyWhile`.
-		 */
-		restoreHibernated() {
-			for (const ws of ctx.getWebSockets()) {
-				const attachment = ws.deserializeAttachment() as WsAttachment | null;
-				if (!attachment) continue;
-
-				const { state } = handleWsOpen(doc, awareness, ws);
-				for (const id of attachment.controlledClientIds) {
-					state.controlledClientIds.add(id);
-				}
-				states.set(ws, state);
-			}
-		},
-
-		/**
-		 * Handle a WebSocket upgrade request.
-		 *
-		 * Creates a WebSocketPair, accepts via the Hibernation API, registers
-		 * sync handlers, sends initial messages (SyncStep1 + awareness), and
-		 * returns the 101 response.
-		 */
-		upgrade(): Response {
-			void ctx.storage.deleteAlarm();
-
-			const pair = new WebSocketPair();
-			const [client, server] = [pair[0], pair[1]];
-
-			ctx.acceptWebSocket(server);
-
-			const { initialMessages, state } = handleWsOpen(doc, awareness, server);
-			states.set(server, state);
-
-			server.serializeAttachment({
-				controlledClientIds: [],
-			} satisfies WsAttachment);
-
-			for (const msg of initialMessages) {
-				server.send(msg);
-			}
-
-			return new Response(null, { status: 101, webSocket: client });
-		},
-
-		/**
-		 * Dispatch an incoming WebSocket message: validate size, decode via
-		 * sync-handlers, process effects (respond, broadcast, persist attachment).
-		 */
-		dispatch(ws: WebSocket, message: ArrayBuffer | string) {
-			const state = states.get(ws);
-			if (!state) return;
-
-			const byteLength =
-				message instanceof ArrayBuffer ? message.byteLength : message.length;
-			if (byteLength > MAX_PAYLOAD_BYTES) {
-				ws.close(1009, 'Message too large');
-				return;
-			}
-
-			const data =
-				message instanceof ArrayBuffer
-					? new Uint8Array(message)
-					: new TextEncoder().encode(message);
-
-			const { data: effects, error } = handleWsMessage(data, state);
-			if (error) {
-				console.error(error.message);
-				return;
-			}
-
-			for (const effect of effects) {
-				switch (effect.type) {
-					case 'respond':
-						ws.send(effect.data);
-						break;
-					case 'broadcast':
-						for (const [peer] of states) {
-							if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-								try {
-									peer.send(effect.data);
-								} catch {
-									/* Socket may have died between readyState check and send.
-									   Safe to ignore — the close event will fire and trigger
-									   proper cleanup via hub.close(). */
-								}
-							}
-						}
-						break;
-					case 'persistAttachment':
-						ws.serializeAttachment({
-							controlledClientIds: [...state.controlledClientIds],
-						} satisfies WsAttachment);
-						break;
-				}
-			}
-		},
-
-		/**
-		 * Clean up a closed WebSocket: unregister handlers, remove from map,
-		 * and fire `onAllDisconnected` if this was the last connection.
-		 */
-		close(ws: WebSocket, code: number, reason: string) {
-			const state = states.get(ws);
-			if (!state) return;
-
-			handleWsClose(state);
-			states.delete(ws);
-
-			try {
-				ws.close(code, reason);
-			} catch {
-				/* Already closed by the remote end. Cleanup above (handler
-				   deregistration, awareness removal) completed regardless. */
-			}
-
-			if (states.size === 0) {
-				onAllDisconnected?.();
-				void ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
-			}
-		},
-
-		/**
-		 * Handle a WebSocket error by closing with code 1011.
-		 */
-		error(ws: WebSocket) {
-			this.close(ws, 1011, 'WebSocket error');
-		},
-	};
 }

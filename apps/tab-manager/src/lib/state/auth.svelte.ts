@@ -15,6 +15,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import { untrack } from 'svelte';
 import { remoteServerUrl } from './settings.svelte';
 import { createStorageState } from './storage-state.svelte';
 
@@ -118,6 +119,29 @@ function createAuthState() {
 	async function clearState() {
 		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
 	}
+
+	// Listeners notified when an *external* context signs in (e.g. another sidepanel).
+	const externalSignInListeners = new Set<() => void>();
+
+	$effect.root(() => {
+		// Token cleared externally (e.g. sign-out in another extension context).
+		$effect(() => {
+			if (!authToken.current && phase.status === 'signed-in') {
+				void authUser.set(undefined);
+				phase = { status: 'signed-out' };
+			}
+		});
+
+		// Token + user set externally (e.g. sign-in in another extension context).
+		$effect(() => {
+			if (authToken.current && authUser.current && phase.status === 'signed-out') {
+				phase = { status: 'signed-in' };
+				untrack(() => {
+					for (const fn of externalSignInListeners) fn();
+				});
+			}
+		});
+	});
 
 	return {
 		get status() {
@@ -352,26 +376,26 @@ function createAuthState() {
 		},
 
 		/**
-		 * Watch for token being cleared externally (e.g. another extension context).
-		 * Call this inside a $effect.
+		 * Subscribe to external sign-in events (e.g. sign-in from another extension context).
+		 *
+		 * When the auth token and user appear while this context is signed-out,
+		 * the callback fires. Useful for triggering side effects like reconnecting
+		 * sync without coupling those concerns to the auth module.
+		 *
+		 * @returns Unsubscribe function. Call in `onMount` cleanup.
+		 *
+		 * @example
+		 * ```typescript
+		 * onMount(() => {
+		 *     return authState.onExternalSignIn(() => reconnectSync());
+		 * });
+		 * ```
 		 */
-		reactToTokenCleared() {
-			if (!authToken.current && phase.status === 'signed-in') {
-				void authUser.set(undefined);
-				phase = { status: 'signed-out' };
-			}
-		},
-		/**
-		 * Watch for token being set externally (e.g. sign-in in another extension context).
-		 * When a token and user appear while this context is signed-out, transition to signed-in.
-		 * Call this inside a $effect. Returns `true` if a transition occurred.
-		 */
-		reactToTokenSet() {
-			if (authToken.current && authUser.current && phase.status === 'signed-out') {
-				phase = { status: 'signed-in' };
-				return true;
-			}
-			return false;
+		onExternalSignIn(callback: () => void) {
+			externalSignInListeners.add(callback);
+			return () => {
+				externalSignInListeners.delete(callback);
+			};
 		},
 	};
 }

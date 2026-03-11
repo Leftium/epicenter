@@ -1,7 +1,7 @@
 # Auth State: Internalize Reactive Lifecycle with $effect.root
 
 **Date**: 2026-03-11
-**Status**: Draft
+**Status**: In Progress
 **Author**: AI-assisted
 
 ## Overview
@@ -178,9 +178,9 @@ This is a defensive measure. Current consumers don't need it, but it prevents a 
 
 ### Phase 1: Refactor auth state internals
 
-- [ ] **1.1** Add `$effect.root()` block inside `createAuthState()` with two internal effects (token cleared, token set)
-- [ ] **1.2** Add `externalSignInListeners` Set and `onExternalSignIn(callback)` method to the return object
-- [ ] **1.3** Remove `reactToTokenCleared()` and `reactToTokenSet()` from the return object
+- [x] **1.1** Add `$effect.root()` block inside `createAuthState()` with two internal effects (token cleared, token set)
+- [x] **1.2** Add `externalSignInListeners` Set and `onExternalSignIn(callback)` method to the return object
+- [x] **1.3** Remove `reactToTokenCleared()` and `reactToTokenSet()` from the return object
 
 ### Phase 2: Update consumer
 

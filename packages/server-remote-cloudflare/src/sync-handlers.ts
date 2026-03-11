@@ -241,7 +241,25 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 					return {};
 				}
 
+				case MESSAGE_TYPE.SYNC_STATUS: {
+					// Echo the raw message back unchanged — zero parsing cost.
+					// Client uses this for sync confirmation ("Saving…" → "Saved")
+					// and dead connection detection (2s probe + 3s timeout).
+					return { response: data };
+				}
+
+				case MESSAGE_TYPE.AUTH: {
+					// Auth is handled at the Worker boundary (Better Auth middleware).
+					// Receiving AUTH on an already-authenticated WS is unexpected —
+					// log for observability but don't close the connection.
+					console.warn(
+						'[sync] Unexpected AUTH message on authenticated WebSocket',
+					);
+					return {};
+				}
+
 				default:
+					console.warn(`[sync] Unknown WS message type: ${messageType}`);
 					return {};
 			}
 		},

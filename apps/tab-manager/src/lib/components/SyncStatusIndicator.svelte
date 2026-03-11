@@ -45,7 +45,7 @@
 		syncStatus.current === 'connected'
 			? 'Connected'
 			: syncStatus.current === 'connecting'
-				? 'Connecting\u2026'
+				? 'Connecting…'
 				: 'Offline',
 	);
 </script>

@@ -346,7 +346,7 @@ function createAiChatState() {
 					.map((p) => p.content ?? '')
 					.join('')
 					.trim();
-				return text.length > 60 ? `${text.slice(0, 60)}\u2026` : text;
+				return text.length > 60 ? `${text.slice(0, 60)}…` : text;
 			},
 
 			// ── Actions ──

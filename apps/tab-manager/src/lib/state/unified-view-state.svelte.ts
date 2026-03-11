@@ -1,0 +1,261 @@
+/**
+ * Reactive unified view state for the side panel.
+ *
+ * Manages section expansion (open tabs, saved for later, bookmarks) and
+ * derives a single flat item array from {@link browserState} and
+ * {@link savedTabState}. The flat array feeds a single VList that renders
+ * all sections in one scrollable view.
+ *
+ * Section expand/collapse works identically to how window expand/collapse
+ * already works in `FlatTabList.svelte`—a `SvelteSet` tracks expanded
+ * sections, and `$derived` flatItems includes or excludes child items.
+ *
+ * @example
+ * ```svelte
+ * <script>
+ *   import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
+ * </script>
+ *
+ * <VList data={unifiedViewState.flatItems}>
+ *   {#snippet children(item)}
+ *     {#if item.kind === 'section-header'}...{/if}
+ *   {/snippet}
+ * </VList>
+ * ```
+ */
+
+import { SvelteSet } from 'svelte/reactivity';
+import { browserState } from '$lib/state/browser-state.svelte';
+import { savedTabState } from '$lib/state/saved-tab-state.svelte';
+import { bookmarkState } from '$lib/state/bookmark-state.svelte';
+import type { Bookmark, SavedTab, Tab, Window, WindowCompositeId } from '$lib/workspace';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SectionId = 'open-tabs' | 'saved' | 'bookmarks';
+
+export type FlatItem =
+	| { kind: 'section-header'; section: SectionId; label: string; count: number }
+	| { kind: 'window-header'; window: Window }
+	| { kind: 'tab'; tab: Tab }
+	| { kind: 'saved-tab'; savedTab: SavedTab }
+	| { kind: 'bookmark'; bookmark: Bookmark };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// State Factory
+// ─────────────────────────────────────────────────────────────────────────────
+
+function createUnifiedViewState() {
+	/** Which top-level sections are expanded. All expanded by default. */
+	const expandedSections = new SvelteSet<SectionId>(['open-tabs', 'saved', 'bookmarks']);
+
+	/** Which windows are expanded within the open tabs section. */
+	const expandedWindows = new SvelteSet<WindowCompositeId>(
+		browserState.windows.filter((w) => w.focused).map((w) => w.id),
+	);
+
+	/** Current search query for filtering. Empty = no filter. */
+	let searchQuery = $state('');
+
+	/** Whether a search filter is currently active. */
+	const isFiltering = $derived(searchQuery.trim().length > 0);
+
+	/** Case-insensitive match against title and URL. */
+	function matchesFilter(
+		title: string | undefined,
+		url: string | undefined,
+	): boolean {
+		if (!isFiltering) return true;
+		const lower = searchQuery.toLowerCase();
+		const t = title?.toLowerCase() ?? '';
+		const u = url?.toLowerCase() ?? '';
+		return t.includes(lower) || u.includes(lower);
+	}
+
+	/**
+	 * Flat item array derived from browserState + savedTabState.
+	 *
+	 * Respects section expansion, window expansion, and search filtering.
+	 * When filtering is active, all sections and windows auto-expand and
+	 * empty sections are hidden.
+	 */
+	const flatItems = $derived.by((): FlatItem[] => {
+		const items: FlatItem[] = [];
+
+		// ── Open Tabs section ──
+		const totalTabs = browserState.windows.reduce(
+			(sum, w) => sum + browserState.tabsByWindow(w.id).length,
+			0,
+		);
+
+		// When filtering, compute matching tab count
+		let openTabsMatchCount = totalTabs;
+		if (isFiltering) {
+			openTabsMatchCount = 0;
+			for (const window of browserState.windows) {
+				for (const tab of browserState.tabsByWindow(window.id)) {
+					if (matchesFilter(tab.title, tab.url)) openTabsMatchCount++;
+				}
+			}
+			// Hide section entirely if no matches
+			if (openTabsMatchCount === 0) {
+				// Skip open tabs section
+			} else {
+				items.push({
+					kind: 'section-header',
+					section: 'open-tabs',
+					label: 'Open Tabs',
+					count: openTabsMatchCount,
+				});
+				// Auto-expand when filtering
+				for (const window of browserState.windows) {
+					const windowTabs = browserState.tabsByWindow(window.id);
+					const matchingTabs = windowTabs.filter((tab) =>
+						matchesFilter(tab.title, tab.url),
+					);
+					if (matchingTabs.length === 0) continue;
+
+					items.push({ kind: 'window-header', window });
+					for (const tab of matchingTabs) {
+						items.push({ kind: 'tab', tab });
+					}
+				}
+			}
+		} else {
+			items.push({
+				kind: 'section-header',
+				section: 'open-tabs',
+				label: 'Open Tabs',
+				count: totalTabs,
+			});
+			if (expandedSections.has('open-tabs')) {
+				for (const window of browserState.windows) {
+					items.push({ kind: 'window-header', window });
+					if (expandedWindows.has(window.id)) {
+						for (const tab of browserState.tabsByWindow(window.id)) {
+							items.push({ kind: 'tab', tab });
+						}
+					}
+				}
+			}
+		}
+
+		// ── Saved for Later section ──
+		const savedTabs = savedTabState.tabs;
+
+		if (isFiltering) {
+			const matchingSaved = savedTabs.filter((tab) =>
+				matchesFilter(tab.title, tab.url),
+			);
+			if (matchingSaved.length > 0) {
+				items.push({
+					kind: 'section-header',
+					section: 'saved',
+					label: 'Saved for Later',
+					count: matchingSaved.length,
+				});
+				for (const savedTab of matchingSaved) {
+					items.push({ kind: 'saved-tab', savedTab });
+				}
+			}
+		} else {
+			items.push({
+				kind: 'section-header',
+				section: 'saved',
+				label: 'Saved for Later',
+				count: savedTabs.length,
+			});
+			if (expandedSections.has('saved')) {
+				for (const savedTab of savedTabs) {
+					items.push({ kind: 'saved-tab', savedTab });
+				}
+			}
+		}
+
+		// ── Bookmarks section ──
+		const allBookmarks = bookmarkState.bookmarks;
+
+		if (isFiltering) {
+			const matchingBookmarks = allBookmarks.filter((b) =>
+				matchesFilter(b.title, b.url),
+			);
+			if (matchingBookmarks.length > 0) {
+				items.push({
+					kind: 'section-header',
+					section: 'bookmarks',
+					label: 'Bookmarks',
+					count: matchingBookmarks.length,
+				});
+				for (const bookmark of matchingBookmarks) {
+					items.push({ kind: 'bookmark', bookmark });
+				}
+			}
+		} else {
+			items.push({
+				kind: 'section-header',
+				section: 'bookmarks',
+				label: 'Bookmarks',
+				count: allBookmarks.length,
+			});
+			if (expandedSections.has('bookmarks')) {
+				for (const bookmark of allBookmarks) {
+					items.push({ kind: 'bookmark', bookmark });
+				}
+			}
+		}
+
+		return items;
+	});
+
+	return {
+		/** The flat item array for VList rendering. */
+		get flatItems() {
+			return flatItems;
+		},
+
+		/** Whether a search filter is currently active. */
+		get isFiltering() {
+			return isFiltering;
+		},
+
+		/** Current search query. */
+		get searchQuery() {
+			return searchQuery;
+		},
+		set searchQuery(value: string) {
+			searchQuery = value;
+		},
+
+		/** Toggle a section's expanded state. */
+		toggleSection(section: SectionId) {
+			if (expandedSections.has(section)) {
+				expandedSections.delete(section);
+			} else {
+				expandedSections.add(section);
+			}
+		},
+
+		/** Check if a section is expanded. */
+		isSectionExpanded(section: SectionId): boolean {
+			return expandedSections.has(section);
+		},
+
+		/** Toggle a window's expanded state. */
+		toggleWindow(windowId: WindowCompositeId) {
+			if (expandedWindows.has(windowId)) {
+				expandedWindows.delete(windowId);
+			} else {
+				expandedWindows.add(windowId);
+			}
+		},
+
+		/** Check if a window is expanded. */
+		isWindowExpanded(windowId: WindowCompositeId): boolean {
+			return expandedWindows.has(windowId);
+		},
+	};
+}
+
+export const unifiedViewState = createUnifiedViewState();

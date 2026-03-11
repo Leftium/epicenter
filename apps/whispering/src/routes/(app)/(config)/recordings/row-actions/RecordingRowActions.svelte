@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { Spinner } from '@epicenter/ui/spinner';
@@ -11,10 +12,9 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import RepeatIcon from '@lucide/svelte/icons/repeat';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { viewTransition } from '$lib/utils/viewTransitions';

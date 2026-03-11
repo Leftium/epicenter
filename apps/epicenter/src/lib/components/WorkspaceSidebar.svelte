@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Collapsible from '@epicenter/ui/collapsible';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Popover from '@epicenter/ui/popover';
 	import * as Sidebar from '@epicenter/ui/sidebar';
@@ -17,7 +18,6 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { createSettingDialog } from '$lib/components/CreateSettingDialog.svelte';
 	import { createTableDialog } from '$lib/components/CreateTableDialog.svelte';
 	import { rpc } from '$lib/query';

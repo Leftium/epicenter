@@ -5,6 +5,7 @@
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Card } from '@epicenter/ui/card';
 	import { Checkbox } from '@epicenter/ui/checkbox';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
@@ -24,6 +25,7 @@
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import {
 		createTable as createSvelteTable,
@@ -45,9 +47,7 @@
 	import { format } from 'date-fns';
 	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';

@@ -42,11 +42,13 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 
 	const tooltip = $derived(
-		syncStatus.current === 'connected'
-			? 'Connected'
-			: syncStatus.current === 'connecting'
-				? 'Connecting…'
-				: 'Offline — click to reconnect',
+		(
+			{
+				connected: 'Connected',
+				connecting: 'Connecting…',
+				offline: 'Offline—click to reconnect',
+			} satisfies Record<SyncStatus, string>
+		)[syncStatus.current],
 	);
 </script>
 

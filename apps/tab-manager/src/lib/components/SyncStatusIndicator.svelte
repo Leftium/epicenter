@@ -71,12 +71,12 @@
 		title={tooltip}
 	>
 		<div class="relative">
-			{#if syncStatus.current.phase === 'connected'}
+			{#if !isSignedIn}
+				<CloudOff class="size-4 text-muted-foreground" />
+			{:else if syncStatus.current.phase === 'connected'}
 				<Cloud class="size-4" />
 			{:else if syncStatus.current.phase === 'connecting'}
 				<LoaderCircle class="size-4 animate-spin" />
-			{:else if !isSignedIn}
-				<CloudOff class="size-4 text-muted-foreground" />
 			{:else}
 				<CloudOff class="size-4 text-destructive" />
 			{/if}

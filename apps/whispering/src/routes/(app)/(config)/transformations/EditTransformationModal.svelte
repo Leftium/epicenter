@@ -11,7 +11,7 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
 	const updateTransformation = createMutation(

@@ -2,7 +2,7 @@ import { type Command, commandCallbacks } from '$lib/commands';
 import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
-import type { CommandId } from '$lib/services/isomorphic/local-shortcut-manager';
+import type { CommandId } from '$lib/services/local-shortcut-manager';
 
 /**
  * Local shortcuts - cross-platform, work in web and desktop.

@@ -6,7 +6,7 @@ import type {
 	Recording,
 	Transformation,
 	TransformationRun,
-} from '$lib/services/isomorphic/db';
+} from '$lib/services/db';
 import { settings } from '$lib/state/settings.svelte';
 
 /**

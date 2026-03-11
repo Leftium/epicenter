@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
-import { DbError } from '$lib/services/isomorphic/db';
+import { DbError } from '$lib/services/db';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';

@@ -11,7 +11,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import type { Recording } from '$lib/services/isomorphic/db';
+	import type { Recording } from '$lib/services/db';
 	import { recordingActions } from '$lib/utils/recording-actions';
 
 	const updateRecording = createMutation(

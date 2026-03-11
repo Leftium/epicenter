@@ -13,7 +13,7 @@
 	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import type { LocalModelConfig } from '$lib/services/isomorphic/transcription/local/types';
+	import type { LocalModelConfig } from '$lib/services/transcription/local/types';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**

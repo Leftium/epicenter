@@ -1,22 +1,22 @@
 <script module lang="ts">
 	import { nanoid } from 'nanoid/non-secure';
 	import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-	import { createFileSystemDb } from '$lib/services/isomorphic/db/file-system';
+	import { createFileSystemDb } from '$lib/services/db/file-system';
 	import type {
 		Recording,
 		RecordingStoredInIndexedDB,
 		SerializedAudio,
 		Transformation,
 		TransformationRun,
-	} from '$lib/services/isomorphic/db/models';
+	} from '$lib/services/db/models';
 	import {
 		generateDefaultTransformation,
 		generateDefaultTransformationStep,
-	} from '$lib/services/isomorphic/db/models';
-	import type { DbService } from '$lib/services/isomorphic/db/types';
-	import { DbError } from '$lib/services/isomorphic/db/types';
-	import { createDbServiceWeb } from '$lib/services/isomorphic/db/web';
-	import { DownloadServiceLive } from '$lib/services/isomorphic/download';
+	} from '$lib/services/db/models';
+	import type { DbService } from '$lib/services/db/types';
+	import { DbError } from '$lib/services/db/types';
+	import { createDbServiceWeb } from '$lib/services/db/web';
+	import { DownloadServiceLive } from '$lib/services/download';
 
 	/**
 	 * Result of a migration operation

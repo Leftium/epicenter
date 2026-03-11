@@ -50,7 +50,7 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/isomorphic/db';
+	import type { Recording } from '$lib/services/db';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';

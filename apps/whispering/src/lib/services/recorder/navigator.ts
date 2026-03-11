@@ -8,7 +8,7 @@ import {
 	cleanupRecordingStream,
 	enumerateDevices,
 	getRecordingStream,
-} from '$lib/services/isomorphic/device-stream';
+} from '$lib/services/device-stream';
 import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,

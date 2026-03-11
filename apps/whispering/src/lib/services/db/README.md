@@ -243,7 +243,7 @@ src/lib/services/db/
 ### Creating a recording
 
 ```typescript
-import { db } from '$lib/services/isomorphic/db';
+import { db } from '$lib/services/db';
 
 const { data: recording, error } = await db.recordings.create({
 	id: generateId(),

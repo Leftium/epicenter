@@ -4,7 +4,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { rpc } from '$lib/query';
-import type { DownloadService } from '$lib/services/isomorphic/download';
+import type { DownloadService } from '$lib/services/download';
 import type { Settings } from '$lib/settings';
 import type {
 	Recording,

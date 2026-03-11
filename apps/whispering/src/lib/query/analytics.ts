@@ -1,7 +1,7 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
-import type { Event } from '$lib/services/isomorphic/analytics/types';
+import type { Event } from '$lib/services/analytics/types';
 import { settings } from '$lib/state/settings.svelte';
 
 const analyticsKeys = {

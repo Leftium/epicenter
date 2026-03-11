@@ -8,7 +8,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 
 	const transformInput = createMutation(
 		() => rpc.transformer.transformInput.options,

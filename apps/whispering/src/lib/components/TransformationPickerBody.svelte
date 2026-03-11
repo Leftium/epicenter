@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 
 	const transformationsQuery = createQuery(
 		() => rpc.db.transformations.getAll.options,

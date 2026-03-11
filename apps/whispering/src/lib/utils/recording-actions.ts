@@ -1,5 +1,5 @@
 import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-import type { Recording } from '$lib/services/isomorphic/db';
+import type { Recording } from '$lib/services/db';
 import { rpc } from '$lib/query';
 
 /**

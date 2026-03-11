@@ -1,4 +1,4 @@
-import { DownloadServiceLive } from '$lib/services/isomorphic/download';
+import { DownloadServiceLive } from '$lib/services/download';
 import { createDbServiceDesktop } from './desktop';
 import { createDbServiceWeb } from './web';
 

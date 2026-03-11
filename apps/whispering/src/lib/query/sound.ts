@@ -2,7 +2,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { defineMutation } from '$lib/query/client';
 import { services } from '$lib/services';
-import type { SoundError } from '$lib/services/isomorphic/sound';
+import type { SoundError } from '$lib/services/sound';
 import { settings } from '$lib/state/settings.svelte';
 
 const soundKeys = {

@@ -7,7 +7,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
-	import { generateDefaultTransformation } from '$lib/services/isomorphic/db';
+	import { generateDefaultTransformation } from '$lib/services/db';
 
 	const createTransformation = createMutation(
 		() => rpc.db.transformations.create.options,

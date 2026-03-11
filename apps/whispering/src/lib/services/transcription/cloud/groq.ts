@@ -1,13 +1,13 @@
-import OpenAI from 'openai';
+import Groq from 'groq-sdk';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
-import { customFetch } from '$lib/services/isomorphic/http';
-import { getAudioExtension } from '$lib/services/isomorphic/transcription/utils';
+import { customFetch } from '$lib/services/http';
+import { getAudioExtension } from '$lib/services/transcription/utils';
 import type { Settings } from '$lib/settings';
 
 const MAX_FILE_SIZE_MB = 25 as const;
 
-export const OpenaiTranscriptionServiceLive = {
+export const GroqTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		options: {
@@ -21,20 +21,19 @@ export const OpenaiTranscriptionServiceLive = {
 	): Promise<Result<string, WhisperingError>> {
 		const isUsingCustomEndpoint = Boolean(options.baseURL);
 
-		// When no custom baseURL is provided, we're using the official OpenAI API.
+		// When no custom baseURL is provided, we're using the official Groq API.
 		// The official API has strict requirements:
 		// 1. An API key is always required
-		// 2. The key must follow OpenAI's format (starts with "sk-")
+		// 2. The key must follow Groq's format (starts with "gsk_" or "xai-")
 		//
-		// Custom endpoints (reverse proxies, OpenAI-compatible servers, etc.) may have
+		// Custom endpoints (reverse proxies, Groq-compatible servers, etc.) may have
 		// different authentication schemes or no auth at all, so we skip these checks.
 		if (!isUsingCustomEndpoint) {
-			// Check 1: Official OpenAI API requires an API key
+			// Check 1: Official Groq API requires an API key
 			if (!options.apiKey) {
 				return WhisperingErr({
 					title: '🔑 API Key Required',
-					description:
-						'Please enter your OpenAI API key in settings to use Whisper transcription.',
+					description: 'Please enter your Groq API key in settings.',
 					action: {
 						type: 'link',
 						label: 'Add API key',
@@ -43,12 +42,15 @@ export const OpenaiTranscriptionServiceLive = {
 				});
 			}
 
-			// Check 2: Official OpenAI API keys always start with "sk-"
-			if (!options.apiKey.startsWith('sk-')) {
+			// Check 2: Official Groq API keys start with "gsk_" or "xai-"
+			const hasValidGroqKeyFormat =
+				options.apiKey.startsWith('gsk_') || options.apiKey.startsWith('xai-');
+
+			if (!hasValidGroqKeyFormat) {
 				return WhisperingErr({
 					title: '🔑 Invalid API Key Format',
 					description:
-						'Your OpenAI API key should start with "sk-". Please check and update your API key.',
+						'Your Groq API key should start with "gsk_" or "xai-". Please check and update your API key.',
 					action: {
 						type: 'link',
 						label: 'Update API key',
@@ -58,7 +60,7 @@ export const OpenaiTranscriptionServiceLive = {
 			}
 		}
 
-		// Validate file size
+		// Check file size
 		const blobSizeInMb = audioBlob.size / (1024 * 1024);
 		if (blobSizeInMb > MAX_FILE_SIZE_MB) {
 			return WhisperingErr({
@@ -67,7 +69,7 @@ export const OpenaiTranscriptionServiceLive = {
 			});
 		}
 
-		// Create File object from blob
+		// Create file from blob
 		const { data: file, error: fileError } = trySync({
 			try: () =>
 				new File(
@@ -75,20 +77,21 @@ export const OpenaiTranscriptionServiceLive = {
 					`recording.${getAudioExtension(audioBlob.type)}`,
 					{ type: audioBlob.type },
 				),
-			catch: (_error) =>
+			catch: (error) =>
 				WhisperingErr({
-					title: '📁 File Creation Failed',
+					title: '📄 File Creation Failed',
 					description:
 						'Failed to create audio file for transcription. Please try again.',
+					action: { type: 'more-details', error },
 				}),
 		});
 
 		if (fileError) return Err(fileError);
 
-		// Call OpenAI API
-		const { data: transcription, error: openaiApiError } = await tryAsync({
+		// Make the transcription request
+		const { data: transcription, error: groqApiError } = await tryAsync({
 			try: () =>
-				new OpenAI({
+				new Groq({
 					apiKey: options.apiKey,
 					dangerouslyAllowBrowser: true,
 					fetch: customFetch,
@@ -97,17 +100,17 @@ export const OpenaiTranscriptionServiceLive = {
 					file,
 					model: options.modelName,
 					language:
-						options.outputLanguage !== 'auto'
-							? options.outputLanguage
-							: undefined,
-					prompt: options.prompt || undefined,
+						options.outputLanguage === 'auto'
+							? undefined
+							: options.outputLanguage,
+					prompt: options.prompt ? options.prompt : undefined,
 					temperature: options.temperature
 						? Number.parseFloat(options.temperature)
 						: undefined,
 				}),
 			catch: (error) => {
-				// Check if it's NOT an OpenAI API error
-				if (!(error instanceof OpenAI.APIError)) {
+				// Check if it's NOT a Groq API error
+				if (!(error instanceof Groq.APIError)) {
 					// This is an unexpected error type
 					throw error;
 				}
@@ -116,9 +119,9 @@ export const OpenaiTranscriptionServiceLive = {
 			},
 		});
 
-		if (openaiApiError) {
-			// Error handling follows https://www.npmjs.com/package/openai#error-handling
-			const { status, name, message, error } = openaiApiError;
+		if (groqApiError) {
+			// Error handling follows https://www.npmjs.com/package/groq-sdk#error-handling
+			const { status, name, message, error } = groqApiError;
 
 			// 400 - BadRequestError
 			if (status === 400) {
@@ -126,8 +129,8 @@ export const OpenaiTranscriptionServiceLive = {
 					title: '❌ Bad Request',
 					description:
 						message ??
-						`Invalid request to OpenAI API. ${error?.message ?? ''}`.trim(),
-					action: { type: 'more-details', error: openaiApiError },
+						`Invalid request to Groq API. ${error?.message ?? ''}`.trim(),
+					action: { type: 'more-details', error: groqApiError },
 				});
 			}
 
@@ -153,7 +156,7 @@ export const OpenaiTranscriptionServiceLive = {
 					description:
 						message ??
 						"Your account doesn't have access to this feature. This may be due to plan limitations or account restrictions.",
-					action: { type: 'more-details', error: openaiApiError },
+					action: { type: 'more-details', error: groqApiError },
 				});
 			}
 
@@ -164,29 +167,7 @@ export const OpenaiTranscriptionServiceLive = {
 					description:
 						message ??
 						'The requested resource was not found. This might indicate an issue with the model or API endpoint.',
-					action: { type: 'more-details', error: openaiApiError },
-				});
-			}
-
-			// 413 - Request Entity Too Large
-			if (status === 413) {
-				return WhisperingErr({
-					title: '📦 Audio File Too Large',
-					description:
-						message ??
-						'Your audio file exceeds the maximum size limit (25MB). Try splitting it into smaller segments or reducing the audio quality.',
-					action: { type: 'more-details', error: openaiApiError },
-				});
-			}
-
-			// 415 - Unsupported Media Type
-			if (status === 415) {
-				return WhisperingErr({
-					title: '🎵 Unsupported Format',
-					description:
-						message ??
-						"This audio format isn't supported. Please convert your file to MP3, WAV, M4A, or another common audio format.",
-					action: { type: 'more-details', error: openaiApiError },
+					action: { type: 'more-details', error: groqApiError },
 				});
 			}
 
@@ -197,7 +178,11 @@ export const OpenaiTranscriptionServiceLive = {
 					description:
 						message ??
 						'The request was valid but the server cannot process it. Please check your audio file and parameters.',
-					action: { type: 'more-details', error: openaiApiError },
+					action: {
+						type: 'link',
+						label: 'Update API key',
+						href: '/settings/transcription',
+					},
 				});
 			}
 
@@ -221,7 +206,7 @@ export const OpenaiTranscriptionServiceLive = {
 					description:
 						message ??
 						`The transcription service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-					action: { type: 'more-details', error: openaiApiError },
+					action: { type: 'more-details', error: groqApiError },
 				});
 			}
 
@@ -231,8 +216,8 @@ export const OpenaiTranscriptionServiceLive = {
 					title: '🌐 Connection Issue',
 					description:
 						message ??
-						'Unable to connect to the OpenAI service. This could be a network issue or temporary service interruption.',
-					action: { type: 'more-details', error: openaiApiError },
+						'Unable to connect to the Groq service. This could be a network issue or temporary service interruption.',
+					action: { type: 'more-details', error: groqApiError },
 				});
 			}
 
@@ -241,13 +226,12 @@ export const OpenaiTranscriptionServiceLive = {
 				title: '❌ Unexpected Error',
 				description:
 					message ?? 'An unexpected error occurred. Please try again.',
-				action: { type: 'more-details', error: openaiApiError },
+				action: { type: 'more-details', error: groqApiError },
 			});
 		}
 
-		// Success - return the transcription text
 		return Ok(transcription.text.trim());
 	},
 };
 
-export type OpenaiTranscriptionService = typeof OpenaiTranscriptionServiceLive;
+export type GroqTranscriptionService = typeof GroqTranscriptionServiceLive;

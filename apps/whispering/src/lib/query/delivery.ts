@@ -2,7 +2,7 @@ import { Ok } from 'wellcrafted/result';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
 import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
-import type { TextError } from '$lib/services/isomorphic/text';
+import type { TextError } from '$lib/services/text';
 import { settings } from '$lib/state/settings.svelte';
 import { rpc } from '..';
 

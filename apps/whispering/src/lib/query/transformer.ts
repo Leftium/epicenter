@@ -18,7 +18,7 @@ import type {
 	TransformationRunFailed,
 	TransformationRunRunning,
 	TransformationStep,
-} from '$lib/services/isomorphic/db';
+} from '$lib/services/db';
 import { settings } from '$lib/state/settings.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { dbKeys } from './db';

@@ -11,15 +11,6 @@
         "turbo": "catalog:",
       },
     },
-    "apps/demo-mcp": {
-      "name": "@epicenter/demo-mcp",
-      "version": "0.0.0",
-      "dependencies": {
-        "@epicenter/vault": "workspace:*",
-        "@libsql/client": "^0.11.0",
-        "drizzle-orm": "catalog:",
-      },
-    },
     "apps/epicenter": {
       "name": "@epicenter/app",
       "version": "0.0.1",
@@ -162,23 +153,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
-      },
-    },
-    "apps/vault-demo": {
-      "name": "vault-demo",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@epicenter/vault": "workspace:*",
-        "@sveltejs/adapter-auto": "catalog:",
-        "@sveltejs/kit": "catalog:",
-        "@sveltejs/vite-plugin-svelte": "catalog:",
-        "arktype": "catalog:",
-        "bun-types": "catalog:",
-        "drizzle-orm": "catalog:",
-        "svelte": "catalog:",
-        "svelte-check": "catalog:",
-        "typescript": "catalog:",
-        "vite": "catalog:",
       },
     },
     "apps/whispering": {
@@ -723,8 +697,6 @@
     "@epicenter/config": ["@epicenter/config@workspace:packages/config"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
-
-    "@epicenter/demo-mcp": ["@epicenter/demo-mcp@workspace:apps/demo-mcp"],
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 
@@ -3053,8 +3025,6 @@
     "valibot": ["valibot@1.2.0", "", { "peerDependencies": { "typescript": ">=5" }, "optionalPeers": ["typescript"] }, "sha512-mm1rxUsmOxzrwnX5arGS+U4T25RdvpPjPN4yR0u9pUBov9+zGVtO84tif1eY4r6zWxVxu3KzIyknJy3rxfRZZg=="],
 
     "vaul-svelte": ["vaul-svelte@1.0.0-next.7", "", { "dependencies": { "runed": "^0.23.2", "svelte-toolbelt": "^0.7.1" }, "peerDependencies": { "svelte": "^5.0.0" } }, "sha512-7zN7Bi3dFQixvvbUJY9uGDe7Ws/dGZeBQR2pXdXmzQiakjrxBvWo0QrmsX3HK+VH+SZOltz378cmgmCS9f9rSg=="],
-
-    "vault-demo": ["vault-demo@workspace:apps/vault-demo"],
 
     "vfile": ["vfile@6.0.3", "", { "dependencies": { "@types/unist": "^3.0.0", "vfile-message": "^4.0.0" } }, "sha512-KzIbH/9tXat2u30jf+smMwFCsno4wHVdNmzFyL+T/L3UGqqk6JKfVqOFOZEpZSHADH1k40ab6NUIXZq422ov3Q=="],
 

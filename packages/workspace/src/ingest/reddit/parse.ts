@@ -64,6 +64,27 @@ function csvNameToKey(filename: CsvFileName): CsvKey {
 }
 
 /**
+ * Find all ZIP entries matching a CSV file name.
+ * Matches both unsplit (`{name}.csv`) and batched (`{name}_{n}.csv`) variants,
+ * with or without a subdirectory prefix.
+ */
+function findMatchingEntries(
+	files: Record<string, Uint8Array>,
+	csvFile: CsvFileName,
+): Uint8Array[] {
+	const stem = csvFile.replace('.csv', '');
+	return Object.entries(files)
+		.filter(([name]) => {
+			const basename = name.includes('/') ? name.split('/').pop()! : name;
+			return (
+				basename === csvFile ||
+				(basename.startsWith(`${stem}_`) && basename.endsWith('.csv'))
+			);
+		})
+		.map(([, content]) => content);
+}
+
+/**
  * Parse a Reddit GDPR export ZIP file.
  *
  * @param input - ZIP file as Blob, File, or ArrayBuffer
@@ -84,20 +105,22 @@ export async function parseRedditZip(
 	for (const csvFile of TABLE_CSV_FILES) {
 		const key = csvNameToKey(csvFile);
 
-		// Find the file (may be in root or subdirectory)
-		const entry = Object.entries(files).find(
-			([name]) => name === csvFile || name.endsWith(`/${csvFile}`),
-		);
+		// Find all matching files (handles batched CSVs like post_votes_1.csv, post_votes_2.csv)
+		const entries = findMatchingEntries(files, csvFile);
 
-		if (!entry) {
+		if (entries.length === 0) {
 			result[key] = [];
 			continue;
 		}
 
-		const [, content] = entry;
-		const text = new TextDecoder().decode(content);
-		const rows = CSV.parse<Record<string, string>>(text);
-		result[key] = rows;
+		// Parse each file independently (each has its own header row) and concatenate rows
+		const allRows: Record<string, string>[] = [];
+		for (const content of entries) {
+			let text = new TextDecoder().decode(content);
+			text = text.replace(/^\uFEFF/, ''); // Strip UTF-8 BOM
+			allRows.push(...CSV.parse<Record<string, string>>(text));
+		}
+		result[key] = allRows;
 	}
 
 	return result;

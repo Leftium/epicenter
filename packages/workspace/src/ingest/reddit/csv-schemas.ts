@@ -115,7 +115,7 @@ export const pollVotes = type({
 		row.image_url ?? '',
 		row.is_prediction ?? '',
 		row.stake_amount ?? '',
-	].join(':'),
+	].join('|'),
 	...row,
 }));
 
@@ -208,7 +208,7 @@ export const gildedContent = type({
 		row.date ?? '',
 		row.award ?? '',
 		row.amount ?? '',
-	].join(':'),
+	].join('|'),
 	...row,
 }));
 
@@ -224,7 +224,7 @@ export const goldReceived = type({
 		row.date ?? '',
 		row.gold_received ?? '',
 		row.gilder_username ?? '',
-	].join(':'),
+	].join('|'),
 	...row,
 }));
 

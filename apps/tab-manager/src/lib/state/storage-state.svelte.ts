@@ -62,7 +62,6 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	const item = storage.defineItem<T>(key, { fallback });
 
 	let value = $state<T>(fallback);
-	let ready = $state(false);
 
 	/**
 	 * Number of writes we initiated that haven't resolved yet.
@@ -77,10 +76,10 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 	 */
 	let writesInFlight = 0;
 
-	// Async init — load persisted value, validate, then mark ready.
-	void item.getValue().then((persisted) => {
+	// Async init — load persisted value from chrome.storage.
+	// Exposes a promise so consumers can await readiness before reading.
+	const whenReady = item.getValue().then((persisted) => {
 		value = validate(persisted) ?? fallback;
-		ready = true;
 	});
 
 	// Sync external changes from other extension contexts, with validation.
@@ -128,9 +127,12 @@ export function createStorageState<TSchema extends StandardSchemaV1>(
 			await writeToStorage(newValue);
 		},
 
-		/** Whether the initial async load has completed. */
-		get ready(): boolean {
-			return ready;
-		},
+		/**
+		 * Resolves once the initial value has been loaded from chrome.storage.
+		 *
+		 * Await this before reading `.current` in async code paths where the
+		 * fallback value would cause incorrect behavior (e.g. auth token checks).
+		 */
+		whenReady,
 	};
 }

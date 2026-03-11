@@ -13,42 +13,41 @@ System architecture documentation for Epicenter's distributed sync system.
 
 ## Quick Reference
 
-> **Topology note:** Epicenter uses a three-tier architecture. The diagrams below show the local-mesh layer (Phase 3): browsers talking to their local sidecar (`createLocalServer`), and sidecars syncing peer-to-peer. The remote server (`createRemoteServer`) is a separate cloud tier that handles auth (Better Auth), AI streaming (`/ai/chat`), and an ephemeral Yjs relay. The SPA routes data sync to the local sidecar and AI requests to the remote server. Cross-device sync via the remote server (Phase 4) is not yet wired. See [Network Topology](./network-topology.md) for the full picture.
+> **Topology note:** Epicenter uses a two-tier architecture. Browsers connect to the remote server (`server-remote-cloudflare`) which handles auth (Better Auth), AI streaming (`/ai/chat`), and a Yjs relay. A local sidecar tier was previously planned but has been removed (see `specs/20260311T080000-remove-server-local.md`). See [Network Topology](./network-topology.md) for the full picture.
 
 ### Node Types
 
-| Type          | Runtime  | Can Accept Connections | Can Serve Blobs | Notes                                         |
-| ------------- | -------- | ---------------------- | --------------- | --------------------------------------------- |
-| Client (SPA)  | Browser  | No                     | No              | Data → local sidecar; AI → remote server      |
-| Local Sidecar | Bun/Node | Yes                    | Yes             | `createLocalServer`; workspace CRUD, actions  |
-| Remote Server | Bun/Node | Yes                    | No              | `createRemoteServer`; auth, AI proxy, Yjs relay |
+| Type          | Runtime  | Can Accept Connections | Can Serve Blobs | Notes                                           |
+| ------------- | -------- | ---------------------- | --------------- | ----------------------------------------------- |
+| Client (SPA)  | Browser  | No                     | No              | Data + AI → remote server                       |
+| Remote Server | Bun/Node | Yes                    | No              | `server-remote-cloudflare`; auth, AI proxy, Yjs relay |
 
 ### Connection Rules
 
 ```
-Client ──► Local Sidecar   ✅  (WebSocket, HTTP — data sync)
-Client ──► Hub             ✅  (HTTP — AI streaming, auth)
-Client ──► Client          ✅  (via YJS action dispatch, not direct connection)
-Server ──► Server          ✅  (WebSocket)
-Server ──► Client          ✅  (via YJS action dispatch, not direct connection)
+Client ──► Remote Server  ✅  (WebSocket, HTTP — data sync, AI, auth)
+Client ──► Client         ✅  (via YJS action dispatch, not direct connection)
+Server ──► Server         ✅  (WebSocket)
+Server ──► Client         ✅  (via YJS action dispatch, not direct connection)
 ```
 
 Note: Direct connections are only possible **to** servers. However, any device can invoke actions on any other device via [action dispatch](./action-dispatch.md) through the shared Y.Doc.
 
-### Typical Setup (Local Mesh — Phase 3)
+### Typical Setup
 
 ```
-         ┌─────────┐           ┌─────────┐
-         │LAPTOP A │           │LAPTOP B │
-         │ Browser │           │ Browser │
-         │    ▼    │           │    ▼    │
-         │ Sidecar ◄├───────────┼► Sidecar│     ┌────────┐
-         └────▲────┘           └────▲────┘     │ PHONE  │
-              │                     │          │Browser │
-              └─────────────────────┴──────────┴───┘
+         ┌─────────┐           ┌─────────┐          ┌────────┐
+         │LAPTOP A │           │LAPTOP B │          │ PHONE  │
+         │ Browser │           │ Browser │          │Browser │
+         └────┬────┘           └────┬────┘          └───┬────┘
+              │                     │                   │
+              └─────────────────────┼───────────────────┘
+                                    │
+                              ┌─────▼─────┐
+                              │  Remote   │
+                              │  Server   │
+                              └───────────┘
 ```
-
-AI requests from all browsers go to the remote server (cloud), not to the local sidecar.
 
 ## Related Documentation
 

@@ -45,14 +45,30 @@ export type SyncProviderConfig = {
 };
 
 /**
+ * Error context from the last failed connection attempt.
+ *
+ * Discriminated on `type`:
+ * - `auth` — Token acquisition failed (`getToken` threw)
+ * - `connection` — WebSocket failed to open or dropped
+ */
+export type SyncError =
+	| { type: 'auth'; error: unknown }
+	| { type: 'connection' };
+
+/**
  * Connection status of the sync provider.
  *
- * Three-state model:
+ * Discriminated on `phase`:
  * - `offline` — Not connected, not trying to connect
- * - `connecting` — Attempting to open a WebSocket or performing handshake
+ * - `connecting` — Attempting to open a WebSocket or performing handshake.
+ *   Carries `attempt` (0 = first, 1+ = reconnecting) and optional `lastError`
+ *   from the previous failed attempt.
  * - `connected` — Fully synced and communicating
  */
-export type SyncStatus = 'offline' | 'connecting' | 'connected';
+export type SyncStatus =
+	| { phase: 'offline' }
+	| { phase: 'connecting'; attempt: number; lastError?: SyncError }
+	| { phase: 'connected' };
 
 /**
  * A sync provider instance returned by {@link createSyncProvider}.
@@ -88,11 +104,14 @@ export type SyncProvider = {
 	 * @example
 	 * ```typescript
 	 * const unsub = provider.onStatusChange((status) => {
-	 *   console.log('Status:', status);
+	 *   switch (status.phase) {
+	 *     case 'connected': console.log('Online'); break;
+	 *     case 'connecting': console.log(`Attempt ${status.attempt}`); break;
+	 *     case 'offline': console.log('Offline'); break;
+	 *   }
 	 * });
 	 * // Later:
 	 * unsub();
-	 * ```
 	 */
 	onStatusChange(listener: (status: SyncStatus) => void): () => void;
 

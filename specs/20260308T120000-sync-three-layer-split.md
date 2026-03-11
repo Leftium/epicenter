@@ -9,8 +9,8 @@
 
 | Module | Concern | Consumers |
 |---|---|---|
-| `protocol.ts` | Pure encode/decode (wire protocol) | sync-client, server-local (indirectly), server-remote-cloudflare |
-| `handlers.ts` | Server-side WS connection lifecycle | server-local, server-remote-cloudflare |
+| `protocol.ts` | Pure encode/decode (wire protocol) | sync-client, server-local (indirectly), server-remote |
+| `handlers.ts` | Server-side WS connection lifecycle | server-local, server-remote |
 
 `@epicenter/sync-client` is already clean — client-side providers only.
 
@@ -36,7 +36,7 @@
 @epicenter/sync-client ──────→ @epicenter/sync
 @epicenter/sync-server ──────→ @epicenter/sync
 server-local ────────────────→ @epicenter/sync-server
-server-remote-cloudflare ────→ @epicenter/sync-server
+server-remote ────→ @epicenter/sync-server
 ```
 
 `sync-client` and `sync-server` both depend on `sync` (protocol). Neither depends on the other.
@@ -60,7 +60,7 @@ server-remote-cloudflare ────→ @epicenter/sync-server
 +} from '@epicenter/sync-server';
 ```
 
-### server-remote-cloudflare/src/document-room.ts
+### server-remote/src/document-room.ts
 
 ```diff
 -import {
@@ -85,7 +85,7 @@ server-remote-cloudflare ────→ @epicenter/sync-server
 +} from '@epicenter/sync-server';
 ```
 
-### server-remote-cloudflare/src/workspace-room.ts
+### server-remote/src/workspace-room.ts
 
 Same pattern as document-room.ts — split the import.
 
@@ -194,12 +194,12 @@ Same pattern as document-room.ts — split the import.
 1. **`packages/server-local/package.json`**: Change `@epicenter/sync` → `@epicenter/sync-server` in dependencies
    > `server-local/src/sync/ws-plugin.ts` only imports handler symbols (`ConnectionState`, `handleWsOpen/Message/Close`). It doesn't use any protocol symbols directly. So the dep on `@epicenter/sync` can be replaced entirely.
 
-2. **`packages/server-remote-cloudflare/package.json`**: Add `@epicenter/sync-server` to dependencies. Keep `@epicenter/sync` (CF rooms use `decodeSyncRequest` and `stateVectorsEqual` from protocol).
+2. **`packages/server-remote/package.json`**: Add `@epicenter/sync-server` to dependencies. Keep `@epicenter/sync` (CF rooms use `decodeSyncRequest` and `stateVectorsEqual` from protocol).
 
 3. Update import paths in:
    - `packages/server-local/src/sync/ws-plugin.ts` — change `'@epicenter/sync'` → `'@epicenter/sync-server'`
-   - `packages/server-remote-cloudflare/src/document-room.ts` — split import (protocol from `sync`, handlers from `sync-server`)
-   - `packages/server-remote-cloudflare/src/workspace-room.ts` — same split
+   - `packages/server-remote/src/document-room.ts` — split import (protocol from `sync`, handlers from `sync-server`)
+   - `packages/server-remote/src/workspace-room.ts` — same split
 
 4. Run `bun install` to wire up the new workspace package.
 

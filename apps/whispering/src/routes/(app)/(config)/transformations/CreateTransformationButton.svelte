@@ -4,7 +4,7 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';
 	import { generateDefaultTransformation } from '$lib/services/isomorphic/db';

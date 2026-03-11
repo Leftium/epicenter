@@ -292,10 +292,10 @@ Impossible. DO isolate is single-threaded. The `alarm()` handler is synchronous 
 
 ## References
 
-- `packages/server-remote-cloudflare/src/base-sync-room.ts` — primary file, all changes here
-- `packages/server-remote-cloudflare/src/document-room.ts` — subclass with `onAllDisconnected` auto-snapshot (`gc: false`)
-- `packages/server-remote-cloudflare/src/workspace-room.ts` — bare subclass (`gc: true`)
-- `packages/server-remote-cloudflare/src/sync-handlers.ts` — WebSocket protocol handlers, V2 encoding usage throughout
+- `packages/server-remote/src/base-sync-room.ts` — primary file, all changes here
+- `packages/server-remote/src/document-room.ts` — subclass with `onAllDisconnected` auto-snapshot (`gc: false`)
+- `packages/server-remote/src/workspace-room.ts` — bare subclass (`gc: true`)
+- `packages/server-remote/src/sync-handlers.ts` — WebSocket protocol handlers, V2 encoding usage throughout
 - [yjs#710](https://github.com/yjs/yjs/issues/710) — `mergeUpdatesV2` exponential performance edge case
 - [yjs#675](https://github.com/yjs/yjs/issues/675) — V1 vs V2 encoding size comparison
 - [Cloudflare Durable Objects Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/) — Alarm API docs

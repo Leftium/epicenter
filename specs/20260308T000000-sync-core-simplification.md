@@ -7,7 +7,7 @@
 
 `@epicenter/sync` has three modules:
 
-| Module | What it does | Used by server-local | Used by server-remote-cloudflare |
+| Module | What it does | Used by server-local | Used by server-remote |
 |---|---|---|---|
 | `protocol.ts` | Binary encode/decode for all wire message types | Indirectly (via handlers) | Yes (`decodeSyncRequest`, `stateVectorsEqual`) |
 | `handlers.ts` | Framework-agnostic WS lifecycle (`handleWsOpen/Message/Close`) | Yes | Yes |

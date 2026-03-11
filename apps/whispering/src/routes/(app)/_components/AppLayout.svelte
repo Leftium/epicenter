@@ -5,7 +5,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { commandCallbacks } from '$lib/commands';
-	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';

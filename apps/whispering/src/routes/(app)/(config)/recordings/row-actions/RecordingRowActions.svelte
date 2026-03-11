@@ -13,8 +13,8 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-	import { TrashIcon } from '$lib/components/icons';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { viewTransition } from '$lib/utils/viewTransitions';

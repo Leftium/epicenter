@@ -121,4 +121,4 @@
 
 ### Verification
 - LSP diagnostics: 0 errors on all 3 changed files
-- `tsc --noEmit`: passes (via `bun typecheck --filter=@epicenter/server-remote-cloudflare`)
+- `tsc --noEmit`: passes (via `bun typecheck --filter=@epicenter/server-remote`)

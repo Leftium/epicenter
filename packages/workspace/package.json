@@ -12,6 +12,7 @@
 		"./extensions/sync": "./src/extensions/sync.ts",
 		"./extensions/sync/web": "./src/extensions/sync/web.ts",
 		"./extensions/sync/desktop": "./src/extensions/sync/desktop.ts",
+		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts"
 	},
@@ -22,7 +23,7 @@
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
 		"@standard-schema/spec": "catalog:",
-		"@sindresorhus/slugify": "^3.0.0",
+		"@sindresorhus/slugify": "catalog:",
 		"@tursodatabase/database": "^0.3.2",
 		"@types/bun": "catalog:",
 		"@epicenter/sync-client": "workspace:*",
@@ -32,7 +33,7 @@
 		"diff": "^8.0.3",
 		"drizzle-orm": "catalog:",
 		"elysia": "^1.2.25",
-		"fflate": "^0.8.2",
+		"fflate": "catalog:",
 		"lib0": "catalog:",
 		"mime": "catalog:",
 		"nanoid": "catalog:",

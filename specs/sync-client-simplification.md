@@ -273,7 +273,7 @@ destroy() {
 - [x] **1.13** Update `SyncStatus` type: 3 states
 
 ### Wave 2: Server-side cleanup
-**Files:** `packages/server-remote-cloudflare/src/sync-handlers.ts`, `packages/sync-server/src/handlers.ts`, `packages/sync/src/protocol.ts`, `packages/sync/src/index.ts`
+**Files:** `packages/server-remote/src/sync-handlers.ts`, `packages/sync-server/src/handlers.ts`, `packages/sync/src/protocol.ts`, `packages/sync/src/index.ts`
 
 - [x] **2.1** Remove `MESSAGE_TYPE.SYNC_STATUS` case from CF `handleWsMessage`
 - [x] **2.2** Remove `MESSAGE_TYPE.SYNC_STATUS` case from generic `handleWsMessage`

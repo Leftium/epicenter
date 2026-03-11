@@ -1120,7 +1120,7 @@ Feel free to suggest and implement any features that improve usability—I'll do
 
 Whispering's local transcription capabilities are powered by amazing open-source projects:
 
-- **[transcribe-rs](https://github.com/cjpais/transcribe-rs)** by [CJ Pais](https://github.com/cjpais) - A unified Rust library providing abstraction over multiple speech-to-text engines (Whisper and Parakeet). This library enables Whispering to seamlessly support different transcription engines with a consistent API.
+- **[transcribe-rs](https://github.com/cjpais/transcribe-rs)** by [CJ Pais](https://github.com/cjpais) - A unified Rust library providing abstraction over multiple speech-to-text engines (Whisper, Parakeet, and Moonshine). This library enables Whispering to seamlessly support different transcription engines with a consistent API.
 
 - **[Handy](https://github.com/cjpais/handy)** by [CJ Pais](https://github.com/cjpais) - The original project that birthed `transcribe-rs`. Handy is a an awesome cross-platform desktop speech-to-text application, and I personally use it especially when developing Whispering locally.
 

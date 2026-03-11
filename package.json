@@ -56,7 +56,8 @@
 			"typebox": "^1.0.0",
 			"better-auth": "^1.5.3",
 			"@better-auth/oauth-provider": "^1.5.3",
-			"@better-auth/drizzle-adapter": "^1.5.3"
+			"@better-auth/drizzle-adapter": "^1.5.3",
+			"jsrepo": "^3.6.2"
 		}
 	},
 	"packageManager": "bun@1.3.3",
@@ -77,9 +78,6 @@
 		"@types/bun": "catalog:",
 		"@types/node": "catalog:",
 		"turbo": "catalog:",
-		"jsrepo": "^3.6.2"
-	},
-	"dependencies": {
-		"arktype": "^2.2.0"
+		"jsrepo": "catalog:"
 	}
 }

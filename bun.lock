@@ -4,14 +4,11 @@
   "workspaces": {
     "": {
       "name": "epicenter",
-      "dependencies": {
-        "arktype": "^2.2.0",
-      },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
-        "jsrepo": "^3.6.2",
+        "jsrepo": "catalog:",
         "turbo": "catalog:",
       },
     },
@@ -293,7 +290,7 @@
       "dependencies": {
         "@epicenter/server-local": "workspace:*",
         "@epicenter/workspace": "workspace:*",
-        "jsrepo": "^3.6.1",
+        "jsrepo": "catalog:",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
         "yargs": "catalog:",
@@ -468,7 +465,7 @@
         "@epicenter/config": "workspace:*",
         "@internationalized/date": "^3.10.0",
         "@types/node": "catalog:",
-        "jsrepo": "^3.0.8",
+        "jsrepo": "catalog:",
         "mode-watcher": "catalog:",
         "package-manager-detector": "^1.3.0",
         "runed": "^0.36.0",
@@ -567,6 +564,7 @@
     "drizzle-kit": "^0.31.7",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.10.7",
+    "jsrepo": "^3.6.2",
     "lib0": "^0.2.117",
     "mime": "^4.0.6",
     "mode-watcher": "^1.1.0",

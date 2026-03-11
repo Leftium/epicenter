@@ -9,7 +9,7 @@
  *
  * ## Module structure
  *
- * - {@link createUpdateLog} — SQLite append-only update log + cold-start compaction
+ * - {@link initUpdateLog} — SQLite append-only update log + cold-start compaction
  * - {@link createConnectionHub} — WebSocket connection map + dispatch + broadcast
  * - {@link BaseSyncRoom} — DO base class wiring the above together
  */
@@ -127,10 +127,9 @@ export class BaseSyncRoom extends DurableObject {
 	/**
 	 * WebSocket connection hub managing upgrade, dispatch, and lifecycle.
 	 *
-	 * Same initialization safety as {@link doc} — set inside
-	 * `blockConcurrencyWhile` with no `await` in the callback, so it's
-	 * guaranteed to be assigned before any method or subclass constructor
-	 * can access it.
+	 * Set inside {@link initHub}, which each subclass must call after `super()`.
+	 * Safe because the Cloudflare runtime won't deliver requests until the
+	 * constructor (including the subclass portion) has fully returned.
 	 */
 	private hub!: ConnectionHub;
 	private awareness!: Awareness;
@@ -146,8 +145,7 @@ export class BaseSyncRoom extends DurableObject {
 			this.doc = new Y.Doc({ gc: config.gc });
 			this.awareness = new Awareness(this.doc);
 
-			const updateLog = createUpdateLog(ctx.storage);
-			updateLog.init(this.doc);
+			initUpdateLog(ctx.storage, this.doc);
 		});
 	}
 
@@ -278,61 +276,53 @@ type WsAttachment = {
 };
 
 // ============================================================================
-// createUpdateLog
+// initUpdateLog
 // ============================================================================
 
 /**
- * Create an append-only Yjs update log backed by DO SQLite.
+ * Initialize an append-only Yjs update log backed by DO SQLite.
  *
- * Owns the full persistence lifecycle: DDL creation, cold-start loading with
- * opportunistic compaction, and live update persistence via `doc.on('updateV2')`.
+ * Creates the table, loads persisted updates into the doc with opportunistic
+ * cold-start compaction, and registers the live persist handler via
+ * `doc.on('updateV2')`.
+ *
+ * Must be called inside `blockConcurrencyWhile` to ensure the doc is ready
+ * before any `fetch()` or `webSocketMessage()` runs.
  *
  * @example
  * ```typescript
- * const updateLog = createUpdateLog(ctx.storage);
- * updateLog.init(doc);
+ * initUpdateLog(ctx.storage, doc);
  * ```
  */
-function createUpdateLog(storage: DurableObjectStorage) {
-	return {
-		/**
-		 * Initialize the update log: create the table, load persisted updates
-		 * into the doc, compact if beneficial, and register the live persist handler.
-		 *
-		 * Must be called inside `blockConcurrencyWhile` to ensure the doc is
-		 * ready before any `fetch()` or `webSocketMessage()` runs.
-		 */
-		init(doc: Y.Doc) {
-			storage.sql.exec(`
-				CREATE TABLE IF NOT EXISTS updates (
-					id INTEGER PRIMARY KEY AUTOINCREMENT,
-					data BLOB NOT NULL
-				)
-			`);
+function initUpdateLog(storage: DurableObjectStorage, doc: Y.Doc) {
+	storage.sql.exec(`
+		CREATE TABLE IF NOT EXISTS updates (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			data BLOB NOT NULL
+		)
+	`);
 
-			const rows = storage.sql
-				.exec('SELECT data FROM updates ORDER BY id')
-				.toArray();
+	const rows = storage.sql
+		.exec('SELECT data FROM updates ORDER BY id')
+		.toArray();
 
-			if (rows.length > 0) {
-				const merged = Y.mergeUpdatesV2(
-					rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-				);
-				Y.applyUpdateV2(doc, merged);
+	if (rows.length > 0) {
+		const merged = Y.mergeUpdatesV2(
+			rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
+		);
+		Y.applyUpdateV2(doc, merged);
 
-				if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
-					storage.transactionSync(() => {
-						storage.sql.exec('DELETE FROM updates');
-						storage.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
-					});
-				}
-			}
-
-			doc.on('updateV2', (update: Uint8Array) => {
-				storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+		if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
+			storage.transactionSync(() => {
+				storage.sql.exec('DELETE FROM updates');
+				storage.sql.exec('INSERT INTO updates (data) VALUES (?)', merged);
 			});
-		},
-	};
+		}
+	}
+
+	doc.on('updateV2', (update: Uint8Array) => {
+		storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
+	});
 }
 
 // ============================================================================

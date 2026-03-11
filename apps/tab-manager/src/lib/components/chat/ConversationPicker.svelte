@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Command from '@epicenter/ui/command';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import * as Popover from '@epicenter/ui/popover';
 	import { cn } from '@epicenter/ui/utils';
@@ -9,7 +10,6 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import type { ConversationHandle } from '$lib/state/chat-state.svelte';
 	import type { ConversationId } from '$lib/workspace';
 

@@ -31,7 +31,6 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
-		"@epicenter/config": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",

@@ -15,7 +15,12 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type { SyncError, SyncProvider, SyncProviderConfig, SyncStatus } from './types';
+import type {
+	SyncError,
+	SyncProvider,
+	SyncProviderConfig,
+	SyncStatus,
+} from './types';
 
 // ============================================================================
 // Constants

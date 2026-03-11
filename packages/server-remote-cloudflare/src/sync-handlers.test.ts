@@ -9,7 +9,7 @@
  * Key behaviors:
  * - computeInitialMessages returns SyncStep1 + awareness states
  * - registerConnection sets up doc/awareness event listeners
- * - applyMessage dispatches SYNC, AWARENESS, and QUERY_AWARENESS messages
+ * - applyMessage dispatches SYNC, AWARENESS, QUERY_AWARENESS, and SYNC_STATUS messages
  * - teardownConnection unregisters handlers and removes awareness states
  * - Multi-client broadcast: update from client A reaches client B via updateV2 handler
  * - Full handshake: SyncStep1 → SyncStep2 → documents converge
@@ -226,10 +226,9 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step1Message, room, connection });
 
 		expect(result.error).toBeNull();
-		const respond = result.data!.find((e) => e.type === 'respond');
-		expect(respond).toBeDefined();
+		expect(result.data!.response).toBeDefined();
 
-		const decoded = decodeSyncMessage(respond!.data);
+		const decoded = decodeSyncMessage(result.data!.response!);
 		expect(decoded.type).toBe('step2');
 	});
 
@@ -245,7 +244,7 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: step2Message, room, connection });
 
 		expect(result.error).toBeNull();
-		expect(result.data!).toHaveLength(0);
+		expect(result.data!.response).toBeUndefined();
 		expect(doc.getMap('data').get('client-key')).toBe('client-value');
 	});
 
@@ -264,7 +263,7 @@ describe('applyMessage — SYNC', () => {
 		const result = applyMessage({ data: updateMessage, room, connection });
 
 		expect(result.error).toBeNull();
-		expect(result.data!).toHaveLength(0);
+		expect(result.data!.response).toBeUndefined();
 		expect(doc.getMap('data').get('incremental')).toBe('update-value');
 	});
 });
@@ -293,10 +292,9 @@ describe('applyMessage — AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		const broadcast = result.data!.find((e) => e.type === 'broadcast');
-		expect(broadcast).toBeDefined();
-		expect(decodeMessageType(broadcast!.data)).toBe(MESSAGE_TYPE.AWARENESS);
-		expect(result.data!.some((e) => e.type === 'persistAttachment')).toBe(true);
+		expect(result.data!.broadcast).toBeDefined();
+		expect(decodeMessageType(result.data!.broadcast!)).toBe(MESSAGE_TYPE.AWARENESS);
+		expect(result.data!.persistAttachment).toBe(true);
 	});
 
 	test('awareness update is applied to the shared awareness instance', () => {
@@ -332,9 +330,8 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		const respond = result.data!.find((e) => e.type === 'respond');
-		expect(respond).toBeDefined();
-		expect(decodeMessageType(respond!.data)).toBe(MESSAGE_TYPE.AWARENESS);
+		expect(result.data!.response).toBeDefined();
+		expect(decodeMessageType(result.data!.response!)).toBe(MESSAGE_TYPE.AWARENESS);
 	});
 
 	test('returns empty result when no awareness states exist', () => {
@@ -354,7 +351,7 @@ describe('applyMessage — QUERY_AWARENESS', () => {
 		const result = applyMessage({ data: message, room, connection });
 
 		expect(result.error).toBeNull();
-		expect(result.data!).toHaveLength(0);
+		expect(result.data!.response).toBeUndefined();
 	});
 });
 
@@ -385,7 +382,7 @@ describe('applyMessage — error handling', () => {
 
 		// Unknown types return empty effects array with no error
 		expect(result.error).toBeNull();
-		expect(result.data!).toHaveLength(0);
+		expect(result.data!.response).toBeUndefined();
 	});
 });
 
@@ -502,9 +499,8 @@ describe('multi-client broadcast', () => {
 			connection: connection1,
 		});
 
-		// The broadcast effect should be returned for the DO to distribute
-		const broadcast = result.data!.find((e) => e.type === 'broadcast');
-		expect(broadcast).toBeDefined();
+		// The broadcast field should be set for the DO to distribute
+		expect(result.data!.broadcast).toBeDefined();
 
 		// The awareness state should be applied to the shared instance
 		expect(awareness.getStates().has(clientAwareness.clientID)).toBe(true);
@@ -541,11 +537,10 @@ describe('full handshake convergence', () => {
 		const result = applyMessage({ data: clientStep1, room, connection });
 
 		expect(result.error).toBeNull();
-		const respond = result.data!.find((e) => e.type === 'respond');
-		expect(respond).toBeDefined();
+		expect(result.data!.response).toBeDefined();
 
 		// Step 3: Client applies server's SyncStep2 response
-		const decodedStep2 = decodeSyncMessage(respond!.data);
+		const decodedStep2 = decodeSyncMessage(result.data!.response!);
 		expect(decodedStep2.type).toBe('step2');
 		if (decodedStep2.type === 'step2') {
 			Y.applyUpdateV2(clientDoc, decodedStep2.update, 'server');
@@ -579,11 +574,10 @@ describe('full handshake convergence', () => {
 		// Client sends SyncStep1 to server → gets SyncStep2 back
 		const clientStep1 = encodeSyncStep1({ doc: clientDoc });
 		const result1 = applyMessage({ data: clientStep1, room, connection });
-		const respond1 = result1.data!.find((e) => e.type === 'respond');
-		expect(respond1).toBeDefined();
+		expect(result1.data!.response).toBeDefined();
 
 		// Client applies server's diff
-		const serverDiff = decodeSyncMessage(respond1!.data);
+		const serverDiff = decodeSyncMessage(result1.data!.response!);
 		if (serverDiff.type === 'step2') {
 			Y.applyUpdateV2(clientDoc, serverDiff.update, 'server');
 		}

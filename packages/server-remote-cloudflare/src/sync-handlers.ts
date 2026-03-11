@@ -95,20 +95,21 @@ export type Connection = {
 };
 
 /**
- * Typed effect produced by {@link applyMessage}.
+ * Result of handling a single WebSocket message.
  *
- * The handler returns an array of effects. The DO processes each one in
- * order. This makes adding new message types impossible to silently miss —
- * every handler path must produce explicit effects.
+ * Mirrors the pattern from `sync-server/handlers.ts` — optional fields on a
+ * plain object instead of a discriminated union array. The caller checks each
+ * field with a simple guard clause (`if (result.response) ...`).
  *
- * - `respond`: Send data back to the sender only.
- * - `broadcast`: Fan out data to all OTHER connections (exclude sender).
- * - `persistAttachment`: Save connection metadata to survive hibernation.
+ * - `response`: Data to send back to the sender only.
+ * - `broadcast`: Data to fan out to all OTHER connections (exclude sender).
+ * - `persistAttachment`: Whether to save connection metadata to survive hibernation.
  */
-type SyncEffect =
-	| { type: 'respond'; data: Uint8Array }
-	| { type: 'broadcast'; data: Uint8Array }
-	| { type: 'persistAttachment' };
+type MessageResult = {
+	response?: Uint8Array;
+	broadcast?: Uint8Array;
+	persistAttachment?: boolean;
+};
 
 // ============================================================================
 // Handlers
@@ -207,7 +208,7 @@ export function registerConnection({
  *
  * Mutates `room.doc` and `room.awareness` via `applyUpdateV2` and
  * `applyAwarenessUpdate` respectively, then returns a `Result` — `Ok` with
- * a list of {@link SyncEffect}s the caller must process in order, or
+ * a {@link MessageResult} describing what the caller should do, or
  * `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed.
  *
  * The `trySync` wrapper catches lib0 decoder throws (buffer underflow on
@@ -229,7 +230,7 @@ export function applyMessage({
 	connection: Connection;
 }) {
 	return trySync({
-		try: (): SyncEffect[] => {
+		try: (): MessageResult => {
 			const decoder = decoding.createDecoder(data);
 			const messageType = decoding.readVarUint(decoder);
 
@@ -243,39 +244,36 @@ export function applyMessage({
 						doc: room.doc,
 						origin: connection.ws,
 					});
-					return response ? [{ type: 'respond', data: response }] : [];
+					return response ? { response } : {};
 				}
 
 				case MESSAGE_TYPE.AWARENESS: {
 					const update = decoding.readVarUint8Array(decoder);
 					applyAwarenessUpdate(room.awareness, update, connection.ws);
-					return [
-						{ type: 'broadcast', data: encodeAwareness({ update }) },
-						{ type: 'persistAttachment' },
-					];
+					return {
+						broadcast: encodeAwareness({ update }),
+						persistAttachment: true,
+					};
 				}
 
 				case MESSAGE_TYPE.QUERY_AWARENESS: {
 					const awarenessStates = room.awareness.getStates();
 					if (awarenessStates.size > 0) {
-						return [
-							{
-								type: 'respond',
-								data: encodeAwarenessStates({
-									awareness: room.awareness,
-									clients: Array.from(awarenessStates.keys()),
-								}),
-							},
-						];
+						return {
+							response: encodeAwarenessStates({
+								awareness: room.awareness,
+								clients: Array.from(awarenessStates.keys()),
+							}),
+						};
 					}
-					return [];
+					return {};
 				}
 
 				case MESSAGE_TYPE.SYNC_STATUS: {
 					// Echo the raw message back unchanged — zero parsing cost.
 					// Client uses this for sync confirmation ("Saving…" → "Saved")
 					// and dead connection detection (2s probe + 3s timeout).
-					return [{ type: 'respond', data }];
+					return { response: data };
 				}
 
 				case MESSAGE_TYPE.AUTH: {
@@ -285,12 +283,12 @@ export function applyMessage({
 					console.warn(
 						'[sync] Unexpected AUTH message on authenticated WebSocket',
 					);
-					return [];
+					return {};
 				}
 
 				default:
 					console.warn(`[sync] Unknown WS message type: ${messageType}`);
-					return [];
+					return {};
 			}
 		},
 		catch: (cause) => SyncHandlerError.MessageDecode({ cause }),

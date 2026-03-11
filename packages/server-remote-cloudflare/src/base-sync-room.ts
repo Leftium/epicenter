@@ -273,11 +273,10 @@ export class BaseSyncRoom extends DurableObject {
 	 * Handle an incoming WebSocket message.
 	 *
 	 * Validates payload size against {@link MAX_PAYLOAD_BYTES}, converts the
-	 * raw message to a `Uint8Array`, then delegates to `handleWsMessage` from
-	 * `sync-handlers.ts` for protocol decoding. Processes the returned effects
-	 * in order:
+	 * raw message to a `Uint8Array`, then delegates to `applyMessage` from
+	 * `sync-handlers.ts` for protocol decoding. Checks the returned fields:
 	 *
-	 * - `respond` — send data back to the sender only
+	 * - `response` — send data back to the sender only
 	 * - `broadcast` — fan out to all other connected peers
 	 * - `persistAttachment` — serialize connection metadata to survive hibernation
 	 */
@@ -300,7 +299,7 @@ export class BaseSyncRoom extends DurableObject {
 				? new Uint8Array(message)
 				: new TextEncoder().encode(message);
 
-		const { data: effects, error } = applyMessage({
+		const { data: result, error } = applyMessage({
 			data,
 			room: this.room,
 			connection,
@@ -310,30 +309,28 @@ export class BaseSyncRoom extends DurableObject {
 			return;
 		}
 
-		for (const effect of effects) {
-			switch (effect.type) {
-				case 'respond':
-					ws.send(effect.data);
-					break;
-				case 'broadcast':
-					for (const [peer] of this.connections) {
-						if (peer !== ws && peer.readyState === WebSocket.OPEN) {
-							try {
-								peer.send(effect.data);
-							} catch {
-								/* Socket may have died between readyState check and send.
-								   Safe to ignore — the close event will fire and trigger
-								   proper cleanup via webSocketClose(). */
-							}
-						}
+		if (result.response) {
+			ws.send(result.response);
+		}
+
+		if (result.broadcast) {
+			for (const [peer] of this.connections) {
+				if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+					try {
+						peer.send(result.broadcast);
+					} catch {
+						/* Socket may have died between readyState check and send.
+						   Safe to ignore — the close event will fire and trigger
+						   proper cleanup via webSocketClose(). */
 					}
-					break;
-				case 'persistAttachment':
-					ws.serializeAttachment({
-						controlledClientIds: [...connection.controlledClientIds],
-					} satisfies WsAttachment);
-					break;
+				}
 			}
+		}
+
+		if (result.persistAttachment) {
+			ws.serializeAttachment({
+				controlledClientIds: [...connection.controlledClientIds],
+			} satisfies WsAttachment);
 		}
 	}
 

@@ -1,7 +1,7 @@
 # Auth State: Internalize Reactive Lifecycle with $effect.root
 
 **Date**: 2026-03-11
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -194,7 +194,7 @@ This is a defensive measure. Current consumers don't need it, but it prevents a 
 - [ ] **3.3** Test: sign out → verify clearState and phase reset
 - [ ] **3.4** Test: open two sidepanels → sign in in one → verify the other transitions to signed-in and reconnects sync
 - [ ] **3.5** Test: open two sidepanels → sign out in one → verify the other transitions to signed-out
-- [ ] **3.6** LSP diagnostics clean on `auth.svelte.ts` and `App.svelte`
+- [x] **3.6** LSP diagnostics clean on `auth.svelte.ts` and `App.svelte`
 
 ## Edge Cases
 
@@ -217,11 +217,11 @@ No impact on the refactored code—`$derived` on `client` is unchanged.
 
 ## Success Criteria
 
-- [ ] `reactToTokenCleared()` and `reactToTokenSet()` removed from public API
-- [ ] No `$effect` block in `App.svelte` for auth lifecycle management
-- [ ] Cross-context sign-in/sign-out still works (token changes in one panel are reflected in another)
-- [ ] `reconnectSync()` still fires on external sign-in
-- [ ] LSP diagnostics pass on all changed files
+- [x] `reactToTokenCleared()` and `reactToTokenSet()` removed from public API
+- [x] No `$effect` block in `App.svelte` for auth lifecycle management
+- [ ] Cross-context sign-in/sign-out still works (token changes in one panel are reflected in another) *(requires manual testing)*
+- [ ] `reconnectSync()` still fires on external sign-in *(requires manual testing)*
+- [x] LSP diagnostics pass on all changed files
 
 ## References
 
@@ -230,3 +230,19 @@ No impact on the refactored code—`$derived` on `client` is unchanged.
 - `apps/tab-manager/src/entrypoints/sidepanel/App.svelte` — Sole consumer of reactToToken* methods
 - `apps/tab-manager/src/lib/workspace.ts` — `reconnectSync()` definition (line 870)
 - `docs/articles/your-spa-singleton-doesnt-need-effect-cleanup.md` — Prior art on singleton lifecycle
+
+## Review
+
+**Completed**: 2026-03-11
+
+### Summary
+
+Internalized auth state's reactive lifecycle by replacing the two public `reactToTokenCleared()`/`reactToTokenSet()` methods with `$effect.root()` effects inside `createAuthState()`. Added `onExternalSignIn(callback)` subscription method so consumers can react to cross-context sign-ins without understanding the auth state machine. App.svelte now uses a simple `onMount` subscription instead of a raw `$effect` block.
+
+### Deviations from Spec
+
+None—implementation matched the spec exactly.
+
+### Follow-up Work
+
+- Manual testing items 3.1–3.5 (sign-in/sign-out flows, cross-context sync) need human verification

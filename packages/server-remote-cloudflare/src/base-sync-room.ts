@@ -326,17 +326,10 @@ export function createAutoSaveTracker({
  */
 const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
-// ============================================================================
-// Types
-// ============================================================================
-
 /** Per-connection metadata persisted via `ws.serializeAttachment` to survive hibernation. */
 type WsAttachment = {
 	controlledClientIds: number[];
 };
-
-/** WebSocket connection hub returned by {@link createConnectionHub}. */
-type ConnectionHub = ReturnType<typeof createConnectionHub>;
 
 // ============================================================================
 // createUpdateLog
@@ -399,6 +392,9 @@ function createUpdateLog(storage: DurableObjectStorage) {
 // ============================================================================
 // createConnectionHub
 // ============================================================================
+
+/** WebSocket connection hub returned by {@link createConnectionHub}. */
+type ConnectionHub = ReturnType<typeof createConnectionHub>;
 
 /**
  * Create a WebSocket connection hub that manages the full lifecycle:

@@ -55,11 +55,15 @@ description: Git commit and pull request guidelines using conventional commits. 
 - No period at the end
 - Keep under 50-72 characters on first line
 
-### Breaking Changes
+### Breaking Changes & Version Bumps
 
-- Add `!` after type/scope, before colon: `feat(api)!: change endpoint structure`
-- Include `BREAKING CHANGE:` in the footer with details
-- These trigger MAJOR version bumps in semantic versioning
+Our monorepo uses a unified version scheme (`8.Y.Z`) where major version 8 is permanent:
+
+- **Patch** (default): Every merged PR increments `Z` (e.g., `8.0.1` → `8.0.2`)
+- **Minor**: Add `!` after type/scope: `feat(api)!: change endpoint structure` — increments `Y`, resets `Z`
+- **Major**: Manual only. Reserved for "if ever needed." Do not use `!` expecting a major bump.
+
+Include `BREAKING CHANGE:` in the commit footer with details when using `!`.
 
 ### Examples Following Your Style:
 
@@ -99,6 +103,35 @@ The first commit tells future developers WHY the code exists. The second makes t
 - Each commit should represent a single, atomic change
 - Write commits for future developers (including yourself)
 - If you need more than one line to describe what you did, consider splitting the commit
+
+### Changelog Entries in PRs
+
+PRs with `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description body. These entries are automatically aggregated into GitHub Releases by `auto.release.yml`.
+
+**Rules:**
+
+- One line per user-visible change
+- Written for end users, not developers — describe the benefit, not the implementation
+- Use imperative mood ("Add...", "Fix...", not "Added" or "Fixes")
+- Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the section entirely
+
+**Good entries:**
+
+```
+## Changelog
+- Add local workspace sync via Bun sidecar
+- Fix sync client sending unnecessary heartbeat probes
+```
+
+**Bad entries:**
+
+```
+## Changelog
+- refactor(services): flatten isomorphic/ to services root
+- Bump transcribe-rs 0.2.1 → 0.2.9
+```
+
+The first examples describe user-visible outcomes. The second examples are developer shorthand that means nothing to users.
 
 ## Pull Request Guidelines
 
@@ -402,6 +435,33 @@ The reader's eye should bounce between prose and visuals. Prose provides the "wh
 - Focus on the "why" and "what" of changes, not the "how it was created"
 - Include any breaking changes prominently
 - Link to relevant issues
+
+### Changelog Entries in PRs
+
+PRs with a `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases by `auto.release.yml`.
+
+Rules:
+
+- One line per user-visible change
+- Use imperative mood, written for end users (not developers)
+- Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the section entirely
+- Entries are grouped in releases: `feat:` → "New", `fix:` → "Fixed", other with changelog → "Improved"
+
+**Good entry:**
+
+```
+## Changelog
+- Add Bun sidecar for local workspace sync
+```
+
+**Bad entry (developer-facing, not user-facing):**
+
+```
+## Changelog
+- refactor(services): flatten isomorphic/ to services root
+```
+
+When no `## Changelog` section is present, the PR is still released (gets a version bump) but excluded from the release body.
 
 ### Scanning GitHub Issues Before Writing a PR Description
 

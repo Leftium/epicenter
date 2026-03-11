@@ -107,6 +107,24 @@ Currently, **Whispering** (`apps/whispering`) is the most mature application and
    Create a PR to merge your fork's branch into `EpicenterHQ/epicenter:main`:
    Go to [EpicenterHQ/epicenter](https://github.com/EpicenterHQ/epicenter) — GitHub usually shows a "Compare & pull request" banner for recent pushes.
 
+### Changelog Entries
+
+Every PR with a `feat:` or `fix:` prefix should include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases automatically.
+
+Write one line per user-visible change, in imperative mood, for end users—not developers. The person who wrote the code is always best positioned to describe what it does.
+
+**Good entries:**
+
+- Add Bun sidecar for local workspace sync
+- Fix audio clipping when switching transcription providers mid-session
+
+**Bad entries:**
+
+- refactor(services): flatten isomorphic/ to services root
+- Update deps
+
+Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the `## Changelog` section entirely. They still get released but won't appear in the changelog.
+
 <details>
 <summary>Tips for new contributors</summary>
 

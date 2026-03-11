@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import AuthGate from '$lib/components/AuthGate.svelte';
-	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import FlatTabList from '$lib/components/tabs/FlatTabList.svelte';

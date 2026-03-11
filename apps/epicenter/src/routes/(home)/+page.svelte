@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Item from '@epicenter/ui/item';
@@ -11,7 +12,6 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { createWorkspaceDialog } from '$lib/components/CreateWorkspaceDialog.svelte';
 	import { editWorkspaceDialog } from '$lib/components/EditWorkspaceDialog.svelte';
 	import { rpc } from '$lib/query';

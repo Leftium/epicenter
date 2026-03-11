@@ -19,7 +19,6 @@
 	},
 	"license": "AGPL-3.0",
 	"devDependencies": {
-		"@epicenter/config": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",

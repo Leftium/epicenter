@@ -1,6 +1,5 @@
 import * as Y from 'yjs';
-import { BaseSyncRoom } from './base-sync-room';
-import { createAutoSaveTracker } from './room-helpers';
+import { BaseSyncRoom, createAutoSaveTracker } from './base-sync-room';
 
 /**
  * Durable Object for content documents (`gc: false`).

@@ -361,6 +361,18 @@ function createAuthState() {
 				phase = { status: 'signed-out' };
 			}
 		},
+		/**
+		 * Watch for token being set externally (e.g. sign-in in another extension context).
+		 * When a token and user appear while this context is signed-out, transition to signed-in.
+		 * Call this inside a $effect. Returns `true` if a transition occurred.
+		 */
+		reactToTokenSet() {
+			if (authToken.current && authUser.current && phase.status === 'signed-out') {
+				phase = { status: 'signed-in' };
+				return true;
+			}
+			return false;
+		},
 	};
 }
 

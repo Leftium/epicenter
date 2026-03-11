@@ -49,6 +49,12 @@ export type Env = {
 export const BASE_AUTH_CONFIG = {
 	basePath: '/auth',
 	emailAndPassword: { enabled: true },
+	account: {
+		accountLinking: {
+			enabled: true,
+			trustedProviders: ['google', 'email-password'],
+		},
+	},
 } as const;
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */

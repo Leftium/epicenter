@@ -12,6 +12,7 @@
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import type { Recording } from '$lib/services/isomorphic/db';
+	import { recordingActions } from '$lib/utils/recording-actions';
 
 	const updateRecording = createMutation(
 		() => rpc.db.recordings.update.options,
@@ -189,7 +190,7 @@
 		<Modal.Footer>
 			<Button
 				onclick={() =>
-					rpc.recordingActions.deleteWithConfirmation(
+					recordingActions.deleteWithConfirmation(
 						$state.snapshot(recording),
 						{ onSuccess: () => { isDialogOpen = false; } },
 					)}

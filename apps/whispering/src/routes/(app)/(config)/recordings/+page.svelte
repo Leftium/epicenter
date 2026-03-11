@@ -52,6 +52,7 @@
 	import { rpc } from '$lib/query';
 	import type { Recording } from '$lib/services/isomorphic/db';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
 	import { RecordingRowActions } from './row-actions';
@@ -533,7 +534,7 @@
 						variant="outline"
 						size="icon"
 					onclick={() =>
-						rpc.recordingActions.deleteWithConfirmation(
+						recordingActions.deleteWithConfirmation(
 							selectedRecordingRows.map(({ original }) => original),
 						)}
 					>

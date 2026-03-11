@@ -1,7 +1,6 @@
 import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
 import type { Recording } from '$lib/services/isomorphic/db';
-import { rpc } from '..';
-import { notify } from './notify';
+import { rpc } from '$lib/query';
 
 /**
  * Recording management actions. These are UI-boundary functions that compose
@@ -54,14 +53,14 @@ export const recordingActions = {
 			onConfirm: async () => {
 				const { error } = await rpc.db.recordings.delete(arr);
 				if (error) {
-					notify.error({
+					rpc.notify.error({
 						title: `Failed to delete ${noun}!`,
 						description: `Your ${noun} could not be deleted.`,
 						action: { type: 'more-details', error },
 					});
 					throw error;
 				}
-				notify.success({
+				rpc.notify.success({
 					title: `Deleted ${noun}!`,
 					description: `Your ${noun} ${count === 1 ? 'has' : 'have'} been deleted.`,
 				});

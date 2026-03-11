@@ -4,7 +4,6 @@ import { db } from './db';
 import { delivery } from './delivery';
 import { download } from './download';
 import { notify } from './notify';
-import { recordingActions } from './recording-actions';
 import { recorder } from './recorder';
 import { localShortcuts } from './shortcuts';
 import { sound } from './sound';
@@ -29,5 +28,4 @@ export const rpc = {
 	transformer,
 	notify,
 	delivery,
-	recordingActions,
 };

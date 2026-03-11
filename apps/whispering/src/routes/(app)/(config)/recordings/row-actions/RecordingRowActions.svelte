@@ -16,6 +16,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
@@ -182,7 +183,7 @@
 
 		<Button
 			tooltip="Delete recording"
-			onclick={() => rpc.recordingActions.deleteWithConfirmation(recording)}
+			onclick={() => recordingActions.deleteWithConfirmation(recording)}
 			variant="ghost"
 			size="icon"
 		>

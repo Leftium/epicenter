@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -534,6 +533,7 @@
         "drizzle-kit": "catalog:",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",

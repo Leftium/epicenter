@@ -136,27 +136,14 @@ Validation shape
 
 ## Server-backed ingestion
 
-Migrations require DDL, so run vault operations server-side with a DB like Bun SQLite + Drizzle:
+Migrations require DDL, so run vault operations server-side with a DB like Bun SQLite + Drizzle.
 
-- For a reference implementation, see:
-  - Vault service singleton: [`apps/vault-demo/src/lib/server/vaultService.ts`](apps/vault-demo/src/lib/server/vaultService.ts
-  - Endpoints (SvelteKit +server.ts):
-    - Ingest: [`apps/vault-demo/src/routes/api/vault/ingest/+server.ts`](apps/vault-demo/src/routes/api/vault/ingest/+server.ts
-    - Import (multi-adapter): [`apps/vault-demo/src/routes/api/vault/import/+server.ts`](apps/vault-demo/src/routes/api/vault/import/+server.ts
-    - Export: [`apps/vault-demo/src/routes/api/vault/export/+server.ts`](apps/vault-demo/src/routes/api/vault/export/+server.ts
-    - Counts: [`apps/vault-demo/src/routes/api/vault/tables/+server.ts`](apps/vault-demo/src/routes/api/vault/tables/+server.ts
+A typical server setup involves:
+- A vault service singleton wrapping `createVault()` with a persistent DB
+- SvelteKit `+server.ts` endpoints (or equivalent) for ingest, import, export, and table counts
+- Each endpoint calls the corresponding vault method and returns the result
 
-## Demo app
-
-A minimal SvelteKit demo shows:
-
-- Import/export page calling `importData`/`exportData` via server endpoints:
-  - [`apps/vault-demo/src/routes/import-export/+page.svelte`](apps/vault-demo/src/routes/import-export/+page.svelte:1)
-- Reddit GDPR ingest + entity suggestions → user-curated Entity Index import
-  - [`apps/vault-demo/src/routes/reddit-upload/+page.svelte`](apps/vault-demo/src/routes/reddit-upload/+page.svelte:1)
-  - Heuristics for subreddits, users, domains:
-    - [`apps/vault-demo/src/lib/extract/redditEntities.ts`](apps/vault-demo/src/lib/extract/redditEntities.ts
-- Runtime cross-adapter UI (Dashboard, Entities, Notes) using `getQueryInterface()`
+> **Note:** The `apps/vault-demo` SvelteKit reference app was removed during monorepo cleanup. The vault's test suite in `src/` and the API docs above remain the best reference for integration patterns.
 
 ## Notes on the new multi-adapter import
 

@@ -901,7 +901,7 @@ const client = createClient(definition.id)
 
 The `{id}` placeholder is replaced with the workspace ID automatically.
 
-The `{id}` placeholder is replaced with the workspace ID automatically. Point the URL at any y-websocket compatible server (e.g., `server-remote-cloudflare`).
+The `{id}` placeholder is replaced with the workspace ID automatically. Point the URL at any y-websocket compatible server (e.g., `apps/api`).
 
 **How it works:**
 

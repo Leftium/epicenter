@@ -6,15 +6,15 @@
 	import { cn } from '@epicenter/ui/utils';
 	import AppWindowIcon from '@lucide/svelte/icons/app-window';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import StarIcon from '@lucide/svelte/icons/star';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { VList } from 'virtua/svelte';
-	import { browserState } from '$lib/state/browser-state.svelte';
 	import { bookmarkState } from '$lib/state/bookmark-state.svelte';
+	import { browserState } from '$lib/state/browser-state.svelte';
 	import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { getDomain, getRelativeTime } from '$lib/utils/format';
@@ -204,7 +204,9 @@
 							>
 								<span class="truncate">{getDomain(bookmark.url)}</span>
 								<span>•</span>
-								<span class="shrink-0">{getRelativeTime(bookmark.createdAt)}</span>
+								<span class="shrink-0"
+									>{getRelativeTime(bookmark.createdAt)}</span
+								>
 							</Item.Description>
 						</Item.Content>
 

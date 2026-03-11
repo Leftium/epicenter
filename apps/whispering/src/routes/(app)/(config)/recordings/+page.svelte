@@ -5,6 +5,7 @@
 	import * as ButtonGroup from '@epicenter/ui/button-group';
 	import { Card } from '@epicenter/ui/card';
 	import { Checkbox } from '@epicenter/ui/checkbox';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';

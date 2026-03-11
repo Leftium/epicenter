@@ -5,11 +5,11 @@
 	import * as Tooltip from '@epicenter/ui/tooltip';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import TerminalIcon from '@lucide/svelte/icons/terminal';
-	import ZapIcon from '@lucide/svelte/icons/zap';
 	import XIcon from '@lucide/svelte/icons/x';
+	import ZapIcon from '@lucide/svelte/icons/zap';
+	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import AuthGate from '$lib/components/AuthGate.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import AiDrawer from '$lib/components/AiDrawer.svelte';
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
@@ -47,7 +47,9 @@
 			>
 				<div class="flex items-center gap-2">
 					<div class="relative flex-1">
-						<SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+						<SearchIcon
+							class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+						/>
 						<Input
 							bind:ref={searchInputRef}
 							type="search"

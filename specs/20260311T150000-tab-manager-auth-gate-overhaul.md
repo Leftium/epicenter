@@ -1,7 +1,7 @@
 # Tab Manager Auth Gate Overhaul
 
 **Date**: 2026-03-11
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -391,3 +391,42 @@ User can sign in anytime via cloud icon popover.
 - Better Auth docs: [OAuth](https://www.better-auth.com/docs/concepts/oauth) — Social sign-in and idToken flow
 - Better Auth docs: [Google provider](https://www.better-auth.com/docs/authentication/google) — Google OAuth setup
 - Better Auth docs: [Error reference](https://www.better-auth.com/docs/reference/errors) — `LINKING_NOT_ALLOWED` error
+
+## Review
+
+**Completed**: 2026-03-11
+**Commits**: `ee1f67359` → `b29b52343` (4 commits)
+
+### Summary
+
+Removed the `AuthGate` wrapper that blocked the entire tab manager UI behind authentication. The app now renders immediately with all local features available. Authentication is opt-in via the cloud sync icon popover. Account linking was enabled server-side so Google and email/password accounts with the same email auto-link seamlessly.
+
+### Changes by Wave
+
+**Wave 1 — Foundation** (`ee1f67359`)
+- Created `AuthForm.svelte` — extracted the login/signup form UI from AuthGate into a reusable component
+- Added `account.accountLinking` to `BASE_AUTH_CONFIG` with `trustedProviders: ['google', 'email-password']`
+
+**Wave 2 — Gate Removal** (`1db31608e`)
+- Removed `<AuthGate>` wrapper from `App.svelte` — app renders unconditionally
+- Moved auth initialization (`onMount` + `$effect`) from AuthGate into App.svelte
+
+**Wave 3 — Auth Entry Point** (`cd78b77d8`)
+- Rewrote `SyncStatusIndicator.svelte` with a `Popover` that shows AuthForm (signed-out) or AccountPanel (signed-in)
+- AccountPanel displays user name/email, sync status, reconnect and sign-out buttons
+- Added "Sign in to sync across devices" tooltip and dot indicator when signed out
+- CloudOff icon uses muted color when unauthenticated (vs destructive when auth'd but disconnected)
+
+**Wave 4 — AI Chat Gate** (`b29b52343`)
+- Added auth check to `AiDrawer.svelte` — shows "Sign in to use AI chat" prompt when unauthenticated
+
+### Deviations from Spec
+
+- **4.2**: The spec suggested "a button that opens the sync popover or triggers auth directly." Instead, the Close button dismisses the drawer, letting the user click the cloud icon. Simpler than programmatically opening another component's popover.
+- **AuthGate.svelte not deleted**: Left in place since it's not imported anywhere. Can be cleaned up separately.
+
+### Follow-up Work
+
+- Delete `AuthGate.svelte` (now unused)
+- 3.3/3.4: Manual testing of account linking flows (email→Google, Google→email) requires a running server
+- Consider adding first-run onboarding hint if analytics show poor cloud icon discovery

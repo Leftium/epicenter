@@ -75,7 +75,7 @@
 						placeholder="Search tabs..."
 						bind:value={unifiedViewState.searchQuery}
 						onkeydown={handleSearchKeydown}
-						class="h-8 pl-8 pr-8 text-sm"
+						class="h-8 pl-8 pr-8 text-sm [&::-webkit-search-cancel-button]:hidden"
 					/>
 					{#if unifiedViewState.searchQuery}
 						<button

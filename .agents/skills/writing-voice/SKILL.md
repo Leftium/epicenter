@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Voice and tone rules for all written content. Use when writing prose that should sound human and be suitable for reading aloud.
+description: Voice and tone rules for all written content—prose, UI text, tooltips, error messages. Use when writing any user-facing text.
 ---
 
 # Writing Voice

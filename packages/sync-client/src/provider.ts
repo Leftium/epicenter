@@ -15,7 +15,7 @@ import {
 	encodeAwarenessUpdate,
 	removeAwarenessStates,
 } from 'y-protocols/awareness';
-import type { SyncProvider, SyncProviderConfig, SyncStatus } from './types';
+import type { SyncError, SyncProvider, SyncProviderConfig, SyncStatus } from './types';
 
 // ============================================================================
 // Constants
@@ -39,6 +39,8 @@ const LIVENESS_TIMEOUT_MS = 45_000;
 /** How often to check whether the liveness timeout has expired. */
 const LIVENESS_CHECK_INTERVAL_MS = 10_000;
 
+/** Max time to wait for a WebSocket to open before giving up. */
+const CONNECT_TIMEOUT_MS = 15_000;
 // ============================================================================
 // Factory Function
 // ============================================================================
@@ -104,7 +106,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 	/** User intent: should we be connected? Set by connect()/disconnect(). */
 	let desired: 'online' | 'offline' = 'offline';
 
-	const status = createStatusEmitter<SyncStatus>('offline');
+	const status = createStatusEmitter<SyncStatus>({ phase: 'offline' });
 
 	/**
 	 * Monotonic counter bumped by disconnect(). The supervisor loop captures
@@ -217,8 +219,11 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 	 * Calls `getToken()` fresh on each iteration.
 	 */
 	async function runLoop(myRunId: number) {
+		let attempt = 0;
+		let lastError: SyncError | undefined;
+
 		while (desired === 'online' && runId === myRunId) {
-			status.set('connecting');
+			status.set({ phase: 'connecting', attempt, lastError });
 
 			// --- Token acquisition (fresh each iteration) ---
 			let token: string | undefined;
@@ -227,7 +232,10 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 					token = await getToken();
 				} catch (e) {
 					console.warn('[SyncProvider] Failed to get token', e);
+					lastError = { type: 'auth', error: e };
+					status.set({ phase: 'connecting', attempt, lastError });
 					await backoff.sleep();
+					attempt += 1;
 					continue;
 				}
 			}
@@ -241,19 +249,24 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 
 			if (result === 'connected') {
 				backoff.reset();
+				lastError = undefined;
 			}
 
 			if (result === 'cancelled') break;
 
 			// Connection failed or closed — backoff and retry
 			if (desired === 'online' && runId === myRunId) {
-				status.set('connecting');
+				if (result === 'failed') {
+					lastError = { type: 'connection' };
+				}
+				attempt += 1;
+				status.set({ phase: 'connecting', attempt, lastError });
 				await backoff.sleep();
 			}
 		}
 
 		if (desired === 'offline') {
-			status.set('offline');
+			status.set({ phase: 'offline' });
 		}
 
 		connectRun = null;
@@ -289,7 +302,15 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 
 		const liveness = createLivenessMonitor(ws);
 
+		// Close the socket if it hasn't opened within CONNECT_TIMEOUT_MS.
+		// Protects against black-hole servers where the browser may take
+		// minutes to fire onerror.
+		const connectTimeout = setTimeout(() => {
+			if (ws.readyState === WebSocket.CONNECTING) ws.close();
+		}, CONNECT_TIMEOUT_MS);
+
 		ws.onopen = () => {
+			clearTimeout(connectTimeout);
 			send(encodeSyncStep1({ doc }));
 
 			if (awareness.getLocalState() !== null) {
@@ -306,6 +327,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 		};
 
 		ws.onclose = () => {
+			clearTimeout(connectTimeout);
 			liveness.stop();
 
 			// Remove remote awareness states (keep our own)
@@ -355,7 +377,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 							syncType === SYNC_MESSAGE_TYPE.UPDATE)
 					) {
 						handshakeComplete = true;
-						status.set('connected');
+						status.set({ phase: 'connected' });
 					}
 					break;
 				}
@@ -434,7 +456,7 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 			}
 
 			// Synchronously set offline so callers see the status immediately
-			status.set('offline');
+			status.set({ phase: 'offline' });
 		},
 
 		onStatusChange: status.subscribe,
@@ -456,11 +478,12 @@ export function createSyncProvider(config: SyncProviderConfig): SyncProvider {
 // ============================================================================
 
 /**
- * Creates a deduplicated status emitter.
+ * Creates a status emitter.
  *
- * Encapsulates a value and a listener set into a single unit. Calls to `set()`
- * that don't change the value are no-ops, so listeners get a clean,
- * deduplicated stream of transitions.
+ * Encapsulates a value and a listener set into a single unit. Every `set()`
+ * call notifies listeners — no dedup, since SyncStatus is an object (objects
+ * are never `===` equal) and consumers want every transition including
+ * attempt/lastError changes.
  */
 function createStatusEmitter<T>(initial: T) {
 	let current = initial;
@@ -472,9 +495,8 @@ function createStatusEmitter<T>(initial: T) {
 			return current;
 		},
 
-		/** Transition to a new value and notify listeners. No-op if unchanged. */
+		/** Transition to a new value and notify listeners. */
 		set(value: T) {
-			if (current === value) return;
 			current = value;
 			for (const listener of listeners) {
 				listener(value);
@@ -513,6 +535,7 @@ function createLivenessMonitor(ws: WebSocket) {
 	return {
 		/** Begin sending pings and checking for staleness. */
 		start() {
+			this.stop(); // Guard: prevent interval leak on double-start
 			lastMessageTime = Date.now();
 
 			pingInterval = setInterval(() => {

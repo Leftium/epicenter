@@ -93,7 +93,7 @@ describe('createSyncExtension', () => {
 			const provider = result.provider;
 			result.destroy();
 
-			expect(provider.status).toBe('offline');
+			expect(provider.status.phase).toBe('offline');
 		});
 	});
 
@@ -109,7 +109,7 @@ describe('createSyncExtension', () => {
 		) as unknown as SyncExtensionResult;
 
 		expect(result.provider).toBeDefined();
-		expect(result.provider.status).toBe('offline');
+		expect(result.provider.status.phase).toBe('offline');
 
 		result.destroy();
 	});

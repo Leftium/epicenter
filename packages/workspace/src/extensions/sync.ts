@@ -1,4 +1,4 @@
-import { createSyncProvider, type SyncProvider } from '@epicenter/sync-client';
+import { createSyncProvider, type SyncProvider, type SyncStatus } from '@epicenter/sync-client';
 import type { ExtensionFactory } from '../workspace/types';
 
 /**
@@ -87,7 +87,11 @@ export type SyncExtensionConfig = {
  */
 /** Exports available on `client.extensions.sync` after registration. */
 export type SyncExtensionExports = {
-	/** The sync provider instance. */
+	/** Current connection status. Shorthand for `provider.status`. */
+	readonly status: SyncStatus;
+	/** Subscribe to status changes. Shorthand for `provider.onStatusChange`. Returns unsubscribe function. */
+	onStatusChange: SyncProvider['onStatusChange'];
+	/** The sync provider instance for advanced use (awareness, etc.). */
 	readonly provider: SyncProvider;
 	/** Force disconnect + reconnect (e.g. after auth change). */
 	reconnect(): void;
@@ -123,6 +127,10 @@ export function createSyncExtension(
 		})();
 
 		return {
+			get status() {
+				return provider.status;
+			},
+			onStatusChange: provider.onStatusChange.bind(provider),
 			provider,
 			/**
 			 * Force an immediate disconnect + reconnect.

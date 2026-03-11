@@ -84,8 +84,9 @@ export const TRANSCRIPTION_SERVICES = [
 		modelPathField: 'transcription.parakeet.modelPath',
 		location: 'local',
 	},
-	// Moonshine is not available on Windows due to MSVC runtime library conflicts
-	// between tokenizers/esaxx-rs (static CRT) and ort (dynamic CRT)
+	// Moonshine is not available on Windows due to MSVC runtime library conflicts.
+	// The tokenizers/esaxx-rs CRT conflict was resolved in transcribe-rs 0.2.2,
+	// but moonshine on Windows remains untested.
 	...(IS_WINDOWS
 		? []
 		: [

@@ -45,6 +45,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 | File | Trigger | What it does |
 |---|---|---|
 | `auto.label-issues.yml` | Issues opened/edited | Uses Claude to auto-label issues by type, priority, platform, and area. |
+| `auto.release.yml` | PR merged to `main` | Bumps version, collects `## Changelog` entries from merged PRs, commits release, tags, creates GitHub Release with grouped changelog. |
 
 ### Meta
 
@@ -75,7 +76,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 | `APPLE_ID` | `release.whispering`, `pr-preview.whispering` | Apple ID for notarization |
 | `APPLE_PASSWORD` | `release.whispering`, `pr-preview.whispering` | Apple app-specific password |
 | `APPLE_TEAM_ID` | `release.whispering`, `pr-preview.whispering` | Apple Developer team ID |
-| `GH_ACTIONS_PAT` | `meta.sync-releases` | PAT for cross-repo release sync |
+| `GH_ACTIONS_PAT` | `auto.release`, `meta.sync-releases`, `meta.sponsors-readme`, `meta.update-readme-version` | PAT with repo + read:org scope for pushing commits/tags and creating releases |
 | `ANTHROPIC_API_KEY` | `auto.label-issues`, `claude` | Anthropic API key for Claude |
 
 ## Rollback

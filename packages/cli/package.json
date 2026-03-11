@@ -12,7 +12,7 @@
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"yargs": "catalog:",
-		"yjs": "^13.6.29"
+		"yjs": "catalog:"
 	},
 	"devDependencies": {
 		"@types/yargs": "catalog:",

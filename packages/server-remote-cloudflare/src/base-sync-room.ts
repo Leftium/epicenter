@@ -23,8 +23,6 @@ import {
 	handleWsClose,
 	handleWsMessage,
 	handleWsOpen,
-	safeBroadcast,
-	swallow,
 } from './sync-handlers';
 
 // ============================================================================
@@ -418,7 +416,17 @@ function createConnectionHub({
 						ws.send(effect.data);
 						break;
 					case 'broadcast':
-						safeBroadcast(states, ws, effect.data);
+						for (const [peer] of states) {
+							if (peer !== ws && peer.readyState === WebSocket.OPEN) {
+								try {
+									peer.send(effect.data);
+								} catch {
+									/* Socket may have died between readyState check and send.
+									   Safe to ignore — the close event will fire and trigger
+									   proper cleanup via hub.close(). */
+								}
+							}
+						}
 						break;
 					case 'persistAttachment':
 						ws.serializeAttachment({
@@ -440,7 +448,12 @@ function createConnectionHub({
 			handleWsClose(state);
 			states.delete(ws);
 
-			swallow(() => ws.close(code, reason));
+			try {
+				ws.close(code, reason);
+			} catch {
+				/* Already closed by the remote end. Cleanup above (handler
+				   deregistration, awareness removal) completed regardless. */
+			}
 
 			if (states.size === 0) {
 				onAllDisconnected?.();

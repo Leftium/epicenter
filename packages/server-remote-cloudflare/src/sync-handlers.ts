@@ -40,8 +40,6 @@ import {
 } from 'y-protocols/awareness';
 import type * as Y from 'yjs';
 
-export { Awareness } from 'y-protocols/awareness';
-
 // ============================================================================
 // Errors
 // ============================================================================
@@ -53,13 +51,12 @@ export { Awareness } from 'y-protocols/awareness';
  * binary frames: lib0 buffer underflow (truncated messages), y-protocols
  * awareness JSON parse errors, and any other decode-time exceptions.
  */
-export const SyncHandlerError = defineErrors({
+const SyncHandlerError = defineErrors({
 	MessageDecode: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to decode WebSocket message: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type SyncHandlerError = InferErrors<typeof SyncHandlerError>;
 
 // ============================================================================
 // Types
@@ -79,37 +76,6 @@ export type ConnectionState = {
 	) => void;
 };
 
-// ============================================================================
-// Broadcast Helpers
-// ============================================================================
-
-/** Silently ignore errors (e.g. dead WebSocket sends/closes). */
-export function swallow(fn: () => void): void {
-	try {
-		fn();
-	} catch {
-		/* connection already dead */
-	}
-}
-
-/**
- * Broadcast a message to all connections except the sender.
- *
- * Each `send()` is wrapped individually so a dead socket can't abort
- * the loop — remaining connections still receive the message.
- */
-export function safeBroadcast(
-	connectionStates: Map<WebSocket, ConnectionState>,
-	sender: WebSocket,
-	msg: Uint8Array,
-): void {
-	for (const [ws] of connectionStates) {
-		if (ws !== sender && ws.readyState === WebSocket.OPEN) {
-			swallow(() => ws.send(msg));
-		}
-	}
-}
-
 /**
  * Typed effect produced by {@link handleWsMessage}.
  *
@@ -121,7 +87,7 @@ export function safeBroadcast(
  * - `broadcast`: Fan out data to all OTHER connections (exclude sender).
  * - `persistAttachment`: Save connection metadata to survive hibernation.
  */
-export type SyncEffect =
+type SyncEffect =
 	| { type: 'respond'; data: Uint8Array }
 	| { type: 'broadcast'; data: Uint8Array }
 	| { type: 'persistAttachment' };

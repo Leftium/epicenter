@@ -39,15 +39,12 @@ export const recordingActions = {
 		options?: { onSuccess?: () => void; skipConfirmation?: boolean },
 	) {
 		const arr = Array.isArray(recordings) ? recordings : [recordings];
-		const count = arr.length;
-		const noun = count === 1 ? 'recording' : 'recordings';
+		const isSingle = arr.length === 1;
+		const noun = isSingle ? 'recording' : 'recordings';
 
 		confirmationDialog.open({
 			title: `Delete ${noun}`,
-			description:
-				count === 1
-					? 'Are you sure you want to delete this recording?'
-					: `Are you sure you want to delete these ${noun}?`,
+			description: `Are you sure you want to delete ${isSingle ? 'this' : 'these'} ${noun}?`,
 			confirm: { text: 'Delete', variant: 'destructive' },
 			skipConfirmation: options?.skipConfirmation,
 			onConfirm: async () => {
@@ -62,7 +59,7 @@ export const recordingActions = {
 				}
 				rpc.notify.success({
 					title: `Deleted ${noun}!`,
-					description: `Your ${noun} ${count === 1 ? 'has' : 'have'} been deleted.`,
+					description: `Your ${noun} ${isSingle ? 'has' : 'have'} been deleted.`,
 				});
 				options?.onSuccess?.();
 			},

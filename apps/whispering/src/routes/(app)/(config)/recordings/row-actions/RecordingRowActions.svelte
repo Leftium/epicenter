@@ -13,10 +13,10 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { rpc } from '$lib/query';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import EditRecordingModal from './EditRecordingModal.svelte';
 	import TransformationPicker from './TransformationPicker.svelte';
@@ -183,28 +183,7 @@
 
 		<Button
 			tooltip="Delete recording"
-			onclick={() => {
-				confirmationDialog.open({
-					title: 'Delete recording',
-					description: 'Are you sure you want to delete this recording?',
-					confirm: { text: 'Delete', variant: 'destructive' },
-					onConfirm: async () => {
-						const { error } = await rpc.db.recordings.delete(recording);
-						if (error) {
-							rpc.notify.error({
-								title: 'Failed to delete recording!',
-								description: 'Your recording could not be deleted.',
-								action: { type: 'more-details', error },
-							});
-							throw error;
-						}
-						rpc.notify.success({
-							title: 'Deleted recording!',
-							description: 'Your recording has been deleted.',
-						});
-					},
-				});
-			}}
+			onclick={() => recordingActions.deleteWithConfirmation(recording)}
 			variant="ghost"
 			size="icon"
 		>

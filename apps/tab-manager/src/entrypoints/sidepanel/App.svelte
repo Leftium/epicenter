@@ -6,6 +6,7 @@
 	import AuthGate from '$lib/components/AuthGate.svelte';
 	import ConfirmationDialog from '$lib/components/ConfirmationDialog.svelte';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
+	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import FlatTabList from '$lib/components/tabs/FlatTabList.svelte';
 	import SavedTabList from '$lib/components/tabs/SavedTabList.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
@@ -65,6 +66,11 @@
 					<AiChat />
 				</Tabs.Content>
 			</Tabs.Root>
+			<footer
+				class="border-t px-3 py-1.5 flex items-center bg-background/95 backdrop-blur"
+			>
+				<SyncStatusIndicator />
+			</footer>
 		</main>
 	</Tooltip.Provider>
 </AuthGate>

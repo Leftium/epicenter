@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Dialog from '@epicenter/ui/dialog';
 	// import { extension } from '@epicenter/extension';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { commandCallbacks } from '$lib/commands';
-	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';

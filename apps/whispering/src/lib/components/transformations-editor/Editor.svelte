@@ -2,7 +2,7 @@
 	import * as Resizable from '@epicenter/ui/resizable';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 	import Configuration from './Configuration.svelte';
 	import Runs from './Runs.svelte';
 	import Test from './Test.svelte';

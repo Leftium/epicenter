@@ -325,6 +325,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -387,6 +388,7 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -399,6 +401,9 @@
         "@epicenter/sync": "workspace:*",
         "lib0": "catalog:",
         "y-protocols": "catalog:",
+      },
+      "devDependencies": {
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",
@@ -492,6 +497,7 @@
         "drizzle-kit": "catalog:",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",
+        "yjs": "catalog:",
       },
       "peerDependencies": {
         "yjs": "catalog:",

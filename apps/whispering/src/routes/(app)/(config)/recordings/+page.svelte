@@ -24,6 +24,7 @@
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
 	import SearchIcon from '@lucide/svelte/icons/search';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import {
 		createTable as createSvelteTable,
@@ -45,14 +46,13 @@
 	import { format } from 'date-fns';
 	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { rpc } from '$lib/query';
-	import type { Recording } from '$lib/services/isomorphic/db';
+	import type { Recording } from '$lib/services/db';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
+	import { recordingActions } from '$lib/utils/recording-actions';
 	import LatestTransformationRunOutputByRecordingId from './LatestTransformationRunOutputByRecordingId.svelte';
 	import RenderAudioUrl from './RenderAudioUrl.svelte';
 	import { RecordingRowActions } from './row-actions';
@@ -533,32 +533,10 @@
 						tooltip="Delete selected recordings"
 						variant="outline"
 						size="icon"
-						onclick={() => {
-							confirmationDialog.open({
-								title: 'Delete recordings',
-								description:
-									'Are you sure you want to delete these recordings?',
-								confirm: { text: 'Delete', variant: 'destructive' },
-								onConfirm: async () => {
-									const { error } = await rpc.db.recordings.delete(
-										selectedRecordingRows.map(({ original }) => original),
-									);
-									if (error) {
-										rpc.notify.error({
-											title: 'Failed to delete recordings!',
-											description: 'Your recordings could not be deleted.',
-											action: { type: 'more-details', error },
-										});
-										throw error;
-									}
-									rpc.notify.success({
-										title: 'Deleted recordings!',
-										description:
-											'Your recordings have been deleted successfully.',
-									});
-								},
-							});
-						}}
+						onclick={() =>
+						recordingActions.deleteWithConfirmation(
+							selectedRecordingRows.map(({ original }) => original),
+						)}
 					>
 						<TrashIcon class="size-4" />
 					</Button>

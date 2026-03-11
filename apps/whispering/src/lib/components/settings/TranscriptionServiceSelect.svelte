@@ -8,7 +8,7 @@
 	import {
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
-	} from '$lib/services/isomorphic/transcription/registry';
+	} from '$lib/services/transcription/registry';
 
 	let {
 		id = 'transcription-service',

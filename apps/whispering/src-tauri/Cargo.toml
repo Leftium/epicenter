@@ -60,14 +60,15 @@ nix = { version = "0.29", features = ["signal"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Console"] }
 # Windows: Only parakeet is available due to MSVC runtime library conflicts (MT_StaticRelease vs MD_DynamicRelease)
-# - whisper-cpp: whisper-rs-sys conflicts with tokenizers/esaxx-rs
-# - moonshine: tokenizers/esaxx-rs (static CRT) conflicts with ort (dynamic CRT)
+# - whisper-cpp: whisper-rs-sys conflicts with ort
+# - moonshine: Previously blocked by tokenizers/esaxx-rs CRT conflict.
+#   tokenizers was removed in transcribe-rs 0.2.2 — moonshine on Windows may now work (untested).
 # Parakeet works because it uses ort without tokenizers dependency
-transcribe-rs = { version = "0.2.1", features = ["parakeet"] }
+transcribe-rs = { version = "0.2.9", features = ["parakeet"] }
 
 [target.'cfg(not(windows))'.dependencies]
 # macOS/Linux: full whisper-cpp support
-transcribe-rs = { version = "0.2.1", features = ["whisper", "parakeet", "moonshine"] }
+transcribe-rs = { version = "0.2.9", features = ["whisper", "parakeet", "moonshine"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 accessibility-sys =  "0.1.3"

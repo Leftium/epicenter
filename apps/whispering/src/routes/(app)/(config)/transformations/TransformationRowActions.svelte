@@ -2,7 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { TrashIcon } from '$lib/components/icons';
 	import { rpc } from '$lib/query';
 	import EditTransformationModal from './EditTransformationModal.svelte';

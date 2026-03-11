@@ -17,7 +17,7 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { createSettingDialog } from '$lib/components/CreateSettingDialog.svelte';
 	import { createTableDialog } from '$lib/components/CreateTableDialog.svelte';
 	import { rpc } from '$lib/query';

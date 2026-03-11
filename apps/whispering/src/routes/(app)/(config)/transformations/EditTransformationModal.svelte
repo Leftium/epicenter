@@ -7,7 +7,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { PencilIcon as EditIcon } from '$lib/components/icons';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { rpc } from '$lib/query';

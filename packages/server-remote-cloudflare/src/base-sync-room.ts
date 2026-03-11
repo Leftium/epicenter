@@ -18,10 +18,12 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import {
-	type ConnectionState,
-	handleWsClose,
-	handleWsMessage,
-	handleWsOpen,
+	applyMessage,
+	type Connection,
+	computeInitialMessages,
+	type RoomContext,
+	registerConnection,
+	teardownConnection,
 } from './sync-handlers';
 
 // ============================================================================
@@ -121,10 +123,11 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	protected doc!: Y.Doc;
 
-	private awareness!: Awareness;
+	/** Shared room state: the Yjs doc and awareness instance all connections share. */
+	private room!: RoomContext;
 
 	/** Active WebSocket connections and their per-connection sync state. */
-	private states = new Map<WebSocket, ConnectionState>();
+	private connections = new Map<WebSocket, Connection>();
 
 	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig) {
 		super(ctx, env);
@@ -135,7 +138,7 @@ export class BaseSyncRoom extends DurableObject {
 
 		ctx.blockConcurrencyWhile(async () => {
 			this.doc = new Y.Doc({ gc: config.gc });
-			this.awareness = new Awareness(this.doc);
+			this.room = { doc: this.doc, awareness: new Awareness(this.doc) };
 
 			// --- Update log: DDL + cold-start load + compaction + live persist ---
 
@@ -162,15 +165,17 @@ export class BaseSyncRoom extends DurableObject {
 			// --- Restore connections that survived hibernation ---
 			// Iterates ctx.getWebSockets(), deserializes each attachment to recover
 			// controlled awareness client IDs, and re-registers sync handlers.
+			// Only registerConnection — no computeInitialMessages (the client
+			// already received initial messages before hibernation).
 			for (const ws of ctx.getWebSockets()) {
 				const attachment = ws.deserializeAttachment() as WsAttachment | null;
 				if (!attachment) continue;
 
-				const { state } = handleWsOpen(this.doc, this.awareness, ws);
+				const connection = registerConnection({ ...this.room, ws });
 				for (const id of attachment.controlledClientIds) {
-					state.controlledClientIds.add(id);
+					connection.controlledClientIds.add(id);
 				}
-				this.states.set(ws, state);
+				this.connections.set(ws, connection);
 			}
 		});
 	}
@@ -207,12 +212,9 @@ export class BaseSyncRoom extends DurableObject {
 
 		this.ctx.acceptWebSocket(server);
 
-		const { initialMessages, state } = handleWsOpen(
-			this.doc,
-			this.awareness,
-			server,
-		);
-		this.states.set(server, state);
+		const initialMessages = computeInitialMessages(this.room);
+		const connection = registerConnection({ ...this.room, ws: server });
+		this.connections.set(server, connection);
 
 		server.serializeAttachment({
 			controlledClientIds: [],
@@ -283,8 +285,8 @@ export class BaseSyncRoom extends DurableObject {
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
-		const state = this.states.get(ws);
-		if (!state) return;
+		const connection = this.connections.get(ws);
+		if (!connection) return;
 
 		const byteLength =
 			message instanceof ArrayBuffer ? message.byteLength : message.length;
@@ -298,7 +300,11 @@ export class BaseSyncRoom extends DurableObject {
 				? new Uint8Array(message)
 				: new TextEncoder().encode(message);
 
-		const { data: effects, error } = handleWsMessage(data, state);
+		const { data: effects, error } = applyMessage({
+			data,
+			room: this.room,
+			connection,
+		});
 		if (error) {
 			console.error(error.message);
 			return;
@@ -310,7 +316,7 @@ export class BaseSyncRoom extends DurableObject {
 					ws.send(effect.data);
 					break;
 				case 'broadcast':
-					for (const [peer] of this.states) {
+					for (const [peer] of this.connections) {
 						if (peer !== ws && peer.readyState === WebSocket.OPEN) {
 							try {
 								peer.send(effect.data);
@@ -324,7 +330,7 @@ export class BaseSyncRoom extends DurableObject {
 					break;
 				case 'persistAttachment':
 					ws.serializeAttachment({
-						controlledClientIds: [...state.controlledClientIds],
+						controlledClientIds: [...connection.controlledClientIds],
 					} satisfies WsAttachment);
 					break;
 			}
@@ -349,11 +355,11 @@ export class BaseSyncRoom extends DurableObject {
 		reason: string,
 		_wasClean: boolean,
 	): Promise<void> {
-		const state = this.states.get(ws);
-		if (!state) return;
+		const connection = this.connections.get(ws);
+		if (!connection) return;
 
-		handleWsClose(state);
-		this.states.delete(ws);
+		teardownConnection({ room: this.room, connection });
+		this.connections.delete(ws);
 
 		try {
 			ws.close(code, reason);
@@ -362,7 +368,7 @@ export class BaseSyncRoom extends DurableObject {
 			   deregistration, awareness removal) completed regardless. */
 		}
 
-		if (this.states.size === 0) {
+		if (this.connections.size === 0) {
 			this.onAllDisconnected();
 			void this.ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
 		}
@@ -406,7 +412,7 @@ export class BaseSyncRoom extends DurableObject {
 	 * @see {@link https://developers.cloudflare.com/durable-objects/api/alarms/ | Durable Objects Alarms}
 	 */
 	override async alarm(): Promise<void> {
-		if (this.states.size > 0) return;
+		if (this.connections.size > 0) return;
 		compactUpdateLog(this.ctx, this.doc);
 	}
 }

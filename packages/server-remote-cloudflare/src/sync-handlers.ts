@@ -4,6 +4,13 @@
  * Inlined from the generic @epicenter/sync-server package. Narrowed to CF
  * WebSocket types — no framework-agnostic indirection, no WeakMap tricks.
  *
+ * ## API surface
+ *
+ * - {@link computeInitialMessages} — pure, computes SyncStep1 + awareness states
+ * - {@link registerConnection} — side-effectful, registers doc/awareness listeners
+ * - {@link applyMessage} — mutates doc/awareness, returns additional effects
+ * - {@link teardownConnection} — cleanup, unregisters listeners + removes awareness
+ *
  * ## Error handling rationale (grounded in Yjs internals)
  *
  * `Y.applyUpdateV2` is resilient by design — it never throws on malformed
@@ -13,7 +20,7 @@
  * However, `lib0/decoding` functions (readVarUint, readVarUint8Array) DO
  * throw on buffer underflow, and `applyAwarenessUpdate` from y-protocols
  * throws on malformed JSON. Since WebSocket messages are untrusted input,
- * `handleWsMessage` wraps the decode+dispatch path with `trySync` to catch
+ * `applyMessage` wraps the decode+dispatch path with `trySync` to catch
  * these at the system boundary.
  */
 
@@ -62,22 +69,33 @@ const SyncHandlerError = defineErrors({
 // Types
 // ============================================================================
 
-/** Per-connection state stored in `Map<WebSocket, ConnectionState>`. */
-export type ConnectionState = {
-	ws: WebSocket;
+/**
+ * Shared room state — the doc and awareness instance that all connections
+ * in a room share. Passed explicitly to handlers rather than duplicated
+ * in every {@link Connection}.
+ */
+export type RoomContext = {
 	doc: Y.Doc;
 	awareness: Awareness;
-	controlledClientIds: Set<number>;
-	/** Stored directly — no WeakMap indirection needed when we own the type. */
-	updateHandler: (update: Uint8Array, origin: unknown) => void;
-	awarenessHandler: (
-		changes: { added: number[]; updated: number[]; removed: number[] },
-		origin: unknown,
-	) => void;
 };
 
 /**
- * Typed effect produced by {@link handleWsMessage}.
+ * Per-connection state stored in `Map<WebSocket, Connection>`.
+ *
+ * Contains only per-connection data: the socket, the set of awareness
+ * client IDs this connection controls, and an `unregister` closure that
+ * removes the doc/awareness event listeners registered by
+ * {@link registerConnection}.
+ */
+export type Connection = {
+	ws: WebSocket;
+	controlledClientIds: Set<number>;
+	/** Removes `doc.on('updateV2')` and `awareness.on('update')` listeners for this connection. */
+	unregister: () => void;
+};
+
+/**
+ * Typed effect produced by {@link applyMessage}.
  *
  * The handler returns an array of effects. The DO processes each one in
  * order. This makes adding new message types impossible to silently miss —
@@ -97,31 +115,56 @@ type SyncEffect =
 // ============================================================================
 
 /**
- * Initialize a new WebSocket connection's sync state.
+ * Compute the initial messages to send to a newly connected client.
  *
- * Returns initial messages to send (SyncStep1 + awareness) and the
- * ConnectionState the caller must store for the connection's lifetime.
+ * Pure function — no side effects. Returns a SyncStep1 message (the room's
+ * state vector) and, if any awareness states exist, the current awareness
+ * snapshot. The caller sends these over the WebSocket after accepting the
+ * upgrade.
  *
- * Registers `doc.on('updateV2')` and `awareness.on('update')` handlers
- * that are cleaned up by {@link handleWsClose}.
+ * Separated from {@link registerConnection} so callers that don't need
+ * initial messages (e.g. `restoreHibernated`) can skip this entirely.
+ *
+ * @param options.doc - The shared Yjs document
+ * @param options.awareness - The shared awareness instance
+ * @returns Array of encoded messages to send to the new client
  */
-export function handleWsOpen(
-	doc: Y.Doc,
-	awareness: Awareness,
-	ws: WebSocket,
-): { initialMessages: Uint8Array[]; state: ConnectionState } {
-	const controlledClientIds = new Set<number>();
-
-	const initialMessages: Uint8Array[] = [encodeSyncStep1({ doc })];
+export function computeInitialMessages({
+	doc,
+	awareness,
+}: RoomContext): Uint8Array[] {
+	const messages: Uint8Array[] = [encodeSyncStep1({ doc })];
 	const awarenessStates = awareness.getStates();
 	if (awarenessStates.size > 0) {
-		initialMessages.push(
+		messages.push(
 			encodeAwarenessStates({
 				awareness,
 				clients: Array.from(awarenessStates.keys()),
 			}),
 		);
 	}
+	return messages;
+}
+
+/**
+ * Register a WebSocket connection's doc and awareness event listeners.
+ *
+ * Side-effectful — registers `doc.on('updateV2')` and `awareness.on('update')`
+ * handlers that forward updates to the WebSocket and track controlled client
+ * IDs. Returns a {@link Connection} with an `unregister` closure that removes
+ * both listeners — call it via {@link teardownConnection} when the socket closes.
+ *
+ * @param options.doc - The shared Yjs document
+ * @param options.awareness - The shared awareness instance
+ * @param options.ws - The WebSocket to register listeners for
+ * @returns Per-connection state with cleanup handle
+ */
+export function registerConnection({
+	doc,
+	awareness,
+	ws,
+}: RoomContext & { ws: WebSocket }): Connection {
+	const controlledClientIds = new Set<number>();
 
 	// Forward V2 doc updates to this connection (skip echo via identity check)
 	const updateHandler = (update: Uint8Array, origin: unknown) => {
@@ -149,31 +192,42 @@ export function handleWsOpen(
 	};
 	awareness.on('update', awarenessHandler);
 
-	const state: ConnectionState = {
+	return {
 		ws,
-		doc,
-		awareness,
 		controlledClientIds,
-		updateHandler,
-		awarenessHandler,
+		unregister() {
+			doc.off('updateV2', updateHandler);
+			awareness.off('update', awarenessHandler);
+		},
 	};
-
-	return { initialMessages, state };
 }
 
 /**
  * Dispatch an incoming binary WebSocket message.
  *
- * Returns a `Result` — `Ok` with a list of {@link SyncEffect}s the caller
- * must process in order, or `Err(SyncHandlerError.MessageDecode)` if the
- * binary frame is malformed.
+ * Mutates `room.doc` and `room.awareness` via `applyUpdateV2` and
+ * `applyAwarenessUpdate` respectively, then returns a `Result` — `Ok` with
+ * a list of {@link SyncEffect}s the caller must process in order, or
+ * `Err(SyncHandlerError.MessageDecode)` if the binary frame is malformed.
  *
  * The `trySync` wrapper catches lib0 decoder throws (buffer underflow on
  * truncated messages) and y-protocols awareness errors (malformed JSON).
  * Yjs's own `applyUpdateV2` is resilient and won't throw — it stores
  * unresolved dependencies in `doc.store.pendingStructs` automatically.
+ *
+ * @param options.data - Raw binary WebSocket message
+ * @param options.room - The shared room context (doc + awareness)
+ * @param options.connection - The per-connection state (ws + controlled IDs)
  */
-export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
+export function applyMessage({
+	data,
+	room,
+	connection,
+}: {
+	data: Uint8Array;
+	room: RoomContext;
+	connection: Connection;
+}) {
 	return trySync({
 		try: (): SyncEffect[] => {
 			const decoder = decoding.createDecoder(data);
@@ -186,15 +240,15 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 					const response = handleSyncPayload({
 						syncType: syncType as SyncMessageType,
 						payload,
-						doc: state.doc,
-						origin: state.ws,
+						doc: room.doc,
+						origin: connection.ws,
 					});
 					return response ? [{ type: 'respond', data: response }] : [];
 				}
 
 				case MESSAGE_TYPE.AWARENESS: {
 					const update = decoding.readVarUint8Array(decoder);
-					applyAwarenessUpdate(state.awareness, update, state.ws);
+					applyAwarenessUpdate(room.awareness, update, connection.ws);
 					return [
 						{ type: 'broadcast', data: encodeAwareness({ update }) },
 						{ type: 'persistAttachment' },
@@ -202,13 +256,13 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 				}
 
 				case MESSAGE_TYPE.QUERY_AWARENESS: {
-					const awarenessStates = state.awareness.getStates();
+					const awarenessStates = room.awareness.getStates();
 					if (awarenessStates.size > 0) {
 						return [
 							{
 								type: 'respond',
 								data: encodeAwarenessStates({
-									awareness: state.awareness,
+									awareness: room.awareness,
 									clients: Array.from(awarenessStates.keys()),
 								}),
 							},
@@ -246,21 +300,30 @@ export function handleWsMessage(data: Uint8Array, state: ConnectionState) {
 /**
  * Clean up a closed WebSocket connection.
  *
- * Unregisters event handlers and removes awareness states for this
- * connection's controlled client IDs. The `removeAwarenessStates` call
- * is wrapped in `trySync` as a safety net — awareness cleanup should
+ * Calls `connection.unregister()` to remove the `doc.on('updateV2')` and
+ * `awareness.on('update')` listeners, then removes awareness states for
+ * this connection's controlled client IDs. The `removeAwarenessStates`
+ * call is wrapped in `trySync` as a safety net — awareness cleanup should
  * never prevent handler deregistration from completing.
+ *
+ * @param options.room - The shared room context (doc + awareness)
+ * @param options.connection - The per-connection state to tear down
  */
-export function handleWsClose(state: ConnectionState): void {
-	state.doc.off('updateV2', state.updateHandler);
-	state.awareness.off('update', state.awarenessHandler);
+export function teardownConnection({
+	room,
+	connection,
+}: {
+	room: RoomContext;
+	connection: Connection;
+}): void {
+	connection.unregister();
 
-	if (state.controlledClientIds.size > 0) {
+	if (connection.controlledClientIds.size > 0) {
 		trySync({
 			try: () =>
 				removeAwarenessStates(
-					state.awareness,
-					Array.from(state.controlledClientIds),
+					room.awareness,
+					Array.from(connection.controlledClientIds),
 					null,
 				),
 			catch: () => Ok(undefined), // cleanup best-effort

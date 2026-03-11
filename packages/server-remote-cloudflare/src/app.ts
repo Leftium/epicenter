@@ -248,51 +248,51 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Workspace routes — one WorkspaceRoom DO per room (gc: true)
+// Workspace routes — one WorkspaceRoom DO per workspace (gc: true)
 // ---------------------------------------------------------------------------
 
 /**
- * Room key namespacing: `user:{userId}:{room}`
+ * DO name namespacing: `user:{userId}:{workspace|document}`
  *
- * We use user-scoped room keys (Google Docs model) rather than org-scoped keys
+ * We use user-scoped DO names (Google Docs model) rather than org-scoped names
  * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
  *
  * Alternatives considered:
  *
- * - **Org-scoped (`org:{orgId}:{room}`)**: Evaluated for enterprise/self-hosted.
+ * - **Org-scoped (`org:{orgId}:{name}`)**: Evaluated for enterprise/self-hosted.
  *   Problems: most workspaces (Whispering recordings, Entries) are personal data
  *   that shouldn't merge into a shared Y.Doc. Org-scoped would require a
  *   per-workspace `scope` flag anyway, adding complexity without simplifying.
  *
- * - **Org-scoped with personal sub-scope (`org:{orgId}:user:{userId}:{room}`)**:
+ * - **Org-scoped with personal sub-scope (`org:{orgId}:user:{userId}:{name}`)**:
  *   Embeds org management in the app. For self-hosted enterprise, the deployment
  *   itself IS the org boundary (like GitLab, Outline, Mattermost), so org tables
  *   and Better Auth organization plugin are unnecessary overhead.
  *
  * Current scheme keeps the app auth-simple ("user has account, user accesses
- * rooms") and works for both cloud and self-hosted without org infrastructure.
- * When sharing is needed, it follows the Google Docs pattern: the owner's room
- * key stays the same, an ACL table grants access to other users, and auth
+ * their data") and works for both cloud and self-hosted without org infrastructure.
+ * When sharing is needed, it follows the Google Docs pattern: the owner's DO
+ * name stays the same, an ACL table grants access to other users, and auth
  * middleware checks "is this user the owner OR in the ACL?"
  *
  * Multi-tenant cloud isolation (if needed later) is a platform-layer concern—
  * a tenant prefix added at the routing layer, not embedded in the app's data model.
  */
 
-/** Get a WorkspaceRoom DO stub for the authenticated user's room. */
+/** Get a WorkspaceRoom DO stub for the authenticated user's workspace. */
 function getWorkspaceStub(c: Context<Env>) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
-	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(roomKey));
+	const doName = `user:${c.var.user.id}:${c.req.param('workspace')}`;
+	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(doName));
 }
 
-/** Get a DocumentRoom DO stub for the authenticated user's room. */
+/** Get a DocumentRoom DO stub for the authenticated user's document. */
 function getDocumentStub(c: Context<Env>) {
-	const roomKey = `user:${c.var.user.id}:${c.req.param('room')}`;
-	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(roomKey));
+	const doName = `user:${c.var.user.id}:${c.req.param('document')}`;
+	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName));
 }
 
 app.get(
-	'/workspaces/:room',
+	'/workspaces/:workspace',
 	describeRoute({
 		description: 'Get workspace doc or upgrade to WebSocket',
 		tags: ['workspaces'],
@@ -312,7 +312,7 @@ app.get(
 );
 
 app.post(
-	'/workspaces/:room',
+	'/workspaces/:workspace',
 	describeRoute({
 		description: 'Sync workspace doc',
 		tags: ['workspaces'],
@@ -334,11 +334,11 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Document routes — one DocumentRoom DO per room (gc: false, snapshots)
+// Document routes — one DocumentRoom DO per document (gc: false, snapshots)
 // ---------------------------------------------------------------------------
 
 app.get(
-	'/documents/:room',
+	'/documents/:document',
 	describeRoute({
 		description: 'Get document doc or upgrade to WebSocket',
 		tags: ['documents'],
@@ -358,7 +358,7 @@ app.get(
 );
 
 app.post(
-	'/documents/:room',
+	'/documents/:document',
 	describeRoute({
 		description: 'Sync document doc',
 		tags: ['documents'],
@@ -381,7 +381,7 @@ app.post(
 
 // Snapshot endpoints for DocumentRoom
 app.post(
-	'/documents/:room/snapshots',
+	'/documents/:document/snapshots',
 	describeRoute({
 		description: 'Save a document snapshot',
 		tags: ['documents', 'snapshots'],
@@ -396,7 +396,7 @@ app.post(
 );
 
 app.get(
-	'/documents/:room/snapshots',
+	'/documents/:document/snapshots',
 	describeRoute({
 		description: 'List document snapshots',
 		tags: ['documents', 'snapshots'],
@@ -409,12 +409,12 @@ app.get(
 );
 
 app.get(
-	'/documents/:room/snapshots/:id',
+	'/documents/:document/snapshots/:id',
 	describeRoute({
 		description: 'Get a document snapshot by ID',
 		tags: ['documents', 'snapshots'],
 	}),
-	sValidator('param', type({ room: 'string', id: 'string.numeric' })),
+	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
 		const stub = getDocumentStub(c);
 		const { id } = c.req.valid('param');
@@ -427,13 +427,13 @@ app.get(
 );
 
 app.post(
-	'/documents/:room/snapshots/:id/apply',
+	'/documents/:document/snapshots/:id/apply',
 	describeRoute({
 		description:
 			'Apply a past snapshot state into the current document (CRDT forward-merge)',
 		tags: ['documents', 'snapshots'],
 	}),
-	sValidator('param', type({ room: 'string', id: 'string.numeric' })),
+	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
 	async (c) => {
 		const stub = getDocumentStub(c);
 		const { id } = c.req.valid('param');

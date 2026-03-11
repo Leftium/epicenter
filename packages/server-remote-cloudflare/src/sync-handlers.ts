@@ -113,7 +113,7 @@ export function safeBroadcast(
 /**
  * Typed effect produced by {@link handleWsMessage}.
  *
- * The handler returns an array of effects. The room processes each one in
+ * The handler returns an array of effects. The DO processes each one in
  * order. This makes adding new message types impossible to silently miss —
  * every handler path must produce explicit effects.
  *

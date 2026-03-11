@@ -80,26 +80,26 @@ type SyncRoomConfig = {
  * Append-only update log in DO SQLite with opportunistic cold-start
  * compaction. Initialized inside `blockConcurrencyWhile` in the constructor.
  *
- * ## Auth & room isolation
+ * ## Auth & data isolation
  *
  * Handled upstream by `authGuard` middleware in app.ts. The Worker validates
  * the session (cookie or `?token=` query param for WebSocket) via Better Auth
  * before calling RPC methods or forwarding fetch. The DO itself does not
  * re-validate — it trusts the Worker boundary.
  *
- * Room names are user-scoped: the Worker prefixes `user:{userId}:` to the
- * client-provided room name before calling `idFromName()`. This ensures each
- * user's documents are isolated in separate DO instances, even if multiple
- * users create documents with the same name (e.g., "tab-manager").
+ * DO names are user-scoped: the Worker prefixes `user:{userId}:` to the
+ * client-provided workspace or document name before calling `idFromName()`.
+ * This ensures each user's data is isolated in separate DO instances, even
+ * if multiple users create workspaces with the same name (e.g., "tab-manager").
  *
- * We chose user-scoped keys (Google Docs model) over org-scoped keys
+ * We chose user-scoped DO names (Google Docs model) over org-scoped names
  * (Vercel/Supabase model) because most workspaces hold personal data.
  * For enterprise self-hosted, the deployment itself is the org boundary.
  * See `getWorkspaceStub` in app.ts for the full rationale.
  */
 export class BaseSyncRoom extends DurableObject {
 	/**
-	 * The shared Yjs document for this room.
+	 * The shared Yjs document for this sync room.
 	 *
 	 * Initialized inside `ctx.blockConcurrencyWhile()` in the constructor.
 	 * The definite assignment assertion (`!`) is safe because of two

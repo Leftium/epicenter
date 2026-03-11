@@ -1,6 +1,6 @@
 # Network Topology
 
-> **Status note:** This document describes the sync topology. The current architecture uses a **remote server** (`server-remote-cloudflare`) that handles auth (Better Auth), AI streaming, AI proxy, and a Yjs relay. A local sidecar tier was previously planned but has been removed (see `specs/20260311T080000-remove-server-local.md`). The local-mesh topology described below is aspirational and not yet implemented.
+> **Status note:** This document describes the sync topology. The current architecture uses a **remote server** (`apps/api`) that handles auth (Better Auth), AI streaming, AI proxy, and a Yjs relay. A local sidecar tier was previously planned but has been removed (see `specs/20260311T080000-remove-server-local.md`). The local-mesh topology described below is aspirational and not yet implemented.
 
 Epicenter uses a **leaderless, bidirectional graph** topology for syncing data across devices. This document describes the node types, connection rules, and example configurations.
 

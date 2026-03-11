@@ -201,5 +201,5 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
 ```
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.
-- **Server**: Any server exposing `ws://host:port/rooms/{id}` with y-websocket protocol (e.g., `server-remote-cloudflare`).
+- **Server**: Any server exposing `ws://host:port/rooms/{id}` with y-websocket protocol (e.g., `apps/api`).
 - **`@epicenter/workspace/extensions/sync`**: Workspace extension wrapper. Most consumers use this instead of the raw provider.

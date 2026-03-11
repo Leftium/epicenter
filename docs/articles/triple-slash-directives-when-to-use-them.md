@@ -21,7 +21,7 @@ That works great. Worker types load. Everyone's happy.
 Then we added `env.ts` — a CLI utility that reads `wrangler.toml` and `.dev.vars` to give drizzle-kit and better-auth the database URL they need. It runs under Bun, not wrangler. So it uses `Bun.TOML.parse()` and `Bun.file()`:
 
 ```typescript
-// packages/server-remote/src/env.ts
+// apps/api/src/env.ts
 const WranglerToml = type('string')
   .pipe((s) => Bun.TOML.parse(s))  // ← needs @types/bun
   .to({
@@ -142,7 +142,7 @@ If including a type package globally would genuinely break other files — becau
 
 ## How This Looked in Our Package
 
-Our final `tsconfig.json` for `server-remote`:
+Our final `tsconfig.json` for `api`:
 
 ```json
 {

@@ -323,8 +323,8 @@ export function createAutoSaveTracker({
  * persistence, WebSocket lifecycle via the Hibernation API, HTTP sync via RPC,
  * and connection management. Subclasses customize via {@link SyncRoomConfig}:
  *
- * - `gc` — Y.Doc garbage collection (default: `true`) via {@link SyncRoomConfig}
- * - {@link BaseSyncRoom.onAllDisconnected} — register disconnect-time behavior (e.g. auto-save)
+ * - `gc` — Y.Doc garbage collection via {@link SyncRoomConfig}
+ * - {@link BaseSyncRoom.registerDisconnectHandler} — register disconnect-time behavior (e.g. auto-save)
  *
  * ## Worker → DO interface
  *
@@ -369,12 +369,13 @@ export function createAutoSaveTracker({
  */
 type SyncRoomConfig = {
 	/**
-	 * Whether to enable Yjs garbage collection. Defaults to `true`.
+	 * Whether to enable Yjs garbage collection.
 	 *
-	 * Set to `false` for document rooms that need version history — `gc: false`
-	 * preserves delete history so `Y.snapshot()` can reconstruct past states.
+	 * - `true` — workspace rooms that don't need version history
+	 * - `false` — document rooms that preserve delete history so
+	 *   `Y.snapshot()` can reconstruct past states
 	 */
-	gc?: boolean;
+	gc: boolean;
 };
 
 export class BaseSyncRoom extends DurableObject {
@@ -382,7 +383,7 @@ export class BaseSyncRoom extends DurableObject {
 	private hub!: ConnectionHub;
 	private disconnectHandlers: (() => void)[] = [];
 
-	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig = {}) {
+	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig) {
 		super(ctx, env);
 
 		ctx.setWebSocketAutoResponse(
@@ -392,7 +393,7 @@ export class BaseSyncRoom extends DurableObject {
 		const updateLog = createUpdateLog(ctx.storage);
 
 		ctx.blockConcurrencyWhile(async () => {
-			this.doc = new Y.Doc({ gc: config.gc ?? true });
+			this.doc = new Y.Doc({ gc: config.gc });
 			const awareness = new Awareness(this.doc);
 
 			updateLog.init(this.doc);
@@ -422,11 +423,11 @@ export class BaseSyncRoom extends DurableObject {
 	 * constructor(ctx: DurableObjectState, env: Env) {
 	 *   super(ctx, env, { gc: false });
 	 *   const autoSave = createAutoSaveTracker({ doc: this.doc, save: () => ... });
-	 *   this.onAllDisconnected(() => autoSave.checkAndSave());
+	 *   this.registerDisconnectHandler(() => autoSave.checkAndSave());
 	 * }
 	 * ```
 	 */
-	protected onAllDisconnected(handler: () => void) {
+	protected registerDisconnectHandler(handler: () => void) {
 		this.disconnectHandlers.push(handler);
 	}
 

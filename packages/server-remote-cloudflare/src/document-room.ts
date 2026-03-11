@@ -28,7 +28,7 @@ export class DocumentRoom extends BaseSyncRoom {
 			save: () => this.saveSnapshot('Auto-save'),
 		});
 
-		this.onAllDisconnected(() => autoSave.checkAndSave());
+		this.registerDisconnectHandler(() => autoSave.checkAndSave());
 	}
 
 	// --- Snapshot RPCs ---

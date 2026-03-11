@@ -9,4 +9,8 @@ import { BaseSyncRoom } from './base-sync-room';
  *
  * Uses all defaults from {@link BaseSyncRoom} — no config needed.
  */
-export class WorkspaceRoom extends BaseSyncRoom {}
+export class WorkspaceRoom extends BaseSyncRoom {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env, { gc: true });
+	}
+}

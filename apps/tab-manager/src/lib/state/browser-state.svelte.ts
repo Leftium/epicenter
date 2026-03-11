@@ -596,7 +596,7 @@ function createBrowserState() {
 		 * {#await browserState.whenReady}
 		 *   <LoadingSpinner />
 		 * {:then}
- *   <UnifiedTabList />
+		 *   <UnifiedTabList />
 		 * {/await}
 		 * ```
 		 */

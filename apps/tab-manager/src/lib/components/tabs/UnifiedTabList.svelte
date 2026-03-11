@@ -65,28 +65,31 @@
 				{@const isExpanded =
 					unifiedViewState.isFiltering ||
 					unifiedViewState.isSectionExpanded(item.section)}
-				<button
-					type="button"
-					onclick={() => {
-						if (!unifiedViewState.isFiltering) {
-							unifiedViewState.toggleSection(item.section);
-						}
-					}}
-					class="sticky top-0 z-20 flex w-full cursor-pointer items-center gap-2 border-b bg-background px-4 py-2.5 text-sm font-medium transition hover:bg-muted/50"
+				<div
+					class="sticky top-0 z-20 flex w-full items-center gap-2 border-b bg-background px-4 py-2.5 text-sm font-medium"
 				>
-					<ChevronRightIcon
-						class={cn(
-							'size-4 shrink-0 text-muted-foreground transition',
-							isExpanded && 'rotate-90',
-						)}
-					/>
-					<span>{item.label}</span>
-					<Badge variant="outline" class="ml-auto shrink-0">
-						{item.count}
-					</Badge>
+					<button
+						type="button"
+						onclick={() => {
+							if (!unifiedViewState.isFiltering) {
+								unifiedViewState.toggleSection(item.section);
+							}
+						}}
+						class="flex flex-1 cursor-pointer items-center gap-2 transition hover:opacity-80"
+					>
+						<ChevronRightIcon
+							class={cn(
+								'size-4 shrink-0 text-muted-foreground transition',
+								isExpanded && 'rotate-90',
+							)}
+						/>
+						<span>{item.label}</span>
+						<Badge variant="outline" class="ml-auto shrink-0">
+							{item.count}
+						</Badge>
+					</button>
 					{#if item.section === 'saved' && savedTabState.tabs.length > 0 && isExpanded}
-						<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-						<div class="flex gap-1" onclick={(e) => e.stopPropagation()}>
+						<div class="flex gap-1">
 							<Button
 								variant="ghost"
 								size="icon-xs"
@@ -106,7 +109,7 @@
 							</Button>
 						</div>
 					{/if}
-				</button>
+				</div>
 			{:else if item.kind === 'window-header'}
 				{@const windowTabs = browserState.tabsByWindow(item.window.id)}
 				{@const activeTab = windowTabs.find((t) => t.active)}

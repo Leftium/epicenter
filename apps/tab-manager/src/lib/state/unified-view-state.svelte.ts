@@ -2,9 +2,9 @@
  * Reactive unified view state for the side panel.
  *
  * Manages section expansion (open tabs, saved for later, bookmarks) and
- * derives a single flat item array from {@link browserState} and
- * {@link savedTabState}. The flat array feeds a single VList that renders
- * all sections in one scrollable view.
+ * derives a single flat item array from {@link browserState},
+ * {@link savedTabState}, and {@link bookmarkState}. The flat array feeds
+ * a single VList that renders all sections in one scrollable view.
  *
  * Section expand/collapse works identically to how window expand/collapse
  * already works in the original `FlatTabList`—a `SvelteSet` tracks expanded
@@ -51,10 +51,22 @@ function createUnifiedViewState() {
 	/** Which top-level sections are expanded. All expanded by default. */
 	const expandedSections = new SvelteSet<SectionId>(['open-tabs', 'saved', 'bookmarks']);
 
-	/** Which windows are expanded within the open tabs section. */
-	const expandedWindows = new SvelteSet<WindowCompositeId>(
-		browserState.windows.filter((w) => w.focused).map((w) => w.id),
-	);
+	/**
+	 * Which windows are expanded within the open tabs section.
+	 *
+	 * Starts empty because this singleton initializes at import time—before
+	 * {@link browserState.whenReady} resolves. The focused window is seeded
+	 * once browser data is available (see `whenReady.then` below).
+	 */
+	const expandedWindows = new SvelteSet<WindowCompositeId>();
+
+	// Seed focused window(s) once browser data is available.
+	// Runs exactly once—after this, the user controls expansion via toggleWindow.
+	void browserState.whenReady.then(() => {
+		for (const w of browserState.windows) {
+			if (w.focused) expandedWindows.add(w.id);
+		}
+	});
 
 	/** Current search query for filtering. Empty = no filter. */
 	let searchQuery = $state('');
@@ -75,7 +87,7 @@ function createUnifiedViewState() {
 	}
 
 	/**
-	 * Flat item array derived from browserState + savedTabState.
+	 * Flat item array derived from browserState + savedTabState + bookmarkState.
 	 *
 	 * Respects section expansion, window expansion, and search filtering.
 	 * When filtering is active, all sections and windows auto-expand and
@@ -90,38 +102,32 @@ function createUnifiedViewState() {
 			0,
 		);
 
-		// When filtering, compute matching tab count
-		let openTabsMatchCount = totalTabs;
 		if (isFiltering) {
-			openTabsMatchCount = 0;
+			let openTabsMatchCount = 0;
+			const openTabsItems: FlatItem[] = [];
+
 			for (const window of browserState.windows) {
-				for (const tab of browserState.tabsByWindow(window.id)) {
-					if (matchesFilter(tab.title, tab.url)) openTabsMatchCount++;
+				const windowTabs = browserState.tabsByWindow(window.id);
+				const matching = windowTabs.filter((tab) =>
+					matchesFilter(tab.title, tab.url),
+				);
+				if (matching.length === 0) continue;
+
+				openTabsMatchCount += matching.length;
+				openTabsItems.push({ kind: 'window-header', window });
+				for (const tab of matching) {
+					openTabsItems.push({ kind: 'tab', tab });
 				}
 			}
-			// Hide section entirely if no matches
-			if (openTabsMatchCount === 0) {
-				// Skip open tabs section
-			} else {
+
+			if (openTabsMatchCount > 0) {
 				items.push({
 					kind: 'section-header',
 					section: 'open-tabs',
 					label: 'Open Tabs',
 					count: openTabsMatchCount,
 				});
-				// Auto-expand when filtering
-				for (const window of browserState.windows) {
-					const windowTabs = browserState.tabsByWindow(window.id);
-					const matchingTabs = windowTabs.filter((tab) =>
-						matchesFilter(tab.title, tab.url),
-					);
-					if (matchingTabs.length === 0) continue;
-
-					items.push({ kind: 'window-header', window });
-					for (const tab of matchingTabs) {
-						items.push({ kind: 'tab', tab });
-					}
-				}
+				items.push(...openTabsItems);
 			}
 		} else {
 			items.push({

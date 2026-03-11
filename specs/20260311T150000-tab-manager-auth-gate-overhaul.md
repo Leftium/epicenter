@@ -265,12 +265,14 @@ User can sign in anytime via cloud icon popover.
 
 ### Phase 2: SyncStatusIndicator as Auth Entry Point
 
-- [ ] **2.1** Add a `Popover` to `SyncStatusIndicator` that opens on click
-- [ ] **2.2** When `authState.status === 'signed-out'`, popover shows `AuthForm`
-- [ ] **2.3** When `authState.status === 'signed-in'`, popover shows account panel (user name, email, sync status, sign-out button)
-- [ ] **2.4** After successful sign-in from popover, call `reconnectSync()` (already happens in current AuthGate form handlers)
-- [ ] **2.5** Update tooltip text: "Sign in to sync across devices" when signed out; keep existing tooltips for other states
-- [ ] **2.6** Add visual indicator to the cloud icon when signed out (e.g., a small dot or different icon variant) so users know sync is available but inactive
+- [x] **2.1** Add a `Popover` to `SyncStatusIndicator` that opens on click
+- [x] **2.2** When `authState.status === 'signed-out'`, popover shows `AuthForm`
+- [x] **2.3** When `authState.status === 'signed-in'`, popover shows account panel (user name, email, sync status, sign-out button)
+- [x] **2.4** After successful sign-in from popover, call `reconnectSync()` (already happens in current AuthGate form handlers)
+  > **Note**: AuthForm calls `reconnectSync()` internally on successful sign-in/sign-up/Google OAuth.
+- [x] **2.5** Update tooltip text: "Sign in to sync across devices" when signed out; keep existing tooltips for other states
+- [x] **2.6** Add visual indicator to the cloud icon when signed out (e.g., a small dot or different icon variant) so users know sync is available but inactive
+  > **Note**: Added a small primary-colored dot indicator on the cloud icon when signed out. Also uses muted-foreground color for CloudOff when unauthenticated (vs destructive when authenticated but disconnected).
 
 ### Phase 3: Fix Account Linking (Server Change)
 

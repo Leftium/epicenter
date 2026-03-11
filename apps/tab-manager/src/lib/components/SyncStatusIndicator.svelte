@@ -32,7 +32,8 @@
 
 	const syncStatus = createSyncStatus();
 
-	function getTooltip(s: SyncStatus): string {
+	function getTooltip(s: SyncStatus, isSignedIn: boolean): string {
+		if (!isSignedIn) return 'Sign in to sync across devices';
 		switch (s.phase) {
 			case 'connected':
 				return 'Connected';
@@ -48,20 +49,92 @@
 </script>
 
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
+	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as Popover from '@epicenter/ui/popover';
 	import Cloud from '@lucide/svelte/icons/cloud';
 	import CloudOff from '@lucide/svelte/icons/cloud-off';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import LogOutIcon from '@lucide/svelte/icons/log-out';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import AuthForm from '$lib/components/AuthForm.svelte';
+	import { authState } from '$lib/state/auth.svelte';
 
-	const tooltip = $derived(getTooltip(syncStatus.current));
+	const isSignedIn = $derived(authState.status === 'signed-in');
+	const tooltip = $derived(getTooltip(syncStatus.current, isSignedIn));
+
+	let popoverOpen = $state(false);
 </script>
 
-<Button {tooltip} variant="ghost" size="icon-sm" onclick={reconnectSync}>
-	{#if syncStatus.current.phase === 'connected'}
-		<Cloud class="size-4" />
-	{:else if syncStatus.current.phase === 'connecting'}
-		<LoaderCircle class="size-4 animate-spin" />
-	{:else}
-		<CloudOff class="size-4 text-destructive" />
-	{/if}
-</Button>
+<Popover.Root bind:open={popoverOpen}>
+	<Popover.Trigger
+		class={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+		title={tooltip}
+	>
+		<div class="relative">
+			{#if syncStatus.current.phase === 'connected'}
+				<Cloud class="size-4" />
+			{:else if syncStatus.current.phase === 'connecting'}
+				<LoaderCircle class="size-4 animate-spin" />
+			{:else if !isSignedIn}
+				<CloudOff class="size-4 text-muted-foreground" />
+			{:else}
+				<CloudOff class="size-4 text-destructive" />
+			{/if}
+			{#if !isSignedIn}
+				<span
+					class="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary"
+				></span>
+			{/if}
+		</div>
+	</Popover.Trigger>
+	<Popover.Content class="w-80 p-0" align="end">
+		{#if isSignedIn}
+			<!-- Account panel -->
+			<div class="p-4 space-y-3">
+				<div class="space-y-1">
+					<p class="text-sm font-medium">{authState.user?.name}</p>
+					<p class="text-xs text-muted-foreground">{authState.user?.email}</p>
+				</div>
+				<div class="border-t pt-3 space-y-1">
+					<p class="text-xs text-muted-foreground">
+						Sync:
+						{syncStatus.current.phase === 'connected'
+							? 'Connected'
+							: syncStatus.current.phase === 'connecting'
+								? 'Connecting…'
+								: 'Offline'}
+					</p>
+				</div>
+				<div class="border-t pt-3 flex gap-2">
+					{#if syncStatus.current.phase !== 'connected'}
+						<Button
+							variant="outline"
+							size="sm"
+							class="flex-1"
+							onclick={reconnectSync}
+						>
+							<RefreshCwIcon class="size-3.5" />
+							Reconnect
+						</Button>
+					{/if}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="flex-1"
+						onclick={async () => {
+							await authState.signOut();
+							reconnectSync();
+							popoverOpen = false;
+						}}
+					>
+						<LogOutIcon class="size-3.5" />
+						Sign out
+					</Button>
+				</div>
+			</div>
+		{:else}
+			<!-- Auth form -->
+			<div class="flex items-center justify-center p-4"><AuthForm /></div>
+		{/if}
+	</Popover.Content>
+</Popover.Root>

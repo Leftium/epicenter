@@ -1,6 +1,6 @@
 # Fix: getToken returning empty string misclassifies auth errors
 
-**Status:** Implementing
+**Status:** Implemented
 **Scope:** 4 files, ~10 lines changed
 
 ## Problem
@@ -78,7 +78,7 @@ getToken: async () => authState.token,
 
 - The provider still retries on auth errors (with backoff). This is fine—the user might sign in while the provider is retrying, and `getToken` is called fresh each iteration.
 - The UI already checks `lastError?.type === 'auth'` in the tooltip. Correct classification means the UI now shows "Authentication failed" instead of treating it as a generic connection problem.
-- The `reconnectSync()` call from `reactToTokenSet()` still handles the sign-in→reconnect flow. The retry loop is a fallback, not the primary recovery path.
+- The `reconnectSync()` call from `onExternalSignIn()` still handles the sign-in→reconnect flow. The retry loop is a fallback, not the primary recovery path.
 
 ### Future consideration (not in scope)
 
@@ -87,8 +87,8 @@ The provider could stop retrying entirely on auth errors and wait for an explici
 ## Todo
 
 - [x] Write spec
-- [ ] Update `SyncProviderConfig.getToken` return type
-- [ ] Add falsy token guard in provider `runLoop`
-- [ ] Update `SyncExtensionConfig.getToken` return type
-- [ ] Remove `?? ''` from workspace.ts callsite
-- [ ] LSP diagnostics clean on all 4 files
+- [x] Update `SyncProviderConfig.getToken` return type
+- [x] Add falsy token guard in provider `runLoop`
+- [x] Update `SyncExtensionConfig.getToken` return type
+- [x] Remove `?? ''` from workspace.ts callsite
+- [x] LSP diagnostics clean on all 4 files

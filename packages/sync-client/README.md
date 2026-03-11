@@ -4,7 +4,7 @@ Client-side Yjs sync provider for any y-websocket compatible server.
 
 ## What This Does
 
-`createSyncProvider()` connects a `Y.Doc` to a WebSocket sync server using the y-websocket protocol, plus a custom heartbeat extension (MESSAGE_SYNC_STATUS, tag 102) for `hasLocalChanges` tracking and fast dead-connection detection.
+`createSyncProvider()` connects a `Y.Doc` to a WebSocket sync server using the y-websocket protocol with text-based ping/pong liveness detection.
 
 Most consumers don't use this package directly. Instead, they use `createSyncExtension` from `@epicenter/workspace/extensions/sync`, which wraps this provider with workspace lifecycle management (waiting for persistence to load before connecting, auto-cleanup on destroy, URL templating with workspace IDs).
 
@@ -26,11 +26,6 @@ const provider = createSyncProvider({
 // Provider connects automatically. Check status:
 provider.onStatusChange((status) => {
 	console.log('Sync phase:', status.phase);
-});
-
-// Track whether local changes have reached the server:
-provider.onLocalChanges((hasChanges) => {
-	console.log(hasChanges ? 'Saving...' : 'Saved');
 });
 
 // Clean up when done:
@@ -67,7 +62,7 @@ const provider = createSyncProvider({
 });
 ```
 
-The provider caches the token and refreshes it after every 3 consecutive connection failures.
+The token is fetched fresh on every connection attempt—no caching.
 
 ## API
 
@@ -83,7 +78,7 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 | ---------------------- | ----------------------- | -------------------- | --------------------------------------------------------------- |
 | `doc`                  | `Y.Doc`                 | (required)           | The Yjs document to sync                                        |
 | `url`                  | `string`                | (required)           | WebSocket URL to connect to                                     |
-| `getToken`             | `() => Promise<string>` | —                    | Dynamic token fetcher for authenticated mode                    |
+| `getToken`             | `() => Promise<string \| undefined>` | —                    | Dynamic token fetcher for authenticated mode. Return `undefined` when no token is available. |
 | `connect`              | `boolean`               | `true`               | Whether to connect immediately                                  |
 | `awareness`            | `Awareness`             | `new Awareness(doc)` | External awareness instance for user presence                   |
 
@@ -92,12 +87,10 @@ function createSyncProvider(config: SyncProviderConfig): SyncProvider;
 | Property / Method    | Type                                                     | Description                                            |
 | -------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
 | `status`             | `SyncStatus` (readonly)                                  | Current connection status (discriminated on `phase`)   |
-| `hasLocalChanges`    | `boolean` (readonly)                                     | Whether unacknowledged local changes exist             |
 | `awareness`          | `Awareness` (readonly)                                   | The awareness instance for user presence               |
 | `connect()`          | `() => void`                                             | Start connecting. Idempotent.                          |
 | `disconnect()`       | `() => void`                                             | Stop connecting and close the socket                   |
 | `onStatusChange(fn)` | `(listener: (status: SyncStatus) => void) => () => void` | Subscribe to status changes. Returns unsubscribe.      |
-| `onLocalChanges(fn)` | `(listener: (has: boolean) => void) => () => void`       | Subscribe to local changes state. Returns unsubscribe. |
 | `destroy()`          | `() => void`                                             | Disconnect, remove all listeners, release resources    |
 
 ## Connection Status Model
@@ -141,37 +134,15 @@ provider.onStatusChange((status) => {
 });
 ```
 
-## `hasLocalChanges`
+## Liveness Detection
 
-Tracks whether all local Y.Doc mutations have been acknowledged by the server.
+The provider sends text `"ping"` messages at a fixed interval. Any incoming message (binary sync data or text `"pong"`) resets the liveness timer. If no message arrives within the timeout window, the WebSocket is closed and reconnection begins.
 
-The provider sends a MESSAGE_SYNC_STATUS (tag 102) frame after each local edit containing a monotonic version counter. The server echoes it back unchanged. When the echoed version matches the local version, all changes have reached the server.
+- **Ping interval**: 30 seconds
+- **Liveness timeout**: 45 seconds (checked every 10 seconds)
+- **Worst-case dead connection detection**: ~55 seconds
 
-This powers "Saving..." / "Saved" UI indicators and `beforeunload` warnings:
-
-```typescript
-provider.onLocalChanges((hasChanges) => {
-	statusBar.text = hasChanges ? 'Saving...' : 'Saved';
-});
-
-window.addEventListener('beforeunload', (e) => {
-	if (provider.hasLocalChanges) {
-		e.preventDefault();
-	}
-});
-```
-
-## Heartbeat
-
-The same MESSAGE_SYNC_STATUS message doubles as a heartbeat probe:
-
-- After **2 seconds** of silence (no messages sent or received), the provider sends a probe
-- If no response arrives within **3 seconds**, the WebSocket is closed and reconnection begins
-- Worst-case dead connection detection: **5 seconds**
-
-The heartbeat timeout only arms after the server has responded to at least one probe (proving it supports tag 102). This prevents false-positive disconnects from standard y-websocket servers.
-
-Browser `offline` events trigger an immediate probe. Browser `online` events wake the reconnect backoff sleeper.
+Browser `offline` events close the socket immediately. Browser `online` events wake the reconnect backoff sleeper. Tab visibility changes trigger an immediate ping to detect stale connections.
 
 ## Architecture
 
@@ -190,14 +161,14 @@ This eliminates the race conditions common in event-driven WebSocket reconnectio
  └─ extensions/sync.ts                  └─ WebSocket endpoint
      │                                      │
      │  createSyncExtension()               │  y-websocket protocol
-     │  - URL templating ({id})             │  MESSAGE_SYNC_STATUS echo
-     │  - Waits for persistence             │  Ping/pong keepalive
+     │  - URL templating ({id})             │  Ping/pong keepalive
+     │  - Waits for persistence             │
      │  - Lifecycle management              │
      │                                      │
      └──── uses ────▶ @epicenter/sync ◀──── talks to ────┘
                       └─ createSyncProvider()
                       └─ Supervisor loop
-                      └─ Heartbeat + hasLocalChanges
+                      └─ Liveness (ping/pong)
 ```
 
 - **`@epicenter/sync`** (this package): Raw sync provider. Connects a Y.Doc to a WebSocket.

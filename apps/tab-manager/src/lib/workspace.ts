@@ -21,6 +21,7 @@ import {
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
+import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
 import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -558,6 +559,7 @@ export const workspaceClient = createWorkspace(
 	}),
 )
 	.withExtension('persistence', indexeddbPersistence)
+	.withExtension('broadcast', broadcastChannelSync)
 	.withExtension(
 		'sync',
 		createSyncExtension({

@@ -12,6 +12,7 @@
 		"./extensions/sync": "./src/extensions/sync.ts",
 		"./extensions/sync/web": "./src/extensions/sync/web.ts",
 		"./extensions/sync/desktop": "./src/extensions/sync/desktop.ts",
+		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts"
 	},

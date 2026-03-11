@@ -1,2 +1,2 @@
 export { createSyncProvider } from './provider';
-export type { SyncProvider, SyncProviderConfig, SyncStatus } from './types';
+export type { SyncError, SyncProvider, SyncProviderConfig, SyncStatus } from './types';

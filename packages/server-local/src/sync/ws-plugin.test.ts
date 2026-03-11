@@ -97,7 +97,7 @@ function startIntegratedTestServer({
  */
 function waitForStatus(
 	provider: SyncProvider,
-	target: SyncStatus,
+	target: SyncStatus['phase'],
 	timeoutMs = 5_000,
 ): Promise<void> {
 	return new Promise((resolve, reject) => {
@@ -105,19 +105,19 @@ function waitForStatus(
 			unsub();
 			reject(
 				new Error(
-					`Timed out waiting for status '${target}', stuck at '${provider.status}'`,
+					`Timed out waiting for status '${target}', stuck at '${provider.status.phase}'`,
 				),
 			);
 		}, timeoutMs);
 		const unsub = provider.onStatusChange((s) => {
-			if (s === target) {
+			if (s.phase === target) {
 				clearTimeout(timer);
 				unsub();
 				resolve();
 			}
 		});
 		// Check AFTER subscribing to close the race window
-		if (provider.status === target) {
+		if (provider.status.phase === target) {
 			clearTimeout(timer);
 			unsub();
 			resolve();
@@ -491,8 +491,9 @@ describe('ws sync plugin auth', () => {
 		unsub();
 
 		// Should have attempted at least one connection cycle
-		expect(statuses).toContain('connecting');
-		expect(statuses).not.toContain('connected');
+		const phases = statuses.map((s) => s.phase);
+		expect(phases).toContain('connecting');
+		expect(phases).not.toContain('connected');
 	}
 
 	test('rejects connection without token when auth is required', async () => {
@@ -558,7 +559,7 @@ describe('ws sync plugin auth', () => {
 
 			try {
 				await waitForStatus(provider, 'connected');
-				expect(provider.status).toBe('connected');
+				expect(provider.status.phase).toBe('connected');
 			} finally {
 				provider.destroy();
 			}

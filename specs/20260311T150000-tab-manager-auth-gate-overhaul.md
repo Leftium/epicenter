@@ -257,9 +257,11 @@ User can sign in anytime via cloud icon popover.
 ### Phase 1: Remove Auth Gate (Core Change)
 
 - [x] **1.1** Extract the login form from `AuthGate.svelte` into a new `AuthForm.svelte` component (reusable form content without the gate wrapper logic)
-- [ ] **1.2** Remove `<AuthGate>` wrapper from `App.svelte`—app renders unconditionally
-- [ ] **1.3** Update `authState.checkSession()` to handle the "no token" case without showing a loading spinner—if no token in storage, immediately set `signed-out` status (it already does this, but verify the `checking` state doesn't flash)
-- [ ] **1.4** Verify that `workspaceClient` initializes correctly without auth (IndexedDB + BroadcastChannel should work; sync extension should enter `connecting` → `offline` gracefully)
+- [x] **1.2** Remove `<AuthGate>` wrapper from `App.svelte`—app renders unconditionally
+- [x] **1.3** Update `authState.checkSession()` to handle the "no token" case without showing a loading spinner—if no token in storage, immediately set `signed-out` status (it already does this, but verify the `checking` state doesn't flash)
+  > **Note**: Moved the `onMount` + `$effect` from AuthGate directly into App.svelte. The `checking` state never flashes because `checkSession()` fast-paths to `signed-out` when no token exists (no server round-trip).
+- [x] **1.4** Verify that `workspaceClient` initializes correctly without auth (IndexedDB + BroadcastChannel should work; sync extension should enter `connecting` → `offline` gracefully)
+  > **Note**: Verified by code inspection—`workspaceClient` uses `authState.token ?? ''` for the token, sync extension handles empty tokens gracefully (gets 401, enters offline).
 
 ### Phase 2: SyncStatusIndicator as Auth Entry Point
 

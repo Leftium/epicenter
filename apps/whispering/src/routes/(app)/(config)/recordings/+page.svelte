@@ -188,26 +188,21 @@
 					onDelete: () => {
 						confirmationDialog.open({
 							title: 'Delete recording',
-							description:
-								'Are you sure you want to delete this recording?',
+							description: 'Are you sure you want to delete this recording?',
 							confirm: { text: 'Delete', variant: 'destructive' },
 							onConfirm: async () => {
-								const { error } = await rpc.db.recordings.delete(
-									row.original,
-								);
+								const { error } = await rpc.db.recordings.delete(row.original);
 								if (error) {
 									rpc.notify.error({
 										title: 'Failed to delete recording!',
-										description:
-											'Your recording could not be deleted.',
+										description: 'Your recording could not be deleted.',
 										action: { type: 'more-details', error },
 									});
 									throw error;
 								}
 								rpc.notify.success({
 									title: 'Deleted recording!',
-									description:
-										'Your recording has been deleted.',
+									description: 'Your recording has been deleted.',
 								});
 							},
 						});

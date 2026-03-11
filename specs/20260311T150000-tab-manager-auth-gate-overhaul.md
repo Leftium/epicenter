@@ -395,7 +395,7 @@ User can sign in anytime via cloud icon popover.
 ## Review
 
 **Completed**: 2026-03-11
-**Commits**: `ee1f67359` → `b29b52343` (4 commits)
+**Commits**: `ee1f67359` → `575aca052` (9 commits)
 
 ### Summary
 
@@ -420,13 +420,20 @@ Removed the `AuthGate` wrapper that blocked the entire tab manager UI behind aut
 **Wave 4 — AI Chat Gate** (`b29b52343`)
 - Added auth check to `AiDrawer.svelte` — shows "Sign in to use AI chat" prompt when unauthenticated
 
+**Cleanup** (`c87d20372`)
+- Deleted `AuthGate.svelte` (no longer imported anywhere)
+
+**Bug Fixes** (`f88e2efee` → `575aca052`)
+- Added `reactToTokenSet()` to detect cross-context sign-in (another window signs in → this window updates)
+- Reordered SyncStatusIndicator icon logic to check auth state before sync phase (fixes perpetual spinner when unauthenticated)
+- Wired `reconnectSync()` into the token-set effect so the WebSocket reconnects with the fresh token
+
 ### Deviations from Spec
 
 - **4.2**: The spec suggested "a button that opens the sync popover or triggers auth directly." Instead, the Close button dismisses the drawer, letting the user click the cloud icon. Simpler than programmatically opening another component's popover.
-- **AuthGate.svelte not deleted**: Left in place since it's not imported anywhere. Can be cleaned up separately.
 
 ### Follow-up Work
 
-- Delete `AuthGate.svelte` (now unused)
 - 3.3/3.4: Manual testing of account linking flows (email→Google, Google→email) requires a running server
 - Consider adding first-run onboarding hint if analytics show poor cloud icon discovery
+- The `getToken` in workspace.ts still returns `authState.token ?? ''` (empty string) rather than throwing when unauthenticated. The UI fix handles this, but the sync provider doesn't distinguish auth errors from connection errors when it receives an empty token. A future improvement could make `getToken` throw when no token exists, which would give the provider a proper `auth` error type.

@@ -184,8 +184,8 @@ This is a defensive measure. Current consumers don't need it, but it prevents a 
 
 ### Phase 2: Update consumer
 
-- [ ] **2.1** In `App.svelte`, remove the `$effect` block (lines 37-40)
-- [ ] **2.2** Add `authState.onExternalSignIn(() => reconnectSync())` inside the existing `onMount`, returning the unsubscribe in cleanup
+- [x] **2.1** In `App.svelte`, remove the `$effect` block (lines 37-40)
+- [x] **2.2** Add `authState.onExternalSignIn(() => reconnectSync())` inside the existing `onMount`, returning the unsubscribe in cleanup
 
 ### Phase 3: Verify
 

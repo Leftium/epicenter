@@ -23,9 +23,9 @@
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
 	import { TRANSCRIPTION } from '$lib/constants/transcription';
-	import { MOONSHINE_MODELS } from '$lib/services/isomorphic/transcription/local/moonshine';
-	import { PARAKEET_MODELS } from '$lib/services/isomorphic/transcription/local/parakeet';
-	import { WHISPER_MODELS } from '$lib/services/isomorphic/transcription/local/whispercpp';
+	import { MOONSHINE_MODELS } from '$lib/services/transcription/local/moonshine';
+	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
+	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
 	import { hasNavigatorLocalTranscriptionIssue } from '$routes/(app)/_layout-utils/check-ffmpeg';

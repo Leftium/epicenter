@@ -12,7 +12,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
-	import type { Transformation } from '$lib/services/isomorphic/db';
+	import type { Transformation } from '$lib/services/db';
 	import { settings } from '$lib/state/settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 

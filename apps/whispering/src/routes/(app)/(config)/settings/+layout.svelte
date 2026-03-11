@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Link } from '@epicenter/ui/link';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { rpc } from '$lib/query';
 	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';

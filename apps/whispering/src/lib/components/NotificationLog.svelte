@@ -36,7 +36,7 @@
 	import CheckCircle2 from '@lucide/svelte/icons/check-circle-2';
 	import Info from '@lucide/svelte/icons/info';
 	import { mode } from 'mode-watcher';
-	import type { UnifiedNotificationOptions } from '$lib/services/isomorphic/notifications/types';
+	import type { UnifiedNotificationOptions } from '$lib/services/notifications/types';
 </script>
 
 <Modal.Root bind:open={notificationLog.isOpen}>

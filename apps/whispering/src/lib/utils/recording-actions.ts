@@ -1,6 +1,6 @@
 import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
-import type { Recording } from '$lib/services/isomorphic/db';
 import { rpc } from '$lib/query';
+import type { Recording } from '$lib/services/db';
 
 /**
  * Recording management actions. These are UI-boundary functions that compose

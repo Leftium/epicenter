@@ -18,6 +18,7 @@
 	},
 	"dependencies": {
 		"@epicenter/ai": "workspace:*",
+		"@epicenter/sync-client": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"better-auth": "catalog:",

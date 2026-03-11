@@ -6,6 +6,7 @@
 	"types": "./src/app.ts",
 	"license": "AGPL-3.0",
 	"scripts": {
+		"test": "bun test",
 		"typecheck": "tsc --noEmit",
 		"dev:local": "wrangler dev",
 		"dev:remote": "infisical run --watch --path=/api -- wrangler dev",

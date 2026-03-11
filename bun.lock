@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -119,6 +118,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/ai": "workspace:*",
+        "@epicenter/sync-client": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",

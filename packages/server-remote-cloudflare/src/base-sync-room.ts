@@ -12,7 +12,7 @@
  * - {@link createUpdateLog} — SQLite append-only update log + cold-start compaction
  * - {@link createConnectionHub} — WebSocket connection map + dispatch + broadcast
  * - {@link createAutoSaveTracker} — dedup auto-save on last disconnect
- * - {@link BaseSyncRoom} — abstract DO base class wiring the above together
+ * - {@link BaseSyncRoom} — DO base class wiring the above together
  */
 
 import { DurableObject } from 'cloudflare:workers';
@@ -317,14 +317,14 @@ export function createAutoSaveTracker({
 // ============================================================================
 
 /**
- * Abstract base for Yjs sync rooms backed by Cloudflare Durable Objects.
+ * Base class for Yjs sync rooms backed by Cloudflare Durable Objects.
  *
  * Owns the shared infrastructure that every sync room needs: SQLite update log
  * persistence, WebSocket lifecycle via the Hibernation API, HTTP sync via RPC,
- * and connection management. Subclasses customize via two hooks:
+ * and connection management. Subclasses customize via {@link SyncRoomConfig}:
  *
- * - {@link createDoc} — override to set Y.Doc options (e.g., `gc: false`)
- * - {@link initRoom} — override for extra DDL, auto-save, or other setup
+ * - `gc` — Y.Doc garbage collection (default: `true`) via {@link SyncRoomConfig}
+ * - {@link BaseSyncRoom.onAllDisconnected} — register disconnect-time behavior (e.g. auto-save)
  *
  * ## Worker → DO interface
  *
@@ -361,11 +361,28 @@ export function createAutoSaveTracker({
  * For enterprise self-hosted, the deployment itself is the org boundary.
  * See `getWorkspaceStub` in app.ts for the full rationale.
  */
-export abstract class BaseSyncRoom extends DurableObject {
+/**
+ * Configuration for customizing sync room behavior.
+ *
+ * Passed to the {@link BaseSyncRoom} constructor. Keeps customization
+ * explicit and co-located with the subclass constructor.
+ */
+type SyncRoomConfig = {
+	/**
+	 * Whether to enable Yjs garbage collection. Defaults to `true`.
+	 *
+	 * Set to `false` for document rooms that need version history — `gc: false`
+	 * preserves delete history so `Y.snapshot()` can reconstruct past states.
+	 */
+	gc?: boolean;
+};
+
+export class BaseSyncRoom extends DurableObject {
 	protected doc!: Y.Doc;
 	private hub!: ConnectionHub;
+	private disconnectHandlers: (() => void)[] = [];
 
-	constructor(ctx: DurableObjectState, env: Env) {
+	constructor(ctx: DurableObjectState, env: Env, config: SyncRoomConfig = {}) {
 		super(ctx, env);
 
 		ctx.setWebSocketAutoResponse(
@@ -375,47 +392,42 @@ export abstract class BaseSyncRoom extends DurableObject {
 		const updateLog = createUpdateLog(ctx.storage);
 
 		ctx.blockConcurrencyWhile(async () => {
-			this.doc = this.createDoc();
+			this.doc = new Y.Doc({ gc: config.gc ?? true });
 			const awareness = new Awareness(this.doc);
 
 			updateLog.init(this.doc);
-
-			const onAllDisconnected = this.initRoom(ctx.storage);
 
 			this.hub = createConnectionHub({
 				ctx,
 				doc: this.doc,
 				awareness,
-				onAllDisconnected,
+				onAllDisconnected: () => {
+					for (const handler of this.disconnectHandlers) handler();
+				},
 			});
 			this.hub.restoreHibernated();
 		});
 	}
 
 	/**
-	 * Create the Y.Doc instance for this room.
+	 * Register a callback to run when all WebSocket connections disconnect.
 	 *
-	 * Override to customize Y.Doc options. For example, use `gc: false` to
-	 * preserve delete history for version snapshots.
+	 * Call during construction (after `super()`) to register disconnect-time
+	 * behavior like auto-save. The handler array is captured by reference in
+	 * the connection hub's closure, so handlers registered after hub creation
+	 * are still invoked at disconnect time. Handlers run in registration order.
 	 *
-	 * @default `new Y.Doc()` (gc: true)
+	 * @example
+	 * ```typescript
+	 * constructor(ctx: DurableObjectState, env: Env) {
+	 *   super(ctx, env, { gc: false });
+	 *   const autoSave = createAutoSaveTracker({ doc: this.doc, save: () => ... });
+	 *   this.onAllDisconnected(() => autoSave.checkAndSave());
+	 * }
+	 * ```
 	 */
-	protected createDoc(): Y.Doc {
-		return new Y.Doc();
-	}
-
-	/**
-	 * Room-specific initialization hook.
-	 *
-	 * Called inside `blockConcurrencyWhile` after the doc and update log are
-	 * ready but before the connection hub is created. Use this to create
-	 * additional tables or set up auto-save tracking.
-	 *
-	 * @returns A callback invoked when all WebSocket connections disconnect,
-	 *          or `undefined` if no action is needed on disconnect.
-	 */
-	protected initRoom(_storage: DurableObjectStorage): (() => void) | undefined {
-		return undefined;
+	protected onAllDisconnected(handler: () => void) {
+		this.disconnectHandlers.push(handler);
 	}
 
 	// --- fetch: WebSocket upgrades only ---

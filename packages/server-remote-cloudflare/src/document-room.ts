@@ -11,14 +11,10 @@ import { BaseSyncRoom, createAutoSaveTracker } from './base-sync-room';
  * WebSocket disconnects.
  */
 export class DocumentRoom extends BaseSyncRoom {
-	protected override createDoc(): Y.Doc {
-		return new Y.Doc({ gc: false });
-	}
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env, { gc: false });
 
-	protected override initRoom(
-		storage: DurableObjectStorage,
-	): (() => void) | undefined {
-		storage.sql.exec(`
+		ctx.storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS snapshots (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				snapshot BLOB NOT NULL,
@@ -32,7 +28,7 @@ export class DocumentRoom extends BaseSyncRoom {
 			save: () => this.saveSnapshot('Auto-save'),
 		});
 
-		return () => autoSave.checkAndSave();
+		this.onAllDisconnected(() => autoSave.checkAndSave());
 	}
 
 	// --- Snapshot RPCs ---

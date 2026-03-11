@@ -188,31 +188,11 @@
 		</div>
 		<Modal.Footer>
 			<Button
-				onclick={() => {
-					confirmationDialog.open({
-						title: 'Delete recording',
-						description: 'Are you sure? This action cannot be undone.',
-						confirm: { text: 'Delete', variant: 'destructive' },
-						onConfirm: async () => {
-							const { error } = await rpc.db.recordings.delete(
-								$state.snapshot(recording),
-							);
-							if (error) {
-								rpc.notify.error({
-									title: 'Failed to delete recording!',
-									description: 'Your recording could not be deleted.',
-									action: { type: 'more-details', error },
-								});
-								throw error;
-							}
-							isDialogOpen = false;
-							rpc.notify.success({
-								title: 'Deleted recording!',
-								description: 'Your recording has been deleted successfully.',
-							});
-						},
-					});
-				}}
+				onclick={() =>
+					rpc.recordingActions.deleteWithConfirmation(
+						$state.snapshot(recording),
+						{ onSuccess: () => { isDialogOpen = false; } },
+					)}
 				variant="destructive"
 			>
 				Delete

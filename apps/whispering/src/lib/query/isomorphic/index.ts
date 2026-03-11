@@ -3,6 +3,7 @@ import { analytics } from './analytics';
 import { db } from './db';
 import { delivery } from './delivery';
 import { download } from './download';
+import { recordingActions } from './recording-actions';
 import { notify } from './notify';
 import { recorder } from './recorder';
 import { localShortcuts } from './shortcuts';
@@ -28,4 +29,5 @@ export const rpc = {
 	transformer,
 	notify,
 	delivery,
+	recordingActions,
 };

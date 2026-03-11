@@ -155,22 +155,10 @@ export class BaseSyncRoom extends DurableObject {
 				.exec('SELECT data FROM updates ORDER BY id')
 				.toArray();
 
-			if (rows.length > 0) {
-				const merged = Y.mergeUpdatesV2(
-					rows.map((r) => new Uint8Array(r.data as ArrayBuffer)),
-				);
-				Y.applyUpdateV2(this.doc, merged);
-
-				if (rows.length > 1 && merged.byteLength <= MAX_COMPACTED_BYTES) {
-					ctx.storage.transactionSync(() => {
-						ctx.storage.sql.exec('DELETE FROM updates');
-						ctx.storage.sql.exec(
-							'INSERT INTO updates (data) VALUES (?)',
-							merged,
-						);
-					});
-				}
+			for (const row of rows) {
+				Y.applyUpdateV2(this.doc, new Uint8Array(row.data as ArrayBuffer));
 			}
+			compactUpdateLog(ctx, this.doc);
 
 			this.doc.on('updateV2', (update: Uint8Array) => {
 				ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', update);
@@ -281,6 +269,25 @@ export class BaseSyncRoom extends DurableObject {
 	override async webSocketError(ws: WebSocket, _error: unknown): Promise<void> {
 		this.hub.error(ws);
 	}
+
+	// --- Alarm: deferred compaction ---
+
+	/**
+	 * Compact the update log after all clients disconnect.
+	 *
+	 * Scheduled 30s after the last WebSocket closes via `ctx.storage.setAlarm`.
+	 * Cancelled if a client reconnects before the alarm fires (see `upgrade()`).
+	 *
+	 * If the DO is evicted before the alarm fires, the alarm still wakes it —
+	 * the constructor re-runs `blockConcurrencyWhile` which does cold-start
+	 * compaction, so the alarm handler finds ≤ 1 row and no-ops.
+	 *
+	 * @see {@link https://developers.cloudflare.com/durable-objects/api/alarms/ | Durable Objects Alarms}
+	 */
+	override async alarm(): Promise<void> {
+		if (this.hub.size > 0) return;
+		compactUpdateLog(this.ctx, this.doc);
+	}
 }
 
 // ============================================================================
@@ -288,21 +295,64 @@ export class BaseSyncRoom extends DurableObject {
 // ============================================================================
 
 /**
- * Max compacted snapshot size (2 MB). Cloudflare DO SQLite enforces a hard
+ * Max compacted update size (2 MB). Cloudflare DO SQLite enforces a hard
  * 2 MB per-row BLOB limit.
  *
- * On cold start, all update rows are merged into a single snapshot via
- * `Y.mergeUpdatesV2`. If the merged result fits under this limit, all rows
- * are atomically replaced with a single compacted row. This collapses
- * thousands of tiny keystroke-level updates into one row, dramatically
- * improving future cold-start load times.
+ * During compaction (cold-start or alarm), the current doc state is encoded
+ * via `Y.encodeStateAsUpdateV2`. If the result fits under this limit, all
+ * update rows are atomically replaced with a single compacted row. This
+ * collapses thousands of tiny keystroke-level updates into one row,
+ * dramatically improving future cold-start load times.
  */
 const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Delay before alarm-based compaction fires (30 seconds).
+ *
+ * Long enough to skip reconnect storms (user refresh, network blip),
+ * short enough to fire before DO eviction (~60s idle timeout).
+ */
+const COMPACTION_DELAY_MS = 30_000;
 
 /** Per-connection metadata persisted via `ws.serializeAttachment` to survive hibernation. */
 type WsAttachment = {
 	controlledClientIds: number[];
 };
+
+// ============================================================================
+// compactUpdateLog
+// ============================================================================
+
+/**
+ * Compact the SQLite update log into a single row.
+ *
+ * Encodes the current doc state via `Y.encodeStateAsUpdateV2` — produces
+ * smaller output than `Y.mergeUpdatesV2` because deleted items become
+ * lightweight GC structs (with `gc: true`) and struct merging is more
+ * thorough (with `gc: false`). Also avoids the exponential performance
+ * edge case documented in yjs#710.
+ *
+ * No-ops if the log already has ≤ 1 row or the compacted blob exceeds
+ * the 2 MB per-row BLOB limit.
+ *
+ * @see {@link https://github.com/yjs/yjs/issues/710 | yjs#710 — mergeUpdatesV2 performance}
+ */
+function compactUpdateLog(ctx: DurableObjectState, doc: Y.Doc): void {
+	const rowCount = ctx.storage.sql
+		.exec('SELECT COUNT(*) as count FROM updates')
+		.one().count as number;
+	if (rowCount <= 1) return;
+
+	const compacted = Y.encodeStateAsUpdateV2(doc);
+	if (compacted.byteLength > MAX_COMPACTED_BYTES) return;
+
+	ctx.storage.transactionSync(() => {
+		ctx.storage.sql.exec('DELETE FROM updates');
+		ctx.storage.sql.exec('INSERT INTO updates (data) VALUES (?)', compacted);
+	});
+
+	console.log(`[compaction] ${rowCount} rows → ${compacted.byteLength} bytes`);
+}
 
 // ============================================================================
 // createConnectionHub
@@ -365,6 +415,8 @@ function createConnectionHub({
 		 * returns the 101 response.
 		 */
 		upgrade(): Response {
+			void ctx.storage.deleteAlarm();
+
 			const pair = new WebSocketPair();
 			const [client, server] = [pair[0], pair[1]];
 
@@ -457,6 +509,7 @@ function createConnectionHub({
 
 			if (states.size === 0) {
 				onAllDisconnected?.();
+				void ctx.storage.setAlarm(Date.now() + COMPACTION_DELAY_MS);
 			}
 		},
 

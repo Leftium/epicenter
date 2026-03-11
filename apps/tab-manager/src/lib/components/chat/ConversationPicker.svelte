@@ -9,7 +9,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import type { ConversationHandle } from '$lib/state/chat-state.svelte';
 	import type { ConversationId } from '$lib/workspace';
 

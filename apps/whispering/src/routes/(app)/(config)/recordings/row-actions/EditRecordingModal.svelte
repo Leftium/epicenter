@@ -8,7 +8,7 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
-	import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import type { Recording } from '$lib/services/isomorphic/db';

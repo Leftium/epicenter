@@ -28,12 +28,7 @@
 			confirmationText: string;
 		};
 		/**
-		 * Skip the dialog entirely and call onConfirm immediately.
-		 * Useful for batch operations where user has already confirmed.
-		 */
-		skipConfirmation?: boolean;
-		/**
-		 * Called when the user confirms. Can be async - the dialog will show
+		 * Called when the user confirms. Can be async—the dialog will show
 		 * a loading state and stay open until the promise resolves.
 		 * Throw an error to keep the dialog open (e.g., on failure).
 		 */
@@ -45,6 +40,9 @@
 	/**
 	 * Creates a confirmation dialog state manager.
 	 *
+	 * Mount the `ConfirmationDialog` component once in your app layout,
+	 * then call `confirmationDialog.open()` from anywhere to trigger it.
+	 *
 	 * @example
 	 * ```ts
 	 * // Basic usage
@@ -53,12 +51,7 @@
 	 *   description: 'Are you sure you want to delete this item?',
 	 *   confirm: { text: 'Delete', variant: 'destructive' },
 	 *   onConfirm: async () => {
-	 *     const { error } = await rpc.db.items.delete(item);
-	 *     if (error) {
-	 *       rpc.notify.error({ title: 'Failed to delete', description: error.message });
-	 *       throw error;
-	 *     }
-	 *     rpc.notify.success({ title: 'Deleted!', description: 'Item deleted.' });
+	 *     await deleteItem();
 	 *   },
 	 * });
 	 *
@@ -69,14 +62,6 @@
 	 *   input: { confirmationText: 'DELETE' },
 	 *   confirm: { text: 'Delete All', variant: 'destructive' },
 	 *   onConfirm: () => deleteAllData(),
-	 * });
-	 *
-	 * // Skip confirmation (useful for batch operations)
-	 * confirmationDialog.open({
-	 *   title: 'Delete items',
-	 *   description: 'Deleting selected items...',
-	 *   skipConfirmation: userAlreadyConfirmed,
-	 *   onConfirm: () => deleteItems(),
 	 * });
 	 * ```
 	 */
@@ -108,14 +93,8 @@
 
 			/**
 			 * Opens the confirmation dialog with the given options.
-			 * If skipConfirmation is true, calls onConfirm immediately without showing the dialog.
 			 */
 			open(opts: ConfirmationDialogOptions) {
-				if (opts.skipConfirmation) {
-					opts.onConfirm();
-					return;
-				}
-
 				options = opts;
 				isPending = false;
 				inputText = '';
@@ -181,10 +160,10 @@
 </script>
 
 <script lang="ts">
-	import * as AlertDialog from '@epicenter/ui/alert-dialog';
-	import { Input } from '@epicenter/ui/input';
-	import { Spinner } from '@epicenter/ui/spinner';
-	import { cn } from '@epicenter/ui/utils';
+	import * as AlertDialog from '#/alert-dialog';
+	import { Input } from '#/input';
+	import { Spinner } from '#/spinner';
+	import { cn } from '#/utils';
 </script>
 
 <AlertDialog.Root bind:open={confirmationDialog.isOpen}>

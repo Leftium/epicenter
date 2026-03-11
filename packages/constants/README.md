@@ -1,72 +1,49 @@
 # @epicenter/constants
 
-Environment-aware constants and configuration for all services in the ecosystem. This package provides a unified way to manage service URLs and environment-specific settings across different platforms (Node.js, Cloudflare Workers, and Vite).
+Shared URLs and version info for the Epicenter monorepo. Each runtime context gets its own subpath export so bundlers only pull in what they need and types resolve correctly.
 
-## Installation
+## Exports
 
-```bash
-bun add @epicenter/constants
-```
+### `@epicenter/constants/apps`
 
-## Architecture
-
-Files are separated by runtime context (`./cloudflare`, `./node`, `./vite`) to prevent import issues:
-
-- **`/node`**: For Node.js server environments. Build-time evaluation using `process.env.NODE_ENV`.
-- **`/cloudflare`**: For Cloudflare Workers. Runtime evaluation using `c.env` and lazily evaluating at runtime per request.
-- **`/vite`**: For Vite client applications. Build-time evaluation using `import.meta.env.MODE`.
-
-## Usage
-
-### Node.js
+Runtime-agnostic factory. No dependency on `import.meta.env`, `process.env`, or Cloudflare bindings—works in any JavaScript environment.
 
 ```typescript
-import { APPS, APP_URLS, env } from '@epicenter/constants/node';
+import { createApps } from '@epicenter/constants/apps';
 
-// Access pre-evaluated constants
-console.log(APPS.AUTH.URL); // 'http://localhost:8787' or 'https://auth.epicenter.so'
+// Browser extension that always talks to production:
+const API_URL = createApps('production').API.URL;
 
-// Use in CORS configuration
-const corsOptions = {
-  origin: APP_URLS
-};
-
-// Access validated environment
-console.log(env.NODE_ENV); // 'development' or 'production'
+// Server that reads env at startup:
+const apps = createApps(process.env.NODE_ENV === 'production' ? 'production' : 'development');
 ```
 
-### Cloudflare Workers
+`createApps` returns URLs for three apps:
 
-Everything you need for Cloudflare Workers with runtime environment:
+| Key     | Production                        | Development              |
+|---------|-----------------------------------|--------------------------|
+| `API`   | `https://api.epicenter.so`        | `http://localhost:8787`  |
+| `SH`    | `https://epicenter.sh`            | `http://localhost:5173`  |
+| `AUDIO` | `https://whispering.epicenter.so` | `http://localhost:1420`  |
+
+### `@epicenter/constants/vite`
+
+Pre-evaluated for Vite apps. Calls `createApps` with `import.meta.env.MODE` at build time so consumers get a plain object.
 
 ```typescript
-import { APPS, APP_URLS, validateNodeEnv, type NodeEnv } from '@epicenter/constants/cloudflare';
-import { Hono } from 'hono';
-import { cors } from 'hono/cors';
+import { APPS } from '@epicenter/constants/vite';
 
-const app = new Hono<{ Bindings: NodeEnv }>();
-
-app.use('/api/*', (c, next) =>
-    cors({
-        origin: APP_URLS(c.env),
-        credentials: true,
-    })(c, next),
-);
-
-// App constants (runtime resolution)
-app.get('/config', (c) => {
-    const authUrl = APPS(c.env).AUTH.URL;
-    return c.json({ authUrl });
-});
+const whisperingUrl = APPS.AUDIO.URL;
 ```
-### Vite
+
+### `@epicenter/constants/versions`
+
+Monorepo-wide version string, stamped by CI on each release.
 
 ```typescript
-import { APPS, APP_URLS } from '@epicenter/constants/vite';
-
-// Use in your client application
-const authEndpoint = `${APPS.AUTH.URL}/api/login`;
-
-// Configure allowed origins
-const allowedOrigins = APP_URLS;
+import { VERSION } from '@epicenter/constants/versions';
 ```
+
+## Adding a new app
+
+Add a new entry to the return object in `src/apps.ts` with production and development URLs. Every subpath export picks it up automatically.

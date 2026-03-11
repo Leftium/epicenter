@@ -5,6 +5,59 @@ description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte
 
 # Svelte Guidelines
 
+# `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
+
+When a `$derived` expression maps a finite union to output values, use a `satisfies Record` lookup. Never use nested ternaries. Never use `$derived.by()` with a switch just to map values.
+
+```svelte
+<!-- Bad: nested ternary in $derived -->
+<script lang="ts">
+	const tooltip = $derived(
+		syncStatus.current === 'connected'
+			? 'Connected'
+			: syncStatus.current === 'connecting'
+				? 'Connecting…'
+				: 'Offline',
+	);
+</script>
+
+<!-- Bad: $derived.by with switch for a pure value lookup -->
+<script lang="ts">
+	const tooltip = $derived.by(() => {
+		switch (syncStatus.current) {
+			case 'connected': return 'Connected';
+			case 'connecting': return 'Connecting…';
+			case 'offline': return 'Offline';
+		}
+	});
+</script>
+
+<!-- Good: $derived with satisfies Record -->
+<script lang="ts">
+	import type { SyncStatus } from '@epicenter/sync-client';
+
+	const tooltip = $derived(
+		({
+			connected: 'Connected',
+			connecting: 'Connecting…',
+			offline: 'Offline',
+		} satisfies Record<SyncStatus, string>)[syncStatus.current],
+	);
+</script>
+```
+
+Why `satisfies Record` wins:
+
+- Compile-time exhaustiveness: add a value to the union and TypeScript errors on the missing key. Nested ternaries silently fall through.
+- It's a data declaration, not control flow. The mapping is immediately visible.
+- `$derived()` stays a single expression — no need for `$derived.by()`.
+
+Reserve `$derived.by()` for multi-statement logic where you genuinely need a function body. For value lookups, keep it as `$derived()` with a record.
+
+`as const` is unnecessary when using `satisfies`. `satisfies Record<T, string>` already validates shape and value types.
+
+See `docs/articles/record-lookup-over-nested-ternaries.md` for rationale.
+
 # Mutation Pattern Preference
 
 ## In Svelte Files (.svelte)

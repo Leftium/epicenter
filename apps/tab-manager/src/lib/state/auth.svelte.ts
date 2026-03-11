@@ -303,11 +303,17 @@ function createAuthState() {
 		/**
 		 * Validate the stored session against the server.
 		 *
+		 * Waits for chrome.storage to load before reading the token so that
+		 * fresh sidebar contexts (new windows) don't race past a still-undefined
+		 * fallback value.
+		 *
 		 * Unreachable server (network error or 5xx) trusts the cached user
 		 * so offline/degraded users aren't logged out. Only an explicit auth
 		 * rejection (4xx) clears state.
 		 */
 		async checkSession() {
+			await authToken.whenReady;
+
 			const token = authToken.current;
 			if (!token) {
 				phase = { status: 'signed-out' };

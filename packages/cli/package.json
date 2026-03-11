@@ -9,7 +9,7 @@
 	"dependencies": {
 		"@epicenter/server-local": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
-		"jsrepo": "^3.6.1",
+		"jsrepo": "catalog:",
 		"typebox": "catalog:",
 		"wellcrafted": "catalog:",
 		"yargs": "catalog:",

@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: Voice and tone rules for all written content. Use when writing prose that should sound human and be suitable for reading aloud.
+description: Voice and tone rules for all written content—prose, UI text, tooltips, error messages. Use when writing any user-facing text.
 ---
 
 # Writing Voice
@@ -25,7 +25,7 @@ Patterns that scream "AI wrote this":
 - **Marketing words**: "game-changing", "revolutionary", "unleash", "empower"
 - **Structured sections**: "Key Features:", "Benefits:", "Why This Matters:"
 - **Vague superlatives**: "incredibly powerful", "seamlessly integrates"
-- **Dramatic hyperbole**: "feels like an eternity", "pain point", "excruciating" — use facts instead
+- **Dramatic hyperbole**: "feels like an eternity", "pain point", "excruciating"—use facts instead
 - **AI adjectives**: "perfectly", "effortlessly", "beautifully"
 - **Space-hyphen-space**: "The code works - the tests pass"
 - **Overusing fragments**: "Every. Single. Time." (once is emphasis, twice is a pattern)
@@ -34,16 +34,16 @@ Patterns that scream "AI wrote this":
 
 ## Punctuation
 
-Never use " - " (space-hyphen-space) or " — " (space-em-dash-space). Prefer simpler punctuation:
+Em dashes (—) are always closed—no surrounding spaces. Never ` — ` or ` - `.
 
 | Prefer        | When                                                           |
 | ------------- | -------------------------------------------------------------- |
 | Period (.)    | Default choice. Two sentences are often clearer than one.      |
 | Colon (:)     | Introducing explanation: "Here's the thing: it doesn't work"   |
 | Semicolon (;) | Related independent clauses: "The code works; the tests pass"  |
-| Em dash (—)   | Sparingly, for interruption or emphasis: "It's fast—really fast" |
+| Em dash (—)   | Asides and emphasis, always closed: "It's fast—really fast"    |
 
-Em dashes are fine but easy to overuse. When in doubt, use a period.
+When in doubt, use a period.
 
 ## How to Write Good Prose
 

@@ -213,6 +213,23 @@ export function createHeadDoc(options: { workspaceId: string; ydoc?: Y.Doc }) {
 
 Method shorthand is the only approach that preserves JSDoc AND allows methods to call each other via `this`.
 
+## Where This Fits in the Factory Function Anatomy
+
+Factory functions follow a four-zone internal shape: immutable state → mutable state → private helpers → return object. Method shorthand lives in the return object (zone 4)—the public API.
+
+The `this.method()` vs direct-call decision depends on which zone the function lives in:
+
+| Situation | Where it lives | How to call it |
+|---|---|---|
+| Only used by sibling methods in the return object | Zone 4 (return object, method shorthand) | `this.method()` |
+| Used by return-object methods AND pre-return init logic | Zone 3 (private helper, standalone function) | Direct call: `helperFn()` |
+| Used during initialization only, not exposed | Zone 3 (private helper) | Direct call: `helperFn()` |
+
+When a helper needs to be in zone 3, its JSDoc won't be visible to consumers—but that's correct, because it's a private implementation detail. Only zone 4 methods need consumer-facing JSDoc.
+
+See [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md) for the full factory function anatomy.
+
 ## References
 
 - [docs/articles/method-shorthand-jsdoc-preservation.md](../../docs/articles/method-shorthand-jsdoc-preservation.md) - Same content as article
+- [docs/articles/closures-are-better-privacy-than-keywords.md](../../docs/articles/closures-are-better-privacy-than-keywords.md) - Factory function anatomy and zone system

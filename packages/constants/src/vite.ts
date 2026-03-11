@@ -4,9 +4,12 @@ import { createApps } from '#apps';
 
 /**
  * Vite build-time URLs.
- * Uses import.meta.env.MODE for environment detection.
  *
- * For use in Vite contexts (client-side applications).
+ * Uses `import.meta.env.MODE` for environment detection. Any mode other than
+ * `'production'` resolves to development URLs—safe default for local dev,
+ * preview, and test builds.
  */
-// @ts-expect-error TODO properly assert this
-export const APPS = createApps(import.meta.env.MODE);
+const mode =
+	import.meta.env.MODE === 'production' ? 'production' : 'development';
+
+export const APPS = createApps(mode);

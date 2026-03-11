@@ -4,8 +4,8 @@
 	import { Toaster, type ToasterProps } from 'svelte-sonner';
 	import { queryClient } from '$lib/query';
 	import '@epicenter/ui/app.css';
-	import AddStaticWorkspaceDialog from '$lib/components/AddStaticWorkspaceDialog.svelte';
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
+	import AddStaticWorkspaceDialog from '$lib/components/AddStaticWorkspaceDialog.svelte';
 	import CreateSettingDialog from '$lib/components/CreateSettingDialog.svelte';
 	import CreateTableDialog from '$lib/components/CreateTableDialog.svelte';
 	import CreateWorkspaceDialog from '$lib/components/CreateWorkspaceDialog.svelte';

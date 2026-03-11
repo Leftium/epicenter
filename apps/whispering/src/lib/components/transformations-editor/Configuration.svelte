@@ -28,10 +28,7 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
-	import type {
-		Transformation,
-		TransformationStep,
-	} from '$lib/services/db';
+	import type { Transformation, TransformationStep } from '$lib/services/db';
 	import { generateDefaultTransformationStep } from '$lib/services/db';
 
 	// Derived labels for select triggers

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
@@ -8,7 +9,6 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import type { Recording } from '$lib/services/db';

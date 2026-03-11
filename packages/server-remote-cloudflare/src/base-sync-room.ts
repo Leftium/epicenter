@@ -414,7 +414,7 @@ export abstract class BaseSyncRoom extends DurableObject {
 	 * @returns A callback invoked when all WebSocket connections disconnect,
 	 *          or `undefined` if no action is needed on disconnect.
 	 */
-	protected initRoom(_sql: SqlStorage): (() => void) | undefined {
+	protected initRoom(_storage: DurableObjectStorage): (() => void) | undefined {
 		return undefined;
 	}
 

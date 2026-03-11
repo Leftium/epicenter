@@ -15,8 +15,10 @@ export class DocumentRoom extends BaseSyncRoom {
 		return new Y.Doc({ gc: false });
 	}
 
-	protected override initRoom(sql: SqlStorage): (() => void) | undefined {
-		sql.exec(`
+	protected override initRoom(
+		storage: DurableObjectStorage,
+	): (() => void) | undefined {
+		storage.sql.exec(`
 			CREATE TABLE IF NOT EXISTS snapshots (
 				id INTEGER PRIMARY KEY AUTOINCREMENT,
 				snapshot BLOB NOT NULL,
@@ -41,8 +43,7 @@ export class DocumentRoom extends BaseSyncRoom {
 	): Promise<{ id: number; createdAt: string }> {
 		const snap = Y.snapshot(this.doc);
 		const encoded = Y.encodeSnapshot(snap);
-		const { sql } = this.ctx.storage;
-		const row = sql
+		const row = this.ctx.storage.sql
 			.exec(
 				'INSERT INTO snapshots (snapshot, label) VALUES (?, ?) RETURNING id, created_at',
 				encoded,
@@ -56,8 +57,7 @@ export class DocumentRoom extends BaseSyncRoom {
 	async listSnapshots(): Promise<
 		Array<{ id: number; label: string | null; createdAt: string }>
 	> {
-		const { sql } = this.ctx.storage;
-		return sql
+		return this.ctx.storage.sql
 			.exec('SELECT id, label, created_at FROM snapshots ORDER BY id DESC')
 			.toArray()
 			.map((row) => ({
@@ -69,8 +69,7 @@ export class DocumentRoom extends BaseSyncRoom {
 
 	/** Reconstruct a past doc state from a snapshot. Returns full state as binary update. */
 	async getSnapshot(snapshotId: number): Promise<Uint8Array | null> {
-		const { sql } = this.ctx.storage;
-		const rows = sql
+		const rows = this.ctx.storage.sql
 			.exec('SELECT snapshot FROM snapshots WHERE id = ?', snapshotId)
 			.toArray();
 		if (rows.length === 0) return null;

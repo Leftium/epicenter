@@ -379,7 +379,39 @@ type SyncRoomConfig = {
 };
 
 export class BaseSyncRoom extends DurableObject {
+	/**
+	 * The shared Yjs document for this room.
+	 *
+	 * Initialized inside `ctx.blockConcurrencyWhile()` in the constructor.
+	 * The definite assignment assertion (`!`) is safe because of two
+	 * guarantees working together:
+	 *
+	 * 1. **Cloudflare runtime guarantee**: `blockConcurrencyWhile` prevents
+	 *    the DO from receiving any incoming requests (`fetch`, `webSocketMessage`,
+	 *    etc.) until the initialization promise resolves. So no method on this
+	 *    class can run before `doc` is set.
+	 *
+	 * 2. **Synchronous async callback**: The callback passed to
+	 *    `blockConcurrencyWhile` contains no `await`, so it executes to
+	 *    completion synchronously. This means `doc` is assigned before the
+	 *    constructor returns — so subclass constructors (e.g. `DocumentRoom`)
+	 *    can safely access `this.doc` after `super()`.
+	 *
+	 * If an `await` is ever added to the `blockConcurrencyWhile` callback,
+	 * guarantee (2) breaks and subclass constructor access becomes unsafe.
+	 *
+	 * @see {@link https://developers.cloudflare.com/durable-objects/api/state/#blockconcurrencywhile | blockConcurrencyWhile docs}
+	 */
 	protected doc!: Y.Doc;
+
+	/**
+	 * WebSocket connection hub managing upgrade, dispatch, and lifecycle.
+	 *
+	 * Same initialization safety as {@link doc} — set inside
+	 * `blockConcurrencyWhile` with no `await` in the callback, so it's
+	 * guaranteed to be assigned before any method or subclass constructor
+	 * can access it.
+	 */
 	private hub!: ConnectionHub;
 	private disconnectHandlers: (() => void)[] = [];
 

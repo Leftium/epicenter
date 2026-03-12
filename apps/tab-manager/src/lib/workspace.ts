@@ -26,6 +26,9 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import { getDeviceId } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 import {
 	executeActivateTab,
 	executeCloseTabs,
@@ -36,9 +39,6 @@ import {
 	executeReloadTabs,
 	executeSaveTabs,
 } from '$lib/tab-actions';
-import { getDeviceId } from '$lib/device/device-id';
-import { authState } from '$lib/state/auth.svelte';
-import { serverUrl } from '$lib/state/settings.svelte';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -764,4 +764,3 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
 export function reconnectSync() {
 	workspaceClient.extensions.sync.reconnect();
 }
-

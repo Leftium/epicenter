@@ -23,12 +23,12 @@ import CopyMinusIcon from '@lucide/svelte/icons/copy-minus';
 import GlobeIcon from '@lucide/svelte/icons/globe';
 import GroupIcon from '@lucide/svelte/icons/group';
 import type { Component } from 'svelte';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { browserState } from '$lib/state/browser-state.svelte';
 import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 import { getDomain } from '$lib/utils/format';
 import type { TabCompositeId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
-import { Ok, tryAsync } from 'wellcrafted/result';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

@@ -7,9 +7,9 @@
  */
 import type { TableHelper } from '@epicenter/workspace';
 import { generateId } from '@epicenter/workspace';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
-import { Ok, tryAsync } from 'wellcrafted/result';
 
 /**
  * Extract the native tab ID (number) from a composite tab ID string.
@@ -93,8 +93,11 @@ export async function executeSaveTabs(
 
 	const validTabs = results
 		.filter(
-			(r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof browser.tabs.get>>> =>
-				r.status === 'fulfilled' && !!r.value.url,
+			(
+				r,
+			): r is PromiseFulfilledResult<
+				Awaited<ReturnType<typeof browser.tabs.get>>
+			> => r.status === 'fulfilled' && !!r.value.url,
 		)
 		.map((r) => r.value);
 
@@ -168,7 +171,9 @@ export async function executePinTabs(
 	const results = await Promise.allSettled(
 		nativeIds.map((id) => browser.tabs.update(id, { pinned })),
 	);
-	return { pinnedCount: results.filter((r) => r.status === 'fulfilled').length };
+	return {
+		pinnedCount: results.filter((r) => r.status === 'fulfilled').length,
+	};
 }
 
 /**
@@ -203,5 +208,7 @@ export async function executeReloadTabs(
 	const results = await Promise.allSettled(
 		nativeIds.map((id) => browser.tabs.reload(id)),
 	);
-	return { reloadedCount: results.filter((r) => r.status === 'fulfilled').length };
+	return {
+		reloadedCount: results.filter((r) => r.status === 'fulfilled').length,
+	};
 }

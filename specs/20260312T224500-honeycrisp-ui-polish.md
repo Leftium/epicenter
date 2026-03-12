@@ -194,12 +194,12 @@ apps/honeycrisp/src/
 - [x] **1.3** Verify editor padding is adequate—current `p-8` is fine at full `prose` size. No change needed.
 
 ### Wave 2: Formatting Toolbar
-- [ ] **2.1** Install Tiptap extensions: `@tiptap/extension-task-list`, `@tiptap/extension-task-item`, `@tiptap/extension-underline`
-- [ ] **2.2** Add extensions to the Tiptap `Editor` config in `Editor.svelte`
-- [ ] **2.3** Create toolbar markup in `Editor.svelte` above the editor div using `Toggle`, `ToggleGroup`, `Separator` from `@epicenter/ui/`
-- [ ] **2.4** Wire toolbar buttons to Tiptap commands (`editor.chain().focus().toggleBold().run()`, etc.)
-- [ ] **2.5** Sync toolbar active state from `editor.isActive('bold')` etc. using `$effect` on editor updates
-- [ ] **2.6** Add `Tooltip` wrappers on each toolbar button showing keyboard shortcut (e.g., "Bold (⌘B)")
+- [x] **2.1** Install Tiptap extensions: `@tiptap/extension-task-list`, `@tiptap/extension-task-item`, `@tiptap/extension-underline` (pinned to ^2.12.0 for core compat)
+- [x] **2.2** Add extensions to the Tiptap `Editor` config in `Editor.svelte`
+- [x] **2.3** Create toolbar markup in `Editor.svelte` above the editor div using `Toggle`, `ToggleGroup`, `Separator` from `@epicenter/ui/`
+- [x] **2.4** Wire toolbar buttons to Tiptap commands (`editor.chain().focus().toggleBold().run()`, etc.)
+- [x] **2.5** Sync toolbar active state from `editor.isActive('bold')` etc. using `onTransaction` callback
+- [x] **2.6** Add `Tooltip` wrappers on each toolbar button showing keyboard shortcut (e.g., "Bold (⌘B)")
 
 ### Wave 3: Search + Layout Polish
 - [ ] **3.1** Add `Sidebar.Input` to `Sidebar.svelte` header for folder/note search

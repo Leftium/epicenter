@@ -2,8 +2,26 @@
 	import { Editor, Extension } from '@tiptap/core';
 	import Placeholder from '@tiptap/extension-placeholder';
 	import StarterKit from '@tiptap/starter-kit';
+	import TaskItem from '@tiptap/extension-task-item';
+	import TaskList from '@tiptap/extension-task-list';
+	import Underline from '@tiptap/extension-underline';
 	import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import { Toggle } from '@epicenter/ui/toggle';
+	import { Separator } from '@epicenter/ui/separator';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+
+	import BoldIcon from '@lucide/svelte/icons/bold';
+	import ItalicIcon from '@lucide/svelte/icons/italic';
+	import UnderlineIcon from '@lucide/svelte/icons/underline';
+	import StrikethroughIcon from '@lucide/svelte/icons/strikethrough';
+	import Heading1Icon from '@lucide/svelte/icons/heading-1';
+	import Heading2Icon from '@lucide/svelte/icons/heading-2';
+	import ListIcon from '@lucide/svelte/icons/list';
+	import ListOrderedIcon from '@lucide/svelte/icons/list-ordered';
+	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
+	import QuoteIcon from '@lucide/svelte/icons/quote';
 
 	let {
 		ytext,
@@ -15,6 +33,19 @@
 
 	let element: HTMLDivElement | undefined = $state();
 	let editor: Editor | undefined = $state();
+	let activeFormats = $state({
+		bold: false,
+		italic: false,
+		underline: false,
+		strike: false,
+		heading1: false,
+		heading2: false,
+		bulletList: false,
+		orderedList: false,
+		taskList: false,
+		blockquote: false,
+	});
+
 
 	/**
 	 * Create a Tiptap extension that wraps y-prosemirror plugins for Yjs collaboration.
@@ -59,6 +90,9 @@
 				Placeholder.configure({
 					placeholder: 'Start writing…',
 				}),
+				TaskList,
+				TaskItem.configure({ nested: true }),
+				Underline,
 				yjsExtension,
 			],
 			editorProps: {
@@ -70,6 +104,20 @@
 			onUpdate({ editor: ed }) {
 				if (!onContentChange) return;
 				onContentChange(extractTitleAndPreview(ed));
+			},
+			onTransaction({ editor: ed }) {
+				activeFormats = {
+					bold: ed.isActive('bold'),
+					italic: ed.isActive('italic'),
+					underline: ed.isActive('underline'),
+					strike: ed.isActive('strike'),
+					heading1: ed.isActive('heading', { level: 1 }),
+					heading2: ed.isActive('heading', { level: 2 }),
+					bulletList: ed.isActive('bulletList'),
+					orderedList: ed.isActive('orderedList'),
+					taskList: ed.isActive('taskList'),
+					blockquote: ed.isActive('blockquote'),
+				};
 			},
 		});
 
@@ -88,6 +136,138 @@
 </script>
 
 <div class="flex h-full flex-col">
+	{#if editor}
+		<div class="flex items-center gap-1 border-b p-2">
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Toggle
+						size="sm"
+						pressed={activeFormats.bold}
+						onPressedChange={() => editor?.chain().focus().toggleBold().run()}
+					>
+						<BoldIcon class="size-4" />
+					</Toggle>
+				</Tooltip.Trigger>
+				<Tooltip.Content>Bold (⌘B)</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Toggle
+						size="sm"
+						pressed={activeFormats.italic}
+						onPressedChange={() => editor?.chain().focus().toggleItalic().run()}
+					>
+						<ItalicIcon class="size-4" />
+					</Toggle>
+				</Tooltip.Trigger>
+				<Tooltip.Content>Italic (⌘I)</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Toggle
+						size="sm"
+						pressed={activeFormats.underline}
+						onPressedChange={() => editor?.chain().focus().toggleUnderline().run()}
+					>
+						<UnderlineIcon class="size-4" />
+					</Toggle>
+				</Tooltip.Trigger>
+				<Tooltip.Content>Underline (⌘U)</Tooltip.Content>
+			</Tooltip.Root>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Toggle
+						size="sm"
+						pressed={activeFormats.strike}
+						onPressedChange={() => editor?.chain().focus().toggleStrike().run()}
+					>
+						<StrikethroughIcon class="size-4" />
+					</Toggle>
+				</Tooltip.Trigger>
+				<Tooltip.Content>Strikethrough (⌘⇧S)</Tooltip.Content>
+			</Tooltip.Root>
+
+			<Separator orientation="vertical" class="mx-1 h-6" />
+
+			<ToggleGroup.Root
+				type="single"
+				size="sm"
+				value={activeFormats.heading1 ? 'h1' : activeFormats.heading2 ? 'h2' : ''}
+				onValueChange={(v) => {
+					if (v === 'h1') editor?.chain().focus().toggleHeading({ level: 1 }).run();
+					else if (v === 'h2') editor?.chain().focus().toggleHeading({ level: 2 }).run();
+				}}
+			>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="h1"><Heading1Icon class="size-4" /></ToggleGroup.Item>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Heading 1</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="h2"><Heading2Icon class="size-4" /></ToggleGroup.Item>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Heading 2</Tooltip.Content>
+				</Tooltip.Root>
+			</ToggleGroup.Root>
+
+			<Separator orientation="vertical" class="mx-1 h-6" />
+
+			<ToggleGroup.Root
+				type="single"
+				size="sm"
+				value={activeFormats.bulletList
+					? 'bullet'
+					: activeFormats.orderedList
+						? 'ordered'
+						: activeFormats.taskList
+							? 'task'
+							: ''}
+				onValueChange={(v) => {
+					if (v === 'bullet') editor?.chain().focus().toggleBulletList().run();
+					else if (v === 'ordered') editor?.chain().focus().toggleOrderedList().run();
+					else if (v === 'task') editor?.chain().focus().toggleTaskList().run();
+				}}
+			>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="bullet"><ListIcon class="size-4" /></ToggleGroup.Item>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Bullet List</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="ordered"
+							><ListOrderedIcon class="size-4" /></ToggleGroup.Item
+						>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Ordered List</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="task"><ListChecksIcon class="size-4" /></ToggleGroup.Item>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Checklist</Tooltip.Content>
+				</Tooltip.Root>
+			</ToggleGroup.Root>
+
+			<Separator orientation="vertical" class="mx-1 h-6" />
+
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					<Toggle
+						size="sm"
+						pressed={activeFormats.blockquote}
+						onPressedChange={() => editor?.chain().focus().toggleBlockquote().run()}
+					>
+						<QuoteIcon class="size-4" />
+					</Toggle>
+				</Tooltip.Trigger>
+				<Tooltip.Content>Blockquote (⌘⇧B)</Tooltip.Content>
+			</Tooltip.Root>
+		</div>
+	{/if}
 	<div bind:this={element} class="flex-1 overflow-y-auto p-8"></div>
 </div>
 
@@ -109,5 +289,17 @@
 		float: left;
 		height: 0;
 		pointer-events: none;
+	}
+	:global(.tiptap ul[data-type='taskList']) {
+		list-style: none;
+		padding-left: 0;
+	}
+	:global(.tiptap ul[data-type='taskList'] li) {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+	}
+	:global(.tiptap ul[data-type='taskList'] li > label) {
+		margin-top: 0.25rem;
 	}
 </style>

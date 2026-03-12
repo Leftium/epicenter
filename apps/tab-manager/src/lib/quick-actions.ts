@@ -144,7 +144,7 @@ const dedupAction: QuickAction = {
 			async onConfirm() {
 				const nativeIds = toClose
 					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
-					.filter((id): id is number => id !== undefined);
+					.filter((id) => id !== undefined);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),
 					catch: () => Ok(undefined),
@@ -196,11 +196,11 @@ const groupByDomainAction: QuickAction = {
 			.map(([domain, tabIds]) => {
 				const nativeIds = tabIds
 					.map((id) => parseTabId(id as TabCompositeId)?.tabId)
-					.filter((id): id is number => id !== undefined);
+					.filter((id) => id !== undefined);
 				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 			})
 			.filter(
-				(op): op is { domain: string; nativeIds: number[] } => op !== null,
+				(op) => op !== null,
 			);
 
 		await Promise.allSettled(
@@ -269,7 +269,7 @@ const closeByDomainAction: QuickAction = {
 			async onConfirm() {
 				const nativeIds = tabIds
 					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
-					.filter((id): id is number => id !== undefined);
+					.filter((id) => id !== undefined);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),
 					catch: () => Ok(undefined),

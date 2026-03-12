@@ -119,7 +119,7 @@ export async function executeSaveTabs(
 	if (close) {
 		const idsToClose = validTabs
 			.map((t) => t.id)
-			.filter((id): id is number => id !== undefined);
+			.filter((id) => id !== undefined);
 		await tryAsync({
 			try: () => browser.tabs.remove(idsToClose),
 			catch: () => Ok(undefined),

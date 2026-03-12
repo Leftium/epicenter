@@ -1,4 +1,4 @@
-import { confirmationDialog } from '$lib/components/ConfirmationDialog.svelte';
+import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 import { rpc } from '$lib/query';
 import type { Recording } from '$lib/services/db';
 
@@ -32,11 +32,10 @@ export const recordingActions = {
 	 *
 	 * @param recordings - Single recording or array of recordings to delete
 	 * @param options.onSuccess - Called after successful deletion (e.g., close a modal)
-	 * @param options.skipConfirmation - Skip the dialog and delete immediately
 	 */
 	deleteWithConfirmation(
 		recordings: Recording | Recording[],
-		options?: { onSuccess?: () => void; skipConfirmation?: boolean },
+		options?: { onSuccess?: () => void },
 	) {
 		const arr = Array.isArray(recordings) ? recordings : [recordings];
 		const isSingle = arr.length === 1;
@@ -46,7 +45,6 @@ export const recordingActions = {
 			title: `Delete ${noun}`,
 			description: `Are you sure you want to delete ${isSingle ? 'this' : 'these'} ${noun}?`,
 			confirm: { text: 'Delete', variant: 'destructive' },
-			skipConfirmation: options?.skipConfirmation,
 			onConfirm: async () => {
 				const { error } = await rpc.db.recordings.delete(arr);
 				if (error) {

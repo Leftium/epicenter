@@ -184,13 +184,16 @@ function createAiChatState() {
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
+					const systemPrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
 					return {
+						credentials: 'include',
 						body: {
-							provider: conv?.provider ?? DEFAULT_PROVIDER,
-							model: conv?.model ?? DEFAULT_MODEL,
-							conversationId,
-							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: actionContext.definitions,
+							data: {
+								provider: conv?.provider ?? DEFAULT_PROVIDER,
+								model: conv?.model ?? DEFAULT_MODEL,
+								conversationId,
+								systemPrompts: [systemPrompt],
+							},
 						},
 					};
 				},

@@ -176,6 +176,11 @@ const transformation = {
 	'transformation.selectedId': defineKv(type('string | null')),
 } as const;
 
+// Completion (inference for transformations)
+const completion = {
+	'completion.openrouter.model': defineKv(type('string')),
+} as const;
+
 // Analytics
 const analytics = {
 	'analytics.enabled': defineKv(type('boolean')),
@@ -216,6 +221,7 @@ export default createWorkspace(
 			...recording,
 			...transcription,
 			...transformation,
+			...completion,
 			...analytics,
 			...shortcuts,
 		},

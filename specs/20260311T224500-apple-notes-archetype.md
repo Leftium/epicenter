@@ -647,11 +647,14 @@ export default createWorkspace(
   > Created package.json, svelte.config.js, vite.config.ts, tsconfig.json, app.html, +layout.svelte, +page.svelte, query/client.ts, favicon.ico.
 - [x] **1.2** Create `apps/fuji/src/lib/workspace.ts` with `EntryId`, `entriesTable`, KV, workspace client
   > EntryId branded type, entriesTable with .withDocument('body', { guid: 'id' }), KV with selectedEntryId + sortBy, IndexedDB persistence.
-- [ ] **1.3** Two-column layout: timeline + editor using `Resizable`
-- [ ] **1.4** Timeline: entries sorted by `updatedAt`, date group headers
+- [x] **1.3** Two-column layout: timeline + editor using `Resizable`
+  > Resizable.PaneGroup (30/70 split) with timeline left panel and editor placeholder right panel.
+- [x] **1.4** Timeline: entries sorted by `updatedAt`, date group headers
+  > Entries sorted by updatedAt, grouped by date (Today/Yesterday/MMMM d), pinned entries at top.
 - [ ] **1.5** Editor: Tiptap on Y.Text via `.withDocument('body', { guid: 'id' })`
-- [ ] **1.6** CRUD: create entry, delete entry, pin/unpin
-- [ ] **1.7** Auto-title from first line of content
+- [x] **1.6** CRUD: create entry, delete entry, pin/unpin
+  > Create via + button, delete with trash icon, pin/unpin toggle. All inline in +page.svelte.
+- [ ] **1.7** Auto-title from first line of content (deferred to Wave 5 — requires editor)
 - [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
   > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 

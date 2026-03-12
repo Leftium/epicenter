@@ -90,7 +90,7 @@ type SyncRoomConfig = {
  * DO names are user-scoped: the Worker prefixes `user:{userId}:` to the
  * client-provided workspace or document name before calling `idFromName()`.
  * This ensures each user's data is isolated in separate DO instances, even
- * if multiple users create workspaces with the same name (e.g., "tab-manager").
+ * if multiple users create workspaces with the same name (e.g., "epicenter.tab-manager").
  *
  * We chose user-scoped DO names (Google Docs model) over org-scoped names
  * (Vercel/Supabase model) because most workspaces hold personal data.
@@ -265,6 +265,11 @@ export class BaseSyncRoom extends DurableObject {
 	 */
 	async getDoc(): Promise<Uint8Array> {
 		return Y.encodeStateAsUpdateV2(this.doc);
+	}
+
+	/** Delete all storage for this DO. Used for cleanup of renamed/orphaned rooms. */
+	async deleteStorage(): Promise<void> {
+		await this.ctx.storage.deleteAll();
 	}
 
 	// --- WebSocket lifecycle ---

@@ -1,0 +1,323 @@
+# Headless Workspace Runner
+
+**Date**: 2026-03-12
+**Status**: Draft
+
+## Overview
+
+A new `apps/runner/` app that loads `epicenter.config.ts` from any project folder, auto-wires persistence and sync extensions, and stays alive as a headless workspace client connected to the Epicenter server.
+
+## Motivation
+
+### Current State
+
+`apps/tab-manager-markdown/` is a hardcoded headless client for one specific workspace:
+
+```typescript
+// apps/tab-manager-markdown/src/index.ts
+import { definition } from '@epicenter/tab-manager/workspace';
+import { createWorkspace } from '@epicenter/workspace';
+import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
+import { createMarkdownPersistenceExtension } from './markdown-persistence-extension';
+
+const client = createWorkspace(definition)
+  .withExtension('persistence', createMarkdownPersistenceExtension({
+    outputDir: './markdown/devices',
+    debounceMs: 1000,
+  }))
+  .withExtension('sync', createSyncExtension({
+    url: (id) => `ws://localhost:3913/workspaces/${id}`,
+  }));
+
+await client.whenReady;
+// ... SIGINT handler
+```
+
+Every workspace that needs headless operation requires a new `apps/` entry with duplicate extension wiring. The "load workspace, wire extensions, keep alive" pattern is generic but each instance is bespoke.
+
+This creates problems:
+
+1. **No reusable runner**: Each headless use case requires a new app with duplicate extension wiring
+2. **Users write boilerplate**: Understanding the extension API shouldn't be required to run a workspace headlessly
+3. **tab-manager-markdown is too specific**: The only tab-manager-specific code is the markdown serializer; the runner pattern is completely generic
+
+### Desired State
+
+```bash
+cd my-project/
+bun run apps/runner -- .
+# → Loads epicenter.config.ts from current directory
+# → Creates workspace clients with persistence + sync
+# → Stays alive, syncs with Epicenter server
+```
+
+The user writes only `defineWorkspace()` in their config. Zero extension wiring.
+
+## Research Findings
+
+### Existing Building Blocks
+
+Every piece needed already exists in the codebase. The runner is pure composition.
+
+| Component | Location | What it does |
+|---|---|---|
+| Config loading | `packages/cli/src/discovery.ts` | Loads `epicenter.config.ts`, validates exports, detects ambiguous configs |
+| SQLite persistence | `packages/workspace/src/extensions/sync/desktop.ts` | Append-only update log via `bun:sqlite`, compaction on startup/shutdown |
+| Sync extension | `packages/workspace/src/extensions/sync/` | WebSocket connection to Epicenter server |
+| Workspace creation | `packages/workspace/src/workspace/create-workspace.ts` | `createWorkspace(def).withExtension(...)` chaining |
+| Tab manager markdown | `apps/tab-manager-markdown/src/index.ts` | Manual extension wiring (the pattern to generalize) |
+
+### Config Export Convention
+
+The CLI currently loads **pre-wired clients** from config files:
+
+```typescript
+// What CLI expects (packages/cli/src/discovery.ts)
+function isWorkspaceClient(value: unknown): value is AnyWorkspaceClient {
+  return (
+    typeof value === 'object' && value !== null &&
+    'id' in value && 'tables' in value && 'definitions' in value &&
+    typeof (value as Record<string, unknown>).id === 'string'
+  );
+}
+```
+
+The runner needs to load **raw definitions**. A `WorkspaceDefinition` has `id` and `tables` but NOT `definitions` (that property only exists on instantiated clients). This makes detection straightforward:
+
+```typescript
+function isWorkspaceDefinition(value: unknown): boolean {
+  return (
+    typeof value === 'object' && value !== null &&
+    'id' in value && !('definitions' in value) &&
+    typeof (value as Record<string, unknown>).id === 'string'
+  );
+}
+```
+
+The runner can also accept pre-wired clients (detected via `isWorkspaceClient`), in which case it skips extension wiring and just keeps them alive.
+
+### Persistence Format
+
+The codebase already settled on SQLite append-only log (same pattern as the Cloudflare Durable Object sync server):
+
+```sql
+CREATE TABLE updates (id INTEGER PRIMARY KEY AUTOINCREMENT, data BLOB NOT NULL)
+```
+
+Each Y.Doc `updateV2` event is a tiny INSERT. Compaction merges all rows into one via `Y.encodeStateAsUpdateV2` on startup and shutdown. Uses `bun:sqlite`—no external dependencies.
+
+## Design Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| App location | `apps/runner/` | Separate app with clean boundary from packages |
+| Config file | `epicenter.config.ts` | Existing convention; CLI already uses it |
+| Export format | Named exports of `defineWorkspace()` results | Multiple workspaces via named exports; natural TypeScript |
+| Persistence | SQLite append-log (auto-wired) | Already battle-tested in codebase; `bun:sqlite` is built-in |
+| Sync | WebSocket via `createSyncExtension` (auto-wired) | Existing extension; connects to Epicenter server |
+| `.epicenter/` location | Sibling to `epicenter.config.ts` | Consistent with existing folder discovery spec |
+| Markdown output | Not auto-wired by runner | Markdown is workspace-specific presentation, not generic infra |
+| tab-manager-markdown | Fold into runner | Its config becomes a standard `epicenter.config.ts` |
+| Server URL | `EPICENTER_SERVER_URL` env var, default `ws://localhost:3913` | Configurable without touching code |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  User's Project Folder                                              │
+│                                                                     │
+│  epicenter.config.ts          ← exports defineWorkspace() results   │
+│  posts/                       ← markdown output (visible to user)   │
+│  .epicenter/                  ← runner creates this (gitignored)    │
+│    └── persistence/                                                 │
+│        └── {workspaceId}.db   ← SQLite append-log                   │
+└──────────────────┬──────────────────────────────────────────────────┘
+                   │
+                   │  bun run apps/runner -- /path/to/project
+                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Runner Process                                                     │
+│                                                                     │
+│  1. Resolve target directory (arg or cwd)                           │
+│  2. Load epicenter.config.ts via dynamic import                     │
+│  3. Collect all defineWorkspace() exports                           │
+│  4. For each definition:                                            │
+│     createWorkspace(definition)                                     │
+│       .withExtension('persistence', filesystemPersistence({         │
+│         filePath: '.epicenter/persistence/{id}.db'                  │
+│       }))                                                           │
+│       .withExtension('sync', createSyncExtension({                  │
+│         url: serverUrl + '/workspaces/{id}'                         │
+│       }))                                                           │
+│  5. await Promise.all(clients.map(c => c.whenReady))                │
+│  6. Log status, keep alive                                          │
+│  7. SIGINT/SIGTERM → destroy all clients (flushes persistence)      │
+└──────────────────┬──────────────────────────────────────────────────┘
+                   │
+                   │  ws://localhost:3913/workspaces/{id}
+                   ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  Epicenter Sync Server (packages/server)                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Config file example
+
+```typescript
+// epicenter.config.ts
+import { defineWorkspace, text, ytext, boolean } from '@epicenter/workspace';
+
+export const blog = defineWorkspace({
+  id: 'blog',
+  tables: {
+    posts: {
+      title: text(),
+      content: ytext({ nullable: true }),
+      published: boolean(),
+    },
+  },
+});
+
+export const notes = defineWorkspace({
+  id: 'notes',
+  tables: {
+    entries: {
+      title: text(),
+      body: ytext({ nullable: true }),
+    },
+  },
+});
+```
+
+Running `bun run apps/runner -- .` in that folder creates two workspace clients, each with their own persistence DB and sync connection.
+
+## Implementation Plan
+
+### Phase 1: Scaffold `apps/runner/`
+
+- [x] **1.1** Create `apps/runner/package.json` — dependencies: `@epicenter/workspace`, `yjs`
+- [x] **1.2** Create `apps/runner/tsconfig.json`
+- [x] **1.3** Create `apps/runner/src/index.ts` — entry point with arg parsing and SIGINT handler
+
+### Phase 2: Config loading
+
+- [x] **2.1** Create `apps/runner/src/load-config.ts` — load `epicenter.config.ts` from target dir via `Bun.pathToFileURL` + dynamic import (same approach as `packages/cli/src/discovery.ts`)
+- [x] **2.2** Filter exports: detect `WorkspaceDefinition` (has `id`, lacks `definitions`) and `WorkspaceClient` (has `definitions`)
+- [x] **2.3** Error cases: no config found, no valid exports, duplicate workspace IDs
+
+### Phase 3: Extension wiring
+
+- [x] **3.1** For each `WorkspaceDefinition`: `createWorkspace(def).withExtension('persistence', ...).withExtension('sync', ...)`
+- [x] **3.2** For each pre-wired `WorkspaceClient`: skip wiring, just track for lifecycle
+- [x] **3.3** Persistence path: `.epicenter/persistence/{workspaceId}.db` relative to config dir
+- [x] **3.4** Sync URL: `EPICENTER_SERVER_URL` env var or `ws://localhost:3913`, append `/workspaces/{id}`
+
+### Phase 4: Process lifecycle
+
+- [x] **4.1** `await Promise.all(...)` on all clients' `whenReady`
+- [x] **4.2** Log: workspace count, IDs, server URL, persistence paths
+- [x] **4.3** SIGINT + SIGTERM: call `destroy()` on all clients, then `process.exit(0)`
+
+### Phase 5: Fold `apps/tab-manager-markdown/`
+
+- [ ] **5.1** Create `epicenter.config.ts` for the tab-manager workspace (exports `defineWorkspace(...)` with tab-manager schema)
+- [ ] **5.2** Verify the runner loads and runs it successfully
+- [ ] **5.3** Decide: keep `apps/tab-manager-markdown/` as a reference, or remove it entirely
+
+## Edge Cases
+
+### Config exports pre-wired clients
+
+1. User exports `createWorkspace(...)` result (already has extensions)
+2. Runner detects the `definitions` property → identifies as a client
+3. Skips extension wiring, just tracks for lifecycle management
+
+### Server unreachable
+
+1. Sync extension fails to connect on startup
+2. Persistence still works—offline-first by design
+3. Sync extension reconnects automatically (existing behavior)
+4. Runner stays alive; logs warning
+
+### Multiple workspaces with the same ID
+
+1. Config exports two definitions with identical `id` values
+2. Runner throws before creating any clients: "Duplicate workspace ID 'X' found"
+
+### No `epicenter.config.ts` found
+
+1. Runner checks target directory
+2. Prints: `No epicenter.config.ts found in {dir}`
+
+### Config has no workspace exports
+
+1. File exists but contains no `defineWorkspace()` or `createWorkspace()` exports
+2. Prints: `No workspace definitions found in epicenter.config.ts`
+
+## Open Questions
+
+1. **Should the runner accept a `--dir` flag, a positional arg, or default to cwd?**
+   - `bun run apps/runner -- --dir /path` vs `bun run apps/runner -- /path` vs `bun run apps/runner` (uses cwd)
+   - **Recommendation**: Positional arg with cwd fallback. Simplest UX.
+
+2. **Should the runner watch `epicenter.config.ts` for changes?**
+   - Hot-reload during development would be convenient
+   - Adds complexity; config changes might mean schema changes which need migration logic
+   - **Recommendation**: Defer. Manual restart is fine for v1.
+
+3. **Should the runner support markdown materialization as a built-in?**
+   - Currently markdown is workspace-specific (different serializers per workspace)
+   - A generic "dump all tables to markdown" might be useful
+   - **Recommendation**: Out of scope for v1. Users can wire markdown extensions in the config by exporting pre-wired clients instead of raw definitions.
+
+4. **What happens to `apps/tab-manager-markdown/` after folding?**
+   - Option A: Delete entirely—the runner replaces it
+   - Option B: Keep as a reference/example
+   - **Recommendation**: Delete. The runner + a tab-manager `epicenter.config.ts` fully replaces it.
+
+## Success Criteria
+
+- [ ] `bun run apps/runner -- .` in a folder with `epicenter.config.ts` connects to the Epicenter server
+- [ ] Each workspace's state persists to `.epicenter/persistence/{id}.db`
+- [ ] Multiple workspaces from a single config all run simultaneously
+- [ ] Graceful shutdown (SIGINT) flushes all pending persistence writes
+- [ ] `apps/tab-manager-markdown/` functionality reproducible by pointing the runner at the right config
+- [ ] No type errors; `bun run typecheck` passes
+
+## References
+
+- `apps/tab-manager-markdown/src/index.ts` — pattern to generalize
+- `apps/tab-manager-markdown/src/markdown-persistence-extension.ts` — example custom extension
+- `packages/cli/src/discovery.ts` — config loading logic (detection, error messages)
+- `packages/workspace/src/extensions/sync/desktop.ts` — `filesystemPersistence()` and `persistence()` functions
+- `packages/workspace/src/workspace/create-workspace.ts` — `createWorkspace()` and `.withExtension()` chain
+- `packages/workspace/src/workspace/define-workspace.ts` — `defineWorkspace()` and `WorkspaceDefinition` type
+- `specs/20251225T210000-epicenter-folder-discovery.md` — `.epicenter/` folder conventions
+- `specs/20251030T000000 persistence-factory-pattern.md` — persistence factory pattern (storagePath)
+
+## Review
+
+### Implementation Summary (Phases 1–4)
+
+Created `apps/runner/` with 4 files:
+
+| File | Lines | Purpose |
+|---|---|---|
+| `package.json` | 20 | Deps: `@epicenter/workspace`, `yjs`. Scripts: `dev`, `typecheck` |
+| `tsconfig.json` | 9 | Extends `tsconfig.base.json`, ESNext target |
+| `src/load-config.ts` | ~95 | Dynamic import of `epicenter.config.ts`, duck-type detection of definitions vs clients |
+| `src/index.ts` | ~82 | Entry point: arg parsing → config loading → extension wiring → lifecycle |
+
+**Total new code**: ~175 lines (as predicted by spec's "~100 lines of real code").
+
+### Key decisions made during implementation
+
+1. **`AnyWorkspaceDefinition` type**: Used `WorkspaceDefinition<string, any, any, any>` from the workspace package rather than a manual duck type. Dynamic imports erase generics, so the `any` variance is justified at this boundary—matches the `AnyWorkspaceClient` pattern already in the codebase.
+
+2. **Named exports only**: The loader skips `default` exports and only processes named exports, matching the spec's convention of `export const blog = defineWorkspace(...)`. This avoids ambiguity with configs that might `export default` something unrelated.
+
+3. **Pre-existing type errors**: Two errors in `packages/workspace` (`NumberKeysOf`, `TDocuments` indexing) are pre-existing and unrelated to this change. Verified by running typecheck on `apps/tab-manager-markdown/` which shows the same errors.
+
+### Phase 5 (deferred)
+
+Folding `apps/tab-manager-markdown/` into the runner is deferred per instructions. The runner already supports all the functionality needed—a user would create an `epicenter.config.ts` that exports the tab-manager definition and optionally wire custom extensions by exporting a pre-wired client instead.

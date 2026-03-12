@@ -1,8 +1,8 @@
 /**
- * Create typed action contexts from workspace action trees.
+ * Bridge between Epicenter workspace actions and TanStack AI tool types.
  *
- * Captures an `Actions` generic once and derives everything AI consumers
- * need — client tools, server definitions, and a label lookup.
+ * Converts workspace `Action` trees into TanStack AI `ClientTool[]` and
+ * stripped `ServerToolDefinition[]` for the HTTP request body.
  *
  * @module
  */
@@ -12,7 +12,7 @@ import { iterateActions } from '@epicenter/workspace';
 import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public types
 // ---------------------------------------------------------------------------
 
 /** Display labels for an action's active and completed states. */
@@ -30,7 +30,7 @@ export type ActionLabel = { active: string; done: string };
  * // "tabs_search" | "tabs_list" | "tabs_close" | "windows_list" | ...
  * ```
  */
-type ActionNames<T extends Actions> = {
+export type ActionNames<T extends Actions> = {
 	[K in keyof T & string]: T[K] extends Action
 		? K
 		: T[K] extends Actions
@@ -38,63 +38,19 @@ type ActionNames<T extends Actions> = {
 			: never;
 }[keyof T & string];
 
-/**
- * Create a typed action context from a workspace action tree.
- *
- * Captures the `TActions` generic at the call site and returns tools,
- * definitions, and a label lookup — all properly typed.
- *
- * @example
- * ```ts
- * const ctx = createActionContext(workspace.actions, {
- *   labels: {
- *     tabs_search: { active: 'Searching', done: 'Searched' },
- *     // ... compile error if you miss one
- *   },
- * });
- *
- * ctx.tools;                    // AnyClientTool[]
- * ctx.definitions;              // ServerToolDefinition[]
- * ctx.getLabel('tabs_search');  // ActionLabel
- * ```
- */
-export function createActionContext<TActions extends Actions>(
-	actions: TActions,
-	{
-		labels,
-		...toolOptions
-	}: {
-		/** Exhaustive map of action name → label. Compile error if you miss one. */
-		labels: Record<ActionNames<TActions>, ActionLabel>;
-		/** If true, mutations will require user approval before executing. @default false */
-		requireApprovalForMutations?: boolean;
-	},
-) {
-	const tools = actionsToClientTools(actions, toolOptions);
-	const definitions = toDefinitions(tools);
-
-	return {
-		tools,
-		definitions,
-		getLabel: (name: ActionNames<TActions>): ActionLabel => labels[name],
-	};
-}
-
 // ---------------------------------------------------------------------------
-// Internals
+// Public API
 // ---------------------------------------------------------------------------
-
-/** Separator used to join action path segments into tool names. */
-const ACTION_NAME_SEPARATOR = '_';
 
 /**
  * Convert a workspace action tree into client-side AI tools.
  *
  * Each action becomes a `ClientTool` with `__toolSide: 'client'` and its
- * handler wired as the `execute` function.
+ * handler wired as the `execute` function. Tool names are path segments
+ * joined with `_` (e.g. `tabs_search`, `windows_list`).
  *
  * ```
- *   actionsToClientTools(actions)       toDefinitions(tools)
+ *   actionsToClientTools(actions)       toServerDefinitions(tools)
  *   ┌──────────────────────────┐       ┌────────────────────┐
  *   │ __toolSide: 'client'     │       │                    │
  *   │ name                     │  ──►  │ name               │
@@ -105,13 +61,21 @@ const ACTION_NAME_SEPARATOR = '_';
  *   └──────────────────────────┘        ServerToolDefinition
  *          AnyClientTool
  * ```
+ *
+ * @example
+ * ```ts
+ * const tools = actionsToClientTools(workspace.actions, {
+ *   requireApprovalForMutations: true,
+ * });
+ * ```
  */
-function actionsToClientTools<TActions extends Actions>(
+export function actionsToClientTools<TActions extends Actions>(
 	actions: TActions,
-	{
-		requireApprovalForMutations = false,
-	}: { requireApprovalForMutations?: boolean } = {},
+	options?: { requireApprovalForMutations?: boolean },
 ): (AnyClientTool & { name: ActionNames<TActions> })[] {
+	const requireApprovalForMutations =
+		options?.requireApprovalForMutations ?? false;
+
 	return [...iterateActions(actions)].map(([action, path]) => ({
 		__toolSide: 'client' as const,
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
@@ -123,23 +87,21 @@ function actionsToClientTools<TActions extends Actions>(
 	}));
 }
 
-/** JSON Schema with `properties` and `required` guaranteed present. */
-type NormalizedJSONSchema = JSONSchema &
-	Required<Pick<JSONSchema, 'properties' | 'required'>>;
-
-type ServerToolDefinition = {
-	name: string;
-	description: string;
-	inputSchema?: NormalizedJSONSchema;
-};
-
 /**
  * Strip client tools to plain definitions for the server request body.
  *
  * Removes runtime-only fields (`execute`, `__toolSide`, `needsApproval`),
- * leaving only what the AI provider needs.
+ * leaving only what the AI provider needs. Normalizes schemas for providers
+ * that require `properties` and `required` (notably Anthropic).
+ *
+ * @example
+ * ```ts
+ * const tools = actionsToClientTools(workspace.actions);
+ * const definitions = toServerDefinitions(tools);
+ * // [{ name: 'tabs_search', description: '...', inputSchema?: { ... } }]
+ * ```
  */
-function toDefinitions(
+export function toServerDefinitions(
 	tools: readonly AnyClientTool[],
 ): ServerToolDefinition[] {
 	return tools.map((tool) => ({
@@ -154,6 +116,23 @@ function toDefinitions(
 		}),
 	}));
 }
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+/** Separator used to join action path segments into tool names. */
+const ACTION_NAME_SEPARATOR = '_';
+
+/** JSON Schema with `properties` and `required` guaranteed present. */
+type NormalizedJSONSchema = JSONSchema &
+	Required<Pick<JSONSchema, 'properties' | 'required'>>;
+
+type ServerToolDefinition = {
+	name: string;
+	description: string;
+	inputSchema?: NormalizedJSONSchema;
+};
 
 /**
  * Normalize a JSON Schema for AI provider compatibility.

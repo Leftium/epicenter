@@ -82,35 +82,48 @@ export async function executeSaveTabs(
 	deviceId: DeviceId,
 	savedTabsTable: TableHelper<SavedTab>,
 ): Promise<{ savedCount: number }> {
-	let savedCount = 0;
-	for (const compositeId of tabIds) {
-		const id = nativeTabId(compositeId, deviceId);
-		if (id === undefined) continue;
+	const nativeIds = tabIds
+		.map((id) => nativeTabId(id, deviceId))
+		.filter((id) => id !== undefined);
 
-		try {
-			const tab = await browser.tabs.get(id);
-			if (!tab.url) continue;
+	// Fetch all tabs in parallel
+	const results = await Promise.allSettled(
+		nativeIds.map((id) => browser.tabs.get(id)),
+	);
 
-			savedTabsTable.set({
-				id: generateId() as string as SavedTabId,
-				url: tab.url,
-				title: tab.title || 'Untitled',
-				favIconUrl: tab.favIconUrl,
-				pinned: tab.pinned ?? false,
-				sourceDeviceId: deviceId,
-				savedAt: Date.now(),
-				_v: 1,
-			});
-			savedCount++;
+	const validTabs = results
+		.filter(
+			(r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof browser.tabs.get>>> =>
+				r.status === 'fulfilled' && !!r.value.url,
+		)
+		.map((r) => r.value);
 
-			if (close) {
-				await browser.tabs.remove(id);
-			}
-		} catch {
-			// Tab may have been closed already
-		}
+	// Sync writes to Y.Doc
+	for (const tab of validTabs) {
+		savedTabsTable.set({
+			id: generateId() as string as SavedTabId,
+			url: tab.url!,
+			title: tab.title || 'Untitled',
+			favIconUrl: tab.favIconUrl,
+			pinned: tab.pinned ?? false,
+			sourceDeviceId: deviceId,
+			savedAt: Date.now(),
+			_v: 1,
+		});
 	}
-	return { savedCount };
+
+	// Batch close if requested
+	if (close) {
+		const idsToClose = validTabs
+			.map((t) => t.id)
+			.filter((id): id is number => id !== undefined);
+		await tryAsync({
+			try: () => browser.tabs.remove(idsToClose),
+			catch: () => Ok(undefined),
+		});
+	}
+
+	return { savedCount: validTabs.length };
 }
 
 /**

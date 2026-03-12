@@ -230,10 +230,10 @@ const saveAllAction: QuickAction = {
 			description: `Save and close ${allTabs.length} tab${allTabs.length === 1 ? '' : 's'}?`,
 			confirm: { text: 'Save & Close All', variant: 'destructive' },
 			async onConfirm() {
-				for (const tab of allTabs) {
-					if (!tab.url) continue;
-					await savedTabState.actions.save(tab);
-				}
+				const tabsWithUrls = allTabs.filter((tab) => tab.url);
+				await Promise.allSettled(
+					tabsWithUrls.map((tab) => savedTabState.actions.save(tab)),
+				);
 			},
 		});
 	},

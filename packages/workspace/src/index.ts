@@ -63,6 +63,13 @@ export type { AbsolutePath, ProjectDir } from './shared/types';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId, Id as createId } from './shared/id';
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// DATE UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+
+export type { DateIsoString, TimezoneId } from './shared/datetime-string';
+export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════

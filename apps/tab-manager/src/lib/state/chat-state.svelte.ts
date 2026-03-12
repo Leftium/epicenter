@@ -55,11 +55,12 @@ import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
-	actionContext,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
 	workspaceClient,
+	workspaceDefinitions,
+	workspaceTools,
 } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -179,18 +180,22 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: actionContext.clientTools,
+			tools: workspaceTools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
+					const systemPrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
 					return {
+						credentials: 'include',
 						body: {
-							provider: conv?.provider ?? DEFAULT_PROVIDER,
-							model: conv?.model ?? DEFAULT_MODEL,
-							conversationId,
-							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: actionContext.toolDefinitions,
+							data: {
+								provider: conv?.provider ?? DEFAULT_PROVIDER,
+								model: conv?.model ?? DEFAULT_MODEL,
+								conversationId,
+								systemPrompts: [systemPrompt],
+								tools: workspaceDefinitions,
+							},
 						},
 					};
 				},

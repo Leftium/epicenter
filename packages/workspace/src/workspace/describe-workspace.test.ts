@@ -215,4 +215,55 @@ describe('describeWorkspace', () => {
 			'object',
 		);
 	});
+
+	test('title and destructive appear in action descriptors', () => {
+		const client = createWorkspace({
+			id: 'metadata-test',
+			tables: {
+				posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
+			},
+		}).withActions((c) => ({
+			posts: {
+				getAll: defineQuery({
+					title: 'List Posts',
+					description: 'Get all posts',
+					handler: () => c.tables.posts.getAllValid(),
+				}),
+				delete: defineMutation({
+					title: 'Delete Post',
+					description: 'Delete a post by ID',
+					destructive: true,
+					input: Type.Object({ id: Type.String() }),
+					handler: ({ id }) => {
+						c.tables.posts.delete(id);
+					},
+				}),
+				create: defineMutation({
+					description: 'Create a post (no title or destructive)',
+					handler: () => {},
+				}),
+			},
+		}));
+
+		const descriptor = describeWorkspace(client);
+
+		const getAllAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.getAll',
+		);
+		expect(getAllAction?.title).toBe('List Posts');
+		expect(getAllAction?.destructive).toBeUndefined();
+
+		const deleteAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.delete',
+		);
+		expect(deleteAction?.title).toBe('Delete Post');
+		expect(deleteAction?.destructive).toBe(true);
+
+		const createAction = descriptor.actions.find(
+			(a) => a.path.join('.') === 'posts.create',
+		);
+		expect(createAction?.title).toBeUndefined();
+		expect(createAction?.destructive).toBeUndefined();
+	});
+
 });

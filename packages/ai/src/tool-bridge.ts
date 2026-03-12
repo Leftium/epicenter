@@ -96,6 +96,8 @@ export type ActionNames<T extends Actions> = {
  */
 export type ToolDefinitionPayload = {
 	name: string;
+	/** Short, human-readable display name for UI surfaces and MCP annotations. */
+	title?: string;
 	description: string;
 	inputSchema?: NormalizedJsonSchema;
 	outputSchema?: JSONSchema;
@@ -143,8 +145,10 @@ export function actionsToClientTools<TActions extends Actions>(
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
-		...(requireApprovalForMutations &&
-			action.type === 'mutation' && { needsApproval: true }),
+		...((action.destructive ||
+			(requireApprovalForMutations && action.type === 'mutation')) && {
+			needsApproval: true,
+		}),
 		execute: async (args: unknown) => (action.input ? action(args) : action()),
 	}));
 }

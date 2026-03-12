@@ -17,6 +17,7 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
+	iterateActions,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -515,6 +516,7 @@ export const workspaceClient = createWorkspace(
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({
+				title: 'Search Tabs',
 				description:
 					'Search tabs by URL or title match. Returns matching tabs across all devices, optionally scoped to one device.',
 				input: Type.Object({
@@ -544,6 +546,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			list: defineQuery({
+				title: 'List Tabs',
 				description:
 					'List all open tabs. Optionally filter by device or window.',
 				input: Type.Object({
@@ -574,7 +577,9 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			close: defineMutation({
+				title: 'Close Tabs',
 				description: 'Close one or more tabs by their composite IDs.',
+				destructive: true,
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),
@@ -585,6 +590,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			open: defineMutation({
+				title: 'Open Tab',
 				description: 'Open a new tab with the given URL on the current device.',
 				input: Type.Object({
 					url: Type.String(),
@@ -596,6 +602,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			activate: defineMutation({
+				title: 'Activate Tab',
 				description: 'Activate (focus) a specific tab by its composite ID.',
 				input: Type.Object({
 					tabId: Type.String(),
@@ -607,6 +614,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			save: defineMutation({
+				title: 'Save Tabs',
 				description: 'Save tabs for later. Optionally close them after saving.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -624,6 +632,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			group: defineMutation({
+				title: 'Group Tabs',
 				description: 'Group tabs together with an optional title and color.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -637,6 +646,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			pin: defineMutation({
+				title: 'Pin Tabs',
 				description: 'Pin or unpin tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -649,6 +659,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			mute: defineMutation({
+				title: 'Mute Tabs',
 				description: 'Mute or unmute tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -661,6 +672,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			reload: defineMutation({
+				title: 'Reload Tabs',
 				description: 'Reload one or more tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -674,6 +686,7 @@ export const workspaceClient = createWorkspace(
 
 		windows: {
 			list: defineQuery({
+				title: 'List Windows',
 				description:
 					'List all browser windows with their tab counts. Optionally filter by device.',
 				input: Type.Object({
@@ -701,6 +714,7 @@ export const workspaceClient = createWorkspace(
 
 		devices: {
 			list: defineQuery({
+				title: 'List Devices',
 				description:
 					'List all synced devices with their names, browsers, and online status.',
 				input: Type.Object({}),
@@ -720,6 +734,7 @@ export const workspaceClient = createWorkspace(
 
 		domains: {
 			count: defineQuery({
+				title: 'Count Domains',
 				description:
 					'Count open tabs grouped by domain (e.g. youtube.com: 5, github.com: 3). Optionally filter by device.',
 				input: Type.Object({
@@ -754,6 +769,18 @@ export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
+
+/**
+ * Lookup map from tool name to human-readable title.
+ *
+ * Used by `ToolCallPart.svelte` to display action titles instead of
+ * deriving names from underscore-separated tool names.
+ */
+export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
+	[...iterateActions(workspaceClient.actions)]
+		.filter(([action]) => action.title !== undefined)
+		.map(([action, path]) => [path.join('_'), action.title!]),
+);
 
 /**
  * Reconnect the sync extension with fresh auth credentials.

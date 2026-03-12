@@ -92,6 +92,20 @@ Epicenter is an ecosystem of open-source, local-first apps. Our eventual goal is
 
 Our vision is to build a personal workspace where you own your data, choose your models, and replace siloed apps with open, interoperable alternatives. All while preserving authenticity and being free and open source.
 
+## Encryption
+
+Epicenter uses server-managed encryption at rest. Every workspace value—notes, transcripts, settings—is AES-256-GCM ciphertext wherever it sits: local storage, sync server, cloud bucket.
+
+The server holds a per-user encryption key. This is a deliberate choice, not a compromise. Zero-knowledge encryption—where the server can't decrypt anything—breaks search, AI, password recovery, and device migration. PGP has been trying to make key management work for thirty years; it hasn't. Even technical users on Hacker News choose centralized convenience over self-hosted alternatives.
+
+If you don't trust the server, self-host. When you run the server on your own infrastructure, server-managed encryption *is* zero-knowledge. The key sits on a machine you control. Same app, same API, same features—different trust boundary.
+
+**Further reading:**
+
+- [Why E2E Encryption Keeps Failing](docs/articles/why-e2e-encryption-keeps-failing.md)—PGP, Signal, and the structural problem
+- [Let the Server Handle Encryption](docs/articles/let-the-server-handle-encryption.md)—the pragmatic alternative
+- [If You Don't Trust the Server, Become the Server](docs/articles/if-you-dont-trust-the-server-become-the-server.md)—self-hosting as the clean answer
+
 ## Quick Start
 
 ### Install Epicenter Whispering

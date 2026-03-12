@@ -4,6 +4,7 @@
 	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
+	import EntriesTable from '$lib/components/EntriesTable.svelte';
 	import workspaceClient, { type Entry, type EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
@@ -49,6 +50,18 @@
 	const selectedEntry = $derived(
 		entries.find((e) => e.id === selectedEntryId) ?? null,
 	);
+
+	/** Entries filtered by sidebar type/tag filters. */
+	const filteredEntries = $derived.by(() => {
+		let result = entries;
+		if (activeTypeFilter) {
+			result = result.filter((e) => e.type?.includes(activeTypeFilter));
+		}
+		if (activeTagFilter) {
+			result = result.filter((e) => e.tags?.includes(activeTagFilter));
+		}
+		return result;
+	});
 
 	// ─── Document Handle (Y.Text) ────────────────────────────────────────────────
 
@@ -96,9 +109,24 @@
 				<p class="text-muted-foreground">Editor placeholder — Wave 4</p>
 			</div>
 		{:else}
-			<div class="flex h-full items-center justify-center">
-				<p class="text-muted-foreground">Data table placeholder — Wave 3</p>
-			</div>
+			<EntriesTable
+				entries={filteredEntries}
+				globalFilter={searchQuery}
+				{selectedEntryId}
+				onSelectEntry={(id) => workspaceClient.kv.set('selectedEntryId', id)}
+				onAddEntry={() => {
+					const id = generateId() as unknown as EntryId;
+					workspaceClient.tables.entries.set({
+						id,
+						title: '',
+						preview: '',
+						createdAt: dateTimeStringNow(),
+						updatedAt: dateTimeStringNow(),
+						_v: 2,
+					});
+					workspaceClient.kv.set('selectedEntryId', id);
+				}}
+			/>
 		{/if}
 	</main>
 </SidebarProvider>

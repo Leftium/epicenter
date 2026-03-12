@@ -571,7 +571,7 @@ export type Command = InferTableRow<typeof commandsTable>;
  */
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
-		id: 'tab-manager',
+		id: 'epicenter.tab-manager',
 
 		awareness: {
 			deviceId: type('string'),

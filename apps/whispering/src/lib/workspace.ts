@@ -15,8 +15,12 @@ import { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 
-// ── Tables ────────────────────────────────────────────────────────────────────
-
+/**
+ * Tables store normalized domain entities. Each row is replaced atomically via
+ * `table.set()` — there's no field-level merging. Schemas validate on read, so old
+ * data stays in storage until explicitly rewritten.
+ */
+/** Audio recordings captured by the user. One row per recording session. */
 const recordings = defineTable(
 	type({
 		id: 'string',
@@ -31,6 +35,7 @@ const recordings = defineTable(
 	}),
 );
 
+/** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable(
 	type({
 		id: 'string',
@@ -42,6 +47,19 @@ const transformations = defineTable(
 	}),
 );
 
+/**
+ * Individual steps within a transformation pipeline.
+ *
+ * Uses a flat row schema — all `prompt_transform` and `find_replace` fields are
+ * present on every row, discriminated by the `type` field. This is intentional:
+ *
+ * - `table.set()` replaces the entire row. A discriminated union would lose the
+ *   inactive variant's data on every write. Flat rows preserve everything.
+ * - Per-provider model memory: each inference provider's model selection is stored
+ *   independently. Switching providers and switching back retains your choices.
+ *
+ * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
+ */
 const transformationSteps = defineTable(
 	type({
 		id: 'string',
@@ -74,6 +92,7 @@ const transformationSteps = defineTable(
 	}),
 );
 
+/** Execution records for transformation pipelines. One run per invocation. */
 const transformationRuns = defineTable(
 	type({
 		id: 'string',
@@ -89,6 +108,7 @@ const transformationRuns = defineTable(
 	}),
 );
 
+/** Per-step execution records within a transformation run. */
 const transformationStepRuns = defineTable(
 	type({
 		id: 'string',
@@ -105,17 +125,21 @@ const transformationStepRuns = defineTable(
 	}),
 );
 
-// ── Synced Settings (KV) ──────────────────────────────────────────────────────
-//
-// Each setting is its own KV entry with independent last-write-wins resolution.
-// This means two devices can change different settings simultaneously without
-// one overwriting the other.
-//
-// Only preferences that roam across devices live here. API keys, filesystem
-// paths, hardware device IDs, base URLs, and global shortcuts stay in
-// localStorage and are never synced.
-
-// Sound effect toggles — play a sound on these events
+/**
+ * Synced settings stored as individual KV entries with last-write-wins resolution.
+ *
+ * Each key is independently resolved — two devices can change different settings
+ * simultaneously without one overwriting the other. Dot-notation keys create a
+ * natural namespace hierarchy and give per-key LWW granularity (unlike table rows
+ * which are replaced atomically).
+ *
+ * Only preferences that roam across devices live here. API keys, filesystem paths,
+ * hardware device IDs, base URLs, and global shortcuts stay in localStorage.
+ */
+/**
+ * Sound effect toggles. Each event can independently play/mute a sound.
+ * Manual = user-initiated recording. VAD = voice activity detection.
+ */
 const sound = {
 	'sound.manualStart': defineKv(type('boolean')),
 	'sound.manualStop': defineKv(type('boolean')),
@@ -127,7 +151,10 @@ const sound = {
 	'sound.transformationComplete': defineKv(type('boolean')),
 } as const;
 
-// Output behavior — what to do after transcription/transformation completes
+/**
+ * Output behavior after transcription/transformation completes.
+ * Controls clipboard, cursor paste, and simulated Enter key per pipeline stage.
+ */
 const output = {
 	'transcription.copyToClipboard': defineKv(type('boolean')),
 	'transcription.writeToCursor': defineKv(type('boolean')),
@@ -137,26 +164,36 @@ const output = {
 	'transformation.simulateEnter': defineKv(type('boolean')),
 } as const;
 
-// UI preferences
+/** Window behavior and navigation layout preferences. */
 const ui = {
 	'ui.alwaysOnTop': defineKv(type.enumerated(...ALWAYS_ON_TOP_MODES)),
 	'ui.layoutMode': defineKv(type.enumerated(...LAYOUT_MODES)),
 } as const;
 
-// Data retention
+/**
+ * Recording retention policy. `maxCount` is stored as an integer — the old
+ * settings schema used `string.digits` for localStorage; the workspace uses
+ * the semantically correct numeric type.
+ */
 const dataRetention = {
 	'retention.strategy': defineKv(type("'keep-forever' | 'limit-count'")),
 	'retention.maxCount': defineKv(type('number.integer >= 1')),
 } as const;
 
-// Recording mode (user preference, not hardware-specific)
+/** User's preferred recording mode — manual trigger vs voice activity detection. */
 const recording = {
 	'recording.mode': defineKv(type.enumerated(...RECORDING_MODES)),
 } as const;
 
-// Transcription settings — service and per-service model selections are individual
-// KVs for independent LWW resolution. Shared preferences (prompt, temperature,
-// etc.) are also independent KVs.
+/**
+ * Transcription service and per-service model selections.
+ *
+ * Each service's model is its own KV entry so switching from OpenAI → Groq and
+ * back preserves your OpenAI model choice. `temperature` is stored as a number
+ * (0–1) — the old settings schema used a string for localStorage.
+ *
+ * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
+ */
 const transcription = {
 	'transcription.service': defineKv(type.enumerated(...TRANSCRIPTION_SERVICE_IDS)),
 	'transcription.openai.model': defineKv(type('string')),
@@ -171,23 +208,26 @@ const transcription = {
 	'transcription.compressionOptions': defineKv(type('string')),
 } as const;
 
-// Transformation selection
+/** Currently active transformation pipeline. `null` = no transformation selected. */
 const transformation = {
 	'transformation.selectedId': defineKv(type('string | null')),
 } as const;
 
-// Completion (inference for transformations)
+/** Inference model for transformation completion. OpenRouter model roams across devices. */
 const completion = {
 	'completion.openrouter.model': defineKv(type('string')),
 } as const;
 
-// Analytics
+/** Anonymized event logging toggle (Aptabase). */
 const analytics = {
 	'analytics.enabled': defineKv(type('boolean')),
 } as const;
 
-
-// In-app shortcuts (not system-global, safe to sync)
+/**
+ * In-app keyboard shortcuts. System-global shortcuts are device-specific and stay
+ * in localStorage — these are only the shortcuts within the Whispering window.
+ * `null` = unbound.
+ */
 const shortcuts = {
 	'shortcut.toggleManualRecording': defineKv(type('string | null')),
 	'shortcut.startManualRecording': defineKv(type('string | null')),
@@ -201,8 +241,11 @@ const shortcuts = {
 	'shortcut.runTransformationOnClipboard': defineKv(type('string | null')),
 } as const;
 
-// ── Workspace ─────────────────────────────────────────────────────────────────
-
+/**
+ * The Whispering workspace — 5 normalized tables for domain data and ~40 KV entries
+ * for synced preferences. Persisted to IndexedDB; future sync extensions will add
+ * remote replication.
+ */
 export default createWorkspace(
 	defineWorkspace({
 		id: 'whispering',

@@ -1,31 +1,8 @@
-# Astro Starter Kit: Minimal
+# @epicenter/landing
 
-```sh
-bun create astro@latest -- --template minimal
-```
+Epicenter's public landing site, built with [Astro](https://astro.build/) and deployed to Cloudflare Pages.
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
-
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
-
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
-
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
-
-Any static assets, like images, can be placed in the `public/` directory.
-
-## 🧞 Commands
+## Commands
 
 All commands are run from the root of the project, from a terminal:
 
@@ -38,6 +15,6 @@ All commands are run from the root of the project, from a terminal:
 | `bun astro ...`       | Run CLI commands like `astro add`, `astro check` |
 | `bun astro -- --help` | Get help using the Astro CLI                     |
 
-## 👀 Want to learn more?
+## Learn more
 
-Feel free to check [our documentation](../../docs/) or jump into our [Discord server](https://go.epicenter.so/discord).
+Check [our documentation](../../docs/) or jump into our [Discord server](https://go.epicenter.so/discord).

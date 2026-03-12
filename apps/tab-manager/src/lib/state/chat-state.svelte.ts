@@ -194,7 +194,7 @@ function createAiChatState() {
 								model: conv?.model ?? DEFAULT_MODEL,
 								conversationId,
 								systemPrompts: [systemPrompt],
-						tools: workspaceDefinitions,
+								tools: workspaceDefinitions,
 							},
 						},
 					};

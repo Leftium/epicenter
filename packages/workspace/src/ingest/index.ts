@@ -9,6 +9,7 @@
 
 // Reddit importer
 export {
+	type ImportError,
 	type ImportProgress,
 	type ImportStats,
 	importRedditExport,

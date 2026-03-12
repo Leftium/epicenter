@@ -11,8 +11,9 @@
  *
  * Usage:
  * ```typescript
- * const rows = csvData.posts.map(csvSchemas.posts.assert);
- * // rows is already typed and ready for table insertion
+ * const result = csvSchemas.posts(rawRow);
+ * if (result instanceof type.errors) { /* handle error */ }
+ * // result is already typed and ready for table insertion
  * ```
  */
 

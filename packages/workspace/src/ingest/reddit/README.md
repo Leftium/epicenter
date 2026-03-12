@@ -38,7 +38,7 @@ Some exports include `messages.csv` + `message_headers.csv` instead of `messages
 | `moderated_subreddits.csv` | `moderatedSubreddits` | `subreddit` value | Subreddits you moderate |
 | `multireddits.csv` | `multireddits` | Natural `id` | Custom subreddit groups you created |
 | `payouts.csv` | `payouts` | `payout_id` or date fallback | Money Reddit paid you |
-| `poll_votes.csv` | `pollVotes` | Composite: `post:selection:text:img:pred:stake` | Polls you voted on |
+| `poll_votes.csv` | `pollVotes` | Composite: `post\|selection\|text\|img\|pred\|stake` | Polls you voted on |
 | `post_votes.csv` | `postVotes` | Natural `id` | Every post you upvoted/downvoted |
 | `posts.csv` | `posts` | Natural `id` | Every post you submitted |
 | `purchases.csv` | `purchases` | `transaction_id` | Reddit purchases you made |

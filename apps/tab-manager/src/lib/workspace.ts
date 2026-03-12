@@ -10,7 +10,7 @@
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
-import { actionsToClientTools, toServerDefinitions } from '@epicenter/ai';
+import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
 import {
 	createWorkspace,
 	defineMutation,
@@ -838,7 +838,7 @@ export const workspaceClient = createWorkspace(
 	}));
 
 export const workspaceTools = actionsToClientTools(workspaceClient.actions);
-export const workspaceDefinitions = toServerDefinitions(workspaceTools);
+export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];

@@ -1,1 +1,6 @@
-export { type ActionNames, actionsToClientTools, toServerDefinitions } from './action-context';
+export {
+	type ActionNames,
+	actionsToClientTools,
+	type ToolDefinitionPayload,
+	toToolDefinitions,
+} from './tool-bridge';

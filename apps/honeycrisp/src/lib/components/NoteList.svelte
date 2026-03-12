@@ -3,6 +3,7 @@
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { format, isToday, isYesterday } from 'date-fns';
 	import type { Note, NoteId } from '$lib/workspace';
 
@@ -11,11 +12,15 @@
 		selectedNoteId,
 		onSelectNote,
 		onCreateNote,
+		onDeleteNote,
+		onPinNote,
 	}: {
 		notes: Note[];
 		selectedNoteId: NoteId | null;
 		onSelectNote: (noteId: NoteId) => void;
 		onCreateNote: () => void;
+		onDeleteNote: (noteId: NoteId) => void;
+		onPinNote: (noteId: NoteId) => void;
 	} = $props();
 
 	function parseDateTime(dts: string): Date {
@@ -94,7 +99,7 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div
-								class="flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50 {selectedNoteId ===
+								class="group relative flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50 {selectedNoteId ===
 								note.id
 									? 'bg-accent'
 									: ''}"
@@ -116,6 +121,38 @@
 								<p class="line-clamp-2 text-xs text-muted-foreground">
 									{note.preview || 'No content'}
 								</p>
+
+								<div
+									class="absolute right-2 top-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
+									note.id
+										? 'flex'
+										: ''}"
+								>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="size-6"
+										onclick={(e) => {
+											e.stopPropagation();
+											onPinNote(note.id);
+										}}
+									>
+										<PinIcon
+											class="size-3 {note.pinned ? 'fill-current' : ''}"
+										/>
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="size-6 text-destructive hover:text-destructive"
+										onclick={(e) => {
+											e.stopPropagation();
+											onDeleteNote(note.id);
+										}}
+									>
+										<TrashIcon class="size-3" />
+									</Button>
+								</div>
 							</div>
 						{/each}
 					</div>

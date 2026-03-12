@@ -126,6 +126,27 @@
 		});
 	}
 
+	function renameFolder(folderId: FolderId, name: string) {
+		workspaceClient.tables.folders.update(folderId, { name });
+	}
+
+	function deleteFolder(folderId: FolderId) {
+		// Move notes in this folder to unfiled
+		const folderNotes = notes.filter((n) => n.folderId === folderId);
+		for (const note of folderNotes) {
+			workspaceClient.tables.notes.update(note.id, {
+				folderId: undefined,
+			});
+		}
+
+		workspaceClient.tables.folders.delete(folderId);
+
+		// If deleted folder was selected, go to All Notes
+		if (selectedFolderId === folderId) {
+			workspaceClient.kv.set('selectedFolderId', null);
+		}
+	}
+
 	function createNote() {
 		const id = generateId() as unknown as NoteId;
 		workspaceClient.tables.notes.set({
@@ -139,6 +160,19 @@
 			_v: 1,
 		});
 		workspaceClient.kv.set('selectedNoteId', id);
+	}
+
+	function deleteNote(noteId: NoteId) {
+		workspaceClient.tables.notes.delete(noteId);
+		if (selectedNoteId === noteId) {
+			workspaceClient.kv.set('selectedNoteId', null);
+		}
+	}
+
+	function pinNote(noteId: NoteId) {
+		const note = notes.find((n) => n.id === noteId);
+		if (!note) return;
+		workspaceClient.tables.notes.update(noteId, { pinned: !note.pinned });
 	}
 
 	function selectFolder(folderId: FolderId | null) {
@@ -161,7 +195,29 @@
 		if (!selectedNoteId) return;
 		workspaceClient.tables.notes.update(selectedNoteId, { title, preview });
 	}
+
+	// ─── Keyboard Shortcuts ──────────────────────────────────────────────────
+
+	function handleKeydown(e: KeyboardEvent) {
+		const meta = e.metaKey || e.ctrlKey;
+		if (!meta) return;
+
+		if (e.key === 'n' && e.shiftKey) {
+			// ⌘⇧N — New folder
+			e.preventDefault();
+			createFolder();
+		} else if (e.key === 'n') {
+			// ⌘N — New note
+			e.preventDefault();
+			createNote();
+		} else if (e.key === 'b') {
+			// ⌘B — Toggle sidebar (handled by SidebarProvider)
+			// SidebarProvider already handles this via keyboard shortcut
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <SidebarProvider>
 	<HoneycripSidebar
@@ -171,6 +227,8 @@
 		totalNoteCount={notes.length}
 		onSelectFolder={selectFolder}
 		onCreateFolder={createFolder}
+		onRenameFolder={renameFolder}
+		onDeleteFolder={deleteFolder}
 	/>
 
 	<main class="flex h-screen flex-1 overflow-hidden">
@@ -181,6 +239,8 @@
 					{selectedNoteId}
 					onSelectNote={selectNote}
 					onCreateNote={createNote}
+					onDeleteNote={deleteNote}
+					onPinNote={pinNote}
 				/>
 			</Resizable.Pane>
 			<Resizable.Handle withHandle />

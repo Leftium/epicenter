@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Sidebar from '@epicenter/ui/sidebar';
+	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import FolderIcon from '@lucide/svelte/icons/folder';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import type { Folder, FolderId } from '$lib/workspace';
 
 	let {
@@ -13,6 +17,8 @@
 		totalNoteCount,
 		onSelectFolder,
 		onCreateFolder,
+		onRenameFolder,
+		onDeleteFolder,
 	}: {
 		folders: Folder[];
 		selectedFolderId: FolderId | null;
@@ -20,7 +26,30 @@
 		totalNoteCount: number;
 		onSelectFolder: (folderId: FolderId | null) => void;
 		onCreateFolder: () => void;
+		onRenameFolder: (folderId: FolderId, name: string) => void;
+		onDeleteFolder: (folderId: FolderId) => void;
 	} = $props();
+
+	let editingFolderId = $state<FolderId | null>(null);
+	let editingName = $state('');
+
+	function startRename(folder: Folder) {
+		editingFolderId = folder.id;
+		editingName = folder.name;
+	}
+
+	function commitRename() {
+		if (editingFolderId && editingName.trim()) {
+			onRenameFolder(editingFolderId, editingName.trim());
+		}
+		editingFolderId = null;
+		editingName = '';
+	}
+
+	function cancelRename() {
+		editingFolderId = null;
+		editingName = '';
+	}
 </script>
 
 <Sidebar.Root>
@@ -60,20 +89,60 @@
 				<Sidebar.Menu>
 					{#each folders as folder (folder.id)}
 						<Sidebar.MenuItem>
-							<Sidebar.MenuButton
-								isActive={selectedFolderId === folder.id}
-								onclick={() => onSelectFolder(folder.id)}
-							>
-								{#if folder.icon}
-									<span class="text-base leading-none">{folder.icon}</span>
-								{:else}
-									<FolderIcon class="size-4" />
-								{/if}
-								<span>{folder.name}</span>
-								<span class="ml-auto text-xs text-muted-foreground">
-									{noteCounts[folder.id] ?? 0}
-								</span>
-							</Sidebar.MenuButton>
+							{#if editingFolderId === folder.id}
+								<div class="flex items-center gap-2 px-2 py-1">
+									<!-- svelte-ignore a11y_autofocus -->
+									<input
+										class="flex-1 rounded border bg-background px-1 py-0.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+										bind:value={editingName}
+										onkeydown={(e) => {
+											if (e.key === 'Enter') commitRename();
+											if (e.key === 'Escape') cancelRename();
+										}}
+										onblur={commitRename}
+										autofocus
+									>
+								</div>
+							{:else}
+								<Sidebar.MenuButton
+									isActive={selectedFolderId === folder.id}
+									onclick={() => onSelectFolder(folder.id)}
+								>
+									{#if folder.icon}
+										<span class="text-base leading-none">{folder.icon}</span>
+									{:else}
+										<FolderIcon class="size-4" />
+									{/if}
+									<span>{folder.name}</span>
+									<span class="ml-auto text-xs text-muted-foreground">
+										{noteCounts[folder.id] ?? 0}
+									</span>
+								</Sidebar.MenuButton>
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger>
+										{#snippet child({ props })}
+											<Sidebar.MenuAction showOnHover {...props}>
+												<EllipsisIcon class="size-4" />
+												<span class="sr-only">Folder actions</span>
+											</Sidebar.MenuAction>
+										{/snippet}
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="start" side="right" class="w-40">
+										<DropdownMenu.Item onclick={() => startRename(folder)}>
+											<PencilIcon class="mr-2 size-4" />
+											Rename
+										</DropdownMenu.Item>
+										<DropdownMenu.Separator />
+										<DropdownMenu.Item
+											class="text-destructive focus:text-destructive"
+											onclick={() => onDeleteFolder(folder.id)}
+										>
+											<TrashIcon class="mr-2 size-4" />
+											Delete
+										</DropdownMenu.Item>
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							{/if}
 						</Sidebar.MenuItem>
 					{:else}
 						<Sidebar.MenuItem>

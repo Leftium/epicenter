@@ -1,3 +1,5 @@
+> **Note:** The tab-manager command queue implementation described here was removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`. The discriminated union pattern itself remains a valid approach for typed command queues over Y.Doc.
+
 # One Table, Eight Commands, Zero JSON.parse
 
 A Y.Doc table with a discriminated union on `action` gives you a fully typed command queue. Each command variant carries its own input fields and result shape—flat key-value pairs on a Y.Map, no serialization layer.

@@ -7,7 +7,7 @@
 
 ## Overview
 
-The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming SSE from the hub server's generic `/ai/chat` endpoint. The BGSW has zero AI responsibilities — it handles only Yjs sync, browser event syncing, and the command consumer for future cross-device use. The hub server remains maximally generic with no app-specific tools or system prompts.
+The sidebar runs `createChat()` from `@tanstack/ai-svelte` directly, streaming SSE from the hub server's generic `/ai/chat` endpoint. The BGSW has zero AI responsibilities — it handles only Yjs sync and browser event syncing. The hub server remains maximally generic with no app-specific tools or system prompts.
 
 ## Motivation
 
@@ -103,7 +103,7 @@ const chat = createChat({
 
 ### Cross-Device Commands
 
-The command queue infrastructure is kept intact for future cross-device AI mutations. When a tool targets a remote device, it can write to the commands table instead of calling Chrome APIs directly.
+> **Update (2026-03-11):** The command queue infrastructure was removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`. If cross-device AI mutations become needed, a lighter signaling mechanism (e.g., server-to-device WebSocket RPC) would likely replace it.
 
 ## Todo
 

@@ -1,11 +1,10 @@
 /**
  * Per-action Chrome API execution functions.
  *
- * Each function receives the command payload, executes the corresponding
- * Chrome browser API, and returns the result. Called by the command consumer
- * after filtering for this device and checking TTL.
+ * Each function receives the action payload, executes the corresponding
+ * Chrome browser API, and returns the result. Used by the `.withActions()`
+ * mutation handlers in workspace.ts.
  */
-
 import type { TableHelper } from '@epicenter/workspace';
 import { generateId } from '@epicenter/workspace';
 import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';

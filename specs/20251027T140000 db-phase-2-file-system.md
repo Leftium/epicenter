@@ -3,6 +3,7 @@
 **Created**: 2025-10-27T14:00:00
 **Status**: Planning
 **Depends On**: Phase 1 (completed in PR #XXX)
+> **Note**: The `gray-matter` dependency chosen in this spec was later replaced with a lightweight `frontmatter.ts` utility using `js-yaml` v4. See `specs/20260311T213400-remove-gray-matter-polyfills.md` for details.
 
 ## Overview
 

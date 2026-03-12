@@ -3,7 +3,6 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -13,12 +12,6 @@ export default defineConfig(async () => ({
 		sveltekit(),
 		tailwindcss(),
 		devtoolsJson(),
-		nodePolyfills({
-			// Enable polyfills for Buffer (needed by gray-matter)
-			globals: {
-				Buffer: true,
-			},
-		}),
 	],
 	resolve: {
 		dedupe: ['yjs'],

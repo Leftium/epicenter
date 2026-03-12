@@ -16,8 +16,12 @@
 
 <DrawerPrimitive.Portal {...portalProps}>
 	<DrawerOverlay />
+	<!-- TODO: Remove onOpenAutoFocus workaround when vaul-svelte releases a version compatible with bits-ui 2.x.
+	     vaul-svelte 1.0.0-next.7 depends on bits-ui ^1.1.0, causing an infinite handleFocus recursion
+	     with bits-ui 2.x. See: https://github.com/huntabyte/vaul-svelte/issues/135 -->
 	<DrawerPrimitive.Content
 		bind:ref
+		onOpenAutoFocus={(e) => e.preventDefault()}
 		data-slot="drawer-content"
 		class={cn(
 			'group/drawer-content bg-background fixed z-50 flex h-auto flex-col',

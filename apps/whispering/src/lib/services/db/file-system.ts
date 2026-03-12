@@ -10,12 +10,12 @@ import {
 	writeTextFile,
 } from '@tauri-apps/plugin-fs';
 import { type } from 'arktype';
-import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
 import mime from 'mime';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { FsServiceLive } from '$lib/services/desktop/fs';
+import { parseFrontmatter, stringifyFrontmatter } from './frontmatter';
 import type { Recording } from './models';
 import { Transformation, TransformationRun } from './models';
 import type { DbService } from './types';
@@ -117,7 +117,7 @@ export function createFileSystemDb(): DbService {
 
 						// Parse all files
 						const recordings = contents.map((content) => {
-						const { data, content: body } = parseFrontmatter(content);
+							const { data, content: body } = parseFrontmatter(content);
 
 							// Validate the front matter schema
 							const frontMatter = RecordingFrontMatter(data);
@@ -181,7 +181,7 @@ export function createFileSystemDb(): DbService {
 						if (!fileExists) return null;
 
 						const content = await readTextFile(mdPath);
-					const { data, content: body } = parseFrontmatter(content);
+						const { data, content: body } = parseFrontmatter(content);
 
 						// Validate the front matter schema
 						const frontMatter = RecordingFrontMatter(data);
@@ -436,7 +436,7 @@ export function createFileSystemDb(): DbService {
 
 						// Parse all files
 						const transformations = contents.map((content) => {
-						const { data } = parseFrontmatter(content);
+							const { data } = parseFrontmatter(content);
 
 							// Validate with migrating schema (accepts V1 or V2, outputs V2)
 							const validated = Transformation(data);
@@ -465,7 +465,7 @@ export function createFileSystemDb(): DbService {
 						if (!fileExists) return null;
 
 						const content = await readTextFile(mdPath);
-					const { data } = parseFrontmatter(content);
+						const { data } = parseFrontmatter(content);
 
 						// Validate with migrating schema (accepts V1 or V2, outputs V2)
 						const validated = Transformation(data);
@@ -489,7 +489,7 @@ export function createFileSystemDb(): DbService {
 						await mkdir(transformationsPath, { recursive: true });
 						await Promise.all(
 							transformations.map(async (transformation) => {
-						const mdContent = stringifyFrontmatter('', transformation);
+								const mdContent = stringifyFrontmatter('', transformation);
 								const mdPath = await PATHS.DB.TRANSFORMATION_MD(
 									transformation.id,
 								);
@@ -515,7 +515,10 @@ export function createFileSystemDb(): DbService {
 						const mdPath = await PATHS.DB.TRANSFORMATION_MD(transformation.id);
 
 						// Create .md file with front matter
-					const mdContent = stringifyFrontmatter('', transformationWithTimestamp);
+						const mdContent = stringifyFrontmatter(
+							'',
+							transformationWithTimestamp,
+						);
 
 						// Atomic write
 						const tmpPath = `${mdPath}.tmp`;
@@ -587,7 +590,7 @@ export function createFileSystemDb(): DbService {
 
 						// Parse all files
 						const runs = contents.map((content) => {
-						const { data } = parseFrontmatter(content);
+							const { data } = parseFrontmatter(content);
 
 							// Validate with arktype schema
 							const validated = TransformationRun(data);
@@ -615,7 +618,7 @@ export function createFileSystemDb(): DbService {
 						if (!fileExists) return null;
 
 						const content = await readTextFile(mdPath);
-					const { data } = parseFrontmatter(content);
+						const { data } = parseFrontmatter(content);
 
 						// Validate with arktype schema
 						const validated = TransformationRun(data);
@@ -649,7 +652,7 @@ export function createFileSystemDb(): DbService {
 						// Parse and filter
 						const runs = contents
 							.map((content) => {
-						const { data } = parseFrontmatter(content);
+								const { data } = parseFrontmatter(content);
 
 								// Validate with arktype schema
 								const validated = TransformationRun(data);
@@ -695,7 +698,7 @@ export function createFileSystemDb(): DbService {
 						// Parse and filter
 						const runs = contents
 							.map((content) => {
-						const { data } = parseFrontmatter(content);
+								const { data } = parseFrontmatter(content);
 
 								// Validate with arktype schema
 								const validated = TransformationRun(data);
@@ -732,7 +735,7 @@ export function createFileSystemDb(): DbService {
 
 						await Promise.all(
 							runs.map(async (run) => {
-						const mdContent = stringifyFrontmatter('', run);
+								const mdContent = stringifyFrontmatter('', run);
 								const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 								const tmpPath = `${mdPath}.tmp`;
 								await writeTextFile(tmpPath, mdContent);
@@ -763,7 +766,7 @@ export function createFileSystemDb(): DbService {
 						};
 
 						// Update .md file
-					const mdContent = stringifyFrontmatter('', updatedRun);
+						const mdContent = stringifyFrontmatter('', updatedRun);
 						const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 
 						// Atomic write
@@ -801,7 +804,7 @@ export function createFileSystemDb(): DbService {
 						};
 
 						// Update .md file
-					const mdContent = stringifyFrontmatter('', failedRun);
+						const mdContent = stringifyFrontmatter('', failedRun);
 						const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 
 						// Atomic write
@@ -836,7 +839,7 @@ export function createFileSystemDb(): DbService {
 						};
 
 						// Update .md file
-					const mdContent = stringifyFrontmatter('', updatedRun);
+						const mdContent = stringifyFrontmatter('', updatedRun);
 						const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 
 						// Atomic write
@@ -863,7 +866,7 @@ export function createFileSystemDb(): DbService {
 						};
 
 						// Update .md file
-					const mdContent = stringifyFrontmatter('', completedRun);
+						const mdContent = stringifyFrontmatter('', completedRun);
 						const mdPath = await PATHS.DB.TRANSFORMATION_RUN_MD(run.id);
 
 						// Atomic write

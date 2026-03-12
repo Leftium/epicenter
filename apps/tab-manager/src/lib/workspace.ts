@@ -10,7 +10,7 @@
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
-import { type ActionLabel, actionsToClientTools, toServerDefinitions } from '@epicenter/ai';
+import { actionsToClientTools, toServerDefinitions } from '@epicenter/ai';
 import {
 	createWorkspace,
 	defineMutation,
@@ -843,25 +843,6 @@ export const workspaceDefinitions = toServerDefinitions(workspaceTools);
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
-/** Exhaustive map of action name → display labels for active/completed states. */
-export const workspaceLabels: Record<WorkspaceActionName, ActionLabel> = {
-	tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
-	tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
-	windows_list: { active: 'Listing windows', done: 'Listed windows' },
-	devices_list: { active: 'Listing devices', done: 'Listed devices' },
-	domains_count: {
-		active: 'Counting domains',
-		done: 'Counted domains',
-	},
-	tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
-	tabs_open: { active: 'Opening tab', done: 'Opened tab' },
-	tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
-	tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
-	tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
-	tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
-	tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
-	tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
-};
 
 /**
  * Reconnect the sync extension with fresh auth credentials.

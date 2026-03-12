@@ -179,7 +179,7 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: actionContext.tools,
+			tools: actionContext.clientTools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
@@ -190,7 +190,7 @@ function createAiChatState() {
 							model: conv?.model ?? DEFAULT_MODEL,
 							conversationId,
 							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: actionContext.definitions,
+							tools: actionContext.toolDefinitions,
 						},
 					};
 				},

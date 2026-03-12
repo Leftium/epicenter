@@ -858,7 +858,7 @@ export const actionContext = createActionContext(workspaceClient.actions, {
 	},
 });
 
-export type WorkspaceTools = typeof actionContext.tools;
+export type WorkspaceTools = typeof actionContext.clientTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
 /**

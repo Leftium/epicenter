@@ -53,8 +53,8 @@ type ActionNames<T extends Actions> = {
  *   },
  * });
  *
- * ctx.tools;                    // AnyClientTool[]
- * ctx.definitions;              // ServerToolDefinition[]
+ * ctx.clientTools;             // AnyClientTool[]
+ * ctx.toolDefinitions;         // ServerToolDefinition[]
  * ctx.getLabel('tabs_search');  // ActionLabel
  * ```
  */
@@ -74,8 +74,8 @@ export function createActionContext<TActions extends Actions>(
 	const definitions = toDefinitions(tools);
 
 	return {
-		tools,
-		definitions,
+		clientTools: tools,
+		toolDefinitions: definitions,
 		getLabel: (name: ActionNames<TActions>): ActionLabel => labels[name],
 	};
 }

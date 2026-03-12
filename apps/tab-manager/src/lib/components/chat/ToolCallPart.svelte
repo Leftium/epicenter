@@ -3,7 +3,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { actionContext, type WorkspaceTools } from '$lib/workspace';
+	import { type WorkspaceTools } from '$lib/workspace';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
@@ -18,8 +18,9 @@
 			part.output !== null &&
 			'error' in part.output,
 	);
-	const label = $derived(actionContext.getLabel(part.name));
-	const displayName = $derived(isRunning ? label.active : label.done);
+	const displayName = $derived(
+		part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
+	);
 	const badgeVariant = $derived.by(() => {
 		if (isFailed) return 'status.failed';
 		if (isRunning) return 'status.running';

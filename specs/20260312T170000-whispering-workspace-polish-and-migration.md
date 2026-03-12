@@ -135,22 +135,24 @@ Verify these are correctly EXCLUDED (they are — just confirming):
 
 ### Wave 1: Polish workspace.ts
 
-- [ ] **1.1** Replace `transformationSteps` discriminated union with flat row approach
+- [x] **1.1** Replace `transformationSteps` discriminated union with flat camelCase row schema
   - All prompt_transform fields + all find_replace fields on every row
-  - Each inference provider's model as a separate field
+  - Each inference provider's model as a separate camelCase field
   - `type` field discriminates between step types
-  - Match the spec's proposed schema
-- [ ] **1.2** Break `transcription.config` blob into individual KVs
+  - camelCase for tables (consistent with codebase), dot-notation reserved for KV
+- [x] **1.2** Break `transcription.config` blob into individual KVs
   - `transcription.service`: selected service ID
   - `transcription.openai.model`: OpenAI model selection
   - `transcription.groq.model`: Groq model selection
   - `transcription.elevenlabs.model`: ElevenLabs model selection
   - `transcription.deepgram.model`: Deepgram model selection
   - `transcription.mistral.model`: Mistral model selection
-- [ ] **1.3** Add missing KV entries
+- [x] **1.3** Add missing KV entries
   - `completion.openrouter.model` (roams across devices)
-- [ ] **1.4** Review all KV types and ensure they match what the app actually needs
-- [ ] **1.5** Add JSDoc comments to every table and KV group explaining the design
+  - Audit confirmed: only one entry was missing; all others present or correctly excluded
+- [x] **1.4** Review all KV types — all correct
+  - `retention.maxCount` (`number.integer >= 1`) and `transcription.temperature` (`0 <= number <= 1`) intentionally differ from settings.ts string types — workspace uses semantically correct types
+- [x] **1.5** Add JSDoc comments to every table and KV group explaining the design
 
 ### Wave 2: Settings Split
 

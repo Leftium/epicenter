@@ -70,3 +70,9 @@ GitLab, Outline, and Mattermost all work this way. Enterprise customers who need
 | Want zero-knowledge? | Built in | Self-host |
 
 The single advantage of zero-knowledge—protection from the server operator—disappears when self-hosting lets you become the server operator. For everything else, let the server handle encryption.
+
+## Related
+
+- [Why E2E Encryption Keeps Failing](./why-e2e-encryption-keeps-failing.md) — PGP, the jasode argument, and Signal as case studies
+- [If You Don't Trust the Server, Become the Server](./if-you-dont-trust-the-server-become-the-server.md) — self-hosting as the clean answer to zero-knowledge
+- [Encryption at Rest Is the Gold Standard](./encryption-at-rest-is-the-gold-standard.md) — how Epicenter encrypts sensitive data at rest

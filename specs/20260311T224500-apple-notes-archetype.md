@@ -1,18 +1,23 @@
-# Apple Notes Archetypes — Three Standalone Apps
+# Apple Notes Archetypes — Two Standalone Apps (Umbrella Spec)
 
 **Date**: 2026-03-11
-**Status**: Draft
+**Status**: Active — Phase 1 (Fuji v1) complete, roles revised
 **Author**: AI-assisted
 
 ## Overview
 
-Three standalone note-taking apps, each named after an apple variety, each with a distinct personality. All built on the Epicenter workspace API with `defineWorkspace`, branded IDs, `DateTimeString` dates, and Y.Text collaborative editing—but targeting different writing workflows.
+Two standalone note-taking apps built on the Epicenter workspace API. Each has a distinct purpose and separate execution spec.
 
-| App | Vibe | One-liner |
+| App | Role | One-liner |
 |-----|------|-----------|
-| **Granny Smith** | Classic, traditional, no-nonsense | The faithful Apple Notes clone—folders, pinned notes, checklists |
-| **Honeycrisp** | Premium, polished, focused | The beautiful rich-text editor you actually want to write in |
-| **Fuji** | Clean, minimal, zen | Quick-capture daily notes—no folders, just a timeline |
+| **Fuji** | Personal power-notes | The real app—ground-up rewrite for daily use, rich schema, Sidebar, eventually table view |
+| **Honeycrisp** | Simple Apple Notes clone | Faithful three-column clone—folders, notes, editor. Clean and straightforward |
+
+> **Role Revision (2026-03-12)**: Fuji was originally "minimal zen quick-capture." That's wrong—it's now the primary personal note app with a richer schema. Honeycrisp takes the "simple faithful clone" role. Granny Smith remains shelved.
+
+> **Execution**: Each app has its own spec. See:
+> - `specs/20260312T192500-honeycrisp.md` — Honeycrisp execution spec (build first, simpler)
+> - `specs/20260312T192500-fuji-rewrite.md` — Fuji rewrite execution spec (build second, needs design)
 
 Each is a standalone SPA under `apps/` with its own workspace schema, its own `defineWorkspace` call, and its own UI.
 
@@ -109,14 +114,26 @@ The shadcn-svelte `Sidebar` component already exists in `packages/ui/src/sidebar
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **Number of apps** | 3 standalone SPAs | Each has a distinct vibe—forces different schema/UI decisions, showcases workspace API flexibility |
-| **App structure** | `apps/granny-smith/`, `apps/honeycrisp/`, `apps/fuji/` | Standalone Tauri + Svelte apps, same as `apps/whispering/` and `apps/tab-manager/` |
+| **Number of apps** | 2 standalone SPAs (Granny Smith shelved) | Fuji = personal quick-capture, Honeycrisp = full Apple Notes clone. One polished clone > two half-baked ones. |
+| **App structure** | `apps/fuji/`, `apps/honeycrisp/` | Standalone SvelteKit web-only SPAs. No Tauri for v1. |
 | **DateTimeString** | Shared in `@epicenter/workspace` | 3 consumers from day one. Extract now, not later. |
 | **Date validator** | arktype `type('string').pipe(...)` | Matches tab-manager branded type pattern. Validates format and brands in one step. |
-| **Rich text** | Yes, all three use rich text via Y.Text | User decided. Tiptap/ProseMirror on Y.Text gives collaborative rich editing. |
-| **Folders** | Flat (no nesting) for all three | User decided. Add nesting via `_v: '2'` migration later if wanted. |
+| **Rich text** | Yes, both use rich text via Y.Text | Tiptap/ProseMirror on Y.Text gives collaborative rich editing. |
+| **Folders** | Flat (no nesting) for Honeycrisp; none for Fuji | Add nesting via `_v: '2'` migration later if wanted. |
 | **Body GUID** | Use note `id` as the document GUID (`guid: 'id'`) | Simplest option. Split to separate GUID if multi-doc notes are needed later. |
 
+
+### SPA Configuration Pattern (Reference for Both Apps)
+
+Each app is a **client-side SPA** using `@sveltejs/adapter-static`. Three config files work together:
+
+1. **`svelte.config.js`** — `adapter-static` with `fallback: 'index.html'` (SPA routing)
+2. **`src/routes/+layout.ts`** — `export const ssr = false;` (disables SSR during dev)
+3. **`vite.config.ts`** — `nodePolyfills({ globals: { Buffer: true } })` + `resolve.dedupe: ['yjs']`
+
+All three are required. Without `ssr = false`, SvelteKit tries to server-render pages during `bun dev`, which breaks `vite-plugin-node-polyfills` (its shims are browser-only virtual modules that can't be resolved during SSR).
+
+**Reference**: `apps/whispering/` uses this exact pattern. Fuji copies it minus Tauri-specific config (ports, host, HMR, watch, devtoolsJson, inspector).
 ---
 
 ## Architecture
@@ -143,74 +160,17 @@ All three apps share:
 
 ---
 
-### 🍏 Granny Smith — The Classic
+### 🍏 Granny Smith — SHELVED
 
-**Vibe**: Traditional, organized, full-featured. The one your mom would use.
-
-**Workspace ID**: `epicenter.granny-smith`
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ defineWorkspace({ id: 'epicenter.granny-smith' })       │
-│                                                         │
-│  folders table                                          │
-│  ├── id: FolderId (branded)                             │
-│  ├── name: 'string'                                     │
-│  ├── icon?: 'string | undefined'  (emoji or icon name)  │
-│  ├── sortOrder: 'number'                                │
-│  └── _v: '1'                                            │
-│                                                         │
-│  notes table                                            │
-│  ├── id: NoteId (branded)                               │
-│  ├── folderId?: FolderId | undefined                    │
-│  ├── title: 'string'                                    │
-│  ├── preview: 'string'         (first ~100 chars)       │
-│  ├── pinned: 'boolean'                                  │
-│  ├── locked: 'boolean'                                  │
-│  ├── hasChecklist: 'boolean'                            │
-│  ├── createdAt: DateTimeString (branded)                │
-│  ├── updatedAt: DateTimeString (branded)                │
-│  └── _v: '1'                                            │
-│       └─ .withDocument('body', { guid: 'id' })          │
-│                                                         │
-│  KV                                                     │
-│  ├── 'selectedFolderId': FolderId | null                │
-│  ├── 'selectedNoteId': NoteId | null                    │
-│  ├── 'sortBy': 'dateEdited' | 'dateCreated' | 'title'  │
-│  └── 'sidebarCollapsed': boolean                        │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Table name**: `notes`
-
-**UI**: Classic three-column (sidebar, note list, editor). Faithful Apple Notes layout with folder sidebar, date-grouped note list, and a rich-text editor.
-
-**Unique features**:
-- Pinned notes
-- Locked notes (read-only toggle)
-- Checklist detection (`hasChecklist` computed from body content)
-- Folder icons (emoji picker)
-
-```
-┌─ Sidebar ────────────┬─ Note List ───────────┬─ Editor ─────────────────┐
-│                       │                       │                          │
-│  📋 All Notes         │  📌 Meeting prep      │  Meeting prep            │
-│  📁 Work         (3) │  Updated 2h ago       │  ─────────────────       │
-│  📁 Personal     (7) │  First line of body.. │                          │
-│  📁 Recipes      (2) │                       │  Rich text editor with   │
-│  📁 Ideas        (1) │  Grocery list         │  bold, italic, lists,    │
-│                       │  Yesterday            │  headings, and           │
-│  ─────────────────── │  ☐ Milk ☐ Eggs...     │  checklists              │
-│  + New Folder         │                       │                          │
-│                       │  + New Note           │                          │
-└───────────────────────┴───────────────────────┴──────────────────────────┘
-```
+> **Status**: Shelved. Features absorbed into Honeycrisp. May revisit as a fun/joke app later.
 
 ---
 
-### 🍯 Honeycrisp — The Premium Editor
+---
 
-**Vibe**: Beautiful, focused, distraction-free. The one for serious writers.
+### 🍯 Honeycrisp — The Apple Notes Clone
+
+**Vibe**: Classic Apple Notes, but polished. Folders, checklists, locked notes—plus premium touches like word count and focus mode.
 
 **Workspace ID**: `epicenter.honeycrisp`
 
@@ -222,6 +182,7 @@ All three apps share:
 │  ├── id: FolderId (branded)                             │
 │  ├── name: 'string'                                     │
 │  ├── color?: 'string | undefined'  (accent color)       │
+│  ├── icon?: 'string | undefined'   (emoji or icon name) │
 │  ├── sortOrder: 'number'                                │
 │  └── _v: '1'                                            │
 │                                                         │
@@ -229,8 +190,10 @@ All three apps share:
 │  ├── id: NoteId (branded)                               │
 │  ├── folderId?: FolderId | undefined                    │
 │  ├── title: 'string'                                    │
-│  ├── preview: 'string'                                  │
+│  ├── preview: 'string'         (first ~100 chars)       │
 │  ├── pinned: 'boolean'                                  │
+│  ├── locked: 'boolean'                                  │
+│  ├── hasChecklist: 'boolean'                            │
 │  ├── wordCount: 'number'                                │
 │  ├── createdAt: DateTimeString (branded)                │
 │  ├── updatedAt: DateTimeString (branded)                │
@@ -241,7 +204,7 @@ All three apps share:
 │  ├── 'selectedFolderId': FolderId | null                │
 │  ├── 'selectedNoteId': NoteId | null                    │
 │  ├── 'sortBy': 'dateEdited' | 'dateCreated' | 'title'  │
-│  ├── 'sidebarWidth': number                             │
+│  ├── 'sidebarCollapsed': boolean                        │
 │  ├── 'editorFontSize': number                           │
 │  └── 'focusMode': boolean                               │
 └─────────────────────────────────────────────────────────┘
@@ -249,26 +212,29 @@ All three apps share:
 
 **Table name**: `notes`
 
-**UI**: Collapsible sidebar + wide editor. The editor is the star—premium typography, focus mode that fades everything but the current paragraph, word count in the footer.
+**UI**: Classic three-column (sidebar, note list, editor). Faithful Apple Notes layout with folder sidebar, date-grouped note list, and a rich-text editor—plus premium touches.
 
-**Unique features**:
+**Unique features** (merged from Granny Smith + original Honeycrisp):
+- Pinned notes
+- Locked notes (read-only toggle)
+- Checklist detection (`hasChecklist` computed from body content)
+- Folder icons (emoji) + folder colors (accent bar)
 - Word count tracking (`wordCount` updated on body change)
 - Focus mode (KV toggle) — dims sidebar and note list
 - Editor font size preference (KV)
-- Folder colors (accent bar on the left)
 
 ```
-┌─ Sidebar (narrow) ─┬─ Note List ─────┬─ Editor (wide, focus mode) ──────────┐
-│                     │                 │                                       │
-│  All Notes          │  Design doc     │                                       │
-│  ■ Work             │  1,247 words    │    The Architecture of                │
-│  ■ Writing          │  2h ago         │    Local-First Apps                   │
-│  ■ Research         │                 │                                       │
-│                     │  Blog post      │    The key insight is that CRDTs      │
-│  + New Folder       │  834 words      │    eliminate the need for a central   │
-│                     │  Yesterday      │    server to resolve conflicts...     │
-│                     │                 │                                       │
-│                     │                 │              ─── 1,247 words ───      │
+┌─ Sidebar ────────────┬─ Note List ───────────┬─ Editor ─────────────────┐
+│                       │                       │                          │
+│  📋 All Notes         │  📌 Meeting prep      │  Meeting prep            │
+│  🟢 Work         (3) │  1,247 words · 2h ago │  ─────────────────       │
+│  🔵 Personal     (7) │  First line of body.. │                          │
+│  🟡 Recipes      (2) │                       │  Rich text editor with   │
+│  🟣 Ideas        (1) │  Grocery list         │  bold, italic, lists,    │
+│                       │  Yesterday            │  headings, and           │
+│  ─────────────────── │  ☐ Milk ☐ Eggs...     │  checklists              │
+│  + New Folder         │                       │                          │
+│                       │  + New Note           │     ─── 1,247 words ─── │
 └─────────────────────┴─────────────────┴───────────────────────────────────────┘
 ```
 
@@ -336,20 +302,20 @@ All three apps share:
 
 ### Comparison Table
 
-| Dimension | 🍏 Granny Smith | 🍯 Honeycrisp | 🗻 Fuji |
-|-----------|-----------------|---------------|---------|
-| **Workspace ID** | `epicenter.granny-smith` | `epicenter.honeycrisp` | `epicenter.fuji` |
-| **Tables** | `folders` + `notes` | `folders` + `notes` | `entries` (no folders) |
-| **Table name** | `notes` | `notes` | `entries` |
-| **Columns** | 3 (sidebar, list, editor) | 3 (narrow sidebar, list, wide editor) | 2 (timeline, editor) |
-| **Folders** | Yes (flat, with icons) | Yes (flat, with colors) | No |
-| **Pinned** | Yes | Yes | Yes |
-| **Locked** | Yes | No | No |
-| **Checklist** | Yes | No | No |
-| **Word count** | No | Yes | No |
-| **Focus mode** | No | Yes | No |
-| **Personality** | Traditional, organized | Beautiful, premium | Minimal, zero-friction |
-| **Target user** | Organiser | Writer | Thinker |
+| Dimension | 🍯 Honeycrisp | 🗻 Fuji |
+|-----------|---------------|---------|
+| **Workspace ID** | `epicenter.honeycrisp` | `epicenter.fuji` |
+| **Tables** | `folders` + `notes` | `entries` (no folders) |
+| **Table name** | `notes` | `entries` |
+| **Columns** | 3 (sidebar, list, editor) | 2 (timeline, editor) |
+| **Folders** | Yes (flat, with icons + colors) | No |
+| **Pinned** | Yes | Yes |
+| **Locked** | Yes | No |
+| **Checklist** | Yes | No |
+| **Word count** | Yes | No |
+| **Focus mode** | Yes | No |
+| **Personality** | Classic Apple Notes + premium | Minimal, zero-friction |
+| **Target user** | Organiser / writer | Thinker |
 
 ---
 
@@ -397,7 +363,7 @@ export function dateTimeStringNow(timezone?: string): DateTimeString {
 Each app defines its own branded IDs following the tab-manager pattern:
 
 ```typescript
-// Granny Smith + Honeycrisp
+// Honeycrisp
 export type NoteId = string & Brand<'NoteId'>;
 export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
 
@@ -413,7 +379,11 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 
 ## Full Schema Definitions
 
-### 🍏 Granny Smith — `apps/granny-smith/src/lib/workspace.ts`
+### 🍏 Granny Smith — SHELVED
+
+> Schema removed. See git history for original definition.
+
+### 🍯 Honeycrisp — `apps/honeycrisp/src/lib/workspace.ts`
 
 ```typescript
 import {
@@ -424,7 +394,7 @@ import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// ─── Branded IDs ──────────────────────────────────────────────────────────
+// ─── Branded IDs ────────────────────────────────────────────────────────
 
 export type NoteId = string & Brand<'NoteId'>;
 export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
@@ -432,12 +402,13 @@ export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
 export type FolderId = string & Brand<'FolderId'>;
 export const FolderId = type('string').pipe((s): FolderId => s as FolderId);
 
-// ─── Tables ───────────────────────────────────────────────────────────────
+// ─── Tables ─────────────────────────────────────────────────────────────
 
 const foldersTable = defineTable(
   type({
     id: FolderId,
     name: 'string',
+    'color?': 'string | undefined',
     'icon?': 'string | undefined',
     sortOrder: 'number',
     _v: '1',
@@ -454,55 +425,6 @@ const notesTable = defineTable(
     pinned: 'boolean',
     locked: 'boolean',
     hasChecklist: 'boolean',
-    createdAt: DateTimeString,
-    updatedAt: DateTimeString,
-    _v: '1',
-  }),
-).withDocument('body', {
-  guid: 'id',
-  onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
-});
-export type Note = InferTableRow<typeof notesTable>;
-
-// ─── Workspace ────────────────────────────────────────────────────────────
-
-export default createWorkspace(
-  defineWorkspace({
-    id: 'epicenter.granny-smith',
-    tables: { folders: foldersTable, notes: notesTable },
-    kv: {
-      selectedFolderId: defineKv(FolderId.or(type('null'))),
-      selectedNoteId: defineKv(NoteId.or(type('null'))),
-      sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'")),
-      sidebarCollapsed: defineKv(type('boolean')),
-    },
-  }),
-).withExtension('persistence', indexeddbPersistence);
-```
-
-### 🍯 Honeycrisp — `apps/honeycrisp/src/lib/workspace.ts`
-
-```typescript
-// Same branded ID imports as Granny Smith (NoteId, FolderId)
-
-const foldersTable = defineTable(
-  type({
-    id: FolderId,
-    name: 'string',
-    'color?': 'string | undefined',
-    sortOrder: 'number',
-    _v: '1',
-  }),
-);
-export type Folder = InferTableRow<typeof foldersTable>;
-
-const notesTable = defineTable(
-  type({
-    id: NoteId,
-    'folderId?': FolderId.or('undefined'),
-    title: 'string',
-    preview: 'string',
-    pinned: 'boolean',
     wordCount: 'number',
     createdAt: DateTimeString,
     updatedAt: DateTimeString,
@@ -514,6 +436,8 @@ const notesTable = defineTable(
 });
 export type Note = InferTableRow<typeof notesTable>;
 
+// ─── Workspace ──────────────────────────────────────────────────────────
+
 export default createWorkspace(
   defineWorkspace({
     id: 'epicenter.honeycrisp',
@@ -522,7 +446,7 @@ export default createWorkspace(
       selectedFolderId: defineKv(FolderId.or(type('null'))),
       selectedNoteId: defineKv(NoteId.or(type('null'))),
       sortBy: defineKv(type("'dateEdited' | 'dateCreated' | 'title'")),
-      sidebarWidth: defineKv(type('number')),
+      sidebarCollapsed: defineKv(type('boolean')),
       editorFontSize: defineKv(type('number')),
       focusMode: defineKv(type('boolean')),
     },
@@ -571,10 +495,10 @@ export default createWorkspace(
 ### Empty Workspace (First Launch)
 
 1. No notes/entries exist.
-2. Granny Smith / Honeycrisp: "All Notes" selected, empty state with "Create your first note" button.
+2. Honeycrisp: "All Notes" selected, empty state with "Create your first note" button.
 3. Fuji: Empty timeline with a prominent "+ New Entry" at top. Or auto-create on any keystroke.
 
-### Deleting a Folder with Notes (Granny Smith / Honeycrisp)
+### Deleting a Folder with Notes (Honeycrisp)
 
 1. User deletes folder "Work" which contains 5 notes.
 2. Move notes to unfiled (set `folderId` to `undefined`). Apple Notes does this.
@@ -602,31 +526,17 @@ export default createWorkspace(
 
 ## Open Questions
 
-1. **Rich text editor library?**
-   - Tiptap (ProseMirror-based, Y.js integration via `y-prosemirror`) is the most common choice.
-   - Lexical has a Y.js adapter too but is less mature in the Svelte ecosystem.
-   - Novel.js wraps Tiptap with a nice UI but is React-only.
-   - **Recommendation**: Tiptap with `y-prosemirror`. Well-documented Y.js integration, good Svelte support via `svelte-tiptap`.
+1. **Rich text editor library?** — **RESOLVED**: Tiptap with `y-prosemirror`. Implemented in Fuji.
 
-2. **Should all three apps share a `packages/notes-ui/` component library?**
-   - Shared components (NoteListItem, DateGroupHeader, etc.) could reduce duplication.
-   - But the whole point is different vibes—shared components might homogenize.
-   - **Recommendation**: Start with copy-paste across the three apps. Extract shared primitives only when they prove identical. Premature sharing kills individuality.
+2. **Should both apps share a component library?** — **RESOLVED**: No. Copy-paste for now. Extract if identical later.
 
-3. **Build order — which app first?**
-   - Fuji is simplest (no folders, 1 table, 2-column layout). Good for proving the Y.Text + DateTimeString stack.
-   - Granny Smith is the most "complete" demo. Good for marketing.
-   - Honeycrisp is the one you'd actually use daily.
-   - **Recommendation**: Fuji first (simplest, proves the stack), then Honeycrisp (the one you want), then Granny Smith (the showcase).
+3. **Build order?** — **RESOLVED**: Fuji first (done), then Honeycrisp. Granny Smith shelved.
 
-4. **Should these also register as templates in the epicenter app?**
-   - They're standalone apps, but they could ALSO appear as templates in the epicenter workspace picker.
-   - **Recommendation**: Yes—register the workspace definitions (not the SPAs) as templates in `apps/epicenter/src/lib/templates/`. The standalone apps are the full experience; the template is the schema-only quick-start.
+4. **Register as templates?** — **RESOLVED**: Yes. Fuji template registered. Honeycrisp will be too.
 
-5. **Tauri or web-only?**
-   - Whispering has Tauri. Tab-manager is a browser extension.
-   - Notes apps don't need native APIs (no microphone, no browser tabs).
-   - **Recommendation**: SvelteKit web-only for v1. Add Tauri wrapper later if desktop features are needed (e.g., menu bar, file system access).
+5. **Tauri or web-only?** — **RESOLVED**: SvelteKit web-only for v1.
+
+6. **Sidebar vs Resizable for Fuji's left panel?** — OPEN. Fuji currently uses `Resizable.PaneGroup` but `Sidebar` may be more natural for a notes app (collapsible, responsive, built-in mobile handling). Needs evaluation.
 
 ---
 
@@ -660,27 +570,29 @@ export default createWorkspace(
 - [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
   > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 
-### Phase 2: 🍯 Honeycrisp (The One You Want)
+### Phase 1.5: 🗻 Fuji Bug Fixes
+
+- [ ] **1.9** Fix timestamp/action button overlap on entry hover (z-index/positioning)
+- [ ] **1.10** Evaluate Sidebar vs Resizable for left panel (Sidebar may be more appropriate for a notes app)
+- [ ] **1.11** General UI polish pass (hover states, transitions, spacing)
+
+### Phase 2: 🍯 Honeycrisp — The Full Apple Notes Clone
 
 - [ ] **2.1** Scaffold `apps/honeycrisp/` SvelteKit app
-- [ ] **2.2** Create workspace with `foldersTable` + `notesTable` + KV (including `focusMode`, `editorFontSize`)
-- [ ] **2.3** Three-column layout with collapsible sidebar, color-coded folders
-- [ ] **2.4** Word count tracking (update `wordCount` on body change)
-- [ ] **2.5** Focus mode (dim sidebar + note list, expand editor)
-- [ ] **2.6** Folder CRUD + move notes between folders
-- [ ] **2.7** Register as template
+- [ ] **2.2** Create workspace with `foldersTable` (icons + colors) + `notesTable` (locked, hasChecklist, wordCount) + KV
+- [ ] **2.3** Three-column layout: collapsible sidebar + note list + editor
+- [ ] **2.4** Folder CRUD + move notes between folders + folder icons/colors
+- [ ] **2.5** Note CRUD + pinned notes + locked notes (read-only toggle)
+- [ ] **2.6** Checklist detection from Y.Text content
+- [ ] **2.7** Word count tracking (update `wordCount` on body change)
+- [ ] **2.8** Focus mode (dim sidebar + note list, expand editor)
+- [ ] **2.9** Register as template
 
-### Phase 3: 🍏 Granny Smith (The Showcase)
+### Phase 3: 🍏 Granny Smith — SHELVED
 
-- [ ] **3.1** Scaffold `apps/granny-smith/` SvelteKit app
-- [ ] **3.2** Create workspace with `foldersTable` (with icons) + `notesTable` (with locked, hasChecklist)
-- [ ] **3.3** Classic three-column Apple Notes layout
-- [ ] **3.4** Folder icons via emoji picker
-- [ ] **3.5** Note locking (read-only toggle)
-- [ ] **3.6** Checklist detection from Y.Text content
-- [ ] **3.7** Register as template
+> Deferred. Features merged into Honeycrisp. Revisit later as a fun/joke app if desired.
 
-### Phase 4: Polish (All Three)
+### Phase 4: Polish (Both Apps)
 
 - [ ] **4.1** Command palette search in each app
 - [ ] **4.2** Empty states
@@ -691,14 +603,14 @@ export default createWorkspace(
 
 ## Success Criteria
 
-- [ ] `DateTimeString` is a shared branded type exported from `@epicenter/workspace`
-- [ ] `bun typecheck` passes for all three apps
+- [x] `DateTimeString` is a shared branded type exported from `@epicenter/workspace`
+- [ ] `bun typecheck` passes for both apps
 - [ ] Each app has a distinct visual identity matching its vibe
-- [ ] Notes can be created, edited (rich text Y.Text body), and deleted in all three apps
-- [ ] Granny Smith and Honeycrisp support folders; Fuji uses timeline-only
+- [ ] Notes can be created, edited (rich text Y.Text body), and deleted in both apps
+- [ ] Honeycrisp supports folders; Fuji uses timeline-only
 - [ ] `DateTimeString` values round-trip correctly through Yjs storage
 - [ ] Branded IDs prevent mixing `NoteId`/`FolderId`/`EntryId` at compile time
-- [ ] All three workspace definitions are registered as templates in epicenter
+- [ ] Both workspace definitions are registered as templates in epicenter
 
 ---
 

@@ -15,8 +15,6 @@ import type { AnyClientTool, JSONSchema } from '@tanstack/ai';
 // Public types
 // ---------------------------------------------------------------------------
 
-/** Display labels for an action's active and completed states. */
-export type ActionLabel = { active: string; done: string };
 
 /**
  * Recursively extract all tool names from an `Actions` tree as a string literal union.

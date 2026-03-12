@@ -843,7 +843,6 @@ export const workspaceDefinitions = toServerDefinitions(workspaceTools);
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
-
 /**
  * Reconnect the sync extension with fresh auth credentials.
  *

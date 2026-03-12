@@ -25,7 +25,7 @@ Separate into independent exports. No god-object.
 - Remove `createActionContext`
 - Export `actionsToClientTools` (was private — now public, explicit options)
 - Export `toServerDefinitions` (renamed from `toDefinitions` — now public)
-- Keep `ActionLabel`, `ActionNames` types exported
+- Remove dead `ActionLabel` type (no external consumers after labels removed)
 
 #### `packages/ai/src/index.ts`
 
@@ -36,7 +36,6 @@ Separate into independent exports. No god-object.
 - Replace single `createActionContext(...)` call with:
   - `actionsToClientTools(workspaceClient.actions)` → `workspaceTools`
   - `toServerDefinitions(workspaceTools)` → `workspaceDefinitions`
-  - Plain typed record → `workspaceLabels`
 - Export each separately
 
 #### `apps/tab-manager/src/lib/state/chat-state.svelte.ts`
@@ -45,8 +44,8 @@ Separate into independent exports. No god-object.
 
 #### `apps/tab-manager/src/lib/components/chat/ToolCallPart.svelte`
 
-- Import `workspaceLabels` instead of `actionContext`
-- Direct record lookup instead of `getLabel()`
+- Remove `actionContext` import — no longer exists
+- Derive display names inline: `part.name.replace(/_/g, ' ')` instead of label lookup
 
 ## Non-goals
 
@@ -56,4 +55,8 @@ Separate into independent exports. No god-object.
 
 ## Review
 
-- [ ] Pending
+- [x] `createActionContext` removed, replaced with direct `actionsToClientTools` + `toServerDefinitions`
+- [x] Labels removed entirely — tool display names derived from action name at render time
+- [x] Dead `ActionLabel` type cleaned up
+- [x] Zero type errors across all changed files
+- [x] Single consumer (`chat-state.svelte.ts`) updated to use new exports

@@ -273,16 +273,16 @@ plugins: [
 ]
 ```
 
-- [ ] **6.1.1** Add `deviceAuthorization` plugin to `createAuth` in `apps/api/src/app.ts`
-- [ ] **6.1.2** Register `epicenter-runner` as a trusted client (similar to `epicenter-desktop` and `epicenter-mobile`)
+- [x] **6.1.1** Add `deviceAuthorization` plugin to `createAuth` in `apps/api/src/app.ts`
+- [x] **6.1.2** Register `epicenter-runner` as a trusted client (similar to `epicenter-desktop` and `epicenter-mobile`)
 
 #### 6.2 — Server: Build `/device` verification page
 
 Simple page where the user enters the code displayed by the runner. Can be a minimal HTML form or part of the existing Epicenter web app.
 
-- [ ] **6.2.1** Create verification page at the `verificationUri` path
-- [ ] **6.2.2** Page flow: enter code → approve → confirmation message
-- [ ] **6.2.3** User must be logged in to approve (redirect to sign-in if not)
+- [x] **6.2.1** Create verification page at the `verificationUri` path
+- [x] **6.2.2** Page flow: enter code → approve → confirmation message
+- [x] **6.2.3** User must be logged in to approve (redirect to sign-in if not)
 
 #### 6.3 — Runner: `login` command
 

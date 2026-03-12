@@ -597,7 +597,7 @@ export const workspaceClient = createWorkspace(
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
-			getToken: async () => authState.token ?? '',
+			getToken: async () => authState.token,
 		}),
 	)
 	.withActions(({ tables }) => ({

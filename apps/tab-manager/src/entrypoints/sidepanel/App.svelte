@@ -20,6 +20,9 @@
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
 		authState.checkSession();
+		const unsubExternalSignIn = authState.onExternalSignIn(() =>
+			reconnectSync(),
+		);
 
 		const onVisibilityChange = () => {
 			if (
@@ -30,13 +33,10 @@
 			}
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
-		return () =>
+		return () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-	});
-
-	$effect(() => {
-		authState.reactToTokenCleared();
-		if (authState.reactToTokenSet()) reconnectSync();
+			unsubExternalSignIn();
+		};
 	});
 
 	let searchInputRef = $state<HTMLInputElement | null>(null);

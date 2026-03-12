@@ -70,16 +70,17 @@
 				>
 					<button
 						type="button"
+						disabled={item.count === 0}
 						onclick={() => {
 							if (!unifiedViewState.isFiltering) {
 								unifiedViewState.toggleSection(item.section);
 							}
 						}}
-						class="flex flex-1 cursor-pointer items-center gap-2 transition hover:opacity-80"
+						class="group flex flex-1 items-center gap-2 transition enabled:cursor-pointer enabled:hover:opacity-80"
 					>
 						<ChevronRightIcon
 							class={cn(
-								'size-4 shrink-0 text-muted-foreground transition',
+								'size-4 shrink-0 text-muted-foreground transition group-disabled:invisible',
 								isExpanded && 'rotate-90',
 							)}
 						/>

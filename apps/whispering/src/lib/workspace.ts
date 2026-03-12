@@ -10,7 +10,7 @@ import { type } from 'arktype';
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
-import { INFERENCE } from '$lib/constants/inference';
+import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import { TRANSCRIPTION } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
@@ -42,66 +42,36 @@ const transformations = defineTable(
 	}),
 );
 
-// Shared base fields for all transformation step types
-const transformationStepBase = type({
-	id: 'string',
-	transformationId: 'string',
-	order: 'number',
-	_v: '1',
-});
-
-// Inference provider discriminated union — exact model literals per provider.
-// OpenAI/Groq/Anthropic/Google derive from constant arrays; OpenRouter/Custom are free-text.
-const inferenceProvider = type.or(
-	{
-		'inference.provider': "'OpenAI'",
-		'inference.model': type.enumerated(...INFERENCE.OpenAI.models),
-	},
-	{
-		'inference.provider': "'Groq'",
-		'inference.model': type.enumerated(...INFERENCE.Groq.models),
-	},
-	{
-		'inference.provider': "'Anthropic'",
-		'inference.model': type.enumerated(...INFERENCE.Anthropic.models),
-	},
-	{
-		'inference.provider': "'Google'",
-		'inference.model': type.enumerated(...INFERENCE.Google.models),
-	},
-	{
-		'inference.provider': "'OpenRouter'",
-		'inference.model': 'string',
-	},
-	{
-		'inference.provider': "'Custom'",
-		'inference.model': 'string',
-		'inference.baseUrl': 'string',
-	},
-);
-
-// Prompt transform: inference provider union merged with prompt-specific fields.
-// .merge() distributes — each provider branch gets the prompt fields.
-const promptTransformVariant = inferenceProvider.merge({
-	type: "'prompt_transform'",
-	systemPromptTemplate: 'string',
-	userPromptTemplate: 'string',
-});
-
-// Find & replace: regex or literal text substitution
-const findReplaceVariant = type({
-	type: "'find_replace'",
-	findText: 'string',
-	replaceText: 'string',
-	useRegex: 'boolean',
-});
-
-// Transformation steps: base merged with discriminated step type union.
-// .merge() distributes over the union — each branch gets the base fields.
 const transformationSteps = defineTable(
-	transformationStepBase.merge(
-		type.or(promptTransformVariant, findReplaceVariant),
-	),
+	type({
+		id: 'string',
+		transformationId: 'string',
+		order: 'number',
+		type: "'prompt_transform' | 'find_replace'",
+
+		// Prompt transform: active provider
+		inferenceProvider: type.enumerated(...INFERENCE_PROVIDER_IDS),
+
+		// Prompt transform: per-provider model memory
+		openaiModel: 'string',
+		groqModel: 'string',
+		anthropicModel: 'string',
+		googleModel: 'string',
+		openrouterModel: 'string',
+		customModel: 'string',
+		customBaseUrl: 'string',
+
+		// Prompt transform: prompt templates
+		systemPromptTemplate: 'string',
+		userPromptTemplate: 'string',
+
+		// Find & replace
+		findText: 'string',
+		replaceText: 'string',
+		useRegex: 'boolean',
+
+		_v: '1',
+	}),
 );
 
 const transformationRuns = defineTable(
@@ -237,6 +207,7 @@ const transformation = {
 const analytics = {
 	'analytics.enabled': defineKv(type('boolean')),
 } as const;
+
 
 // In-app shortcuts (not system-global, safe to sync)
 const shortcuts = {

@@ -86,6 +86,7 @@ Studied [opencode.ai/changelog](https://opencode.ai/changelog) and [GitHub relea
 | AI involvement | None for generation; optional human-triggered polish | Avoids OpenCode's quality problems |
 | Release body target | GitHub Releases (source of truth) | Already where users look; website pulls from this later |
 | Website `/changelog` | Deferred to post-v8 | Build what's needed now; website can consume GitHub Releases API when ready |
+| Versioning scope | Apps only (8.Y.Z); packages excluded | Packages use independent semver for future npm publishing. `workspace:*` makes internal version numbers irrelevant. |
 
 ## Architecture
 

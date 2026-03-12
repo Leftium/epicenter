@@ -643,14 +643,17 @@ export default createWorkspace(
 
 ### Phase 1: 🗻 Fuji (Simplest — Proves the Stack)
 
-- [ ] **1.1** Scaffold `apps/fuji/` as a SvelteKit app (copy structure from existing app)
-- [ ] **1.2** Create `apps/fuji/src/lib/workspace.ts` with `EntryId`, `entriesTable`, KV, workspace client
+- [x] **1.1** Scaffold `apps/fuji/` as a SvelteKit app (copy structure from existing app)
+  > Created package.json, svelte.config.js, vite.config.ts, tsconfig.json, app.html, +layout.svelte, +page.svelte, query/client.ts, favicon.ico.
+- [x] **1.2** Create `apps/fuji/src/lib/workspace.ts` with `EntryId`, `entriesTable`, KV, workspace client
+  > EntryId branded type, entriesTable with .withDocument('body', { guid: 'id' }), KV with selectedEntryId + sortBy, IndexedDB persistence.
 - [ ] **1.3** Two-column layout: timeline + editor using `Resizable`
 - [ ] **1.4** Timeline: entries sorted by `updatedAt`, date group headers
 - [ ] **1.5** Editor: Tiptap on Y.Text via `.withDocument('body', { guid: 'id' })`
 - [ ] **1.6** CRUD: create entry, delete entry, pin/unpin
 - [ ] **1.7** Auto-title from first line of content
-- [ ] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
+- [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
+  > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 
 ### Phase 2: 🍯 Honeycrisp (The One You Want)
 

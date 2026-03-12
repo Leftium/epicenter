@@ -1,0 +1,19 @@
+{
+	"name": "@epicenter/runner",
+	"version": "0.0.1",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"dev": "bun run src/index.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@epicenter/workspace": "workspace:*",
+		"yjs": "catalog:"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"module": "src/index.ts"
+}

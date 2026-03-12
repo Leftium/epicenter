@@ -190,6 +190,18 @@
         "wrangler": "catalog:",
       },
     },
+    "apps/runner": {
+      "name": "@epicenter/runner",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "apps/tab-manager": {
       "name": "@epicenter/tab-manager",
       "version": "0.0.1",
@@ -782,6 +794,8 @@
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
+
+    "@epicenter/runner": ["@epicenter/runner@workspace:apps/runner"],
 
     "@epicenter/svelte": ["@epicenter/svelte@workspace:packages/svelte-utils"],
 

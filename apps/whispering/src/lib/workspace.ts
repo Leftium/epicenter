@@ -11,7 +11,7 @@ import { type } from 'arktype';
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
-import { TRANSCRIPTION } from '$lib/constants/transcription';
+import { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
 
@@ -154,43 +154,16 @@ const recording = {
 	'recording.mode': defineKv(type.enumerated(...RECORDING_MODES)),
 } as const;
 
-// Transcription service + model selection as a discriminated union.
-// Cloud services derive model enums from their constant arrays.
-// Local/self-hosted services omit model (paths and IDs are device-specific,
-// stay in localStorage).
-const transcriptionConfig = type.or(
-	{
-		service: "'OpenAI'",
-		model: type.enumerated(...TRANSCRIPTION.OpenAI.models.map((m) => m.name)),
-	},
-	{
-		service: "'Groq'",
-		model: type.enumerated(...TRANSCRIPTION.Groq.models.map((m) => m.name)),
-	},
-	{
-		service: "'ElevenLabs'",
-		model: type.enumerated(
-			...TRANSCRIPTION.ElevenLabs.models.map((m) => m.name),
-		),
-	},
-	{
-		service: "'Deepgram'",
-		model: type.enumerated(...TRANSCRIPTION.Deepgram.models.map((m) => m.name)),
-	},
-	{
-		service: "'Mistral'",
-		model: type.enumerated(...TRANSCRIPTION.Mistral.models.map((m) => m.name)),
-	},
-	{ service: "'whispercpp'" },
-	{ service: "'parakeet'" },
-	{ service: "'moonshine'" },
-	{ service: "'speaches'" },
-);
-
-// Transcription settings — service config is a discriminated union,
-// shared preferences (prompt, temperature, etc.) are independent KVs.
+// Transcription settings — service and per-service model selections are individual
+// KVs for independent LWW resolution. Shared preferences (prompt, temperature,
+// etc.) are also independent KVs.
 const transcription = {
-	'transcription.config': defineKv(transcriptionConfig),
+	'transcription.service': defineKv(type.enumerated(...TRANSCRIPTION_SERVICE_IDS)),
+	'transcription.openai.model': defineKv(type('string')),
+	'transcription.groq.model': defineKv(type('string')),
+	'transcription.elevenlabs.model': defineKv(type('string')),
+	'transcription.deepgram.model': defineKv(type('string')),
+	'transcription.mistral.model': defineKv(type('string')),
 	'transcription.language': defineKv(type('string')),
 	'transcription.prompt': defineKv(type('string')),
 	'transcription.temperature': defineKv(type('0 <= number <= 1')),

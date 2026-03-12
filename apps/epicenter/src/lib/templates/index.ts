@@ -12,6 +12,7 @@
 import { ENTRIES_TEMPLATE } from './entries';
 import { WHISPERING_TEMPLATE } from './whispering';
 import { FUJI_TEMPLATE } from './fuji';
+import { HONEYCRISP_TEMPLATE } from './honeycrisp';
 
 /**
  * Registry of available workspace templates.
@@ -23,6 +24,7 @@ import { FUJI_TEMPLATE } from './fuji';
 export const WORKSPACE_TEMPLATES = [
 	ENTRIES_TEMPLATE,
 	FUJI_TEMPLATE,
+	HONEYCRISP_TEMPLATE,
 	WHISPERING_TEMPLATE,
 ] as const;
 

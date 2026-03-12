@@ -1,7 +1,7 @@
 # Honeycrisp UI Polish — Closer to Apple Notes
 
 **Date**: 2026-03-12
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 **Branch**: `origin/main` (Honeycrisp merged via PR #1509)
 
@@ -272,14 +272,14 @@ apps/honeycrisp/src/
 
 ## Success Criteria
 
-- [ ] Editor title (first line) renders at ~28px bold
-- [ ] Editor body renders at ~16px (prose, not prose-sm)
-- [ ] Formatting toolbar with B/I/U/S, H1/H2, bullet/ordered/checklist, blockquote
-- [ ] Toolbar active states reflect current cursor formatting
-- [ ] Search field in sidebar filters notes by title/preview
-- [ ] Resizable handle is a clean hairline (no visible drag indicator)
-- [ ] All new UI uses shadcn components—no custom component CSS beyond title first-child rule
-- [ ] `bun typecheck` passes for `apps/honeycrisp`
+- [x] Editor title (first line) renders at ~28px bold
+- [x] Editor body renders at ~16px (prose, not prose-sm)
+- [x] Formatting toolbar with B/I/U/S, H1/H2, bullet/ordered/checklist, blockquote
+- [x] Toolbar active states reflect current cursor formatting
+- [x] Search field in sidebar filters notes by title/preview
+- [x] Resizable handle is a clean hairline (no visible drag indicator)
+- [x] All new UI uses shadcn components—no custom component CSS beyond title first-child rule
+- [x] `bun typecheck` passes for `apps/honeycrisp` (5 pre-existing errors in packages/workspace and packages/ui unrelated to Honeycrisp)
 
 ## References
 
@@ -294,3 +294,25 @@ apps/honeycrisp/src/
 - `packages/ui/src/sidebar/` — 26 sub-components including Input, Trigger
 - `packages/ui/src/prose.css` — Existing prose styles (used by editor)
 - `packages/ui/src/app.css` — Design tokens, font stack, color variables
+
+## Review
+
+**Completed**: 2026-03-12
+
+### Summary
+
+All four waves implemented as specified. Honeycrisp now has Apple Notes–style typography (1.75rem bold title, 16px body), a persistent formatting toolbar built entirely from shadcn Toggle/ToggleGroup/Separator/Tooltip components, sidebar search following Fuji's Sidebar.Input pattern, clean hairline resizable dividers, a sort dropdown persisted to KV, and a Sidebar.Trigger for mobile toggle.
+
+### Deviations from Spec
+
+- **Toolbar padding**: Spec suggested `px-4 py-1`, implementation uses `p-2`—visually equivalent, slightly more compact.
+- **Inline formatting**: Used individual Toggle components instead of ToggleGroup type="multiple" for Bold/Italic/Underline/Strike—simpler value management since each is an independent on/off state.
+- **Tiptap extension versions**: Pinned to `^2.12.0` range instead of latest v3.x to match existing `@tiptap/core@^2.12.0`.
+- **Toolbar active state sync**: Used `onTransaction` callback instead of `$effect` on editor updates—onTransaction fires on every editor state change, which is the correct Tiptap pattern for toolbar state.
+
+### Follow-up Work
+
+- ⌘K command palette (spec: deliberately excluded for v1)
+- Right-click context menus on notes
+- Drag-and-drop folder reordering
+- Move search field from sidebar to note list header (Apple Notes position)

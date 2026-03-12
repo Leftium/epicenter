@@ -1,4 +1,4 @@
-# API
+# Epicenter API
 
 The hub server. Handles authentication, real-time sync, and AI inference—everything that needs a single authority across devices.
 
@@ -9,6 +9,22 @@ Runs on Cloudflare Workers with Durable Objects. Each user gets dedicated Durabl
 Local-first doesn't mean no server. It means your data lives on your machine and you aren't dependent on a cloud service to function. But some operations genuinely need a single authority: user identity, API key storage, AI proxying. Trying to make every device a peer for these operations led to three failed attempts at distributed key management before we split into hub (central authority) and local (device-side execution).
 
 The hub handles auth, sync relay, and AI. Local servers handle filesystem access, offline editing, and low-latency operations. Neither tries to do the other's job. See [Why Epicenter Split Into Hub and Local Servers](/docs/articles/why-epicenter-split-into-hub-and-local-servers.md) for the full story.
+
+## Stack and priorities
+
+Hono handles HTTP routing. We originally wanted Elysia—it's faster, the API is more ergonomic, and it runs natively on Bun. But Elysia depends on Bun-specific APIs that don't exist in the Cloudflare Workers runtime, and Workers compatibility was non-negotiable. Hono runs on Cloudflare Workers, Node.js, Deno, Bun, and AWS Lambda. When we build self-hosting adapters, the route layer comes along for free.
+
+Cloudflare Durable Objects are the current deployment target. Three things make them a natural fit for per-user Yjs sync:
+
+- **Single-threaded per object.** Each user's WorkspaceRoom or DocumentRoom runs in its own isolate. No mutex, no race conditions on CRDT state—the runtime guarantees it.
+- **Built-in SQLite.** The update log lives inside the Durable Object's storage. No external database for sync state, no connection pooling, no cold-start latency from network hops.
+- **WebSocket Hibernation.** Idle connections don't consume compute. A user can leave a tab open for hours and the DO sleeps until the next message arrives. Costs stay proportional to actual sync traffic, not connection count.
+
+We're focused on Durable Objects to keep the maintenance surface small and iterate fast. The Cloudflare-specific code lives in three files: `workspace-room.ts`, `document-room.ts`, and `base-sync-room.ts`. Everything else—routes, auth, AI, validation—is runtime-portable Hono code.
+
+We want self-hosting adapters. The plan is to stabilize the API surface on Durable Objects first, then extract the sync room logic into a runtime-agnostic layer backed by Node.js WebSockets + SQLite. If you want to deploy today, fork the repo and use the existing `wrangler.jsonc`—everything you need is in there.
+
+Better Auth handles identity: email/password and Google OAuth for sign-in, plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
 ## Encryption and trust model
 

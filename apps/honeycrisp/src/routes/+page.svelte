@@ -22,6 +22,7 @@
 	let selectedNoteId = $state<NoteId | null>(null);
 	let currentYText = $state<Y.Text | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
+	let searchQuery = $state('');
 
 	// ─── Workspace Observation ───────────────────────────────────────────────
 
@@ -64,12 +65,22 @@
 
 	// ─── Derived State ───────────────────────────────────────────────────────
 
-	/** Notes filtered by selected folder (or all notes if no folder selected). */
-	const filteredNotes = $derived(
-		selectedFolderId === null
-			? notes
-			: notes.filter((n) => n.folderId === selectedFolderId),
-	);
+	/** Notes filtered by selected folder and search query. */
+	const filteredNotes = $derived.by(() => {
+		let result =
+			selectedFolderId === null
+				? notes
+				: notes.filter((n) => n.folderId === selectedFolderId);
+		if (searchQuery.trim()) {
+			const q = searchQuery.trim().toLowerCase();
+			result = result.filter(
+				(n) =>
+					n.title.toLowerCase().includes(q) ||
+					n.preview.toLowerCase().includes(q),
+			);
+		}
+		return result;
+	});
 
 	/** Per-folder note counts for the sidebar. */
 	const noteCounts = $derived.by(() => {
@@ -225,10 +236,12 @@
 		{selectedFolderId}
 		{noteCounts}
 		totalNoteCount={notes.length}
+		{searchQuery}
 		onSelectFolder={selectFolder}
 		onCreateFolder={createFolder}
 		onRenameFolder={renameFolder}
 		onDeleteFolder={deleteFolder}
+		onSearchChange={(q) => (searchQuery = q)}
 	/>
 
 	<main class="flex h-screen flex-1 overflow-hidden">
@@ -243,7 +256,7 @@
 					onPinNote={pinNote}
 				/>
 			</Resizable.Pane>
-			<Resizable.Handle withHandle />
+			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
 				{#if selectedNote && currentYText}
 					{#key selectedNoteId}

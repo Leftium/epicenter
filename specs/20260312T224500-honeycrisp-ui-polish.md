@@ -202,10 +202,10 @@ apps/honeycrisp/src/
 - [x] **2.6** Add `Tooltip` wrappers on each toolbar button showing keyboard shortcut (e.g., "Bold (⌘B)")
 
 ### Wave 3: Search + Layout Polish
-- [ ] **3.1** Add `Sidebar.Input` to `Sidebar.svelte` header for folder/note search
-- [ ] **3.2** In `+page.svelte`, add `searchQuery` state and filter `filteredNotes` by title/preview matching
-- [ ] **3.3** Remove `withHandle` from `<Resizable.Handle>` in `+page.svelte` — produces clean hairline divider
-- [ ] **3.4** Add `Sidebar.Trigger` somewhere accessible (header area) for toggling sidebar on mobile
+- [x] **3.1** Add `Sidebar.Input` to `Sidebar.svelte` header for folder/note search (follows Fuji pattern)
+- [x] **3.2** In `+page.svelte`, add `searchQuery` state and filter `filteredNotes` by title/preview matching
+- [x] **3.3** Remove `withHandle` from `<Resizable.Handle>` in `+page.svelte` — produces clean hairline divider
+- [x] **3.4** Add `Sidebar.Trigger` in sidebar header for toggling sidebar on mobile
 
 ### Wave 4: NoteList Header
 - [ ] **4.1** Add sort dropdown in NoteList header (Date Edited / Date Created / Title) wired to the existing `sortBy` KV

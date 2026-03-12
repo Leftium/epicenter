@@ -109,7 +109,6 @@ export const honeycrisp = defineWorkspace({
  * and KV settings via `workspaceClient.kv`. The client is ready when
  * `workspaceClient.whenReady` resolves.
  */
-export default createWorkspace(honeycrisp).withExtension(
-	'persistence',
-	indexeddbPersistence,
-);
+export default createWorkspace(honeycrisp)
+	.withExtension('persistence', indexeddbPersistence)
+	.withDocumentExtension('persistence', indexeddbPersistence);

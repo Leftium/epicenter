@@ -1,13 +1,15 @@
 /**
  * Fuji workspace template.
  *
- * A minimal, timeline-first note-taking schema with no folders.
- * Entries flow chronologically with DateTimeString timestamps,
- * branded EntryId, and Y.Text collaborative rich-text bodies.
+ * A personal CMS schema for content pieces—articles, thoughts, ideas—organized
+ * by type and tags. Entries have Y.Text collaborative rich-text bodies, explicit
+ * titles, and auto-derived previews. Displayed in a data table with an editor
+ * panel.
  */
 
 import {
 	DateTimeString,
+	dateTimeStringNow,
 	defineKv,
 	defineTable,
 	defineWorkspace,
@@ -23,26 +25,32 @@ const entries = defineTable(
 		id: EntryId,
 		title: 'string',
 		preview: 'string',
-		pinned: 'boolean',
+		'type?': 'string[] | undefined',
+		'tags?': 'string[] | undefined',
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
-		_v: '1',
+		_v: '2',
 	}),
-).withDocument('body', { guid: 'id' });
+).withDocument('body', {
+	guid: 'id',
+	onUpdate: () => ({ updatedAt: dateTimeStringNow() }),
+});
 
 export const fujiWorkspace = defineWorkspace({
 	id: 'epicenter.fuji' as const,
 	tables: { entries },
 	kv: {
 		selectedEntryId: defineKv(EntryId.or(type('null'))),
-		sortBy: defineKv(type("'dateEdited' | 'dateCreated'")),
+		viewMode: defineKv(type("'table' | 'timeline'")),
+		sidebarCollapsed: defineKv(type('boolean')),
 	},
 });
 
 export const FUJI_TEMPLATE = {
 	id: 'epicenter.fuji',
 	name: 'Fuji',
-	description: 'Quick-capture timeline notes — no folders, just write',
+	description:
+		'Personal content app — articles, thoughts, ideas with tags and types',
 	icon: null,
 	workspace: fujiWorkspace,
 } as const;

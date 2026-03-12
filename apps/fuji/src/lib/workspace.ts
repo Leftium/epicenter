@@ -1,12 +1,14 @@
 /**
- * Workspace — schema and client for Fuji quick-capture notes.
+ * Workspace — schema and client for Fuji personal content app.
  *
- * Fuji is a minimal, timeline-first note app with zero folders. Entries flow
- * in a timeline sorted by date. Each entry has a Y.Text body for collaborative
- * rich-text editing via Tiptap + y-prosemirror.
+ * Fuji is a personal CMS with a 1:1 mapping to your blog. Entries are content
+ * pieces—articles, thoughts, ideas—organized by tags and type, displayed in a
+ * data table with an editor panel. Each entry has a Y.Text body for
+ * collaborative rich-text editing via Tiptap + y-prosemirror.
  *
- * Contains the branded EntryId type, entries table definition with DateTimeString
- * timestamps, KV settings, and the workspace client with IndexedDB persistence.
+ * Contains the branded EntryId type, entries table definition with
+ * DateTimeString timestamps, KV settings, and the workspace client with
+ * IndexedDB persistence.
  */
 
 import {
@@ -16,6 +18,7 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	generateId,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { indexeddbPersistence } from '@epicenter/workspace/extensions/sync/web';
@@ -35,25 +38,30 @@ export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 /**
- * Entries table — temporal captures in a timeline.
+ * Entries table — content pieces in a personal CMS.
  *
- * Unlike "notes" in Granny Smith or Honeycrisp, entries are temporal — they
- * flow in a timeline with no folder organisation. The `title` field is
- * auto-populated from the first line of content; `preview` holds the first
- * ~100 characters for the timeline list view.
+ * Unlike v1's timeline-only notes, entries are typed and tagged content. The
+ * `type` field categorizes entries (article, thought, reading, etc.) while
+ * `tags` provide freeform cross-cutting labels (crdt, open-source, etc.).
  *
- * Each entry has a Y.Text document (`body`) for collaborative rich-text editing.
- * The document GUID matches the entry `id` so there's a 1:1 mapping.
+ * The `title` field is explicit and required—blog posts have titles. The
+ * `preview` column stores the first ~100 chars of body content for table
+ * display.
+ *
+ * Each entry has a Y.Text document (`body`) for collaborative rich-text
+ * editing. The document GUID matches the entry `id` so there's a 1:1 mapping.
+ * Updates to the document automatically touch `updatedAt`.
  */
 const entriesTable = defineTable(
 	type({
 		id: EntryId,
 		title: 'string',
 		preview: 'string',
-		pinned: 'boolean',
+		'type?': 'string[] | undefined',
+		'tags?': 'string[] | undefined',
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
-		_v: '1',
+		_v: '2',
 	}),
 ).withDocument('body', {
 	guid: 'id',
@@ -69,7 +77,8 @@ export const fujiWorkspace = defineWorkspace({
 	tables: { entries: entriesTable },
 	kv: {
 		selectedEntryId: defineKv(EntryId.or(type('null'))),
-		sortBy: defineKv(type("'dateEdited' | 'dateCreated'")),
+		viewMode: defineKv(type("'table' | 'timeline'")),
+		sidebarCollapsed: defineKv(type('boolean')),
 	},
 });
 

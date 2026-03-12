@@ -10,9 +10,9 @@
  */
 
 import { ENTRIES_TEMPLATE } from './entries';
-import { WHISPERING_TEMPLATE } from './whispering';
 import { FUJI_TEMPLATE } from './fuji';
 import { HONEYCRISP_TEMPLATE } from './honeycrisp';
+import { WHISPERING_TEMPLATE } from './whispering';
 
 /**
  * Registry of available workspace templates.

@@ -48,12 +48,9 @@
 			},
 		);
 
-		const unsubViewMode = workspaceClient.kv.observe(
-			'viewMode',
-			(change) => {
-				viewMode = change.type === 'set' ? change.value : 'table';
-			},
-		);
+		const unsubViewMode = workspaceClient.kv.observe('viewMode', (change) => {
+			viewMode = change.type === 'set' ? change.value : 'table';
+		});
 
 		return () => {
 			unsubEntries();

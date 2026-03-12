@@ -10,6 +10,8 @@
  */
 
 import { ENTRIES_TEMPLATE } from './entries';
+import { FUJI_TEMPLATE } from './fuji';
+import { HONEYCRISP_TEMPLATE } from './honeycrisp';
 import { WHISPERING_TEMPLATE } from './whispering';
 
 /**
@@ -21,6 +23,8 @@ import { WHISPERING_TEMPLATE } from './whispering';
  */
 export const WORKSPACE_TEMPLATES = [
 	ENTRIES_TEMPLATE,
+	FUJI_TEMPLATE,
+	HONEYCRISP_TEMPLATE,
 	WHISPERING_TEMPLATE,
 ] as const;
 

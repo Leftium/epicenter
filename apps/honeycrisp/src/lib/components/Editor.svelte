@@ -24,10 +24,10 @@
 	import QuoteIcon from '@lucide/svelte/icons/quote';
 
 	let {
-		ytext,
+		yxmlfragment,
 		onContentChange,
 	}: {
-		ytext: Y.Text;
+		yxmlfragment: Y.XmlFragment;
 		onContentChange?: (content: { title: string; preview: string }) => void;
 	} = $props();
 
@@ -50,14 +50,14 @@
 	/**
 	 * Create a Tiptap extension that wraps y-prosemirror plugins for Yjs collaboration.
 	 *
-	 * Uses ySyncPlugin for binding ProseMirror state to Y.Text, and yUndoPlugin for
+	 * Uses ySyncPlugin for binding ProseMirror state to Y.XmlFragment, and yUndoPlugin for
 	 * collaborative undo/redo that respects per-client origins.
 	 */
-	function createYjsExtension(text: Y.Text) {
+	function createYjsExtension(xmlFragment: Y.XmlFragment) {
 		return Extension.create({
 			name: 'yjs-collaboration',
 			addProseMirrorPlugins() {
-				return [ySyncPlugin(text), yUndoPlugin()];
+				return [ySyncPlugin(xmlFragment), yUndoPlugin()];
 			},
 		});
 	}
@@ -78,7 +78,7 @@
 	$effect(() => {
 		if (!element) return;
 
-		const yjsExtension = createYjsExtension(ytext);
+		const yjsExtension = createYjsExtension(yxmlfragment);
 
 		const ed = new Editor({
 			element,

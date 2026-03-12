@@ -20,7 +20,7 @@
 	let notes = $state<Note[]>([]);
 	let selectedFolderId = $state<FolderId | null>(null);
 	let selectedNoteId = $state<NoteId | null>(null);
-	let currentYText = $state<Y.Text | null>(null);
+	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 	let searchQuery = $state('');
 	let sortBy = $state<'dateEdited' | 'dateCreated' | 'title'>('dateEdited');
@@ -110,12 +110,12 @@
 		notes.find((n) => n.id === selectedNoteId) ?? null,
 	);
 
-	// ─── Document Handle (Y.Text) ────────────────────────────────────────────
+	// ─── Document Handle (Y.XmlFragment) ────────────────────────────────────────────
 
 	$effect(() => {
 		const noteId = selectedNoteId;
 		if (!noteId) {
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;
 		}
@@ -124,7 +124,7 @@
 		workspaceClient.documents.notes.body.open(noteId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYText = handle.ydoc.getText('content');
+			currentYXmlFragment = handle.ydoc.getXmlFragment('content');
 		});
 
 		return () => {
@@ -132,7 +132,7 @@
 			if (currentDocHandle) {
 				workspaceClient.documents.notes.body.close(noteId);
 			}
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 		};
 	});
@@ -273,10 +273,10 @@
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if selectedNote && currentYText}
+				{#if selectedNote && currentYXmlFragment}
 					{#key selectedNoteId}
 						<HoneycripEditor
-							ytext={currentYText}
+							yxmlfragment={currentYXmlFragment}
 							onContentChange={handleContentChange}
 						/>
 					{/key}

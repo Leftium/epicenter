@@ -208,8 +208,8 @@ apps/honeycrisp/src/
 - [x] **3.4** Add `Sidebar.Trigger` in sidebar header for toggling sidebar on mobile
 
 ### Wave 4: NoteList Header
-- [ ] **4.1** Add sort dropdown in NoteList header (Date Edited / Date Created / Title) wired to the existing `sortBy` KV
-- [ ] **4.2** Apply sort to `filteredNotes` derived state in `+page.svelte`
+- [x] **4.1** Add sort dropdown in NoteList header (Date Edited / Date Created / Title) wired to the existing `sortBy` KV using DropdownMenu
+- [x] **4.2** Apply sort to `filteredNotes` derived state in `+page.svelte` with KV observation
 
 ## Edge Cases
 

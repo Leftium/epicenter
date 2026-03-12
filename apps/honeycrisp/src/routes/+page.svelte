@@ -23,6 +23,7 @@
 	let currentYText = $state<Y.Text | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 	let searchQuery = $state('');
+	let sortBy = $state<'dateEdited' | 'dateCreated' | 'title'>('dateEdited');
 
 	// ─── Workspace Observation ───────────────────────────────────────────────
 
@@ -35,6 +36,8 @@
 
 		const kvNoteId = workspaceClient.kv.get('selectedNoteId');
 		selectedNoteId = kvNoteId.status === 'valid' ? kvNoteId.value : null;
+		const kvSortBy = workspaceClient.kv.get('sortBy');
+		sortBy = kvSortBy.status === 'valid' ? kvSortBy.value : 'dateEdited';
 
 		const unsubFolders = workspaceClient.tables.folders.observe(() => {
 			folders = workspaceClient.tables.folders.getAllValid();
@@ -54,12 +57,16 @@
 				selectedNoteId = change.type === 'set' ? change.value : null;
 			},
 		);
+		const unsubSortByKv = workspaceClient.kv.observe('sortBy', (change) => {
+			sortBy = change.type === 'set' ? change.value : 'dateEdited';
+		});
 
 		return () => {
 			unsubFolders();
 			unsubNotes();
 			unsubFolderKv();
 			unsubNoteKv();
+			unsubSortByKv();
 		};
 	});
 
@@ -79,6 +86,12 @@
 					n.preview.toLowerCase().includes(q),
 			);
 		}
+		// Apply sort
+		result = [...result].sort((a, b) => {
+			if (sortBy === 'title') return a.title.localeCompare(b.title);
+			if (sortBy === 'dateCreated') return b.createdAt.localeCompare(a.createdAt);
+			return b.updatedAt.localeCompare(a.updatedAt);
+		});
 		return result;
 	});
 
@@ -247,14 +260,16 @@
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
-				<NoteList
-					notes={filteredNotes}
-					{selectedNoteId}
-					onSelectNote={selectNote}
-					onCreateNote={createNote}
-					onDeleteNote={deleteNote}
-					onPinNote={pinNote}
-				/>
+			<NoteList
+				notes={filteredNotes}
+				{selectedNoteId}
+				{sortBy}
+				onSelectNote={selectNote}
+				onCreateNote={createNote}
+				onDeleteNote={deleteNote}
+				onPinNote={pinNote}
+				onSortChange={(v) => workspaceClient.kv.set('sortBy', v)}
+			/>
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">

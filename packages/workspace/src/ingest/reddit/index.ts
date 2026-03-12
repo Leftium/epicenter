@@ -20,8 +20,8 @@
  * ```
  */
 
-import { snakify } from '../../shared/snakify.js';
 import { type } from 'arktype';
+import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../workspace/index.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
@@ -142,7 +142,13 @@ export async function importRedditExport(
 	workspace: RedditWorkspaceClient,
 	options?: { onProgress?: (progress: ImportProgress) => void },
 ): Promise<ImportStats> {
-	const stats: ImportStats = { tables: {}, kv: 0, totalRows: 0, errors: [], skipped: 0 };
+	const stats: ImportStats = {
+		tables: {},
+		kv: 0,
+		totalRows: 0,
+		errors: [],
+		skipped: 0,
+	};
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// PHASE 1: PARSE ZIP → RAW CSV DATA

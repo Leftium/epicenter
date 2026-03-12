@@ -12,7 +12,7 @@
  * Usage:
  * ```typescript
  * const result = csvSchemas.posts(rawRow);
- * if (result instanceof type.errors) { /* handle error */ }
+ * if (result instanceof type.errors) return; // handle error
  * // result is already typed and ready for table insertion
  * ```
  */

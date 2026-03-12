@@ -99,13 +99,12 @@ PR merges to main
 
 ### Files stamped by `bump-version.ts`
 
-The script globs for all files that need version updates instead of a hardcoded list:
+The script globs for app-level files that need version updates. Packages are **intentionally excluded**—they use independent semver for future npm publishing.
 
 ```
 # JSON files (version field)
 package.json                                    (root)
 apps/*/package.json                             (all apps)
-packages/*/package.json                         (all packages)
 
 # Tauri configs (version field)
 apps/*/src-tauri/tauri.conf.json                (all Tauri apps)
@@ -116,6 +115,8 @@ apps/*/src-tauri/Cargo.toml                     (all Tauri apps)
 # TypeScript constant
 packages/constants/src/versions.ts              (single VERSION export)
 ```
+
+**Why packages are excluded:** Internal dependencies use `workspace:*` protocol, so package version numbers are irrelevant for monorepo resolution. They only matter when publishing to npm, where each package needs a clean independent version history (starting from `1.0.0`, not jumping from `0.0.1` to `8.0.0`). Packages are versioned manually at publish time.
 
 ### `packages/constants/src/versions.ts` simplification
 

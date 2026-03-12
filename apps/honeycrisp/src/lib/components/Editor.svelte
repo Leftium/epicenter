@@ -64,7 +64,7 @@
 			editorProps: {
 				attributes: {
 					class:
-						'prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-full',
+						'prose dark:prose-invert max-w-none focus:outline-none min-h-full',
 				},
 			},
 			onUpdate({ editor: ed }) {
@@ -95,7 +95,15 @@
 	:global(.tiptap) {
 		min-height: 100%;
 	}
+	:global(.tiptap > *:first-child) {
+		font-size: 1.75rem;
+		font-weight: 700;
+		line-height: 1.2;
+	}
 	:global(.tiptap p.is-editor-empty:first-child::before) {
+		font-size: 1.75rem;
+		font-weight: 700;
+		line-height: 1.2;
 		color: hsl(var(--muted-foreground));
 		content: attr(data-placeholder);
 		float: left;

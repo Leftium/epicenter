@@ -5,6 +5,7 @@
 	import type * as Y from 'yjs';
 	import FujiSidebar from '$lib/components/FujiSidebar.svelte';
 	import EntriesTable from '$lib/components/EntriesTable.svelte';
+	import EntryEditor from '$lib/components/EntryEditor.svelte';
 	import workspaceClient, { type Entry, type EntryId } from '$lib/workspace';
 
 	// ─── Reactive State ────────────────────────────────────────────────────────────
@@ -104,9 +105,25 @@
 	/>
 
 	<main class="flex h-screen flex-1 flex-col overflow-hidden">
-		{#if selectedEntry}
+		{#if selectedEntry && currentYText}
+			{#key selectedEntryId}
+				<EntryEditor
+					entry={selectedEntry}
+					ytext={currentYText}
+					onUpdateEntry={(updates) => {
+						if (!selectedEntryId) return;
+						workspaceClient.tables.entries.update(selectedEntryId, updates);
+					}}
+					onPreviewChange={(preview) => {
+						if (!selectedEntryId) return;
+						workspaceClient.tables.entries.update(selectedEntryId, { preview });
+					}}
+					onBack={() => workspaceClient.kv.set('selectedEntryId', null)}
+				/>
+			{/key}
+		{:else if selectedEntry}
 			<div class="flex h-full items-center justify-center">
-				<p class="text-muted-foreground">Editor placeholder — Wave 4</p>
+				<p class="text-muted-foreground">Loading editor\u2026</p>
 			</div>
 		{:else}
 			<EntriesTable

@@ -224,6 +224,144 @@ Running `bun run apps/runner -- .` in that folder creates two workspace clients,
 - [ ] **5.2** Verify the runner loads and runs it successfully
 - [ ] **5.3** Decide: keep `apps/tab-manager-markdown/` as a reference, or remove it entirely
 
+### Phase 6: Device Code Auth (RFC 8628)
+
+The runner needs authenticated sync against remote servers (e.g. `api.epicenter.so`). The server already has `bearer()` and `jwt()` plugins, and the auth guard supports `?token=` on WebSocket upgrades. What's missing is a way for the headless runner to obtain a token without a browser.
+
+Better Auth has a first-party `deviceAuthorization` plugin implementing RFC 8628 (OAuth 2.0 Device Authorization Grant)—the same flow used by `gh auth login`, `wrangler login`, and every serious CLI tool.
+
+```
+Runner                           Server                          User's Browser
+  │                                │                                │
+  ├─POST /auth/device/code────────►│                                │
+  │  { client_id }                 │                                │
+  │◄───────────────────────────────│                                │
+  │  { device_code, user_code,     │                                │
+  │    verification_uri }          │                                │
+  │                                │                                │
+  │  "Visit api.epicenter.so/device │                                │
+  │   and enter code: ABCD-1234"   │                                │
+  │                                │                                │
+  │                                │◄──── User visits /device ──────┤
+  │                                │◄──── Enters code, approves ────┤
+  │                                │                                │
+  ├─POST /auth/device/token───────►│  (polling)                     │
+  │  { device_code, client_id }    │                                │
+  │◄───────────────────────────────│                                │
+  │  { access_token, expires_in }  │                                │
+  │                                │                                │
+  │  Store token → .epicenter/auth │                                │
+  │  Use for WebSocket sync        │                                │
+```
+
+#### 6.1 — Server: Add `deviceAuthorization` plugin
+
+Surgical change to `apps/api/src/app.ts`:
+
+```typescript
+import { deviceAuthorization } from 'better-auth/plugins';
+
+plugins: [
+  bearer(),
+  jwt(),
+  deviceAuthorization({
+    verificationUri: '/device',
+    expiresIn: 600,  // 10 min to complete flow
+    interval: 5,     // poll every 5s
+  }),
+  oauthProvider({ ... }),
+]
+```
+
+- [ ] **6.1.1** Add `deviceAuthorization` plugin to `createAuth` in `apps/api/src/app.ts`
+- [ ] **6.1.2** Register `epicenter-runner` as a trusted client (similar to `epicenter-desktop` and `epicenter-mobile`)
+
+#### 6.2 — Server: Build `/device` verification page
+
+Simple page where the user enters the code displayed by the runner. Can be a minimal HTML form or part of the existing Epicenter web app.
+
+- [ ] **6.2.1** Create verification page at the `verificationUri` path
+- [ ] **6.2.2** Page flow: enter code → approve → confirmation message
+- [ ] **6.2.3** User must be logged in to approve (redirect to sign-in if not)
+
+#### 6.3 — Runner: `login` command
+
+```bash
+bun run apps/runner login                         # login to default server
+bun run apps/runner login --server api.epicenter.so  # login to specific server
+```
+
+Implementation (~50 lines):
+
+```typescript
+// src/auth.ts
+const CLIENT_ID = 'epicenter-runner';
+const TOKEN_PATH = join(configDir, '.epicenter', 'auth', 'token.json');
+
+async function login(serverUrl: string) {
+  // 1. Request device + user codes
+  const { device_code, user_code, verification_uri } = await fetch(
+    `${serverUrl}/auth/device/code`,
+    { method: 'POST', body: JSON.stringify({ client_id: CLIENT_ID }) },
+  ).then(r => r.json());
+
+  console.log(`\nVisit: ${verification_uri}`);
+  console.log(`Enter code: ${user_code}\n`);
+
+  // 2. Poll for token
+  while (true) {
+    await Bun.sleep(5000);
+    const res = await fetch(`${serverUrl}/auth/device/token`, {
+      method: 'POST',
+      body: JSON.stringify({
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        device_code,
+        client_id: CLIENT_ID,
+      }),
+    }).then(r => r.json());
+
+    if (res.error === 'authorization_pending') continue;
+    if (res.error === 'slow_down') { await Bun.sleep(5000); continue; }
+    if (res.error) throw new Error(`Auth failed: ${res.error}`);
+
+    // 3. Store token
+    await Bun.write(TOKEN_PATH, JSON.stringify({
+      access_token: res.access_token,
+      server: serverUrl,
+      created_at: Date.now(),
+    }));
+    console.log('✓ Login successful');
+    return;
+  }
+}
+```
+
+- [ ] **6.3.1** Create `apps/runner/src/auth.ts` with `login()` and `loadToken()` functions
+- [ ] **6.3.2** Token storage at `.epicenter/auth/token.json` relative to config dir
+- [ ] **6.3.3** Add `login` subcommand to entry point arg parsing
+- [ ] **6.3.4** Auto-load stored token on startup (replaces `EPICENTER_TOKEN` env var as primary method, env var remains as override)
+
+#### 6.4 — Runner: Token lifecycle
+
+- [ ] **6.4.1** On startup: check for stored token → use it; check for `EPICENTER_TOKEN` env var → use it; neither → warn "not authenticated, sync will fail against auth-required servers"
+- [ ] **6.4.2** Pass token to `createSyncExtension`'s `getToken` callback
+- [ ] **6.4.3** Handle token expiry gracefully—sync extension reconnects automatically, `getToken` is called on each reconnect so a refreshed token is used if available
+- [ ] **6.4.4** Add `logout` subcommand that deletes stored token
+
+#### Scope boundaries
+
+What's IN scope for Phase 6:
+- `deviceAuthorization` plugin on server
+- `epicenter-runner` trusted client registration
+- Verification page (minimal)
+- Runner `login`/`logout` commands
+- Token storage + auto-loading
+
+What's OUT of scope:
+- Token refresh (Better Auth sessions last 7 days; `login` again when expired)
+- Keychain integration (file storage is fine for v1; tokens are scoped to one server)
+- Multiple server profiles (one token file per config dir is sufficient)
+
 ## Edge Cases
 
 ### Config exports pre-wired clients
@@ -283,6 +421,9 @@ Running `bun run apps/runner -- .` in that folder creates two workspace clients,
 - [ ] Graceful shutdown (SIGINT) flushes all pending persistence writes
 - [ ] `apps/tab-manager-markdown/` functionality reproducible by pointing the runner at the right config
 - [ ] No type errors; `bun run typecheck` passes
+- [ ] `bun run apps/runner login` completes device code flow and stores token
+- [ ] Stored token is automatically used for authenticated WebSocket sync
+- [ ] `bun run apps/runner -- .` against `api.epicenter.so` syncs successfully with stored token
 
 ## References
 
@@ -294,6 +435,10 @@ Running `bun run apps/runner -- .` in that folder creates two workspace clients,
 - `packages/workspace/src/workspace/define-workspace.ts` — `defineWorkspace()` and `WorkspaceDefinition` type
 - `specs/20251225T210000-epicenter-folder-discovery.md` — `.epicenter/` folder conventions
 - `specs/20251030T000000 persistence-factory-pattern.md` — persistence factory pattern (storagePath)
+- Better Auth Device Authorization plugin — `better-auth/plugins/deviceAuthorization`
+- Better Auth Bearer plugin — `better-auth/plugins/bearer` (already active in `apps/api/src/app.ts`)
+- RFC 8628: OAuth 2.0 Device Authorization Grant
+- `apps/api/src/app.ts` lines 73–100 — existing plugin config and trusted clients
 
 ## Review
 

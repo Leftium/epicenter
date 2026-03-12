@@ -4,7 +4,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Err, trySync, type Result } from 'wellcrafted/result';
+import { Err, type Result, trySync } from 'wellcrafted/result';
 
 export type ParseInputOptions = {
 	/** Positional argument (inline JSON or @file) */

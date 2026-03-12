@@ -28,6 +28,7 @@ import { savedTabState } from '$lib/state/saved-tab-state.svelte';
 import { getDomain } from '$lib/utils/format';
 import type { TabCompositeId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
+import { Ok, tryAsync } from 'wellcrafted/result';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -141,16 +142,13 @@ const dedupAction: QuickAction = {
 			description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
 			confirm: { text: 'Close Duplicates', variant: 'destructive' },
 			async onConfirm() {
-				for (const tabId of toClose) {
-					try {
-						const parsed = parseTabId(tabId as TabCompositeId);
-						if (parsed) {
-							await browser.tabs.remove(parsed.tabId);
-						}
-					} catch {
-						// Tab may already be closed
-					}
-				}
+				const nativeIds = toClose
+					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
+					.filter((id): id is number => id !== undefined);
+				await tryAsync({
+					try: () => browser.tabs.remove(nativeIds),
+					catch: () => Ok(undefined),
+				});
 			},
 		});
 	},
@@ -193,27 +191,26 @@ const groupByDomainAction: QuickAction = {
 	async execute() {
 		const domains = getUniqueDomains();
 
-		for (const [domain, tabIds] of domains) {
-			if (tabIds.length < 2) continue;
+		const groupOps = [...domains.entries()]
+			.filter(([, tabIds]) => tabIds.length >= 2)
+			.map(([domain, tabIds]) => {
+				const nativeIds = tabIds
+					.map((id) => parseTabId(id as TabCompositeId)?.tabId)
+					.filter((id): id is number => id !== undefined);
+				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
+			})
+			.filter(
+				(op): op is { domain: string; nativeIds: number[] } => op !== null,
+			);
 
-			const nativeIds = tabIds
-				.map((id) => {
-					const parsed = parseTabId(id as TabCompositeId);
-					return parsed?.tabId;
-				})
-				.filter((id): id is number => id !== undefined);
-
-			if (nativeIds.length < 2) continue;
-
-			try {
+		await Promise.allSettled(
+			groupOps.map(async ({ domain, nativeIds }) => {
 				const groupId = await browser.tabs.group({
 					tabIds: nativeIds as [number, ...number[]],
 				});
 				await browser.tabGroups.update(groupId, { title: domain });
-			} catch {
-				// Grouping may fail
-			}
-		}
+			}),
+		);
 	},
 };
 
@@ -270,15 +267,13 @@ const closeByDomainAction: QuickAction = {
 			description: `Close ${topCount} tab${topCount === 1 ? '' : 's'} from ${topDomain}?`,
 			confirm: { text: 'Close Tabs', variant: 'destructive' },
 			async onConfirm() {
-				for (const tabId of tabIds) {
-					const parsed = parseTabId(tabId as TabCompositeId);
-					if (!parsed) continue;
-					try {
-						await browser.tabs.remove(parsed.tabId);
-					} catch {
-						// Tab may already be closed
-					}
-				}
+				const nativeIds = tabIds
+					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
+					.filter((id): id is number => id !== undefined);
+				await tryAsync({
+					try: () => browser.tabs.remove(nativeIds),
+					catch: () => Ok(undefined),
+				});
 			},
 		});
 	},

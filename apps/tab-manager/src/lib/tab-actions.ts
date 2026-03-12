@@ -9,6 +9,7 @@ import type { TableHelper } from '@epicenter/workspace';
 import { generateId } from '@epicenter/workspace';
 import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
 import { parseTabId } from '$lib/workspace';
+import { Ok, tryAsync } from 'wellcrafted/result';
 
 /**
  * Extract the native tab ID (number) from a composite tab ID string.
@@ -36,16 +37,11 @@ export async function executeCloseTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	let closedCount = 0;
-	for (const id of nativeIds) {
-		try {
-			await browser.tabs.remove(id);
-			closedCount++;
-		} catch {
-			// Tab may already be closed
-		}
-	}
-	return { closedCount };
+	await tryAsync({
+		try: () => browser.tabs.remove(nativeIds),
+		catch: () => Ok(undefined),
+	});
+	return { closedCount: nativeIds.length };
 }
 
 /**
@@ -156,16 +152,10 @@ export async function executePinTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	let pinnedCount = 0;
-	for (const id of nativeIds) {
-		try {
-			await browser.tabs.update(id, { pinned });
-			pinnedCount++;
-		} catch {
-			// Tab may not exist
-		}
-	}
-	return { pinnedCount };
+	const results = await Promise.allSettled(
+		nativeIds.map((id) => browser.tabs.update(id, { pinned })),
+	);
+	return { pinnedCount: results.filter((r) => r.status === 'fulfilled').length };
 }
 
 /**
@@ -180,16 +170,10 @@ export async function executeMuteTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	let mutedCount = 0;
-	for (const id of nativeIds) {
-		try {
-			await browser.tabs.update(id, { muted });
-			mutedCount++;
-		} catch {
-			// Tab may not exist
-		}
-	}
-	return { mutedCount };
+	const results = await Promise.allSettled(
+		nativeIds.map((id) => browser.tabs.update(id, { muted })),
+	);
+	return { mutedCount: results.filter((r) => r.status === 'fulfilled').length };
 }
 
 /**
@@ -203,14 +187,8 @@ export async function executeReloadTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	let reloadedCount = 0;
-	for (const id of nativeIds) {
-		try {
-			await browser.tabs.reload(id);
-			reloadedCount++;
-		} catch {
-			// Tab may not exist
-		}
-	}
-	return { reloadedCount };
+	const results = await Promise.allSettled(
+		nativeIds.map((id) => browser.tabs.reload(id)),
+	);
+	return { reloadedCount: results.filter((r) => r.status === 'fulfilled').length };
 }

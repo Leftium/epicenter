@@ -1,4 +1,10 @@
 import { readFileSync, readSync } from 'node:fs';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, trySync, type Result } from 'wellcrafted/result';
 
 export type ParseInputOptions = {
 	/** Positional argument (inline JSON or @file) */
@@ -11,35 +17,51 @@ export type ParseInputOptions = {
 	stdinContent?: string;
 };
 
-export type ParseInputResult<T> =
-	| { ok: true; data: T }
-	| { ok: false; error: string };
+const ParseInputError = defineErrors({
+	InvalidJson: ({ cause }: { cause: unknown }) => ({
+		message: `Invalid JSON: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	FileNotFound: ({ path }: { path: string }) => ({
+		message: `File not found: ${path}`,
+		path,
+	}),
+	FileReadFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
+		message: `Error reading file '${path}': ${extractErrorMessage(cause)}`,
+		path,
+		cause,
+	}),
+	NoInputProvided: () => ({
+		message:
+			'No input provided. Use inline JSON, --file, @file, or pipe via stdin.',
+	}),
+});
+type ParseInputError = InferErrors<typeof ParseInputError>;
 
-function parseJson<T>(input: string): ParseInputResult<T> {
-	try {
-		const data = JSON.parse(input) as T;
-		return { ok: true, data };
-	} catch (e) {
-		return {
-			ok: false,
-			error: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}`,
-		};
-	}
+function parseJson<T>(input: string): Result<T, ParseInputError> {
+	return trySync({
+		try: () => JSON.parse(input) as T,
+		catch: (error) => ParseInputError.InvalidJson({ cause: error }),
+	});
 }
 
-function readJsonFile<T>(filePath: string): ParseInputResult<T> {
-	try {
-		const content = readFileSync(filePath, 'utf-8');
-		return parseJson<T>(content);
-	} catch (e) {
-		if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
-			return { ok: false, error: `File not found: ${filePath}` };
-		}
-		return {
-			ok: false,
-			error: `Error reading file: ${e instanceof Error ? e.message : String(e)}`,
-		};
-	}
+function readJsonFile<T>(filePath: string): Result<T, ParseInputError> {
+	const { data: content, error: readError } = trySync({
+		try: () => readFileSync(filePath, 'utf-8'),
+		catch: (error) => {
+			if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+				return ParseInputError.FileNotFound({ path: filePath });
+			}
+			return ParseInputError.FileReadFailed({
+				path: filePath,
+				cause: error,
+			});
+		},
+	});
+
+	if (readError) return Err(readError);
+
+	return parseJson<T>(content);
 }
 
 /**
@@ -48,7 +70,7 @@ function readJsonFile<T>(filePath: string): ParseInputResult<T> {
  */
 export function parseJsonInput<T = unknown>(
 	options: ParseInputOptions,
-): ParseInputResult<T> {
+): Result<T, ParseInputError> {
 	// 1. Check positional (could be inline JSON or @file)
 	if (options.positional) {
 		if (options.positional.startsWith('@')) {
@@ -68,11 +90,7 @@ export function parseJsonInput<T = unknown>(
 		return parseJson<T>(options.stdinContent);
 	}
 
-	return {
-		ok: false,
-		error:
-			'No input provided. Use inline JSON, --file, @file, or pipe via stdin.',
-	};
+	return ParseInputError.NoInputProvided();
 }
 
 /**

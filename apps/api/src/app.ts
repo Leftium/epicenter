@@ -445,7 +445,7 @@ app.post(
 		const { id } = c.req.valid('param');
 		const ok = await stub.applySnapshot(Number(id));
 		if (!ok) return c.json({ error: 'Snapshot not found' }, 404);
-		return c.json({ ok: true });
+		return c.body(null, 204);
 	},
 );
 

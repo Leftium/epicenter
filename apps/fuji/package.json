@@ -30,11 +30,18 @@
 		"@epicenter/workspace": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-query-devtools": "catalog:",
+		"@tiptap/core": "^2.12.0",
+		"@tiptap/extension-placeholder": "^2.12.0",
+		"@tiptap/starter-kit": "^2.12.0",
 		"arktype": "catalog:",
 		"bits-ui": "catalog:",
 		"date-fns": "catalog:",
 		"nanoid": "catalog:",
+		"prosemirror-model": "^1.25.0",
+		"prosemirror-state": "^1.4.0",
+		"prosemirror-view": "^1.41.0",
 		"wellcrafted": "catalog:",
+		"y-prosemirror": "^1.3.7",
 		"yjs": "catalog:"
 	}
 }

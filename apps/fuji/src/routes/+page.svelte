@@ -8,9 +8,14 @@
 	import { isToday, isYesterday, format } from 'date-fns';
 	import workspaceClient, { type Entry, type EntryId } from '$lib/workspace';
 	import { dateTimeStringNow, generateId } from '@epicenter/workspace';
+	import type { DocumentHandle } from '@epicenter/workspace';
+	import type * as Y from 'yjs';
+	import FujiEditor from '$lib/components/editor.svelte';
 
 	let entries = $state<Entry[]>([]);
 	let selectedEntryId = $state<EntryId | null>(null);
+	let currentYText = $state<Y.Text | null>(null);
+	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	$effect(() => {
 		entries = workspaceClient.tables.entries.getAllValid();
@@ -37,6 +42,32 @@
 
 	const selectedEntry = $derived(entries.find((e) => e.id === selectedEntryId) ?? null);
 
+	// Open/close the Y.Text document when the selected entry changes
+	$effect(() => {
+		const entryId = selectedEntryId;
+		if (!entryId) {
+			currentYText = null;
+			currentDocHandle = null;
+			return;
+		}
+
+		let cancelled = false;
+		workspaceClient.documents.entries.body.open(entryId).then((handle) => {
+			if (cancelled) return;
+			currentDocHandle = handle;
+			currentYText = handle.ydoc.getText('content');
+		});
+
+		return () => {
+			cancelled = true;
+			if (currentDocHandle) {
+				workspaceClient.documents.entries.body.close(entryId);
+			}
+			currentYText = null;
+			currentDocHandle = null;
+		};
+	});
+
 	function parseDateTime(dts: string): Date {
 		return new Date(dts.split('|')[0]!);
 	}
@@ -52,13 +83,13 @@
 		const pinned = entries
 			.filter((e) => e.pinned)
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-		
+
 		const unpinned = entries
 			.filter((e) => !e.pinned)
 			.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
 		const groups: { label: string; entries: Entry[] }[] = [];
-		
+
 		if (pinned.length > 0) {
 			groups.push({ label: 'Pinned', entries: pinned });
 		}
@@ -85,9 +116,6 @@
 
 		return groups;
 	});
-
-  // Auto-title will be added in Wave 5 when the Tiptap editor is integrated.
-  // It observes the Y.Text body document and derives title from the first line.
 </script>
 
 <div class="flex h-screen w-full overflow-hidden bg-background">
@@ -185,12 +213,22 @@
 		</Resizable.Pane>
 		<Resizable.Handle withHandle />
 		<Resizable.Pane defaultSize={70} minSize={30} class="flex flex-col">
-			{#if selectedEntry}
-				<div class="flex h-full flex-col p-8">
-					<h1 class="text-3xl font-bold">{selectedEntry.title || 'Untitled'}</h1>
-					<div class="mt-8 flex flex-1 items-center justify-center rounded-lg border border-dashed">
-						<p class="text-muted-foreground">Editor coming in Wave 5</p>
-					</div>
+			{#if selectedEntry && currentYText}
+				{#key selectedEntryId}
+					<FujiEditor
+						ytext={currentYText}
+						onContentChange={({ title, preview }) => {
+							if (!selectedEntryId) return;
+							workspaceClient.tables.entries.update(selectedEntryId, {
+								title,
+								preview,
+							});
+						}}
+					/>
+				{/key}
+			{:else if selectedEntry}
+				<div class="flex h-full items-center justify-center">
+					<p class="text-muted-foreground">Loading editor…</p>
 				</div>
 			{:else}
 				<div class="flex h-full items-center justify-center">

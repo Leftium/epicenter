@@ -651,10 +651,12 @@ export default createWorkspace(
   > Resizable.PaneGroup (30/70 split) with timeline left panel and editor placeholder right panel.
 - [x] **1.4** Timeline: entries sorted by `updatedAt`, date group headers
   > Entries sorted by updatedAt, grouped by date (Today/Yesterday/MMMM d), pinned entries at top.
-- [ ] **1.5** Editor: Tiptap on Y.Text via `.withDocument('body', { guid: 'id' })`
+- [x] **1.5** Editor: Tiptap on Y.Text via `.withDocument('body', { guid: 'id' })`
+  > Created editor.svelte with Tiptap + y-prosemirror (ySyncPlugin, yUndoPlugin). Mounts to DOM via $effect, binds to Y.Text from documents.entries.body.open(). StarterKit with history disabled (yUndoPlugin handles undo). Placeholder extension for empty state.
 - [x] **1.6** CRUD: create entry, delete entry, pin/unpin
   > Create via + button, delete with trash icon, pin/unpin toggle. All inline in +page.svelte.
-- [ ] **1.7** Auto-title from first line of content (deferred to Wave 5 — requires editor)
+- [x] **1.7** Auto-title from first line of content (deferred to Wave 5 — requires editor)
+  > Editor onContentChange callback extracts first line (80 chars) as title and first 100 chars as preview. +page.svelte wires this to workspaceClient.tables.entries.update(). {#key selectedEntryId} ensures editor remounts on entry switch.
 - [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
   > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 

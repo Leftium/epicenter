@@ -92,7 +92,7 @@ export const redditWorkspace = defineWorkspace({
 		/** poll_votes.csv */
 		pollVotes: defineTable(
 			type({
-				id: 'string', // Composite: `${post_id}:${user_selection ?? ''}:${text ?? ''}`
+				id: 'string', // Composite: `${post_id}|${user_selection ?? ''}|${text ?? ''}`
 				post_id: 'string',
 				'user_selection?': 'string',
 				'text?': 'string',
@@ -224,7 +224,7 @@ export const redditWorkspace = defineWorkspace({
 		/** gilded_content.csv */
 		gildedContent: defineTable(
 			type({
-				id: 'string', // Composite: `${content_link}:${date ?? ''}:${award ?? ''}:${amount ?? ''}`
+				id: 'string', // Composite: `${content_link}|${date ?? ''}|${award ?? ''}|${amount ?? ''}`
 				content_link: 'string',
 				'award?': 'string',
 				'amount?': 'string',
@@ -236,7 +236,7 @@ export const redditWorkspace = defineWorkspace({
 		/** gold_received.csv */
 		goldReceived: defineTable(
 			type({
-				id: 'string', // Composite: `${content_link}:${date ?? ''}:${gold_received ?? ''}:${gilder_username ?? ''}`
+				id: 'string', // Composite: `${content_link}|${date ?? ''}|${gold_received ?? ''}|${gilder_username ?? ''}`
 				content_link: 'string',
 				'gold_received?': 'string',
 				'gilder_username?': 'string',

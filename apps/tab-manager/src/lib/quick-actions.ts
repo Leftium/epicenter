@@ -8,7 +8,7 @@
  *
  * @example
  * ```typescript
- * import { quickActions } from '$lib/commands/quick-actions';
+ * import { quickActions } from '$lib/quick-actions';
  *
  * for (const action of quickActions) {
  *   console.log(action.label, action.description);

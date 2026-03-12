@@ -20,6 +20,7 @@
  * ```
  */
 
+import { type } from 'arktype';
 import { snakify } from '../../shared/snakify.js';
 import { createWorkspace } from '../../workspace/index.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
@@ -32,10 +33,18 @@ export { redditWorkspace, type RedditWorkspace };
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export type ImportError = {
+	table: string;
+	rowIndex: number;
+	error: string;
+};
+
 export type ImportStats = {
 	tables: Record<string, number>;
 	kv: number;
 	totalRows: number;
+	errors: ImportError[];
+	skipped: number;
 };
 
 export type ImportProgress = {
@@ -49,18 +58,35 @@ export type ImportProgress = {
 const _createRedditWorkspace = () => createWorkspace(redditWorkspace);
 type RedditWorkspaceClient = ReturnType<typeof _createRedditWorkspace>;
 
-/** Import rows for a single table — typed to avoid `as any` casts */
+/** Import rows for a single table with per-row error recovery */
 function importTableRows(
 	csvData: Record<string, string>[],
-	schema: { assert(data: unknown): { id: string } },
+	schema: (data: unknown) => unknown,
 	tableClient: {
 		set(row: { id: string; _v: 1 }): void;
 	},
-): number {
-	if (csvData.length === 0) return 0;
-	const rows = csvData.map((row) => schema.assert(row));
-	for (const row of rows) tableClient.set({ ...row, _v: 1 });
-	return rows.length;
+	tableName: string,
+	errors: ImportError[],
+): { imported: number; skipped: number } {
+	let imported = 0;
+	let skipped = 0;
+
+	for (let i = 0; i < csvData.length; i++) {
+		const result = schema(csvData[i]);
+		if (result instanceof type.errors) {
+			errors.push({
+				table: tableName,
+				rowIndex: i,
+				error: result.summary,
+			});
+			skipped++;
+			continue;
+		}
+		tableClient.set({ ...(result as { id: string }), _v: 1 });
+		imported++;
+	}
+
+	return { imported, skipped };
 }
 
 const tableNames = Object.keys(csvSchemas) as TableName[];
@@ -116,7 +142,13 @@ export async function importRedditExport(
 	workspace: RedditWorkspaceClient,
 	options?: { onProgress?: (progress: ImportProgress) => void },
 ): Promise<ImportStats> {
-	const stats: ImportStats = { tables: {}, kv: 0, totalRows: 0 };
+	const stats: ImportStats = {
+		tables: {},
+		kv: 0,
+		totalRows: 0,
+		errors: [],
+		skipped: 0,
+	};
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// PHASE 1: PARSE ZIP → RAW CSV DATA
@@ -142,11 +174,15 @@ export async function importRedditExport(
 			const csv = snakify(table);
 			const csvData = rawData[csv as keyof ParsedRedditData] ?? [];
 
-			stats.tables[table] = importTableRows(
+			const { imported, skipped: tableSkipped } = importTableRows(
 				csvData,
-				csvSchemas[table],
+				csvSchemas[table] as (data: unknown) => unknown,
 				workspace.tables[table as keyof typeof workspace.tables],
+				table,
+				stats.errors,
 			);
+			stats.tables[table] = imported;
+			stats.skipped += tableSkipped;
 		}
 
 		// ═══════════════════════════════════════════════════════════════════════

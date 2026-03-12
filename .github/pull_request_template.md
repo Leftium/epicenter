@@ -2,6 +2,10 @@
 
 <!-- Briefly describe what this PR does and why it's needed -->
 
+## Changelog
+
+<!-- One line per user-visible change. Omit this section entirely for internal-only changes. -->
+
 ## Type of Change
 
 <!-- Mark the relevant option with an "x" -->

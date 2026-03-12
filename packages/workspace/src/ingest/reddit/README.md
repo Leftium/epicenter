@@ -11,6 +11,8 @@ workspace.ts    → Workspace definition (tables + KV store)
 index.ts        → Orchestrator: wires parse → schema → workspace insertion
 ```
 
+Large CSV files that Reddit splits into numbered parts (e.g., `post_votes_1.csv`, `post_votes_2.csv`) are automatically detected and concatenated during parsing. UTF-8 BOM is stripped from all decoded files.
+
 ## CSV File Reference
 
 A typical Reddit export contains **38 CSV files** (flat, no subdirectories). Every file is accounted for below.
@@ -28,15 +30,15 @@ Some exports include `messages.csv` + `message_headers.csv` instead of `messages
 | `comments.csv` | `comments` | Natural `id` | Every comment you posted |
 | `drafts.csv` | `drafts` | Natural `id` | Unsaved post drafts |
 | `friends.csv` | `friends` | `username` value | Users you follow |
-| `gilded_content.csv` | `gildedContent` | Composite: `link:date:award:amount` | Awards you gave to others |
-| `gold_received.csv` | `goldReceived` | Composite: `link:date:gold:gilder` | Awards your content received |
+| `gilded_content.csv` | `gildedContent` | Composite: `link\|date\|award\|amount` | Awards you gave to others |
+| `gold_received.csv` | `goldReceived` | Composite: `link\|date\|gold\|gilder` | Awards your content received |
 | `hidden_posts.csv` | `hiddenPosts` | Natural `id` | Posts you hid from your feed |
 | `messages.csv` | `messages` | Natural `id` | DMs sent/received (some exports use this) |
 | `messages_archive.csv` | `messagesArchive` | Natural `id` | DMs sent/received (some exports use this instead) |
 | `moderated_subreddits.csv` | `moderatedSubreddits` | `subreddit` value | Subreddits you moderate |
 | `multireddits.csv` | `multireddits` | Natural `id` | Custom subreddit groups you created |
 | `payouts.csv` | `payouts` | `payout_id` or date fallback | Money Reddit paid you |
-| `poll_votes.csv` | `pollVotes` | Composite: `post:selection:text:img:pred:stake` | Polls you voted on |
+| `poll_votes.csv` | `pollVotes` | Composite: `post\|selection\|text\|img\|pred\|stake` | Polls you voted on |
 | `post_votes.csv` | `postVotes` | Natural `id` | Every post you upvoted/downvoted |
 | `posts.csv` | `posts` | Natural `id` | Every post you submitted |
 | `purchases.csv` | `purchases` | `transaction_id` | Reddit purchases you made |
@@ -57,7 +59,7 @@ Singleton data (one value per account) goes into the KV store instead of tables.
 | `statistics.csv` | `statistics` | Account stats as key-value pairs (email, signup date, karma breakdown, etc.) |
 | `user_preferences.csv` | `preferences` | Account settings as key-value pairs (language, theme, notification opts, etc.) |
 
-### Excluded Files (16 CSV files, intentionally not stored)
+### Excluded Files (14 CSV files, intentionally not stored)
 
 These files are present in Reddit exports but are **not parsed or stored**.
 
@@ -90,6 +92,8 @@ Reddit includes the `*_headers.csv` variants so users can review metadata (dates
 ## All Files Are Optional
 
 The importer is best-effort: it parses every known CSV it finds and defaults missing ones to empty. No files are required. The returned `ImportStats` tell the caller exactly what was found.
+
+One bad row doesn't abort the import. Malformed rows are skipped and reported in `ImportStats.errors` with the table name, row index, and validation error message.
 
 ## References
 

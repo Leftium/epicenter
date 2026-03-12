@@ -1,12 +1,11 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
 	import * as Drawer from '@epicenter/ui/drawer';
+	import ZapIcon from '@lucide/svelte/icons/zap';
 	import AiChat from '$lib/components/chat/AiChat.svelte';
+	import { authState } from '$lib/state/auth.svelte';
 
-	type Props = {
-		open: boolean;
-	};
-
-	let { open = $bindable(false) }: Props = $props();
+	let { open = $bindable(false) }: { open: boolean } = $props();
 </script>
 
 <Drawer.Root bind:open direction="bottom" shouldScaleBackground={false}>
@@ -17,6 +16,20 @@
 				Chat with AI about your tabs
 			</Drawer.Description>
 		</Drawer.Header>
-		<div class="h-[60vh] px-4 pb-4"><AiChat /></div>
+		{#if authState.status === 'signed-in'}
+			<div class="h-[400px] px-4 pb-4"><AiChat /></div>
+		{:else}
+			<div
+				class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4"
+			>
+				<ZapIcon class="size-8 text-muted-foreground" />
+				<p class="text-sm text-muted-foreground text-center">
+					Sign in to use AI chat
+				</p>
+				<Button variant="outline" size="sm" onclick={() => (open = false)}>
+					Close
+				</Button>
+			</div>
+		{/if}
 	</Drawer.Content>
 </Drawer.Root>

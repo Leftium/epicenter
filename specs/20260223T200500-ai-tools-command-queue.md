@@ -1,7 +1,7 @@
 # AI Tools via Command Queue
 
 **Date**: 2026-02-23
-**Status**: Draft
+**Status**: Superseded — commands table removed in `specs/20260311T230000-remove-commands-table-and-awareness.md`
 **Author**: AI-assisted design session
 
 ---

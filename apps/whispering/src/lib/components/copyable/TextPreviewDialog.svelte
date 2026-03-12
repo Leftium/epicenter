@@ -87,7 +87,7 @@
 				<textarea
 					{...props}
 					data-slot="input-group-control"
-					class="flex-1 min-w-0 resize-none rounded-none border-0 bg-transparent py-2 px-3 shadow-none focus-visible:ring-0 focus:outline-none dark:bg-transparent text-sm leading-snug hover:cursor-pointer hover:bg-accent/50 transition-colors min-h-0"
+					class="flex-1 min-w-0 resize-none rounded-none border-0 bg-transparent py-2 px-3 shadow-none focus-visible:ring-0 focus:outline-none dark:bg-transparent text-sm leading-snug enabled:hover:cursor-pointer enabled:hover:bg-accent/50 transition-colors min-h-0"
 					readonly
 					value={text}
 					style="view-transition-name: {id}"

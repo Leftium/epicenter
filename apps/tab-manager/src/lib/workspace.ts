@@ -10,7 +10,7 @@
  * @see https://developer.chrome.com/docs/extensions/reference/api/windows#type-Window
  */
 
-import { createActionContext } from '@epicenter/ai';
+import { actionsToClientTools, toToolDefinitions } from '@epicenter/ai';
 import {
 	createWorkspace,
 	defineMutation,
@@ -26,6 +26,9 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import { getDeviceId } from '$lib/device/device-id';
+import { authState } from '$lib/state/auth.svelte';
+import { serverUrl } from '$lib/state/settings.svelte';
 import {
 	executeActivateTab,
 	executeCloseTabs,
@@ -35,11 +38,7 @@ import {
 	executePinTabs,
 	executeReloadTabs,
 	executeSaveTabs,
-} from '$lib/commands/actions';
-import { startCommandConsumer } from '$lib/commands/consumer';
-import { getDeviceId } from '$lib/device/device-id';
-import { authState } from '$lib/state/auth.svelte';
-import { serverUrl } from '$lib/state/settings.svelte';
+} from '$lib/tab-actions';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -118,14 +117,6 @@ export type ChatMessageId = string & Brand<'ChatMessageId'>;
 export const ChatMessageId = type('string').pipe(
 	(s): ChatMessageId => s as ChatMessageId,
 );
-
-/**
- * Branded command ID — nanoid generated when an AI tool writes a command.
- *
- * Prevents accidental mixing with other string IDs (tab, conversation, etc.).
- */
-export type CommandId = string & Brand<'CommandId'>;
-export const CommandId = type('string').pipe((s): CommandId => s as CommandId);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types
@@ -268,13 +259,6 @@ export function parseGroupId(
 const tabGroupColor = type(
 	"'grey' | 'blue' | 'red' | 'yellow' | 'green' | 'pink' | 'purple' | 'cyan' | 'orange'",
 );
-
-const commandBase = type({
-	id: CommandId,
-	deviceId: DeviceId,
-	createdAt: 'number',
-	_v: '1',
-});
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
@@ -492,71 +476,6 @@ const chatMessagesTable = defineTable(
 );
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
-/**
- * AI command queue — discriminated union on `action`.
- *
- * The server writes commands targeting a device; the device's background
- * worker observes, executes the Chrome API action, and writes the result.
- * `result?` presence = status: no result = pending, has result = done.
- *
- * Uses `commandBase.merge(type.or(...))` for a flat list of 8 action variants.
- *
- * @see specs/20260223T200500-ai-tools-command-queue.md
- */
-const commandsTable = defineTable(
-	commandBase.merge(
-		type.or(
-			{
-				action: "'closeTabs'",
-				tabIds: 'string[]',
-				'result?': type({ closedCount: 'number' }).or('undefined'),
-			},
-			{
-				action: "'openTab'",
-				url: 'string',
-				'windowId?': 'string',
-				'result?': type({ tabId: 'string' }).or('undefined'),
-			},
-			{
-				action: "'activateTab'",
-				tabId: 'string',
-				'result?': type({ activated: 'boolean' }).or('undefined'),
-			},
-			{
-				action: "'saveTabs'",
-				tabIds: 'string[]',
-				close: 'boolean',
-				'result?': type({ savedCount: 'number' }).or('undefined'),
-			},
-			{
-				action: "'groupTabs'",
-				tabIds: 'string[]',
-				'title?': 'string',
-				'color?': tabGroupColor,
-				'result?': type({ groupId: 'string' }).or('undefined'),
-			},
-			{
-				action: "'pinTabs'",
-				tabIds: 'string[]',
-				pinned: 'boolean',
-				'result?': type({ pinnedCount: 'number' }).or('undefined'),
-			},
-			{
-				action: "'muteTabs'",
-				tabIds: 'string[]',
-				muted: 'boolean',
-				'result?': type({ mutedCount: 'number' }).or('undefined'),
-			},
-			{
-				action: "'reloadTabs'",
-				tabIds: 'string[]',
-				'result?': type({ reloadedCount: 'number' }).or('undefined'),
-			},
-		),
-	),
-);
-export type Command = InferTableRow<typeof commandsTable>;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Client
 // ─────────────────────────────────────────────────────────────────────────────
@@ -572,12 +491,6 @@ export type Command = InferTableRow<typeof commandsTable>;
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
 		id: 'tab-manager',
-
-		awareness: {
-			deviceId: type('string'),
-			deviceType: type('"browser-extension" | "desktop" | "server" | "cli"'),
-		},
-
 		tables: {
 			devices: devicesTable,
 			tabs: tabsTable,
@@ -587,7 +500,6 @@ export const workspaceClient = createWorkspace(
 			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
 			chatMessages: chatMessagesTable,
-			commands: commandsTable,
 		},
 	}),
 )
@@ -597,7 +509,7 @@ export const workspaceClient = createWorkspace(
 		'sync',
 		createSyncExtension({
 			url: (workspaceId) => `${serverUrl.current}/workspaces/${workspaceId}`,
-			getToken: async () => authState.token ?? '',
+			getToken: async () => authState.token,
 		}),
 	)
 	.withActions(({ tables }) => ({
@@ -837,28 +749,10 @@ export const workspaceClient = createWorkspace(
 		},
 	}));
 
-export const actionContext = createActionContext(workspaceClient.actions, {
-	labels: {
-		tabs_search: { active: 'Searching tabs', done: 'Searched tabs' },
-		tabs_list: { active: 'Listing tabs', done: 'Listed tabs' },
-		windows_list: { active: 'Listing windows', done: 'Listed windows' },
-		devices_list: { active: 'Listing devices', done: 'Listed devices' },
-		domains_count: {
-			active: 'Counting domains',
-			done: 'Counted domains',
-		},
-		tabs_close: { active: 'Closing tabs', done: 'Closed tabs' },
-		tabs_open: { active: 'Opening tab', done: 'Opened tab' },
-		tabs_activate: { active: 'Activating tab', done: 'Activated tab' },
-		tabs_save: { active: 'Saving tabs', done: 'Saved tabs' },
-		tabs_group: { active: 'Grouping tabs', done: 'Grouped tabs' },
-		tabs_pin: { active: 'Pinning tabs', done: 'Pinned tabs' },
-		tabs_mute: { active: 'Muting tabs', done: 'Muted tabs' },
-		tabs_reload: { active: 'Reloading tabs', done: 'Reloaded tabs' },
-	},
-});
+export const workspaceTools = actionsToClientTools(workspaceClient.actions);
+export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
-export type WorkspaceTools = typeof actionContext.tools;
+export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
 
 /**
@@ -870,19 +764,3 @@ export type WorkspaceActionName = WorkspaceTools[number]['name'];
 export function reconnectSync() {
 	workspaceClient.extensions.sync.reconnect();
 }
-
-// Initialize workspace: set awareness + start command consumer
-void workspaceClient.whenReady.then(async () => {
-	const deviceId = await getDeviceId();
-	workspaceClient.awareness.setLocal({
-		deviceId,
-		deviceType: 'browser-extension',
-	});
-
-	// Start consuming AI commands targeting this device
-	startCommandConsumer(
-		workspaceClient.tables.commands,
-		workspaceClient.tables.savedTabs,
-		deviceId,
-	);
-});

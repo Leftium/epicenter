@@ -74,9 +74,7 @@ export class DocumentRoom extends BaseSyncRoom {
 			.toArray();
 		if (!row) return null;
 
-		const snap = Y.decodeSnapshot(
-			new Uint8Array(row.snapshot as ArrayBuffer),
-		);
+		const snap = Y.decodeSnapshot(new Uint8Array(row.snapshot as ArrayBuffer));
 		const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
 		return Y.encodeStateAsUpdateV2(restoredDoc);
 	}

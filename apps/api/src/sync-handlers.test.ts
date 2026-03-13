@@ -496,7 +496,9 @@ describe('multi-client broadcast', () => {
 
 		// The forwarded message should be a SYNC message
 		// biome-ignore lint/style/noNonNullAssertion: length asserted above
-		expect(decodeMessageType(ws2.sent[ws2.sent.length - 1]!)).toBe(MESSAGE_TYPE.SYNC);
+		expect(decodeMessageType(ws2.sent[ws2.sent.length - 1]!)).toBe(
+			MESSAGE_TYPE.SYNC,
+		);
 
 		// Client A's ws should NOT have received it (echo prevention)
 		expect(ws1.sent.length).toBe(ws1SentBefore);

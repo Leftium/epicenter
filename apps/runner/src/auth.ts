@@ -10,30 +10,39 @@ type StoredToken = {
 	expires_in: number;
 };
 
-// ─── Server API helpers ─────────────────────────────────────────────────────
+// ─── Server API ────────────────────────────────────────────────────────────────────
 
-/** POST to a JSON endpoint and return the parsed response. */
-async function post(url: string, body: Record<string, string>): Promise<Record<string, unknown>> {
-	const res = await fetch(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
-	return res.json() as Promise<Record<string, unknown>>;
-}
+/**
+ * Create an API client bound to a specific Epicenter server.
+ *
+ * Closes over `serverUrl` so callers don't repeat it on every request.
+ * `post` is a private helper; only the named operations are exposed.
+ */
+function createServerApi(serverUrl: string) {
+	async function post(path: string, body: Record<string, string>) {
+		const res = await fetch(`${serverUrl}${path}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+		return res.json() as Promise<Record<string, unknown>>;
+	}
 
-/** Request a device code for the OAuth device authorization flow. */
-async function requestDeviceCode(serverUrl: string) {
-	return post(`${serverUrl}/auth/device/code`, { client_id: CLIENT_ID });
-}
+	return {
+		/** Request a device code for the OAuth device authorization flow. */
+		requestDeviceCode() {
+			return post('/auth/device/code', { client_id: CLIENT_ID });
+		},
 
-/** Poll the token endpoint with a previously-issued device code. */
-async function pollDeviceToken(serverUrl: string, deviceCode: string) {
-	return post(`${serverUrl}/auth/device/token`, {
-		grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-		device_code: deviceCode,
-		client_id: CLIENT_ID,
-	});
+		/** Poll the token endpoint with a previously-issued device code. */
+		pollDeviceToken(deviceCode: string) {
+			return post('/auth/device/token', {
+				grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+				device_code: deviceCode,
+				client_id: CLIENT_ID,
+			});
+		},
+	};
 }
 
 /**
@@ -47,7 +56,8 @@ export async function login(
 	serverUrl: string,
 	configDir: string,
 ): Promise<void> {
-	const codeData = await requestDeviceCode(serverUrl);
+	const api = createServerApi(serverUrl);
+	const codeData = await api.requestDeviceCode();
 
 	console.log(`\nVisit: ${codeData.verification_uri_complete}`);
 	console.log(`Enter code: ${codeData.user_code}\n`);
@@ -57,7 +67,7 @@ export async function login(
 	while (true) {
 		await Bun.sleep(interval);
 
-		const tokenData = await pollDeviceToken(serverUrl, codeData.device_code as string);
+		const tokenData = await api.pollDeviceToken(codeData.device_code as string);
 
 		if (!tokenData.error) {
 			const authDir = join(configDir, '.epicenter', 'auth');

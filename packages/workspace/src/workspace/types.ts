@@ -401,6 +401,7 @@ export type KvDefinition<TVersions extends readonly CombinedStandardSchema[]> =
 		migrate: (
 			value: StandardSchemaV1.InferOutput<TVersions[number]>,
 		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
+		defaultValue: StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
 	};
 
 /** Extract the value type from a KvDefinition */
@@ -737,10 +738,10 @@ export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 
 /** KV helper with dictionary-style access */
 export type KvHelper<TKvDefinitions extends KvDefinitions> = {
-	/** Get a value by key (validates + migrates). */
+	/** Get a value by key (validates + migrates). Returns the stored value or the default. */
 	get<K extends keyof TKvDefinitions & string>(
 		key: K,
-	): KvGetResult<InferKvValue<TKvDefinitions[K]>>;
+	): InferKvValue<TKvDefinitions[K]>;
 
 	/** Set a value by key (always latest schema). */
 	set<K extends keyof TKvDefinitions & string>(

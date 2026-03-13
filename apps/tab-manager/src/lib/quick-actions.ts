@@ -172,11 +172,10 @@ const sortAction: QuickAction = {
 				if (!tab) continue;
 				const parsed = parseTabId(tab.id as TabCompositeId);
 				if (!parsed) continue;
-				try {
-					await browser.tabs.move(parsed.tabId, { index: i });
-				} catch {
-					// Tab may not exist
-				}
+				await tryAsync({
+					try: () => browser.tabs.move(parsed.tabId, { index: i }),
+					catch: () => Ok(undefined),
+				});
 			}
 		}
 	},

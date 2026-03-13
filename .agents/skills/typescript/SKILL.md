@@ -458,7 +458,7 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 test('creates workspace with tables', () => {
 	const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 
-	const theme = defineKv(type({ mode: "'light' | 'dark'", _v: '1' }));
+	const theme = defineKv(type("'light' | 'dark'"), 'light');
 
 	const workspace = defineWorkspace({
 		id: 'test-app',
@@ -480,7 +480,7 @@ test('creates workspace with tables', () => {
 			posts: defineTable(type({ id: 'string', title: 'string', _v: '1' })),
 		},
 		kv: {
-			theme: defineKv(type({ mode: "'light' | 'dark'", _v: '1' })),
+			theme: defineKv(type("'light' | 'dark'"), 'light'),
 		},
 	});
 

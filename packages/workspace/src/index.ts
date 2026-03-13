@@ -141,7 +141,6 @@ export type {
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvGetResult,
 	KvHelper,
 	NotFoundResult,
 	RowResult,

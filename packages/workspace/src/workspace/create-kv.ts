@@ -32,10 +32,10 @@
 import type * as Y from 'yjs';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import {
-	YKeyValueLww,
 	type YKeyValueLwwChange,
 	type YKeyValueLwwEntry,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+	} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { createEncryptedKvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	InferKvValue,
 	KvDefinition,
@@ -58,10 +58,11 @@ import { KV_KEY } from './ydoc-keys.js';
 export function createKv<TKvDefinitions extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TKvDefinitions,
+	options?: { getKey?: () => Uint8Array | undefined },
 ): KvHelper<TKvDefinitions> {
-	// All KV values share a single YKeyValueLww store
+	// All KV values share a single encrypted KV store (passthrough when no key)
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = new YKeyValueLww(yarray);
+	const ykv = createEncryptedKvLww(yarray, { getKey: options?.getKey });
 
 	/**
 	 * Parse and migrate a raw value using the given definition.

@@ -486,9 +486,9 @@ Composition wrapper. Zero changes to `YKeyValueLww`.
 
 Replace the `YKeyValueLww` instantiation in `createKv` with `createEncryptedKvLww`.
 
-- [ ] **3.1** Add optional `getKey: () => Uint8Array | undefined` parameter to `createKv`
-- [ ] **3.2** Pass through to `createEncryptedKvLww`
-- [ ] **3.3** Existing tests pass with no `getKey` (passthrough mode)
+- [x] **3.1** Add optional `getKey: () => Uint8Array | undefined` parameter to `createKv`
+- [x] **3.2** Pass through to `createEncryptedKvLww`
+- [x] **3.3** Existing tests pass with no `getKey` (passthrough mode)
 
 ### Phase 4: Wire into `createWorkspace`
 

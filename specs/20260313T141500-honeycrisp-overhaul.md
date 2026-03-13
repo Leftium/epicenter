@@ -348,12 +348,12 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Wave 3: Command Palette
 
-- [ ] **3.1** Create `CommandPalette.svelte` using shadcn `Command` component
-- [ ] **3.2** Search notes by title and preview text
-- [ ] **3.3** Quick folder navigation (select folder from palette)
-- [ ] **3.4** "New Note" and "New Folder" actions in palette
-- [ ] **3.5** Wire ⌘K keyboard shortcut to open palette
-- [ ] **3.6** Add to `+page.svelte` layout
+- [x] **3.1** Create `CommandPalette.svelte` using shadcn `Command` component
+- [x] **3.2** Search notes by title and preview text
+- [x] **3.3** Quick folder navigation (select folder from palette)
+- [x] **3.4** "New Note" and "New Folder" actions in palette
+- [x] **3.5** Wire ⌘K keyboard shortcut to open palette
+- [x] **3.6** Add to `+page.svelte` layout
 
 ### Wave 4: Visual Polish
 

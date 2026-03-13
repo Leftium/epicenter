@@ -6,6 +6,7 @@
 	import HoneycripEditor from '$lib/components/Editor.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import {
 		createFolder,
 		createNote,
@@ -42,6 +43,7 @@
 	// ─── Recently Deleted View ──────────────────────────────────────────────
 
 	let isRecentlyDeletedView = $state(false);
+	let commandPaletteOpen = $state(false);
 
 	const folderName = $derived(
 		isRecentlyDeletedView
@@ -86,6 +88,12 @@
 	function handleKeydown(e: KeyboardEvent) {
 		const meta = e.metaKey || e.ctrlKey;
 		if (!meta) return;
+
+		if (e.key === 'k') {
+			e.preventDefault();
+			commandPaletteOpen = !commandPaletteOpen;
+			return;
+		}
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
@@ -164,3 +172,19 @@
 		</Resizable.PaneGroup>
 	</main>
 </SidebarProvider>
+
+<CommandPalette
+	bind:open={commandPaletteOpen}
+	{notes}
+	{folders}
+	onSelectNote={(noteId) => {
+		isRecentlyDeletedView = false;
+		selectNote(noteId);
+	}}
+	onSelectFolder={(folderId) => {
+		isRecentlyDeletedView = false;
+		selectFolder(folderId);
+	}}
+	onCreateNote={createNote}
+	onCreateFolder={createFolder}
+/>

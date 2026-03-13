@@ -94,21 +94,16 @@ export async function executeSaveTabs(
 		nativeIds.map((id) => browser.tabs.get(id)),
 	);
 
-	const validTabs = results
-		.filter(
-			(
-				r,
-			): r is PromiseFulfilledResult<
-				Awaited<ReturnType<typeof browser.tabs.get>>
-			> => r.status === 'fulfilled' && !!r.value.url,
-		)
-		.map((r) => r.value);
+	const validTabs = results.flatMap((r) => {
+		if (r.status !== 'fulfilled' || !r.value.url) return [];
+		return [{ ...r.value, url: r.value.url }];
+	});
 
 	// Sync writes to Y.Doc
 	for (const tab of validTabs) {
 		savedTabsTable.set({
 			id: generateId() as string as SavedTabId,
-			url: tab.url!,
+			url: tab.url,
 			title: tab.title || 'Untitled',
 			favIconUrl: tab.favIconUrl,
 			pinned: tab.pinned ?? false,

@@ -16,7 +16,7 @@ import { defineKv } from './define-kv.js';
 describe('defineKv', () => {
 	describe('shorthand syntax', () => {
 		test('creates valid KV definition with direct schema', () => {
-			const theme = defineKv(type({ mode: "'light' | 'dark'" }));
+			const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
 			// Verify schema validates correctly
 			const result = theme.schema['~standard'].validate({ mode: 'dark' });
@@ -24,7 +24,7 @@ describe('defineKv', () => {
 		});
 
 		test('shorthand migrate returns the same value reference', () => {
-			const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
+			const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }), { collapsed: false, width: 0 });
 
 			const value = { collapsed: true, width: 300 };
 			expect(sidebar.migrate(value)).toBe(value);
@@ -33,8 +33,8 @@ describe('defineKv', () => {
 		test('shorthand produces equivalent validation to variadic pattern', () => {
 			const schema = type({ collapsed: 'boolean', width: 'number' });
 
-			const shorthand = defineKv(schema);
-			const variadic = defineKv(schema);
+			const shorthand = defineKv(schema, { collapsed: false, width: 0 });
+			const variadic = defineKv(schema, { collapsed: false, width: 0 });
 
 			// Both should validate the same data
 			const testValue = { collapsed: true, width: 300 };
@@ -48,7 +48,7 @@ describe('defineKv', () => {
 
 	describe('variadic syntax', () => {
 		test('creates valid KV definition with single version', () => {
-			const theme = defineKv(type({ mode: "'light' | 'dark'" }));
+			const theme = defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' });
 
 			const result = theme.schema['~standard'].validate({ mode: 'light' });
 			expect(result).not.toHaveProperty('issues');
@@ -61,7 +61,7 @@ describe('defineKv', () => {
 			).migrate((v) => {
 				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
 				return v;
-			});
+			}, { mode: 'light', fontSize: 14 });
 
 			// V1 data should validate
 			const v1Result = theme.schema['~standard'].validate({ mode: 'dark' });
@@ -82,7 +82,7 @@ describe('defineKv', () => {
 			).migrate((v) => {
 				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
 				return v;
-			});
+			}, { mode: 'light', fontSize: 14 });
 
 			const migrated = theme.migrate({ mode: 'dark' });
 			expect(migrated).toEqual({ mode: 'dark', fontSize: 14 });
@@ -91,7 +91,7 @@ describe('defineKv', () => {
 
 	describe('schema patterns', () => {
 		test('primitive value (not recommended but supported)', () => {
-			const fontSize = defineKv(type('number'));
+			const fontSize = defineKv(type('number'), 0);
 
 			const result = fontSize.schema['~standard'].validate(14);
 			expect(result).not.toHaveProperty('issues');
@@ -109,7 +109,7 @@ describe('defineKv', () => {
 			).migrate((v) => {
 				if (!('_v' in v)) return { mode: v.mode, fontSize: 14, _v: 2 };
 				return v;
-			});
+			}, { mode: 'light', fontSize: 14, _v: 2 });
 
 			// Both versions should validate
 			const v1Result = theme.schema['~standard'].validate({
@@ -136,7 +136,7 @@ describe('defineKv', () => {
 			).migrate((v) => {
 				if (!('fontSize' in v)) return { ...v, fontSize: 14 };
 				return v;
-			});
+			}, { mode: 'light', fontSize: 14 });
 
 			// Both versions should validate
 			const v1Result = theme.schema['~standard'].validate({
@@ -170,7 +170,7 @@ describe('defineKv', () => {
 					case 2:
 						return v;
 				}
-			});
+			}, { mode: 'light', fontSize: 14, _v: 2 });
 
 			// V1 data should validate
 			const v1Result = theme.schema['~standard'].validate({

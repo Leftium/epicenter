@@ -1,7 +1,7 @@
 # defineKv Defaults (Pre-Wave 2)
 
 **Date**: 2026-03-13
-**Status**: In Progress
+**Status**: Implemented
 **Prerequisite for**: [20260312T210000-whispering-settings-separation.md](./20260312T210000-whispering-settings-separation.md)
 
 ## Problem
@@ -304,9 +304,9 @@ Defaults sourced from old `settings.ts` schema. Mapping:
 **Note:** `transcription.temperature` was a string `'0.0'` in old settings. The KV type is `number` (`0 <= number <= 1`). Default should be `0`.
 
 **Acceptance:**
-- [ ] All 43 entries have explicit defaults
-- [ ] Defaults match the old settings schema
-- [ ] TypeScript compiles (each default matches its schema's output type)
+- [x] All 43 entries have explicit defaults
+- [x] Defaults match the old settings schema
+- [x] TypeScript compiles (each default matches its schema's output type)
 
 ---
 
@@ -384,9 +384,9 @@ test('delete causes get to return defaultValue', () => {
 ```
 
 **Acceptance:**
-- [ ] All existing tests updated and passing
-- [ ] New default-behavior tests passing
-- [ ] `bun test` in `packages/workspace` passes
+- [x] All existing tests updated and passing
+- [x] New default-behavior tests passing
+- [x] `bun test` in `packages/workspace` passes
 
 ---
 
@@ -407,10 +407,36 @@ Task 4 (observeAll) is independent and can run in parallel with Task 3.
 
 ## Verification
 
-- [ ] `bun test` in `packages/workspace` — all tests pass
-- [ ] `bun run check` from root (or `bunx tsc --noEmit` in packages/workspace) — no type errors
-- [ ] `bun run check` in `apps/whispering` — workspace.ts compiles clean with new defaults
+- [x] `bun test` in `packages/workspace` — all tests pass (70/70)
+- [x] `bun run tsc --noEmit` in packages/workspace — no new type errors (10 pre-existing errors remain, none in our files)
+- [ ] `bun run check` in `apps/whispering` — workspace.ts compiles clean with new defaults (not verified—app-level check requires full monorepo build)
 
 ## Review
 
-(To be filled after implementation)
+### Changes made
+
+**Wave 1** (committed `c8e64f781`):
+- `types.ts`: Added `defaultValue` field to `KvDefinition`, changed `KvHelper.get()` return type from `KvGetResult<T>` to `T` directly
+- `define-kv.ts`: Rewrote overloads — single-version `defineKv(schema, defaultValue)`, multi-version `.migrate(fn, defaultValue)`
+
+**Wave 2** (committed `d3e8b382f`):
+- `create-kv.ts`: Simplified `get()` to return `defaultValue` on miss/invalid instead of `KvGetResult` discriminated union
+- `create-kv.ts` + `types.ts`: Added `observeAll()` method that batches all key changes per Y.Transaction
+
+**Wave 3** (this commit):
+- `workspace.ts`: Updated all 43 `defineKv()` calls with correct defaults per mapping table, added `TRANSCRIPTION` and `FFMPEG_DEFAULT_COMPRESSION_OPTIONS` imports
+- `create-kv.test.ts`: Rewrote all tests + added 'invalid stored data' test
+- `define-workspace.test.ts`: Updated 3 `defineKv()` calls with defaults + 1 assertion
+- `benchmark.test.ts`: Updated 3 `defineKv()` calls + 3 assertions
+- `define-kv.test.ts`: Updated all `defineKv()` calls with defaults (single-version + multi-version `.migrate()` calls)
+- `describe-workspace.test.ts`: Updated 2 `defineKv()` calls with defaults
+- `create-workspace.test.ts`: Updated 1 `defineKv()` call with default
+- `ingest/reddit/workspace.ts`: Updated 2 `defineKv()` calls with `null` defaults
+
+### Bug fix discovered during verification
+
+`define-kv.ts` schema detection (`isSecondArgSchema`) used `typeof args[1] === 'object'` to distinguish schemas from default values. Arktype schemas are **functions** (`typeof === 'function'`), not objects. This caused multi-version `defineKv(v1, v2)` to misidentify the second schema as a default value, silently producing a broken `KvDefinition`. Fixed by adding `|| typeof args[1] === 'function'` to the check.
+
+### Pre-existing issues (not caused by this spec)
+
+- 10 TypeScript errors in `packages/workspace` — all in unrelated files (`define-table.ts`, `y-keyvalue-lww.test.ts`, `reddit/` tests, `types.ts` updatedAt indexing)

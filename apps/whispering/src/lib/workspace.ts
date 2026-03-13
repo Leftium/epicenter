@@ -11,9 +11,10 @@ import { type } from 'arktype';
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
-import { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
+import { TRANSCRIPTION, TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
 import { LAYOUT_MODES } from '$lib/constants/ui/layout-mode';
+import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/recorder/ffmpeg';
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
@@ -166,33 +167,37 @@ const transformationStepRuns = defineTable(
  * Manual = user-initiated recording. VAD = voice activity detection.
  */
 const sound = {
-	'sound.manualStart': defineKv(type('boolean')),
-	'sound.manualStop': defineKv(type('boolean')),
-	'sound.manualCancel': defineKv(type('boolean')),
-	'sound.vadStart': defineKv(type('boolean')),
-	'sound.vadCapture': defineKv(type('boolean')),
-	'sound.vadStop': defineKv(type('boolean')),
-	'sound.transcriptionComplete': defineKv(type('boolean')),
-	'sound.transformationComplete': defineKv(type('boolean')),
+	'sound.manualStart': defineKv(type('boolean'), true),
+	'sound.manualStop': defineKv(type('boolean'), true),
+	'sound.manualCancel': defineKv(type('boolean'), true),
+	'sound.vadStart': defineKv(type('boolean'), true),
+	'sound.vadCapture': defineKv(type('boolean'), true),
+	'sound.vadStop': defineKv(type('boolean'), true),
+	'sound.transcriptionComplete': defineKv(type('boolean'), true),
+	'sound.transformationComplete': defineKv(type('boolean'), true),
 } as const;
 
 /**
  * Output behavior after transcription/transformation completes.
  * Controls clipboard, cursor paste, and simulated Enter key per pipeline stage.
+ *
+ * Uses `output.*` prefix to separate post-processing behavior from service
+ * configuration—avoids polluting `transcription.*` and `transformation.*`
+ * namespaces with unrelated concerns.
  */
 const output = {
-	'transcription.copyToClipboard': defineKv(type('boolean')),
-	'transcription.writeToCursor': defineKv(type('boolean')),
-	'transcription.simulateEnter': defineKv(type('boolean')),
-	'transformation.copyToClipboard': defineKv(type('boolean')),
-	'transformation.writeToCursor': defineKv(type('boolean')),
-	'transformation.simulateEnter': defineKv(type('boolean')),
+	'output.transcription.clipboard': defineKv(type('boolean'), true),
+	'output.transcription.cursor': defineKv(type('boolean'), true),
+	'output.transcription.enter': defineKv(type('boolean'), false),
+	'output.transformation.clipboard': defineKv(type('boolean'), true),
+	'output.transformation.cursor': defineKv(type('boolean'), false),
+	'output.transformation.enter': defineKv(type('boolean'), false),
 } as const;
 
 /** Window behavior and navigation layout preferences. */
 const ui = {
-	'ui.alwaysOnTop': defineKv(type.enumerated(...ALWAYS_ON_TOP_MODES)),
-	'ui.layoutMode': defineKv(type.enumerated(...LAYOUT_MODES)),
+	'ui.alwaysOnTop': defineKv(type.enumerated(...ALWAYS_ON_TOP_MODES), 'Never'),
+	'ui.layoutMode': defineKv(type.enumerated(...LAYOUT_MODES), 'sidebar'),
 } as const;
 
 /**
@@ -201,13 +206,13 @@ const ui = {
  * the semantically correct numeric type.
  */
 const dataRetention = {
-	'retention.strategy': defineKv(type("'keep-forever' | 'limit-count'")),
-	'retention.maxCount': defineKv(type('number.integer >= 1')),
+	'retention.strategy': defineKv(type("'keep-forever' | 'limit-count'"), 'keep-forever'),
+	'retention.maxCount': defineKv(type('number.integer >= 1'), 100),
 } as const;
 
 /** User's preferred recording mode — manual trigger vs voice activity detection. */
 const recording = {
-	'recording.mode': defineKv(type.enumerated(...RECORDING_MODES)),
+	'recording.mode': defineKv(type.enumerated(...RECORDING_MODES), 'manual'),
 } as const;
 
 /**
@@ -220,32 +225,34 @@ const recording = {
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
 const transcription = {
-	'transcription.service': defineKv(type.enumerated(...TRANSCRIPTION_SERVICE_IDS)),
-	'transcription.openai.model': defineKv(type('string')),
-	'transcription.groq.model': defineKv(type('string')),
-	'transcription.elevenlabs.model': defineKv(type('string')),
-	'transcription.deepgram.model': defineKv(type('string')),
-	'transcription.mistral.model': defineKv(type('string')),
-	'transcription.language': defineKv(type('string')),
-	'transcription.prompt': defineKv(type('string')),
-	'transcription.temperature': defineKv(type('0 <= number <= 1')),
-	'transcription.compressionEnabled': defineKv(type('boolean')),
-	'transcription.compressionOptions': defineKv(type('string')),
+	'transcription.service': defineKv(type.enumerated(...TRANSCRIPTION_SERVICE_IDS), 'moonshine'),
+	'transcription.openai.model': defineKv(type('string'), TRANSCRIPTION.OpenAI.defaultModel),
+	'transcription.groq.model': defineKv(type('string'), TRANSCRIPTION.Groq.defaultModel),
+	'transcription.elevenlabs.model': defineKv(type('string'), TRANSCRIPTION.ElevenLabs.defaultModel),
+	'transcription.deepgram.model': defineKv(type('string'), TRANSCRIPTION.Deepgram.defaultModel),
+	'transcription.mistral.model': defineKv(type('string'), TRANSCRIPTION.Mistral.defaultModel),
+	'transcription.language': defineKv(type('string'), 'auto'),
+	'transcription.prompt': defineKv(type('string'), ''),
+	'transcription.temperature': defineKv(type('0 <= number <= 1'), 0),
+	'transcription.compressionEnabled': defineKv(type('boolean'), false),
+	'transcription.compressionOptions': defineKv(type('string'), FFMPEG_DEFAULT_COMPRESSION_OPTIONS),
 } as const;
 
-/** Currently active transformation pipeline. `null` = no transformation selected. */
+/**
+ * Currently active transformation pipeline and default completion model.
+ *
+ * `selectedId`: FK to `transformations` table. `null` = no transformation selected.
+ * `openrouterModel`: Default OpenRouter model for new transformation steps.
+ * Merged from `completion.*` — this is transformation pipeline config, not a separate domain.
+ */
 const transformation = {
-	'transformation.selectedId': defineKv(type('string | null')),
-} as const;
-
-/** Inference model for transformation completion. OpenRouter model roams across devices. */
-const completion = {
-	'completion.openrouter.model': defineKv(type('string')),
+	'transformation.selectedId': defineKv(type('string | null'), null),
+	'transformation.openrouterModel': defineKv(type('string'), 'mistralai/mixtral-8x7b'),
 } as const;
 
 /** Anonymized event logging toggle (Aptabase). */
 const analytics = {
-	'analytics.enabled': defineKv(type('boolean')),
+	'analytics.enabled': defineKv(type('boolean'), true),
 } as const;
 
 /**
@@ -254,16 +261,16 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
-	'shortcut.toggleManualRecording': defineKv(type('string | null')),
-	'shortcut.startManualRecording': defineKv(type('string | null')),
-	'shortcut.stopManualRecording': defineKv(type('string | null')),
-	'shortcut.cancelManualRecording': defineKv(type('string | null')),
-	'shortcut.toggleVadRecording': defineKv(type('string | null')),
-	'shortcut.startVadRecording': defineKv(type('string | null')),
-	'shortcut.stopVadRecording': defineKv(type('string | null')),
-	'shortcut.pushToTalk': defineKv(type('string | null')),
-	'shortcut.openTransformationPicker': defineKv(type('string | null')),
-	'shortcut.runTransformationOnClipboard': defineKv(type('string | null')),
+	'shortcut.toggleManualRecording': defineKv(type('string | null'), ' '),
+	'shortcut.startManualRecording': defineKv(type('string | null'), null),
+	'shortcut.stopManualRecording': defineKv(type('string | null'), null),
+	'shortcut.cancelManualRecording': defineKv(type('string | null'), 'c'),
+	'shortcut.toggleVadRecording': defineKv(type('string | null'), 'v'),
+	'shortcut.startVadRecording': defineKv(type('string | null'), null),
+	'shortcut.stopVadRecording': defineKv(type('string | null'), null),
+	'shortcut.pushToTalk': defineKv(type('string | null'), 'p'),
+	'shortcut.openTransformationPicker': defineKv(type('string | null'), 't'),
+	'shortcut.runTransformationOnClipboard': defineKv(type('string | null'), 'r'),
 } as const;
 
 /**
@@ -289,7 +296,6 @@ export default createWorkspace(
 			...recording,
 			...transcription,
 			...transformation,
-			...completion,
 			...analytics,
 			...shortcuts,
 		},

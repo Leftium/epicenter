@@ -130,7 +130,7 @@ export function defineKv<TSchema extends CombinedStandardSchema<JsonValue>>(
 	// Single version: second arg is NOT a schema (it's a primitive/object value)
 	const isSecondArgSchema =
 		args[1] != null &&
-		typeof args[1] === 'object' &&
+		(typeof args[1] === 'object' || typeof args[1] === 'function') &&
 		'~standard' in args[1];
 
 	if (!isSecondArgSchema) {

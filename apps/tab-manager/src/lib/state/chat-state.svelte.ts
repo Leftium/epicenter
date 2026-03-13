@@ -35,7 +35,6 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,
@@ -59,6 +58,8 @@ import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
 	workspaceClient,
 	workspaceDefinitions,
 	workspaceTools,
@@ -83,9 +84,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Generate a new branded ConversationId from a random ID. */
-const generateConversationId = () => generateId() as string as ConversationId;
 
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
@@ -412,7 +410,7 @@ function createAiChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = generateId() as string as ChatMessageId;
+				const userMessageId = generateChatMessageId();
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips

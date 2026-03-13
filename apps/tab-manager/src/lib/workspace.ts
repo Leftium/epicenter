@@ -18,6 +18,7 @@ import {
 	defineTable,
 	defineWorkspace,
 	generateId,
+	type Id,
 	type InferTableRow,
 	iterateActions,
 } from '@epicenter/workspace';
@@ -66,17 +67,32 @@ export const TAB_GROUP_ID_NONE = -1;
  * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
  */
 export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
+export const DeviceId = type('string').as<DeviceId>();
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = string & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').pipe(
-	(s): SavedTabId => s as SavedTabId,
-);
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+export const SavedTabId = type('string').as<SavedTabId>();
+/**
+ * Generate a unique {@link SavedTabId} for a newly saved tab.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.savedTabs.set({
+ *   id: generateSavedTabId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -84,10 +100,25 @@ export const SavedTabId = type('string').pipe(
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = string & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').pipe(
-	(s): BookmarkId => s as BookmarkId,
-);
+export type BookmarkId = Id & Brand<'BookmarkId'>;
+export const BookmarkId = type('string').as<BookmarkId>();
+/**
+ * Generate a unique {@link BookmarkId} for a newly created bookmark.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.bookmarks.set({
+ *   id: generateBookmarkId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
@@ -95,20 +126,59 @@ export const BookmarkId = type('string').pipe(
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = string & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+export type ConversationId = Id & Brand<'ConversationId'>;
+export const ConversationId = type('string').as<ConversationId>();
+/**
+ * Generate a unique {@link ConversationId} for a new chat conversation.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const id = generateConversationId();
+ * workspaceClient.tables.conversations.set({
+ *   id,
+ *   title: 'New Chat',
+ *   provider: DEFAULT_PROVIDER,
+ *   model: DEFAULT_MODEL,
+ *   createdAt: Date.now(),
+ *   updatedAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateConversationId = (): ConversationId =>
+	generateId() as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = string & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').pipe(
-	(s): ChatMessageId => s as ChatMessageId,
-);
+export type ChatMessageId = Id & Brand<'ChatMessageId'>;
+export const ChatMessageId = type('string').as<ChatMessageId>();
+/**
+ * Generate a unique {@link ChatMessageId} for a new chat message.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const userMessageId = generateChatMessageId();
+ * workspaceClient.tables.chatMessages.set({
+ *   id: userMessageId,
+ *   conversationId,
+ *   role: 'user',
+ *   parts: [{ type: 'text', content }],
+ *   createdAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateChatMessageId = (): ChatMessageId =>
+	generateId() as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types
@@ -120,9 +190,7 @@ export const ChatMessageId = type('string').pipe(
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 
 /**
  * Device-scoped composite window ID: `${deviceId}_${windowId}`.
@@ -130,9 +198,7 @@ export const TabCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
  */
 export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
-export const WindowCompositeId = type('string').pipe(
-	(s): WindowCompositeId => s as WindowCompositeId,
-);
+export const WindowCompositeId = type('string').as<WindowCompositeId>();
 
 /**
  * Device-scoped composite group ID: `${deviceId}_${groupId}`.
@@ -140,9 +206,7 @@ export const WindowCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
  */
 export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
-export const GroupCompositeId = type('string').pipe(
-	(s): GroupCompositeId => s as GroupCompositeId,
-);
+export const GroupCompositeId = type('string').as<GroupCompositeId>();
 
 /**
  * Create a device-scoped composite tab ID: `${deviceId}_${tabId}`.

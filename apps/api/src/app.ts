@@ -258,7 +258,7 @@ app.post(
 // ---------------------------------------------------------------------------
 
 /**
- * DO name namespacing: `user:{userId}:{workspace|document}`
+ * DO name namespacing: `user:{userId}:{type}:{name}`
  *
  * We use user-scoped DO names (Google Docs model) rather than org-scoped names
  * (Vercel/Supabase model). Each user gets their own DO instance per workspace.
@@ -287,13 +287,13 @@ app.post(
 
 /** Get a WorkspaceRoom DO stub for the authenticated user's workspace. */
 function getWorkspaceStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:${c.req.param('workspace')}`;
+	const doName = `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`;
 	return c.env.WORKSPACE_ROOM.get(c.env.WORKSPACE_ROOM.idFromName(doName));
 }
 
 /** Get a DocumentRoom DO stub for the authenticated user's document. */
 function getDocumentStub(c: Context<Env>) {
-	const doName = `user:${c.var.user.id}:${c.req.param('document')}`;
+	const doName = `user:${c.var.user.id}:document:${c.req.param('document')}`;
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName));
 }
 

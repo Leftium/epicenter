@@ -2,12 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import {
-		ChevronRight,
-		File as FileIcon,
-		Folder as FolderIcon,
-		FolderOpen as FolderOpenIcon,
-	} from 'lucide-svelte';
+	import { ChevronRight, File as FileIcon } from 'lucide-svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
@@ -64,13 +59,6 @@
 										? 'rotate-90'
 										: ''}"
 								/>
-								{#if open}
-									<FolderOpenIcon
-										class="h-4 w-4 shrink-0 text-muted-foreground"
-									/>
-								{:else}
-									<FolderIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
-								{/if}
 							{/snippet}
 							{#each children as childId (childId)}
 								<FileTreeItem id={childId} />
@@ -99,7 +87,7 @@
 					</TreeView.File>
 				{/if}
 			{/snippet}
-		</ContextMenu.Trigger>
+		</>
 		<ContextMenu.Content>
 			{#if isFolder}
 				<ContextMenu.Item onclick={() => selectAndOpenCreate('file')}>

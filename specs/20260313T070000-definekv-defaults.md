@@ -185,10 +185,10 @@ get(key) {
 `parseValue` is no longer needed for `get()` — inline the logic. Keep `parseValue` if `observe()` still uses it.
 
 **Acceptance:**
-- [ ] `get(key)` returns the stored value when valid
-- [ ] `get(key)` returns `defaultValue` when key is missing (never written)
-- [ ] `get(key)` returns `defaultValue` when stored data fails validation
-- [ ] Return type is `InferKvValue<T>`, not `KvGetResult<T>`
+- [x] `get(key)` returns the stored value when valid
+- [x] `get(key)` returns `defaultValue` when key is missing (never written)
+- [x] `get(key)` returns `defaultValue` when stored data fails validation
+- [x] Return type is `InferKvValue<T>`, not `KvGetResult<T>`
 
 ---
 
@@ -239,10 +239,10 @@ observeAll(callback) {
 ```
 
 **Acceptance:**
-- [ ] Single observer fires for all key changes
-- [ ] Invalid values skipped
-- [ ] Unknown keys skipped
-- [ ] Returns unsubscribe function
+- [x] Single observer fires for all key changes
+- [x] Invalid values skipped
+- [x] Unknown keys skipped
+- [x] Returns unsubscribe function
 - [ ] Test covers multi-key batch changes
 
 ---

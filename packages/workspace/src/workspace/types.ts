@@ -760,6 +760,26 @@ export type KvHelper<TKvDefinitions extends KvDefinitions> = {
 			transaction: unknown,
 		) => void,
 	): () => void;
+
+	/**
+	 * Watch for changes to any KV key. Returns unsubscribe function.
+	 *
+	 * Fires once per Y.Transaction with all changed keys batched into a single Map.
+	 * Invalid values and unknown keys are skipped. Only valid, parsed changes
+	 * are included in the callback.
+	 *
+	 * Useful for bulk reactivity (e.g., syncing all settings to a SvelteMap)
+	 * without registering per-key observers.
+	 *
+	 * @param callback - Receives a Map of changed keys to their KvChange, plus the transaction
+	 * @returns Unsubscribe function
+	 */
+	observeAll(
+		callback: (
+			changes: Map<keyof TKvDefinitions & string, KvChange<unknown>>,
+			transaction: unknown,
+		) => void,
+	): () => void;
 };
 
 /**

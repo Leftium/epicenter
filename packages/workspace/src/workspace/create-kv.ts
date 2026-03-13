@@ -38,6 +38,7 @@ import {
 } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type {
 	InferKvValue,
+	KvChange,
 	KvDefinition,
 	KvDefinitions,
 	KvGetResult,
@@ -93,10 +94,14 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 			if (!definition) throw new Error(`Unknown KV key: ${key}`);
 
 			const raw = ykv.get(key);
-			if (raw === undefined) {
-				return { status: 'not_found', value: undefined };
-			}
-			return parseValue(raw, definition);
+			if (raw === undefined) return definition.defaultValue;
+
+			const result = definition.schema['~standard'].validate(raw);
+			if (result instanceof Promise)
+				throw new TypeError('Async schemas not supported');
+			if (result.issues) return definition.defaultValue;
+
+			return definition.migrate(result.value);
 		},
 
 		set(key, value) {
@@ -142,6 +147,35 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				}
 			};
 
+			ykv.observe(handler);
+			return () => ykv.unobserve(handler);
+		},
+
+		observeAll(
+			callback: (
+				changes: Map<string, KvChange<unknown>>,
+				transaction: unknown,
+			) => void,
+		) {
+			const handler = (
+				changes: Map<string, YKeyValueLwwChange<unknown>>,
+				transaction: Y.Transaction,
+			) => {
+				const parsed = new Map<string, KvChange<unknown>>();
+				for (const [key, change] of changes) {
+					const definition = definitions[key];
+					if (!definition) continue;
+					if (change.action === 'delete') {
+						parsed.set(key, { type: 'delete' });
+					} else {
+						const result = definition.schema['~standard'].validate(change.newValue);
+						if (!(result instanceof Promise) && !result.issues) {
+							parsed.set(key, { type: 'set', value: definition.migrate(result.value) });
+						}
+					}
+				}
+				if (parsed.size > 0) callback(parsed, transaction);
+			};
 			ykv.observe(handler);
 			return () => ykv.unobserve(handler);
 		},

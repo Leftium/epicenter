@@ -38,7 +38,6 @@
 		"hono-openapi": "catalog:",
 		"lib0": "catalog:",
 		"pg": "^8.20.0",
-		"postgres": "^3.4.8",
 		"wellcrafted": "catalog:",
 		"y-protocols": "catalog:",
 		"yjs": "catalog:"

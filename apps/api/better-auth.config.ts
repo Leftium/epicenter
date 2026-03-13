@@ -23,8 +23,8 @@ import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { config } from 'dotenv';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import pg from 'pg';
 import { BASE_AUTH_CONFIG } from './src/app';
 import { LOCAL_DATABASE_URL } from './env';
 
@@ -34,8 +34,9 @@ const env = type({
 	'DATABASE_URL?': 'string',
 }).assert(process.env);
 
-const sql = postgres(env.DATABASE_URL ?? LOCAL_DATABASE_URL);
-const db = drizzle(sql);
+const client = new pg.Client({ connectionString: env.DATABASE_URL ?? LOCAL_DATABASE_URL });
+await client.connect();
+const db = drizzle(client);
 
 export const auth = betterAuth({
 	...BASE_AUTH_CONFIG,

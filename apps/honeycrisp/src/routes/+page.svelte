@@ -3,42 +3,12 @@
 	import { SidebarProvider } from '@epicenter/ui/sidebar';
 	import type { DocumentHandle } from '@epicenter/workspace';
 	import type * as Y from 'yjs';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import HoneycripEditor from '$lib/components/Editor.svelte';
 	import NoteList from '$lib/components/NoteList.svelte';
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import {
-		createFolder,
-		createNote,
-		deletedNotes,
-		deleteFolder,
-		filteredNotes,
-		folders,
-		handleContentChange,
-		noteCounts,
-		notes,
-		permanentlyDeleteNote,
-		pinNote,
-		renameFolder,
-		restoreNote,
-		searchQuery,
-		selectedFolderId,
-		selectedNote,
-		selectedNoteId,
-		selectFolder,
-		selectNote,
-		setSearchQuery,
-		setSortBy,
-		softDeleteNote,
-		sortBy,
-	} from '$lib/state/notes.svelte';
-	import workspaceClient, { type FolderId, type NoteId } from '$lib/workspace';
-
-	// ─── Move to Folder ────────────────────────────────────────────────────
-
-	function moveNoteToFolder(noteId: NoteId, folderId: FolderId | undefined) {
-		workspaceClient.tables.notes.update(noteId, { folderId });
-	}
+	import { notesState } from '$lib/state/notes.svelte';
+	import workspaceClient from '$lib/workspace';
 
 	// ─── Recently Deleted View ──────────────────────────────────────────────
 
@@ -48,8 +18,9 @@
 	const folderName = $derived(
 		isRecentlyDeletedView
 			? 'Recently Deleted'
-			: selectedFolderId
-				? (folders.find((f) => f.id === selectedFolderId)?.name ?? 'Notes')
+			: notesState.selectedFolderId
+				? (notesState.folders.find((f) => f.id === notesState.selectedFolderId)
+						?.name ?? 'Notes')
 				: 'All Notes',
 	);
 
@@ -59,7 +30,7 @@
 	let currentDocHandle = $state<DocumentHandle | null>(null);
 
 	$effect(() => {
-		const noteId = selectedNoteId;
+		const noteId = notesState.selectedNoteId;
 		if (!noteId) {
 			currentYXmlFragment = null;
 			currentDocHandle = null;
@@ -97,10 +68,10 @@
 
 		if (e.key === 'n' && e.shiftKey) {
 			e.preventDefault();
-			createFolder();
+			notesState.createFolder();
 		} else if (e.key === 'n') {
 			e.preventDefault();
-			createNote();
+			notesState.createNote();
 		}
 	}
 </script>
@@ -109,24 +80,24 @@
 
 <SidebarProvider>
 	<HoneycripSidebar
-		{folders}
-		{selectedFolderId}
-		{noteCounts}
-		totalNoteCount={notes.length}
-		{searchQuery}
-		deletedNoteCount={deletedNotes.length}
+		folders={notesState.folders}
+		selectedFolderId={notesState.selectedFolderId}
+		noteCounts={notesState.noteCounts}
+		totalNoteCount={notesState.notes.length}
+		searchQuery={notesState.searchQuery}
+		deletedNoteCount={notesState.deletedNotes.length}
 		isRecentlyDeletedSelected={isRecentlyDeletedView}
 		onSelectFolder={(folderId) => {
 			isRecentlyDeletedView = false;
-			selectFolder(folderId);
+			notesState.selectFolder(folderId);
 		}}
-		onCreateFolder={createFolder}
-		onRenameFolder={renameFolder}
-		onDeleteFolder={deleteFolder}
-		onSearchChange={setSearchQuery}
+		onCreateFolder={() => notesState.createFolder()}
+		onRenameFolder={(id, name) => notesState.renameFolder(id, name)}
+		onDeleteFolder={(id) => notesState.deleteFolder(id)}
+		onSearchChange={(q) => notesState.setSearchQuery(q)}
 		onSelectRecentlyDeleted={() => {
 			isRecentlyDeletedView = true;
-			selectFolder(null);
+			notesState.selectFolder(null);
 		}}
 	/>
 
@@ -134,32 +105,32 @@
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
 				<NoteList
-					notes={isRecentlyDeletedView ? deletedNotes : filteredNotes}
-					{selectedNoteId}
-					{sortBy}
+					notes={isRecentlyDeletedView ? notesState.deletedNotes : notesState.filteredNotes}
+					selectedNoteId={notesState.selectedNoteId}
+					sortBy={notesState.sortBy}
 					viewMode={isRecentlyDeletedView ? 'recentlyDeleted' : 'normal'}
 					{folderName}
-					onSelectNote={selectNote}
-					onCreateNote={createNote}
-					onDeleteNote={softDeleteNote}
-					onPinNote={pinNote}
-					onSortChange={setSortBy}
-					onRestoreNote={restoreNote}
-					onPermanentlyDeleteNote={permanentlyDeleteNote}
-					onMoveToFolder={moveNoteToFolder}
-					{folders}
+					folders={notesState.folders}
+					onSelectNote={(id) => notesState.selectNote(id)}
+					onCreateNote={() => notesState.createNote()}
+					onDeleteNote={(id) => notesState.softDeleteNote(id)}
+					onPinNote={(id) => notesState.pinNote(id)}
+					onSortChange={(v) => notesState.setSortBy(v)}
+					onRestoreNote={(id) => notesState.restoreNote(id)}
+					onPermanentlyDeleteNote={(id) => notesState.permanentlyDeleteNote(id)}
+					onMoveToFolder={(noteId, folderId) => notesState.moveNoteToFolder(noteId, folderId)}
 				/>
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if selectedNote && currentYXmlFragment}
-					{#key selectedNoteId}
+				{#if notesState.selectedNote && currentYXmlFragment}
+					{#key notesState.selectedNoteId}
 						<HoneycripEditor
 							yxmlfragment={currentYXmlFragment}
-							onContentChange={handleContentChange}
+							onContentChange={(change) => notesState.handleContentChange(change)}
 						/>
 					{/key}
-				{:else if selectedNote}
+				{:else if notesState.selectedNote}
 					<div class="flex h-full items-center justify-center">
 						<p class="text-muted-foreground">Loading editor…</p>
 					</div>
@@ -178,16 +149,16 @@
 
 <CommandPalette
 	bind:open={commandPaletteOpen}
-	{notes}
-	{folders}
+	notes={notesState.notes}
+	folders={notesState.folders}
 	onSelectNote={(noteId) => {
 		isRecentlyDeletedView = false;
-		selectNote(noteId);
+		notesState.selectNote(noteId);
 	}}
 	onSelectFolder={(folderId) => {
 		isRecentlyDeletedView = false;
-		selectFolder(folderId);
+		notesState.selectFolder(folderId);
 	}}
-	onCreateNote={createNote}
-	onCreateFolder={createFolder}
+	onCreateNote={() => notesState.createNote()}
+	onCreateFolder={() => notesState.createFolder()}
 />

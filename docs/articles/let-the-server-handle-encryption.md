@@ -71,6 +71,26 @@ GitLab, Outline, and Mattermost all work this way. Enterprise customers who need
 
 The single advantage of zero-knowledge—protection from the server operator—disappears when self-hosting lets you become the server operator. For everything else, let the server handle encryption.
 
+## One primitive, one code path
+
+Epicenter implements this philosophy by wrapping its core storage primitive in a single encryption layer. Instead of building separate "secure" and "insecure" versions of every feature, we use `createEncryptedKvLww` to wrap the standard `YKeyValueLww` structure. Every value—whether it's a transcript, a note, or a setting—is serialized and encrypted with AES-256-GCM before it ever touches the underlying Y.Doc.
+
+```typescript
+const kv = createEncryptedKvLww(yarray, {
+  getKey: () => session.encryptionKey,
+});
+```
+
+We use `@noble/ciphers` for the implementation because it's synchronous and Cure53-audited. Keeping encryption synchronous is vital for local-first apps; it ensures that `set()` remains a void operation that doesn't force the UI to wait for a promise. When a key is present, the wrapper stores a versioned blob containing the algorithm, initialization vector, and ciphertext. If no key is provided, it's a zero-overhead passthrough.
+
+| Mode | Key source | Server can decrypt? |
+|---|---|---|
+| Cloud | Server derives from BETTER_AUTH_SECRET | Yes |
+| Self-hosted | User password → PBKDF2 → key | No (zero-knowledge) |
+| Local / no encryption | No key → passthrough | N/A |
+
+This single code path handles every trust model Epicenter supports. In the cloud, the server derives the key from a secret, enabling features like AI and search. For self-hosted users, the key is derived from their password via PBKDF2, ensuring the developer never sees the plaintext. The application logic doesn't care where the key came from—it just sees a key and encrypts.
+
 ## Related
 
 - [Why E2E Encryption Keeps Failing](./why-e2e-encryption-keeps-failing.md) — PGP, the jasode argument, and Signal as case studies

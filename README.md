@@ -94,11 +94,17 @@ Our vision is to build a personal workspace where you own your data, choose your
 
 ## Encryption
 
-Epicenter uses server-managed encryption at rest. Every workspace value—notes, transcripts, settings—is AES-256-GCM ciphertext wherever it sits: local storage, sync server, cloud bucket.
+Epicenter encrypts data inside the CRDT structure before it ever leaves the application. We use AES-256-GCM via @noble/ciphers to wrap individual values, ensuring that every downstream layer—IndexedDB, sync servers, SQLite databases, and cloud backups—only ever handles ciphertext.
 
-The server holds a per-user encryption key. This is a deliberate choice, not a compromise. Zero-knowledge encryption—where the server can't decrypt anything—breaks search, AI, password recovery, and device migration. PGP has been trying to make key management work for thirty years; it hasn't. Even technical users on Hacker News choose centralized convenience over self-hosted alternatives.
+```text
+App Code -> [Encrypt] -> Y.Doc -> IndexedDB / Sync Server / Backups (Ciphertext)
+```
 
-If you don't trust the server, self-host. When you run the server on your own infrastructure, server-managed encryption *is* zero-knowledge. The key sits on a machine you control. Same app, same API, same features—different trust boundary.
+The server holds the key. It can decrypt your data. We chose this trade-off because genuine zero-knowledge encryption breaks the features people actually use: server-side search, AI processing, and simple password recovery. PGP has spent decades proving that manual key management is a UX dead end that even technical users avoid.
+
+This is defense in depth. A database dump or a compromised storage bucket yields nothing but noise without the application secret. It reduces the blast radius of a breach while keeping the app fast and functional.
+
+If you don't trust the server, self-host. When you run the server on your own infrastructure, server-managed encryption *is* zero-knowledge. The key derives from your own environment variables or password, and the server never sends it to us. Same code, same primitives, different trust boundary.
 
 **Further reading:**
 

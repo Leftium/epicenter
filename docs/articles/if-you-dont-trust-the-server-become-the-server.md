@@ -10,15 +10,19 @@ Self-hosting eliminates that threat without the tax.
 
 When you deploy a server on your own hardware, the encryption key sits on a machine in your closet. The server decrypts data to serve requests—search, AI, password recovery all work normally. But nobody else has access to the machine. The properties are identical to zero-knowledge: no third party can read your data. The mechanism is different: instead of mathematical guarantees, you have physical control.
 
+This isn't a separate implementation or a compatible mode. It's the same `createEncryptedKvLww` function using AES-256-GCM from `@noble/ciphers` for every operation. The only variable is the `getKey` source. In the cloud, the key is derived from `BETTER_AUTH_SECRET` on the server and sent to the client on authentication. When self-hosting, you enter a password that runs through PBKDF2 (SHA-256) with 600,000 iterations to derive the key locally. It never touches the network. The server receives the same encrypted blobs—`{ v: 1, alg: 'A256GCM', ct, iv }`—but the trust boundary has moved from our infrastructure to your own password.
+
 ```
 Zero-knowledge (hosted):
-  User → encrypts client-side → ciphertext → server stores blobs it can't read
+  Key: User-managed password, never sent to server
+  Flow: User → encrypts client-side → ciphertext → server stores blobs
   Cost: no search, no AI, no password recovery, key management ceremony
 
-Self-hosted server-managed:
-  User → authenticates → server decrypts with key on YOUR machine → plaintext
+Self-hosted (Zero-knowledge):
+  Key: Derived locally via PBKDF2 (600k iterations) from your password
+  Flow: User → password stays local → client encrypts → server stores blobs
   Cost: you maintain a server
-  Properties: identical — nobody else can read your data
+  Properties: identical—nobody else can read your data
 ```
 
 The populations overlap almost perfectly. The people who care enough about server trust to want zero-knowledge are exactly the people technical enough to run a Docker container on a home server or a $5/month VPS. You don't need to solve the key management problem for your mom—your mom doesn't distrust the server operator.

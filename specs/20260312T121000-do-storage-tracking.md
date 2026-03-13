@@ -1,6 +1,6 @@
 # DO Storage Tracking Registry
 
-**Status:** In Progress
+**Status:** Implemented
 **Scope:** 3 files modified, 1 migration generated, 2 atomic commits
 
 ## Problem
@@ -360,4 +360,21 @@ Client                    Worker (app.ts)              DO (base-sync-room.ts)   
 
 ## Review
 
-_To be filled in after implementation._
+**Completed**: 2026-03-13
+**Branch**: `opencode/playful-cactus`
+
+### Summary
+
+Implemented the DO storage tracking registry in 2 atomic commits matching the spec's commit strategy. The `durable_object_instance` table tracks every Durable Object access per user with storage size piggybacked on existing `sync()` and `getDoc()` RPC responses. An `afterResponse` queue pattern in the DB middleware ensures upserts complete before `client.end()` without blocking HTTP responses.
+
+### Deviations from Spec
+
+- **Table placement in schema.ts**: Moved `durableObjectInstance` table definition before `userRelations` (not at end of file) to avoid TypeScript `const` temporal dead zone errors from forward references.
+- **No new errors introduced**: 3 pre-existing Better Auth type errors in `app.ts` remain unchanged.
+
+### Follow-up Work
+
+- Apply migration to production database (`bun run db:migrate:remote`)
+- Dashboard query endpoint for per-user storage display (separate spec)
+- Upsert throttling if traffic warrants it
+- Stale row cleanup job for deleted DOs

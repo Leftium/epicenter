@@ -27,7 +27,25 @@ function nativeTabId(
 }
 
 /**
- * Close the specified tabs.
+ * Close the specified browser tabs by their composite IDs.
+ *
+ * Resolves each composite ID to a native Chrome tab ID scoped to `deviceId`,
+ * then batch-removes them. IDs belonging to other devices are silently ignored.
+ * Chrome API failures are swallowed—`closedCount` reflects the number of tabs
+ * targeted, not confirmed closed (Chrome doesn't report individual failures).
+ *
+ * @param tabIds - Composite tab IDs in `${deviceId}_${nativeId}` format
+ * @param deviceId - The local device ID used to filter composite IDs
+ * @returns The number of tabs targeted for removal
+ *
+ * @example
+ * ```typescript
+ * const { closedCount } = await executeCloseTabs(
+ *   ['device1_42', 'device1_99', 'device2_7'],
+ *   DeviceId('device1'),
+ * );
+ * // closedCount === 2 (device2_7 is ignored)
+ * ```
  */
 export async function executeCloseTabs(
 	tabIds: string[],
@@ -45,7 +63,21 @@ export async function executeCloseTabs(
 }
 
 /**
- * Open a new tab with the given URL.
+ * Open a new browser tab at the given URL.
+ *
+ * Creates a tab via `browser.tabs.create`. If the Chrome API call fails
+ * (e.g., invalid URL, extension permissions), returns `tabId: "-1"` as a
+ * sentinel value instead of throwing.
+ *
+ * @param url - The URL to open in the new tab
+ * @param _windowId - Reserved for future use (target window)
+ * @returns The string-encoded native tab ID, or `"-1"` on failure
+ *
+ * @example
+ * ```typescript
+ * const { tabId } = await executeOpenTab('https://example.com');
+ * if (tabId === '-1') console.error('Failed to open tab');
+ * ```
  */
 export async function executeOpenTab(
 	url: string,
@@ -60,7 +92,21 @@ export async function executeOpenTab(
 }
 
 /**
- * Activate (focus) a specific tab.
+ * Activate (bring to focus) a specific browser tab.
+ *
+ * Resolves the composite ID to a native tab ID scoped to `deviceId`.
+ * If the ID belongs to a different device or the tab no longer exists,
+ * returns `{ activated: false }` without throwing.
+ *
+ * @param compositeTabId - Composite tab ID in `${deviceId}_${nativeId}` format
+ * @param deviceId - The local device ID used to scope the lookup
+ * @returns Whether the tab was successfully activated
+ *
+ * @example
+ * ```typescript
+ * const { activated } = await executeActivateTab('device1_42', deviceId);
+ * if (!activated) console.warn('Tab not found or not on this device');
+ * ```
  */
 export async function executeActivateTab(
 	compositeTabId: string,
@@ -77,7 +123,28 @@ export async function executeActivateTab(
 }
 
 /**
- * Save tabs to the savedTabs table, optionally closing them.
+ * Save browser tabs to the Y.Doc savedTabs table, optionally closing them.
+ *
+ * Fetches full tab metadata via `Promise.allSettled` (tolerating tabs that
+ * vanished between query and fetch), filters to tabs with valid URLs, writes
+ * each to the CRDT-backed savedTabs table, and optionally batch-closes them.
+ * Tabs without URLs (e.g., `chrome://` pages) are silently skipped.
+ *
+ * @param tabIds - Composite tab IDs to save
+ * @param close - Whether to close the tabs after saving
+ * @param deviceId - The local device ID used to scope composite IDs
+ * @param savedTabsTable - The Y.Doc table helper for persisting saved tabs
+ * @returns The number of tabs successfully saved
+ *
+ * @example
+ * ```typescript
+ * const { savedCount } = await executeSaveTabs(
+ *   selectedTabIds,
+ *   true, // close after saving
+ *   deviceId,
+ *   workspace.tables.savedTabs,
+ * );
+ * ```
  */
 export async function executeSaveTabs(
 	tabIds: string[],
@@ -128,7 +195,25 @@ export async function executeSaveTabs(
 }
 
 /**
- * Group tabs together with an optional title and color.
+ * Group browser tabs together with an optional title and color.
+ *
+ * Creates a Chrome tab group from the resolved native IDs, then optionally
+ * applies a title and/or color. If grouping fails (e.g., tabs don't exist),
+ * returns `groupId: "-1"`. If the group is created but title/color update
+ * fails, the group still exists—the cosmetic failure is swallowed.
+ *
+ * @param tabIds - Composite tab IDs to group
+ * @param deviceId - The local device ID used to scope composite IDs
+ * @param title - Optional group label shown in the tab strip
+ * @param color - Optional group color (Chrome tab group color name)
+ * @returns The string-encoded group ID, or `"-1"` on failure
+ *
+ * @example
+ * ```typescript
+ * const { groupId } = await executeGroupTabs(
+ *   tabIds, deviceId, 'Research', 'blue',
+ * );
+ * ```
  */
 export async function executeGroupTabs(
 	tabIds: string[],
@@ -160,7 +245,21 @@ export async function executeGroupTabs(
 }
 
 /**
- * Pin or unpin tabs.
+ * Pin or unpin browser tabs.
+ *
+ * Applies the pin state to each resolved native tab ID via `Promise.allSettled`,
+ * tolerating individual failures (e.g., tab closed mid-operation). Returns the
+ * count of tabs that were successfully updated.
+ *
+ * @param tabIds - Composite tab IDs to pin/unpin
+ * @param pinned - `true` to pin, `false` to unpin
+ * @param deviceId - The local device ID used to scope composite IDs
+ * @returns The number of tabs successfully pinned/unpinned
+ *
+ * @example
+ * ```typescript
+ * const { pinnedCount } = await executePinTabs(tabIds, true, deviceId);
+ * ```
  */
 export async function executePinTabs(
 	tabIds: string[],
@@ -180,7 +279,20 @@ export async function executePinTabs(
 }
 
 /**
- * Mute or unmute tabs.
+ * Mute or unmute browser tabs.
+ *
+ * Applies the mute state to each resolved native tab ID via `Promise.allSettled`,
+ * tolerating individual failures. Returns the count of tabs successfully updated.
+ *
+ * @param tabIds - Composite tab IDs to mute/unmute
+ * @param muted - `true` to mute, `false` to unmute
+ * @param deviceId - The local device ID used to scope composite IDs
+ * @returns The number of tabs successfully muted/unmuted
+ *
+ * @example
+ * ```typescript
+ * const { mutedCount } = await executeMuteTabs(tabIds, true, deviceId);
+ * ```
  */
 export async function executeMuteTabs(
 	tabIds: string[],
@@ -198,7 +310,20 @@ export async function executeMuteTabs(
 }
 
 /**
- * Reload tabs.
+ * Reload browser tabs.
+ *
+ * Triggers a reload on each resolved native tab ID via `Promise.allSettled`,
+ * tolerating individual failures (e.g., tab closed mid-operation). Returns the
+ * count of tabs that were successfully reloaded.
+ *
+ * @param tabIds - Composite tab IDs to reload
+ * @param deviceId - The local device ID used to scope composite IDs
+ * @returns The number of tabs successfully reloaded
+ *
+ * @example
+ * ```typescript
+ * const { reloadedCount } = await executeReloadTabs(tabIds, deviceId);
+ * ```
  */
 export async function executeReloadTabs(
 	tabIds: string[],

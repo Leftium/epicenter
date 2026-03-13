@@ -1,7 +1,7 @@
 # OpenSidian UI Idiomaticity
 
 **Date**: 2026-03-13
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -137,13 +137,13 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 
 ## Success Criteria
 
-- [ ] Zero raw `<input>` or `<textarea>` elements—all use `@epicenter/ui` components
-- [ ] Zero inline SVG icons—all use `lucide-svelte` components
-- [ ] Toolbar buttons have tooltips showing their action
-- [ ] Dialog form fields have proper labels
-- [ ] Empty state uses the `Empty` component
-- [ ] Visual appearance is identical (no regressions)—these are primitive swaps, not redesigns
-- [ ] `svelte-check` passes with no new errors
+- [x] Zero raw `<input>` or `<textarea>` elements—all use `@epicenter/ui` components
+- [x] Zero inline SVG icons—all use `lucide-svelte` components
+- [x] Toolbar buttons have tooltips showing their action
+- [x] Dialog form fields have proper labels
+- [x] Empty state uses the `Empty` component
+- [x] Visual appearance is identical (no regressions)—these are primitive swaps, not redesigns
+- [x] `svelte-check` passes with no new errors (67 pre-existing errors in packages/ui and packages/workspace, none in changed files)
 
 ## References
 
@@ -158,3 +158,30 @@ The current `<textarea>` uses `resize: vertical` and fills the available height.
 - `packages/ui/src/field/` — Field component
 - `packages/ui/src/tooltip/` — Tooltip component
 - `packages/ui/src/empty/` — Empty component
+
+## Review
+
+**Completed**: 2026-03-13
+
+### Summary
+
+Replaced all hand-written HTML primitives in OpenSidian with their `@epicenter/ui` counterparts across 6 component files. Added `lucide-svelte` as the icon library, replacing ~70 lines of inline SVG markup with 4 Lucide component imports. All changes are mechanical swaps—no behavioral changes.
+
+### Changes by File
+
+- **CreateDialog.svelte**: Raw `<input>` → `Input` from `@epicenter/ui/input`, wrapped in `Field` + `FieldLabel`
+- **RenameDialog.svelte**: Same treatment as CreateDialog
+- **ContentEditor.svelte**: Raw `<textarea>` → `Textarea` from `@epicenter/ui/textarea` with class overrides to maintain borderless editor appearance. Simplified `handleInput` to only set dirty flag since `bind:value` handles content sync.
+- **TreeNode.svelte**: 4 inline SVGs (ChevronRight, Folder, FolderOpen, File) → `lucide-svelte` components. `File` aliased as `FileIcon` to avoid name collision.
+- **Toolbar.svelte**: All 5 buttons wrapped in `Tooltip.Root`/`Tooltip.Trigger`/`Tooltip.Content` using child snippet pattern to avoid nested buttons. Added `Tooltip.Provider` for shared delay settings.
+- **FileTree.svelte**: Manual empty state `<div>` → `Empty.Root`/`Empty.Header`/`Empty.Title`/`Empty.Description` from `@epicenter/ui/empty`.
+
+### Deviations from Spec
+
+- **3.3 (Kbd hints)**: Deferred. Adding `Kbd` components for keyboard shortcut hints (Ctrl+S, Enter) is a UX enhancement beyond the scope of primitive swaps. Recommended as a follow-up.
+- **2.5 (Toolbar SVGs)**: No-op. Toolbar.svelte uses text-only Button components with no inline SVGs.
+
+### Follow-up Work
+
+- Add `Kbd` hints for keyboard shortcuts (Ctrl+S in editor, Enter in dialogs)
+- Consider converting toolbar to icon-only buttons where tooltips provide the label

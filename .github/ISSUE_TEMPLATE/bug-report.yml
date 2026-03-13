@@ -72,6 +72,10 @@ body:
         - Settings
         - Transcription
         - Local Models
+        - Sync (sync server/client)
+        - CLI
+        - Workspace (data layer)
+        - Landing Page
     validations:
       required: true
 

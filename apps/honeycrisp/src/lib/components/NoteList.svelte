@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
+	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
+	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
+	import CheckIcon from '@lucide/svelte/icons/check';
 	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
@@ -10,17 +13,21 @@
 	let {
 		notes,
 		selectedNoteId,
+		sortBy,
 		onSelectNote,
 		onCreateNote,
 		onDeleteNote,
 		onPinNote,
+		onSortChange,
 	}: {
 		notes: Note[];
 		selectedNoteId: NoteId | null;
+		sortBy: 'dateEdited' | 'dateCreated' | 'title';
 		onSelectNote: (noteId: NoteId) => void;
 		onCreateNote: () => void;
 		onDeleteNote: (noteId: NoteId) => void;
 		onPinNote: (noteId: NoteId) => void;
+		onSortChange: (sortBy: 'dateEdited' | 'dateCreated' | 'title') => void;
 	} = $props();
 
 	function parseDateTime(dts: string): Date {
@@ -76,9 +83,46 @@
 <div class="flex h-full flex-col">
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<h2 class="text-sm font-semibold">Notes</h2>
-		<Button variant="ghost" size="icon" class="size-7" onclick={onCreateNote}>
-			<PlusIcon class="size-4" />
-		</Button>
+		<div class="flex items-center gap-1">
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button variant="ghost" size="icon" class="size-7" {...props}>
+							<ArrowUpDownIcon class="size-4" />
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-44">
+					<DropdownMenu.Item onclick={() => onSortChange('dateEdited')}>
+						{#if sortBy === 'dateEdited'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
+						Date Edited
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => onSortChange('dateCreated')}>
+						{#if sortBy === 'dateCreated'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
+						Date Created
+					</DropdownMenu.Item>
+					<DropdownMenu.Item onclick={() => onSortChange('title')}>
+						{#if sortBy === 'title'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
+						Title
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+			<Button variant="ghost" size="icon" class="size-7" onclick={onCreateNote}>
+				<PlusIcon class="size-4" />
+			</Button>
+		</div>
 	</div>
 
 	<ScrollArea.Root class="flex-1">

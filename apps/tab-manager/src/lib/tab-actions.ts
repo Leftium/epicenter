@@ -51,7 +51,11 @@ export async function executeOpenTab(
 	url: string,
 	_windowId?: string,
 ): Promise<{ tabId: string }> {
-	const tab = await browser.tabs.create({ url });
+	const { data: tab, error } = await tryAsync({
+		try: () => browser.tabs.create({ url }),
+		catch: () => Ok(undefined),
+	});
+	if (error || !tab) return { tabId: String(-1) };
 	return { tabId: String(tab.id ?? -1) };
 }
 
@@ -141,15 +145,20 @@ export async function executeGroupTabs(
 		.map((id) => nativeTabId(id, deviceId))
 		.filter((id) => id !== undefined);
 
-	const groupId = await browser.tabs.group({
-		tabIds: nativeIds as [number, ...number[]],
+	const { data: groupId, error: groupError } = await tryAsync({
+		try: () => browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
+		catch: () => Ok(undefined),
 	});
+	if (groupError || groupId === undefined) return { groupId: String(-1) };
 
 	if (title || color) {
 		const updateProps: Browser.tabGroups.UpdateProperties = {};
 		if (title) updateProps.title = title;
 		if (color) updateProps.color = color as `${Browser.tabGroups.Color}`;
-		await browser.tabGroups.update(groupId as number, updateProps);
+		await tryAsync({
+			try: () => browser.tabGroups.update(groupId as number, updateProps),
+			catch: () => Ok(undefined),
+		});
 	}
 
 	return { groupId: String(groupId) };

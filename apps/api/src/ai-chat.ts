@@ -19,6 +19,7 @@ const chatOptions = type({
 	'topP?': 'number | undefined',
 	'metadata?': 'Record<string, unknown> | undefined',
 	'conversationId?': 'string | undefined',
+	'tools?': 'object[] | undefined',
 });
 
 const AiChatError = defineErrors({

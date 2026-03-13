@@ -71,7 +71,7 @@ This is the transcribed text content.
 **Implementation**: `file-system.ts`
 
 - Uses `@tauri-apps/plugin-fs` for file operations
-- Uses `gray-matter` to parse YAML frontmatter
+- Uses `frontmatter.ts` utility (built on `js-yaml`) to parse YAML frontmatter
 - Converts snake_case (YAML) ↔ camelCase (TypeScript)
 - Reads audio file and converts to Blob when returning Recording
 
@@ -232,7 +232,7 @@ src/lib/services/db/
 ├── models.ts              ← Type definitions (Recording, Transformation, etc.)
 ├── file-system.ts         ← Desktop file system implementation
 ├── web.ts                 ← Web IndexedDB implementation (Dexie)
-└── desktop.ts             ← Desktop migration + optimized read wrapper
+├── frontmatter.ts      ← YAML frontmatter parsing utility
                               - Migration functions (migrateRecordings, etc.)
                               - Per-table migration promises
                               - Intelligent read methods (fast-path vs fallback)

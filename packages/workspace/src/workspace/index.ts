@@ -157,7 +157,6 @@ export type {
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvGetResult,
 	KvHelper,
 	NotFoundResult,
 	// Result types - composed

@@ -29,8 +29,18 @@ import type { KvDefinition } from './types.js';
 /**
  * Create a KV definition with a schema and required default value.
  *
+ * The `defaultValue` serves dual duty: it is returned both when the key has
+ * never been set (initial state) and when the stored value fails schema
+ * validation (corrupt or outdated data). It is never written to storage—
+ * it exists only at read time.
+ *
  * Schema output must be JSON-serializable (`JsonValue`).
- * Invalid stored data falls back to `defaultValue`—no migration step.
+ *
+ * Unlike tables, KV stores have no versioning or migration. See
+ * {@link KvDefinition} for the full design rationale.
+ *
+ * @param schema - Standard Schema validator for this entry's value
+ * @param defaultValue - Value returned by `get()` when stored data is missing or invalid
  *
  * @example
  * ```typescript

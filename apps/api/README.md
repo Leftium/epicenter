@@ -52,30 +52,6 @@ For the full argument:
 - [If You Don't Trust the Server, Become the Server](/docs/articles/if-you-dont-trust-the-server-become-the-server.md)—self-hosting as the clean answer
 - [Encrypted Workspace Storage spec](/specs/20260213T005300-encrypted-workspace-storage.md)—implementation details
 
-Workspace data synced through the hub is encrypted at rest with AES-256-GCM. The Durable Objects that store Yjs documents see CRDT structure (key names, timestamps for conflict resolution) but not values. A storage-layer dump yields noise.
-
-The server holds a per-user encryption key. When you authenticate, the key decrypts your data for features that need it: search, AI, password recovery. The server can read your data. That's the design—zero-knowledge encryption would prevent every server-side feature from working.
-
-| Deployment | Key location | Who can decrypt | Features |
-|---|---|---|---|
-| Epicenter Cloud | Our infrastructure | Epicenter | All: search, AI, password reset, device migration |
-| Self-hosted | Your infrastructure | Only you | Identical |
-
-Self-hosting makes this functionally zero-knowledge. The encryption key sits on a machine you control. Same binary, same API surface—the deployment is the trust boundary.
-
-### Why not zero-knowledge?
-
-Zero-knowledge means the server can't read your data. The cost: password recovery doesn't work (the server can't re-derive your key), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and device migration requires a key transfer ceremony.
-
-PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional—the server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users reset passwords without losing everything.
-
-For the full argument:
-
-- [Why E2E Encryption Keeps Failing](/docs/articles/why-e2e-encryption-keeps-failing.md)—PGP, Signal, and the structural problem
-- [Let the Server Handle Encryption](/docs/articles/let-the-server-handle-encryption.md)—the pragmatic alternative
-- [If You Don't Trust the Server, Become the Server](/docs/articles/if-you-dont-trust-the-server-become-the-server.md)—self-hosting as the clean answer
-- [Encrypted Workspace Storage spec](/specs/20260213T005300-encrypted-workspace-storage.md)—implementation details
-
 ## Architecture
 
 ```

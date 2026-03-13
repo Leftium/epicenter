@@ -88,12 +88,30 @@ Already a general argument. Implementation details don't belong here.
 
 ## Implementation Plan
 
-- [ ] **1.** Rewrite `README.md` `## Encryption` section
-- [ ] **2.** Refresh `apps/api/README.md` `## Encryption and trust model` section
-- [ ] **3.** Rewrite `docs/articles/encryption-at-rest-is-the-gold-standard.md`
-- [ ] **4.** Add implementation section to `docs/articles/let-the-server-handle-encryption.md`
-- [ ] **5.** Add concrete detail to `docs/articles/if-you-dont-trust-the-server-become-the-server.md`
+- [x] **1.** Rewrite `README.md` `## Encryption` section
+- [x] **2.** Refresh `apps/api/README.md` `## Encryption and trust model` section
+  > **Note**: Agent appended new content but didn't remove old. Fixed by deleting duplicate lines 55–77 manually.
+- [x] **3.** Rewrite `docs/articles/encryption-at-rest-is-the-gold-standard.md`
+- [x] **4.** Add implementation section to `docs/articles/let-the-server-handle-encryption.md`
+- [x] **5.** Add concrete detail to `docs/articles/if-you-dont-trust-the-server-become-the-server.md`
 
 ## Review
 
-_(To be filled after implementation)_
+**Completed**: 2026-03-13
+**Status**: Implemented
+
+### Summary
+
+Updated all encryption documentation to reflect the `createEncryptedKvLww` implementation. The narrative across all docs is now consistent: encryption at the CRDT layer, honest about cloud mode (server holds key), self-hosted = zero-knowledge with the same code path.
+
+### Changes by file
+
+1. **README.md**: Rewrote Encryption section. Leads with CRDT-level encryption, compact flow diagram, defense-in-depth framing, self-host escape hatch.
+2. **apps/api/README.md**: Added CRDT-layer detail, `@noble/ciphers` mention, encrypted blob format. Fixed duplicate content from agent error.
+3. **encryption-at-rest-is-the-gold-standard.md**: Full rewrite. Removed stale API key vault references. New content covers all workspace data with updated diagrams and defense-in-depth framing.
+4. **let-the-server-handle-encryption.md**: Added "One primitive, one code path" section with `createEncryptedKvLww` code example and key-source table.
+5. **if-you-dont-trust-the-server-become-the-server.md**: Added concrete `createEncryptedKvLww` detail to zero-knowledge section, showing identical code with PBKDF2 key derivation.
+
+### Deviations from spec
+
+- apps/api/README.md agent duplicated old content instead of replacing. Fixed manually by removing lines 55–77.

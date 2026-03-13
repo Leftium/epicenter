@@ -87,7 +87,7 @@
 					</TreeView.File>
 				{/if}
 			{/snippet}
-		</>
+		</ContextMenu.Trigger>
 		<ContextMenu.Content>
 			{#if isFolder}
 				<ContextMenu.Item onclick={() => selectAndOpenCreate('file')}>

@@ -53,6 +53,7 @@ import {
 } from '$lib/ai/providers';
 import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
+import { getDeviceId } from '$lib/device/device-id';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
 import {
 	type ChatMessageId,
@@ -185,7 +186,9 @@ function createAiChatState() {
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
-					const systemPrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
+					const deviceId = await getDeviceId();
+					const basePrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
+					const deviceContext = `\n\n## Current Device\n\nYour device ID is "${deviceId}". Tab IDs are composite: "deviceId_tabId". You can only modify (close, activate, pin, mute, reload, group) tabs whose ID starts with "${deviceId}_". Tabs from other devices are read-only—do not attempt to close or modify them.`;
 					return {
 						credentials: 'include',
 						body: {
@@ -193,7 +196,7 @@ function createAiChatState() {
 								provider: conv?.provider ?? DEFAULT_PROVIDER,
 								model: conv?.model ?? DEFAULT_MODEL,
 								conversationId,
-								systemPrompts: [systemPrompt],
+								systemPrompts: [basePrompt + deviceContext],
 								tools: workspaceDefinitions,
 							},
 						},
@@ -201,19 +204,35 @@ function createAiChatState() {
 				},
 			),
 			onMessagesChange: (msgs) => {
-				messageStore.set(conversationId, msgs);
+				// Shallow-clone every message and part to break reference identity.
+				// TanStack AI's StreamProcessor mutates tool-call parts in place
+				// (output, state, approval) but creates new objects for text parts.
+				// SvelteMap stores raw values without deep proxying, so Svelte 5's
+				// fine-grained reactivity can't detect in-place mutations on parts.
+				// Fresh references ensure keyed {#each} blocks propagate changes
+				// to $derived() in child components (isRunning, isApprovalRequested).
+				messageStore.set(
+					conversationId,
+					msgs.map((m) => ({ ...m, parts: m.parts.map((p) => ({ ...p })) })),
+				);
 			},
 			onLoadingChange: (isLoading) => {
+				console.log('[ai-chat] loading:', isLoading, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, isLoading });
 			},
 			onErrorChange: (error) => {
+				if (error) console.warn('[ai-chat] error:', error.message, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, error });
 			},
 			onStatusChange: (status) => {
+				console.log('[ai-chat] status:', status, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, status });
+			},
+			onError: (error) => {
+				console.error('[ai-chat] stream error:', error.message, 'conversation:', conversationId);
 			},
 			onFinish: (message) => {
 				workspaceClient.tables.chatMessages.set({

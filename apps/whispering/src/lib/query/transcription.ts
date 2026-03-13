@@ -207,9 +207,9 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							apiKey: deviceConfig.value['apiKeys.openai'],
+						apiKey: deviceConfig.get("apiKeys.openai"),
 							modelName: workspaceSettings.get('transcription.openai.model'),
-							baseURL: deviceConfig.value['apiEndpoints.openai'] || undefined,
+						baseURL: deviceConfig.get("apiEndpoints.openai") || undefined,
 						},
 					);
 				case 'Groq':
@@ -219,9 +219,9 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							apiKey: deviceConfig.value['apiKeys.groq'],
+						apiKey: deviceConfig.get("apiKeys.groq"),
 							modelName: workspaceSettings.get('transcription.groq.model'),
-							baseURL: deviceConfig.value['apiEndpoints.groq'] || undefined,
+						baseURL: deviceConfig.get("apiEndpoints.groq") || undefined,
 						},
 					);
 				case 'speaches':
@@ -231,8 +231,8 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							modelId: deviceConfig.value['transcription.speaches.modelId'],
-							baseUrl: deviceConfig.value['transcription.speaches.baseUrl'],
+						modelId: deviceConfig.get("transcription.speaches.modelId"),
+						baseUrl: deviceConfig.get("transcription.speaches.baseUrl"),
 						},
 					);
 				case 'ElevenLabs':
@@ -242,7 +242,7 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							apiKey: deviceConfig.value['apiKeys.elevenlabs'],
+						apiKey: deviceConfig.get("apiKeys.elevenlabs"),
 							modelName: workspaceSettings.get(
 								'transcription.elevenlabs.model',
 							),
@@ -255,7 +255,7 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							apiKey: deviceConfig.value['apiKeys.deepgram'],
+						apiKey: deviceConfig.get("apiKeys.deepgram"),
 							modelName: workspaceSettings.get('transcription.deepgram.model'),
 						},
 					);
@@ -266,7 +266,7 @@ export async function transcribeBlob(
 							outputLanguage,
 							prompt,
 							temperature,
-							apiKey: deviceConfig.value['apiKeys.mistral'],
+						apiKey: deviceConfig.get("apiKeys.mistral"),
 							modelName: workspaceSettings.get('transcription.mistral.model'),
 						},
 					);
@@ -279,7 +279,7 @@ export async function transcribeBlob(
 						{
 							outputLanguage,
 							modelPath:
-								deviceConfig.value['transcription.whispercpp.modelPath'],
+							deviceConfig.get("transcription.whispercpp.modelPath"),
 							prompt,
 						},
 					);
@@ -291,7 +291,7 @@ export async function transcribeBlob(
 					return await services.transcriptions.parakeet.transcribe(
 						audioToTranscribe,
 						{
-							modelPath: deviceConfig.value['transcription.parakeet.modelPath'],
+						modelPath: deviceConfig.get("transcription.parakeet.modelPath"),
 						},
 					);
 				}
@@ -302,7 +302,7 @@ export async function transcribeBlob(
 						audioToTranscribe,
 						{
 							modelPath:
-								deviceConfig.value['transcription.moonshine.modelPath'],
+							deviceConfig.get("transcription.moonshine.modelPath"),
 						},
 					);
 				}

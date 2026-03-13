@@ -34,7 +34,7 @@ export function hasNavigatorLocalTranscriptionIssue({
 	if (!window.__TAURI_INTERNALS__) return false;
 
 	const isUsingNavigator =
-		deviceConfig.value['recording.method'] === 'navigator';
+		deviceConfig.get('recording.method') === 'navigator';
 	const isUsingLocalTranscription =
 		workspaceSettings.get('transcription.service') === 'whispercpp' ||
 		workspaceSettings.get('transcription.service') === 'parakeet' ||
@@ -49,7 +49,7 @@ export function hasNavigatorLocalTranscriptionIssue({
  */
 export function isCompressionRecommended(): boolean {
 	return (
-		deviceConfig.value['recording.method'] === 'cpal' &&
+		deviceConfig.get('recording.method') === 'cpal' &&
 		!isUsingLocalTranscription() &&
 		!workspaceSettings.get('transcription.compressionEnabled')
 	);
@@ -68,7 +68,7 @@ export async function checkFfmpegRecordingMethodCompatibility() {
 	if (!window.__TAURI_INTERNALS__) return;
 
 	// Only check if FFmpeg recording method is selected
-	if (deviceConfig.value['recording.method'] !== 'ffmpeg') return;
+	if (deviceConfig.get('recording.method') !== 'ffmpeg') return;
 
 	const { data: ffmpegInstalled } =
 		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();

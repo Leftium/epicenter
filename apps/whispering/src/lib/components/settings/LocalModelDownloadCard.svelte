@@ -136,7 +136,7 @@
 	$effect(() => {
 		// React to settings changes for this engine
 		const settingsKey = `transcription.${model.engine}.modelPath` as const;
-		const currentPath = deviceConfig.value[settingsKey];
+		const currentPath = deviceConfig.get(settingsKey);
 		// Trigger refresh when settings change (currentPath is a dependency)
 		refreshStatus();
 	});
@@ -154,7 +154,7 @@
 
 				// Check if this model is active in settings
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
-				const currentPath = deviceConfig.value[settingsKey];
+				const currentPath = deviceConfig.get(settingsKey);
 				const isActive = currentPath === path;
 
 				modelState = isActive ? { type: 'active' } : { type: 'ready' };
@@ -300,7 +300,7 @@
 		const path = await ensureModelDestinationPath();
 		const settingsKey = `transcription.${model.engine}.modelPath` as const;
 
-		deviceConfig.updateKey(settingsKey, path);
+		deviceConfig.set(settingsKey, path);
 		// The settings watcher will update modelState to 'active'
 		toast.success('Model activated');
 	}
@@ -318,8 +318,8 @@
 				// Clear settings if this was the active model
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
 
-				if (deviceConfig.value[settingsKey] === path) {
-					deviceConfig.updateKey(settingsKey, '');
+			if (deviceConfig.get(settingsKey) === path) {
+				deviceConfig.set(settingsKey, '');
 				}
 
 				modelState = { type: 'not-downloaded' };

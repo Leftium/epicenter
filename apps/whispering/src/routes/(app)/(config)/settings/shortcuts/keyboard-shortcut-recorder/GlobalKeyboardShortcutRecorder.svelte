@@ -24,7 +24,7 @@
 	} = $props();
 
 	const shortcutValue = $derived(
-		deviceConfig.value[`shortcuts.global.${command.id}`],
+		deviceConfig.get(`shortcuts.global.${command.id}`),
 	);
 
 	const keyRecorder = createKeyRecorder({
@@ -88,7 +88,7 @@
 				return;
 			}
 
-			deviceConfig.updateKey(`shortcuts.global.${command.id}`, accelerator);
+			deviceConfig.set(`shortcuts.global.${command.id}`, accelerator);
 
 			rpc.notify.success({
 				title: `Global shortcut set to ${accelerator}`,
@@ -109,7 +109,7 @@
 				});
 			}
 
-			deviceConfig.updateKey(`shortcuts.global.${command.id}`, null);
+			deviceConfig.set(`shortcuts.global.${command.id}`, null);
 
 			rpc.notify.success({
 				title: 'Global shortcut cleared',

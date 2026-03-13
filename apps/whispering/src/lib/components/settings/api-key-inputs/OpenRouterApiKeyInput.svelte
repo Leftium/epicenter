@@ -12,8 +12,8 @@
 		type="password"
 		placeholder="Your OpenRouter API Key"
 		autocomplete="off"
-		bind:value={() => deviceConfig.value['apiKeys.openrouter'],
-			(value) => deviceConfig.updateKey('apiKeys.openrouter', value)}
+		bind:value={() => deviceConfig.get('apiKeys.openrouter'),
+			(value) => deviceConfig.set('apiKeys.openrouter', value)}
 	/>
 	<Field.Description>
 		You can find your OpenRouter API key in your <Link

@@ -12,8 +12,8 @@
 		type="password"
 		placeholder="Your Google API Key"
 		autocomplete="off"
-		bind:value={() => deviceConfig.value['apiKeys.google'],
-			(value) => deviceConfig.updateKey('apiKeys.google', value)}
+		bind:value={() => deviceConfig.get('apiKeys.google'),
+			(value) => deviceConfig.set('apiKeys.google', value)}
 	/>
 	<Field.Description>
 		You can find your Google API key in your <Link

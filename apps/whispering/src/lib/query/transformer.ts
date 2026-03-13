@@ -189,7 +189,7 @@ async function handleStep({
 				case 'OpenAI': {
 					const { data: completionResponse, error: completionError } =
 						await services.completions.openai.complete({
-							apiKey: deviceConfig.value['apiKeys.openai'],
+						apiKey: deviceConfig.get("apiKeys.openai"),
 							systemPrompt,
 							userPrompt,
 							model: step['prompt_transform.inference.provider.OpenAI.model'],
@@ -206,7 +206,7 @@ async function handleStep({
 					const model = step['prompt_transform.inference.provider.Groq.model'];
 					const { data: completionResponse, error: completionError } =
 						await services.completions.groq.complete({
-							apiKey: deviceConfig.value['apiKeys.groq'],
+						apiKey: deviceConfig.get("apiKeys.groq"),
 							model,
 							systemPrompt,
 							userPrompt,
@@ -222,7 +222,7 @@ async function handleStep({
 				case 'Anthropic': {
 					const { data: completionResponse, error: completionError } =
 						await services.completions.anthropic.complete({
-							apiKey: deviceConfig.value['apiKeys.anthropic'],
+						apiKey: deviceConfig.get("apiKeys.anthropic"),
 							model:
 								step['prompt_transform.inference.provider.Anthropic.model'],
 							systemPrompt,
@@ -239,7 +239,7 @@ async function handleStep({
 				case 'Google': {
 					const { data: completion, error: completionError } =
 						await services.completions.google.complete({
-							apiKey: deviceConfig.value['apiKeys.google'],
+						apiKey: deviceConfig.get("apiKeys.google"),
 							model: step['prompt_transform.inference.provider.Google.model'],
 							systemPrompt,
 							userPrompt,
@@ -255,7 +255,7 @@ async function handleStep({
 				case 'OpenRouter': {
 					const { data: completionResponse, error: completionError } =
 						await services.completions.openrouter.complete({
-							apiKey: deviceConfig.value['apiKeys.openrouter'],
+						apiKey: deviceConfig.get("apiKeys.openrouter"),
 							model:
 								step['prompt_transform.inference.provider.OpenRouter.model'],
 							systemPrompt,
@@ -279,14 +279,14 @@ async function handleStep({
 						step['prompt_transform.inference.provider.Custom.baseUrl']?.trim();
 					// Fall back to global default from Settings → API Keys → Custom section
 					const defaultBaseUrl =
-						deviceConfig.value['completion.custom.baseUrl']?.trim();
+						deviceConfig.get("completion.custom.baseUrl")?.trim();
 					// Use || so empty string falls back to next value (cleared field = use default)
 					const baseUrl = stepBaseUrl || defaultBaseUrl || '';
 
 					// API key is global because most local endpoints don't require auth
 					const { data: completionResponse, error: completionError } =
 						await services.completions.custom.complete({
-							apiKey: deviceConfig.value['apiKeys.custom'],
+						apiKey: deviceConfig.get("apiKeys.custom"),
 							model,
 							baseUrl,
 							systemPrompt,

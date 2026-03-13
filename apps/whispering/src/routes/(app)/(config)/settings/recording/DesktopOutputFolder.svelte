@@ -21,7 +21,7 @@
 
 	// Derived state for the display path
 	const displayPath = $derived(
-		deviceConfig.value['recording.cpal.outputFolder'] ??
+		deviceConfig.get('recording.cpal.outputFolder') ??
 			defaultRecordingsFolder ??
 			null,
 	);
@@ -37,7 +37,7 @@
 		});
 
 		if (selected)
-			deviceConfig.updateKey('recording.cpal.outputFolder', selected);
+			deviceConfig.set('recording.cpal.outputFolder', selected);
 	}
 
 	async function openOutputFolder() {
@@ -48,7 +48,7 @@
 				const { openPath } = await import('@tauri-apps/plugin-opener');
 
 				const folderPath =
-					deviceConfig.value['recording.cpal.outputFolder'] ??
+					deviceConfig.get('recording.cpal.outputFolder') ??
 					defaultRecordingsFolder;
 				if (!folderPath) {
 					throw new Error('No output folder configured');
@@ -92,13 +92,13 @@
 		<ExternalLink class="h-4 w-4" />
 	</Button>
 
-	{#if deviceConfig.value['recording.cpal.outputFolder']}
+	{#if deviceConfig.get('recording.cpal.outputFolder')}
 		<Button
 			tooltip="Reset to default folder"
 			variant="outline"
 			size="icon"
 			onclick={() => {
-				deviceConfig.updateKey('recording.cpal.outputFolder', null);
+				deviceConfig.set('recording.cpal.outputFolder', null);
 			}}
 		>
 			<RotateCcw class="h-4 w-4" />

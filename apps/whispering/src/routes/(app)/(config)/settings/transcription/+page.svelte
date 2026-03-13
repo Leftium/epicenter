@@ -385,9 +385,9 @@
 					id="speaches-base-url"
 					placeholder="http://localhost:8000"
 					autocomplete="off"
-					bind:value={() => deviceConfig.value['transcription.speaches.baseUrl'],
+					bind:value={() => deviceConfig.get('transcription.speaches.baseUrl'),
 						(value) =>
-							deviceConfig.updateKey('transcription.speaches.baseUrl', value)}
+							deviceConfig.set('transcription.speaches.baseUrl', value)}
 				/>
 				<Field.Description>
 					The URL where your Speaches server is running (<code>
@@ -411,9 +411,9 @@
 					id="speaches-model-id"
 					placeholder="Systran/faster-distil-whisper-small.en"
 					autocomplete="off"
-					bind:value={() => deviceConfig.value['transcription.speaches.modelId'],
+					bind:value={() => deviceConfig.get('transcription.speaches.modelId'),
 						(value) =>
-							deviceConfig.updateKey('transcription.speaches.modelId', value)}
+							deviceConfig.set('transcription.speaches.modelId', value)}
 				/>
 				<Field.Description>
 					The model you downloaded in step 3 (<code>MODEL_ID</code>), e.g.
@@ -438,8 +438,8 @@
 						description="Select a pre-built model or browse for your own. Models run locally for private, offline transcription."
 						fileSelectionMode="file"
 						fileExtensions={['bin', 'gguf', 'ggml']}
-						bind:value={() => deviceConfig.value['transcription.whispercpp.modelPath'],
-							(v) => deviceConfig.updateKey('transcription.whispercpp.modelPath', v)}
+						bind:value={() => deviceConfig.get('transcription.whispercpp.modelPath'),
+							(v) => deviceConfig.set('transcription.whispercpp.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">
@@ -529,8 +529,8 @@
 						title="Parakeet Model"
 						description="Parakeet is an NVIDIA NeMo model optimized for fast local transcription. It automatically detects the language and doesn't support manual language selection."
 						fileSelectionMode="directory"
-						bind:value={() => deviceConfig.value['transcription.parakeet.modelPath'],
-							(v) => deviceConfig.updateKey('transcription.parakeet.modelPath', v)}
+					bind:value={() => deviceConfig.get('transcription.parakeet.modelPath'),
+						(v) => deviceConfig.set('transcription.parakeet.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">
@@ -636,8 +636,8 @@
 						title="Moonshine Model"
 						description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
 						fileSelectionMode="directory"
-						bind:value={() => deviceConfig.value['transcription.moonshine.modelPath'],
-							(v) => deviceConfig.updateKey('transcription.moonshine.modelPath', v)}
+					bind:value={() => deviceConfig.get('transcription.moonshine.modelPath'),
+						(v) => deviceConfig.set('transcription.moonshine.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
 							<p class="text-sm text-muted-foreground">

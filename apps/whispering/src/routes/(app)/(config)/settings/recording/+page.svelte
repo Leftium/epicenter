@@ -39,13 +39,13 @@
 
 	const sampleRateLabel = $derived(
 		SAMPLE_RATE_OPTIONS.find(
-			(o) => o.value === deviceConfig.value['recording.cpal.sampleRate'],
+		(o) => o.value === deviceConfig.get('recording.cpal.sampleRate'),
 		)?.label,
 	);
 
 	const bitrateLabel = $derived(
 		BITRATE_OPTIONS.find(
-			(o) => o.value === deviceConfig.value['recording.navigator.bitrateKbps'],
+		(o) => o.value === deviceConfig.get('recording.navigator.bitrateKbps'),
 		)?.label,
 	);
 
@@ -83,27 +83,27 @@
 
 	const recordingMethodLabel = $derived(
 		RECORDING_METHOD_OPTIONS.find(
-			(o) => o.value === deviceConfig.value['recording.method'],
+		(o) => o.value === deviceConfig.get('recording.method'),
 		)?.label,
 	);
 
 	const isUsingNavigatorMethod = $derived(
 		!window.__TAURI_INTERNALS__ ||
-			deviceConfig.value['recording.method'] === 'navigator',
+			deviceConfig.get('recording.method') === 'navigator',
 	);
 
 	const isUsingFfmpegMethod = $derived(
-		deviceConfig.value['recording.method'] === 'ffmpeg',
+		deviceConfig.get('recording.method') === 'ffmpeg',
 	);
 
 	function getManualDeviceId(method: 'cpal' | 'navigator' | 'ffmpeg') {
 		switch (method) {
 			case 'cpal':
-				return deviceConfig.value['recording.cpal.deviceId'];
+			return deviceConfig.get('recording.cpal.deviceId');
 			case 'navigator':
-				return deviceConfig.value['recording.navigator.deviceId'];
+			return deviceConfig.get('recording.navigator.deviceId');
 			case 'ffmpeg':
-				return deviceConfig.value['recording.ffmpeg.deviceId'];
+			return deviceConfig.get('recording.ffmpeg.deviceId');
 		}
 	}
 
@@ -113,13 +113,13 @@
 	) {
 		switch (method) {
 			case 'cpal':
-				deviceConfig.updateKey('recording.cpal.deviceId', selected);
+				deviceConfig.set('recording.cpal.deviceId', selected);
 				break;
 			case 'navigator':
-				deviceConfig.updateKey('recording.navigator.deviceId', selected);
+				deviceConfig.set('recording.navigator.deviceId', selected);
 				break;
 			case 'ffmpeg':
-				deviceConfig.updateKey('recording.ffmpeg.deviceId', selected);
+				deviceConfig.set('recording.ffmpeg.deviceId', selected);
 				break;
 		}
 	}
@@ -165,10 +165,10 @@
 				<Field.Label for="recording-method">Recording Method</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => deviceConfig.value['recording.method'],
+				bind:value={() => deviceConfig.get('recording.method'),
 						(selected) => {
 							if (selected)
-								deviceConfig.updateKey(
+							deviceConfig.set(
 									'recording.method',
 									selected as 'cpal' | 'navigator' | 'ffmpeg',
 								);
@@ -194,12 +194,12 @@
 				</Select.Root>
 				<Field.Description>
 					{RECORDING_METHOD_OPTIONS.find(
-						(option) => option.value === deviceConfig.value['recording.method'],
+					(option) => option.value === deviceConfig.get('recording.method'),
 					)?.description}
 				</Field.Description>
 			</Field.Field>
 
-			{#if IS_MACOS && deviceConfig.value['recording.method'] === 'navigator'}
+			{#if IS_MACOS && deviceConfig.get('recording.method') === 'navigator'}
 				<Alert.Root class="border-warning/20 bg-warning/5">
 					<InfoIcon class="size-4 text-warning dark:text-warning" />
 					<Alert.Title class="text-warning dark:text-warning">
@@ -213,7 +213,7 @@
 				</Alert.Root>
 			{/if}
 
-			{#if deviceConfig.value['recording.method'] === 'ffmpeg' && !data.ffmpegInstalled}
+			{#if deviceConfig.get('recording.method') === 'ffmpeg' && !data.ffmpegInstalled}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 					<Alert.Title class="text-red-600 dark:text-red-400">
@@ -264,7 +264,7 @@
 							<div class="flex items-center gap-2">
 								<span class="text-sm"><strong>Option 1:</strong></span>
 								<Button
-									onclick={() => deviceConfig.updateKey('recording.method', 'cpal')}
+						onclick={() => deviceConfig.set('recording.method', 'cpal')}
 									variant="secondary"
 									size="sm"
 								>
@@ -288,7 +288,7 @@
 		{/if}
 
 		{#if workspaceSettings.get('recording.mode') === 'manual'}
-			{@const method = deviceConfig.value['recording.method']}
+			{@const method = deviceConfig.get('recording.method')}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
 					const selected = getManualDeviceId(method);
@@ -334,11 +334,11 @@
 
 			<VadSelectRecordingDevice
 				bind:selected={() => {
-					const selected = deviceConfig.value['recording.navigator.deviceId'];
+					const selected = deviceConfig.get('recording.navigator.deviceId');
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
 					(selected) =>
-						deviceConfig.updateKey('recording.navigator.deviceId', selected)}
+						deviceConfig.set('recording.navigator.deviceId', selected)}
 			/>
 		{/if}
 
@@ -349,10 +349,10 @@
 					<Field.Label for="bit-rate">Bitrate</Field.Label>
 					<Select.Root
 						type="single"
-						bind:value={() => deviceConfig.value['recording.navigator.bitrateKbps'],
+					bind:value={() => deviceConfig.get('recording.navigator.bitrateKbps'),
 							(selected) => {
 								if (selected)
-									deviceConfig.updateKey(
+							deviceConfig.set(
 										'recording.navigator.bitrateKbps',
 										selected,
 									);
@@ -386,12 +386,12 @@
 				</div>
 
 				<FfmpegCommandBuilder
-					bind:globalOptions={() => deviceConfig.value['recording.ffmpeg.globalOptions'],
-						(v) => deviceConfig.updateKey('recording.ffmpeg.globalOptions', v)}
-					bind:inputOptions={() => deviceConfig.value['recording.ffmpeg.inputOptions'],
-						(v) => deviceConfig.updateKey('recording.ffmpeg.inputOptions', v)}
-					bind:outputOptions={() => deviceConfig.value['recording.ffmpeg.outputOptions'],
-						(v) => deviceConfig.updateKey('recording.ffmpeg.outputOptions', v)}
+				bind:globalOptions={() => deviceConfig.get('recording.ffmpeg.globalOptions'),
+						(v) => deviceConfig.set('recording.ffmpeg.globalOptions', v)}
+				bind:inputOptions={() => deviceConfig.get('recording.ffmpeg.inputOptions'),
+						(v) => deviceConfig.set('recording.ffmpeg.inputOptions', v)}
+				bind:outputOptions={() => deviceConfig.get('recording.ffmpeg.outputOptions'),
+						(v) => deviceConfig.set('recording.ffmpeg.outputOptions', v)}
 				/>
 			{:else}
 				<!-- CPAL method settings -->
@@ -399,10 +399,10 @@
 					<Field.Label for="sample-rate">Sample Rate</Field.Label>
 					<Select.Root
 						type="single"
-						bind:value={() => deviceConfig.value['recording.cpal.sampleRate'],
+					bind:value={() => deviceConfig.get('recording.cpal.sampleRate'),
 							(selected) => {
 								if (selected)
-									deviceConfig.updateKey('recording.cpal.sampleRate', selected);
+							deviceConfig.set('recording.cpal.sampleRate', selected);
 							}}
 					>
 						<Select.Trigger id="sample-rate" class="w-full">

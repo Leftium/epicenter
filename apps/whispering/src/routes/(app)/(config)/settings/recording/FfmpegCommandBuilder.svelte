@@ -44,7 +44,7 @@
 	const selectedDeviceId = $derived(
 		// First, try to find the user's selected device
 		getDevicesQuery.data?.find(
-			(d) => d.id === deviceConfig.value['recording.ffmpeg.deviceId'],
+			(d) => d.id === deviceConfig.get('recording.ffmpeg.deviceId'),
 		)?.id ??
 			// Then fall back to the first available device
 			getDevicesQuery.data?.at(0)?.id ??
@@ -173,7 +173,7 @@
 	// Function to update the preview command
 	async function updatePreviewCommand() {
 		const outputFolder =
-			deviceConfig.value['recording.cpal.outputFolder'] ??
+			deviceConfig.get('recording.cpal.outputFolder') ??
 			(await PATHS.DB.RECORDINGS());
 		const ext = AUDIO_FORMATS[selected.format].extension;
 		const outputPath = await join(

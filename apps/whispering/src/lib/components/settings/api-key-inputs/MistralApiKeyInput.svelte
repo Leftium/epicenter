@@ -12,8 +12,8 @@
 		type="password"
 		placeholder="Your Mistral AI API Key"
 		autocomplete="off"
-		bind:value={() => deviceConfig.value['apiKeys.mistral'],
-			(value) => deviceConfig.updateKey('apiKeys.mistral', value)}
+		bind:value={() => deviceConfig.get('apiKeys.mistral'),
+			(value) => deviceConfig.set('apiKeys.mistral', value)}
 	/>
 	<Field.Description>
 		You can find your API key in your <Link

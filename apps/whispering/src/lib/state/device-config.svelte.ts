@@ -1,5 +1,6 @@
-import { createPersistedState } from '@epicenter/svelte-utils';
+import type { Type } from 'arktype';
 import { type } from 'arktype';
+import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
@@ -10,177 +11,275 @@ import {
 	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
 } from '$lib/services/desktop/recorder/ffmpeg';
 
+// ── Definition helper ────────────────────────────────────────────────────────
+
 /**
- * Device-bound configuration — secrets, hardware IDs, filesystem paths,
- * and global OS shortcuts that should NEVER sync across devices.
- *
- * Uses createPersistedState (localStorage) with cross-tab sync via
- * storage events. Separate from workspace-settings which syncs via Yjs.
+ * Define a per-key device config entry with schema and default value.
+ * Mirrors the `defineKv(schema, defaultValue)` pattern from workspace.
  */
-const DeviceConfig = type({
+function defineDevice<T>(
+	schema: Type<T>,
+	defaultValue: NoInfer<T>,
+): { schema: Type<T>; defaultValue: T } {
+	return { schema, defaultValue };
+}
+
+// ── Per-key definitions ──────────────────────────────────────────────────────
+
+/**
+ * Device-bound configuration definitions — secrets, hardware IDs, filesystem
+ * paths, and global OS shortcuts that should NEVER sync across devices.
+ *
+ * Each key has its own schema and default value. Stored individually in
+ * localStorage under the `whispering.device.{key}` prefix.
+ */
+const DEVICE_DEFINITIONS = {
 	// ── API keys (secrets, never synced) ──────────────────────────────
-	'apiKeys.openai': "string = ''",
-	'apiKeys.anthropic': "string = ''",
-	'apiKeys.groq': "string = ''",
-	'apiKeys.google': "string = ''",
-	'apiKeys.deepgram': "string = ''",
-	'apiKeys.elevenlabs': "string = ''",
-	'apiKeys.mistral': "string = ''",
-	'apiKeys.openrouter': "string = ''",
-	'apiKeys.custom': "string = ''",
+	'apiKeys.openai': defineDevice(type('string'), ''),
+	'apiKeys.anthropic': defineDevice(type('string'), ''),
+	'apiKeys.groq': defineDevice(type('string'), ''),
+	'apiKeys.google': defineDevice(type('string'), ''),
+	'apiKeys.deepgram': defineDevice(type('string'), ''),
+	'apiKeys.elevenlabs': defineDevice(type('string'), ''),
+	'apiKeys.mistral': defineDevice(type('string'), ''),
+	'apiKeys.openrouter': defineDevice(type('string'), ''),
+	'apiKeys.custom': defineDevice(type('string'), ''),
 
 	// ── API endpoint overrides ────────────────────────────────────────
-	'apiEndpoints.openai': "string = ''",
-	'apiEndpoints.groq': "string = ''",
+	'apiEndpoints.openai': defineDevice(type('string'), ''),
+	'apiEndpoints.groq': defineDevice(type('string'), ''),
 
 	// ── Recording hardware ────────────────────────────────────────────
-	'recording.method': "'cpal' | 'navigator' | 'ffmpeg' = 'cpal'",
-	'recording.cpal.deviceId': 'string | null = null',
-	'recording.navigator.deviceId': 'string | null = null',
-	'recording.ffmpeg.deviceId': 'string | null = null',
-	'recording.navigator.bitrateKbps': type
-		.enumerated(...BITRATES_KBPS)
-		.default(DEFAULT_BITRATE_KBPS),
-	'recording.cpal.outputFolder': 'string | null = null',
-	'recording.cpal.sampleRate': "'16000' | '44100' | '48000' = '16000'",
-	'recording.ffmpeg.globalOptions': type('string').default(
+	'recording.method': defineDevice(
+		type("'cpal' | 'navigator' | 'ffmpeg'"),
+		'cpal',
+	),
+	'recording.cpal.deviceId': defineDevice(type('string | null'), null),
+	'recording.navigator.deviceId': defineDevice(type('string | null'), null),
+	'recording.ffmpeg.deviceId': defineDevice(type('string | null'), null),
+	'recording.navigator.bitrateKbps': defineDevice(
+		type.enumerated(...BITRATES_KBPS),
+		DEFAULT_BITRATE_KBPS,
+	),
+	'recording.cpal.outputFolder': defineDevice(type('string | null'), null),
+	'recording.cpal.sampleRate': defineDevice(
+		type("'16000' | '44100' | '48000'"),
+		'16000',
+	),
+	'recording.ffmpeg.globalOptions': defineDevice(
+		type('string'),
 		FFMPEG_DEFAULT_GLOBAL_OPTIONS,
 	),
-	'recording.ffmpeg.inputOptions': type('string').default(
+	'recording.ffmpeg.inputOptions': defineDevice(
+		type('string'),
 		FFMPEG_DEFAULT_INPUT_OPTIONS,
 	),
-	'recording.ffmpeg.outputOptions': type('string').default(
+	'recording.ffmpeg.outputOptions': defineDevice(
+		type('string'),
 		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
 	),
 
 	// ── Local model paths ─────────────────────────────────────────────
-	'transcription.speaches.baseUrl': "string = 'http://localhost:8000'",
-	'transcription.speaches.modelId': type('string').default(
+	'transcription.speaches.baseUrl': defineDevice(
+		type('string'),
+		'http://localhost:8000',
+	),
+	'transcription.speaches.modelId': defineDevice(
+		type('string'),
 		'Systran/faster-distil-whisper-small.en',
 	),
-	'transcription.whispercpp.modelPath': "string = ''",
-	'transcription.parakeet.modelPath': "string = ''",
-	'transcription.moonshine.modelPath': "string = ''",
+	'transcription.whispercpp.modelPath': defineDevice(type('string'), ''),
+	'transcription.parakeet.modelPath': defineDevice(type('string'), ''),
+	'transcription.moonshine.modelPath': defineDevice(type('string'), ''),
 
 	// ── Self-hosted server URLs ───────────────────────────────────────
-	'completion.custom.baseUrl': "string = 'http://localhost:11434/v1'",
+	'completion.custom.baseUrl': defineDevice(
+		type('string'),
+		'http://localhost:11434/v1',
+	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
-	'shortcuts.global.toggleManualRecording': type('string | null').default(
+	'shortcuts.global.toggleManualRecording': defineDevice(
+		type('string | null'),
 		`${CommandOrControl}+Shift+;`,
 	),
-	'shortcuts.global.startManualRecording': 'string | null = null',
-	'shortcuts.global.stopManualRecording': 'string | null = null',
-	'shortcuts.global.cancelManualRecording': type('string | null').default(
+	'shortcuts.global.startManualRecording': defineDevice(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.stopManualRecording': defineDevice(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.cancelManualRecording': defineDevice(
+		type('string | null'),
 		`${CommandOrControl}+Shift+'`,
 	),
-	'shortcuts.global.toggleVadRecording': 'string | null = null',
-	'shortcuts.global.startVadRecording': 'string | null = null',
-	'shortcuts.global.stopVadRecording': 'string | null = null',
-	'shortcuts.global.pushToTalk': type('string | null').default(
+	'shortcuts.global.toggleVadRecording': defineDevice(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.startVadRecording': defineDevice(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.stopVadRecording': defineDevice(
+		type('string | null'),
+		null,
+	),
+	'shortcuts.global.pushToTalk': defineDevice(
+		type('string | null'),
 		`${CommandOrAlt}+Shift+D`,
 	),
-	'shortcuts.global.openTransformationPicker': type('string | null').default(
+	'shortcuts.global.openTransformationPicker': defineDevice(
+		type('string | null'),
 		`${CommandOrControl}+Shift+X`,
 	),
-	'shortcuts.global.runTransformationOnClipboard': type(
-		'string | null',
-	).default(`${CommandOrControl}+Shift+R`),
-});
+	'shortcuts.global.runTransformationOnClipboard': defineDevice(
+		type('string | null'),
+		`${CommandOrControl}+Shift+R`,
+	),
+};
 
-type DeviceConfig = typeof DeviceConfig.infer;
+// ── Types ────────────────────────────────────────────────────────────────────
 
-function getDefaultDeviceConfig(): DeviceConfig {
-	const result = DeviceConfig({});
-	if (result instanceof type.errors) {
-		throw new Error(`Failed to get default device config: ${result.summary}`);
-	}
-	return result;
+type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
+export type DeviceConfigKey = keyof DeviceConfigDefs & string;
+
+/** Infer the value type for a device config key from its definition. */
+export type InferDeviceValue<K extends DeviceConfigKey> =
+	DeviceConfigDefs[K]['defaultValue'];
+
+// ── Per-key storage ──────────────────────────────────────────────────────────
+
+const STORAGE_PREFIX = 'whispering.device.';
+
+function storageKey(key: string): string {
+	return `${STORAGE_PREFIX}${key}`;
 }
 
-function parseStoredDeviceConfig(storedValue: unknown): DeviceConfig {
-	const fullResult = DeviceConfig(storedValue);
-	if (!(fullResult instanceof type.errors)) return fullResult;
+/**
+ * Read a single key from localStorage, validate against its schema,
+ * and fall back to the definition's default on any failure.
+ */
+function readKey<K extends DeviceConfigKey>(key: K): InferDeviceValue<K> {
+	const def = DEVICE_DEFINITIONS[key];
+	const raw = window.localStorage.getItem(storageKey(key));
+	if (raw === null) return def.defaultValue as InferDeviceValue<K>;
 
-	if (typeof storedValue !== 'object' || storedValue === null) {
-		return getDefaultDeviceConfig();
-	}
-
-	const defaults = getDefaultDeviceConfig();
-	const validatedConfig: Record<string, unknown> = {};
-
-	for (const [key, value] of Object.entries(
-		storedValue as Record<string, unknown>,
-	)) {
-		if (key in defaults) {
-			validatedConfig[key] = value;
+	try {
+		const parsed: unknown = JSON.parse(raw);
+		const result = (def.schema as (data: unknown) => unknown)(parsed);
+		if (result instanceof type.errors) {
+			console.warn(
+				`Invalid device config for "${key}", using default:`,
+				result.summary,
+			);
+			return def.defaultValue as InferDeviceValue<K>;
 		}
+		return result as InferDeviceValue<K>;
+	} catch {
+		console.warn(`Failed to parse device config for "${key}", using default`);
+		return def.defaultValue as InferDeviceValue<K>;
 	}
-
-	const merged = { ...defaults, ...validatedConfig };
-	const mergedResult = DeviceConfig(merged);
-	if (!(mergedResult instanceof type.errors)) return mergedResult;
-
-	const keyByKey: Record<string, unknown> = {};
-	for (const [key, value] of Object.entries(validatedConfig)) {
-		const test = DeviceConfig({ ...defaults, [key]: value });
-		if (!(test instanceof type.errors)) {
-			keyByKey[key] = value;
-		}
-	}
-
-	const finalResult = DeviceConfig({ ...defaults, ...keyByKey });
-	if (!(finalResult instanceof type.errors)) return finalResult;
-
-	return defaults;
 }
 
-export const deviceConfig = (() => {
-	const _config = createPersistedState({
-		key: 'whispering-device-config',
-		schema: DeviceConfig,
-		onParseError: (error) => {
-			if (error.type === 'storage_empty') return getDefaultDeviceConfig();
-			if (error.type === 'json_parse_error') {
-				console.error('Failed to parse device config JSON:', error.error);
-				return getDefaultDeviceConfig();
+// ── Reactive store ───────────────────────────────────────────────────────────
+
+function createDeviceConfig() {
+	const map = new SvelteMap<string, unknown>();
+
+	// Initialize SvelteMap from per-key localStorage reads.
+	for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
+		map.set(key, readKey(key));
+	}
+
+	// Cross-tab sync: storage event filtered by prefix.
+	// Only the changed key updates in the SvelteMap.
+	window.addEventListener('storage', (e) => {
+		if (!e.key?.startsWith(STORAGE_PREFIX)) return;
+		const key = e.key.slice(STORAGE_PREFIX.length);
+		if (!(key in DEVICE_DEFINITIONS)) return;
+
+		const def = DEVICE_DEFINITIONS[key as DeviceConfigKey];
+
+		if (e.newValue === null) {
+			map.set(key, def.defaultValue);
+			return;
+		}
+
+		try {
+			const parsed: unknown = JSON.parse(e.newValue);
+			const result = (def.schema as (data: unknown) => unknown)(parsed);
+			if (result instanceof type.errors) {
+				map.set(key, def.defaultValue);
+				return;
 			}
-			if (error.type === 'schema_validation_failed') {
-				return parseStoredDeviceConfig(error.value);
-			}
-			if (error.type === 'schema_validation_async_during_sync') {
-				console.warn('Unexpected async validation for device config');
-				return parseStoredDeviceConfig(error.value);
-			}
-			return getDefaultDeviceConfig();
-		},
-		onUpdateError: (err) => {
-			rpc.notify.error({
-				title: 'Error updating device config',
-				description: extractErrorMessage(err),
-			});
-		},
+			map.set(key, result);
+		} catch {
+			map.set(key, def.defaultValue);
+		}
+	});
+
+	// Re-read all keys on focus (handles non-storage changes like DevTools edits).
+	window.addEventListener('focus', () => {
+		for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
+			map.set(key, readKey(key));
+		}
 	});
 
 	return {
-		/** Read-only access to current device config values */
-		get value(): DeviceConfig {
-			return _config.value;
+		/**
+		 * Get a device config value. Returns the current value from the
+		 * reactive SvelteMap. Components reading this will re-render when
+		 * the value changes (from local writes OR cross-tab sync).
+		 */
+		get<K extends DeviceConfigKey>(key: K): InferDeviceValue<K> {
+			return map.get(key) as InferDeviceValue<K>;
 		},
 
-		/** Update multiple device config keys at once */
-		update(updates: Partial<DeviceConfig>) {
-			_config.value = { ..._config.value, ...updates };
+		/**
+		 * Set a single device config value. Writes to localStorage per-key
+		 * and updates the SvelteMap. Components re-render only for this key.
+		 */
+		set<K extends DeviceConfigKey>(key: K, value: InferDeviceValue<K>) {
+			try {
+				window.localStorage.setItem(storageKey(key), JSON.stringify(value));
+			} catch (err) {
+				rpc.notify.error({
+					title: 'Error updating device config',
+					description: extractErrorMessage(err),
+				});
+			}
+			map.set(key, value);
 		},
 
-		/** Update a single device config key */
-		updateKey<K extends keyof DeviceConfig>(key: K, value: DeviceConfig[K]) {
-			_config.value = { ..._config.value, [key]: value };
+		/**
+		 * Update multiple device config keys at once. Calls set() for each
+		 * key. Not atomic — partial writes are fine for device config.
+		 */
+		update(updates: Partial<{ [K in DeviceConfigKey]: InferDeviceValue<K> }>) {
+			for (const [key, value] of Object.entries(updates)) {
+				this.set(
+					key as DeviceConfigKey,
+					value as InferDeviceValue<DeviceConfigKey>,
+				);
+			}
 		},
 
-		/** Reset all device config to defaults */
+		/**
+		 * Reset all device config to defaults. Writes each default value
+		 * to localStorage per-key.
+		 */
 		reset() {
-			_config.value = getDefaultDeviceConfig();
+			for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
+				this.set(
+					key,
+					DEVICE_DEFINITIONS[key].defaultValue as InferDeviceValue<typeof key>,
+				);
+			}
 		},
 	};
-})();
+}
+
+export const deviceConfig = createDeviceConfig();

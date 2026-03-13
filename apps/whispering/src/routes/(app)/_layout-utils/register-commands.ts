@@ -114,9 +114,9 @@ export async function syncLocalShortcutsWithSettings() {
 export async function syncGlobalShortcutsWithSettings() {
 	const commandsWithAccelerators = commands
 		.map((command) => {
-			const accelerator = deviceConfig.value[
+			const accelerator = deviceConfig.get(
 				getGlobalShortcutKey(command.id)
-			] as Accelerator | null;
+			) as Accelerator | null;
 			if (!accelerator) return null;
 			return { command, accelerator };
 		})
@@ -179,7 +179,7 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 
 	// Check for duplicates
 	for (const command of commands) {
-		const shortcut = deviceConfig.value[getGlobalShortcutKey(command.id)];
+		const shortcut = deviceConfig.get(getGlobalShortcutKey(command.id));
 		if (shortcut) {
 			if (globalShortcuts.has(shortcut)) {
 				// If duplicates found, reset all global shortcuts to defaults
@@ -221,7 +221,7 @@ export function resetLocalShortcuts() {
  */
 export function resetGlobalShortcuts() {
 	for (const command of commands) {
-		deviceConfig.updateKey(
+		deviceConfig.set(
 			getGlobalShortcutKey(command.id),
 			DEFAULT_GLOBAL_SHORTCUTS[command.id] ?? null,
 		);

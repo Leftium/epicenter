@@ -18,7 +18,7 @@
 	// VAD always uses navigator device ID
 	const settingKey = 'recording.navigator.deviceId';
 
-	const selectedDeviceId = $derived(deviceConfig.value[settingKey]);
+	const selectedDeviceId = $derived(deviceConfig.get(settingKey));
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
 
@@ -78,7 +78,7 @@
 							value={device.id}
 							onSelect={() => {
 								const currentDeviceId = selectedDeviceId;
-								deviceConfig.updateKey(
+						deviceConfig.set(
 									settingKey,
 									currentDeviceId === device.id ? null : device.id,
 								);

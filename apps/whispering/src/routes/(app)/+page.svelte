@@ -439,7 +439,7 @@
 					>
 						<Kbd.Root
 							>{getShortcutDisplayLabel(
-								deviceConfig.value['shortcuts.global.toggleManualRecording'],
+						deviceConfig.get('shortcuts.global.toggleManualRecording'),
 							)}</Kbd.Root
 						>
 					</Link>
@@ -478,7 +478,7 @@
 					>
 						<Kbd.Root
 							>{getShortcutDisplayLabel(
-								deviceConfig.value['shortcuts.global.toggleManualRecording'],
+						deviceConfig.get('shortcuts.global.toggleManualRecording'),
 							)}</Kbd.Root
 						>
 					</Link>

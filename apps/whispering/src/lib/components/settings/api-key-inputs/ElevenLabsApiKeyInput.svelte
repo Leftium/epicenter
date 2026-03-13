@@ -12,8 +12,8 @@
 		type="password"
 		placeholder="Your ElevenLabs API Key"
 		autocomplete="off"
-		bind:value={() => deviceConfig.value['apiKeys.elevenlabs'],
-			(value) => deviceConfig.updateKey('apiKeys.elevenlabs', value)}
+		bind:value={() => deviceConfig.get('apiKeys.elevenlabs'),
+			(value) => deviceConfig.set('apiKeys.elevenlabs', value)}
 	/>
 	<Field.Description>
 		You can find your ElevenLabs API key in your <Link

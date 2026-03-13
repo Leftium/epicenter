@@ -84,8 +84,8 @@ const startManualRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
-				const method = deviceConfig.value['recording.method'];
-				deviceConfig.updateKey(
+				const method = deviceConfig.get("recording.method");
+				deviceConfig.set(
 					`recording.${method}.deviceId`,
 					deviceAcquisitionOutcome.deviceId,
 				);
@@ -258,8 +258,8 @@ const startVadRecording = defineMutation({
 				break;
 			}
 			case 'fallback': {
-				deviceConfig.updateKey(
-					'recording.navigator.deviceId',
+				deviceConfig.set(
+					"recording.navigator.deviceId",
 					deviceAcquisitionOutcome.deviceId,
 				);
 				switch (deviceAcquisitionOutcome.reason) {

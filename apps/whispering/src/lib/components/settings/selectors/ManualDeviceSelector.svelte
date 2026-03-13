@@ -15,11 +15,11 @@
 
 	const combobox = useCombobox();
 
-	const selectedMethod = $derived(deviceConfig.value['recording.method']);
+	const selectedMethod = $derived(deviceConfig.get('recording.method'));
 
 	// Get the device ID for the current method
 	const selectedDeviceId = $derived(
-		deviceConfig.value[`recording.${selectedMethod}.deviceId`],
+		deviceConfig.get(`recording.${selectedMethod}.deviceId`),
 	);
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
@@ -93,7 +93,7 @@
 							<Command.Item
 								value={`method-${methodKey} ${method.label} ${method.description}`}
 								onSelect={() => {
-									deviceConfig.updateKey(
+						deviceConfig.set(
 										'recording.method',
 										methodKey as keyof typeof RECORDING_METHODS,
 									);
@@ -144,7 +144,7 @@
 								value={`device-${device.id} ${device.label}`}
 								onSelect={() => {
 									const currentDeviceId = selectedDeviceId;
-									deviceConfig.updateKey(
+						deviceConfig.set(
 										`recording.${selectedMethod}.deviceId`,
 										currentDeviceId === device.id ? null : device.id,
 									);

@@ -13,8 +13,8 @@
 			type="password"
 			placeholder="Your OpenAI API Key"
 			autocomplete="off"
-			bind:value={() => deviceConfig.value['apiKeys.openai'],
-				(value) => deviceConfig.updateKey('apiKeys.openai', value)}
+			bind:value={() => deviceConfig.get('apiKeys.openai'),
+				(value) => deviceConfig.set('apiKeys.openai', value)}
 		/>
 		<Field.Description>
 			You can find your API key in your <Link
@@ -42,8 +42,8 @@
 			type="url"
 			placeholder="https://api.openai.com/v1 (default)"
 			autocomplete="off"
-			bind:value={() => deviceConfig.value['apiEndpoints.openai'],
-				(value) => deviceConfig.updateKey('apiEndpoints.openai', value)}
+			bind:value={() => deviceConfig.get('apiEndpoints.openai'),
+				(value) => deviceConfig.set('apiEndpoints.openai', value)}
 		/>
 		<Field.Description>
 			Override the default OpenAI API endpoint. Useful for reverse proxies or

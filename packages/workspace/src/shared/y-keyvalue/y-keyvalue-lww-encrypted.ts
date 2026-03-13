@@ -127,7 +127,7 @@ export type YKeyValueLwwEncrypted<T> = {
  * });
  * kv.set('tab-1', { url: 'https://bank.com', title: 'My Bank' });
  * kv.get('tab-1'); // { url: 'https://bank.com', title: 'My Bank' }
- * // Y.Array contains: { key: 'tab-1', val: { v: 1, alg: 'A256GCM', ct: '...', iv: '...' }, ts: ... }
+ * // Y.Array contains: { key: 'tab-1', val: { v: 1, ct: '...', iv: '...' }, ts: ... }
  *
  * // No-key passthrough: identical to plain YKeyValueLww
  * const plainKv = createEncryptedKvLww<string>(yarray);

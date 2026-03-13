@@ -86,12 +86,11 @@ describe('encryptValue / decryptValue', () => {
 		const encrypted = encryptValue('test', key);
 
 		expect(encrypted).toHaveProperty('v');
-		expect(encrypted).toHaveProperty('alg');
 		expect(encrypted).toHaveProperty('ct');
 		expect(encrypted).toHaveProperty('iv');
+		expect(Object.keys(encrypted).sort()).toEqual(['ct', 'iv', 'v']);
 
 		expect(encrypted.v).toBe(1);
-		expect(encrypted.alg).toBe('A256GCM');
 		expect(typeof encrypted.ct).toBe('string');
 		expect(typeof encrypted.iv).toBe('string');
 	});
@@ -165,20 +164,18 @@ describe('isEncryptedBlob', () => {
 		expect(isEncryptedBlob({})).toBe(false);
 	});
 
-	test('returns false for object with wrong v', () => {
+	test('returns true for any numeric version (future-proof)', () => {
 		const blob = {
-			v: 2, // Wrong version
-			alg: 'A256GCM',
+			v: 2,
 			ct: 'ciphertext',
 			iv: 'nonce',
 		};
-		expect(isEncryptedBlob(blob)).toBe(false);
+		expect(isEncryptedBlob(blob)).toBe(true);
 	});
 
-	test('returns false for object with wrong alg', () => {
+	test('returns false for object with non-numeric v', () => {
 		const blob = {
-			v: 1,
-			alg: 'AES-256-CBC', // Wrong algorithm
+			v: 'not-a-number',
 			ct: 'ciphertext',
 			iv: 'nonce',
 		};
@@ -188,7 +185,6 @@ describe('isEncryptedBlob', () => {
 	test('returns false for object missing ct field', () => {
 		const blob = {
 			v: 1,
-			alg: 'A256GCM',
 			iv: 'nonce',
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
@@ -197,7 +193,6 @@ describe('isEncryptedBlob', () => {
 	test('returns false for object missing iv field', () => {
 		const blob = {
 			v: 1,
-			alg: 'A256GCM',
 			ct: 'ciphertext',
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
@@ -206,7 +201,6 @@ describe('isEncryptedBlob', () => {
 	test('returns false for object with non-string ct', () => {
 		const blob = {
 			v: 1,
-			alg: 'A256GCM',
 			ct: 12345, // Should be string
 			iv: 'nonce',
 		};
@@ -216,7 +210,6 @@ describe('isEncryptedBlob', () => {
 	test('returns false for object with non-string iv', () => {
 		const blob = {
 			v: 1,
-			alg: 'A256GCM',
 			ct: 'ciphertext',
 			iv: 12345, // Should be string
 		};

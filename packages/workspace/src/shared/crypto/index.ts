@@ -5,14 +5,13 @@ import { randomBytes } from '@noble/ciphers/utils.js';
  * Encrypted blob format for persisted and synced encrypted data.
  *
  * Uses AES-256-GCM with a 12-byte nonce and 16-byte authentication tag.
- * Field names are compact (`ct`, `iv`, `v`, `alg`) because this type is
+ * Field names are compact (`ct`, `iv`, `v`) because this type is
  * persisted in the workspace database and synced across clients.
  *
  * @example
  * ```typescript
  * const encrypted: EncryptedBlob = {
  *   v: 1,
- *   alg: 'A256GCM',
  *   ct: 'base64-encoded-ciphertext',
  *   iv: 'base64-encoded-nonce',
  * };
@@ -20,7 +19,6 @@ import { randomBytes } from '@noble/ciphers/utils.js';
  */
 type EncryptedBlob = {
 	v: 1;
-	alg: 'A256GCM';
 	ct: string;
 	iv: string;
 };
@@ -60,7 +58,7 @@ function generateEncryptionKey(): Uint8Array {
  * const key = generateEncryptionKey();
  * const encrypted = encryptValue('secret data', key);
  * console.log(encrypted);
- * // { v: 1, alg: 'A256GCM', ct: '...', iv: '...' }
+ * // { v: 1, ct: '...', iv: '...' }
  * ```
  */
 function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
@@ -72,7 +70,6 @@ function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
 
 	return {
 		v: 1,
-		alg: 'A256GCM',
 		ct: bytesToBase64(ciphertext),
 		iv: bytesToBase64(nonce),
 	};
@@ -131,11 +128,9 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
 		typeof value === 'object' &&
 		value !== null &&
 		'v' in value &&
-		'alg' in value &&
 		'ct' in value &&
 		'iv' in value &&
-		(value as Record<string, unknown>).v === 1 &&
-		(value as Record<string, unknown>).alg === 'A256GCM' &&
+		typeof (value as Record<string, unknown>).v === 'number' &&
 		typeof (value as Record<string, unknown>).ct === 'string' &&
 		typeof (value as Record<string, unknown>).iv === 'string'
 	);

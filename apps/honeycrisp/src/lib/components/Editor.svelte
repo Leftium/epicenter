@@ -6,6 +6,7 @@
 	import BoldIcon from '@lucide/svelte/icons/bold';
 	import Heading1Icon from '@lucide/svelte/icons/heading-1';
 	import Heading2Icon from '@lucide/svelte/icons/heading-2';
+	import Heading3Icon from '@lucide/svelte/icons/heading-3';
 	import ItalicIcon from '@lucide/svelte/icons/italic';
 	import ListIcon from '@lucide/svelte/icons/list';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
@@ -39,6 +40,7 @@
 		strike: false,
 		heading1: false,
 		heading2: false,
+		heading3: false,
 		bulletList: false,
 		orderedList: false,
 		taskList: false,
@@ -111,6 +113,7 @@
 					strike: ed.isActive('strike'),
 					heading1: ed.isActive('heading', { level: 1 }),
 					heading2: ed.isActive('heading', { level: 2 }),
+					heading3: ed.isActive('heading', { level: 3 }),
 					bulletList: ed.isActive('bulletList'),
 					orderedList: ed.isActive('orderedList'),
 					taskList: ed.isActive('taskList'),
@@ -190,10 +193,11 @@
 			<ToggleGroup.Root
 				type="single"
 				size="sm"
-				value={activeFormats.heading1 ? 'h1' : activeFormats.heading2 ? 'h2' : ''}
+				value={activeFormats.heading1 ? 'h1' : activeFormats.heading2 ? 'h2' : activeFormats.heading3 ? 'h3' : ''}
 				onValueChange={(v) => {
 					if (v === 'h1') editor?.chain().focus().toggleHeading({ level: 1 }).run();
 					else if (v === 'h2') editor?.chain().focus().toggleHeading({ level: 2 }).run();
+					else if (v === 'h3') editor?.chain().focus().toggleHeading({ level: 3 }).run();
 				}}
 			>
 				<Tooltip.Root>
@@ -211,6 +215,14 @@
 						>
 					</Tooltip.Trigger>
 					<Tooltip.Content>Heading 2</Tooltip.Content>
+				</Tooltip.Root>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						<ToggleGroup.Item value="h3"
+							><Heading3Icon class="size-4" /></ToggleGroup.Item
+						>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Heading 3</Tooltip.Content>
 				</Tooltip.Root>
 			</ToggleGroup.Root>
 

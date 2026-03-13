@@ -84,7 +84,7 @@ export type ActionNames<T extends Actions> = {
  * - **`needsApproval`** — Only present when the action is marked `destructive`.
  *   Omitted entirely for non-destructive tools. The server's `executeToolCalls`
  *   checks this to decide whether to send an `APPROVAL_REQUESTED` event or a
- *   direct `TOOL_CALL` event. Without it, mutations auto-execute with no approval
+ *   direct `TOOL_CALL` event. Without it, actions auto-execute with no approval
  *   dialog.
  * - **`metadata`** — Pass-through `Record<string, unknown>` for server-side
  *   routing, logging, or future TanStack AI features.

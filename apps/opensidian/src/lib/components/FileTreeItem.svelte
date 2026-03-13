@@ -2,7 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { ChevronRight, File as FileIcon } from 'lucide-svelte';
+	import { File as FileIcon } from 'lucide-svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
@@ -53,13 +53,6 @@
 								? 'bg-accent text-accent-foreground'
 								: ''}"
 						>
-							{#snippet icon({ open })}
-								<ChevronRight
-									class="h-4 w-4 shrink-0 transition-transform {open
-										? 'rotate-90'
-										: ''}"
-								/>
-							{/snippet}
 							{#each children as childId (childId)}
 								<FileTreeItem id={childId} />
 							{/each}

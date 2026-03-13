@@ -6,10 +6,8 @@
  * mutation handlers in workspace.ts.
  */
 import type { TableHelper } from '@epicenter/workspace';
-import { generateId } from '@epicenter/workspace';
+import { createSavedTabId, type DeviceId, parseTabId, type SavedTab, type SavedTabId } from '$lib/workspace';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import type { DeviceId, SavedTab, SavedTabId } from '$lib/workspace';
-import { parseTabId } from '$lib/workspace';
 
 /**
  * Extract the native tab ID (number) from a composite tab ID string.
@@ -176,7 +174,7 @@ export async function executeSaveTabs(
 	// Sync writes to Y.Doc
 	for (const tab of validTabs) {
 		savedTabsTable.set({
-			id: generateId() as string as SavedTabId,
+			id: createSavedTabId(),
 			url: tab.url,
 			title: tab.title || 'Untitled',
 			favIconUrl: tab.favIconUrl,

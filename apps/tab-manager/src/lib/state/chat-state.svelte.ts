@@ -35,7 +35,6 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,
@@ -45,19 +44,11 @@ import {
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import {
-	AVAILABLE_PROVIDERS,
-	DEFAULT_MODEL,
-	DEFAULT_PROVIDER,
-	PROVIDER_MODELS,
-	type Provider,
-} from '$lib/ai/providers';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { toUiMessage } from '$lib/ai/ui-message';
-import { remoteServerUrl } from '$lib/state/settings.svelte';
-import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	createChatMessageId,
+	createConversationId,
 	workspaceClient,
 	workspaceDefinitions,
 	workspaceTools,
@@ -83,8 +74,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Generate a new branded ConversationId from a random ID. */
-const generateConversationId = () => generateId() as string as ConversationId;
 
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
@@ -105,7 +94,7 @@ function createAiChatState() {
 	 */
 	function ensureDefaultConversation(): ConversationId | undefined {
 		if (conversations.length > 0) return undefined;
-		const id = generateConversationId();
+		const id = createConversationId();
 		const now = Date.now();
 		workspaceClient.tables.conversations.set({
 			id,
@@ -358,7 +347,7 @@ function createAiChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = generateId() as string as ChatMessageId;
+				const userMessageId = createChatMessageId();
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
@@ -503,7 +492,7 @@ function createAiChatState() {
 		sourceMessageId?: ChatMessageId;
 		systemPrompt?: string;
 	}): ConversationId {
-		const id = generateConversationId();
+		const id = createConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 

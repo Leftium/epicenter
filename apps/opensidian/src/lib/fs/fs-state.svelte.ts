@@ -30,7 +30,7 @@ import { toast } from 'svelte-sonner';
  */
 function createFsState() {
 	const ws = createWorkspace({
-		id: 'fs-explorer',
+		id: 'opensidian',
 		tables: { files: filesTable },
 	}).withExtension('persistence', indexeddbPersistence);
 	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);

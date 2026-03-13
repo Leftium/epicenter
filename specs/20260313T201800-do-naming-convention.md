@@ -1,6 +1,6 @@
 # DO Naming Convention: Include Type Segment
 
-**Status:** Pending
+**Status:** Completed (merged in PR #1520)
 **Scope:** 2 files, ~10 line changes
 **Worktree:** Separate branch off `main` (not this branch)
 
@@ -36,8 +36,8 @@ More fundamentally, the current naming scheme doesn't encode **what kind of DO**
 
 ### Task 1: Update stub functions in `app.ts`
 
-- [ ] Change `getWorkspaceStub` DO name: `user:${userId}:${workspace}` → `user:${userId}:workspace:${workspace}`
-- [ ] Change `getDocumentStub` DO name: `user:${userId}:${document}` → `user:${userId}:document:${document}`
+- [x] Change `getWorkspaceStub` DO name: `user:${userId}:${workspace}` → `user:${userId}:workspace:${workspace}`
+- [x] Change `getDocumentStub` DO name: `user:${userId}:${document}` → `user:${userId}:document:${document}`
 
 **`getWorkspaceStub` (app.ts:294–297):**
 
@@ -59,8 +59,8 @@ function getDocumentStub(c: Context<Env>) {
 
 ### Task 2: Update JSDoc comments
 
-- [ ] Update the DO name namespacing JSDoc block above `getWorkspaceStub` (app.ts:265–291)
-- [ ] Update JSDoc in `base-sync-room.ts` (line 90–93) that references the naming scheme
+- [x] Update the DO name namespacing JSDoc block above `getWorkspaceStub` (app.ts:265–291)
+- [x] Update JSDoc in `base-sync-room.ts` (line 90–93) that references the naming scheme
 
 **JSDoc update in app.ts (first line of the block, line 266):**
 
@@ -83,9 +83,9 @@ function getDocumentStub(c: Context<Env>) {
 
 ### Verification
 
-- [ ] `bun run typecheck` passes from `apps/api/`
-- [ ] Grep for old pattern `user:\${c.var.user.id}:\${c.req.param` returns 0 results in `apps/api/src/`
-- [ ] Grep for new pattern `user:\${c.var.user.id}:workspace:` and `user:\${c.var.user.id}:document:` returns expected results
+- [x] `bun run typecheck` passes from `apps/api/`
+- [x] Grep for old pattern `user:\${c.var.user.id}:\${c.req.param` returns 0 results in `apps/api/src/`
+- [x] Grep for new pattern `user:\${c.var.user.id}:workspace:` and `user:\${c.var.user.id}:document:` returns expected results
 
 ## Files Changed
 

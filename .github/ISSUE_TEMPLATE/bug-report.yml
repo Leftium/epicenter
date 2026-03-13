@@ -119,5 +119,3 @@ body:
       options:
         - label: I have searched existing issues to ensure this hasn't been reported
           required: true
-        - label: I have included all relevant information above
-          required: true

@@ -472,15 +472,15 @@ Synchronous via `@noble/ciphers`. Zero Yjs dependency. Independently testable.
 
 Composition wrapper. Zero changes to `YKeyValueLww`.
 
-- [ ] **2.1** Create `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
-- [ ] **2.2** Implement `createEncryptedKvLww` factory function with `getKey` getter
-- [ ] **2.3** `set()`: call `getKey()` → if undefined, passthrough; else serialize → encrypt → delegate to inner
-- [ ] **2.4** `get()`: read from wrapper.map (decrypted) or pending → return plaintext
-- [ ] **2.5** Maintain decrypted `wrapper.map` via `inner.observe()` — decrypt each change, write to wrapper.map
-- [ ] **2.6** `entries()`: iterate wrapper.map (already decrypted)
-- [ ] **2.7** `observe()`: wrap inner observer, decrypt change values before forwarding to registered handlers
-- [ ] **2.8** No-key passthrough: when `getKey()` returns undefined, all operations pass through without encryption
-- [ ] **2.9** Tests: encrypt-write → decrypt-read round-trip, no-key passthrough, observer decryption, mixed plaintext/encrypted migration, wrapper.map always plaintext, table-helper compatibility, two-device sync with same key
+- [x] **2.1** Create `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
+- [x] **2.2** Implement `createEncryptedKvLww` factory function with `getKey` getter
+- [x] **2.3** `set()`: call `getKey()` → if undefined, passthrough; else serialize → encrypt → delegate to inner
+- [x] **2.4** `get()`: read from wrapper.map (decrypted) or pending → return plaintext
+- [x] **2.5** Maintain decrypted `wrapper.map` via `inner.observe()` — decrypt each change, write to wrapper.map
+- [x] **2.6** `entries()`: iterate wrapper.map (already decrypted), merge with pending
+- [x] **2.7** `observe()`: wrap inner observer, decrypt change values before forwarding to registered handlers
+- [x] **2.8** No-key passthrough: when `getKey()` returns undefined, all operations pass through without encryption
+- [x] **2.9** Tests: 24 tests passing — encrypt round-trip, no-key passthrough, observer decryption, mixed plaintext/encrypted migration, wrapper.map always plaintext, two-device sync with same key, batch operations, mid-session key availability
 
 ### Phase 3: Wire into `createKv`
 

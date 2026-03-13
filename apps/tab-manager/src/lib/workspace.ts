@@ -17,6 +17,7 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
+	generateId,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -85,6 +86,8 @@ export type SavedTabId = string & Brand<'SavedTabId'>;
 export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
+export const createSavedTabId = (): SavedTabId =>
+	generateId() as string as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -96,6 +99,8 @@ export type BookmarkId = string & Brand<'BookmarkId'>;
 export const BookmarkId = type('string').pipe(
 	(s): BookmarkId => s as BookmarkId,
 );
+export const createBookmarkId = (): BookmarkId =>
+	generateId() as string as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
@@ -107,6 +112,8 @@ export type ConversationId = string & Brand<'ConversationId'>;
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
+export const createConversationId = (): ConversationId =>
+	generateId() as string as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
@@ -117,6 +124,8 @@ export type ChatMessageId = string & Brand<'ChatMessageId'>;
 export const ChatMessageId = type('string').pipe(
 	(s): ChatMessageId => s as ChatMessageId,
 );
+export const createChatMessageId = (): ChatMessageId =>
+	generateId() as string as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types

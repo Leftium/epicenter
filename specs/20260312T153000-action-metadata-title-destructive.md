@@ -244,6 +244,7 @@ Added `title` and `destructive` fields to the action definition system across 7 
 
 ### Follow-up Work
 
+- `requireApprovalForMutations` was identified as redundant with the `destructive` field and removed in the follow-up spec (`specs/20260312T170000-progressive-tool-trust.md`). The `needsApproval` flag is now set conditionally—only when `destructive: true`—rather than blanket-applied to all mutations.
 - Unify `QuickAction` system with `.withActions()` metadata (out of scope per spec)
 - Consider `category` field if path nesting proves insufficient for command palette grouping
 - Consider `keywords` field if `title + description + path` search proves insufficient

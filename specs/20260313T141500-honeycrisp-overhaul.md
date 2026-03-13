@@ -357,12 +357,12 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Wave 4: Visual Polish
 
-- [ ] **4.1** Refine note card selection state: `rounded-lg` with proper `bg-accent` opacity
-- [ ] **4.2** Refine note card hover state: subtle `bg-accent/30` transition
-- [ ] **4.3** Verify editor title CSS (first-child 1.75rem bold) still works correctly
-- [ ] **4.4** Verify toolbar spacing and icon sizes match Apple Notes feel
-- [ ] **4.5** Test empty states: no notes in folder, no folders, no search results, no note selected
-- [ ] **4.6** Add proper keyboard navigation: arrow keys in note list to navigate between notes
+- [x] **4.1** Refine note card selection state: `rounded-lg` with proper `bg-accent` opacity
+- [x] **4.2** Refine note card hover state: subtle `bg-accent/30` transition
+- [x] **4.3** Verify editor title CSS (first-child 1.75rem bold) still works correctly
+- [x] **4.4** Verify toolbar spacing and icon sizes match Apple Notes feel
+- [x] **4.5** Test empty states: no notes in folder, no folders, no search results, no note selected
+- [x] **4.6** Add proper keyboard navigation: arrow keys in note list to navigate between notes
 
 ### Wave 5: Quality + Edge Cases
 

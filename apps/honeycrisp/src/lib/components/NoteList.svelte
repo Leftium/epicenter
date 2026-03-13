@@ -98,9 +98,35 @@
 
 		return groups;
 	});
+
+	/** Flat list of note IDs in display order for arrow key navigation. */
+	const flatNoteIds = $derived(
+		groupedNotes.flatMap((g) => g.entries.map((n) => n.id)),
+	);
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+		if (flatNoteIds.length === 0) return;
+		e.preventDefault();
+
+		const currentIndex = selectedNoteId
+			? flatNoteIds.indexOf(selectedNoteId)
+			: -1;
+
+		if (e.key === 'ArrowDown') {
+			const nextIndex =
+				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
+			onSelectNote(flatNoteIds[nextIndex]!);
+		} else {
+			const prevIndex =
+				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
+			onSelectNote(flatNoteIds[prevIndex]!);
+		}
+	}
 </script>
 
-<div class="flex h-full flex-col">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="flex h-full flex-col" onkeydown={handleKeydown} tabindex="-1">
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
 			<h2 class="text-sm font-semibold">{folderName}</h2>

@@ -164,8 +164,11 @@
 						<p class="text-muted-foreground">Loading editor…</p>
 					</div>
 				{:else}
-					<div class="flex h-full items-center justify-center">
-						<p class="text-muted-foreground">Select or create a note</p>
+					<div class="flex h-full flex-col items-center justify-center gap-2">
+						<p class="text-muted-foreground">No note selected</p>
+						<p class="text-sm text-muted-foreground/60">
+							Choose a note from the list or press ⌘N to create one
+						</p>
 					</div>
 				{/if}
 			</Resizable.Pane>

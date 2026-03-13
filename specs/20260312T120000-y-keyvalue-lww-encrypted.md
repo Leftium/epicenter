@@ -4,6 +4,8 @@
 **Status**: Draft (Updated 2026-03-12: getKey getter, decrypted map, all open questions resolved)
 **Builds on**: `specs/20260213T005300-encrypted-workspace-storage.md`
 
+> **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct, iv }`—the version field is the sole contract for algorithm and encoding. References to `alg: 'A256GCM'` below are historical. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+
 ## Overview
 
 An encrypted variant of `YKeyValueLww` that transparently encrypts values before they enter the Y.Doc and decrypts on read. Encryption at the CRDT data structure level—the lowest possible insertion point—so no higher layer can accidentally bypass it.

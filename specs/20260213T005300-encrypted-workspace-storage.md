@@ -8,6 +8,8 @@
 
 > **Note (2026-03-12)**: The implementation uses `@noble/ciphers` (synchronous AES-256-GCM) instead of Web Crypto API as originally planned. Synchronous encryption preserves the `set()` → `void` API across 394 call sites. See `specs/20260312T120000-y-keyvalue-lww-encrypted.md` for the final implementation spec. The encrypted blob format was also extended to `{ v: 1, alg: 'A256GCM', ct, iv }` with version and algorithm fields for cryptographic agility.
 
+> **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct, iv }`—the version field is the sole contract for algorithm and encoding. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+
 ## Overview
 
 Optional value-level encryption for all workspace data stored in Yjs. When enabled, every value written to tables and KV is encrypted with AES-256-GCM before entering the Y.Doc. The CRDT structure remains intact (Y-Sweet can still merge), but the content is opaque.

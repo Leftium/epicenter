@@ -3,6 +3,8 @@
 **Date**: 2026-03-13
 **Status**: Draft
 
+> **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. References to `{ v: 1, alg: 'A256GCM', ct, iv }` below are historical. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+
 ## Overview
 
 The encrypted KVLWW implementation landed. The docs and READMEs still describe encryption in abstract terms ("server-managed encryption at rest") without mentioning what actually happens: encryption inside the CRDT data structure, one code path where the key source is the only variable, and real zero-knowledge for self-hosted users.

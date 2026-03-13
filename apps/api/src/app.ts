@@ -365,7 +365,7 @@ app.get(
 					userId: c.var.user.id,
 					doType: 'workspace',
 					resourceName: c.req.param('workspace'),
-					doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+					doName: `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`,
 				}),
 			);
 			return stub.fetch(c.req.raw);
@@ -377,7 +377,7 @@ app.get(
 				userId: c.var.user.id,
 				doType: 'workspace',
 				resourceName: c.req.param('workspace'),
-				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+					doName: `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`,
 				storageBytes,
 			}),
 		);
@@ -407,7 +407,7 @@ app.post(
 				userId: c.var.user.id,
 				doType: 'workspace',
 				resourceName: c.req.param('workspace'),
-				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+					doName: `user:${c.var.user.id}:workspace:${c.req.param('workspace')}`,
 				storageBytes,
 			}),
 		);
@@ -438,7 +438,7 @@ app.get(
 					userId: c.var.user.id,
 					doType: 'document',
 					resourceName: c.req.param('document'),
-					doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+					doName: `user:${c.var.user.id}:document:${c.req.param('document')}`,
 				}),
 			);
 			return stub.fetch(c.req.raw);
@@ -450,7 +450,7 @@ app.get(
 				userId: c.var.user.id,
 				doType: 'document',
 				resourceName: c.req.param('document'),
-				doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+					doName: `user:${c.var.user.id}:document:${c.req.param('document')}`,
 				storageBytes,
 			}),
 		);
@@ -480,7 +480,7 @@ app.post(
 				userId: c.var.user.id,
 				doType: 'document',
 				resourceName: c.req.param('document'),
-				doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+					doName: `user:${c.var.user.id}:document:${c.req.param('document')}`,
 				storageBytes,
 			}),
 		);

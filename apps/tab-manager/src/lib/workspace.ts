@@ -86,6 +86,22 @@ export type SavedTabId = string & Brand<'SavedTabId'>;
 export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
+/**
+ * Generate a unique {@link SavedTabId} for a newly saved tab.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need the error-prone `as string as SavedTabId` double-cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.savedTabs.set({
+ *   id: createSavedTabId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
 export const createSavedTabId = (): SavedTabId =>
 	generateId() as string as SavedTabId;
 
@@ -99,6 +115,22 @@ export type BookmarkId = string & Brand<'BookmarkId'>;
 export const BookmarkId = type('string').pipe(
 	(s): BookmarkId => s as BookmarkId,
 );
+/**
+ * Generate a unique {@link BookmarkId} for a newly created bookmark.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need the error-prone `as string as BookmarkId` double-cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.bookmarks.set({
+ *   id: createBookmarkId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
 export const createBookmarkId = (): BookmarkId =>
 	generateId() as string as BookmarkId;
 
@@ -112,6 +144,26 @@ export type ConversationId = string & Brand<'ConversationId'>;
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
+/**
+ * Generate a unique {@link ConversationId} for a new chat conversation.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need the error-prone `as string as ConversationId` double-cast.
+ *
+ * @example
+ * ```typescript
+ * const id = createConversationId();
+ * workspaceClient.tables.conversations.set({
+ *   id,
+ *   title: 'New Chat',
+ *   provider: DEFAULT_PROVIDER,
+ *   model: DEFAULT_MODEL,
+ *   createdAt: Date.now(),
+ *   updatedAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
 export const createConversationId = (): ConversationId =>
 	generateId() as string as ConversationId;
 
@@ -124,6 +176,25 @@ export type ChatMessageId = string & Brand<'ChatMessageId'>;
 export const ChatMessageId = type('string').pipe(
 	(s): ChatMessageId => s as ChatMessageId,
 );
+/**
+ * Generate a unique {@link ChatMessageId} for a new chat message.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need the error-prone `as string as ChatMessageId` double-cast.
+ *
+ * @example
+ * ```typescript
+ * const userMessageId = createChatMessageId();
+ * workspaceClient.tables.chatMessages.set({
+ *   id: userMessageId,
+ *   conversationId,
+ *   role: 'user',
+ *   parts: [{ type: 'text', content }],
+ *   createdAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
 export const createChatMessageId = (): ChatMessageId =>
 	generateId() as string as ChatMessageId;
 

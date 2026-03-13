@@ -1,7 +1,7 @@
 # Whispering Settings Separation (Wave 2)
 
 **Date**: 2026-03-12
-**Status**: In Progress
+**Status**: Implemented
 **Builds on**: [20260312T170000-whispering-workspace-polish-and-migration.md](./20260312T170000-whispering-workspace-polish-and-migration.md)
 
 ## Overview
@@ -381,7 +381,8 @@ For device-config:
 - All existing functionality preserved (no regressions)
 - LSP diagnostics clean on all changed files
 
-### Task 5: Deprecate old unified settings
+- [x] **Task 5**: Deprecate old unified settings
+  > **Note**: settings.svelte.ts marked @deprecated with JSDoc. settings.ts schema kept for Wave 3 migration.
 
 **Files:**
 - `apps/whispering/src/lib/state/settings.svelte.ts` — mark deprecated or remove
@@ -463,4 +464,29 @@ Tasks 2 and 3 can be parallelized (independent files). Task 4 depends on both 2 
 
 ## Review
 
-(To be filled after implementation)
+**Completed**: 2026-03-13
+**Branch**: opencode/silent-squid
+
+### Summary
+
+Split the unified `settings.svelte.ts` singleton into two purpose-built modules:
+- **workspace-settings.svelte.ts** — ~43 synced preferences backed by Yjs KV + SvelteMap for per-key reactivity
+- **device-config.svelte.ts** — ~37 device-bound secrets/hardware/paths backed by localStorage via createPersistedState
+
+All 47 consumer files migrated. Old settings module marked @deprecated (schema preserved for future localStorage→Yjs migration).
+
+### Deviations from Spec
+
+- **No defaults seeding**: `kv.get()` already returns defaultValue for missing keys, so eager seeding into Yjs was unnecessary. SvelteMap is populated from `kv.get()` directly.
+- **No discriminated union**: `get(key)` returns the value directly (not `KvGetResult<T>`), matching the simplified Spec 1 API.
+- **Pipe transforms dropped**: device-config uses plain `string | null` for device IDs instead of the old `deviceIdTransform` pipe. Consumers that need `DeviceIdentifier` branding call `asDeviceIdentifier()` at the call site.
+- **Reset methods added**: `workspaceSettings.reset()` and `deviceConfig.reset()` added to support the existing "Reset All Settings" button. `resetLocalShortcuts()` and `resetGlobalShortcuts()` extracted to register-commands.ts.
+- **switchRecordingMode inlined**: The old `settings.switchRecordingMode()` method was inlined in `+page.svelte` since it was the only consumer.
+- **Type conversions at boundaries**: `transcription.temperature` (string→number) and `retention.maxCount` (string→number) require `String()` conversion at service call boundaries since service types still reference the old `Settings` type.
+
+### Follow-up Work
+
+- **Wave 3 migration**: Read old `whispering-settings` localStorage data, parse with `parseStoredSettings()`, and seed workspace KV + device-config localStorage. Then delete the old key.
+- **Service type updates**: Update `cleanupExpired()` and transcription service signatures to accept `number` directly instead of requiring `String()` conversion.
+- **README updates**: Update state/README.md and components/settings/README.md to reference new modules.
+- **Remove old settings.svelte.ts**: After Wave 3 migration is complete, delete the deprecated file.

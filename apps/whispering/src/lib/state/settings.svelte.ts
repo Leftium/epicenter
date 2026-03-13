@@ -17,8 +17,11 @@ import {
 } from '$routes/(app)/_layout-utils/register-commands';
 
 /**
- * Encapsulated settings object with controlled access.
- * Provides read-only access to settings values and methods for controlled mutations.
+ * @deprecated Use `workspaceSettings` from `$lib/state/workspace-settings.svelte` for synced settings,
+ * or `deviceConfig` from `$lib/state/device-config.svelte` for device-bound config.
+ *
+ * This unified settings singleton is kept only for the Wave 3 localStorage migration.
+ * No new code should import from this module.
  */
 export const settings = (() => {
 	// Private settings instance

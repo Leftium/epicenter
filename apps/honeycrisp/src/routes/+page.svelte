@@ -20,8 +20,10 @@
 	let notes = $state<Note[]>([]);
 	let selectedFolderId = $state<FolderId | null>(null);
 	let selectedNoteId = $state<NoteId | null>(null);
-	let currentYText = $state<Y.Text | null>(null);
+	let currentYXmlFragment = $state<Y.XmlFragment | null>(null);
 	let currentDocHandle = $state<DocumentHandle | null>(null);
+	let searchQuery = $state('');
+	let sortBy = $state<'dateEdited' | 'dateCreated' | 'title'>('dateEdited');
 
 	// ─── Workspace Observation ───────────────────────────────────────────────
 
@@ -34,6 +36,8 @@
 
 		const kvNoteId = workspaceClient.kv.get('selectedNoteId');
 		selectedNoteId = kvNoteId.status === 'valid' ? kvNoteId.value : null;
+		const kvSortBy = workspaceClient.kv.get('sortBy');
+		sortBy = kvSortBy.status === 'valid' ? kvSortBy.value : 'dateEdited';
 
 		const unsubFolders = workspaceClient.tables.folders.observe(() => {
 			folders = workspaceClient.tables.folders.getAllValid();
@@ -53,23 +57,44 @@
 				selectedNoteId = change.type === 'set' ? change.value : null;
 			},
 		);
+		const unsubSortByKv = workspaceClient.kv.observe('sortBy', (change) => {
+			sortBy = change.type === 'set' ? change.value : 'dateEdited';
+		});
 
 		return () => {
 			unsubFolders();
 			unsubNotes();
 			unsubFolderKv();
 			unsubNoteKv();
+			unsubSortByKv();
 		};
 	});
 
 	// ─── Derived State ───────────────────────────────────────────────────────
 
-	/** Notes filtered by selected folder (or all notes if no folder selected). */
-	const filteredNotes = $derived(
-		selectedFolderId === null
-			? notes
-			: notes.filter((n) => n.folderId === selectedFolderId),
-	);
+	/** Notes filtered by selected folder and search query. */
+	const filteredNotes = $derived.by(() => {
+		let result =
+			selectedFolderId === null
+				? notes
+				: notes.filter((n) => n.folderId === selectedFolderId);
+		if (searchQuery.trim()) {
+			const q = searchQuery.trim().toLowerCase();
+			result = result.filter(
+				(n) =>
+					n.title.toLowerCase().includes(q) ||
+					n.preview.toLowerCase().includes(q),
+			);
+		}
+		// Apply sort
+		result = [...result].sort((a, b) => {
+			if (sortBy === 'title') return a.title.localeCompare(b.title);
+			if (sortBy === 'dateCreated')
+				return b.createdAt.localeCompare(a.createdAt);
+			return b.updatedAt.localeCompare(a.updatedAt);
+		});
+		return result;
+	});
 
 	/** Per-folder note counts for the sidebar. */
 	const noteCounts = $derived.by(() => {
@@ -86,12 +111,12 @@
 		notes.find((n) => n.id === selectedNoteId) ?? null,
 	);
 
-	// ─── Document Handle (Y.Text) ────────────────────────────────────────────
+	// ─── Document Handle (Y.XmlFragment) ────────────────────────────────────────────
 
 	$effect(() => {
 		const noteId = selectedNoteId;
 		if (!noteId) {
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 			return;
 		}
@@ -100,7 +125,7 @@
 		workspaceClient.documents.notes.body.open(noteId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYText = handle.ydoc.getText('content');
+			currentYXmlFragment = handle.ydoc.getXmlFragment('content');
 		});
 
 		return () => {
@@ -108,7 +133,7 @@
 			if (currentDocHandle) {
 				workspaceClient.documents.notes.body.close(noteId);
 			}
-			currentYText = null;
+			currentYXmlFragment = null;
 			currentDocHandle = null;
 		};
 	});
@@ -225,10 +250,12 @@
 		{selectedFolderId}
 		{noteCounts}
 		totalNoteCount={notes.length}
+		{searchQuery}
 		onSelectFolder={selectFolder}
 		onCreateFolder={createFolder}
 		onRenameFolder={renameFolder}
 		onDeleteFolder={deleteFolder}
+		onSearchChange={(q) => (searchQuery = q)}
 	/>
 
 	<main class="flex h-screen flex-1 overflow-hidden">
@@ -237,18 +264,20 @@
 				<NoteList
 					notes={filteredNotes}
 					{selectedNoteId}
+					{sortBy}
 					onSelectNote={selectNote}
 					onCreateNote={createNote}
 					onDeleteNote={deleteNote}
 					onPinNote={pinNote}
+					onSortChange={(v) => workspaceClient.kv.set('sortBy', v)}
 				/>
 			</Resizable.Pane>
-			<Resizable.Handle withHandle />
+			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
-				{#if selectedNote && currentYText}
+				{#if selectedNote && currentYXmlFragment}
 					{#key selectedNoteId}
 						<HoneycripEditor
-							ytext={currentYText}
+							yxmlfragment={currentYXmlFragment}
 							onContentChange={handleContentChange}
 						/>
 					{/key}

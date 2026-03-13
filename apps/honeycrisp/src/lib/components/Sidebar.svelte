@@ -15,19 +15,23 @@
 		selectedFolderId,
 		noteCounts,
 		totalNoteCount,
+		searchQuery,
 		onSelectFolder,
 		onCreateFolder,
 		onRenameFolder,
 		onDeleteFolder,
+		onSearchChange,
 	}: {
 		folders: Folder[];
 		selectedFolderId: FolderId | null;
 		noteCounts: Record<string, number>;
 		totalNoteCount: number;
+		searchQuery: string;
 		onSelectFolder: (folderId: FolderId | null) => void;
 		onCreateFolder: () => void;
 		onRenameFolder: (folderId: FolderId, name: string) => void;
 		onDeleteFolder: (folderId: FolderId) => void;
+		onSearchChange: (query: string) => void;
 	} = $props();
 
 	let editingFolderId = $state<FolderId | null>(null);
@@ -56,6 +60,14 @@
 	<Sidebar.Header>
 		<div class="flex items-center justify-between px-2 py-1">
 			<span class="text-sm font-semibold">Honeycrisp</span>
+			<Sidebar.Trigger />
+		</div>
+		<div class="px-2 pb-1">
+			<Sidebar.Input
+				placeholder="Search notes\u2026"
+				value={searchQuery}
+				oninput={(e) => onSearchChange(e.currentTarget.value)}
+			/>
 		</div>
 	</Sidebar.Header>
 

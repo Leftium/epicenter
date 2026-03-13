@@ -42,6 +42,7 @@ Closes #
 - [ ] I've added/updated tests for my changes (if applicable)
 - [ ] My changes don't break existing functionality
 - [ ] I've updated documentation (if needed)
+- [ ] If touching `apps/api/`, `packages/sync/`, or `packages/sync-client/`—CODEOWNERS requires @braden-w review
 
 ## Screenshots/Recordings
 

@@ -5,22 +5,24 @@ import { randomBytes } from '@noble/ciphers/utils.js';
  * Encrypted blob format for persisted and synced encrypted data.
  *
  * Uses AES-256-GCM with a 12-byte nonce and 16-byte authentication tag.
- * Field names are compact (`ct`, `iv`, `v`) because this type is
+ * The nonce is packed into the `ct` field: `ct = base64(nonce(12) || ciphertext || tag(16))`.
+ * The version field (`v`) is the sole contract for the format—algorithm, nonce size,
+ * tag size, and byte layout are all implied by the version number.
+ *
+ * Field names are compact (`ct`, `v`) because this type is
  * persisted in the workspace database and synced across clients.
  *
  * @example
  * ```typescript
  * const encrypted: EncryptedBlob = {
  *   v: 1,
- *   ct: 'base64-encoded-ciphertext',
- *   iv: 'base64-encoded-nonce',
+ *   ct: 'base64-encoded-nonce-ciphertext-tag',
  * };
  * ```
  */
 type EncryptedBlob = {
 	v: 1;
 	ct: string;
-	iv: string;
 };
 
 /**
@@ -46,19 +48,19 @@ function generateEncryptionKey(): Uint8Array {
  *
  * Generates a random 12-byte nonce for each encryption, ensuring that
  * encrypting the same plaintext with the same key produces different ciphertexts.
- * The nonce and ciphertext are returned as base64-encoded strings for easy storage
- * and transmission.
+ * The nonce is prepended to the ciphertext before base64 encoding, so the
+ * output is a single self-contained string: `base64(nonce || ciphertext || tag)`.
  *
  * @param plaintext - The string to encrypt
  * @param key - A 32-byte Uint8Array encryption key
- * @returns An EncryptedBlob with base64-encoded ciphertext and nonce
+ * @returns An EncryptedBlob with base64-encoded nonce+ciphertext+tag
  *
  * @example
  * ```typescript
  * const key = generateEncryptionKey();
  * const encrypted = encryptValue('secret data', key);
  * console.log(encrypted);
- * // { v: 1, ct: '...', iv: '...' }
+ * // { v: 1, ct: '...' }
  * ```
  */
 function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
@@ -68,21 +70,25 @@ function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
 	const data = new TextEncoder().encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
+	// Pack nonce || ciphertext || tag into a single buffer before base64 encoding
+	const packed = new Uint8Array(nonce.length + ciphertext.length);
+	packed.set(nonce, 0);
+	packed.set(ciphertext, nonce.length);
+
 	return {
 		v: 1,
-		ct: bytesToBase64(ciphertext),
-		iv: bytesToBase64(nonce),
+		ct: bytesToBase64(packed),
 	};
 }
 
 /**
  * Decrypt an EncryptedBlob using AES-256-GCM.
  *
- * Decodes the base64-encoded ciphertext and nonce from the blob, then decrypts
- * using the provided key. Throws if the authentication tag is invalid or if
- * decryption fails.
+ * Decodes the base64-encoded `ct` field, slices the first 12 bytes as the nonce,
+ * and decrypts the remaining bytes (ciphertext + 16-byte GCM auth tag) using the
+ * provided key. Throws if the authentication tag is invalid or decryption fails.
  *
- * @param blob - An EncryptedBlob with base64-encoded ciphertext and nonce
+ * @param blob - An EncryptedBlob with base64-encoded nonce+ciphertext+tag
  * @param key - The 32-byte Uint8Array encryption key used to encrypt the blob
  * @returns The decrypted plaintext string
  * @throws If the authentication tag is invalid or decryption fails
@@ -97,8 +103,9 @@ function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
  */
 function decryptValue(blob: EncryptedBlob, key: Uint8Array): string {
 	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes (AES-256)');
-	const ciphertext = base64ToBytes(blob.ct);
-	const nonce = base64ToBytes(blob.iv);
+	const packed = base64ToBytes(blob.ct);
+	const nonce = packed.slice(0, 12);
+	const ciphertext = packed.slice(12);
 	const cipher = gcm(key, nonce);
 	const data = cipher.decrypt(ciphertext);
 
@@ -109,8 +116,13 @@ function decryptValue(blob: EncryptedBlob, key: Uint8Array): string {
  * Type guard to check if a value is a valid EncryptedBlob.
  *
  * Validates the structure and field types of an EncryptedBlob without
- * performing cryptographic verification. Use this to safely narrow types
+ * performing cryptographic verification. Checks for `v` (number) and `ct` (string)
+ * only—the two fields that define the format. Use this to safely narrow types
  * when deserializing data from storage or network.
+ *
+ * The version check uses `typeof v === 'number'` (not `v === 1`) so the guard
+ * recognizes any future version. The decrypt function dispatches on the specific
+ * version number.
  *
  * @param value - The value to check
  * @returns True if value is a valid EncryptedBlob, false otherwise
@@ -129,10 +141,8 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
 		value !== null &&
 		'v' in value &&
 		'ct' in value &&
-		'iv' in value &&
 		typeof (value as Record<string, unknown>).v === 'number' &&
-		typeof (value as Record<string, unknown>).ct === 'string' &&
-		typeof (value as Record<string, unknown>).iv === 'string'
+		typeof (value as Record<string, unknown>).ct === 'string'
 	);
 }
 

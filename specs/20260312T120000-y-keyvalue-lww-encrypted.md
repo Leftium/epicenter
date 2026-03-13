@@ -4,7 +4,7 @@
 **Status**: Draft (Updated 2026-03-12: getKey getter, decrypted map, all open questions resolved)
 **Builds on**: `specs/20260213T005300-encrypted-workspace-storage.md`
 
-> **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct, iv }`—the version field is the sole contract for algorithm and encoding. References to `alg: 'A256GCM'` below are historical. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 
 ## Overview
 
@@ -37,7 +37,7 @@ This creates problems:
 // Encrypted at the data structure level
 const kv = createEncryptedKvLww<TabData>(yarray, { getKey: () => encryptionKey });
 kv.set('tab-1', { url: 'https://bank.com', title: 'My Bank Account' });
-// Y.Doc contains: { key: 'tab-1', val: { v: 1, alg: 'A256GCM', ct: '...', iv: '...' }, ts: 1706200000 }
+// Y.Doc contains: { key: 'tab-1', val: { v: 1, ct: '...' }, ts: 1706200000 }
 // Every layer below sees ciphertext. Same API surface as YKeyValueLww.
 ```
 
@@ -68,14 +68,14 @@ Three options were evaluated:
 | Decision | Choice | Rationale |
 |---|---|---|
 | Architecture | Composition wrapper around `YKeyValueLww` | Zero changes to the existing LWW class. Yjs `ContentAny` stores objects by reference—`YKeyValueLww` relies on `indexOf()` (strict `===`) for conflict resolution. A fork that decrypts into new objects breaks `indexOf` because the map entries are no longer the same JS objects as the yarray entries. Empirically verified with 8 experiments (see `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`). |
-| Encrypted value format | `{ v: 1, alg: 'A256GCM', ct: string, iv: string }` | `v` for format versioning. `alg` for cryptographic agility. `ct`/`iv` as base64 strings for JSON-safe Yjs ContentAny storage. |
+| Encrypted value format | `{ v: 1, ct: string }` | `v` for format versioning. `ct` contains `base64(nonce(12) || ciphertext || tag(16))` for JSON-safe Yjs ContentAny storage. |
 | Algorithm shorthand | `'A256GCM'` (not `'AES-256-GCM'`) | JWE algorithm identifier. Compact, standardized, unambiguous. |
 | No-key passthrough | When `getKey()` returns undefined, behave identically to plain `YKeyValueLww` | Zero overhead for unencrypted workspaces. Same code path, just no encryption. |
 | Key parameter | `getKey: () => Uint8Array \| undefined` (lazy getter) | Decouples key availability from wrapper construction. The workspace is created eagerly as a module-level export before auth completes—a static key would force recreation. The getter is called on every `set()`/`get()`, so encryption activates the moment a key becomes available. |
 | Encryption library | `@noble/ciphers` (pure JS, synchronous) | Preserves the synchronous `set()` API. Web Crypto is async-only, which would break 394 synchronous call sites across 23 files. Noble is audited (Cure53, Sep 2024), zero dependencies, 11KB gzipped, works in Cloudflare Workers and browser extensions. |
 | Serialization | `JSON.stringify` before encryption, `JSON.parse` after decryption | Values are already JSON-serializable (they're stored in Yjs ContentAny). Round-trip fidelity is guaranteed. |
 | IV strategy | Random 12-byte IV per encryption via `randomBytes(12)` from `@noble/ciphers/utils` | Wraps `crypto.getRandomValues`. No coordination needed between devices. Birthday bound (~2^48) is unreachable at workspace scale. |
-| Mixed-mode detection | Check for `ct`/`iv`/`v` fields on read | Enables migration from plaintext to encrypted. If a value doesn't have the encrypted shape, return it as-is (plaintext). |
+| Mixed-mode detection | Check for `v`/`ct` fields on read | Enables migration from plaintext to encrypted. If a value doesn't have the encrypted shape, return it as-is (plaintext). |
 | Decrypted `.map` | Wrapper maintains its own `Map<string, YKeyValueLwwEntry<T>>` with plaintext values | `table-helper.ts` reads `ykv.map` directly for `getAll()`, `filter()`, `find()`, `count()`, `clear()`. If the wrapper exposed the inner map, table helpers would see encrypted blobs. The wrapper's own `.map` is kept in sync via `inner.observe()`. Zero changes to table helper. |
 | No `entries()` cache | Decrypt on every `entries()` call, no cached result set | ~5ms for 1000 decrypts. Caching would need invalidation logic tied to the observer and doubles memory. Not worth the complexity at workspace scale. |
 | Base64 encoding | `ct` and `iv` stored as base64 strings, not raw `Uint8Array` | Yjs ContentAny JSON-serializes object properties. A `Uint8Array` in an object property would serialize to `{"0":1,"1":2,...}` instead of compact binary. Base64 adds ~33% overhead but guarantees correct round-trip through Yjs's internal serialization. |
@@ -109,8 +109,8 @@ APPLICATION CODE (tables, KV, app layer)
 │    key = getKey()                                            │
 │    if (!key) → inner.set(key, val)  ← passthrough           │
 │    plaintext = JSON.stringify(val)                           │
-│    { ct, iv } = encrypt(plaintext, key)                     │
-│    inner.set(key, { v: 1, alg: 'A256GCM', ct, iv })        │
+│    { ct } = encrypt(plaintext, key)                     │
+│    inner.set(key, { v: 1, ct })                        │
 │                                                              │
 │  get(key):                                                   │
 │    entry = wrapper.map.get(key) ?? pending.get(key)          │
@@ -193,12 +193,8 @@ Result: wrapper.map always contains plaintext. Table helper reads it. Zero chang
 type EncryptedBlob = {
   /** Format version. Increment when the blob structure changes. */
   v: 1;
-  /** JWE algorithm identifier. Enables future algorithm migration. */
-  alg: 'A256GCM';
-  /** Base64-encoded ciphertext (plaintext + 16-byte GCM auth tag). */
+  /** Base64-encoded packed format: nonce(12) || ciphertext || tag(16). */
   ct: string;
-  /** Base64-encoded 12-byte initialization vector. */
-  iv: string;
 };
 ```
 
@@ -415,19 +411,20 @@ async function deriveSalt(userId: string, workspaceId: string): Promise<Uint8Arr
 function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
   const nonce = randomBytes(12);
   const data = new TextEncoder().encode(plaintext);
+  const nonce = randomBytes(12);
   const ciphertext = gcm(key, nonce).encrypt(data);
+  const tag = ciphertext.slice(-16); // GCM tag is last 16 bytes
   return {
     v: 1,
-    alg: 'A256GCM',
-    ct: bytesToBase64(ciphertext),
-    iv: bytesToBase64(nonce),
+    ct: bytesToBase64(nonce.concat(ciphertext)), // nonce || ciphertext || tag
   };
 }
 
 // decryptValue internals:
 function decryptValue(blob: EncryptedBlob, key: Uint8Array): string {
-  const nonce = base64ToBytes(blob.iv);
-  const ciphertext = base64ToBytes(blob.ct);
+  const packed = base64ToBytes(blob.ct);
+  const nonce = packed.slice(0, 12);
+  const ciphertext = packed.slice(12);
   const plaintext = gcm(key, nonce).decrypt(ciphertext);
   return new TextDecoder().decode(plaintext);
 }

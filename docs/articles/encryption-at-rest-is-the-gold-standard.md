@@ -14,13 +14,12 @@ This approach provides defense-in-depth for your most sensitive information. An 
 
 ## Metadata remains visible for sync
 
-The encryption uses AES-256-GCM. This algorithm produces a structured blob for every value. Each blob includes the version, the initialization vector, and the ciphertext. The version field is the sole contract for the encryption format—algorithm, nonce size, tag size, and encoding are all implied by the version.
+The encryption uses AES-256-GCM. This algorithm produces a structured blob for every value. Each blob includes the version and the ciphertext. The 12-byte nonce is packed into the ciphertext field. The version field is the sole contract for the encryption format—algorithm, nonce size, tag size, and encoding are all implied by the version.
 
 ```json
 {
   "v": 1,
-  "ct": "x8f2k9z1...",
-  "iv": "m3n7b2v1..."
+  "ct": "x8f2k9z1..."
 }
 ```
 
@@ -38,7 +37,7 @@ A raw database dump shows exactly what an attacker would see. Instead of private
 
 ```sql
 SELECT * FROM workspace_data WHERE key = 'note-123';
--- Result: { "v": 1, "ct": "7f3a...", "iv": "1b2c..." }
+-- Result: { "v": 1, "ct": "7f3a..." }
 ```
 
 This ensures a total compromise of the storage infrastructure doesn't lead to a data breach. The storage layer is just a bucket for ciphertext. Application keys stay within the boundary.

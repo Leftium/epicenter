@@ -66,15 +66,14 @@ describe('encryptValue / decryptValue', () => {
 		expect(decrypted).toBe(plaintext);
 	});
 
-	test('each encrypt produces different ciphertext (unique IV per call)', () => {
+	test('each encrypt produces different ciphertext (unique nonce per call)', () => {
 		const key = generateEncryptionKey();
 		const plaintext = 'Same plaintext';
 		const encrypted1 = encryptValue(plaintext, key);
 		const encrypted2 = encryptValue(plaintext, key);
 
-		// Different IVs should produce different ciphertexts
+		// Different nonces (packed into ct) should produce different ciphertexts
 		expect(encrypted1.ct).not.toBe(encrypted2.ct);
-		expect(encrypted1.iv).not.toBe(encrypted2.iv);
 
 		// But both should decrypt to the same plaintext
 		expect(decryptValue(encrypted1, key)).toBe(plaintext);
@@ -87,12 +86,10 @@ describe('encryptValue / decryptValue', () => {
 
 		expect(encrypted).toHaveProperty('v');
 		expect(encrypted).toHaveProperty('ct');
-		expect(encrypted).toHaveProperty('iv');
-		expect(Object.keys(encrypted).sort()).toEqual(['ct', 'iv', 'v']);
+		expect(Object.keys(encrypted).sort()).toEqual(['ct', 'v']);
 
 		expect(encrypted.v).toBe(1);
 		expect(typeof encrypted.ct).toBe('string');
-		expect(typeof encrypted.iv).toBe('string');
 	});
 
 	test('invalid key (16-byte instead of 32) throws', () => {
@@ -120,15 +117,16 @@ describe('encryptValue / decryptValue', () => {
 		}).toThrow();
 	});
 
-	test('tampered IV throws', () => {
+	test('tampered nonce throws', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Flip a character in the IV
-		const tamperedIv = encrypted.iv.split('').reverse().join('');
+		// Decode ct, flip a byte in the nonce (first 12 bytes), re-encode
+		const packed = base64ToBytes(encrypted.ct);
+		packed[0] ^= 0xff;
 		const tamperedBlob: EncryptedBlob = {
 			...encrypted,
-			iv: tamperedIv,
+			ct: bytesToBase64(packed),
 		};
 
 		expect(() => {
@@ -168,7 +166,6 @@ describe('isEncryptedBlob', () => {
 		const blob = {
 			v: 2,
 			ct: 'ciphertext',
-			iv: 'nonce',
 		};
 		expect(isEncryptedBlob(blob)).toBe(true);
 	});
@@ -177,7 +174,6 @@ describe('isEncryptedBlob', () => {
 		const blob = {
 			v: 'not-a-number',
 			ct: 'ciphertext',
-			iv: 'nonce',
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
 	});
@@ -185,33 +181,29 @@ describe('isEncryptedBlob', () => {
 	test('returns false for object missing ct field', () => {
 		const blob = {
 			v: 1,
-			iv: 'nonce',
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
 	});
 
-	test('returns false for object missing iv field', () => {
+	test('returns true for minimal 2-field blob', () => {
 		const blob = {
 			v: 1,
 			ct: 'ciphertext',
 		};
-		expect(isEncryptedBlob(blob)).toBe(false);
+		expect(isEncryptedBlob(blob)).toBe(true);
 	});
 
 	test('returns false for object with non-string ct', () => {
 		const blob = {
 			v: 1,
 			ct: 12345, // Should be string
-			iv: 'nonce',
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
 	});
 
-	test('returns false for object with non-string iv', () => {
+	test('returns false for object missing v field', () => {
 		const blob = {
-			v: 1,
 			ct: 'ciphertext',
-			iv: 12345, // Should be string
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
 	});

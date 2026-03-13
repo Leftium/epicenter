@@ -4,6 +4,7 @@
 **Status**: Draft
 
 > **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. References to `{ v: 1, alg: 'A256GCM', ct, iv }` below are historical. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+> **Note (2026-03-13)**: Blob format further simplified to 2-field `{ v: 1, ct }` where ct = base64(nonce || ciphertext || tag). See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 
 ## Overview
 
@@ -16,7 +17,7 @@ This spec covers updating all encryption-related documentation to reflect the im
 1. Encryption happens inside `YKeyValueLww` via `createEncryptedKvLww`—not as a middleware or at-rest wrapper
 2. `@noble/ciphers` provides synchronous AES-256-GCM (not Web Crypto async)
 3. Self-hosted users derive keys from their password via PBKDF2—real zero-knowledge, same code path
-4. The encrypted blob format is versioned (`{ v: 1, alg: 'A256GCM', ct, iv }`)
+4. The encrypted blob format is versioned (`{ v: 1, ct }`)
 5. Mixed-mode detection handles plaintext→encrypted migration transparently
 6. One primitive, one code path. Key source is the only variable between cloud and self-hosted.
 

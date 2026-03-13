@@ -28,7 +28,7 @@ Better Auth handles identity: email/password and Google OAuth for sign-in, plus 
 
 ## Encryption and trust model
 
-Workspace data is encrypted at the CRDT level using AES-256-GCM via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww—a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob stored in a versioned format: `{ v: 1, ct: '...', iv: '...' }`.
+Workspace data is encrypted at the CRDT level using AES-256-GCM via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww—a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob stored in a versioned format: `{ v: 1, ct: '...' }`.
 
 The encryption key derives from the deployment's auth secret (`BETTER_AUTH_SECRET`). This is server-managed, deployment-level encryption—the same model used by Notion, Linear, and most SaaS products, but applied deeper (individual CRDT values rather than database-level). The server can decrypt data to power search indexing, AI summarization, and password recovery.
 
@@ -47,7 +47,7 @@ PGP has been trying to make key management practical for thirty years. Signal wo
 
 ### Overhead
 
-Encryption adds a fixed ~54 bytes per value (IV, GCM auth tag, JSON structure) plus 33% base64 expansion on the ciphertext. For typical workspace data (100–2000 byte values), total overhead is 1.3–3x. Performance impact is negligible—AES-256-GCM via @noble/ciphers encrypts 1 KB in ~0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
+Encryption adds a fixed ~38 bytes per value (GCM auth tag, JSON structure) plus 33% base64 expansion on the ciphertext. For typical workspace data (100–2000 byte values), total overhead is 1.3–3x. Performance impact is negligible—AES-256-GCM via @noble/ciphers encrypts 1 KB in ~0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
 
 For the full argument:
 

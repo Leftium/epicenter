@@ -17,7 +17,7 @@ kv.set('tab-1', { url: 'https://bank.com' });
 
 // After encryption: ciphertext in Y.Array, plaintext to consumers
 kv.set('tab-1', { url: 'https://bank.com' });
-// Y.Array: { key: 'tab-1', val: { v: 1, ct: '...', iv: '...' }, ts: 1000 }
+// Y.Array: { key: 'tab-1', val: { v: 1, ct: '...' }, ts: 1000 }
 // kv.get('tab-1') → { url: 'https://bank.com' }
 ```
 

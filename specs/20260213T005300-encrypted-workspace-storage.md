@@ -6,9 +6,9 @@
 
 > **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely — API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
 
-> **Note (2026-03-12)**: The implementation uses `@noble/ciphers` (synchronous AES-256-GCM) instead of Web Crypto API as originally planned. Synchronous encryption preserves the `set()` → `void` API across 394 call sites. See `specs/20260312T120000-y-keyvalue-lww-encrypted.md` for the final implementation spec. The encrypted blob format was also extended to `{ v: 1, alg: 'A256GCM', ct, iv }` with version and algorithm fields for cryptographic agility.
+> **Note (2026-03-12)**: The implementation uses `@noble/ciphers` (synchronous AES-256-GCM) instead of Web Crypto API as originally planned. Synchronous encryption preserves the `set()` → `void` API across 394 call sites. See `specs/20260312T120000-y-keyvalue-lww-encrypted.md` for the final implementation spec. The encrypted blob format is now `{ v: 1, ct }` where `ct = base64(nonce(12) || ciphertext || tag(16))`.
 
-> **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct, iv }`—the version field is the sole contract for algorithm and encoding. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
+> **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 
 ## Overview
 
@@ -84,14 +84,23 @@ With encryption enabled, Y-Sweet sees key names and timestamps but not values:
 
 ```
 // Y-Sweet can see:
-{ key: 'apiKey:openai',     val: { ct: 'aGVsbG8...', iv: 'abc123...' }, ts: 1706200000 }
-{ key: 'apiKey:anthropic',  val: { ct: 'dG9rZW4...', iv: 'def456...' }, ts: 1706200001 }
+{ key: 'apiKey:openai',     val: { v: 1, ct: 'aGVsbG8...' }, ts: 1706200000 }
+{ key: 'apiKey:anthropic',  val: { v: 1, ct: 'dG9rZW4...' }, ts: 1706200001 }
 
 // Table row:
-{ key: 'post:abc',          val: { ct: 'ZW5jcnl...', iv: 'ghi789...' }, ts: 1706200002 }
+{ key: 'post:abc',          val: { v: 1, ct: 'ZW5jcnl...' }, ts: 1706200002 }
 
 // Y-Sweet can still:
-// - Merge concurrent updates (LWW on the whole { ct, iv } blob)
+// - Merge concurrent updates (LWW on the whole { v: 1, ct } blob)
+// - Sync between devices (CRDT protocol is unaffected)
+// - Garbage collect old entries
+//
+// Y-Sweet cannot:
+// - Read the actual API key, post content, or any value
+```
+
+// Y-Sweet can still:
+// - Merge concurrent updates (LWW on the whole { v: 1, ct } blob)
 // - Sync between devices (CRDT protocol is unaffected)
 // - Garbage collect old entries
 //
@@ -218,7 +227,7 @@ The same applies to markdown extension, revision history snapshots, and any futu
 | Algorithm                    | AES-256-GCM via ~~Web Crypto API~~ `@noble/ciphers` | Originally planned for Web Crypto; switched to @noble/ciphers for synchronous API. Cure53-audited, zero deps, 11KB gzipped. |
 | Key derivation               | PBKDF2, 600k iterations, SHA-256      | PBKDF2 via Web Crypto API (async, runs once at session start). 600k is OWASP 2024+ recommendation.                         |
 | IV management                | Random 12-byte IV per encryption      | Stored alongside ciphertext. Never reused. Standard AES-GCM practice.                                                      |
-| Encrypted value format       | `{ ct: string, iv: string }` (base64) | Compatible with KV LWW and table value storage. Safe for JSON serialization.                                               |
+| Encrypted value format       | `{ v: 1, ct: string }` | Compatible with KV LWW and table value storage. `ct` contains `base64(nonce(12) || ciphertext || tag(16))`. Safe for JSON serialization. |
 
 ## What Was Eliminated (vs Original Spec)
 
@@ -243,10 +252,8 @@ The original spec (`20260213T030000-encrypted-api-key-vault.md`) used a 3-layer 
 
 ~~Pure Web Crypto API functions.~~ Implemented with `@noble/ciphers` (synchronous). PBKDF2 key derivation remains async via Web Crypto. No Yjs or framework dependencies.
 
-- [ ] `deriveKeyFromSecret(secret)` — SHA-256 hash of `BETTER_AUTH_SECRET` → AES-256 CryptoKey (cloud mode)
-- [ ] `deriveKeyFromPassword(password, salt)` — PBKDF2 → AES-GCM CryptoKey (self-hosted opt-in)
-- [ ] `encryptValue(plaintext, key)` → `{ ct: string, iv: string }`
-- [ ] `decryptValue({ ct, iv }, key)` → plaintext string
+- [ ] `encryptValue(plaintext, key)` → `{ v: 1, ct: string }`
+- [ ] `decryptValue({ v: 1, ct }, key)` → plaintext string
 - [ ] Tests: round-trip encrypt/decrypt, same secret = same key, same password + salt = same key, unique IV per encryption
 
 ### Phase 2: Encrypted Storage Layer
@@ -303,11 +310,11 @@ No impact. Cloud: log in again, server derives key from `BETTER_AUTH_SECRET`, Du
 
 ### Mixed encrypted/unencrypted devices
 
-If Device A has encryption enabled and Device B doesn't, Device B will see encrypted blobs as raw `{ ct, iv }` objects instead of plaintext values. The application should detect this (check if value has `ct` and `iv` fields) and prompt for the encryption key.
+If Device A has encryption enabled and Device B doesn't, Device B will see encrypted blobs as raw `{ v: 1, ct }` objects instead of plaintext values. The application should detect this (check if value has `v` and `ct` fields) and prompt for the encryption key.
 
 ### Concurrent updates
 
-Two devices encrypt the same key simultaneously with different values. LWW resolves by timestamp — the higher `ts` wins. Both devices converge on the same ciphertext. The "loser" is overwritten. No corruption because the entire `{ ct, iv }` blob is replaced atomically.
+Two devices encrypt the same key simultaneously with different values. LWW resolves by timestamp — the higher `ts` wins. Both devices converge on the same ciphertext. The "loser" is overwritten. No corruption because the entire `{ v: 1, ct }` blob is replaced atomically.
 
 ### Migration: Existing unencrypted data
 

@@ -1,5 +1,5 @@
 {
-  "id": "85544634-1701-4cff-9eef-78df56402419",
+  "id": "24d53b66-0e62-4e3f-9cf3-109aa20d8882",
   "prevId": "ff1381e2-80d6-46fd-96f7-c3887c284bac",
   "version": "7",
   "dialect": "postgresql",
@@ -182,21 +182,6 @@
         }
       },
       "indexes": {
-        "doi_do_name_idx": {
-          "name": "doi_do_name_idx",
-          "columns": [
-            {
-              "expression": "do_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "doi_user_id_idx": {
           "name": "doi_user_id_idx",
           "columns": [
@@ -238,7 +223,15 @@
           ]
         }
       },
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "durable_object_instance_do_name_unique": {
+          "name": "durable_object_instance_do_name_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "do_name"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

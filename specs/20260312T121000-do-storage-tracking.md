@@ -34,15 +34,18 @@ No visibility into which Durable Object instances exist per user, what type they
 **Table definition:**
 
 ```typescript
+/** Discriminator for the type of Durable Object instance. */
+export type DoType = 'workspace' | 'document';
+
 export const durableObjectInstance = pgTable(
 	'durable_object_instance',
 	{
 		userId: text('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		doType: text('do_type').notNull(),
+		doType: text('do_type').notNull().$type<DoType>(),
 		resourceName: text('resource_name').notNull(),
-		doName: text('do_name').notNull(),
+		doName: text('do_name').notNull().unique(),
 		storageBytes: bigint('storage_bytes', { mode: 'number' }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull(),
@@ -52,7 +55,6 @@ export const durableObjectInstance = pgTable(
 		primaryKey({
 			columns: [table.userId, table.doType, table.resourceName],
 		}),
-		uniqueIndex('doi_do_name_idx').on(table.doName),
 		index('doi_user_id_idx').on(table.userId),
 	],
 );
@@ -129,13 +131,39 @@ Three sub-tasks: afterResponse middleware, upsert helper, route handler modifica
 
 #### 3a: afterResponse queue in DB middleware
 
-- [x] Add `afterResponse: Promise<unknown>[]` to `Env.Variables`
-- [x] Initialize the array and set it on context in the DB middleware
-- [x] Change `finally` block to `Promise.allSettled(afterResponse).then(() => client.end())`
+- [x] Add `afterResponse: AfterResponseQueue` to `Env.Variables`
+- [x] Create `createAfterResponseQueue()` utility function
+- [x] Use `afterResponse.drain().then(() => client.end())` in `finally` block
 
-**Env type change (app.ts:34–42):**
+**`createAfterResponseQueue()` utility (app.ts):**
 
 ```typescript
+function createAfterResponseQueue() {
+	/**
+	 * Tracked promises whose resolution values are intentionally ignored.
+	 * `unknown` is the semantic contract for fire-and-forget: we track these
+	 * promises to completion via `Promise.allSettled`, but never inspect what
+	 * they resolve to.
+	 */
+	const promises: Promise<unknown>[] = [];
+	return {
+		/** Enqueue a fire-and-forget promise to run after the response is sent. */
+		push(promise: Promise<unknown>) {
+			promises.push(promise);
+		},
+		/** Settle all queued promises. Returns a single promise suitable for `executionCtx.waitUntil()`. */
+		drain() {
+			return Promise.allSettled(promises);
+		},
+	};
+}
+```
+
+**Env type (app.ts):**
+
+```typescript
+type AfterResponseQueue = ReturnType<typeof createAfterResponseQueue>;
+
 export type Env = {
 	Bindings: Cloudflare.Env;
 	Variables: {
@@ -143,28 +171,26 @@ export type Env = {
 		auth: Auth;
 		user: Session['user'];
 		session: Session['session'];
-		afterResponse: Promise<unknown>[];
+		afterResponse: AfterResponseQueue;
 	};
 };
 ```
 
-**DB middleware change (app.ts:166–177):**
+**DB middleware (app.ts):**
 
 ```typescript
 app.use('*', async (c, next) => {
 	const client = new pg.Client({
 		connectionString: c.env.HYPERDRIVE.connectionString,
 	});
-	const afterResponse: Promise<unknown>[] = [];
+	const afterResponse = createAfterResponseQueue();
 	try {
 		await client.connect();
 		c.set('db', drizzle(client, { schema }));
 		c.set('afterResponse', afterResponse);
 		await next();
 	} finally {
-		c.executionCtx.waitUntil(
-			Promise.allSettled(afterResponse).then(() => client.end()),
-		);
+		c.executionCtx.waitUntil(afterResponse.drain(() => client.end()));
 	}
 });
 ```
@@ -187,7 +213,7 @@ function upsertDoInstance(
 	db: Db,
 	params: {
 		userId: string;
-		doType: string;
+		doType: schema.DoType;
 		resourceName: string;
 		doName: string;
 		storageBytes?: number;
@@ -240,7 +266,7 @@ app.get(
 		tags: ['workspaces'],
 	}),
 	async (c) => {
-		const stub = getWorkspaceStub(c);
+		const { stub, doName } = getWorkspaceStub(c);
 
 		if (c.req.header('upgrade') === 'websocket') {
 			c.var.afterResponse.push(
@@ -248,7 +274,7 @@ app.get(
 					userId: c.var.user.id,
 					doType: 'workspace',
 					resourceName: c.req.param('workspace'),
-					doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+					doName,
 				}),
 			);
 			return stub.fetch(c.req.raw);
@@ -260,7 +286,7 @@ app.get(
 				userId: c.var.user.id,
 				doType: 'workspace',
 				resourceName: c.req.param('workspace'),
-				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+				doName,
 				storageBytes,
 			}),
 		);
@@ -268,7 +294,6 @@ app.get(
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
-);
 ```
 
 **Pattern for POST routes (using workspace as example):**
@@ -286,7 +311,7 @@ app.post(
 			return c.body('Payload too large', 413);
 		}
 
-		const stub = getWorkspaceStub(c);
+		const { stub, doName } = getWorkspaceStub(c);
 		const { diff, storageBytes } = await stub.sync(body);
 
 		c.var.afterResponse.push(
@@ -294,7 +319,7 @@ app.post(
 				userId: c.var.user.id,
 				doType: 'workspace',
 				resourceName: c.req.param('workspace'),
-				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+				doName,
 				storageBytes,
 			}),
 		);
@@ -304,7 +329,6 @@ app.post(
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
-);
 ```
 
 **Verification:**
@@ -365,9 +389,21 @@ Client                    Worker (app.ts)              DO (base-sync-room.ts)   
 
 ### Summary
 
-Implemented the DO storage tracking registry in 2 atomic commits matching the spec's commit strategy. The `durable_object_instance` table tracks every Durable Object access per user with storage size piggybacked on existing `sync()` and `getDoc()` RPC responses. An `afterResponse` queue pattern in the DB middleware ensures upserts complete before `client.end()` without blocking HTTP responses.
+Implemented the DO storage tracking registry. The `durable_object_instance` table tracks every Durable Object access per user with storage size piggybacked on existing `sync()` and `getDoc()` RPC responses.
 
-### Deviations from Spec
+### Post-Implementation Refinements
+
+After the initial implementation, several improvements were made:
+
+- **`createAfterResponseQueue()` utility**: Extracted the raw `Promise<unknown>[]` array into a factory function with `push()` and `drain()` methods. Encapsulates the `Promise.allSettled → cleanup` pattern and makes the middleware more readable.
+- **`DoType` union type**: Added `type DoType = 'workspace' | 'document'` with `$type<DoType>()` on the column definition. Narrows the `doType` parameter from `string` to a compile-time checked union.
+- **Inline `.unique()` on `doName`**: Moved from `uniqueIndex('doi_do_name_idx')` in the callback to `.unique()` chained on the column, matching the existing pattern for `user.email` and `session.token`. The composite PK and `userId` index remain in the callback.
+- **Stub functions return `doName`**: `getWorkspaceStub()` and `getDocumentStub()` now return `{ stub, doName }` instead of just the stub. Eliminates duplicate `doName` template literal construction across 6 upsert call sites.
+- **Fixed indentation**: Corrected `doName` property indentation in 4 upsert calls that had an extra tab level.
+- **Fixed `userRelations` closing brace**: Removed extra tab on the closing `}));`.
+- **Migration regenerated**: `0001_low_morlun.sql` replaces `0001_striped_silverclaw.sql` with `UNIQUE CONSTRAINT` (from inline `.unique()`) instead of `CREATE UNIQUE INDEX`.
+
+### Deviations from Original Spec
 
 - **Table placement in schema.ts**: Moved `durableObjectInstance` table definition before `userRelations` (not at end of file) to avoid TypeScript `const` temporal dead zone errors from forward references.
 - **No new errors introduced**: 3 pre-existing Better Auth type errors in `app.ts` remain unchanged.

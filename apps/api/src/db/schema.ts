@@ -8,8 +8,10 @@ import {
 	primaryKey,
 	text,
 	timestamp,
-	uniqueIndex,
 } from 'drizzle-orm/pg-core';
+
+/** Discriminator for the type of Durable Object instance. */
+export type DoType = 'workspace' | 'document';
 
 export const user = pgTable('user', {
 	id: text('id').primaryKey(),
@@ -180,9 +182,9 @@ export const durableObjectInstance = pgTable(
 		userId: text('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		doType: text('do_type').notNull(),
+		doType: text('do_type').notNull().$type<DoType>(),
 		resourceName: text('resource_name').notNull(),
-		doName: text('do_name').notNull(),
+		doName: text('do_name').notNull().unique(),
 		storageBytes: bigint('storage_bytes', { mode: 'number' }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull(),
@@ -192,7 +194,6 @@ export const durableObjectInstance = pgTable(
 		primaryKey({
 			columns: [table.userId, table.doType, table.resourceName],
 		}),
-		uniqueIndex('doi_do_name_idx').on(table.doName),
 		index('doi_user_id_idx').on(table.userId),
 	],
 );
@@ -205,7 +206,7 @@ export const userRelations = relations(user, ({ many }) => ({
 	oauthAccessTokens: many(oauthAccessToken),
 	oauthConsents: many(oauthConsent),
 	durableObjectInstances: many(durableObjectInstance),
-	}));
+}));
 
 export const sessionRelations = relations(session, ({ one, many }) => ({
 	user: one(user, {

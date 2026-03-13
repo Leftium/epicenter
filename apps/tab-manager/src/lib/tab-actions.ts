@@ -65,12 +65,11 @@ export async function executeActivateTab(
 	const id = nativeTabId(compositeTabId, deviceId);
 	if (id === undefined) return { activated: false };
 
-	try {
-		await browser.tabs.update(id, { active: true });
-		return { activated: true };
-	} catch {
-		return { activated: false };
-	}
+	const { error } = await tryAsync({
+		try: () => browser.tabs.update(id, { active: true }),
+		catch: () => Ok(undefined),
+	});
+	return { activated: !error };
 }
 
 /**

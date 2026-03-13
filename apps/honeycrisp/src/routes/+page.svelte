@@ -127,7 +127,7 @@
 					{#key notesState.selectedNoteId}
 						<HoneycripEditor
 							yxmlfragment={currentYXmlFragment}
-							onContentChange={(change) => notesState.handleContentChange(change)}
+							onContentChange={(change) => notesState.updateNoteContent(change)}
 						/>
 					{/key}
 				{:else if notesState.selectedNote}

@@ -58,6 +58,7 @@ function createNotesState() {
 		workspaceClient.kv.get('sortBy'),
 	);
 	let searchQuery = $state('');
+	let isRecentlyDeletedView = $state(false);
 
 	// ─── Workspace Observers ─────────────────────────────────────────────
 
@@ -127,6 +128,15 @@ function createNotesState() {
 		return counts;
 	});
 
+	/** Human-readable name for the current view (sidebar + NoteList header). */
+	const folderName = $derived(
+		isRecentlyDeletedView
+			? 'Recently Deleted'
+			: selectedFolderId
+				? (folders.find((f) => f.id === selectedFolderId)?.name ?? 'Notes')
+				: 'All Notes',
+	);
+
 	/** The currently selected note (can be active or deleted). */
 	const selectedNote = $derived(
 		allNotes.find((n) => n.id === selectedNoteId) ?? null,
@@ -169,11 +179,17 @@ function createNotesState() {
 		get sortBy() {
 			return sortBy;
 		},
+		get isRecentlyDeletedView() {
+			return isRecentlyDeletedView;
+		},
+		get folderName() {
+			return folderName;
+		},
 
 		// Actions
 
 		createFolder() {
-			const id = generateId() as unknown as FolderId;
+			const id = generateId() as string as FolderId;
 			workspaceClient.tables.folders.set({
 				id,
 				name: 'New Folder',
@@ -200,7 +216,7 @@ function createNotesState() {
 		},
 
 		createNote() {
-			const id = generateId() as unknown as NoteId;
+			const id = generateId() as string as NoteId;
 			workspaceClient.tables.notes.set({
 				id,
 				folderId: selectedFolderId ?? undefined,
@@ -256,7 +272,14 @@ function createNotesState() {
 		},
 
 		selectFolder(folderId: FolderId | null) {
+			isRecentlyDeletedView = false;
 			workspaceClient.kv.set('selectedFolderId', folderId);
+			workspaceClient.kv.set('selectedNoteId', null);
+		},
+
+		selectRecentlyDeleted() {
+			isRecentlyDeletedView = true;
+			workspaceClient.kv.set('selectedFolderId', null);
 			workspaceClient.kv.set('selectedNoteId', null);
 		},
 
@@ -264,7 +287,7 @@ function createNotesState() {
 			workspaceClient.kv.set('selectedNoteId', noteId);
 		},
 
-		handleContentChange({
+		updateNoteContent({
 			title,
 			preview,
 		}: {

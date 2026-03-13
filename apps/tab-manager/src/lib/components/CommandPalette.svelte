@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Command from '@epicenter/ui/command';
-	import { quickActions } from '$lib/commands/quick-actions';
+	import { quickActions } from '$lib/quick-actions';
 
 	type Props = {
 		open: boolean;

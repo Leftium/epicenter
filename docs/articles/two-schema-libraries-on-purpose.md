@@ -57,7 +57,7 @@ This matters in three places:
 **2. AI tool definitions.** When actions become AI tools, their input schemas are forwarded directly to providers (Anthropic, OpenAI, etc.) as JSON Schema. The cast from TypeBox to `JSONSchema` is a safe no-op — they're already the same thing:
 
 ```typescript
-// In action-context.ts — forwarding action input to AI provider
+// In tool-bridge.ts — forwarding action input to AI provider
 // Safe cast: our action system only accepts TypeBox schemas (TSchema),
 // which ARE plain JSON Schema objects.
 ...(tool.inputSchema && {

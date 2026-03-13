@@ -82,6 +82,27 @@ async function destroyLifo(
 }
 
 /**
+ * Start all cleanups immediately in LIFO order without awaiting between them.
+ *
+ * Used in the sync builder error path where we can't await. Every cleanup is
+ * invoked before the throw propagates—async portions settle in the background.
+ * Rejections are observed (logged) so they don't become unhandled.
+ */
+function startDestroyLifo(
+	cleanups: (() => MaybePromise<void>)[],
+): void {
+	for (let i = cleanups.length - 1; i >= 0; i--) {
+		try {
+			Promise.resolve(cleanups[i]?.()).catch((err) => {
+				console.error('Extension cleanup error during rollback:', err);
+			});
+		} catch (err) {
+			console.error('Extension cleanup error during rollback:', err);
+		}
+	}
+}
+
+/**
  * Create a workspace client with chainable extension support.
  *
  * The returned client IS directly usable (no extensions required) AND supports
@@ -245,6 +266,65 @@ export function createWorkspace<
 			[Symbol.asyncDispose]: destroy,
 		};
 
+		// Workspace extension logic — shared by withExtension and withWorkspaceExtension.
+		// Extracted to avoid duplication; both methods apply the factory to the workspace
+		// Y.Doc, the only difference is whether withExtension also registers for documents.
+		function applyWorkspaceExtension<
+			TKey extends string,
+			TExports extends Record<string, unknown>,
+		>(
+			key: TKey,
+			factory: (
+				context: ExtensionContext<
+					TId,
+					TTableDefinitions,
+					TKvDefinitions,
+					TAwarenessDefinitions,
+					TExtensions
+				>,
+			) => TExports & {
+				whenReady?: Promise<unknown>;
+				destroy?: () => MaybePromise<void>;
+			},
+		) {
+			const {
+				destroy: _destroy,
+				[Symbol.asyncDispose]: _dispose,
+				whenReady: _whenReady,
+				...clientContext
+			} = client;
+			const ctx = {
+				...clientContext,
+				whenReady:
+					state.whenReadyPromises.length === 0
+						? Promise.resolve()
+						: Promise.all(state.whenReadyPromises).then(() => {}),
+			};
+
+			try {
+				const raw = factory(ctx);
+
+				// Void return means "not installed" — skip registration
+				if (!raw) return buildClient(extensions, state);
+
+				const resolved = defineExtension(raw);
+
+				return buildClient(
+					{
+						...extensions,
+						[key]: resolved,
+					} as TExtensions & Record<TKey, TExports>,
+					{
+						extensionCleanups: [...state.extensionCleanups, resolved.destroy],
+						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
+					},
+				);
+			} catch (err) {
+				startDestroyLifo(state.extensionCleanups);
+				throw err;
+			}
+		}
+
 		// The builder methods use generics at the type level for progressive accumulation,
 		// but the runtime implementations use wider types for storage (registrations array).
 		// The cast at the end bridges the gap — type safety is enforced at call sites.
@@ -267,54 +347,36 @@ export function createWorkspace<
 					destroy?: () => MaybePromise<void>;
 				},
 			) {
-				const {
-					destroy: _destroy,
-					[Symbol.asyncDispose]: _dispose,
-					whenReady: _whenReady,
-					...clientContext
-				} = client;
-				const ctx = {
-					...clientContext,
-					whenReady:
-						state.whenReadyPromises.length === 0
-							? Promise.resolve()
-							: Promise.all(state.whenReadyPromises).then(() => {}),
-				};
+				// Register for document Y.Docs (fires lazily at documents.open() time)
+				documentExtensionRegistrations.push({
+					key,
+					factory:
+						factory as unknown as DocumentExtensionRegistration['factory'],
+					tags: [],
+				});
+				// Register for workspace Y.Doc (fires now, synchronously)
+				return applyWorkspaceExtension(key, factory);
+			},
 
-				try {
-					const raw = factory(ctx);
-
-					// Void return means "not installed" — skip registration
-					if (!raw) return buildClient(extensions, state);
-
-					const resolved = defineExtension(raw);
-
-					return buildClient(
-						{
-							...extensions,
-							[key]: resolved,
-						} as TExtensions & Record<TKey, TExports>,
-						{
-							extensionCleanups: [...state.extensionCleanups, resolved.destroy],
-							whenReadyPromises: [
-								...state.whenReadyPromises,
-								resolved.whenReady,
-							],
-						},
-					);
-				} catch (err) {
-					// Fire-and-forget: withExtension is sync so we can't await
-					destroyLifo(state.extensionCleanups).then((errors) => {
-						if (errors.length > 0) {
-							console.error(
-								'Extension cleanup errors during factory failure:',
-								errors,
-							);
-						}
-					});
-
-					throw err;
-				}
+			withWorkspaceExtension<
+				TKey extends string,
+				TExports extends Record<string, unknown>,
+			>(
+				key: TKey,
+				factory: (
+					context: ExtensionContext<
+						TId,
+						TTableDefinitions,
+						TKvDefinitions,
+						TAwarenessDefinitions,
+						TExtensions
+					>,
+				) => TExports & {
+					whenReady?: Promise<unknown>;
+					destroy?: () => MaybePromise<void>;
+				},
+			) {
+				return applyWorkspaceExtension(key, factory);
 			},
 
 			withDocumentExtension(

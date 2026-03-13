@@ -1,1 +1,6 @@
-export { type ActionLabel, createActionContext } from './action-context';
+export {
+	type ActionNames,
+	actionsToClientTools,
+	type ToolDefinitionPayload,
+	toToolDefinitions,
+} from './tool-bridge';

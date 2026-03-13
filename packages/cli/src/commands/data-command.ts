@@ -153,8 +153,8 @@ function buildKvSubcommand(serverUrl: string) {
 								stdinContent,
 							});
 
-							if (!result.ok) {
-								outputError(result.error);
+							if (result.error) {
+								outputError(result.error.message);
 								process.exitCode = 1;
 								return;
 							}
@@ -258,8 +258,8 @@ function buildActionSubcommand(serverUrl: string) {
 							hasStdin: stdinContent !== undefined,
 							stdinContent,
 						});
-						if (!result.ok) {
-							outputError(result.error);
+						if (result.error) {
+							outputError(result.error.message);
 							process.exitCode = 1;
 							return;
 						}
@@ -384,8 +384,8 @@ function buildTableSubcommand(serverUrl: string) {
 							stdinContent,
 						});
 
-						if (!result.ok) {
-							outputError(result.error);
+						if (result.error) {
+							outputError(result.error.message);
 							process.exitCode = 1;
 							return;
 						}

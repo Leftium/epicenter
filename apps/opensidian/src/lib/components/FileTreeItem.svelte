@@ -1,20 +1,26 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import * as Collapsible from '@epicenter/ui/collapsible';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
-	import { ChevronRight, File as FileIcon, Folder, FolderOpen } from 'lucide-svelte';
+	import * as TreeView from '@epicenter/ui/tree-view';
+	import {
+		ChevronRight,
+		File as FileIcon,
+		Folder as FolderIcon,
+		FolderOpen as FolderOpenIcon,
+	} from 'lucide-svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
+	import FileTreeItem from './FileTreeItem.svelte';
 	import RenameDialog from './RenameDialog.svelte';
-	import TreeNode from './TreeNode.svelte';
 
-	type Props = {
+	let {
+		id,
+		depth = 0,
+	}: {
 		id: FileId;
-		depth: number;
-	};
-
-	let { id, depth }: Props = $props();
+		depth?: number;
+	} = $props();
 
 	const row = $derived(fsState.getRow(id));
 	const isFolder = $derived(row?.type === 'folder');
@@ -26,21 +32,6 @@
 	let createDialogMode = $state<'file' | 'folder'>('file');
 	let renameDialogOpen = $state(false);
 	let deleteDialogOpen = $state(false);
-
-	function handleClick() {
-		if (isFolder) {
-			fsState.actions.toggleExpand(id);
-		} else {
-			fsState.actions.selectFile(id);
-		}
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' || e.key === ' ') {
-			e.preventDefault();
-			handleClick();
-		}
-	}
 
 	function selectAndOpenCreate(mode: 'file' | 'folder') {
 		fsState.actions.selectFile(id);
@@ -64,56 +55,56 @@
 		<ContextMenu.Trigger>
 			{#snippet child({ props })}
 				{#if isFolder}
-					<div {...props}>
-						<Collapsible.Root open={isExpanded}>
-							<Collapsible.Trigger>
-								{#snippet child({ props: collapsibleProps })}
-									<button
-										{...collapsibleProps}
-										class="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm hover:bg-accent {isSelected
-											? 'bg-accent text-accent-foreground'
-											: ''}"
-										style="padding-left: {depth * 12 + 8}px"
-										onclick={handleClick}
-										onkeydown={handleKeydown}
-										role="treeitem"
-										aria-expanded={isExpanded}
-									>
-										<ChevronRight
-											class="h-4 w-4 shrink-0 transition-transform {isExpanded
-												? 'rotate-90'
-												: ''}"
-										/>
-										{#if isExpanded}
-											<FolderOpen class="h-4 w-4 shrink-0 text-muted-foreground" />
-										{:else}
-											<Folder class="h-4 w-4 shrink-0 text-muted-foreground" />
-										{/if}
-										<span class="truncate">{row.name}</span>
-									</button>
-								{/snippet}
-							</Collapsible.Trigger>
-							<Collapsible.Content>
-								{#each children as childId (childId)}
-									<TreeNode id={childId} depth={depth + 1} />
-								{/each}
-							</Collapsible.Content>
-						</Collapsible.Root>
+					<div {...props} role="treeitem" aria-expanded={isExpanded}>
+						<TreeView.Folder
+							name={row.name}
+							open={isExpanded}
+							onOpenChange={() => fsState.actions.toggleExpand(id)}
+							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
+								? 'bg-accent text-accent-foreground'
+								: ''}"
+							style="padding-left: {depth * 12 + 8}px"
+						>
+							{#snippet icon({ open })}
+								<ChevronRight
+									class="h-4 w-4 shrink-0 transition-transform {open
+										? 'rotate-90'
+										: ''}"
+								/>
+								{#if open}
+									<FolderOpenIcon
+										class="h-4 w-4 shrink-0 text-muted-foreground"
+									/>
+								{:else}
+									<FolderIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+								{/if}
+							{/snippet}
+							{#each children as childId (childId)}
+								<FileTreeItem id={childId} depth={depth + 1} />
+							{/each}
+						</TreeView.Folder>
 					</div>
 				{:else}
-					<button
+					<TreeView.File
 						{...props}
-						class="flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left text-sm hover:bg-accent {isSelected
+						name={row.name}
+						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''}"
 						style="padding-left: {depth * 12 + 8 + 20}px"
-						onclick={handleClick}
-						onkeydown={handleKeydown}
+						onclick={() => fsState.actions.selectFile(id)}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								fsState.actions.selectFile(id);
+							}
+						}}
 						role="treeitem"
 					>
-						<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
-						<span class="truncate">{row.name}</span>
-					</button>
+						{#snippet icon()}
+							<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+						{/snippet}
+					</TreeView.File>
 				{/if}
 			{/snippet}
 		</ContextMenu.Trigger>

@@ -2,6 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import { onMount } from 'svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 
 	type Props = {
 		fileId: FileId;
@@ -29,9 +30,7 @@
 		dirty = false;
 	}
 
-	function handleInput(e: Event) {
-		const target = e.target as HTMLTextAreaElement;
-		content = target.value;
+	function handleInput() {
 		dirty = true;
 	}
 
@@ -56,13 +55,13 @@
 		Loading...
 	</div>
 {:else}
-	<textarea
-		class="h-full w-full resize-none border-0 bg-transparent p-4 font-mono text-sm outline-none focus:ring-0"
-		value={content}
+	<Textarea
+		class="h-full w-full resize-none border-0 shadow-none rounded-none bg-transparent p-4 font-mono text-sm outline-none focus-visible:ring-0 focus-visible:border-transparent"
+		bind:value={content}
 		oninput={handleInput}
 		onblur={saveContent}
 		onkeydown={handleKeydown}
 		spellcheck={false}
 		placeholder="Empty file"
-	></textarea>
+	/>
 {/if}

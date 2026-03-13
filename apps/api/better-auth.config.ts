@@ -1,25 +1,32 @@
 /**
  * CLI-only config for Better Auth schema tools.
  *
- * Run via:
- *   bun run auth:generate  — generate Drizzle schema from Better Auth tables
+ * This file exists solely for `@better-auth/cli generate` to introspect the auth
+ * config and emit the correct Drizzle schema. It is never used at runtime—the
+ * Cloudflare Worker uses `createAuth()` in `src/app.ts` instead.
  *
- * Loads `.dev.vars` via `tooling/env.ts`.
+ * Both configs spread `BASE_AUTH_CONFIG` (which owns the plugin list) so the CLI
+ * and runtime always agree on which tables exist.
+ *
+ * Run via:
+ *   bun run auth:generate
+ *
+ * Env strategy:
+ *   - `BETTER_AUTH_SECRET` comes from `.dev.vars` (loaded via dotenv) or Infisical.
+ *   - `DATABASE_URL` falls back to the local Postgres URL parsed from `wrangler.jsonc`
+ *     by `env.ts`.
  */
 
 import { fileURLToPath } from 'node:url';
-import { oauthProvider } from '@better-auth/oauth-provider';
+import { createApps } from '@epicenter/constants/apps';
 import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { bearer } from 'better-auth/plugins/bearer';
-import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
-import { jwt } from 'better-auth/plugins/jwt';
 import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { BASE_AUTH_CONFIG } from './src/app';
-import { LOCAL_DATABASE_URL } from './tooling/env';
+import { LOCAL_DATABASE_URL } from './env';
 
 config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
 const env = type({
@@ -32,13 +39,12 @@ const db = drizzle(sql);
 
 export const auth = betterAuth({
 	...BASE_AUTH_CONFIG,
-	baseURL: 'http://localhost:8787',
+	/**
+	 * The CLI always runs locally, so we hardcode the dev URL. The value doesn't
+	 * affect schema generation—it only prevents `oauthProvider` from crashing on
+	 * `new URL('')` during plugin init. The runtime config uses `env.BASE_URL` instead.
+	 */
+	baseURL: createApps('development').API.URL,
 	database: drizzleAdapter(db, { provider: 'pg' }),
 	secret: env.BETTER_AUTH_SECRET,
-	plugins: [
-		bearer(),
-		jwt(),
-		deviceAuthorization(),
-		oauthProvider({ loginPage: '/sign-in', consentPage: '/consent' }),
-	],
 });

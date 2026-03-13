@@ -208,7 +208,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 }
 
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
-function createAuth(db: Db) {
+function createAuth(db: Db, env: Env['Bindings']) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
 		database: drizzleAdapter(db, { provider: 'pg' }),
@@ -365,7 +365,7 @@ const factory = createFactory<Env>({
 
 		// Layer 2: Auth — pure, reads db from context.
 		app.use('*', async (c, next) => {
-			c.set('auth', createAuth(c.var.db));
+			c.set('auth', createAuth(c.var.db, c.env));
 			await next();
 		});
 	},

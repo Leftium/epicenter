@@ -9,20 +9,8 @@
 	import HoneycripSidebar from '$lib/components/Sidebar.svelte';
 	import { notesState } from '$lib/state/notes.svelte';
 	import workspaceClient from '$lib/workspace';
-
-	// ─── Recently Deleted View ──────────────────────────────────────────────
-
-	let isRecentlyDeletedView = $state(false);
+	
 	let commandPaletteOpen = $state(false);
-
-	const folderName = $derived(
-		isRecentlyDeletedView
-			? 'Recently Deleted'
-			: notesState.selectedFolderId
-				? (notesState.folders.find((f) => f.id === notesState.selectedFolderId)
-						?.name ?? 'Notes')
-				: 'All Notes',
-	);
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 
@@ -79,47 +67,12 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <SidebarProvider>
-	<HoneycripSidebar
-		folders={notesState.folders}
-		selectedFolderId={notesState.selectedFolderId}
-		noteCounts={notesState.noteCounts}
-		totalNoteCount={notesState.notes.length}
-		searchQuery={notesState.searchQuery}
-		deletedNoteCount={notesState.deletedNotes.length}
-		isRecentlyDeletedSelected={isRecentlyDeletedView}
-		onSelectFolder={(folderId) => {
-			isRecentlyDeletedView = false;
-			notesState.selectFolder(folderId);
-		}}
-		onCreateFolder={() => notesState.createFolder()}
-		onRenameFolder={(id, name) => notesState.renameFolder(id, name)}
-		onDeleteFolder={(id) => notesState.deleteFolder(id)}
-		onSearchChange={(q) => notesState.setSearchQuery(q)}
-		onSelectRecentlyDeleted={() => {
-			isRecentlyDeletedView = true;
-			notesState.selectFolder(null);
-		}}
-	/>
+	<HoneycripSidebar />
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
-				<NoteList
-					notes={isRecentlyDeletedView ? notesState.deletedNotes : notesState.filteredNotes}
-					selectedNoteId={notesState.selectedNoteId}
-					sortBy={notesState.sortBy}
-					viewMode={isRecentlyDeletedView ? 'recentlyDeleted' : 'normal'}
-					{folderName}
-					folders={notesState.folders}
-					onSelectNote={(id) => notesState.selectNote(id)}
-					onCreateNote={() => notesState.createNote()}
-					onDeleteNote={(id) => notesState.softDeleteNote(id)}
-					onPinNote={(id) => notesState.pinNote(id)}
-					onSortChange={(v) => notesState.setSortBy(v)}
-					onRestoreNote={(id) => notesState.restoreNote(id)}
-					onPermanentlyDeleteNote={(id) => notesState.permanentlyDeleteNote(id)}
-					onMoveToFolder={(noteId, folderId) => notesState.moveNoteToFolder(noteId, folderId)}
-				/>
+				<NoteList />
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">
@@ -147,18 +100,4 @@
 	</main>
 </SidebarProvider>
 
-<CommandPalette
-	bind:open={commandPaletteOpen}
-	notes={notesState.notes}
-	folders={notesState.folders}
-	onSelectNote={(noteId) => {
-		isRecentlyDeletedView = false;
-		notesState.selectNote(noteId);
-	}}
-	onSelectFolder={(folderId) => {
-		isRecentlyDeletedView = false;
-		notesState.selectFolder(folderId);
-	}}
-	onCreateNote={() => notesState.createNote()}
-	onCreateFolder={() => notesState.createFolder()}
-/>
+<CommandPalette bind:open={commandPaletteOpen} />

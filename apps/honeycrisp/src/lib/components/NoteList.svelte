@@ -7,49 +7,16 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { differenceInDays, format, isToday, isYesterday } from 'date-fns';
 	import NoteCard from '$lib/components/NoteCard.svelte';
-	import type { Folder, FolderId, Note, NoteId } from '$lib/workspace';
+	import { notesState } from '$lib/state/notes.svelte';
+	import { parseDateTime } from '$lib/utils/date';
+	import type { Note } from '$lib/workspace';
 
-	let {
-		notes,
-		selectedNoteId,
-		sortBy,
-		onSelectNote,
-		onCreateNote,
-		onDeleteNote,
-		onPinNote,
-		onSortChange,
-		viewMode = 'normal' as 'normal' | 'recentlyDeleted',
-		onRestoreNote = undefined as ((noteId: NoteId) => void) | undefined,
-		onPermanentlyDeleteNote = undefined as
-			| ((noteId: NoteId) => void)
-			| undefined,
-		onMoveToFolder = undefined as
-			| ((noteId: NoteId, folderId: FolderId | undefined) => void)
-			| undefined,
-		folderName = 'Notes',
-		folders = [] as Folder[],
-	}: {
-		notes: Note[];
-		selectedNoteId: NoteId | null;
-		sortBy: 'dateEdited' | 'dateCreated' | 'title';
-		onSelectNote: (noteId: NoteId) => void;
-		onCreateNote: () => void;
-		onDeleteNote: (noteId: NoteId) => void;
-		onPinNote: (noteId: NoteId) => void;
-		onSortChange: (sortBy: 'dateEdited' | 'dateCreated' | 'title') => void;
-		viewMode?: 'normal' | 'recentlyDeleted';
-		onRestoreNote?: ((noteId: NoteId) => void) | undefined;
-		onPermanentlyDeleteNote?: ((noteId: NoteId) => void) | undefined;
-		onMoveToFolder?:
-			| ((noteId: NoteId, folderId: FolderId | undefined) => void)
-			| undefined;
-		folderName?: string;
-		folders?: Folder[];
-	} = $props();
-
-	function parseDateTime(dts: string): Date {
-		return new Date(dts.split('|')[0]!);
-	}
+	/** Notes to display — filtered active notes or deleted notes depending on view. */
+	const notes = $derived(
+		notesState.isRecentlyDeletedView
+			? notesState.deletedNotes
+			: notesState.filteredNotes,
+	);
 
 	function getDateLabel(dts: string): string {
 		const date = parseDateTime(dts);
@@ -109,18 +76,18 @@
 		if (flatNoteIds.length === 0) return;
 		e.preventDefault();
 
-		const currentIndex = selectedNoteId
-			? flatNoteIds.indexOf(selectedNoteId)
+		const currentIndex = notesState.selectedNoteId
+			? flatNoteIds.indexOf(notesState.selectedNoteId)
 			: -1;
 
 		if (e.key === 'ArrowDown') {
 			const nextIndex =
 				currentIndex < flatNoteIds.length - 1 ? currentIndex + 1 : 0;
-			onSelectNote(flatNoteIds[nextIndex]!);
+			notesState.selectNote(flatNoteIds[nextIndex]!);
 		} else {
 			const prevIndex =
 				currentIndex > 0 ? currentIndex - 1 : flatNoteIds.length - 1;
-			onSelectNote(flatNoteIds[prevIndex]!);
+			notesState.selectNote(flatNoteIds[prevIndex]!);
 		}
 	}
 </script>
@@ -129,10 +96,10 @@
 <div class="flex h-full flex-col" onkeydown={handleKeydown} tabindex="-1">
 	<div class="flex items-center justify-between border-b px-4 py-3">
 		<div class="flex items-center gap-2">
-			<h2 class="text-sm font-semibold">{folderName}</h2>
+			<h2 class="text-sm font-semibold">{notesState.folderName}</h2>
 			<span class="text-xs text-muted-foreground">{notes.length}</span>
 		</div>
-		{#if viewMode === 'normal'}
+		{#if !notesState.isRecentlyDeletedView}
 			<div class="flex items-center gap-1">
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger>
@@ -143,24 +110,24 @@
 						{/snippet}
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-44">
-						<DropdownMenu.Item onclick={() => onSortChange('dateEdited')}>
-							{#if sortBy === 'dateEdited'}
+						<DropdownMenu.Item onclick={() => notesState.setSortBy('dateEdited')}>
+							{#if notesState.sortBy === 'dateEdited'}
 								<CheckIcon class="mr-2 size-4" />
 							{:else}
 								<span class="mr-2 size-4"></span>
 							{/if}
 							Date Edited
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => onSortChange('dateCreated')}>
-							{#if sortBy === 'dateCreated'}
+						<DropdownMenu.Item onclick={() => notesState.setSortBy('dateCreated')}>
+							{#if notesState.sortBy === 'dateCreated'}
 								<CheckIcon class="mr-2 size-4" />
 							{:else}
 								<span class="mr-2 size-4"></span>
 							{/if}
 							Date Created
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => onSortChange('title')}>
-							{#if sortBy === 'title'}
+						<DropdownMenu.Item onclick={() => notesState.setSortBy('title')}>
+							{#if notesState.sortBy === 'title'}
 								<CheckIcon class="mr-2 size-4" />
 							{:else}
 								<span class="mr-2 size-4"></span>
@@ -173,7 +140,7 @@
 					variant="ghost"
 					size="icon"
 					class="size-7"
-					onclick={onCreateNote}
+					onclick={() => notesState.createNote()}
 				>
 					<PlusIcon class="size-4" />
 				</Button>
@@ -187,7 +154,7 @@
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
 				<p class="text-sm">
-					{#if viewMode === 'recentlyDeleted'}
+					{#if notesState.isRecentlyDeletedView}
 						No deleted notes
 					{:else}
 						No notes yet. Click + to create one.
@@ -202,18 +169,7 @@
 							{group.label}
 						</h3>
 						{#each group.entries as note (note.id)}
-							<NoteCard
-								{note}
-								isSelected={selectedNoteId === note.id}
-								{viewMode}
-								{folders}
-								onSelect={() => onSelectNote(note.id)}
-								onPin={() => onPinNote(note.id)}
-								onDelete={() => onDeleteNote(note.id)}
-								onRestore={() => onRestoreNote?.(note.id)}
-								onPermanentlyDelete={() => onPermanentlyDeleteNote?.(note.id)}
-								onMoveToFolder={(folderId) => onMoveToFolder?.(note.id, folderId)}
-							/>
+						<NoteCard {note} />
 						{/each}
 					</div>
 				{/each}

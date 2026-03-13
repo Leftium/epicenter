@@ -102,11 +102,13 @@ These directly contradict established codebase conventions or have correctness i
 - [x] **1.1** Move `isRecentlyDeletedView` into `notesState` as `$state(false)` with a getter. Add `selectRecentlyDeleted()` method that sets it to `true` and calls `selectFolder(null)`. Update `selectFolder()` to set it to `false`.
 - [x] **1.2** Add `folderName` as a `$derived` getter on `notesState` (currently a ternary in +page.svelte).
 - [x] **1.3** Refactor `Sidebar.svelte` to import `notesState` directly. Remove all forwarded data/callback props. Keep only props that are genuinely component-local (editing state).
-- [ ] **1.4** Refactor `NoteList.svelte` to import `notesState` directly. The only prop it should receive is potentially `viewMode` (or derive it from `notesState.isRecentlyDeletedView`).
+- [x] **1.4** Refactor `NoteList.svelte` to import `notesState` directly. The only prop it should receive is potentially `viewMode` (or derive it from `notesState.isRecentlyDeletedView`).
+  > **Note**: Zero props — derives notes list from `notesState.isRecentlyDeletedView` internally.
 - [x] **1.5** Refactor `NoteCard.svelte` to import `notesState` directly. Props reduce to `note` and `isSelected`. Actions call `notesState.softDeleteNote(note.id)` etc. directly.
   > **Note**: Props reduced to just `note` — `isSelected` is now computed internally via `$derived`.
 - [x] **1.6** Refactor `CommandPalette.svelte` to import `notesState` directly. Only prop: `open` (bindable).
-- [ ] **1.7** Slim down `+page.svelte` to layout + document handle `$effect` + keyboard shortcuts only.
+- [x] **1.7** Slim down `+page.svelte` to layout + document handle `$effect` + keyboard shortcuts only.
+  > **Note**: 164 lines → 103 lines. Only props remaining: Editor's yxmlfragment + onContentChange.
 - [x] **1.8** Fix `generateId() as unknown as FolderId` → `generateId() as string as FolderId` in `notes.svelte.ts` (2 occurrences: `createFolder` and `createNote`).
 
 ### Tier 2 — Should Fix (code quality)

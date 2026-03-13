@@ -71,8 +71,8 @@ function normalizeUrl(url: string): string {
  * Returns only groups with 2+ tabs (actual duplicates).
  * Within each group, tabs are ordered by their original array position.
  */
-function findDuplicates(): Map<string, { tabId: string; title: string }[]> {
-	const byUrl = new Map<string, { tabId: string; title: string }[]>();
+function findDuplicates(): Map<string, { tabId: TabCompositeId; title: string }[]> {
+	const byUrl = new Map<string, { tabId: TabCompositeId; title: string }[]>();
 
 	for (const window of browserState.windows) {
 		for (const tab of browserState.tabsByWindow(window.id)) {
@@ -97,8 +97,8 @@ function getAllTabs() {
 /**
  * Get unique domains from all open tabs.
  */
-function getUniqueDomains(): Map<string, string[]> {
-	const byDomain = new Map<string, string[]>();
+function getUniqueDomains(): Map<string, TabCompositeId[]> {
+	const byDomain = new Map<string, TabCompositeId[]>();
 
 	for (const tab of getAllTabs()) {
 		if (!tab.url) continue;
@@ -143,7 +143,7 @@ const dedupAction: QuickAction = {
 			confirm: { text: 'Close Duplicates', variant: 'destructive' },
 			async onConfirm() {
 				const nativeIds = toClose
-					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
+					.map((tabId) => parseTabId(tabId)?.tabId)
 					.filter((id) => id !== undefined);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),
@@ -170,7 +170,7 @@ const sortAction: QuickAction = {
 			for (let i = 0; i < sorted.length; i++) {
 				const tab = sorted[i];
 				if (!tab) continue;
-				const parsed = parseTabId(tab.id as TabCompositeId);
+				const parsed = parseTabId(tab.id);
 				if (!parsed) continue;
 				await tryAsync({
 					try: () => browser.tabs.move(parsed.tabId, { index: i }),
@@ -194,7 +194,7 @@ const groupByDomainAction: QuickAction = {
 			.filter(([, tabIds]) => tabIds.length >= 2)
 			.map(([domain, tabIds]) => {
 				const nativeIds = tabIds
-					.map((id) => parseTabId(id as TabCompositeId)?.tabId)
+					.map((id) => parseTabId(id)?.tabId)
 					.filter((id) => id !== undefined);
 				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 			})
@@ -267,7 +267,7 @@ const closeByDomainAction: QuickAction = {
 			confirm: { text: 'Close Tabs', variant: 'destructive' },
 			async onConfirm() {
 				const nativeIds = tabIds
-					.map((tabId) => parseTabId(tabId as TabCompositeId)?.tabId)
+					.map((tabId) => parseTabId(tabId)?.tabId)
 					.filter((id) => id !== undefined);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),

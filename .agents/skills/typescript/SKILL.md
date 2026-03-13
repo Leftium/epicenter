@@ -670,10 +670,12 @@ This makes type boundaries visible and intentional, without forcing awkward para
 
 Every `defineTable()` schema MUST use branded ID types for the `id` field and all string foreign keys. Never use plain `'string'` for table IDs.
 
-For tables that use arktype schemas, follow the **three-part pattern**:
+#### The Three-Part Pattern
+
+Every branded ID type that is generated at runtime MUST follow the three-part pattern:
 
 ```typescript
-import type { Brand } from 'wellcrafted/brand';
+import { type Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
 import { generateId } from '@epicenter/workspace';
 
@@ -685,33 +687,28 @@ export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
 
-// 3. FACTORY — create* prefix, encapsulates the double-cast
+// 3. FACTORY — create* prefix, encapsulates the cast
 export const createSavedTabId = (): SavedTabId =>
 	generateId() as string as SavedTabId;
 ```
 
-Then use directly in the schema: `id: SavedTabId` and for optional FKs: `'parentId?': SavedTabId.or('undefined')`.
+| Part | Naming | Required When |
+|------|--------|--------------|
+| Type | PascalCase (`SavedTabId`) | Always — this IS the branded type |
+| Validator | Same PascalCase (TS allows type+value same name) | Used in `defineTable()` or other arktype schemas |
+| Factory | `create` + PascalCase (`createSavedTabId`) | IDs are generated at runtime (via `generateId()`) |
 
-**At call sites, use the factory—never the double-cast directly:**
+At call sites, **always use the factory**:
 
 ```typescript
-// Good: factory encapsulates the cast
+// Good — factory encapsulates the cast
 const id = createSavedTabId();
 
-// Bad: double-cast scattered across files
+// Bad — double-cast scattered across call sites
 const id = generateId() as string as SavedTabId;
 ```
 
-| Part | Naming | Required When |
-|------|--------|--------------|
-| Type | PascalCase (`SavedTabId`) | Always |
-| Validator | Same PascalCase (`SavedTabId`) | Used in `defineTable()` schemas |
-| Factory | `create` + PascalCase (`createSavedTabId`) | IDs generated at runtime |
-
-Not every branded type needs all three. Path types like `AbsolutePath` need only the type. Composite IDs like `TabCompositeId` already have `createTabCompositeId()` factories.
-
-See `packages/filesystem/src/ids.ts` for the reference implementation (`generateRowId`, `generateColumnId`, `generateFileId`). See `specs/20260312T180000-branded-id-convention.md` for the full inventory and migration plan.
-
+See the `workspace-api` skill for the full pattern with `defineTable()` usage, and `specs/20260312T180000-branded-id-convention.md` for the complete inventory.
 # Extract Coupled `let` State Into Sub-Factories
 
 When a factory function accumulates `let` statements that are always read, written, and reset together, extract them into a sub-factory. The tell: two or three `let` declarations that move as a pack across multiple inner functions.

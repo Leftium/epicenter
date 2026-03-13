@@ -94,7 +94,7 @@ const theme = defineKv()
 
 Every table's `id` field and every string foreign key field MUST use a branded type instead of plain `'string'`. This prevents accidental mixing of IDs from different tables at compile time.
 
-### Three-Part Pattern
+### Pattern
 
 Define a branded type + arktype validator + factory in the same file as the workspace definition:
 
@@ -103,19 +103,17 @@ import type { Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
 import { generateId } from '@epicenter/workspace';
 
-// 1. TYPE — the branded type
+// 1. Branded type + arktype validator (co-located with workspace definition)
 export type ConversationId = string & Brand<'ConversationId'>;
-
-// 2. VALIDATOR — arktype pipe for schema composition
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
 
-// 3. FACTORY — create* prefix, encapsulates the double-cast
+// 2. Factory function — the ONLY place with the double-cast
 export const createConversationId = (): ConversationId =>
 	generateId() as string as ConversationId;
 
-// Use in defineTable schema:
+// 3. Use in defineTable + co-locate type export
 const conversationsTable = defineTable(
 	type({
 		id: ConversationId,              // Primary key — branded
@@ -126,25 +124,9 @@ const conversationsTable = defineTable(
 );
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
-const chatMessagesTable = defineTable(
-	type({
-		id: ChatMessageId,               // Different branded type
-		conversationId: ConversationId,   // FK to conversations — branded
-		role: "'user' | 'assistant'",
-		_v: '1',
-	}),
-);
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
-
-// Compose in createWorkspace
-export const workspaceClient = createWorkspace(
-	defineWorkspace({
-		tables: {
-			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
-		},
-	}),
-);
+// 4. At call sites — use the factory, never double-cast
+const newId = createConversationId();  // Good
+// const newId = generateId() as string as ConversationId;  // Bad — don't do this
 ```
 
 ### Rules
@@ -153,7 +135,7 @@ export const workspaceClient = createWorkspace(
 2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `ConversationId`, not `'string'`
 3. **Optional FKs use `.or('undefined')`**: `'parentId?': ConversationId.or('undefined')`
 4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`
-5. **Use `create*` factories at generation sites**: `createConversationId()` not `generateId() as string as ConversationId`
+5. **Use factory functions**: When IDs are generated at runtime, use a `create*` factory: `createConversationId()`. Never scatter double-casts (`generateId() as string as ConversationId`) across call sites.
 6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`
 
 ### Why Not Plain `'string'`
@@ -170,7 +152,7 @@ deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
 
 ### Reference Implementation
 
-See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 branded ID types.
+See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 branded ID types and 4 factory functions.
 See `packages/filesystem/src/ids.ts` for the reference factory pattern (`generateRowId`, `generateColumnId`, `generateFileId`).
 See `specs/20260312T180000-branded-id-convention.md` for the full inventory and migration plan.
 

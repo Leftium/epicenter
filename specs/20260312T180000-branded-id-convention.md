@@ -88,27 +88,33 @@ Not every branded type needs all three. Path types like `AbsolutePath`, `Project
 
 ### Wave 1: Add factory functions (workspace.ts)
 
-- [ ] Add `createSavedTabId` to `apps/tab-manager/src/lib/workspace.ts`
-- [ ] Add `createBookmarkId` to `apps/tab-manager/src/lib/workspace.ts`
-- [ ] Add `createConversationId` to `apps/tab-manager/src/lib/workspace.ts`
-- [ ] Add `createChatMessageId` to `apps/tab-manager/src/lib/workspace.ts`
+- [x] Add `createSavedTabId` to `apps/tab-manager/src/lib/workspace.ts`
+- [x] Add `createBookmarkId` to `apps/tab-manager/src/lib/workspace.ts`
+- [x] Add `createConversationId` to `apps/tab-manager/src/lib/workspace.ts`
+- [x] Add `createChatMessageId` to `apps/tab-manager/src/lib/workspace.ts`
 
 ### Wave 2: Replace double-casts at call sites
 
-- [ ] `apps/tab-manager/src/lib/tab-actions.ts:104` — `generateId() as string as SavedTabId` → `createSavedTabId()`
-- [ ] `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts:93` — same
-- [ ] `apps/tab-manager/src/lib/state/bookmark-state.svelte.ts:84` — `generateId() as string as BookmarkId` → `createBookmarkId()`
-- [ ] `apps/tab-manager/src/lib/state/chat-state.svelte.ts:87` — `generateId() as string as ConversationId` → `createConversationId()`
-- [ ] `apps/tab-manager/src/lib/state/chat-state.svelte.ts:361` — `generateId() as string as ChatMessageId` → `createChatMessageId()`
+- [x] `apps/tab-manager/src/lib/tab-actions.ts:179` — `generateId() as string as SavedTabId` → `createSavedTabId()`
+- [x] `apps/tab-manager/src/lib/state/saved-tab-state.svelte.ts:93` — same
+- [x] `apps/tab-manager/src/lib/state/bookmark-state.svelte.ts:84` — `generateId() as string as BookmarkId` → `createBookmarkId()`
+- [x] `apps/tab-manager/src/lib/state/chat-state.svelte.ts:87` — `generateConversationId` wrapper removed, replaced with `createConversationId()`
+- [x] `apps/tab-manager/src/lib/state/chat-state.svelte.ts:361` — `generateId() as string as ChatMessageId` → `createChatMessageId()`
 
 ### Wave 3: Update skills and documentation
 
-- [ ] Update `.agents/skills/typescript/SKILL.md` — branded types section to document `create*` factory convention
-- [ ] Update `.agents/skills/workspace-api/SKILL.md` — branded table IDs section to use factories instead of double-casts
-- [ ] Update JSDoc on each factory function with `@example` blocks
+- [x] Update `.agents/skills/typescript/SKILL.md` — branded types section to document `create*` factory convention
+- [x] Update `.agents/skills/workspace-api/SKILL.md` — branded table IDs section to use factories instead of double-casts
+- [x] Update JSDoc on each factory function with `@example` blocks
 
 ---
 
 ## Review
 
-_To be filled after implementation._
+Three commits landed:
+
+1. `feat(tab-manager): add create* factory functions for branded ID types` — added `generateId` import and 4 factories (`createSavedTabId`, `createBookmarkId`, `createConversationId`, `createChatMessageId`) co-located with their type+validator pairs in `workspace.ts`.
+2. `refactor(tab-manager): replace double-cast ID generation with create* factories` — replaced all 5 double-cast call sites across 4 files. Removed the local `generateConversationId` wrapper in `chat-state.svelte.ts` and eliminated all `generateId` imports from consumer files.
+3. `docs(tab-manager): add JSDoc with @example blocks to create* ID factories` — each factory has a description, `{@link}` to its branded type, and a realistic `@example` block.
+
+4. `docs(skills): update typescript and workspace-api skills with branded ID factory convention` — completed the truncated three-part pattern section in typescript skill; refined the workspace-api skill's pattern section with factory-first examples and call-site guidance.

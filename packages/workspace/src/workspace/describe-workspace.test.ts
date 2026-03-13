@@ -265,5 +265,4 @@ describe('describeWorkspace', () => {
 		expect(createAction?.title).toBeUndefined();
 		expect(createAction?.destructive).toBeUndefined();
 	});
-
 });

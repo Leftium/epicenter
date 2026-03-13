@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
-	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
-	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import { Button } from '@epicenter/ui/button';
+	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
-	import { toolTrustState } from '$lib/state/tool-trust.svelte';
-	import { aiChatState } from '$lib/state/chat-state.svelte';
+	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { workspaceToolTitles, type WorkspaceTools } from '$lib/workspace';
+	import { aiChatState } from '$lib/state/chat-state.svelte';
+	import { toolTrustState } from '$lib/state/tool-trust.svelte';
+	import { type WorkspaceTools, workspaceToolTitles } from '$lib/workspace';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	let {
@@ -39,7 +39,11 @@
 	);
 
 	$effect(() => {
-		if (isApprovalRequested && approval?.id && toolTrustState.shouldAutoApprove(part.name)) {
+		if (
+			isApprovalRequested &&
+			approval?.id &&
+			toolTrustState.shouldAutoApprove(part.name)
+		) {
 			aiChatState.active?.approveToolCall(approval.id, true);
 		}
 	});
@@ -90,13 +94,16 @@
 
 	{#if isApprovalRequested && !toolTrustState.shouldAutoApprove(part.name)}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
-			<Button variant="outline" size="sm" onclick={handleAllow}>
-				Allow
-			</Button>
+			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>
 			<Button variant="outline" size="sm" onclick={handleAlwaysAllow}>
 				Always Allow
 			</Button>
-			<Button variant="ghost" size="sm" class="text-muted-foreground" onclick={handleDeny}>
+			<Button
+				variant="ghost"
+				size="sm"
+				class="text-muted-foreground"
+				onclick={handleDeny}
+			>
 				Deny
 			</Button>
 		</div>

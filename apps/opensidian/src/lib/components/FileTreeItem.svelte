@@ -14,13 +14,7 @@
 	import FileTreeItem from './FileTreeItem.svelte';
 	import RenameDialog from './RenameDialog.svelte';
 
-	let {
-		id,
-		depth = 0,
-	}: {
-		id: FileId;
-		depth?: number;
-	} = $props();
+	let { id }: { id: FileId } = $props();
 
 	const row = $derived(fsState.getRow(id));
 	const isFolder = $derived(row?.type === 'folder');
@@ -63,7 +57,6 @@
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 								? 'bg-accent text-accent-foreground'
 								: ''}"
-							style="padding-left: {depth * 12 + 8}px"
 						>
 							{#snippet icon({ open })}
 								<ChevronRight
@@ -80,7 +73,7 @@
 								{/if}
 							{/snippet}
 							{#each children as childId (childId)}
-								<FileTreeItem id={childId} depth={depth + 1} />
+								<FileTreeItem id={childId} />
 							{/each}
 						</TreeView.Folder>
 					</div>
@@ -91,7 +84,6 @@
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
 							: ''}"
-						style="padding-left: {depth * 12 + 8 + 20}px"
 						onclick={() => fsState.actions.selectFile(id)}
 						onkeydown={(e) => {
 							if (e.key === 'Enter' || e.key === ' ') {

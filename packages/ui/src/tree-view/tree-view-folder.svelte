@@ -10,17 +10,13 @@
 		open = $bindable(true),
 		onOpenChange,
 		class: className,
-		style,
 		icon,
 		children,
 	}: TreeViewFolderProps = $props();
 </script>
 
 <Collapsible.Root bind:open {onOpenChange}>
-	<Collapsible.Trigger
-		class={cn('flex place-items-center gap-1', className)}
-		{style}
-	>
+	<Collapsible.Trigger class={cn('flex place-items-center gap-1', className)}>
 		{#if icon}
 			{@render icon({ name, open })}
 		{:else if open}
@@ -30,5 +26,10 @@
 		{/if}
 		<span>{name}</span>
 	</Collapsible.Trigger>
-	<Collapsible.Content> {@render children?.()} </Collapsible.Content>
+	<Collapsible.Content class="mx-2 border-l">
+		<div class="relative flex place-items-start">
+			<div class="bg-border mx-2 h-full w-px"></div>
+			<div class="flex flex-col">{@render children?.()}</div>
+		</div>
+	</Collapsible.Content>
 </Collapsible.Root>

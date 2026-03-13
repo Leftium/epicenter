@@ -9,7 +9,6 @@ export type TreeViewFolderProps = WithChildren<{
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	class?: string;
-	style?: string;
 	icon?: Snippet<[{ name: string; open: boolean }]>;
 }>;
 

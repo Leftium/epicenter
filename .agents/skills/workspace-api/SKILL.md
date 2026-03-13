@@ -273,6 +273,56 @@ return { ...row, views: 0, _v: 2 }; // Works — contextual narrowing
 return { ...row, views: 0, _v: 2 as const }; // Also works — redundant
 ```
 
+## Document Content (Per-Row Y.Docs)
+
+Tables with `.withDocument()` create a content Y.Doc per row. Content is stored using a **timeline model**: a `Y.Array('timeline')` inside the Y.Doc, where each entry is a typed `Y.Map` supporting text, binary, and sheet modes.
+
+### Reading and Writing Content
+
+Use the filesystem package's content helpers, which read/write via the timeline:
+
+```typescript
+import { createYjsFileSystem } from '@epicenter/filesystem';
+
+const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+
+// Read content (timeline-backed)
+const text = await fs.content.read(fileId);
+
+// Write content (timeline-backed)
+await fs.content.write(fileId, 'hello');
+```
+
+### Anti-Patterns
+
+**Do not use `handle.read()`/`handle.write()`** for apps that also use the filesystem API. These methods read/write from `Y.Text('content')`—a different shared type than the timeline—causing silent data loss:
+
+```typescript
+// ❌ BAD: handle uses Y.Text('content'), filesystem uses Y.Array('timeline')
+const handle = await ws.documents.files.content.open(id);
+handle.read();      // reads from wrong shared type
+handle.write('x');  // writes to wrong shared type
+
+// ✅ GOOD: use fs.content which reads/writes via timeline
+await fs.content.read(id);
+await fs.content.write(id, 'hello');
+```
+
+**Do not access `handle.ydoc` directly for content:**
+
+```typescript
+// ❌ BAD: bypasses all abstractions
+const ytext = handle.ydoc.getText('content');
+const fragment = handle.ydoc.getXmlFragment('content');
+
+// ✅ GOOD: use timeline abstraction
+import { createTimeline } from '@epicenter/filesystem';
+const tl = createTimeline(handle.ydoc);
+const text = tl.readAsString();
+```
+
+See `specs/20260313T224500-unify-document-content-model.md` for the full unification plan.
+
 ## References
 
 - `packages/workspace/src/workspace/define-table.ts`

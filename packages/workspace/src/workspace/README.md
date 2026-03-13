@@ -103,6 +103,14 @@ if (result.status === 'valid') {
 
 For detailed rationale on all of this, see [the guide](docs/articles/20260127T120000-static-workspace-api-guide.md).
 
+## Document Content
+
+Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in the filesystem package.
+
+**Important**: `DocumentHandle.read()`/`write()` currently use `Y.Text('content')`, which is a different shared type than the timeline. If your app uses `@epicenter/filesystem`, prefer `fs.content.read()`/`fs.content.write()` for timeline-backed access. Accessing `handle.ydoc.getText('content')` directly is also discouraged.
+
+See `specs/20260313T224500-unify-document-content-model.md` for the full unification plan and anti-pattern reference.
+
 ## Testing
 
 The tests are in `*.test.ts` files next to the implementation. Use `new Y.Doc()` for in-memory tests. Migrations are validated by reading old data and checking the result. Look at existing tests for patterns.

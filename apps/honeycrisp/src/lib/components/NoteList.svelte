@@ -167,7 +167,7 @@
 								</p>
 
 								<div
-									class="absolute right-2 top-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
+									class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
 									note.id
 										? 'flex'
 										: ''}"

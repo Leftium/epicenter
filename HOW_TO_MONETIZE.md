@@ -28,6 +28,15 @@ The typical flow looks like this: a developer at a company discovers Epicenter, 
 
 This is the same playbook that Grafana Labs ($9B valuation, $400M+ ARR), Bitwarden ($100M Series B), and MinIO ($1B+ valuation) all use. AGPL creates the constraint. The commercial license removes it.
 
+
+## What this means for developers building on Epicenter
+
+If you're building on top of Epicenter's libraries, your own code can be under any license that's compatible with AGPL-3.0. That includes most modern permissive licenses—MIT, Apache 2.0, BSD, ISC, and others. You don't have to use AGPL for your own code.
+
+The catch is that the **combined work** (your code + our AGPL library) must comply with AGPL when you distribute it or serve it over a network. In practice, this means users of your app must be able to get the full source code. Your original files keep whatever license you put on them—someone could fork your MIT code, swap out the Epicenter dependency, and redistribute under pure MIT. But as long as our AGPL library is in the mix, the distributed package follows AGPL rules.
+
+This is the same pattern Grafana uses—their UI libraries (`grafana-ui`, `grafana-data`) are Apache 2.0 so plugin developers aren't forced into AGPL for their own code, even though the combined Grafana distribution is AGPL.
+
 ## The three revenue streams
 
 We see three ways this generates revenue, serving different kinds of customers:

@@ -31,9 +31,9 @@
 
 import type * as Y from 'yjs';
 import {
-	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+	} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { createEncryptedKvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createTableHelper } from './table-helper.js';
 import type {
 	BaseRow,
@@ -58,13 +58,14 @@ import { TableKey } from './ydoc-keys.js';
 export function createTables<TTableDefinitions extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TTableDefinitions,
+	options?: { getKey?: () => Uint8Array | undefined },
 ): TablesHelper<TTableDefinitions> {
 	const helpers: Record<string, TableHelper<BaseRow>> = {};
 
 	for (const [name, definition] of Object.entries(definitions)) {
-		// Each table gets its own Y.Array for isolation
+		// Each table gets its own encrypted KV store (passthrough when no key)
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const ykv = new YKeyValueLww(yarray);
+		const ykv = createEncryptedKvLww(yarray, { getKey: options?.getKey });
 
 		helpers[name] = createTableHelper(ykv, definition);
 	}

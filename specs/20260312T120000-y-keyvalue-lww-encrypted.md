@@ -494,9 +494,9 @@ Replace the `YKeyValueLww` instantiation in `createKv` with `createEncryptedKvLw
 
 The workspace creation flow passes the encryption key down.
 
-- [ ] **4.1** Add `getKey` getter to workspace options or extension context
-- [ ] **4.2** All table and KV helpers receive the `getKey` getter
-- [ ] **4.3** Extensions (SQLite, persistence) continue to work—they read through the same helpers
+- [x] **4.1** Add `getKey` getter to workspace options or extension context
+- [x] **4.2** All table and KV helpers receive the `getKey` getter
+- [x] **4.3** Extensions (SQLite, persistence) continue to work—they read through the same helpers
 
 ## Edge Cases
 

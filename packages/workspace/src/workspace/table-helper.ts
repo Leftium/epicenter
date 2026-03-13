@@ -27,7 +27,7 @@ export function createTableHelper<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	ykv: YKeyValueLww<unknown>,
+	ykv: Pick<YKeyValueLww<unknown>, 'set' | 'get' | 'has' | 'delete' | 'map' | 'observe' | 'unobserve'>,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;

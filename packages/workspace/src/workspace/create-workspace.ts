@@ -100,17 +100,20 @@ export function createWorkspace<
 	TTableDefinitions extends TableDefinitions = Record<string, never>,
 	TKvDefinitions extends KvDefinitions = Record<string, never>,
 	TAwarenessDefinitions extends AwarenessDefinitions = Record<string, never>,
->({
-	id,
-	tables: tablesDef,
-	kv: kvDef,
-	awareness: awarenessDef,
-}: WorkspaceDefinition<
-	TId,
-	TTableDefinitions,
-	TKvDefinitions,
-	TAwarenessDefinitions
->): WorkspaceClientBuilder<
+>(
+	{
+		id,
+		tables: tablesDef,
+		kv: kvDef,
+		awareness: awarenessDef,
+	}: WorkspaceDefinition<
+		TId,
+		TTableDefinitions,
+		TKvDefinitions,
+		TAwarenessDefinitions
+	>,
+	options?: { getKey?: () => Uint8Array | undefined },
+): WorkspaceClientBuilder<
 	TId,
 	TTableDefinitions,
 	TKvDefinitions,
@@ -122,8 +125,8 @@ export function createWorkspace<
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	const tables = createTables(ydoc, tableDefs);
-	const kv = createKv(ydoc, kvDefs);
+	const tables = createTables(ydoc, tableDefs, { getKey: options?.getKey });
+	const kv = createKv(ydoc, kvDefs, { getKey: options?.getKey });
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,

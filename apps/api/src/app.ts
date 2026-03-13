@@ -8,6 +8,7 @@ import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bearer } from 'better-auth/plugins/bearer';
+import { customSession } from 'better-auth/plugins';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
@@ -57,6 +58,20 @@ export const BASE_AUTH_CONFIG = {
 	},
 } as const;
 
+/** Derive a deterministic 32-byte AES-256 key from the auth secret via SHA-256. */
+async function deriveKeyFromSecret(secret: string): Promise<Uint8Array> {
+	const hash = await crypto.subtle.digest(
+		'SHA-256',
+		new TextEncoder().encode(secret),
+	);
+	return new Uint8Array(hash);
+}
+
+/** Convert bytes to base64 string for JSON transport. */
+function bytesToBase64(bytes: Uint8Array): string {
+	return btoa(String.fromCharCode(...bytes));
+}
+
 /** Creates a Better Auth instance using an already-connected Drizzle instance. */
 function createAuth(db: Db, env: Env['Bindings']) {
 	return betterAuth({
@@ -73,6 +88,12 @@ function createAuth(db: Db, env: Env['Bindings']) {
 		plugins: [
 			bearer(),
 			jwt(),
+			customSession(async () => {
+				const encryptionKey = await deriveKeyFromSecret(env.BETTER_AUTH_SECRET);
+				return {
+					encryptionKey: bytesToBase64(encryptionKey),
+				};
+			}),
 			oauthProvider({
 				loginPage: '/sign-in',
 				consentPage: '/consent',

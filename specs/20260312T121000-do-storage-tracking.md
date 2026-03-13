@@ -24,7 +24,7 @@ No visibility into which Durable Object instances exist per user, what type they
 
 ### Task 1: Schema definition + migration
 
-- [x] Add imports to `schema.ts`: `bigint`, `primaryKey`, `uniqueIndex` from `drizzle-orm/pg-core`
+- [x] Add imports to `schema.ts`: `bigint`, `index` from `drizzle-orm/pg-core`
 - [x] Add `durableObjectInstance` table definition
 - [x] Add `durableObjectInstanceRelations`
 - [x] Add `durableObjectInstances: many(durableObjectInstance)` to `userRelations`
@@ -45,18 +45,13 @@ export const durableObjectInstance = pgTable(
 			.references(() => user.id, { onDelete: 'cascade' }),
 		doType: text('do_type').notNull().$type<DoType>(),
 		resourceName: text('resource_name').notNull(),
-		doName: text('do_name').notNull().unique(),
+		doName: text('do_name').primaryKey(),
 		storageBytes: bigint('storage_bytes', { mode: 'number' }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull(),
 		storageMeasuredAt: timestamp('storage_measured_at'),
 	},
-	(table) => [
-		primaryKey({
-			columns: [table.userId, table.doType, table.resourceName],
-		}),
-		index('doi_user_id_idx').on(table.userId),
-	],
+	(table) => [index('doi_user_id_idx').on(table.userId)],
 );
 ```
 
@@ -83,7 +78,7 @@ durableObjectInstances: many(durableObjectInstance),
 
 **Verification:**
 - `bun run db:generate` from `apps/api/` succeeds
-- Generated SQL contains `CREATE TABLE "durable_object_instance"` with composite PK, unique index on `do_name`, and index on `user_id`
+- Generated SQL contains `CREATE TABLE "durable_object_instance"` with `do_name` as PK and index on `user_id`
 - `bun run typecheck` from `apps/api/` passes
 
 ### Task 2: DO RPC return type changes (`base-sync-room.ts`)
@@ -232,11 +227,7 @@ function upsertDoInstance(
 			storageMeasuredAt: params.storageBytes != null ? now : null,
 		})
 		.onConflictDoUpdate({
-			target: [
-				schema.durableObjectInstance.userId,
-				schema.durableObjectInstance.doType,
-				schema.durableObjectInstance.resourceName,
-			],
+			target: schema.durableObjectInstance.doName,
 			set: {
 				lastAccessedAt: now,
 				...(params.storageBytes != null && {
@@ -397,11 +388,11 @@ After the initial implementation, several improvements were made:
 
 - **`createAfterResponseQueue()` utility**: Extracted the raw `Promise<unknown>[]` array into a factory function with `push()` and `drain()` methods. Encapsulates the `Promise.allSettled → cleanup` pattern and makes the middleware more readable.
 - **`DoType` union type**: Added `type DoType = 'workspace' | 'document'` with `$type<DoType>()` on the column definition. Narrows the `doType` parameter from `string` to a compile-time checked union.
-- **Inline `.unique()` on `doName`**: Moved from `uniqueIndex('doi_do_name_idx')` in the callback to `.unique()` chained on the column, matching the existing pattern for `user.email` and `session.token`. The composite PK and `userId` index remain in the callback.
+- **`doName` as primary key**: Simplified from composite PK `(userId, doType, resourceName)` + unique constraint on `doName` to just `doName` as the single PK. The composite was redundant since `doName` = `user:{userId}:{doType}:{resourceName}`. Added `userId` index for FK cascade performance and user-scoped queries. `doType` and `resourceName` remain as data columns for query convenience.
 - **Stub functions return `doName`**: `getWorkspaceStub()` and `getDocumentStub()` now return `{ stub, doName }` instead of just the stub. Eliminates duplicate `doName` template literal construction across 6 upsert call sites.
 - **Fixed indentation**: Corrected `doName` property indentation in 4 upsert calls that had an extra tab level.
 - **Fixed `userRelations` closing brace**: Removed extra tab on the closing `}));`.
-- **Migration regenerated**: `0001_low_morlun.sql` replaces `0001_striped_silverclaw.sql` with `UNIQUE CONSTRAINT` (from inline `.unique()`) instead of `CREATE UNIQUE INDEX`.
+- **Migration regenerated**: `0001_futuristic_santa_claus.sql` with `doName` as PK, `userId` index, and no composite PK.
 
 ### Deviations from Original Spec
 

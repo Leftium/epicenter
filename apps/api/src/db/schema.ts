@@ -5,7 +5,6 @@ import {
 	index,
 	jsonb,
 	pgTable,
-	primaryKey,
 	text,
 	timestamp,
 } from 'drizzle-orm/pg-core';
@@ -184,17 +183,13 @@ export const durableObjectInstance = pgTable(
 			.references(() => user.id, { onDelete: 'cascade' }),
 		doType: text('do_type').notNull().$type<DoType>(),
 		resourceName: text('resource_name').notNull(),
-		doName: text('do_name').notNull().unique(),
+		doName: text('do_name').primaryKey(),
 		storageBytes: bigint('storage_bytes', { mode: 'number' }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull(),
 		storageMeasuredAt: timestamp('storage_measured_at'),
 	},
-	(table) => [
-		primaryKey({
-			columns: [table.userId, table.doType, table.resourceName],
-		}),
-	],
+	(table) => [index('doi_user_id_idx').on(table.userId)],
 );
 
 export const userRelations = relations(user, ({ many }) => ({

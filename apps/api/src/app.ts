@@ -387,11 +387,7 @@ function upsertDoInstance(
 			storageMeasuredAt: params.storageBytes != null ? now : null,
 		})
 		.onConflictDoUpdate({
-			target: [
-				schema.durableObjectInstance.userId,
-				schema.durableObjectInstance.doType,
-				schema.durableObjectInstance.resourceName,
-			],
+			target: schema.durableObjectInstance.doName,
 			set: {
 				lastAccessedAt: now,
 				...(params.storageBytes != null && {

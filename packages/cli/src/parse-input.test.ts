@@ -33,10 +33,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ id: string; name: string }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data).toEqual({ id: '1', name: 'test' });
-		}
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ id: '1', name: 'test' });
 	});
 
 	it('reads @file shorthand', () => {
@@ -49,10 +47,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ id: string; value: number }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data).toEqual({ id: '2', value: 42 });
-		}
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ id: '2', value: 42 });
 	});
 
 	it('reads --file flag', () => {
@@ -65,10 +61,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ source: string }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data).toEqual({ source: 'file-flag' });
-		}
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ source: 'file-flag' });
 	});
 
 	it('reads stdin content', () => {
@@ -79,10 +73,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ from: string }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data).toEqual({ from: 'stdin' });
-		}
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ from: 'stdin' });
 	});
 
 	it('returns error for invalid JSON', () => {
@@ -92,10 +84,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput(options);
 
-		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.error).toContain('Invalid JSON');
-		}
+		expect(result.error).toBeDefined();
+		expect(result.error?.message).toContain('Invalid JSON');
 	});
 
 	it('returns error for missing file', () => {
@@ -105,10 +95,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput(options);
 
-		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.error).toContain('File not found');
-		}
+		expect(result.error).toBeDefined();
+		expect(result.error?.message).toContain('File not found');
 	});
 
 	it('returns error when no input provided', () => {
@@ -116,10 +104,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput(options);
 
-		expect(result.ok).toBe(false);
-		if (!result.ok) {
-			expect(result.error).toContain('No input provided');
-		}
+		expect(result.error).toBeDefined();
+		expect(result.error?.message).toContain('No input provided');
 	});
 
 	it('prioritizes positional over --file', () => {
@@ -133,10 +119,8 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ source: string }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data.source).toBe('positional');
-		}
+		expect(result.error).toBeNull();
+		expect(result.data!.source).toBe('positional');
 	});
 
 	it('prioritizes --file over stdin', () => {
@@ -151,9 +135,7 @@ describe('parseJsonInput', () => {
 
 		const result = parseJsonInput<{ source: string }>(options);
 
-		expect(result.ok).toBe(true);
-		if (result.ok) {
-			expect(result.data.source).toBe('file');
-		}
+		expect(result.error).toBeNull();
+		expect(result.data!.source).toBe('file');
 	});
 });

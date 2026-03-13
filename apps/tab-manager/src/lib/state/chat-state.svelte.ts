@@ -35,7 +35,6 @@
  * ```
  */
 
-import { generateId } from '@epicenter/workspace';
 import {
 	ChatClient,
 	type ChatClientState,
@@ -45,21 +44,14 @@ import {
 import { SvelteMap } from 'svelte/reactivity';
 import type { JsonValue } from 'wellcrafted/json';
 import {
-	AVAILABLE_PROVIDERS,
-	DEFAULT_MODEL,
-	DEFAULT_PROVIDER,
-	PROVIDER_MODELS,
-	type Provider,
-} from '$lib/ai/providers';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
-import { toUiMessage } from '$lib/ai/ui-message';
-import { remoteServerUrl } from '$lib/state/settings.svelte';
-import {
-	actionContext,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	generateChatMessageId,
+	generateConversationId,
 	workspaceClient,
+	workspaceDefinitions,
+	workspaceTools,
 } from '$lib/workspace';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,9 +73,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 // ─────────────────────────────────────────────────────────────────────────────
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Generate a new branded ConversationId from a random ID. */
-const generateConversationId = () => generateId() as string as ConversationId;
 
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
@@ -179,18 +168,22 @@ function createAiChatState() {
 
 		const client = new ChatClient({
 			initialMessages,
-			tools: actionContext.clientTools,
+			tools: workspaceTools,
 			connection: fetchServerSentEvents(
 				() => `${remoteServerUrl.current}/ai/chat`,
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
+					const systemPrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
 					return {
+						credentials: 'include',
 						body: {
-							provider: conv?.provider ?? DEFAULT_PROVIDER,
-							model: conv?.model ?? DEFAULT_MODEL,
-							conversationId,
-							systemPrompt: conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
-							tools: actionContext.toolDefinitions,
+							data: {
+								provider: conv?.provider ?? DEFAULT_PROVIDER,
+								model: conv?.model ?? DEFAULT_MODEL,
+								conversationId,
+								systemPrompts: [systemPrompt],
+								tools: workspaceDefinitions,
+							},
 						},
 					};
 				},
@@ -353,7 +346,7 @@ function createAiChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = generateId() as string as ChatMessageId;
+				const userMessageId = generateChatMessageId();
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
@@ -396,6 +389,30 @@ function createAiChatState() {
 
 			stop() {
 				client.stop();
+			},
+
+			/**
+			 * Respond to a tool approval request.
+			 *
+			 * Called when the user clicks [Allow], [Always Allow], or [Deny]
+			 * on a destructive tool call in the chat. Delegates to ChatClient's
+			 * `addToolApprovalResponse`, which sends the response back to the
+			 * server to resume or cancel tool execution.
+			 *
+			 * @param approvalId - The `part.approval.id` from the ToolCallPart
+			 * @param approved - `true` to allow execution, `false` to deny
+			 *
+			 * @example
+			 * ```typescript
+			 * // User clicks "Allow"
+			 * handle.approveToolCall(part.approval.id, true);
+			 *
+			 * // User clicks "Deny"
+			 * handle.approveToolCall(part.approval.id, false);
+			 * ```
+			 */
+			approveToolCall(approvalId: string, approved: boolean) {
+				void client.addToolApprovalResponse({ id: approvalId, approved });
 			},
 
 			rename(title: string) {

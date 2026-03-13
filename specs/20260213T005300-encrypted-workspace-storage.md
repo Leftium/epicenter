@@ -1,10 +1,12 @@
 # Encrypted Workspace Storage
 
 **Date**: 2026-02-13
-**Status**: Draft (API key portions superseded, key source simplified 2026-03-12)
+**Status**: Draft (API key portions superseded, key source simplified 2026-03-12, crypto library changed to @noble/ciphers)
 **Supersedes**: `20260213T030000-encrypted-api-key-vault.md` (original was overengineered; see Analysis section)
 
 > **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely — API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
+
+> **Note (2026-03-12)**: The implementation uses `@noble/ciphers` (synchronous AES-256-GCM) instead of Web Crypto API as originally planned. Synchronous encryption preserves the `set()` → `void` API across 394 call sites. See `specs/20260312T120000-y-keyvalue-lww-encrypted.md` for the final implementation spec. The encrypted blob format was also extended to `{ v: 1, alg: 'A256GCM', ct, iv }` with version and algorithm fields for cryptographic agility.
 
 ## Overview
 
@@ -211,8 +213,8 @@ The same applies to markdown extension, revision history snapshots, and any futu
 | Cloud key source             | Derived from `BETTER_AUTH_SECRET`     | One key for all users. No per-user key storage. No key generation on signup. No key delivery logic. Same security as per-user keys when keys live in the same DB. |
 | Self-hosted encryption       | Opt-in via password                   | Most self-hosted users are on Tailscale. Don't add friction for the common case.                                           |
 | Local encryption             | Opt-in via password                   | OS disk encryption is the right layer. App-level encryption is a nice-to-have.                                             |
-| Algorithm                    | AES-256-GCM via Web Crypto API        | Native browser support, hardware accelerated, authenticated encryption. No external dependencies.                          |
-| Key derivation               | PBKDF2, 600k iterations, SHA-256      | Only KDF natively in Web Crypto API. 600k is OWASP 2024+ recommendation. Argon2 not yet in browsers.                       |
+| Algorithm                    | AES-256-GCM via ~~Web Crypto API~~ `@noble/ciphers` | Originally planned for Web Crypto; switched to @noble/ciphers for synchronous API. Cure53-audited, zero deps, 11KB gzipped. |
+| Key derivation               | PBKDF2, 600k iterations, SHA-256      | PBKDF2 via Web Crypto API (async, runs once at session start). 600k is OWASP 2024+ recommendation.                         |
 | IV management                | Random 12-byte IV per encryption      | Stored alongside ciphertext. Never reused. Standard AES-GCM practice.                                                      |
 | Encrypted value format       | `{ ct: string, iv: string }` (base64) | Compatible with KV LWW and table value storage. Safe for JSON serialization.                                               |
 
@@ -237,7 +239,7 @@ The original spec (`20260213T030000-encrypted-api-key-vault.md`) used a 3-layer 
 
 ### Phase 1: Crypto Module
 
-Pure Web Crypto API functions. No Yjs or framework dependencies.
+~~Pure Web Crypto API functions.~~ Implemented with `@noble/ciphers` (synchronous). PBKDF2 key derivation remains async via Web Crypto. No Yjs or framework dependencies.
 
 - [ ] `deriveKeyFromSecret(secret)` — SHA-256 hash of `BETTER_AUTH_SECRET` → AES-256 CryptoKey (cloud mode)
 - [ ] `deriveKeyFromPassword(password, salt)` — PBKDF2 → AES-GCM CryptoKey (self-hosted opt-in)

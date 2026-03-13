@@ -23,6 +23,7 @@ describe('describeWorkspace', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
 		const settings = defineKv(
 			type({ theme: "'light' | 'dark'", fontSize: 'number' }),
+			{ theme: 'light', fontSize: 14 },
 		);
 
 		const client = createWorkspace({
@@ -142,7 +143,7 @@ describe('describeWorkspace', () => {
 
 	test('JSON.stringify(descriptor) succeeds (no circular refs)', () => {
 		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
-		const settings = defineKv(type({ theme: "'light' | 'dark'" }));
+		const settings = defineKv(type({ theme: "'light' | 'dark'" }), { theme: 'light' });
 
 		const client = createWorkspace({
 			id: 'stringify-test',

@@ -87,8 +87,9 @@ type SyncRoomConfig = {
  * before calling RPC methods or forwarding fetch. The DO itself does not
  * re-validate — it trusts the Worker boundary.
  *
- * DO names are user-scoped: the Worker prefixes `user:{userId}:` to the
- * client-provided workspace or document name before calling `idFromName()`.
+ * DO names are user-scoped: the Worker constructs
+ * `user:{userId}:{type}:{name}` before calling `idFromName()`, where
+ * `{type}` is `workspace` or `document`.
  * This ensures each user's data is isolated in separate DO instances, even
  * if multiple users create workspaces with the same name (e.g., "epicenter.tab-manager").
  *

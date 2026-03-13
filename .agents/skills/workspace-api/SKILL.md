@@ -1,6 +1,6 @@
 ---
 name: workspace-api
-description: Workspace API patterns for defineTable, defineKv, versioning, and migrations. Use when defining workspace schemas, adding versions to existing tables/KV stores, or writing migration functions.
+description: Workspace API patterns for defineTable, defineKv, versioning, and migrations. Use when defining workspace schemas, adding versions to existing tables, or writing migration functions.
 metadata:
   author: epicenter
   version: '4.0'
@@ -8,14 +8,13 @@ metadata:
 
 # Workspace API
 
-Type-safe schema definitions for tables and KV stores with versioned migrations.
+Type-safe schema definitions for tables and KV stores.
 
 ## When to Apply This Skill
 
 - Defining a new table or KV store with `defineTable()` or `defineKv()`
-- Adding a new version to an existing definition
-- Writing migration functions
-- Converting from shorthand to builder pattern
+- Adding a new version to an existing table definition
+- Writing table migration functions
 
 ## Tables
 
@@ -53,42 +52,33 @@ const posts = defineTable()
 
 ## KV Stores
 
-KV stores are flexible — `_v` is optional. Both patterns work:
-
-### Without `_v` (field presence)
+KV stores use `defineKv(schema, defaultValue)`. No versioning, no migration—invalid stored data falls back to the default.
 
 ```typescript
 import { defineKv } from '@epicenter/workspace';
+import { type } from 'arktype';
 
-const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
-
-// Multi-version with field presence
-const theme = defineKv()
-	.version(type({ mode: "'light' | 'dark'" }))
-	.version(type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number' }))
-	.migrate((v) => {
-		if (!('fontSize' in v)) return { ...v, fontSize: 14 };
-		return v;
-	});
+const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }), { collapsed: false, width: 300 });
+const fontSize = defineKv(type('number'), 14);
+const enabled = defineKv(type('boolean'), true);
 ```
 
-### With `_v` (explicit discriminant)
+### KV Design Convention: One Scalar Per Key
+
+Use dot-namespaced keys for logical groupings of scalar values:
 
 ```typescript
-const theme = defineKv()
-	.version(type({ mode: "'light' | 'dark'", _v: '1' }))
-	.version(
-		type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }),
-	)
-	.migrate((v) => {
-		switch (v._v) {
-			case 1:
-				return { ...v, fontSize: 14, _v: 2 };
-			case 2:
-				return v;
-		}
-	});
+// ✅ Correct — each preference is an independent scalar
+'theme.mode': defineKv(type("'light' | 'dark' | 'system'"), 'light'),
+'theme.fontSize': defineKv(type('number'), 14),
+
+// ❌ Wrong — structured object invites migration needs
+'theme': defineKv(type({ mode: "'light' | 'dark'", fontSize: 'number' }), { mode: 'light', fontSize: 14 }),
 ```
+
+With scalar values, schema changes either don't break validation (widening `'light' | 'dark'` to `'light' | 'dark' | 'system'` still validates old data) or the default fallback is acceptable (resetting a toggle takes one click).
+
+Exception: discriminated unions and `Record<string, T> | null` are acceptable when they represent a single atomic value.
 
 ## Branded Table IDs (Required)
 
@@ -238,12 +228,12 @@ export const workspaceClient = createWorkspace(
 
 - `_v` is a **number** discriminant field (`'1'` in arktype = the literal number `1`)
 - **Required for tables** — enforced at the type level via `CombinedStandardSchema<{ id: string; _v: number }>`
-- **Optional for KV stores** — KV keeps full flexibility
+- **Not used by KV stores** — KV has no versioning; `defineKv(schema, defaultValue)` is the only pattern
 - In arktype schemas: `_v: '1'`, `_v: '2'`, `_v: '3'` (number literals)
 - In migration returns: `_v: 2` (TypeScript narrows automatically, `as const` is unnecessary)
 - Convention: `_v` goes last in the object (`{ id, ...fields, _v: '1' }`)
 
-## Migration Function Rules
+## Table Migration Function Rules
 
 1. Input type is a union of all version outputs
 2. Return type is the latest version output
@@ -251,7 +241,7 @@ export const workspaceClient = createWorkspace(
 4. Final case returns `row` as-is (already latest)
 5. Always migrate directly to latest (not incrementally through each version)
 
-## Anti-Patterns
+## Table Anti-Patterns
 
 ### Incremental migration (v1 -> v2 -> v3)
 
@@ -285,8 +275,8 @@ return { ...row, views: 0, _v: 2 as const }; // Also works — redundant
 
 ## References
 
-- `packages/epicenter/src/workspace/define-table.ts`
-- `packages/epicenter/src/workspace/define-kv.ts`
-- `packages/epicenter/src/workspace/index.ts`
-- `packages/epicenter/src/workspace/create-tables.ts`
-- `packages/epicenter/src/workspace/create-kv.ts`
+- `packages/workspace/src/workspace/define-table.ts`
+- `packages/workspace/src/workspace/define-kv.ts`
+- `packages/workspace/src/workspace/index.ts`
+- `packages/workspace/src/workspace/create-tables.ts`
+- `packages/workspace/src/workspace/create-kv.ts`

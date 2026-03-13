@@ -7,8 +7,8 @@
  */
 import type { TableHelper } from '@epicenter/workspace';
 import {
-	generateSavedTabId,
 	type DeviceId,
+	generateSavedTabId,
 	parseTabId,
 	type SavedTab,
 	type SavedTabId,

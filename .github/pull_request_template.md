@@ -6,19 +6,6 @@
 
 <!-- One line per user-visible change. Omit this section entirely for internal-only changes. -->
 
-## Type of Change
-
-<!-- Mark the relevant option with an "x" -->
-
-- [ ] `feat`: New feature
-- [ ] `fix`: Bug fix
-- [ ] `docs`: Documentation update
-- [ ] `refactor`: Code refactoring (no functional changes)
-- [ ] `perf`: Performance improvement
-- [ ] `test`: Test additions or changes
-- [ ] `chore`: Maintenance tasks
-- [ ] `style`: Code style changes
-
 ## Related Issue
 
 <!-- Link to the issue this PR addresses, if applicable -->

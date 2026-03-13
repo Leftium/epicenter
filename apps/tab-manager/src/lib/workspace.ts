@@ -17,8 +17,8 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
-	iterateActions,
 	type InferTableRow,
+	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
@@ -477,6 +477,25 @@ const chatMessagesTable = defineTable(
 );
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
+/**
+ * Tool trust — per-tool approval preferences for AI chat.
+ *
+ * Each row represents a user's trust decision for a specific destructive tool.
+ * Tools not in this table default to 'ask' (show approval UI). Users can
+ * escalate to 'always' (auto-approve) via the inline approval buttons.
+ *
+ * The `id` is the tool name (e.g. 'tabs_close') — the same string used
+ * in action paths and tool definitions.
+ */
+const toolTrustTable = defineTable(
+	type({
+		id: 'string',
+		trust: "'ask' | 'always'",
+		_v: '1',
+	}),
+);
+export type ToolTrust = InferTableRow<typeof toolTrustTable>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Client
 // ─────────────────────────────────────────────────────────────────────────────
@@ -501,6 +520,7 @@ export const workspaceClient = createWorkspace(
 			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
 			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
 		},
 	}),
 )

@@ -2,10 +2,12 @@
  * defineTable() for creating versioned table definitions.
  *
  * All table schemas must include `_v: number` as a discriminant field.
+ * The underscore prefix avoids collision with `EncryptedBlob.v`—see `BaseRow` in
+ * `types.ts` for the full rationale.
+ *
  * Use shorthand for single-version tables, variadic args for multiple versions with migrations.
  *
  * Optionally chain `.withDocument()` to declare named document configs on the table.
- *
  * @example
  * ```typescript
  * import { defineTable } from '@epicenter/workspace';

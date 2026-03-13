@@ -1,7 +1,7 @@
 # Workspace Architecture: Desktop App & AI Scripting Platform
 
 **Date**: 2026-03-13
-**Status**: Draft — amended 2026-03-13 (HTTP architecture, editor choice, centralized workspace model)
+**Status**: Draft — amended 2026-03-13 (HTTP architecture, editor choice, self-contained workspace extensions)
 **Supersedes**: Aspects of `20260225T210000-workspace-apps-orchestrator.md` (centralized model) and `20260312T211500-headless-workspace-runner.md` (runner-specific decisions)
 
 ### Revision: Centralized Workspace Model (2026-03-13)
@@ -66,10 +66,10 @@ The original debate was "definitions vs builders in config." Oracle initially re
 │                                                                      │
 │  ┌─ Workspaces ──────────────────────────────────────────────────┐  │
 │  │                                                                │  │
-│  │  ☑ blog          ~/projects/blog        3 tables, 2 actions   │  │
-│  │  ☑ habits        ~/.epicenter/.../habits 1 table, 5 actions   │  │
-│  │  ☐ notes         ~/projects/notes        2 tables, 0 actions  │  │
-│  │  ☑ tab-manager   ~/.epicenter/.../tabs   1 table, 3 actions   │  │
+│  │  ☑ blog          ~/.epicenter/workspaces/blog        3 tables, 2 actions   │  │
+│  │  ☑ habits        ~/.epicenter/workspaces/habits      1 table, 5 actions   │  │
+│  │  ☐ notes         ~/.epicenter/workspaces/notes        2 tables, 0 actions  │  │
+│  │  ☑ tab-manager   ~/.epicenter/workspaces/tabs         1 table, 3 actions   │  │
 │  │                                                                │  │
 │  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
@@ -285,7 +285,7 @@ The original spec supported workspaces scattered across the filesystem (e.g., `~
 ### What You're Actually Exporting
 
 ```typescript
-// ~/projects/blog/epicenter.config.ts
+// ~/.epicenter/workspaces/blog/epicenter.config.ts
 
 import {
   createWorkspace,
@@ -409,29 +409,26 @@ The AI scripting tool needs to call `blog.actions.searchPosts()` and `blog.exten
 
 ### Extension Placement Rules
 
+**All extensions live in the config.** The workspace is self-contained.
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  IN THE CONFIG (workspace-inherent):                             │
 │                                                                  │
 │  • SQLite materialization   - the workspace needs SQL queries    │
 │  • Markdown projection      - the workspace persists as .md     │
+│  • Persistence (IDB/fs)     - the workspace persists its Y.Doc  │
+│  • Sync (WebSocket)         - the workspace syncs its data      │
 │  • Custom domain extensions - specific to this workspace        │
 │                                                                  │
-│  These define the workspace's capabilities and appear in the     │
-│  exported type. They use relative paths (resolved from the       │
-│  config's directory = the workspace folder).                     │
-├─────────────────────────────────────────────────────────────────┤
-│  ADDED BY BUN APP SERVER (environment-specific):                   │
+│  Everything the workspace needs is defined in the config and     │
+│  appears in the exported type. Extensions use relative paths     │
+│  (resolved from the config's directory = the workspace folder).  │
+│  Environment-specific values (sync URLs, auth) are read from    │
+│  env vars or local config by the extension factories.           │
 │                                                                  │
-│  • Sync WebSocket URL       - differs per environment            │
-│  • Auth tokens              - injected at runtime                │
-│  • Persistence overrides    - absolute paths, IndexedDB, etc.   │
-│                                                                  │
-│  These are infrastructure. Scripts don't call them directly.     │
-│  Bun chains them AFTER importing the config:                       │
-│                                                                  │
-│  const client = config.blog; // already has sqlite + actions     │
-│  // Bun can add more extensions via the immutable builder          │
+│  The Bun app server does NOT inject extensions. It import()s    │
+│  the config and gets back fully-formed live clients.            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -581,7 +578,7 @@ The original design had Svelte communicating with Bun through Tauri's IPC, with 
 │  │                                                                   │  │
 │  │  Workspace Runtime (same process):                                  │  │
 │  │  STARTUP:                                                          │  │
-│  │  1. Read known-workspaces.json                                      │  │
+│  │  1. readdir(~/.epicenter/workspaces/)                                │  │
 │  │  2. For each folder: import(config.ts)                              │  │
 │  │  3. All clients ready:                                              │  │
 │  │     blog   → Y.Doc + SQLite + actions                               │  │
@@ -610,8 +607,8 @@ The original design had Svelte communicating with Bun through Tauri's IPC, with 
 
 The startup pipeline is unchanged from the original design—only the transport changes from IPC to HTTP:
 
-1. **Discovery**: Read `~/.epicenter/known-workspaces.json`, validate paths, prune dead entries
-2. **Import**: For each valid folder, `import(Bun.pathToFileURL(configPath).href)` in parallel
+1. **Discovery**: `readdir(~/.epicenter/workspaces/)`, filter for directories containing `epicenter.config.ts`
+2. **Import**: For each workspace directory, `import(Bun.pathToFileURL(configPath).href)` in parallel
 3. **Register**: Collect all `WorkspaceClient` exports into a `Map<string, AnyWorkspaceClient>`
 4. **Ready**: `await Promise.all(clients.values().map(c => c.whenReady))`
 5. **Serve**: Start Hono HTTP server, signal ready to Rust shell
@@ -980,7 +977,7 @@ The user wants to search blog posts using the AI scripting tool. Here's every st
 The developer wrote this config and ran `epicenter init` + `bun add @epicenter/workspace`:
 
 ```typescript
-// ~/projects/blog/epicenter.config.ts
+// ~/.epicenter/workspaces/blog/epicenter.config.ts
 export const blog = createWorkspace({
   id: 'blog',
   tables: { posts: { title: text(), content: ytext() } },
@@ -1332,36 +1329,23 @@ This is the key architectural insight. Types don't "transfer" between processes.
 
 ## Open Questions
 
-### Lazy Extension Factory Execution
+### ~~Lazy Extension Factory Execution~~ (Resolved)
 
-Currently `.withExtension(factory)` calls the factory immediately. For configs that export the full chain, this means the SQLite extension opens a database on import. A potential future improvement:
+**Decision**: Eager execution is fine. `.withExtension(factory)` calls the factory immediately on `import()`. The Bun app server IS the consumer—side effects on import are acceptable. The simplicity of eager execution (~30 lines, no lifecycle management) outweighs the theoretical purity of deferred execution.
 
-- `.withExtension()` stores the factory without calling it
-- A new `.mount()` method triggers factory execution
-- Types are inferred from factory return types without execution (TypeScript already does this)
+### ~~Environment-Specific Extension Override~~ (Resolved)
 
-This would make configs truly side-effect-free. Not blocking—eager execution is fine for the Bun app server.
+**Decision**: Not needed. This was a phantom requirement.
 
-### Environment-Specific Extension Override
+The per-folder model means each workspace is self-contained. The config defines ALL its extensions—persistence, sync, SQLite, everything. Sync URLs are configured in the config itself (or read from env vars). Persistence paths are relative to the workspace folder. Auth tokens are read from local config or env vars by the extension factories.
 
-The Bun app server may need to add sync, override paths, or inject auth. Since the builder is immutable (each `.withExtension()` returns a new builder), Bun can chain after import:
+The Bun app server just `import()`s configs and gets back fully-formed clients. It has nothing to inject. Therefore `.withActions()` being terminal is not a problem—nothing needs to chain after it.
 
-```typescript
-const config = await import(configPath);
-// config.blog already has sqlite + actions
-// Bun can add more:
-// const withSync = config.blog.withExtension('sync', syncFactory);
-// But .withActions() is terminal — can't chain after it.
-```
-
-**Issue**: `.withActions()` is terminal. If the config chains `.withActions()`, Bun can't add extensions after. Options:
-1. Make `.withActions()` non-terminal
-2. Config exports builder WITHOUT `.withActions()`, Bun calls it
-3. Bun ignores this and adds env extensions via a separate mechanism
+The browser never imports configs directly—it connects via HTTP API. CI runs the same configs headless. There is no environment split that demands runtime injection.
 
 ### ~~Browser Config Compatibility~~ (Resolved)
 
-No longer an open question. Browser configs will diverge from server configs anyway (different action sets, no FS extensions). Browser apps connect to the Bun app server via HTTP, not by importing configs directly. The centralized model reinforces this: workspaces are server-side artifacts.
+No longer an open question. Browser apps connect to the Bun app server via HTTP, not by importing configs directly. The workspace config is a server-side artifact.
 
 ### Config Hot Reload
 
@@ -1386,7 +1370,6 @@ The startup token is generated once per app launch. Should it rotate? Options:
 3. Per-request HMAC (overkill for same-machine communication)
 
 Recommendation: single token per session. The threat model is local-only.
-
 ---
 
 ## Comparison with Prior Specs

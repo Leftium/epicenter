@@ -458,14 +458,15 @@ async function deriveSalt(userId: string, workspaceId: string): Promise<Uint8Arr
 
 Synchronous via `@noble/ciphers`. Zero Yjs dependency. Independently testable.
 
-- [ ] **1.1** `bun add @noble/ciphers` in `packages/workspace`
-- [ ] **1.2** Create `packages/workspace/src/shared/crypto/index.ts`
-- [ ] **1.3** Implement `generateEncryptionKey` (`randomBytes(32)` from noble)
-- [ ] **1.4** Implement `encryptValue`, `decryptValue` (synchronous, AES-256-GCM via `gcm` from `@noble/ciphers/aes`)
-- [ ] **1.5** Implement `isEncryptedBlob` type guard
-- [ ] **1.6** Implement `deriveKeyFromPassword` (async PBKDF2 via Web Crypto — only for self-hosted password mode)
-- [ ] **1.7** Implement `deriveSalt` (deterministic `SHA-256(userId + workspaceId)` — no random salt, syncs implicitly)
-- [ ] **1.8** Tests: round-trip, same password + salt = same key, unique IV per call, invalid key throws, tampered ciphertext throws, `deriveSalt` is deterministic
+- [x] **1.1** `bun add @noble/ciphers` in `packages/workspace`
+- [x] **1.2** Create `packages/workspace/src/shared/crypto/index.ts`
+- [x] **1.3** Implement `generateEncryptionKey` (`randomBytes(32)` from noble)
+- [x] **1.4** Implement `encryptValue`, `decryptValue` (synchronous, AES-256-GCM via `gcm` from `@noble/ciphers/aes`)
+  > **Note**: Added 32-byte key length validation guard. `@noble/ciphers` `gcm()` accepts 16-byte keys (AES-128) which we don't want. Import paths use `.js` extension per `@noble/ciphers` v2.x exports map.
+- [x] **1.5** Implement `isEncryptedBlob` type guard
+- [x] **1.6** Implement `deriveKeyFromPassword` (async PBKDF2 via Web Crypto — only for self-hosted password mode)
+- [x] **1.7** Implement `deriveSalt` (deterministic `SHA-256(userId + workspaceId)` — no random salt, syncs implicitly)
+- [x] **1.8** Tests: round-trip, same password + salt = same key, unique IV per call, invalid key throws, tampered ciphertext throws, `deriveSalt` is deterministic (39 tests, all passing)
 
 ### Phase 2: `createEncryptedKvLww`
 

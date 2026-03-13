@@ -322,17 +322,6 @@ function nativeTabId(
 	return parsed.tabId;
 }
 
-/**
- * Batch-resolve composite tab IDs to native Chrome tab IDs.
- *
- * Filters out IDs that don't belong to the given device.
- */
-function toNativeIds(tabIds: string[], deviceId: DeviceId): number[] {
-	return tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -967,11 +956,12 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * Reconnect the sync extension with fresh auth credentials.
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
  *
- * Call after sign-in so the WebSocket reconnects with a valid token,
- * or after sign-out to disconnect.
+ * Filters out IDs that don't belong to the given device.
  */
-export function reconnectSync() {
-	workspaceClient.extensions.sync.reconnect();
+function toNativeIds(tabIds: string[], deviceId: DeviceId): number[] {
+	return tabIds
+		.map((id) => nativeTabId(id, deviceId))
+		.filter((id) => id !== undefined);
 }

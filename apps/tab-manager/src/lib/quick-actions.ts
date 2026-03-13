@@ -80,7 +80,10 @@ function normalizeUrl(url: string): string {
  * Returns only groups with 2+ tabs (actual duplicates).
  * Within each group, tabs are ordered by their original array position.
  */
-function findDuplicates(): Map<string, { tabId: TabCompositeId; title: string }[]> {
+function findDuplicates(): Map<
+	string,
+	{ tabId: TabCompositeId; title: string }[]
+> {
 	const byUrl = new Map<string, { tabId: TabCompositeId; title: string }[]>();
 
 	for (const window of browserState.windows) {
@@ -203,9 +206,7 @@ const groupByDomainAction: QuickAction = {
 				const nativeIds = compositeToNativeIds(tabIds);
 				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 			})
-			.filter(
-				(op) => op !== null,
-			);
+			.filter((op) => op !== null);
 
 		await Promise.allSettled(
 			groupOps.map(async ({ domain, nativeIds }) => {

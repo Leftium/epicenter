@@ -81,7 +81,7 @@ function createBookmarkState() {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
 				workspaceClient.tables.bookmarks.set({
-				id: createBookmarkId(),
+					id: createBookmarkId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,

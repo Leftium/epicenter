@@ -6,8 +6,14 @@
  * mutation handlers in workspace.ts.
  */
 import type { TableHelper } from '@epicenter/workspace';
-import { createSavedTabId, type DeviceId, parseTabId, type SavedTab, type SavedTabId } from '$lib/workspace';
 import { Ok, tryAsync } from 'wellcrafted/result';
+import {
+	createSavedTabId,
+	type DeviceId,
+	parseTabId,
+	type SavedTab,
+	type SavedTabId,
+} from '$lib/workspace';
 
 /**
  * Extract the native tab ID (number) from a composite tab ID string.
@@ -229,7 +235,8 @@ export async function executeGroupTabs(
 	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	const { data: groupId, error: groupError } = await tryAsync({
-		try: () => browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
+		try: () =>
+			browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
 		catch: () => Ok(undefined),
 	});
 	if (groupError || groupId === undefined) return { groupId: String(-1) };

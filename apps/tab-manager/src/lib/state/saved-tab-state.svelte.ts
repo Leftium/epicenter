@@ -90,7 +90,7 @@ function createSavedTabState() {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
 				workspaceClient.tables.savedTabs.set({
-				id: createSavedTabId(),
+					id: createSavedTabId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,

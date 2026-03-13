@@ -74,7 +74,6 @@ const DEFAULT_STREAM_STATE: StreamState = {
 // State Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 function createAiChatState() {
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 

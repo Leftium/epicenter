@@ -5,7 +5,8 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
 
 	let { children } = $props();
@@ -77,7 +78,8 @@
 						'This will reset all settings to their default values. This action cannot be undone.',
 					confirm: { text: 'Reset Settings', variant: 'destructive' },
 					onConfirm: () => {
-						settings.reset();
+						workspaceSettings.reset();
+						deviceConfig.reset();
 						rpc.notify.success({
 							title: 'Settings reset',
 							description: 'All settings have been reset to defaults.',

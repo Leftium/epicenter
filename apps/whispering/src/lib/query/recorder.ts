@@ -5,7 +5,9 @@ import { PATHS } from '$lib/constants/paths';
 import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
-import { settings } from '$lib/state/settings.svelte';
+import type { DeviceIdentifier } from '$lib/services/types';
+import { asDeviceIdentifier } from '$lib/services/types';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 import { notify } from './notify';
 
 const recorderKeys = {
@@ -24,6 +26,11 @@ let currentRecordingId: string | null = null;
 
 const invalidateRecorderState = () =>
 	queryClient.invalidateQueries({ queryKey: recorderKeys.recorderState });
+
+function parseDeviceId(deviceId: string | null): DeviceIdentifier | null {
+	if (!deviceId) return null;
+	return asDeviceIdentifier(deviceId);
+}
 
 export const recorder = {
 	// Query that enumerates available recording devices with labels
@@ -74,7 +81,7 @@ export const recorder = {
 
 			// Resolve the output folder - use default if null
 			const outputFolder = window.__TAURI_INTERNALS__
-				? (settings.value['recording.cpal.outputFolder'] ??
+				? (deviceConfig.value['recording.cpal.outputFolder'] ??
 					(await PATHS.DB.RECORDINGS()))
 				: '';
 
@@ -82,24 +89,30 @@ export const recorder = {
 				navigator: {
 					...baseParams,
 					method: 'navigator' as const,
-					selectedDeviceId: settings.value['recording.navigator.deviceId'],
-					bitrateKbps: settings.value['recording.navigator.bitrateKbps'],
+					selectedDeviceId: parseDeviceId(
+						deviceConfig.value['recording.navigator.deviceId'],
+					),
+					bitrateKbps: deviceConfig.value['recording.navigator.bitrateKbps'],
 				},
 				ffmpeg: {
 					...baseParams,
 					method: 'ffmpeg' as const,
-					selectedDeviceId: settings.value['recording.ffmpeg.deviceId'],
-					globalOptions: settings.value['recording.ffmpeg.globalOptions'],
-					inputOptions: settings.value['recording.ffmpeg.inputOptions'],
-					outputOptions: settings.value['recording.ffmpeg.outputOptions'],
+					selectedDeviceId: parseDeviceId(
+						deviceConfig.value['recording.ffmpeg.deviceId'],
+					),
+					globalOptions: deviceConfig.value['recording.ffmpeg.globalOptions'],
+					inputOptions: deviceConfig.value['recording.ffmpeg.inputOptions'],
+					outputOptions: deviceConfig.value['recording.ffmpeg.outputOptions'],
 					outputFolder,
 				},
 				cpal: {
 					...baseParams,
 					method: 'cpal' as const,
-					selectedDeviceId: settings.value['recording.cpal.deviceId'],
+					selectedDeviceId: parseDeviceId(
+						deviceConfig.value['recording.cpal.deviceId'],
+					),
 					outputFolder,
-					sampleRate: settings.value['recording.cpal.sampleRate'],
+					sampleRate: deviceConfig.value['recording.cpal.sampleRate'],
 				},
 			} as const;
 
@@ -107,7 +120,7 @@ export const recorder = {
 				paramsMap[
 					!window.__TAURI_INTERNALS__
 						? 'navigator'
-						: settings.value['recording.method']
+						: deviceConfig.value['recording.method']
 				];
 
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
@@ -199,5 +212,5 @@ export function recorderService() {
 		ffmpeg: desktopServices.ffmpegRecorder,
 		cpal: desktopServices.cpalRecorder,
 	};
-	return recorderMap[settings.value['recording.method']];
+	return recorderMap[deviceConfig.value['recording.method']];
 }

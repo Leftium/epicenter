@@ -5,7 +5,7 @@
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { desktopRpc, rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
 </script>
@@ -35,7 +35,7 @@
 				size="sm"
 				onclick={async () => {
 					await desktopRpc.globalShortcuts.unregisterAll();
-					settings.resetGlobalShortcuts();
+					resetGlobalShortcuts();
 					rpc.notify.success({
 						title: 'Shortcuts reset',
 						description: 'All global shortcuts have been reset to defaults.',

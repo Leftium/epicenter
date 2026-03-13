@@ -13,7 +13,7 @@
 	import { goto } from '$app/navigation';
 	import { rpc } from '$lib/query';
 	import type { Transformation } from '$lib/services/db';
-	import { settings } from '$lib/state/settings.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
 	const transformationsQuery = createQuery(
@@ -30,8 +30,7 @@
 
 	const selectedTransformation = $derived(
 		transformations.find(
-			(t) =>
-				t.id === settings.value['transformations.selectedTransformationId'],
+			(t) => t.id === workspaceSettings.get('transformation.selectedId'),
 		),
 	);
 
@@ -84,14 +83,14 @@
 			<Command.Group class="overflow-y-auto max-h-[400px]">
 				{#each transformations as transformation (transformation.id)}
 					{@const isSelectedTransformation =
-						settings.value['transformations.selectedTransformationId'] ===
+						workspaceSettings.get('transformation.selectedId') ===
 						transformation.id}
 					<Command.Item
 						value="${transformation.id} - ${transformation.title} - ${transformation.description}"
 						onSelect={() => {
-							settings.updateKey(
-								'transformations.selectedTransformationId',
-								settings.value['transformations.selectedTransformationId'] ===
+							workspaceSettings.set(
+								'transformation.selectedId',
+								workspaceSettings.get('transformation.selectedId') ===
 									transformation.id
 									? null
 									: transformation.id,

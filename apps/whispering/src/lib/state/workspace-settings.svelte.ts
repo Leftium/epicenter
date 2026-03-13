@@ -3,6 +3,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import workspace from '$lib/workspace';
 
 const KV_DEFINITIONS = workspace.definitions.kv;
+type KvKey = keyof typeof KV_DEFINITIONS & string;
 
 type KvDefs = typeof KV_DEFINITIONS;
 
@@ -11,7 +12,7 @@ function createWorkspaceSettings() {
 
 	// Initialize SvelteMap with current values for ALL KV keys.
 	// kv.get() always returns a valid value (stored value or defaultValue).
-	for (const key of Object.keys(KV_DEFINITIONS)) {
+	for (const key of Object.keys(KV_DEFINITIONS) as KvKey[]) {
 		map.set(key, workspace.kv.get(key));
 	}
 
@@ -48,6 +49,16 @@ function createWorkspaceSettings() {
 			value: InferKvValue<KvDefs[K]>,
 		) {
 			workspace.kv.set(key, value);
+		},
+
+		/**
+		 * Reset all workspace settings to their default values.
+		 * Iterates every KV definition and writes its defaultValue to Yjs KV.
+		 */
+		reset() {
+			for (const key of Object.keys(KV_DEFINITIONS) as KvKey[]) {
+				workspace.kv.set(key, KV_DEFINITIONS[key].defaultValue);
+			}
 		},
 	};
 }

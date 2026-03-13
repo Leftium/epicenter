@@ -11,8 +11,8 @@
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
-	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import {
 		checkCompressionRecommendation,
@@ -82,9 +82,8 @@
 		getRecorderStateQuery.data;
 		vadRecorder.state; // Reactive VAD state access
 		services.db.recordings.cleanupExpired({
-			recordingRetentionStrategy:
-				settings.value['database.recordingRetentionStrategy'],
-			maxRecordingCount: settings.value['database.maxRecordingCount'],
+			recordingRetentionStrategy: workspaceSettings.get('retention.strategy'),
+			maxRecordingCount: String(workspaceSettings.get('retention.maxCount')),
 		});
 	});
 

@@ -177,5 +177,10 @@ export const deviceConfig = (() => {
 		updateKey<K extends keyof DeviceConfig>(key: K, value: DeviceConfig[K]) {
 			_config.value = { ..._config.value, [key]: value };
 		},
+
+		/** Reset all device config to defaults */
+		reset() {
+			_config.value = getDefaultDeviceConfig();
+		},
 	};
 })();

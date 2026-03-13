@@ -11,15 +11,15 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	const combobox = useCombobox();
 
-	const selectedMethod = $derived(settings.value['recording.method']);
+	const selectedMethod = $derived(deviceConfig.value['recording.method']);
 
 	// Get the device ID for the current method
 	const selectedDeviceId = $derived(
-		settings.value[`recording.${selectedMethod}.deviceId`],
+		deviceConfig.value[`recording.${selectedMethod}.deviceId`],
 	);
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
@@ -93,7 +93,7 @@
 							<Command.Item
 								value={`method-${methodKey} ${method.label} ${method.description}`}
 								onSelect={() => {
-									settings.updateKey(
+									deviceConfig.updateKey(
 										'recording.method',
 										methodKey as keyof typeof RECORDING_METHODS,
 									);
@@ -144,7 +144,7 @@
 								value={`device-${device.id} ${device.label}`}
 								onSelect={() => {
 									const currentDeviceId = selectedDeviceId;
-									settings.updateKey(
+									deviceConfig.updateKey(
 										`recording.${selectedMethod}.deviceId`,
 										currentDeviceId === device.id ? null : device.id,
 									);

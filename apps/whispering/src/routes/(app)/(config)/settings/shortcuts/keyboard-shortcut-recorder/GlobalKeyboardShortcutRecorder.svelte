@@ -6,7 +6,7 @@
 		type Accelerator,
 		pressedKeysToTauriAccelerator,
 	} from '$lib/services/desktop/global-shortcut-manager';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
 	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
@@ -24,7 +24,7 @@
 	} = $props();
 
 	const shortcutValue = $derived(
-		settings.value[`shortcuts.global.${command.id}`],
+		deviceConfig.value[`shortcuts.global.${command.id}`],
 	);
 
 	const keyRecorder = createKeyRecorder({
@@ -88,7 +88,7 @@
 				return;
 			}
 
-			settings.updateKey(`shortcuts.global.${command.id}`, accelerator);
+			deviceConfig.updateKey(`shortcuts.global.${command.id}`, accelerator);
 
 			rpc.notify.success({
 				title: `Global shortcut set to ${accelerator}`,
@@ -109,7 +109,7 @@
 				});
 			}
 
-			settings.updateKey(`shortcuts.global.${command.id}`, null);
+			deviceConfig.updateKey(`shortcuts.global.${command.id}`, null);
 
 			rpc.notify.success({
 				title: 'Global shortcut cleared',

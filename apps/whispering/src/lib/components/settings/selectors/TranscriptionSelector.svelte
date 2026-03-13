@@ -19,20 +19,72 @@
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,
 	} from '$lib/settings/transcription-validation';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
 
+	function getSelectedServiceId() {
+		return workspaceSettings.get('transcription.service');
+	}
+
 	function getSelectedModelNameOrUrl(service: TranscriptionService) {
 		switch (service.location) {
-			case 'cloud':
-				return settings.value[service.modelSettingKey];
+			case 'cloud': {
+				switch (service.id) {
+					case 'Groq':
+						return workspaceSettings.get('transcription.groq.model');
+					case 'OpenAI':
+						return workspaceSettings.get('transcription.openai.model');
+					case 'ElevenLabs':
+						return workspaceSettings.get('transcription.elevenlabs.model');
+					case 'Deepgram':
+						return workspaceSettings.get('transcription.deepgram.model');
+					case 'Mistral':
+						return workspaceSettings.get('transcription.mistral.model');
+				}
+				break;
+			}
 			case 'self-hosted':
-				return settings.value[service.serverUrlField];
-			case 'local':
-				return settings.value[service.modelPathField];
+				return deviceConfig.value['transcription.speaches.baseUrl'];
+			case 'local': {
+				switch (service.id) {
+					case 'whispercpp':
+						return deviceConfig.value['transcription.whispercpp.modelPath'];
+					case 'parakeet':
+						return deviceConfig.value['transcription.parakeet.modelPath'];
+					case 'moonshine':
+						return deviceConfig.value['transcription.moonshine.modelPath'];
+				}
+				break;
+			}
+		}
+
+		return '';
+	}
+
+	function setSelectedCloudModel(
+		service: TranscriptionService,
+		modelName: string,
+	) {
+		switch (service.id) {
+			case 'Groq':
+				workspaceSettings.set('transcription.groq.model', modelName);
+				return;
+			case 'OpenAI':
+				workspaceSettings.set('transcription.openai.model', modelName);
+				return;
+			case 'ElevenLabs':
+				workspaceSettings.set('transcription.elevenlabs.model', modelName);
+				return;
+			case 'Deepgram':
+				workspaceSettings.set('transcription.deepgram.model', modelName);
+				return;
+			case 'Mistral':
+				workspaceSettings.set('transcription.mistral.model', modelName);
+				return;
 		}
 	}
 
@@ -132,18 +184,14 @@
 				<Command.Group heading="Local">
 					{#each localServices as service (service.id)}
 						{@const isSelected =
-							settings.value['transcription.selectedTranscriptionService'] ===
-							service.id}
+							getSelectedServiceId() === service.id}
 						{@const isConfigured = isTranscriptionServiceConfigured(service)}
-						{@const modelPath = settings.value[service.modelPathField]}
+						{@const modelPath = getSelectedModelNameOrUrl(service)}
 
 						<Command.Item
 							value={`${service.id} ${service.name} whisper cpp ggml local offline`}
 							onSelect={() => {
-								settings.updateKey(
-									'transcription.selectedTranscriptionService',
-									service.id,
-								);
+								workspaceSettings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"
@@ -174,8 +222,7 @@
 				<Command.Group heading="Cloud">
 					{#each cloudServices as service (service.id)}
 						{@const isSelected =
-							settings.value['transcription.selectedTranscriptionService'] ===
-							service.id}
+							getSelectedServiceId() === service.id}
 						{@const isConfigured = isTranscriptionServiceConfigured(service)}
 						{@const currentSelectedModelName =
 							getSelectedModelNameOrUrl(service)}
@@ -221,10 +268,11 @@
 								<Command.Item
 									value={`${service.id} ${service.name} ${model.name}`}
 									onSelect={() => {
-										settings.update({
-											'transcription.selectedTranscriptionService': service.id,
-											[service.modelSettingKey]: model.name,
-										});
+										workspaceSettings.set(
+											'transcription.service',
+											service.id,
+										);
+										setSelectedCloudModel(service, model.name);
 										combobox.closeAndFocusTrigger();
 									}}
 									class="flex items-center gap-2 px-2 py-1.5 pl-11"
@@ -252,18 +300,14 @@
 				<Command.Group heading="Self-Hosted">
 					{#each selfHostedServices as service (service.id)}
 						{@const isSelected =
-							settings.value['transcription.selectedTranscriptionService'] ===
-							service.id}
+							getSelectedServiceId() === service.id}
 						{@const isConfigured = isTranscriptionServiceConfigured(service)}
-						{@const serverUrl = settings.value[service.serverUrlField]}
+						{@const serverUrl = getSelectedModelNameOrUrl(service)}
 
 						<Command.Item
 							value={`${service.id} ${service.name} self-hosted server`}
 							onSelect={() => {
-								settings.updateKey(
-									'transcription.selectedTranscriptionService',
-									service.id,
-								);
+								workspaceSettings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"

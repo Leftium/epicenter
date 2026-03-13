@@ -1,7 +1,8 @@
 import { toast } from 'svelte-sonner';
 import { goto } from '$app/navigation';
 import { desktopRpc } from '$lib/query';
-import { settings } from '$lib/state/settings.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 
 export const COMPRESSION_RECOMMENDED_MESSAGE =
 	"Since you're using CPAL recording with cloud transcription, we recommend enabling audio compression to reduce file sizes and upload times.";
@@ -13,7 +14,7 @@ export const RECORDING_COMPATIBILITY_MESSAGE =
 	'Browser API recording produces compressed audio that requires FFmpeg for local transcription. Switch to CPAL recording, install FFmpeg, or use a cloud transcription service.';
 
 function isUsingLocalTranscription(): boolean {
-	const service = settings.value['transcription.selectedTranscriptionService'];
+	const service = workspaceSettings.get('transcription.service');
 	return (
 		service === 'whispercpp' ||
 		service === 'parakeet' ||
@@ -32,14 +33,12 @@ export function hasNavigatorLocalTranscriptionIssue({
 }): boolean {
 	if (!window.__TAURI_INTERNALS__) return false;
 
-	const isUsingNavigator = settings.value['recording.method'] === 'navigator';
+	const isUsingNavigator =
+		deviceConfig.value['recording.method'] === 'navigator';
 	const isUsingLocalTranscription =
-		settings.value['transcription.selectedTranscriptionService'] ===
-			'whispercpp' ||
-		settings.value['transcription.selectedTranscriptionService'] ===
-			'parakeet' ||
-		settings.value['transcription.selectedTranscriptionService'] ===
-			'moonshine';
+		workspaceSettings.get('transcription.service') === 'whispercpp' ||
+		workspaceSettings.get('transcription.service') === 'parakeet' ||
+		workspaceSettings.get('transcription.service') === 'moonshine';
 
 	return isUsingNavigator && isUsingLocalTranscription && !isFFmpegInstalled;
 }
@@ -50,9 +49,9 @@ export function hasNavigatorLocalTranscriptionIssue({
  */
 export function isCompressionRecommended(): boolean {
 	return (
-		settings.value['recording.method'] === 'cpal' &&
+		deviceConfig.value['recording.method'] === 'cpal' &&
 		!isUsingLocalTranscription() &&
-		!settings.value['transcription.compressionEnabled']
+		!workspaceSettings.get('transcription.compressionEnabled')
 	);
 }
 
@@ -69,7 +68,7 @@ export async function checkFfmpegRecordingMethodCompatibility() {
 	if (!window.__TAURI_INTERNALS__) return;
 
 	// Only check if FFmpeg recording method is selected
-	if (settings.value['recording.method'] !== 'ffmpeg') return;
+	if (deviceConfig.value['recording.method'] !== 'ffmpeg') return;
 
 	const { data: ffmpegInstalled } =
 		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();

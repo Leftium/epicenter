@@ -339,7 +339,10 @@ export const deviceConfig = (() => {
 - Progressive validation handles corrupted/partial data
 - Type-safe get/set per key
 
-### Task 4: Update consumers to import from correct source
+- [x] **Task 4**: Update consumers to import from correct source
+  > **Note**: ~47 files migrated. Reset methods (reset(), resetLocalShortcuts, resetGlobalShortcuts) added to new modules.
+  > register-commands.ts rewritten with proper type-safe shortcut key mapping.
+  > switchRecordingMode() inlined in +page.svelte. retention.maxCount converted number→string at service boundary.
 
 This is the largest task by file count but each change is mechanical:
 

@@ -1,16 +1,31 @@
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
+import {
+	SUPPORTED_LANGUAGES,
+	type SupportedLanguage,
+} from '$lib/constants/languages';
+import { rpc } from '$lib/query';
 import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices, services } from '$lib/services';
 import type { Recording } from '$lib/services/db';
-import { settings } from '$lib/state/settings.svelte';
-import { rpc } from '$lib/query';
+import { deviceConfig } from '$lib/state/device-config.svelte';
+import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
 import { db } from './db';
 import { notify } from './notify';
 
 const transcriptionKeys = {
 	isTranscribing: ['transcription', 'isTranscribing'] as const,
 } as const;
+
+function getOutputLanguage(): SupportedLanguage {
+	const language = workspaceSettings.get('transcription.language');
+	for (const supportedLanguage of SUPPORTED_LANGUAGES) {
+		if (supportedLanguage === language) {
+			return supportedLanguage;
+		}
+	}
+	return 'auto';
+}
 
 export const transcription = {
 	isCurrentlyTranscribing() {
@@ -127,8 +142,7 @@ export const transcription = {
 export async function transcribeBlob(
 	blob: Blob,
 ): Promise<Result<string, WhisperingError>> {
-	const selectedService =
-		settings.value['transcription.selectedTranscriptionService'];
+	const selectedService = workspaceSettings.get('transcription.service');
 
 	// Log transcription request
 	const startTime = Date.now();
@@ -139,11 +153,11 @@ export async function transcribeBlob(
 
 	// Compress audio if enabled, else pass through original blob
 	let audioToTranscribe = blob;
-	if (settings.value['transcription.compressionEnabled']) {
+	if (workspaceSettings.get('transcription.compressionEnabled')) {
 		const { data: compressedBlob, error: compressionError } =
 			await desktopServices.ffmpeg.compressAudioBlob(
 				blob,
-				settings.value['transcription.compressionOptions'],
+				workspaceSettings.get('transcription.compressionOptions'),
 			);
 
 		if (compressionError) {
@@ -179,73 +193,81 @@ export async function transcribeBlob(
 
 	const transcriptionResult: Result<string, WhisperingError> =
 		await (async () => {
+			const outputLanguage = getOutputLanguage();
+			const prompt = workspaceSettings.get('transcription.prompt');
+			const temperature = String(
+				workspaceSettings.get('transcription.temperature'),
+			);
+
 			switch (selectedService) {
 				case 'OpenAI':
 					return await services.transcriptions.openai.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							apiKey: settings.value['apiKeys.openai'],
-							modelName: settings.value['transcription.openai.model'],
-							baseURL: settings.value['apiEndpoints.openai'] || undefined,
+							outputLanguage,
+							prompt,
+							temperature,
+							apiKey: deviceConfig.value['apiKeys.openai'],
+							modelName: workspaceSettings.get('transcription.openai.model'),
+							baseURL: deviceConfig.value['apiEndpoints.openai'] || undefined,
 						},
 					);
 				case 'Groq':
 					return await services.transcriptions.groq.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							apiKey: settings.value['apiKeys.groq'],
-							modelName: settings.value['transcription.groq.model'],
-							baseURL: settings.value['apiEndpoints.groq'] || undefined,
+							outputLanguage,
+							prompt,
+							temperature,
+							apiKey: deviceConfig.value['apiKeys.groq'],
+							modelName: workspaceSettings.get('transcription.groq.model'),
+							baseURL: deviceConfig.value['apiEndpoints.groq'] || undefined,
 						},
 					);
 				case 'speaches':
 					return await services.transcriptions.speaches.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							modelId: settings.value['transcription.speaches.modelId'],
-							baseUrl: settings.value['transcription.speaches.baseUrl'],
+							outputLanguage,
+							prompt,
+							temperature,
+							modelId: deviceConfig.value['transcription.speaches.modelId'],
+							baseUrl: deviceConfig.value['transcription.speaches.baseUrl'],
 						},
 					);
 				case 'ElevenLabs':
 					return await services.transcriptions.elevenlabs.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							apiKey: settings.value['apiKeys.elevenlabs'],
-							modelName: settings.value['transcription.elevenlabs.model'],
+							outputLanguage,
+							prompt,
+							temperature,
+							apiKey: deviceConfig.value['apiKeys.elevenlabs'],
+							modelName: workspaceSettings.get(
+								'transcription.elevenlabs.model',
+							),
 						},
 					);
 				case 'Deepgram':
 					return await services.transcriptions.deepgram.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							apiKey: settings.value['apiKeys.deepgram'],
-							modelName: settings.value['transcription.deepgram.model'],
+							outputLanguage,
+							prompt,
+							temperature,
+							apiKey: deviceConfig.value['apiKeys.deepgram'],
+							modelName: workspaceSettings.get('transcription.deepgram.model'),
 						},
 					);
 				case 'Mistral':
 					return await services.transcriptions.mistral.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							prompt: settings.value['transcription.prompt'],
-							temperature: settings.value['transcription.temperature'],
-							apiKey: settings.value['apiKeys.mistral'],
-							modelName: settings.value['transcription.mistral.model'],
+							outputLanguage,
+							prompt,
+							temperature,
+							apiKey: deviceConfig.value['apiKeys.mistral'],
+							modelName: workspaceSettings.get('transcription.mistral.model'),
 						},
 					);
 				case 'whispercpp': {
@@ -255,9 +277,10 @@ export async function transcribeBlob(
 					return await services.transcriptions.whispercpp.transcribe(
 						audioToTranscribe,
 						{
-							outputLanguage: settings.value['transcription.outputLanguage'],
-							modelPath: settings.value['transcription.whispercpp.modelPath'],
-							prompt: settings.value['transcription.prompt'],
+							outputLanguage,
+							modelPath:
+								deviceConfig.value['transcription.whispercpp.modelPath'],
+							prompt,
 						},
 					);
 				}
@@ -267,7 +290,9 @@ export async function transcribeBlob(
 					// handled automatically as a fallback in the Rust conversion pipeline
 					return await services.transcriptions.parakeet.transcribe(
 						audioToTranscribe,
-						{ modelPath: settings.value['transcription.parakeet.modelPath'] },
+						{
+							modelPath: deviceConfig.value['transcription.parakeet.modelPath'],
+						},
 					);
 				}
 				case 'moonshine': {
@@ -276,7 +301,8 @@ export async function transcribeBlob(
 					return await services.transcriptions.moonshine.transcribe(
 						audioToTranscribe,
 						{
-							modelPath: settings.value['transcription.moonshine.modelPath'],
+							modelPath:
+								deviceConfig.value['transcription.moonshine.modelPath'],
 						},
 					);
 				}

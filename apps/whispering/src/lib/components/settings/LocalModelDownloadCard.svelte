@@ -23,7 +23,7 @@
 		isModelFileSizeValid,
 		type LocalModelConfig,
 	} from '$lib/services/transcription/local/types';
-	import { settings } from '$lib/state/settings.svelte';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	let {
 		model,
@@ -136,7 +136,7 @@
 	$effect(() => {
 		// React to settings changes for this engine
 		const settingsKey = `transcription.${model.engine}.modelPath` as const;
-		const currentPath = settings.value[settingsKey];
+		const currentPath = deviceConfig.value[settingsKey];
 		// Trigger refresh when settings change (currentPath is a dependency)
 		refreshStatus();
 	});
@@ -154,7 +154,7 @@
 
 				// Check if this model is active in settings
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
-				const currentPath = settings.value[settingsKey];
+				const currentPath = deviceConfig.value[settingsKey];
 				const isActive = currentPath === path;
 
 				modelState = isActive ? { type: 'active' } : { type: 'ready' };
@@ -300,7 +300,7 @@
 		const path = await ensureModelDestinationPath();
 		const settingsKey = `transcription.${model.engine}.modelPath` as const;
 
-		settings.updateKey(settingsKey, path);
+		deviceConfig.updateKey(settingsKey, path);
 		// The settings watcher will update modelState to 'active'
 		toast.success('Model activated');
 	}
@@ -318,8 +318,8 @@
 				// Clear settings if this was the active model
 				const settingsKey = `transcription.${model.engine}.modelPath` as const;
 
-				if (settings.value[settingsKey] === path) {
-					settings.updateKey(settingsKey, '');
+				if (deviceConfig.value[settingsKey] === path) {
+					deviceConfig.updateKey(settingsKey, '');
 				}
 
 				modelState = { type: 'not-downloaded' };

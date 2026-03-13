@@ -76,7 +76,7 @@ export const TAB_GROUP_ID_NONE = -1;
  * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
  */
 export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
+export const DeviceId = type('string').as<DeviceId>();
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
@@ -84,9 +84,7 @@ export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
 export type SavedTabId = Id & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').pipe(
-	(s): SavedTabId => s as SavedTabId,
-);
+export const SavedTabId = type('string').as<SavedTabId>();
 /**
  * Generate a unique {@link SavedTabId} for a newly saved tab.
  *
@@ -112,9 +110,7 @@ export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
  * bookmarked URL does NOT delete the record.
  */
 export type BookmarkId = Id & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').pipe(
-	(s): BookmarkId => s as BookmarkId,
-);
+export const BookmarkId = type('string').as<BookmarkId>();
 /**
  * Generate a unique {@link BookmarkId} for a newly created bookmark.
  *
@@ -140,9 +136,7 @@ export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
  * Prevents accidental mixing with message IDs or other string IDs.
  */
 export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+export const ConversationId = type('string').as<ConversationId>();
 /**
  * Generate a unique {@link ConversationId} for a new chat conversation.
  *
@@ -172,9 +166,7 @@ export const generateConversationId = (): ConversationId =>
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
 export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').pipe(
-	(s): ChatMessageId => s as ChatMessageId,
-);
+export const ChatMessageId = type('string').as<ChatMessageId>();
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.
  *
@@ -207,9 +199,7 @@ export const generateChatMessageId = (): ChatMessageId =>
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 
 /**
  * Device-scoped composite window ID: `${deviceId}_${windowId}`.
@@ -217,9 +207,7 @@ export const TabCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
  */
 export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
-export const WindowCompositeId = type('string').pipe(
-	(s): WindowCompositeId => s as WindowCompositeId,
-);
+export const WindowCompositeId = type('string').as<WindowCompositeId>();
 
 /**
  * Device-scoped composite group ID: `${deviceId}_${groupId}`.
@@ -227,9 +215,7 @@ export const WindowCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
  */
 export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
-export const GroupCompositeId = type('string').pipe(
-	(s): GroupCompositeId => s as GroupCompositeId,
-);
+export const GroupCompositeId = type('string').as<GroupCompositeId>();
 
 /**
  * Create a device-scoped composite tab ID: `${deviceId}_${tabId}`.

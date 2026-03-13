@@ -36,32 +36,29 @@ describe('actionsToClientTools', () => {
 		expect(openTool?.needsApproval).toBeUndefined();
 	});
 
-	test('destructive + requireApprovalForMutations both set needsApproval', () => {
+	test('non-destructive tools omit needsApproval entirely', () => {
 		const actions = {
-			read: defineQuery({
-				title: 'Read',
-				description: 'Read data',
-				destructive: true,
+			query: defineQuery({
+				title: 'Query',
+				description: 'Query data',
 				handler: () => {},
 			}),
-			write: defineMutation({
-				title: 'Write',
-				description: 'Write data',
+			mutation: defineMutation({
+				title: 'Mutation',
+				description: 'Mutate data',
 				handler: () => {},
 			}),
 		};
 
-		const tools = actionsToClientTools(actions, {
-			requireApprovalForMutations: true,
-		});
+		const tools = actionsToClientTools(actions);
 
-		// Destructive query gets needsApproval
-		const readTool = tools.find((t) => t.name === 'read');
-		expect(readTool?.needsApproval).toBe(true);
+		const queryTool = tools.find((t) => t.name === 'query');
+		expect(queryTool).toBeDefined();
+		expect('needsApproval' in queryTool!).toBe(false);
 
-		// Mutation gets needsApproval from blanket option
-		const writeTool = tools.find((t) => t.name === 'write');
-		expect(writeTool?.needsApproval).toBe(true);
+		const mutationTool = tools.find((t) => t.name === 'mutation');
+		expect(mutationTool).toBeDefined();
+		expect('needsApproval' in mutationTool!).toBe(false);
 	});
 });
 
@@ -81,5 +78,30 @@ describe('toToolDefinitions', () => {
 		expect(definitions).toHaveLength(1);
 		expect(definitions[0]?.name).toBe('search');
 		expect(definitions[0]?.description).toBe('Search stuff');
+	});
+
+	test('only forwards needsApproval for destructive tools', () => {
+		const actions = {
+			destructive: defineMutation({
+				title: 'Destructive',
+				description: 'Destructive action',
+				destructive: true,
+				handler: () => {},
+			}),
+			safe: defineQuery({
+				title: 'Safe',
+				description: 'Safe action',
+				handler: () => {},
+			}),
+		};
+
+		const tools = actionsToClientTools(actions);
+		const definitions = toToolDefinitions(tools);
+
+		const destructiveDef = definitions.find((d) => d.name === 'destructive');
+		expect(destructiveDef?.needsApproval).toBe(true);
+
+		const safeDef = definitions.find((d) => d.name === 'safe');
+		expect('needsApproval' in safeDef!).toBe(false);
 	});
 });

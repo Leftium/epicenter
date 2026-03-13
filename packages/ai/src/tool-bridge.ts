@@ -81,10 +81,11 @@ export type ActionNames<T extends Actions> = {
  *   (notably Anthropic) reject schemas missing those fields.
  * - **`outputSchema`** — Enables server-side output validation. TanStack AI's
  *   `executeToolCalls` validates results against this when present.
- * - **`needsApproval`** — **Critical for the approval flow.** The server's
- *   `executeToolCalls` checks this to decide whether to send an
- *   `APPROVAL_REQUESTED` event or a direct `TOOL_CALL` event. Without it,
- *   mutations auto-execute with no approval dialog.
+ * - **`needsApproval`** — Only present when the action is marked `destructive`.
+ *   Omitted entirely for non-destructive tools. The server's `executeToolCalls`
+ *   checks this to decide whether to send an `APPROVAL_REQUESTED` event or a
+ *   direct `TOOL_CALL` event. Without it, mutations auto-execute with no approval
+ *   dialog.
  * - **`metadata`** — Pass-through `Record<string, unknown>` for server-side
  *   routing, logging, or future TanStack AI features.
  *
@@ -122,9 +123,7 @@ export type ToolDefinitionPayload = {
  *
  * @example
  * ```ts
- * const tools = actionsToClientTools(workspace.actions, {
- *   requireApprovalForMutations: true,
- * });
+ * const tools = actionsToClientTools(workspace.actions);
  *
  * // Use locally in ChatClient
  * const chat = createChat({ tools, connection: ... });
@@ -135,20 +134,13 @@ export type ToolDefinitionPayload = {
  */
 export function actionsToClientTools<TActions extends Actions>(
 	actions: TActions,
-	options?: { requireApprovalForMutations?: boolean },
 ): (AnyClientTool & { name: ActionNames<TActions> })[] {
-	const requireApprovalForMutations =
-		options?.requireApprovalForMutations ?? false;
-
 	return [...iterateActions(actions)].map(([action, path]) => ({
 		__toolSide: 'client' as const,
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
-		...((action.destructive ||
-			(requireApprovalForMutations && action.type === 'mutation')) && {
-			needsApproval: true,
-		}),
+		...(action.destructive && { needsApproval: true }),
 		execute: async (args: unknown) => (action.input ? action(args) : action()),
 	}));
 }
@@ -188,8 +180,9 @@ export function toToolDefinitions(
 		...(tool.outputSchema && {
 			outputSchema: tool.outputSchema as JSONSchema,
 		}),
-		...('needsApproval' in tool &&
-			tool.needsApproval && { needsApproval: true }),
+		...(tool.needsApproval && {
+			needsApproval: true,
+		}),
 		...('metadata' in tool &&
 			tool.metadata && { metadata: tool.metadata as Record<string, unknown> }),
 	}));

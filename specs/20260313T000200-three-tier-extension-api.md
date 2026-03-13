@@ -1,7 +1,7 @@
 # Three-Tier Extension API
 
 **Date**: 2026-03-13
-**Status**: Draft
+**Status**: Implemented
 **Supersedes**: `20260219T195800-document-extension-api.md` (partially — the document extension API spec introduced `withDocumentExtension`; this spec redefines `withExtension` and adds `withWorkspaceExtension`)
 
 ## Problem
@@ -122,13 +122,9 @@ export default createWorkspace(honeycrisp)
     .withExtension('persistence', indexeddbPersistence);
 
 // apps/fs-explorer/src/lib/fs/fs-state.svelte.ts
-// NOTE: fs-explorer uses tags to limit document persistence to 'persistent' docs.
-// withExtension fires for ALL docs, so we use withDocumentExtension for the tagged case.
+// fs-explorer doesn't use document tags for persistence, so withExtension covers both.
 const ws = createWorkspace({ id: 'fs-explorer', tables: { files: filesTable } })
-    .withWorkspaceExtension('persistence', indexeddbPersistence)
-    .withDocumentExtension('persistence', indexeddbPersistence, {
-        tags: ['persistent'],
-    });
+    .withExtension('persistence', indexeddbPersistence);
 ```
 
 ### When each method applies
@@ -170,20 +166,20 @@ Workspace extensions and document extensions already use independent key namespa
 
 ## Todo
 
-- [ ] Rename current `withExtension` to `withWorkspaceExtension` in `create-workspace.ts`
-- [ ] Add new `withExtension` that calls `withWorkspaceExtension` + pushes to `documentExtensionRegistrations`
-- [ ] Add `withWorkspaceExtension` to `WorkspaceClientBuilder` type in `types.ts`
-- [ ] Update `withExtension` JSDoc in `types.ts` to document both-scope behavior
-- [ ] Update `apps/honeycrisp/src/lib/workspace.ts` — remove `.withDocumentExtension` (now redundant)
-- [ ] Update `apps/fuji/src/lib/workspace.ts` — remove `.withDocumentExtension` (now redundant)
-- [ ] Update `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — change to `withWorkspaceExtension` + `withDocumentExtension` (tagged case)
-- [ ] Update `apps/tab-manager/src/lib/workspace.ts` if applicable
-- [ ] Update `apps/whispering/src/lib/workspace.ts` if applicable
-- [ ] Update `create-workspace.test.ts` — add test that `withExtension` fires for both scopes
-- [ ] Update `create-workspace.test.ts` — add test that `withWorkspaceExtension` fires only for workspace
-- [ ] Update existing `withDocumentExtension` tests (unchanged behavior, just verify)
-- [ ] Run `bun test` in `packages/workspace`
-- [ ] Run `bun run check` across monorepo
+- [x] Rename current `withExtension` to `withWorkspaceExtension` in `create-workspace.ts`
+- [x] Add new `withExtension` that calls `applyWorkspaceExtension` + pushes to `documentExtensionRegistrations`
+- [x] Add `withWorkspaceExtension` to `WorkspaceClientBuilder` type in `types.ts`
+- [x] Update `withExtension` JSDoc in `types.ts` to document both-scope behavior
+- [x] Update `apps/honeycrisp/src/lib/workspace.ts` — remove `.withDocumentExtension` (now redundant)
+- [x] Update `apps/fuji/src/lib/workspace.ts` — remove `.withDocumentExtension` (now redundant)
+- [x] Update `apps/fs-explorer/src/lib/fs/fs-state.svelte.ts` — collapsed to single `.withExtension` (no tagging needed)
+- [x] Update `apps/tab-manager/src/lib/workspace.ts` — no changes needed (no document tables)
+- [x] Update `apps/whispering/src/lib/workspace.ts` — no changes needed (no document tables)
+- [x] Update `create-workspace.test.ts` — add test that `withExtension` fires for both scopes
+- [x] Update `create-workspace.test.ts` — add test that `withWorkspaceExtension` fires only for workspace
+- [x] Update existing `withDocumentExtension` tests (unchanged behavior, verified passing)
+- [x] Run `bun test` in `packages/workspace` — 349 pass, 1 pre-existing fail
+- [x] Run `bun typecheck` across monorepo — only pre-existing errors in unrelated packages
 
 ## Design Notes
 
@@ -204,3 +200,35 @@ This means workspace extensions resolve during the build chain (enabling typed `
 ### Will there ever be workspace-only extensions?
 
 Rarely. The only clear cases are analytics/telemetry that track workspace-level events and shouldn't fire per-document, or workspace-level middleware that inspects the workspace Y.Doc structure. `withWorkspaceExtension` exists as an escape hatch — most consumers will never need it.
+
+## Review
+
+### Changes Made
+
+**Core implementation** (`packages/workspace/src/workspace/`):
+
+1. **`create-workspace.ts`**: Extracted shared workspace extension logic into `applyWorkspaceExtension()` helper. `withExtension` now pushes the factory into `documentExtensionRegistrations[]` (with `tags: []` for universal) then delegates to `applyWorkspaceExtension`. New `withWorkspaceExtension` delegates directly to `applyWorkspaceExtension` without document registration. The cast `factory as unknown as DocumentExtensionRegistration['factory']` bridges `ExtensionContext` → `DocumentContext` (runtime compatible since both provide `{ ydoc }`).
+
+2. **`types.ts`**: Added `withWorkspaceExtension` method to `WorkspaceClientBuilder`. Updated `withExtension` return type to accumulate document extensions (`TDocExtensions & Record<TKey, ...>`). Updated JSDoc to document both-scope behavior.
+
+3. **`create-workspace.test.ts`**: Added two tests:
+   - `withExtension registers for both workspace and document Y.Docs` — verifies factory fires twice (once for workspace, once on `documents.open()`)
+   - `withWorkspaceExtension fires only for workspace Y.Doc, not documents` — verifies factory fires exactly once even after `documents.open()`
+
+**App migrations**:
+
+4. **`apps/honeycrisp/src/lib/workspace.ts`**: Removed `.withDocumentExtension('persistence', indexeddbPersistence)` — single `.withExtension` now covers both.
+5. **`apps/fuji/src/lib/workspace.ts`**: Same removal.
+6. **`apps/fs-explorer/src/lib/fs/fs-state.svelte.ts`**: Collapsed `.withExtension('persistence', idb).withDocumentExtension('persistence', idb, { tags: ['persistent'] })` into single `.withExtension('persistence', indexeddbPersistence)`. No tagging was actually needed for this app.
+
+**No changes needed**: `apps/tab-manager` and `apps/whispering` — both use `.withExtension` but have no document tables, so the new document registration is a no-op.
+
+### Verification
+
+- `bun test` in `packages/workspace`: 349 pass, 1 pre-existing fail (`factory throw cleanup` test)
+- `bun typecheck` across monorepo: only pre-existing errors in `@epicenter/api` (BetterAuth types), `@epicenter/workspace` (unrelated test files, `define-table.ts` generics)
+- LSP diagnostics clean on all changed files
+
+### Design Note: fs-explorer simplification
+
+The spec originally proposed keeping fs-explorer with `withWorkspaceExtension` + `withDocumentExtension` (tagged). Per user direction, the tagging was unnecessary — all documents in fs-explorer should persist. This simplified the migration to a single `.withExtension` call, same as Honeycrisp and Fuji.

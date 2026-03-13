@@ -89,6 +89,7 @@ export const fujiWorkspace = defineWorkspace({
  * `workspaceClient.kv`. The client is ready when `workspaceClient.whenReady`
  * resolves.
  */
-export default createWorkspace(fujiWorkspace)
-	.withExtension('persistence', indexeddbPersistence)
-	.withDocumentExtension('persistence', indexeddbPersistence);
+export default createWorkspace(fujiWorkspace).withExtension(
+	'persistence',
+	indexeddbPersistence,
+);

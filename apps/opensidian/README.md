@@ -1,4 +1,4 @@
-# OpenSidian
+# Opensidian
 
 Open-source, local-first note-taking app inspired by Obsidian. Built with SvelteKit on the Epicenter ecosystem.
 

@@ -1,11 +1,14 @@
 import { relations } from 'drizzle-orm';
 import {
+	bigint,
 	boolean,
 	index,
 	jsonb,
 	pgTable,
+	primaryKey,
 	text,
 	timestamp,
+	uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
@@ -171,6 +174,29 @@ export const oauthConsent = pgTable('oauth_consent', {
 	updatedAt: timestamp('updated_at'),
 });
 
+export const durableObjectInstance = pgTable(
+	'durable_object_instance',
+	{
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		doType: text('do_type').notNull(),
+		resourceName: text('resource_name').notNull(),
+		doName: text('do_name').notNull(),
+		storageBytes: bigint('storage_bytes', { mode: 'number' }),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		lastAccessedAt: timestamp('last_accessed_at').defaultNow().notNull(),
+		storageMeasuredAt: timestamp('storage_measured_at'),
+	},
+	(table) => [
+		primaryKey({
+			columns: [table.userId, table.doType, table.resourceName],
+		}),
+		uniqueIndex('doi_do_name_idx').on(table.doName),
+		index('doi_user_id_idx').on(table.userId),
+	],
+);
+
 export const userRelations = relations(user, ({ many }) => ({
 	sessions: many(session),
 	accounts: many(account),
@@ -178,7 +204,8 @@ export const userRelations = relations(user, ({ many }) => ({
 	oauthRefreshTokens: many(oauthRefreshToken),
 	oauthAccessTokens: many(oauthAccessToken),
 	oauthConsents: many(oauthConsent),
-}));
+	durableObjectInstances: many(durableObjectInstance),
+	}));
 
 export const sessionRelations = relations(session, ({ one, many }) => ({
 	user: one(user, {
@@ -257,3 +284,14 @@ export const oauthConsentRelations = relations(oauthConsent, ({ one }) => ({
 		references: [user.id],
 	}),
 }));
+
+export const durableObjectInstanceRelations = relations(
+	durableObjectInstance,
+	({ one }) => ({
+		user: one(user, {
+			fields: [durableObjectInstance.userId],
+			references: [user.id],
+		}),
+	}),
+);
+

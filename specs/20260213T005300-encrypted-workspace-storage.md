@@ -1,7 +1,7 @@
 # Encrypted Workspace Storage
 
 **Date**: 2026-02-13
-**Status**: Draft (API key portions superseded)
+**Status**: Draft (API key portions superseded, key source simplified 2026-03-12)
 **Supersedes**: `20260213T030000-encrypted-api-key-vault.md` (original was overengineered; see Analysis section)
 
 > **Note (2026-02-22)**: The API key encryption portions of this spec were superseded by `20260222T195800-server-side-api-key-management.md`, which itself has been superseded by `20260223T102844-remove-key-store-simplify-api-key-resolution.md`. Server-side API key storage has been removed entirely — API keys now come from env vars (operator keys) or per-request headers (user BYOK). The broader value-level workspace encryption described here (for transcriptions, notes, chat histories) remains valid and is a separate concern from API key storage.
@@ -16,7 +16,7 @@ Encryption is not just for API keys. Transcriptions, notes, chat histories, and 
 
 You get an encryption key one of three ways depending on your setup:
 
-1. **Epicenter Cloud**: You log in. The server sends your encryption key over TLS. Done. You never think about it.
+1. **Epicenter Cloud**: The server derives an AES-256 key from `BETTER_AUTH_SECRET` via SHA-256. One key for all users. Sent to the client over TLS on login. Done. You never think about it.
 2. **Self-hosted / Local (opt-in)**: You set an encryption password in settings. Your browser derives a key from it using PBKDF2 (intentionally slow to resist brute-force). This only happens once per session.
 3. **Self-hosted / Local (default)**: No encryption. Your device, your server, your data. OS-level disk encryption (FileVault, BitLocker, LUKS) and network-level encryption (Tailscale/WireGuard/TLS) are the right layers for this.
 
@@ -104,14 +104,15 @@ With encryption enabled, Y-Sweet sees key names and timestamps but not values:
 │  EPICENTER CLOUD                                             │
 │  ────────────────                                            │
 │  Login via Better Auth                                       │
-│    → Server generates random AES-256 key per user            │
-│    → Key stored on user record (server-side)                 │
+│    → Server derives AES-256 key from BETTER_AUTH_SECRET      │
+│      (SHA-256 hash of the secret → raw 256-bit key)          │
+│    → Same key for all users (single server secret)           │
 │    → Sent to client over TLS on authentication               │
 │    → Client holds key in memory for session                  │
 │                                                               │
-│  Password change: No-op for encryption (key lives on server) │
-│  Forgot password: No-op for encryption (key lives on server) │
-│  New device: Login → get key → decrypt synced data           │
+│  Password change: No-op for encryption (key is server-side)  │
+│  Forgot password: No-op for encryption (key is server-side)  │
+│  New device: Login → derive key → decrypt synced data        │
 │                                                               │
 ├───────────────────────────────────────────────────────────────┤
 │                                                               │
@@ -146,17 +147,18 @@ With encryption enabled, Y-Sweet sees key names and timestamps but not values:
 ### Cross-Device Sync (Cloud Mode)
 
 ```
-DEVICE A (Origin)                 SERVER / DATABASE                DEVICE B (New)
-─────────────────                 ─────────────────                ──────────────
+DEVICE A (Origin)                 SERVER                          DEVICE B (New)
+─────────────────                 ──────                          ──────────────
 
-1. Login
-2. Receive encryption key ◄──── [ Postgres: user.encryptionKey ]
+1. Login                          derive key from
+2. Receive key ◄──────────────── BETTER_AUTH_SECRET (SHA-256)
 3. Encrypt values
-4. Store in KV ──────────────▶  [ Y-sweet: encrypted blobs ]
+4. Store in KV ──────────────▶  [ Durable Object: encrypted blobs ]
 
-                                 [ Postgres ] ────────────────▶ 5. Login
-                                                                6. Receive encryption key
-                                 [ Y-sweet  ] ────────────────▶ 7. Sync encrypted KV
+                                  derive key from
+                                  BETTER_AUTH_SECRET ──────────▶ 5. Login
+                                                                6. Receive key
+                                 [ DO sync ] ────────────────▶ 7. Sync encrypted KV
                                                                 8. Decrypt values
 ```
 
@@ -206,7 +208,7 @@ The same applies to markdown extension, revision history snapshots, and any futu
 | Encryption scope             | All values, not just API keys         | Uniform security model. Transcriptions and notes are more sensitive than replaceable API keys. Marginal cost is near zero. |
 | Encryption layer             | Value-level (inside CRDT)             | Y-Sweet can still merge. Structure visible, content opaque. No sync protocol changes.                                      |
 | No KEK / Master Key wrapping | Direct key usage                      | KEK exists to make password changes cheap. Re-encrypting 1000 values takes ~50ms. Not worth the complexity for our scale.  |
-| Cloud key source             | Server-held per-user key              | Eliminates password interception, password change, and forgot-password problems entirely. Login IS the encryption gate.    |
+| Cloud key source             | Derived from `BETTER_AUTH_SECRET`     | One key for all users. No per-user key storage. No key generation on signup. No key delivery logic. Same security as per-user keys when keys live in the same DB. |
 | Self-hosted encryption       | Opt-in via password                   | Most self-hosted users are on Tailscale. Don't add friction for the common case.                                           |
 | Local encryption             | Opt-in via password                   | OS disk encryption is the right layer. App-level encryption is a nice-to-have.                                             |
 | Algorithm                    | AES-256-GCM via Web Crypto API        | Native browser support, hardware accelerated, authenticated encryption. No external dependencies.                          |
@@ -223,7 +225,7 @@ The original spec (`20260213T030000-encrypted-api-key-vault.md`) used a 3-layer 
 | KEK (Key Encryption Key) layer                                                 | Only purpose was cheap password changes. Re-encrypting 1000 values is ~50ms. Not worth the complexity.    |
 | Master Key generation                                                          | No master key needed. The encryption key IS the key.                                                      |
 | Wrap/unwrap operations                                                         | No wrapping layer.                                                                                        |
-| `wrappedMasterKey`, `masterKeySalt`, `masterKeyIv`, `keyVersion` on user table | Cloud mode: server stores raw key. Self-hosted: salt stored locally.                                      |
+| `wrappedMasterKey`, `masterKeySalt`, `masterKeyIv`, `keyVersion` on user table | Cloud mode: key derived from existing env var. Self-hosted: salt stored locally.                           |
 | Password interception at login (Open Question #2)                              | Cloud: password has nothing to do with encryption. Self-hosted: separate encryption password in settings. |
 | Password change re-wrap flow                                                   | Cloud: no-op. Self-hosted: re-encrypt all (~50ms).                                                        |
 | "Forgot password = permanent loss" footgun                                     | Cloud: key on server, just reset password. Self-hosted: API keys are replaceable.                         |
@@ -237,12 +239,11 @@ The original spec (`20260213T030000-encrypted-api-key-vault.md`) used a 3-layer 
 
 Pure Web Crypto API functions. No Yjs or framework dependencies.
 
-- [ ] `generateEncryptionKey()` — `crypto.getRandomValues(new Uint8Array(32))`
-- [ ] `deriveKeyFromPassword(password, salt)` — PBKDF2 → AES-GCM CryptoKey
+- [ ] `deriveKeyFromSecret(secret)` — SHA-256 hash of `BETTER_AUTH_SECRET` → AES-256 CryptoKey (cloud mode)
+- [ ] `deriveKeyFromPassword(password, salt)` — PBKDF2 → AES-GCM CryptoKey (self-hosted opt-in)
 - [ ] `encryptValue(plaintext, key)` → `{ ct: string, iv: string }`
 - [ ] `decryptValue({ ct, iv }, key)` → plaintext string
-- [ ] `serializeKey(key)` / `deserializeKey(raw)` — for server storage/transport
-- [ ] Tests: round-trip encrypt/decrypt, same password + salt = same key, unique IV per encryption
+- [ ] Tests: round-trip encrypt/decrypt, same secret = same key, same password + salt = same key, unique IV per encryption
 
 ### Phase 2: Encrypted Storage Layer
 
@@ -258,7 +259,7 @@ A wrapper that intercepts table and KV operations to encrypt/decrypt transparent
 
 Where the encryption key comes from, per sync mode.
 
-- [ ] **Cloud**: Add `encryptionKey` field to user record via Better Auth `additionalFields`. Server generates on signup. Client receives on login.
+- [ ] **Cloud**: Derive AES-256 key from `BETTER_AUTH_SECRET` via SHA-256 at server startup. Include derived key in auth session response so client receives it on login.
 - [ ] **Self-hosted / Local opt-in**: Settings UI for encryption password. Derive key via PBKDF2. Store salt in app settings (local only, not synced).
 - [ ] **Self-hosted / Local default**: No encryption. No key. Passthrough mode.
 - [ ] Hold derived/received key in memory for the session duration. Clear on logout/close.
@@ -290,11 +291,11 @@ API keys are replaceable (regenerate from provider dashboards in seconds). Other
 
 ### Cloud: Forgot login password
 
-No impact on encryption. The encryption key lives on the server, tied to the user account. Password reset via Better Auth recovers account access, and the encryption key is still there.
+No impact on encryption. The encryption key is derived from `BETTER_AUTH_SECRET`, not from the user's password. Password reset via Better Auth recovers account access; encryption continues to work because the server secret hasn't changed.
 
 ### Browser data cleared
 
-No impact. Cloud: log in again, get key from server, Y-Sweet re-syncs encrypted data, decrypt. Self-hosted: enter encryption password again, derive key, local persistence reloads.
+No impact. Cloud: log in again, server derives key from `BETTER_AUTH_SECRET`, Durable Objects re-sync encrypted data, decrypt. Self-hosted: enter encryption password again, derive key, local persistence reloads.
 
 ### Mixed encrypted/unencrypted devices
 
@@ -310,14 +311,12 @@ On first encryption setup, the application reads all existing plaintext values, 
 
 ## Open Questions
 
-1. **Key storage for cloud mode**: Should the encryption key be stored directly on the user record, or in a separate table? Direct is simpler; separate allows per-workspace keys later.
-   - Recommendation: Direct on user record. One key per user. Per-workspace keys can be added later if needed.
+1. ~~**Key storage for cloud mode**~~: Resolved. Key derived from `BETTER_AUTH_SECRET`. No per-user storage needed.
 
 2. **Selective encryption**: Should users be able to choose which workspaces are encrypted? Or all-or-nothing?
    - Recommendation: All-or-nothing per sync mode. Cloud = always encrypted. Self-hosted = user chooses once. Reduces configuration surface.
 
-3. **Key rotation**: If the cloud encryption key needs to be rotated (admin action, security incident), all values must be re-encrypted. Worth building now?
-   - Recommendation: Defer. Add a `keyVersion` field to the user record for future-proofing, but don't build rotation logic yet.
+3. ~~**Key rotation**~~: Resolved. Key rotates when `BETTER_AUTH_SECRET` rotates. Re-encryption of all data required on rotation, but this is a rare admin-level operation. No `keyVersion` field needed.
 
 ## Self-Hosted Deployment Context
 
@@ -344,7 +343,7 @@ In all these cases, the user controls the server. Client-side encryption protect
 - [ ] Value encrypted with AES-GCM, stored in Yjs, syncs to second device, decrypts correctly
 - [ ] Y-Sweet inspection shows only ciphertext (no plaintext values anywhere in the CRDT)
 - [ ] SQLite extension materializes decrypted plaintext correctly
-- [ ] Cloud mode: login on new device recovers all data via server-held key
+- [ ] Cloud mode: login on new device recovers all data via key derived from `BETTER_AUTH_SECRET`
 - [ ] Self-hosted opt-in: same password on two devices yields same key and can decrypt each other's data
 - [ ] No encryption mode: everything works exactly as it does today (zero overhead)
 - [ ] Encryption overhead: < 50ms for 1000 values on bulk operations

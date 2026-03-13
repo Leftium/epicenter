@@ -17,6 +17,7 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
+	generateId,
 	type InferTableRow,
 	iterateActions,
 } from '@epicenter/workspace';
@@ -30,16 +31,6 @@ import type { JsonValue } from 'wellcrafted/json';
 import { getDeviceId } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
-import {
-	executeActivateTab,
-	executeCloseTabs,
-	executeGroupTabs,
-	executeMuteTabs,
-	executeOpenTab,
-	executePinTabs,
-	executeReloadTabs,
-	executeSaveTabs,
-} from '$lib/tab-actions';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -249,6 +240,21 @@ export function parseGroupId(
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;
 	return { deviceId: result.deviceId, groupId: result.nativeId };
+}
+
+/**
+ * Extract the native tab ID (number) from a composite tab ID string.
+ *
+ * Composite format: `${deviceId}_${tabId}`. Returns the number portion.
+ * Returns `undefined` if the composite ID doesn't belong to this device.
+ */
+function nativeTabId(
+	compositeId: string,
+	deviceId: DeviceId,
+): number | undefined {
+	const parsed = parseTabId(compositeId as TabCompositeId);
+	if (!parsed || parsed.deviceId !== deviceId) return undefined;
+	return parsed.tabId;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -605,7 +611,34 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeCloseTabs(tabIds, deviceId);
+					let skippedOtherDevice = 0;
+					const nativeIds: number[] = [];
+					for (const id of tabIds) {
+						const nativeId = nativeTabId(id, deviceId);
+						if (nativeId === undefined) {
+							skippedOtherDevice++;
+						} else {
+							nativeIds.push(nativeId);
+						}
+					}
+					let closedCount = 0;
+					const failed: string[] = [];
+					for (const id of nativeIds) {
+						try {
+							await browser.tabs.remove(id);
+							closedCount++;
+						} catch (error) {
+							failed.push(
+								`Tab ${id}: ${error instanceof Error ? error.message : 'unknown error'}`,
+							);
+						}
+					}
+					return {
+						closedCount,
+						requested: tabIds.length,
+						skippedOtherDevice,
+						failed,
+					};
 				},
 			}),
 
@@ -616,8 +649,9 @@ export const workspaceClient = createWorkspace(
 					url: Type.String(),
 					windowId: Type.Optional(Type.String()),
 				}),
-				handler: async ({ url, windowId }) => {
-					return executeOpenTab(url, windowId);
+				handler: async ({ url }) => {
+					const tab = await browser.tabs.create({ url });
+					return { tabId: String(tab.id ?? -1) };
 				},
 			}),
 
@@ -629,7 +663,14 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabId }) => {
 					const deviceId = await getDeviceId();
-					return executeActivateTab(tabId, deviceId);
+					const id = nativeTabId(tabId, deviceId);
+					if (id === undefined) return { activated: false };
+					try {
+						await browser.tabs.update(id, { active: true });
+						return { activated: true };
+					} catch {
+						return { activated: false };
+					}
 				},
 			}),
 
@@ -642,12 +683,32 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, close }) => {
 					const deviceId = await getDeviceId();
-					return executeSaveTabs(
-						tabIds,
-						close ?? false,
-						deviceId,
-						tables.savedTabs,
-					);
+					let savedCount = 0;
+					for (const compositeId of tabIds) {
+						const id = nativeTabId(compositeId, deviceId);
+						if (id === undefined) continue;
+						try {
+							const tab = await browser.tabs.get(id);
+							if (!tab.url) continue;
+							tables.savedTabs.set({
+								id: generateId() as string as SavedTabId,
+								url: tab.url,
+								title: tab.title || 'Untitled',
+								favIconUrl: tab.favIconUrl,
+								pinned: tab.pinned ?? false,
+								sourceDeviceId: deviceId,
+								savedAt: Date.now(),
+								_v: 1,
+							});
+							savedCount++;
+							if (close) {
+								await browser.tabs.remove(id);
+							}
+						} catch {
+							// Tab may have been closed already
+						}
+					}
+					return { savedCount };
 				},
 			}),
 
@@ -661,7 +722,19 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, title, color }) => {
 					const deviceId = await getDeviceId();
-					return executeGroupTabs(tabIds, deviceId, title, color);
+					const nativeIds = tabIds
+						.map((id) => nativeTabId(id, deviceId))
+						.filter((id) => id !== undefined);
+					const groupId = await browser.tabs.group({
+						tabIds: nativeIds as [number, ...number[]],
+					});
+					if (title || color) {
+						await browser.tabGroups.update(groupId as number, {
+							...(title && { title }),
+							...(color && { color: color as `${Browser.tabGroups.Color}` }),
+						});
+					}
+					return { groupId: String(groupId) };
 				},
 			}),
 
@@ -674,7 +747,19 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, pinned }) => {
 					const deviceId = await getDeviceId();
-					return executePinTabs(tabIds, pinned, deviceId);
+					const nativeIds = tabIds
+						.map((id) => nativeTabId(id, deviceId))
+						.filter((id) => id !== undefined);
+					let pinnedCount = 0;
+					for (const id of nativeIds) {
+						try {
+							await browser.tabs.update(id, { pinned });
+							pinnedCount++;
+						} catch {
+							// Tab may not exist
+						}
+					}
+					return { pinnedCount };
 				},
 			}),
 
@@ -687,7 +772,19 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, muted }) => {
 					const deviceId = await getDeviceId();
-					return executeMuteTabs(tabIds, muted, deviceId);
+					const nativeIds = tabIds
+						.map((id) => nativeTabId(id, deviceId))
+						.filter((id) => id !== undefined);
+					let mutedCount = 0;
+					for (const id of nativeIds) {
+						try {
+							await browser.tabs.update(id, { muted });
+							mutedCount++;
+						} catch {
+							// Tab may not exist
+						}
+					}
+					return { mutedCount };
 				},
 			}),
 
@@ -699,7 +796,19 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeReloadTabs(tabIds, deviceId);
+					const nativeIds = tabIds
+						.map((id) => nativeTabId(id, deviceId))
+						.filter((id) => id !== undefined);
+					let reloadedCount = 0;
+					for (const id of nativeIds) {
+						try {
+							await browser.tabs.reload(id);
+							reloadedCount++;
+						} catch {
+							// Tab may not exist
+						}
+					}
+					return { reloadedCount };
 				},
 			}),
 		},

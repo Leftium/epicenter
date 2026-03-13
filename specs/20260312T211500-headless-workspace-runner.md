@@ -466,3 +466,136 @@ Created `apps/runner/` with 4 files:
 ### Phase 5 (deferred)
 
 Folding `apps/tab-manager-markdown/` into the runner is deferred per instructions. The runner already supports all the functionality needed—a user would create an `epicenter.config.ts` that exports the tab-manager definition and optionally wire custom extensions by exporting a pre-wired client instead.
+
+### Phase 6.3–6.4 Implementation Plan
+
+#### Overview
+
+Two files change. One new file (`auth.ts`), one modified file (`index.ts`). Total ~80 lines new code.
+
+#### File 1: `apps/runner/src/auth.ts` (new, ~55 lines)
+
+Three exported functions, one module-level constant, one type.
+
+```typescript
+const CLIENT_ID = 'epicenter-runner';
+
+type StoredToken = {
+  access_token: string;
+  server: string;
+  created_at: number;
+  expires_in: number;
+};
+```
+
+**`login(serverUrl: string, configDir: string): Promise<void>`**
+
+Device code flow (RFC 8628):
+1. POST `{serverUrl}/auth/device/code` with `{ client_id: CLIENT_ID }`
+2. Print `verification_uri_complete` and `user_code` to console
+3. Poll POST `{serverUrl}/auth/device/token` with `{ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code, client_id: CLIENT_ID }`
+4. Handle poll responses:
+   - `authorization_pending` → continue polling
+   - `slow_down` → double the interval, continue
+   - `expired_token` → throw, tell user to retry
+   - `access_denied` → throw, user denied
+   - Success → write token to disk
+5. `mkdir` the auth directory with `recursive: true`
+6. `Bun.write` the token as `StoredToken` JSON to `{configDir}/.epicenter/auth/token.json`
+
+Control flow: while(true) loop with early returns on terminal errors. Uses `Bun.sleep()` for polling interval.
+
+**`logout(configDir: string): Promise<void>`**
+
+Delete `{configDir}/.epicenter/auth/token.json` via `unlink`. No-op if file doesn't exist (catch and ignore ENOENT).
+
+**`loadToken(configDir: string): Promise<string | undefined>`**
+
+Token resolution order:
+1. `EPICENTER_TOKEN` env var → return immediately (override)
+2. Read `{configDir}/.epicenter/auth/token.json` → return `access_token` field
+3. Neither exists → return `undefined`
+
+This function is called once on startup. The `getToken` callback passed to `createSyncExtension` calls `loadToken` each time, so a token refreshed by running `login` in another terminal is picked up on the next WebSocket reconnect.
+
+#### File 2: `apps/runner/src/index.ts` (modify, ~25 lines changed)
+
+Insert subcommand parsing before the existing config-loading flow.
+
+**Arg parsing changes:**
+
+Current: `const targetDir = process.argv[2] ?? process.cwd();`
+
+New: parse `process.argv.slice(2)` — first non-flag arg is either a subcommand (`login`, `logout`) or the target dir.
+
+```
+bun run apps/runner login --server https://api.epicenter.so [dir]
+bun run apps/runner logout [dir]
+bun run apps/runner -- [dir]        ← existing flow, unchanged
+```
+
+**Subcommand handling (switch statement):**
+
+- `login`: extract `--server` flag value (required), resolve config dir from remaining positional arg or cwd, call `login()`, exit
+- `logout`: resolve config dir from positional arg or cwd, call `logout()`, exit
+- default: treat first arg as target dir (existing behavior)
+
+**Token integration in normal startup:**
+
+Replace the current static env-var read:
+```typescript
+// Before
+const token = process.env.EPICENTER_TOKEN;
+...(token && { getToken: async () => token })
+
+// After
+import { loadToken } from './auth';
+getToken: async () => loadToken(configDir),
+```
+
+The `getToken` callback returns `string | undefined`. The sync extension already handles `undefined` (no token → unauthenticated connection). Passing `loadToken` as a callback (not a captured value) means each reconnect re-reads from disk.
+
+**Startup log update:**
+
+```typescript
+// Before
+console.log(`  Auth: ${token ? 'token provided' : 'none (open mode)'}`);
+
+// After — resolve token once for logging, but getToken callback re-reads
+const initialToken = await loadToken(configDir);
+console.log(`  Auth: ${initialToken ? 'token loaded' : 'none (open mode)'}`);
+```
+
+#### Execution checklist
+
+- [x] **6.3.1** Create `apps/runner/src/auth.ts` with `login()`, `logout()`, and `loadToken()`
+- [x] **6.3.2** Token storage at `.epicenter/auth/token.json` relative to config dir
+- [x] **6.3.3** Add `login` and `logout` subcommands to `index.ts` arg parsing
+- [x] **6.3.4** Replace static env-var token with `loadToken()` callback in `createSyncExtension`
+- [x] **6.4.1** Startup token resolution: env var override → stored file → undefined with warning
+- [x] **6.4.2** Log authentication state on startup
+- [x] **6.4.3** `getToken` callback re-reads from disk on each reconnect (not cached)
+- [x] **6.4.4** Typecheck passes: `bun run typecheck` in `apps/runner`
+
+#### API contract reference (from Better Auth source)
+
+**POST `/auth/device/code`**
+- Request: `{ client_id: string, scope?: string }`
+- Response: `{ device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval }`
+- Errors: `{ error: 'invalid_request' | 'invalid_client', error_description }`
+
+**POST `/auth/device/token`**
+- Request: `{ grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: string, client_id: string }`
+- Response: `{ access_token, token_type: 'Bearer', expires_in, scope }`
+- Errors: `{ error: 'authorization_pending' | 'slow_down' | 'expired_token' | 'access_denied' | 'invalid_grant', error_description }`
+
+#### Design decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Token scope | Per-project (config dir) | Different projects may connect to different servers |
+| `login` dir resolution | Optional positional arg, default CWD | Matches existing runner UX for target dir |
+| `getToken` caching | No cache (re-read on each call) | Reconnect picks up fresh token if `login` ran in another terminal |
+| Env var precedence | `EPICENTER_TOKEN` overrides stored file | Escape hatch for CI/scripts; matches existing behavior |
+| Polling backoff | Use server-provided `interval`, double on `slow_down` | Per RFC 8628 §3.5 |
+| Arg parsing | Manual (no library) | Only 2 subcommands + 1 flag; adding a dep is overkill |

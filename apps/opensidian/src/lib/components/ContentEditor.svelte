@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { onMount } from 'svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import { Textarea } from '@epicenter/ui/textarea';
 
@@ -41,10 +40,18 @@
 		}
 	}
 
-	// Load content when fileId changes
+	// Load content when fileId changes; save dirty content on cleanup.
+	// The {#key} block in ContentPanel destroys this component when
+	// activeFileId changes—DOM removal doesn't fire blur, so the
+	// cleanup function is the only chance to persist unsaved edits.
 	$effect(() => {
-		void fileId;
+		const id = fileId;
 		loadContent();
+		return () => {
+			if (dirty) {
+				fsState.actions.writeContent(id, content);
+			}
+		};
 	});
 </script>
 

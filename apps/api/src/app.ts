@@ -7,8 +7,8 @@ import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { bearer } from 'better-auth/plugins/bearer';
 import { customSession } from 'better-auth/plugins';
+import { bearer } from 'better-auth/plugins/bearer';
 import { jwt } from 'better-auth/plugins/jwt';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
@@ -56,7 +56,7 @@ export const BASE_AUTH_CONFIG = {
 			trustedProviders: ['google', 'email-password'],
 		},
 	},
-} as const;
+};
 
 /** Derive a deterministic 32-byte AES-256 key from the auth secret via SHA-256. */
 async function deriveKeyFromSecret(secret: string): Promise<Uint8Array> {

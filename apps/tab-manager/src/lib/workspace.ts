@@ -103,8 +103,7 @@ export const SavedTabId = type('string').pipe(
  * });
  * ```
  */
-export const generateSavedTabId = (): SavedTabId =>
-	generateId() as SavedTabId;
+export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -132,8 +131,7 @@ export const BookmarkId = type('string').pipe(
  * });
  * ```
  */
-export const generateBookmarkId = (): BookmarkId =>
-	generateId() as BookmarkId;
+export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.

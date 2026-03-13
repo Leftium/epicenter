@@ -194,7 +194,6 @@ export const durableObjectInstance = pgTable(
 		primaryKey({
 			columns: [table.userId, table.doType, table.resourceName],
 		}),
-		index('doi_user_id_idx').on(table.userId),
 	],
 );
 

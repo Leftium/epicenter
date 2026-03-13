@@ -1,5 +1,5 @@
 {
-  "id": "24d53b66-0e62-4e3f-9cf3-109aa20d8882",
+  "id": "ba5c9051-239d-49bb-acb4-7e925af736eb",
   "prevId": "ff1381e2-80d6-46fd-96f7-c3887c284bac",
   "version": "7",
   "dialect": "postgresql",
@@ -181,23 +181,7 @@
           "notNull": false
         }
       },
-      "indexes": {
-        "doi_user_id_idx": {
-          "name": "doi_user_id_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "durable_object_instance_user_id_user_id_fk": {
           "name": "durable_object_instance_user_id_user_id_fk",

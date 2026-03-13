@@ -94,21 +94,28 @@ const theme = defineKv()
 
 Every table's `id` field and every string foreign key field MUST use a branded type instead of plain `'string'`. This prevents accidental mixing of IDs from different tables at compile time.
 
-### Pattern
+### Three-Part Pattern
 
-Define a branded type + arktype pipe pair in the same file as the workspace definition:
+Define a branded type + arktype validator + factory in the same file as the workspace definition:
 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
+import { generateId } from '@epicenter/workspace';
 
-// 1. Branded type + arktype pipe (co-located with workspace definition)
+// 1. TYPE — the branded type
 export type ConversationId = string & Brand<'ConversationId'>;
+
+// 2. VALIDATOR — arktype pipe for schema composition
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
 
-// 2. Wrap in defineTable + co-locate type export
+// 3. FACTORY — create* prefix, encapsulates the double-cast
+export const createConversationId = (): ConversationId =>
+	generateId() as string as ConversationId;
+
+// Use in defineTable schema:
 const conversationsTable = defineTable(
 	type({
 		id: ConversationId,              // Primary key — branded
@@ -129,7 +136,7 @@ const chatMessagesTable = defineTable(
 );
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
-// 3. Compose in createWorkspace
+// Compose in createWorkspace
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
 		tables: {
@@ -146,7 +153,7 @@ export const workspaceClient = createWorkspace(
 2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `ConversationId`, not `'string'`
 3. **Optional FKs use `.or('undefined')`**: `'parentId?': ConversationId.or('undefined')`
 4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`
-5. **Brand at generation site**: When creating IDs with `generateId()`, cast through string: `generateId() as string as ConversationId`
+5. **Use `create*` factories at generation sites**: `createConversationId()` not `generateId() as string as ConversationId`
 6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`
 
 ### Why Not Plain `'string'`
@@ -164,6 +171,8 @@ deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
 ### Reference Implementation
 
 See `apps/tab-manager/src/lib/workspace.ts` for the canonical example with 7 branded ID types.
+See `packages/filesystem/src/ids.ts` for the reference factory pattern (`generateRowId`, `generateColumnId`, `generateFileId`).
+See `specs/20260312T180000-branded-id-convention.md` for the full inventory and migration plan.
 
 ## Workspace File Structure
 

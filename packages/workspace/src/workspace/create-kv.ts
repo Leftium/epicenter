@@ -7,30 +7,18 @@
  * import { createKv, defineKv } from '@epicenter/workspace';
  * import { type } from 'arktype';
  *
- * // Shorthand for single version
- * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }));
- *
- * // Variadic for multiple versions with migration
- * const theme = defineKv(
- *   type({ mode: "'light' | 'dark'", _v: '1' }),
- *   type({ mode: "'light' | 'dark' | 'system'", fontSize: 'number', _v: '2' }),
- * ).migrate((v) => {
- *   switch (v._v) {
- *     case 1: return { ...v, fontSize: 14, _v: 2 };
- *     case 2: return v;
- *   }
- * });
+ * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }), { collapsed: false, width: 300 });
+ * const fontSize = defineKv(type('number'), 14);
  *
  * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const kv = createKv(ydoc, { sidebar, theme });
+ * const kv = createKv(ydoc, { sidebar, fontSize });
  *
  * kv.set('sidebar', { collapsed: false, width: 300 });
- * kv.set('theme', { mode: 'system', fontSize: 16, _v: 2 });
+ * kv.set('fontSize', 16);
  * ```
  */
 
 import type * as Y from 'yjs';
-import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import {
 	YKeyValueLww,
 	type YKeyValueLwwChange,
@@ -41,7 +29,6 @@ import type {
 	KvChange,
 	KvDefinition,
 	KvDefinitions,
-	KvGetResult,
 	KvHelper,
 } from './types.js';
 import { KV_KEY } from './ydoc-keys.js';
@@ -64,30 +51,6 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
 	const ykv = new YKeyValueLww(yarray);
 
-	/**
-	 * Parse and migrate a raw value using the given definition.
-	 */
-	function parseValue<TValue>(
-		raw: unknown,
-		definition: KvDefinition<readonly CombinedStandardSchema[]>,
-	): KvGetResult<TValue> {
-		const result = definition.schema['~standard'].validate(raw);
-		if (result instanceof Promise)
-			throw new TypeError('Async schemas not supported');
-
-		if (result.issues) {
-			return {
-				status: 'invalid',
-				errors: result.issues,
-				value: raw,
-			};
-		}
-
-		// Migrate to latest version
-		const migrated = definition.migrate(result.value);
-		return { status: 'valid', value: migrated as TValue };
-	}
-
 	return {
 		get(key) {
 			const definition = definitions[key];
@@ -101,7 +64,7 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				throw new TypeError('Async schemas not supported');
 			if (result.issues) return definition.defaultValue;
 
-			return definition.migrate(result.value);
+			return result.value;
 		},
 
 		set(key, value) {
@@ -131,17 +94,18 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 						break;
 					case 'add':
 					case 'update': {
-						// Parse and migrate the new value
-						const parsed = parseValue(change.newValue, definition);
-						if (parsed.status === 'valid') {
+						const result = definition.schema['~standard'].validate(
+							change.newValue,
+						);
+						if (!(result instanceof Promise) && !result.issues) {
 							callback(
-								{ type: 'set', value: parsed.value } as Parameters<
+								{ type: 'set', value: result.value } as Parameters<
 									typeof callback
 								>[0],
 								transaction,
 							);
 						}
-						// Skip callback for invalid values (could add an error callback if needed)
+						// Skip callback for invalid values
 						break;
 					}
 				}
@@ -168,9 +132,14 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 					if (change.action === 'delete') {
 						parsed.set(key, { type: 'delete' });
 					} else {
-						const result = definition.schema['~standard'].validate(change.newValue);
+						const result = definition.schema['~standard'].validate(
+							change.newValue,
+						);
 						if (!(result instanceof Promise) && !result.issues) {
-							parsed.set(key, { type: 'set', value: definition.migrate(result.value) });
+							parsed.set(key, {
+								type: 'set',
+								value: result.value,
+							});
 						}
 					}
 				}

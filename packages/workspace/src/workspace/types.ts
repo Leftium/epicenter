@@ -388,32 +388,22 @@ export type DocumentsHelper<TTableDefinitions extends TableDefinitions> = {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * A KV definition created by `defineKv(schema)` or `defineKv(v1, v2, ...).migrate(fn)`
+ * A KV definition created by `defineKv(schema, defaultValue)`.
  *
- * @typeParam TVersions - Tuple of schema versions
+ * KV stores use validate-or-default semantics—no migration step.
+ * Invalid stored data falls back to `defaultValue`.
+ *
+ * @typeParam TSchema - The schema for this KV entry
  */
-export type KvDefinition<TVersions extends readonly CombinedStandardSchema[]> =
-	{
-		schema: CombinedStandardSchema<
-			unknown,
-			StandardSchemaV1.InferOutput<TVersions[number]>
-		>;
-		migrate: (
-			value: StandardSchemaV1.InferOutput<TVersions[number]>,
-		) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-		defaultValue: StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
-	};
+export type KvDefinition<TSchema extends CombinedStandardSchema> = {
+	schema: TSchema;
+	defaultValue: StandardSchemaV1.InferOutput<TSchema>;
+};
 
 /** Extract the value type from a KvDefinition */
 export type InferKvValue<T> =
-	T extends KvDefinition<infer V>
-		? StandardSchemaV1.InferOutput<LastSchema<V>>
-		: never;
-
-/** Extract the version union type from a KvDefinition */
-export type InferKvVersionUnion<T> =
-	T extends KvDefinition<infer V>
-		? StandardSchemaV1.InferOutput<V[number]>
+	T extends KvDefinition<infer TSchema>
+		? StandardSchemaV1.InferOutput<TSchema>
 		: never;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -738,7 +728,7 @@ export type TablesHelper<TTableDefinitions extends TableDefinitions> = {
 
 /** KV helper with dictionary-style access */
 export type KvHelper<TKvDefinitions extends KvDefinitions> = {
-	/** Get a value by key (validates + migrates). Returns the stored value or the default. */
+	/** Get a value by key (validates, returns stored value or default). */
 	get<K extends keyof TKvDefinitions & string>(
 		key: K,
 	): InferKvValue<TKvDefinitions[K]>;

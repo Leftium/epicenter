@@ -27,6 +27,17 @@ function nativeTabId(
 }
 
 /**
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
+ *
+ * Filters out IDs that don't belong to the given device.
+ */
+function toNativeIds(tabIds: string[], deviceId: DeviceId): number[] {
+	return tabIds
+		.map((id) => nativeTabId(id, deviceId))
+		.filter((id) => id !== undefined);
+}
+
+/**
  * Close the specified browser tabs by their composite IDs.
  *
  * Resolves each composite ID to a native Chrome tab ID scoped to `deviceId`,
@@ -51,9 +62,7 @@ export async function executeCloseTabs(
 	tabIds: string[],
 	deviceId: DeviceId,
 ): Promise<{ closedCount: number }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	await tryAsync({
 		try: () => browser.tabs.remove(nativeIds),
@@ -152,9 +161,7 @@ export async function executeSaveTabs(
 	deviceId: DeviceId,
 	savedTabsTable: TableHelper<SavedTab>,
 ): Promise<{ savedCount: number }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	// Fetch all tabs in parallel
 	const results = await Promise.allSettled(
@@ -221,9 +228,7 @@ export async function executeGroupTabs(
 	title?: string,
 	color?: string,
 ): Promise<{ groupId: string }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	const { data: groupId, error: groupError } = await tryAsync({
 		try: () => browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
@@ -266,9 +271,7 @@ export async function executePinTabs(
 	pinned: boolean,
 	deviceId: DeviceId,
 ): Promise<{ pinnedCount: number }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	const results = await Promise.allSettled(
 		nativeIds.map((id) => browser.tabs.update(id, { pinned })),
@@ -299,9 +302,7 @@ export async function executeMuteTabs(
 	muted: boolean,
 	deviceId: DeviceId,
 ): Promise<{ mutedCount: number }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	const results = await Promise.allSettled(
 		nativeIds.map((id) => browser.tabs.update(id, { muted })),
@@ -329,9 +330,7 @@ export async function executeReloadTabs(
 	tabIds: string[],
 	deviceId: DeviceId,
 ): Promise<{ reloadedCount: number }> {
-	const nativeIds = tabIds
-		.map((id) => nativeTabId(id, deviceId))
-		.filter((id) => id !== undefined);
+	const nativeIds = toNativeIds(tabIds, deviceId);
 
 	const results = await Promise.allSettled(
 		nativeIds.map((id) => browser.tabs.reload(id)),

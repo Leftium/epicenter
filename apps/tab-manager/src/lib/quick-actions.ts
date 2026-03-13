@@ -50,6 +50,15 @@ export type QuickAction = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
+ */
+function compositeToNativeIds(compositeIds: TabCompositeId[]): number[] {
+	return compositeIds
+		.map((id) => parseTabId(id)?.tabId)
+		.filter((id) => id !== undefined);
+}
+
+/**
  * Normalize a URL for duplicate comparison.
  *
  * Strips trailing slash, query params, and hash to treat
@@ -142,9 +151,7 @@ const dedupAction: QuickAction = {
 			description: `Found ${totalDuplicates} duplicate tab${totalDuplicates === 1 ? '' : 's'} across ${dupes.size} URL${dupes.size === 1 ? '' : 's'}. Close them?`,
 			confirm: { text: 'Close Duplicates', variant: 'destructive' },
 			async onConfirm() {
-				const nativeIds = toClose
-					.map((tabId) => parseTabId(tabId)?.tabId)
-					.filter((id) => id !== undefined);
+				const nativeIds = compositeToNativeIds(toClose);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),
 					catch: () => Ok(undefined),
@@ -193,9 +200,7 @@ const groupByDomainAction: QuickAction = {
 		const groupOps = [...domains.entries()]
 			.filter(([, tabIds]) => tabIds.length >= 2)
 			.map(([domain, tabIds]) => {
-				const nativeIds = tabIds
-					.map((id) => parseTabId(id)?.tabId)
-					.filter((id) => id !== undefined);
+				const nativeIds = compositeToNativeIds(tabIds);
 				return nativeIds.length >= 2 ? { domain, nativeIds } : null;
 			})
 			.filter(
@@ -266,9 +271,7 @@ const closeByDomainAction: QuickAction = {
 			description: `Close ${topCount} tab${topCount === 1 ? '' : 's'} from ${topDomain}?`,
 			confirm: { text: 'Close Tabs', variant: 'destructive' },
 			async onConfirm() {
-				const nativeIds = tabIds
-					.map((tabId) => parseTabId(tabId)?.tabId)
-					.filter((id) => id !== undefined);
+				const nativeIds = compositeToNativeIds(tabIds);
 				await tryAsync({
 					try: () => browser.tabs.remove(nativeIds),
 					catch: () => Ok(undefined),

@@ -94,15 +94,27 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="w-44">
 					<DropdownMenu.Item onclick={() => onSortChange('dateEdited')}>
-						{#if sortBy === 'dateEdited'}<CheckIcon class="mr-2 size-4" />{:else}<span class="mr-2 size-4"></span>{/if}
+						{#if sortBy === 'dateEdited'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
 						Date Edited
 					</DropdownMenu.Item>
 					<DropdownMenu.Item onclick={() => onSortChange('dateCreated')}>
-						{#if sortBy === 'dateCreated'}<CheckIcon class="mr-2 size-4" />{:else}<span class="mr-2 size-4"></span>{/if}
+						{#if sortBy === 'dateCreated'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
 						Date Created
 					</DropdownMenu.Item>
 					<DropdownMenu.Item onclick={() => onSortChange('title')}>
-						{#if sortBy === 'title'}<CheckIcon class="mr-2 size-4" />{:else}<span class="mr-2 size-4"></span>{/if}
+						{#if sortBy === 'title'}
+							<CheckIcon class="mr-2 size-4" />
+						{:else}
+							<span class="mr-2 size-4"></span>
+						{/if}
 						Title
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>

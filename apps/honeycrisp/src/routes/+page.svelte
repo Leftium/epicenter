@@ -89,7 +89,8 @@
 		// Apply sort
 		result = [...result].sort((a, b) => {
 			if (sortBy === 'title') return a.title.localeCompare(b.title);
-			if (sortBy === 'dateCreated') return b.createdAt.localeCompare(a.createdAt);
+			if (sortBy === 'dateCreated')
+				return b.createdAt.localeCompare(a.createdAt);
 			return b.updatedAt.localeCompare(a.updatedAt);
 		});
 		return result;
@@ -260,16 +261,16 @@
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
-			<NoteList
-				notes={filteredNotes}
-				{selectedNoteId}
-				{sortBy}
-				onSelectNote={selectNote}
-				onCreateNote={createNote}
-				onDeleteNote={deleteNote}
-				onPinNote={pinNote}
-				onSortChange={(v) => workspaceClient.kv.set('sortBy', v)}
-			/>
+				<NoteList
+					notes={filteredNotes}
+					{selectedNoteId}
+					{sortBy}
+					onSelectNote={selectNote}
+					onCreateNote={createNote}
+					onDeleteNote={deleteNote}
+					onPinNote={pinNote}
+					onSortChange={(v) => workspaceClient.kv.set('sortBy', v)}
+				/>
 			</Resizable.Pane>
 			<Resizable.Handle />
 			<Resizable.Pane defaultSize={65} minSize={30} class="flex flex-col">

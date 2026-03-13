@@ -1,27 +1,26 @@
 <script lang="ts">
+	import { Separator } from '@epicenter/ui/separator';
+	import { Toggle } from '@epicenter/ui/toggle';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import * as Tooltip from '@epicenter/ui/tooltip';
+	import BoldIcon from '@lucide/svelte/icons/bold';
+	import Heading1Icon from '@lucide/svelte/icons/heading-1';
+	import Heading2Icon from '@lucide/svelte/icons/heading-2';
+	import ItalicIcon from '@lucide/svelte/icons/italic';
+	import ListIcon from '@lucide/svelte/icons/list';
+	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
+	import ListOrderedIcon from '@lucide/svelte/icons/list-ordered';
+	import QuoteIcon from '@lucide/svelte/icons/quote';
+	import StrikethroughIcon from '@lucide/svelte/icons/strikethrough';
+	import UnderlineIcon from '@lucide/svelte/icons/underline';
 	import { Editor, Extension } from '@tiptap/core';
 	import Placeholder from '@tiptap/extension-placeholder';
-	import StarterKit from '@tiptap/starter-kit';
 	import TaskItem from '@tiptap/extension-task-item';
 	import TaskList from '@tiptap/extension-task-list';
 	import Underline from '@tiptap/extension-underline';
+	import StarterKit from '@tiptap/starter-kit';
 	import { ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import type * as Y from 'yjs';
-	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import { Toggle } from '@epicenter/ui/toggle';
-	import { Separator } from '@epicenter/ui/separator';
-	import * as Tooltip from '@epicenter/ui/tooltip';
-
-	import BoldIcon from '@lucide/svelte/icons/bold';
-	import ItalicIcon from '@lucide/svelte/icons/italic';
-	import UnderlineIcon from '@lucide/svelte/icons/underline';
-	import StrikethroughIcon from '@lucide/svelte/icons/strikethrough';
-	import Heading1Icon from '@lucide/svelte/icons/heading-1';
-	import Heading2Icon from '@lucide/svelte/icons/heading-2';
-	import ListIcon from '@lucide/svelte/icons/list';
-	import ListOrderedIcon from '@lucide/svelte/icons/list-ordered';
-	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
-	import QuoteIcon from '@lucide/svelte/icons/quote';
 
 	let {
 		yxmlfragment,
@@ -45,7 +44,6 @@
 		taskList: false,
 		blockquote: false,
 	});
-
 
 	/**
 	 * Create a Tiptap extension that wraps y-prosemirror plugins for Yjs collaboration.
@@ -200,13 +198,17 @@
 			>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<ToggleGroup.Item value="h1"><Heading1Icon class="size-4" /></ToggleGroup.Item>
+						<ToggleGroup.Item value="h1"
+							><Heading1Icon class="size-4" /></ToggleGroup.Item
+						>
 					</Tooltip.Trigger>
 					<Tooltip.Content>Heading 1</Tooltip.Content>
 				</Tooltip.Root>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<ToggleGroup.Item value="h2"><Heading2Icon class="size-4" /></ToggleGroup.Item>
+						<ToggleGroup.Item value="h2"
+							><Heading2Icon class="size-4" /></ToggleGroup.Item
+						>
 					</Tooltip.Trigger>
 					<Tooltip.Content>Heading 2</Tooltip.Content>
 				</Tooltip.Root>
@@ -232,7 +234,9 @@
 			>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<ToggleGroup.Item value="bullet"><ListIcon class="size-4" /></ToggleGroup.Item>
+						<ToggleGroup.Item value="bullet"
+							><ListIcon class="size-4" /></ToggleGroup.Item
+						>
 					</Tooltip.Trigger>
 					<Tooltip.Content>Bullet List</Tooltip.Content>
 				</Tooltip.Root>
@@ -246,7 +250,9 @@
 				</Tooltip.Root>
 				<Tooltip.Root>
 					<Tooltip.Trigger>
-						<ToggleGroup.Item value="task"><ListChecksIcon class="size-4" /></ToggleGroup.Item>
+						<ToggleGroup.Item value="task"
+							><ListChecksIcon class="size-4" /></ToggleGroup.Item
+						>
 					</Tooltip.Trigger>
 					<Tooltip.Content>Checklist</Tooltip.Content>
 				</Tooltip.Root>
@@ -290,16 +296,16 @@
 		height: 0;
 		pointer-events: none;
 	}
-	:global(.tiptap ul[data-type='taskList']) {
+	:global(.tiptap ul[data-type="taskList"]) {
 		list-style: none;
 		padding-left: 0;
 	}
-	:global(.tiptap ul[data-type='taskList'] li) {
+	:global(.tiptap ul[data-type="taskList"] li) {
 		display: flex;
 		align-items: flex-start;
 		gap: 0.5rem;
 	}
-	:global(.tiptap ul[data-type='taskList'] li > label) {
+	:global(.tiptap ul[data-type="taskList"] li > label) {
 		margin-top: 0.25rem;
 	}
 </style>

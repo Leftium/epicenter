@@ -292,10 +292,7 @@ export function createWorkspace<
 					} as TExtensions & Record<TKey, TExports>,
 					{
 						extensionCleanups: [...state.extensionCleanups, resolved.destroy],
-						whenReadyPromises: [
-							...state.whenReadyPromises,
-							resolved.whenReady,
-						],
+						whenReadyPromises: [...state.whenReadyPromises, resolved.whenReady],
 					},
 				);
 			} catch (err) {
@@ -338,7 +335,8 @@ export function createWorkspace<
 				// Register for document Y.Docs (fires lazily at documents.open() time)
 				documentExtensionRegistrations.push({
 					key,
-					factory: factory as unknown as DocumentExtensionRegistration['factory'],
+					factory:
+						factory as unknown as DocumentExtensionRegistration['factory'],
 					tags: [],
 				});
 				// Register for workspace Y.Doc (fires now, synchronously)

@@ -31,7 +31,13 @@
 		softDeleteNote,
 		sortBy,
 	} from '$lib/state/notes.svelte';
-	import workspaceClient from '$lib/workspace';
+	import workspaceClient, { type FolderId, type NoteId } from '$lib/workspace';
+
+	// ─── Move to Folder ────────────────────────────────────────────────────
+
+	function moveNoteToFolder(noteId: NoteId, folderId: FolderId | undefined) {
+		workspaceClient.tables.notes.update(noteId, { folderId });
+	}
 
 	// ─── Recently Deleted View ──────────────────────────────────────────────
 
@@ -132,6 +138,8 @@
 					onSortChange={setSortBy}
 					onRestoreNote={restoreNote}
 					onPermanentlyDeleteNote={permanentlyDeleteNote}
+					onMoveToFolder={moveNoteToFolder}
+					{folders}
 				/>
 			</Resizable.Pane>
 			<Resizable.Handle />

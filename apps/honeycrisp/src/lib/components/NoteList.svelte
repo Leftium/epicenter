@@ -2,14 +2,12 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
-	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
-	import PinIcon from '@lucide/svelte/icons/pin';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { format, isToday, isYesterday } from 'date-fns';
-	import type { Note, NoteId } from '$lib/workspace';
+	import { differenceInDays, format, isToday, isYesterday } from 'date-fns';
+	import NoteCard from '$lib/components/NoteCard.svelte';
+	import type { Folder, FolderId, Note, NoteId } from '$lib/workspace';
 
 	let {
 		notes,
@@ -25,7 +23,11 @@
 		onPermanentlyDeleteNote = undefined as
 			| ((noteId: NoteId) => void)
 			| undefined,
+		onMoveToFolder = undefined as
+			| ((noteId: NoteId, folderId: FolderId | undefined) => void)
+			| undefined,
 		folderName = 'Notes',
+		folders = [] as Folder[],
 	}: {
 		notes: Note[];
 		selectedNoteId: NoteId | null;
@@ -38,7 +40,11 @@
 		viewMode?: 'normal' | 'recentlyDeleted';
 		onRestoreNote?: ((noteId: NoteId) => void) | undefined;
 		onPermanentlyDeleteNote?: ((noteId: NoteId) => void) | undefined;
+		onMoveToFolder?:
+			| ((noteId: NoteId, folderId: FolderId | undefined) => void)
+			| undefined;
 		folderName?: string;
+		folders?: Folder[];
 	} = $props();
 
 	function parseDateTime(dts: string): Date {
@@ -49,7 +55,10 @@
 		const date = parseDateTime(dts);
 		if (isToday(date)) return 'Today';
 		if (isYesterday(date)) return 'Yesterday';
-		return format(date, 'MMMM d');
+		const daysAgo = differenceInDays(new Date(), date);
+		if (daysAgo <= 7) return 'Previous 7 Days';
+		if (daysAgo <= 30) return 'Previous 30 Days';
+		return format(date, 'MMMM yyyy');
 	}
 
 	const groupedNotes = $derived.by(() => {
@@ -167,100 +176,18 @@
 							{group.label}
 						</h3>
 						{#each group.entries as note (note.id)}
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div
-								class="group relative flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50 {selectedNoteId ===
-								note.id
-									? 'bg-accent'
-									: ''}"
-								onclick={() => onSelectNote(note.id)}
-							>
-								<div class="flex items-start justify-between gap-2">
-									<span class="font-medium line-clamp-1">
-										{#if note.pinned}
-											<PinIcon
-												class="mr-1 inline size-3 fill-current align-baseline"
-											/>
-										{/if}
-										{note.title || 'Untitled'}
-									</span>
-									<span class="shrink-0 text-xs text-muted-foreground">
-										{format(parseDateTime(note.updatedAt), 'h:mm a')}
-									</span>
-								</div>
-								<p class="line-clamp-2 text-xs text-muted-foreground">
-									{note.preview || 'No content'}
-								</p>
-
-								{#if viewMode === 'recentlyDeleted'}
-									<div
-										class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
-										note.id
-											? 'flex'
-											: ''}"
-									>
-										{#if onRestoreNote}
-											<Button
-												variant="ghost"
-												size="icon"
-												class="size-6"
-												onclick={(e) => {
-													e.stopPropagation();
-													onRestoreNote(note.id);
-												}}
-											>
-												<ArchiveRestoreIcon class="size-3" />
-											</Button>
-										{/if}
-										{#if onPermanentlyDeleteNote}
-											<Button
-												variant="ghost"
-												size="icon"
-												class="size-6 text-destructive hover:text-destructive"
-												onclick={(e) => {
-													e.stopPropagation();
-													onPermanentlyDeleteNote(note.id);
-												}}
-											>
-												<TrashIcon class="size-3" />
-											</Button>
-										{/if}
-									</div>
-								{:else}
-									<div
-										class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
-										note.id
-											? 'flex'
-											: ''}"
-									>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="size-6"
-											onclick={(e) => {
-												e.stopPropagation();
-												onPinNote(note.id);
-											}}
-										>
-											<PinIcon
-												class="size-3 {note.pinned ? 'fill-current' : ''}"
-											/>
-										</Button>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="size-6 text-destructive hover:text-destructive"
-											onclick={(e) => {
-												e.stopPropagation();
-												onDeleteNote(note.id);
-											}}
-										>
-											<TrashIcon class="size-3" />
-										</Button>
-									</div>
-								{/if}
-							</div>
+							<NoteCard
+								{note}
+								isSelected={selectedNoteId === note.id}
+								{viewMode}
+								{folders}
+								onSelect={() => onSelectNote(note.id)}
+								onPin={() => onPinNote(note.id)}
+								onDelete={() => onDeleteNote(note.id)}
+								onRestore={() => onRestoreNote?.(note.id)}
+								onPermanentlyDelete={() => onPermanentlyDeleteNote?.(note.id)}
+								onMoveToFolder={(folderId) => onMoveToFolder?.(note.id, folderId)}
+							/>
 						{/each}
 					</div>
 				{/each}

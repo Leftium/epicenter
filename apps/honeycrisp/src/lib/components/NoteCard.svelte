@@ -1,0 +1,207 @@
+<script lang="ts">
+	import * as AlertDialog from '@epicenter/ui/alert-dialog';
+	import { Button } from '@epicenter/ui/button';
+	import * as ContextMenu from '@epicenter/ui/context-menu';
+	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import FolderIcon from '@lucide/svelte/icons/folder';
+	import PinIcon from '@lucide/svelte/icons/pin';
+	import TrashIcon from '@lucide/svelte/icons/trash-2';
+	import { format } from 'date-fns';
+	import type { Folder, FolderId, Note } from '$lib/workspace';
+
+	let {
+		note,
+		isSelected,
+		viewMode = 'normal' as 'normal' | 'recentlyDeleted',
+		folders = [] as Folder[],
+		onSelect,
+		onPin,
+		onDelete,
+		onRestore,
+		onPermanentlyDelete,
+		onMoveToFolder,
+	}: {
+		note: Note;
+		isSelected: boolean;
+		viewMode?: 'normal' | 'recentlyDeleted';
+		folders?: Folder[];
+		onSelect: () => void;
+		onPin?: () => void;
+		onDelete?: () => void;
+		onRestore?: () => void;
+		onPermanentlyDelete?: () => void;
+		onMoveToFolder?: (folderId: FolderId | undefined) => void;
+	} = $props();
+
+	function parseDateTime(dts: string): Date {
+		return new Date(dts.split('|')[0]!);
+	}
+
+	let confirmingPermanentDelete = $state(false);
+</script>
+
+<ContextMenu.Root>
+	<ContextMenu.Trigger>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="group relative flex cursor-pointer flex-col gap-0.5 rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent/50 {isSelected
+				? 'bg-accent'
+				: ''}"
+			onclick={onSelect}
+		>
+			<div class="flex items-start justify-between gap-2">
+				<span class="font-medium line-clamp-1">
+					{#if note.pinned}
+						<PinIcon class="mr-1 inline size-3 fill-current align-baseline" />
+					{/if}
+					{note.title || 'Untitled'}
+				</span>
+				<span class="shrink-0 text-xs text-muted-foreground">
+					{format(parseDateTime(note.updatedAt), 'h:mm a')}
+				</span>
+			</div>
+			<p class="line-clamp-2 text-xs text-muted-foreground">
+				{note.preview || 'No content'}
+			</p>
+
+			{#if viewMode === 'recentlyDeleted'}
+				<div
+					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {isSelected
+						? 'flex'
+						: ''}"
+				>
+					{#if onRestore}
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-6"
+							onclick={(e) => {
+								e.stopPropagation();
+								onRestore();
+							}}
+						>
+							<ArchiveRestoreIcon class="size-3" />
+						</Button>
+					{/if}
+					{#if onPermanentlyDelete}
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-6 text-destructive hover:text-destructive"
+							onclick={(e) => {
+								e.stopPropagation();
+								confirmingPermanentDelete = true;
+							}}
+						>
+							<TrashIcon class="size-3" />
+						</Button>
+					{/if}
+				</div>
+			{:else}
+				<div
+					class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {isSelected
+						? 'flex'
+						: ''}"
+				>
+					<Button
+						variant="ghost"
+						size="icon"
+						class="size-6"
+						onclick={(e) => {
+							e.stopPropagation();
+							onPin?.();
+						}}
+					>
+						<PinIcon class="size-3 {note.pinned ? 'fill-current' : ''}" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
+						class="size-6 text-destructive hover:text-destructive"
+						onclick={(e) => {
+							e.stopPropagation();
+							onDelete?.();
+						}}
+					>
+						<TrashIcon class="size-3" />
+					</Button>
+				</div>
+			{/if}
+		</div>
+	</ContextMenu.Trigger>
+
+	<ContextMenu.Content class="w-48">
+		{#if viewMode === 'recentlyDeleted'}
+			<ContextMenu.Item onclick={() => onRestore?.()}>
+				<ArchiveRestoreIcon class="mr-2 size-4" />
+				Restore
+			</ContextMenu.Item>
+			<ContextMenu.Separator />
+			<ContextMenu.Item
+				class="text-destructive focus:text-destructive"
+				onclick={() => {
+					confirmingPermanentDelete = true;
+				}}
+			>
+				<TrashIcon class="mr-2 size-4" />
+				Delete Permanently
+			</ContextMenu.Item>
+		{:else}
+			<ContextMenu.Item onclick={() => onPin?.()}>
+				<PinIcon class="mr-2 size-4 {note.pinned ? 'fill-current' : ''}" />
+				{note.pinned ? 'Unpin' : 'Pin'}
+			</ContextMenu.Item>
+			<ContextMenu.Separator />
+			<ContextMenu.Sub>
+				<ContextMenu.SubTrigger>
+					<FolderIcon class="mr-2 size-4" />
+					Move to Folder
+				</ContextMenu.SubTrigger>
+				<ContextMenu.SubContent class="w-48">
+					<ContextMenu.Item onclick={() => onMoveToFolder?.(undefined)}>
+						<FileTextIcon class="mr-2 size-4" />
+						Unfiled
+					</ContextMenu.Item>
+					<ContextMenu.Separator />
+					{#each folders as folder (folder.id)}
+						<ContextMenu.Item onclick={() => onMoveToFolder?.(folder.id)}>
+							{#if folder.icon}
+								<span class="mr-2 text-base leading-none">{folder.icon}</span>
+							{:else}
+								<FolderIcon class="mr-2 size-4" />
+							{/if}
+							{folder.name}
+						</ContextMenu.Item>
+					{/each}
+				</ContextMenu.SubContent>
+			</ContextMenu.Sub>
+			<ContextMenu.Separator />
+			<ContextMenu.Item
+				class="text-destructive focus:text-destructive"
+				onclick={() => onDelete?.()}
+			>
+				<TrashIcon class="mr-2 size-4" />
+				Delete
+			</ContextMenu.Item>
+		{/if}
+	</ContextMenu.Content>
+</ContextMenu.Root>
+
+<AlertDialog.Root bind:open={confirmingPermanentDelete}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Delete Permanently?</AlertDialog.Title>
+			<AlertDialog.Description>
+				This note will be permanently deleted. This action cannot be undone.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action onclick={() => onPermanentlyDelete?.()}
+				>Delete</AlertDialog.Action
+			>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

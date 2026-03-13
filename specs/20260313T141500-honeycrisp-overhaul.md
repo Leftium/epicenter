@@ -338,13 +338,13 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Wave 2: Note List Polish
 
-- [ ] **2.1** Extract `NoteCard.svelte` from the inline note rendering in NoteList
-- [ ] **2.2** Wrap each NoteCard in `ContextMenu.Root` with Pin/Move/Delete actions
-- [ ] **2.3** Add "Move to Folder" submenu inside the context menu (list all folders, click to move)
-- [ ] **2.4** Improve date grouping: add "Previous 7 Days", "Previous 30 Days", and month name groups
-- [ ] **2.5** Update NoteList header: show current folder name (not just "Notes"), show note count
-- [ ] **2.6** Soft-delete instead of permanent delete—notes go to "Recently Deleted"
-- [ ] **2.7** Add `AlertDialog` for permanent delete confirmation (only from Recently Deleted view)
+- [x] **2.1** Extract `NoteCard.svelte` from the inline note rendering in NoteList
+- [x] **2.2** Wrap each NoteCard in `ContextMenu.Root` with Pin/Move/Delete actions
+- [x] **2.3** Add "Move to Folder" submenu inside the context menu (list all folders, click to move)
+- [x] **2.4** Improve date grouping: add "Previous 7 Days", "Previous 30 Days", and month name groups
+- [x] **2.5** Update NoteList header: show current folder name (not just "Notes"), show note count
+- [x] **2.6** Soft-delete instead of permanent delete—notes go to "Recently Deleted"
+- [x] **2.7** Add `AlertDialog` for permanent delete confirmation (only from Recently Deleted view)
 
 ### Wave 3: Command Palette
 

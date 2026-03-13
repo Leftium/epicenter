@@ -51,7 +51,7 @@ import {
 	PROVIDER_MODELS,
 	type Provider,
 } from '$lib/ai/providers';
-import { TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
+import { buildDeviceConstraints, TAB_MANAGER_SYSTEM_PROMPT } from '$lib/ai/system-prompt';
 import { toUiMessage } from '$lib/ai/ui-message';
 import { getDeviceId } from '$lib/device/device-id';
 import { remoteServerUrl } from '$lib/state/settings.svelte';
@@ -158,6 +158,11 @@ function createAiChatState() {
 
 	/** Per-conversation ChatClient instances. Plain Map — not read in templates. */
 	const clients = new Map<ConversationId, ChatClient>();
+	/** Per-conversation timeout IDs for stuck 'submitted' status recovery. */
+	const submittedTimers = new Map<ConversationId, ReturnType<typeof setTimeout>>();
+
+	/** Seconds to wait for the server to begin streaming before timing out. */
+	const SUBMITTED_TIMEOUT_MS = 60_000;
 
 	/** Per-conversation handle projections (reactive — read in templates). */
 	const handles = new SvelteMap<
@@ -187,8 +192,6 @@ function createAiChatState() {
 				async () => {
 					const conv = conversations.find((c) => c.id === conversationId);
 					const deviceId = await getDeviceId();
-					const basePrompt = conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT;
-					const deviceContext = `\n\n## Current Device\n\nYour device ID is "${deviceId}". Tab IDs are composite: "deviceId_tabId". You can only modify (close, activate, pin, mute, reload, group) tabs whose ID starts with "${deviceId}_". Tabs from other devices are read-only—do not attempt to close or modify them.`;
 					return {
 						credentials: 'include',
 						body: {
@@ -196,7 +199,12 @@ function createAiChatState() {
 								provider: conv?.provider ?? DEFAULT_PROVIDER,
 								model: conv?.model ?? DEFAULT_MODEL,
 								conversationId,
-								systemPrompts: [basePrompt + deviceContext],
+								// Device constraints first (immutable), then base/custom prompt.
+								// Constraints stay even if the conversation overrides the prompt.
+								systemPrompts: [
+									buildDeviceConstraints(deviceId),
+									conv?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+								],
 								tools: workspaceDefinitions,
 							},
 						},
@@ -230,6 +238,33 @@ function createAiChatState() {
 				console.log('[ai-chat] status:', status, 'conversation:', conversationId);
 				const current = streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE;
 				streamStore.set(conversationId, { ...current, status });
+
+				// Clear any existing submitted-timeout when status changes.
+				const existingTimer = submittedTimers.get(conversationId);
+				if (existingTimer) {
+					clearTimeout(existingTimer);
+					submittedTimers.delete(conversationId);
+				}
+
+				// Start a timeout when entering 'submitted' — if the server
+				// never begins streaming, auto-stop and surface an error.
+				if (status === 'submitted') {
+					const timer = setTimeout(() => {
+						submittedTimers.delete(conversationId);
+						const latest = (streamStore.get(conversationId) ?? DEFAULT_STREAM_STATE).status;
+						if (latest !== 'submitted') return;
+
+						console.warn('[ai-chat] timeout: no response within 60 s, stopping', conversationId);
+						const c = clients.get(conversationId);
+						if (c) c.stop();
+						streamStore.set(conversationId, {
+							isLoading: false,
+							error: new Error('Request timed out. The AI did not respond within 60 seconds.'),
+							status: 'error',
+						});
+					}, SUBMITTED_TIMEOUT_MS);
+					submittedTimers.set(conversationId, timer);
+				}
 			},
 			onError: (error) => {
 				console.error('[ai-chat] stream error:', error.message, 'conversation:', conversationId);

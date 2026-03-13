@@ -99,11 +99,12 @@ These are all standard Lucide icons.
 
 ### Phase 2: Replace Inline SVGs with Icon Components
 
-- [ ] **2.1** Add `lucide-svelte` to `apps/opensidian` dependencies
-- [ ] **2.2** Replace inline ChevronRight SVG in `TreeNode.svelte` with `<ChevronRight>` from lucide-svelte
-- [ ] **2.3** Replace inline Folder/FolderOpen SVGs with `<Folder>` / `<FolderOpen>`
-- [ ] **2.4** Replace inline File SVG with `<FileIcon>` (aliased to avoid name collision)
-- [ ] **2.5** Replace any remaining inline SVGs in `Toolbar.svelte` or other components
+- [x] **2.1** Add `lucide-svelte` to `apps/opensidian` dependencies
+- [x] **2.2** Replace inline ChevronRight SVG in `TreeNode.svelte` with `<ChevronRight>` from lucide-svelte
+- [x] **2.3** Replace inline Folder/FolderOpen SVGs with `<Folder>` / `<FolderOpen>`
+- [x] **2.4** Replace inline File SVG with `<FileIcon>` (aliased to avoid name collision)
+- [x] **2.5** Replace any remaining inline SVGs in `Toolbar.svelte` or other components
+  > **Note**: Toolbar.svelte has no inline SVGs—it uses text-only Button components. No changes needed.
 
 ### Phase 3: Add Missing Primitives
 

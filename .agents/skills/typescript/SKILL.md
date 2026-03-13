@@ -670,51 +670,38 @@ This makes type boundaries visible and intentional, without forcing awkward para
 
 Every `defineTable()` schema MUST use branded ID types for the `id` field and all string foreign keys. Never use plain `'string'` for table IDs.
 
-#### The Three-Part Pattern
-
-Every branded ID type that is generated at runtime MUST follow the three-part pattern:
+For tables that use arktype schemas, follow the three-part pattern:
 
 ```typescript
-import { type Brand } from 'wellcrafted/brand';
-import { type } from 'arktype';
-import { generateId, type Id } from '@epicenter/workspace';
-
-// 1. TYPE — extends Id so generateId() can single-cast
+// 1. TYPE — extends Id, not string (enables single-cast in generator)
 export type SavedTabId = Id & Brand<'SavedTabId'>;
 
-// 2. VALIDATOR — type-only cast via .as<T>() (zero runtime overhead)
+// 2. VALIDATOR — zero-cost type assertion for schema composition
 export const SavedTabId = type('string').as<SavedTabId>();
 
-// 3. FACTORY — generate* prefix, single-cast thanks to Id base
+// 3. GENERATOR — wraps generateId() so the cast lives in one place
 export const generateSavedTabId = (): SavedTabId =>
 	generateId() as SavedTabId;
 ```
 
-| Part | Naming | Required When |
-|------|--------|--------------|
-| Type | PascalCase (`SavedTabId`) | Always — this IS the branded type |
-| Validator | Same PascalCase (TS allows type+value same name) | Used in `defineTable()` or other arktype schemas |
-| Factory | `generate` + PascalCase (`generateSavedTabId`) | IDs are generated at runtime (via `generateId()`) |
+Use directly in the schema: `id: SavedTabId` and for optional FKs: `'parentId?': SavedTabId.or('undefined')`.
 
-Not every branded type needs all three. Path types like `AbsolutePath` are cast from external sources — they need only the type. `DeviceId` is set from `chrome.storage.local`, not generated.
-
-#### Why `Id & Brand<…>` Instead of `string & Brand<…>`
-
-`generateId()` returns `Id` (which is `string & Brand<'Id'>`). If you define `SavedTabId = string & Brand<'SavedTabId'>`, the brands are incompatible—TypeScript requires a double-cast: `generateId() as string as SavedTabId`. By extending `Id` instead of `string`, `SavedTabId` becomes a subtype of `Id`, allowing a single cast: `generateId() as SavedTabId`.
+At call sites, use the generator—never the double-cast:
 
 ```typescript
-// BAD: string & Brand means double-cast needed
-type SavedTabId = string & Brand<'SavedTabId'>;
-const id = generateId() as string as SavedTabId;
+// Good
+const id = generateSavedTabId();
 
-// GOOD: Id & Brand means single-cast
-type SavedTabId = Id & Brand<'SavedTabId'>;
-const id = generateId() as SavedTabId;
+// Bad — scattered casts
+const id = generateId() as string as SavedTabId;
 ```
 
-Then use directly in the schema: `id: ConversationId` and for optional FKs: `'parentId?': ConversationId.or('undefined')`.
+The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
+
+Not every branded type needs all three parts. `DeviceId` is set from an external source (no generator). Path types like `AbsolutePath` need only the type.
 
 See the `workspace-api` skill for the full workspace file structure and rules.
+
 # Extract Coupled `let` State Into Sub-Factories
 
 When a factory function accumulates `let` statements that are always read, written, and reset together, extract them into a sub-factory. The tell: two or three `let` declarations that move as a pack across multiple inner functions.

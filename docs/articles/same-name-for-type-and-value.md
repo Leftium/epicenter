@@ -117,6 +117,22 @@ export function createTabCompositeId(
 Here `TabCompositeId` (the type) and `TabCompositeId` (the const) handle the two-namespace pattern—the type brands your strings, the const validates them in schema definitions. `createTabCompositeId` is the constructor that does real work: it takes the component parts and joins them. The `create` prefix makes intent obvious at call sites.
 
 This three-part split arises when the validator and the constructor have different jobs. The validator says "this string is already a `TabCompositeId`" (deserialization from Y.Doc). The constructor says "build me a new one from these parts." They don't collapse into one function because they serve different callers.
+### Shadowed type with a validator + generator
+
+The variant for IDs generated from scratch. The validator handles deserialization (Y.Doc reads), the generator wraps `generateId()` so the double-cast lives in exactly one place:
+
+````typescript
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+export const SavedTabId = type('string').as<SavedTabId>();
+
+export const generateSavedTabId = (): SavedTabId =>
+  generateId() as SavedTabId;
+````
+
+Three parts, three jobs. The type brands the string. The const validates it in `defineTable()` schemas. The generator creates new ones. Call sites just write `generateSavedTabId()`—no casts, no imports of `generateId`.
+
+The `generate` prefix distinguishes these from `create` factories that compose from parts (like `createTabCompositeId(deviceId, tabId)`). `generate` means "new ID from scratch"; `create` means "assemble from inputs."
+
 
 ### Companion object
 
@@ -147,6 +163,7 @@ export const DateTimeString = {
 | ----------------------- | ---------------------------------------- | -------------------------------------------------- | ------------------------------------ |
 | Constructor function    | `type Id = string & Brand<'Id'>`         | `function Id(s: string): Id`                       | Same as value side                   |
 | Validator + constructor | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').as<…>()`    | `function createTabCompositeId(...)` |
+| Validator + generator  | `type SavedTabId = Id & Brand<…>`        | `const SavedTabId = type('string').as<…>()` | `const generateSavedTabId = () => …`  |
 | Companion object        | `type DateTimeString = ... & Brand<...>` | `const DateTimeString = { parse, stringify, now }` | Methods on the companion             |
 
 ## When Not to Do This

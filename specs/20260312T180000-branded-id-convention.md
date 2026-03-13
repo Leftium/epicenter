@@ -117,3 +117,14 @@ Six commits landed:
 4. `docs(skills): update typescript and workspace-api skills with branded ID factory convention` — documented the three-part pattern in both skills.
 5. `refactor(tab-manager): rename create* ID factories to generate* for cross-package consistency` — aligned with `packages/filesystem` naming convention.
 6. `refactor(tab-manager): extend Id instead of string in branded types to eliminate double-cast` — changed type definitions from `string & Brand<'*'>` to `Id & Brand<'*'>`, enabling single-cast `generateId() as *Id` inside factories. Matches the pattern in `packages/filesystem/src/ids.ts`.
+
+Additional changes (session 2):
+
+7. `refactor(tab-manager): replace .pipe() validators with .as<>() for zero-cost type casts` — all branded ID validators in `workspace.ts` updated from `type('string').pipe((s): T => s as T)` to `type('string').as<T>()`.
+8. `docs(skills): update typescript and workspace-api skills with generate* + .as<>() convention` — skills now show `Id & Brand<>`, `.as<>()`, and `generate*` as the canonical pattern.
+9. `docs(articles): add validator+generator variant to same-name-for-type-and-value.md` — added the fourth same-name variant (type + validator + generator) with summary table row.
+10. `docs(articles): create three-part-branded-id-pattern.md` — standalone article documenting the type + validator + generator convention with rationale for `Id &` vs `string &`, `.as<>()` vs `.pipe()`, and `generate*` vs `create*`.
+
+### Naming Decision
+
+The spec originally proposed `create*` prefix for factories. During implementation, we chose `generate*` instead to match the existing codebase convention (`generateId`, `generateGuid`, `generateFileId`, `generateRowId`, `generateColumnId`). The semantic distinction: `generate*` = new ID from scratch, `create*` = assemble from inputs.

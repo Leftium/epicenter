@@ -101,10 +101,11 @@ These directly contradict established codebase conventions or have correctness i
 
 - [x] **1.1** Move `isRecentlyDeletedView` into `notesState` as `$state(false)` with a getter. Add `selectRecentlyDeleted()` method that sets it to `true` and calls `selectFolder(null)`. Update `selectFolder()` to set it to `false`.
 - [x] **1.2** Add `folderName` as a `$derived` getter on `notesState` (currently a ternary in +page.svelte).
-- [ ] **1.3** Refactor `Sidebar.svelte` to import `notesState` directly. Remove all forwarded data/callback props. Keep only props that are genuinely component-local (editing state).
+- [x] **1.3** Refactor `Sidebar.svelte` to import `notesState` directly. Remove all forwarded data/callback props. Keep only props that are genuinely component-local (editing state).
 - [ ] **1.4** Refactor `NoteList.svelte` to import `notesState` directly. The only prop it should receive is potentially `viewMode` (or derive it from `notesState.isRecentlyDeletedView`).
-- [ ] **1.5** Refactor `NoteCard.svelte` to import `notesState` directly. Props reduce to `note` and `isSelected`. Actions call `notesState.softDeleteNote(note.id)` etc. directly.
-- [ ] **1.6** Refactor `CommandPalette.svelte` to import `notesState` directly. Only prop: `open` (bindable).
+- [x] **1.5** Refactor `NoteCard.svelte` to import `notesState` directly. Props reduce to `note` and `isSelected`. Actions call `notesState.softDeleteNote(note.id)` etc. directly.
+  > **Note**: Props reduced to just `note` — `isSelected` is now computed internally via `$derived`.
+- [x] **1.6** Refactor `CommandPalette.svelte` to import `notesState` directly. Only prop: `open` (bindable).
 - [ ] **1.7** Slim down `+page.svelte` to layout + document handle `$effect` + keyboard shortcuts only.
 - [x] **1.8** Fix `generateId() as unknown as FolderId` → `generateId() as string as FolderId` in `notes.svelte.ts` (2 occurrences: `createFolder` and `createNote`).
 
@@ -114,8 +115,10 @@ These improve maintainability but don't fix correctness issues.
 
 - [x] **2.1** Extract `parseDateTime(dts: string): Date` to `$lib/utils/date.ts`. Remove duplicates from NoteCard and NoteList.
 - [x] **2.2** Rename `handleContentChange` → `updateNoteContent` in `notesState` (and update the call site in +page.svelte / Editor).
-- [ ] **2.3** Remove unnecessary `as` casts in NoteCard prop defaults (`viewMode = 'normal' as 'normal' | 'recentlyDeleted'` → just `viewMode = 'normal'`).
-- [ ] **2.4** Clean up `onSortChange` → `onSortChange` / `setSortBy` naming inconsistency (will be resolved by direct import in Tier 1, but verify).
+- [x] **2.3** Remove unnecessary `as` casts in NoteCard prop defaults (`viewMode = 'normal' as 'normal' | 'recentlyDeleted'` → just `viewMode = 'normal'`).
+  > **Note**: Resolved by removing all those props entirely — NoteCard now reads from notesState directly.
+- [x] **2.4** Clean up `onSortChange` → `onSortChange` / `setSortBy` naming inconsistency (will be resolved by direct import in Tier 1, but verify).
+  > **Note**: Resolved — components now call `notesState.setSortBy()` directly, no more prop indirection.
 
 ### Tier 3 — Nice to Have (polish)
 

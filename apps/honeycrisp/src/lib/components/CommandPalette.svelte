@@ -4,25 +4,9 @@
 	import FolderIcon from '@lucide/svelte/icons/folder';
 	import FolderPlusIcon from '@lucide/svelte/icons/folder-plus';
 	import PlusIcon from '@lucide/svelte/icons/plus';
-	import type { Folder, FolderId, Note, NoteId } from '$lib/workspace';
+	import { notesState } from '$lib/state/notes.svelte';
 
-	let {
-		open = $bindable(false),
-		notes,
-		folders,
-		onSelectNote,
-		onSelectFolder,
-		onCreateNote,
-		onCreateFolder,
-	}: {
-		open: boolean;
-		notes: Note[];
-		folders: Folder[];
-		onSelectNote: (noteId: NoteId) => void;
-		onSelectFolder: (folderId: FolderId | null) => void;
-		onCreateNote: () => void;
-		onCreateFolder: () => void;
-	} = $props();
+	let { open = $bindable(false) }: { open: boolean } = $props();
 </script>
 
 <Command.Dialog bind:open>
@@ -33,17 +17,17 @@
 		<Command.Group heading="Folders">
 			<Command.Item
 				onSelect={() => {
-					onSelectFolder(null);
+					notesState.selectFolder(null);
 					open = false;
 				}}
 			>
 				<FileTextIcon class="mr-2 size-4" />
 				All Notes
 			</Command.Item>
-			{#each folders as folder (folder.id)}
+			{#each notesState.folders as folder (folder.id)}
 				<Command.Item
 					onSelect={() => {
-						onSelectFolder(folder.id);
+						notesState.selectFolder(folder.id);
 						open = false;
 					}}
 				>
@@ -60,10 +44,10 @@
 		<Command.Separator />
 
 		<Command.Group heading="Notes">
-			{#each notes as note (note.id)}
+			{#each notesState.notes as note (note.id)}
 				<Command.Item
 					onSelect={() => {
-						onSelectNote(note.id);
+					notesState.selectNote(note.id);
 						open = false;
 					}}
 				>
@@ -85,7 +69,7 @@
 		<Command.Group heading="Actions">
 			<Command.Item
 				onSelect={() => {
-					onCreateNote();
+				notesState.createNote();
 					open = false;
 				}}
 			>
@@ -94,7 +78,7 @@
 			</Command.Item>
 			<Command.Item
 				onSelect={() => {
-					onCreateFolder();
+				notesState.createFolder();
 					open = false;
 				}}
 			>

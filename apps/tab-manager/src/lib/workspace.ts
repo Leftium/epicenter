@@ -17,7 +17,10 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
+	generateId,
+	type Id,
 	type InferTableRow,
+	iterateActions,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
 import { broadcastChannelSync } from '@epicenter/workspace/extensions/sync/broadcast-channel';
@@ -74,17 +77,32 @@ export const TAB_GROUP_ID_NONE = -1;
  * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
  */
 export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
+export const DeviceId = type('string').as<DeviceId>();
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = string & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').pipe(
-	(s): SavedTabId => s as SavedTabId,
-);
+export type SavedTabId = Id & Brand<'SavedTabId'>;
+export const SavedTabId = type('string').as<SavedTabId>();
+/**
+ * Generate a unique {@link SavedTabId} for a newly saved tab.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.savedTabs.set({
+ *   id: generateSavedTabId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -92,10 +110,25 @@ export const SavedTabId = type('string').pipe(
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = string & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').pipe(
-	(s): BookmarkId => s as BookmarkId,
-);
+export type BookmarkId = Id & Brand<'BookmarkId'>;
+export const BookmarkId = type('string').as<BookmarkId>();
+/**
+ * Generate a unique {@link BookmarkId} for a newly created bookmark.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * workspaceClient.tables.bookmarks.set({
+ *   id: generateBookmarkId(),
+ *   url: tab.url,
+ *   title: tab.title || 'Untitled',
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
@@ -103,20 +136,59 @@ export const BookmarkId = type('string').pipe(
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = string & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+export type ConversationId = Id & Brand<'ConversationId'>;
+export const ConversationId = type('string').as<ConversationId>();
+/**
+ * Generate a unique {@link ConversationId} for a new chat conversation.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const id = generateConversationId();
+ * workspaceClient.tables.conversations.set({
+ *   id,
+ *   title: 'New Chat',
+ *   provider: DEFAULT_PROVIDER,
+ *   model: DEFAULT_MODEL,
+ *   createdAt: Date.now(),
+ *   updatedAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateConversationId = (): ConversationId =>
+	generateId() as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = string & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').pipe(
-	(s): ChatMessageId => s as ChatMessageId,
-);
+export type ChatMessageId = Id & Brand<'ChatMessageId'>;
+export const ChatMessageId = type('string').as<ChatMessageId>();
+/**
+ * Generate a unique {@link ChatMessageId} for a new chat message.
+ *
+ * Wraps `generateId()` with the branded cast so call sites never
+ * need a manual cast.
+ *
+ * @example
+ * ```typescript
+ * const userMessageId = generateChatMessageId();
+ * workspaceClient.tables.chatMessages.set({
+ *   id: userMessageId,
+ *   conversationId,
+ *   role: 'user',
+ *   parts: [{ type: 'text', content }],
+ *   createdAt: Date.now(),
+ *   // …remaining fields
+ * });
+ * ```
+ */
+export const generateChatMessageId = (): ChatMessageId =>
+	generateId() as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types
@@ -128,9 +200,7 @@ export const ChatMessageId = type('string').pipe(
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 
 /**
  * Device-scoped composite window ID: `${deviceId}_${windowId}`.
@@ -138,9 +208,7 @@ export const TabCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or group IDs.
  */
 export type WindowCompositeId = string & Brand<'WindowCompositeId'>;
-export const WindowCompositeId = type('string').pipe(
-	(s): WindowCompositeId => s as WindowCompositeId,
-);
+export const WindowCompositeId = type('string').as<WindowCompositeId>();
 
 /**
  * Device-scoped composite group ID: `${deviceId}_${groupId}`.
@@ -148,9 +216,7 @@ export const WindowCompositeId = type('string').pipe(
  * Prevents accidental mixing with plain strings, tab IDs, or window IDs.
  */
 export type GroupCompositeId = string & Brand<'GroupCompositeId'>;
-export const GroupCompositeId = type('string').pipe(
-	(s): GroupCompositeId => s as GroupCompositeId,
-);
+export const GroupCompositeId = type('string').as<GroupCompositeId>();
 
 /**
  * Create a device-scoped composite tab ID: `${deviceId}_${tabId}`.
@@ -476,6 +542,25 @@ const chatMessagesTable = defineTable(
 );
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
+/**
+ * Tool trust — per-tool approval preferences for AI chat.
+ *
+ * Each row represents a user's trust decision for a specific destructive tool.
+ * Tools not in this table default to 'ask' (show approval UI). Users can
+ * escalate to 'always' (auto-approve) via the inline approval buttons.
+ *
+ * The `id` is the tool name (e.g. 'tabs_close') — the same string used
+ * in action paths and tool definitions.
+ */
+const toolTrustTable = defineTable(
+	type({
+		id: 'string',
+		trust: "'ask' | 'always'",
+		_v: '1',
+	}),
+);
+export type ToolTrust = InferTableRow<typeof toolTrustTable>;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Client
 // ─────────────────────────────────────────────────────────────────────────────
@@ -500,6 +585,7 @@ export const workspaceClient = createWorkspace(
 			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
 			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
 		},
 	}),
 )
@@ -515,6 +601,7 @@ export const workspaceClient = createWorkspace(
 	.withActions(({ tables }) => ({
 		tabs: {
 			search: defineQuery({
+				title: 'Search Tabs',
 				description:
 					'Search tabs by URL or title match. Returns matching tabs across all devices, optionally scoped to one device.',
 				input: Type.Object({
@@ -544,6 +631,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			list: defineQuery({
+				title: 'List Tabs',
 				description:
 					'List all open tabs. Optionally filter by device or window.',
 				input: Type.Object({
@@ -574,7 +662,9 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			close: defineMutation({
+				title: 'Close Tabs',
 				description: 'Close one or more tabs by their composite IDs.',
+				destructive: true,
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),
@@ -585,6 +675,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			open: defineMutation({
+				title: 'Open Tab',
 				description: 'Open a new tab with the given URL on the current device.',
 				input: Type.Object({
 					url: Type.String(),
@@ -596,6 +687,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			activate: defineMutation({
+				title: 'Activate Tab',
 				description: 'Activate (focus) a specific tab by its composite ID.',
 				input: Type.Object({
 					tabId: Type.String(),
@@ -607,6 +699,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			save: defineMutation({
+				title: 'Save Tabs',
 				description: 'Save tabs for later. Optionally close them after saving.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -624,6 +717,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			group: defineMutation({
+				title: 'Group Tabs',
 				description: 'Group tabs together with an optional title and color.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -637,6 +731,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			pin: defineMutation({
+				title: 'Pin Tabs',
 				description: 'Pin or unpin tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -649,6 +744,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			mute: defineMutation({
+				title: 'Mute Tabs',
 				description: 'Mute or unmute tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -661,6 +757,7 @@ export const workspaceClient = createWorkspace(
 			}),
 
 			reload: defineMutation({
+				title: 'Reload Tabs',
 				description: 'Reload one or more tabs.',
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
@@ -674,6 +771,7 @@ export const workspaceClient = createWorkspace(
 
 		windows: {
 			list: defineQuery({
+				title: 'List Windows',
 				description:
 					'List all browser windows with their tab counts. Optionally filter by device.',
 				input: Type.Object({
@@ -701,6 +799,7 @@ export const workspaceClient = createWorkspace(
 
 		devices: {
 			list: defineQuery({
+				title: 'List Devices',
 				description:
 					'List all synced devices with their names, browsers, and online status.',
 				input: Type.Object({}),
@@ -720,6 +819,7 @@ export const workspaceClient = createWorkspace(
 
 		domains: {
 			count: defineQuery({
+				title: 'Count Domains',
 				description:
 					'Count open tabs grouped by domain (e.g. youtube.com: 5, github.com: 3). Optionally filter by device.',
 				input: Type.Object({
@@ -754,6 +854,18 @@ export const workspaceDefinitions = toToolDefinitions(workspaceTools);
 
 export type WorkspaceTools = typeof workspaceTools;
 export type WorkspaceActionName = WorkspaceTools[number]['name'];
+
+/**
+ * Lookup map from tool name to human-readable title.
+ *
+ * Used by `ToolCallPart.svelte` to display action titles instead of
+ * deriving names from underscore-separated tool names.
+ */
+export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
+	[...iterateActions(workspaceClient.actions)]
+		.filter(([action]) => action.title !== undefined)
+		.map(([action, path]) => [path.join('_'), action.title!]),
+);
 
 /**
  * Reconnect the sync extension with fresh auth credentials.

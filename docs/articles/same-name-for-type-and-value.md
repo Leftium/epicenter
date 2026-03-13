@@ -4,7 +4,7 @@ TypeScript has two parallel namespaces: one for types, one for values. Most peop
 
 ```typescript
 export type FileId = Guid & Brand<'FileId'>;
-export const FileId = type('string').pipe((s): FileId => s as FileId);
+export const FileId = type('string').as<FileId>();
 ```
 
 `FileId` here is two things at once. In type position it's a branded string. In value position it's an arktype schema that validates and brands at runtime. Same name, zero ambiguity, because TypeScript resolves which one you mean from context.
@@ -20,9 +20,7 @@ Here's the underrated part. When you hover over `FileId` in your IDE—whether y
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 ```
 
 Hover over `TabCompositeId` anywhere in the codebase and you'll see that doc comment. Whether it's used as a type annotation on a function parameter, or as a runtime schema passed into `defineTable`—same hover, same docs.
@@ -97,9 +95,7 @@ Sometimes the value-side name is taken by a schema validator (for deserializatio
  * Prevents accidental mixing with plain strings, window IDs, or group IDs.
  */
 export type TabCompositeId = string & Brand<'TabCompositeId'>;
-export const TabCompositeId = type('string').pipe(
-	(s): TabCompositeId => s as TabCompositeId,
-);
+export const TabCompositeId = type('string').as<TabCompositeId>();
 
 /**
  * Create a device-scoped composite tab ID from its parts.
@@ -150,7 +146,7 @@ export const DateTimeString = {
 | Variant                 | Type Side                                | Value Side                                         | Constructor                          |
 | ----------------------- | ---------------------------------------- | -------------------------------------------------- | ------------------------------------ |
 | Constructor function    | `type Id = string & Brand<'Id'>`         | `function Id(s: string): Id`                       | Same as value side                   |
-| Validator + constructor | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').pipe(...)`  | `function createTabCompositeId(...)` |
+| Validator + constructor | `type TabCompositeId = ... & Brand<...>` | `const TabCompositeId = type('string').as<…>()`    | `function createTabCompositeId(...)` |
 | Companion object        | `type DateTimeString = ... & Brand<...>` | `const DateTimeString = { parse, stringify, now }` | Methods on the companion             |
 
 ## When Not to Do This

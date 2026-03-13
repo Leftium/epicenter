@@ -682,10 +682,8 @@ import { generateId, type Id } from '@epicenter/workspace';
 // 1. TYPE — extends Id so generateId() can single-cast
 export type SavedTabId = Id & Brand<'SavedTabId'>;
 
-// 2. VALIDATOR — arktype pipe for schema composition in defineTable()
-export const SavedTabId = type('string').pipe(
-	(s): SavedTabId => s as SavedTabId,
-);
+// 2. VALIDATOR — type-only cast via .as<T>() (zero runtime overhead)
+export const SavedTabId = type('string').as<SavedTabId>();
 
 // 3. FACTORY — generate* prefix, single-cast thanks to Id base
 export const generateSavedTabId = (): SavedTabId =>

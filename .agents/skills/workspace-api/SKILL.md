@@ -105,9 +105,7 @@ import { generateId, type Id } from '@epicenter/workspace';
 
 // 1. Branded type — extends Id for single-cast generation
 export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').pipe(
-	(s): ConversationId => s as ConversationId,
-);
+export const ConversationId = type('string').as<ConversationId>();
 
 // 2. Factory function — single-cast thanks to Id base type
 export const generateConversationId = (): ConversationId =>

@@ -57,7 +57,7 @@ The double-cast `generateId() as string as SavedTabId` appeared in **7 sites acr
 
 **Resolution**: A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part branded ID convention:
 1. `type SavedTabId = Id & Brand<'SavedTabId'>` — branded type extending `Id` for single-cast
-2. `const SavedTabId = type('string').pipe(...)` — arktype validator for schema composition
+2. `const SavedTabId = type('string').as<SavedTabId>()` — arktype validator (zero-cost type cast)
 3. `const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId` — factory with single-cast
 
 This applies to all branded IDs codebase-wide, not just `SavedTabId`.

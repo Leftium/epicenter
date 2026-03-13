@@ -5,10 +5,8 @@
  */
 
 import type * as Y from 'yjs';
-import type {
-	YKeyValueLww,
-	YKeyValueLwwChange,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	DeleteResult,
 	GetResult,
@@ -27,7 +25,7 @@ export function createTableHelper<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(
-	ykv: Pick<YKeyValueLww<unknown>, 'set' | 'get' | 'has' | 'delete' | 'map' | 'observe' | 'unobserve'>,
+	ykv: YKeyValueLwwEncrypted<unknown>,
 	definition: TTableDefinition,
 ): TableHelper<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;

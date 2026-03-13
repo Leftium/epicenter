@@ -80,7 +80,7 @@ type EncryptedKvLwwOptions = { getKey?: () => Uint8Array | undefined };
  * so it's a drop-in replacement. All values exposed through this type are
  * **plaintext**—encryption is fully transparent to consumers.
  */
-export type EncryptedKvLww<T> = {
+export type YKeyValueLwwEncrypted<T> = {
 	set(key: string, val: T): void;
 	get(key: string): T | undefined;
 	has(key: string): boolean;
@@ -138,7 +138,7 @@ export type EncryptedKvLww<T> = {
 export function createEncryptedKvLww<T>(
 	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
 	options?: EncryptedKvLwwOptions,
-): EncryptedKvLww<T> {
+): YKeyValueLwwEncrypted<T> {
 	/**
 	 * The inner LWW store that handles all CRDT logic. It sees `EncryptedBlob | T`
 	 * as its value type—it doesn't know or care that some values are ciphertext.

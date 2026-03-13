@@ -1,9 +1,19 @@
 # Workspace Architecture: Desktop App & AI Scripting Platform
 
 **Date**: 2026-03-13
-**Status**: Draft — amended 2026-03-13 (HTTP architecture revision, editor choice)
+**Status**: Draft — amended 2026-03-13 (HTTP architecture, editor choice, centralized workspace model)
 **Supersedes**: Aspects of `20260225T210000-workspace-apps-orchestrator.md` (centralized model) and `20260312T211500-headless-workspace-runner.md` (runner-specific decisions)
 
+### Revision: Centralized Workspace Model (2026-03-13)
+
+Simplified from "per-folder anywhere + discovery cache" to "all workspaces live in `~/.epicenter/workspaces/`." Key changes:
+
+- **Decision 1**: Workspaces always live in `~/.epicenter/workspaces/`, not scattered across the filesystem. Eliminates discovery cache, self-registration, and scan logic.
+- **Decision 6**: Aggregation becomes trivial `readdir()`. No `known-workspaces.json`.
+- **Removed**: Cache schema, pruning logic, self-registration mechanism, scan locations.
+- **Unchanged**: Decisions 2–5, 7–8 (config exports, module resolution, Bun server, Monaco types, HTTP protocol, editor choice).
+
+Rationale: Browser configs will diverge from server configs anyway (different action sets, no FS extensions). Workspaces are Epicenter artifacts, not project artifacts. The per-folder model added discovery complexity for a use case that doesn't exist yet. Obsidian, VS Code, Docker, and every comparable tool uses a centralized registry — none do recursive filesystem scanning as primary discovery.
 ---
 
 ## Table of Contents
@@ -11,7 +21,7 @@
 1. [Context & Background](#context--background)
 2. [The Vision](#the-vision)
 3. [Architecture Overview](#architecture-overview)
-4. [Decision 1: Per-Folder Workspace Model](#decision-1-per-folder-workspace-model)
+4. [Decision 1: Centralized Workspace Model](#decision-1-centralized-workspace-model)
 5. [Decision 2: Config Exports Full Builder Chain](#decision-2-config-exports-full-builder-chain)
 6. [Decision 3: Module Resolution](#decision-3-module-resolution-via-bun-add)
 7. [Decision 4: Bun App Server](#decision-4-bun-app-server)
@@ -113,150 +123,158 @@ If this works, simpler use cases (single-workspace runner, CLI metadata, browser
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           YOUR MACHINE                                   │
-│                                                                          │
-│   Workspace Folders (scattered across filesystem)                        │
-│   ┌────────────────────┐  ┌────────────────────┐  ┌──────────────────┐  │
-│   │ ~/projects/blog/   │  │ ~/projects/notes/  │  │ ~/.epicenter/    │  │
-│   │ ├─ epicenter       │  │ ├─ epicenter       │  │  workspaces/     │  │
-│   │ │  .config.ts      │  │ │  .config.ts      │  │  habits/         │  │
-│   │ ├─ .epicenter/     │  │ ├─ .epicenter/     │  │  ├─ epicenter    │  │
-│   │ │  └─ data/        │  │ │  └─ data/        │  │  │  .config.ts   │  │
-│   │ │     └─ blog.db   │  │ │     └─ notes.db  │  │  ├─ .epicenter/  │  │
-│   │ ├─ package.json    │  │ ├─ package.json    │  │  │  └─ data/     │  │
-│   │ └─ node_modules/   │  │ └─ node_modules/   │  │  └─ node_modules │  │
-│   └────────────────────┘  └────────────────────┘  └──────────────────┘  │
-│            │                        │                       │            │
-│            └────────────────────────┼───────────────────────┘            │
-│                                     │                                    │
-│                                     ▼                                    │
-│   Discovery Cache: ~/.epicenter/known-workspaces.json                    │
-│   ┌──────────────────────────────────────────────────────────────────┐   │
-│   │ ["/Users/you/projects/blog", "/Users/you/projects/notes",        │   │
-│   │  "/Users/you/.epicenter/workspaces/habits"]                      │   │
-│   └──────────────────────────────────────────────────────────────────┘   │
-│                                     │                                    │
-│                                     ▼                                    │
-│   ┌──────────────────────────────────────────────────────────────────┐   │
-│   │                      Tauri Desktop App                            │   │
-│   │                                                                   │   │
-│   │   ┌── Rust Shell (thin) ──┐                                      │   │
-│   │   │  • Spawns Bun         │                                      │   │
-│   │   │  • Opens webview      │                                      │   │
-│   │   │  • System tray/menus  │                                      │   │
-│   │   │  • Kills Bun on close │                                      │   │
-│   │   └───────────┬───────────┘                                      │   │
-│   │               │ spawns                                           │   │
-│   │               ▼                                                  │   │
-│   │   ┌── Bun App Server (http://127.0.0.1:{PORT}) ───────────────┐ │   │
-│   │   │                                                           │ │   │
-│   │   │  Serves:                    Runtime:                      │ │   │
-│   │   │  GET /          → SPA       import() each config          │ │   │
-│   │   │  GET /assets/*  → static    from its folder               │ │   │
-│   │   │  GET /api/workspaces        clients = {                   │ │   │
-│   │   │  GET /api/types             blog:   live client,          │ │   │
-│   │   │  POST /api/run              notes:  live client,          │ │   │
-│   │   │  WS  /api/ws                habits: live client,          │ │   │
-│   │   │                             }                             │ │   │
-│   │   └───────────────────────────────────────────────────────────┘ │   │
-│   │               ▲                                                  │   │
-│   │               │ HTTP / WebSocket                                 │   │
-│   │               ▼                                                  │   │
-│   │   ┌── Webview ────────────────────────────────────────────────┐  │   │
-│   │   │  Svelte UI loaded from http://127.0.0.1:{PORT}           │  │   │
-│   │   │  • Workspace list      • Monaco editor                   │  │   │
-│   │   │  • Script output       • AI chat                         │  │   │
-│   │   │                                                          │  │   │
-│   │   │  fetch('/api/workspaces')  → workspace list               │  │   │
-│   │   │  fetch('/api/types')       → .ts files for Monaco        │  │   │
-│   │   │  fetch('/api/run', {code}) → execute script               │  │   │
-│   │   │  new WebSocket('/api/ws')  → streaming output             │  │   │
-│   │   └──────────────────────────────────────────────────────────┘  │   │
-│   └──────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+                        YOUR MACHINE
+
+  ~/.epicenter/
+  +-- workspaces/                  <-- ALL workspaces live here
+  |   +-- blog/
+  |   |   +-- epicenter.config.ts
+  |   |   +-- .epicenter/
+  |   |   |   +-- providers/
+  |   |   |       +-- persistence/blog.yjs
+  |   |   |       +-- sqlite/blog.db
+  |   |   +-- package.json
+  |   |   +-- node_modules/
+  |   |       +-- @epicenter/workspace/
+  |   |
+  |   +-- notes/
+  |   |   +-- epicenter.config.ts
+  |   |   +-- .epicenter/
+  |   |   +-- package.json
+  |   |   +-- node_modules/
+  |   |
+  |   +-- habit-tracker/
+  |       +-- epicenter.config.ts
+  |       +-- .epicenter/
+  |       +-- package.json
+  |       +-- node_modules/
+  |
+  Discovery: readdir('~/.epicenter/workspaces/')  -- that's it.
+  No cache. No self-registration. No scanning.
+
+  +---------------------------------------------------------------------+
+  |                      Tauri Desktop App                              |
+  |                                                                     |
+  |   +-- Rust Shell (thin) --+                                        |
+  |   |  * Spawns Bun         |                                        |
+  |   |  * Opens webview      |                                        |
+  |   |  * System tray/menus  |                                        |
+  |   |  * Kills Bun on close |                                        |
+  |   +----------+------------+                                        |
+  |              | spawns                                              |
+  |              v                                                     |
+  |   +-- Bun App Server (http://127.0.0.1:{PORT}) -----------------+ |
+  |   |                                                             | |
+  |   |  Serves:                    Runtime:                        | |
+  |   |  GET /          -> SPA       readdir(workspacesDir)         | |
+  |   |  GET /assets/*  -> static    import() each config           | |
+  |   |  GET /api/workspaces        clients = {                     | |
+  |   |  GET /api/types               blog:   live client,          | |
+  |   |  POST /api/run                notes:  live client,          | |
+  |   |  WS  /api/ws                  habits: live client,          | |
+  |   |                              }                              | |
+  |   +-------------------------------------------------------------+ |
+  |              ^                                                     |
+  |              | HTTP / WebSocket                                    |
+  |              v                                                     |
+  |   +-- Webview --------------------------------------------------+ |
+  |   |  Svelte UI loaded from http://127.0.0.1:{PORT}              | |
+  |   |  * Workspace list      * Monaco editor                      | |
+  |   |  * Script output       * AI chat                            | |
+  |   +-------------------------------------------------------------+ |
+  +---------------------------------------------------------------------+
 ```
 
 ---
 
-## Decision 1: Per-Folder Workspace Model
+## Decision 1: Centralized Workspace Model
 
 ### Answer
 
-A workspace is an **isolated instance** with a stable ID, a config file, and a state namespace. On filesystem runtimes, each instance lives in its own folder.
+All workspaces live in `~/.epicenter/workspaces/`. A workspace is an **isolated instance** with a stable ID, a config file, and a state namespace. Each instance is a subfolder of the centralized workspaces directory.
 
 ### What a Workspace Folder Looks Like
 
 ```
-~/projects/blog/
-├── epicenter.config.ts          ← Schema + extensions + actions
-├── .epicenter/                  ← State namespace (gitignored)
-│   └── providers/
-│       ├── persistence/
-│       │   └── blog.yjs         ← Yjs persistence
-│       └── sqlite/
-│           ├── blog.db          ← SQLite materialization
-│           └── logs/
-│               └── blog.log
-├── package.json                 ← Has @epicenter/workspace dep
-└── node_modules/
-    └── @epicenter/workspace/    ← Resolved locally
-```
-
-### App-Managed Workspaces (Installed from jsrepo)
-
-```
 ~/.epicenter/
-├── known-workspaces.json        ← Discovery cache (NOT source of truth)
-└── workspaces/
-    └── habit-tracker/           ← Same structure as any workspace folder
-        ├── epicenter.config.ts
-        ├── .epicenter/
-        │   └── providers/...
-        ├── package.json
-        └── node_modules/
++-- workspaces/
+|   +-- blog/
+|   |   +-- epicenter.config.ts      <-- Schema + extensions + actions
+|   |   +-- .epicenter/              <-- State namespace (gitignored)
+|   |   |   +-- providers/
+|   |   |       +-- persistence/
+|   |   |       |   +-- blog.yjs     <-- Yjs persistence
+|   |   |       +-- sqlite/
+|   |   |           +-- blog.db      <-- SQLite materialization
+|   |   +-- package.json             <-- Has @epicenter/workspace dep
+|   |   +-- node_modules/
+|   |       +-- @epicenter/workspace/ <-- Resolved locally (Bun hard-links to global cache)
+|   |
+|   +-- habit-tracker/               <-- Installed via `epicenter install`
+|   |   +-- epicenter.config.ts
+|   |   +-- .epicenter/
+|   |   +-- package.json
+|   |   +-- node_modules/
+|   |
+|   +-- notes/                       <-- Created via `epicenter init`
+|       +-- epicenter.config.ts
+|       +-- .epicenter/
+|       +-- package.json
+|       +-- node_modules/
 ```
 
-Both are the same model. `~/.epicenter/workspaces/` is just where `epicenter install` puts things. It's still a regular folder.
+Every workspace has its own `node_modules/` for version isolation. Bun's global cache means this costs near-zero disk space (hard links, not copies).
 
 ### Discovery
 
-`~/.epicenter/known-workspaces.json` is a **cache**, never source of truth:
+Discovery is a single `readdir()` call:
 
-```json
-[
-  "/Users/you/projects/blog",
-  "/Users/you/projects/notes",
-  "/Users/you/.epicenter/workspaces/habit-tracker"
-]
+```typescript
+const entries = await readdir(join(epicenterHome, 'workspaces'), { withFileTypes: true });
+// For each subdirectory: check for epicenter.config.ts, import it.
+// That's it. No cache file. No self-registration. No scanning.
 ```
 
-- Validated on open/startup (check folder still exists, config still valid)
-- Dead entries pruned lazily
-- New workspaces self-register when first run
-- Desktop app can also scan common locations or accept manual adds
+No `known-workspaces.json`. No stale path validation. No pruning logic. The filesystem IS the source of truth.
+
+### How Workspaces Get Created
+
+| Method | What happens |
+|--------|-------------|
+| `epicenter install <name>` | Downloads workspace into `~/.epicenter/workspaces/<name>/`, runs `bun install` |
+| `epicenter init <name>` | Creates `~/.epicenter/workspaces/<name>/` with starter config, runs `bun install` |
+| Desktop app UI | "Create workspace" button, equivalent to `epicenter init` |
+
+All three create the workspace in the same location. There is no "workspace in an arbitrary directory" concept.
+
+### Why Not Per-Folder Anywhere?
+
+The original spec supported workspaces scattered across the filesystem (e.g., `~/projects/blog/epicenter.config.ts`). This was dropped because:
+
+1. **Discovery complexity**: Required a cache file (`known-workspaces.json`), self-registration on `epicenter init`, stale path pruning, and configurable scan locations.
+2. **Browser configs diverge anyway**: Browser apps need different action sets and can't use FS extensions (SQLite). The config in `~/projects/blog/` wouldn't be the same config the desktop app uses.
+3. **No real demand**: The per-folder model served a hypothetical "workspace-powered app" use case that doesn't exist yet.
+4. **Precedent**: Obsidian, VS Code, Docker, Homebrew, and every comparable tool uses centralized storage. None do recursive filesystem scanning.
 
 ### Key Rules
 
 | Rule | Rationale |
 |------|-----------|
-| **Path ≠ identity** | Workspace ID (e.g., `epicenter.blog`) is the stable identifier. Folder can be moved. |
+| **ID is identity, not path** | Workspace ID (e.g., `blog`) is the stable identifier. Folder name within `workspaces/` is just a convenience. |
 | **`.epicenter/` is one replica** | For shared workspaces, the sync layer is the source of truth. Local state is one copy. |
-| **No global control plane** | Discovery is just "find folders with `epicenter.config.ts`." No registry database. |
-| **No symlinks** | The orchestrator spec's symlink model is dropped. Direct folder paths are simpler. |
+| **One directory, one `readdir()`** | No registry database, no cache, no symlinks. |
+| **Per-workspace `node_modules/`** | Version isolation. Bun hard-links to global cache, so disk cost is near-zero. |
 
 ### Stress Test Results (Oracle)
 
-| Scenario | How Per-Folder Handles It |
+| Scenario | How Centralized Handles It |
 |----------|--------------------------|
-| **Installed workspace with no project** | App-managed folder in `~/.epicenter/workspaces/`. Still per-folder. |
-| **GUI-only user (never uses CLI)** | Same — they just never see the folder. App manages it. |
-| **50 workspaces, stale paths** | Validate on open, prune lazily. Staleness only affects discovery, not correctness. |
+| **Installed workspace** | `epicenter install` puts it in `~/.epicenter/workspaces/`. Found by `readdir()`. |
+| **GUI-only user (never uses CLI)** | Desktop app creates workspaces in the same directory. They never see the folder. |
+| **50 workspaces** | `readdir()` returns 50 entries. Each import is parallel. Startup: 1-3s. |
 | **Shared team workspace** | Local `.epicenter/` is one replica. Sync layer is source of truth. |
-| **CI/CD (no persistent state)** | Fine — `.epicenter/` is disposable if sync can rebuild it. |
-| **Cloud/mobile (no filesystem)** | Future: host abstraction. Not needed now. "Workspace = instance; folder is the default local host." |
-
----
+| **CI/CD (no persistent state)** | Fine. `.epicenter/` is disposable if sync can rebuild it. |
+| **Cloud/mobile (no filesystem)** | Future: host abstraction. Not needed now. |
 
 ## Decision 2: Config Exports Full Builder Chain
 
@@ -761,34 +779,30 @@ That's it. ~15 lines of code. The TypeScript worker does the rest.
 
 ### Answer
 
-There is no separate "aggregation architecture." Aggregation is just: read the discovery cache → import configs from their folders → create clients → show in UI.
+There is no separate "aggregation architecture." Aggregation is just: `readdir()` the workspaces directory, import each config, create clients.
 
-```
-  Per-folder workspaces              Discovery              Bun App Server
-  (independent, scattered)           (cache)                (loads all)
+```typescript
+// Bun app server startup - entire discovery pipeline
+const wsDir = join(epicenterHome, 'workspaces');
+const entries = await readdir(wsDir, { withFileTypes: true });
 
-  ~/projects/blog/
-  ├── epicenter.config.ts ────┐
-  └── .epicenter/             │
-                              │    known-workspaces.json
-  ~/projects/notes/           ├──► ┌──────────────────┐
-  ├── epicenter.config.ts ────┤    │ [                 │     ┌──────────┐
-  └── .epicenter/             │    │  ".../blog",      │────►│ import() │
-                              │    │  ".../notes",     │     │ each     │
-  ~/.epicenter/workspaces/    │    │  ".../habits"     │     │ config   │
-    habits/                   │    │ ]                 │     │          │
-    ├── epicenter.config.ts ──┘    └──────────────────┘     │ Create   │
-    └── .epicenter/                                          │ clients  │
-                                                             │          │
-                                                             │ Result:  │
-                                                             │ Map of   │
-                                                             │ live     │
-                                                             │ clients  │
-                                                             └──────────┘
+const clients = new Map<string, AnyWorkspaceClient>();
+
+for (const entry of entries) {
+  if (!entry.isDirectory()) continue;
+  const configPath = join(wsDir, entry.name, 'epicenter.config.ts');
+  if (!(await Bun.file(configPath).exists())) continue;
+
+  const mod = await import(Bun.pathToFileURL(configPath).href);
+  const client = extractWorkspaceClient(mod);
+  clients.set(client.id, client);
+}
+
+await Promise.all([...clients.values()].map(c => c.whenReady));
+// Done. All clients loaded and ready.
 ```
 
-Independence is preserved: each workspace can run alone (headless runner, CLI). Aggregation is just the desktop app's view of them.
-
+This replaces the previous design which required `known-workspaces.json`, cache validation, stale path pruning, and self-registration. The centralized model makes all of that unnecessary.
 ---
 
 ## Decision 7: Communication Protocol
@@ -1261,7 +1275,7 @@ This is the key architectural insight. Types don't "transfer" between processes.
 | Standalone `bun run config`? | Per-project dep is the answer | Bun resolves from config's dir, not importer's. `epicenter init` solves friction. |
 | Lazy vs eager loading? | Eager load all | Lazy loading contaminates scripting API. 20 workspaces = ~40-160MB, acceptable. |
 | .d.ts generation needed? | No — load .ts source into Monaco | `typeof import(...)` gives full types. ~15 lines of prelude code. 1-4h effort. |
-| Per-folder as THE model? | Per-folder is correct | "Workspace = instance; folder is default host." App-managed folders are still per-folder. |
+| Per-folder as THE model? | Centralized is simpler (revised) | Original verdict was per-folder. Revised: all workspaces in `~/.epicenter/workspaces/` eliminates discovery complexity with no loss of functionality. |
 
 ### Librarian Research (5 agents)
 
@@ -1279,16 +1293,15 @@ This is the key architectural insight. Types don't "transfer" between processes.
 
 ### Phase 1: Foundation
 
-- [ ] Implement `epicenter init` CLI command (scaffold folder, install deps, create starter config)
+- [ ] Implement `epicenter init <name>` CLI command (creates workspace in `~/.epicenter/workspaces/<name>/`, installs deps, creates starter config)
 - [ ] Implement `epicenter validate` (import config, check exports are valid workspace clients)
-- [ ] Define `known-workspaces.json` schema and read/write utilities
-- [ ] Implement workspace discovery (read cache, validate paths, prune dead entries)
+- [ ] Implement workspace discovery (`readdir()` on `~/.epicenter/workspaces/`, import each config)
 
 ### Phase 2: Bun App Server
 
 - [ ] Create Bun app server entry point (Hono — serves SPA + API + WebSocket)
 - [ ] Implement Rust shell: spawn Bun on launch, open webview to `http://127.0.0.1:{PORT}`, kill on close
-- [ ] Implement config loading pipeline (discover → import → register → await ready)
+- [ ] Implement config loading pipeline (`readdir()` workspaces dir, import each, register, await ready)
 - [ ] Define HTTP API routes (`GET /api/workspaces`, `GET /api/types`, `POST /api/run`, `WS /api/ws`)
 - [ ] Implement workspace list endpoint (returns id, tables, actions, extensions for each)
 - [ ] Implement startup token auth (Rust generates token, passes to Bun + webview)
@@ -1346,12 +1359,9 @@ const config = await import(configPath);
 2. Config exports builder WITHOUT `.withActions()`, Bun calls it
 3. Bun ignores this and adds env extensions via a separate mechanism
 
-### Browser Config Compatibility
+### ~~Browser Config Compatibility~~ (Resolved)
 
-Configs with FS extensions (SQLite, markdown) can't be imported in the browser. This is fine for the desktop app (everything goes through Bun), but browser-only apps need an alternative:
-1. Export both `blogDef` (definition) and `blog` (full client)
-2. Browser-specific config file
-3. Browser connects to Bun app server API instead of importing directly
+No longer an open question. Browser configs will diverge from server configs anyway (different action sets, no FS extensions). Browser apps connect to the Bun app server via HTTP, not by importing configs directly. The centralized model reinforces this: workspaces are server-side artifacts.
 
 ### Config Hot Reload
 
@@ -1383,16 +1393,16 @@ Recommendation: single token per session. The threat model is local-only.
 
 | Topic | Orchestrator Spec (Feb 25) | Runner Spec (Mar 12) | This Spec (original) | This Spec (amended) |
 |-------|---------------------------|---------------------|---------------------|---------------------|
-| State location | Centralized `~/.epicenter/workspaces/` with symlinks | Per-folder (any folder with config) | Per-folder instances, folder is default host | ← unchanged |
-| Config export | Not specified | `defineWorkspace()` | Full builder chain | ← unchanged |
-| Module resolution | Not specified | Runner provides imports | Per-project `bun add` | ← unchanged |
+| State location | Centralized `~/.epicenter/workspaces/` with symlinks | Per-folder (any folder with config) | Per-folder instances, folder is default host | **Centralized `~/.epicenter/workspaces/`, no symlinks** |
+| Config export | Not specified | `defineWorkspace()` | Full builder chain | <- unchanged |
+| Module resolution | Not specified | Runner provides imports | Per-project `bun add` | <- unchanged |
 | Process model | Not specified | Single runner per workspace | Single sidecar, Tauri IPC | **Bun app server, HTTP/WS** |
 | Communication | Not specified | Not specified | Tauri IPC (Rust bridge) | **HTTP + WebSocket (127.0.0.1)** |
 | Editor | Not specified | Not specified | Monaco (implied) | **Monaco (explicit, with CodeMirror comparison)** |
-| Type injection | Not specified | Not specified | Monaco virtual FS + prelude | ← unchanged (transport now HTTP) |
-| Aggregation | Registry database + symlinks | Not addressed | Discovery cache + import loop | ← unchanged |
-| Actions | Separate action exports | Not addressed | Chained via `.withActions()` | ← unchanged |
-| Extensions | Not specified | Wired by runner | Workspace-inherent in config | ← unchanged |
+| Type injection | Not specified | Not specified | Monaco virtual FS + prelude | <- unchanged (transport now HTTP) |
+| Aggregation | Registry database + symlinks | Not addressed | Discovery cache + import loop | **`readdir()` on workspaces dir. No cache.** |
+| Actions | Separate action exports | Not addressed | Chained via `.withActions()` | <- unchanged |
+| Extensions | Not specified | Wired by runner | Workspace-inherent in config | <- unchanged |
 | Security | Not specified | Not specified | Not specified | **Startup token auth, 127.0.0.1 binding** |
 
 ### Key Architectural Insight

@@ -15,7 +15,7 @@
 		</Empty.Header>
 	</Empty.Root>
 {:else}
-	<TreeView.Root class="gap-0.5" role="tree">
+	<TreeView.Root class="gap-0.5">
 		{#each fsState.rootChildIds as childId (childId)}
 			<FileTreeItem id={childId} />
 		{/each}

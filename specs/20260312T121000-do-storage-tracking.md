@@ -86,9 +86,9 @@ durableObjectInstances: many(durableObjectInstance),
 
 ### Task 2: DO RPC return type changes (`base-sync-room.ts`)
 
-- [ ] Change `sync()` return type from `Promise<Uint8Array | null>` to `Promise<{ diff: Uint8Array | null; storageBytes: number }>`
-- [ ] Change `getDoc()` return type from `Promise<Uint8Array>` to `Promise<{ data: Uint8Array; storageBytes: number }>`
-- [ ] Read `this.ctx.storage.sql.databaseSize` in each method
+- [x] Change `sync()` return type from `Promise<Uint8Array | null>` to `Promise<{ diff: Uint8Array | null; storageBytes: number }>`
+- [x] Change `getDoc()` return type from `Promise<Uint8Array>` to `Promise<{ data: Uint8Array; storageBytes: number }>`
+- [x] Read `this.ctx.storage.sql.databaseSize` in each method
 
 **`sync()` change (base-sync-room.ts:244–257):**
 
@@ -129,9 +129,9 @@ Three sub-tasks: afterResponse middleware, upsert helper, route handler modifica
 
 #### 3a: afterResponse queue in DB middleware
 
-- [ ] Add `afterResponse: Promise<unknown>[]` to `Env.Variables`
-- [ ] Initialize the array and set it on context in the DB middleware
-- [ ] Change `finally` block to `Promise.allSettled(afterResponse).then(() => client.end())`
+- [x] Add `afterResponse: Promise<unknown>[]` to `Env.Variables`
+- [x] Initialize the array and set it on context in the DB middleware
+- [x] Change `finally` block to `Promise.allSettled(afterResponse).then(() => client.end())`
 
 **Env type change (app.ts:34–42):**
 
@@ -171,7 +171,7 @@ app.use('*', async (c, next) => {
 
 #### 3b: Upsert helper function
 
-- [ ] Add `upsertDoInstance` function in `app.ts` (above the route definitions, below the factory)
+- [x] Add `upsertDoInstance` function in `app.ts` (above the route definitions, below the factory)
 
 ```typescript
 /**
@@ -225,10 +225,10 @@ function upsertDoInstance(
 
 #### 3c: Route handler modifications
 
-- [ ] `GET /workspaces/:workspace` — destructure `getDoc()` result, add upsert (with storageBytes for HTTP, without for WS)
-- [ ] `POST /workspaces/:workspace` — destructure `sync()` result, add upsert with storageBytes
-- [ ] `GET /documents/:document` — same pattern as workspace GET
-- [ ] `POST /documents/:document` — same pattern as workspace POST
+- [x] `GET /workspaces/:workspace` — destructure `getDoc()` result, add upsert (with storageBytes for HTTP, without for WS)
+- [x] `POST /workspaces/:workspace` — destructure `sync()` result, add upsert with storageBytes
+- [x] `GET /documents/:document` — same pattern as workspace GET
+- [x] `POST /documents/:document` — same pattern as workspace POST
 
 **Pattern for GET routes (using workspace as example, document is identical with `'document'` doType):**
 

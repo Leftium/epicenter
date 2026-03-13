@@ -38,6 +38,7 @@ export type Env = {
 		auth: Auth;
 		user: Session['user'];
 		session: Session['session'];
+		afterResponse: Promise<unknown>[];
 	};
 };
 
@@ -167,12 +168,16 @@ const factory = createFactory<Env>({
 			const client = new pg.Client({
 				connectionString: c.env.HYPERDRIVE.connectionString,
 			});
+			const afterResponse: Promise<unknown>[] = [];
 			try {
 				await client.connect();
 				c.set('db', drizzle(client, { schema }));
+				c.set('afterResponse', afterResponse);
 				await next();
 			} finally {
-				c.executionCtx.waitUntil(client.end());
+				c.executionCtx.waitUntil(
+					Promise.allSettled(afterResponse).then(() => client.end()),
+				);
 			}
 		});
 
@@ -297,6 +302,54 @@ function getDocumentStub(c: Context<Env>) {
 	return c.env.DOCUMENT_ROOM.get(c.env.DOCUMENT_ROOM.idFromName(doName));
 }
 
+/**
+ * Fire-and-forget upsert for DO instance tracking.
+ *
+ * Records that a user accessed a DO, optionally updating storage bytes.
+ * Uses INSERT ON CONFLICT so the first access creates the row and
+ * subsequent accesses update `lastAccessedAt` (and `storageBytes` when
+ * provided). Errors are caught and logged—this is best-effort telemetry,
+ * not billing authority.
+ */
+function upsertDoInstance(
+	db: Db,
+	params: {
+		userId: string;
+		doType: string;
+		resourceName: string;
+		doName: string;
+		storageBytes?: number;
+	},
+): Promise<unknown> {
+	const now = new Date();
+	return db
+		.insert(schema.durableObjectInstance)
+		.values({
+			userId: params.userId,
+			doType: params.doType,
+			resourceName: params.resourceName,
+			doName: params.doName,
+			storageBytes: params.storageBytes ?? null,
+			lastAccessedAt: now,
+			storageMeasuredAt: params.storageBytes != null ? now : null,
+		})
+		.onConflictDoUpdate({
+			target: [
+				schema.durableObjectInstance.userId,
+				schema.durableObjectInstance.doType,
+				schema.durableObjectInstance.resourceName,
+			],
+			set: {
+				lastAccessedAt: now,
+				...(params.storageBytes != null && {
+					storageBytes: params.storageBytes,
+					storageMeasuredAt: now,
+				}),
+			},
+		})
+		.catch((e) => console.error('[do-tracking] upsert failed:', e));
+}
+
 app.get(
 	'/workspaces/:workspace',
 	describeRoute({
@@ -307,11 +360,28 @@ app.get(
 		const stub = getWorkspaceStub(c);
 
 		if (c.req.header('upgrade') === 'websocket') {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					doType: 'workspace',
+					resourceName: c.req.param('workspace'),
+					doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+				}),
+			);
 			return stub.fetch(c.req.raw);
 		}
 
-		const update = await stub.getDoc();
-		return new Response(update, {
+		const { data, storageBytes } = await stub.getDoc();
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'workspace',
+				resourceName: c.req.param('workspace'),
+				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+				storageBytes,
+			}),
+		);
+		return new Response(data, {
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
@@ -330,7 +400,17 @@ app.post(
 		}
 
 		const stub = getWorkspaceStub(c);
-		const diff = await stub.sync(body);
+		const { diff, storageBytes } = await stub.sync(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'workspace',
+				resourceName: c.req.param('workspace'),
+				doName: `user:${c.var.user.id}:${c.req.param('workspace')}`,
+				storageBytes,
+			}),
+		);
 
 		if (!diff) return c.body(null, 304);
 		return new Response(diff, {
@@ -353,11 +433,28 @@ app.get(
 		const stub = getDocumentStub(c);
 
 		if (c.req.header('upgrade') === 'websocket') {
+			c.var.afterResponse.push(
+				upsertDoInstance(c.var.db, {
+					userId: c.var.user.id,
+					doType: 'document',
+					resourceName: c.req.param('document'),
+					doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+				}),
+			);
 			return stub.fetch(c.req.raw);
 		}
 
-		const update = await stub.getDoc();
-		return new Response(update, {
+		const { data, storageBytes } = await stub.getDoc();
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'document',
+				resourceName: c.req.param('document'),
+				doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+				storageBytes,
+			}),
+		);
+		return new Response(data, {
 			headers: { 'content-type': 'application/octet-stream' },
 		});
 	},
@@ -376,7 +473,17 @@ app.post(
 		}
 
 		const stub = getDocumentStub(c);
-		const diff = await stub.sync(body);
+		const { diff, storageBytes } = await stub.sync(body);
+
+		c.var.afterResponse.push(
+			upsertDoInstance(c.var.db, {
+				userId: c.var.user.id,
+				doType: 'document',
+				resourceName: c.req.param('document'),
+				doName: `user:${c.var.user.id}:${c.req.param('document')}`,
+				storageBytes,
+			}),
+		);
 
 		if (!diff) return c.body(null, 304);
 		return new Response(diff, {

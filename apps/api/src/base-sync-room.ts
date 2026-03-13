@@ -241,7 +241,7 @@ export class BaseSyncRoom extends DurableObject {
 	 *    maps to 304).
 	 * 3. Otherwise returns the binary diff the client is missing.
 	 */
-	async sync(body: Uint8Array): Promise<Uint8Array | null> {
+	async sync(body: Uint8Array): Promise<{ diff: Uint8Array | null; storageBytes: number }> {
 		const { stateVector: clientSV, update } = decodeSyncRequest(body);
 
 		if (update.byteLength > 0) {
@@ -249,11 +249,11 @@ export class BaseSyncRoom extends DurableObject {
 		}
 
 		const serverSV = Y.encodeStateVector(this.doc);
-		if (stateVectorsEqual(serverSV, clientSV)) {
-			return null;
-		}
+		const diff = stateVectorsEqual(serverSV, clientSV)
+			? null
+			: Y.encodeStateAsUpdateV2(this.doc, clientSV);
 
-		return Y.encodeStateAsUpdateV2(this.doc, clientSV);
+		return { diff, storageBytes: this.ctx.storage.sql.databaseSize };
 	}
 
 	/**
@@ -263,8 +263,11 @@ export class BaseSyncRoom extends DurableObject {
 	 * this with `Y.applyUpdateV2` to hydrate their local doc before opening a
 	 * WebSocket, reducing the initial sync payload size.
 	 */
-	async getDoc(): Promise<Uint8Array> {
-		return Y.encodeStateAsUpdateV2(this.doc);
+	async getDoc(): Promise<{ data: Uint8Array; storageBytes: number }> {
+		return {
+			data: Y.encodeStateAsUpdateV2(this.doc),
+			storageBytes: this.ctx.storage.sql.databaseSize,
+		};
 	}
 
 	/** Delete all storage for this DO. Used for cleanup of renamed/orphaned rooms. */

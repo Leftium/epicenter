@@ -1,7 +1,7 @@
 # Honeycrisp Complete Overhaul — Faithful Apple Notes Clone
 
 **Date**: 2026-03-13
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 **Parent**: `specs/20260311T224500-apple-notes-archetype.md`, `specs/20260312T224500-honeycrisp-ui-polish.md`
 
@@ -495,3 +495,38 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 - `specs/20260311T224500-apple-notes-archetype.md` — Umbrella spec with full schema vision
 - `specs/20260312T192500-honeycrisp.md` — Original build spec
 - `specs/20260312T224500-honeycrisp-ui-polish.md` — First polish pass spec
+
+## Review
+
+**Completed**: 2026-03-13
+**Branch**: `opencode/calm-forest`
+
+### Summary
+
+Complete UI overhaul of Honeycrisp executed across 5 waves (0–4). The app went from a 296-line monolithic +page.svelte with flat styling to a well-decomposed component architecture with Apple Notes–style interactions. All new UI uses shadcn-svelte components with zero custom CSS added.
+
+### What Was Built
+
+- **Schema v2 with soft delete**: Notes have a `deletedAt` field; deleting moves notes to "Recently Deleted" instead of permanent destruction. Restore and permanent delete flows work.
+- **State extraction**: All reactive state, workspace observers, derived computations, and actions moved from +page.svelte (296 lines) into `lib/state/notes.svelte.ts` (264 lines). +page.svelte is now layout-only (131→193 lines with new features).
+- **Sidebar overhaul**: "Recently Deleted" smart folder with badge count, collapsible Folders section, AlertDialog confirmation on folder delete, removed duplicate footer button.
+- **NoteCard component**: Extracted from inline NoteList rendering. Right-click context menus with Pin/Unpin, Move to Folder submenu (lists all folders), Delete. Recently Deleted cards get Restore and Delete Permanently with AlertDialog.
+- **Expanded date grouping**: Today, Yesterday, Previous 7 Days, Previous 30 Days, then month names (was only Today/Yesterday/date).
+- **⌘K command palette**: Search notes by title/preview, navigate to folders, create notes/folders. Uses shadcn Command.Dialog.
+- **Visual polish**: rounded-lg selection with bg-accent/30 hover, arrow key navigation in note list, warmer empty states.
+
+### Deviations from Spec
+
+- **Open Question #3 (state pattern)**: Spec recommended module-level `$state` exports; implemented as module-level `$state` with `export { }` re-exports and observer registration at module scope (no factory function). Works correctly as a single-page SPA.
+- **Open Question #1 (auto-purge)**: Not implemented—deferred per recommendation. Manual permanent delete via context menu or Recently Deleted view.
+- **`moveNoteToFolder` action**: Implemented inline in +page.svelte rather than in notes.svelte.ts, keeping the state module focused on core CRUD and the page handling orchestration.
+- **`defineKv` API change**: Required adding default values to all KV definitions (API changed to require 2 arguments). `kv.get()` now returns values directly instead of `{ status, value }` objects.
+- **Wave 5 (QA)**: Not executed—spec listed Waves 0–4 for execution. Manual QA deferred.
+
+### Follow-up Work
+
+- Wave 5 QA items (manual testing of all flows)
+- Drag-and-drop notes between folders
+- Note card folder tag when viewing "All Notes"
+- Gallery view (deferred in spec)
+- Sidebar search relocation to NoteList header

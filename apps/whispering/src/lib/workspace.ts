@@ -92,37 +92,62 @@ const transformationSteps = defineTable(
 	}),
 );
 
-/** Execution records for transformation pipelines. One run per invocation. */
+/**
+ * Execution records for transformation pipelines. One run per invocation.
+ *
+ * Uses a discriminated union on `status`—unlike `transformationSteps` (which uses
+ * flat rows to preserve per-provider model memory across type switches), runs have
+ * one-way state transitions (running → completed | failed) with no data to preserve
+ * across states. The union ensures `output` exists only on completed runs and `error`
+ * exists only on failed runs, eliminating null checks after status narrowing.
+ *
+ * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
+ */
+const TransformationRunBase = type({
+	id: 'string',
+	transformationId: 'string',
+	recordingId: 'string | null',
+	input: 'string',
+	startedAt: 'string',
+	completedAt: 'string | null',
+	_v: '1',
+});
+
 const transformationRuns = defineTable(
-	type({
-		id: 'string',
-		transformationId: 'string',
-		recordingId: 'string | null',
-		status: "'running' | 'completed' | 'failed'",
-		input: 'string',
-		output: 'string | null',
-		error: 'string | null',
-		startedAt: 'string',
-		completedAt: 'string | null',
-		_v: '1',
-	}),
+	TransformationRunBase.merge(
+		type.or(
+			{ status: "'running'" },
+			{ status: "'completed'", output: 'string' },
+			{ status: "'failed'", error: 'string' },
+		),
+	),
 );
 
-/** Per-step execution records within a transformation run. */
+/**
+ * Per-step execution records within a transformation run.
+ *
+ * Same discriminated union pattern as `transformationRuns`—`output` and `error`
+ * are only present on the relevant status variant.
+ */
+const TransformationStepRunBase = type({
+	id: 'string',
+	transformationRunId: 'string',
+	stepId: 'string',
+	order: 'number',
+	input: 'string',
+	startedAt: 'string',
+	completedAt: 'string | null',
+	_v: '1',
+});
+
 const transformationStepRuns = defineTable(
-	type({
-		id: 'string',
-		transformationRunId: 'string',
-		stepId: 'string',
-		order: 'number',
-		status: "'running' | 'completed' | 'failed'",
-		input: 'string',
-		output: 'string | null',
-		error: 'string | null',
-		startedAt: 'string',
-		completedAt: 'string | null',
-		_v: '1',
-	}),
+	TransformationStepRunBase.merge(
+		type.or(
+			{ status: "'running'" },
+			{ status: "'completed'", output: 'string' },
+			{ status: "'failed'", error: 'string' },
+		),
+	),
 );
 
 /**

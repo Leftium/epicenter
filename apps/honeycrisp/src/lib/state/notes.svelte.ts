@@ -188,6 +188,19 @@ function createNotesState() {
 
 		// Actions
 
+		/**
+		 * Create a new folder with the default name "New Folder".
+		 *
+		 * The folder is added to the end of the folder list and can be renamed
+		 * immediately. Use this when the user clicks "New Folder" in the sidebar.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Create a new folder
+		 * notesState.createFolder();
+		 * // Folder appears in sidebar with name "New Folder"
+		 * ```
+		 */
 		createFolder() {
 			const id = generateId() as string as FolderId;
 			workspaceClient.tables.folders.set({
@@ -198,10 +211,37 @@ function createNotesState() {
 			});
 		},
 
+		/**
+		 * Rename an existing folder.
+		 *
+		 * Updates the folder name in the sidebar and all references. The folder
+		 * must exist; if it doesn't, the update is silently ignored.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Rename a folder to "Work"
+		 * notesState.renameFolder(folderId, 'Work');
+		 * // Sidebar updates immediately
+		 * ```
+		 */
 		renameFolder(folderId: FolderId, name: string) {
 			workspaceClient.tables.folders.update(folderId, { name });
 		},
 
+		/**
+		 * Delete a folder and move all its notes to unfiled.
+		 *
+		 * The folder is removed from the sidebar. All notes that were in this
+		 * folder are moved to the unfiled section (folderId set to undefined).
+		 * If the deleted folder was selected, the selection is cleared.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Delete a folder and move its notes to unfiled
+		 * notesState.deleteFolder(folderId);
+		 * // Folder disappears from sidebar, its notes move to "All Notes"
+		 * ```
+		 */
 		deleteFolder(folderId: FolderId) {
 			const folderNotes = allNotes.filter((n) => n.folderId === folderId);
 			for (const note of folderNotes) {
@@ -215,6 +255,20 @@ function createNotesState() {
 			}
 		},
 
+		/**
+		 * Create a new note in the currently selected folder.
+		 *
+		 * The note starts with an empty title and preview. It's automatically
+		 * selected after creation so the editor opens immediately. If no folder
+		 * is selected, the note is created as unfiled.
+		 *
+		 * @example
+		 * ```typescript
+		 * // From a Svelte component:
+		 * notesState.createNote();
+		 * // New note appears in the list and editor opens
+		 * ```
+		 */
 		createNote() {
 			const id = generateId() as string as NoteId;
 			workspaceClient.tables.notes.set({
@@ -231,7 +285,20 @@ function createNotesState() {
 			workspaceClient.kv.set('selectedNoteId', id);
 		},
 
-		/** Soft-delete a note — moves it to Recently Deleted. */
+		/**
+		 * Soft-delete a note — moves it to Recently Deleted.
+		 *
+		 * The note is marked with a `deletedAt` timestamp but not permanently
+		 * removed. It can be restored from the Recently Deleted view. If the
+		 * deleted note was selected, the selection is cleared.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Soft-delete a note
+		 * notesState.softDeleteNote(noteId);
+		 * // Note moves to Recently Deleted, editor closes
+		 * ```
+		 */
 		softDeleteNote(noteId: NoteId) {
 			workspaceClient.tables.notes.update(noteId, {
 				deletedAt: dateTimeStringNow(),
@@ -241,7 +308,19 @@ function createNotesState() {
 			}
 		},
 
-		/** Restore a soft-deleted note from Recently Deleted. */
+		/**
+		 * Restore a soft-deleted note from Recently Deleted.
+		 *
+		 * Removes the `deletedAt` timestamp. If the note's original folder no
+		 * longer exists, the note is restored to unfiled instead.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Restore a deleted note
+		 * notesState.restoreNote(noteId);
+		 * // Note reappears in its original folder (or unfiled)
+		 * ```
+		 */
 		restoreNote(noteId: NoteId) {
 			const note = allNotes.find((n) => n.id === noteId);
 			if (!note) return;
@@ -255,7 +334,19 @@ function createNotesState() {
 			});
 		},
 
-		/** Permanently delete a note — no recovery. */
+		/**
+		 * Permanently delete a note — no recovery.
+		 *
+		 * Removes the note from the database completely. This cannot be undone.
+		 * If the deleted note was selected, the selection is cleared.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Permanently delete a note
+		 * notesState.permanentlyDeleteNote(noteId);
+		 * // Note is removed from Recently Deleted and database
+		 * ```
+		 */
 		permanentlyDeleteNote(noteId: NoteId) {
 			workspaceClient.tables.notes.delete(noteId);
 			if (selectedNoteId === noteId) {
@@ -263,6 +354,19 @@ function createNotesState() {
 			}
 		},
 
+		/**
+		 * Toggle the pin state of a note.
+		 *
+		 * Pinned notes typically appear at the top of the note list. If the note
+		 * doesn't exist, the operation is silently ignored.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Pin a note to keep it at the top
+		 * notesState.pinNote(noteId);
+		 * // Note moves to the top of the list
+		 * ```
+		 */
 		pinNote(noteId: NoteId) {
 			const note = allNotes.find((n) => n.id === noteId);
 			if (!note) return;
@@ -271,22 +375,83 @@ function createNotesState() {
 			});
 		},
 
+		/**
+		 * Select a folder and clear the note selection.
+		 *
+		 * Switches the view to show notes in the selected folder. If `null` is
+		 * passed, shows all notes (unfiled + all folders). Also clears the
+		 * Recently Deleted view if it was active.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Select a specific folder
+		 * notesState.selectFolder(folderId);
+		 * // View updates to show only notes in that folder
+		 *
+		 * // Show all notes
+		 * notesState.selectFolder(null);
+		 * // View updates to show all notes
+		 * ```
+		 */
 		selectFolder(folderId: FolderId | null) {
 			isRecentlyDeletedView = false;
 			workspaceClient.kv.set('selectedFolderId', folderId);
 			workspaceClient.kv.set('selectedNoteId', null);
 		},
 
+		/**
+		 * Switch to the Recently Deleted view.
+		 *
+		 * Shows only soft-deleted notes. Clears the folder selection and note
+		 * selection. Use this when the user clicks "Recently Deleted" in the sidebar.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Switch to Recently Deleted view
+		 * notesState.selectRecentlyDeleted();
+		 * // View updates to show only deleted notes
+		 * ```
+		 */
 		selectRecentlyDeleted() {
 			isRecentlyDeletedView = true;
 			workspaceClient.kv.set('selectedFolderId', null);
 			workspaceClient.kv.set('selectedNoteId', null);
 		},
 
+		/**
+		 * Select a note by ID to open it in the editor.
+		 *
+		 * The note can be active or soft-deleted. The editor will open and
+		 * display the selected note's content.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Select a note to open it in the editor
+		 * notesState.selectNote(noteId);
+		 * // Editor opens and displays the note
+		 * ```
+		 */
 		selectNote(noteId: NoteId) {
 			workspaceClient.kv.set('selectedNoteId', noteId);
 		},
 
+		/**
+		 * Update the title and preview of the currently selected note.
+		 *
+		 * Called when the editor content changes. Only updates if a note is
+		 * currently selected. The preview is typically the first line or a
+		 * summary of the note content.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Update note content from editor
+		 * notesState.updateNoteContent({
+		 *   title: 'My Note Title',
+		 *   preview: 'First line of content...',
+		 * });
+		 * // Note updates in the list and sidebar
+		 * ```
+		 */
 		updateNoteContent({
 			title,
 			preview,
@@ -301,10 +466,46 @@ function createNotesState() {
 			});
 		},
 
+		/**
+		 * Change the note sort order.
+		 *
+		 * Sorts the note list by the specified criteria. The sort preference
+		 * is persisted to the workspace KV store.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Sort by title alphabetically
+		 * notesState.setSortBy('title');
+		 *
+		 * // Sort by date edited (most recent first)
+		 * notesState.setSortBy('dateEdited');
+		 *
+		 * // Sort by date created (most recent first)
+		 * notesState.setSortBy('dateCreated');
+		 * ```
+		 */
 		setSortBy(value: 'dateEdited' | 'dateCreated' | 'title') {
 			workspaceClient.kv.set('sortBy', value);
 		},
 
+		/**
+		 * Update the search filter text.
+		 *
+		 * Filters the note list to show only notes whose title or preview
+		 * contains the search query (case-insensitive). Pass an empty string
+		 * to clear the search.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Search for notes containing "meeting"
+		 * notesState.setSearchQuery('meeting');
+		 * // List updates to show only matching notes
+		 *
+		 * // Clear search
+		 * notesState.setSearchQuery('');
+		 * // List shows all notes again
+		 * ```
+		 */
 		setSearchQuery(query: string) {
 			searchQuery = query;
 		},
@@ -312,7 +513,17 @@ function createNotesState() {
 		/**
 		 * Move a note to a different folder.
 		 *
-		 * Pass `undefined` to move to unfiled (remove from folder).
+		 * Pass `undefined` to move the note to unfiled (remove from folder).
+		 * The note remains selected if it was selected before the move.
+		 *
+		 * @example
+		 * ```typescript
+		 * // Move a note to a specific folder
+		 * notesState.moveNoteToFolder(noteId, folderId);
+		 *
+		 * // Move a note to unfiled
+		 * notesState.moveNoteToFolder(noteId, undefined);
+		 * ```
 		 */
 		moveNoteToFolder(noteId: NoteId, folderId: FolderId | undefined) {
 			workspaceClient.tables.notes.update(noteId, { folderId });

@@ -1,7 +1,7 @@
 # Honeycrisp PR #1526 Cleanup — Eliminate Prop Drilling, Fix Patterns
 
 **Date**: 2026-03-13
-**Status**: In Progress
+**Status**: Implemented
 **Author**: AI-assisted
 **Parent**: PR #1526 (`opencode/calm-forest` branch)
 
@@ -126,8 +126,8 @@ These improve maintainability but don't fix correctness issues.
 
 These improve developer experience but don't affect behavior.
 
-- [ ] **3.1** Add JSDoc with `@example` to all public methods on `notesState`: `createFolder`, `renameFolder`, `deleteFolder`, `createNote`, `softDeleteNote`, `restoreNote`, `permanentlyDeleteNote`, `pinNote`, `selectFolder`, `selectNote`, `updateNoteContent`, `setSortBy`, `setSearchQuery`, `moveNoteToFolder`.
-- [ ] **3.2** Add JSDoc to `selectRecentlyDeleted` (new method from 1.1).
+- [x] **3.1** Add JSDoc with `@example` to all public methods on `notesState`: `createFolder`, `renameFolder`, `deleteFolder`, `createNote`, `softDeleteNote`, `restoreNote`, `permanentlyDeleteNote`, `pinNote`, `selectFolder`, `selectNote`, `updateNoteContent`, `setSortBy`, `setSearchQuery`, `moveNoteToFolder`.
+- [x] **3.2** Add JSDoc to `selectRecentlyDeleted` (new method from 1.1).
 
 ## Edge Cases
 
@@ -185,3 +185,32 @@ The Editor component receives a Y.XmlFragment and fires content changes. This ca
 - `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md` — The pattern we're aligning with
 - `.agents/skills/svelte/SKILL.md` — Self-Contained Component Pattern, no `handle*` functions
 - `.agents/skills/workspace-api/SKILL.md` — `generateId()` cast convention
+
+## Review
+
+**Completed**: 2026-03-13
+**Branch**: `opencode/calm-forest`
+
+### Summary
+
+Eliminated prop drilling from all Honeycrisp components. Components now import the `notesState` singleton directly—matching the established `browser-state`/`saved-tab-state` pattern documented in `docs/articles/migrating-tanstack-query-to-svelte-state-and-observers.md`. `+page.svelte` went from 164 lines of wiring harness to 103 lines of pure layout + document handle lifecycle.
+
+### Changes by Wave
+
+**Wave 1** (state module): Added `isRecentlyDeletedView`, `folderName`, `selectRecentlyDeleted()` to notesState. Fixed `as unknown as` → `as string as`. Renamed `handleContentChange` → `updateNoteContent`. Extracted `parseDateTime` to `$lib/utils/date.ts`.
+
+**Wave 2** (leaf components): Sidebar, NoteCard, CommandPalette all import notesState directly. Sidebar: 0 props. NoteCard: 1 prop (`note`), computes `isSelected` via `$derived`. CommandPalette: 1 prop (`open` bindable).
+
+**Wave 3** (list + page): NoteList imports notesState directly (0 props), derives its note list from `isRecentlyDeletedView`. `+page.svelte` stripped to layout shell.
+
+**Wave 4** (polish): Detailed JSDoc with `@example` blocks on all 15 public methods.
+
+### Deviations from Spec
+
+- **1.5**: Spec said "props reduce to `note` and `isSelected`". `isSelected` was moved to a `$derived` inside NoteCard instead—fewer props, trivial computation.
+- **2.3/2.4**: Resolved implicitly by removing all affected props entirely rather than fixing their defaults/names.
+
+### Follow-up Work
+
+- Consider moving document handle lifecycle from `+page.svelte` into `notesState` (spec Open Question #3—deferred as recommended).
+- Consider persisting `isRecentlyDeletedView` to KV if cross-device sync becomes desirable (spec Open Question #1—deferred as recommended).

@@ -432,11 +432,26 @@ app.get(
 	},
 );
 
+app.delete(
+	'/documents/:document/snapshots/:id',
+	describeRoute({
+		description: 'Delete a document snapshot',
+		tags: ['documents', 'snapshots'],
+	}),
+	sValidator('param', type({ document: 'string', id: 'string.numeric' })),
+	async (c) => {
+		const stub = getDocumentStub(c);
+		const { id } = c.req.valid('param');
+		const deleted = await stub.deleteSnapshot(Number(id));
+		if (!deleted) return c.body('Snapshot not found', 404);
+		return c.body(null, 204);
+	},
+);
+
 app.post(
 	'/documents/:document/snapshots/:id/apply',
 	describeRoute({
-		description:
-			'Apply a past snapshot state into the current document (CRDT forward-merge)',
+		description: 'Restore document content from a past snapshot (delete + insert)',
 		tags: ['documents', 'snapshots'],
 	}),
 	sValidator('param', type({ document: 'string', id: 'string.numeric' })),

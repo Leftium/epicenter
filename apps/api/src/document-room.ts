@@ -80,22 +80,41 @@ export class DocumentRoom extends BaseSyncRoom {
 	}
 
 	/**
-	 * Merge a past snapshot's content into the current doc.
+	 * Restore the document to a past snapshot's content.
 	 *
-	 * This is a CRDT forward-merge, not a destructive rollback. The snapshot's
-	 * content is re-applied as a new update, so the doc grows slightly as items
-	 * from the snapshot re-enter the struct store. All edits made after the
-	 * snapshot are preserved — they coexist with the restored content via CRDT
-	 * conflict resolution.
-	 *
-	 * Saves a "Before restore" safety snapshot before applying.
+	 * Reads the snapshot text, then replaces the current content with new CRDT
+	 * operations (delete + insert) inside a single transaction. This is an
+	 * append-only event in the timeline—the pre-restore content remains in the
+	 * struct store (gc: false) and can be recovered via the "Before restore"
+	 * safety snapshot.
 	 */
 	async applySnapshot(snapshotId: number): Promise<boolean> {
-		const past = await this.getSnapshot(snapshotId);
-		if (!past) return false;
+		const [row] = this.ctx.storage.sql
+			.exec('SELECT snapshot FROM snapshots WHERE id = ?', snapshotId)
+			.toArray();
+		if (!row) return false;
+
+		const snap = Y.decodeSnapshot(new Uint8Array(row.snapshot as ArrayBuffer));
+		const restoredDoc = Y.createDocFromSnapshot(this.doc, snap);
+		const restoredText = restoredDoc.getText('content').toString();
 
 		await this.saveSnapshot('Before restore');
-		Y.applyUpdateV2(this.doc, past, 'restore');
+
+		this.doc.transact(() => {
+			const content = this.doc.getText('content');
+			content.delete(0, content.length);
+			content.insert(0, restoredText);
+		});
+
 		return true;
+	}
+
+	/** Delete a snapshot by ID. Returns true if a row was removed. */
+	async deleteSnapshot(snapshotId: number): Promise<boolean> {
+		const rowsDeleted = this.ctx.storage.sql.exec(
+			'DELETE FROM snapshots WHERE id = ?',
+			snapshotId,
+		).rowsWritten;
+		return rowsDeleted > 0;
 	}
 }

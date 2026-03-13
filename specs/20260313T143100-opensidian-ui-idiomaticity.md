@@ -108,9 +108,10 @@ These are all standard Lucide icons.
 
 ### Phase 3: Add Missing Primitives
 
-- [ ] **3.1** Add `Tooltip` wrappers on Toolbar buttons (New File, New Folder, Rename, Delete, Load Sample Data)
-- [ ] **3.2** Replace the "No files yet" empty state in `FileTree.svelte` with `Empty` component
+- [x] **3.1** Add `Tooltip` wrappers on Toolbar buttons (New File, New Folder, Rename, Delete, Load Sample Data)
+- [x] **3.2** Replace the "No files yet" empty state in `FileTree.svelte` with `Empty` component
 - [ ] **3.3** Add `Kbd` hints where keyboard shortcuts exist (Ctrl+S in editor, Enter to submit dialogs)
+  > **Deferred**: Kbd hints are a UX enhancement outside the scope of primitive swaps. Can be a follow-up.
 
 ## Edge Cases
 

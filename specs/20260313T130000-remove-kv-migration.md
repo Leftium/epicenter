@@ -168,12 +168,12 @@ All changes are in `packages/workspace/src/workspace/`. Every wave is independen
 
 KV migration references exist in skills and docs. Update them to reflect the simplified API and document the scalar-per-key convention.
 
-- [ ] **6.1** `.agents/skills/workspace-api/SKILL.md`: Rewrite the "KV Stores" section. Remove all variadic/versioned examples (`defineKv().version().migrate()`). Replace with the shorthand-only pattern (`defineKv(schema, defaultValue)`). Add a "KV Design Convention" subsection documenting scalar-per-key with dot-namespacing. Remove KV mentions from "Migration Function Rules" and "Anti-Patterns" (those now apply only to tables).
-- [ ] **6.2** `docs/articles/versioned-schemas-migrate-on-read.md`: Rewrite the "KV Storage" section (lines 196–212). Remove the multi-version KV example. Replace with the simplified pattern showing `defineKv(schema, default)` and explain that KV uses validate-or-default (no migration). Keep the table migration content unchanged.
-- [ ] **6.3** `docs/articles/api-design-decisions-definetable-definekv.md`: Update the "Symmetry: Tables and KV" section (lines 195–211). Tables and KV are no longer symmetric in their versioning API—tables have `.migrate()`, KV does not. Rewrite to explain the deliberate asymmetry: tables accumulate rows (migration required), KV stores preferences (default fallback sufficient).
-- [ ] **6.4** `docs/articles/20260127T120000-static-workspace-api-guide.md`: Update KV examples that use the builder/variadic pattern (`defineKv().version().migrate()`). Replace with `defineKv(schema, defaultValue)` shorthand.
-- [ ] **6.5** `packages/workspace/src/workspace/index.ts`: Update the module-level JSDoc example block (lines 29–41) — remove the variadic KV example and replace with a simple shorthand KV example.
-- [ ] **6.6** `packages/workspace/src/workspace/create-kv.ts`: Update the module-level JSDoc example block (lines 13–22) — remove the variadic KV example.
+- [x] **6.1** `.agents/skills/workspace-api/SKILL.md`: Rewrite the "KV Stores" section. Remove all variadic/versioned examples (`defineKv().version().migrate()`). Replace with the shorthand-only pattern (`defineKv(schema, defaultValue)`). Add a "KV Design Convention" subsection documenting scalar-per-key with dot-namespacing. Remove KV mentions from "Migration Function Rules" and "Anti-Patterns" (those now apply only to tables).
+- [x] **6.2** `docs/articles/versioned-schemas-migrate-on-read.md`: Rewrite the "KV Storage" section (lines 196–212). Remove the multi-version KV example. Replace with the simplified pattern showing `defineKv(schema, default)` and explain that KV uses validate-or-default (no migration). Keep the table migration content unchanged.
+- [x] **6.3** `docs/articles/api-design-decisions-definetable-definekv.md`: Update the "Symmetry: Tables and KV" section (lines 195–211). Tables and KV are no longer symmetric in their versioning API—tables have `.migrate()`, KV does not. Rewrite to explain the deliberate asymmetry: tables accumulate rows (migration required), KV stores preferences (default fallback sufficient).
+- [x] **6.4** `docs/articles/20260127T120000-static-workspace-api-guide.md`: Update KV examples that use the builder/variadic pattern (`defineKv().version().migrate()`). Replace with `defineKv(schema, defaultValue)` shorthand.
+- [x] **6.5** `packages/workspace/src/workspace/index.ts`: Update the module-level JSDoc example block (lines 29–41) — remove the variadic KV example and replace with a simple shorthand KV example.
+- [x] **6.6** `packages/workspace/src/workspace/create-kv.ts`: Update the module-level JSDoc example block (lines 13–22) — remove the variadic KV example.
 
 ## Edge Cases
 

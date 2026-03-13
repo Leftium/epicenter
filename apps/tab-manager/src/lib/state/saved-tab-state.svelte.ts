@@ -33,7 +33,7 @@
 
 import { getDeviceId } from '$lib/device/device-id';
 import {
-	createSavedTabId,
+	generateSavedTabId,
 	type SavedTab,
 	type SavedTabId,
 	type Tab,
@@ -90,7 +90,7 @@ function createSavedTabState() {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
 				workspaceClient.tables.savedTabs.set({
-					id: createSavedTabId(),
+					id: generateSavedTabId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,

@@ -30,7 +30,7 @@ import { getDeviceId } from '$lib/device/device-id';
 import {
 	type Bookmark,
 	type BookmarkId,
-	createBookmarkId,
+	generateBookmarkId,
 	type Tab,
 	workspaceClient,
 } from '$lib/workspace';
@@ -81,7 +81,7 @@ function createBookmarkState() {
 				if (!tab.url) return;
 				const deviceId = await getDeviceId();
 				workspaceClient.tables.bookmarks.set({
-					id: createBookmarkId(),
+					id: generateBookmarkId(),
 					url: tab.url,
 					title: tab.title || 'Untitled',
 					favIconUrl: tab.favIconUrl,

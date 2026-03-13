@@ -47,8 +47,8 @@ import {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
-	createChatMessageId,
-	createConversationId,
+	generateChatMessageId,
+	generateConversationId,
 	workspaceClient,
 	workspaceDefinitions,
 	workspaceTools,
@@ -93,7 +93,7 @@ function createAiChatState() {
 	 */
 	function ensureDefaultConversation(): ConversationId | undefined {
 		if (conversations.length > 0) return undefined;
-		const id = createConversationId();
+		const id = generateConversationId();
 		const now = Date.now();
 		workspaceClient.tables.conversations.set({
 			id,
@@ -346,7 +346,7 @@ function createAiChatState() {
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = createChatMessageId();
+				const userMessageId = generateChatMessageId();
 
 				// Send to client FIRST so isLoading=true before the
 				// Y.Doc observer fires refreshFromDoc (which skips
@@ -491,7 +491,7 @@ function createAiChatState() {
 		sourceMessageId?: ChatMessageId;
 		systemPrompt?: string;
 	}): ConversationId {
-		const id = createConversationId();
+		const id = generateConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 

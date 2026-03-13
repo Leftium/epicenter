@@ -687,8 +687,8 @@ export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
 
-// 3. FACTORY — create* prefix, encapsulates the cast
-export const createSavedTabId = (): SavedTabId =>
+// 3. FACTORY — generate* prefix, encapsulates the cast
+export const generateSavedTabId = (): SavedTabId =>
 	generateId() as string as SavedTabId;
 ```
 
@@ -696,19 +696,27 @@ export const createSavedTabId = (): SavedTabId =>
 |------|--------|--------------|
 | Type | PascalCase (`SavedTabId`) | Always — this IS the branded type |
 | Validator | Same PascalCase (TS allows type+value same name) | Used in `defineTable()` or other arktype schemas |
-| Factory | `create` + PascalCase (`createSavedTabId`) | IDs are generated at runtime (via `generateId()`) |
+| Factory | `generate` + PascalCase (`generateSavedTabId`) | IDs are generated at runtime (via `generateId()`) |
+,
+Not every branded type needs all three. Path types like `AbsolutePath` are cast from external sources — they need only the type. `DeviceId` is set from `chrome.storage.local`, not generated.
 
-At call sites, **always use the factory**:
+#### Bad Pattern (Scattered Double-Casts)
 
 ```typescript
-// Good — factory encapsulates the cast
-const id = createSavedTabId();
-
-// Bad — double-cast scattered across call sites
+// BAD: Double-cast scattered across call sites
 const id = generateId() as string as SavedTabId;
 ```
 
-See the `workspace-api` skill for the full pattern with `defineTable()` usage, and `specs/20260312T180000-branded-id-convention.md` for the complete inventory.
+#### Good Pattern (Factory Function)
+
+```typescript
+// GOOD: Factory encapsulates the cast — single source of truth
+const id = generateSavedTabId();
+```
+
+Then use directly in the schema: `id: ConversationId` and for optional FKs: `'parentId?': ConversationId.or('undefined')`.
+
+See the `workspace-api` skill for the full workspace file structure and rules.
 # Extract Coupled `let` State Into Sub-Factories
 
 When a factory function accumulates `let` statements that are always read, written, and reset together, extract them into a sub-factory. The tell: two or three `let` declarations that move as a pack across multiple inner functions.

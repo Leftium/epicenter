@@ -95,14 +95,14 @@ export const SavedTabId = type('string').pipe(
  * @example
  * ```typescript
  * workspaceClient.tables.savedTabs.set({
- *   id: createSavedTabId(),
+ *   id: generateSavedTabId(),
  *   url: tab.url,
  *   title: tab.title || 'Untitled',
  *   // …remaining fields
  * });
  * ```
  */
-export const createSavedTabId = (): SavedTabId =>
+export const generateSavedTabId = (): SavedTabId =>
 	generateId() as string as SavedTabId;
 
 /**
@@ -124,14 +124,14 @@ export const BookmarkId = type('string').pipe(
  * @example
  * ```typescript
  * workspaceClient.tables.bookmarks.set({
- *   id: createBookmarkId(),
+ *   id: generateBookmarkId(),
  *   url: tab.url,
  *   title: tab.title || 'Untitled',
  *   // …remaining fields
  * });
  * ```
  */
-export const createBookmarkId = (): BookmarkId =>
+export const generateBookmarkId = (): BookmarkId =>
 	generateId() as string as BookmarkId;
 
 /**
@@ -152,7 +152,7 @@ export const ConversationId = type('string').pipe(
  *
  * @example
  * ```typescript
- * const id = createConversationId();
+ * const id = generateConversationId();
  * workspaceClient.tables.conversations.set({
  *   id,
  *   title: 'New Chat',
@@ -164,7 +164,7 @@ export const ConversationId = type('string').pipe(
  * });
  * ```
  */
-export const createConversationId = (): ConversationId =>
+export const generateConversationId = (): ConversationId =>
 	generateId() as string as ConversationId;
 
 /**
@@ -184,7 +184,7 @@ export const ChatMessageId = type('string').pipe(
  *
  * @example
  * ```typescript
- * const userMessageId = createChatMessageId();
+ * const userMessageId = generateChatMessageId();
  * workspaceClient.tables.chatMessages.set({
  *   id: userMessageId,
  *   conversationId,
@@ -195,7 +195,7 @@ export const ChatMessageId = type('string').pipe(
  * });
  * ```
  */
-export const createChatMessageId = (): ChatMessageId =>
+export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as string as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────

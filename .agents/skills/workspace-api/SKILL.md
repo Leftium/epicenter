@@ -110,7 +110,7 @@ export const ConversationId = type('string').pipe(
 );
 
 // 2. Factory function — the ONLY place with the double-cast
-export const createConversationId = (): ConversationId =>
+export const generateConversationId = (): ConversationId =>
 	generateId() as string as ConversationId;
 
 // 3. Use in defineTable + co-locate type export
@@ -125,7 +125,7 @@ const conversationsTable = defineTable(
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // 4. At call sites — use the factory, never double-cast
-const newId = createConversationId();  // Good
+const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad — don't do this
 ```
 
@@ -135,7 +135,7 @@ const newId = createConversationId();  // Good
 2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `ConversationId`, not `'string'`
 3. **Optional FKs use `.or('undefined')`**: `'parentId?': ConversationId.or('undefined')`
 4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`
-5. **Use factory functions**: When IDs are generated at runtime, use a `create*` factory: `createConversationId()`. Never scatter double-casts (`generateId() as string as ConversationId`) across call sites.
+5. **Use factory functions**: When IDs are generated at runtime, use a `generate*` factory: `generateConversationId()`. Never scatter double-casts (`generateId() as string as ConversationId`) across call sites.
 6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`
 
 ### Why Not Plain `'string'`

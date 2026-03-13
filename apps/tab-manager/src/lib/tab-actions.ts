@@ -6,9 +6,8 @@
  * mutation handlers in workspace.ts.
  */
 import type { TableHelper } from '@epicenter/workspace';
-import { Ok, tryAsync } from 'wellcrafted/result';
 import {
-	createSavedTabId,
+	generateSavedTabId,
 	type DeviceId,
 	parseTabId,
 	type SavedTab,
@@ -180,7 +179,7 @@ export async function executeSaveTabs(
 	// Sync writes to Y.Doc
 	for (const tab of validTabs) {
 		savedTabsTable.set({
-			id: createSavedTabId(),
+			id: generateSavedTabId(),
 			url: tab.url,
 			title: tab.title || 'Untitled',
 			favIconUrl: tab.favIconUrl,

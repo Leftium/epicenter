@@ -38,14 +38,16 @@ const value = kv.get('sound.manualStart');
 
 No `KvGetResult` discriminated union needed at this layer. Consumers always get `T`.
 
-### Multi-version overload (kept for backward compat)
+### Multi-version overload (kept for backward compat, likely removable)
 
 ```typescript
 // Multi-version: default passed to .migrate()
 defineKv(v1, v2).migrate(fn, defaultValue)
 ```
 
-Nobody currently uses multi-version KV, but we keep it working.
+Nobody currently uses multi-version KV. The variadic+migrate pattern adds complexity that KV settings don't need—they're simple flags and preferences, not structured documents that evolve through versions. When a KV schema changes, updating the schema and default is sufficient: `get()` already returns `defaultValue` when stored data fails validation, which **is** the migration strategy for KV.
+
+**Follow-up consideration:** Remove the variadic overload entirely. If a rare case needs schema evolution, a single-schema overload with an optional `migrate` callback would be simpler than the current multi-schema variadic pattern.
 
 ## Breaking changes
 
@@ -440,3 +442,7 @@ Task 4 (observeAll) is independent and can run in parallel with Task 3.
 ### Pre-existing issues (not caused by this spec)
 
 - 10 TypeScript errors in `packages/workspace` — all in unrelated files (`define-table.ts`, `y-keyvalue-lww.test.ts`, `reddit/` tests, `types.ts` updatedAt indexing)
+
+### Follow-up: consider removing variadic defineKv pattern
+
+KV stores are single values per key—not documents that accumulate rows over time. The `defineKv(v1, v2).migrate(fn, default)` pattern imports table-like versioning machinery that KV doesn't need. The "invalid stored data → return default" behavior already handles schema changes gracefully. If a migration function is ever needed, it could be an optional parameter on the shorthand: `defineKv(schema, default, { migrate? })` rather than a separate multi-schema overload.

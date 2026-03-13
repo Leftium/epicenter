@@ -105,6 +105,272 @@ Wave 4     Sync wiring (deferred — needs Better Auth + server-remote)
 
 ## Audit: Current workspace.ts vs Old Models
 
+### Full Data Model Comparison: Old Storage vs Workspace Client
+
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║                        CURRENT: apps/whispering (IndexedDB + FS)                        ║
+╠══════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                          ║
+║  ┌─ IndexedDB ("RecordingDB" via Dexie, V6) ─────────────────────────────────────────┐  ║
+║  │                                                                                    │  ║
+║  │  recordings  (&id, timestamp, createdAt, updatedAt)                                │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── title: string                                                                 │  ║
+║  │  ├── subtitle: string                                                              │  ║
+║  │  ├── timestamp: string                                                             │  ║
+║  │  ├── createdAt: string                                                             │  ║
+║  │  ├── updatedAt: string                                                             │  ║
+║  │  ├── transcribedText: string                                                       │  ║
+║  │  ├── transcriptionStatus: UNPROCESSED|TRANSCRIBING|DONE|FAILED                     │  ║
+║  │  └── serializedAudio: { arrayBuffer, blobType } | undefined                       │  ║
+║  │                                                                                    │  ║
+║  │  transformations  (&id, createdAt, updatedAt)                                      │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── title: string                                                                 │  ║
+║  │  ├── description: string                                                           │  ║
+║  │  ├── createdAt: string                                                             │  ║
+║  │  ├── updatedAt: string                                                             │  ║
+║  │  └── steps: TransformationStepV2[]          ◄── NESTED ARRAY (denormalized)        │  ║
+║  │       ├── id, version: 2                                                           │  ║
+║  │       ├── type: prompt_transform | find_replace                                    │  ║
+║  │       ├── prompt_transform.inference.provider: OpenAI|Groq|Anthropic|...           │  ║
+║  │       ├── prompt_transform.inference.provider.OpenAI.model: string                 │  ║
+║  │       ├── prompt_transform.inference.provider.Groq.model: string                   │  ║
+║  │       ├── prompt_transform.inference.provider.Anthropic.model: string              │  ║
+║  │       ├── prompt_transform.inference.provider.Google.model: string                 │  ║
+║  │       ├── prompt_transform.inference.provider.OpenRouter.model: string             │  ║
+║  │       ├── prompt_transform.inference.provider.Custom.model: string                 │  ║
+║  │       ├── prompt_transform.inference.provider.Custom.baseUrl: string               │  ║
+║  │       ├── prompt_transform.systemPromptTemplate: string                            │  ║
+║  │       ├── prompt_transform.userPromptTemplate: string                              │  ║
+║  │       ├── find_replace.findText: string                                            │  ║
+║  │       ├── find_replace.replaceText: string                                         │  ║
+║  │       └── find_replace.useRegex: boolean                                           │  ║
+║  │                                                                                    │  ║
+║  │  transformationRuns  (&id, transformationId, recordingId, startedAt)                │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── transformationId: string                                                      │  ║
+║  │  ├── recordingId: string | null                                                    │  ║
+║  │  ├── status: running | completed | failed                                          │  ║
+║  │  ├── input: string                                                                 │  ║
+║  │  ├── output: string | null                                                         │  ║
+║  │  ├── error: string | null                                                          │  ║
+║  │  ├── startedAt: string                                                             │  ║
+║  │  ├── completedAt: string | null                                                    │  ║
+║  │  └── stepRuns: TransformationStepRun[]      ◄── NESTED ARRAY (denormalized)        │  ║
+║  │       ├── id, stepId, input, startedAt, completedAt                                │  ║
+║  │       ├── status: running | completed | failed                                     │  ║
+║  │       ├── output?: string  (completed)                                             │  ║
+║  │       └── error?: string   (failed)                                                │  ║
+║  │                                                                                    │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  ┌─ File System (Desktop only, ~/.whispering/) ──────────────────────────────────────┐  ║
+║  │                                                                                    │  ║
+║  │  recordings/{id}.md          YAML frontmatter + transcribed text body              │  ║
+║  │  recordings/{id}.webm|.mp3   Audio blob as separate file                          │  ║
+║  │  transformations/{id}.json   Transformation with nested steps                     │  ║
+║  │  runs/{id}.json              Run with nested stepRuns                              │  ║
+║  │                                                                                    │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  ┌─ localStorage ────────────────────────────────────────────────────────────────────┐  ║
+║  │                                                                                    │  ║
+║  │  ALL settings: API keys, transcription service/model selection, recording mode,    │  ║
+║  │  sound toggles, output behavior, UI prefs, shortcuts, retention strategy,          │  ║
+║  │  device IDs, base URLs, global shortcuts, analytics toggle, ...                    │  ║
+║  │  (flat key-value, ~60+ keys, NOT synced across devices)                            │  ║
+║  │                                                                                    │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  ┌─ Desktop DB Service (desktop.ts) ─────────────────────────────────────────────────┐  ║
+║  │  READS:  merge IndexedDB + FS  (FS wins on conflict)                               │  ║
+║  │  WRITES: FS only                                                                   │  ║
+║  │  Migration: gradual IndexedDB → FS (in progress)                                   │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+
+
+╔══════════════════════════════════════════════════════════════════════════════════════════╗
+║               TARGET: workspace.ts (Y.Doc + workspace client)                            ║
+║               file: apps/whispering/src/lib/workspace.ts                                 ║
+╠══════════════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                          ║
+║  ┌─ Tables (defineTable → Y.Array in Y.Doc) ─────────────────────────────────────────┐  ║
+║  │                                                                                    │  ║
+║  │  recordings  (_v: 1)                                                               │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── title: string                                                                 │  ║
+║  │  ├── subtitle: string                                                              │  ║
+║  │  ├── timestamp: string                                                             │  ║
+║  │  ├── createdAt: string                                                             │  ║
+║  │  ├── updatedAt: string                                                             │  ║
+║  │  ├── transcribedText: string                                                       │  ║
+║  │  └── transcriptionStatus: UNPROCESSED|TRANSCRIBING|DONE|FAILED                     │  ║
+║  │       ⚠ NO audio blob — stored out-of-band (blob store / FS)                      │  ║
+║  │                                                                                    │  ║
+║  │  transformations  (_v: 1)                   ◄── NORMALIZED (no nested steps)        │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── title: string                                                                 │  ║
+║  │  ├── description: string                                                           │  ║
+║  │  ├── createdAt: string                                                             │  ║
+║  │  └── updatedAt: string                                                             │  ║
+║  │                                                                                    │  ║
+║  │  transformationSteps  (_v: 1)               ◄── NEW: broken out from nested array  │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── transformationId: string               ← FK to transformations.id             │  ║
+║  │  ├── order: number                          ← explicit ordering                    │  ║
+║  │  ├── type: prompt_transform | find_replace                                         │  ║
+║  │  ├── inferenceProvider: OpenAI|Groq|Anthropic|Google|OpenRouter|Custom             │  ║
+║  │  ├── openaiModel: string                    ┐                                      │  ║
+║  │  ├── groqModel: string                      │                                      │  ║
+║  │  ├── anthropicModel: string                 │ camelCase field names                │  ║
+║  │  ├── googleModel: string                    │ (no more dot-notation keys)          │  ║
+║  │  ├── openrouterModel: string                │                                      │  ║
+║  │  ├── customModel: string                    │                                      │  ║
+║  │  ├── customBaseUrl: string                  ┘                                      │  ║
+║  │  ├── systemPromptTemplate: string                                                  │  ║
+║  │  ├── userPromptTemplate: string                                                    │  ║
+║  │  ├── findText: string                                                              │  ║
+║  │  ├── replaceText: string                                                           │  ║
+║  │  └── useRegex: boolean                                                             │  ║
+║  │                                                                                    │  ║
+║  │  transformationRuns  (_v: 1)                ◄── NORMALIZED (no nested stepRuns)     │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── transformationId: string                                                      │  ║
+║  │  ├── recordingId: string | null                                                    │  ║
+║  │  ├── status: running | completed | failed                                          │  ║
+║  │  ├── input: string                                                                 │  ║
+║  │  ├── output: string | null                                                         │  ║
+║  │  ├── error: string | null                                                          │  ║
+║  │  ├── startedAt: string                                                             │  ║
+║  │  └── completedAt: string | null                                                    │  ║
+║  │                                                                                    │  ║
+║  │  transformationStepRuns  (_v: 1)            ◄── NEW: broken out from nested array  │  ║
+║  │  ├── id: string                                                                    │  ║
+║  │  ├── transformationRunId: string            ← FK to transformationRuns.id          │  ║
+║  │  ├── stepId: string                         ← FK to transformationSteps.id         │  ║
+║  │  ├── order: number                                                                 │  ║
+║  │  ├── status: running | completed | failed                                          │  ║
+║  │  ├── input: string                                                                 │  ║
+║  │  ├── output: string | null                                                         │  ║
+║  │  ├── error: string | null                                                          │  ║
+║  │  ├── startedAt: string                                                             │  ║
+║  │  └── completedAt: string | null                                                    │  ║
+║  │                                                                                    │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  ┌─ KV Store (defineKv → Y.Array 'kv' in Y.Doc) ────────────────────────────────────┐  ║
+║  │                                                                                    │  ║
+║  │  sound (8 keys)                              boolean toggles                       │  ║
+║  │  ├── sound.manualStart                                                             │  ║
+║  │  ├── sound.manualStop                                                              │  ║
+║  │  ├── sound.manualCancel                                                            │  ║
+║  │  ├── sound.vadStart                                                                │  ║
+║  │  ├── sound.vadCapture                                                              │  ║
+║  │  ├── sound.vadStop                                                                 │  ║
+║  │  ├── sound.transcriptionComplete                                                   │  ║
+║  │  └── sound.transformationComplete                                                  │  ║
+║  │                                                                                    │  ║
+║  │  output (6 keys)                             boolean toggles                       │  ║
+║  │  ├── transcription.copyToClipboard                                                 │  ║
+║  │  ├── transcription.writeToCursor                                                   │  ║
+║  │  ├── transcription.simulateEnter                                                   │  ║
+║  │  ├── transformation.copyToClipboard                                                │  ║
+║  │  ├── transformation.writeToCursor                                                  │  ║
+║  │  └── transformation.simulateEnter                                                  │  ║
+║  │                                                                                    │  ║
+║  │  ui (2 keys)                                                                       │  ║
+║  │  ├── ui.alwaysOnTop: enum                                                          │  ║
+║  │  └── ui.layoutMode: enum                                                           │  ║
+║  │                                                                                    │  ║
+║  │  dataRetention (2 keys)                                                            │  ║
+║  │  ├── retention.strategy: keep-forever | limit-count                                │  ║
+║  │  └── retention.maxCount: integer >= 1                                              │  ║
+║  │                                                                                    │  ║
+║  │  recording (1 key)                                                                 │  ║
+║  │  └── recording.mode: enum                                                          │  ║
+║  │                                                                                    │  ║
+║  │  transcription (6 keys)                                                            │  ║
+║  │  ├── transcription.service: selected service ID                                    │  ║
+║  │  ├── transcription.openai.model: string                                            │  ║
+║  │  ├── transcription.groq.model: string                                              │  ║
+║  │  ├── transcription.elevenlabs.model: string                                        │  ║
+║  │  ├── transcription.deepgram.model: string                                          │  ║
+║  │  ├── transcription.mistral.model: string                                           │  ║
+║  │  ├── transcription.language: string                                                │  ║
+║  │  ├── transcription.prompt: string                                                  │  ║
+║  │  ├── transcription.temperature: 0..1                                               │  ║
+║  │  ├── transcription.compressionEnabled: boolean                                     │  ║
+║  │  └── transcription.compressionOptions: string                                      │  ║
+║  │                                                                                    │  ║
+║  │  transformation (1 key)                                                            │  ║
+║  │  └── transformation.selectedId: string | null                                      │  ║
+║  │                                                                                    │  ║
+║  │  analytics (1 key)                                                                 │  ║
+║  │  └── analytics.enabled: boolean                                                    │  ║
+║  │                                                                                    │  ║
+║  │  shortcuts (10 keys)                                                               │  ║
+║  │  ├── shortcut.toggleManualRecording                                                │  ║
+║  │  ├── shortcut.startManualRecording                                                 │  ║
+║  │  ├── shortcut.stopManualRecording                                                  │  ║
+║  │  ├── shortcut.cancelManualRecording                                                │  ║
+║  │  ├── shortcut.toggleVadRecording                                                   │  ║
+║  │  ├── shortcut.startVadRecording                                                    │  ║
+║  │  ├── shortcut.stopVadRecording                                                     │  ║
+║  │  ├── shortcut.pushToTalk                                                           │  ║
+║  │  ├── shortcut.openTransformationPicker                                             │  ║
+║  │  └── shortcut.runTransformationOnClipboard                                         │  ║
+║  │                                                                                    │  ║
+║  │  ⚠ NOT in KV (stay in localStorage, device-specific):                              │  ║
+║  │    API keys, filesystem paths, hardware device IDs, base URLs, global shortcuts    │  ║
+║  │                                                                                    │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+║  ┌─ Persistence ─────────────────────────────────────────────────────────────────────┐  ║
+║  │  Web:     indexeddbPersistence (Y.Doc → IndexedDB)                                 │  ║
+║  │  Desktop: (future) file system persistence                                         │  ║
+║  └────────────────────────────────────────────────────────────────────────────────────┘  ║
+║                                                                                          ║
+╚══════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+### Key Structural Differences
+
+```
+CHANGE                          OLD (Dexie/FS)              NEW (workspace client)
+─────────────────────────────── ─────────────────────────── ──────────────────────────────
+1. Steps storage                nested array in             separate transformationSteps
+                                transformations.steps[]     table with FK + order field
+
+2. Step runs storage            nested array in             separate transformationStepRuns
+                                transformationRuns.         table with FK + order field
+                                stepRuns[]
+
+3. Step field naming            dot-notation keys           camelCase fields
+                                "prompt_transform.          "inferenceProvider",
+                                inference.provider"         "openaiModel", etc.
+
+4. Settings storage             localStorage (~60 keys,     KV store in Y.Doc (37 keys,
+                                all device-local)           synced across devices)
+                                                            API keys stay in localStorage
+
+5. Audio blobs                  serializedAudio in IDB      NOT in Y.Doc — out-of-band
+                                OR separate file on FS      (blob store / FS, same as now)
+
+6. Source of truth              Dexie IDB + FS (dual read)  Y.Doc (single CRDT source)
+                                                            with optional materializers
+
+7. Versioning                   Dexie .version() upgrades   _v field per table schema
+                                (imperative migration)      (declarative, workspace-level)
+
+8. Sync                         none                        Y.Doc CRDT replication
+                                                            (multi-device via server-remote)
+```
+
+
 ### Tables — What's Good
 
 The 5 normalized tables are correct:
@@ -369,6 +635,56 @@ const transformationSteps = defineTable(type({
 ### Decision 3: KV Key Naming ✅ Confirmed
 
 **Choice**: Keep the new shorter names (`sound.manualStart` not `sound.playOn.manual-start`). The migration handles the mapping. Cleaner namespace is worth a one-time translation.
+
+### Decision 4: Discriminated Unions for `transformationRuns` and `transformationStepRuns` ✅ Confirmed
+
+**Choice**: Use arktype discriminated unions on `status` for run tables. `output` exists only on `completed` runs, `error` exists only on `failed` runs. Shared fields live in a PascalCase base type, composed via `.merge(type.or(...))` where `.merge()` distributes the base across each union branch.
+
+**Rationale (contrast with Decision 1)**:
+
+Decision 1 chose flat rows for `transformationSteps` because steps switch types bidirectionally—toggling between `prompt_transform` and `find_replace` must preserve the inactive variant's data. That argument does not apply to runs:
+
+1. **One-way state transitions.** Runs move `running → completed` or `running → failed`. They never transition back. There is no inactive variant's data to preserve across states.
+
+2. **Eliminates impossible states.** The flat approach allows `{ status: 'running', output: 'some value', error: 'some error' }` which is nonsensical. The discriminated union makes this unrepresentable—`output` physically does not exist on a running or failed run.
+
+3. **Type narrowing eliminates null checks.** With flat rows, consumer code must null-check `output` and `error` even after verifying `status`. With discriminated unions, `status === 'completed'` narrows the type so `output` is `string` (not `string | null`), removing defensive checks in `transformer.ts` and similar consumers.
+
+4. **`table.set()` row replacement is safe here.** The Decision 1 concern about `table.set()` losing data on type switches is irrelevant for runs—there is no data to lose on a one-way state transition. Writing `{ status: 'completed', output: '...' }` replaces the `{ status: 'running' }` row cleanly.
+
+**Pattern**: `Base.merge(type.or(...))`
+
+```typescript
+const TransformationRunBase = type({
+  id: 'string',
+  transformationId: 'string',
+  recordingId: 'string | null',
+  input: 'string',
+  startedAt: 'string',
+  completedAt: 'string | null',
+  _v: '1',
+});
+
+const transformationRuns = defineTable(
+  TransformationRunBase.merge(
+    type.or(
+      { status: "'running'" },
+      { status: "'completed'", output: 'string' },
+      { status: "'failed'", error: 'string' },
+    ),
+  ),
+);
+```
+
+The `.merge()` distributes over the union—each branch gets all base fields merged in. Arktype auto-detects `status` as the discriminant because each branch has a distinct literal value. Same pattern applies to `transformationStepRuns` with `TransformationStepRunBase`.
+
+**Why `completedAt` stays in the base (not discriminated)**: While `completedAt` is null during `running` and set during `completed`/`failed`, it appears in both terminal states identically. Discriminating it would add two near-identical branches (`completed` and `failed` both have `completedAt: 'string'`) for no type-safety benefit. Keeping it as `'string | null'` in the base is simpler.
+
+**Alternatives considered**:
+
+- **Flat rows (same as Decision 1)**: Simpler schema definition, but allows impossible states and forces null checks after status narrowing. The simplicity argument is weaker here because the union has only 3 branches (not the 7+ provider models in transformationSteps).
+
+- **Consumer-side mapping**: Keep workspace schemas flat, map to discriminated unions in the service/query layer. Adds an unnecessary translation layer when the workspace schema itself can express the constraint directly.
 
 ## Key Reference: Workspace API Behavior
 

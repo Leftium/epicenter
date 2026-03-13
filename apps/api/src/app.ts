@@ -88,9 +88,11 @@ function createAuth(db: Db, env: Env['Bindings']) {
 		plugins: [
 			bearer(),
 			jwt(),
-			customSession(async () => {
+			customSession(async ({ user, session }) => {
 				const encryptionKey = await deriveKeyFromSecret(env.BETTER_AUTH_SECRET);
 				return {
+					user,
+					session,
 					encryptionKey: bytesToBase64(encryptionKey),
 				};
 			}),

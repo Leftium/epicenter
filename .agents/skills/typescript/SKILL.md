@@ -677,19 +677,19 @@ Every branded ID type that is generated at runtime MUST follow the three-part pa
 ```typescript
 import { type Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
-import { generateId } from '@epicenter/workspace';
+import { generateId, type Id } from '@epicenter/workspace';
 
-// 1. TYPE — the branded type itself
-export type SavedTabId = string & Brand<'SavedTabId'>;
+// 1. TYPE — extends Id so generateId() can single-cast
+export type SavedTabId = Id & Brand<'SavedTabId'>;
 
 // 2. VALIDATOR — arktype pipe for schema composition in defineTable()
 export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
 
-// 3. FACTORY — generate* prefix, encapsulates the cast
+// 3. FACTORY — generate* prefix, single-cast thanks to Id base
 export const generateSavedTabId = (): SavedTabId =>
-	generateId() as string as SavedTabId;
+	generateId() as SavedTabId;
 ```
 
 | Part | Naming | Required When |
@@ -697,21 +697,21 @@ export const generateSavedTabId = (): SavedTabId =>
 | Type | PascalCase (`SavedTabId`) | Always — this IS the branded type |
 | Validator | Same PascalCase (TS allows type+value same name) | Used in `defineTable()` or other arktype schemas |
 | Factory | `generate` + PascalCase (`generateSavedTabId`) | IDs are generated at runtime (via `generateId()`) |
-,
+
 Not every branded type needs all three. Path types like `AbsolutePath` are cast from external sources — they need only the type. `DeviceId` is set from `chrome.storage.local`, not generated.
 
-#### Bad Pattern (Scattered Double-Casts)
+#### Why `Id & Brand<…>` Instead of `string & Brand<…>`
+
+`generateId()` returns `Id` (which is `string & Brand<'Id'>`). If you define `SavedTabId = string & Brand<'SavedTabId'>`, the brands are incompatible—TypeScript requires a double-cast: `generateId() as string as SavedTabId`. By extending `Id` instead of `string`, `SavedTabId` becomes a subtype of `Id`, allowing a single cast: `generateId() as SavedTabId`.
 
 ```typescript
-// BAD: Double-cast scattered across call sites
+// BAD: string & Brand means double-cast needed
+type SavedTabId = string & Brand<'SavedTabId'>;
 const id = generateId() as string as SavedTabId;
-```
 
-#### Good Pattern (Factory Function)
-
-```typescript
-// GOOD: Factory encapsulates the cast — single source of truth
-const id = generateSavedTabId();
+// GOOD: Id & Brand means single-cast
+type SavedTabId = Id & Brand<'SavedTabId'>;
+const id = generateId() as SavedTabId;
 ```
 
 Then use directly in the schema: `id: ConversationId` and for optional FKs: `'parentId?': ConversationId.or('undefined')`.

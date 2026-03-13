@@ -101,17 +101,17 @@ Define a branded type + arktype validator + factory in the same file as the work
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
-import { generateId } from '@epicenter/workspace';
+import { generateId, type Id } from '@epicenter/workspace';
 
-// 1. Branded type + arktype validator (co-located with workspace definition)
-export type ConversationId = string & Brand<'ConversationId'>;
+// 1. Branded type — extends Id for single-cast generation
+export type ConversationId = Id & Brand<'ConversationId'>;
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
 
-// 2. Factory function — the ONLY place with the double-cast
+// 2. Factory function — single-cast thanks to Id base type
 export const generateConversationId = (): ConversationId =>
-	generateId() as string as ConversationId;
+	generateId() as ConversationId;
 
 // 3. Use in defineTable + co-locate type export
 const conversationsTable = defineTable(
@@ -124,9 +124,9 @@ const conversationsTable = defineTable(
 );
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
-// 4. At call sites — use the factory, never double-cast
+// 4. At call sites — use the factory, never cast manually
 const newId = generateConversationId();  // Good
-// const newId = generateId() as string as ConversationId;  // Bad — don't do this
+// const newId = generateId() as ConversationId;  // Bad — use factory
 ```
 
 ### Rules
@@ -135,7 +135,7 @@ const newId = generateConversationId();  // Good
 2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `ConversationId`, not `'string'`
 3. **Optional FKs use `.or('undefined')`**: `'parentId?': ConversationId.or('undefined')`
 4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`
-5. **Use factory functions**: When IDs are generated at runtime, use a `generate*` factory: `generateConversationId()`. Never scatter double-casts (`generateId() as string as ConversationId`) across call sites.
+5. **Use factory functions**: When IDs are generated at runtime, use a `generate*` factory: `generateConversationId()`. Never cast manually at call sites.
 6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`
 
 ### Why Not Plain `'string'`

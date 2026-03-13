@@ -18,6 +18,7 @@ import {
 	defineTable,
 	defineWorkspace,
 	generateId,
+	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { createSyncExtension } from '@epicenter/workspace/extensions/sync';
@@ -82,7 +83,7 @@ export const DeviceId = type('string').pipe((s): DeviceId => s as DeviceId);
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = string & Brand<'SavedTabId'>;
+export type SavedTabId = Id & Brand<'SavedTabId'>;
 export const SavedTabId = type('string').pipe(
 	(s): SavedTabId => s as SavedTabId,
 );
@@ -90,7 +91,7 @@ export const SavedTabId = type('string').pipe(
  * Generate a unique {@link SavedTabId} for a newly saved tab.
  *
  * Wraps `generateId()` with the branded cast so call sites never
- * need the error-prone `as string as SavedTabId` double-cast.
+ * need a manual cast.
  *
  * @example
  * ```typescript
@@ -103,7 +104,7 @@ export const SavedTabId = type('string').pipe(
  * ```
  */
 export const generateSavedTabId = (): SavedTabId =>
-	generateId() as string as SavedTabId;
+	generateId() as SavedTabId;
 
 /**
  * Branded bookmark ID — nanoid generated when a URL is bookmarked.
@@ -111,7 +112,7 @@ export const generateSavedTabId = (): SavedTabId =>
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = string & Brand<'BookmarkId'>;
+export type BookmarkId = Id & Brand<'BookmarkId'>;
 export const BookmarkId = type('string').pipe(
 	(s): BookmarkId => s as BookmarkId,
 );
@@ -119,7 +120,7 @@ export const BookmarkId = type('string').pipe(
  * Generate a unique {@link BookmarkId} for a newly created bookmark.
  *
  * Wraps `generateId()` with the branded cast so call sites never
- * need the error-prone `as string as BookmarkId` double-cast.
+ * need a manual cast.
  *
  * @example
  * ```typescript
@@ -132,7 +133,7 @@ export const BookmarkId = type('string').pipe(
  * ```
  */
 export const generateBookmarkId = (): BookmarkId =>
-	generateId() as string as BookmarkId;
+	generateId() as BookmarkId;
 
 /**
  * Branded conversation ID — nanoid generated when a chat conversation is created.
@@ -140,7 +141,7 @@ export const generateBookmarkId = (): BookmarkId =>
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = string & Brand<'ConversationId'>;
+export type ConversationId = Id & Brand<'ConversationId'>;
 export const ConversationId = type('string').pipe(
 	(s): ConversationId => s as ConversationId,
 );
@@ -148,7 +149,7 @@ export const ConversationId = type('string').pipe(
  * Generate a unique {@link ConversationId} for a new chat conversation.
  *
  * Wraps `generateId()` with the branded cast so call sites never
- * need the error-prone `as string as ConversationId` double-cast.
+ * need a manual cast.
  *
  * @example
  * ```typescript
@@ -165,14 +166,14 @@ export const ConversationId = type('string').pipe(
  * ```
  */
 export const generateConversationId = (): ConversationId =>
-	generateId() as string as ConversationId;
+	generateId() as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = string & Brand<'ChatMessageId'>;
+export type ChatMessageId = Id & Brand<'ChatMessageId'>;
 export const ChatMessageId = type('string').pipe(
 	(s): ChatMessageId => s as ChatMessageId,
 );
@@ -180,7 +181,7 @@ export const ChatMessageId = type('string').pipe(
  * Generate a unique {@link ChatMessageId} for a new chat message.
  *
  * Wraps `generateId()` with the branded cast so call sites never
- * need the error-prone `as string as ChatMessageId` double-cast.
+ * need a manual cast.
  *
  * @example
  * ```typescript
@@ -196,7 +197,7 @@ export const ChatMessageId = type('string').pipe(
  * ```
  */
 export const generateChatMessageId = (): ChatMessageId =>
-	generateId() as string as ChatMessageId;
+	generateId() as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Composite ID Types

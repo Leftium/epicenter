@@ -53,12 +53,12 @@ Pure deletion only. No behavior changes. Run `lsp_diagnostics` on both files aft
 
 **Deferred to dedicated spec.** Investigation revealed that `SavedTabId` is an arktype validator (`type('string').pipe(...)`) used in `defineTable()` schema composition — not a callable brand constructor. Calling `SavedTabId(value)` returns `SavedTabId | ArkErrors`, which isn't directly assignable.
 
-The double-cast `generateId() as string as SavedTabId` appears in **7 sites across 4 files** and is the established convention for all branded IDs (`BookmarkId`, `ConversationId`, `ChatMessageId`, etc.).
+The double-cast `generateId() as string as SavedTabId` appeared in **7 sites across 4 files**. This was later resolved by extending `Id` instead of `string` in the type definition (`Id & Brand<'SavedTabId'>`), eliminating the double-cast entirely.
 
 **Resolution**: A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part branded ID convention:
-1. `type SavedTabId = string & Brand<'SavedTabId'>` — the branded type
+1. `type SavedTabId = Id & Brand<'SavedTabId'>` — branded type extending `Id` for single-cast
 2. `const SavedTabId = type('string').pipe(...)` — arktype validator for schema composition
-3. `const generateSavedTabId = (): SavedTabId => generateId() as string as SavedTabId` — factory with `generate` prefix
+3. `const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId` — factory with single-cast
 
 This applies to all branded IDs codebase-wide, not just `SavedTabId`.
 
@@ -336,6 +336,6 @@ All 10 items addressed. 8 committed as individual refactors, 1 skipped (deferred
 ### Key Discoveries
 
 1. **TS 5.5+ type predicate inference**—Manual type predicates on `.filter()` are unnecessary noise. TypeScript infers them automatically.
-2. **`SavedTabId` is an arktype validator**, not a simple brand—Calling it returns `SavedTabId | ArkErrors`. The double-cast `generateId() as string as SavedTabId` is the established convention across the codebase. A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part pattern: branded type + arktype validator + `create*` factory.
+2. **`SavedTabId` is an arktype validator**, not a simple brand—Calling it returns `SavedTabId | ArkErrors`. A separate spec (`20260312T180000-branded-id-convention.md`) standardizes the three-part pattern: branded type (extending `Id`) + arktype validator + `generate*` factory. The `Id & Brand<'SavedTabId'>` base type eliminates the double-cast.
 3. **`Tab.id` was already `TabCompositeId`**—The casts in quick-actions.ts were caused by helper functions (`findDuplicates`, `getUniqueDomains`) widening return types to `string`. Fixed upstream.
 4. **`toNativeIds()` and `compositeToNativeIds()`**—Extracted to replace 9 total inline occurrences of the map-filter-parse pattern across both files.

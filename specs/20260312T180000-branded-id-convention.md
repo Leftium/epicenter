@@ -4,11 +4,11 @@
 
 Branded ID types in the codebase lack a consistent construction pattern. Currently:
 
-- The **type** (`type SavedTabId = string & Brand<'SavedTabId'>`) exists everywhere
+- The **type** (`type SavedTabId = string & Brand<'SavedTabId'>`) used `string` as the base—requiring a double-cast to convert from `Id`
 - The **arktype validator** (`const SavedTabId = type('string').pipe(...)`) exists for types used in `defineTable()` schemas
 - **No factory function** exists—every call site uses the ugly double-cast: `generateId() as string as SavedTabId`
 
-The double-cast is error-prone (easy to forget the intermediate `as string`), inconsistent with `packages/filesystem` which already has factories (`generateRowId`, `generateColumnId`), and scattered across 7+ call sites.
+The double-cast existed because `Id` (`string & Brand<'Id'>`) and `SavedTabId` (`string & Brand<'SavedTabId'>`) have incompatible brands. By extending `Id` instead of `string`, the cast becomes single-step. Combined with factory functions (matching `packages/filesystem`'s existing convention), the cast is fully encapsulated.
 
 ## Convention
 
@@ -17,19 +17,19 @@ Every branded ID type that is generated at runtime MUST follow the three-part pa
 ```typescript
 import { type Brand } from 'wellcrafted/brand';
 import { type } from 'arktype';
-import { generateId } from '@epicenter/workspace';
+import { generateId, type Id } from '@epicenter/workspace';
 
-// 1. TYPE — the branded type itself
-export type SavedTabId = string & Brand<'SavedTabId'>;
+// 1. TYPE — extends Id for single-cast generation
+export type SavedTabId = Id & Brand<'SavedTabId'>;
 
 // 2. VALIDATOR — arktype pipe for schema composition in defineTable()
 export const SavedTabId = type('string').pipe(
     (s): SavedTabId => s as SavedTabId,
 );
 
-// 3. FACTORY — generate* prefix, encapsulates the cast
+// 3. FACTORY — generate* prefix, single-cast thanks to Id base
 export const generateSavedTabId = (): SavedTabId =>
-    generateId() as string as SavedTabId;
+    generateId() as SavedTabId;
 ```
 
 ### Naming Rules
@@ -111,10 +111,11 @@ Not every branded type needs all three. Path types like `AbsolutePath`, `Project
 
 ## Review
 
-Three commits landed:
+Six commits landed:
 
-1. `feat(tab-manager): add generate* factory functions for branded ID types` — added `generateId` import and 4 factories (`generateSavedTabId`, `generateBookmarkId`, `generateConversationId`, `generateChatMessageId`) co-located with their type+validator pairs in `workspace.ts`.
-2. `refactor(tab-manager): replace double-cast ID generation with generate* factories` — replaced all 5 double-cast call sites across 4 files. Removed the local `generateConversationId` wrapper in `chat-state.svelte.ts` and eliminated all `generateId` imports from consumer files.
-3. `docs(tab-manager): add JSDoc with @example blocks to generate* ID factories` — each factory has a description, `{@link}` to its branded type, and a realistic `@example` block.
-
-4. `docs(skills): update typescript and workspace-api skills with branded ID factory convention` — completed the truncated three-part pattern section in typescript skill; refined the workspace-api skill's pattern section with factory-first examples and call-site guidance.
+1. `feat(tab-manager): add generate* factory functions for branded ID types` — added `generateId` import and 4 factories co-located with their type+validator pairs in `workspace.ts`.
+2. `refactor(tab-manager): replace double-cast ID generation with generate* factories` — replaced all 5 double-cast call sites across 4 files. Removed the local `generateConversationId` wrapper in `chat-state.svelte.ts`.
+3. `docs(tab-manager): add JSDoc with @example blocks to generate* ID factories` — each factory has a description, `{@link}`, and a realistic `@example` block.
+4. `docs(skills): update typescript and workspace-api skills with branded ID factory convention` — documented the three-part pattern in both skills.
+5. `refactor(tab-manager): rename create* ID factories to generate* for cross-package consistency` — aligned with `packages/filesystem` naming convention.
+6. `refactor(tab-manager): extend Id instead of string in branded types to eliminate double-cast` — changed type definitions from `string & Brand<'*'>` to `Id & Brand<'*'>`, enabling single-cast `generateId() as *Id` inside factories. Matches the pattern in `packages/filesystem/src/ids.ts`.

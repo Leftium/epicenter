@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as ScrollArea from '@epicenter/ui/scroll-area';
+	import ArchiveRestoreIcon from '@lucide/svelte/icons/archive-restore';
 	import ArrowUpDownIcon from '@lucide/svelte/icons/arrow-up-down';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import PinIcon from '@lucide/svelte/icons/pin';
@@ -19,6 +20,12 @@
 		onDeleteNote,
 		onPinNote,
 		onSortChange,
+		viewMode = 'normal' as 'normal' | 'recentlyDeleted',
+		onRestoreNote = undefined as ((noteId: NoteId) => void) | undefined,
+		onPermanentlyDeleteNote = undefined as
+			| ((noteId: NoteId) => void)
+			| undefined,
+		folderName = 'Notes',
 	}: {
 		notes: Note[];
 		selectedNoteId: NoteId | null;
@@ -28,6 +35,10 @@
 		onDeleteNote: (noteId: NoteId) => void;
 		onPinNote: (noteId: NoteId) => void;
 		onSortChange: (sortBy: 'dateEdited' | 'dateCreated' | 'title') => void;
+		viewMode?: 'normal' | 'recentlyDeleted';
+		onRestoreNote?: ((noteId: NoteId) => void) | undefined;
+		onPermanentlyDeleteNote?: ((noteId: NoteId) => void) | undefined;
+		folderName?: string;
 	} = $props();
 
 	function parseDateTime(dts: string): Date {
@@ -82,47 +93,57 @@
 
 <div class="flex h-full flex-col">
 	<div class="flex items-center justify-between border-b px-4 py-3">
-		<h2 class="text-sm font-semibold">Notes</h2>
-		<div class="flex items-center gap-1">
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<Button variant="ghost" size="icon" class="size-7" {...props}>
-							<ArrowUpDownIcon class="size-4" />
-						</Button>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-44">
-					<DropdownMenu.Item onclick={() => onSortChange('dateEdited')}>
-						{#if sortBy === 'dateEdited'}
-							<CheckIcon class="mr-2 size-4" />
-						{:else}
-							<span class="mr-2 size-4"></span>
-						{/if}
-						Date Edited
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => onSortChange('dateCreated')}>
-						{#if sortBy === 'dateCreated'}
-							<CheckIcon class="mr-2 size-4" />
-						{:else}
-							<span class="mr-2 size-4"></span>
-						{/if}
-						Date Created
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => onSortChange('title')}>
-						{#if sortBy === 'title'}
-							<CheckIcon class="mr-2 size-4" />
-						{:else}
-							<span class="mr-2 size-4"></span>
-						{/if}
-						Title
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-			<Button variant="ghost" size="icon" class="size-7" onclick={onCreateNote}>
-				<PlusIcon class="size-4" />
-			</Button>
+		<div class="flex items-center gap-2">
+			<h2 class="text-sm font-semibold">{folderName}</h2>
+			<span class="text-xs text-muted-foreground">{notes.length}</span>
 		</div>
+		{#if viewMode === 'normal'}
+			<div class="flex items-center gap-1">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger>
+						{#snippet child({ props })}
+							<Button variant="ghost" size="icon" class="size-7" {...props}>
+								<ArrowUpDownIcon class="size-4" />
+							</Button>
+						{/snippet}
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-44">
+						<DropdownMenu.Item onclick={() => onSortChange('dateEdited')}>
+							{#if sortBy === 'dateEdited'}
+								<CheckIcon class="mr-2 size-4" />
+							{:else}
+								<span class="mr-2 size-4"></span>
+							{/if}
+							Date Edited
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => onSortChange('dateCreated')}>
+							{#if sortBy === 'dateCreated'}
+								<CheckIcon class="mr-2 size-4" />
+							{:else}
+								<span class="mr-2 size-4"></span>
+							{/if}
+							Date Created
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => onSortChange('title')}>
+							{#if sortBy === 'title'}
+								<CheckIcon class="mr-2 size-4" />
+							{:else}
+								<span class="mr-2 size-4"></span>
+							{/if}
+							Title
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+				<Button
+					variant="ghost"
+					size="icon"
+					class="size-7"
+					onclick={onCreateNote}
+				>
+					<PlusIcon class="size-4" />
+				</Button>
+			</div>
+		{/if}
 	</div>
 
 	<ScrollArea.Root class="flex-1">
@@ -130,7 +151,13 @@
 			<div
 				class="flex h-full items-center justify-center p-8 text-center text-muted-foreground"
 			>
-				<p class="text-sm">No notes yet. Click + to create one.</p>
+				<p class="text-sm">
+					{#if viewMode === 'recentlyDeleted'}
+						No deleted notes
+					{:else}
+						No notes yet. Click + to create one.
+					{/if}
+				</p>
 			</div>
 		{:else}
 			<div class="flex flex-col gap-4 p-2">
@@ -166,37 +193,73 @@
 									{note.preview || 'No content'}
 								</p>
 
-								<div
-									class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
-									note.id
-										? 'flex'
-										: ''}"
-								>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="size-6"
-										onclick={(e) => {
-											e.stopPropagation();
-											onPinNote(note.id);
-										}}
+								{#if viewMode === 'recentlyDeleted'}
+									<div
+										class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
+										note.id
+											? 'flex'
+											: ''}"
 									>
-										<PinIcon
-											class="size-3 {note.pinned ? 'fill-current' : ''}"
-										/>
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="size-6 text-destructive hover:text-destructive"
-										onclick={(e) => {
-											e.stopPropagation();
-											onDeleteNote(note.id);
-										}}
+										{#if onRestoreNote}
+											<Button
+												variant="ghost"
+												size="icon"
+												class="size-6"
+												onclick={(e) => {
+													e.stopPropagation();
+													onRestoreNote(note.id);
+												}}
+											>
+												<ArchiveRestoreIcon class="size-3" />
+											</Button>
+										{/if}
+										{#if onPermanentlyDeleteNote}
+											<Button
+												variant="ghost"
+												size="icon"
+												class="size-6 text-destructive hover:text-destructive"
+												onclick={(e) => {
+													e.stopPropagation();
+													onPermanentlyDeleteNote(note.id);
+												}}
+											>
+												<TrashIcon class="size-3" />
+											</Button>
+										{/if}
+									</div>
+								{:else}
+									<div
+										class="absolute bottom-1 right-2 hidden items-center gap-0.5 group-hover:flex {selectedNoteId ===
+										note.id
+											? 'flex'
+											: ''}"
 									>
-										<TrashIcon class="size-3" />
-									</Button>
-								</div>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-6"
+											onclick={(e) => {
+												e.stopPropagation();
+												onPinNote(note.id);
+											}}
+										>
+											<PinIcon
+												class="size-3 {note.pinned ? 'fill-current' : ''}"
+											/>
+										</Button>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-6 text-destructive hover:text-destructive"
+											onclick={(e) => {
+												e.stopPropagation();
+												onDeleteNote(note.id);
+											}}
+										>
+											<TrashIcon class="size-3" />
+										</Button>
+									</div>
+								{/if}
 							</div>
 						{/each}
 					</div>

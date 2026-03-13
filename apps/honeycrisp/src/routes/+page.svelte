@@ -9,14 +9,17 @@
 	import {
 		createFolder,
 		createNote,
+		deletedNotes,
 		deleteFolder,
 		filteredNotes,
 		folders,
 		handleContentChange,
 		noteCounts,
 		notes,
+		permanentlyDeleteNote,
 		pinNote,
 		renameFolder,
+		restoreNote,
 		searchQuery,
 		selectedFolderId,
 		selectedNote,
@@ -29,6 +32,18 @@
 		sortBy,
 	} from '$lib/state/notes.svelte';
 	import workspaceClient from '$lib/workspace';
+
+	// ─── Recently Deleted View ──────────────────────────────────────────────
+
+	let isRecentlyDeletedView = $state(false);
+
+	const folderName = $derived(
+		isRecentlyDeletedView
+			? 'Recently Deleted'
+			: selectedFolderId
+				? (folders.find((f) => f.id === selectedFolderId)?.name ?? 'Notes')
+				: 'All Notes',
+	);
 
 	// ─── Document Handle ────────────────────────────────────────────────────
 
@@ -85,25 +100,38 @@
 		{noteCounts}
 		totalNoteCount={notes.length}
 		{searchQuery}
-		onSelectFolder={selectFolder}
+		deletedNoteCount={deletedNotes.length}
+		isRecentlyDeletedSelected={isRecentlyDeletedView}
+		onSelectFolder={(folderId) => {
+			isRecentlyDeletedView = false;
+			selectFolder(folderId);
+		}}
 		onCreateFolder={createFolder}
 		onRenameFolder={renameFolder}
 		onDeleteFolder={deleteFolder}
 		onSearchChange={setSearchQuery}
+		onSelectRecentlyDeleted={() => {
+			isRecentlyDeletedView = true;
+			selectFolder(null);
+		}}
 	/>
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
 			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
 				<NoteList
-					notes={filteredNotes}
+					notes={isRecentlyDeletedView ? deletedNotes : filteredNotes}
 					{selectedNoteId}
 					{sortBy}
+					viewMode={isRecentlyDeletedView ? 'recentlyDeleted' : 'normal'}
+					{folderName}
 					onSelectNote={selectNote}
 					onCreateNote={createNote}
 					onDeleteNote={softDeleteNote}
 					onPinNote={pinNote}
 					onSortChange={setSortBy}
+					onRestoreNote={restoreNote}
+					onPermanentlyDeleteNote={permanentlyDeleteNote}
 				/>
 			</Resizable.Pane>
 			<Resizable.Handle />

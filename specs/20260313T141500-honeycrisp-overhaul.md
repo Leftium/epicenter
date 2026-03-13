@@ -330,11 +330,11 @@ Migration from v1: add `deletedAt: undefined` to all existing notes.
 
 ### Wave 1: Sidebar Overhaul
 
-- [ ] **1.1** Add "Recently Deleted" smart folder below "All Notes" (shows count of soft-deleted notes)
-- [ ] **1.2** Make "Folders" section collapsible using `Collapsible` (Apple Notes has collapsible sections)
-- [ ] **1.3** Remove duplicate "New Folder" from Sidebar.Footer (keep only the GroupAction `+` in the Folders section header)
-- [ ] **1.4** Add `AlertDialog` confirmation when deleting a folder ("Move N notes to All Notes and delete folder?")
-- [ ] **1.5** When "Recently Deleted" is selected, NoteList shows deleted notes with "Restore" / "Delete Permanently" actions
+- [x] **1.1** Add "Recently Deleted" smart folder below "All Notes" (shows count of soft-deleted notes)
+- [x] **1.2** Make "Folders" section collapsible using `Collapsible` (Apple Notes has collapsible sections)
+- [x] **1.3** Remove duplicate "New Folder" from Sidebar.Footer (keep only the GroupAction `+` in the Folders section header)
+- [x] **1.4** Add `AlertDialog` confirmation when deleting a folder ("Move N notes to All Notes and delete folder?")
+- [x] **1.5** When "Recently Deleted" is selected, NoteList shows deleted notes with "Restore" / "Delete Permanently" actions
 
 ### Wave 2: Note List Polish
 

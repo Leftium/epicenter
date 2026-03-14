@@ -80,12 +80,14 @@ export type {
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
+	ValidatedEntry,
 } from './content';
 export {
 	computeMidpoint,
 	createTimeline,
 	generateInitialOrders,
 	parseSheetFromCsv,
+	readEntry,
 	serializeSheetToCsv,
 	type Timeline,
 } from './content';
@@ -148,7 +150,6 @@ export type {
 	BaseRow,
 	DeleteResult,
 	DocumentConfig,
-	DocumentContent,
 	DocumentHandle,
 	Documents,
 	DocumentsHelper,

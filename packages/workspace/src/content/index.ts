@@ -11,4 +11,9 @@ export {
 	parseSheetFromCsv,
 	serializeSheetToCsv,
 } from './sheet-csv.js';
-export { createTimeline, type Timeline } from './timeline.js';
+export {
+	createTimeline,
+	readEntry,
+	type Timeline,
+	type ValidatedEntry,
+} from './timeline.js';

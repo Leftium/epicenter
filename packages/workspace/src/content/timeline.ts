@@ -23,6 +23,22 @@ export type Timeline = {
 	readAsBuffer(): Uint8Array;
 };
 
+export type ValidatedEntry =
+	| { mode: 'text'; content: Y.Text; createdAt: number }
+	| {
+			mode: 'richtext';
+			content: Y.XmlFragment;
+			frontmatter: Y.Map<unknown>;
+			createdAt: number;
+	  }
+	| {
+			mode: 'sheet';
+			columns: Y.Map<Y.Map<string>>;
+			rows: Y.Map<Y.Map<string>>;
+			createdAt: number;
+	  }
+	| { mode: 'empty' };
+
 export function createTimeline(ydoc: Y.Doc): Timeline {
 	const timeline = ydoc.getArray<TimelineEntry>('timeline');
 
@@ -53,6 +69,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			const ytext = new Y.Text();
 			ytext.insert(0, content);
 			entry.set('content', ytext);
+			entry.set('createdAt', Date.now());
 			timeline.push([entry]);
 			return entry;
 		},
@@ -62,6 +79,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			entry.set('type', 'sheet');
 			entry.set('columns', new Y.Map());
 			entry.set('rows', new Y.Map());
+			entry.set('createdAt', Date.now());
 			timeline.push([entry]);
 			return entry;
 		},
@@ -74,44 +92,74 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			entry.set('columns', columns);
 			entry.set('rows', rows);
 			parseSheetFromCsv(csv, columns, rows);
+			entry.set('createdAt', Date.now());
 			timeline.push([entry]);
 			return entry;
 		},
 
 		readAsString(): string {
-			const entry = currentEntry();
-			if (!entry) return '';
-			switch (entry.get('type') as ContentMode) {
+			const validated = readEntry(currentEntry());
+			switch (validated.mode) {
 				case 'text':
-					return (entry.get('content') as Y.Text).toString();
+					return validated.content.toString();
 				case 'richtext':
 					return '';
 				case 'sheet':
-					return serializeSheetToCsv(
-						entry.get('columns') as Y.Map<Y.Map<string>>,
-						entry.get('rows') as Y.Map<Y.Map<string>>,
-					);
+					return serializeSheetToCsv(validated.columns, validated.rows);
+				case 'empty':
+					return '';
 			}
 		},
 
 		readAsBuffer(): Uint8Array {
-			const entry = currentEntry();
-			if (!entry) return new Uint8Array();
-			switch (entry.get('type') as ContentMode) {
+			const validated = readEntry(currentEntry());
+			switch (validated.mode) {
 				case 'text':
-					return new TextEncoder().encode(
-						(entry.get('content') as Y.Text).toString(),
-					);
+					return new TextEncoder().encode(validated.content.toString());
 				case 'richtext':
 					return new Uint8Array();
 				case 'sheet':
 					return new TextEncoder().encode(
-						serializeSheetToCsv(
-							entry.get('columns') as Y.Map<Y.Map<string>>,
-							entry.get('rows') as Y.Map<Y.Map<string>>,
-						),
+						serializeSheetToCsv(validated.columns, validated.rows),
 					);
+				case 'empty':
+					return new Uint8Array();
 			}
 		},
 	};
+}
+
+export function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
+	if (!entry) return { mode: 'empty' };
+
+	const type = entry.get('type');
+	const createdAt = (entry.get('createdAt') as number) ?? 0;
+
+	if (type === 'text') {
+		const content = entry.get('content');
+		if (content instanceof Y.Text) return { mode: 'text', content, createdAt };
+	}
+
+	if (type === 'richtext') {
+		const content = entry.get('content');
+		const frontmatter = entry.get('frontmatter');
+		if (content instanceof Y.XmlFragment && frontmatter instanceof Y.Map) {
+			return { mode: 'richtext', content, frontmatter, createdAt };
+		}
+	}
+
+	if (type === 'sheet') {
+		const columns = entry.get('columns');
+		const rows = entry.get('rows');
+		if (columns instanceof Y.Map && rows instanceof Y.Map) {
+			return {
+				mode: 'sheet',
+				columns: columns as Y.Map<Y.Map<string>>,
+				rows: rows as Y.Map<Y.Map<string>>,
+				createdAt,
+			};
+		}
+	}
+
+	return { mode: 'empty' };
 }

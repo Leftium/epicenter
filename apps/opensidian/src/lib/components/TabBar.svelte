@@ -37,14 +37,14 @@
 		class="w-full"
 	>
 		<Tabs.List
-			class="w-full justify-start gap-1 overflow-x-auto rounded-none border-b bg-transparent p-0 px-1"
+			class="w-full justify-start overflow-x-auto rounded-none border-b bg-transparent p-0"
 		>
 			{#each fsState.openFileIds as fileId (fileId)}
 				{@const row = fsState.getRow(fileId)}
 				{#if row}
 					<Tabs.Trigger
 						value={fileId}
-						class="relative flex-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-none"
+						class="relative flex-none rounded-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-none"
 						onauxclick={(e) => handleAuxClick(e, fileId)}
 					>
 						<span class="mr-4">{row.name}</span>

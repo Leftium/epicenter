@@ -300,8 +300,8 @@ Server checks needsApproval on tool definition
 
 ## Success Criteria
 
-- [ ] `requireApprovalForMutations` is fully removed from the codebase
-- [ ] `needsApproval` is only set on tools with `destructive: true`
+- [x] `requireApprovalForMutations` is fully removed from the codebase
+- [x] `needsApproval` is only set on tools with `destructive: true`
 - [ ] Destructive tool calls in chat show inline approval UI (or auto-approve if trusted)
 - [ ] Non-destructive tool calls execute immediately without any approval gate
 - [ ] "Always Allow" persists across conversations and page reloads

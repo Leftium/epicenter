@@ -223,15 +223,14 @@ function createFsState() {
 			},
 
 			/**
-			 * Read file content as string via the documents manager.
+			 * Read file content as string via the filesystem's timeline-backed content helpers.
 			 *
-			 * Opens (or reuses) the per-file Y.Doc via the document handle,
-			 * then reads the text content synchronously.
+			 * Uses `fs.content.read()` which reads from the `Y.Array('timeline')` in the
+			 * per-file content Y.Doc—the same shared type that `fs.writeFile()` writes to.
 			 */
 			async readContent(id: FileId): Promise<string | null> {
 				try {
-					const handle = await ws.documents.files.content.open(id);
-					return handle.read();
+					return await fs.content.read(id);
 				} catch (err) {
 					console.error('Failed to read content:', err);
 					return null;
@@ -239,15 +238,15 @@ function createFsState() {
 			},
 
 			/**
-			 * Write file content via the documents manager.
+			 * Write file content via the filesystem's timeline-backed content helpers.
 			 *
-			 * The documents manager automatically bumps `updatedAt` on the file row
-			 * when content changes. Toasts only on error.
+			 * Uses `fs.content.write()` which writes to the `Y.Array('timeline')` in the
+			 * per-file content Y.Doc. The documents manager's `onUpdate` callback still
+			 * fires (it watches all Y.Doc changes) and bumps `updatedAt` on the file row.
 			 */
 			async writeContent(id: FileId, data: string): Promise<void> {
 				try {
-					const handle = await ws.documents.files.content.open(id);
-					handle.write(data);
+					await fs.content.write(id, data);
 				} catch (err) {
 					toast.error(
 						err instanceof Error ? err.message : 'Failed to save file',

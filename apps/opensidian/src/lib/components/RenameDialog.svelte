@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import { Field, FieldLabel } from '@epicenter/ui/field';
+	import { Input } from '@epicenter/ui/input';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	type Props = {
@@ -38,13 +40,15 @@
 			<Dialog.Description>Enter a new name.</Dialog.Description>
 		</Dialog.Header>
 		<form onsubmit={handleSubmit}>
-			<input
-				class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-				type="text"
-				placeholder="new-name"
-				bind:value={name}
-				autofocus
-			>
+			<Field>
+				<FieldLabel>Name</FieldLabel>
+				<Input
+					type="text"
+					placeholder="new-name"
+					bind:value={name}
+					autofocus
+				/>
+			</Field>
 			<Dialog.Footer class="mt-4">
 				<Button variant="outline" type="button" onclick={() => (open = false)}>
 					Cancel

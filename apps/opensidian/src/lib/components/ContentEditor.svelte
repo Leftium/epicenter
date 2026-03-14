@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
-	import { onMount } from 'svelte';
 	import { fsState } from '$lib/fs/fs-state.svelte';
+	import { Textarea } from '@epicenter/ui/textarea';
 
 	type Props = {
 		fileId: FileId;
@@ -29,9 +29,7 @@
 		dirty = false;
 	}
 
-	function handleInput(e: Event) {
-		const target = e.target as HTMLTextAreaElement;
-		content = target.value;
+	function handleInput() {
 		dirty = true;
 	}
 
@@ -42,10 +40,18 @@
 		}
 	}
 
-	// Load content when fileId changes
+	// Load content when fileId changes; save dirty content on cleanup.
+	// The {#key} block in ContentPanel destroys this component when
+	// activeFileId changes—DOM removal doesn't fire blur, so the
+	// cleanup function is the only chance to persist unsaved edits.
 	$effect(() => {
-		void fileId;
+		const id = fileId;
 		loadContent();
+		return () => {
+			if (dirty) {
+				fsState.actions.writeContent(id, content);
+			}
+		};
 	});
 </script>
 
@@ -56,13 +62,13 @@
 		Loading...
 	</div>
 {:else}
-	<textarea
-		class="h-full w-full resize-none border-0 bg-transparent p-4 font-mono text-sm outline-none focus:ring-0"
-		value={content}
+	<Textarea
+		class="h-full w-full resize-none border-0 shadow-none rounded-none bg-transparent p-4 font-mono text-sm outline-none focus-visible:ring-0 focus-visible:border-transparent"
+		bind:value={content}
 		oninput={handleInput}
 		onblur={saveContent}
 		onkeydown={handleKeydown}
 		spellcheck={false}
 		placeholder="Empty file"
-	></textarea>
+	/>
 {/if}

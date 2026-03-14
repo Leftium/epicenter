@@ -11,6 +11,9 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+import type { ContentMode } from '../timeline/entries.js';
+import type { SheetBinding } from '../timeline/richtext.js';
+import type { Timeline } from '../timeline/timeline.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -253,39 +256,85 @@ export type StringKeysOf<TRow> = {
  */
 export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
-> =
-	| TDocuments[keyof TDocuments]['guid']
-	| TDocuments[keyof TDocuments]['updatedAt'];
+> = TDocuments[keyof TDocuments]['guid'];
 
 /**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * All operations are scoped to this specific document. Content methods
- * (read, write) are synchronous because the Y.Doc is already open.
- * Exports are a property, not a function, because they belong to this doc.
+ * All operations are scoped to this specific document. Timeline-backed
+ * read/write methods are exposed directly on the handle.
+ *
+ * @example
+ * ```typescript
+ * const handle = await documents.open(id);
+ * handle.read();            // read from timeline (always string)
+ * handle.write('hello');    // write to timeline (always text mode)
+ * handle.asText();          // Y.Text for editor binding (converts if needed)
+ * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
+ * handle.asSheet();         // Sheet columns/rows (converts if needed)
+ * handle.mode;              // current content mode
+ * handle.timeline;          // escape hatch for advanced ops
+ * ```
  */
 export type DocumentHandle = {
-	/** The raw Y.Doc — escape hatch for custom operations (timelines, binary, sheets). */
 	ydoc: Y.Doc;
 
-	/** Read the document's text content (from `ydoc.getText('content')`). */
+	/** Current content mode, or undefined if timeline is empty. */
+	readonly mode: ContentMode | undefined;
+
+	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
 	read(): string;
 
-	/** Replace the document's text content. */
+	/** Replace text content. If current mode is text, replaces in-place. Otherwise pushes new text entry. */
 	write(text: string): void;
 
 	/**
-	 * Per-doc extension exports, keyed by extension name.
+	 * Get current content as Y.Text for editor binding.
 	 *
-	 * Each key corresponds to a document extension registered via
-	 * `withDocumentExtension()`. The value is that extension's `exports` object.
+	 * If already text mode, returns the existing Y.Text. If the timeline is
+	 * empty, creates a new text entry. If the current entry is a different mode,
+	 * converts the content and pushes a new text entry.
 	 *
-	 * @example
-	 * ```typescript
-	 * const handle = await documents.open(guid);
-	 * await handle.exports.persistence?.clearData?.();
+	 * All conversions always succeed—no content type can fail to convert to
+	 * another. Richtext→text is lossy (strips formatting).
+	 *
+	 * ```
+	 * DocumentHandle
+	 * ├── mode              → 'text' | 'richtext' | 'sheet' | undefined
+	 * ├── read()            → string           (always works, flattens any mode)
+	 * ├── write(text)       → void             (always works, text mode)
+	 * ├── asText()          → Y.Text           (converts if needed, editor binding)
+	 * ├── asRichText()      → Y.XmlFragment    (converts if needed, Tiptap binding)
+	 * ├── asSheet()         → SheetBinding     (converts if needed, spreadsheet)
+	 * ├── timeline          → Timeline         (escape hatch for advanced ops)
+	 * ├── batch(fn)         → void             (wraps ydoc.transact)
+	 * ├── ydoc              → Y.Doc            (escape hatch)
+	 * └── exports           → Record           (extension exports)
 	 * ```
 	 */
+	asText(): Y.Text;
+
+	/**
+	 * Get current content as Y.XmlFragment for richtext editor binding.
+	 *
+	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
+	 * creates a new richtext entry. If different mode, converts and pushes.
+	 */
+	asRichText(): Y.XmlFragment;
+
+	/**
+	 * Get current content as sheet columns/rows for spreadsheet binding.
+	 *
+	 * If already sheet mode, returns existing columns and rows. If empty,
+	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
+	 */
+	asSheet(): SheetBinding;
+
+	/** Direct access to the timeline for advanced operations. */
+	timeline: Timeline;
+	/** Batch mutations into a single Yjs transaction. */
+	batch(fn: () => void): void;
+	/** Per-doc extension exports. */
 	exports: Record<string, Record<string, unknown>>;
 };
 
@@ -301,7 +350,7 @@ export type DocumentHandle = {
  * @example
  * ```typescript
  * const handle = await documents.open(row);
- * handle.ydoc.getText('body').insert(0, 'hello');
+ * handle.write('hello');
  * // updatedAt on the row is bumped automatically
  *
  * const text = handle.read();

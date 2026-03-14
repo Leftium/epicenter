@@ -17,7 +17,7 @@
 			</Drawer.Description>
 		</Drawer.Header>
 		{#if authState.status === 'signed-in'}
-			<div class="h-[400px] px-4 pb-4"><AiChat /></div>
+			<div class="h-[clamp(300px,50vh,600px)] px-4 pb-4"><AiChat /></div>
 		{:else}
 			<div
 				class="flex flex-col items-center justify-center gap-3 h-[200px] px-4 pb-4"

@@ -29,19 +29,10 @@ import { type } from 'arktype';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { getDeviceId } from '$lib/device/device-id';
 import { authState } from '$lib/state/auth.svelte';
 import { serverUrl } from '$lib/state/settings.svelte';
-import {
-	executeActivateTab,
-	executeCloseTabs,
-	executeGroupTabs,
-	executeMuteTabs,
-	executeOpenTab,
-	executePinTabs,
-	executeReloadTabs,
-	executeSaveTabs,
-} from '$lib/tab-actions';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chrome API Sentinel Constants
@@ -314,6 +305,21 @@ export function parseGroupId(
 	const result = parseCompositeIdInternal(compositeId);
 	if (!result) return null;
 	return { deviceId: result.deviceId, groupId: result.nativeId };
+}
+
+/**
+ * Extract the native tab ID (number) from a composite tab ID string.
+ *
+ * Composite format: `${deviceId}_${tabId}`. Returns the number portion.
+ * Returns `undefined` if the composite ID doesn't belong to this device.
+ */
+function nativeTabId(
+	compositeId: string,
+	deviceId: DeviceId,
+): number | undefined {
+	const parsed = parseTabId(compositeId as TabCompositeId);
+	if (!parsed || parsed.deviceId !== deviceId) return undefined;
+	return parsed.tabId;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -670,7 +676,12 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeCloseTabs(tabIds, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					await tryAsync({
+						try: () => browser.tabs.remove(nativeIds),
+						catch: () => Ok(undefined),
+					});
+					return { closedCount: nativeIds.length };
 				},
 			}),
 
@@ -681,8 +692,13 @@ export const workspaceClient = createWorkspace(
 					url: Type.String(),
 					windowId: Type.Optional(Type.String()),
 				}),
-				handler: async ({ url, windowId }) => {
-					return executeOpenTab(url, windowId);
+				handler: async ({ url }) => {
+					const { data: tab, error } = await tryAsync({
+						try: () => browser.tabs.create({ url }),
+						catch: () => Ok(undefined),
+					});
+					if (error || !tab) return { tabId: String(-1) };
+					return { tabId: String(tab.id ?? -1) };
 				},
 			}),
 
@@ -694,7 +710,13 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabId }) => {
 					const deviceId = await getDeviceId();
-					return executeActivateTab(tabId, deviceId);
+					const id = nativeTabId(tabId, deviceId);
+					if (id === undefined) return { activated: false };
+					const { error } = await tryAsync({
+						try: () => browser.tabs.update(id, { active: true }),
+						catch: () => Ok(undefined),
+					});
+					return { activated: !error };
 				},
 			}),
 
@@ -707,12 +729,44 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, close }) => {
 					const deviceId = await getDeviceId();
-					return executeSaveTabs(
-						tabIds,
-						close ?? false,
-						deviceId,
-						tables.savedTabs,
+					const nativeIds = toNativeIds(tabIds, deviceId);
+
+					// Fetch all tabs in parallel
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.get(id)),
 					);
+
+					const validTabs = results.flatMap((r) => {
+						if (r.status !== 'fulfilled' || !r.value.url) return [];
+						return [{ ...r.value, url: r.value.url }];
+					});
+
+					// Sync writes to Y.Doc
+					for (const tab of validTabs) {
+						tables.savedTabs.set({
+							id: generateSavedTabId(),
+							url: tab.url,
+							title: tab.title || 'Untitled',
+							favIconUrl: tab.favIconUrl,
+							pinned: tab.pinned ?? false,
+							sourceDeviceId: deviceId,
+							savedAt: Date.now(),
+							_v: 1,
+						});
+					}
+
+					// Batch close if requested
+					if (close) {
+						const idsToClose = validTabs
+							.map((t) => t.id)
+							.filter((id) => id !== undefined);
+						await tryAsync({
+							try: () => browser.tabs.remove(idsToClose),
+							catch: () => Ok(undefined),
+						});
+					}
+
+					return { savedCount: validTabs.length };
 				},
 			}),
 
@@ -726,7 +780,26 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, title, color }) => {
 					const deviceId = await getDeviceId();
-					return executeGroupTabs(tabIds, deviceId, title, color);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+
+					const { data: groupId, error: groupError } = await tryAsync({
+						try: () =>
+							browser.tabs.group({ tabIds: nativeIds as [number, ...number[]] }),
+						catch: () => Ok(undefined),
+					});
+					if (groupError || groupId === undefined) return { groupId: String(-1) };
+
+					if (title || color) {
+						const updateProps: Browser.tabGroups.UpdateProperties = {};
+						if (title) updateProps.title = title;
+						if (color) updateProps.color = color as `${Browser.tabGroups.Color}`;
+						await tryAsync({
+							try: () => browser.tabGroups.update(groupId as number, updateProps),
+							catch: () => Ok(undefined),
+						});
+					}
+
+					return { groupId: String(groupId) };
 				},
 			}),
 
@@ -739,7 +812,13 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, pinned }) => {
 					const deviceId = await getDeviceId();
-					return executePinTabs(tabIds, pinned, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.update(id, { pinned })),
+					);
+					return {
+						pinnedCount: results.filter((r) => r.status === 'fulfilled').length,
+					};
 				},
 			}),
 
@@ -752,7 +831,11 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds, muted }) => {
 					const deviceId = await getDeviceId();
-					return executeMuteTabs(tabIds, muted, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.update(id, { muted })),
+					);
+					return { mutedCount: results.filter((r) => r.status === 'fulfilled').length };
 				},
 			}),
 
@@ -764,7 +847,13 @@ export const workspaceClient = createWorkspace(
 				}),
 				handler: async ({ tabIds }) => {
 					const deviceId = await getDeviceId();
-					return executeReloadTabs(tabIds, deviceId);
+					const nativeIds = toNativeIds(tabIds, deviceId);
+					const results = await Promise.allSettled(
+						nativeIds.map((id) => browser.tabs.reload(id)),
+					);
+					return {
+						reloadedCount: results.filter((r) => r.status === 'fulfilled').length,
+					};
 				},
 			}),
 		},
@@ -833,12 +922,11 @@ export const workspaceClient = createWorkspace(
 					const counts = new Map<string, number>();
 					for (const tab of matched) {
 						if (!tab.url) continue;
-						try {
-							const domain = new URL(tab.url).hostname;
-							counts.set(domain, (counts.get(domain) ?? 0) + 1);
-						} catch {
-							// Skip tabs with invalid URLs (e.g. chrome:// pages)
-						}
+						const { data: domain } = trySync({
+							try: () => new URL(tab.url!).hostname,
+							catch: () => Ok(undefined),
+						});
+						if (domain) counts.set(domain, (counts.get(domain) ?? 0) + 1);
 					}
 					const domains = Array.from(counts.entries())
 						.map(([domain, count]) => ({ domain, count }))
@@ -868,11 +956,12 @@ export const workspaceToolTitles: Record<string, string> = Object.fromEntries(
 );
 
 /**
- * Reconnect the sync extension with fresh auth credentials.
+ * Batch-resolve composite tab IDs to native Chrome tab IDs.
  *
- * Call after sign-in so the WebSocket reconnects with a valid token,
- * or after sign-out to disconnect.
+ * Filters out IDs that don't belong to the given device.
  */
-export function reconnectSync() {
-	workspaceClient.extensions.sync.reconnect();
+function toNativeIds(tabIds: string[], deviceId: DeviceId): number[] {
+	return tabIds
+		.map((id) => nativeTabId(id, deviceId))
+		.filter((id) => id !== undefined);
 }

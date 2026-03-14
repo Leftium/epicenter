@@ -5,16 +5,18 @@ import { rpc } from '$lib/query';
 import type { DownloadService } from '$lib/services/download';
 
 import type {
+	TransformationStepV2,
+	TransformationV1,
+	TransformationV2,
+} from '../models';
+import type {
 	RecordingsDbSchemaV1,
 	RecordingsDbSchemaV2,
 	RecordingsDbSchemaV3,
 	RecordingsDbSchemaV4,
 	RecordingsDbSchemaV5,
 	SerializedAudio,
-	TransformationStepV2,
-	TransformationV1,
-	TransformationV2,
-} from '../models';
+} from './dexie-schemas';
 
 const DB_NAME = 'RecordingDB';
 

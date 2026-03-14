@@ -4,8 +4,6 @@ import type { DownloadService } from '$lib/services/download';
 
 import type {
 	Recording,
-	RecordingsDbSchemaV5,
-	SerializedAudio,
 	Transformation,
 	TransformationRun,
 	TransformationRunCompleted,
@@ -14,6 +12,7 @@ import type {
 	TransformationStepRunFailed,
 	TransformationStepRunRunning,
 } from '../models';
+import type { RecordingsDbSchemaV5, SerializedAudio } from './dexie-schemas';
 import type { DbService } from '../types';
 import { DbError } from '../types';
 import { blobToSerializedAudio, WhisperingDatabase } from './dexie-database';

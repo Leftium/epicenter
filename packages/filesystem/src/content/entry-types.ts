@@ -3,7 +3,6 @@
  * definitions now live.
  */
 export type {
-	BinaryEntry,
 	ContentMode,
 	RichTextEntry,
 	SheetEntry,

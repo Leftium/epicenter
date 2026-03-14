@@ -164,12 +164,8 @@ export function createYjsFileSystem(
 		},
 
 		async readFileBuffer(path) {
-			const abs = posixResolve(cwd, path);
-			const id = tree.resolveId(abs);
-			if (id === null) throw FS_ERRORS.ENOENT(abs);
-			const row = tree.getRow(id, abs);
-			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return content.readBuffer(id);
+			const text = await this.readFile(path);
+			return new TextEncoder().encode(text);
 		},
 
 		// ═══════════════════════════════════════════════════════════════════════
@@ -187,14 +183,17 @@ export function createYjsFileSystem(
 
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
-				const size =
+				const textData =
 					typeof data === 'string'
-						? new TextEncoder().encode(data).byteLength
-						: data.byteLength;
+						? data
+						: new TextDecoder().decode(data);
+				const size = new TextEncoder().encode(textData).byteLength;
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
 
-			const size = await content.write(id, data);
+			const textData =
+				typeof data === 'string' ? data : new TextDecoder().decode(data);
+			const size = await content.write(id, textData);
 			tree.touch(id, size);
 		},
 
@@ -302,23 +301,8 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const srcBuffer = await content.readBuffer(srcId);
 				const srcText = await content.read(srcId);
-				if (srcText === '' && srcBuffer.length === 0) {
-					await this.writeFile(resolvedDest, '');
-				} else {
-					// Check if content is binary by comparing text encoding roundtrip
-					const textBytes = new TextEncoder().encode(srcText);
-					const isBinary =
-						srcBuffer.length > 0 &&
-						(srcBuffer.length !== textBytes.length ||
-							!srcBuffer.every((b, i) => b === textBytes[i]));
-					if (isBinary) {
-						await this.writeFile(resolvedDest, srcBuffer);
-					} else {
-						await this.writeFile(resolvedDest, srcText);
-					}
-				}
+				await this.writeFile(resolvedDest, srcText);
 			}
 		},
 

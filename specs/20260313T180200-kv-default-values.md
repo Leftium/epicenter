@@ -1,7 +1,7 @@
 # KV Default Values and Optional Migration
 
 **Date**: 2026-03-13
-**Status**: Draft
+**Status**: Implemented (simpler design — required `defaultValue` param, no `migrate` callback, no status discriminant)
 **Builds on**: `specs/20260214T225000-version-discriminant-tables-only.md`, `specs/20251230T132500-kv-store-feature.md`
 **Independent of**: `specs/20260313T180100-client-side-encryption-wiring.md` (can be implemented in parallel)
 

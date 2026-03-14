@@ -141,11 +141,11 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 
 ### Phase 3: Tests
 
-- [ ] **3.1** Mode transitions: plaintext → unlocked → locked → unlocked round-trip
-- [ ] **3.2** Locked mode: verify `set()` throws, `get()` still returns cached values
-- [ ] **3.3** Error containment: inject a corrupted blob, verify observation continues for other entries
-- [ ] **3.4** Key transition: create wrapper without key, add entries as plaintext, call `onKeyChange(key)`, verify new writes encrypt and map is rebuilt
-- [ ] **3.5** AAD: verify cross-table ciphertext replay fails (decrypt with wrong AAD throws)
+- [x] **3.1** Mode transitions: plaintext → unlocked → locked → unlocked round-trip
+- [x] **3.2** Locked mode: verify `set()` throws, `get()` still returns cached values
+- [x] **3.3** Error containment: inject a corrupted blob, verify observation continues for other entries
+- [x] **3.4** Key transition: create wrapper without key, add entries as plaintext, call `onKeyChange(key)`, verify new writes encrypt and map is rebuilt
+- [x] **3.5** AAD: verify cross-table ciphertext replay fails (decrypt with wrong AAD throws)
 
 ### Phase 4: Update Docs
 

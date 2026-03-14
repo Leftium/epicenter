@@ -4,13 +4,13 @@ export type {
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
-} from './entry-types.js';
+} from './entries.js';
 export {
 	computeMidpoint,
 	generateInitialOrders,
 	parseSheetFromCsv,
 	serializeSheetToCsv,
-} from './sheet-csv.js';
+} from './sheet.js';
 export {
 	createTimeline,
 	readEntry,
@@ -21,4 +21,4 @@ export {
 	xmlFragmentToPlaintext,
 	populateFragmentFromText,
 	type SheetBinding,
-} from './conversions.js';
+} from './richtext.js';

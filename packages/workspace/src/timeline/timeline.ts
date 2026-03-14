@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
-import type { ContentMode } from './entry-types.js';
-import { xmlFragmentToPlaintext } from './conversions.js';
-import { parseSheetFromCsv, serializeSheetToCsv } from './sheet-csv.js';
+import type { ContentMode } from './entries.js';
+import { xmlFragmentToPlaintext } from './richtext.js';
+import { parseSheetFromCsv, serializeSheetToCsv } from './sheet.js';
 
 type TimelineEntry = Y.Map<unknown>;
 

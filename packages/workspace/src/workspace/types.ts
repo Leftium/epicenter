@@ -265,7 +265,7 @@ export type DocumentHandle = {
 	ydoc: Y.Doc;
 
 	/** Current content mode, or undefined if timeline is empty. */
-	readonly mode: import('../content/entry-types.js').ContentMode | undefined;
+	readonly mode: import('../timeline/entries.js').ContentMode | undefined;
 
 	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
 	read(): string;
@@ -313,10 +313,10 @@ export type DocumentHandle = {
 	 * If already sheet mode, returns existing columns and rows. If empty,
 	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
 	 */
-	asSheet(): import('../content/conversions.js').SheetBinding;
+	asSheet(): import('../timeline/richtext.js').SheetBinding;
 
 	/** Direct access to the timeline for advanced operations. */
-	timeline: import('../content/timeline.js').Timeline;
+	timeline: import('../timeline/timeline.js').Timeline;
 	/** Batch mutations into a single Yjs transaction. */
 	batch(fn: () => void): void;
 	/** Per-doc extension exports. */

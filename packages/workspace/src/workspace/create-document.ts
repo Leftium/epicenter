@@ -42,12 +42,12 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from '../content/timeline.js';
-import { serializeSheetToCsv } from '../content/sheet-csv.js';
+import { createTimeline, readEntry } from '../timeline/timeline.js';
+import { serializeSheetToCsv } from '../timeline/sheet.js';
 import {
 	xmlFragmentToPlaintext,
 	populateFragmentFromText,
-} from '../content/conversions.js';
+} from '../timeline/richtext.js';
 import {
 	defineExtension,
 	type Extension,

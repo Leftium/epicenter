@@ -71,7 +71,7 @@ export type { DateIsoString, TimezoneId } from './shared/datetime-string';
 export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
 
 // ════════════════════════════════════════════════════════════════════════════
-// CONTENT (Timeline)
+// TIMELINE
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
@@ -82,7 +82,7 @@ export type {
 	TextEntry,
 	TimelineEntry,
 	ValidatedEntry,
-} from './content';
+} from './timeline';
 export {
 	computeMidpoint,
 	createTimeline,
@@ -93,7 +93,7 @@ export {
 	serializeSheetToCsv,
 	xmlFragmentToPlaintext,
 	type Timeline,
-} from './content';
+} from './timeline';
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════

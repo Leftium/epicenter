@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import {
 	populateFragmentFromText,
 	xmlFragmentToPlaintext,
-} from './conversions.js';
+} from './richtext.js';
 import { createTimeline } from './timeline.js';
 
 /** Helper: build a paragraph XmlElement with text content (standalone, for insertion). */

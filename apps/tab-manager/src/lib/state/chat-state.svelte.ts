@@ -459,7 +459,7 @@ function createAiChatState() {
 			 * Respond to a tool approval request.
 			 *
 			 * Called when the user clicks [Allow], [Always Allow], or [Deny]
-			 * on a destructive tool call in the chat. Delegates to ChatClient's
+			 * on a mutation tool call in the chat. Delegates to ChatClient's
 			 * `addToolApprovalResponse`, which sends the response back to the
 			 * server to resume or cancel tool execution.
 			 *

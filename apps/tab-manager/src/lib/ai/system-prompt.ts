@@ -25,7 +25,7 @@ export const TAB_MANAGER_SYSTEM_PROMPT = `You are a browser tab management assis
 ## Guidelines
 
 - Use read tools first to understand the current state before making changes
-- Destructive actions (like closing tabs) have their own approval UI — do not ask for confirmation in prose
+- Mutations (actions that change state) have their own approval UI — do not ask for confirmation in prose
 - Group related tabs proactively when you notice patterns
 - Be concise — the sidebar has limited space
 - When listing tabs, include the URL and title so the user can identify them

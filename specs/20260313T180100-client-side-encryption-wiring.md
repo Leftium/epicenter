@@ -1,10 +1,19 @@
 # Client-Side Encryption Wiring
 
 **Date**: 2026-03-13
-**Status**: Draft
+**Status**: Superseded
 **Builds on**: `specs/20260313T180000-encrypted-blob-format-simplification.md`, `specs/20260312T120000-y-keyvalue-lww-encrypted.md`, `specs/20260213T005300-encrypted-workspace-storage.md`
 **Related**: PR #1507 (encryption infrastructure), `apps/api/src/app.ts` (server-side key delivery)
-> **Note (2026-03-14)**: Architectural review identified five hardening items that should ship with or before the initial wiring. Added as Phase 0 below. The original wiring plan (Phases 1-3) is unchanged.
+> **Superseded (2026-03-14)**: This spec has been refactored into two focused specs:
+>
+> 1. **`specs/20260314T063000-encryption-wrapper-hardening.md`** — Three explicit encryption modes, error containment, key transition hook, AAD binding. Covers Phase 0 below. Execute first.
+> 2. **`specs/20260314T064000-per-workspace-envelope-encryption.md`** — Per-workspace DEKs stored in Postgres, `GET /workspaces/:id/key` endpoint, workspace-scoped key cache. Replaces Phases 1-2 below (deployment-wide key from session → per-workspace key from endpoint).
+>
+> Phase 3 (per-app wiring) is now part of Spec B's Phase 3. The app inventory and edge cases sections below remain useful reference.
+>
+> **Execution order**: Spec A (hardening) → Spec B (envelope encryption, includes per-app wiring).
+>
+> The original content below is preserved for context but should not be executed as-is.
 
 ## Overview
 

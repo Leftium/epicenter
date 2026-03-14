@@ -4,7 +4,7 @@ import type { DbService } from '$lib/services/db/types';
 import type workspace from '$lib/workspace';
 
 const MIGRATION_KEY = 'whispering:db-migration';
-type DbMigrationState = 'pending' | 'done';
+export type DbMigrationState = 'pending' | 'done';
 
 type WorkspaceRecordingRow = Parameters<
 	(typeof workspace.tables.recordings)['set']

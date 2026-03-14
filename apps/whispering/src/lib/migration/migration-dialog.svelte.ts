@@ -1,7 +1,9 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { DbServiceLive } from '$lib/services/db';
+import { ToastServiceLive } from '$lib/services/toast';
 import workspace from '$lib/workspace';
 import {
+	type DbMigrationState,
 	getDatabaseMigrationState,
 	type MigrationResult,
 	migrateDatabaseToWorkspace,
@@ -18,15 +20,22 @@ const testData = createMigrationTestData();
 function createMigrationDialog() {
 	let isOpen = $state(false);
 	let isRunning = $state(false);
-	let isPending = $state(getDatabaseMigrationState() === 'pending');
+	let persistedState = $state(getDatabaseMigrationState());
 	let isSeeding = $state(false);
 	let isClearing = $state(false);
 	let isResetting = $state(false);
 	let logs = $state<string[]>([]);
 	let migrationResult = $state<MigrationResult | null>(null);
+	let hasFailedAttempt = $state(false);
+	let migrationToastId: string | undefined;
 
 	function addLog(message: string) {
 		logs.push(message);
+	}
+
+	function setPersistedState(state: DbMigrationState) {
+		setDatabaseMigrationState(state);
+		persistedState = state;
 	}
 
 	return {
@@ -38,7 +47,7 @@ function createMigrationDialog() {
 		},
 		openDialog() {
 			if (typeof window !== 'undefined') {
-				isPending = getDatabaseMigrationState() === 'pending';
+				persistedState = getDatabaseMigrationState();
 			}
 			isOpen = true;
 		},
@@ -57,6 +66,7 @@ function createMigrationDialog() {
 			isRunning = true;
 			logs = [];
 			migrationResult = null;
+			hasFailedAttempt = false;
 			addLog('Starting workspace migration...');
 
 			const { data: migrationOutcome } = await tryAsync({
@@ -70,6 +80,7 @@ function createMigrationDialog() {
 					addLog(
 						`❌ Migration failed: ${error instanceof Error ? error.message : String(error)}`,
 					);
+					hasFailedAttempt = true;
 					addLog('Migration state remains pending — you can retry.');
 					return Ok(null);
 				},
@@ -77,6 +88,7 @@ function createMigrationDialog() {
 
 			if (migrationOutcome?.error) {
 				addLog(`❌ Migration failed: ${migrationOutcome.error.message}`);
+				hasFailedAttempt = true;
 				addLog('Migration state remains pending — you can retry.');
 			}
 
@@ -84,9 +96,12 @@ function createMigrationDialog() {
 
 			if (result) {
 				migrationResult = result;
-				setDatabaseMigrationState('done');
-				isPending = false;
+				setPersistedState('done');
 				addLog('✅ Migration complete');
+				if (migrationToastId) {
+					ToastServiceLive.dismiss(migrationToastId);
+					migrationToastId = undefined;
+				}
 				addLog(
 					`Recordings: ${result.recordings.migrated} migrated, ${result.recordings.skipped} skipped, ${result.recordings.failed} failed`,
 				);
@@ -101,10 +116,19 @@ function createMigrationDialog() {
 			isRunning = false;
 		},
 		get isPending() {
-			return isPending;
+			return persistedState === 'pending';
 		},
 		set isPending(value: boolean) {
-			isPending = value;
+			setPersistedState(value ? 'pending' : 'done');
+		},
+		get hasFailedAttempt() {
+			return hasFailedAttempt;
+		},
+		get migrationToastId() {
+			return migrationToastId;
+		},
+		set migrationToastId(value: string | undefined) {
+			migrationToastId = value;
 		},
 		get isSeeding() {
 			return isSeeding;
@@ -175,8 +199,7 @@ function createMigrationDialog() {
 			addLog('✅ Workspace tables cleared');
 
 			addLog('Resetting migration state...');
-			window.localStorage.removeItem('whispering:db-migration');
-			isPending = true;
+			setPersistedState('pending');
 			addLog('✅ Migration state reset to pending');
 
 			isResetting = false;

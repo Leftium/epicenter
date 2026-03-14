@@ -46,6 +46,8 @@
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---
+	// Optional: ENCRYPTION_SECRET — decouples encryption key derivation from auth.
+	// Falls back to BETTER_AUTH_SECRET if not set. Set via `wrangler secret put ENCRYPTION_SECRET`.
 	"secrets": {
 		"required": [
 			"BETTER_AUTH_SECRET",

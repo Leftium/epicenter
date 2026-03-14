@@ -121,6 +121,25 @@ function createAuthState() {
 		await Promise.all([authToken.set(undefined), authUser.set(undefined)]);
 	}
 
+	/**
+	 * Fetch the session to extract the encryption key.
+	 *
+	 * Better Auth's signIn/signUp responses don't include customSession
+	 * fields—only getSession() returns them. Fire-and-forget after
+	 * successful sign-in so the encryption wiring can unlock immediately
+	 * instead of waiting for the next visibility-change or page reload.
+	 */
+	async function refreshEncryptionKey() {
+		const { data } = await client.getSession();
+		if (data) {
+			const session = data.session as Record<string, unknown> | undefined;
+			encryptionKey =
+				typeof session?.encryptionKey === 'string'
+					? session.encryptionKey
+					: undefined;
+		}
+	}
+
 	// Listeners notified when an *external* context signs in (e.g. another sidepanel).
 	const externalSignInListeners = new Set<() => void>();
 
@@ -215,6 +234,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
+				void refreshEncryptionKey();
 			}
 
 			return result;
@@ -247,6 +267,7 @@ function createAuthState() {
 			} else {
 				phase = { status: 'signed-in' };
 				password = '';
+				void refreshEncryptionKey();
 			}
 
 			return result;
@@ -318,6 +339,7 @@ function createAuthState() {
 				};
 			} else {
 				phase = { status: 'signed-in' };
+				void refreshEncryptionKey();
 			}
 
 			return result;

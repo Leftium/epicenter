@@ -64,7 +64,11 @@ export const BASE_AUTH_CONFIG = {
  * 1. SHA-256 the secret to get high-entropy root key material.
  * 2. Import as HKDF key and derive 256 bits with info="user:{userId}:v1".
  *
- * Same inputs always produce the same key — deterministic, no storage needed.
+ * Same inputs always produce the same key—deterministic, no storage needed.
+ *
+ * The `v1` in the info string is the blob format version. If the derivation
+ * scheme or encryption algorithm ever changes, bump this to `v2` to produce
+ * new independent keys while old blobs remain decryptable with the v1 key.
  */
 async function deriveUserKey(secret: string, userId: string): Promise<Uint8Array> {
 	const rawKey = await crypto.subtle.digest(
@@ -113,7 +117,12 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveUserKey(env.BETTER_AUTH_SECRET, user.id);
+				// ENCRYPTION_SECRET decouples key derivation from auth secret rotation.
+				// Falls back to BETTER_AUTH_SECRET for existing deployments.
+				const encryptionSecret =
+					(env as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET ??
+					env.BETTER_AUTH_SECRET;
+				const encryptionKey = await deriveUserKey(encryptionSecret, user.id);
 				return {
 					user,
 					session,

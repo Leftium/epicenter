@@ -671,7 +671,6 @@ export const workspaceClient = createWorkspace(
 			close: defineMutation({
 				title: 'Close Tabs',
 				description: 'Close one or more tabs by their composite IDs.',
-				destructive: true,
 				input: Type.Object({
 					tabIds: Type.Array(Type.String()),
 				}),

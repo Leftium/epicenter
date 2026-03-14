@@ -151,7 +151,6 @@ export type {
 	AwarenessHelper,
 	AwarenessState,
 	BaseRow,
-	DeleteResult,
 	DocumentConfig,
 	DocumentHandle,
 	Documents,

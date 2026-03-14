@@ -10,7 +10,6 @@ import type {
 	YKeyValueLwwChange,
 } from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import type {
-	DeleteResult,
 	GetResult,
 	InferTableRow,
 	InvalidRowResult,
@@ -152,12 +151,8 @@ export function createTableHelper<
 		// DELETE
 		// ═══════════════════════════════════════════════════════════════════════
 
-		delete(id: string): DeleteResult {
-			if (!ykv.has(id)) {
-				return { status: 'not_found_locally' };
-			}
+		delete(id: string): void {
 			ykv.delete(id);
-			return { status: 'deleted' };
 		},
 
 		clear(): void {

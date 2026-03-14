@@ -73,10 +73,7 @@ export type RowResult<TRow> = ValidRowResult<TRow> | InvalidRowResult;
  */
 export type GetResult<TRow> = RowResult<TRow> | NotFoundResult;
 
-/** Result of deleting a single row */
-export type DeleteResult =
-	| { status: 'deleted' }
-	| { status: 'not_found_locally' };
+
 
 /** Result of updating a single row */
 export type UpdateResult<TRow> =
@@ -612,11 +609,12 @@ export type TableHelper<TRow extends BaseRow> = {
 	/**
 	 * Delete a single row by ID.
 	 *
-	 * If the row doesn't exist locally, returns `{ status: 'not_found_locally' }`.
+	 * Fire-and-forget — matches Y.Map.delete() semantics. If the row
+	 * doesn't exist locally, this is a silent no-op.
 	 *
 	 * @param id - The row ID to delete
 	 */
-	delete(id: string): DeleteResult;
+	delete(id: string): void;
 
 	/**
 	 * Delete all rows from the table.

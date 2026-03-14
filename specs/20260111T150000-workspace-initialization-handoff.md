@@ -267,7 +267,7 @@ type TableHelper<TFields extends FieldSchemaMap, TCodeKey extends string> = {
 	getAll(): RowResult<Row<TFields>>[];
 	getAllValid(): Row<TFields>[];
 	update(patch: PartialRow<TFields>): UpdateResult;
-	delete(id: string): DeleteResult;
+	delete(id: string): void;
 	clear(): void;
 	count(): number;
 

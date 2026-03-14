@@ -279,6 +279,14 @@ function createDeviceConfig() {
 				);
 			}
 		},
+
+		/**
+		 * Get the definition's default value for a key. Useful for showing
+		 * "Default: X" placeholders in settings UI without reading localStorage.
+		 */
+		getDefault<K extends DeviceConfigKey>(key: K): InferDeviceValue<K> {
+			return DEVICE_DEFINITIONS[key].defaultValue as InferDeviceValue<K>;
+		},
 	};
 }
 

@@ -5,7 +5,7 @@ import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { rpc } from '$lib/query';
 import type { DownloadService } from '$lib/services/download';
-import type { Settings } from '$lib/settings';
+
 import type {
 	Recording,
 	RecordingsDbSchemaV1,
@@ -513,8 +513,8 @@ export function createDbServiceWeb({
 				recordingRetentionStrategy,
 				maxRecordingCount,
 			}: {
-				recordingRetentionStrategy: Settings['database.recordingRetentionStrategy'];
-				maxRecordingCount: Settings['database.maxRecordingCount'];
+				recordingRetentionStrategy: 'keep-forever' | 'limit-count';
+				maxRecordingCount: number;
 			}) => {
 				switch (recordingRetentionStrategy) {
 					case 'keep-forever': {
@@ -528,15 +528,15 @@ export function createDbServiceWeb({
 						if (countError) return Err(countError);
 						if (count === 0) return Ok(undefined);
 
-						const maxCount = Number.parseInt(maxRecordingCount, 10);
 
-						if (count <= maxCount) return Ok(undefined);
+
+						if (count <= maxRecordingCount) return Ok(undefined);
 
 						return tryAsync({
 							try: async () => {
 								const idsToDelete = await db.recordings
 									.orderBy('createdAt')
-									.limit(count - maxCount)
+									.limit(count - maxRecordingCount)
 									.primaryKeys();
 								await db.recordings.bulkDelete(idsToDelete);
 							},

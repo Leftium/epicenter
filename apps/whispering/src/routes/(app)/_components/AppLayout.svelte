@@ -83,7 +83,7 @@
 		vadRecorder.state; // Reactive VAD state access
 		services.db.recordings.cleanupExpired({
 			recordingRetentionStrategy: workspaceSettings.get('retention.strategy'),
-			maxRecordingCount: String(workspaceSettings.get('retention.maxCount')),
+			maxRecordingCount: workspaceSettings.get('retention.maxCount'),
 		});
 	});
 

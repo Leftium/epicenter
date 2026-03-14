@@ -42,7 +42,14 @@
  */
 
 import * as Y from 'yjs';
-import { createTimeline } from '../content/timeline.js';
+import { createTimeline, readEntry } from '../content/timeline.js';
+import { serializeSheetToCsv } from '../content/sheet-csv.js';
+import {
+	xmlFragmentToPlaintext,
+	populateFragmentFromText,
+} from '../content/conversions.js';
+import { ContentConversionError } from '../content/errors.js';
+import { Ok } from 'wellcrafted/result';
 import {
 	defineExtension,
 	type Extension,
@@ -107,6 +114,9 @@ function makeHandle(
 
 	return {
 		ydoc,
+		get mode() {
+			return tl.currentMode;
+		},
 		read() {
 			return tl.readAsString();
 		},
@@ -121,33 +131,130 @@ function makeHandle(
 				ydoc.transact(() => tl.pushText(text));
 			}
 		},
-		getText() {
-			const entry = tl.currentEntry;
-			if (entry && (entry.get('type') as string) === 'text') {
-				return entry.get('content') as Y.Text;
+		asText() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'text':
+					return Ok(validated.content);
+				case 'empty': {
+					ydoc.transact(() => tl.pushText(''));
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'text') {
+						return ContentConversionError.ConversionFailed({
+							from: 'empty', to: 'text', reason: 'Failed to create text entry',
+						});
+					}
+					return Ok(entry.content);
+				}
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					ydoc.transact(() => tl.pushText(plaintext));
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'text') {
+						return ContentConversionError.ConversionFailed({
+							from: 'richtext', to: 'text', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok(entry.content);
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					ydoc.transact(() => tl.pushText(csv));
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'text') {
+						return ContentConversionError.ConversionFailed({
+							from: 'sheet', to: 'text', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok(entry.content);
+				}
 			}
-			// Auto-create a text entry for editor binding (matches Y.Text lazy-create semantics)
-			if (!entry) {
-				tl.pushText('');
-				return tl.currentEntry!.get('content') as Y.Text;
-			}
-			return undefined;
 		},
-		getFragment() {
-			const entry = tl.currentEntry;
-			if (entry && (entry.get('type') as string) === 'richtext') {
-				return entry.get('content') as Y.XmlFragment;
+		asRichText() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'richtext':
+					return Ok(validated.content);
+				case 'empty': {
+					ydoc.transact(() => tl.pushRichtext());
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'richtext') {
+						return ContentConversionError.ConversionFailed({
+							from: 'empty', to: 'richtext', reason: 'Failed to create richtext entry',
+						});
+					}
+					return Ok(entry.content);
+				}
+				case 'text': {
+					const plaintext = validated.content.toString();
+					ydoc.transact(() => {
+						const rtEntry = tl.pushRichtext();
+						const fragment = rtEntry.get('content') as Y.XmlFragment;
+						populateFragmentFromText(fragment, plaintext);
+					});
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'richtext') {
+						return ContentConversionError.ConversionFailed({
+							from: 'text', to: 'richtext', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok(entry.content);
+				}
+				case 'sheet': {
+					const csv = serializeSheetToCsv(validated.columns, validated.rows);
+					ydoc.transact(() => {
+						const rtEntry = tl.pushRichtext();
+						const fragment = rtEntry.get('content') as Y.XmlFragment;
+						populateFragmentFromText(fragment, csv);
+					});
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'richtext') {
+						return ContentConversionError.ConversionFailed({
+							from: 'sheet', to: 'richtext', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok(entry.content);
+				}
 			}
-			// Auto-create a richtext entry for editor binding
-			if (!entry) {
-				const newEntry = new Y.Map();
-				newEntry.set('type', 'richtext');
-				newEntry.set('content', new Y.XmlFragment());
-				newEntry.set('frontmatter', new Y.Map());
-				ydoc.getArray('timeline').push([newEntry]);
-				return tl.currentEntry!.get('content') as Y.XmlFragment;
+		},
+		asSheet() {
+			const validated = readEntry(tl.currentEntry);
+			switch (validated.mode) {
+				case 'sheet':
+					return Ok({ columns: validated.columns, rows: validated.rows });
+				case 'empty': {
+					ydoc.transact(() => tl.pushSheet());
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'sheet') {
+						return ContentConversionError.ConversionFailed({
+							from: 'empty', to: 'sheet', reason: 'Failed to create sheet entry',
+						});
+					}
+					return Ok({ columns: entry.columns, rows: entry.rows });
+				}
+				case 'text': {
+					const plaintext = validated.content.toString();
+					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'sheet') {
+						return ContentConversionError.ConversionFailed({
+							from: 'text', to: 'sheet', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok({ columns: entry.columns, rows: entry.rows });
+				}
+				case 'richtext': {
+					const plaintext = xmlFragmentToPlaintext(validated.content);
+					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
+					const entry = readEntry(tl.currentEntry);
+					if (entry.mode !== 'sheet') {
+						return ContentConversionError.ConversionFailed({
+							from: 'richtext', to: 'sheet', reason: 'Conversion produced invalid entry',
+						});
+					}
+					return Ok({ columns: entry.columns, rows: entry.rows });
+				}
 			}
-			return undefined;
 		},
 		timeline: tl,
 		batch(fn: () => void) {

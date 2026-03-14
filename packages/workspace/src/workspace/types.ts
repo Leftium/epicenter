@@ -11,6 +11,7 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+import type { Result } from 'wellcrafted/result';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -252,80 +253,50 @@ export type ClaimedDocumentColumns<
  * @example
  * ```typescript
  * const handle = await documents.open(id);
- * handle.read();            // read from timeline
- * handle.write('hello');    // write to timeline
- * handle.getText();         // Y.Text for editor binding
- * handle.getFragment();     // Y.XmlFragment for richtext
+ * handle.read();            // read from timeline (always string)
+ * handle.write('hello');    // write to timeline (always text mode)
+ * handle.asText();          // Y.Text for editor binding (converts if needed)
+ * handle.asRichText();      // Y.XmlFragment for richtext binding (converts if needed)
+ * handle.asSheet();         // Sheet columns/rows (converts if needed)
+ * handle.mode;              // current content mode
  * handle.timeline;          // escape hatch for advanced ops
  * ```
  */
 export type DocumentHandle = {
-	/**
-	 * The underlying Y.Doc for this document.
-	 *
-	 * **Escape hatch—you almost certainly don't need this.** Exposed for
-	 * document extensions (persistence, sync providers) and tests that
-	 * assert Y.Doc properties. For content operations, use `handle.read()`,
-	 * `handle.write()`, `handle.getText()`, or `handle.getFragment()`.
-	 * For batching mutations, use `handle.batch()` instead of
-	 * `handle.ydoc.transact()`.
-	 *
-	 * @example
-	 * ```typescript
-	 * // Legitimate use: awareness protocol (not content)
-	 * const awareness = new awarenessProtocol.Awareness(handle.ydoc);
-	 * ```
-	 */
 	ydoc: Y.Doc;
 
-	/** Read the current content as a string. Returns '' if empty. */
+	/** Current content mode, or undefined if timeline is empty. */
+	readonly mode: import('../content/entry-types.js').ContentMode | undefined;
+
+	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
 	read(): string;
-	/** Replace the document's text content via the timeline. */
+
+	/** Replace text content. If current mode is text, replaces in-place. Otherwise pushes new text entry. */
 	write(text: string): void;
-	/**
-	 * Get the Y.Text from the current timeline entry for editor binding.
-	 * Auto-creates an empty text entry if the timeline is empty (matches
-	 * Y.Text lazy-create semantics). Returns undefined only if the current
-	 * entry is a non-text mode (richtext, sheet).
-	 */
-	getText(): Y.Text | undefined;
-	/**
-	 * Get the Y.XmlFragment from the current timeline entry for richtext binding.
-	 * Auto-creates an empty richtext entry if the timeline is empty.
-	 * Returns undefined only if the current entry is a non-richtext mode.
-	 */
-	getFragment(): Y.XmlFragment | undefined;
-	/** Direct access to the timeline for advanced operations. */
-	timeline: import('../content/timeline.js').Timeline;
-	/**
-	 * Batch multiple mutations into a single Yjs transaction.
-	 *
-	 * Wraps `ydoc.transact()`—use this instead of accessing the raw
-	 * ydoc. All changes inside the callback emit a single update event.
-	 * Nested `batch()` calls are safe (Yjs transact is reentrant).
-	 *
-	 * @example
-	 * ```typescript
-	 * handle.batch(() => {
-	 *   handle.write('hello');
-	 *   // ...other mutations
-	 * });
-	 * ```
-	 */
-	batch(fn: () => void): void;
 
 	/**
-	 * Per-doc extension exports, keyed by extension name.
-	 *
-	 * Each key corresponds to a document extension registered via
-	 * `withDocumentExtension()`. The value is that extension's `exports` object.
-	 *
-	 * @example
-	 * ```typescript
-	 * const handle = await documents.open(guid);
-	 * await handle.exports.persistence?.clearData?.();
-	 * ```
+	 * Get current content as Y.Text for editor binding.
+	 * Converts from other modes if needed (lossy for richtext). Returns Result.
 	 */
+	asText(): Result<Y.Text, import('../content/errors.js').ContentConversionError>;
+
+	/**
+	 * Get current content as Y.XmlFragment for richtext editor binding.
+	 * Converts from other modes if needed. Returns Result.
+	 */
+	asRichText(): Result<Y.XmlFragment, import('../content/errors.js').ContentConversionError>;
+
+	/**
+	 * Get current content as sheet columns/rows for spreadsheet binding.
+	 * Converts from other modes if needed (parsed as CSV). Returns Result.
+	 */
+	asSheet(): Result<import('../content/conversions.js').SheetBinding, import('../content/errors.js').ContentConversionError>;
+
+	/** Direct access to the timeline for advanced operations. */
+	timeline: import('../content/timeline.js').Timeline;
+	/** Batch mutations into a single Yjs transaction. */
+	batch(fn: () => void): void;
+	/** Per-doc extension exports. */
 	exports: Record<string, Record<string, unknown>>;
 };
 

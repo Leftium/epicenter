@@ -747,3 +747,230 @@ describe('createDocuments', () => {
 		});
 	});
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+// as*() conversion methods
+// ════════════════════════════════════════════════════════════════════════════
+
+describe('handle.asText / asRichText / asSheet', () => {
+	function setupSimple() {
+		const ydoc = new Y.Doc({ guid: 'workspace' });
+		const tableDef = defineTable(
+			type({ id: 'string', name: 'string', updatedAt: 'number', _v: '1' }),
+		);
+		const tables = createTables(ydoc, { files: tableDef });
+		const documents = createDocuments({
+			guidKey: 'id',
+			onUpdate: () => ({ updatedAt: Date.now() }),
+			tableHelper: tables.files,
+			ydoc,
+		});
+		tables.files.set({ id: 'f1', name: 'test', updatedAt: 0, _v: 1 });
+		return { documents, tables };
+	}
+
+	// ─── asText ────────────────────────────────────────────────────────
+
+	test('asText on empty timeline auto-creates text entry', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		const result = handle.asText();
+		expect(result.error).toBeNull();
+		expect(result.data).toBeInstanceOf(Y.Text);
+		expect(handle.mode).toBe('text');
+	});
+
+	test('asText on text entry returns existing Y.Text', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.write('hello');
+
+		const result = handle.asText();
+		expect(result.data?.toString()).toBe('hello');
+		expect(handle.timeline.length).toBe(1); // no new entry pushed
+	});
+
+	test('asText on richtext entry converts (lossy)', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		// Create richtext entry with content
+		const rtEntry = handle.timeline.pushRichtext();
+		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const p = new Y.XmlElement('paragraph');
+		const t = new Y.XmlText();
+		t.insert(0, 'Rich content');
+		p.insert(0, [t]);
+		fragment.insert(0, [p]);
+
+		expect(handle.mode).toBe('richtext');
+
+		const result = handle.asText();
+		expect(result.error).toBeNull();
+		expect(result.data?.toString()).toBe('Rich content');
+		expect(handle.mode).toBe('text'); // mode switched
+		expect(handle.timeline.length).toBe(2); // new entry pushed
+	});
+
+	test('asText on sheet entry converts to CSV', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		handle.timeline.pushSheetFromCsv('Name,Age\nAlice,30\n');
+		expect(handle.mode).toBe('sheet');
+
+		const result = handle.asText();
+		expect(result.error).toBeNull();
+		expect(result.data?.toString()).toBe('Name,Age\nAlice,30\n');
+		expect(handle.mode).toBe('text');
+		expect(handle.timeline.length).toBe(2);
+	});
+
+	// ─── asRichText ────────────────────────────────────────────────────
+
+	test('asRichText on empty timeline auto-creates richtext entry', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		const result = handle.asRichText();
+		expect(result.error).toBeNull();
+		expect(result.data).toBeInstanceOf(Y.XmlFragment);
+		expect(handle.mode).toBe('richtext');
+	});
+
+	test('asRichText on richtext entry returns existing fragment', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.timeline.pushRichtext();
+
+		const result = handle.asRichText();
+		expect(result.data).toBeInstanceOf(Y.XmlFragment);
+		expect(handle.timeline.length).toBe(1); // no new entry
+	});
+
+	test('asRichText on text entry converts to paragraphs', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.write('Line 1\nLine 2');
+
+		const result = handle.asRichText();
+		expect(result.error).toBeNull();
+		expect(handle.mode).toBe('richtext');
+		expect(handle.timeline.length).toBe(2);
+		// Read back as text to verify content
+		expect(handle.read()).toBe('Line 1\nLine 2');
+	});
+
+	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.timeline.pushSheetFromCsv('A,B\n1,2\n');
+
+		const result = handle.asRichText();
+		expect(result.error).toBeNull();
+		expect(handle.mode).toBe('richtext');
+		expect(handle.timeline.length).toBe(2);
+	});
+
+	// ─── asSheet ──────────────────────────────────────────────────────
+
+	test('asSheet on empty timeline auto-creates sheet entry', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		const result = handle.asSheet();
+		expect(result.error).toBeNull();
+		expect(result.data?.columns).toBeInstanceOf(Y.Map);
+		expect(result.data?.rows).toBeInstanceOf(Y.Map);
+		expect(handle.mode).toBe('sheet');
+	});
+
+	test('asSheet on sheet entry returns existing binding', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.timeline.pushSheetFromCsv('X,Y\n1,2\n');
+
+		const result = handle.asSheet();
+		expect(result.data?.columns.size).toBe(2);
+		expect(result.data?.rows.size).toBe(1);
+		expect(handle.timeline.length).toBe(1); // no new entry
+	});
+
+	test('asSheet on text entry parses as CSV', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+		handle.write('Col1,Col2\nA,B\n');
+
+		const result = handle.asSheet();
+		expect(result.error).toBeNull();
+		expect(result.data?.columns.size).toBe(2);
+		expect(result.data?.rows.size).toBe(1);
+		expect(handle.mode).toBe('sheet');
+		expect(handle.timeline.length).toBe(2);
+	});
+
+	test('asSheet on richtext entry extracts text then parses CSV', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		const rtEntry = handle.timeline.pushRichtext();
+		const fragment = rtEntry.get('content') as Y.XmlFragment;
+		const p1 = new Y.XmlElement('paragraph');
+		const t1 = new Y.XmlText();
+		t1.insert(0, 'Name,Age');
+		p1.insert(0, [t1]);
+		const p2 = new Y.XmlElement('paragraph');
+		const t2 = new Y.XmlText();
+		t2.insert(0, 'Alice,30');
+		p2.insert(0, [t2]);
+		fragment.insert(0, [p1, p2]);
+
+		const result = handle.asSheet();
+		expect(result.error).toBeNull();
+		expect(result.data?.columns.size).toBe(2);
+		expect(handle.mode).toBe('sheet');
+		expect(handle.timeline.length).toBe(2);
+	});
+
+	// ─── mode getter ──────────────────────────────────────────────────
+
+	test('mode reflects current timeline state', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		expect(handle.mode).toBeUndefined(); // empty
+		handle.write('text');
+		expect(handle.mode).toBe('text');
+	});
+
+	// ─── consecutive conversions ──────────────────────────────────────
+
+	test('consecutive conversions: text → richtext → sheet → text', async () => {
+		const { documents } = setupSimple();
+		const handle = await documents.open('f1');
+
+		// Start with text
+		handle.write('hello');
+		expect(handle.mode).toBe('text');
+		expect(handle.timeline.length).toBe(1);
+
+		// Convert to richtext
+		const rt = handle.asRichText();
+		expect(rt.error).toBeNull();
+		expect(handle.mode).toBe('richtext');
+		expect(handle.timeline.length).toBe(2);
+
+		// Convert to sheet
+		const sh = handle.asSheet();
+		expect(sh.error).toBeNull();
+		expect(handle.mode).toBe('sheet');
+		expect(handle.timeline.length).toBe(3);
+
+		// Convert back to text
+		const tx = handle.asText();
+		expect(tx.error).toBeNull();
+		expect(handle.mode).toBe('text');
+		expect(handle.timeline.length).toBe(4);
+	});
+});

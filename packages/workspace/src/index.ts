@@ -77,6 +77,7 @@ export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
 export type {
 	ContentMode,
 	RichTextEntry,
+	SheetBinding,
 	SheetEntry,
 	TextEntry,
 	TimelineEntry,
@@ -84,11 +85,14 @@ export type {
 } from './content';
 export {
 	computeMidpoint,
+	ContentConversionError,
 	createTimeline,
 	generateInitialOrders,
 	parseSheetFromCsv,
+	populateFragmentFromText,
 	readEntry,
 	serializeSheetToCsv,
+	xmlFragmentToPlaintext,
 	type Timeline,
 } from './content';
 // ════════════════════════════════════════════════════════════════════════════

@@ -55,13 +55,35 @@ export function createYjsFileSystem(
 		 * delegates to the handle's timeline-backed methods.
 		 * The `write` method handles sheet mode switching automatically.
 		 *
+		 * Use `open()` to get the full {@link DocumentHandle} for editor
+		 * binding (e.g. `handle.asText()` for CodeMirror + Yjs).
+		 *
 		 * @example
 		 * ```typescript
 		 * const text = await fs.content.read(fileId);
 		 * await fs.content.write(fileId, 'hello');
+		 *
+		 * // Editor binding
+		 * const handle = await fs.content.open(fileId);
+		 * const ytext = handle.asText();
 		 * ```
 		 */
 		content: {
+			/**
+			 * Open a file's content document and return the full handle.
+			 *
+			 * The returned {@link DocumentHandle} exposes timeline-backed methods
+			 * for editor binding: `asText()` returns a `Y.Text` suitable for
+			 * CodeMirror/y-codemirror.next, `asRichText()` returns a `Y.XmlFragment`
+			 * for TipTap, and `asSheet()` returns column/row maps.
+			 *
+			 * Documents are cached -- calling `open()` twice for the same file returns
+			 * handles backed by the same Y.Doc.
+			 */
+			async open(fileId: FileId) {
+				return contentDocuments.open(fileId);
+			},
+
 			/**
 			 * Read file content as a string.
 			 *

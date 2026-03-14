@@ -19,8 +19,6 @@ export type Timeline = {
 	pushSheetFromCsv(csv: string): TimelineEntry;
 	/** Read the current entry as a string. Returns '' if empty. */
 	readAsString(): string;
-	/** Read the current entry as Uint8Array. Returns empty array if empty. */
-	readAsBuffer(): Uint8Array;
 };
 
 export type ValidatedEntry =
@@ -111,21 +109,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			}
 		},
 
-		readAsBuffer(): Uint8Array {
-			const validated = readEntry(currentEntry());
-			switch (validated.mode) {
-				case 'text':
-					return new TextEncoder().encode(validated.content.toString());
-				case 'richtext':
-					return new Uint8Array();
-				case 'sheet':
-					return new TextEncoder().encode(
-						serializeSheetToCsv(validated.columns, validated.rows),
-					);
-				case 'empty':
-					return new Uint8Array();
-			}
-		},
 	};
 }
 

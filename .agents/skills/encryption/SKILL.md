@@ -29,15 +29,31 @@ When working with encryption, consult these repositories for patterns and docume
 
 ## Epicenter's Encryption Architecture
 
+### Environment Variables
+
+```bash
+# Required. Separate from BETTER_AUTH_SECRET. Generate: openssl rand -base64 32
+ENCRYPTION_SECRET="base64encodedSecret"
+
+# Future (key rotation). Comma-separated, version-prefixed. Better Auth convention.
+# First entry = current key for new encryptions. Others = decryption-only.
+# ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
 ```
-ENCRYPTION_SECRETS="2:newBase64,1:oldBase64"   (env var, Better Auth convention)
-       |
-       |  Parse -> Keyring Map<version, secret>
+
+- `ENCRYPTION_SECRET` (singular) is REQUIRED and completely independent from `BETTER_AUTH_SECRET`
+- Auth secret rotation and encryption key rotation are decoupled--changing one never affects the other
+- For key rotation (future): `ENCRYPTION_SECRETS` (plural) takes precedence when set
+- Format matches Better Auth's own `BETTER_AUTH_SECRETS` convention: `version:secret` pairs
+
+### Key Hierarchy
+
+```
+ENCRYPTION_SECRET
        |
        |  SHA-256(secret) -> root key material
        |  HKDF(root, info="user:{userId}") -> per-user key (32 bytes)
        v
-  Session response -> client receives user key(s)
+  Session response -> client receives user key
        |
        |  HKDF(userKey, info="workspace:{wsId}") -> per-workspace key (32 bytes)
        v
@@ -79,13 +95,22 @@ type EncryptedBlob = { v: 1; ct: Uint8Array };
 - `v: 1` means XChaCha20-Poly1305, 24-byte random nonce, no key version prefix
 - The `{ v, ct }` wrapper distinguishes encrypted from plaintext values in the CRDT
 
-### Key Rotation
+### Key Rotation (Future)
 
-- Env var: `ENCRYPTION_SECRETS="2:newBase64,1:oldBase64"` (comma-separated, version-prefixed)
+When rotation support ships:
+
+```bash
+# Set the keyring env var (takes precedence over ENCRYPTION_SECRET)
+ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
+```
+
+- Parser splits by `,`, then each entry by first `:` -> `{ version: number, secret: string }`
 - First entry = current version for new encryptions
+- Remaining entries = decryption-only (for reading old data)
 - Decrypt: trial decryption with keyring entries (current key first, then older keys)
 - Lazy re-encryption: on successful decrypt with non-current key, re-encrypt on next write
 - Trial decryption is cheap: 3 keys x 2us = 6us per blob (still faster than single-key AES-GCM)
+- Keep old secrets in keyring for at least 90 days to handle offline devices
 
 ### Format Version Upgrade Path
 

@@ -120,12 +120,7 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				// ENCRYPTION_SECRET decouples key derivation from auth secret rotation.
-				// Falls back to BETTER_AUTH_SECRET for existing deployments.
-				const encryptionSecret =
-					(env as { ENCRYPTION_SECRET?: string }).ENCRYPTION_SECRET ??
-					env.BETTER_AUTH_SECRET;
-				const encryptionKey = await deriveUserKey(encryptionSecret, user.id);
+				const encryptionKey = await deriveUserKey(env.ENCRYPTION_SECRET, user.id);
 				return {
 					user,
 					session,

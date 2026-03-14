@@ -12,6 +12,7 @@ declare namespace Cloudflare {
 		BASE_URL: 'https://api.epicenter.so';
 		GOOGLE_CLIENT_ID: '702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 		BETTER_AUTH_SECRET: string;
+		ENCRYPTION_SECRET: string;
 		GOOGLE_CLIENT_SECRET: string;
 		OPENAI_API_KEY: string;
 		ANTHROPIC_API_KEY: string;
@@ -33,6 +34,7 @@ declare namespace NodeJS {
 				| 'BASE_URL'
 				| 'GOOGLE_CLIENT_ID'
 				| 'BETTER_AUTH_SECRET'
+				| 'ENCRYPTION_SECRET'
 				| 'GOOGLE_CLIENT_SECRET'
 				| 'OPENAI_API_KEY'
 				| 'ANTHROPIC_API_KEY'

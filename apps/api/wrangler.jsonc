@@ -46,11 +46,13 @@
 		}
 	],
 	// --- Secrets (set via `wrangler secret put`, typed via `wrangler types`) ---
-	// Optional: ENCRYPTION_SECRET — decouples encryption key derivation from auth.
-	// Falls back to BETTER_AUTH_SECRET if not set. Set via `wrangler secret put ENCRYPTION_SECRET`.
 	"secrets": {
 		"required": [
 			"BETTER_AUTH_SECRET",
+			// ENCRYPTION_SECRET: Separate from BETTER_AUTH_SECRET. Used to derive per-user
+			// encryption keys via HKDF. Generate with: openssl rand -base64 32
+			// For key rotation (future): ENCRYPTION_SECRETS="2:newBase64,1:oldBase64"
+			"ENCRYPTION_SECRET",
 			"GOOGLE_CLIENT_SECRET",
 			"OPENAI_API_KEY",
 			"ANTHROPIC_API_KEY"

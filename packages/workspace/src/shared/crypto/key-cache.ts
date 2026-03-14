@@ -1,8 +1,8 @@
 /**
  * Platform-agnostic interface for caching encryption keys.
  *
- * The workspace layer doesn't care where the key lives—it only calls
- * `getKey()` on every operation. But between app restarts and tab
+ * The workspace layer doesn't care where the key lives—it only needs a
+ * `Uint8Array` at construction time. But between app restarts and tab
  * refreshes, re-deriving the key from the server adds a network
  * roundtrip. Implementations of `KeyCache` store the key locally so
  * the workspace can decrypt immediately on launch.
@@ -56,12 +56,11 @@
  *   ▼
  * App startup (before auth roundtrip completes)
  *   │  KeyCache.get(userId) → Uint8Array (cached from last session)
- *   │  getKey() returns cached key immediately
+ *   │  key available immediately
  *   ▼
- * createEncryptedKvLww(yarray, { getKey })
+ * createEncryptedKvLww(yarray, { key })
  *   │  encrypts/decrypts using the cached key
  *   │  no network roundtrip needed on refresh
- * ```
  *
  * Without a `KeyCache`, every page refresh requires a full auth roundtrip before
  * encrypted data can be read. With a cache, the workspace decrypts immediately
@@ -70,7 +69,7 @@
  * ## Related Modules
  *
  * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding)
- * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Encrypted wrapper that calls `getKey()` on every operation
+ * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Encrypted wrapper that receives `key` at construction
  */
 export type KeyCache = {
 	/** Store encryption key for this user. */

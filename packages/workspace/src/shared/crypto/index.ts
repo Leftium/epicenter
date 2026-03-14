@@ -12,7 +12,7 @@
  * │  Server derives key from secret → sends base64 in session response │
  * │  Client decodes → stores in memory via KeyCache                    │
  * └────────────────────────┬────────────────────────────────────────────┘
- *                          │  getKey() → Uint8Array | undefined
+ *                          │  key: Uint8Array | undefined
  *                          ▼
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │  Encrypted KV Wrapper (y-keyvalue-lww-encrypted.ts)                │
@@ -37,7 +37,7 @@
  * |-----------------|------------------------------------------|------------------|
  * | Cloud (SaaS)    | SHA-256(BETTER_AUTH_SECRET)               | Yes              |
  * | Self-hosted     | PBKDF2(password, salt, 600k iterations)  | No (zero-knowledge) |
- * | No auth / local | getKey() → undefined → passthrough       | N/A              |
+ * | No auth / local | key: undefined → passthrough             | N/A              |
  *
  * ## Related Modules
  *

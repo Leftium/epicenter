@@ -81,11 +81,10 @@ export type ActionNames<T extends Actions> = {
  *   (notably Anthropic) reject schemas missing those fields.
  * - **`outputSchema`** — Enables server-side output validation. TanStack AI's
  *   `executeToolCalls` validates results against this when present.
- * - **`needsApproval`** — Only present when the action is marked `destructive`.
- *   Omitted entirely for non-destructive tools. The server's `executeToolCalls`
- *   checks this to decide whether to send an `APPROVAL_REQUESTED` event or a
- *   direct `TOOL_CALL` event. Without it, actions auto-execute with no approval
- *   dialog.
+ * - **`needsApproval`** — Present on all mutations. Queries never need approval.
+ *   The server's `executeToolCalls` checks this to decide whether to send an
+ *   `APPROVAL_REQUESTED` event or a direct `TOOL_CALL` event. Without it,
+ *   actions auto-execute with no approval dialog.
  * - **`metadata`** — Pass-through `Record<string, unknown>` for server-side
  *   routing, logging, or future TanStack AI features.
  *
@@ -140,7 +139,7 @@ export function actionsToClientTools<TActions extends Actions>(
 		name: path.join(ACTION_NAME_SEPARATOR) as ActionNames<TActions>,
 		description: action.description ?? `${action.type}: ${path.join('.')}`,
 		...(action.input && { inputSchema: action.input }),
-		...(action.destructive && { needsApproval: true }),
+		...(action.type === 'mutation' && { needsApproval: true }),
 		execute: async (args: unknown) => (action.input ? action(args) : action()),
 	}));
 }

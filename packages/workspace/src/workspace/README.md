@@ -105,11 +105,11 @@ For detailed rationale on all of this, see [the guide](docs/articles/20260127T12
 
 ## Document Content
 
-Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in the filesystem package.
+Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in `packages/workspace/src/content/`.
 
-**Important**: `DocumentHandle.read()`/`write()` currently use `Y.Text('content')`, which is a different shared type than the timeline. If your app uses `@epicenter/filesystem`, prefer `fs.content.read()`/`fs.content.write()` for timeline-backed access. Accessing `handle.ydoc.getText('content')` directly is also discouraged.
+`handle.content` is the canonical interface: `read()`/`write()` for text, `getText()` for Y.Text editor binding, `getFragment()` for Y.XmlFragment richtext binding, and `timeline` for advanced operations. Legacy `Y.Text('content')` data is migrated to the timeline automatically on first read.
 
-See `specs/20260313T224500-unify-document-content-model.md` for the full unification plan and anti-pattern reference.
+See `specs/20260313T230000-promote-timeline-to-workspace.md` for the full design.
 
 ## Testing
 

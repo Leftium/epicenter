@@ -1479,7 +1479,7 @@ await client.destroy(); // Cleanup resources
 
 ### Document Content Model
 
-> **Important**: Tables with `.withDocument()` create per-row content Y.Docs. These use a **timeline model** (`Y.Array('timeline')`) in `@epicenter/filesystem` for multi-format content (text, binary, sheet). `DocumentHandle.read()`/`write()` use a different shared type (`Y.Text('content')`) and are not timeline-aware. Apps using the filesystem package should use `fs.content.read()`/`fs.content.write()` for content access. Accessing `handle.ydoc.getText('content')` or `handle.ydoc.getXmlFragment('content')` directly is discouraged—use `createTimeline(ydoc)` from `@epicenter/filesystem` instead. See `specs/20260313T224500-unify-document-content-model.md`.
+> Tables with `.withDocument()` create per-row content Y.Docs backed by a **timeline model** (`Y.Array('timeline')`) supporting text, binary, richtext, and sheet content. Use `handle.content.read()`/`.write()` for text, `handle.content.getText()` for Y.Text editor binding, `handle.content.getFragment()` for Y.XmlFragment richtext binding, and `handle.content.timeline` for advanced operations (binary, sheet). The filesystem's `fs.content` helpers delegate to `handle.content` internally and add binary/sheet/append support. See `specs/20260313T230000-promote-timeline-to-workspace.md`.
 
 
 ### Column Schemas

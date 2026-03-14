@@ -10,7 +10,7 @@ Core library shared across apps.
 
 ## Content Model
 
-`handle.read()`/`handle.write()` on `DocumentHandle` use raw `Y.Text('content')`, which is NOT the same shared type as the filesystem's timeline (`Y.Array('timeline')`). Apps using `@epicenter/filesystem` must use `fs.content.read/write` for timeline-backed content access. Direct `handle.ydoc.getText('content')` access is an anti-pattern. See `specs/20260313T224500-unify-document-content-model.md`.
+`handle.content` is the canonical interface for document content. It reads/writes through the timeline (`Y.Array('timeline')`), supports text, richtext, binary, and sheet modes, and provides `getText()`/`getFragment()` for editor binding. Direct `handle.ydoc.getText('content')` access is an anti-pattern—use `handle.content.getText()` instead. Legacy Y.Text data is migrated automatically on first read. See `specs/20260313T230000-promote-timeline-to-workspace.md`.
 
 ## Bun Usage
 

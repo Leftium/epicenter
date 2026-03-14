@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import * as Field from '@epicenter/ui/field';
 	import type { Snippet } from 'svelte';
 	import { migrationDialog } from './migration-dialog.svelte';
 	import { MOCK_RECORDING_COUNT, MOCK_TRANSFORMATION_COUNT } from './migration-test-data';
@@ -40,17 +41,15 @@
 					disabled={migrationDialog.isRunning}
 					class="w-full"
 				>
-					{migrationDialog.isRunning ? 'Migrating…' : 'Start Migration'}
+					{migrationDialog.isRunning ? 'Migrating…' : migrationDialog.hasFailedAttempt ? 'Retry Migration' : 'Start Migration'}
 				</Button>
 			{:else}
-				<p class="text-sm text-muted-foreground">
-					Migration is already complete.
-				</p>
+				<Field.Description>Migration is already complete.</Field.Description>
 			{/if}
 
 			{#if migrationDialog.logs.length > 0}
-				<div class="space-y-2">
-					<h3 class="text-sm font-semibold">Progress</h3>
+				<Field.Set>
+					<Field.Legend variant="label">Progress</Field.Legend>
 					<div
 						bind:this={logsContainer}
 						class="max-h-48 overflow-y-auto rounded-lg border bg-muted p-3 font-mono text-xs"
@@ -59,40 +58,36 @@
 							<div class="mb-1">{log}</div>
 						{/each}
 					</div>
-				</div>
+				</Field.Set>
 			{/if}
 
 			{#if migrationDialog.migrationResult}
 				{@const r = migrationDialog.migrationResult}
-				<div class="rounded-lg border p-4">
-					<h3 class="mb-3 text-sm font-semibold">Results</h3>
-					<div class="space-y-1 text-sm text-muted-foreground">
-						<p>
+				<Field.Set class="rounded-lg border p-4">
+					<Field.Legend variant="label">Results</Field.Legend>
+					<div class="space-y-1">
+						<Field.Description>
 							Recordings: {r.recordings.migrated} migrated,
-							{r.recordings.skipped}
-							skipped, {r.recordings.failed} failed (of {r.recordings.total})
-						</p>
-						<p>
+							{r.recordings.skipped} skipped, {r.recordings.failed} failed (of {r.recordings.total})
+						</Field.Description>
+						<Field.Description>
 							Transformations: {r.transformations.migrated} migrated,
-							{r.transformations.skipped}
-							skipped, {r.transformations.failed}
-							failed (of {r.transformations.total})
-						</p>
-						<p>
+							{r.transformations.skipped} skipped, {r.transformations.failed} failed (of {r.transformations.total})
+						</Field.Description>
+						<Field.Description>
 							Steps: {r.steps.migrated} migrated, {r.steps.skipped} skipped,
-							{r.steps.failed}
-							failed (of {r.steps.total})
-						</p>
+							{r.steps.failed} failed (of {r.steps.total})
+						</Field.Description>
 					</div>
-				</div>
+				</Field.Set>
 			{/if}
 
 			{#if import.meta.env.DEV}
-				<div class="rounded-lg border border-dashed p-4">
-					<h3 class="mb-3 text-sm font-semibold">Dev Tools</h3>
-					<div class="space-y-3">
-						<div>
-							<p class="mb-1.5 text-xs text-muted-foreground">Seed & Clear</p>
+				<Field.Set class="rounded-lg border border-dashed p-4">
+					<Field.Legend>Dev Tools</Field.Legend>
+					<Field.Group>
+						<Field.Set>
+							<Field.Legend variant="label">Seed & Clear</Field.Legend>
 							<div class="flex flex-wrap gap-2">
 								<Button
 									onclick={migrationDialog.seedIndexedDB}
@@ -113,9 +108,13 @@
 									{migrationDialog.isClearing ? 'Clearing\u2026' : 'Clear IndexedDB'}
 								</Button>
 							</div>
-						</div>
-						<div>
-							<p class="mb-1.5 text-xs text-muted-foreground">Reset</p>
+						</Field.Set>
+						<Field.Separator />
+						<Field.Set>
+							<Field.Legend variant="label">Reset</Field.Legend>
+							<Field.Description>
+								Clears workspace tables and resets localStorage\u2014re-enables the migration button.
+							</Field.Description>
 							<Button
 								onclick={migrationDialog.resetMigration}
 								disabled={migrationDialog.isDevBusy}
@@ -126,12 +125,9 @@
 									? 'Resetting\u2026'
 									: 'Reset Migration State'}
 							</Button>
-							<p class="mt-1 text-xs text-muted-foreground">
-								Clears workspace tables and resets localStorage\u2014re-enables the migration button.
-							</p>
-						</div>
-					</div>
-				</div>
+						</Field.Set>
+					</Field.Group>
+				</Field.Set>
 			{/if}
 		</div>
 

@@ -1479,7 +1479,7 @@ await client.destroy(); // Cleanup resources
 
 ### Document Content Model
 
-> Tables with `.withDocument()` create per-row content Y.Docs backed by a **timeline model** (`Y.Array('timeline')`) supporting text, binary, richtext, and sheet content. Use `handle.content.read()`/`.write()` for text, `handle.content.getText()` for Y.Text editor binding, `handle.content.getFragment()` for Y.XmlFragment richtext binding, and `handle.content.timeline` for advanced operations (binary, sheet). The filesystem's `fs.content` helpers delegate to `handle.content` internally and add binary/sheet/append support. See `specs/20260313T230000-promote-timeline-to-workspace.md`.
+> Tables with `.withDocument()` create per-row content Y.Docs backed by a **timeline model** (`Y.Array('timeline')`) supporting text, richtext, and sheet content. Use `handle.content.read()`/`.write()` for text, `handle.content.getText()` for Y.Text editor binding, `handle.content.getFragment()` for Y.XmlFragment richtext binding, and `handle.content.timeline` for advanced operations (sheet).
 
 
 ### Column Schemas

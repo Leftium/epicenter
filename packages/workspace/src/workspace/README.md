@@ -107,7 +107,7 @@ For detailed rationale on all of this, see [the guide](docs/articles/20260127T12
 
 Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in `packages/workspace/src/content/`.
 
-`handle.content` is the canonical interface: `read()`/`write()` for text, `getText()` for Y.Text editor binding, `getFragment()` for Y.XmlFragment richtext binding, and `timeline` for advanced operations. Legacy `Y.Text('content')` data is migrated to the timeline automatically on first read.
+`handle.content` is the canonical interface: `read()`/`write()` for text, `getText()` for Y.Text editor binding, `getFragment()` for Y.XmlFragment richtext binding, and `timeline` for advanced operations.
 
 See `specs/20260313T230000-promote-timeline-to-workspace.md` for the full design.
 

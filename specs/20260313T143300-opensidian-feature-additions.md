@@ -192,12 +192,12 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 ### Phase 3: Rich Editing
 
-- [ ] **3.1** Add CodeMirror 6 dependency with Svelte wrapper
-- [ ] **3.2** Add `y-codemirror.next` for Yjs binding
-- [ ] **3.3** Replace `ContentEditor.svelte`'s textarea with CodeMirror
-- [ ] **3.4** Bind CodeMirror to the file's Y.Doc directly (no serialization)
-- [ ] **3.5** Add markdown syntax highlighting
-- [ ] **3.6** Optional: Add split-pane markdown preview
+- [x] **3.1** Add CodeMirror 6 dependency with Svelte wrapper
+- [x] **3.2** Add `y-codemirror.next` for Yjs binding
+- [x] **3.3** Replace `ContentEditor.svelte`'s textarea with CodeMirror
+- [x] **3.4** Bind CodeMirror to the file's Y.Doc directly (no serialization)
+- [x] **3.5** Add markdown syntax highlighting
+- [ ] **3.6** Optional: Add split-pane markdown preview (skipped for now)
 
 ### Phase 4: Advanced Interactions
 
@@ -263,3 +263,39 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 - `packages/ui/src/tabs/` — Tabs component
 - `packages/ui/src/command/` — Command palette component
 - `packages/filesystem/src/content/content.ts` — content read/write for editor binding
+
+## Phase 3 Review
+
+### Summary
+
+Replaced the plain `<Textarea>` in ContentEditor with CodeMirror 6 bound directly to Yjs via `y-codemirror.next`. Every keystroke is now a Y.Doc operation with no intermediate string copy.
+
+### Key Discovery
+
+The Y.Array('timeline') / Y.Text compatibility concern was a non-issue. The timeline Y.Array is a container for versioned entries; each text entry contains a Y.Text inside it. The existing `DocumentHandle.asText()` method (designed explicitly for editor binding) returns the Y.Text directly, handling mode conversion and empty-doc initialization automatically.
+
+### Changes Made
+
+1. **`packages/filesystem/src/file-system.ts`** -- Added `open()` method to `fs.content`. One-line passthrough to `contentDocuments.open(fileId)` that returns the full `DocumentHandle`. This bridges the string-based I/O layer to the richer handle API needed for editor binding.
+
+2. **`apps/opensidian/package.json`** -- Added devDependencies: `@codemirror/state`, `@codemirror/view`, `@codemirror/commands`, `@codemirror/lang-markdown`, `@codemirror/language`, `y-codemirror.next`.
+
+3. **`apps/opensidian/src/lib/components/CodeMirrorEditor.svelte`** (NEW) -- Svelte 5 wrapper for CodeMirror 6. Accepts a `Y.Text` prop, creates an `EditorView` in `$effect`, destroys on cleanup. Extensions: `yCollab` (Yjs binding with built-in UndoManager), `markdown()` (syntax highlighting), `defaultKeymap`, `indentWithTab`, `drawSelection`, `EditorView.lineWrapping`. Styled to match the original textarea: monospace font, no gutters, no focus ring, transparent background, 1rem padding.
+
+4. **`apps/opensidian/src/lib/components/ContentEditor.svelte`** -- Complete rewrite. Dropped: `content` state, `loading`/`dirty` flags, `loadContent()`, `saveContent()`, `handleInput()`, `handleKeydown()`, cleanup write-on-destroy, `Textarea` import. Added: async `open()` call to get `DocumentHandle`, `handle.asText()` to extract `Y.Text`, renders `CodeMirrorEditor` with the Y.Text. The entire read-edit-writeback cycle is eliminated.
+
+### What Was Eliminated
+
+- No more `readContent` / `writeContent` calls from the editor
+- No more `dirty` flag tracking
+- No more `saveContent` on blur / Ctrl+S / cleanup
+- No more race condition guard on string loading (the Y.Text is the source of truth)
+- No more Textarea component import
+
+### Lifecycle
+
+The `{#key fsState.activeFileId}` block in ContentPanel.svelte destroys/recreates ContentEditor on tab switch. This naturally handles CodeMirror lifecycle: the `$effect` cleanup calls `view.destroy()`, and a new EditorView is created for the next file's Y.Text. The `DocumentHandle` caching in the Documents manager means re-opening the same file is cheap (returns the existing cached Y.Doc).
+
+### Pre-existing Issues
+
+svelte-check reports 80 pre-existing errors in `@epicenter/ui` (missing `#/utils.js` module resolution) and `define-table.ts` (missing `NumberKeysOf` type). None are related to our changes.

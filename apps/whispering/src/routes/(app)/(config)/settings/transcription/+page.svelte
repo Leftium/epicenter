@@ -442,7 +442,7 @@
 							(v) => deviceConfig.set('transcription.whispercpp.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
-							<p class="text-sm text-muted-foreground">
+							<Field.Description>
 								Models are downloaded from{' '}
 								<Link
 									href="https://huggingface.co/ggerganov/whisper.cpp"
@@ -453,7 +453,7 @@
 								</Link>
 								{' '}and stored locally in your app data directory. Quantized
 								models offer smaller sizes with minimal quality loss.
-							</p>
+							</Field.Description>
 						{/snippet}
 
 						{#snippet manualInstructions()}
@@ -533,7 +533,7 @@
 						(v) => deviceConfig.set('transcription.parakeet.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
-							<p class="text-sm text-muted-foreground">
+							<Field.Description>
 								Models are downloaded from{' '}
 								<Link
 									href="https://github.com/EpicenterHQ/epicenter/releases/tag/models/parakeet-tdt-0.6b-v3-int8"
@@ -545,15 +545,15 @@
 								{' '}and stored in your app data directory. The pre-packaged
 								archive contains the NVIDIA Parakeet model with INT8
 								quantization and is extracted after download.
-							</p>
+							</Field.Description>
 						{/snippet}
 
 						{#snippet manualInstructions()}
 							<Card.Root class="bg-muted/50">
 								<Card.Content class="p-4">
-									<h4 class="mb-2 text-sm font-medium">
+									<Field.Legend variant="label">
 										Getting Parakeet Models
-									</h4>
+									</Field.Legend>
 									<ul class="space-y-2 text-sm text-muted-foreground">
 										<li class="flex items-start gap-2">
 											<span
@@ -640,7 +640,7 @@
 						(v) => deviceConfig.set('transcription.moonshine.modelPath', v)}
 					>
 						{#snippet prebuiltFooter()}
-							<p class="text-sm text-muted-foreground">
+							<Field.Description>
 								Models are downloaded from{' '}
 								<Link
 									href="https://huggingface.co/UsefulSensors/moonshine"
@@ -651,15 +651,15 @@
 								</Link>
 								{' '}and stored in your app data directory. Moonshine uses
 								quantized ONNX models for efficient local inference.
-							</p>
+							</Field.Description>
 						{/snippet}
 
 						{#snippet manualInstructions()}
 							<Card.Root class="bg-muted/50">
 								<Card.Content class="p-4">
-									<h4 class="mb-2 text-sm font-medium">
+									<Field.Legend variant="label">
 										Getting Moonshine Models
-									</h4>
+									</Field.Legend>
 									<ul class="space-y-2 text-sm text-muted-foreground">
 										<li class="flex items-start gap-2">
 											<span
@@ -703,7 +703,7 @@
 										>
 											Directory Naming Requirement
 										</p>
-										<p class="mt-1 text-xs text-muted-foreground">
+										<Field.Description class="mt-1">
 											The model directory must be named{' '}
 											<code class="rounded bg-muted px-1 py-0.5 font-mono"
 												>moonshine-&#123;variant&#125;-&#123;lang&#125;</code
@@ -717,7 +717,7 @@
 												>moonshine-base-en</code
 											>). The variant (tiny/base) determines model architecture.
 										</p>
-									</div>
+									</Field.Description>
 								</Card.Content>
 							</Card.Root>
 						{/snippet}

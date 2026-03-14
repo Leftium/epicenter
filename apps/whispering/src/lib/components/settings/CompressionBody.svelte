@@ -133,9 +133,9 @@
 					</Button>
 				{/each}
 			</div>
-			<p class="text-muted-foreground text-xs">
+			<Field.Description>
 				Choose a preset or customize FFmpeg options below
-			</p>
+			</Field.Description>
 		</div>
 
 		<!-- Custom Options Input -->

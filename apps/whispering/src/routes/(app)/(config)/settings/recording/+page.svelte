@@ -375,14 +375,12 @@
 			{:else if isUsingFfmpegMethod}
 				<!-- FFmpeg method settings -->
 				<div class="space-y-2">
-					<label for="output-folder" class="text-sm font-medium">
-						Recording Output Folder
-					</label>
-					<DesktopOutputFolder></DesktopOutputFolder>
-					<p class="text-xs text-muted-foreground">
-						Choose where to save your recordings. Default location is secure and
-						managed by the app.
-					</p>
+				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
+				<DesktopOutputFolder></DesktopOutputFolder>
+				<Field.Description>
+					Choose where to save your recordings. Default location is secure and
+					managed by the app.
+				</Field.Description>
 				</div>
 
 				<FfmpegCommandBuilder
@@ -420,14 +418,12 @@
 				</Field.Field>
 
 				<div class="space-y-2">
-					<label for="output-folder" class="text-sm font-medium">
-						Recording Output Folder
-					</label>
-					<DesktopOutputFolder></DesktopOutputFolder>
-					<p class="text-xs text-muted-foreground">
-						Choose where to save your recordings. Default location is secure and
-						managed by the app.
-					</p>
+				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
+				<DesktopOutputFolder></DesktopOutputFolder>
+				<Field.Description>
+					Choose where to save your recordings. Default location is secure and
+					managed by the app.
+				</Field.Description>
 				</div>
 			{/if}
 		{/if}

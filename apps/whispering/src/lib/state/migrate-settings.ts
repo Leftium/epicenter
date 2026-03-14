@@ -7,6 +7,8 @@
  *
  * @see specs/20260313T163000-settings-data-migration.md
  */
+
+import { Ok, trySync } from 'wellcrafted/result';
 import {
 	type DeviceConfigKey,
 	deviceConfig,
@@ -14,19 +16,128 @@ import {
 import workspace from '$lib/workspace';
 
 const MIGRATION_KEY = 'whispering:settings-migration';
-const DEVICE_STORAGE_PREFIX = 'whispering.device.';
 
-// ── Type-safe wrappers for dynamic key writes ────────────────────────────────
+// Type-widened accessors for dynamic key writes. The mapping tables guarantee
+// runtime correctness; these bypass the generic constraints that require
+// literal key types we can't produce from a data-driven loop.
+const setKv = workspace.kv.set as (key: string, value: unknown) => void;
+const getKv = workspace.kv.get as (key: string) => unknown;
+const getKvDefault = (key: string) =>
+	(workspace.definitions.kv as Record<string, { defaultValue: unknown }>)[key]
+		?.defaultValue;
 
-type KvSetter = (key: string, value: unknown) => void;
-type KvGetter = (key: string) => unknown;
-type DeviceSetter = (key: string, value: unknown) => void;
+/**
+ * Migrate old settings from the monolithic `whispering-settings` localStorage
+ * blob to per-key workspace KV and device config stores.
+ *
+ * **Must be called after workspace and device-config are initialized.**
+ * Awaits `workspace.whenReady` internally to ensure IndexedDB persistence
+ * has loaded before checking first-write-wins conditions.
+ *
+ * Silent, automatic, idempotent. One bad key doesn't abort the migration.
+ */
+export async function migrateOldSettings(): Promise<void> {
+	// Already completed or not needed — fast path
+	const state = window.localStorage.getItem(MIGRATION_KEY);
+	if (state === 'completed' || state === 'not-needed') return;
 
-const writeWorkspaceKv = workspace.kv.set as KvSetter;
-const readWorkspaceKv = workspace.kv.get as KvGetter;
-const writeDeviceConfig = deviceConfig.set as DeviceSetter;
+	// Read old blobs before any async work
+	const oldSettingsRaw = window.localStorage.getItem('whispering-settings');
+	const oldDeviceConfigRaw = window.localStorage.getItem(
+		'whispering-device-config',
+	);
 
-// ── Type conversions ─────────────────────────────────────────────────────────
+	// No old data at all — fresh install
+	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
+		window.localStorage.setItem(MIGRATION_KEY, 'not-needed');
+		return;
+	}
+
+	// Parse old blobs
+	const oldSettings = tryParseJson(oldSettingsRaw);
+	const oldDeviceConfig = tryParseJson(oldDeviceConfigRaw);
+
+	// Both parse failures — nothing to migrate
+	if (!oldSettings && !oldDeviceConfig) {
+		window.localStorage.setItem(MIGRATION_KEY, 'completed');
+		return;
+	}
+
+	// Wait for IndexedDB persistence to load so workspace.kv.get() returns
+	// real persisted values (not defaults). This ensures the first-write-wins
+	// check correctly detects user-set values.
+	await workspace.whenReady;
+
+	// ── Migrate workspace keys ───────────────────────────────────────────
+
+	for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
+		trySync({
+			try: () => {
+				const raw = oldSettings?.[oldKey];
+				if (raw === undefined || raw === null) return;
+
+				// First-write-wins: skip if user already changed this setting
+				if (getKv(newKey) !== getKvDefault(newKey)) return;
+
+				const value = convert ? convert(raw) : raw;
+				if (value === undefined) return;
+
+				setKv(newKey, value);
+			},
+			catch: (err) => {
+				console.warn(`[settings-migration] workspace key "${oldKey}":`, err);
+				return Ok(undefined);
+			},
+		});
+	}
+
+	// ── Migrate device keys ──────────────────────────────────────────────
+	// Priority: per-key localStorage > whispering-device-config > whispering-settings
+
+	for (const { oldKey, newKey } of DEVICE_KEY_MAP) {
+		trySync({
+			try: () => {
+				// Already has a per-key entry — user-set or prior migration run
+				if (window.localStorage.getItem(`whispering.device.${newKey}`) !== null)
+					return;
+
+				// Look up from monolithic device-config blob first (uses NEW key names),
+				// then fall back to the original settings blob (uses OLD key names)
+				const raw = oldDeviceConfig?.[newKey] ?? oldSettings?.[oldKey];
+				if (raw === undefined || raw === null) return;
+
+				(deviceConfig.set as (key: string, value: unknown) => void)(
+					newKey,
+					raw,
+				);
+			},
+			catch: (err) => {
+				console.warn(`[settings-migration] device key "${oldKey}":`, err);
+				return Ok(undefined);
+			},
+		});
+	}
+
+	// ── Cleanup ──────────────────────────────────────────────────────────
+
+	window.localStorage.removeItem('whispering-settings');
+	window.localStorage.removeItem('whispering-device-config');
+	window.localStorage.setItem(MIGRATION_KEY, 'completed');
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function tryParseJson(raw: string | null): Record<string, unknown> | null {
+	if (!raw) return null;
+	const { data } = trySync({
+		try: () => JSON.parse(raw) as unknown,
+		catch: () => Ok(null),
+	});
+	if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+		return data as Record<string, unknown>;
+	}
+	return null;
+}
 
 function toNumber(raw: unknown): number | undefined {
 	if (typeof raw === 'number') return raw;
@@ -48,22 +159,15 @@ function toInteger(raw: unknown): number | undefined {
 
 // ── Key mappings ─────────────────────────────────────────────────────────────
 
-type WorkspaceKeyMapping = {
-	oldKey: string;
-	newKey: string;
-	convert?: (raw: unknown) => unknown;
-};
-
-type DeviceKeyMapping = {
-	oldKey: string;
-	newKey: string;
-};
-
 /**
  * Maps old `whispering-settings` blob keys to new workspace KV keys.
  * Two keys require type conversion (string → number).
  */
-const WORKSPACE_KEY_MAP: readonly WorkspaceKeyMapping[] = [
+const WORKSPACE_KEY_MAP: readonly {
+	oldKey: string;
+	newKey: string;
+	convert?: (raw: unknown) => unknown;
+}[] = [
 	// Sound toggles
 	{ oldKey: 'sound.playOn.manual-start', newKey: 'sound.manualStart' },
 	{ oldKey: 'sound.playOn.manual-stop', newKey: 'sound.manualStop' },
@@ -222,7 +326,7 @@ const WORKSPACE_KEY_MAP: readonly WorkspaceKeyMapping[] = [
  *   2. `whispering-device-config` monolithic blob (from brief interim period)
  *   3. `whispering-settings` original blob
  */
-const DEVICE_KEY_MAP: readonly DeviceKeyMapping[] = [
+const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
 	// API keys
 	{ oldKey: 'apiKeys.openai', newKey: 'apiKeys.openai' },
 	{ oldKey: 'apiKeys.anthropic', newKey: 'apiKeys.anthropic' },
@@ -335,138 +439,3 @@ const DEVICE_KEY_MAP: readonly DeviceKeyMapping[] = [
 		newKey: 'shortcuts.global.runTransformationOnClipboard',
 	},
 ] as const;
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function tryParseJson(raw: string | null): Record<string, unknown> | null {
-	if (!raw) return null;
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		if (
-			typeof parsed === 'object' &&
-			parsed !== null &&
-			!Array.isArray(parsed)
-		) {
-			return parsed as Record<string, unknown>;
-		}
-		return null;
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Check if a workspace KV key still has its default value.
- * Returns true if the key hasn't been explicitly set by the user.
- */
-function isWorkspaceKeyAtDefault(key: string): boolean {
-	const def = (
-		workspace.definitions.kv as Record<string, { defaultValue: unknown }>
-	)[key];
-	if (!def) return false;
-	return readWorkspaceKv(key) === def.defaultValue;
-}
-
-/**
- * Check if a device config key already has a value in per-key localStorage.
- * If per-key localStorage has an entry, the user (or a prior migration run)
- * has already set it — don't overwrite.
- */
-function hasDeviceKeyInStorage(key: string): boolean {
-	return window.localStorage.getItem(`${DEVICE_STORAGE_PREFIX}${key}`) !== null;
-}
-
-// ── Migration ────────────────────────────────────────────────────────────────
-
-/**
- * Migrate old settings from the monolithic `whispering-settings` localStorage
- * blob to per-key workspace KV and device config stores.
- *
- * **Must be called after workspace and device-config are initialized.**
- * Awaits `workspace.whenReady` internally to ensure IndexedDB persistence
- * has loaded before checking first-write-wins conditions.
- *
- * Silent, automatic, idempotent. One bad key doesn't abort the migration.
- */
-export async function migrateOldSettings(): Promise<void> {
-	// Already completed or not needed — fast path
-	const state = window.localStorage.getItem(MIGRATION_KEY);
-	if (state === 'completed' || state === 'not-needed') return;
-
-	// Read old blobs before any async work
-	const oldSettingsRaw = window.localStorage.getItem('whispering-settings');
-	const oldDeviceConfigRaw = window.localStorage.getItem(
-		'whispering-device-config',
-	);
-
-	// No old data at all — fresh install
-	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
-		window.localStorage.setItem(MIGRATION_KEY, 'not-needed');
-		return;
-	}
-
-	// Parse old blobs
-	const oldSettings = tryParseJson(oldSettingsRaw);
-	const oldDeviceConfig = tryParseJson(oldDeviceConfigRaw);
-
-	// Both parse failures — nothing to migrate
-	if (!oldSettings && !oldDeviceConfig) {
-		window.localStorage.setItem(MIGRATION_KEY, 'completed');
-		return;
-	}
-
-	// Wait for IndexedDB persistence to load so workspace.kv.get() returns
-	// real persisted values (not defaults). This ensures the first-write-wins
-	// check correctly detects user-set values.
-	await workspace.whenReady;
-
-	// ── Migrate workspace keys ───────────────────────────────────────────
-
-	for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
-		try {
-			const raw = oldSettings?.[oldKey];
-			if (raw === undefined || raw === null) continue;
-
-			// First-write-wins: skip if user already changed this setting
-			if (!isWorkspaceKeyAtDefault(newKey)) continue;
-
-			const value = convert ? convert(raw) : raw;
-			if (value === undefined) continue;
-
-			writeWorkspaceKv(newKey, value);
-		} catch (err) {
-			console.warn(
-				`[settings-migration] Failed to migrate workspace key "${oldKey}":`,
-				err,
-			);
-		}
-	}
-
-	// ── Migrate device keys ──────────────────────────────────────────────
-	// Priority: per-key localStorage > whispering-device-config > whispering-settings
-
-	for (const { oldKey, newKey } of DEVICE_KEY_MAP) {
-		try {
-			// Already has a per-key entry — user-set or prior migration run
-			if (hasDeviceKeyInStorage(newKey)) continue;
-
-			// Look up from monolithic device-config blob first (uses NEW key names),
-			// then fall back to the original settings blob (uses OLD key names)
-			const raw = oldDeviceConfig?.[newKey] ?? oldSettings?.[oldKey];
-			if (raw === undefined || raw === null) continue;
-
-			writeDeviceConfig(newKey as DeviceConfigKey, raw);
-		} catch (err) {
-			console.warn(
-				`[settings-migration] Failed to migrate device key "${oldKey}":`,
-				err,
-			);
-		}
-	}
-
-	// ── Cleanup ──────────────────────────────────────────────────────────
-
-	window.localStorage.removeItem('whispering-settings');
-	window.localStorage.removeItem('whispering-device-config');
-	window.localStorage.setItem(MIGRATION_KEY, 'completed');
-}

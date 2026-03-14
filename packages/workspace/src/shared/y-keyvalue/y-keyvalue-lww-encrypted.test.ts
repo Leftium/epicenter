@@ -13,8 +13,8 @@ import {
 
 type PlainChange<T> =
 	| { action: 'add'; newValue: T }
-	| { action: 'update'; oldValue: T; newValue: T }
-	| { action: 'delete'; oldValue: T };
+	| { action: 'update'; newValue: T }
+	| { action: 'delete' };
 
 function syncDocs(from: Y.Doc, to: Y.Doc): void {
 	Y.applyUpdate(to, Y.encodeStateAsUpdate(from));
@@ -220,7 +220,6 @@ describe('createEncryptedKvLww', () => {
 					key: 'foo',
 					change: {
 						action: 'update',
-						oldValue: 'first',
 						newValue: 'second',
 					},
 				},
@@ -245,7 +244,7 @@ describe('createEncryptedKvLww', () => {
 			kv.delete('foo');
 
 			expect(events).toEqual([
-				{ key: 'foo', change: { action: 'delete', oldValue: 'value' } },
+				{ key: 'foo', change: { action: 'delete' } },
 			]);
 		});
 

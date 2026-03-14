@@ -349,83 +349,23 @@ export function createEncryptedKvLww<T>(
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 
 		for (const [key, change] of changes) {
-			const previousEntry = map.get(key);
-
 			if (change.action === 'delete') {
 				map.delete(key);
 				quarantine.delete(key);
-
-				if (previousEntry) {
-					decryptedChanges.set(key, {
-						action: 'delete',
-						oldValue: previousEntry.val,
-					});
-				} else {
-					const { data: oldValue } = trySync({
-						try: () => maybeDecrypt(change.oldValue),
-						catch: (e) => {
-							console.warn(
-								`[encrypted-kv] Failed to decrypt deleted entry "${key}":`,
-								e,
-							);
-							return Ok(undefined);
-						},
-					});
-
-					if (oldValue !== undefined)
-						decryptedChanges.set(key, { action: 'delete', oldValue });
-				}
+				decryptedChanges.set(key, { action: 'delete' });
 			} else {
 				const entry = inner.map.get(key);
 				if (!entry) continue;
 
-				const { data: decryptedVal, error: decryptError } = trySync({
-					try: () => maybeDecrypt(entry.val),
-					catch: (e) => {
-						console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
-						return Ok(undefined);
-					},
+				const decrypted = tryDecryptEntry(key, entry);
+				if (!decrypted) continue;
+
+				const wasNew = !map.has(key);
+				map.set(key, decrypted);
+				decryptedChanges.set(key, {
+					action: wasNew ? 'add' : 'update',
+					newValue: decrypted.val,
 				});
-
-				if (decryptError || decryptedVal === undefined) {
-					quarantine.set(key, entry);
-					continue;
-				}
-
-				quarantine.delete(key);
-				map.set(key, { ...entry, val: decryptedVal });
-
-				if (change.action === 'add') {
-					decryptedChanges.set(key, { action: 'add', newValue: decryptedVal });
-				} else {
-					const oldValue = previousEntry?.val;
-					if (oldValue === undefined) {
-						const { data: decryptedOldValue } = trySync({
-							try: () => maybeDecrypt(change.oldValue),
-							catch: (e) => {
-								console.warn(
-									`[encrypted-kv] Failed to decrypt old value for "${key}":`,
-									e,
-								);
-								return Ok(undefined);
-							},
-						});
-
-						if (decryptedOldValue !== undefined) {
-							decryptedChanges.set(key, {
-								action: 'update',
-								oldValue: decryptedOldValue,
-								newValue: decryptedVal,
-							});
-						}
-					} else {
-						decryptedChanges.set(key, {
-							action: 'update',
-							oldValue,
-							newValue: decryptedVal,
-						});
-					}
-				}
 			}
 		}
 
@@ -559,10 +499,7 @@ export function createEncryptedKvLww<T>(
 				}
 
 				if (oldEntry && !newEntry) {
-					syntheticChanges.set(key, {
-						action: 'delete',
-						oldValue: oldEntry.val,
-					});
+					syntheticChanges.set(key, { action: 'delete' });
 					continue;
 				}
 
@@ -571,7 +508,6 @@ export function createEncryptedKvLww<T>(
 
 				syntheticChanges.set(key, {
 					action: 'update',
-					oldValue: oldEntry.val,
 					newValue: newEntry.val,
 				});
 			}

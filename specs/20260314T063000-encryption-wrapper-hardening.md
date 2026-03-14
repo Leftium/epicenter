@@ -223,6 +223,8 @@ Implemented the full hardening spec across 4 phases in 4 incremental commits. Th
 - **Non-optional type members**: `mode`, `quarantine`, and `onKeyChange` are non-optional on `YKeyValueLwwEncrypted<T>` — clean break.
 - **Synthetic transaction**: `onKeyChange()` fires synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.
 - **Comprehensive JSDoc restored**: All inline JSDoc stripped during Wave 2 has been restored to match original coverage depth, plus documentation for all new functions.
+- **Dropped oldValue from change events**: `YKeyValueLwwChange<T>` simplified from `{action, oldValue?, newValue?}` to `{action: 'add'|'update', newValue} | {action: 'delete'}`. No consumers used oldValue. Consumers that need it in the future can track previous values in a closure (5 lines). This eliminated 2 of 3 trySync blocks in the encrypted wrapper's observer, collapsing ~55 lines to ~20.
+- **Eliminated pending/pendingDeletes**: The wrapper no longer duplicates the inner CRDT's pending state. `get()` falls back to `inner.get()` + decrypt-on-the-fly during the transaction gap. `has()` is now consistent with `get()` for quarantined entries.
 
 ### Follow-up Work
 

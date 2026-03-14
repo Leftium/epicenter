@@ -110,9 +110,16 @@ Better Auth Server (customSession plugin)
 
 ## Implementation Plan
 
-### Phase 1: Shared Utilities
+### Phase 1: Per-App Wiring
 
-- [ ] **1.1** Create a shared `createEncryptionKeyStore()` factory in `packages/workspace` (or a shared lib) that returns `{ set(base64Key), get(): Uint8Array | undefined, clear() }`. Uses `base64ToBytes` from the crypto module. Pure in-memory, no persistence.
+No shared key store needed. The `$session` subscription calls `workspace.onKeyChange()` directly—no intermediate abstraction. Each app wires the same 3-line pattern:
+
+```typescript
+session.subscribe((s) => {
+  const key = s?.encryptionKey ? base64ToBytes(s.encryptionKey) : undefined;
+  workspace.onKeyChange(key);
+});
+```
 
 ### Phase 0: Encryption Hardening (before or alongside Phase 1)
 
@@ -128,8 +135,8 @@ These items address architectural gaps identified during review. They should lan
 
 For each auth-backed app:
 
-- [ ] **2.1** **epicenter** — Add `customSessionClient()` to auth client config. Subscribe to `$session` and call `workspace.onKeyChange(key)` on sign-in, `workspace.onKeyChange(undefined)` on sign-out.
-- [ ] **2.2** **whispering** — Same pattern. Auth client → `$session` subscription → `onKeyChange`.
+- [ ] **2.1** **epicenter** — Add `customSessionClient()` to auth client config. Add `$session` subscription calling `workspace.onKeyChange(key)`. Disable editing UI when `workspace.mode === 'locked'`.
+- [ ] **2.2** **whispering** — Same pattern. Auth client → `$session` subscription → `onKeyChange`. Disable editing in locked mode.
 - [ ] **2.3** **tab-manager** — Same pattern. Note: Chrome extension auth flow may have different session access patterns (popup vs background). Verify `$session` subscription works in the extension context.
 
 ### Phase 3: Verify
@@ -147,11 +154,20 @@ This is the common case—workspaces are created at module scope as side-effect-
 
 ### Session Refresh / Token Rotation
 
-When Better Auth refreshes the session, `$session` emits a new value. The key store should update (though the key itself won't change unless `BETTER_AUTH_SECRET` rotates). The subscription handles this transparently.
+When Better Auth refreshes the session, `$session` emits a new value. The subscription calls `onKeyChange` with the (possibly unchanged) key. If the key hasn't changed, `onKeyChange` is a no-op. The subscription handles this transparently.
 
 ### Sign Out
 
-On sign-out, `$session` emits `null`. The key store clears and calls `onKeyChange(undefined)`. **With Phase 0 hardening**: mode transitions to `locked`—`set()` rejects writes instead of falling through to plaintext. This prevents a sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
+On sign-out, `$session` emits `null`. The subscription calls `onKeyChange(undefined)`. Mode transitions to `locked`—`set()` throws instead of falling through to plaintext. This prevents sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
+
+**UX in locked mode**: Apps are local-first—users were editing freely before sign-in and expect to keep working. But once encryption has activated, allowing plaintext writes is a security downgrade. The UI should:
+- Detect `workspace.mode === 'locked'`
+- Disable all editing controls (forms, inputs, buttons that trigger writes)
+- Show a clear message: "Sign in to continue editing"
+- Keep all data readable from the cached decrypted map
+- On re-sign-in, `onKeyChange(key)` transitions back to `unlocked` and editing resumes
+
+This matches how cloud apps handle expired auth in offline mode—read-only until credentials are restored.
 
 ### Mixed Plaintext and Encrypted Data
 
@@ -159,9 +175,7 @@ When encryption first activates, existing data is plaintext. The encrypted wrapp
 
 ## Open Questions
 
-1. **Should the key store live in `packages/workspace` or per-app?**
-   - Options: (a) shared factory in workspace package, (b) each app implements its own
-   - **Recommendation**: (a) shared factory—the logic is identical across apps, and it can be imported alongside `createWorkspace`.
+1. ~~**Should the key store live in `packages/workspace` or per-app?**~~ **RESOLVED.** No key store needed. The `$session` subscription calls `workspace.onKeyChange()` directly. No intermediate abstraction.
 
 2. **Loading gate UX—what does the user see before auth completes?**
    - Apps are local-first and work without auth. The workspace is fully functional in `plaintext` mode before sign-in. No loading gate needed.

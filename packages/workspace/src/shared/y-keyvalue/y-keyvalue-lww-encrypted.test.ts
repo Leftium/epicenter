@@ -29,7 +29,7 @@ function createEncryptedBlob<T>(value: T, key: Uint8Array): EncryptedBlob {
 	const helperDoc = new Y.Doc({ guid: 'helper-blob' });
 	const helperArray =
 		helperDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | T>>('helper-data');
-	const helperKv = createEncryptedKvLww<T>(helperArray, { getKey: () => key });
+	const helperKv = createEncryptedKvLww<T>(helperArray, { key: key });
 
 	helperKv.set('helper-key', value);
 
@@ -48,7 +48,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('secret', 'hello-world');
 
@@ -60,7 +60,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('secret', 'cipher-me');
 
@@ -75,7 +75,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | Bookmark>>('data');
-			const kv = createEncryptedKvLww<Bookmark>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<Bookmark>(yarray, { key: key });
 
 			const value: Bookmark = { url: 'https://bank.com', title: 'My Bank' };
 			kv.set('site', value);
@@ -88,7 +88,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('k', 'v');
 			kv.delete('k');
@@ -101,7 +101,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('k', 'v');
 			expect(kv.has('k')).toBe(true);
@@ -115,7 +115,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('a', '1');
 			kv.set('b', '2');
@@ -132,26 +132,22 @@ describe('createEncryptedKvLww', () => {
 	});
 
 	describe('No-key passthrough', () => {
-		test('when getKey returns undefined, set/get work as plaintext', () => {
+		test('when no key is provided, set/get work as plaintext', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('plain', 'text');
 
 			expect(kv.get('plain')).toBe('text');
 		});
 
-		test('when getKey returns undefined, yarray contains plaintext', () => {
+		test('when no key is provided, yarray contains plaintext', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('plain', 'raw-value');
 
@@ -164,9 +160,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('x', '10');
 			kv.set('y', '20');
@@ -183,7 +177,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			const events: Array<{ key: string; change: PlainChange<string> }> = [];
 			kv.observe((changes) => {
@@ -203,7 +197,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('foo', 'first');
 
@@ -231,7 +225,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('foo', 'value');
 
@@ -253,7 +247,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			let count = 0;
 			const handler = () => {
@@ -278,7 +272,7 @@ describe('createEncryptedKvLww', () => {
 
 			yarray.push([{ key: 'legacy', val: 'legacy-plaintext', ts: 1000 }]);
 
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 			expect(kv.get('legacy')).toBe('legacy-plaintext');
 		});
 
@@ -291,7 +285,7 @@ describe('createEncryptedKvLww', () => {
 			const encrypted = createEncryptedBlob('encrypted-value', key);
 			yarray.push([{ key: 'enc', val: encrypted, ts: 1000 }]);
 
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 			expect(kv.get('enc')).toBe('encrypted-value');
 		});
 
@@ -307,7 +301,7 @@ describe('createEncryptedKvLww', () => {
 				{ key: 'new', val: encrypted, ts: 1001 },
 			]);
 
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.get('old')).toBe('old-plaintext');
 			expect(kv.get('new')).toBe('new-secret');
@@ -320,7 +314,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('k', 'plain-view');
 
@@ -339,8 +333,8 @@ describe('createEncryptedKvLww', () => {
 			const yarray2 =
 				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			const kv1 = createEncryptedKvLww<string>(yarray1, { getKey: () => key });
-			const kv2 = createEncryptedKvLww<string>(yarray2, { getKey: () => key });
+			const kv1 = createEncryptedKvLww<string>(yarray1, { key: key });
+			const kv2 = createEncryptedKvLww<string>(yarray2, { key: key });
 
 			kv1.set('shared-key', 'from-doc1');
 			syncDocs(doc1, doc2);
@@ -362,8 +356,8 @@ describe('createEncryptedKvLww', () => {
 			const yarray2 =
 				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			const kv1 = createEncryptedKvLww<string>(yarray1, { getKey: () => key });
-			const kv2 = createEncryptedKvLww<string>(yarray2, { getKey: () => key });
+			const kv1 = createEncryptedKvLww<string>(yarray1, { key: key });
+			const kv2 = createEncryptedKvLww<string>(yarray2, { key: key });
 
 			kv1.set('token', 'abc-123');
 			syncDocs(doc1, doc2);
@@ -400,8 +394,8 @@ describe('createEncryptedKvLww', () => {
 
 			syncBoth(doc1, doc2);
 
-			const kv1 = createEncryptedKvLww<string>(yarray1, { getKey: () => key });
-			const kv2 = createEncryptedKvLww<string>(yarray2, { getKey: () => key });
+			const kv1 = createEncryptedKvLww<string>(yarray1, { key: key });
+			const kv2 = createEncryptedKvLww<string>(yarray2, { key: key });
 
 			expect(kv1.get('x')).toBe('from-client-2-later');
 			expect(kv2.get('x')).toBe('from-client-2-later');
@@ -418,8 +412,8 @@ describe('createEncryptedKvLww', () => {
 			const yarray2 =
 				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 
-			const kv1 = createEncryptedKvLww<string>(yarray1, { getKey: () => key });
-			const kv2 = createEncryptedKvLww<string>(yarray2, { getKey: () => key });
+			const kv1 = createEncryptedKvLww<string>(yarray1, { key: key });
+			const kv2 = createEncryptedKvLww<string>(yarray2, { key: key });
 
 			kv1.set('shared', 'value-from-doc1');
 			kv2.set('shared', 'value-from-doc2');
@@ -465,7 +459,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			let valueInBatch: string | undefined;
 			ydoc.transact(() => {
@@ -482,7 +476,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			const keysInBatch: string[] = [];
 			ydoc.transact(() => {
@@ -502,9 +496,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-no-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
 		});
@@ -514,7 +506,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-key-start' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 		});
@@ -524,9 +516,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-plain-to-unlocked' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
 			kv.onKeyChange?.(key);
@@ -538,7 +528,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-unlocked-to-locked' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 			kv.onKeyChange?.(undefined);
@@ -550,7 +540,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-locked-to-unlocked' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 			kv.onKeyChange?.(undefined);
@@ -563,9 +553,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-stays-plaintext' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
 			kv.onKeyChange?.(undefined);
@@ -579,7 +567,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'locked-set-throws' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.onKeyChange?.(undefined);
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
@@ -591,7 +579,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'locked-get-cached' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			yarray.push([
 				{ key: 'a', val: 'alpha', ts: Date.now() },
@@ -609,7 +597,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'locked-has-cached' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('x', '1');
 			kv.set('y', '2');
@@ -625,7 +613,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'locked-entries-cached' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			yarray.push([
 				{ key: 'first', val: 'one', ts: Date.now() },
@@ -649,7 +637,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'containment-corrupt-no-crash' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('good-1', 'value-1');
 			kv.set('good-2', 'value-2');
@@ -677,7 +665,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'containment-observer-continues' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			kv.set('good', 'still-works');
 			yarray.push([
@@ -708,9 +696,7 @@ describe('createEncryptedKvLww', () => {
 			});
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('legacy-1', 'plain-a');
 			kv.set('legacy-2', 'plain-b');
@@ -726,9 +712,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'key-transition-new-writes-encrypt' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => undefined,
-			});
+			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('before', 'plaintext-before-key');
 			kv.onKeyChange?.(key);
@@ -747,7 +731,7 @@ describe('createEncryptedKvLww', () => {
 			const ydoc = new Y.Doc({ guid: 'key-transition-synthetic-events' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, { getKey: () => key1 });
+			const kv = createEncryptedKvLww<string>(yarray, { key: key1 });
 
 			kv.set('a', 'alpha');
 			kv.set('b', 'beta');

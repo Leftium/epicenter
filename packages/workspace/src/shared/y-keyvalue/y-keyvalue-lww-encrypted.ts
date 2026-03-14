@@ -18,7 +18,7 @@
  *
  * ```
  * set('tab-1', { url: '...' })
- *   ├── JSON.stringify → encryptValue → EncryptedBlob
+ *   ├── JSON.stringify → encryptValue → Uint8Array [fmt‖keyVer‖nonce‖ct‖tag]
  *   └── inner.set('tab-1', encryptedBlob)              ← CRDT source of truth
  *         │                                                (inner handles pending)
  *         ▼  inner.observe fires

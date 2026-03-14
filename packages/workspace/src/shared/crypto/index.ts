@@ -24,15 +24,15 @@
  * │                                                                     │
  * │  set(key, val)                                                      │
  * │    → JSON.stringify(val)                                            │
- * │    → encryptValue(json, key) → { v: 1, ct: Uint8Array(nonce‖ct‖tag) }
- * │    → encryptValue(json, key, aad?) for context binding            │
- * │    → inner CRDT stores EncryptedBlob                               │
+ * │    → encryptValue(json, key) → Uint8Array [fmt‖keyVer‖nonce‖ct‖tag]│
+ * │    → encryptValue(json, key, aad?) for context binding             │
+ * │    → inner CRDT stores EncryptedBlob (bare Uint8Array)             │
  * │                                                                     │
  * │  observer fires (inner CRDT change)                                │
- * │    → isEncryptedBlob(val)? decryptValue → JSON.parse → plaintext  │
+ * │    → isEncryptedBlob(val)? decryptValue → JSON.parse → plaintext   │
  * │    → wrapper.map updated with plaintext                            │
  * │                                                                     │
- * │  get(key) → reads from plaintext map (cached, no re-decrypt)      │
+ * │  get(key) → reads from plaintext map (cached, no re-decrypt)       │
  * └─────────────────────────────────────────────────────────────────────┘
  * ```
  *
@@ -54,30 +54,46 @@
  * @module
  */
 
+import type { Brand } from 'wellcrafted/brand';
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 
 const NONCE_LENGTH = 24;
 
 /**
- * Encrypted blob stored and synced as binary.
+ * Encrypted blob stored directly in the CRDT as a bare Uint8Array.
  *
- * Uses XChaCha20-Poly1305 with a 24-byte nonce and 16-byte authentication tag.
- * `ct` is a raw `Uint8Array` of `keyVersion(1) || nonce(24) || ciphertext || tag(16)`,
- * stored natively by Yjs `writeAny` as binary (type tag 116).
+ * Uses XChaCha20-Poly1305 with a self-describing binary header. The format
+ * version lives at byte 0, eliminating the old `{ v, ct }` JSON wrapper.
+ * Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116).
  *
- * Field names are compact (`ct`, `v`) because this type is
- * persisted in the workspace database and synced across clients.
+ * v:1 binary layout:
+ * ```
+ *  Byte:  0         1         2                        26
+ *         +---------+---------+------------------------+---------------------------+
+ *         | format  | key     |        nonce           |    ciphertext + tag       |
+ *         | version | version |      (24 bytes)        |    (variable + 16)        |
+ *         +---------+---------+------------------------+---------------------------+
+ *         |  0x01   | 0x01-FF | random (CSPRNG)        | XChaCha20-Poly1305 output |
+ *         +---------+---------+------------------------+---------------------------+
+ *
+ *  Total: 1 + 1 + 24 + len(plaintext) + 16 bytes
+ * ```
+ *
+ * Detection: `value instanceof Uint8Array && value[0] === 1`.
+ * User values in the CRDT are always JS objects (never Uint8Arrays),
+ * so this check is a reliable discriminant.
  *
  * @example
  * ```typescript
- * const encrypted: EncryptedBlob = {
- *   v: 1,
- *   ct: new Uint8Array([keyVersion, ...nonce, ...ciphertext, ...tag]),
- * };
+ * const blob: EncryptedBlob = encryptValue('secret', key);
+ * blob[0]; // 1 (format version)
+ * blob[1]; // 1 (key version, default)
+ * blob.slice(2, 26); // 24-byte random nonce
+ * blob.slice(26); // ciphertext + 16-byte Poly1305 tag
  * ```
  */
-type EncryptedBlob = { v: 1; ct: Uint8Array };
+type EncryptedBlob = Uint8Array & Brand<'EncryptedBlob'>;
 
 /**
  * Generate a random 256-bit encryption key.
@@ -102,24 +118,24 @@ function generateEncryptionKey(): Uint8Array {
  *
  * Generates a random 24-byte nonce for each encryption, ensuring that
  * encrypting the same plaintext with the same key produces different ciphertexts.
- * The key version and nonce are prepended to the ciphertext in the output Uint8Array:
- * `ct = keyVersion(1) || nonce(24) || ciphertext || tag(16)`.
+ * Returns a bare `Uint8Array` with a self-describing binary header:
+ * `formatVersion(1) || keyVersion(1) || nonce(24) || ciphertext || tag(16)`.
  *
- * Returns an EncryptedBlob with raw binary `ct`. Yjs `writeAny` serializes
- * `Uint8Array` natively as binary (type tag 116), eliminating base64 overhead.
+ * Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116),
+ * eliminating base64 overhead and the old `{ v, ct }` JSON wrapper.
  *
  * @param plaintext - The string to encrypt
  * @param key - A 32-byte Uint8Array encryption key
  * @param aad - Optional additional authenticated data bound to ciphertext integrity
- * @param keyVersion - Key version from ENCRYPTION_SECRETS keyring (default 1). Embedded as ct[0].
- * @returns An EncryptedBlob with raw binary nonce+ciphertext+tag
+ * @param keyVersion - Key version from ENCRYPTION_SECRETS keyring (default 1). Embedded as byte 1.
+ * @returns A bare Uint8Array: `[formatVersion, keyVersion, ...nonce(24), ...ciphertext, ...tag(16)]`
  *
  * @example
  * ```typescript
  * const key = generateEncryptionKey();
  * const encrypted = encryptValue('secret data', key);
- * console.log(encrypted);
- * // { v: 1, ct: Uint8Array(...) }
+ * encrypted[0]; // 1 (format version)
+ * encrypted[1]; // 1 (key version)
  * ```
  */
 function encryptValue(
@@ -136,30 +152,36 @@ function encryptValue(
 	const data = new TextEncoder().encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
-	// Pack keyVersion(1) || nonce(24) || ciphertext || tag(16)
-	const packed = new Uint8Array(1 + nonce.length + ciphertext.length);
-	packed[0] = keyVersion;
-	packed.set(nonce, 1);
-	packed.set(ciphertext, 1 + nonce.length);
+	// Pack formatVersion(1) || keyVersion(1) || nonce(24) || ciphertext || tag(16)
+	const packed = new Uint8Array(2 + nonce.length + ciphertext.length);
+	packed[0] = 1; // format version
+	packed[1] = keyVersion;
+	packed.set(nonce, 2);
+	packed.set(ciphertext, 2 + nonce.length);
 
-	return {
-		v: 1,
-		ct: packed,
-	};
+	return packed as EncryptedBlob;
 }
 
 /**
  * Decrypt an EncryptedBlob using XChaCha20-Poly1305.
  *
- * Reads `ct[0]` as key version metadata, then slices `ct[1..24]` as nonce and
- * decrypts `ct[25..]` (ciphertext + 16-byte auth tag) using the provided key.
- * Throws if the authentication tag is invalid or decryption fails.
+ * Validates the format version at `blob[0]` (must be 1), then reads `blob[1]`
+ * as key version metadata, `blob[2..25]` as nonce, and `blob[26..]` as
+ * ciphertext + 16-byte auth tag. Decrypts using the provided key.
  *
- * @param blob - An EncryptedBlob with binary `ct`
+ * The format version check exists as a safety net for forward compatibility.
+ * Today only v1 exists, but if a future client writes v2 blobs, this function
+ * will throw a clear error instead of silently misinterpreting the binary layout.
+ * Future format versions would add dispatch logic here.
+ *
+ * Key version (`blob[1]`) is NOT validated here—the caller is responsible for
+ * selecting the correct key from the keyring via `getKeyVersion()`.
+ *
+ * @param blob - A branded EncryptedBlob (bare Uint8Array with format header)
  * @param key - The 32-byte Uint8Array encryption key used to encrypt the blob
  * @param aad - Optional additional authenticated data that must match encryption input
  * @returns The decrypted plaintext string
- * @throws If the authentication tag is invalid or decryption fails
+ * @throws If format version is unknown, auth tag is invalid, or decryption fails
  *
  * @example
  * ```typescript
@@ -175,10 +197,19 @@ function decryptValue(
 	aad?: Uint8Array,
 ): string {
 	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
-	const packed = blob.ct;
-	// Skip key version byte at ct[0]
-	const nonce = packed.slice(1, 1 + NONCE_LENGTH);
-	const ciphertext = packed.slice(1 + NONCE_LENGTH);
+
+	// Validate format version — today only v1 exists. Future versions would
+	// dispatch to different decryption logic here instead of falling through.
+	const formatVersion = blob[0];
+	if (formatVersion !== 1) {
+		throw new Error(
+			`Unknown encryption format version: ${formatVersion}. This blob may require a newer client.`,
+		);
+	}
+
+	// blob[1] = key version (caller responsibility to select correct key)
+	const nonce = blob.slice(2, 2 + NONCE_LENGTH);
+	const ciphertext = blob.slice(2 + NONCE_LENGTH);
 	const cipher = aad
 		? xchacha20poly1305(key, nonce, aad)
 		: xchacha20poly1305(key, nonce);
@@ -190,47 +221,55 @@ function decryptValue(
 /**
  * Read the key version from an EncryptedBlob without decrypting.
  *
- * The key version is stored as the first byte of `ct` and identifies which
+ * The key version is stored at byte 1 of the blob and identifies which
  * secret from the ENCRYPTION_SECRETS keyring was used to encrypt this blob.
  *
  * @param blob - An EncryptedBlob to read the key version from
  * @returns The key version number (1-255)
  */
 function getKeyVersion(blob: EncryptedBlob): number {
-	return blob.ct[0]!;
+	return blob[1]!;
+}
+
+/**
+ * Read the format version from an EncryptedBlob without decrypting.
+ *
+ * The format version is stored at byte 0 of the blob. Currently only
+ * version 1 exists (XChaCha20-Poly1305 with the layout documented on
+ * the `EncryptedBlob` type). Future versions may use different algorithms
+ * or binary layouts.
+ *
+ * @param blob - An EncryptedBlob to read the format version from
+ * @returns The format version number (currently always 1)
+ */
+function getFormatVersion(blob: EncryptedBlob): number {
+	return blob[0]!;
 }
 
 /**
  * Type guard to check if a value is a valid EncryptedBlob.
  *
- * Validates the structure: exactly 2 keys (`v` + `ct`) where `v === 1`
- * and `ct instanceof Uint8Array` with enough bytes for keyVersion + nonce + tag.
+ * Checks that the value is a `Uint8Array` with format version 1 at byte 0.
+ * User values stored in the CRDT are always JS objects (from schema definitions),
+ * never `Uint8Array` instances, so this check is a reliable discriminant.
  *
- * The key count check (`Object.keys().length === 2`) prevents false positives from
- * user-defined schemas that happen to include `v` and `ct` fields alongside other
- * data. Table rows always have at least 3 keys (`id`, `_v`, plus user fields),
- * so they can never match.
+ * Truncated or corrupted blobs that pass this check will fail during
+ * `decryptValue()` and get quarantined by the encrypted wrapper's error
+ * containment—they are not silently misinterpreted.
  *
  * @param value - The value to check
  * @returns True if value is a valid EncryptedBlob, false otherwise
  *
  * @example
  * ```typescript
- * const data = JSON.parse(jsonString);
+ * const data = crdt.get('key');
  * if (isEncryptedBlob(data)) {
  *   const decrypted = decryptValue(data, key);
  * }
  * ```
  */
 function isEncryptedBlob(value: unknown): value is EncryptedBlob {
-	if (typeof value !== 'object' || value === null) return false;
-	const obj = value as Record<string, unknown>;
-	return (
-		Object.keys(obj).length === 2 &&
-		obj.v === 1 &&
-		obj.ct instanceof Uint8Array &&
-		(obj.ct as Uint8Array).length >= 1 + 24 + 16
-	);
+	return value instanceof Uint8Array && value[0] === 1;
 }
 
 /**
@@ -410,6 +449,7 @@ export {
 	encryptValue,
 	decryptValue,
 	getKeyVersion,
+	getFormatVersion,
 	isEncryptedBlob,
 	deriveKeyFromPassword,
 	deriveSalt,

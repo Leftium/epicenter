@@ -645,9 +645,9 @@ describe('createEncryptedYkvLww', () => {
 					key: 'corrupt',
 					val: (() => {
 						const blob = createEncryptedBlob('broken', key);
-						const tamperedCt = new Uint8Array(blob.ct);
-						tamperedCt[1] = tamperedCt[1]! ^ 0xff;
-						return { v: 1 as const, ct: tamperedCt };
+						const tampered = new Uint8Array(blob);
+						tampered[2] = tampered[2]! ^ 0xff;
+						return tampered as EncryptedBlob;
 					})(),
 					ts: Date.now(),
 				},
@@ -673,9 +673,9 @@ describe('createEncryptedYkvLww', () => {
 					key: 'corrupt',
 					val: (() => {
 						const blob = createEncryptedBlob('broken', key);
-						const tamperedCt = new Uint8Array(blob.ct);
-						tamperedCt[1] = tamperedCt[1]! ^ 0xff;
-						return { v: 1 as const, ct: tamperedCt };
+						const tampered = new Uint8Array(blob);
+						tampered[2] = tampered[2]! ^ 0xff;
+						return tampered as EncryptedBlob;
 					})(),
 					ts: Date.now(),
 				},

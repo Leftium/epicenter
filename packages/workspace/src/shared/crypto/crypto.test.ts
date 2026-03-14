@@ -77,31 +77,31 @@ describe('encryptValue / decryptValue', () => {
 		const encrypted1 = encryptValue(plaintext, key);
 		const encrypted2 = encryptValue(plaintext, key);
 
-		// Different nonces (packed into ct) should produce different ciphertexts
-		expect(encrypted1.ct).not.toEqual(encrypted2.ct);
+		// Different nonces should produce different ciphertexts
+		expect(encrypted1).not.toEqual(encrypted2);
 
 		// But both should decrypt to the same plaintext
 		expect(decryptValue(encrypted1, key)).toBe(plaintext);
 		expect(decryptValue(encrypted2, key)).toBe(plaintext);
 	});
 
-	test('encrypted blob has correct shape', () => {
+	test('encrypted blob is a bare Uint8Array with correct header', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		expect(encrypted).toHaveProperty('v');
-		expect(encrypted).toHaveProperty('ct');
-		expect(Object.keys(encrypted).sort()).toEqual(['ct', 'v']);
-
-		expect(encrypted.v).toBe(1);
-		expect(encrypted.ct).toBeInstanceOf(Uint8Array);
+		expect(encrypted).toBeInstanceOf(Uint8Array);
+		expect(encrypted[0]).toBe(1); // format version
+		expect(encrypted[1]).toBe(1); // key version (default)
+		// formatVer(1) + keyVer(1) + nonce(24) + ciphertext + tag(16)
+		expect(encrypted.length).toBeGreaterThanOrEqual(2 + 24 + 16);
 		expect(getKeyVersion(encrypted)).toBe(1);
 	});
 
-	test('custom keyVersion is embedded at ct[0]', () => {
+	test('custom keyVersion is embedded at byte 1', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key, undefined, 7);
 
+		expect(encrypted[1]).toBe(7);
 		expect(getKeyVersion(encrypted)).toBe(7);
 	});
 
@@ -118,12 +118,14 @@ describe('encryptValue / decryptValue', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Reverse the bytes in the ciphertext
-		const tamperedCt = new Uint8Array(encrypted.ct).reverse();
-		const tamperedBlob: EncryptedBlob = { v: 1, ct: tamperedCt };
+		// Copy and reverse the ciphertext portion
+		const tampered = new Uint8Array(encrypted);
+		for (let i = 26; i < tampered.length; i++) {
+			tampered[i] = tampered[i]! ^ 0xff;
+		}
 
 		expect(() => {
-			decryptValue(tamperedBlob, key);
+			decryptValue(tampered as EncryptedBlob, key);
 		}).toThrow();
 	});
 
@@ -131,15 +133,12 @@ describe('encryptValue / decryptValue', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Copy ct, flip a byte in the nonce (ct[0] is keyVersion)
-		const packed = new Uint8Array(encrypted.ct);
-		if (packed.length <= 1)
-			throw new Error('Expected nonce bytes in encrypted blob');
-		packed[1] = packed[1]! ^ 0xff;
-		const tamperedBlob: EncryptedBlob = { v: 1, ct: packed };
+		// Copy and flip the first nonce byte (byte 2)
+		const tampered = new Uint8Array(encrypted);
+		tampered[2] = tampered[2]! ^ 0xff;
 
 		expect(() => {
-			decryptValue(tamperedBlob, key);
+			decryptValue(tampered as EncryptedBlob, key);
 		}).toThrow();
 	});
 
@@ -219,51 +218,30 @@ describe('isEncryptedBlob', () => {
 		expect(isEncryptedBlob({})).toBe(false);
 	});
 
-	test('returns true for valid shape (v: 1, ct: Uint8Array)', () => {
-		const minimumCtLength = 1 + 24 + 16;
-		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(minimumCtLength) })).toBe(
-			true,
-		);
+	test('returns true for Uint8Array with format version 1 at byte 0', () => {
+		expect(isEncryptedBlob(new Uint8Array([1]))).toBe(true);
+		expect(isEncryptedBlob(new Uint8Array([1, 0, 0, 0]))).toBe(true);
+		expect(isEncryptedBlob(new Uint8Array(42).fill(0).map((_, i) => (i === 0 ? 1 : 0)))).toBe(true);
 	});
 
-	test('returns false for ct shorter than keyVersion + nonce + tag minimum', () => {
-		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(1 + 24 + 16 - 1) })).toBe(
-			false,
-		);
+	test('returns false for Uint8Array with byte 0 !== 1', () => {
+		expect(isEncryptedBlob(new Uint8Array([0]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array([2]))).toBe(false);
+		expect(isEncryptedBlob(new Uint8Array([255]))).toBe(false);
 	});
 
-	test('returns false for string ct', () => {
-		expect(isEncryptedBlob({ v: 1, ct: 'ciphertext' })).toBe(false);
+	test('returns false for empty Uint8Array', () => {
+		expect(isEncryptedBlob(new Uint8Array([]))).toBe(false);
 	});
 
-	test('returns false for wrong version number', () => {
-		expect(isEncryptedBlob({ v: 2, ct: new Uint8Array([1, 2, 3]) })).toBe(
-			false,
-		);
-		expect(isEncryptedBlob({ v: 0, ct: new Uint8Array([1, 2, 3]) })).toBe(
-			false,
-		);
+	test('returns false for old object format { v: 1, ct: Uint8Array }', () => {
+		// The old wrapper format is no longer recognized
+		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(42) })).toBe(false);
 	});
 
-	test('returns false for v1 with numeric ct', () => {
-		expect(isEncryptedBlob({ v: 1, ct: 12345 })).toBe(false);
-	});
-
-	test('returns false for object missing v field', () => {
-		const blob = {
-			ct: 'ciphertext',
-		};
-		expect(isEncryptedBlob(blob)).toBe(false);
-	});
-
-	test('returns false for object with extra keys (prevents user schema collision)', () => {
-		// A table row like { id: '1', _v: 1, v: 2, ct: 'text/html' } should NOT match
-		const tableRow = { id: '1', _v: 1, v: 2, ct: 'text/html' };
-		expect(isEncryptedBlob(tableRow)).toBe(false);
-
-		// Even just one extra key disqualifies it
-		const kvValue = { v: 1, ct: 'config', extra: true };
-		expect(isEncryptedBlob(kvValue)).toBe(false);
+	test('returns false for regular arrays and objects with extra keys', () => {
+		expect(isEncryptedBlob([1, 2, 3])).toBe(false);
+		expect(isEncryptedBlob({ id: '1', _v: 1, data: 'test' })).toBe(false);
 	});
 });
 
@@ -435,23 +413,22 @@ describe('binary storage overhead', () => {
 		// Create Y.Doc with base64 string blobs (simulated old format)
 		const base64Doc = new Y.Doc({ guid: 'bench-base64' });
 		const base64Array =
-			base64Doc.getArray<YKeyValueLwwEntry<{ v: 1; ct: string } | string>>(
-				'data',
-			);
+			base64Doc.getArray<YKeyValueLwwEntry<string>>('data');
 
-		// Extract binary entries and convert ct to base64 string
+		// Extract binary entries and convert to base64 string representation
 		const binaryEntries = binaryArray.toArray();
-		const base64Entries: YKeyValueLwwEntry<{ v: 1; ct: string } | string>[] =
+		const base64Entries: YKeyValueLwwEntry<string>[] =
 			binaryEntries.map((entry) => {
 				const val = entry.val;
 				if (isEncryptedBlob(val)) {
 					return {
 						...entry,
-						val: { v: 1 as const, ct: bytesToBase64(val.ct) },
+						val: bytesToBase64(val),
 					};
 				}
 				return entry as YKeyValueLwwEntry<string>;
 			});
+		base64Array.push(base64Entries);
 		base64Array.push(base64Entries);
 
 		const base64Size = Y.encodeStateAsUpdate(base64Doc).byteLength;

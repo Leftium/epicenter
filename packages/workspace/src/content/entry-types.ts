@@ -11,7 +11,6 @@ export type RichTextEntry = {
 	content: Y.XmlFragment;
 	frontmatter: Y.Map<unknown>;
 };
-export type BinaryEntry = { type: 'binary'; content: Uint8Array };
 export type SheetEntry = {
 	type: 'sheet';
 	columns: Y.Map<Y.Map<string>>;
@@ -20,7 +19,6 @@ export type SheetEntry = {
 export type TimelineEntry =
 	| TextEntry
 	| RichTextEntry
-	| BinaryEntry
 	| SheetEntry;
 
 /** Content modes supported by timeline entries */

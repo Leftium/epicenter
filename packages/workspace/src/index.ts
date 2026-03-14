@@ -75,7 +75,6 @@ export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
 // ════════════════════════════════════════════════════════════════════════════
 
 export type {
-	BinaryEntry,
 	ContentMode,
 	RichTextEntry,
 	SheetEntry,

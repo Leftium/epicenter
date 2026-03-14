@@ -13,8 +13,6 @@ export type Timeline = {
 	readonly currentMode: ContentMode | undefined;
 	/** Append a new text entry. Returns the Y.Map. */
 	pushText(content: string): TimelineEntry;
-	/** Append a new binary entry. Returns the Y.Map. */
-	pushBinary(data: Uint8Array): TimelineEntry;
 	/** Append a new empty sheet entry. Returns the Y.Map. */
 	pushSheet(): TimelineEntry;
 	/** Append a sheet entry populated from a CSV string. Returns the Y.Map. */
@@ -59,14 +57,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
-		pushBinary(data: Uint8Array): TimelineEntry {
-			const entry = new Y.Map();
-			entry.set('type', 'binary');
-			entry.set('content', data);
-			timeline.push([entry]);
-			return entry;
-		},
-
 		pushSheet(): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
@@ -96,8 +86,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					return (entry.get('content') as Y.Text).toString();
 				case 'richtext':
 					return '';
-				case 'binary':
-					return new TextDecoder().decode(entry.get('content') as Uint8Array);
 				case 'sheet':
 					return serializeSheetToCsv(
 						entry.get('columns') as Y.Map<Y.Map<string>>,
@@ -116,8 +104,6 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 					);
 				case 'richtext':
 					return new Uint8Array();
-				case 'binary':
-					return entry.get('content') as Uint8Array;
 				case 'sheet':
 					return new TextEncoder().encode(
 						serializeSheetToCsv(

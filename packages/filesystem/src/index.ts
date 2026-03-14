@@ -1,8 +1,6 @@
 // Content (document layer)
 export {
-	type ContentHelpers,
 	type ContentMode,
-	createContentHelpers,
 	type SheetEntry,
 } from './content/index.js';
 

@@ -70,7 +70,8 @@ export type Folder = InferTableRow<typeof foldersTable>;
  *
  * v2 adds `deletedAt` for soft delete — notes move to "Recently Deleted"
  * instead of being permanently destroyed. The field is `undefined` for active
- * notes and a `DateTimeString` for deleted ones.
+ * notes and a `DateTimeString` for deleted ones. Also adds optional `wordCount`
+ * (computed on each editor update, `undefined` for legacy notes).
  *
  * The Y.XmlFragment document (`body`) provides collaborative rich-text editing.
  * The document GUID matches the note `id` for 1:1 mapping. Updates to the
@@ -94,6 +95,7 @@ const notesTable = defineTable(
 		preview: 'string',
 		pinned: 'boolean',
 		'deletedAt?': DateTimeString.or('undefined'),
+		'wordCount?': 'number | undefined',
 		createdAt: DateTimeString,
 		updatedAt: DateTimeString,
 		_v: '2',

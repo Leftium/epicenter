@@ -278,6 +278,7 @@ function createNotesState() {
 				preview: '',
 				pinned: false,
 				deletedAt: undefined,
+				wordCount: 0,
 				createdAt: dateTimeStringNow(),
 				updatedAt: dateTimeStringNow(),
 				_v: 2,
@@ -436,33 +437,36 @@ function createNotesState() {
 		},
 
 		/**
-		 * Update the title and preview of the currently selected note.
+		 * Update the title, preview, and word count of the currently selected note.
 		 *
 		 * Called when the editor content changes. Only updates if a note is
 		 * currently selected. The preview is typically the first line or a
-		 * summary of the note content.
+		 * summary of the note content. Word count is computed from the full
+		 * editor text.
 		 *
 		 * @example
 		 * ```typescript
-		 * // Update note content from editor
 		 * notesState.updateNoteContent({
 		 *   title: 'My Note Title',
 		 *   preview: 'First line of content...',
+		 *   wordCount: 42,
 		 * });
-		 * // Note updates in the list and sidebar
 		 * ```
 		 */
 		updateNoteContent({
 			title,
 			preview,
+			wordCount,
 		}: {
 			title: string;
 			preview: string;
+			wordCount: number;
 		}) {
 			if (!selectedNoteId) return;
 			workspaceClient.tables.notes.update(selectedNoteId, {
 				title,
 				preview,
+				wordCount,
 			});
 		},
 

@@ -2,6 +2,7 @@ import type { Type } from 'arktype';
 import { type } from 'arktype';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, Ok, trySync } from 'wellcrafted/result';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { rpc } from '$lib/query';
@@ -152,36 +153,66 @@ export type InferDeviceValue<K extends DeviceConfigKey> =
 
 // ── Per-key storage ──────────────────────────────────────────────────────────
 
+/**
+ * Namespace prefix for all device config localStorage keys.
+ *
+ * localStorage is shared across the entire origin (all tabs, all code on
+ * the same domain), so the prefix prevents collisions between different
+ * Whispering modules (e.g., `whispering.workspace.*` vs `whispering.device.*`)
+ * and any other code running on the same origin.
+ *
+ * Also used as a subscription filter in the `storage` event handler—only
+ * events whose key starts with this prefix are processed by this module.
+ */
 const STORAGE_PREFIX = 'whispering.device.';
 
+/** Build the full localStorage key for a device config entry. */
 function storageKey(key: string): string {
 	return `${STORAGE_PREFIX}${key}`;
 }
 
+/** Type guard: narrows a string to `DeviceConfigKey` via runtime `in` check. */
+function isDeviceConfigKey(key: string): key is DeviceConfigKey {
+	return key in DEVICE_DEFINITIONS;
+}
+
 /**
- * Read a single key from localStorage, validate against its schema,
- * and fall back to the definition's default on any failure.
+ * Parse a raw JSON string from localStorage against a key's schema.
+ *
+ * Handles both JSON parsing and schema validation, returning the
+ * definition's default value on any failure (malformed JSON, schema
+ * mismatch, or null/missing value).
  */
-function readKey<K extends DeviceConfigKey>(key: K): InferDeviceValue<K> {
+function parseStoredValue<K extends DeviceConfigKey>(
+	key: K,
+	raw: string | null,
+): InferDeviceValue<K> {
 	const def = DEVICE_DEFINITIONS[key];
-	const raw = window.localStorage.getItem(storageKey(key));
 	if (raw === null) return def.defaultValue as InferDeviceValue<K>;
 
-	try {
-		const parsed: unknown = JSON.parse(raw);
-		const result = (def.schema as (data: unknown) => unknown)(parsed);
-		if (result instanceof type.errors) {
-			console.warn(
-				`Invalid device config for "${key}", using default:`,
-				result.summary,
-			);
-			return def.defaultValue as InferDeviceValue<K>;
-		}
-		return result as InferDeviceValue<K>;
-	} catch {
-		console.warn(`Failed to parse device config for "${key}", using default`);
+	const { data: parsed, error: parseError } = trySync({
+		try: () => JSON.parse(raw) as unknown,
+		catch: () => Err('malformed JSON'),
+	});
+	if (parseError) {
+		console.warn(`Invalid device config for "${key}", using default`);
 		return def.defaultValue as InferDeviceValue<K>;
 	}
+
+	const validated = (def.schema as (data: unknown) => unknown)(parsed);
+	if (validated instanceof type.errors) {
+		console.warn(
+			`Invalid device config for "${key}", using default:`,
+			validated.summary,
+		);
+		return def.defaultValue as InferDeviceValue<K>;
+	}
+	return validated as InferDeviceValue<K>;
+}
+
+/** Read a single key from localStorage and validate it via `parseStoredValue`. */
+function readKey<K extends DeviceConfigKey>(key: K): InferDeviceValue<K> {
+	return parseStoredValue(key, window.localStorage.getItem(storageKey(key)));
 }
 
 // ── Reactive store ───────────────────────────────────────────────────────────
@@ -194,34 +225,26 @@ function createDeviceConfig() {
 		map.set(key, readKey(key));
 	}
 
-	// Cross-tab sync: storage event filtered by prefix.
-	// Only the changed key updates in the SvelteMap.
+	// ── Cross-tab sync ────────────────────────────────────────────────────
+	// The `storage` event fires when ANOTHER tab on the same origin writes
+	// to localStorage. This handler filters events by our namespace prefix
+	// and updates only the changed key in the SvelteMap.
+	//
+	// `e.newValue === null` means the key was deleted (e.g., via DevTools
+	// or `localStorage.removeItem`), so we restore the definition default.
 	window.addEventListener('storage', (e) => {
 		if (!e.key?.startsWith(STORAGE_PREFIX)) return;
 		const key = e.key.slice(STORAGE_PREFIX.length);
-		if (!(key in DEVICE_DEFINITIONS)) return;
+		if (!isDeviceConfigKey(key)) return;
 
-		const def = DEVICE_DEFINITIONS[key as DeviceConfigKey];
-
-		if (e.newValue === null) {
-			map.set(key, def.defaultValue);
-			return;
-		}
-
-		try {
-			const parsed: unknown = JSON.parse(e.newValue);
-			const result = (def.schema as (data: unknown) => unknown)(parsed);
-			if (result instanceof type.errors) {
-				map.set(key, def.defaultValue);
-				return;
-			}
-			map.set(key, result);
-		} catch {
-			map.set(key, def.defaultValue);
-		}
+		map.set(key, parseStoredValue(key, e.newValue));
 	});
 
-	// Re-read all keys on focus (handles non-storage changes like DevTools edits).
+	// ── Non-storage change detection ──────────────────────────────────────
+	// The `storage` event only fires for changes from OTHER tabs. If the
+	// user edits localStorage directly in DevTools (same tab), or if another
+	// library writes to our keys, we won't hear about it. Re-reading all
+	// keys on window focus catches these edge cases.
 	window.addEventListener('focus', () => {
 		for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
 			map.set(key, readKey(key));
@@ -240,17 +263,27 @@ function createDeviceConfig() {
 
 		/**
 		 * Set a single device config value. Writes to localStorage per-key
-		 * and updates the SvelteMap. Components re-render only for this key.
+		 * and updates the SvelteMap immediately (optimistic update).
+		 *
+		 * The localStorage write is best-effort—if it fails (e.g., quota
+		 * exceeded), an error notification is shown but the in-memory
+		 * SvelteMap still updates so the UI stays responsive.
 		 */
 		set<K extends DeviceConfigKey>(key: K, value: InferDeviceValue<K>) {
-			try {
-				window.localStorage.setItem(storageKey(key), JSON.stringify(value));
-			} catch (err) {
-				rpc.notify.error({
-					title: 'Error updating device config',
-					description: extractErrorMessage(err),
-				});
-			}
+			trySync({
+				try: () =>
+					window.localStorage.setItem(
+						storageKey(key),
+						JSON.stringify(value),
+					),
+				catch: (err) => {
+					rpc.notify.error({
+						title: 'Error updating device config',
+						description: extractErrorMessage(err),
+					});
+					return Ok(undefined);
+				},
+			});
 			map.set(key, value);
 		},
 

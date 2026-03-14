@@ -45,15 +45,18 @@ const workspace = createWorkspace(definition)
 ### Desired State
 
 ```typescript
-// After: encryption active when signed in
-const workspace = createWorkspace(definition, {
-  key: encryptionKeyStore.get(),
-})
+// After: encryption active when signed in, via onKeyChange
+const workspace = createWorkspace(definition)
   .withExtension('persistence', ...)
   .withExtension('sync', ...);
+
+// Auth subscription — sole mechanism for key delivery
+session.subscribe((s) => {
+  workspace.onKeyChange(s?.encryptionKey ? base64ToBytes(s.encryptionKey) : undefined);
+});
 ```
 
-The key flows from the server session to an in-memory store, and the `key` option reads from that store synchronously. Before auth completes, `key` is `undefined` (passthrough). After sign-in, encryption activates automatically.
+The key flows from the server session to `onKeyChange` via a subscription. Before auth completes, the workspace is in `plaintext` mode (fully functional, unencrypted). After sign-in, `onKeyChange(key)` transitions to `unlocked` mode. The `key` constructor option is reserved for future KeyCache optimization (seeding from a cached key on page refresh) and is not needed for the initial wiring.
 
 ## Architecture
 
@@ -71,20 +74,11 @@ Better Auth Server (customSession plugin)
                      │  $session store subscription
                      ▼
 ┌─────────────────────────────────────────────────┐
-│  Encryption Key Store (in-memory module)        │
+│  workspace.onKeyChange(key | undefined)         │
 │                                                 │
-│  setKey(base64) → decode → store Uint8Array     │
-│  key: Uint8Array | undefined              │
-│  clearKey() → undefined                         │
-└────────────────────┬────────────────────────────┘
-                     │
-                     │                     │  key option (synchronous)
-                     ▼
-┌─────────────────────────────────────────────────┐
-│  createWorkspace(definition, { key })         │
-│                                                 │
-│  key === undefined → passthrough (before auth)
-│  key === Uint8Array → encrypts (after auth) │
+│  key arrives    → plaintext → unlocked          │
+│  key cleared    → unlocked  → locked            │
+│  key re-arrives → locked    → unlocked          │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -92,10 +86,10 @@ Better Auth Server (customSession plugin)
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key storage | In-memory module (not persistent cache) | Server delivers key on every session fetch. No need for persistent KeyCache until "offline restart with encrypted data" becomes a real requirement. |
+| Key delivery | `onKeyChange` via `$session` subscription | `key` constructor option is static (set once). All runtime key transitions go through `onKeyChange()`. No in-memory key store needed—the subscription calls `onKeyChange` directly. |
 | Key format in memory | `Uint8Array` (decoded from base64 once) | Avoids repeated base64 decode on every `key` access. |
 | Auth client plugin | `customSessionClient()` from `better-auth/client/plugins` | Required to type `session.encryptionKey` on the client. Server already uses `customSession`. |
-| Loading gate | App-level, not library-level | Auth-backed apps show a loading state until key is available. Library stays platform-agnostic. |
+| Loading gate | Not needed for initial wiring | Apps are local-first and work without auth. The workspace starts in `plaintext` mode and transitions to `unlocked` when auth completes. No loading gate required—the UI is fully functional in plaintext mode. For page refresh with mixed data, KeyCache (future) prevents partial-data flash. |
 | No-auth apps | Unchanged | `fs-explorer` and `tab-manager-markdown` don't have auth, don't need encryption. |
 | One commit per app | Yes | Each app is independently deployable and testable. |
 | Encryption mode | Three explicit modes: `plaintext` \| `locked` \| `unlocked` | `key === undefined` currently means passthrough. For encrypted workspaces, no key should mean **locked/read-only**, not plaintext writes that can LWW-win over ciphertext. |
@@ -134,8 +128,8 @@ These items address architectural gaps identified during review. They should lan
 
 For each auth-backed app:
 
-- [ ] **2.1** **epicenter** — Add `customSessionClient()` to auth client config. Subscribe to `$session` to populate key store on sign-in and clear on sign-out. Pass `{ key }` to `createWorkspace`. Add loading gate in app shell.
-- [ ] **2.2** **whispering** — Same pattern. Auth client → key store → workspace `key`.
+- [ ] **2.1** **epicenter** — Add `customSessionClient()` to auth client config. Subscribe to `$session` and call `workspace.onKeyChange(key)` on sign-in, `workspace.onKeyChange(undefined)` on sign-out.
+- [ ] **2.2** **whispering** — Same pattern. Auth client → `$session` subscription → `onKeyChange`.
 - [ ] **2.3** **tab-manager** — Same pattern. Note: Chrome extension auth flow may have different session access patterns (popup vs background). Verify `$session` subscription works in the extension context.
 
 ### Phase 3: Verify
@@ -149,7 +143,7 @@ For each auth-backed app:
 
 ### Workspace Created Before Auth Completes
 
-This is the common case—workspaces are created at module scope as side-effect-free exports. The `key` option is `undefined` until the session loads. **With Phase 0 hardening**: the workspace starts in `plaintext` mode (no key ever seen). Once the key arrives, mode transitions to `unlocked` and `onKeyChange` rebuilds the decrypted map. Early reads return plaintext; early writes are plaintext (acceptable for initial load before auth).
+This is the common case—workspaces are created at module scope as side-effect-free exports. The workspace starts in `plaintext` mode (fully functional, no encryption). Users can read and write freely. Once auth completes, the `$session` subscription calls `onKeyChange(key)`, transitioning to `unlocked` mode. New writes encrypt; old plaintext data stays readable via mixed-mode detection.
 
 ### Session Refresh / Token Rotation
 
@@ -170,8 +164,8 @@ When encryption first activates, existing data is plaintext. The encrypted wrapp
    - **Recommendation**: (a) shared factory—the logic is identical across apps, and it can be imported alongside `createWorkspace`.
 
 2. **Loading gate UX—what does the user see before auth completes?**
-   - The workspace is functional in passthrough mode, so the app could render immediately. But writes would be plaintext until the key arrives.
-   - **Recommendation**: Show a brief loading skeleton until `$session` resolves. Most apps already have auth gates.
+   - Apps are local-first and work without auth. The workspace is fully functional in `plaintext` mode before sign-in. No loading gate needed.
+   - **Caveat**: After sign-in + page refresh, encrypted entries are invisible until `onKeyChange` fires (~100-500ms). KeyCache (future) would eliminate this flash by seeding the key at construction via the `key` option. For the initial wiring, this brief partial-data flash is acceptable.
 
 3. **Tab-manager extension context—does `$session` work in service workers?**
    - The extension's auth client may behave differently in the WXT background script vs popup.
@@ -181,7 +175,7 @@ When encryption first activates, existing data is plaintext. The encrypted wrapp
 
 - [ ] `customSessionClient()` added to all 3 auth-backed apps
 - [ ] `session.encryptionKey` is typed and accessible in each app
-- [ ] Each app passes `{ key }` to `createWorkspace`
+- [ ] Each app subscribes to `$session` and calls `workspace.onKeyChange(key)` on sign-in
 - [ ] New KV/table writes produce `EncryptedBlob` when signed in
 - [ ] Reads decrypt transparently (existing plaintext + new ciphertext coexist)
 - [ ] Sign-out transitions to `locked` mode; `set()` rejects writes (not plaintext passthrough)

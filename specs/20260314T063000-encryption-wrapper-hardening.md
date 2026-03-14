@@ -179,7 +179,7 @@ Each table gets its own AAD context (`workspaceId:tableName:entryKey`). A value 
 1. **Should `locked` mode throw on `set()` or silently no-op?**
    - Throw: consumer knows immediately something is wrong. But unhandled throws in UI code can crash components.
    - No-op: silent data loss—user thinks they saved but nothing persisted.
-   - **Recommendation**: Throw. The UI should have an auth gate that prevents reaching the write path when locked.
+   - **Recommendation**: Throw. Apps are local-first and work without auth gates, so the UI layer should disable editing controls when the workspace is in `locked` mode (e.g., after sign-out). The throw acts as a safety net for any write path the UI missed.
 
 2. **Should quarantined entries be exposed via the API?**
    - Options: (a) internal-only, just skip them, (b) expose `wrapper.quarantine` as a read-only map

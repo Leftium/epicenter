@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid/non-secure';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { DbServiceLive } from '$lib/services/db';
 import { ToastServiceLive } from '$lib/services/toast';
@@ -7,6 +8,7 @@ import {
 	getDatabaseMigrationState,
 	type MigrationResult,
 	migrateDatabaseToWorkspace,
+	probeForOldData,
 	setDatabaseMigrationState,
 } from './migrate-database';
 import {
@@ -36,6 +38,26 @@ function createMigrationDialog() {
 	function setPersistedState(state: DbMigrationState) {
 		setDatabaseMigrationState(state);
 		persistedState = state;
+	}
+
+	function showPendingToast() {
+		const toastId = nanoid();
+		ToastServiceLive.show({
+			variant: 'info',
+			id: toastId,
+			title: 'Data Migration Available',
+			description:
+				'Your recordings and transformations can be migrated to the new workspace storage.',
+			action: {
+				type: 'button',
+				label: 'Migrate Now',
+				onClick: () => {
+					isOpen = true;
+				},
+			},
+			persist: true,
+		});
+		migrationToastId = toastId;
 	}
 
 	return {
@@ -118,17 +140,27 @@ function createMigrationDialog() {
 		get isPending() {
 			return persistedState === 'pending';
 		},
-		set isPending(value: boolean) {
-			setPersistedState(value ? 'pending' : 'done');
-		},
 		get hasFailedAttempt() {
 			return hasFailedAttempt;
 		},
-		get migrationToastId() {
-			return migrationToastId;
-		},
-		set migrationToastId(value: string | undefined) {
-			migrationToastId = value;
+		async check() {
+			const state = getDatabaseMigrationState();
+
+			// Already done — nothing to do
+			if (state === 'done') return;
+
+			if (state === null) {
+				// First check: probe for old data
+				const hasData = await probeForOldData(DbServiceLive);
+				if (!hasData) {
+					setPersistedState('done');
+					return;
+				}
+				setPersistedState('pending');
+			}
+
+			// State is 'pending' — show toast
+			showPendingToast();
 		},
 		get isSeeding() {
 			return isSeeding;

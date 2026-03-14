@@ -209,14 +209,14 @@ startMigration()
 
 ### Phase 2: Absorb toast lifecycle and check logic
 
-- [ ] **2.1** Move toast creation from `check-database-migration.ts` into a `showPendingToast()` method on the dialog (private—not exported on the return object).
-- [ ] **2.2** Move the probe logic from `check-database-migration.ts` into a `check()` method on the dialog.
-- [ ] **2.3** Simplify `check-database-migration.ts` to a one-liner:
+- [x] **2.1** Move toast creation from `check-database-migration.ts` into a `showPendingToast()` method on the dialog (private—not exported on the return object).
+- [x] **2.2** Move the probe logic from `check-database-migration.ts` into a `check()` method on the dialog.
+- [x] **2.3** Simplify `check-database-migration.ts` to a one-liner:
   ```typescript
   import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
   export async function checkDatabaseMigration() { return migrationDialog.check(); }
   ```
-- [ ] **2.4** Remove the `migrationToastId` setter from the public API (toast dismiss is now internal).
+- [x] **2.4** Remove the `migrationToastId` setter from the public API (toast dismiss is now internal).
 
 ### Phase 3: Replace `isRunning` with `phase`
 

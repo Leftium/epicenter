@@ -1,6 +1,7 @@
 import {
 	type Documents,
 	parseSheetFromCsv,
+	readEntry,
 	type TableHelper,
 } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
@@ -83,23 +84,17 @@ export function createYjsFileSystem(
 			 */
 			async write(fileId: FileId, data: string): Promise<number> {
 				const handle = await contentDocuments.open(fileId);
-				const tl = handle.timeline;
+				const validated = readEntry(handle.timeline.currentEntry);
 
-				if (tl.currentMode === 'sheet') {
-					const columns = tl.currentEntry?.get('columns') as import('yjs').Map<
-						import('yjs').Map<string>
-					>;
-					const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
-						import('yjs').Map<string>
-					>;
+				if (validated.mode === 'sheet') {
 					handle.batch(() => {
-						columns.forEach((_, key) => {
-							columns.delete(key);
+						validated.columns.forEach((_, key) => {
+							validated.columns.delete(key);
 						});
-						rows.forEach((_, key) => {
-							rows.delete(key);
+						validated.rows.forEach((_, key) => {
+							validated.rows.delete(key);
 						});
-						parseSheetFromCsv(data, columns, rows);
+						parseSheetFromCsv(data, validated.columns, validated.rows);
 					});
 				} else {
 					handle.write(data);
@@ -116,19 +111,14 @@ export function createYjsFileSystem(
 			 */
 			async append(fileId: FileId, data: string): Promise<number | null> {
 				const handle = await contentDocuments.open(fileId);
-				const tl = handle.timeline;
+				const validated = readEntry(handle.timeline.currentEntry);
 
-				if (tl.currentMode === 'text') {
-					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
-					handle.batch(() => ytext.insert(ytext.length, data));
-				} else {
-					return null;
-				}
+				if (validated.mode !== 'text') return null;
+
+				handle.batch(() => validated.content.insert(validated.content.length, data));
 
 				// Re-read after mutation
-				return new TextEncoder().encode(
-					(tl.currentEntry?.get('content') as import('yjs').Text).toString(),
-				).byteLength;
+				return new TextEncoder().encode(validated.content.toString()).byteLength;
 			},
 		},
 

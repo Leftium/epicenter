@@ -8,6 +8,10 @@ Core library shared across apps.
 - All functions return `Result<T, E>` types
 - Use Bun for everything (see below)
 
+## Content Model
+
+`handle.read()`/`handle.write()` on `DocumentHandle` use raw `Y.Text('content')`, which is NOT the same shared type as the filesystem's timeline (`Y.Array('timeline')`). Apps using `@epicenter/filesystem` must use `fs.content.read/write` for timeline-backed content access. Direct `handle.ydoc.getText('content')` access is an anti-pattern. See `specs/20260313T224500-unify-document-content-model.md`.
+
 ## Bun Usage
 
 Default to Bun instead of Node.js:

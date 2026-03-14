@@ -207,6 +207,31 @@ yarray.push([sameItem]); // Different Y.Map instance internally
 
 Any concurrent edits to the "moved" item are lost because you deleted the original.
 
+### 6. Accessing Raw Y.Doc Shared Types for Document Content
+
+Document Y.Docs in this codebase use a timeline model (`Y.Array('timeline')` with nested typed entries). Accessing top-level shared types directly writes to a different location than the timeline, causing silent data loss:
+
+```typescript
+// BAD: writes to Y.Text('content'), not the timeline
+const ytext = handle.ydoc.getText('content');
+ytext.insert(0, 'hello');  // invisible to fs.readFile()
+
+// BAD: handle.read/write also uses Y.Text('content')
+handle.read();   // reads from wrong shared type
+handle.write('x'); // writes to wrong shared type
+
+// GOOD: use filesystem content helpers (timeline-backed)
+await fs.content.read(id);
+await fs.content.write(id, 'hello');
+
+// GOOD: use timeline abstraction directly if needed
+import { createTimeline } from '@epicenter/filesystem';
+const tl = createTimeline(handle.ydoc);
+const text = tl.readAsString();
+```
+
+See `specs/20260313T224500-unify-document-content-model.md`.
+
 ## Debugging Tips
 
 ### Inspect Document State

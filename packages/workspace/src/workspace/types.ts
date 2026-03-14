@@ -251,15 +251,45 @@ export type ClaimedDocumentColumns<
  * All operations are scoped to this specific document. Content methods
  * (read, write) are synchronous because the Y.Doc is already open.
  * Exports are a property, not a function, because they belong to this doc.
+ *
+ * **Content model warning**: `read()` and `write()` operate on a raw
+ * `Y.Text('content')` shared type, which is NOT the same as the filesystem's
+ * timeline (`Y.Array('timeline')`). If your app uses the filesystem package,
+ * prefer `fs.content.read()`/`fs.content.write()` instead. Direct `handle.ydoc`
+ * access for content (e.g. `handle.ydoc.getText('content')`) is also discouraged—
+ * use `createTimeline(handle.ydoc)` from `@epicenter/filesystem` instead.
+ *
+ * See `specs/20260313T224500-unify-document-content-model.md` for the unification plan.
  */
 export type DocumentHandle = {
-	/** The raw Y.Doc — escape hatch for custom operations (timelines, binary, sheets). */
+	/**
+	 * The underlying Y.Doc for this document.
+	 *
+	 * Use for genuinely custom shared types (awareness, cursors, non-content data).
+	 * For content operations, prefer the filesystem's timeline-backed helpers
+	 * (`fs.content.read/write` or `createTimeline(ydoc)`) over raw shared type
+	 * access like `ydoc.getText('content')` or `ydoc.getXmlFragment('content')`.
+	 */
 	ydoc: Y.Doc;
 
-	/** Read the document's text content (from `ydoc.getText('content')`). */
+	/**
+	 * Read the document's text content from `ydoc.getText('content')`.
+	 *
+	 * **Warning**: This reads from a raw `Y.Text('content')` shared type, NOT the
+	 * filesystem's timeline. If your app uses `@epicenter/filesystem`, prefer
+	 * `fs.content.read(id)` which reads from the timeline. This method will be
+	 * unified with the timeline in a future version.
+	 */
 	read(): string;
 
-	/** Replace the document's text content. */
+	/**
+	 * Replace the document's text content in `ydoc.getText('content')`.
+	 *
+	 * **Warning**: This writes to a raw `Y.Text('content')` shared type, NOT the
+	 * filesystem's timeline. If your app uses `@epicenter/filesystem`, prefer
+	 * `fs.content.write(id, text)` which writes to the timeline. This method will
+	 * be unified with the timeline in a future version.
+	 */
 	write(text: string): void;
 
 	/**

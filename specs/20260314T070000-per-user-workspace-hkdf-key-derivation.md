@@ -152,7 +152,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 
 4. Client receives key
    ├── workspaceKeyCache.set('epicenter.whispering', base64ToBytes(key))
-   └── wrapper.onKeyChange(key)  ← from hardening spec
+   └── wrapper.unlock(key)  ← from hardening spec
 
 5. First encrypted write
    └── kv.set('tab-1', data) → encryptValue(json, key, aad) → inner CRDT
@@ -219,7 +219,7 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 ### Phase 2: Client Key Cache
 
 - [ ] **2.1** Create `WorkspaceKeyCache` interface: `set(workspaceId, key)`, `getSync(workspaceId)`, `clear()`. In-memory implementation (Map). Scoped per-workspace, not per-user.
-- [ ] **2.2** Create `fetchWorkspaceKey(workspaceId)` async helper that calls `GET /workspaces/:id/key`, decodes the base64 key, stores in cache, and calls `wrapper.onKeyChange(key)`.
+- [ ] **2.2** Create `fetchWorkspaceKey(workspaceId)` async helper that calls `GET /workspaces/:id/key`, decodes the base64 key, stores in cache, and calls `wrapper.unlock(key)`.
 
 ### Phase 3: Per-App Wiring
 

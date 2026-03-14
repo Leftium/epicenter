@@ -39,19 +39,19 @@
  *         (creation,  │  PLAINTEXT  │  (no key ever seen)
  *          no key)    │  rw plain   │
  *                     └──────┬──────┘
- *                            │ onKeyChange(key)
+ *                            │ unlock(key)
  *                            ▼
  *                     ┌─────────────┐
  *                     │  UNLOCKED   │  (key active)
- *                     │  rw encrypt │◄── onKeyChange(newKey)
+ *                     │  rw encrypt │◄── unlock(newKey)
  *                     └──────┬──────┘
- *                            │ onKeyChange(undefined)
+ *                            │ lock()
  *                            ▼
  *                     ┌─────────────┐
  *                     │   LOCKED    │  (key was active, now cleared)
  *                     │  r-only     │
  *                     └──────┬──────┘
- *                            │ onKeyChange(key)
+ *                            │ unlock(key)
  *                            ▼
  *                     ┌─────────────┐
  *                     │  UNLOCKED   │  (re-sign-in)
@@ -68,9 +68,9 @@
  *
  * ## Key Management
  *
- * The encryption key is managed through a single mechanism: `onKeyChange(key)`.
+ * The encryption key is managed through two methods: `unlock(key)` and `lock()`.
  * The optional `key` in options seeds the initial key (and therefore the initial
- * mode). After creation, all key transitions go through `onKeyChange()`.
+ * mode). After creation, all key transitions go through `unlock()` and `lock()`.
  *
  * ## Pending State
  *
@@ -85,7 +85,7 @@
  * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt quarantines
  * the entry (stored in `quarantine` map) and logs a warning instead of throwing.
  * This prevents one bad blob from crashing all observation. Quarantined entries
- * are retried on `onKeyChange()` when the correct key arrives.
+ * are retried on `unlock()` when the correct key arrives.
  *
  * ## Related Modules
  *
@@ -115,7 +115,7 @@ import {
  *
  * `key` seeds the initial encryption key and determines the starting mode
  * (`plaintext` if undefined, `unlocked` if a key is provided). After creation,
- * all key transitions go through `onKeyChange()`.
+ * all key transitions go through `unlock()` and `lock()`.
  */
 type EncryptedKvLwwOptions = {
 	key?: Uint8Array;
@@ -126,7 +126,7 @@ export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 
 /**
  * Return type of `createEncryptedKvLww`. Same API surface as `YKeyValueLww<T>`
- * plus encryption-specific members (`mode`, `quarantine`, `onKeyChange`).
+ * plus encryption-specific members (`mode`, `quarantine`, `lock`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
  */
@@ -140,20 +140,28 @@ export type YKeyValueLwwEncrypted<T> = {
 	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
 
 	/**
-	 * Transition the encryption key. This is the **sole mechanism** for key
-	 * changes after creation. Rebuilds `map` from `inner.map`, retries
-	 * quarantined entries, transitions mode, and fires synthetic change events.
-	 *
-	 * @param key - New key (`unlocked`) or `undefined` (`locked` / stay `plaintext`)
+	 * Lock the workspace. Clears the encryption key and transitions to `locked`
+	 * mode if the workspace was previously `unlocked`. `set()` throws to prevent
+	 * plaintext from overwriting ciphertext. `get()` returns cached plaintext.
+	 * No-op if mode is `plaintext` (never had a key).
 	 */
-	onKeyChange(key: Uint8Array | undefined): void;
+	lock(): void;
+
+	/**
+	 * Unlock the workspace with an encryption key. Rebuilds the decrypted map
+	 * from `inner.map`, retries quarantined entries, transitions to `unlocked`
+	 * mode, and fires synthetic change events for any values that changed.
+	 *
+	 * @param key - A 32-byte AES-256 encryption key (required)
+	 */
+	unlock(key: Uint8Array): void;
 
 	/** Current encryption mode. Derived from key presence history. */
 	readonly mode: EncryptionMode;
 
 	/**
 	 * Entries that failed to decrypt. Stored as raw `EncryptedBlob | T` entries
-	 * from `inner.map`. Retried automatically on `onKeyChange()` when the
+	 * from `inner.map`. Retried automatically on `unlock()` when the
 	 * correct key arrives. Exposed so table helpers can show a
 	 * "N entries failed to decrypt" warning.
 	 */
@@ -199,11 +207,11 @@ export type YKeyValueLwwEncrypted<T> = {
  * kv.mode; // 'plaintext'
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
- * kv.onKeyChange(encryptionKey);
+ * kv.unlock(encryptionKey);
  * kv.mode; // 'unlocked'
  * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
  *
- * kv.onKeyChange(undefined);
+ * kv.lock();
  * kv.mode; // 'locked'
  * kv.set('tab-3', ...); // throws: "Workspace is locked"
  * kv.get('tab-1'); // still returns cached plaintext
@@ -239,13 +247,13 @@ export function createEncryptedKvLww<T>(
 
 	/**
 	 * Entries that failed to decrypt. Stored as raw entries from `inner.map`.
-	 * Retried on `onKeyChange()` when a new key arrives.
+	 * Retried on `unlock()` when a new key arrives.
 	 */
 	const quarantine = new Map<string, YKeyValueLwwEntry<EncryptedBlob | T>>();
 
 	/**
 	 * The active encryption key. Seeded from `options.key` at creation,
-	 * then updated exclusively via `onKeyChange()`.
+	 * then updated exclusively via `lock()` and `unlock()`.
 	 */
 	let currentKey: Uint8Array | undefined = options?.key;
 
@@ -270,7 +278,7 @@ export function createEncryptedKvLww<T>(
 	};
 
 	/**
-	 * Compare two decrypted values for equality. Used by `onKeyChange()` to
+	 * Compare two decrypted values for equality. Used by `unlock()` to
 	 * determine whether an entry's decrypted value actually changed (to avoid
 	 * emitting no-op 'update' events). Falls back to JSON.stringify comparison
 	 * when Object.is fails (handles deep object equality).
@@ -288,7 +296,7 @@ export function createEncryptedKvLww<T>(
 	 * returns the decrypted entry. On failure, quarantines the entry and
 	 * returns `undefined`.
 	 *
-	 * Used during initialization, observer processing, and `onKeyChange()` rebuild.
+	 * Used during initialization, observer processing, and `unlock()` rebuild.
 	 */
 	const tryDecryptEntry = (
 		key: string,
@@ -452,26 +460,25 @@ export function createEncryptedKvLww<T>(
 		},
 
 		/**
-		 * Transition the encryption key and rebuild the decrypted map.
-		 *
-		 * Mode transitions:
-		 * - `key` provided → `unlocked` (rebuild map with new key, fire synthetic events)
-		 * - `undefined` + was `unlocked`/`locked` → `locked` (freeze cache, no rebuild)
-		 * - `undefined` + was `plaintext` → stays `plaintext` (no-op)
-		 *
-		 * Locking preserves the existing decrypted cache—you lose write access,
-		 * not read access. Only unlocking triggers a full map rebuild.
+		 * Lock the workspace. Clears the encryption key and preserves
+		 * the existing decrypted cache. `set()` throws, `get()` returns
+		 * cached plaintext. No-op if mode is `plaintext`.
 		 */
-		onKeyChange(nextKey) {
+		lock() {
+			currentKey = undefined;
+			if (mode !== 'plaintext') mode = 'locked';
+		},
+
+		/**
+		 * Unlock with a new encryption key. Rebuilds the decrypted map
+		 * from scratch, retries quarantined entries, and fires synthetic
+		 * change events for any values that changed.
+		 *
+		 * @param nextKey - A 32-byte AES-256 encryption key
+		 */
+		unlock(nextKey) {
 			currentKey = nextKey;
 
-			// Lock transition: freeze current state, don't rebuild
-			if (!nextKey) {
-				if (mode !== 'plaintext') mode = 'locked';
-				return;
-			}
-
-			// Unlock transition: rebuild decrypted map with new key
 			const oldMap = new Map(map);
 			mode = 'unlocked';
 
@@ -513,7 +520,7 @@ export function createEncryptedKvLww<T>(
 
 			if (syntheticChanges.size === 0) return;
 
-			// Synthetic events have no real Y.Transaction — onKeyChange is not a Yjs operation.
+			// Synthetic events have no real Y.Transaction — lock/unlock are not Yjs operations.
 			// Handlers that only read the changes map (all current consumers) are unaffected.
 			const syntheticTransaction = undefined as unknown as Y.Transaction;
 			for (const handler of changeHandlers)

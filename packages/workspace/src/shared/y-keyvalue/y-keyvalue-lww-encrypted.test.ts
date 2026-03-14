@@ -425,7 +425,7 @@ describe('createEncryptedKvLww', () => {
 	});
 
 	describe('Key becomes available mid-session', () => {
-		test('passthrough then encrypted via onKeyChange', () => {
+		test('passthrough then encrypted via unlock', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
@@ -435,7 +435,7 @@ describe('createEncryptedKvLww', () => {
 			kv.set('old-2', 'legacy-b');
 
 			const key = generateEncryptionKey();
-			kv.onKeyChange(key);
+			kv.unlock(key);
 			kv.set('new-1', 'encrypted-c');
 
 			expect(kv.get('old-1')).toBe('legacy-a');
@@ -511,7 +511,7 @@ describe('createEncryptedKvLww', () => {
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 		});
 
-		test('plaintext → unlocked via onKeyChange(key)', () => {
+		test('plaintext → unlocked via unlock(key)', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'mode-plain-to-unlocked' });
 			const yarray =
@@ -519,11 +519,11 @@ describe('createEncryptedKvLww', () => {
 			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
-			kv.onKeyChange?.(key);
+			kv.unlock(key);
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 		});
 
-		test('unlocked → locked via onKeyChange(undefined)', () => {
+		test('unlocked → locked via lock()', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'mode-unlocked-to-locked' });
 			const yarray =
@@ -531,11 +531,11 @@ describe('createEncryptedKvLww', () => {
 			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 		});
 
-		test('locked → unlocked via onKeyChange(key)', () => {
+		test('locked → unlocked via unlock(key)', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'mode-locked-to-unlocked' });
 			const yarray =
@@ -543,20 +543,20 @@ describe('createEncryptedKvLww', () => {
 			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
-			kv.onKeyChange?.(key);
+			kv.unlock(key);
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 		});
 
-		test('plaintext stays plaintext on onKeyChange(undefined)', () => {
+		test('plaintext stays plaintext on lock()', () => {
 			const ydoc = new Y.Doc({ guid: 'mode-stays-plaintext' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 			expect(kv.mode).toBe('plaintext' satisfies EncryptionMode);
 		});
 	});
@@ -569,7 +569,7 @@ describe('createEncryptedKvLww', () => {
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
 			const kv = createEncryptedKvLww<string>(yarray, { key: key });
 
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 			expect(() => kv.set('x', 'y')).toThrow(/locked/i);
 		});
@@ -585,7 +585,7 @@ describe('createEncryptedKvLww', () => {
 				{ key: 'a', val: 'alpha', ts: Date.now() },
 				{ key: 'b', val: 'beta', ts: Date.now() + 1 },
 			]);
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 			expect(kv.get('a')).toBe('alpha');
@@ -601,7 +601,7 @@ describe('createEncryptedKvLww', () => {
 
 			kv.set('x', '1');
 			kv.set('y', '2');
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 
 			expect(kv.mode).toBe('locked' satisfies EncryptionMode);
 			expect(kv.has('x')).toBe(true);
@@ -619,7 +619,7 @@ describe('createEncryptedKvLww', () => {
 				{ key: 'first', val: 'one', ts: Date.now() },
 				{ key: 'second', val: 'two', ts: Date.now() + 1 },
 			]);
-			kv.onKeyChange?.(undefined);
+			kv.lock();
 
 			const values = new Map<string, string>();
 			for (const [entryKey, entry] of kv.entries())
@@ -682,8 +682,8 @@ describe('createEncryptedKvLww', () => {
 		});
 	});
 
-	describe('Key transition (onKeyChange)', () => {
-		test('plaintext entries remain accessible after onKeyChange', () => {
+	describe('Key transition (lock/unlock)', () => {
+		test('plaintext entries remain accessible after unlock', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({
 				guid: 'key-transition-plaintext-stays-readable',
@@ -694,14 +694,14 @@ describe('createEncryptedKvLww', () => {
 
 			kv.set('legacy-1', 'plain-a');
 			kv.set('legacy-2', 'plain-b');
-			kv.onKeyChange?.(key);
+			kv.unlock(key);
 
 			expect(kv.mode).toBe('unlocked' satisfies EncryptionMode);
 			expect(kv.get('legacy-1')).toBe('plain-a');
 			expect(kv.get('legacy-2')).toBe('plain-b');
 		});
 
-		test('new writes after onKeyChange encrypt', () => {
+		test('new writes after unlock encrypt', () => {
 			const key = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'key-transition-new-writes-encrypt' });
 			const yarray =
@@ -709,7 +709,7 @@ describe('createEncryptedKvLww', () => {
 			const kv = createEncryptedKvLww<string>(yarray, {});
 
 			kv.set('before', 'plaintext-before-key');
-			kv.onKeyChange?.(key);
+			kv.unlock(key);
 			kv.set('after', 'encrypted-after-key');
 
 			const afterEntry = yarray
@@ -719,7 +719,7 @@ describe('createEncryptedKvLww', () => {
 			expect(isEncryptedBlob(afterEntry?.val)).toBe(true);
 		});
 
-		test('onKeyChange rebuilds map and fires synthetic events', () => {
+		test('unlock rebuilds map and fires synthetic events', () => {
 			const key1 = generateEncryptionKey();
 			const key2 = generateEncryptionKey();
 			const ydoc = new Y.Doc({ guid: 'key-transition-synthetic-events' });
@@ -736,7 +736,7 @@ describe('createEncryptedKvLww', () => {
 					events.push({ key: entryKey, change });
 			});
 
-			kv.onKeyChange?.(key2);
+			kv.unlock(key2);
 			expect(kv.quarantine?.size).toBe(2);
 
 			const deleteEvents = events.filter(
@@ -745,7 +745,7 @@ describe('createEncryptedKvLww', () => {
 			expect(deleteEvents.length).toBe(2);
 			expect(deleteEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
 
-			kv.onKeyChange?.(key1);
+			kv.unlock(key1);
 			expect(kv.quarantine?.size).toBe(0);
 
 			const addEvents = events.filter((event) => event.change.action === 'add');

@@ -71,7 +71,7 @@ Three options were evaluated:
 | Encrypted value format | `{ v: 1, ct: string }` | `v` for format versioning. `ct` contains `base64(nonce(12) || ciphertext || tag(16))` for JSON-safe Yjs ContentAny storage. |
 | Algorithm shorthand | `'A256GCM'` (not `'AES-256-GCM'`) | JWE algorithm identifier. Compact, standardized, unambiguous. |
 | No-key passthrough | When `key` is undefined, behave identically to plain `YKeyValueLww` | Zero overhead for unencrypted workspaces. Same code path, just no encryption. |
-| Key parameter | `key?: Uint8Array` (plain value) | Seeded at creation time. The workspace is created eagerly as a module-level export before auth completes. After creation, `onKeyChange()` handles all key transitions. Encryption activates when a key is provided. |
+| Key parameter | `key?: Uint8Array` (plain value) | Seeded at creation time. The workspace is created eagerly as a module-level export before auth completes. After creation, `lock()` and `unlock(key)` handle all key transitions. Encryption activates when a key is provided. |
 | Encryption library | `@noble/ciphers` (pure JS, synchronous) | Preserves the synchronous `set()` API. Web Crypto is async-only, which would break 394 synchronous call sites across 23 files. Noble is audited (Cure53, Sep 2024), zero dependencies, 11KB gzipped, works in Cloudflare Workers and browser extensions. |
 | Serialization | `JSON.stringify` before encryption, `JSON.parse` after decryption | Values are already JSON-serializable (they're stored in Yjs ContentAny). Round-trip fidelity is guaranteed. |
 | IV strategy | Random 12-byte IV per encryption via `randomBytes(12)` from `@noble/ciphers/utils` | Wraps `crypto.getRandomValues`. No coordination needed between devices. Birthday bound (~2^48) is unreachable at workspace scale. |
@@ -106,7 +106,7 @@ APPLICATION CODE (tables, KV, app layer)
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                              │
 │  set(key, val):                                              │
-│    key = options.key  // seeded at creation, or via onKeyChange()
+│    key = options.key  // seeded at creation, or via lock()/unlock()
 │    if (!key) → inner.set(key, val)  ← passthrough           │
 │    plaintext = JSON.stringify(val)                           │
 │    { ct } = encrypt(plaintext, key)                     │
@@ -225,7 +225,7 @@ For a full workspace (500 tabs + 1000 KV entries + 1000 chat messages):
  *
  * The `key` option is seeded at creation time. The workspace is created eagerly as a module-level export before auth completes.
  * The workspace is created eagerly as a module-level export before auth completes.
- * After creation, `onKeyChange()` handles all key transitions. Encryption activates when a key is provided.
+ * After creation, `lock()` and `unlock(key)` handle all key transitions. Encryption activates when a key is provided.
  * so encryption activates the moment a key becomes available.
  */
 function createEncryptedKvLww<T>(
@@ -509,13 +509,13 @@ The workspace creation flow passes the encryption key down.
 
 ### ~~Encryption key not yet available~~ (RESOLVED)
 
-No longer a concern. The `key` option is seeded at creation time. After creation, `onKeyChange()` handles all key transitions. The wrapper calls `onKeyChange()` when the key changes:
+No longer a concern. The `key` option is seeded at creation time. After creation, `lock()` and `unlock(key)` handle all key transitions. The wrapper calls these methods when the key changes:
 
 1. **`key` is undefined (no key yet):** Passthrough mode—values stored/read as plaintext. Zero overhead.
 2. **`key` is provided:** Encrypted mode—values encrypted on write, decrypted on read.
-3. **Key becomes available mid-session:** Call `onKeyChange(key)` to transition. The wrapper re-decrypts all entries. Existing plaintext entries are read via `isEncryptedBlob` mixed-mode detection.
+3. **Key becomes available mid-session:** Call `unlock(key)` to transition. The wrapper re-decrypts all entries. Existing plaintext entries are read via `isEncryptedBlob` mixed-mode detection.
 
-The workspace is created eagerly as a module-level export (`apps/tab-manager/src/lib/workspace.ts` line 572) before auth completes. The `key` option is seeded at creation time. After auth, `onKeyChange()` is called to activate encryption. No wrapper recreation needed.
+The workspace is created eagerly as a module-level export (`apps/tab-manager/src/lib/workspace.ts` line 572) before auth completes. The `key` option is seeded at creation time. After auth, `unlock(key)` is called to activate encryption. No wrapper recreation needed.
 
 ### ~~Observer fires with encrypted data before key is set~~ (RESOLVED)
 
@@ -524,7 +524,7 @@ The wrapper maintains its own decrypted `.map` (see Architecture section). Obser
 1. **`key` is undefined:** Inner map has plaintext. Wrapper's `.map` mirrors it as-is. Observers see plaintext.
 2. **`key` is provided:** Inner map has encrypted blobs. Wrapper decrypts them into its own `.map`. Observers see plaintext.
 
-If a key becomes available mid-session via `onKeyChange()`, existing plaintext entries in the inner map are detected via `isEncryptedBlob` and passed through. New writes are encrypted. The wrapper's `.map` always contains plaintext regardless.
+If a key becomes available mid-session via `unlock(key)`, existing plaintext entries in the inner map are detected via `isEncryptedBlob` and passed through. New writes are encrypted. The wrapper's `.map` always contains plaintext regardless.
 
 ### Different user logs in
 
@@ -550,7 +550,7 @@ Two rapid `set('x', 1)` then `set('x', 2)` calls execute sequentially as they al
 
 2. ~~**Class vs factory function**~~: **RESOLVED.** Factory function (`createEncryptedKvLww<T>()`). Matches `createKv`, `createTables`, and the rest of the codebase's preference for factory functions over classes.
 
-3. ~~**Key mutability**: Can the encryption key change mid-session?~~ **RESOLVED.** Yes, via `onKeyChange()`. The key is seeded at creation time. After creation, `onKeyChange(newKey)` handles all key transitions. The key either goes from undefined→present (auth) or present→undefined (logout). Re-keying is a separate future concern.
+3. ~~**Key mutability**: Can the encryption key change mid-session?~~ **RESOLVED.** Yes, via `lock()` and `unlock(key)`. The key is seeded at creation time. After creation, `unlock(newKey)` handles key arrival and `lock()` handles key removal. The key either goes from undefined→present (auth) or present→undefined (logout). Re-keying is a separate future concern.
 
 4. ~~**Table encryption**~~: **RESOLVED.** Same `createEncryptedKvLww` wrapper. Tables are KV stores with schema validation on top. Both `createKv` and `createTables` instantiate `YKeyValueLww` internally—both switch to `createEncryptedKvLww`. Encrypt at the KV level, tables get encryption for free.
 

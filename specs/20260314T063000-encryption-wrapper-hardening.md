@@ -51,7 +51,7 @@ const decrypted = trySync(() => maybeDecrypt(entry.val));
 if (decrypted.error) { quarantine(key, entry); continue; }
 
 // key transition rebuilds the map
-wrapper.onKeyChange(newKey);  // re-decrypts all entries, transitions mode
+wrapper.unlock(newKey);  // re-decrypts all entries, transitions mode
 ```
 
 ## Design Decisions
@@ -63,7 +63,7 @@ wrapper.onKeyChange(newKey);  // re-decrypts all entries, transitions mode
 | Error containment | `trySync` wrapper around `maybeDecrypt`, skip failed entries | A quarantine approach (log + skip) is better than a throw that kills all observation. Quarantined entries can be retried when the correct key arrives. |
 | AAD format | `encode(workspaceId + ':' + tableName + ':' + entryKey)` | Binds ciphertext to its exact position. Prevents cross-table replay. Uses string concatenation with `:` separator (no ambiguity since IDs are UUIDs). |
 | AAD as optional parameter | `encryptValue(plaintext, key, aad?)` | Backward compatible—existing code without AAD still works. The wrapper passes AAD; direct callers in tests can omit it. |
-| `onKeyChange` scope | Rebuilds `wrapper.map` from `inner.map` | Re-iterates all entries, decrypts with the new key, replaces the entire map. Fires synthetic change events so observers see the transition. |
+| `unlock()` / `lock()` scope | Rebuilds `wrapper.map` from `inner.map` | Re-iterates all entries, decrypts with the new key, replaces the entire map. Fires synthetic change events so observers see the transition. |
 | Mode persistence | Not persisted—derived from key presence | Mode is runtime state. On fresh page load, workspace starts in `plaintext` if no key cache, or `unlocked` if key cache provides a key. No need to store mode. |
 
 ## Architecture
@@ -85,10 +85,10 @@ wrapper.onKeyChange(newKey);  // re-decrypts all entries, transitions mode
 │    │   └── err → quarantine.set(key, entry), log warning    │
 │    └── forward decrypted changes to handlers                │
 │                                                             │
-│  onKeyChange(key: Uint8Array | undefined)                   │
-│    ├── key present  → mode = 'unlocked', rebuild map        │
-│    ├── key cleared  → mode = 'locked' (if was unlocked)     │
-│    └── key cleared  → mode = 'plaintext' (if was plaintext) │
+│  unlock(key: Uint8Array) or lock(): void                   │
+│    ├─ key present  → mode = 'unlocked', rebuild map        │
+│    ├─ key cleared  → mode = 'locked' (if was unlocked)     │
+│    └─ key cleared  → mode = 'plaintext' (if was plaintext) │
 │                                                             │
 │  encryptValue(plaintext, key, aad?)                         │
 │  decryptValue(blob, key, aad?)                              │
@@ -102,19 +102,19 @@ wrapper.onKeyChange(newKey);  // re-decrypts all entries, transitions mode
         (creation,  │  PLAINTEXT  │  (no key ever seen)
          no key)    │  rw plain   │
                     └──────┬──────┘
-                           │ onKeyChange(key)
+                           └ unlock(key)
                            ▼
                     ┌─────────────┐
                     │  UNLOCKED   │  (key active)
-                    │  rw encrypt │◄─── onKeyChange(newKey)
+                    └─── unlock(newKey)
                     └──────┬──────┘
-                           │ onKeyChange(undefined)
+                           └ lock()
                            ▼
                     ┌─────────────┐
                     │   LOCKED    │  (key was active, now cleared)
                     │  r-only     │
                     └──────┬──────┘
-                           │ onKeyChange(key)
+                           └ unlock(key)
                            ▼
                     ┌─────────────┐
                     │  UNLOCKED   │  (re-sign-in)
@@ -136,7 +136,7 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 - [x] **2.1** Add `mode` state (`plaintext` | `locked` | `unlocked`) to `createEncryptedKvLww`. Initialize based on whether `key` is provided at creation time.
 - [x] **2.2** Gate `set()` on mode — throw in `locked`, encrypt in `unlocked`, passthrough in `plaintext`.
 - [x] **2.3** Wrap `maybeDecrypt` calls in observer with error containment. On failure, store the raw entry in a `quarantine` map and log a warning. Skip the entry in `wrapper.map`.
-- [x] **2.4** Add `onKeyChange(key: Uint8Array | undefined)` method. Re-iterates `inner.map`, re-decrypts all entries, rebuilds `wrapper.map`, retries quarantined entries, transitions mode, fires synthetic change events.
+- [x] **2.4** Add `lock()` and `unlock(key: Uint8Array)` methods. Re-iterates `inner.map`, re-decrypts all entries, rebuilds `wrapper.map`, retries quarantined entries, transitions mode, fires synthetic change events.
 - [x] **2.5** Wire AAD into the wrapper: compute `encode(workspaceId + ':' + tableName + ':' + entryKey)` for each encrypt/decrypt call. Accept `workspaceId` and `tableName` as new options to `createEncryptedKvLww`.
 
 ### Phase 3: Tests
@@ -144,7 +144,7 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 - [x] **3.1** Mode transitions: plaintext → unlocked → locked → unlocked round-trip
 - [x] **3.2** Locked mode: verify `set()` throws, `get()` still returns cached values
 - [x] **3.3** Error containment: inject a corrupted blob, verify observation continues for other entries
-- [x] **3.4** Key transition: create wrapper without key, add entries as plaintext, call `onKeyChange(key)`, verify new writes encrypt and map is rebuilt
+- [x] **3.4** Key transition: create wrapper without key, add entries as plaintext, call `unlock(key)`, verify new writes encrypt and map is rebuilt
 - [x] **3.5** AAD: verify cross-table ciphertext replay fails (decrypt with wrong AAD throws)
 
 ### Phase 4: Update Docs
@@ -158,14 +158,14 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 ### Workspace loads before auth, user has cached key
 
 1. `KeyCache.get()` returns a key from last session
-2. `onKeyChange(cachedKey)` called immediately → mode = `unlocked`
+2. `unlock(cachedKey)` called immediately → mode = `unlocked`
 3. Workspace decrypts from cache while auth roundtrip completes in background
-4. Session arrives → same key (or rotated key) → `onKeyChange` again → no-op or re-decrypt
+4. Session arrives → same key (or rotated key) → `unlock()` again → no-op or re-decrypt
 
 ### Key rotation (same user, new key)
 
 1. Server rotates KEK, user gets new DEK on next session
-2. `onKeyChange(newKey)` called
+2. `unlock(newKey)` called
 3. Old ciphertext was encrypted with old key → `maybeDecrypt` with new key fails → entries go to quarantine
 4. **This is a real problem.** Key rotation requires either: (a) re-encrypting data server-side before rotation, or (b) supporting a keyring of recent keys.
 5. **Recommendation**: Defer keyring support to the envelope encryption spec. For now, key rotation = re-encrypt data first.
@@ -186,7 +186,7 @@ Each table gets its own AAD context (`workspaceId:tableName:entryKey`). A value 
    - Options: (a) internal-only, just skip them, (b) expose `wrapper.quarantine` as a read-only map
    - **Recommendation**: (b) expose it. Table helpers could show a "N entries failed to decrypt" warning.
 
-3. **Should `onKeyChange` fire synthetic `add` events for all entries?**
+3. **Should `unlock()` / `lock()` fire synthetic `add` events for all entries?**
    - On a full rebuild, every entry in `wrapper.map` changes from possibly-wrong to decrypted.
    - Options: (a) fire `update` for changed entries only, (b) fire `add` for everything, (c) fire a single bulk event
    - **Recommendation**: (a) fire `update` only for entries whose decrypted value actually changed.
@@ -195,7 +195,7 @@ Each table gets its own AAD context (`workspaceId:tableName:entryKey`). A value 
 
 - [x] `set()` throws in `locked` mode, encrypts in `unlocked`, passes through in `plaintext`
 - [x] One corrupted blob does not prevent other entries from decrypting
-- [x] `onKeyChange` rebuilds the decrypted map and transitions mode correctly
+- [x] `unlock()` / `lock()` rebuilds the decrypted map and transitions mode correctly
 - [x] AAD mismatch causes decrypt failure (GCM auth tag verification)
 - [x] All existing tests pass (backward compatible—no AAD = same behavior)
 - [x] New tests cover mode transitions, error containment, key transition, and AAD
@@ -219,10 +219,10 @@ Implemented the full hardening spec across 4 phases in 4 incremental commits. Th
 ### Deviations from Spec
 
 - **Removed AAD wiring from wrapper**: The `workspaceId`, `tableName` options and `computeAad()` function were removed. AAD solves a near-theoretical problem in this architecture (CRDT entries don't move, per-workspace keys already namespace ciphertext). The AAD parameter support in `encryptValue`/`decryptValue` primitives is kept for future use.
-- **Single key path**: Removed the `key` polling bridge from `set()`. Keys arrive exclusively via `onKeyChange()` after creation. `key` is seeded at creation time. Clean break, no dual-path ambiguity.
+- **Single key path**: Removed the `key` polling bridge from `set()`. Keys arrive exclusively via `unlock()` and `lock()` after creation. `key` is seeded at creation time. Clean break, no dual-path ambiguity.
 - **Simplified mode transition**: Replaced the redundant `else if (mode === 'plaintext') { mode = 'plaintext' }` no-op with `else if (mode !== 'plaintext') { mode = 'locked' }`.
-- **Non-optional type members**: `mode`, `quarantine`, and `onKeyChange` are non-optional on `YKeyValueLwwEncrypted<T>` — clean break.
-- **Synthetic transaction**: `onKeyChange()` fires synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.
+- **Non-optional type members**: `mode`, `quarantine`, `lock()`, and `unlock()` are non-optional on `YKeyValueLwwEncrypted<T>` — clean break.
+- **Synthetic transaction**: `unlock()` and `lock()` fire synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.
 - **Comprehensive JSDoc restored**: All inline JSDoc stripped during Wave 2 has been restored to match original coverage depth, plus documentation for all new functions.
 - **Dropped oldValue from change events**: `YKeyValueLwwChange<T>` simplified from `{action, oldValue?, newValue?}` to `{action: 'add'|'update', newValue} | {action: 'delete'}`. No consumers used oldValue. Consumers that need it in the future can track previous values in a closure (5 lines). This eliminated 2 of 3 trySync blocks in the encrypted wrapper's observer, collapsing ~55 lines to ~20.
 - **Eliminated pending/pendingDeletes**: The wrapper no longer duplicates the inner CRDT's pending state. `get()` falls back to `inner.get()` + decrypt-on-the-fly during the transaction gap. `has()` is now consistent with `get()` for quarantined entries.

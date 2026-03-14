@@ -123,7 +123,9 @@ describe('encryptValue / decryptValue', () => {
 
 		// Decode ct, flip a byte in the nonce (first 12 bytes), re-encode
 		const packed = base64ToBytes(encrypted.ct);
-		packed[0] ^= 0xff;
+		if (packed.length === 0)
+			throw new Error('Expected nonce bytes in encrypted blob');
+		packed[0] = packed[0]! ^ 0xff;
 		const tamperedBlob: EncryptedBlob = {
 			...encrypted,
 			ct: bytesToBase64(packed),
@@ -131,6 +133,54 @@ describe('encryptValue / decryptValue', () => {
 
 		expect(() => {
 			decryptValue(tamperedBlob, key);
+		}).toThrow();
+	});
+
+	test('round-trip with AAD: encrypt and decrypt with same AAD succeeds', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key, aad);
+		const decrypted = decryptValue(encrypted, key, aad);
+
+		expect(decrypted).toBe(plaintext);
+	});
+
+	test('mismatched AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const encryptionAad = new TextEncoder().encode('workspace:123|user:456');
+		const decryptionAad = new TextEncoder().encode('workspace:123|user:789');
+
+		const encrypted = encryptValue(plaintext, key, encryptionAad);
+
+		expect(() => {
+			decryptValue(encrypted, key, decryptionAad);
+		}).toThrow();
+	});
+
+	test('encrypt with AAD, decrypt without AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key, aad);
+
+		expect(() => {
+			decryptValue(encrypted, key);
+		}).toThrow();
+	});
+
+	test('encrypt without AAD, decrypt with AAD throws', () => {
+		const key = generateEncryptionKey();
+		const plaintext = 'Hello, World!';
+		const aad = new TextEncoder().encode('workspace:123|user:456');
+
+		const encrypted = encryptValue(plaintext, key);
+
+		expect(() => {
+			decryptValue(encrypted, key, aad);
 		}).toThrow();
 	});
 });

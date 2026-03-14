@@ -102,6 +102,7 @@ function generateEncryptionKey(): Uint8Array {
  *
  * @param plaintext - The string to encrypt
  * @param key - A 32-byte Uint8Array encryption key
+ * @param aad - Optional additional authenticated data bound to ciphertext integrity
  * @returns An EncryptedBlob with base64-encoded nonce+ciphertext+tag
  *
  * @example
@@ -112,10 +113,15 @@ function generateEncryptionKey(): Uint8Array {
  * // { v: 1, ct: '...' }
  * ```
  */
-function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
-	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes (AES-256)');
+function encryptValue(
+	plaintext: string,
+	key: Uint8Array,
+	aad?: Uint8Array,
+): EncryptedBlob {
+	if (key.length !== 32)
+		throw new Error('Encryption key must be 32 bytes (AES-256)');
 	const nonce = randomBytes(12);
-	const cipher = gcm(key, nonce);
+	const cipher = aad ? gcm(key, nonce, aad) : gcm(key, nonce);
 	const data = new TextEncoder().encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
@@ -139,6 +145,7 @@ function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
  *
  * @param blob - An EncryptedBlob with base64-encoded nonce+ciphertext+tag
  * @param key - The 32-byte Uint8Array encryption key used to encrypt the blob
+ * @param aad - Optional additional authenticated data that must match encryption input
  * @returns The decrypted plaintext string
  * @throws If the authentication tag is invalid or decryption fails
  *
@@ -150,12 +157,17 @@ function encryptValue(plaintext: string, key: Uint8Array): EncryptedBlob {
  * console.log(decrypted); // 'secret data'
  * ```
  */
-function decryptValue(blob: EncryptedBlob, key: Uint8Array): string {
-	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes (AES-256)');
+function decryptValue(
+	blob: EncryptedBlob,
+	key: Uint8Array,
+	aad?: Uint8Array,
+): string {
+	if (key.length !== 32)
+		throw new Error('Encryption key must be 32 bytes (AES-256)');
 	const packed = base64ToBytes(blob.ct);
 	const nonce = packed.slice(0, 12);
 	const ciphertext = packed.slice(12);
-	const cipher = gcm(key, nonce);
+	const cipher = aad ? gcm(key, nonce, aad) : gcm(key, nonce);
 	const data = cipher.decrypt(ciphertext);
 
 	return new TextDecoder().decode(data);

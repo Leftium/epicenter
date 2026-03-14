@@ -127,9 +127,9 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 
 ### Phase 1: Encryption Primitives — AAD Support
 
-- [ ] **1.1** Update `encryptValue(plaintext, key, aad?)` — pass `aad` to `gcm(key, nonce, aad)`. When `aad` is undefined, behavior is identical to today.
-- [ ] **1.2** Update `decryptValue(blob, key, aad?)` — pass `aad` to `gcm(key, nonce, aad)`. Mismatched AAD causes GCM auth tag failure (throws).
-- [ ] **1.3** Update tests: add round-trip test with AAD, add test that mismatched AAD throws.
+- [x] **1.1** Update `encryptValue(plaintext, key, aad?)` — pass `aad` to `gcm(key, nonce, aad)`. When `aad` is undefined, behavior is identical to today.
+- [x] **1.2** Update `decryptValue(blob, key, aad?)` — pass `aad` to `gcm(key, nonce, aad)`. Mismatched AAD causes GCM auth tag failure (throws).
+- [x] **1.3** Update tests: add round-trip test with AAD, add test that mismatched AAD throws.
 
 ### Phase 2: Wrapper Hardening
 

@@ -149,6 +149,7 @@ export type {
 	BaseRow,
 	DeleteResult,
 	DocumentConfig,
+	DocumentContent,
 	DocumentHandle,
 	Documents,
 	DocumentsHelper,

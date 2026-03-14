@@ -34,14 +34,15 @@
  * });
  *
  * const handle = await contentDocuments.open(someRow);
- * const text = handle.read();
- * handle.write('new content');
+ * const text = handle.content.read();
+ * handle.content.write('new content');
  * ```
  *
  * @module
  */
 
 import * as Y from 'yjs';
+import { createTimeline } from '../content/timeline.js';
 import {
 	defineExtension,
 	type Extension,
@@ -49,6 +50,7 @@ import {
 } from './lifecycle.js';
 import type {
 	BaseRow,
+	DocumentContent,
 	DocumentExtensionRegistration,
 	DocumentHandle,
 	Documents,
@@ -91,31 +93,74 @@ type DocEntry = {
 /**
  * Create a lightweight handle wrapping an open Y.Doc and its resolved extensions.
  *
- * Handles are cheap (4 properties). The Y.Doc underneath is the expensive
+ * Handles are cheap (3 properties). The Y.Doc underneath is the expensive
  * shared resource. Calling `open()` twice returns fresh handles backed
  * by the same cached Y.Doc.
  *
- * The `exports` property on the handle surfaces the resolved extensions map
- * (each entry is `Extension<T>` with `whenReady`/`destroy` alongside custom exports).
+ * The `content` property provides timeline-backed read/write with automatic
+ * migration from legacy `Y.Text('content')` to `Y.Array('timeline')`.
  */
 function makeHandle(
 	ydoc: Y.Doc,
 	// biome-ignore lint/suspicious/noExplicitAny: runtime storage uses wide type
 	extensions: Record<string, Extension<any>>,
 ): DocumentHandle {
-	return {
-		ydoc,
-		exports: extensions,
+	const tl = createTimeline(ydoc);
+
+	/**
+	 * Migrate legacy Y.Text('content') data into the timeline on first access.
+	 * If the timeline is empty but Y.Text('content') has data, copy it into
+	 * a new timeline text entry inside a transaction (atomic, safe for concurrent calls).
+	 */
+	function migrateIfNeeded(): void {
+		if (tl.length > 0) return;
+		const legacyText = ydoc.getText('content');
+		if (legacyText.length === 0) return;
+		ydoc.transact(() => {
+			// Double-check inside transaction to prevent concurrent double-push
+			if (tl.length > 0) return;
+			tl.pushText(legacyText.toString());
+		});
+	}
+
+	const content: DocumentContent = {
 		read() {
-			return ydoc.getText('content').toString();
+			migrateIfNeeded();
+			return tl.readAsString();
 		},
 		write(text: string) {
-			const ytext = ydoc.getText('content');
-			ydoc.transact(() => {
-				ytext.delete(0, ytext.length);
-				ytext.insert(0, text);
-			});
+			migrateIfNeeded();
+			if (tl.currentMode === 'text') {
+				const ytext = tl.currentEntry?.get('content') as Y.Text;
+				ydoc.transact(() => {
+					ytext.delete(0, ytext.length);
+					ytext.insert(0, text);
+				});
+			} else {
+				ydoc.transact(() => tl.pushText(text));
+			}
 		},
+		getText() {
+			migrateIfNeeded();
+			const entry = tl.currentEntry;
+			if (!entry) return undefined;
+			if ((entry.get('type') as string) !== 'text') return undefined;
+			return entry.get('content') as Y.Text;
+		},
+		getFragment() {
+			migrateIfNeeded();
+			const entry = tl.currentEntry;
+			if (!entry) return undefined;
+			if ((entry.get('type') as string) !== 'richtext') return undefined;
+			return entry.get('content') as Y.XmlFragment;
+		},
+		timeline: tl,
+	};
+
+	return {
+		ydoc,
+		content,
+		exports: extensions,
 	};
 }
 

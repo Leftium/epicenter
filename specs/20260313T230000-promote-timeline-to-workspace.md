@@ -175,10 +175,10 @@ DocumentHandle
 
 ### Phase 2: Add `handle.content` to DocumentHandle
 
-- [ ] **2.1** Define `DocumentContent` type in `types.ts` — `read()`, `write(text)`, `getText()`, `getFragment()`, `timeline`.
-- [ ] **2.2** Add `content: DocumentContent` to `DocumentHandle` type. Remove `read()` and `write()` from the type.
-- [ ] **2.3** Update `makeHandle()` in `create-document.ts` — create timeline from ydoc, wire `content` property.
-- [ ] **2.4** Migration logic: if `Y.Array('timeline')` is empty but `Y.Text('content')` has data, copy text content into a new timeline text entry on first `content.read()`.
+- [x] **2.1** Define `DocumentContent` type in `types.ts` — `read()`, `write(text)`, `getText()`, `getFragment()`, `timeline`.
+- [x] **2.2** Add `content: DocumentContent` to `DocumentHandle` type. Remove `read()` and `write()` from the type.
+- [x] **2.3** Update `makeHandle()` in `create-document.ts` — create timeline from ydoc, wire `content` property.
+- [x] **2.4** Migration logic: if `Y.Array('timeline')` is empty but `Y.Text('content')` has data, copy text content into a new timeline text entry on first `content.read()`.
 
 ### Phase 3: Update consumers
 

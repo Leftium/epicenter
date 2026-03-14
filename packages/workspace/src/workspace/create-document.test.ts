@@ -96,12 +96,12 @@ describe('createDocuments', () => {
 		});
 	});
 
-	describe('handle read and write', () => {
+	describe('handle content read and write', () => {
 		test('read returns empty string for new doc', async () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			const text = handle.read();
+			const text = handle.content.read();
 			expect(text).toBe('');
 		});
 
@@ -109,8 +109,8 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.write('hello world');
-			const text = handle.read();
+			handle.content.write('hello world');
+			const text = handle.content.read();
 			expect(text).toBe('hello world');
 		});
 
@@ -118,9 +118,9 @@ describe('createDocuments', () => {
 			const { documents } = setup();
 
 			const handle = await documents.open('f1');
-			handle.write('first');
-			handle.write('second');
-			const text = handle.read();
+			handle.content.write('first');
+			handle.content.write('second');
+			const text = handle.content.read();
 			expect(text).toBe('second');
 		});
 	});

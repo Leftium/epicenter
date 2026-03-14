@@ -246,51 +246,74 @@ export type ClaimedDocumentColumns<
 	| TDocuments[keyof TDocuments]['updatedAt'];
 
 /**
+ * Content interface backed by the timeline (`Y.Array('timeline')`).
+ *
+ * Provides read/write access to document content through the timeline
+ * abstraction. This is the standard interface—apps should use `handle.content`
+ * instead of accessing raw shared types directly.
+ *
+ * @example
+ * ```typescript
+ * const handle = await documents.open(id);
+ * const text = handle.content.read();
+ * handle.content.write('hello');
+ * const ytext = handle.content.getText(); // for editor binding
+ * ```
+ */
+export type DocumentContent = {
+	/** Read the current content as a string. Returns '' if empty. */
+	read(): string;
+	/** Replace the document's text content via the timeline. */
+	write(text: string): void;
+	/**
+	 * Get the Y.Text from the current timeline entry for editor binding.
+	 * Returns undefined if no text entry exists.
+	 */
+	getText(): Y.Text | undefined;
+	/**
+	 * Get the Y.XmlFragment from the current timeline entry for richtext binding.
+	 * Returns undefined if no richtext entry exists.
+	 */
+	getFragment(): Y.XmlFragment | undefined;
+	/** Direct access to the timeline for advanced operations. */
+	timeline: import('../content/timeline.js').Timeline;
+};
+
+/**
  * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * All operations are scoped to this specific document. Content methods
- * (read, write) are synchronous because the Y.Doc is already open.
- * Exports are a property, not a function, because they belong to this doc.
+ * All operations are scoped to this specific document. The `content` property
+ * provides timeline-backed read/write methods—this is the standard interface
+ * for all content operations.
  *
- * **Content model warning**: `read()` and `write()` operate on a raw
- * `Y.Text('content')` shared type, which is NOT the same as the filesystem's
- * timeline (`Y.Array('timeline')`). If your app uses the filesystem package,
- * prefer `fs.content.read()`/`fs.content.write()` instead. Direct `handle.ydoc`
- * access for content (e.g. `handle.ydoc.getText('content')`) is also discouraged—
- * use `createTimeline(handle.ydoc)` from `@epicenter/filesystem` instead.
- *
- * See `specs/20260313T224500-unify-document-content-model.md` for the unification plan.
+ * @example
+ * ```typescript
+ * const handle = await documents.open(id);
+ * handle.content.read();           // read from timeline
+ * handle.content.write('hello');    // write to timeline
+ * handle.content.getText();         // Y.Text for editor binding
+ * handle.content.getFragment();     // Y.XmlFragment for richtext
+ * handle.content.timeline;          // escape hatch for advanced ops
+ * ```
  */
 export type DocumentHandle = {
 	/**
 	 * The underlying Y.Doc for this document.
 	 *
 	 * Use for genuinely custom shared types (awareness, cursors, non-content data).
-	 * For content operations, prefer the filesystem's timeline-backed helpers
-	 * (`fs.content.read/write` or `createTimeline(ydoc)`) over raw shared type
-	 * access like `ydoc.getText('content')` or `ydoc.getXmlFragment('content')`.
+	 * For content operations, use `handle.content` instead of accessing raw shared
+	 * types like `ydoc.getText('content')` or `ydoc.getXmlFragment('content')`.
 	 */
 	ydoc: Y.Doc;
 
 	/**
-	 * Read the document's text content from `ydoc.getText('content')`.
+	 * Timeline-backed content interface.
 	 *
-	 * **Warning**: This reads from a raw `Y.Text('content')` shared type, NOT the
-	 * filesystem's timeline. If your app uses `@epicenter/filesystem`, prefer
-	 * `fs.content.read(id)` which reads from the timeline. This method will be
-	 * unified with the timeline in a future version.
+	 * The standard way to read/write document content. Backed by the timeline
+	 * (`Y.Array('timeline')`) which supports text, richtext, binary, and sheet
+	 * content modes.
 	 */
-	read(): string;
-
-	/**
-	 * Replace the document's text content in `ydoc.getText('content')`.
-	 *
-	 * **Warning**: This writes to a raw `Y.Text('content')` shared type, NOT the
-	 * filesystem's timeline. If your app uses `@epicenter/filesystem`, prefer
-	 * `fs.content.write(id, text)` which writes to the timeline. This method will
-	 * be unified with the timeline in a future version.
-	 */
-	write(text: string): void;
+	content: DocumentContent;
 
 	/**
 	 * Per-doc extension exports, keyed by extension name.
@@ -322,8 +345,8 @@ export type DocumentHandle = {
  * handle.ydoc.getText('body').insert(0, 'hello');
  * // updatedAt on the row is bumped automatically
  *
- * const text = handle.read();
- * handle.write('new content');
+ * const text = handle.content.read();
+ * handle.content.write('new content');
  * await documents.close(row);
  * ```
  */

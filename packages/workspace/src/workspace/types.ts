@@ -11,6 +11,9 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
+import type { ContentMode } from '../timeline/entries.js';
+import type { SheetBinding } from '../timeline/richtext.js';
+import type { Timeline } from '../timeline/timeline.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -265,7 +268,7 @@ export type DocumentHandle = {
 	ydoc: Y.Doc;
 
 	/** Current content mode, or undefined if timeline is empty. */
-	readonly mode: import('../timeline/entries.js').ContentMode | undefined;
+	readonly mode: ContentMode | undefined;
 
 	/** Read current content as string. Always succeeds. Text/richtext/sheet all flatten. */
 	read(): string;
@@ -313,10 +316,10 @@ export type DocumentHandle = {
 	 * If already sheet mode, returns existing columns and rows. If empty,
 	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
 	 */
-	asSheet(): import('../timeline/richtext.js').SheetBinding;
+	asSheet(): SheetBinding;
 
 	/** Direct access to the timeline for advanced operations. */
-	timeline: import('../timeline/timeline.js').Timeline;
+	timeline: Timeline;
 	/** Batch mutations into a single Yjs transaction. */
 	batch(fn: () => void): void;
 	/** Per-doc extension exports. */

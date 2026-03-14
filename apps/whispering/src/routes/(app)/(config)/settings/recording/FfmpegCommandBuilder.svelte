@@ -505,12 +505,12 @@
 	<!-- Right Panel: Live Preview -->
 	<div class="flex flex-col h-full">
 		<div class="rounded-lg border bg-muted/30 flex-1 flex flex-col">
-			<div class="p-4 border-b bg-background/50">
-				<h5 class="text-sm font-medium">Command Preview</h5>
-				<p class="text-xs text-muted-foreground mt-0.5">
+			<SectionHeader.Root class="p-4 border-b bg-background/50">
+				<SectionHeader.Title level={5} class="font-medium">Command Preview</SectionHeader.Title>
+				<SectionHeader.Description class="text-xs">
 					Live updates as you modify settings
-				</p>
-			</div>
+				</SectionHeader.Description>
+			</SectionHeader.Root>
 
 			<div class="flex-1 p-4 overflow-auto">
 				<div

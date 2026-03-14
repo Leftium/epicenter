@@ -69,6 +69,27 @@ export { generateGuid, generateId, Id as createId } from './shared/id';
 
 export type { DateIsoString, TimezoneId } from './shared/datetime-string';
 export { DateTimeString, dateTimeStringNow } from './shared/datetime-string';
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONTENT (Timeline)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type {
+	BinaryEntry,
+	ContentMode,
+	RichTextEntry,
+	SheetEntry,
+	TextEntry,
+	TimelineEntry,
+} from './content';
+export {
+	computeMidpoint,
+	createTimeline,
+	generateInitialOrders,
+	parseSheetFromCsv,
+	serializeSheetToCsv,
+	type Timeline,
+} from './content';
 // ════════════════════════════════════════════════════════════════════════════
 // Y.DOC STORAGE KEYS
 // ════════════════════════════════════════════════════════════════════════════

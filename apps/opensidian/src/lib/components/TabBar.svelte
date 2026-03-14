@@ -44,7 +44,7 @@
 				{#if row}
 					<Tabs.Trigger
 						value={fileId}
-						class="relative flex-none rounded-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-accent data-[state=active]:text-accent-foreground data-[state=active]:shadow-none"
+						class="relative flex-none rounded-none border-0 text-muted-foreground hover:bg-accent hover:text-accent-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground data-[state=active]:shadow-none"
 						onauxclick={(e) => handleAuxClick(e, fileId)}
 					>
 						<span class="mr-4">{row.name}</span>

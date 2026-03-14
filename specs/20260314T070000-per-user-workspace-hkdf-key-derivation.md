@@ -132,9 +132,9 @@ This is acceptable because:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key derivation (server) | `HKDF(SHA-256(WORKSPACE_KEY_SECRET), "user:{userId}:v1")` | Per-user key. Deterministic, no storage. Version label enables future format changes. |
+| Key derivation (server) | `HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}:v1")` | Per-user key. Deterministic, no storage. Version label enables future format changes. |
 | Key derivation (client) | `HKDF(userKey, "workspace:{wsId}:v1")` | Per-workspace key derived locally. No network call needed. |
-| Separate secret | `WORKSPACE_KEY_SECRET` env var (not `BETTER_AUTH_SECRET`) | Decouples auth rotation from encryption. Cheap hygiene—one extra env var. |
+| ~~Separate secret~~ | Uses `BETTER_AUTH_SECRET` directly | Originally proposed as `WORKSPACE_KEY_SECRET` to decouple auth rotation from encryption. Dropped because: (1) auth secret rotation is a breach scenario requiring full data reset anyway, (2) the HKDF info label (`user:{userId}:v1`) already domain-separates encryption from auth, and (3) one fewer env var to manage. |
 | Key delivery | `customSession` plugin (same as today) | User key travels in the session response. No new endpoint. Identical wiring pattern. |
 | Client-side HKDF | Web Crypto `crypto.subtle.deriveBits` | Available in all targets: browser, Cloudflare Workers, Tauri (WebView). |
 | Sharing strategy | Deferred to Phase 2 | Per-user keys don't support shared CRDTs. When sharing ships, shared rooms get workspace-level keys. |
@@ -382,17 +382,17 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 
 ## Success Criteria
 
-- [ ] Each user gets a unique key per workspace via two-level HKDF
-- [ ] Keys are derived deterministically (not stored in any database)
-- [ ] `WORKSPACE_KEY_SECRET` is separate from `BETTER_AUTH_SECRET`
-- [ ] Session carries per-user key (not deployment-wide key)
-- [ ] Client derives per-workspace key locally via Web Crypto HKDF
-- [ ] All existing tests pass, typecheck clean, apps build
-- [ ] Blast radius = one user's data per compromised session
+- [x] Each user gets a unique key per workspace via two-level HKDF
+- [x] Keys are derived deterministically (not stored in any database)
+- [x] ~~`WORKSPACE_KEY_SECRET` is separate from `BETTER_AUTH_SECRET`~~ — Uses `BETTER_AUTH_SECRET` directly. See Design Decisions table for rationale.
+- [x] Session carries per-user key (not deployment-wide key)
+- [x] Client derives per-workspace key locally via Web Crypto HKDF
+- [x] All existing tests pass, typecheck clean, apps build
+- [x] Blast radius = one user's data per compromised session
 
 ## References
 
-- `apps/api/src/app.ts` — current `deriveKeyFromSecret` and `customSession` (to be replaced)
+- `apps/api/src/app.ts` — `deriveUserKey` and `customSession` (per-user HKDF key in session)
 - `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (add `deriveWorkspaceKey`)
 - `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (unchanged, used for session key caching)
 - `specs/20260314T063000-encryption-wrapper-hardening.md` — prerequisite (mode system, AAD, error containment)

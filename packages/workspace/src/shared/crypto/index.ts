@@ -33,11 +33,12 @@
  *
  * ## Key Sources
  *
- * | Mode            | Key derivation                           | Server decrypts? |
- * |-----------------|------------------------------------------|------------------|
- * | Cloud (SaaS)    | SHA-256(BETTER_AUTH_SECRET)               | Yes              |
- * | Self-hosted     | PBKDF2(password, salt, 600k iterations)  | No (zero-knowledge) |
- * | No auth / local | key: undefined → passthrough             | N/A              |
+ * | Mode            | Key derivation                                              | Server decrypts? |
+ * |-----------------|-------------------------------------------------------------|------------------|
+ * | Cloud (SaaS)    | HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}:v1")       | Yes              |
+ * |                 | → per-user key in session; client HKDF → per-workspace key  |                  |
+ * | Self-hosted     | Same HKDF hierarchy, your secret                            | Only you         |
+ * | No auth / local | key: undefined → passthrough                                | N/A              |
  *
  * ## Related Modules
  *

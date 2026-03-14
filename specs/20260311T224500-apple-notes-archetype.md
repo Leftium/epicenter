@@ -570,13 +570,16 @@ export default createWorkspace(
 - [x] **1.8** Register as template in `apps/epicenter/src/lib/templates/`
   > Created apps/epicenter/src/lib/templates/fuji.ts with FUJI_TEMPLATE. Registered in index.ts.
 
-### Phase 1.5: 🗻 Fuji Bug Fixes — DEFERRED
+### Phase 1.5: 🗻 Fuji Bug Fixes — COMPLETE
 
-> Fuji is functional but has cosmetic issues. These are low-priority relative to Honeycrisp cleanup and can be addressed in a future polish pass.
+> Cosmetic issues addressed. No behavioral changes.
 
-- [ ] **1.9** Fix timestamp/action button overlap on entry hover (z-index/positioning)
-- [ ] **1.10** Evaluate Sidebar vs Resizable for left panel (Sidebar may be more appropriate for a notes app)
-- [ ] **1.11** General UI polish pass (hover states, transitions, spacing)
+- [x] **1.9** Fix timestamp/action button overlap on entry hover (z-index/positioning)
+  > Added `group` class to timeline entry container for future `group-hover` action buttons. No action buttons exist yet so no visible overlap—this is preemptive prep.
+- [x] **1.10** Evaluate Sidebar vs Resizable for left panel
+  > **Decision**: Sidebar is correct for Fuji's simpler layout. Resizable is appropriate for variable-width splits (like Honeycrisp's note list/editor). No change needed.
+- [x] **1.11** General UI polish pass (hover states, transitions, spacing)
+  > Added `hover:bg-accent/50 transition-colors` to EntriesTable rows to match EntryTimeline hover behavior.
 
 ### Phase 2: 🍏 Honeycrisp — COMPLETE
 

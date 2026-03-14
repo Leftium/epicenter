@@ -32,7 +32,7 @@
 	}
 
 	// ── Collect all files recursively (only when palette is open) ────
-	type FileEntry = { id: FileId; name: string; path: string };
+	type FileEntry = { id: FileId; name: string; parentDir: string };
 
 	const allFiles = $derived.by((): FileEntry[] => {
 		if (!open) return [];
@@ -44,10 +44,13 @@
 				const row = fsState.getRow(childId);
 				if (!row) continue;
 				if (row.type === 'file') {
+					const fullPath = fsState.getPathForId(childId) ?? '';
+					const lastSlash = fullPath.lastIndexOf('/');
+					const parentDir = lastSlash > 0 ? fullPath.slice(1, lastSlash) : '';
 					files.push({
 						id: childId,
 						name: row.name,
-						path: fsState.getPathForId(childId) ?? '',
+						parentDir,
 					});
 				} else if (row.type === 'folder') {
 					collect(childId);
@@ -127,9 +130,11 @@
 					{@const Icon = getFileIcon(file.name)}
 					<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
 					<span>{file.name}</span>
-					<span class="ml-auto text-xs truncate text-muted-foreground">
-						{file.path}
-					</span>
+					{#if file.parentDir}
+						<span class="ml-auto text-xs truncate text-muted-foreground">
+							{file.parentDir}
+						</span>
+					{/if}
 				</Command.Item>
 			{/each}
 		</Command.Group>

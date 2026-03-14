@@ -176,7 +176,7 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 - [x] **1.1** Build `TabBar.svelte` using `Tabs` from `@epicenter/ui/tabs`
 - [x] **1.2** Wire tab state to `fsState.openFileIds` / `fsState.activeFileId`
-- [x] **1.3** Add close button on tabs, dirty indicator
+- [x] **1.3** Add close button on tabs (dirty indicator removed—no save concept in CRDT-backed storage)
 - [x] **1.4** Build `CommandPalette.svelte` using `Command` from `@epicenter/ui/command`
 - [x] **1.5** Implement file-name search (no SQLite dependency)
 - [x] **1.6** Add `Ctrl+K` / `Cmd+K` keyboard shortcut to open palette

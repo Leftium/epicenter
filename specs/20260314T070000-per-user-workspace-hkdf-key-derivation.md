@@ -251,10 +251,10 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ### Phase 1: Server — HKDF in customSession
 
-- [ ] **1.1** Add `WORKSPACE_KEY_SECRET` env var to `wrangler.jsonc` and local dev config. Separate from `BETTER_AUTH_SECRET`.
-- [ ] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}:v1") }, 256)`.
-- [ ] **1.3** Replace `deriveKeyFromSecret(env.BETTER_AUTH_SECRET)` call in `customSession` with `deriveUserKey(env.WORKSPACE_KEY_SECRET, user.id)`. Session still returns `encryptionKey: bytesToBase64(userKey)`.
-- [ ] **1.4** Remove old `deriveKeyFromSecret` function (replaced by `deriveUserKey`).
+- [x] **1.1** ~~Add `WORKSPACE_KEY_SECRET` env var~~ — Skipped: using `BETTER_AUTH_SECRET` directly (no new env var).
+- [x] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}:v1") }, 256)`.
+- [x] **1.3** Replace `deriveKeyFromSecret(env.BETTER_AUTH_SECRET)` call in `customSession` with `deriveUserKey(env.BETTER_AUTH_SECRET, user.id)`. Session still returns `encryptionKey: bytesToBase64(userKey)`.
+- [x] **1.4** Remove old `deriveKeyFromSecret` function (replaced by `deriveUserKey`).
 
 ### Phase 2: Client — Local Workspace Key Derivation
 

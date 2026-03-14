@@ -58,13 +58,37 @@ export const BASE_AUTH_CONFIG = {
 	},
 };
 
-/** Derive a deterministic 32-byte AES-256 key from the auth secret via SHA-256. */
-async function deriveKeyFromSecret(secret: string): Promise<Uint8Array> {
-	const hash = await crypto.subtle.digest(
+/**
+ * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
+ *
+ * 1. SHA-256 the secret to get high-entropy root key material.
+ * 2. Import as HKDF key and derive 256 bits with info="user:{userId}:v1".
+ *
+ * Same inputs always produce the same key — deterministic, no storage needed.
+ */
+async function deriveUserKey(secret: string, userId: string): Promise<Uint8Array> {
+	const rawKey = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(secret),
 	);
-	return new Uint8Array(hash);
+	const hkdfKey = await crypto.subtle.importKey(
+		'raw',
+		rawKey,
+		'HKDF',
+		false,
+		['deriveBits'],
+	);
+	const derivedBits = await crypto.subtle.deriveBits(
+		{
+			name: 'HKDF',
+			hash: 'SHA-256',
+			salt: new Uint8Array(0),
+			info: new TextEncoder().encode(`user:${userId}:v1`),
+		},
+		hkdfKey,
+		256,
+	);
+	return new Uint8Array(derivedBits);
 }
 
 /** Convert bytes to base64 string for JSON transport. */
@@ -89,7 +113,7 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveKeyFromSecret(env.BETTER_AUTH_SECRET);
+				const encryptionKey = await deriveUserKey(env.BETTER_AUTH_SECRET, user.id);
 				return {
 					user,
 					session,

@@ -4,6 +4,11 @@ description: Svelte 5 patterns including TanStack Query mutations, shadcn-svelte
 ---
 
 # Svelte Guidelines
+## Reference Repositories
+
+- [Svelte](https://github.com/sveltejs/svelte) — Svelte 5 framework with runes and fine-grained reactivity
+- [shadcn-svelte](https://github.com/huntabyte/shadcn-svelte) — Port of shadcn/ui for Svelte with Bits UI primitives
+- [shadcn-svelte-extras](https://github.com/ieedan/shadcn-svelte-extras) — Additional components for shadcn-svelte
 
 # `$derived` Value Mapping: Use `satisfies Record`, Not Ternaries
 

@@ -5,6 +5,11 @@ description: Monorepo script commands and conventions for this codebase. Use whe
 
 # Script Commands
 
+## Reference Repositories
+
+- [jsrepo](https://github.com/jsrepojs/jsrepo) — Package distribution for monorepos
+- [WXT](https://github.com/wxt-dev/wxt) — Browser extension framework (used by tab-manager app)
+
 The monorepo uses consistent script naming conventions:
 
 | Command            | Purpose                                        | When to use |

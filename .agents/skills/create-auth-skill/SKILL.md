@@ -5,6 +5,10 @@ description: Scaffold and implement authentication in TypeScript/JavaScript apps
 
 # Create Auth Skill
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 Guide for adding authentication to TypeScript/JavaScript applications using Better Auth.
 
 **For code examples and syntax, see [better-auth.com/docs](https://better-auth.com/docs).**

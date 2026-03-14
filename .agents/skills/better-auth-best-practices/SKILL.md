@@ -5,6 +5,10 @@ description: Configure Better Auth server and client, set up database adapters, 
 
 # Better Auth Integration Guide
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 **Always consult [better-auth.com/docs](https://better-auth.com/docs) for code examples and latest API.**
 
 ---

@@ -4,6 +4,10 @@ description: Drizzle ORM patterns for type branding and custom types. Use when w
 ---
 
 # Drizzle ORM Guidelines
+## Reference Repositories
+
+- [Drizzle ORM](https://github.com/drizzle-team/drizzle-orm) — TypeScript ORM with SQL-like query builder
+- [Turso](https://github.com/tursodatabase/turso) — Edge-hosted LibSQL database (Epicenter's database)
 
 ## Use $type<T>() for Branded Strings, Not customType
 

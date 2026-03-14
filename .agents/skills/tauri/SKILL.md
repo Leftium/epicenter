@@ -4,6 +4,9 @@ description: Tauri path handling, cross-platform file operations, and API usage.
 ---
 
 # Tauri Path Handling
+## Reference Repositories
+
+- [Tauri](https://github.com/tauri-apps/tauri) — Desktop app framework with Rust backend and web frontend
 
 ## Context Detection
 

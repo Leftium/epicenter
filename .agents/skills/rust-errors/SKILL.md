@@ -4,6 +4,9 @@ description: Rust to TypeScript error handling patterns for Tauri apps. Use when
 ---
 
 # Rust to TypeScript Error Handling
+## Reference Repositories
+
+- [Tauri](https://github.com/tauri-apps/tauri) — Desktop app framework (source of Rust-to-TypeScript error patterns)
 
 ## Discriminated Union Pattern for Errors
 

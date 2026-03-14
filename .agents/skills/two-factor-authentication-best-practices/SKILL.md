@@ -5,6 +5,10 @@ description: Configure TOTP authenticator apps, send OTP codes via email/SMS, ma
 
 ## Setup
 
+## Reference Repositories
+
+- [Better Auth](https://github.com/better-auth/better-auth) — TypeScript authentication framework with plugins
+
 1. Add `twoFactor()` plugin to server config with `issuer`
 2. Add `twoFactorClient()` plugin to client config
 3. Run `npx @better-auth/cli migrate`

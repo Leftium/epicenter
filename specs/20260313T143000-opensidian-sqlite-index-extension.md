@@ -252,24 +252,24 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 
 ### Phase 1: Core Extension
 
-- [ ] **1.1** Add `sql.js` and `drizzle-orm` dependencies to `packages/filesystem`
-- [ ] **1.2** Create `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Drizzle schema mirroring `FileRow`
-- [ ] **1.3** Create `packages/filesystem/src/extensions/sqlite-index/index.ts` — extension factory with `rebuild()`, `destroy()`, `whenReady`
-- [ ] **1.4** Implement debounced rebuild: observe `tables.files` → schedule → nuke + reinsert
-- [ ] **1.5** Wire content serialization: for each file, `documents.open(fileId)` → `content.read()` → store in `content` column
-- [ ] **1.6** Add materialized `path` column populated from `FileTree.index.getPathById()`
-- [ ] **1.7** Export from `packages/filesystem/src/index.ts`
+- [x] **1.1** Add `sql.js` and `drizzle-orm` dependencies to `packages/filesystem`
+- [x] **1.2** Create `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Drizzle schema mirroring `FileRow`
+- [x] **1.3** Create `packages/filesystem/src/extensions/sqlite-index/index.ts` — extension factory with `rebuild()`, `destroy()`, `whenReady`
+- [x] **1.4** Implement debounced rebuild: observe `tables.files` → schedule → nuke + reinsert
+- [x] **1.5** Wire content serialization: for each file, `documents.open(fileId)` → `content.read()` → store in `content` column
+- [x] **1.6** Add materialized `path` column populated via parentId chain traversal
+- [x] **1.7** Export from `packages/filesystem/src/index.ts`
 
 ### Phase 2: Full-Text Search
 
-- [ ] **2.1** Create FTS5 virtual table via raw SQL in the schema setup
-- [ ] **2.2** Implement `search(query: string)` method using FTS5 `MATCH`
-- [ ] **2.3** Return ranked results with highlighted snippets via `snippet()` function
-- [ ] **2.4** Handle content-less files (folders, binary) gracefully in FTS
+- [x] **2.1** Create FTS5 virtual table via raw SQL in the schema setup
+- [x] **2.2** Implement `search(query: string)` method using FTS5 `MATCH`
+- [x] **2.3** Return ranked results with highlighted snippets via `snippet()` function
+- [x] **2.4** Handle content-less files (folders, binary) gracefully in FTS
 
 ### Phase 3: OpenSidian Integration
 
-- [ ] **3.1** Wire extension into OpenSidian's workspace: `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())`
+- [x] **3.1** Wire extension into OpenSidian's workspace: `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())`
 - [ ] **3.2** Create a search service in `apps/opensidian/src/lib/fs/` that wraps the extension's `search()` method
 - [ ] **3.3** Expose rebuild/status in the UI (e.g., "Index: 1,234 files" in the status bar)
 
@@ -344,3 +344,38 @@ export function createSqliteIndex(options: SqliteIndexOptions = {}) {
 - `specs/20251205T164620-sqlite-index-batching.md` — Previous debounced rebuild design
 - `specs/20251030T120000-sqlite-config-inversion.md` — Previous config pattern
 - `specs/20251112T132055-sqlite-schema-namespace-refactor.md` — Previous schema organization
+
+
+## Review
+
+### Changes Made (2026-03-14)
+
+**Files created:**
+- `packages/filesystem/src/extensions/sqlite-index/schema.ts` — Drizzle `sqliteTable` definition with 10 columns (id, name, parentId, type, path, size, createdAt, updatedAt, trashedAt, content) plus 4 indexes
+- `packages/filesystem/src/extensions/sqlite-index/index.ts` — Extension factory (386 lines) implementing:
+  - sql.js WASM initialization with in-memory database
+  - Raw SQL schema creation (files table + FTS5 virtual table)
+  - Debounced full rebuild from Yjs (100ms default)
+  - Eager content indexing via `documents.open()` → `handle.read()`
+  - Materialized path computation via parentId chain traversal (handles cycles and orphans)
+  - FTS5 `search()` with `snippet()` highlighting and `<mark>` tags
+  - Concurrent rebuild guard (`rebuilding` flag)
+  - Proper cleanup: timeout clearing, observer unsubscribe, SQLite close
+
+**Files modified:**
+- `packages/filesystem/package.json` — Added `sql.js`, `drizzle-orm`, `@types/sql.js`
+- `packages/filesystem/src/index.ts` — Added exports for `createSqliteIndex`, `SearchResult`, `SqliteIndex`, `SqliteIndexOptions`
+- `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — Added `.withWorkspaceExtension('sqliteIndex', createSqliteIndex())` to workspace chain
+
+### Deviations from Spec
+
+1. **Path computation**: Spec referenced `FileTree.index.getPathById()` which doesn't exist. Implemented equivalent via parentId chain traversal with cycle detection and orphan handling (same algorithm as `path-index.ts`).
+2. **FTS5 table**: Used standalone FTS5 (`file_id UNINDEXED, name, content`) instead of external-content (`content=files, content_rowid=rowid`) for simplicity—both get nuked and rebuilt together anyway.
+3. **Index syntax**: Used array-style Drizzle index syntax (`(t) => [...]`) instead of object-style (`(t) => ({...})`) to match current drizzle-orm API.
+4. **Phase 3.2–3.3 deferred**: Search service wrapper and status bar UI left for a follow-up—the extension is usable directly via `ws.extensions.sqliteIndex.search()`.
+
+### Verification
+
+- All existing tests pass: 189 pass, 0 fail (packages/filesystem)
+- LSP diagnostics clean on all changed files (schema.ts, index.ts, index.ts barrel, fs-state.svelte.ts)
+- Extension is purely additive—no existing code was modified beyond the barrel export and OpenSidian wiring

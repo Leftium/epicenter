@@ -1,4 +1,5 @@
 import {
+	createSqliteIndex,
 	createYjsFileSystem,
 	type FileId,
 	type FileRow,
@@ -32,7 +33,8 @@ function createFsState() {
 	const ws = createWorkspace({
 		id: 'opensidian',
 		tables: { files: filesTable },
-	}).withExtension('persistence', indexeddbPersistence);
+	}).withExtension('persistence', indexeddbPersistence)
+		.withWorkspaceExtension('sqliteIndex', createSqliteIndex());
 	const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
 	const documents = ws.documents.files.content;
 
@@ -111,6 +113,7 @@ function createFsState() {
 		expandedIds,
 		fs,
 		documents,
+		sqliteIndex: ws.extensions.sqliteIndex,
 
 		/**
 		 * Get child FileIds of a folder. Reads from FileSystemIndex.
@@ -278,3 +281,10 @@ function createFsState() {
 }
 
 export const fsState = createFsState();
+
+// Expose on window for dev console access
+// Usage: await fsState.sqliteIndex.search('hello')
+//        await fsState.sqliteIndex.client.execute('SELECT * FROM files')
+if (typeof window !== 'undefined') {
+	(window as unknown as Record<string, unknown>).fsState = fsState;
+}

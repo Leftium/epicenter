@@ -77,7 +77,7 @@
  * The wrapper does NOT maintain its own pending/pendingDeletes maps. The inner
  * `YKeyValueLww` handles all pending logic. During the transaction gap (after
  * `set()` but before the observer fires), `get()` falls back to `inner.get()`
- * and decrypts on the fly. AES-GCM decrypt of a small JSON blob is microseconds—
+ * and decrypts on the fly. XChaCha20-Poly1305 decrypt of a small JSON blob is microseconds—
  * caching this in a separate pending map is unnecessary indirection.
  *
  * ## Error Containment
@@ -152,7 +152,7 @@ export type YKeyValueLwwEncrypted<T> = {
 	 * from `inner.map`, retries quarantined entries, transitions to `unlocked`
 	 * mode, and fires synthetic change events for any values that changed.
 	 *
-	 * @param key - A 32-byte AES-256 encryption key (required)
+	 * @param key - A 32-byte encryption key (required)
 	 */
 	unlock(key: Uint8Array): void;
 
@@ -399,7 +399,7 @@ export function createEncryptedYkvLww<T>(
 		 * Get a decrypted value by key. O(1) via wrapper.map cache when
 		 * the observer has processed the entry. Falls back to decrypting
 		 * `inner.get()` on the fly during the transaction gap (after set()
-		 * but before observer fires). AES-GCM decrypt is microseconds.
+		 * but before observer fires). XChaCha20-Poly1305 decrypt is microseconds.
 		 */
 		get(key) {
 			// Fast path: check decrypted cache (covers post-observer reads)
@@ -474,7 +474,7 @@ export function createEncryptedYkvLww<T>(
 		 * from scratch, retries quarantined entries, and fires synthetic
 		 * change events for any values that changed.
 		 *
-		 * @param nextKey - A 32-byte AES-256 encryption key
+		 * @param nextKey - A 32-byte encryption key
 		 */
 		unlock(nextKey) {
 			currentKey = nextKey;

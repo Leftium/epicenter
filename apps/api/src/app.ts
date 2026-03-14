@@ -62,13 +62,15 @@ export const BASE_AUTH_CONFIG = {
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
  *
  * 1. SHA-256 the secret to get high-entropy root key material.
- * 2. Import as HKDF key and derive 256 bits with info="user:{userId}:v1".
+ * 2. Import as HKDF key and derive 256 bits with info="user:{userId}".
  *
  * Same inputs always produce the same key—deterministic, no storage needed.
  *
- * The `v1` in the info string is the blob format version. If the derivation
- * scheme or encryption algorithm ever changes, bump this to `v2` to produce
- * new independent keys while old blobs remain decryptable with the v1 key.
+ * The info string is a domain-separation label for HKDF (RFC 5869 §3.2),
+ * not a version identifier. If the derivation scheme ever changes (hash
+ * algorithm, salt policy), the blob format version handles migration—not
+ * the info string. Vault Transit, Signal Protocol, libsodium, and AWS KMS
+ * all use unversioned derivation context strings.
  */
 async function deriveUserKey(secret: string, userId: string): Promise<Uint8Array> {
 	const rawKey = await crypto.subtle.digest(
@@ -87,7 +89,8 @@ async function deriveUserKey(secret: string, userId: string): Promise<Uint8Array
 			name: 'HKDF',
 			hash: 'SHA-256',
 			salt: new Uint8Array(0),
-			info: new TextEncoder().encode(`user:${userId}:v1`),
+			info: new TextEncoder().encode(`user:${userId}`),
+
 		},
 		hkdfKey,
 		256,

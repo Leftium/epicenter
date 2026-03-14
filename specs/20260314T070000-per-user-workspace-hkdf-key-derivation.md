@@ -45,7 +45,7 @@ customSession(async ({ user, session }) => {
 
 // Client: derives per-workspace key locally, no fetch needed
 const userKey = base64ToBytes(session.encryptionKey);
-const wsKey = await hkdfDerive(userKey, `workspace:${workspaceId}:v1`);
+const wsKey = await hkdfDerive(userKey, `workspace:${workspaceId}`);
 workspace.unlock(wsKey);
 ```
 
@@ -65,12 +65,12 @@ NEW: Two-Level HKDF — one secret, unique key per user per workspace
          │  SHA-256 → root key material (never leaves server)
          │
     ┌────┴─────────────────────┐
-    │  Level 1: SERVER         │  HKDF(root, "user:{userId}:v1")
+    │  Level 1: SERVER         │  HKDF(root, "user:{userId}")
     │  Per-user key            │  Sent in session response
     └────┬─────────────────────┘
          │
     ┌────┴─────────────────────┐
-    │  Level 2: CLIENT         │  HKDF(userKey, "workspace:{wsId}:v1")
+    │  Level 2: CLIENT         │  HKDF(userKey, "workspace:{wsId}")
     │  Per-workspace key       │  Derived locally, never sent over network
     └──────────────────────────┘
 ```
@@ -132,9 +132,9 @@ This is acceptable because:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key derivation (server) | `HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}:v1")` | Per-user key. Deterministic, no storage. Version label enables future format changes. |
-| Key derivation (client) | `HKDF(userKey, "workspace:{wsId}:v1")` | Per-workspace key derived locally. No network call needed. |
-| ~~Separate secret~~ | Uses `BETTER_AUTH_SECRET` directly | Originally proposed as `WORKSPACE_KEY_SECRET` to decouple auth rotation from encryption. Dropped because: (1) auth secret rotation is a breach scenario requiring full data reset anyway, (2) the HKDF info label (`user:{userId}:v1`) already domain-separates encryption from auth, and (3) one fewer env var to manage. |
+| Key derivation (server) | `HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}")` | Per-user key. Deterministic, no storage. |
+| Key derivation (client) | `HKDF(userKey, "workspace:{wsId}")` | Per-workspace key derived locally. No network call needed. |
+| ~~Separate secret~~ | Uses `BETTER_AUTH_SECRET` directly | Originally proposed as `WORKSPACE_KEY_SECRET` to decouple auth rotation from encryption. Dropped because: (1) auth secret rotation is a breach scenario requiring full data reset anyway, (2) the HKDF info label already domain-separates encryption from auth, and (3) one fewer env var to manage. |
 | Key delivery | `customSession` plugin (same as today) | User key travels in the session response. No new endpoint. Identical wiring pattern. |
 | Client-side HKDF | Web Crypto `crypto.subtle.deriveBits` | Available in all targets: browser, Cloudflare Workers, Tauri (WebView). |
 | Sharing strategy | Deferred to Phase 2 | Per-user keys don't support shared CRDTs. When sharing ships, shared rooms get workspace-level keys. |
@@ -153,7 +153,7 @@ WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
        │  SHA-256(secret) → root key material (32 bytes)
        │  (stays on server, never sent to client)
        │
-       │  HKDF(root, info="user:{userId}:v1") → per-user key (32 bytes)
+       │  HKDF(root, info="user:{userId}") → per-user key (32 bytes)
        ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  Session Response                                              │
@@ -164,7 +164,7 @@ WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
                                │  Client decodes base64 → Uint8Array
                                │  Then derives per-workspace key locally:
                                │
-                               │  HKDF(userKey, info="workspace:{wsId}:v1")
+                               │  HKDF(userKey, info="workspace:{wsId}")
                                ▼
 ┌────────────────────────────────────────────────────────────────┐
 │  Per-workspace key (32 bytes)                                  │
@@ -182,7 +182,7 @@ WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
 2. Client $session subscription fires
    ├── userKey = base64ToBytes(session.encryptionKey)
    └── For each open workspace:
-       ├── wsKey = HKDF(userKey, "workspace:{wsId}:v1")
+       ├── wsKey = HKDF(userKey, "workspace:{wsId}")
        └── workspace.unlock(wsKey)
 
 3. First encrypted write
@@ -226,9 +226,9 @@ When collaborative workspaces exist, the server adds a branch for shared workspa
 ```typescript
 // Server: shared rooms derive a workspace-level key (no userId)
 if (room.isShared) {
-  return hkdfDerive(root, `workspace:${wsId}:shared:v1`)
+  return hkdfDerive(root, `workspace:${wsId}:shared`)
 } else {
-  return hkdfDerive(root, `user:${userId}:v1`)  // client derives wsKey locally
+  return hkdfDerive(root, `user:${userId}`)  // client derives wsKey locally
 }
 ```
 
@@ -252,13 +252,13 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 ### Phase 1: Server — HKDF in customSession
 
 - [x] **1.1** ~~Add `WORKSPACE_KEY_SECRET` env var~~ — Skipped: using `BETTER_AUTH_SECRET` directly (no new env var).
-- [x] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}:v1") }, 256)`.
+- [x] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}") }, 256)`.
 - [x] **1.3** Replace `deriveKeyFromSecret(env.BETTER_AUTH_SECRET)` call in `customSession` with `deriveUserKey(env.BETTER_AUTH_SECRET, user.id)`. Session still returns `encryptionKey: bytesToBase64(userKey)`.
 - [x] **1.4** Remove old `deriveKeyFromSecret` function (replaced by `deriveUserKey`).
 
 ### Phase 2: Client — Local Workspace Key Derivation
 
-- [x] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}:v1"` and empty salt.
+- [x] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}"` and empty salt.
 - [x] **2.2** Export `deriveWorkspaceKey` from the crypto barrel. Tests added: deterministic output, different userKeys diverge, different workspaceIds diverge, output is 32 bytes.
 
 ### Phase 2.5: Workspace-Level Encryption API
@@ -361,7 +361,7 @@ Not planned. If `BETTER_AUTH_SECRET` is ever rotated (breach scenario), all deri
 ### Multiple workspaces open simultaneously
 
 1. User opens `epicenter.whispering` and `epicenter.tab-manager`
-2. Both derive from the same user key: `HKDF(userKey, "workspace:whispering:v1")` and `HKDF(userKey, "workspace:tab-manager:v1")`
+2. Both derive from the same user key: `HKDF(userKey, "workspace:whispering")` and `HKDF(userKey, "workspace:tab-manager")`
 3. Different workspace IDs → different derived keys
 4. Each workspace's `unlock()` receives its own key
 

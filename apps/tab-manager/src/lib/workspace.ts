@@ -581,7 +581,7 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  */
 export const workspaceClient = createWorkspace(
 	defineWorkspace({
-		id: 'tab-manager',
+		id: 'epicenter.tab-manager',
 		tables: {
 			devices: devicesTable,
 			tabs: tabsTable,

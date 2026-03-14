@@ -10,6 +10,7 @@
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { nanoid } from 'nanoid/non-secure';
@@ -236,14 +237,17 @@
 <div
 	class="flex flex-1 flex-col items-center justify-center gap-4 w-full max-w-md mx-auto px-4"
 >
-	<div class="xs:flex hidden flex-col items-center gap-4">
-		<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
+	<SectionHeader.Root class="xs:flex hidden flex-col items-center gap-4">
+		<SectionHeader.Title
+			level={1}
+			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+		>
 			Whispering
-		</h1>
-		<p class="text-muted-foreground text-center">
+		</SectionHeader.Title>
+		<SectionHeader.Description class="text-center">
 			Press shortcut → speak → get text. Free and open source ❤️
-		</p>
-	</div>
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
 	<ToggleGroup.Root
 		type="single"

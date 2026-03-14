@@ -9,6 +9,7 @@
 	import { CopyButton } from '@epicenter/ui/copy-button';
 	import * as DropdownMenu from '@epicenter/ui/dropdown-menu';
 	import * as Empty from '@epicenter/ui/empty';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Input } from '@epicenter/ui/input';
 	import { Label } from '@epicenter/ui/label';
 	import * as Modal from '@epicenter/ui/modal';
@@ -384,13 +385,18 @@
 <svelte:head> <title>All Recordings</title> </svelte:head>
 
 <main class="flex w-full flex-1 flex-col gap-2 px-4 py-4 sm:px-8 mx-auto">
-	<h1 class="scroll-m-20 text-4xl font-bold tracking-tight lg:text-5xl">
-		Recordings
-	</h1>
-	<p class="text-muted-foreground">
-		Your latest recordings and transcriptions, stored locally
-		{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
-	</p>
+	<SectionHeader.Root>
+		<SectionHeader.Title
+			level={1}
+			class="scroll-m-20 text-4xl tracking-tight lg:text-5xl"
+		>
+			Recordings
+		</SectionHeader.Title>
+		<SectionHeader.Description>
+			Your latest recordings and transcriptions, stored locally
+			{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">
 		<div class="flex flex-col md:flex-row items-center justify-between gap-2">
 			<Input

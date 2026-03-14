@@ -237,9 +237,7 @@ describe('createEncryptedYkvLww', () => {
 
 			kv.delete('foo');
 
-			expect(events).toEqual([
-				{ key: 'foo', change: { action: 'delete' } },
-			]);
+			expect(events).toEqual([{ key: 'foo', change: { action: 'delete' } }]);
 		});
 
 		test('unobserve stops notifications', () => {
@@ -645,7 +643,12 @@ describe('createEncryptedYkvLww', () => {
 			yarray.push([
 				{
 					key: 'corrupt',
-					val: { v: 1, ct: new Uint8Array([1, 2, 3]) },
+					val: (() => {
+						const blob = createEncryptedBlob('broken', key);
+						const tamperedCt = new Uint8Array(blob.ct);
+						tamperedCt[1] = tamperedCt[1]! ^ 0xff;
+						return { v: 1 as const, ct: tamperedCt };
+					})(),
 					ts: Date.now(),
 				},
 			]);
@@ -668,7 +671,12 @@ describe('createEncryptedYkvLww', () => {
 			yarray.push([
 				{
 					key: 'corrupt',
-					val: { v: 1, ct: new Uint8Array([1, 2, 3]) },
+					val: (() => {
+						const blob = createEncryptedBlob('broken', key);
+						const tamperedCt = new Uint8Array(blob.ct);
+						tamperedCt[1] = tamperedCt[1]! ^ 0xff;
+						return { v: 1 as const, ct: tamperedCt };
+					})(),
 					ts: Date.now(),
 				},
 			]);

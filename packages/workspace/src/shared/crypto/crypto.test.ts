@@ -12,6 +12,7 @@ import {
 	type EncryptedBlob,
 	encryptValue,
 	generateEncryptionKey,
+	getKeyVersion,
 	isEncryptedBlob,
 } from './index';
 
@@ -94,6 +95,14 @@ describe('encryptValue / decryptValue', () => {
 
 		expect(encrypted.v).toBe(1);
 		expect(encrypted.ct).toBeInstanceOf(Uint8Array);
+		expect(getKeyVersion(encrypted)).toBe(1);
+	});
+
+	test('custom keyVersion is embedded at ct[0]', () => {
+		const key = generateEncryptionKey();
+		const encrypted = encryptValue('test', key, undefined, 7);
+
+		expect(getKeyVersion(encrypted)).toBe(7);
 	});
 
 	test('invalid key (16-byte instead of 32) throws', () => {
@@ -122,11 +131,11 @@ describe('encryptValue / decryptValue', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Copy ct, flip a byte in the nonce (first 12 bytes)
+		// Copy ct, flip a byte in the nonce (ct[0] is keyVersion)
 		const packed = new Uint8Array(encrypted.ct);
-		if (packed.length === 0)
+		if (packed.length <= 1)
 			throw new Error('Expected nonce bytes in encrypted blob');
-		packed[0] = packed[0]! ^ 0xff;
+		packed[1] = packed[1]! ^ 0xff;
 		const tamperedBlob: EncryptedBlob = { v: 1, ct: packed };
 
 		expect(() => {
@@ -211,7 +220,16 @@ describe('isEncryptedBlob', () => {
 	});
 
 	test('returns true for valid shape (v: 1, ct: Uint8Array)', () => {
-		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array([1, 2, 3]) })).toBe(true);
+		const minimumCtLength = 1 + 24 + 16;
+		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(minimumCtLength) })).toBe(
+			true,
+		);
+	});
+
+	test('returns false for ct shorter than keyVersion + nonce + tag minimum', () => {
+		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array(1 + 24 + 16 - 1) })).toBe(
+			false,
+		);
 	});
 
 	test('returns false for string ct', () => {

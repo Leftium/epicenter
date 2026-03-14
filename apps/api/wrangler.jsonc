@@ -49,10 +49,10 @@
 	"secrets": {
 		"required": [
 			"BETTER_AUTH_SECRET",
-			// ENCRYPTION_SECRET: Separate from BETTER_AUTH_SECRET. Used to derive per-user
-			// encryption keys via HKDF. Generate with: openssl rand -base64 32
-			// For key rotation (future): ENCRYPTION_SECRETS="2:newBase64,1:oldBase64"
-			"ENCRYPTION_SECRET",
+			// ENCRYPTION_SECRETS: Separate from BETTER_AUTH_SECRET. Used to derive per-user
+			// encryption keys via HKDF. Format: "version:secret,version:secret" (e.g.
+			// "2:newBase64,1:oldBase64"). Generate each secret with: openssl rand -base64 32
+			"ENCRYPTION_SECRETS",
 			"GOOGLE_CLIENT_SECRET",
 			"OPENAI_API_KEY",
 			"ANTHROPIC_API_KEY"

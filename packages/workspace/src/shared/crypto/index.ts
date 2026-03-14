@@ -40,7 +40,7 @@
  *
  * | Mode            | Key derivation                                              | Server decrypts? |
  * |-----------------|-------------------------------------------------------------|------------------|
- * | Cloud (SaaS)    | HKDF(SHA-256(BETTER_AUTH_SECRET), "user:{userId}")         | Yes              |
+ * | Cloud (SaaS)    | HKDF(SHA-256(current ENCRYPTION_SECRETS entry), "user:{userId}") | Yes         |
  * |                 | → per-user key in session; client HKDF → per-workspace key  |                  |
  * | Self-hosted     | Same HKDF hierarchy, your secret                            | Only you         |
  * | No auth / local | key: undefined → passthrough                                | N/A              |
@@ -63,12 +63,8 @@ const NONCE_LENGTH = 24;
  * Encrypted blob stored and synced as binary.
  *
  * Uses XChaCha20-Poly1305 with a 24-byte nonce and 16-byte authentication tag.
- * `ct` is a raw `Uint8Array` of `nonce(24) || ciphertext || tag(16)`,
+ * `ct` is a raw `Uint8Array` of `keyVersion(1) || nonce(24) || ciphertext || tag(16)`,
  * stored natively by Yjs `writeAny` as binary (type tag 116).
- *
- * `v:1` means XChaCha20-Poly1305 with 24-byte random nonce. If key rotation is
- * needed, trial decryption is used with keyring entries. Future `v:2` may add a
- * key version prefix byte for deterministic key selection.
  *
  * Field names are compact (`ct`, `v`) because this type is
  * persisted in the workspace database and synced across clients.
@@ -77,7 +73,7 @@ const NONCE_LENGTH = 24;
  * ```typescript
  * const encrypted: EncryptedBlob = {
  *   v: 1,
- *   ct: new Uint8Array([...nonce, ...ciphertext, ...tag]),
+ *   ct: new Uint8Array([keyVersion, ...nonce, ...ciphertext, ...tag]),
  * };
  * ```
  */
@@ -106,8 +102,8 @@ function generateEncryptionKey(): Uint8Array {
  *
  * Generates a random 24-byte nonce for each encryption, ensuring that
  * encrypting the same plaintext with the same key produces different ciphertexts.
- * The nonce is prepended to the ciphertext in the output Uint8Array:
- * `ct = Uint8Array(nonce(24) || ciphertext || tag(16))`.
+ * The key version and nonce are prepended to the ciphertext in the output Uint8Array:
+ * `ct = keyVersion(1) || nonce(24) || ciphertext || tag(16)`.
  *
  * Returns an EncryptedBlob with raw binary `ct`. Yjs `writeAny` serializes
  * `Uint8Array` natively as binary (type tag 116), eliminating base64 overhead.
@@ -115,6 +111,7 @@ function generateEncryptionKey(): Uint8Array {
  * @param plaintext - The string to encrypt
  * @param key - A 32-byte Uint8Array encryption key
  * @param aad - Optional additional authenticated data bound to ciphertext integrity
+ * @param keyVersion - Key version from ENCRYPTION_SECRETS keyring (default 1). Embedded as ct[0].
  * @returns An EncryptedBlob with raw binary nonce+ciphertext+tag
  *
  * @example
@@ -129,9 +126,9 @@ function encryptValue(
 	plaintext: string,
 	key: Uint8Array,
 	aad?: Uint8Array,
+	keyVersion: number = 1,
 ): EncryptedBlob {
-	if (key.length !== 32)
-		throw new Error('Encryption key must be 32 bytes');
+	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
 	const nonce = randomBytes(NONCE_LENGTH);
 	const cipher = aad
 		? xchacha20poly1305(key, nonce, aad)
@@ -139,10 +136,11 @@ function encryptValue(
 	const data = new TextEncoder().encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
-	// Pack nonce || ciphertext || tag into a single buffer
-	const packed = new Uint8Array(nonce.length + ciphertext.length);
-	packed.set(nonce, 0);
-	packed.set(ciphertext, nonce.length);
+	// Pack keyVersion(1) || nonce(24) || ciphertext || tag(16)
+	const packed = new Uint8Array(1 + nonce.length + ciphertext.length);
+	packed[0] = keyVersion;
+	packed.set(nonce, 1);
+	packed.set(ciphertext, 1 + nonce.length);
 
 	return {
 		v: 1,
@@ -153,8 +151,8 @@ function encryptValue(
 /**
  * Decrypt an EncryptedBlob using XChaCha20-Poly1305.
  *
- * Slices the first 24 bytes of `ct` as the nonce and decrypts the remaining
- * bytes (ciphertext + 16-byte auth tag) using the provided key.
+ * Reads `ct[0]` as key version metadata, then slices `ct[1..24]` as nonce and
+ * decrypts `ct[25..]` (ciphertext + 16-byte auth tag) using the provided key.
  * Throws if the authentication tag is invalid or decryption fails.
  *
  * @param blob - An EncryptedBlob with binary `ct`
@@ -176,11 +174,11 @@ function decryptValue(
 	key: Uint8Array,
 	aad?: Uint8Array,
 ): string {
-	if (key.length !== 32)
-		throw new Error('Encryption key must be 32 bytes (AES-256)');
+	if (key.length !== 32) throw new Error('Encryption key must be 32 bytes');
 	const packed = blob.ct;
-	const nonce = packed.slice(0, NONCE_LENGTH);
-	const ciphertext = packed.slice(NONCE_LENGTH);
+	// Skip key version byte at ct[0]
+	const nonce = packed.slice(1, 1 + NONCE_LENGTH);
+	const ciphertext = packed.slice(1 + NONCE_LENGTH);
 	const cipher = aad
 		? xchacha20poly1305(key, nonce, aad)
 		: xchacha20poly1305(key, nonce);
@@ -190,10 +188,23 @@ function decryptValue(
 }
 
 /**
+ * Read the key version from an EncryptedBlob without decrypting.
+ *
+ * The key version is stored as the first byte of `ct` and identifies which
+ * secret from the ENCRYPTION_SECRETS keyring was used to encrypt this blob.
+ *
+ * @param blob - An EncryptedBlob to read the key version from
+ * @returns The key version number (1-255)
+ */
+function getKeyVersion(blob: EncryptedBlob): number {
+	return blob.ct[0]!;
+}
+
+/**
  * Type guard to check if a value is a valid EncryptedBlob.
  *
  * Validates the structure: exactly 2 keys (`v` + `ct`) where `v === 1`
- * and `ct instanceof Uint8Array`.
+ * and `ct instanceof Uint8Array` with enough bytes for keyVersion + nonce + tag.
  *
  * The key count check (`Object.keys().length === 2`) prevents false positives from
  * user-defined schemas that happen to include `v` and `ct` fields alongside other
@@ -215,7 +226,10 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
 	if (typeof value !== 'object' || value === null) return false;
 	const obj = value as Record<string, unknown>;
 	return (
-		Object.keys(obj).length === 2 && obj.v === 1 && obj.ct instanceof Uint8Array
+		Object.keys(obj).length === 2 &&
+		obj.v === 1 &&
+		obj.ct instanceof Uint8Array &&
+		(obj.ct as Uint8Array).length >= 1 + 24 + 16
 	);
 }
 
@@ -395,6 +409,7 @@ export {
 	generateEncryptionKey,
 	encryptValue,
 	decryptValue,
+	getKeyVersion,
 	isEncryptedBlob,
 	deriveKeyFromPassword,
 	deriveSalt,

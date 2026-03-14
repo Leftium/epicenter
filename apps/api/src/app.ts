@@ -59,6 +59,42 @@ export const BASE_AUTH_CONFIG = {
 };
 
 /**
+ * Parse the ENCRYPTION_SECRETS env var into a sorted keyring.
+ *
+ * Format: "2:base64Secret2,1:base64Secret1" (comma-separated, version-prefixed).
+ * First entry after sorting = current version for new encryptions.
+ *
+ * @example
+ * ```
+ * parseEncryptionSecrets("1:mySecret")
+ * // → [{ version: 1, secret: "mySecret" }]
+ *
+ * parseEncryptionSecrets("2:newSecret,1:oldSecret")
+ * // → [{ version: 2, secret: "newSecret" }, { version: 1, secret: "oldSecret" }]
+ * ```
+ */
+function parseEncryptionSecrets(
+	envValue: string,
+): Array<{ version: number; secret: string }> {
+	const entries = envValue.split(',').map((entry) => {
+		const colonIndex = entry.indexOf(':');
+		if (colonIndex === -1) {
+			throw new Error(
+				`Invalid ENCRYPTION_SECRETS format: each entry must be "version:secret" (got "${entry}")`,
+			);
+		}
+		const version = Number(entry.slice(0, colonIndex));
+		if (!Number.isInteger(version) || version < 1) {
+			throw new Error(
+				`Invalid ENCRYPTION_SECRETS version: must be a positive integer (got "${entry.slice(0, colonIndex)}")`,
+			);
+		}
+		return { version, secret: entry.slice(colonIndex + 1) };
+	});
+	return entries.sort((a, b) => b.version - a.version);
+}
+
+/**
  * Derive a per-user 32-byte encryption key via two-step HKDF-SHA256.
  *
  * 1. SHA-256 the secret to get high-entropy root key material.
@@ -72,25 +108,23 @@ export const BASE_AUTH_CONFIG = {
  * the info string. Vault Transit, Signal Protocol, libsodium, and AWS KMS
  * all use unversioned derivation context strings.
  */
-async function deriveUserKey(secret: string, userId: string): Promise<Uint8Array> {
+async function deriveUserKey(
+	secret: string,
+	userId: string,
+): Promise<Uint8Array> {
 	const rawKey = await crypto.subtle.digest(
 		'SHA-256',
 		new TextEncoder().encode(secret),
 	);
-	const hkdfKey = await crypto.subtle.importKey(
-		'raw',
-		rawKey,
-		'HKDF',
-		false,
-		['deriveBits'],
-	);
+	const hkdfKey = await crypto.subtle.importKey('raw', rawKey, 'HKDF', false, [
+		'deriveBits',
+	]);
 	const derivedBits = await crypto.subtle.deriveBits(
 		{
 			name: 'HKDF',
 			hash: 'SHA-256',
 			salt: new Uint8Array(0),
 			info: new TextEncoder().encode(`user:${userId}`),
-
 		},
 		hkdfKey,
 		256,
@@ -120,11 +154,14 @@ function createAuth(db: Db, env: Env['Bindings']) {
 			bearer(),
 			jwt(),
 			customSession(async ({ user, session }) => {
-				const encryptionKey = await deriveUserKey(env.ENCRYPTION_SECRET, user.id);
+				const keyring = parseEncryptionSecrets(env.ENCRYPTION_SECRETS);
+				const current = keyring[0]!;
+				const encryptionKey = await deriveUserKey(current.secret, user.id);
 				return {
 					user,
 					session,
 					encryptionKey: bytesToBase64(encryptionKey),
+					keyVersion: current.version,
 				};
 			}),
 			oauthProvider({

@@ -24,7 +24,8 @@ When working with encryption, consult these repositories for patterns and docume
 | Key derivation | Signal Protocol | HKDF-SHA256 with domain-separation info strings (unversioned, per RFC 5869) |
 | Symmetric cipher | libsodium / WireGuard | XChaCha20-Poly1305: 2.3x faster in pure JS, 24-byte nonce safe for random generation |
 | Key hierarchy | Bitwarden | Root secret -> per-user key -> per-workspace key |
-| Key rotation model | Vault Transit | Keyring with versioned secrets, trial decryption, lazy re-encryption |
+| Key version in ciphertext | Tink / Vault | Key version byte prefix inside ct binary |
+| Key rotation model | Vault Transit | Keyring with versioned secrets, lazy re-encryption |
 | Design philosophy | age | Simplicity over configurability |
 
 ## Epicenter's Encryption Architecture
@@ -32,28 +33,34 @@ When working with encryption, consult these repositories for patterns and docume
 ### Environment Variables
 
 ```bash
-# Required. Separate from BETTER_AUTH_SECRET. Generate: openssl rand -base64 32
-ENCRYPTION_SECRET="base64encodedSecret"
+# Required. Completely independent from BETTER_AUTH_SECRET.
+# Always uses versioned format: "version:secret" pairs, comma-separated.
+# Generate secret: openssl rand -base64 32
 
-# Future (key rotation). Comma-separated, version-prefixed. Better Auth convention.
-# First entry = current key for new encryptions. Others = decryption-only.
-# ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
+# Single key (initial setup):
+ENCRYPTION_SECRETS="1:base64encodedSecret"
+
+# After rotation (add new version, keep old for decryption):
+ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
 ```
 
-- `ENCRYPTION_SECRET` (singular) is REQUIRED and completely independent from `BETTER_AUTH_SECRET`
-- Auth secret rotation and encryption key rotation are decoupled--changing one never affects the other
-- For key rotation (future): `ENCRYPTION_SECRETS` (plural) takes precedence when set
-- Format matches Better Auth's own `BETTER_AUTH_SECRETS` convention: `version:secret` pairs
+- ONE env var: `ENCRYPTION_SECRETS` (always plural, always versioned format)
+- Format: `version:secret` pairs, comma-separated. Highest version = current key for new encryptions.
+- Completely decoupled from `BETTER_AUTH_SECRET`--rotating one never affects the other
+- Matches Better Auth's own `BETTER_AUTH_SECRETS` convention
 
 ### Key Hierarchy
 
 ```
-ENCRYPTION_SECRET
+ENCRYPTION_SECRETS="1:base64Secret"
        |
-       |  SHA-256(secret) -> root key material
+       |  Parse -> keyring[{ version: 1, secret: "base64Secret" }]
+       |  Current = highest version
+       |
+       |  SHA-256(currentSecret) -> root key material
        |  HKDF(root, info="user:{userId}") -> per-user key (32 bytes)
        v
-  Session response -> client receives user key
+  Session response -> client receives { encryptionKey, keyVersion }
        |
        |  HKDF(userKey, info="workspace:{wsId}") -> per-workspace key (32 bytes)
        v
@@ -85,38 +92,45 @@ AES-256-GCM via WebCrypto uses hardware AES-NI and is faster, but it's async. We
 ```typescript
 type EncryptedBlob = { v: 1; ct: Uint8Array };
 
-// v:1 = XChaCha20-Poly1305
+// v:1 = XChaCha20-Poly1305 with key version byte
 // ct binary layout:
-//   ct[0..23]  = random nonce (24 bytes)
-//   ct[24..]   = XChaCha20-Poly1305 ciphertext || authentication tag (16 bytes)
+//   ct[0]      = key version (which secret from ENCRYPTION_SECRETS keyring)
+//   ct[1..24]  = random nonce (24 bytes)
+//   ct[25..]   = XChaCha20-Poly1305 ciphertext || authentication tag (16 bytes)
 ```
 
 - `v` field = blob format version AND discriminant for `isEncryptedBlob` detection
-- `v: 1` means XChaCha20-Poly1305, 24-byte random nonce, no key version prefix
+- `v: 1` means XChaCha20-Poly1305, key version byte at ct[0], 24-byte random nonce
+- `ct[0]` = key version, identifying which secret encrypted this blob
 - The `{ v, ct }` wrapper distinguishes encrypted from plaintext values in the CRDT
+- Use `getKeyVersion(blob)` to read the key version without decrypting
 
-### Key Rotation (Future)
-
-When rotation support ships:
+### Key Rotation
 
 ```bash
-# Set the keyring env var (takes precedence over ENCRYPTION_SECRET)
+# Rotate by adding a new highest-version entry:
 ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
 ```
 
 - Parser splits by `,`, then each entry by first `:` -> `{ version: number, secret: string }`
-- First entry = current version for new encryptions
-- Remaining entries = decryption-only (for reading old data)
-- Decrypt: trial decryption with keyring entries (current key first, then older keys)
-- Lazy re-encryption: on successful decrypt with non-current key, re-encrypt on next write
-- Trial decryption is cheap: 3 keys x 2us = 6us per blob (still faster than single-key AES-GCM)
+- Sorted by version descending; first entry = current for new encryptions
+- Encrypt: always uses current (highest version) key, embeds version as ct[0]
+- Decrypt: read ct[0] to know which key version was used, select matching key from keyring
+- Lazy re-encryption: on read with non-current key version, re-encrypt on next write
 - Keep old secrets in keyring for at least 90 days to handle offline devices
 
 ### Format Version Upgrade Path
 
-- `v: 1` = XChaCha20-Poly1305, trial decryption for key rotation
-- `v: 2` (future, if needed) = XChaCha20-Poly1305 with key version prefix: `ct[0] = keyVersion, ct[1..24] = nonce, ct[25..] = ciphertext || tag`
-- Bump to v:2 only if keyring grows beyond ~5 entries or deterministic key selection is needed
+- `v: 1` = XChaCha20-Poly1305 with key version byte prefix in ct
+
+Format version bumps only needed for algorithm or binary layout changes (extremely rare):
+
+| Scenario | Bumps `v`? |
+|---|---|
+| Secret rotation (new entry in ENCRYPTION_SECRETS) | No--key version in ct[0] handles this |
+| Switch to different algorithm (unlikely) | Yes--different cipher |
+| Add compression before encryption | Yes--different plaintext encoding |
+| Change HKDF parameters (SHA-384, non-empty salt) | Yes--different key derivation |
 
 ### isEncryptedBlob Detection
 
@@ -133,17 +147,3 @@ Do NOT use `Object.keys().length` checks--they are hostile to format evolution a
 ### AAD (Additional Authenticated Data)
 
 When encrypting workspace values, the entry key is bound as AAD to prevent ciphertext transplant attacks (moving an encrypted value from one key to another).
-
-## When to Bump the Format Version
-
-The `v` field on EncryptedBlob changes ONLY for algorithm or binary layout changes:
-
-| Scenario | Bumps `v`? |
-|---|---|
-| Secret rotation (new ENCRYPTION_SECRET) | No--trial decryption handles this |
-| Add key version prefix byte to ct | Yes--binary layout changed (v:2) |
-| Switch to different algorithm (unlikely) | Yes--different cipher |
-| Add compression before encryption | Yes--different plaintext encoding |
-| Change HKDF parameters (SHA-384, non-empty salt) | Yes--different key derivation |
-
-XChaCha20-Poly1305 is used by libsodium, WireGuard, and Noise Protocol. Format version bumps are extremely rare.

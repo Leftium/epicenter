@@ -45,8 +45,33 @@
  * is created eagerly as a module-level export before auth completes. The getter
  * is called on every operation, so encryption activates the moment a key arrives.
  *
- * @see {@link ./y-keyvalue-lww.ts} for the underlying CRDT implementation
- * @see {@link ../crypto/index.ts} for the encryption primitives
+ * ## Key Lifecycle State Machine
+ *
+ * ```
+ * ┌────────────┐   getKey() → undefined   ┌────────────┐
+ * │  NO KEY    │◄─────────────────────────│  SIGNED    │
+ * │ (passthru) │    (sign-out / no auth)  │    OUT     │
+ * └─────┬──────┘                          └────────────┘
+ *       │ getKey() → Uint8Array                  ▲
+ *       │ (auth completes)                       │
+ *       ▼                                        │
+ * ┌────────────┐   clearKey()             ┌──────┴─────┐
+ * │  KEY       │─────────────────────────►│  KEY       │
+ * │  ACTIVE    │                          │  CLEARED   │
+ * │ (encrypts) │                          │ (passthru) │
+ * └────────────┘                          └────────────┘
+ * ```
+ *
+ * **Current behavior**: `getKey() === undefined` means passthrough (plaintext writes).
+ * This is acceptable during initial rollout but should evolve to a three-mode system
+ * (`plaintext` | `locked` | `unlocked`) before shipping to production. See the
+ * client-side encryption wiring spec for the planned state machine.
+ *
+ * ## Related Modules
+ *
+ * - {@link ../crypto/index.ts} — Encryption primitives (encryptValue, decryptValue, isEncryptedBlob)
+ * - {@link ../crypto/key-cache.ts} — Platform-agnostic key caching (survives page refresh)
+ * - {@link ./y-keyvalue-lww.ts} — Inner CRDT that handles conflict resolution (unaware of encryption)
  *
  * @module
  */

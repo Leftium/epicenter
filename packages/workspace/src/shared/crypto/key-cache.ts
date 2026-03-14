@@ -44,6 +44,33 @@
  *   },
  * };
  * ```
+ *
+ * ## How It Fits
+ *
+ * ```
+ * Server (auth session)
+ *   │  encryptionKey: base64 string
+ *   ▼
+ * KeyCache.set(userId, base64ToBytes(key))
+ *   │  stored locally (platform-specific)
+ *   ▼
+ * App startup (before auth roundtrip completes)
+ *   │  KeyCache.get(userId) → Uint8Array (cached from last session)
+ *   │  getKey() returns cached key immediately
+ *   ▼
+ * createEncryptedKvLww(yarray, { getKey })
+ *   │  encrypts/decrypts using the cached key
+ *   │  no network roundtrip needed on refresh
+ * ```
+ *
+ * Without a `KeyCache`, every page refresh requires a full auth roundtrip before
+ * encrypted data can be read. With a cache, the workspace decrypts immediately
+ * on launch using the cached key, then refreshes it silently when the session loads.
+ *
+ * ## Related Modules
+ *
+ * - {@link ./index.ts} — Encryption primitives (`base64ToBytes` for key decoding)
+ * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Encrypted wrapper that calls `getKey()` on every operation
  */
 export type KeyCache = {
 	/** Store encryption key for this user. */

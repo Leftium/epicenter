@@ -4,6 +4,7 @@
 **Status**: Draft
 **Builds on**: `specs/20260313T180000-encrypted-blob-format-simplification.md`, `specs/20260312T120000-y-keyvalue-lww-encrypted.md`, `specs/20260213T005300-encrypted-workspace-storage.md`
 **Related**: PR #1507 (encryption infrastructure), `apps/api/src/app.ts` (server-side key delivery)
+> **Note (2026-03-14)**: Architectural review identified five hardening items that should ship with or before the initial wiring. Added as Phase 0 below. The original wiring plan (Phases 1-3) is unchanged.
 
 ## Overview
 
@@ -88,6 +89,11 @@ Better Auth Server (customSession plugin)
 | Loading gate | App-level, not library-level | Auth-backed apps show a loading state until key is available. Library stays platform-agnostic. |
 | No-auth apps | Unchanged | `fs-explorer` and `tab-manager-markdown` don't have auth, don't need encryption. |
 | One commit per app | Yes | Each app is independently deployable and testable. |
+| Encryption mode | Three explicit modes: `plaintext` \| `locked` \| `unlocked` | `getKey() === undefined` currently means passthrough. For encrypted workspaces, no key should mean **locked/read-only**, not plaintext writes that can LWW-win over ciphertext. |
+| Per-workspace subkeys | Derive subkey: `HKDF(masterKey, workspaceId)` | Current `SHA-256(BETTER_AUTH_SECRET)` is deployment-wide. One compromised client can decrypt any workspace. Subkey derivation bounds blast radius to one workspace. |
+| AAD context binding | Pass `workspaceId + tableName + key` as AES-GCM AAD | Prevents ciphertext from one table being replayed into another. AES-GCM supports this natively at zero extra cost. |
+| Error containment | `trySync` around decrypt in observer; quarantine bad blobs | One corrupted blob currently throws inside the Y.Array observer and poisons the entire observation chain. Containment isolates failures. |
+| Key transition hook | `onKeyChange(key)` rebuilds `wrapper.map` | Initial map hydration happens once at creation. If workspace loads before auth, encrypted entries stay as raw blobs until individually touched. An explicit rebuild on key arrival fixes this. |
 
 ## App Inventory
 
@@ -104,6 +110,16 @@ Better Auth Server (customSession plugin)
 ### Phase 1: Shared Utilities
 
 - [ ] **1.1** Create a shared `createEncryptionKeyStore()` factory in `packages/workspace` (or a shared lib) that returns `{ set(base64Key), get(): Uint8Array | undefined, clear() }`. Uses `base64ToBytes` from the crypto module. Pure in-memory, no persistence.
+
+### Phase 0: Encryption Hardening (before or alongside Phase 1)
+
+These items address architectural gaps identified during review. They should land before real keys flow to real clients.
+
+- [ ] **0.1** **Three explicit encryption modes** — Add a `mode: 'plaintext' | 'locked' | 'unlocked'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously active but is now cleared), `set()` throws or no-ops instead of writing plaintext. Mode transitions: `plaintext` → `unlocked` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
+- [ ] **0.2** **Per-workspace subkey derivation** — In `apps/api/src/app.ts`, change `SHA-256(BETTER_AUTH_SECRET)` to `HKDF(SHA-256(BETTER_AUTH_SECRET), workspaceId)`. Client receives a workspace-scoped key. No change to the encryption primitives—just a different key per workspace.
+- [ ] **0.3** **AAD context binding** — Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
+- [ ] **0.4** **Error containment in observer** — Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
+- [ ] **0.5** **Key transition hook** — Add an `onKeyChange(key: Uint8Array | undefined)` method to `YKeyValueLwwEncrypted`. When called, it re-iterates `inner.map`, re-decrypts all entries with the new key, and rebuilds `wrapper.map`. The key store calls this when the key changes.
 
 ### Phase 2: Per-App Wiring (one commit each)
 
@@ -124,7 +140,7 @@ For each auth-backed app:
 
 ### Workspace Created Before Auth Completes
 
-This is the common case—workspaces are created at module scope as side-effect-free exports. The `getKey` getter returns `undefined` until the session loads, so early reads/writes use passthrough. Once the session arrives and the key store is populated, subsequent writes encrypt. This is by design—the getter pattern exists specifically for this scenario.
+This is the common case—workspaces are created at module scope as side-effect-free exports. The `getKey` getter returns `undefined` until the session loads. **With Phase 0 hardening**: the workspace starts in `plaintext` mode (no key ever seen). Once the key arrives, mode transitions to `unlocked` and `onKeyChange` rebuilds the decrypted map. Early reads return plaintext; early writes are plaintext (acceptable for initial load before auth).
 
 ### Session Refresh / Token Rotation
 
@@ -132,7 +148,7 @@ When Better Auth refreshes the session, `$session` emits a new value. The key st
 
 ### Sign Out
 
-On sign-out, `$session` emits `null`. The key store clears. Subsequent writes fall through to passthrough. This is acceptable—after sign-out, the workspace should be inaccessible anyway (auth gate).
+On sign-out, `$session` emits `null`. The key store clears and calls `onKeyChange(undefined)`. **With Phase 0 hardening**: mode transitions to `locked`—`set()` rejects writes instead of falling through to plaintext. This prevents a sign-out from accidentally downgrading previously encrypted data via LWW timestamp wins.
 
 ### Mixed Plaintext and Encrypted Data
 
@@ -159,7 +175,9 @@ When encryption first activates, existing data is plaintext. The encrypted wrapp
 - [ ] Each app passes `{ getKey }` to `createWorkspace`
 - [ ] New KV/table writes produce `EncryptedBlob` when signed in
 - [ ] Reads decrypt transparently (existing plaintext + new ciphertext coexist)
-- [ ] Sign-out clears the key; subsequent writes are passthrough
+- [ ] Sign-out transitions to `locked` mode; `set()` rejects writes (not plaintext passthrough)
+- [ ] `onKeyChange` rebuilds decrypted map when key arrives after workspace creation
+- [ ] One corrupted blob does not poison the observation chain (error containment)
 - [ ] All tests pass, typecheck clean, each app builds
 
 ## References

@@ -1,3 +1,52 @@
+/**
+ * # Encryption Primitives
+ *
+ * AES-256-GCM encryption for workspace data, using `@noble/ciphers` (Cure53-audited,
+ * synchronous). Chosen because `set()` must remain synchronous across 394+ call sites.
+ *
+ * ## Encryption Flow (10,000ft View)
+ *
+ * ```
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │  Auth Flow                                                         │
+ * │  Server derives key from secret → sends base64 in session response │
+ * │  Client decodes → stores in memory via KeyCache                    │
+ * └────────────────────────┬────────────────────────────────────────────┘
+ *                          │  getKey() → Uint8Array | undefined
+ *                          ▼
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │  Encrypted KV Wrapper (y-keyvalue-lww-encrypted.ts)                │
+ * │                                                                     │
+ * │  set(key, val)                                                      │
+ * │    → JSON.stringify(val)                                            │
+ * │    → encryptValue(json, key) → { v: 1, ct: base64(nonce‖ct‖tag) } │
+ * │    → inner CRDT stores EncryptedBlob                               │
+ * │                                                                     │
+ * │  observer fires (inner CRDT change)                                │
+ * │    → isEncryptedBlob(val)? decryptValue → JSON.parse → plaintext  │
+ * │    → wrapper.map updated with plaintext                            │
+ * │                                                                     │
+ * │  get(key) → reads from plaintext map (cached, no re-decrypt)      │
+ * └─────────────────────────────────────────────────────────────────────┘
+ * ```
+ *
+ * ## Key Sources
+ *
+ * | Mode            | Key derivation                           | Server decrypts? |
+ * |-----------------|------------------------------------------|------------------|
+ * | Cloud (SaaS)    | SHA-256(BETTER_AUTH_SECRET)               | Yes              |
+ * | Self-hosted     | PBKDF2(password, salt, 600k iterations)  | No (zero-knowledge) |
+ * | No auth / local | getKey() → undefined → passthrough       | N/A              |
+ *
+ * ## Related Modules
+ *
+ * - {@link ../y-keyvalue/y-keyvalue-lww-encrypted.ts} — Composition wrapper that wires these primitives into the CRDT
+ * - {@link ./key-cache.ts} — Platform-agnostic key caching interface (survives page refresh)
+ * - {@link ../y-keyvalue/y-keyvalue-lww.ts} — Underlying CRDT (unaware of encryption)
+ *
+ * @module
+ */
+
 import { gcm } from '@noble/ciphers/aes.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 

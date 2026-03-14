@@ -5,9 +5,8 @@ export type {
 	TextEntry,
 	TimelineEntry,
 } from './entries.js';
+export { computeMidpoint, generateInitialOrders } from '../shared/fractional-index.js';
 export {
-	computeMidpoint,
-	generateInitialOrders,
 	parseSheetFromCsv,
 	serializeSheetToCsv,
 } from './sheet.js';

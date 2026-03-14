@@ -7,15 +7,22 @@
  *
  * @see specs/20260313T163000-settings-data-migration.md
  */
-
-import { Ok, trySync } from 'wellcrafted/result';
-import {
-	type DeviceConfigKey,
-	deviceConfig,
-} from '$lib/state/device-config.svelte';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 import workspace from '$lib/workspace';
+import { Ok, trySync } from 'wellcrafted/result';
 
-const MIGRATION_KEY = 'whispering:settings-migration';
+// ── Migration state ──────────────────────────────────────────────────────────
+
+const MIGRATION_STATE_KEY = 'whispering:settings-migration';
+type MigrationState = 'completed' | 'not-needed';
+
+function getMigrationState(): MigrationState | null {
+	return window.localStorage.getItem(MIGRATION_STATE_KEY) as MigrationState | null;
+}
+
+function setMigrationState(state: MigrationState): void {
+	window.localStorage.setItem(MIGRATION_STATE_KEY, state);
+}
 
 // Type-widened accessors for dynamic key writes. The mapping tables guarantee
 // runtime correctness; these bypass the generic constraints that require
@@ -37,9 +44,8 @@ const getKvDefault = (key: string) =>
  * Silent, automatic, idempotent. One bad key doesn't abort the migration.
  */
 export async function migrateOldSettings(): Promise<void> {
-	// Already completed or not needed — fast path
-	const state = window.localStorage.getItem(MIGRATION_KEY);
-	if (state === 'completed' || state === 'not-needed') return;
+	const state = getMigrationState();
+	if (state !== null) return;
 
 	// Read old blobs before any async work
 	const oldSettingsRaw = window.localStorage.getItem('whispering-settings');
@@ -49,7 +55,7 @@ export async function migrateOldSettings(): Promise<void> {
 
 	// No old data at all — fresh install
 	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
-		window.localStorage.setItem(MIGRATION_KEY, 'not-needed');
+		setMigrationState('not-needed');
 		return;
 	}
 
@@ -59,7 +65,7 @@ export async function migrateOldSettings(): Promise<void> {
 
 	// Both parse failures — nothing to migrate
 	if (!oldSettings && !oldDeviceConfig) {
-		window.localStorage.setItem(MIGRATION_KEY, 'completed');
+		setMigrationState('completed');
 		return;
 	}
 
@@ -122,7 +128,7 @@ export async function migrateOldSettings(): Promise<void> {
 
 	window.localStorage.removeItem('whispering-settings');
 	window.localStorage.removeItem('whispering-device-config');
-	window.localStorage.setItem(MIGRATION_KEY, 'completed');
+	setMigrationState('completed');
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

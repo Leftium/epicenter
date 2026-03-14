@@ -388,7 +388,7 @@ async function getTimelineLength(
 	const id = fs.lookupId(path);
 	if (!id) throw new Error(`No file at ${path}`);
 	const handle = await documents.open(id);
-	return createTimeline(handle.ydoc).length;
+	return handle.timeline.length;
 }
 
 describe('timeline content storage', () => {

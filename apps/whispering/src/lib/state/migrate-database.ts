@@ -1,4 +1,4 @@
-import { Ok, tryAsync, trySync } from 'wellcrafted/result';
+import { Ok, trySync } from 'wellcrafted/result';
 import type { DbService } from '$lib/services/db/types';
 import type workspace from '$lib/workspace';
 
@@ -59,17 +59,7 @@ export async function migrateDatabaseToWorkspace({
 		steps: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 	};
 
-	const { error: readyError } = await tryAsync({
-		try: () => ws.whenReady,
-		catch: (cause) => {
-			onProgress(`workspace.whenReady failed: ${String(cause)}`);
-			return String(cause);
-		},
-	});
-
-	if (readyError) {
-		throw new Error(readyError);
-	}
+	await ws.whenReady;
 
 	const recordingsResult = await dbService.recordings.getAll();
 	const transformationsResult = await dbService.transformations.getAll();

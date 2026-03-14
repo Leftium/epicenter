@@ -3,13 +3,9 @@
 	import * as Dialog from '@epicenter/ui/dialog';
 	import type { Snippet } from 'svelte';
 	import { migrationDialog } from './migration-dialog.svelte';
-	import { MOCK_RECORDING_COUNT } from './migration-test-data';
+	import { MOCK_RECORDING_COUNT, MOCK_TRANSFORMATION_COUNT } from './migration-test-data';
 
-	type TriggerProps = {
-		props: Record<string, unknown>;
-	};
-
-	let { trigger }: { trigger?: Snippet<[TriggerProps]> } = $props();
+	let { trigger }: { trigger?: Snippet<[{ props: Record<string, unknown> }]> } = $props();
 
 	let logsContainer = $state<HTMLDivElement | null>(null);
 
@@ -94,25 +90,46 @@
 			{#if import.meta.env.DEV}
 				<div class="rounded-lg border border-dashed p-4">
 					<h3 class="mb-3 text-sm font-semibold">Dev Tools</h3>
-					<div class="flex gap-2">
-						<Button
-							onclick={migrationDialog.seedIndexedDB}
-							disabled={migrationDialog.isSeeding || migrationDialog.isClearing}
-							variant="outline"
-							size="sm"
-						>
-							{migrationDialog.isSeeding
-								? 'Seeding…'
-								: `Seed ${MOCK_RECORDING_COUNT} Recordings`}
-						</Button>
-						<Button
-							onclick={migrationDialog.clearIndexedDB}
-							disabled={migrationDialog.isSeeding || migrationDialog.isClearing}
-							variant="outline"
-							size="sm"
-						>
-							{migrationDialog.isClearing ? 'Clearing…' : 'Clear IndexedDB'}
-						</Button>
+					<div class="space-y-3">
+						<div>
+							<p class="mb-1.5 text-xs text-muted-foreground">Seed & Clear</p>
+							<div class="flex flex-wrap gap-2">
+								<Button
+									onclick={migrationDialog.seedIndexedDB}
+									disabled={migrationDialog.isDevBusy}
+									variant="outline"
+									size="sm"
+								>
+									{migrationDialog.isSeeding
+										? 'Seeding\u2026'
+										: `Seed ${MOCK_RECORDING_COUNT} Recordings + ${MOCK_TRANSFORMATION_COUNT} Transformations`}
+								</Button>
+								<Button
+									onclick={migrationDialog.clearIndexedDB}
+									disabled={migrationDialog.isDevBusy}
+									variant="outline"
+									size="sm"
+								>
+									{migrationDialog.isClearing ? 'Clearing\u2026' : 'Clear IndexedDB'}
+								</Button>
+							</div>
+						</div>
+						<div>
+							<p class="mb-1.5 text-xs text-muted-foreground">Reset</p>
+							<Button
+								onclick={migrationDialog.resetMigration}
+								disabled={migrationDialog.isDevBusy}
+								variant="outline"
+								size="sm"
+							>
+								{migrationDialog.isResetting
+									? 'Resetting\u2026'
+									: 'Reset Migration State'}
+							</Button>
+							<p class="mt-1 text-xs text-muted-foreground">
+								Clears workspace tables and resets localStorage\u2014re-enables the migration button.
+							</p>
+						</div>
 					</div>
 				</div>
 			{/if}

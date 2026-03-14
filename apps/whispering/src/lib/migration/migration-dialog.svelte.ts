@@ -21,6 +21,7 @@ function createMigrationDialog() {
 	let isPending = $state(getDatabaseMigrationState() === 'pending');
 	let isSeeding = $state(false);
 	let isClearing = $state(false);
+	let isResetting = $state(false);
 	let logs = $state<string[]>([]);
 	let migrationResult = $state<MigrationResult | null>(null);
 
@@ -111,6 +112,13 @@ function createMigrationDialog() {
 		get isClearing() {
 			return isClearing;
 		},
+		get isResetting() {
+			return isResetting;
+		},
+		/** True when any dev tool operation is in progress. */
+		get isDevBusy() {
+			return isSeeding || isClearing || isResetting;
+		},
 		async seedIndexedDB() {
 			if (isSeeding) return;
 
@@ -152,6 +160,26 @@ function createMigrationDialog() {
 			});
 
 			isClearing = false;
+		},
+		async resetMigration() {
+			if (isResetting) return;
+
+			isResetting = true;
+			logs = [];
+			migrationResult = null;
+
+			addLog('Clearing workspace tables...');
+			workspace.tables.recordings.clear();
+			workspace.tables.transformations.clear();
+			workspace.tables.transformationSteps.clear();
+			addLog('✅ Workspace tables cleared');
+
+			addLog('Resetting migration state...');
+			window.localStorage.removeItem('whispering:db-migration');
+			isPending = true;
+			addLog('✅ Migration state reset to pending');
+
+			isResetting = false;
 		},
 	};
 }

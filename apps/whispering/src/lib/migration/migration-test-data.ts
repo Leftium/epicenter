@@ -1,12 +1,14 @@
 import { nanoid } from 'nanoid/non-secure';
 import {
 	generateDefaultTransformation,
+	generateDefaultTransformationStep,
 	type Recording,
+	type Transformation,
 } from '$lib/services/db';
 import { createDbServiceWeb } from '$lib/services/db/web';
 import { DownloadServiceLive } from '$lib/services/download';
 
-export const MOCK_RECORDING_COUNT = 10;
+export const MOCK_RECORDING_COUNT = 12;
 export const MOCK_TRANSFORMATION_COUNT = 10;
 
 function createMockRecording(index: number): {
@@ -15,7 +17,7 @@ function createMockRecording(index: number): {
 } {
 	const id = nanoid();
 	const now = new Date().toISOString();
-	const statuses = ['DONE', 'UNPROCESSED', 'FAILED'] as const;
+	const statuses = ['DONE', 'UNPROCESSED', 'FAILED', 'TRANSCRIBING'] as const;
 	const transcriptionStatus = statuses[index % statuses.length] ?? 'DONE';
 
 	const recording: Recording = {
@@ -25,13 +27,42 @@ function createMockRecording(index: number): {
 		timestamp: now,
 		createdAt: now,
 		updatedAt: now,
-		transcribedText: `Mock transcript ${index + 1}`,
+		transcribedText: index % 5 === 0 ? '' : `Mock transcript ${index + 1}`,
 		transcriptionStatus,
 	};
 
 	const audio = new Blob([`mock-audio-${index}`], { type: 'audio/webm' });
 
 	return { recording, audio };
+}
+
+/**
+ * Step counts cycle: 0, 1, 3, 5 — tests empty, single, multi-step transformations.
+ * Step types alternate between prompt_transform and find_replace.
+ */
+const STEP_COUNTS = [0, 1, 3, 5] as const;
+
+function createMockTransformation(index: number): Transformation {
+	const transformation = generateDefaultTransformation();
+	transformation.title = `Mock Transformation ${index + 1}`;
+	transformation.description = 'Generated for workspace migration testing';
+
+	const stepCount = STEP_COUNTS[index % STEP_COUNTS.length] ?? 0;
+	transformation.steps = Array.from({ length: stepCount }, (_, stepIndex) => {
+		const step = generateDefaultTransformationStep();
+		const isFindReplace = stepIndex % 2 === 1;
+		if (isFindReplace) {
+			step.type = 'find_replace';
+			step['find_replace.findText'] = `find-${stepIndex}`;
+			step['find_replace.replaceText'] = `replace-${stepIndex}`;
+		} else {
+			step['prompt_transform.systemPromptTemplate'] = `System prompt for step ${stepIndex}`;
+			step['prompt_transform.userPromptTemplate'] = `Transform: {{input}}`;
+		}
+		return step;
+	});
+
+	return transformation;
 }
 
 export function createMigrationTestData() {
@@ -67,13 +98,7 @@ export function createMigrationTestData() {
 
 			const transformations = Array.from(
 				{ length: transformationCount },
-				(_, index) => {
-					const transformation = generateDefaultTransformation();
-					transformation.title = `Mock Transformation ${index + 1}`;
-					transformation.description =
-						'Generated for workspace migration testing';
-					return transformation;
-				},
+				(_, index) => createMockTransformation(index),
 			);
 
 			const { error: transformationsError } =
@@ -84,8 +109,9 @@ export function createMigrationTestData() {
 				);
 			}
 
+			const totalSteps = transformations.reduce((sum, t) => sum + t.steps.length, 0);
 			onProgress(
-				`✅ Seed complete: ${recordings.length} recordings, ${transformations.length} transformations`,
+				`✅ Seed complete: ${recordings.length} recordings, ${transformations.length} transformations (${totalSteps} steps)`,
 			);
 
 			return {

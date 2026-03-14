@@ -13,7 +13,7 @@
 	$effect(() => {
 		const id = fileId;
 		handle = null;
-		fsState.fs.content.open(id).then((h) => {
+		fsState.documents.open(id).then((h) => {
 			// Guard against race condition -- if file changed while loading, ignore
 			if (fsState.activeFileId !== id) return;
 			handle = h;

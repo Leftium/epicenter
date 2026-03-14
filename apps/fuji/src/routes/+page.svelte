@@ -133,7 +133,8 @@
 		workspaceClient.documents.entries.body.open(entryId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYText = handle.getText() ?? null;
+			const result = handle.asText();
+			currentYText = result.data ?? null;
 		});
 
 		return () => {

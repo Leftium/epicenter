@@ -10,7 +10,7 @@ Core library shared across apps.
 
 ## Content Model
 
-`handle` is the canonical interface for document content. It reads/writes through the timeline (`Y.Array('timeline')`), supports text and richtext modes, and provides `getText()`/`getFragment()` for editor binding. Direct `handle.ydoc.getText('content')` access is an anti-pattern—use `handle.getText()` instead.
+`handle` is the canonical interface for document content. It reads/writes through the timeline (`Y.Array('timeline')`), supports text, richtext, and sheet modes. Use `handle.asText()`, `handle.asRichText()`, or `handle.asSheet()` for mode-aware editor binding with automatic conversion—they return `Result` types. Use `handle.read()`/`handle.write()` for simple string I/O. Direct `handle.ydoc` access is an escape hatch—use the handle methods instead.
 
 ## Bun Usage
 

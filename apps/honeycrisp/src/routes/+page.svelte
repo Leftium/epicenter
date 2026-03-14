@@ -125,7 +125,8 @@
 		workspaceClient.documents.notes.body.open(noteId).then((handle) => {
 			if (cancelled) return;
 			currentDocHandle = handle;
-			currentYXmlFragment = handle.getFragment() ?? null;
+			const result = handle.asRichText();
+			currentYXmlFragment = result.data ?? null;
 		});
 
 		return () => {

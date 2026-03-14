@@ -12,4 +12,4 @@ Token-efficient execution: When possible, delegate to sub-agent with only the co
 
 Writing conventions: Load `writing-voice` skill for any user-facing text—UI strings, tooltips, error messages, docs. Em dashes are always closed (no spaces).
 
-Content model: Document content uses the timeline model (`Y.Array('timeline')`). Use `handle.content.read()`/`handle.content.write()` for text, `handle.content.getText()` for editor binding, and `handle.content.timeline` for advanced operations. Never access `handle.ydoc.getText('content')` directly—use `handle.content` instead.
+Content model: Document content uses the timeline model (`Y.Array('timeline')`). Use `handle.read()`/`handle.write()` for text, `handle.getText()` for editor binding, and `handle.timeline` for advanced operations. Never access `handle.ydoc.getText('content')` directly—use `handle` instead.

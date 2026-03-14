@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import type { ContentMode } from './entry-types.js';
+import { xmlFragmentToPlaintext } from './conversions.js';
 import { parseSheetFromCsv, serializeSheetToCsv } from './sheet-csv.js';
 
 type TimelineEntry = Y.Map<unknown>;
@@ -15,6 +16,8 @@ export type Timeline = {
 	pushText(content: string): TimelineEntry;
 	/** Append a new empty sheet entry. Returns the Y.Map. */
 	pushSheet(): TimelineEntry;
+	/** Append a new empty richtext entry. Returns the Y.Map. */
+	pushRichtext(): TimelineEntry;
 	/** Append a sheet entry populated from a CSV string. Returns the Y.Map. */
 	pushSheetFromCsv(csv: string): TimelineEntry;
 	/** Read the current entry as a string. Returns '' if empty. */
@@ -82,6 +85,16 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			return entry;
 		},
 
+		pushRichtext(): TimelineEntry {
+			const entry = new Y.Map();
+			entry.set('type', 'richtext');
+			entry.set('content', new Y.XmlFragment());
+			entry.set('frontmatter', new Y.Map());
+			entry.set('createdAt', Date.now());
+			timeline.push([entry]);
+			return entry;
+		},
+
 		pushSheetFromCsv(csv: string): TimelineEntry {
 			const entry = new Y.Map();
 			entry.set('type', 'sheet');
@@ -101,14 +114,13 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				case 'text':
 					return validated.content.toString();
 				case 'richtext':
-					return '';
+					return xmlFragmentToPlaintext(validated.content);
 				case 'sheet':
 					return serializeSheetToCsv(validated.columns, validated.rows);
 				case 'empty':
 					return '';
 			}
 		},
-
 	};
 }
 

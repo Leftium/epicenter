@@ -17,3 +17,11 @@ export {
 	type Timeline,
 	type ValidatedEntry,
 } from './timeline.js';
+export {
+	xmlFragmentToPlaintext,
+	populateFragmentFromText,
+	type SheetBinding,
+} from './conversions.js';
+export {
+	ContentConversionError,
+} from './errors.js';

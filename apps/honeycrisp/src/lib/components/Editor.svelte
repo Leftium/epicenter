@@ -28,7 +28,7 @@
 		onContentChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
-		onContentChange?: (content: { title: string; preview: string }) => void;
+		onContentChange?: (content: { title: string; preview: string; wordCount: number }) => void;
 	} = $props();
 
 	let element: HTMLDivElement | undefined = $state();
@@ -65,13 +65,16 @@
 	function extractTitleAndPreview(ed: Editor): {
 		title: string;
 		preview: string;
+		wordCount: number;
 	} {
 		const text = ed.getText();
 		const firstNewline = text.indexOf('\n');
 		const firstLine = firstNewline === -1 ? text : text.slice(0, firstNewline);
+		const trimmed = text.trim();
 		return {
 			title: firstLine.slice(0, 80).trim(),
 			preview: text.slice(0, 100).trim(),
+			wordCount: trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length,
 		};
 	}
 

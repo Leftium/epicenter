@@ -77,7 +77,7 @@ Epicenter implements this philosophy by wrapping its core storage primitive in a
 
 ```typescript
 const kv = createEncryptedKvLww(yarray, {
-  getKey: () => session.encryptionKey,
+  key: session.encryptionKey,
 });
 ```
 

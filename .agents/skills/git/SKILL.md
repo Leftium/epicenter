@@ -309,44 +309,20 @@ To accomplish this, I wrapped the `{@render children?.()}` in a `<div class="fle
 
 #### Architectural PRs (API changes, structural refactors)
 
-For PRs that change APIs, storage structures, or architectural patterns, use this section order:
+Open with WHAT+WHY. Show before/after code for API changes. Use diagrams for structural changes. Add a `### Why X?` section for each non-obvious design decision. Mention what's intentionally deferred.
 
-1. **Opening sentence**: A single crisp sentence summarizing WHAT changed — what was added, removed, or redesigned. This grounds the reader before the motivation.
+Use judgment about which of these the reviewer actually needs—not every PR needs every section. Lead with code and diagrams; prose explains the visuals.
 
-2. **Why paragraph**: WHY this change exists. What problem does analysis reveal? What was the old design masking? End with a **one-sentence decision summary** if applicable: "We chose X over Y because Z."
+Use architectural format for: public API changes, persistent data format changes, cross-package contracts, new subsystems. Use simple format for everything else.
 
-3. **Change bullets**: A short bullet list of the specific changes — new APIs, removed patterns, behavioral differences. Bullets complement the prose here; they don't replace it.
+### Definition of Done (PR Description)
 
-4. **API Migration**: Before/after code examples showing the new usage. Mandatory for any API change.
+A PR description is complete when:
 
-5. **Storage/Data Structure**: ASCII diagrams showing before/after layouts for any structural changes.
-
-6. **Technical Details**: Extension points, type definitions, configuration formats — with code examples.
-
-7. **"Why X?" sections**: Use a named `### Why X?` heading for each significant design decision that needs justification. Write as direct statements, not hedged observations.
-
-8. **Future Work**: What could be re-added later, what's intentionally deferred.
-
-9. **(Optional) Changes Summary / Test Plan**: If included, keep minimal and put at the very end. Most PRs don't need one.
-
-**Key principles**:
-
-- **Visual-first**: Each section should lead with code or ASCII diagrams; prose explains the visuals
-- Code snippets and ASCII art are the most scannable — feature them prominently
-- Rationale is prose-only (no visual needed); it explains the thinking
-- Skip the "Changes" section entirely, or make it minimal at the end
-
-**When to use Architectural format**:
-
-- Public API shape changes (exports, signatures, config formats)
-- Persistent data format changes (storage layout, migrations)
-- Cross-package contract changes
-- New subsystem or major refactor
-
-**When to use Simple format**:
-
-- Localized fix/feature with no consumer migration
-- Behavior-preserving internal refactor
+- Opens with WHAT changed (one sentence), then WHY
+- API changes include before/after code examples
+- No file listings, no AI attribution, no `## Summary` headers
+- `## Changelog` section present for `feat:`/`fix:` PRs (omit for `chore:`/`refactor:`/`docs:`)
 
 #### Voice and Tone
 

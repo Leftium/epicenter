@@ -6,7 +6,7 @@
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
-	import { migrateOldSettings } from '$lib/state/migrate-settings';
+	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import AppLayout from './_components/AppLayout.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
 

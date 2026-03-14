@@ -19,7 +19,7 @@
 		checkFfmpegRecordingMethodCompatibility,
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import { checkDatabaseMigration } from '../_layout-utils/check-indexeddb-migration';
+	import { checkDatabaseMigration } from '../_layout-utils/check-database-migration';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,

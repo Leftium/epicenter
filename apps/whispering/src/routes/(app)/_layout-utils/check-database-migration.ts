@@ -1,11 +1,11 @@
-import { migrationDialog } from '$lib/components/MigrationDialog.svelte';
+import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 import { rpc } from '$lib/query';
 import { DbServiceLive } from '$lib/services/db';
 import {
 	getDatabaseMigrationState,
 	probeForOldData,
 	setDatabaseMigrationState,
-} from '$lib/state/migrate-database';
+} from '$lib/migration/migrate-database';
 
 /**
  * Check whether the user has old data that should be migrated to workspace tables.

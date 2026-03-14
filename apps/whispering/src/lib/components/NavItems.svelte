@@ -14,9 +14,8 @@
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
-	import MigrationDialog, {
-		migrationDialog,
-	} from '$lib/components/MigrationDialog.svelte';
+	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
+	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 
 	let {
 		class: className,

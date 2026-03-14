@@ -130,7 +130,7 @@
 	<Separator />
 
 	<section class="space-y-6">
-		<Field.Legend variant="label">Processing Steps</Field.Legend>
+		<h3 class="font-medium">Processing Steps</h3>
 		{#if transformation.steps.length === 0}
 			<Alert.Root variant="warning">
 				<Alert.Title>Add your first processing step</Alert.Title>

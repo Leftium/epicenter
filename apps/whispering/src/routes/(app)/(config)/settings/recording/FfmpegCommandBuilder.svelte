@@ -234,7 +234,7 @@
 	<!-- Left Panel: Settings -->
 	<div class="space-y-4">
 		<div class="flex items-center justify-between">
-			<Field.Legend variant="label">FFmpeg Settings</Field.Legend>
+			<h4 class="text-sm font-semibold">FFmpeg Settings</h4>
 			<button
 				onclick={() => {
 					globalOptions = FFMPEG_DEFAULT_GLOBAL_OPTIONS;
@@ -271,11 +271,11 @@
 				{/if}
 			</div>
 
-			<Field.Description>
+			<p class="text-xs text-muted-foreground">
 				Choose based on your needs: file size, compatibility, or quality. Note:
 				Some formats may not play in the browser preview but will work for
 				transcription.
-			</Field.Description>
+			</p>
 
 			<!-- Flexible layout that adapts to number of controls -->
 			<div class="flex flex-col sm:flex-row gap-3">
@@ -504,9 +504,9 @@
 		<div class="rounded-lg border bg-muted/30 flex-1 flex flex-col">
 			<div class="p-4 border-b bg-background/50">
 				<h5 class="text-sm font-medium">Command Preview</h5>
-				<Field.Description class="mt-0.5">
+				<p class="text-xs text-muted-foreground mt-0.5">
 					Live updates as you modify settings
-				</Field.Description>
+				</p>
 			</div>
 
 			<div class="flex-1 p-4 overflow-auto">

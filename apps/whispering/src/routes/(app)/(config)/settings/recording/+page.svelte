@@ -374,14 +374,14 @@
 				</Field.Field>
 			{:else if isUsingFfmpegMethod}
 				<!-- FFmpeg method settings -->
-				<div class="space-y-2">
+				<Field.Field>
 				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
 				<DesktopOutputFolder></DesktopOutputFolder>
 				<Field.Description>
 					Choose where to save your recordings. Default location is secure and
 					managed by the app.
 				</Field.Description>
-				</div>
+				</Field.Field>
 
 				<FfmpegCommandBuilder
 				bind:globalOptions={() => deviceConfig.get('recording.ffmpeg.globalOptions'),
@@ -417,14 +417,14 @@
 					</Field.Description>
 				</Field.Field>
 
-				<div class="space-y-2">
+				<Field.Field>
 				<Field.Label for="output-folder">Recording Output Folder</Field.Label>
 				<DesktopOutputFolder></DesktopOutputFolder>
 				<Field.Description>
 					Choose where to save your recordings. Default location is secure and
 					managed by the app.
 				</Field.Description>
-				</div>
+				</Field.Field>
 			{/if}
 		{/if}
 	</Field.Group>

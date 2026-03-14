@@ -703,7 +703,7 @@
 										>
 											Directory Naming Requirement
 										</p>
-										<Field.Description class="mt-1">
+										<p class="mt-1 text-xs text-muted-foreground">
 											The model directory must be named{' '}
 											<code class="rounded bg-muted px-1 py-0.5 font-mono"
 												>moonshine-&#123;variant&#125;-&#123;lang&#125;</code
@@ -717,7 +717,6 @@
 												>moonshine-base-en</code
 											>). The variant (tiny/base) determines model architecture.
 										</p>
-									</Field.Description>
 								</Card.Content>
 							</Card.Root>
 						{/snippet}

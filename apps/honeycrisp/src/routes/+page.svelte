@@ -71,7 +71,7 @@
 
 	<main class="flex h-screen flex-1 overflow-hidden">
 		<Resizable.PaneGroup direction="horizontal">
-			<Resizable.Pane defaultSize={35} minSize={20} class="border-r">
+			<Resizable.Pane defaultSize={35} minSize={20}>
 				<NoteList />
 			</Resizable.Pane>
 			<Resizable.Handle />

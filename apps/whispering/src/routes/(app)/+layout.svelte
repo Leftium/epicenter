@@ -6,8 +6,12 @@
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
+	import { migrateOldSettings } from '$lib/state/migrate-settings';
 	import AppLayout from './_components/AppLayout.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
+
+	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
+	migrateOldSettings();
 
 	let { children } = $props();
 

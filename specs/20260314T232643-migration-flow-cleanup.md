@@ -220,11 +220,11 @@ startMigration()
 
 ### Phase 3: Replace `isRunning` with `phase`
 
-- [ ] **3.1** Replace `isRunning` `$state(false)` with `phase: $state<'idle' | 'running' | 'completed' | 'failed'>('idle')`.
-- [ ] **3.2** Update `MigrationDialog.svelte` to use `phase` instead of `isRunning`:
+- [x] **3.1** Replace `isRunning` `$state(false)` with `phase: $state<'idle' | 'running' | 'completed' | 'failed'>('idle')`.
+- [x] **3.2** Update `MigrationDialog.svelte` to use `phase` instead of `isRunning`:
   - `migrationDialog.phase === 'running'` for disabled state
   - Button label: `phase === 'running'` → 'Migrating…', `hasFailedAttempt` → 'Retry Migration', else → 'Start Migration'
-- [ ] **3.3** Keep `hasFailedAttempt` as a latch (set on first failure, cleared only by `resetMigration()`). Different semantics from `phase`—"has ever failed this session" vs "is currently failed."
+- [x] **3.3** Keep `hasFailedAttempt` as a latch (set on first failure, cleared only by `resetMigration()`). Different semantics from `phase`—"has ever failed this session" vs "is currently failed."
 
 ### Phase 4: Dev tools cleanup
 

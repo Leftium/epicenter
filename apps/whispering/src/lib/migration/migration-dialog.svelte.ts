@@ -21,7 +21,7 @@ const testData = createMigrationTestData();
 
 function createMigrationDialog() {
 	let isOpen = $state(false);
-	let isRunning = $state(false);
+	let phase = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
 	let persistedState = $state(getDatabaseMigrationState());
 	let isSeeding = $state(false);
 	let isClearing = $state(false);
@@ -73,8 +73,8 @@ function createMigrationDialog() {
 			}
 			isOpen = true;
 		},
-		get isRunning() {
-			return isRunning;
+		get phase() {
+			return phase;
 		},
 		get logs() {
 			return logs;
@@ -83,9 +83,9 @@ function createMigrationDialog() {
 			return migrationResult;
 		},
 		async startWorkspaceMigration() {
-			if (isRunning) return;
+			if (phase === 'running') return;
 
-			isRunning = true;
+			phase = 'running';
 			logs = [];
 			migrationResult = null;
 			hasFailedAttempt = false;
@@ -103,6 +103,7 @@ function createMigrationDialog() {
 						`❌ Migration failed: ${error instanceof Error ? error.message : String(error)}`,
 					);
 					hasFailedAttempt = true;
+					phase = 'failed';
 					addLog('Migration state remains pending — you can retry.');
 					return Ok(null);
 				},
@@ -111,6 +112,7 @@ function createMigrationDialog() {
 			if (migrationOutcome?.error) {
 				addLog(`❌ Migration failed: ${migrationOutcome.error.message}`);
 				hasFailedAttempt = true;
+				phase = 'failed';
 				addLog('Migration state remains pending — you can retry.');
 			}
 
@@ -133,9 +135,12 @@ function createMigrationDialog() {
 				addLog(
 					`Steps: ${result.steps.migrated} migrated, ${result.steps.skipped} skipped, ${result.steps.failed} failed`,
 				);
+				phase = 'completed';
 			}
 
-			isRunning = false;
+			if (phase === 'running') {
+				phase = 'failed';
+			}
 		},
 		get isPending() {
 			return persistedState === 'pending';

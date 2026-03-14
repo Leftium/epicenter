@@ -38,10 +38,10 @@
 			{#if migrationDialog.isPending}
 				<Button
 					onclick={migrationDialog.startWorkspaceMigration}
-					disabled={migrationDialog.isRunning}
+					disabled={migrationDialog.phase === 'running'}
 					class="w-full"
 				>
-					{migrationDialog.isRunning ? 'Migrating…' : migrationDialog.hasFailedAttempt ? 'Retry Migration' : 'Start Migration'}
+					{migrationDialog.phase === 'running' ? 'Migrating…' : migrationDialog.hasFailedAttempt ? 'Retry Migration' : 'Start Migration'}
 				</Button>
 			{:else}
 				<Field.Description>Migration is already complete.</Field.Description>

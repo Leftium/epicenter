@@ -137,17 +137,17 @@ Result types come from `wellcrafted/result`: `Ok`, `Err`, `trySync`, `tryAsync`.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Naming | `asText()`, `asRichText()`, `asSheet()` | "as" signals transformation, not retrieval. Avoids Yjs jargon (`getFragment`). Reads naturally: "give me this as text." |
-| Return type for `as*()` | `Result<T, ContentConversionError>` | Matches codebase's `defineErrors` + Result pattern. Some conversions are lossy—caller should be aware. |
+| Return type for `as*()` | Plain value (`Y.Text`, `Y.XmlFragment`, `SheetBinding`) | All six pairwise conversions are infallible—any string is valid CSV, richtext→text always extracts plaintext, etc. Wrapping infallible operations in Result misleads callers into handling errors that don't exist. If future types need failure semantics, that's a new method, not a retrofit. |
 | `read()` return type | `string` (no Result) | Imperative API that always works. Richtext→plaintext is lossy but valid. Empty/unknown → `''`. |
 | `write()` return type | `void` (no Result) | Always succeeds. Mode-switches if needed (pushes new text entry). |
 | Conversion strategy | Push new timeline entry | Timeline is append-only by design. Converting text→richtext pushes a new richtext entry. The old text entry stays as history. |
 | Text→sheet feasibility | Always succeeds (any string is valid CSV) | Single-cell CSV is valid. Lossy like richtext→text, but not a failure. Document the lossy nature. |
-| Where errors live | `content/errors.ts` | Content-specific errors. Separate from workspace `shared/errors.ts`. |
+| Where errors live | Removed (`content/errors.ts` deleted) | No conversion can fail, so `ContentConversionError` was dead code. Removed entirely. |
 | `pushRichtext()` | Add to Timeline | Fixes the layering violation where `getFragment()` bypasses Timeline. |
 | Old methods (`getText`, `getFragment`) | Remove | Clean break. The cleanup spec already flattened `handle.content` → `handle`. One more rename is acceptable. |
-| `as*()` on empty timeline | Auto-create requested type, return `Ok` | Matches current `getText()`/`getFragment()` behavior on empty. No conversion needed—just creation. |
-| `as*()` on matching type | Return existing Y.* directly, wrapped in `Ok` | No conversion needed. Fast path. |
-| `as*()` on different type | Convert, push new entry, return `Ok` or `Err` | Conversion creates a new timeline entry. Old entry preserved as history. |
+| `as*()` on empty timeline | Auto-create requested type, return directly | Matches current behavior on empty. No conversion needed—just creation. |
+| `as*()` on matching type | Return existing Y.* directly | No conversion needed. Fast path. |
+| `as*()` on different type | Convert, push new entry, return directly | Conversion creates a new timeline entry. Old entry preserved as history. |
 | SheetBinding type | `{ columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> }` | Matches the existing sheet entry structure. Named type for clarity. |
 
 ## Architecture
@@ -586,17 +586,17 @@ asText(): Result<Y.Text, ContentConversionError> {
 
 ### Summary
 
-Added mode-aware content conversion to DocumentHandle. Three new `as*()` methods (`asText`, `asRichText`, `asSheet`) automatically convert between content types and return `Result` types. Fixed `read()` returning `''` for richtext by adding `xmlFragmentToPlaintext()` with block-element-aware newline insertion. Added `pushRichtext()` to Timeline to fix the layering bypass in `getFragment()`.
+Added mode-aware content conversion to DocumentHandle. Three new `as*()` methods (`asText`, `asRichText`, `asSheet`) automatically convert between content types and return plain values (not Result). Fixed `read()` returning `''` for richtext by adding `xmlFragmentToPlaintext()` with block-element-aware newline insertion. Added `pushRichtext()` to Timeline to fix the layering bypass in `getFragment()`.
 
 ### Deviations from Spec
 
 - **Conversion functions restructured**: The spec planned six standalone conversion functions returning Y types. Yjs standalone types can't be read from ("Add Yjs type to a document before reading data"), so the approach was restructured into extract functions (doc-backed → primitives) and populate functions (primitives → doc-backed). The `as*()` methods compose these with timeline push methods inside `ydoc.transact()`. Simpler and more correct.
 - **`SheetBinding` type location**: Defined in `content/conversions.ts` instead of `types.ts` — co-located with content code.
-- **`getText()`/`getFragment()` deprecated not removed**: Softer migration. Both methods still work but are marked `@deprecated`. Hard removal deferred.
+- **`getText()`/`getFragment()` fully removed**: Clean breaking change, not deprecated. All consumers updated.
+- **`as*()` return plain values, not Result**: After tracing every code path, all six pairwise conversions are infallible — no content type can fail to convert to another. `ContentConversionError` was dead code and has been deleted. Any string is valid CSV (worst case: single cell). Richtext→text always extracts plaintext. The only "error" paths were defensive guards against Yjs itself producing corrupt entries after a push, which never happens. Wrapping infallible operations in Result misleads callers. If future content types introduce genuinely fallible conversions (e.g., JSON schema validation), those would be new methods — not a retrofit of these three.
 - **Documentation updates 4.2–4.4**: Deferred to a follow-up. The JSDoc on the types is updated.
 
 ### Follow-up Work
 
-- Remove `@deprecated` `getText()`/`getFragment()` after confirming no external consumers
 - Update README content model sections (4.2–4.4)
 - Update AGENTS.md with new handle API

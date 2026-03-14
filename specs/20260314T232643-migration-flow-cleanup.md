@@ -1,7 +1,7 @@
 # Migration Dialog Cleanup
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Implemented
 **Author**: AI-assisted
 
 ## Overview
@@ -247,8 +247,8 @@ startMigration()
 
 ### Phase 5: Update `MigrationDialog.svelte` for new property names
 
-- [ ] **5.1** Update any renamed properties (e.g., `startWorkspaceMigration` → `startMigration` if renamed, `isRunning` → `phase`, etc.).
-- [ ] **5.2** Verify the layout still calls `checkDatabaseMigration()` (the thin wrapper)—no change needed there.
+- [x] **5.1** Update any renamed properties (e.g., `startWorkspaceMigration` → `startMigration` if renamed, `isRunning` → `phase`, etc.).
+- [x] **5.2** Verify the layout still calls `checkDatabaseMigration()` (the thin wrapper)—no change needed there.
 
 ## Edge Cases
 
@@ -290,14 +290,14 @@ startMigration()
 
 ## Success Criteria
 
-- [ ] `isPending` has one source of truth—`persistedState` `$state` synced with localStorage via `setPersistedState()`
-- [ ] `migrationToastId` is a plain `let`, not `$state`
-- [ ] Toast creation and dismissal both live in `migration-dialog.svelte.ts`
-- [ ] `createMigrationTestData()` does not execute at module load in production
-- [ ] No functional behavior changes—migration still works identically from the user's perspective
-- [ ] Filename stays `migration-dialog.svelte.ts`, export stays `migrationDialog`
-- [ ] `lsp_diagnostics` clean on all changed files
-- [ ] Build passes
+- [x] `isPending` has one source of truth—`persistedState` `$state` synced with localStorage via `setPersistedState()`
+- [x] `migrationToastId` is a plain `let`, not `$state`
+- [x] Toast creation and dismissal both live in `migration-dialog.svelte.ts`
+- [x] `createMigrationTestData()` does not execute at module load in production
+- [x] No functional behavior changes—migration still works identically from the user's perspective
+- [x] Filename stays `migration-dialog.svelte.ts`, export stays `migrationDialog`
+- [x] `lsp_diagnostics` clean on all changed files
+- [x] Build passes (7 pre-existing errors in unrelated packages, zero in migration files)
 
 ## References
 
@@ -307,3 +307,26 @@ startMigration()
 - `apps/whispering/src/lib/migration/migrate-database.ts` — pure logic, unchanged
 - `apps/whispering/src/lib/migration/migration-test-data.ts` — lazy-loaded in dev
 - `apps/whispering/src/lib/state/device-config.svelte.ts` — reference pattern for persisted state sync
+
+## Review
+
+### Changes Made
+
+Five waves of incremental commits, each verified with `lsp_diagnostics` and `svelte-check`:
+
+1. **Single source of truth**: Replaced `isPending` `$state` + external setter with `persistedState` `$state` derived from localStorage. All writes go through `setPersistedState()` which atomically syncs both localStorage and reactive state. Demoted `migrationToastId` from `$state` to plain `let`.
+
+2. **Absorb toast lifecycle**: Moved toast creation (`showPendingToast`) and data probe (`check`) from `check-database-migration.ts` into the dialog factory. The wrapper file is now a one-liner. Removed `isPending` setter and `migrationToastId` getter/setter from public API.
+
+3. **Phase state machine**: Replaced `isRunning` boolean with `phase: 'idle' | 'running' | 'completed' | 'failed'`. Updated `MigrationDialog.svelte` to use `phase` for disabled state and button labels. Kept `hasFailedAttempt` as a separate latch.
+
+4. **Dev tools cleanup**: Lazy-loaded test data via `dynamic import()` in `seedIndexedDB`/`clearIndexedDB`. Removed eagerly-executed `createMigrationTestData()` from module scope. Grouped dev state at bottom of closure with comment boundary.
+
+5. **Final verification**: Confirmed all consumers compile clean. Layout still calls thin wrapper. Full `svelte-check` shows zero new errors.
+
+### What Didn't Change
+
+- `migrate-database.ts` — pure migration logic, untouched (only added `export` to `DbMigrationState` type)
+- `migration-test-data.ts` — untouched
+- `MigrationDialog.svelte` — only `isRunning` → `phase` in two lines
+- No file renames, no import path changes for consumers

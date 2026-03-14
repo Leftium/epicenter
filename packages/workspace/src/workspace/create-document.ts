@@ -123,15 +123,31 @@ function makeHandle(
 		},
 		getText() {
 			const entry = tl.currentEntry;
-			if (!entry) return undefined;
-			if ((entry.get('type') as string) !== 'text') return undefined;
-			return entry.get('content') as Y.Text;
+			if (entry && (entry.get('type') as string) === 'text') {
+				return entry.get('content') as Y.Text;
+			}
+			// Auto-create a text entry for editor binding (matches Y.Text lazy-create semantics)
+			if (!entry) {
+				tl.pushText('');
+				return tl.currentEntry!.get('content') as Y.Text;
+			}
+			return undefined;
 		},
 		getFragment() {
 			const entry = tl.currentEntry;
-			if (!entry) return undefined;
-			if ((entry.get('type') as string) !== 'richtext') return undefined;
-			return entry.get('content') as Y.XmlFragment;
+			if (entry && (entry.get('type') as string) === 'richtext') {
+				return entry.get('content') as Y.XmlFragment;
+			}
+			// Auto-create a richtext entry for editor binding
+			if (!entry) {
+				const newEntry = new Y.Map();
+				newEntry.set('type', 'richtext');
+				newEntry.set('content', new Y.XmlFragment());
+				newEntry.set('frontmatter', new Y.Map());
+				ydoc.getArray('timeline').push([newEntry]);
+				return tl.currentEntry!.get('content') as Y.XmlFragment;
+			}
+			return undefined;
 		},
 		timeline: tl,
 	};

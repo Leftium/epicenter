@@ -267,12 +267,15 @@ export type DocumentContent = {
 	write(text: string): void;
 	/**
 	 * Get the Y.Text from the current timeline entry for editor binding.
-	 * Returns undefined if no text entry exists.
+	 * Auto-creates an empty text entry if the timeline is empty (matches
+	 * Y.Text lazy-create semantics). Returns undefined only if the current
+	 * entry is a non-text mode (richtext, sheet).
 	 */
 	getText(): Y.Text | undefined;
 	/**
 	 * Get the Y.XmlFragment from the current timeline entry for richtext binding.
-	 * Returns undefined if no richtext entry exists.
+	 * Auto-creates an empty richtext entry if the timeline is empty.
+	 * Returns undefined only if the current entry is a non-richtext mode.
 	 */
 	getFragment(): Y.XmlFragment | undefined;
 	/** Direct access to the timeline for advanced operations. */
@@ -342,7 +345,7 @@ export type DocumentHandle = {
  * @example
  * ```typescript
  * const handle = await documents.open(row);
- * handle.ydoc.getText('body').insert(0, 'hello');
+ * handle.content.write('hello');
  * // updatedAt on the row is bumped automatically
  *
  * const text = handle.content.read();

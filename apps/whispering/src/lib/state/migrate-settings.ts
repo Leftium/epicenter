@@ -9,7 +9,7 @@
  */
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import workspace from '$lib/workspace';
-import { Ok, trySync } from 'wellcrafted/result';
+import { Ok, tryAsync, trySync } from 'wellcrafted/result';
 
 // ── Migration state ──────────────────────────────────────────────────────────
 
@@ -49,9 +49,7 @@ export async function migrateOldSettings(): Promise<void> {
 
 	// Read old blobs before any async work
 	const oldSettingsRaw = window.localStorage.getItem('whispering-settings');
-	const oldDeviceConfigRaw = window.localStorage.getItem(
-		'whispering-device-config',
-	);
+	const oldDeviceConfigRaw = window.localStorage.getItem('whispering-device-config');
 
 	// No old data at all — fresh install
 	if (!oldSettingsRaw && !oldDeviceConfigRaw) {
@@ -72,32 +70,43 @@ export async function migrateOldSettings(): Promise<void> {
 	// Wait for IndexedDB persistence to load so workspace.kv.get() returns
 	// real persisted values (not defaults). This ensures the first-write-wins
 	// check correctly detects user-set values.
-	await workspace.whenReady;
+	const { error: readyError } = await tryAsync({
+		try: () => workspace.whenReady,
+		catch: (err) => {
+			console.warn('[settings-migration] workspace.whenReady failed, aborting:', err);
+			return Ok(undefined);
+		},
+	});
+	if (readyError) return;
 
-	// ── Migrate workspace keys ───────────────────────────────────────────
+	// ── Migrate workspace keys ───────────────────────────────────────────────────
+	// Batch into a single Yjs transaction so workspaceSettings.observeAll
+	// fires once with all changes, not 43 individual updates.
 
-	for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
-		trySync({
-			try: () => {
-				const raw = oldSettings?.[oldKey];
-				if (raw === undefined || raw === null) return;
+	workspace.batch(() => {
+		for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
+			trySync({
+				try: () => {
+					const raw = oldSettings?.[oldKey];
+					if (raw === undefined || raw === null) return;
 
-				// First-write-wins: skip if user already changed this setting
-				if (getKv(newKey) !== getKvDefault(newKey)) return;
+					// First-write-wins: skip if user already changed this setting
+					if (getKv(newKey) !== getKvDefault(newKey)) return;
 
-				const value = convert ? convert(raw) : raw;
-				if (value === undefined) return;
+					const value = convert ? convert(raw) : raw;
+					if (value === undefined) return;
 
-				setKv(newKey, value);
-			},
-			catch: (err) => {
-				console.warn(`[settings-migration] workspace key "${oldKey}":`, err);
-				return Ok(undefined);
-			},
-		});
-	}
+					setKv(newKey, value);
+				},
+				catch: (err) => {
+					console.warn(`[settings-migration] workspace key "${oldKey}":`, err);
+					return Ok(undefined);
+				},
+			});
+		}
+	});
 
-	// ── Migrate device keys ──────────────────────────────────────────────
+	// ── Migrate device keys ──────────────────────────────────────────────────────
 	// Priority: per-key localStorage > whispering-device-config > whispering-settings
 
 	for (const { oldKey, newKey } of DEVICE_KEY_MAP) {
@@ -112,10 +121,7 @@ export async function migrateOldSettings(): Promise<void> {
 				const raw = oldDeviceConfig?.[newKey] ?? oldSettings?.[oldKey];
 				if (raw === undefined || raw === null) return;
 
-				(deviceConfig.set as (key: string, value: unknown) => void)(
-					newKey,
-					raw,
-				);
+				(deviceConfig.set as (key: string, value: unknown) => void)(newKey, raw);
 			},
 			catch: (err) => {
 				console.warn(`[settings-migration] device key "${oldKey}":`, err);
@@ -124,7 +130,7 @@ export async function migrateOldSettings(): Promise<void> {
 		});
 	}
 
-	// ── Cleanup ──────────────────────────────────────────────────────────
+	// ── Cleanup ────────────────────────────────────────────────────────────
 
 	window.localStorage.removeItem('whispering-settings');
 	window.localStorage.removeItem('whispering-device-config');

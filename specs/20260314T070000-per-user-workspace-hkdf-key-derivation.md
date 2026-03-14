@@ -2,13 +2,14 @@
 
 **Date**: 2026-03-14
 **Status**: Draft
+**Revision**: Simplified — two-level HKDF with user key in session, no separate endpoint
 **Replaces**: `specs/20260314T064000-per-workspace-envelope-encryption.md`
 **Depends on**: `specs/20260314T063000-encryption-wrapper-hardening.md` (mode system, AAD, error containment)
 **Builds on**: `specs/20260313T180100-client-side-encryption-wiring.md` (key delivery to apps)
 
 ## Overview
 
-Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via HKDF. Each user gets a unique key for each workspace they access, limiting blast radius to one user's data in one app per compromised key. No new database tables, no wrapped DEKs, no key storage—keys are deterministically derived from a server secret.
+Replace the deployment-wide encryption key (`SHA-256(BETTER_AUTH_SECRET)`) with per-user-per-workspace keys derived via two-level HKDF. The server derives a per-user key and sends it in the session. The client derives per-workspace keys locally. No new endpoints, no new database tables, no key storage—keys are deterministically derived from a server secret.
 
 ## Motivation
 
@@ -36,19 +37,45 @@ This creates three problems:
 ### Desired State
 
 ```typescript
-// Server: per-user-workspace key, derived on demand
-const key = await deriveWorkspaceKey(env.WORKSPACE_KEY_SECRET, workspaceId, userId);
+// Server: per-user key via HKDF, delivered in session (same wiring as today)
+customSession(async ({ user, session }) => {
+  const userKey = await deriveUserKey(env.WORKSPACE_KEY_SECRET, user.id);
+  return { user, session, encryptionKey: bytesToBase64(userKey) };
+}),
 
-// Client: workspace-scoped key fetch
-const response = await fetch(`/workspaces/${workspaceId}/key`);
-const { key } = await response.json();
-workspaceKeyCache.set(workspaceId, base64ToBytes(key));
-
-// Workspace: closes over its own key
-createEncryptedKvLww(yarray, {
-  key: workspaceKeyCache.getSync(workspaceId),
-});
+// Client: derives per-workspace key locally, no fetch needed
+const userKey = base64ToBytes(session.encryptionKey);
+const wsKey = await hkdfDerive(userKey, `workspace:${workspaceId}:v1`);
+workspace.unlock(wsKey);
 ```
+
+## How HKDF Works (At a Glance)
+
+```
+CURRENT: SHA-256 — one secret, one key, everyone shares it
+══════════════════════════════════════════════════════════
+
+  BETTER_AUTH_SECRET ──SHA-256──▶ 0xA3F2...9B01 (same for all users)
+
+NEW: Two-Level HKDF — one secret, unique key per user per workspace
+═══════════════════════════════════════════════════════════════════
+
+  WORKSPACE_KEY_SECRET
+         │
+         │  SHA-256 → root key material (never leaves server)
+         │
+    ┌────┴─────────────────────┐
+    │  Level 1: SERVER         │  HKDF(root, "user:{userId}:v1")
+    │  Per-user key            │  Sent in session response
+    └────┬─────────────────────┘
+         │
+    ┌────┴─────────────────────┐
+    │  Level 2: CLIENT         │  HKDF(userKey, "workspace:{wsId}:v1")
+    │  Per-workspace key       │  Derived locally, never sent over network
+    └──────────────────────────┘
+```
+
+Each level is deterministic — same inputs always produce the same key. Nothing is stored.
 
 ## Research Findings
 
@@ -58,24 +85,32 @@ createEncryptedKvLww(yarray, {
 |---|---|---|---|
 | Per-deployment (current) | All users, all apps | Trivial | Zero |
 | Per-workspace (workspaceId) | All users of one app | Trivial | Low |
-| **Per-user-workspace** (workspaceId + userId) | **One user, one app** | Server-mediated | Low |
+| **Per-user-workspace** (workspaceId + userId) | **One user, all apps** | Server-mediated | Low |
 
-In Epicenter's model, "workspace" = "app" (e.g., `epicenter.whispering`). Per-workspace keys would mean a single key compromise exposes all users' transcriptions—still a large blast radius. Per-user-workspace gives the tightest isolation with identical implementation complexity.
+In Epicenter's model, "workspace" = "app" (e.g., `epicenter.whispering`). Per-workspace keys would mean a single key compromise exposes all users' transcriptions—still a large blast radius. Per-user-workspace gives the tightest practical isolation.
 
 **Key finding**: Durable Objects are already per-user. The natural key derivation boundary matches the storage boundary.
+
+### Why Two-Level (Session + Client) Instead of Separate Endpoint
+
+| | Session + client derivation | Separate endpoint per workspace |
+|---|---|---|
+| **Extra fetch per workspace** | No | Yes |
+| **Works offline for new workspaces** | Yes (derive locally) | No (needs server) |
+| **Blast radius if client compromised** | One user, all workspaces | One user, one workspace |
+| **Wiring complexity** | Same as today | New endpoint + fetch + cache |
+| **Server changes** | Swap SHA-256 → HKDF in customSession | New route, remove from session |
+
+The blast radius difference is theoretical — a compromised client would fetch all workspace keys from the endpoint anyway. The session approach is simpler, works offline, and keeps the identical `$session` subscription wiring that already exists.
 
 ### Why HKDF (Not Random DEKs / Envelope Encryption)
 
 | Approach | Key storage | Key rotation | Sharing | Implementation |
 |---|---|---|---|---|
-| **HKDF derivation** | None (deterministic) | New secret → re-derive all | Phase 2 (shared rooms) | ~30 lines server code |
+| **HKDF derivation** | None (deterministic) | New secret → re-derive all | Phase 2 (shared rooms) | ~15 lines server + ~10 lines client |
 | Random DEK + server wrap | Postgres table | Re-wrap only, no re-encrypt | Insert wrapped copy | New table, endpoint, migration logic |
 
-HKDF gives all the tenant isolation benefits of envelope encryption without the operational complexity. The main trade-off—rotation requires re-derivation rather than re-wrapping—is acceptable because:
-
-- Key rotation is a rare admin operation
-- No production encrypted data exists yet
-- Re-wrapping still requires touching every row in the key table
+HKDF gives all the tenant isolation benefits of envelope encryption without the operational complexity.
 
 ### What Real Products Do
 
@@ -97,101 +132,107 @@ This is acceptable because:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Key derivation | `HKDF(SHA-256(WORKSPACE_KEY_SECRET), "workspace:{wsId}:user:{userId}:v1")` | Per-user-per-workspace isolation. Deterministic, no storage needed. Version label enables future format changes. |
+| Key derivation (server) | `HKDF(SHA-256(WORKSPACE_KEY_SECRET), "user:{userId}:v1")` | Per-user key. Deterministic, no storage. Version label enables future format changes. |
+| Key derivation (client) | `HKDF(userKey, "workspace:{wsId}:v1")` | Per-workspace key derived locally. No network call needed. |
 | Separate secret | `WORKSPACE_KEY_SECRET` env var (not `BETTER_AUTH_SECRET`) | Decouples auth rotation from encryption. Cheap hygiene—one extra env var. |
-| Key delivery | `GET /workspaces/:id/key` endpoint | Fetch on workspace open, not on login. Client only gets keys for workspaces it actually opens. Session token authenticates. |
-| Key in session | **Removed** | Session no longer carries encryption key. Keys are workspace-scoped, not session-scoped. |
+| Key delivery | `customSession` plugin (same as today) | User key travels in the session response. No new endpoint. Identical wiring pattern. |
+| Client-side HKDF | Web Crypto `crypto.subtle.deriveBits` | Available in all targets: browser, Cloudflare Workers, Tauri (WebView). |
 | Sharing strategy | Deferred to Phase 2 | Per-user keys don't support shared CRDTs. When sharing ships, shared rooms get workspace-level keys. |
 | Envelope encryption | Deferred to Phase 3 | Only needed for enterprise BYOK or user-held keys. HKDF is sufficient for trusted-server model. |
 | Zero-knowledge sharing | Out of scope | Requires public-key infrastructure. Different product entirely. |
+| HKDF salt | Empty | Standard per RFC 5869 §3.1. No benefit from salt when input key material is already high-entropy. |
+| Server-side storage | **None** | Keys are derived on the fly. Same inputs → same key. Nothing to store, look up, or migrate. |
 
 ## Architecture
 
 ### Key Hierarchy
 
 ```
-WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
+WORKSPACE_KEY_SECRET (env var, one string — the only thing stored)
        │
-       │  SHA-256(secret) → root key material
+       │  SHA-256(secret) → root key material (32 bytes)
+       │  (stays on server, never sent to client)
        │
-       │  HKDF-SHA256(root, info="workspace:{wsId}:user:{userId}:v1")
+       │  HKDF(root, info="user:{userId}:v1") → per-user key (32 bytes)
        ▼
-┌──────────────────────────────────────────┐
-│  Per-user-workspace key (32 bytes)       │
-│  Deterministic — same inputs = same key  │
-│  No storage needed                       │
-└──────────────┬───────────────────────────┘
-               │
-               │  Returned via GET /workspaces/:id/key
-               │  (authenticated, authorized)
-               ▼
-┌──────────────────────────────────────────┐
-│  Client (in-memory)                      │
-│                                          │
-│  workspaceKeyCache.set(wsId, key)        │
-│  key: cache.getSync(wsId)       │
-│  createEncryptedKvLww(yarray, { key })│
-└──────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────┐
+│  Session Response                                              │
+│  { user, session, encryptionKey: base64(userKey) }            │
+│  Same customSession plugin, same $session subscription        │
+└──────────────────────────────┬─────────────────────────────────┘
+                               │
+                               │  Client decodes base64 → Uint8Array
+                               │  Then derives per-workspace key locally:
+                               │
+                               │  HKDF(userKey, info="workspace:{wsId}:v1")
+                               ▼
+┌────────────────────────────────────────────────────────────────┐
+│  Per-workspace key (32 bytes)                                  │
+│  workspace.unlock(wsKey)                                       │
+│  encryptValue/decryptValue use this key + AAD                  │
+└────────────────────────────────────────────────────────────────┘
 ```
 
 ### Login → First Encrypted Write
 
 ```
 1. User authenticates with Better Auth
-   └── Session token issued (no encryption key in session)
+   └── Session response includes encryptionKey (per-user key, base64)
 
-2. App opens workspace 'epicenter.whispering'
-   └── Client: GET /workspaces/epicenter.whispering/key
-       (session cookie authenticates, server reads userId from session)
+2. Client $session subscription fires
+   ├── userKey = base64ToBytes(session.encryptionKey)
+   └── For each open workspace:
+       ├── wsKey = HKDF(userKey, "workspace:{wsId}:v1")
+       └── workspace.unlock(wsKey)
 
-3. Server handles key request
-   ├── Verify user has access to workspace
-   ├── root = SHA-256(WORKSPACE_KEY_SECRET)
-   ├── key = HKDF(root, info="workspace:epicenter.whispering:user:usr-123:v1")
-   └── Return { key: base64(key) }
+3. First encrypted write
+   └── kv.set('tab-1', data) → encryptValue(json, wsKey, aad) → inner CRDT
+```
 
-4. Client receives key
-   ├── workspaceKeyCache.set('epicenter.whispering', base64ToBytes(key))
-   └── wrapper.unlock(key)  ← from hardening spec
+### Sign Out
 
-5. First encrypted write
-   └── kv.set('tab-1', data) → encryptValue(json, key, aad) → inner CRDT
+```
+1. User clicks sign out
+   ├── session becomes null
+   ├── $session subscription fires with undefined
+   ├── workspace.lock() for each workspace
+   ├── Clear local Y.Doc / IndexedDB (data is on Durable Object)
+   └── Redirect to sign-in
 ```
 
 ## Phased Approach
 
 This spec implements Phase 1. Phases 2 and 3 are documented here for architectural context but are explicitly deferred.
 
-### Phase 1: Per-User-Workspace HKDF (This Spec)
+### Phase 1: Two-Level HKDF (This Spec)
 
-Everything is private. Every room gets a user-specific key.
+Everything is private. Every room gets a user-specific workspace key.
 
 **Server changes:**
 - Add `WORKSPACE_KEY_SECRET` env var
-- Replace `deriveKeyFromSecret(BETTER_AUTH_SECRET)` with HKDF derivation
-- Add `GET /workspaces/:id/key` endpoint
-- Remove `encryptionKey` from session response
+- Replace `deriveKeyFromSecret(BETTER_AUTH_SECRET)` with `deriveUserKey(WORKSPACE_KEY_SECRET, userId)` using HKDF
+- Session still carries `encryptionKey` (but now it's a per-user key, not deployment-wide)
+- Remove old `deriveKeyFromSecret` function
 
 **Client changes:**
-- Create `WorkspaceKeyCache` (in-memory Map)
-- Fetch key on workspace open, store in cache
-- Pass `key` to `createEncryptedKvLww`
+- Add `deriveWorkspaceKey(userKey, workspaceId)` helper using Web Crypto HKDF
+- `$session` subscription passes workspace-specific key to `workspace.unlock(wsKey)`
+- No new endpoint, no fetch, no cache
 
 ### Phase 2: Shared Room Keys (When Sharing Ships)
 
-When collaborative workspaces exist, the key endpoint gains one branch:
+When collaborative workspaces exist, the server adds a branch for shared workspace keys:
 
 ```typescript
+// Server: shared rooms derive a workspace-level key (no userId)
 if (room.isShared) {
-  // All authorized members derive the same key
   return hkdfDerive(root, `workspace:${wsId}:shared:v1`)
 } else {
-  // Per-user key
-  return hkdfDerive(root, `workspace:${wsId}:user:${userId}:v1`)
+  return hkdfDerive(root, `user:${userId}:v1`)  // client derives wsKey locally
 }
 ```
 
-Still deterministic. Still no storage. Authz gates who can request the key.
+For shared rooms, the server returns the workspace key directly (not a user key). The client skips the second HKDF level and uses the key as-is.
 
 **Trade-off**: Shared room blast radius = all members of that workspace. This is inherent to shared encrypted state—all readers need the same decryption key.
 
@@ -208,30 +249,29 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ## Implementation Plan
 
-### Phase 1: Server Key Derivation
+### Phase 1: Server — HKDF in customSession
 
 - [ ] **1.1** Add `WORKSPACE_KEY_SECRET` env var to `wrangler.jsonc` and local dev config. Separate from `BETTER_AUTH_SECRET`.
-- [ ] **1.2** Implement `deriveWorkspaceKey(secret, workspaceId, userId)` — uses Web Crypto HKDF-SHA256: import `SHA-256(secret)` as HKDF key material, derive 256 bits with `info="workspace:{wsId}:user:{userId}:v1"` and empty salt.
-- [ ] **1.3** Add `GET /workspaces/:id/key` Hono route. Authenticates via session, reads userId from session, verifies workspace access, derives key, returns `{ key: base64(derivedKey) }`.
-- [ ] **1.4** Remove `encryptionKey` from `customSession` plugin response. Session no longer carries any encryption key.
-- [ ] **1.5** Remove `deriveKeyFromSecret` and its `bytesToBase64` helper from `app.ts` (replaced by HKDF derivation).
+- [ ] **1.2** Implement `deriveUserKey(secret, userId)` in `apps/api/src/app.ts` — uses Web Crypto HKDF-SHA256: `importKey('raw', SHA-256(secret), 'HKDF')` then `deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: encode("user:{userId}:v1") }, 256)`.
+- [ ] **1.3** Replace `deriveKeyFromSecret(env.BETTER_AUTH_SECRET)` call in `customSession` with `deriveUserKey(env.WORKSPACE_KEY_SECRET, user.id)`. Session still returns `encryptionKey: bytesToBase64(userKey)`.
+- [ ] **1.4** Remove old `deriveKeyFromSecret` function (replaced by `deriveUserKey`).
 
-### Phase 2: Client Key Cache
+### Phase 2: Client — Local Workspace Key Derivation
 
-- [ ] **2.1** Create `WorkspaceKeyCache` interface: `set(workspaceId, key)`, `getSync(workspaceId)`, `clear()`. In-memory implementation (Map). Scoped per-workspace, not per-user.
-- [ ] **2.2** Create `fetchWorkspaceKey(workspaceId)` async helper that calls `GET /workspaces/:id/key`, decodes the base64 key, stores in cache, and calls `wrapper.unlock(key)`.
+- [ ] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}:v1"` and empty salt.
+- [ ] **2.2** Export `deriveWorkspaceKey` from the crypto barrel.
 
 ### Phase 3: Per-App Wiring
 
-- [ ] **3.1** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `key: cache.getSync(wsId)` to `createWorkspace`.
+- [ ] **3.1** **epicenter** — `$session` subscription decodes `encryptionKey`, calls `deriveWorkspaceKey(userKey, wsId)`, then `workspace.unlock(wsKey)`. On session null, `workspace.lock()` + clear local data.
 - [ ] **3.2** **whispering** — Same pattern.
-- [ ] **3.3** **tab-manager** — Same pattern. Verify Chrome extension can call the key endpoint.
+- [ ] **3.3** **tab-manager** — Same pattern.
 
 ### Phase 4: Verify
 
 - [ ] **4.1** `bun test` in `packages/workspace` — all pass
 - [ ] **4.2** `bun run typecheck` — clean
-- [ ] **4.3** Manual: sign in → open workspace → verify per-user key fetched → new writes produce EncryptedBlob → sign out → workspace locked
+- [ ] **4.3** Manual: sign in → open workspace → verify per-user workspace key derived → new writes produce EncryptedBlob → sign out → workspace locked → data cleared
 
 ### DO NOT build yet (deferred to future phases):
 
@@ -239,44 +279,43 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 - KEK derivation / wrap / unwrap helpers (Phase 3)
 - Key rotation re-wrapping (Phase 3)
 - Shared workspace key derivation (Phase 2)
+- `GET /workspaces/:id/key` endpoint (removed — not needed with session-based delivery)
 
 ## Edge Cases
 
 ### First workspace open
 
-1. `GET /workspaces/epicenter.whispering/key` → server derives key from inputs
-2. Server doesn't store anything—derivation is deterministic
-3. Same request tomorrow produces the same key (same inputs)
+1. Session arrives with per-user `encryptionKey`
+2. Client calls `deriveWorkspaceKey(userKey, workspaceId)` → deterministic per-workspace key
+3. `workspace.unlock(wsKey)` — workspace decrypts
+4. Same derivation tomorrow produces the same workspace key (same inputs)
 
 ### Secret rotation
 
-1. Admin rotates `WORKSPACE_KEY_SECRET`
-2. All derived keys change (HKDF outputs are different for different input key material)
-3. Existing ciphertext becomes undecryptable with new keys
-4. **Mitigation**: Re-encrypt all workspace data during rotation window. Since no production encrypted data exists yet, this is a future concern.
-5. **Future mitigation**: Store key version in EncryptedBlob (v:2 could indicate new key epoch), support keyring of old/new derived keys during rotation.
+Not planned. If `BETTER_AUTH_SECRET` is ever rotated (breach scenario), all derived keys change. Existing ciphertext becomes undecryptable. Since auth is also compromised in that scenario, a full data reset is expected. No keyring or migration mechanism is needed unless production encrypted data exists at scale.
 
 ### User loses access to workspace
 
 1. Admin removes user from workspace
-2. User's next `GET /workspaces/:id/key` returns 403
-3. Client can't fetch key → workspace stays locked
-4. User already had key in memory during session—can't revoke in-memory keys retroactively. This is inherent to any client-side encryption scheme (same limitation as Signal, iMessage, etc.).
+2. User's next session still contains their user key (server can't prevent this)
+3. But the Durable Object enforces authz — sync requests return 403
+4. User can still derive the workspace key locally, but has no data to decrypt
+5. The authz boundary is the Durable Object, not the key derivation
 
-### Offline with cached key
+### Offline with session key
 
-1. User opens workspace, key cached in memory
+1. User opens workspace, session provides user key, workspace key derived locally
 2. Network goes down
 3. Reads/writes continue locally (CRDT)
-4. Sync resumes when network returns—no key re-fetch needed (key is in memory)
-5. Full page refresh without network → no key available → workspace locked until network returns (unless persistent KeyCache is implemented)
+4. Sync resumes when network returns — no key re-fetch needed (key is in memory)
+5. Full page refresh without network → session gone → workspace locked until network returns
 
 ### Multiple workspaces open simultaneously
 
 1. User opens `epicenter.whispering` and `epicenter.tab-manager`
-2. Two separate `GET /workspaces/:id/key` calls → two different derived keys
-3. `WorkspaceKeyCache` stores both: `cache.getSync('epicenter.whispering')` and `cache.getSync('epicenter.tab-manager')` return different keys
-4. Each workspace's `key` option reads from the correct cache entry
+2. Both derive from the same user key: `HKDF(userKey, "workspace:whispering:v1")` and `HKDF(userKey, "workspace:tab-manager:v1")`
+3. Different workspace IDs → different derived keys
+4. Each workspace's `unlock()` receives its own key
 
 ## What This Replaces
 
@@ -286,46 +325,30 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 |---|---|---|
 | DEK source | Random bytes, stored in Postgres | Deterministic HKDF, no storage |
 | KEK | HKDF from WORKSPACE_KEY_SECRET | N/A (no wrapping layer) |
-| Storage | `workspace_user_key` Postgres table | None |
+| Storage | `workspace_user_key` Postgres table | **None** |
+| Key delivery | Separate endpoint per workspace | Session response (same as today) |
 | Key rotation | Re-wrap DEKs only | Re-derive all (or support keyring) |
 | Sharing | Insert wrapped DEK copy | Phase 2: workspace-level derivation |
-| Implementation | ~200 lines server + migration | ~30 lines server |
-| Blast radius | 1 workspace (all users) | **1 user, 1 workspace** |
-
-The HKDF approach has a **tighter blast radius** than envelope encryption while being simpler. Envelope encryption is deferred to Phase 3 for shared rooms only, if enterprise demand warrants it.
-
-## Open Questions
-
-1. **Should the HKDF salt be empty or derived?**
-   - HKDF with empty salt is standard (RFC 5869 §3.1: "if not provided, [salt] is set to a string of HashLen zeros").
-   - A non-empty salt adds no security when the input key material is already high-entropy (SHA-256 of a secret).
-   - **Recommendation**: Empty salt. Simpler, standard-compliant, no benefit from salt in this context.
-
-2. **Should we implement persistent `WorkspaceKeyCache` now?**
-   - Without it: every page refresh requires a network roundtrip before decryption works.
-   - With it: workspace decrypts instantly from cache, auth roundtrip happens in background.
-   - **Recommendation**: Start with in-memory only. Add `sessionStorage` persistence as a fast follow if refresh latency is noticeable.
-
-3. **Should the key endpoint be part of the sync WebSocket handshake or a separate HTTP call?**
-   - WebSocket: fewer round-trips, key arrives with the sync connection.
-   - HTTP: simpler, cacheable, no coupling between key delivery and sync protocol.
-   - **Recommendation**: Separate HTTP endpoint. Keep concerns decoupled. The key fetch is a one-time cost per workspace open.
+| Implementation | ~200 lines server + migration | **~25 lines total** |
+| Blast radius | 1 workspace (all users) | **1 user, all workspaces** |
 
 ## Success Criteria
 
-- [ ] Each user gets a unique key per workspace via `GET /workspaces/:id/key`
-- [ ] Keys are derived via HKDF (not stored in any database)
+- [ ] Each user gets a unique key per workspace via two-level HKDF
+- [ ] Keys are derived deterministically (not stored in any database)
 - [ ] `WORKSPACE_KEY_SECRET` is separate from `BETTER_AUTH_SECRET`
-- [ ] Session response no longer contains `encryptionKey`
+- [ ] Session carries per-user key (not deployment-wide key)
+- [ ] Client derives per-workspace key locally via Web Crypto HKDF
 - [ ] All existing tests pass, typecheck clean, apps build
-- [ ] Blast radius = one user's data in one workspace per compromised key
+- [ ] Blast radius = one user's data per compromised session
 
 ## References
 
 - `apps/api/src/app.ts` — current `deriveKeyFromSecret` and `customSession` (to be replaced)
-- `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (unchanged)
-- `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (WorkspaceKeyCache replaces this for the encryption use case)
+- `packages/workspace/src/shared/crypto/index.ts` — encryption primitives (add `deriveWorkspaceKey`)
+- `packages/workspace/src/shared/crypto/key-cache.ts` — `KeyCache` interface (unchanged, used for session key caching)
 - `specs/20260314T063000-encryption-wrapper-hardening.md` — prerequisite (mode system, AAD, error containment)
+- `specs/20260314T090000-encrypted-blob-binary-storage.md` — `EncryptedBlob` uses `Uint8Array` ct
 - `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (app inventory still useful reference)
 - RFC 5869 — HKDF specification
 - Web Crypto API — `crypto.subtle.deriveBits` with HKDF algorithm

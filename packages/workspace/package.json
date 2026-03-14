@@ -15,6 +15,7 @@
 		"./extensions/sync/broadcast-channel": "./src/extensions/sync/broadcast-channel.ts",
 		"./ingest": "./src/ingest/index.ts",
 		"./ingest/reddit": "./src/ingest/reddit/index.ts"
+		"./shared/crypto": "./src/shared/crypto/index.ts"
 	},
 	"license": "AGPL-3.0",
 	"scripts": {

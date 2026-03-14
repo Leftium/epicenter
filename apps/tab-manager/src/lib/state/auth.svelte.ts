@@ -98,6 +98,7 @@ function createAuthState() {
 	let password = $state('');
 	let name = $state('');
 	let mode = $state<AuthMode>('sign-in');
+	let encryptionKey = $state<string | undefined>(undefined);
 
 	const client = $derived(
 		createAuthClient({
@@ -183,6 +184,9 @@ function createAuthState() {
 		},
 		get token() {
 			return authToken.current;
+		},
+		get encryptionKey() {
+			return encryptionKey;
 		},
 
 		/**
@@ -324,6 +328,7 @@ function createAuthState() {
 			phase = { status: 'signing-out' };
 			await client.signOut().catch(() => {});
 			await clearState().catch(() => {});
+			encryptionKey = undefined;
 			phase = { status: 'signed-out' };
 			return Ok(undefined);
 		},
@@ -375,6 +380,9 @@ function createAuthState() {
 
 			const user = serializeDates(data.user);
 			await authUser.set(user);
+			// Extract per-user encryption key from customSession plugin
+			const session = data.session as Record<string, unknown> | undefined;
+			encryptionKey = typeof session?.encryptionKey === 'string' ? session.encryptionKey : undefined;
 			phase = { status: 'signed-in' };
 			return Ok(user);
 		},

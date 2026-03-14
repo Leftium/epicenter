@@ -312,9 +312,9 @@ unlock(key: Uint8Array): void;
 
 ### Phase 3: Per-App Wiring
 
-- [ ] ~~**3.1** **epicenter**~~ — Skipped (apps/epicenter/src doesn't exist)
-- [ ] ~~**3.2** **whispering**~~ — Skipped (no auth infrastructure yet)
-- [ ] **3.3** **tab-manager** — `authState` subscription decodes `encryptionKey` from session, calls `deriveWorkspaceKey(userKey, workspaceId)`, then `workspaceClient.unlock(wsKey)`. On sign-out, `workspaceClient.lock()`.
+- [x] ~~**3.1** **epicenter**~~ — Skipped (apps/epicenter/src doesn't exist)
+- [x] ~~**3.2** **whispering**~~ — Skipped (no auth infrastructure yet)
+- [x] **3.3** **tab-manager** — Added `encryptionKey` to `authState` (extracted from `getSession()` response), created `encryption-wiring.svelte.ts` module with `$effect` that derives workspace key and calls `unlock()`/`lock()`, wired into `App.svelte` onMount. Added `./shared/crypto` export to workspace package.json.
 
 ### Phase 4: Verify
 

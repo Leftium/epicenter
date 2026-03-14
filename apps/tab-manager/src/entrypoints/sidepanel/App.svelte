@@ -13,6 +13,7 @@
 	import SyncStatusIndicator from '$lib/components/SyncStatusIndicator.svelte';
 	import UnifiedTabList from '$lib/components/tabs/UnifiedTabList.svelte';
 	import { authState } from '$lib/state/auth.svelte';
+	import { initEncryptionWiring } from '$lib/state/encryption-wiring.svelte';
 	import { browserState } from '$lib/state/browser-state.svelte';
 	import { unifiedViewState } from '$lib/state/unified-view-state.svelte';
 	import { workspaceClient } from '$lib/workspace';
@@ -20,6 +21,7 @@
 	// Auth initialization — check cached session on mount, react to external token changes
 	onMount(() => {
 		authState.checkSession();
+		const cleanupEncryption = initEncryptionWiring();
 		const unsubExternalSignIn = authState.onExternalSignIn(() =>
 			workspaceClient.extensions.sync.reconnect(),
 		);
@@ -36,6 +38,7 @@
 		return () => {
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			unsubExternalSignIn();
+			cleanupEncryption();
 		};
 	});
 

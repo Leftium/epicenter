@@ -50,17 +50,18 @@
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
 		cleanupMicrophonePermission = registerMicrophonePermission();
 
+		// Platform-agnostic async checks
+		checkDatabaseMigration();
+
 		if (window.__TAURI_INTERNALS__) {
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
-			// Async operations - fire and forget, don't block UI rendering
-			// These show toasts/notifications on completion, no need to await
+			// Desktop-only async operations - fire and forget
 			Promise.allSettled([
 				checkFfmpegRecordingMethodCompatibility(),
 				checkCompressionRecommendation(),
 				checkForUpdates(),
-				checkDatabaseMigration(),
 			]);
 		} else {
 			// Browser extension context - notify that the Whispering tab is ready

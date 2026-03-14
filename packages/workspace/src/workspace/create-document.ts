@@ -34,8 +34,8 @@
  * });
  *
  * const handle = await contentDocuments.open(someRow);
- * const text = handle.content.read();
- * handle.content.write('new content');
+ * const text = handle.read();
+ * handle.write('new content');
  * ```
  *
  * @module
@@ -50,7 +50,6 @@ import {
 } from './lifecycle.js';
 import type {
 	BaseRow,
-	DocumentContent,
 	DocumentExtensionRegistration,
 	DocumentHandle,
 	Documents,
@@ -93,11 +92,11 @@ type DocEntry = {
 /**
  * Create a lightweight handle wrapping an open Y.Doc and its resolved extensions.
  *
- * Handles are cheap (3 properties). The Y.Doc underneath is the expensive
+ * Handles are cheap (8 properties). The Y.Doc underneath is the expensive
  * shared resource. Calling `open()` twice returns fresh handles backed
  * by the same cached Y.Doc.
  *
- * The `content` property provides timeline-backed read/write.
+ * Timeline-backed content methods are exposed directly on the handle.
  */
 function makeHandle(
 	ydoc: Y.Doc,
@@ -106,7 +105,8 @@ function makeHandle(
 ): DocumentHandle {
 	const tl = createTimeline(ydoc);
 
-	const content: DocumentContent = {
+	return {
+		ydoc,
 		read() {
 			return tl.readAsString();
 		},
@@ -150,11 +150,6 @@ function makeHandle(
 			return undefined;
 		},
 		timeline: tl,
-	};
-
-	return {
-		ydoc,
-		content,
 		exports: extensions,
 	};
 }

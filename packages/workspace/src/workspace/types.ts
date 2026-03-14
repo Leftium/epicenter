@@ -241,26 +241,34 @@ export type StringKeysOf<TRow> = {
  */
 export type ClaimedDocumentColumns<
 	TDocuments extends Record<string, DocumentConfig>,
-> =
-	| TDocuments[keyof TDocuments]['guid']
-	| TDocuments[keyof TDocuments]['updatedAt'];
+> = TDocuments[keyof TDocuments]['guid'];
 
 /**
- * Content interface backed by the timeline (`Y.Array('timeline')`).
+ * A handle to an open content Y.Doc, returned by `documents.open()`.
  *
- * Provides read/write access to document content through the timeline
- * abstraction. This is the standard interface—apps should use `handle.content`
- * instead of accessing raw shared types directly.
+ * All operations are scoped to this specific document. Timeline-backed
+ * read/write methods are exposed directly on the handle.
  *
  * @example
  * ```typescript
  * const handle = await documents.open(id);
- * const text = handle.content.read();
- * handle.content.write('hello');
- * const ytext = handle.content.getText(); // for editor binding
+ * handle.read();            // read from timeline
+ * handle.write('hello');    // write to timeline
+ * handle.getText();         // Y.Text for editor binding
+ * handle.getFragment();     // Y.XmlFragment for richtext
+ * handle.timeline;          // escape hatch for advanced ops
  * ```
  */
-export type DocumentContent = {
+export type DocumentHandle = {
+	/**
+	 * The underlying Y.Doc for this document.
+	 *
+	 * Use for genuinely custom shared types (awareness, cursors, non-content data).
+	 * For content operations, use `handle.read()`/`handle.write()` instead of
+	 * accessing raw shared types like `ydoc.getText('content')`.
+	 */
+	ydoc: Y.Doc;
+
 	/** Read the current content as a string. Returns '' if empty. */
 	read(): string;
 	/** Replace the document's text content via the timeline. */
@@ -280,43 +288,6 @@ export type DocumentContent = {
 	getFragment(): Y.XmlFragment | undefined;
 	/** Direct access to the timeline for advanced operations. */
 	timeline: import('../content/timeline.js').Timeline;
-};
-
-/**
- * A handle to an open content Y.Doc, returned by `documents.open()`.
- *
- * All operations are scoped to this specific document. The `content` property
- * provides timeline-backed read/write methods—this is the standard interface
- * for all content operations.
- *
- * @example
- * ```typescript
- * const handle = await documents.open(id);
- * handle.content.read();           // read from timeline
- * handle.content.write('hello');    // write to timeline
- * handle.content.getText();         // Y.Text for editor binding
- * handle.content.getFragment();     // Y.XmlFragment for richtext
- * handle.content.timeline;          // escape hatch for advanced ops
- * ```
- */
-export type DocumentHandle = {
-	/**
-	 * The underlying Y.Doc for this document.
-	 *
-	 * Use for genuinely custom shared types (awareness, cursors, non-content data).
-	 * For content operations, use `handle.content` instead of accessing raw shared
-	 * types like `ydoc.getText('content')` or `ydoc.getXmlFragment('content')`.
-	 */
-	ydoc: Y.Doc;
-
-	/**
-	 * Timeline-backed content interface.
-	 *
-	 * The standard way to read/write document content. Backed by the timeline
-	 * (`Y.Array('timeline')`) which supports text, richtext, binary, and sheet
-	 * content modes.
-	 */
-	content: DocumentContent;
 
 	/**
 	 * Per-doc extension exports, keyed by extension name.
@@ -345,11 +316,11 @@ export type DocumentHandle = {
  * @example
  * ```typescript
  * const handle = await documents.open(row);
- * handle.content.write('hello');
+ * handle.write('hello');
  * // updatedAt on the row is bumped automatically
  *
- * const text = handle.content.read();
- * handle.content.write('new content');
+ * const text = handle.read();
+ * handle.write('new content');
  * await documents.close(row);
  * ```
  */

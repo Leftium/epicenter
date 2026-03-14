@@ -1,7 +1,7 @@
 import {
 	type Documents,
-	type TableHelper,
 	parseSheetFromCsv,
+	type TableHelper,
 } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
 import { FS_ERRORS } from './errors.js';
@@ -51,7 +51,7 @@ export function createYjsFileSystem(
 		 * Content I/O for direct reads/writes by UI layers.
 		 *
 		 * Opens the per-file content Y.Doc via `contentDocuments.open()` and
-		 * delegates to `handle.content` for timeline-backed operations.
+		 * delegates to the handle's timeline-backed methods.
 		 * The `write` method handles sheet mode switching automatically.
 		 *
 		 * @example
@@ -69,7 +69,7 @@ export function createYjsFileSystem(
 			 */
 			async read(fileId: FileId): Promise<string> {
 				const handle = await contentDocuments.open(fileId);
-				return handle.content.read();
+				return handle.read();
 			},
 
 			/**
@@ -77,13 +77,13 @@ export function createYjsFileSystem(
 			 *
 			 * If the file is in sheet mode, clears existing columns/rows and
 			 * re-parses from the CSV string. Otherwise delegates to
-			 * `handle.content.write()` which replaces the timeline text entry.
+			 * `handle.write()` which replaces the timeline text entry.
 			 *
 			 * @returns The byte size of the written data.
 			 */
 			async write(fileId: FileId, data: string): Promise<number> {
 				const handle = await contentDocuments.open(fileId);
-				const tl = handle.content.timeline;
+				const tl = handle.timeline;
 
 				if (tl.currentMode === 'sheet') {
 					const columns = tl.currentEntry?.get('columns') as import('yjs').Map<
@@ -102,7 +102,7 @@ export function createYjsFileSystem(
 						parseSheetFromCsv(data, columns, rows);
 					});
 				} else {
-					handle.content.write(data);
+					handle.write(data);
 				}
 				return new TextEncoder().encode(data).byteLength;
 			},
@@ -116,7 +116,7 @@ export function createYjsFileSystem(
 			 */
 			async append(fileId: FileId, data: string): Promise<number | null> {
 				const handle = await contentDocuments.open(fileId);
-				const tl = handle.content.timeline;
+				const tl = handle.timeline;
 
 				if (tl.currentMode === 'text') {
 					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
@@ -242,7 +242,7 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 			const handle = await contentDocuments.open(id);
-			return handle.content.read();
+			return handle.read();
 		},
 
 		async readFileBuffer(path) {
@@ -266,9 +266,7 @@ export function createYjsFileSystem(
 			if (!id) {
 				const { parentId, name } = tree.parsePath(abs);
 				const textData =
-					typeof data === 'string'
-						? data
-						: new TextDecoder().decode(data);
+					typeof data === 'string' ? data : new TextDecoder().decode(data);
 				const size = new TextEncoder().encode(textData).byteLength;
 				id = tree.create({ name, parentId, type: 'file', size });
 			}
@@ -384,7 +382,7 @@ export function createYjsFileSystem(
 				}
 			} else {
 				const handle = await contentDocuments.open(srcId);
-				const srcText = handle.content.read();
+				const srcText = handle.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

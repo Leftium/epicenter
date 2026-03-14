@@ -90,20 +90,22 @@ AES-256-GCM via WebCrypto uses hardware AES-NI and is faster, but it's async. We
 ### EncryptedBlob Format
 
 ```typescript
-type EncryptedBlob = { v: 1; ct: Uint8Array };
+type EncryptedBlob = Uint8Array;
 
-// v:1 = XChaCha20-Poly1305 with key version byte
-// ct binary layout:
-//   ct[0]      = key version (which secret from ENCRYPTION_SECRETS keyring)
-//   ct[1..24]  = random nonce (24 bytes)
-//   ct[25..]   = XChaCha20-Poly1305 ciphertext || authentication tag (16 bytes)
+// Bare Uint8Array with self-describing binary header.
+// v:1 binary layout:
+//   blob[0]     = format version (0x01 = XChaCha20-Poly1305)
+//   blob[1]     = key version (which secret from ENCRYPTION_SECRETS keyring)
+//   blob[2..25] = random nonce (24 bytes, XChaCha20)
+//   blob[26..]  = XChaCha20-Poly1305 ciphertext || authentication tag (16 bytes)
 ```
 
-- `v` field = blob format version AND discriminant for `isEncryptedBlob` detection
-- `v: 1` means XChaCha20-Poly1305, key version byte at ct[0], 24-byte random nonce
-- `ct[0]` = key version, identifying which secret encrypted this blob
-- The `{ v, ct }` wrapper distinguishes encrypted from plaintext values in the CRDT
-- Use `getKeyVersion(blob)` to read the key version without decrypting
+- `blob[0]` = format version. Currently always 1 (XChaCha20-Poly1305).
+- `blob[1]` = key version, identifying which secret encrypted this blob
+- Detection: `value instanceof Uint8Array && value[0] === 1`
+- User values in the CRDT are always JS objects, never Uint8Arrays
+- Use `getKeyVersion(blob)` to read `blob[1]` without decrypting
+- Use `getFormatVersion(blob)` to read `blob[0]` without decrypting
 
 ### Key Rotation
 
@@ -114,20 +116,20 @@ ENCRYPTION_SECRETS="2:newBase64Secret,1:oldBase64Secret"
 
 - Parser splits by `,`, then each entry by first `:` -> `{ version: number, secret: string }`
 - Sorted by version descending; first entry = current for new encryptions
-- Encrypt: always uses current (highest version) key, embeds version as ct[0]
-- Decrypt: read ct[0] to know which key version was used, select matching key from keyring
+- Encrypt: always uses current (highest version) key, embeds version as blob[1]
+- Decrypt: read blob[1] to know which key version was used, select matching key from keyring
 - Lazy re-encryption: on read with non-current key version, re-encrypt on next write
 - Keep old secrets in keyring for at least 90 days to handle offline devices
 
 ### Format Version Upgrade Path
 
-- `v: 1` = XChaCha20-Poly1305 with key version byte prefix in ct
+- Format version 1 = XChaCha20-Poly1305 with key version byte at blob[1]
 
 Format version bumps only needed for algorithm or binary layout changes (extremely rare):
 
-| Scenario | Bumps `v`? |
+| Scenario | Bumps format version? |
 |---|---|
-| Secret rotation (new entry in ENCRYPTION_SECRETS) | No--key version in ct[0] handles this |
+| Secret rotation (new entry in ENCRYPTION_SECRETS) | No--key version in blob[1] handles this |
 | Switch to different algorithm (unlikely) | Yes--different cipher |
 | Add compression before encryption | Yes--different plaintext encoding |
 | Change HKDF parameters (SHA-384, non-empty salt) | Yes--different key derivation |
@@ -136,13 +138,14 @@ Format version bumps only needed for algorithm or binary layout changes (extreme
 
 ```typescript
 function isEncryptedBlob(value: unknown): value is EncryptedBlob {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
-  return obj.v === 1 && obj.ct instanceof Uint8Array;
+  return value instanceof Uint8Array && value[0] === 1;
 }
 ```
 
-Do NOT use `Object.keys().length` checks--they are hostile to format evolution and have poor performance (allocates an array on every call).
+User values in the CRDT are always JS objects (from schema definitions), never Uint8Arrays.
+This makes `instanceof Uint8Array` a reliable discriminant. Truncated or corrupted blobs
+that pass this check will fail during `decryptValue()` and get quarantined by the
+encrypted wrapper's error containment.
 
 ### AAD (Additional Authenticated Data)
 

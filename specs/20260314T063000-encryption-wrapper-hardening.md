@@ -5,6 +5,8 @@
 **Builds on**: `specs/20260313T202000-encrypted-blob-pack-nonce.md`, `specs/20260312T120000-y-keyvalue-lww-encrypted.md`
 **Blocks**: `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` (key derivation depends on hardening being in place)
 
+> **Note (2026-03-14)**: The `{ v: 1, ct: Uint8Array }` object wrapper referenced below has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
+
 ## Overview
 
 Harden `createEncryptedKvLww` with three explicit encryption modes, error containment, a key transition hook, and AAD context binding. These are prerequisite fixes before real encryption keys flow to real clients.

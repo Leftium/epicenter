@@ -102,7 +102,7 @@ if (result.status === 'valid') {
 
 **No field-level observation.** You observe entire tables or KV keys, not individual fields. This keeps the API simple. Let your UI framework handle field reactivity.
 
-**Why `_v` instead of `v`.** The underscore prefix is a namespace guard. `EncryptedBlob` uses `v` as its format version, and the `isEncryptedBlob()` type guard checks for `v` (number) + `ct` (string). If rows used bare `v`, every row would match the first check—any schema with a string field named `ct` would false-positive and `maybeDecrypt` would try to decrypt plaintext. The underscore also signals "framework metadata, not user data" (same convention as `_id` in MongoDB), preventing collisions if the encrypted blob format evolves.
+**Why `_v` instead of `v`.** The underscore prefix signals "framework metadata, not user data" (same convention as `_id` in MongoDB). Users intuitively avoid underscore-prefixed fields for business data, which prevents accidental collisions with framework internals. Historically, this also avoided collision with the old `EncryptedBlob.v` field, but that rationale no longer applies—`EncryptedBlob` is now a branded bare `Uint8Array` detected via `instanceof Uint8Array && value[0] === 1`.
 
 For detailed rationale on all of this, see [the guide](docs/articles/20260127T120000-static-workspace-api-guide.md).
 

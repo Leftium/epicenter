@@ -5,6 +5,8 @@
 **Builds on**: `specs/20260313T180000-encrypted-blob-format-simplification.md` (dropped `alg`, already complete)
 **Prerequisite for**: `specs/20260313T180100-client-side-encryption-wiring.md`
 
+> **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array`. Format version moves to `blob[0]`, key version to `blob[1]`. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
+
 ## Overview
 
 Pack the 12-byte nonce into the `ct` field, reducing `EncryptedBlob` from three fields (`v`, `ct`, `iv`) to two fields (`v`, `ct`). The version number fully specifies where to slice. No production data exists yet—zero migration cost.

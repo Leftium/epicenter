@@ -5,7 +5,7 @@
  * with versioned tables and KV stores.
  *
  * Tables use `_v: number` as a discriminant field for versioning and migration
- * (underscore avoids collision with `EncryptedBlob.v`—see `BaseRow` for rationale).
+ * (underscore signals framework metadata—see `BaseRow` for rationale).
  * KV stores use `defineKv(schema, defaultValue)` with validate-or-default semantics.
  *
  * @example

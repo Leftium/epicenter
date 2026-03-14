@@ -31,15 +31,15 @@ export type { JsonObject, JsonValue } from 'wellcrafted/json';
  *
  * ### Why `_v` instead of `v`
  *
- * The underscore prefix is a namespace guard, not cosmetic. `EncryptedBlob` uses
- * `v` (number) as its format version, and `isEncryptedBlob()` checks for `v` + `ct`
- * to distinguish ciphertext from plaintext during mixed-mode migration. If rows used
- * bare `v`, every row would match the first check, and any schema with a string field
- * named `ct` would false-positive—`maybeDecrypt` would try to decrypt a plaintext value.
+ * The underscore prefix signals "framework metadata, not user data" (same convention
+ * as `_id` in MongoDB or `__typename` in GraphQL). Users intuitively avoid
+ * underscore-prefixed fields for business data, which prevents accidental collisions
+ * with framework internals.
  *
- * The underscore also signals "framework metadata, not user data" (same convention as
- * `_id` in MongoDB or `__typename` in GraphQL). Users intuitively avoid underscore-prefixed
- * fields for business data, which prevents future collisions if `EncryptedBlob` evolves.
+ * Historically, this also avoided collision with the old `EncryptedBlob.v` field.
+ * That rationale no longer applies—`EncryptedBlob` is now a branded bare `Uint8Array`
+ * detected via `instanceof Uint8Array && value[0] === 1`—but the underscore convention
+ * remains good practice for framework metadata regardless.
  *
  * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
  * This guarantees data stored in Yjs can be safely serialized/deserialized.

@@ -10,6 +10,7 @@
 
 > **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
 > **Note (2026-03-14)**: The key derivation approach has evolved from deployment-wide `SHA-256(BETTER_AUTH_SECRET)` to per-user-per-workspace HKDF derivation with a separate `WORKSPACE_KEY_SECRET`. Blast radius reduced from "all users, all apps" to "one user, one app." Full envelope encryption deferred. See `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`.
+> **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
 
 ## Overview
 

@@ -5,6 +5,7 @@
 
 > **Note (2026-03-13)**: The `alg` field was later removed from `EncryptedBlob`. References to `{ v: 1, alg: 'A256GCM', ct, iv }` below are historical. See `specs/20260313T180000-encrypted-blob-format-simplification.md`.
 > **Note (2026-03-13)**: Blob format further simplified to 2-field `{ v: 1, ct }` where ct = base64(nonce || ciphertext || tag). See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
+> **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
 
 ## Overview
 

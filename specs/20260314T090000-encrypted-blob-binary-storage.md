@@ -4,6 +4,8 @@
 **Status**: Draft
 **Author**: AI-assisted
 
+> **Note (2026-03-14)**: The `{ v: 1, ct: Uint8Array }` object wrapper has been replaced with a bare `Uint8Array` with a self-describing binary header (`blob[0]` = format version, `blob[1]` = key version). See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
+
 ## Overview
 
 Replace base64 string encoding in `EncryptedBlob.ct` with raw `Uint8Array` storage. Yjs's `writeAny` natively serializes `Uint8Array` as binary (type tag 116), eliminating the 33% base64 overhead that currently inflates every encrypted value.

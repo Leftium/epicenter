@@ -6,6 +6,7 @@
 **Prerequisite for**: `specs/20260313T180100-client-side-encryption-wiring.md`
 
 > **Note (2026-03-13)**: Further simplified to 2-field `{ v: 1, ct }` by packing the nonce into the ciphertext field. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
+> **Note (2026-03-14)**: The `{ v: 1, ct }` object wrapper has been replaced with a bare `Uint8Array` with self-describing binary header. See `specs/20260314T230000-bare-uint8array-encrypted-blob.md`.
 ## Overview
 
 Remove the `alg` field from `EncryptedBlob`. The version number (`v`) is the sole contract for the encryption format—algorithm, nonce size, tag size, and encoding are all implied by the version. This saves 16 bytes per encrypted value and simplifies the type guard.

@@ -2,6 +2,7 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Card from '@epicenter/ui/card';
 	import { Label } from '@epicenter/ui/label';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Switch } from '@epicenter/ui/switch';
 	import { rpc } from '$lib/query';
 	import { workspaceSettings } from '$lib/state/workspace-settings.svelte';
@@ -9,9 +10,9 @@
 
 <div class="space-y-8">
 	<!-- Page Header -->
-	<div class="space-y-2">
+	<SectionHeader.Root>
 		<div class="flex items-center gap-3">
-			<h3 class="text-xl font-semibold tracking-tight">Analytics</h3>
+			<SectionHeader.Title level={3} class="text-xl tracking-tight">Analytics</SectionHeader.Title>
 			{#if workspaceSettings.get('analytics.enabled')}
 				<Badge
 					variant="outline"
@@ -28,11 +29,11 @@
 				</Badge>
 			{/if}
 		</div>
-		<p class="text-sm text-muted-foreground max-w-2xl">
+		<SectionHeader.Description class="max-w-2xl">
 			Help us understand which features are used most. We use anonymized event
 			logging to improve Whispering.
-		</p>
-	</div>
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
 	<!-- Main Toggle Section -->
 	<Card.Root class="transition-colors duration-200">

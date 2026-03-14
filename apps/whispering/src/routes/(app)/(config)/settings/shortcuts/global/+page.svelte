@@ -2,6 +2,7 @@
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Link } from '@epicenter/ui/link';
+	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -18,19 +19,19 @@
 		<div
 			class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
 		>
-			<header class="space-y-1">
+			<SectionHeader.Root>
 				<div class="flex items-center gap-2">
-					<h2 class="text-xl font-semibold tracking-tight sm:text-2xl">
+					<SectionHeader.Title level={2} class="text-xl tracking-tight sm:text-2xl">
 						Global Shortcuts
-					</h2>
+					</SectionHeader.Title>
 					<ShortcutFormatHelp type="global" />
 				</div>
-				<p class="text-sm text-muted-foreground">
+				<SectionHeader.Description>
 					Set system-wide keyboard shortcuts that work even when Whispering is
 					not in focus. These shortcuts will trigger from anywhere on your
 					system.
-				</p>
-			</header>
+				</SectionHeader.Description>
+			</SectionHeader.Root>
 			<Button
 				variant="outline"
 				size="sm"

@@ -40,6 +40,7 @@ function createFsState() {
 	let activeFileId = $state<FileId | null>(null);
 	let openFileIds = $state<FileId[]>([]);
 	const expandedIds = new SvelteSet<FileId>();
+	let focusedId = $state<FileId | null>(null);
 
 	// ── rAF-coalesced observer ────────────────────────────────────────
 	let pendingBump = false;
@@ -102,6 +103,9 @@ function createFsState() {
 		get selectedPath() {
 			return selectedPath;
 		},
+		get focusedId() {
+			return focusedId;
+		},
 
 		expandedIds,
 		fs,
@@ -155,6 +159,10 @@ function createFsState() {
 			toggleExpand(id: FileId) {
 				if (expandedIds.has(id)) expandedIds.delete(id);
 				else expandedIds.add(id);
+			},
+
+			focus(id: FileId | null) {
+				focusedId = id;
 			},
 
 			async createFile(parentId: FileId | null, name: string) {

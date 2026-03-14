@@ -2,7 +2,7 @@
 	import type { FileId } from '@epicenter/filesystem';
 	import * as ContextMenu from '@epicenter/ui/context-menu';
 	import * as TreeView from '@epicenter/ui/tree-view';
-	import { File as FileIcon } from 'lucide-svelte';
+	import { getFileIcon } from '$lib/fs/file-icons';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
 	import DeleteConfirmation from './DeleteConfirmation.svelte';
@@ -16,6 +16,7 @@
 	const isExpanded = $derived(fsState.expandedIds.has(id));
 	const isSelected = $derived(fsState.activeFileId === id);
 	const children = $derived(isFolder ? fsState.getChildIds(id) : []);
+	const isFocused = $derived(fsState.focusedId === id);
 
 	let createDialogOpen = $state(false);
 	let createDialogMode = $state<'file' | 'folder'>('file');
@@ -51,7 +52,7 @@
 							onOpenChange={() => fsState.actions.toggleExpand(id)}
 							class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 								? 'bg-accent text-accent-foreground'
-								: ''}"
+								: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
 						>
 							{#each children as childId (childId)}
 								<FileTreeItem id={childId} />
@@ -62,20 +63,16 @@
 					<TreeView.File
 						{...props}
 						name={row.name}
+						id={id}
 						class="w-full rounded-sm px-2 py-1 text-sm hover:bg-accent {isSelected
 							? 'bg-accent text-accent-foreground'
-							: ''}"
+							: ''} {isFocused ? 'ring-1 ring-ring' : ''}"
 						onclick={() => fsState.actions.selectFile(id)}
-						onkeydown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault();
-								fsState.actions.selectFile(id);
-							}
-						}}
 						role="treeitem"
 					>
 						{#snippet icon()}
-							<FileIcon class="h-4 w-4 shrink-0 text-muted-foreground" />
+							{@const Icon = getFileIcon(row.name)}
+							<Icon class="h-4 w-4 shrink-0 text-muted-foreground" />
 						{/snippet}
 					</TreeView.File>
 				{/if}

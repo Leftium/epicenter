@@ -184,11 +184,11 @@ This requires managing a `focusedId` state separate from `activeFileId` (focused
 
 ### Phase 2: Navigation and Polish
 
-- [ ] **2.1** Implement keyboard tree navigation (arrow keys, Home/End)
-- [ ] **2.2** Add `focusedId` state to `fsState`
-- [ ] **2.3** Compute flat visible-items list from tree expansion state
-- [ ] **2.4** Add file type icon mapping utility
-- [ ] **2.5** Wire icons into TreeNode/FileTreeItem based on file extension
+- [x] **2.1** Implement keyboard tree navigation (arrow keys, Home/End)
+- [x] **2.2** Add `focusedId` state to `fsState`
+- [x] **2.3** Compute flat visible-items list from tree expansion state
+- [x] **2.4** Add file type icon mapping utility
+- [x] **2.5** Wire icons into TreeNode/FileTreeItem based on file extension
 
 ### Phase 3: Rich Editing
 

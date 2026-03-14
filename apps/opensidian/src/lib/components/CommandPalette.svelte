@@ -1,35 +1,13 @@
 <script lang="ts">
 	import type { FileId } from '@epicenter/filesystem';
 	import * as Command from '@epicenter/ui/command';
-	import {
-		FileCode,
-		File as FileIcon,
-		FileJson,
-		FileText,
-	} from 'lucide-svelte';
+	import { getFileIcon } from '$lib/fs/file-icons';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 
 	let open = $state(false);
 	let searchQuery = $state('');
 	let debouncedQuery = $state('');
 
-	// ── Extension → icon mapping ─────────────────────────────────────
-	const ICON_MAP: Record<string, typeof FileIcon> = {
-		'.md': FileText,
-		'.txt': FileText,
-		'.ts': FileCode,
-		'.js': FileCode,
-		'.tsx': FileCode,
-		'.jsx': FileCode,
-		'.json': FileJson,
-	};
-
-	function getFileIcon(name: string): typeof FileIcon {
-		const dotIndex = name.lastIndexOf('.');
-		if (dotIndex === -1) return FileIcon;
-		const ext = name.slice(dotIndex).toLowerCase();
-		return ICON_MAP[ext] ?? FileIcon;
-	}
 
 	// ── Collect all files recursively (only when palette is open) ────
 	type FileEntry = { id: FileId; name: string; parentDir: string };

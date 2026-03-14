@@ -275,53 +275,68 @@ return { ...row, views: 0, _v: 2 as const }; // Also works — redundant
 
 ## Document Content (Per-Row Y.Docs)
 
-Tables with `.withDocument()` create a content Y.Doc per row. Content is stored using a **timeline model**: a `Y.Array('timeline')` inside the Y.Doc, where each entry is a typed `Y.Map` supporting text, binary, and sheet modes.
+Tables with `.withDocument()` create a content Y.Doc per row. Content is stored using a **timeline model**: a `Y.Array('timeline')` inside the Y.Doc, where each entry is a typed `Y.Map` supporting text, richtext, and sheet modes.
 
 ### Reading and Writing Content
 
-Use the filesystem package's content helpers, which read/write via the timeline:
+Use `handle.read()`/`handle.write()` on the document handle:
 
 ```typescript
-import { createYjsFileSystem } from '@epicenter/filesystem';
-
-const fs = createYjsFileSystem(ws.tables.files, ws.documents.files.content);
+const handle = await documents.open(fileId);
 
 // Read content (timeline-backed)
-const text = await fs.content.read(fileId);
+const text = handle.read();
 
 // Write content (timeline-backed)
-await fs.content.write(fileId, 'hello');
+handle.write('hello');
+
+// Editor binding — Y.Text (converts from other modes if needed)
+const ytext = handle.asText();
+
+// Richtext editor binding — Y.XmlFragment (converts if needed)
+const fragment = handle.asRichText();
+
+// Spreadsheet binding — SheetBinding (converts if needed)
+const { columns, rows } = handle.asSheet();
+
+// Current content mode
+handle.mode; // 'text' | 'richtext' | 'sheet' | undefined
+
+// Advanced timeline operations
+const tl = handle.timeline;
 ```
+
+For filesystem operations, `fs.content.read(fileId)` and `fs.content.write(fileId, data)` open the handle and delegate to these methods internally.
+
+### Batching Mutations
+
+Use `handle.batch()` to group multiple mutations into a single Yjs transaction:
+
+```typescript
+handle.batch(() => {
+  handle.write('hello');
+  // ...other mutations
+});
+```
+
+**Do NOT call `handle.ydoc.transact()` directly.** Use `handle.batch()` instead.
 
 ### Anti-Patterns
 
-**Do not use `handle.read()`/`handle.write()`** for apps that also use the filesystem API. These methods read/write from `Y.Text('content')`—a different shared type than the timeline—causing silent data loss:
+**Do not access `handle.ydoc` for content operations:**
 
 ```typescript
-// ❌ BAD: handle uses Y.Text('content'), filesystem uses Y.Array('timeline')
-const handle = await ws.documents.files.content.open(id);
-handle.read();      // reads from wrong shared type
-handle.write('x');  // writes to wrong shared type
-
-// ✅ GOOD: use fs.content which reads/writes via timeline
-await fs.content.read(id);
-await fs.content.write(id, 'hello');
-```
-
-**Do not access `handle.ydoc` directly for content:**
-
-```typescript
-// ❌ BAD: bypasses all abstractions
+// ❌ BAD: bypasses timeline abstraction
 const ytext = handle.ydoc.getText('content');
-const fragment = handle.ydoc.getXmlFragment('content');
+handle.ydoc.transact(() => { ... });
 
-// ✅ GOOD: use timeline abstraction
-import { createTimeline } from '@epicenter/filesystem';
-const tl = createTimeline(handle.ydoc);
-const text = tl.readAsString();
+// ✅ GOOD: use handle methods
+const ytext = handle.asText();
+const fragment = handle.asRichText();
+handle.batch(() => { ... });
 ```
 
-See `specs/20260313T224500-unify-document-content-model.md` for the full unification plan.
+`handle.ydoc` is an **escape hatch** for document extensions (persistence, sync providers) and tests. App code should never need it.
 
 ## References
 

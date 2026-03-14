@@ -78,15 +78,6 @@ describe('createTimeline - sheet entries', () => {
 		tl.pushSheetFromCsv(csv);
 		expect(tl.readAsString()).toBe(csv);
 	});
-
-	test('readAsBuffer returns encoded CSV for sheet entry', () => {
-		const tl = setup();
-		const csv = 'Name,Age\nAlice,30\n';
-		tl.pushSheetFromCsv(csv);
-		const buffer = tl.readAsBuffer();
-		expect(new TextDecoder().decode(buffer)).toBe(csv);
-	});
-
 	test('round-trip: pushSheetFromCsv → readAsString matches original', () => {
 		const tl = setup();
 		const originalCsv =

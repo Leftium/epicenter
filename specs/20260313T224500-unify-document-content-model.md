@@ -1,3 +1,5 @@
+> **Note (2026-03-14)**: Binary content mode was removed and `handle.content` was flattened to direct handle methods in [document-handle-cleanup](./20260314T060000-document-handle-cleanup.md).
+
 # Unify Document Content Model
 
 **Date**: 2026-03-13

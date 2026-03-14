@@ -7,11 +7,11 @@
 > **Superseded (2026-03-14)**: This spec has been refactored into two focused specs:
 >
 > 1. **`specs/20260314T063000-encryption-wrapper-hardening.md`** — Three explicit encryption modes, error containment, key transition hook, AAD binding. Covers Phase 0 below. Execute first.
-> 2. **`specs/20260314T064000-per-workspace-envelope-encryption.md`** — Per-workspace DEKs stored in Postgres, `GET /workspaces/:id/key` endpoint, workspace-scoped key cache. Replaces Phases 1-2 below (deployment-wide key from session → per-workspace key from endpoint).
+> 2. **`specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`** — Per-user-per-workspace key derivation via HKDF, `GET /workspaces/:id/key` endpoint, workspace-scoped key cache. Replaces Phases 1-2 below (deployment-wide key from session → per-user-workspace key from endpoint).
 >
-> Phase 3 (per-app wiring) is now part of Spec B's Phase 3. The app inventory and edge cases sections below remain useful reference.
+> Phase 3 (per-app wiring) is now part of the HKDF spec's Phase 3. The app inventory and edge cases sections below remain useful reference.
 >
-> **Execution order**: Spec A (hardening) → Spec B (envelope encryption, includes per-app wiring).
+> **Execution order**: Spec A (hardening) → Spec B (HKDF key derivation, includes per-app wiring).
 >
 > The original content below is preserved for context but should not be executed as-is.
 

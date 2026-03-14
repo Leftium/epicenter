@@ -1,9 +1,14 @@
 # Per-Workspace Envelope Encryption
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Superseded by `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`
 **Depends on**: `specs/20260314T063000-encryption-wrapper-hardening.md` (mode system, AAD, error containment)
 **Builds on**: `specs/20260313T180100-client-side-encryption-wiring.md` (key delivery to apps)
+> **Superseded (2026-03-14)**: This full envelope encryption spec has been replaced by a simpler HKDF-based approach with tighter per-user blast radius. See `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md`.
+>
+> **Key differences**: Random DEKs + Postgres storage → deterministic HKDF derivation (no storage). Per-workspace blast radius → per-user-per-workspace blast radius. Envelope encryption deferred to Phase 3 (if enterprise demand warrants it).
+>
+> The original content below is preserved for context but should not be executed as-is.
 
 ## Overview
 

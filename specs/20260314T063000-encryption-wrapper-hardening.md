@@ -3,7 +3,7 @@
 **Date**: 2026-03-14
 **Status**: Draft
 **Builds on**: `specs/20260313T202000-encrypted-blob-pack-nonce.md`, `specs/20260312T120000-y-keyvalue-lww-encrypted.md`
-**Blocks**: `specs/20260313T180100-client-side-encryption-wiring.md` (Phase 0 prerequisites)
+**Blocks**: `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` (key derivation depends on hardening being in place)
 
 ## Overview
 

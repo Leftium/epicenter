@@ -133,11 +133,11 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 
 ### Phase 2: Wrapper Hardening
 
-- [ ] **2.1** Add `mode` state (`plaintext` | `locked` | `unlocked`) to `createEncryptedKvLww`. Initialize based on whether `getKey()` returns a key at creation time.
-- [ ] **2.2** Gate `set()` on mode — throw in `locked`, encrypt in `unlocked`, passthrough in `plaintext`.
-- [ ] **2.3** Wrap `maybeDecrypt` calls in observer with error containment. On failure, store the raw entry in a `quarantine` map and log a warning. Skip the entry in `wrapper.map`.
-- [ ] **2.4** Add `onKeyChange(key: Uint8Array | undefined)` method. Re-iterates `inner.map`, re-decrypts all entries, rebuilds `wrapper.map`, retries quarantined entries, transitions mode, fires synthetic change events.
-- [ ] **2.5** Wire AAD into the wrapper: compute `encode(workspaceId + ':' + tableName + ':' + entryKey)` for each encrypt/decrypt call. Accept `workspaceId` and `tableName` as new options to `createEncryptedKvLww`.
+- [x] **2.1** Add `mode` state (`plaintext` | `locked` | `unlocked`) to `createEncryptedKvLww`. Initialize based on whether `getKey()` returns a key at creation time.
+- [x] **2.2** Gate `set()` on mode — throw in `locked`, encrypt in `unlocked`, passthrough in `plaintext`.
+- [x] **2.3** Wrap `maybeDecrypt` calls in observer with error containment. On failure, store the raw entry in a `quarantine` map and log a warning. Skip the entry in `wrapper.map`.
+- [x] **2.4** Add `onKeyChange(key: Uint8Array | undefined)` method. Re-iterates `inner.map`, re-decrypts all entries, rebuilds `wrapper.map`, retries quarantined entries, transitions mode, fires synthetic change events.
+- [x] **2.5** Wire AAD into the wrapper: compute `encode(workspaceId + ':' + tableName + ':' + entryKey)` for each encrypt/decrypt call. Accept `workspaceId` and `tableName` as new options to `createEncryptedKvLww`.
 
 ### Phase 3: Tests
 

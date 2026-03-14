@@ -280,6 +280,52 @@ async function deriveSalt(
 }
 
 /**
+ * Derive a per-workspace 256-bit encryption key from a user key via HKDF-SHA256.
+ *
+ * Second level of a two-level HKDF hierarchy:
+ * 1. Server: `HKDF(SHA-256(secret), "user:{userId}:v1")` → per-user key (in session)
+ * 2. Client: `HKDF(userKey, "workspace:{workspaceId}:v1")` → per-workspace key (this function)
+ *
+ * Deterministic — same inputs always produce the same key. No storage needed.
+ * Uses Web Crypto `deriveBits` which is available in browser, Cloudflare Workers,
+ * and Tauri WebView.
+ *
+ * @param userKey - A 32-byte Uint8Array user key from the session's encryptionKey
+ * @param workspaceId - The workspace identifier (e.g. "tab-manager")
+ * @returns A promise that resolves to a 32-byte Uint8Array per-workspace encryption key
+ *
+ * @example
+ * ```typescript
+ * const userKey = base64ToBytes(session.encryptionKey);
+ * const wsKey = await deriveWorkspaceKey(userKey, 'tab-manager');
+ * workspace.unlock(wsKey);
+ * ```
+ */
+async function deriveWorkspaceKey(
+	userKey: Uint8Array,
+	workspaceId: string,
+): Promise<Uint8Array> {
+	const hkdfKey = await crypto.subtle.importKey(
+		'raw',
+		userKey.buffer as ArrayBuffer,
+		'HKDF',
+		false,
+		['deriveBits'],
+	);
+	const derivedBits = await crypto.subtle.deriveBits(
+		{
+			name: 'HKDF',
+			hash: 'SHA-256',
+			salt: new Uint8Array(0),
+			info: new TextEncoder().encode(`workspace:${workspaceId}:v1`),
+		},
+		hkdfKey,
+		256,
+	);
+	return new Uint8Array(derivedBits);
+}
+
+/**
  * Convert a Uint8Array to a base64-encoded string.
  *
  * Uses the built-in `btoa` function with proper handling of binary data
@@ -334,4 +380,5 @@ export {
 	deriveSalt,
 	bytesToBase64,
 	base64ToBytes,
+	deriveWorkspaceKey,
 };

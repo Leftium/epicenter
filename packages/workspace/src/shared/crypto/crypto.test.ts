@@ -8,6 +8,7 @@ import {
 	decryptValue,
 	deriveKeyFromPassword,
 	deriveSalt,
+	deriveWorkspaceKey,
 	type EncryptedBlob,
 	encryptValue,
 	generateEncryptionKey,
@@ -445,5 +446,45 @@ describe('binary storage overhead', () => {
 		console.log(
 			`base64 size: ${base64Size} bytes, binary size: ${binarySize} bytes, savings: ${savings}%`,
 		);
+	});
+});
+
+describe('deriveWorkspaceKey', () => {
+	test('same inputs produce same key (deterministic)', async () => {
+		const userKey = generateEncryptionKey();
+		const workspaceId = 'tab-manager';
+
+		const key1 = await deriveWorkspaceKey(userKey, workspaceId);
+		const key2 = await deriveWorkspaceKey(userKey, workspaceId);
+
+		expect(key1).toEqual(key2);
+	});
+
+	test('different userKeys produce different workspace keys', async () => {
+		const userKey1 = generateEncryptionKey();
+		const userKey2 = generateEncryptionKey();
+		const workspaceId = 'tab-manager';
+
+		const key1 = await deriveWorkspaceKey(userKey1, workspaceId);
+		const key2 = await deriveWorkspaceKey(userKey2, workspaceId);
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('different workspaceIds produce different keys', async () => {
+		const userKey = generateEncryptionKey();
+
+		const key1 = await deriveWorkspaceKey(userKey, 'tab-manager');
+		const key2 = await deriveWorkspaceKey(userKey, 'whispering');
+
+		expect(key1).not.toEqual(key2);
+	});
+
+	test('output is 32 bytes', async () => {
+		const userKey = generateEncryptionKey();
+		const key = await deriveWorkspaceKey(userKey, 'tab-manager');
+
+		expect(key).toBeInstanceOf(Uint8Array);
+		expect(key.length).toBe(32);
 	});
 });

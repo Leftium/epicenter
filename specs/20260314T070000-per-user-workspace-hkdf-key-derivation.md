@@ -258,8 +258,8 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ### Phase 2: Client — Local Workspace Key Derivation
 
-- [ ] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}:v1"` and empty salt.
-- [ ] **2.2** Export `deriveWorkspaceKey` from the crypto barrel.
+- [x] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}:v1"` and empty salt.
+- [x] **2.2** Export `deriveWorkspaceKey` from the crypto barrel. Tests added: deterministic output, different userKeys diverge, different workspaceIds diverge, output is 32 bytes.
 
 ### Phase 3: Per-App Wiring
 

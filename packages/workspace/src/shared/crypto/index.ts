@@ -116,9 +116,14 @@ function decryptValue(blob: EncryptedBlob, key: Uint8Array): string {
  * Type guard to check if a value is a valid EncryptedBlob.
  *
  * Validates the structure and field types of an EncryptedBlob without
- * performing cryptographic verification. Checks for `v` (number) and `ct` (string)
- * only—the two fields that define the format. Use this to safely narrow types
- * when deserializing data from storage or network.
+ * performing cryptographic verification. Checks for exactly 2 keys (`v` + `ct`)
+ * with the correct types.
+ *
+ * The key count check (`Object.keys().length === 2`) prevents false positives from
+ * user-defined schemas that happen to include `v` (number) and `ct` (string) fields
+ * alongside other data. Table rows always have at least 3 keys (`id`, `_v`, plus
+ * user fields), so they can never match. KV values would need to be exactly
+ * `{ v: <number>, ct: <string> }` with nothing else—pathologically unlikely.
  *
  * The version check uses `typeof v === 'number'` (not `v === 1`) so the guard
  * recognizes any future version. The decrypt function dispatches on the specific
@@ -139,6 +144,7 @@ function isEncryptedBlob(value: unknown): value is EncryptedBlob {
 	return (
 		typeof value === 'object' &&
 		value !== null &&
+		Object.keys(value).length === 2 &&
 		'v' in value &&
 		'ct' in value &&
 		typeof (value as Record<string, unknown>).v === 'number' &&

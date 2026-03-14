@@ -81,7 +81,7 @@ const kv = createEncryptedKvLww(yarray, {
 });
 ```
 
-We use `@noble/ciphers` for the implementation because it's synchronous and Cure53-audited. Keeping encryption synchronous is vital for local-first apps; it ensures that `set()` remains a void operation that doesn't force the UI to wait for a promise. When a key is present, the wrapper stores a versioned blob containing the algorithm, initialization vector, and ciphertext. If no key is provided, it's a zero-overhead passthrough.
+We use `@noble/ciphers` for the implementation because it's synchronous and Cure53-audited. Keeping encryption synchronous is vital for local-first apps; it ensures that `set()` remains a void operation that doesn't force the UI to wait for a promise. When a key is present, the wrapper stores a versioned blob containing the ciphertext with the nonce packed in. If no key is provided, it's a zero-overhead passthrough.
 
 | Mode | Key source | Server can decrypt? |
 |---|---|---|

@@ -207,7 +207,7 @@ The KV default values spec (`20260313T180200`) is independent—no ordering cons
 - [x] `EncryptedBlob` type has exactly 2 fields: `v` and `ct`
 - [x] `encryptValue()` produces `{ v: 1, ct: base64(nonce || ciphertext || tag) }`
 - [x] `decryptValue()` unpacks nonce from first 12 bytes of decoded `ct`
-- [x] `isEncryptedBlob()` validates with only `v` (number) + `ct` (string) checks
+- [x] `isEncryptedBlob()` validates with `v` (number) + `ct` (string) + exactly 2 keys (prevents user schema collision)
 - [x] All existing tests pass (or fail only on expected type changes, then are updated)
 - [x] Monorepo typecheck passes
 - [x] All 4 specs updated with status notes
@@ -240,6 +240,7 @@ Packed the 12-byte nonce into the `ct` field, reducing `EncryptedBlob` from 3 fi
 - Used manual `nonce || ciphertext` packing instead of `managedNonce(gcm)`. Both produce identical byte layout; manual is more explicit.
 - `specs/20260313T180100-client-side-encryption-wiring.md` needed no changes—it already referenced `EncryptedBlob` generically without showing the old `iv` field.
 - Test file was updated (spec said "DO NOT modify test files" initially, but then said "then update to match the new 2-field format"). Tests verify same behaviors (round-trip, tamper detection, unique nonce per call) with the new shape.
+- Hardened `isEncryptedBlob()` with `Object.keys().length === 2` check post-implementation. Prevents false positives from user schemas that happen to include `v` (number) and `ct` (string) alongside other fields. Added test covering table row collision scenario.
 
 ### Follow-up Work
 

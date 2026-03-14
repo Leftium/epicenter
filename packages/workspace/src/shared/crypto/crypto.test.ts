@@ -207,6 +207,16 @@ describe('isEncryptedBlob', () => {
 		};
 		expect(isEncryptedBlob(blob)).toBe(false);
 	});
+
+	test('returns false for object with extra keys (prevents user schema collision)', () => {
+		// A table row like { id: '1', _v: 1, v: 2, ct: 'text/html' } should NOT match
+		const tableRow = { id: '1', _v: 1, v: 2, ct: 'text/html' };
+		expect(isEncryptedBlob(tableRow)).toBe(false);
+
+		// Even just one extra key disqualifies it
+		const kvValue = { v: 1, ct: 'config', extra: true };
+		expect(isEncryptedBlob(kvValue)).toBe(false);
+	});
 });
 
 describe('deriveKeyFromPassword', () => {

@@ -1,31 +1,50 @@
 import { migrationDialog } from '$lib/components/MigrationDialog.svelte';
 import { rpc } from '$lib/query';
+import { DbServiceLive } from '$lib/services/db';
+import {
+	getDatabaseMigrationState,
+	probeForOldData,
+	setDatabaseMigrationState,
+} from '$lib/state/migrate-database';
 
 /**
- * Check if IndexedDB has data and show a migration toast if it does.
- * This helps users discover the migration feature and encourages them to migrate legacy data.
+ * Check whether the user has old data that should be migrated to workspace tables.
+ *
+ * State machine:
+ *   (absent) → probe old data → found? set 'pending' : set 'done'
+ *   'pending' → show toast with "Migrate" button
+ *   'done'    → skip
  */
-export async function checkIndexedDBMigration(): Promise<void> {
-	if (!window.__TAURI_INTERNALS__) {
-		// Only run in desktop app
-		return;
+export async function checkDatabaseMigration(): Promise<void> {
+	const state = getDatabaseMigrationState();
+
+	// Already done — nothing to do
+	if (state === 'done') return;
+
+	if (state === null) {
+		// First check: probe for old data
+		const hasData = await probeForOldData(DbServiceLive);
+		if (!hasData) {
+			setDatabaseMigrationState('done');
+			return;
+		}
+		setDatabaseMigrationState('pending');
 	}
 
-	await migrationDialog.refreshCounts();
+	// State is 'pending' — show toast
+	migrationDialog.isPending = true;
 
-	if (migrationDialog.hasIndexedDBData) {
-		rpc.notify.info({
-			title: 'Database Migration Available',
-			description:
-				'You have data in IndexedDB. Click here to migrate to the faster file system storage.',
-			action: {
-				type: 'button',
-				label: 'View Update',
-				onClick: () => {
-					migrationDialog.isOpen = true;
-				},
+	rpc.notify.info({
+		title: 'Data Migration Available',
+		description:
+			'Your recordings and transformations can be migrated to the new workspace storage.',
+		action: {
+			type: 'button',
+			label: 'Migrate Now',
+			onClick: () => {
+				migrationDialog.isOpen = true;
 			},
-			persist: true,
-		});
-	}
+		},
+		persist: true,
+	});
 }

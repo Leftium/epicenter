@@ -19,7 +19,7 @@
 		checkFfmpegRecordingMethodCompatibility,
 	} from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import { checkIndexedDBMigration } from '../_layout-utils/check-indexeddb-migration';
+	import { checkDatabaseMigration } from '../_layout-utils/check-indexeddb-migration';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
@@ -60,7 +60,7 @@
 				checkFfmpegRecordingMethodCompatibility(),
 				checkCompressionRecommendation(),
 				checkForUpdates(),
-				checkIndexedDBMigration(),
+				checkDatabaseMigration(),
 			]);
 		} else {
 			// Browser extension context - notify that the Whispering tab is ready

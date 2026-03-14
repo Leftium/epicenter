@@ -27,8 +27,7 @@
 	} = $props();
 
 	const shouldShowMigrationButton = $derived(
-		window.__TAURI_INTERNALS__ &&
-			(import.meta.env.DEV || migrationDialog.hasIndexedDBData),
+		import.meta.env.DEV || migrationDialog.isPending,
 	);
 
 	const navItems = [

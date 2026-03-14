@@ -436,33 +436,6 @@ The reader's eye should bounce between prose and visuals. Prose provides the "wh
 - Include any breaking changes prominently
 - Link to relevant issues
 
-### Changelog Entries in PRs
-
-PRs with a `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description. These entries get aggregated into GitHub Releases by `auto.release.yml`.
-
-Rules:
-
-- One line per user-visible change
-- Use imperative mood, written for end users (not developers)
-- Internal-only PRs (`chore:`, `refactor:`, `docs:`) should omit the section entirely
-- Entries are grouped in releases: `feat:` → "New", `fix:` → "Fixed", other with changelog → "Improved"
-
-**Good entry:**
-
-```
-## Changelog
-- Add Bun sidecar for local workspace sync
-```
-
-**Bad entry (developer-facing, not user-facing):**
-
-```
-## Changelog
-- refactor(services): flatten isomorphic/ to services root
-```
-
-When no `## Changelog` section is present, the PR is still released (gets a version bump) but excluded from the release body.
-
 ### Scanning GitHub Issues Before Writing a PR Description
 
 Before drafting a PR description, run a cursory search of open GitHub issues to identify any that the PR's changes may fix, partially address, or lay groundwork for:

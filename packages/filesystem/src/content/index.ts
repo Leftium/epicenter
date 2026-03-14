@@ -1,8 +1,6 @@
-export {
-	type ContentHelpers,
-	createContentHelpers,
-} from './content.js';
+export { type ContentHelpers } from './content.js';
 export type {
+	BinaryEntry,
 	ContentMode,
 	RichTextEntry,
 	SheetEntry,

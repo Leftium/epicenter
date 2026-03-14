@@ -133,7 +133,7 @@ export function createWorkspace<
 		TKvDefinitions,
 		TAwarenessDefinitions
 	>,
-	options?: { getKey?: () => Uint8Array | undefined },
+	options?: { key?: Uint8Array },
 ): WorkspaceClientBuilder<
 	TId,
 	TTableDefinitions,
@@ -146,8 +146,8 @@ export function createWorkspace<
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	const tables = createTables(ydoc, tableDefs, { getKey: options?.getKey });
-	const kv = createKv(ydoc, kvDefs, { getKey: options?.getKey });
+	const tables = createTables(ydoc, tableDefs, { key: options?.key });
+	const kv = createKv(ydoc, kvDefs, { key: options?.key });
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,

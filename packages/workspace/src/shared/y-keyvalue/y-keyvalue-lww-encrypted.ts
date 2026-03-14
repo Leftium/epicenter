@@ -69,9 +69,8 @@
  * ## Key Management
  *
  * The encryption key is managed through a single mechanism: `onKeyChange(key)`.
- * The optional `getKey` getter in options is called **once** at creation to seed
- * the initial key (and therefore the initial mode). After creation, all key
- * transitions go through `onKeyChange()`.
+ * The optional `key` in options seeds the initial key (and therefore the initial
+ * mode). After creation, all key transitions go through `onKeyChange()`.
  *
  * ## Pending State
  *
@@ -114,12 +113,12 @@ import {
 /**
  * Options for `createEncryptedKvLww`.
  *
- * `getKey` is called **once** at creation to seed the initial encryption key
- * and determine the starting mode (`plaintext` if undefined, `unlocked` if a
- * key is returned). After creation, use `onKeyChange()` for all key transitions.
+ * `key` seeds the initial encryption key and determines the starting mode
+ * (`plaintext` if undefined, `unlocked` if a key is provided). After creation,
+ * all key transitions go through `onKeyChange()`.
  */
 type EncryptedKvLwwOptions = {
-	getKey?: () => Uint8Array | undefined;
+	key?: Uint8Array;
 };
 
 /** The three encryption modes. See module JSDoc for the full state machine. */
@@ -245,14 +244,14 @@ export function createEncryptedKvLww<T>(
 	const quarantine = new Map<string, YKeyValueLwwEntry<EncryptedBlob | T>>();
 
 	/**
-	 * The active encryption key. Seeded from `getKey()` at creation (called once),
+	 * The active encryption key. Seeded from `options.key` at creation,
 	 * then updated exclusively via `onKeyChange()`.
 	 */
-	let currentKey: Uint8Array | undefined = options?.getKey?.();
+	let currentKey: Uint8Array | undefined = options?.key;
 
 	/**
 	 * Current encryption mode. Derived from key presence history:
-	 * - `plaintext`: No key has ever been seen (initial state when getKey() → undefined)
+	 * - `plaintext`: No key has ever been seen (initial state when no key provided)
 	 * - `unlocked`: A key is currently active
 	 * - `locked`: A key was active but has been cleared (sign-out)
 	 */

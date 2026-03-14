@@ -46,11 +46,11 @@ import { KV_KEY } from './ydoc-keys.js';
 export function createKv<TKvDefinitions extends KvDefinitions>(
 	ydoc: Y.Doc,
 	definitions: TKvDefinitions,
-	options?: { getKey?: () => Uint8Array | undefined },
+	options?: { key?: Uint8Array },
 ): KvHelper<TKvDefinitions> {
 	// All KV values share a single encrypted KV store (passthrough when no key)
 	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedKvLww(yarray, { getKey: options?.getKey });
+	const ykv = createEncryptedKvLww(yarray, { key: options?.key });
 
 	return {
 		get(key) {

@@ -97,8 +97,7 @@ type DocEntry = {
  * shared resource. Calling `open()` twice returns fresh handles backed
  * by the same cached Y.Doc.
  *
- * The `content` property provides timeline-backed read/write with automatic
- * migration from legacy `Y.Text('content')` to `Y.Array('timeline')`.
+ * The `content` property provides timeline-backed read/write.
  */
 function makeHandle(
 	ydoc: Y.Doc,
@@ -107,29 +106,11 @@ function makeHandle(
 ): DocumentHandle {
 	const tl = createTimeline(ydoc);
 
-	/**
-	 * Migrate legacy Y.Text('content') data into the timeline on first access.
-	 * If the timeline is empty but Y.Text('content') has data, copy it into
-	 * a new timeline text entry inside a transaction (atomic, safe for concurrent calls).
-	 */
-	function migrateIfNeeded(): void {
-		if (tl.length > 0) return;
-		const legacyText = ydoc.getText('content');
-		if (legacyText.length === 0) return;
-		ydoc.transact(() => {
-			// Double-check inside transaction to prevent concurrent double-push
-			if (tl.length > 0) return;
-			tl.pushText(legacyText.toString());
-		});
-	}
-
 	const content: DocumentContent = {
 		read() {
-			migrateIfNeeded();
 			return tl.readAsString();
 		},
 		write(text: string) {
-			migrateIfNeeded();
 			if (tl.currentMode === 'text') {
 				const ytext = tl.currentEntry?.get('content') as Y.Text;
 				ydoc.transact(() => {
@@ -141,14 +122,12 @@ function makeHandle(
 			}
 		},
 		getText() {
-			migrateIfNeeded();
 			const entry = tl.currentEntry;
 			if (!entry) return undefined;
 			if ((entry.get('type') as string) !== 'text') return undefined;
 			return entry.get('content') as Y.Text;
 		},
 		getFragment() {
-			migrateIfNeeded();
 			const entry = tl.currentEntry;
 			if (!entry) return undefined;
 			if ((entry.get('type') as string) !== 'richtext') return undefined;

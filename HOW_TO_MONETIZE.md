@@ -6,7 +6,7 @@ Honestly, we're still figuring this out. I've been thinking about it a lot—tal
 
 Epicenter is AGPL-3.0. It stays that way. We require a lightweight CLA (license grant, not copyright assignment—contributors keep their copyright) and we don't need to formally "dual license" anything. When an enterprise wants to self-host our sync server but can't accept AGPL (because their legal team won't let them), we sell them a commercial license. That's just a private contract between us and them—nothing changes on the public repo.
 
-The AGPL isn't the business model. It's the moat that makes the business model work.
+AGPL keeps the code open. When enterprises need a different arrangement, that's where the commercial license comes in.
 
 ## What we considered
 
@@ -22,11 +22,11 @@ Option 3 won. It's the least complicated, stays faithful to open source, and doe
 
 ## How AGPL actually works as leverage
 
-Here's something I didn't fully appreciate until recently: AGPL is effectively a lead generation tool for enterprise sales. Not because we'd ever sue anyone, but because of how corporate compliance works.
+Here's something I didn't fully appreciate until recently: the AGPL basically does the work of surfacing enterprises who need a commercial license. Not because we'd ever sue anyone, but because of how corporate compliance works.
 
 The typical flow looks like this: a developer at a company discovers Epicenter, starts using it, loves it. Then their compliance tooling (Snyk, FOSSA, whatever they use) flags AGPL in a dependency scan. Legal sees the flag and applies their blanket ban—most Fortune 500 companies prohibit AGPL by default. At that point, the company has two options: stop using it, or buy a commercial license. We get a sales conversation we didn't have to create.
 
-This is the same playbook that Grafana Labs ($9B valuation, $400M+ ARR), Bitwarden ($100M Series B), and MinIO ($1B+ valuation) all use. AGPL creates the constraint. The commercial license removes it.
+This is the same approach Grafana Labs, Bitwarden, and MinIO all use. AGPL creates the constraint. The commercial license removes it.
 
 
 ## What this means for developers building on Epicenter
@@ -37,17 +37,17 @@ The catch is that the **combined work** (your code + our AGPL library) must comp
 
 This is the same pattern Grafana uses—their UI libraries (`grafana-ui`, `grafana-data`) are Apache 2.0 so plugin developers aren't forced into AGPL for their own code, even though the combined Grafana distribution is AGPL.
 
-## The three revenue streams
+## How this sustains the project
 
-We see three ways this generates revenue, serving different kinds of customers:
+We see three ways to become financially sustainable, serving different kinds of customers:
 
-**Hosted sync.** We run the sync server. Users pay for the convenience of not managing infrastructure, plus end-to-end encryption. This is the Obsidian model—they make roughly 80% of their revenue from Sync alone. Individual users and small teams will never self-host; they just want it to work. This is the volume play.
+**Hosted sync.** We run the sync server. Users pay for the convenience of not managing infrastructure, plus end-to-end encryption. This is the Obsidian model—individual users and small teams will never self-host; they just want it to work.
 
-**Enterprise self-host licenses.** Banks, healthcare companies, defense contractors, anyone with strict data sovereignty requirements—they need to run the sync server on their own infrastructure. Their legal team flags the AGPL, and that forces a commercial conversation. They're buying AGPL escape plus SSO, audit logs, and a support SLA. This is the high-ticket play.
+**Enterprise self-host licenses.** Banks, healthcare companies, defense contractors, anyone with strict data sovereignty requirements—they need to run the sync server on their own infrastructure. Their legal team flags the AGPL, and that forces a commercial conversation. They're buying AGPL escape plus SSO, audit logs, and a support SLA.
 
-**AI compute.** Epicenter does transcription and AI assistance. Users who don't want to manage their own API keys pay us for bundled access. We negotiate volume pricing with model providers and mark it up slightly. Nice margin on top.
+**AI compute.** Epicenter does transcription and AI assistance. Users who don't want to manage their own API keys pay us for bundled access. We negotiate volume pricing with model providers and pass on reasonable rates.
 
-These aren't competing streams. The person paying $10/month for hosted sync will never self-host. The enterprise paying $100k/year for a commercial license will never use our hosted sync—their compliance team won't let data leave their network. Different buyers, different motivations, same AGPL foundation.
+These aren't competing streams. The person paying for hosted sync will never self-host. The enterprise buying a commercial license will never use our hosted sync—their compliance team won't let data leave their network. Different buyers, different motivations, same AGPL foundation.
 
 ## Why not a formal dual license?
 
@@ -65,15 +65,14 @@ Crucially, this is a license grant, NOT copyright assignment. You keep your copy
 
 ## The comps
 
-Projects using this same AGPL approach at venture scale right now:
+Projects using this same AGPL approach:
 
-- Grafana Labs—$9B valuation, switched to AGPL specifically to prevent cloud providers from strip-mining their value
-- Bitwarden—AGPL, $100M Series B, sells enterprise self-host licenses
-- MinIO—$1B+ valuation, AGPL forces enterprise licenses starting at ~$96k/year
-- AppFlowy—AGPL, $6.4M seed, open core plus enterprise self-host (closest to our architecture)
-- Logseq—AGPL, local-first desktop app, VC-backed (closest comp to Epicenter overall)
+- Grafana Labs—switched to AGPL specifically to prevent cloud providers from strip-mining their value
+- Bitwarden—AGPL, sells enterprise self-host licenses
+- MinIO—AGPL, enterprise licenses for self-hosted object storage
+- AppFlowy—AGPL, open core plus enterprise self-host (closest to our architecture)
+- Logseq—AGPL, local-first desktop app (closest comp to Epicenter overall)
 
-Nobody's proven a $10B+ exit with this exact model yet. But Grafana at $9B is close, and none of those comps had our AI angle.
 Every one of these projects requires a CLA. We do now too.
 
 ## What I care about

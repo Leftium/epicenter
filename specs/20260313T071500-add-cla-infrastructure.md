@@ -2,7 +2,7 @@
 
 ## Problem
 
-HOW_TO_MONETIZE.md claims Epicenter follows the same AGPL dual-licensing playbook as Grafana ($9B), MongoDB, Bitwarden, and MinIO—but omits that every one of those companies requires a Contributor License Agreement. Without a CLA:
+HOW_TO_MONETIZE.md claims Epicenter follows the same AGPL dual-licensing approach as Grafana, MongoDB, Bitwarden, and MinIO—but omits that every one of those projects requires a Contributor License Agreement. Without a CLA:
 
 1. Community contributions to commercially relevant code (sync server, sync protocol) can't be commercially licensed
 2. Future relicensing is blocked by copyright fragmentation across ~30 contributors
@@ -71,7 +71,7 @@ What the CLA covers:
 ## What This Does NOT Change
 
 - The AGPL-3.0 license stays
-- The monetization strategy stays (it was correct, just incomplete)
+- The sustainability strategy stays (it was correct, just incomplete)
 - Existing contributors' code remains under AGPL (their past contributions don't retroactively fall under the CLA)
 - No copyright assignment—contributors keep their copyright
 

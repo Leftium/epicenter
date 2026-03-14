@@ -22,16 +22,11 @@ body:
         - Links to similar features in other apps
         - If from Discord, paste the Discord message body here
       value: |
-        ### Problem:
+        ### Problem / use case:
 
 
         ### Proposed solution:
 
-
-        ### Use case:
-
-
-        ### Additional details:
 
     validations:
       required: true

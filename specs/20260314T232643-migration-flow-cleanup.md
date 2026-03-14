@@ -228,8 +228,8 @@ startMigration()
 
 ### Phase 4: Dev tools cleanup
 
-- [ ] **4.1** Add clear comment boundary: `// ── Dev tools (import.meta.env.DEV only) ──`
-- [ ] **4.2** Lazy-load test data:
+- [x] **4.1** Add clear comment boundary: `// ── Dev tools (import.meta.env.DEV only) ──`
+- [x] **4.2** Lazy-load test data:
   ```typescript
   // Before (runs in production):
   const testData = createMigrationTestData();
@@ -242,8 +242,8 @@ startMigration()
     // ...
   }
   ```
-- [ ] **4.3** Group dev state together at the bottom of the closure, clearly separated from production state.
-- [ ] **4.4** Remove the top-level `import` of `createMigrationTestData` and `MOCK_RECORDING_COUNT`/`MOCK_TRANSFORMATION_COUNT` from the module (they move into the dynamic import). Note: `MOCK_RECORDING_COUNT` and `MOCK_TRANSFORMATION_COUNT` are still needed in `MigrationDialog.svelte` for the dev UI button labels—that import stays.
+- [x] **4.3** Group dev state together at the bottom of the closure, clearly separated from production state.
+- [x] **4.4** Remove the top-level `import` of `createMigrationTestData` and `MOCK_RECORDING_COUNT`/`MOCK_TRANSFORMATION_COUNT` from the module (they move into the dynamic import). Note: `MOCK_RECORDING_COUNT` and `MOCK_TRANSFORMATION_COUNT` are still needed in `MigrationDialog.svelte` for the dev UI button labels—that import stays.
 
 ### Phase 5: Update `MigrationDialog.svelte` for new property names
 

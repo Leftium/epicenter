@@ -11,21 +11,11 @@ import {
 	probeForOldData,
 	setDatabaseMigrationState,
 } from './migrate-database';
-import {
-	createMigrationTestData,
-	MOCK_RECORDING_COUNT,
-	MOCK_TRANSFORMATION_COUNT,
-} from './migration-test-data';
-
-const testData = createMigrationTestData();
 
 function createMigrationDialog() {
 	let isOpen = $state(false);
 	let phase = $state<'idle' | 'running' | 'completed' | 'failed'>('idle');
 	let persistedState = $state(getDatabaseMigrationState());
-	let isSeeding = $state(false);
-	let isClearing = $state(false);
-	let isResetting = $state(false);
 	let logs = $state<string[]>([]);
 	let migrationResult = $state<MigrationResult | null>(null);
 	let hasFailedAttempt = $state(false);
@@ -59,6 +49,11 @@ function createMigrationDialog() {
 		});
 		migrationToastId = toastId;
 	}
+
+	// ── Dev tools (import.meta.env.DEV only) ──
+	let isSeeding = $state(false);
+	let isClearing = $state(false);
+	let isResetting = $state(false);
 
 	return {
 		get isOpen() {
@@ -167,6 +162,7 @@ function createMigrationDialog() {
 			// State is 'pending' — show toast
 			showPendingToast();
 		},
+		// ── Dev tools (import.meta.env.DEV only) ──
 		get isSeeding() {
 			return isSeeding;
 		},
@@ -185,6 +181,10 @@ function createMigrationDialog() {
 
 			isSeeding = true;
 			logs = [];
+
+			const { createMigrationTestData, MOCK_RECORDING_COUNT, MOCK_TRANSFORMATION_COUNT } =
+				await import('./migration-test-data');
+			const testData = createMigrationTestData();
 
 			await tryAsync({
 				try: async () => {
@@ -209,6 +209,9 @@ function createMigrationDialog() {
 
 			isClearing = true;
 			logs = [];
+
+			const { createMigrationTestData } = await import('./migration-test-data');
+			const testData = createMigrationTestData();
 
 			await tryAsync({
 				try: () => testData.clearIndexedDB({ onProgress: addLog }),

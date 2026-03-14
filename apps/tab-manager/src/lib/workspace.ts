@@ -884,7 +884,6 @@ export const workspaceClient = createWorkspace(
 				title: 'Remove Duplicate Tabs',
 				description:
 					'Close duplicate tabs, keeping the first occurrence of each URL. Only affects tabs on the current device.',
-				destructive: true,
 				input: Type.Object({}),
 				handler: async () => {
 					const deviceId = await getDeviceId();

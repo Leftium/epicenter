@@ -72,14 +72,18 @@ body:
         - Settings
         - Transcription
         - Local Models
+        - Sync (sync server/client)
+        - CLI
+        - Workspace (data layer)
+        - Landing Page
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: Whispering Version
-      description: What version of Whispering are you using?
+      label: Epicenter Version
+      description: What version are you using? (Check Settings or About)
       placeholder: e.g., v7.5.0
     validations:
       required: true

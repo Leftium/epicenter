@@ -6,19 +6,6 @@
 
 <!-- One line per user-visible change. Omit this section entirely for internal-only changes. -->
 
-## Type of Change
-
-<!-- Mark the relevant option with an "x" -->
-
-- [ ] `feat`: New feature
-- [ ] `fix`: Bug fix
-- [ ] `docs`: Documentation update
-- [ ] `refactor`: Code refactoring (no functional changes)
-- [ ] `perf`: Performance improvement
-- [ ] `test`: Test additions or changes
-- [ ] `chore`: Maintenance tasks
-- [ ] `style`: Code style changes
-
 ## Related Issue
 
 <!-- Link to the issue this PR addresses, if applicable -->
@@ -55,6 +42,7 @@ Closes #
 - [ ] I've added/updated tests for my changes (if applicable)
 - [ ] My changes don't break existing functionality
 - [ ] I've updated documentation (if needed)
+- [ ] If touching `apps/api/`, `packages/sync/`, or `packages/sync-client/`—CODEOWNERS requires @braden-w review
 
 ## Screenshots/Recordings
 

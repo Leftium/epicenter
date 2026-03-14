@@ -15,16 +15,16 @@ Harden `createEncryptedKvLww` with three explicit encryption modes, error contai
 
 ```typescript
 // y-keyvalue-lww-encrypted.ts — current behavior
-const getKey = options?.getKey ?? (() => undefined);
+const key = options?.key;
 
 // set() — no key = plaintext passthrough
-const keyBytes = getKey();
+const keyBytes = key;
 if (!keyBytes) return inner.set(key, val);
 inner.set(key, encryptValue(JSON.stringify(val), keyBytes));
 
 // maybeDecrypt — no error handling
 const maybeDecrypt = (value: EncryptedBlob | T): T => {
-  const key = getKey();
+  const key = options?.key;
   if (!key || !isEncryptedBlob(value)) return value as T;
   return JSON.parse(decryptValue(value, key)) as T; // throws on bad blob
 };
@@ -32,7 +32,7 @@ const maybeDecrypt = (value: EncryptedBlob | T): T => {
 
 This creates four problems:
 
-1. **Sign-out writes plaintext over ciphertext.** When a user signs out, `getKey()` returns `undefined`. New writes go plaintext. A plaintext write with a newer LWW timestamp permanently replaces previously encrypted data—security downgrade via timestamp.
+1. **Sign-out writes plaintext over ciphertext.** When a user signs out, `key` is `undefined`. New writes go plaintext. A plaintext write with a newer LWW timestamp permanently replaces previously encrypted data—security downgrade via timestamp.
 2. **One bad blob crashes all observation.** `decryptValue` or `JSON.parse` throwing inside the `inner.observe()` handler kills the entire observation chain. Every consumer of that table stops receiving updates.
 3. **Map hydration doesn't rebuild on key arrival.** The wrapper builds its decrypted map once at creation. If the workspace loads before auth completes, encrypted entries stay as raw `{ v: 1, ct: '...' }` blobs in the map until each entry is individually touched by a new observer event.
 4. **No ciphertext context binding.** Ciphertext from `table:posts/post-1` can be copied to `table:users/user-1` and decrypts successfully. AES-GCM supports Additional Authenticated Data (AAD) at zero extra cost.
@@ -133,7 +133,7 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 
 ### Phase 2: Wrapper Hardening
 
-- [x] **2.1** Add `mode` state (`plaintext` | `locked` | `unlocked`) to `createEncryptedKvLww`. Initialize based on whether `getKey()` returns a key at creation time.
+- [x] **2.1** Add `mode` state (`plaintext` | `locked` | `unlocked`) to `createEncryptedKvLww`. Initialize based on whether `key` is provided at creation time.
 - [x] **2.2** Gate `set()` on mode — throw in `locked`, encrypt in `unlocked`, passthrough in `plaintext`.
 - [x] **2.3** Wrap `maybeDecrypt` calls in observer with error containment. On failure, store the raw entry in a `quarantine` map and log a warning. Skip the entry in `wrapper.map`.
 - [x] **2.4** Add `onKeyChange(key: Uint8Array | undefined)` method. Re-iterates `inner.map`, re-decrypts all entries, rebuilds `wrapper.map`, retries quarantined entries, transitions mode, fires synthetic change events.
@@ -218,7 +218,7 @@ Implemented the full hardening spec across 4 phases in 4 incremental commits. Th
 ### Deviations from Spec
 
 - **Removed AAD wiring from wrapper**: The `workspaceId`, `tableName` options and `computeAad()` function were removed. AAD solves a near-theoretical problem in this architecture (CRDT entries don't move, per-workspace keys already namespace ciphertext). The AAD parameter support in `encryptValue`/`decryptValue` primitives is kept for future use.
-- **Single key path**: Removed the `getKey()` polling bridge from `set()`. Keys arrive exclusively via `onKeyChange()` after creation. `getKey()` is called once at creation to seed the initial key. Clean break, no dual-path ambiguity.
+- **Single key path**: Removed the `key` polling bridge from `set()`. Keys arrive exclusively via `onKeyChange()` after creation. `key` is seeded at creation time. Clean break, no dual-path ambiguity.
 - **Simplified mode transition**: Replaced the redundant `else if (mode === 'plaintext') { mode = 'plaintext' }` no-op with `else if (mode !== 'plaintext') { mode = 'locked' }`.
 - **Non-optional type members**: `mode`, `quarantine`, and `onKeyChange` are non-optional on `YKeyValueLwwEncrypted<T>` — clean break.
 - **Synthetic transaction**: `onKeyChange()` fires synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.

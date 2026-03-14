@@ -76,7 +76,7 @@ In a CRDT system, per-blob versioning matters: a peer on old code produces v1 bl
 |----------|--------|-----------|
 | Which field to drop | `iv` (pack into `ct`) | `v` tells you the nonce length. Separate `iv` is a JWE convention for interop—we control both sides. |
 | Packing approach | `managedNonce(gcm)` from `@noble/ciphers` | Library's built-in API for this exact pattern. No manual nonce prepend/slice. Less code, not more. |
-| Backward compatibility | Not needed | No production data encrypted yet—all apps pass `getKey: undefined` (passthrough). Same window as previous `alg` removal. |
+| Backward compatibility | Not needed | No production data encrypted yet—all apps pass `key: undefined` (passthrough). Same window as previous `alg` removal. |
 | `isEncryptedBlob` check | Check `v` as number + `ct` as string only | Two-field check is simpler and more future-proof. No `iv` check needed. |
 | `decryptValue` | Must change (now slices nonce from `ct`) | Unlike the `alg` removal, this changes the decrypt path. Both encrypt and decrypt use `managedNonce`. |
 
@@ -192,7 +192,7 @@ This spec fits into the encryption spec chain as follows:
 ✅ 20260313T140000 — encryption-docs-refresh (all docs updated)
 ✅ 20260313T180000 — encrypted-blob-format-simplification (dropped alg, 4→3 fields)
 📝 20260313T202000 — THIS SPEC (pack nonce, 3→2 fields)
-📝 20260313T180100 — client-side-encryption-wiring (wire getKey into apps)
+📝 20260313T180100 — client-side-encryption-wiring (wire key into apps)
 📝 20260313T180200 — kv-default-values (independent, any order)
 ```
 
@@ -244,4 +244,4 @@ Packed the 12-byte nonce into the `ct` field, reducing `EncryptedBlob` from 3 fi
 
 ### Follow-up Work
 
-- None. The next spec in the chain (`20260313T180100-client-side-encryption-wiring.md`) can proceed—it wires `getKey` into apps and is unaffected by the format change.
+- None. The next spec in the chain (`20260313T180100-client-side-encryption-wiring.md`) can proceed—it wires `key` into apps and is unaffected by the format change.

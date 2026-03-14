@@ -1,7 +1,7 @@
 # YKeyValueLww Encrypted
 
 **Date**: 2026-03-12
-**Status**: Draft (Updated 2026-03-12: getKey getter, decrypted map, all open questions resolved)
+**Status**: Draft (Updated 2026-03-12: key option, decrypted map, all open questions resolved)
 **Builds on**: `specs/20260213T005300-encrypted-workspace-storage.md`
 
 > **Note (2026-03-13)**: The `alg` and `iv` fields were later removed from `EncryptedBlob`. The blob format is now `{ v: 1, ct }`—the version field is the sole contract for algorithm and encoding. The `ct` field contains `base64(nonce(12) || ciphertext || tag(16))`. See `specs/20260313T202000-encrypted-blob-pack-nonce.md`.
@@ -35,7 +35,7 @@ This creates problems:
 
 ```typescript
 // Encrypted at the data structure level
-const kv = createEncryptedKvLww<TabData>(yarray, { getKey: () => encryptionKey });
+const kv = createEncryptedKvLww<TabData>(yarray, { key: encryptionKey });
 kv.set('tab-1', { url: 'https://bank.com', title: 'My Bank Account' });
 // Y.Doc contains: { key: 'tab-1', val: { v: 1, ct: '...' }, ts: 1706200000 }
 // Every layer below sees ciphertext. Same API surface as YKeyValueLww.
@@ -70,8 +70,8 @@ Three options were evaluated:
 | Architecture | Composition wrapper around `YKeyValueLww` | Zero changes to the existing LWW class. Yjs `ContentAny` stores objects by reference—`YKeyValueLww` relies on `indexOf()` (strict `===`) for conflict resolution. A fork that decrypts into new objects breaks `indexOf` because the map entries are no longer the same JS objects as the yarray entries. Empirically verified with 8 experiments (see `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`). |
 | Encrypted value format | `{ v: 1, ct: string }` | `v` for format versioning. `ct` contains `base64(nonce(12) || ciphertext || tag(16))` for JSON-safe Yjs ContentAny storage. |
 | Algorithm shorthand | `'A256GCM'` (not `'AES-256-GCM'`) | JWE algorithm identifier. Compact, standardized, unambiguous. |
-| No-key passthrough | When `getKey()` returns undefined, behave identically to plain `YKeyValueLww` | Zero overhead for unencrypted workspaces. Same code path, just no encryption. |
-| Key parameter | `getKey: () => Uint8Array \| undefined` (lazy getter) | Decouples key availability from wrapper construction. The workspace is created eagerly as a module-level export before auth completes—a static key would force recreation. The getter is called on every `set()`/`get()`, so encryption activates the moment a key becomes available. |
+| No-key passthrough | When `key` is undefined, behave identically to plain `YKeyValueLww` | Zero overhead for unencrypted workspaces. Same code path, just no encryption. |
+| Key parameter | `key?: Uint8Array` (plain value) | Seeded at creation time. The workspace is created eagerly as a module-level export before auth completes. After creation, `onKeyChange()` handles all key transitions. Encryption activates when a key is provided. |
 | Encryption library | `@noble/ciphers` (pure JS, synchronous) | Preserves the synchronous `set()` API. Web Crypto is async-only, which would break 394 synchronous call sites across 23 files. Noble is audited (Cure53, Sep 2024), zero dependencies, 11KB gzipped, works in Cloudflare Workers and browser extensions. |
 | Serialization | `JSON.stringify` before encryption, `JSON.parse` after decryption | Values are already JSON-serializable (they're stored in Yjs ContentAny). Round-trip fidelity is guaranteed. |
 | IV strategy | Random 12-byte IV per encryption via `randomBytes(12)` from `@noble/ciphers/utils` | Wraps `crypto.getRandomValues`. No coordination needed between devices. Birthday bound (~2^48) is unreachable at workspace scale. |
@@ -96,7 +96,7 @@ APPLICATION CODE (tables, KV, app layer)
        ├── table.getAll()  →  reads wrapper.map  →  plaintext ✓
        │
 ┌──────────────────────────────────────────────────────────────┐
-│  createEncryptedKvLww<T>(yarray, { getKey })                 │
+│  createEncryptedKvLww<T>(yarray, { key })                 │
 │                                                              │
 │  ┌─────────────────────────────────────────────────────────┐ │
 │  │  wrapper.map: Map<string, YKeyValueLwwEntry<T>>         │ │
@@ -106,7 +106,7 @@ APPLICATION CODE (tables, KV, app layer)
 │  └─────────────────────────────────────────────────────────┘ │
 │                                                              │
 │  set(key, val):                                              │
-│    key = getKey()                                            │
+│    key = options.key  // seeded at creation, or via onKeyChange()
 │    if (!key) → inner.set(key, val)  ← passthrough           │
 │    plaintext = JSON.stringify(val)                           │
 │    { ct } = encrypt(plaintext, key)                     │
@@ -219,18 +219,18 @@ For a full workspace (500 tabs + 1000 KV entries + 1000 chat messages):
 /**
  * Create an encrypted LWW key-value store.
  *
- * Returns the same API surface as YKeyValueLww<T>. When `getKey()` returns a key,
- * values are transparently encrypted/decrypted. When `getKey()` returns undefined,
+ * Returns the same API surface as YKeyValueLww<T>. When `key` is provided,
+ * values are transparently encrypted/decrypted. When `key` is undefined,
  * behaves identically to a plain YKeyValueLww<T> (zero overhead passthrough).
  *
- * The getter pattern decouples key availability from wrapper construction.
+ * The `key` option is seeded at creation time. The workspace is created eagerly as a module-level export before auth completes.
  * The workspace is created eagerly as a module-level export before auth completes.
- * A static key would force recreation. The getter is called on every operation,
+ * After creation, `onKeyChange()` handles all key transitions. Encryption activates when a key is provided.
  * so encryption activates the moment a key becomes available.
  */
 function createEncryptedKvLww<T>(
   yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
-  options?: { getKey?: () => Uint8Array | undefined },
+  options?: { key?: Uint8Array },
 ): EncryptedKvLww<T>;
 
 type EncryptedKvLww<T> = {
@@ -472,29 +472,29 @@ Synchronous via `@noble/ciphers`. Zero Yjs dependency. Independently testable.
 Composition wrapper. Zero changes to `YKeyValueLww`.
 
 - [x] **2.1** Create `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
-- [x] **2.2** Implement `createEncryptedKvLww` factory function with `getKey` getter
-- [x] **2.3** `set()`: call `getKey()` → if undefined, passthrough; else serialize → encrypt → delegate to inner
+- [x] **2.2** Implement `createEncryptedKvLww` factory function with `key` option
+- [x] **2.3** `set()`: read `key` from options → if undefined, passthrough; else serialize → encrypt → delegate to inner
 - [x] **2.4** `get()`: read from wrapper.map (decrypted) or pending → return plaintext
 - [x] **2.5** Maintain decrypted `wrapper.map` via `inner.observe()` — decrypt each change, write to wrapper.map
 - [x] **2.6** `entries()`: iterate wrapper.map (already decrypted), merge with pending
 - [x] **2.7** `observe()`: wrap inner observer, decrypt change values before forwarding to registered handlers
-- [x] **2.8** No-key passthrough: when `getKey()` returns undefined, all operations pass through without encryption
+- [x] **2.8** No-key passthrough: when `key` is undefined, all operations pass through without encryption
 - [x] **2.9** Tests: 24 tests passing — encrypt round-trip, no-key passthrough, observer decryption, mixed plaintext/encrypted migration, wrapper.map always plaintext, two-device sync with same key, batch operations, mid-session key availability
 
 ### Phase 3: Wire into `createKv`
 
 Replace the `YKeyValueLww` instantiation in `createKv` with `createEncryptedKvLww`.
 
-- [x] **3.1** Add optional `getKey: () => Uint8Array | undefined` parameter to `createKv`
+- [x] **3.1** Add optional `key?: Uint8Array` parameter to `createKv`
 - [x] **3.2** Pass through to `createEncryptedKvLww`
-- [x] **3.3** Existing tests pass with no `getKey` (passthrough mode)
+- [x] **3.3** Existing tests pass with no `key` (passthrough mode)
 
 ### Phase 4: Wire into `createWorkspace`
 
 The workspace creation flow passes the encryption key down.
 
-- [x] **4.1** Add `getKey` getter to workspace options or extension context
-- [x] **4.2** All table and KV helpers receive the `getKey` getter
+- [x] **4.1** Add `key` option to workspace options or extension context
+- [x] **4.2** All table and KV helpers receive the `key` option
 - [x] **4.3** Extensions (SQLite, persistence) continue to work—they read through the same helpers
 
 ## Edge Cases
@@ -509,22 +509,22 @@ The workspace creation flow passes the encryption key down.
 
 ### ~~Encryption key not yet available~~ (RESOLVED)
 
-No longer a concern. The `getKey()` getter pattern means the wrapper doesn't need the key at construction time. The wrapper calls `getKey()` on every `set()`/`get()`/`entries()` operation:
+No longer a concern. The `key` option is seeded at creation time. After creation, `onKeyChange()` handles all key transitions. The wrapper calls `onKeyChange()` when the key changes:
 
-1. **`getKey()` returns undefined (no key yet):** Passthrough mode—values stored/read as plaintext. Zero overhead.
-2. **`getKey()` returns a key:** Encrypted mode—values encrypted on write, decrypted on read.
-3. **Key becomes available mid-session:** No wrapper recreation needed. The next `set()` call encrypts. Existing plaintext entries are read via `isEncryptedBlob` mixed-mode detection.
+1. **`key` is undefined (no key yet):** Passthrough mode—values stored/read as plaintext. Zero overhead.
+2. **`key` is provided:** Encrypted mode—values encrypted on write, decrypted on read.
+3. **Key becomes available mid-session:** Call `onKeyChange(key)` to transition. The wrapper re-decrypts all entries. Existing plaintext entries are read via `isEncryptedBlob` mixed-mode detection.
 
-The workspace is created eagerly as a module-level export (`apps/tab-manager/src/lib/workspace.ts` line 572) before auth completes. A static key would force recreation of the wrapper after auth. The getter avoids this entirely.
+The workspace is created eagerly as a module-level export (`apps/tab-manager/src/lib/workspace.ts` line 572) before auth completes. The `key` option is seeded at creation time. After auth, `onKeyChange()` is called to activate encryption. No wrapper recreation needed.
 
 ### ~~Observer fires with encrypted data before key is set~~ (RESOLVED)
 
 The wrapper maintains its own decrypted `.map` (see Architecture section). Observers registered on the wrapper always receive decrypted values. Two scenarios:
 
-1. **`getKey()` returns undefined:** Inner map has plaintext. Wrapper's `.map` mirrors it as-is. Observers see plaintext.
-2. **`getKey()` returns a key:** Inner map has encrypted blobs. Wrapper decrypts them into its own `.map`. Observers see plaintext.
+1. **`key` is undefined:** Inner map has plaintext. Wrapper's `.map` mirrors it as-is. Observers see plaintext.
+2. **`key` is provided:** Inner map has encrypted blobs. Wrapper decrypts them into its own `.map`. Observers see plaintext.
 
-If a key becomes available mid-session, existing plaintext entries in the inner map are detected via `isEncryptedBlob` and passed through. New writes are encrypted. The wrapper's `.map` always contains plaintext regardless.
+If a key becomes available mid-session via `onKeyChange()`, existing plaintext entries in the inner map are detected via `isEncryptedBlob` and passed through. New writes are encrypted. The wrapper's `.map` always contains plaintext regardless.
 
 ### Different user logs in
 
@@ -550,7 +550,7 @@ Two rapid `set('x', 1)` then `set('x', 2)` calls execute sequentially as they al
 
 2. ~~**Class vs factory function**~~: **RESOLVED.** Factory function (`createEncryptedKvLww<T>()`). Matches `createKv`, `createTables`, and the rest of the codebase's preference for factory functions over classes.
 
-3. ~~**Key mutability**: Can the encryption key change mid-session?~~ **RESOLVED.** Yes, via the `getKey()` getter. The key can appear at any time (auth completes after workspace creation). The getter is called on every operation, so encryption activates the moment a key becomes available. However, there's no "mid-session key rotation"—the key either goes from undefined→present (auth) or present→undefined (logout). Re-keying is a separate future concern.
+3. ~~**Key mutability**: Can the encryption key change mid-session?~~ **RESOLVED.** Yes, via `onKeyChange()`. The key is seeded at creation time. After creation, `onKeyChange(newKey)` handles all key transitions. The key either goes from undefined→present (auth) or present→undefined (logout). Re-keying is a separate future concern.
 
 4. ~~**Table encryption**~~: **RESOLVED.** Same `createEncryptedKvLww` wrapper. Tables are KV stores with schema validation on top. Both `createKv` and `createTables` instantiate `YKeyValueLww` internally—both switch to `createEncryptedKvLww`. Encrypt at the KV level, tables get encryption for free.
 

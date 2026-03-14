@@ -46,7 +46,7 @@ workspaceKeyCache.set(workspaceId, base64ToBytes(key));
 
 // Workspace: closes over its own key
 createEncryptedKvLww(yarray, {
-  getKey: () => workspaceKeyCache.getSync(workspaceId),
+  key: workspaceKeyCache.getSync(workspaceId),
 });
 ```
 
@@ -129,8 +129,8 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 │  Client (in-memory)                      │
 │                                          │
 │  workspaceKeyCache.set(wsId, key)        │
-│  getKey: () => cache.getSync(wsId)       │
-│  createEncryptedKvLww(yarray, { getKey })│
+│  key: cache.getSync(wsId)       │
+│  createEncryptedKvLww(yarray, { key })│
 └──────────────────────────────────────────┘
 ```
 
@@ -175,7 +175,7 @@ Everything is private. Every room gets a user-specific key.
 **Client changes:**
 - Create `WorkspaceKeyCache` (in-memory Map)
 - Fetch key on workspace open, store in cache
-- Pass `getKey` to `createEncryptedKvLww`
+- Pass `key` to `createEncryptedKvLww`
 
 ### Phase 2: Shared Room Keys (When Sharing Ships)
 
@@ -223,7 +223,7 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 
 ### Phase 3: Per-App Wiring
 
-- [ ] **3.1** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `getKey: () => cache.getSync(wsId)` to `createWorkspace`.
+- [ ] **3.1** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `key: cache.getSync(wsId)` to `createWorkspace`.
 - [ ] **3.2** **whispering** — Same pattern.
 - [ ] **3.3** **tab-manager** — Same pattern. Verify Chrome extension can call the key endpoint.
 
@@ -276,7 +276,7 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 1. User opens `epicenter.whispering` and `epicenter.tab-manager`
 2. Two separate `GET /workspaces/:id/key` calls → two different derived keys
 3. `WorkspaceKeyCache` stores both: `cache.getSync('epicenter.whispering')` and `cache.getSync('epicenter.tab-manager')` return different keys
-4. Each workspace's `getKey` closure reads from the correct cache entry
+4. Each workspace's `key` option reads from the correct cache entry
 
 ## What This Replaces
 

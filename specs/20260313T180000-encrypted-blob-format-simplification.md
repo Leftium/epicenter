@@ -43,7 +43,7 @@ The version field is the complete format specification:
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Which field to drop | `alg` (keep `v`) | `v` is 6 bytes vs `alg` at 16 bytes, and `v` is strictly more powerful—it encodes algorithm *and* format, encoding, field names, nonce size |
-| Backward compatibility | Not needed | No real data encrypted yet—all apps pass `getKey: undefined` (passthrough). Zero migration cost if done now. |
+| Backward compatibility | Not needed | No real data encrypted yet—all apps pass `key: undefined` (passthrough). Zero migration cost if done now. |
 | `isEncryptedBlob` check | Simplify to check `v` as number + `ct`/`iv` as strings | Drops the `alg === 'A256GCM'` check. Future versions dispatch on `v` value. |
 | Future algorithm changes | Bump `v` | v:2 could be XChaCha20-Poly1305, v:3 could be a binary format. The dispatch in `decryptValue` is a switch on `v`. |
 

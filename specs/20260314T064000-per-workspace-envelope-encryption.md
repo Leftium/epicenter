@@ -50,7 +50,7 @@ workspaceKeyCache.set(workspaceId, base64ToBytes(dek));
 
 // Workspace: closes over its own key
 createEncryptedKvLww(yarray, {
-  getKey: () => workspaceKeyCache.getSync(workspaceId),
+  key: workspaceKeyCache.getSync(workspaceId),
 });
 ```
 
@@ -121,8 +121,8 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 │  Client (in-memory)                              │
 │                                                  │
 │  workspaceKeyCache.set('ws-1', dek)              │
-│  getKey: () => workspaceKeyCache.getSync('ws-1') │
-│  createEncryptedKvLww(yarray, { getKey })        │
+│  key: cache.getSync('ws-1') │
+│  createEncryptedKvLww(yarray, { key })        │
 └──────────────────────────────────────────────────┘
 ```
 
@@ -169,7 +169,7 @@ WORKSPACE_KEY_SECRET (env var, separate from BETTER_AUTH_SECRET)
 ### Phase 3: Per-App Wiring
 
 - [ ] **3.1** Remove `encryptionKey` from `customSession` plugin response. Session no longer carries the key.
-- [ ] **3.2** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `getKey: () => workspaceKeyCache.getSync(wsId)` to `createWorkspace`.
+- [ ] **3.2** **epicenter** — On workspace open, call `fetchWorkspaceKey`. Pass `key: workspaceKeyCache.getSync(wsId)` to `createWorkspace`.
 - [ ] **3.3** **whispering** — Same pattern.
 - [ ] **3.4** **tab-manager** — Same pattern. Verify Chrome extension can call the key endpoint.
 

@@ -8,13 +8,12 @@ import { defineMutation, defineQuery } from '@epicenter/workspace';
 import { actionsToClientTools, toToolDefinitions } from './tool-bridge.js';
 
 describe('actionsToClientTools', () => {
-	test('destructive action sets needsApproval without blanket option', () => {
+	test('all mutations get needsApproval', () => {
 		const actions = {
 			tabs: {
 				close: defineMutation({
 					title: 'Close Tabs',
 					description: 'Close tabs',
-					destructive: true,
 					handler: () => {},
 				}),
 				open: defineMutation({
@@ -33,10 +32,10 @@ describe('actionsToClientTools', () => {
 
 		const openTool = tools.find((t) => t.name === 'tabs_open');
 		expect(openTool).toBeDefined();
-		expect(openTool?.needsApproval).toBeUndefined();
+		expect(openTool?.needsApproval).toBe(true);
 	});
 
-	test('non-destructive tools omit needsApproval entirely', () => {
+	test('queries omit needsApproval entirely', () => {
 		const actions = {
 			query: defineQuery({
 				title: 'Query',
@@ -58,7 +57,7 @@ describe('actionsToClientTools', () => {
 
 		const mutationTool = tools.find((t) => t.name === 'mutation');
 		expect(mutationTool).toBeDefined();
-		expect('needsApproval' in mutationTool!).toBe(false);
+		expect(mutationTool?.needsApproval).toBe(true);
 	});
 });
 
@@ -80,12 +79,11 @@ describe('toToolDefinitions', () => {
 		expect(definitions[0]?.description).toBe('Search stuff');
 	});
 
-	test('only forwards needsApproval for destructive tools', () => {
+	test('forwards needsApproval for all mutations, not queries', () => {
 		const actions = {
-			destructive: defineMutation({
-				title: 'Destructive',
-				description: 'Destructive action',
-				destructive: true,
+			save: defineMutation({
+				title: 'Save',
+				description: 'Save action',
 				handler: () => {},
 			}),
 			safe: defineQuery({
@@ -98,8 +96,8 @@ describe('toToolDefinitions', () => {
 		const tools = actionsToClientTools(actions);
 		const definitions = toToolDefinitions(tools);
 
-		const destructiveDef = definitions.find((d) => d.name === 'destructive');
-		expect(destructiveDef?.needsApproval).toBe(true);
+		const saveDef = definitions.find((d) => d.name === 'save');
+		expect(saveDef?.needsApproval).toBe(true);
 
 		const safeDef = definitions.find((d) => d.name === 'safe');
 		expect('needsApproval' in safeDef!).toBe(false);

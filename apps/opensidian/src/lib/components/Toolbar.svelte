@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Separator } from '@epicenter/ui/separator';
+	import * as Tooltip from '@epicenter/ui/tooltip';
 	import { toast } from 'svelte-sonner';
 	import { fsState } from '$lib/fs/fs-state.svelte';
 	import CreateDialog from './CreateDialog.svelte';
@@ -73,39 +74,81 @@
 	}
 </script>
 
-<div class="flex items-center gap-1 border-b px-2 py-1.5">
-	<Button variant="ghost" size="sm" onclick={openCreateFile}>New File</Button>
-	<Button variant="ghost" size="sm" onclick={openCreateFolder}>
-		New Folder
-	</Button>
-	<Separator orientation="vertical" class="mx-1 h-4" />
-	<Button
-		variant="ghost"
-		size="sm"
-		onclick={openRename}
-		disabled={!fsState.activeFileId}
-	>
-		Rename
-	</Button>
-	<Button
-		variant="ghost"
-		size="sm"
-		onclick={openDelete}
-		disabled={!fsState.activeFileId}
-	>
-		Delete
-	</Button>
-	<div class="ml-auto">
-		<Button
-			variant="outline"
-			size="sm"
-			onclick={loadSampleData}
-			disabled={seeding}
-		>
-			{seeding ? 'Loading…' : 'Load Sample Data'}
-		</Button>
+<Tooltip.Provider>
+	<div class="flex items-center gap-1 border-b px-2 py-1.5">
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button {...props} variant="ghost" size="sm" onclick={openCreateFile}>
+						New File
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Create a new file</Tooltip.Content>
+		</Tooltip.Root>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button {...props} variant="ghost" size="sm" onclick={openCreateFolder}>
+						New Folder
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Create a new folder</Tooltip.Content>
+		</Tooltip.Root>
+		<Separator orientation="vertical" class="mx-1 h-4" />
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={openRename}
+						disabled={!fsState.activeFileId}
+					>
+						Rename
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Rename selected item</Tooltip.Content>
+		</Tooltip.Root>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						onclick={openDelete}
+						disabled={!fsState.activeFileId}
+					>
+						Delete
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Delete selected item</Tooltip.Content>
+		</Tooltip.Root>
+		<div class="ml-auto">
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							size="sm"
+							onclick={loadSampleData}
+							disabled={seeding}
+						>
+							{seeding ? 'Loading…' : 'Load Sample Data'}
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>Load example files and folders</Tooltip.Content>
+			</Tooltip.Root>
+		</div>
 	</div>
-</div>
+</Tooltip.Provider>
 
 <CreateDialog bind:open={createDialogOpen} mode={createDialogMode} />
 <RenameDialog bind:open={renameDialogOpen} />

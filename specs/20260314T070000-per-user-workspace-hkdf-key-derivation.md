@@ -318,8 +318,8 @@ unlock(key: Uint8Array): void;
 
 ### Phase 4: Verify
 
-- [ ] **4.1** `bun test` in `packages/workspace` — all pass
-- [ ] **4.2** `bun run typecheck` — clean
+- [x] **4.1** `bun test` in `packages/workspace` — 483 pass, 0 fail
+- [x] **4.2** `bun run typecheck` in `apps/api` — clean
 
 ### DO NOT build yet (deferred to future phases):
 
@@ -400,3 +400,29 @@ This spec supersedes `specs/20260314T064000-per-workspace-envelope-encryption.md
 - `specs/20260313T180100-client-side-encryption-wiring.md` — original wiring plan (app inventory still useful reference)
 - RFC 5869 — HKDF specification
 - Web Crypto API — `crypto.subtle.deriveBits` with HKDF algorithm
+
+## Review
+
+**Completed**: 2026-03-14
+**Branch**: `opencode/shiny-meadow`
+
+### Summary
+
+Implemented two-level HKDF key derivation: server derives per-user keys from `BETTER_AUTH_SECRET` + userId, client derives per-workspace keys locally from the user key + workspaceId. Both use Web Crypto HKDF-SHA256.
+
+The biggest design deviation was Phase 2.5 — the spec assumed `workspace.unlock()` existed, but the workspace client didn't expose encryption controls. We added a workspace-level `lock()`/`unlock(key)`/`mode` API by refactoring `createWorkspace` to own all encrypted KV stores directly. This required extracting `createKvHelper` from `create-kv.ts` and moving store creation from `createTables`/`createKv` into `createWorkspace`.
+
+### Deviations from Spec
+
+- **No `WORKSPACE_KEY_SECRET`** — spec called for a separate env var; we use `BETTER_AUTH_SECRET` directly (per user request)
+- **Phase 2.5 added** — workspace-level encryption API (`lock`/`unlock`/`mode`) didn't exist and was needed for Phase 3
+- **epicenter and whispering skipped** — epicenter doesn't exist, whispering has no auth
+- **`createWorkspace` refactored** — no longer delegates to `createTables`/`createKv`; owns encrypted stores directly for lock/unlock coordination
+- **`unlock()` has rollback** — Oracle-recommended: if any store fails to unlock, already-unlocked stores are re-locked
+
+### Follow-up Work
+
+- Wire whispering when it gets auth infrastructure
+- Wire epicenter when it exists
+- Consider exposing `quarantine` at workspace level for diagnostic UI
+- The `signIn()`/`signUp()` responses may also contain `encryptionKey` — currently only `checkSession()` extracts it (slight delay on first sign-in before key arrives)

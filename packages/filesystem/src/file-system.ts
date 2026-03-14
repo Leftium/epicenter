@@ -4,7 +4,6 @@ import {
 	parseSheetFromCsv,
 } from '@epicenter/workspace';
 import type { IFileSystem } from 'just-bash';
-import type { ContentHelpers } from './content/content.js';
 import { FS_ERRORS } from './errors.js';
 import type { FileId } from './ids.js';
 import { posixResolve } from './path.js';
@@ -47,60 +46,91 @@ export function createYjsFileSystem(
 ) {
 	const tree = new FileTree(filesTable);
 
-	/** Content I/O — uses document handles directly for timeline-backed reads/writes. */
-	const content: ContentHelpers = {
-		async read(fileId) {
-			const handle = await contentDocuments.open(fileId);
-			return handle.content.read();
-		},
-
-		async write(fileId, data) {
-			const handle = await contentDocuments.open(fileId);
-			const tl = handle.content.timeline;
-
-			if (tl.currentMode === 'sheet') {
-				const columns = tl.currentEntry?.get('columns') as import('yjs').Map<
-					import('yjs').Map<string>
-				>;
-				const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
-					import('yjs').Map<string>
-				>;
-				handle.ydoc.transact(() => {
-					columns.forEach((_, key) => {
-						columns.delete(key);
-					});
-					rows.forEach((_, key) => {
-						rows.delete(key);
-					});
-					parseSheetFromCsv(data, columns, rows);
-				});
-			} else {
-				handle.content.write(data);
-			}
-			return new TextEncoder().encode(data).byteLength;
-		},
-
-		async append(fileId, data) {
-			const handle = await contentDocuments.open(fileId);
-			const tl = handle.content.timeline;
-
-			if (tl.currentMode === 'text') {
-				const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
-				handle.ydoc.transact(() => ytext.insert(ytext.length, data));
-			} else {
-				return null;
-			}
-
-			// Re-read after mutation
-			return new TextEncoder().encode(
-				(tl.currentEntry?.get('content') as import('yjs').Text).toString(),
-			).byteLength;
-		},
-	};
-
 	return FileSystem({
-		/** Content I/O operations — exposed for direct content reads/writes by UI layers. */
-		content,
+		/**
+		 * Content I/O for direct reads/writes by UI layers.
+		 *
+		 * Opens the per-file content Y.Doc via `contentDocuments.open()` and
+		 * delegates to `handle.content` for timeline-backed operations.
+		 * The `write` method handles sheet mode switching automatically.
+		 *
+		 * @example
+		 * ```typescript
+		 * const text = await fs.content.read(fileId);
+		 * await fs.content.write(fileId, 'hello');
+		 * ```
+		 */
+		content: {
+			/**
+			 * Read file content as a string.
+			 *
+			 * Opens the file's content Y.Doc and reads from the timeline.
+			 * Returns text content, or sheet CSV for sheet-mode files.
+			 */
+			async read(fileId: FileId): Promise<string> {
+				const handle = await contentDocuments.open(fileId);
+				return handle.content.read();
+			},
+
+			/**
+			 * Write text data to a file, handling sheet mode switching.
+			 *
+			 * If the file is in sheet mode, clears existing columns/rows and
+			 * re-parses from the CSV string. Otherwise delegates to
+			 * `handle.content.write()` which replaces the timeline text entry.
+			 *
+			 * @returns The byte size of the written data.
+			 */
+			async write(fileId: FileId, data: string): Promise<number> {
+				const handle = await contentDocuments.open(fileId);
+				const tl = handle.content.timeline;
+
+				if (tl.currentMode === 'sheet') {
+					const columns = tl.currentEntry?.get('columns') as import('yjs').Map<
+						import('yjs').Map<string>
+					>;
+					const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
+						import('yjs').Map<string>
+					>;
+					handle.ydoc.transact(() => {
+						columns.forEach((_, key) => {
+							columns.delete(key);
+						});
+						rows.forEach((_, key) => {
+							rows.delete(key);
+						});
+						parseSheetFromCsv(data, columns, rows);
+					});
+				} else {
+					handle.content.write(data);
+				}
+				return new TextEncoder().encode(data).byteLength;
+			},
+
+			/**
+			 * Append text to a file's existing content.
+			 *
+			 * Only works for text-mode files—inserts at the end of the Y.Text.
+			 * Returns the new total byte size, or `null` if the current mode
+			 * doesn't support append (caller should fall back to `write`).
+			 */
+			async append(fileId: FileId, data: string): Promise<number | null> {
+				const handle = await contentDocuments.open(fileId);
+				const tl = handle.content.timeline;
+
+				if (tl.currentMode === 'text') {
+					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
+					handle.ydoc.transact(() => ytext.insert(ytext.length, data));
+				} else {
+					return null;
+				}
+
+				// Re-read after mutation
+				return new TextEncoder().encode(
+					(tl.currentEntry?.get('content') as import('yjs').Text).toString(),
+				).byteLength;
+			},
+		},
 
 		/** Reactive file-system indexes for path lookups and parent-child queries. */
 		get index(): FileTree['index'] {
@@ -211,7 +241,8 @@ export function createYjsFileSystem(
 			if (id === null) throw FS_ERRORS.ENOENT(abs);
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
-			return content.read(id);
+			const handle = await contentDocuments.open(id);
+			return handle.content.read();
 		},
 
 		async readFileBuffer(path) {
@@ -244,7 +275,7 @@ export function createYjsFileSystem(
 
 			const textData =
 				typeof data === 'string' ? data : new TextDecoder().decode(data);
-			const size = await content.write(id, textData);
+			const size = await this.content.write(id, textData);
 			tree.touch(id, size);
 		},
 
@@ -258,7 +289,7 @@ export function createYjsFileSystem(
 			const row = tree.getRow(id, abs);
 			if (row.type === 'folder') throw FS_ERRORS.EISDIR(abs);
 
-			const newSize = await content.append(id, text);
+			const newSize = await this.content.append(id, text);
 			if (newSize === null) {
 				await this.writeFile(path, data);
 				return;
@@ -352,7 +383,8 @@ export function createYjsFileSystem(
 					);
 				}
 			} else {
-				const srcText = await content.read(srcId);
+				const handle = await contentDocuments.open(srcId);
+				const srcText = handle.content.read();
 				await this.writeFile(resolvedDest, srcText);
 			}
 		},

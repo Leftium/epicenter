@@ -13,6 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
+import { generateEncryptionKey } from '../shared/crypto/index.js';
 import { createDocuments } from './create-document.js';
 import { createTables } from './create-tables.js';
 import { createWorkspace } from './create-workspace.js';
@@ -929,5 +930,91 @@ describe('createWorkspace', () => {
 			expect(cleanupCalled.has('first')).toBe(true);
 			expect(cleanupCalled.has('second')).toBe(true);
 		});
+	});
+});
+
+// ============================================================================
+// Workspace Encryption (lock / unlock / mode)
+// ============================================================================
+
+describe('workspace encryption', () => {
+	function setupEncrypted() {
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const client = createWorkspace(defineWorkspace({ id: 'enc-test', tables: { posts } }));
+		return { client, key: generateEncryptionKey() };
+	}
+
+	test('mode starts as plaintext when no key provided', () => {
+		const { client } = setupEncrypted();
+		expect(client.mode).toBe('plaintext');
+	});
+
+	test('unlock transitions mode to unlocked', () => {
+		const { client, key } = setupEncrypted();
+		client.unlock(key);
+		expect(client.mode).toBe('unlocked');
+	});
+
+	test('lock after unlock transitions mode to locked', () => {
+		const { client, key } = setupEncrypted();
+		client.unlock(key);
+		client.lock();
+		expect(client.mode).toBe('locked');
+	});
+
+	test('lock is a no-op in plaintext mode', () => {
+		const { client } = setupEncrypted();
+		client.lock();
+		expect(client.mode).toBe('plaintext');
+	});
+
+	test('unlock enables encrypted writes that survive re-unlock', () => {
+		const { client, key } = setupEncrypted();
+		client.unlock(key);
+		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
+
+		// Lock then re-unlock with same key — data survives
+		client.lock();
+		client.unlock(key);
+
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Secret');
+		}
+	});
+
+	test('set() throws while locked', () => {
+		const { client, key } = setupEncrypted();
+		client.unlock(key);
+		client.tables.posts.set({ id: '1', title: 'Secret', _v: 1 });
+		client.lock();
+
+		expect(() =>
+			client.tables.posts.set({ id: '2', title: 'Should fail', _v: 1 }),
+		).toThrow();
+	});
+
+	test('get() returns cached plaintext while locked', () => {
+		const { client, key } = setupEncrypted();
+		client.unlock(key);
+		client.tables.posts.set({ id: '1', title: 'Cached', _v: 1 });
+		client.lock();
+
+		const result = client.tables.posts.get('1');
+		expect(result.status).toBe('valid');
+		if (result.status === 'valid') {
+			expect(result.row.title).toBe('Cached');
+		}
+	});
+
+	test('unlock with construction-time key starts as unlocked', () => {
+		const key = generateEncryptionKey();
+		const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+		const client = createWorkspace(
+			defineWorkspace({ id: 'key-test', tables: { posts } }),
+			{ key },
+		);
+		expect(client.mode).toBe('unlocked');
 	});
 });

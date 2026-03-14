@@ -261,17 +261,65 @@ Replace shared room HKDF with actual random DEKs + wrapped copies, only for shar
 - [x] **2.1** Add `deriveWorkspaceKey(userKey: Uint8Array, workspaceId: string): Promise<Uint8Array>` to `packages/workspace/src/shared/crypto/index.ts`. Uses Web Crypto HKDF-SHA256 with `info="workspace:{wsId}:v1"` and empty salt.
 - [x] **2.2** Export `deriveWorkspaceKey` from the crypto barrel. Tests added: deterministic output, different userKeys diverge, different workspaceIds diverge, output is 32 bytes.
 
+### Phase 2.5: Workspace-Level Encryption API
+
+The workspace client currently hides encrypted KV stores inside `createTables`/`createKv` — no way to call `lock()`/`unlock(key)` at runtime. This phase surfaces encryption as a workspace-level concern so apps can react to session key arrival/departure.
+
+**Design principle**: The workspace owns encryption state. Tables and KV are storage layers that delegate to encrypted stores the workspace created and retained.
+
+#### 2.5a: Extract `createKvHelper` from `create-kv.ts`
+
+`createKv` currently creates the encrypted store AND builds 100+ lines of helper methods in one function. Split into:
+- `createKvHelper(store, definitions)` — exported, builds KV helper from a pre-created encrypted store
+- `createKv(ydoc, definitions, options?)` — unchanged public API, thin wrapper: creates store then calls `createKvHelper`
+
+- [x] **2.5a** Extract `createKvHelper(store: YKeyValueLwwEncrypted<unknown>, definitions: TKvDefinitions)` from `create-kv.ts`. Export it. Public `createKv` becomes a thin wrapper.
+
+#### 2.5b: Refactor `createWorkspace` to own encrypted stores
+
+`createWorkspace` stops calling `createTables`/`createKv`. Instead:
+1. Loop over table definitions: create `Y.Array` → `createEncryptedKvLww` → `createTableHelper` (already exists)
+2. Create KV: `Y.Array` → `createEncryptedKvLww` → `createKvHelper` (from 2.5a)
+3. Collect all encrypted stores in a private array
+4. Build `lock()`, `unlock(key)`, `mode` getter from the array
+5. `unlock` has rollback: if any store throws, re-lock already-unlocked stores and rethrow
+
+- [x] **2.5b** Refactor `createWorkspace` to create and retain all encrypted stores. Replace `createTables()`/`createKv()` calls with direct store creation + helper construction.
+
+#### 2.5c: Add to `WorkspaceClient` type
+
+```typescript
+/** Current encryption mode across all stores. */
+readonly mode: EncryptionMode;
+/** Lock — clears key, writes throw, reads return cached plaintext. No-op if mode is 'plaintext'. */
+lock(): void;
+/** Unlock with encryption key — decrypts all stores, retries quarantine. Rolls back on partial failure. */
+unlock(key: Uint8Array): void;
+```
+
+- [x] **2.5c** Add `lock()`, `unlock(key)`, `readonly mode` to `WorkspaceClient` in `types.ts`. Re-export `EncryptionMode` from the workspace barrel.
+
+#### 2.5d: Tests
+
+- [x] **2.5d** Tests: runtime unlock enables encrypted writes, re-lock preserves cached reads, set() throws while locked, construction-time key starts unlocked, lock no-op in plaintext. 7 tests added.
+
+#### Files changed
+- `packages/workspace/src/workspace/create-kv.ts` — extract `createKvHelper`
+- `packages/workspace/src/workspace/create-workspace.ts` — own stores, expose lock/unlock/mode
+- `packages/workspace/src/workspace/types.ts` — add lock/unlock/mode to WorkspaceClient
+- `packages/workspace/src/workspace/create-workspace.test.ts` — new tests
+- `create-tables.ts` — **no changes** (standalone API stays as-is)
+
 ### Phase 3: Per-App Wiring
 
-- [ ] **3.1** **epicenter** — `$session` subscription decodes `encryptionKey`, calls `deriveWorkspaceKey(userKey, wsId)`, then `workspace.unlock(wsKey)`. On session null, `workspace.lock()` + clear local data.
-- [ ] **3.2** **whispering** — Same pattern.
-- [ ] **3.3** **tab-manager** — Same pattern.
+- [ ] ~~**3.1** **epicenter**~~ — Skipped (apps/epicenter/src doesn't exist)
+- [ ] ~~**3.2** **whispering**~~ — Skipped (no auth infrastructure yet)
+- [ ] **3.3** **tab-manager** — `authState` subscription decodes `encryptionKey` from session, calls `deriveWorkspaceKey(userKey, workspaceId)`, then `workspaceClient.unlock(wsKey)`. On sign-out, `workspaceClient.lock()`.
 
 ### Phase 4: Verify
 
 - [ ] **4.1** `bun test` in `packages/workspace` — all pass
 - [ ] **4.2** `bun run typecheck` — clean
-- [ ] **4.3** Manual: sign in → open workspace → verify per-user workspace key derived → new writes produce EncryptedBlob → sign out → workspace locked → data cleared
 
 ### DO NOT build yet (deferred to future phases):
 

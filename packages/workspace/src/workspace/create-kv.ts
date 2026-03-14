@@ -19,11 +19,14 @@
  */
 
 import type * as Y from 'yjs';
+import type {
+	YKeyValueLwwChange,
+	YKeyValueLwwEntry,
+} from '../shared/y-keyvalue/y-keyvalue-lww.js';
 import {
-	type YKeyValueLwwChange,
-	type YKeyValueLwwEntry,
-	} from '../shared/y-keyvalue/y-keyvalue-lww.js';
-import { createEncryptedKvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+	createEncryptedKvLww,
+	type YKeyValueLwwEncrypted,
+} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	InferKvValue,
 	KvChange,
@@ -34,30 +37,26 @@ import type {
 import { KV_KEY } from './ydoc-keys.js';
 
 /**
- * Binds KV definitions to an existing Y.Doc.
+ * Build a KV helper from a pre-created encrypted store.
  *
- * Creates a KvHelper with dictionary-style access methods.
- * All KV values are stored in a shared Y.Array at `kv`.
+ * This is the core KV helper construction — all get/set/delete/observe logic
+ * lives here. Used by `createKv` (standalone API) and `createWorkspace`
+ * (which creates the store itself for encryption coordination).
  *
- * @param ydoc - The Y.Doc to bind KV to
+ * @param store - A pre-created encrypted KV store
  * @param definitions - Map of key name to KvDefinition
  * @returns KvHelper with type-safe get/set/delete/observe methods
  */
-export function createKv<TKvDefinitions extends KvDefinitions>(
-	ydoc: Y.Doc,
+export function createKvHelper<TKvDefinitions extends KvDefinitions>(
+	store: YKeyValueLwwEncrypted<unknown>,
 	definitions: TKvDefinitions,
-	options?: { key?: Uint8Array },
 ): KvHelper<TKvDefinitions> {
-	// All KV values share a single encrypted KV store (passthrough when no key)
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = createEncryptedKvLww(yarray, { key: options?.key });
-
 	return {
 		get(key) {
 			const definition = definitions[key];
 			if (!definition) throw new Error(`Unknown KV key: ${key}`);
 
-			const raw = ykv.get(key);
+			const raw = store.get(key);
 			if (raw === undefined) return definition.defaultValue;
 
 			const result = definition.schema['~standard'].validate(raw);
@@ -70,12 +69,12 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 
 		set(key, value) {
 			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-			ykv.set(key, value);
+			store.set(key, value);
 		},
 
 		delete(key) {
 			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-			ykv.delete(key);
+			store.delete(key);
 		},
 
 		observe(key, callback) {
@@ -112,8 +111,8 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				}
 			};
 
-			ykv.observe(handler);
-			return () => ykv.unobserve(handler);
+			store.observe(handler);
+			return () => store.unobserve(handler);
 		},
 
 		observeAll(
@@ -146,10 +145,30 @@ export function createKv<TKvDefinitions extends KvDefinitions>(
 				}
 				if (parsed.size > 0) callback(parsed, transaction);
 			};
-			ykv.observe(handler);
-			return () => ykv.unobserve(handler);
+			store.observe(handler);
+			return () => store.unobserve(handler);
 		},
 	} as KvHelper<TKvDefinitions>;
+}
+
+/**
+ * Binds KV definitions to an existing Y.Doc.
+ *
+ * Creates a KvHelper with dictionary-style access methods.
+ * All KV values are stored in a shared Y.Array at `kv`.
+ *
+ * @param ydoc - The Y.Doc to bind KV to
+ * @param definitions - Map of key name to KvDefinition
+ * @returns KvHelper with type-safe get/set/delete/observe methods
+ */
+export function createKv<TKvDefinitions extends KvDefinitions>(
+	ydoc: Y.Doc,
+	definitions: TKvDefinitions,
+	options?: { key?: Uint8Array },
+): KvHelper<TKvDefinitions> {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const store = createEncryptedKvLww(yarray, { key: options?.key });
+	return createKvHelper(store, definitions);
 }
 
 // Re-export types for convenience

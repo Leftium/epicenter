@@ -40,8 +40,14 @@ import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
-import { createKv } from './create-kv.js';
-import { createTables } from './create-tables.js';
+import { createKvHelper } from './create-kv.js';
+import {
+	createEncryptedKvLww,
+	type YKeyValueLwwEncrypted,
+} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { type YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { createTableHelper } from './table-helper.js';
+import { TableKey, KV_KEY } from './ydoc-keys.js';
 import {
 	type DocumentContext,
 	defineExtension,
@@ -146,8 +152,26 @@ export function createWorkspace<
 	const kvDefs = (kvDef ?? {}) as TKvDefinitions;
 	const awarenessDefs = (awarenessDef ?? {}) as TAwarenessDefinitions;
 
-	const tables = createTables(ydoc, tableDefs, { key: options?.key });
-	const kv = createKv(ydoc, kvDefs, { key: options?.key });
+	// ── Encrypted stores ─────────────────────────────────────────────────
+	// The workspace owns all encrypted KV stores so it can coordinate
+	// lock/unlock across tables and KV simultaneously.
+	const encryptedStores: YKeyValueLwwEncrypted<unknown>[] = [];
+
+	// Create table stores + helpers (one encrypted KV per table)
+	const tableHelpers: Record<string, import('./types.js').TableHelper<BaseRow>> = {};
+	for (const [name, definition] of Object.entries(tableDefs)) {
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
+		const store = createEncryptedKvLww(yarray, { key: options?.key });
+		encryptedStores.push(store);
+		tableHelpers[name] = createTableHelper(store, definition);
+	}
+	const tables = tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
+
+	// Create KV store + helper (single shared encrypted KV)
+	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const kvStore = createEncryptedKvLww(kvYarray, { key: options?.key });
+	encryptedStores.push(kvStore);
+	const kv = createKvHelper(kvStore, kvDefs);
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,
@@ -258,6 +282,26 @@ export function createWorkspace<
 			awareness,
 			// Each extension entry is the exports object stored by reference.
 			extensions,
+			get mode() {
+				// All stores are kept in sync — use first store's mode, or 'plaintext' if no stores.
+				return encryptedStores[0]?.mode ?? 'plaintext';
+			},
+			lock() {
+				for (const store of encryptedStores) store.lock();
+			},
+			unlock(key: Uint8Array) {
+				const unlocked: YKeyValueLwwEncrypted<unknown>[] = [];
+				try {
+					for (const store of encryptedStores) {
+						store.unlock(key);
+						unlocked.push(store);
+					}
+				} catch (err) {
+					// Rollback: re-lock stores that were already unlocked
+					for (const store of unlocked) store.lock();
+					throw err;
+				}
+			},
 			batch(fn: () => void): void {
 				ydoc.transact(fn);
 			},

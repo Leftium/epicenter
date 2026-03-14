@@ -14,6 +14,7 @@ import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
 import type { ContentMode } from '../timeline/entries.js';
 import type { SheetBinding } from '../timeline/richtext.js';
 import type { Timeline } from '../timeline/timeline.js';
+import type { EncryptionMode } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -1269,6 +1270,40 @@ export type WorkspaceClient<
 	 * Use `client.whenReady` to wait for all extensions to initialize.
 	 */
 	extensions: TExtensions;
+
+	/**
+	 * Current encryption mode across all stores.
+	 *
+	 * - `'plaintext'` — no key ever set, reads/writes pass through unencrypted
+	 * - `'unlocked'` — key active, writes encrypt, reads decrypt
+	 * - `'locked'` — key was active but cleared (sign-out), writes throw, reads return cached plaintext
+	 *
+	 * All stores are kept in sync — this reflects the workspace-wide state.
+	 */
+	readonly mode: EncryptionMode;
+
+	/**
+	 * Lock the workspace — clears the encryption key across all stores.
+	 *
+	 * After locking:
+	 * - `set()` on any table throws to prevent plaintext overwriting ciphertext
+	 * - `get()` returns cached plaintext values
+	 * - Mode transitions to `'locked'`
+	 *
+	 * No-op if mode is `'plaintext'` (never had a key).
+	 */
+	lock(): void;
+
+	/**
+	 * Unlock the workspace with an encryption key.
+	 *
+	 * Decrypts all stores, retries quarantined entries, transitions to `'unlocked'`.
+	 * If any store fails to unlock, already-unlocked stores are rolled back to `'locked'`
+	 * and the error is rethrown — the workspace never ends up half-unlocked.
+	 *
+	 * @param key - A 32-byte encryption key (e.g. from `deriveWorkspaceKey`)
+	 */
+	unlock(key: Uint8Array): void;
 
 	/**
 	 * Execute multiple operations atomically in a single Y.js transaction.

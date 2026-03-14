@@ -178,3 +178,6 @@ export type {
 	// Workspace types
 	WorkspaceDefinition,
 } from './types.js';
+
+// Re-export EncryptionMode for consumers that need to check workspace.mode
+export type { EncryptionMode } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';

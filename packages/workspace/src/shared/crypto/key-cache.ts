@@ -58,7 +58,7 @@
  *   │  KeyCache.get(userId) → Uint8Array (cached from last session)
  *   │  key available immediately
  *   ▼
- * createEncryptedKvLww(yarray, { key })
+ * createEncryptedYkvLww(yarray, { key })
  *   │  encrypts/decrypts using the cached key
  *   │  no network roundtrip needed on refresh
  *

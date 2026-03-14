@@ -101,14 +101,6 @@ export { defineWorkspace } from './define-workspace.js';
 export { createWorkspace } from './create-workspace.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Lower-Level APIs (Bring Your Own Y.Doc)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createAwareness } from './create-awareness.js';
-export { createKv } from './create-kv.js';
-export { createTables } from './create-tables.js';
-
-// ════════════════════════════════════════════════════════════════════════════
 // Introspection
 // ════════════════════════════════════════════════════════════════════════════
 

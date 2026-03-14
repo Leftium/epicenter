@@ -1,32 +1,18 @@
 /**
- * createKv() - Lower-level API for binding KV definitions to an existing Y.Doc.
+ * Creates a KvHelper from a pre-created YKeyValue store.
  *
- * @example
- * ```typescript
- * import * as Y from 'yjs';
- * import { createKv, defineKv } from '@epicenter/workspace';
- * import { type } from 'arktype';
+ * Provides typed get/set/delete/observe methods over a backing store.
+ * KV uses validate-or-default semantics: invalid or missing data returns
+ * the default value from the KV definition.
  *
- * const sidebar = defineKv(type({ collapsed: 'boolean', width: 'number' }), { collapsed: false, width: 300 });
- * const fontSize = defineKv(type('number'), 14);
- *
- * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const kv = createKv(ydoc, { sidebar, fontSize });
- *
- * kv.set('sidebar', { collapsed: false, width: 300 });
- * kv.set('fontSize', 16);
- * ```
+ * This is the primary building block for KV construction, used by
+ * createWorkspace (which creates the store for encryption coordination)
+ * and by tests.
  */
 
 import type * as Y from 'yjs';
-import type {
-	YKeyValueLwwChange,
-	YKeyValueLwwEntry,
-} from '../shared/y-keyvalue/y-keyvalue-lww.js';
-import {
-	createEncryptedKvLww,
-	type YKeyValueLwwEncrypted,
-} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import type { YKeyValueLwwChange } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import type { YKeyValueLwwEncrypted } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import type {
 	InferKvValue,
 	KvChange,
@@ -34,21 +20,19 @@ import type {
 	KvDefinitions,
 	KvHelper,
 } from './types.js';
-import { KV_KEY } from './ydoc-keys.js';
 
 /**
- * Build a KV helper from a pre-created encrypted store.
+ * Creates a KvHelper with typed get/set/delete/observe methods.
  *
- * This is the core KV helper construction — all get/set/delete/observe logic
- * lives here. Used by `createKv` (standalone API) and `createWorkspace`
- * (which creates the store itself for encryption coordination).
+ * All KV logic lives here. Used by createWorkspace (which creates the
+ * store itself for encryption coordination).
  *
- * @param store - A pre-created encrypted KV store
+ * @param ykv - The backing YKeyValue store (encrypted or passthrough)
  * @param definitions - Map of key name to KvDefinition
  * @returns KvHelper with type-safe get/set/delete/observe methods
  */
-export function createKvHelper<TKvDefinitions extends KvDefinitions>(
-	store: YKeyValueLwwEncrypted<unknown>,
+export function createKv<TKvDefinitions extends KvDefinitions>(
+	ykv: YKeyValueLwwEncrypted<unknown>,
 	definitions: TKvDefinitions,
 ): KvHelper<TKvDefinitions> {
 	return {
@@ -56,7 +40,7 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 			const definition = definitions[key];
 			if (!definition) throw new Error(`Unknown KV key: ${key}`);
 
-			const raw = store.get(key);
+			const raw = ykv.get(key);
 			if (raw === undefined) return definition.defaultValue;
 
 			const result = definition.schema['~standard'].validate(raw);
@@ -69,12 +53,12 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 
 		set(key, value) {
 			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-			store.set(key, value);
+			ykv.set(key, value);
 		},
 
 		delete(key) {
 			if (!definitions[key]) throw new Error(`Unknown KV key: ${key}`);
-			store.delete(key);
+			ykv.delete(key);
 		},
 
 		observe(key, callback) {
@@ -111,8 +95,8 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 				}
 			};
 
-			store.observe(handler);
-			return () => store.unobserve(handler);
+			ykv.observe(handler);
+			return () => ykv.unobserve(handler);
 		},
 
 		observeAll(
@@ -145,30 +129,10 @@ export function createKvHelper<TKvDefinitions extends KvDefinitions>(
 				}
 				if (parsed.size > 0) callback(parsed, transaction);
 			};
-			store.observe(handler);
-			return () => store.unobserve(handler);
+			ykv.observe(handler);
+			return () => ykv.unobserve(handler);
 		},
 	} as KvHelper<TKvDefinitions>;
-}
-
-/**
- * Binds KV definitions to an existing Y.Doc.
- *
- * Creates a KvHelper with dictionary-style access methods.
- * All KV values are stored in a shared Y.Array at `kv`.
- *
- * @param ydoc - The Y.Doc to bind KV to
- * @param definitions - Map of key name to KvDefinition
- * @returns KvHelper with type-safe get/set/delete/observe methods
- */
-export function createKv<TKvDefinitions extends KvDefinitions>(
-	ydoc: Y.Doc,
-	definitions: TKvDefinitions,
-	options?: { key?: Uint8Array },
-): KvHelper<TKvDefinitions> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const store = createEncryptedKvLww(yarray, { key: options?.key });
-	return createKvHelper(store, definitions);
 }
 
 // Re-export types for convenience

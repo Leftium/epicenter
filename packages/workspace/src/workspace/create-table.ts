@@ -1,7 +1,10 @@
 /**
- * TableHelper implementation for versioned table operations.
+ * Creates a TableHelper for a single table bound to a YKeyValue store.
  *
- * Provides CRUD operations with validation and migration on read.
+ * Provides CRUD operations with schema validation and migration on read.
+ * This is the primary building block for table construction, used by
+ * createWorkspace (which creates the store for encryption coordination)
+ * and by tests.
  */
 
 import type * as Y from 'yjs';
@@ -20,8 +23,12 @@ import type {
 
 /**
  * Creates a TableHelper for a single table bound to a YKeyValue store.
+ *
+ * @param ykv - The backing YKeyValue store (encrypted or passthrough)
+ * @param definition - The table definition with schema and migration
+ * @returns TableHelper with type-safe CRUD, query, and observation methods
  */
-export function createTableHelper<
+export function createTable<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly — defineTable already constrains schemas
 	TTableDefinition extends TableDefinition<any>,
 >(

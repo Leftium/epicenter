@@ -111,7 +111,7 @@ import {
 } from './y-keyvalue-lww';
 
 /**
- * Options for `createEncryptedKvLww`.
+ * Options for `createEncryptedYkvLww`.
  *
  * `key` seeds the initial encryption key and determines the starting mode
  * (`plaintext` if undefined, `unlocked` if a key is provided). After creation,
@@ -125,7 +125,7 @@ type EncryptedKvLwwOptions = {
 export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 
 /**
- * Return type of `createEncryptedKvLww`. Same API surface as `YKeyValueLww<T>`
+ * Return type of `createEncryptedYkvLww`. Same API surface as `YKeyValueLww<T>`
  * plus encryption-specific members (`mode`, `quarantine`, `lock`, `unlock`).
  * All values exposed through this type are **plaintext**—encryption is fully
  * transparent to consumers.
@@ -203,7 +203,7 @@ export type YKeyValueLwwEncrypted<T> = {
  * @example
  * ```typescript
  * // Start in plaintext, transition to encrypted when key arrives
- * const kv = createEncryptedKvLww<TabData>(yarray);
+ * const kv = createEncryptedYkvLww<TabData>(yarray);
  * kv.mode; // 'plaintext'
  * kv.set('tab-1', { url: '...' }); // stored as plaintext
  *
@@ -217,7 +217,7 @@ export type YKeyValueLwwEncrypted<T> = {
  * kv.get('tab-1'); // still returns cached plaintext
  * ```
  */
-export function createEncryptedKvLww<T>(
+export function createEncryptedYkvLww<T>(
 	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
 	options?: EncryptedKvLwwOptions,
 ): YKeyValueLwwEncrypted<T> {

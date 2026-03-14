@@ -1,7 +1,7 @@
 /**
  * createKv Tests
  *
- * Verifies key-value helpers over Y.Doc for set/get/delete behavior.
+ * Verifies key-value helpers over a store for set/get/delete behavior.
  * KV uses validate-or-default semantics—invalid or missing data returns the default.
  *
  * Key behaviors:
@@ -14,12 +14,16 @@ import { expect, test } from 'bun:test';
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import type { YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { createKv } from './create-kv.js';
 import { defineKv } from './define-kv.js';
+import { KV_KEY } from './ydoc-keys.js';
 
 test('set stores a value that get returns', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -29,7 +33,9 @@ test('set stores a value that get returns', () => {
 
 test('get returns defaultValue for unset key', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -38,7 +44,9 @@ test('get returns defaultValue for unset key', () => {
 
 test('delete causes get to return defaultValue', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		theme: defineKv(type({ mode: "'light' | 'dark'" }), { mode: 'light' }),
 	});
 
@@ -51,12 +59,13 @@ test('delete causes get to return defaultValue', () => {
 
 test('get returns defaultValue for invalid stored data', () => {
 	const ydoc = new Y.Doc();
-	const kv = createKv(ydoc, {
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
+	const ykv = createEncryptedYkvLww(yarray, {});
+	const kv = createKv(ykv, {
 		count: defineKv(type('number'), 0),
 	});
 
 	// Write garbage directly to the Y.Array
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('kv');
 	yarray.push([{ key: 'count', val: 'not-a-number', ts: 0 }]);
 
 	expect(kv.get('count')).toBe(0);

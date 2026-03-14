@@ -116,14 +116,6 @@ export { defineWorkspace } from './workspace/define-workspace';
 export { createWorkspace } from './workspace/create-workspace';
 
 // ════════════════════════════════════════════════════════════════════════════
-// LOWER-LEVEL APIs (Bring Your Own Y.Doc)
-// ════════════════════════════════════════════════════════════════════════════
-
-export { createAwareness } from './workspace/create-awareness';
-export { createKv } from './workspace/create-kv';
-export { createTables } from './workspace/create-tables';
-
-// ════════════════════════════════════════════════════════════════════════════
 // INTROSPECTION
 // ════════════════════════════════════════════════════════════════════════════
 

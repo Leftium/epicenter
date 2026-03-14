@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
-import { createEncryptedKvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
+import { createEncryptedYkvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
 import {
 	base64ToBytes,
 	bytesToBase64,
@@ -408,7 +408,7 @@ describe('binary storage overhead', () => {
 		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
 		const binaryArray =
 			binaryDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-		const binaryKv = createEncryptedKvLww<string>(binaryArray, { key });
+		const binaryKv = createEncryptedYkvLww<string>(binaryArray, { key });
 
 		for (const [i, val] of testValues.entries()) {
 			binaryKv.set(`key-${i}`, val);

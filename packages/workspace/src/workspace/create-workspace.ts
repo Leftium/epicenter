@@ -40,13 +40,13 @@ import * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import { createAwareness } from './create-awareness.js';
 import { createDocuments } from './create-document.js';
-import { createKvHelper } from './create-kv.js';
+import { createKv } from './create-kv.js';
 import {
-	createEncryptedKvLww,
+	createEncryptedYkvLww,
 	type YKeyValueLwwEncrypted,
 } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { type YKeyValueLwwEntry } from '../shared/y-keyvalue/y-keyvalue-lww.js';
-import { createTableHelper } from './table-helper.js';
+import { createTable } from './create-table.js';
 import { TableKey, KV_KEY } from './ydoc-keys.js';
 import {
 	type DocumentContext,
@@ -161,17 +161,17 @@ export function createWorkspace<
 	const tableHelpers: Record<string, import('./types.js').TableHelper<BaseRow>> = {};
 	for (const [name, definition] of Object.entries(tableDefs)) {
 		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-		const store = createEncryptedKvLww(yarray, { key: options?.key });
-		encryptedStores.push(store);
-		tableHelpers[name] = createTableHelper(store, definition);
+		const ykv = createEncryptedYkvLww(yarray, { key: options?.key });
+		encryptedStores.push(ykv);
+		tableHelpers[name] = createTable(ykv, definition);
 	}
 	const tables = tableHelpers as import('./types.js').TablesHelper<TTableDefinitions>;
 
 	// Create KV store + helper (single shared encrypted KV)
 	const kvYarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const kvStore = createEncryptedKvLww(kvYarray, { key: options?.key });
+	const kvStore = createEncryptedYkvLww(kvYarray, { key: options?.key });
 	encryptedStores.push(kvStore);
-	const kv = createKvHelper(kvStore, kvDefs);
+	const kv = createKv(kvStore, kvDefs);
 	const awareness = createAwareness(ydoc, awarenessDefs);
 	const definitions = {
 		tables: tableDefs,

@@ -10,7 +10,7 @@
 	let { showBaseUrl = true }: Props = $props();
 </script>
 
-<div class="space-y-4">
+<Field.Group>
 	{#if showBaseUrl}
 		<Field.Field>
 			<Field.Label for="custom-endpoint-base-url"
@@ -45,4 +45,4 @@
 			your endpoint requires it.
 		</Field.Description>
 	</Field.Field>
-</div>
+</Field.Group>

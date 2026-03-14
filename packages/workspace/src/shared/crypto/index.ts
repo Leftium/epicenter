@@ -12,14 +12,14 @@
  * │  Server derives key from secret → sends base64 in session response │
  * │  Client decodes → stores in memory via KeyCache                    │
  * └────────────────────────┬────────────────────────────────────────────┘
- *                          │  key: Uint8Array | undefined
+ * │  key: Uint8Array | undefined
  *                          ▼
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │  Encrypted KV Wrapper (y-keyvalue-lww-encrypted.ts)                │
  * │                                                                     │
  * │  set(key, val)                                                      │
  * │    → JSON.stringify(val)                                            │
- * │    → encryptValue(json, key) → { v: 1, ct: base64(nonce‖ct‖tag) } │
+ * │    → encryptValue(json, key) → { v: 1, ct: Uint8Array(nonce‖ct‖tag) }
  * │    → encryptValue(json, key, aad?) for context binding            │
  * │    → inner CRDT stores EncryptedBlob                               │
  * │                                                                     │
@@ -52,12 +52,11 @@ import { gcm } from '@noble/ciphers/aes.js';
 import { randomBytes } from '@noble/ciphers/utils.js';
 
 /**
- * Encrypted blob format for persisted and synced encrypted data.
+ * Encrypted blob stored and synced as binary.
  *
  * Uses AES-256-GCM with a 12-byte nonce and 16-byte authentication tag.
- * The nonce is packed into the `ct` field: `ct = base64(nonce(12) || ciphertext || tag(16))`.
- * The version field (`v`) is the sole contract for the format—algorithm, nonce size,
- * tag size, and byte layout are all implied by the version number.
+ * `ct` is a raw `Uint8Array` of `nonce(12) || ciphertext || tag(16)`,
+ * stored natively by Yjs `writeAny` as binary (type tag 116).
  *
  * Field names are compact (`ct`, `v`) because this type is
  * persisted in the workspace database and synced across clients.
@@ -66,14 +65,11 @@ import { randomBytes } from '@noble/ciphers/utils.js';
  * ```typescript
  * const encrypted: EncryptedBlob = {
  *   v: 1,
- *   ct: 'base64-encoded-nonce-ciphertext-tag',
+ *   ct: new Uint8Array([...nonce, ...ciphertext, ...tag]),
  * };
  * ```
  */
-type EncryptedBlob = {
-	v: 1;
-	ct: string;
-};
+type EncryptedBlob = { v: 1; ct: Uint8Array };
 
 /**
  * Generate a random 256-bit encryption key.
@@ -98,20 +94,23 @@ function generateEncryptionKey(): Uint8Array {
  *
  * Generates a random 12-byte nonce for each encryption, ensuring that
  * encrypting the same plaintext with the same key produces different ciphertexts.
- * The nonce is prepended to the ciphertext before base64 encoding, so the
- * output is a single self-contained string: `base64(nonce || ciphertext || tag)`.
+ * The nonce is prepended to the ciphertext in the output Uint8Array:
+ * `ct = Uint8Array(nonce(12) || ciphertext || tag(16))`.
+ *
+ * Returns an EncryptedBlob with raw binary `ct`. Yjs `writeAny` serializes
+ * `Uint8Array` natively as binary (type tag 116), eliminating base64 overhead.
  *
  * @param plaintext - The string to encrypt
  * @param key - A 32-byte Uint8Array encryption key
  * @param aad - Optional additional authenticated data bound to ciphertext integrity
- * @returns An EncryptedBlob with base64-encoded nonce+ciphertext+tag
+ * @returns An EncryptedBlob with raw binary nonce+ciphertext+tag
  *
  * @example
  * ```typescript
  * const key = generateEncryptionKey();
  * const encrypted = encryptValue('secret data', key);
  * console.log(encrypted);
- * // { v: 1, ct: '...' }
+ * // { v: 1, ct: Uint8Array(...) }
  * ```
  */
 function encryptValue(
@@ -126,25 +125,25 @@ function encryptValue(
 	const data = new TextEncoder().encode(plaintext);
 	const ciphertext = cipher.encrypt(data);
 
-	// Pack nonce || ciphertext || tag into a single buffer before base64 encoding
+	// Pack nonce || ciphertext || tag into a single buffer
 	const packed = new Uint8Array(nonce.length + ciphertext.length);
 	packed.set(nonce, 0);
 	packed.set(ciphertext, nonce.length);
 
 	return {
 		v: 1,
-		ct: bytesToBase64(packed),
+		ct: packed,
 	};
 }
 
 /**
  * Decrypt an EncryptedBlob using AES-256-GCM.
  *
- * Decodes the base64-encoded `ct` field, slices the first 12 bytes as the nonce,
- * and decrypts the remaining bytes (ciphertext + 16-byte GCM auth tag) using the
- * provided key. Throws if the authentication tag is invalid or decryption fails.
+ * Slices the first 12 bytes of `ct` as the nonce and decrypts the remaining
+ * bytes (ciphertext + 16-byte GCM auth tag) using the provided key.
+ * Throws if the authentication tag is invalid or decryption fails.
  *
- * @param blob - An EncryptedBlob with base64-encoded nonce+ciphertext+tag
+ * @param blob - An EncryptedBlob with binary `ct`
  * @param key - The 32-byte Uint8Array encryption key used to encrypt the blob
  * @param aad - Optional additional authenticated data that must match encryption input
  * @returns The decrypted plaintext string
@@ -165,7 +164,7 @@ function decryptValue(
 ): string {
 	if (key.length !== 32)
 		throw new Error('Encryption key must be 32 bytes (AES-256)');
-	const packed = base64ToBytes(blob.ct);
+	const packed = blob.ct;
 	const nonce = packed.slice(0, 12);
 	const ciphertext = packed.slice(12);
 	const cipher = aad ? gcm(key, nonce, aad) : gcm(key, nonce);
@@ -177,19 +176,13 @@ function decryptValue(
 /**
  * Type guard to check if a value is a valid EncryptedBlob.
  *
- * Validates the structure and field types of an EncryptedBlob without
- * performing cryptographic verification. Checks for exactly 2 keys (`v` + `ct`)
- * with the correct types.
+ * Validates the structure: exactly 2 keys (`v` + `ct`) where `v === 1`
+ * and `ct instanceof Uint8Array`.
  *
  * The key count check (`Object.keys().length === 2`) prevents false positives from
- * user-defined schemas that happen to include `v` (number) and `ct` (string) fields
- * alongside other data. Table rows always have at least 3 keys (`id`, `_v`, plus
- * user fields), so they can never match. KV values would need to be exactly
- * `{ v: <number>, ct: <string> }` with nothing else—pathologically unlikely.
- *
- * The version check uses `typeof v === 'number'` (not `v === 1`) so the guard
- * recognizes any future version. The decrypt function dispatches on the specific
- * version number.
+ * user-defined schemas that happen to include `v` and `ct` fields alongside other
+ * data. Table rows always have at least 3 keys (`id`, `_v`, plus user fields),
+ * so they can never match.
  *
  * @param value - The value to check
  * @returns True if value is a valid EncryptedBlob, false otherwise
@@ -203,14 +196,12 @@ function decryptValue(
  * ```
  */
 function isEncryptedBlob(value: unknown): value is EncryptedBlob {
+	if (typeof value !== 'object' || value === null) return false;
+	const obj = value as Record<string, unknown>;
 	return (
-		typeof value === 'object' &&
-		value !== null &&
-		Object.keys(value).length === 2 &&
-		'v' in value &&
-		'ct' in value &&
-		typeof (value as Record<string, unknown>).v === 'number' &&
-		typeof (value as Record<string, unknown>).ct === 'string'
+		Object.keys(obj).length === 2 &&
+		obj.v === 1 &&
+		obj.ct instanceof Uint8Array
 	);
 }
 

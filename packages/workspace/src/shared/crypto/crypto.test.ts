@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import * as Y from 'yjs';
+import type { YKeyValueLwwEntry } from '../y-keyvalue/y-keyvalue-lww';
+import { createEncryptedKvLww } from '../y-keyvalue/y-keyvalue-lww-encrypted';
 import {
 	base64ToBytes,
 	bytesToBase64,
@@ -73,7 +76,7 @@ describe('encryptValue / decryptValue', () => {
 		const encrypted2 = encryptValue(plaintext, key);
 
 		// Different nonces (packed into ct) should produce different ciphertexts
-		expect(encrypted1.ct).not.toBe(encrypted2.ct);
+		expect(encrypted1.ct).not.toEqual(encrypted2.ct);
 
 		// But both should decrypt to the same plaintext
 		expect(decryptValue(encrypted1, key)).toBe(plaintext);
@@ -89,7 +92,7 @@ describe('encryptValue / decryptValue', () => {
 		expect(Object.keys(encrypted).sort()).toEqual(['ct', 'v']);
 
 		expect(encrypted.v).toBe(1);
-		expect(typeof encrypted.ct).toBe('string');
+		expect(encrypted.ct).toBeInstanceOf(Uint8Array);
 	});
 
 	test('invalid key (16-byte instead of 32) throws', () => {
@@ -105,12 +108,9 @@ describe('encryptValue / decryptValue', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Flip a character in the ciphertext
-		const tamperedCt = encrypted.ct.split('').reverse().join('');
-		const tamperedBlob: EncryptedBlob = {
-			...encrypted,
-			ct: tamperedCt,
-		};
+		// Reverse the bytes in the ciphertext
+		const tamperedCt = new Uint8Array(encrypted.ct).reverse();
+		const tamperedBlob: EncryptedBlob = { v: 1, ct: tamperedCt };
 
 		expect(() => {
 			decryptValue(tamperedBlob, key);
@@ -121,15 +121,12 @@ describe('encryptValue / decryptValue', () => {
 		const key = generateEncryptionKey();
 		const encrypted = encryptValue('test', key);
 
-		// Decode ct, flip a byte in the nonce (first 12 bytes), re-encode
-		const packed = base64ToBytes(encrypted.ct);
+		// Copy ct, flip a byte in the nonce (first 12 bytes)
+		const packed = new Uint8Array(encrypted.ct);
 		if (packed.length === 0)
 			throw new Error('Expected nonce bytes in encrypted blob');
 		packed[0] = packed[0]! ^ 0xff;
-		const tamperedBlob: EncryptedBlob = {
-			...encrypted,
-			ct: bytesToBase64(packed),
-		};
+		const tamperedBlob: EncryptedBlob = { v: 1, ct: packed };
 
 		expect(() => {
 			decryptValue(tamperedBlob, key);
@@ -212,43 +209,25 @@ describe('isEncryptedBlob', () => {
 		expect(isEncryptedBlob({})).toBe(false);
 	});
 
-	test('returns true for any numeric version (future-proof)', () => {
-		const blob = {
-			v: 2,
-			ct: 'ciphertext',
-		};
-		expect(isEncryptedBlob(blob)).toBe(true);
+	test('returns true for valid shape (v: 1, ct: Uint8Array)', () => {
+		expect(isEncryptedBlob({ v: 1, ct: new Uint8Array([1, 2, 3]) })).toBe(true);
 	});
 
-	test('returns false for object with non-numeric v', () => {
-		const blob = {
-			v: 'not-a-number',
-			ct: 'ciphertext',
-		};
-		expect(isEncryptedBlob(blob)).toBe(false);
+	test('returns false for string ct', () => {
+		expect(isEncryptedBlob({ v: 1, ct: 'ciphertext' })).toBe(false);
 	});
 
-	test('returns false for object missing ct field', () => {
-		const blob = {
-			v: 1,
-		};
-		expect(isEncryptedBlob(blob)).toBe(false);
+	test('returns false for wrong version number', () => {
+		expect(isEncryptedBlob({ v: 2, ct: new Uint8Array([1, 2, 3]) })).toBe(
+			false,
+		);
+		expect(isEncryptedBlob({ v: 0, ct: new Uint8Array([1, 2, 3]) })).toBe(
+			false,
+		);
 	});
 
-	test('returns true for minimal 2-field blob', () => {
-		const blob = {
-			v: 1,
-			ct: 'ciphertext',
-		};
-		expect(isEncryptedBlob(blob)).toBe(true);
-	});
-
-	test('returns false for object with non-string ct', () => {
-		const blob = {
-			v: 1,
-			ct: 12345, // Should be string
-		};
-		expect(isEncryptedBlob(blob)).toBe(false);
+	test('returns false for v1 with numeric ct', () => {
+		expect(isEncryptedBlob({ v: 1, ct: 12345 })).toBe(false);
 	});
 
 	test('returns false for object missing v field', () => {
@@ -411,5 +390,60 @@ describe('base64 helpers', () => {
 		const text = new TextDecoder().decode(decoded);
 
 		expect(text).toBe('Hello World');
+	});
+});
+
+describe('binary storage overhead', () => {
+	test('binary ct produces smaller Y.Doc than base64 string ct', () => {
+		const key = generateEncryptionKey();
+		const testValues = [
+			'short',
+			'a'.repeat(100),
+			'a'.repeat(500),
+			JSON.stringify({ id: '123', name: 'Test User', active: true }),
+		];
+
+		// Create Y.Doc with binary blobs (current format)
+		const binaryDoc = new Y.Doc({ guid: 'bench-binary' });
+		const binaryArray =
+			binaryDoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
+		const binaryKv = createEncryptedKvLww<string>(binaryArray, { key });
+
+		for (const [i, val] of testValues.entries()) {
+			binaryKv.set(`key-${i}`, val);
+		}
+
+		// Create Y.Doc with base64 string blobs (simulated old format)
+		const base64Doc = new Y.Doc({ guid: 'bench-base64' });
+		const base64Array =
+			base64Doc.getArray<YKeyValueLwwEntry<{ v: 1; ct: string } | string>>(
+				'data',
+			);
+
+		// Extract binary entries and convert ct to base64 string
+		const binaryEntries = binaryArray.toArray();
+		const base64Entries: YKeyValueLwwEntry<{ v: 1; ct: string } | string>[] =
+			binaryEntries.map((entry) => {
+				const val = entry.val;
+				if (isEncryptedBlob(val)) {
+					return {
+						...entry,
+						val: { v: 1 as const, ct: bytesToBase64(val.ct) },
+					};
+				}
+				return entry as YKeyValueLwwEntry<string>;
+			});
+		base64Array.push(base64Entries);
+
+		const base64Size = Y.encodeStateAsUpdate(base64Doc).byteLength;
+		const binarySize = Y.encodeStateAsUpdate(binaryDoc).byteLength;
+
+		// Binary should be smaller than base64
+		expect(binarySize).toBeLessThan(base64Size);
+
+		const savings = ((1 - binarySize / base64Size) * 100).toFixed(1);
+		console.log(
+			`base64 size: ${base64Size} bytes, binary size: ${binarySize} bytes, savings: ${savings}%`,
+		);
 	});
 });

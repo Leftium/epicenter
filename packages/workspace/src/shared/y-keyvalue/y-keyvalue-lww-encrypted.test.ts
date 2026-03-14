@@ -645,10 +645,7 @@ describe('createEncryptedKvLww', () => {
 			yarray.push([
 				{
 					key: 'corrupt',
-					val: {
-						v: 1,
-						ct: 'definitely-not-valid-base64!',
-					} as EncryptedBlob,
+					val: { v: 1, ct: new Uint8Array([1, 2, 3]) },
 					ts: Date.now(),
 				},
 			]);
@@ -671,10 +668,7 @@ describe('createEncryptedKvLww', () => {
 			yarray.push([
 				{
 					key: 'corrupt',
-					val: {
-						v: 1,
-						ct: 'definitely-not-valid-base64!',
-					} as EncryptedBlob,
+					val: { v: 1, ct: new Uint8Array([1, 2, 3]) },
 					ts: Date.now(),
 				},
 			]);

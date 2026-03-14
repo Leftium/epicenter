@@ -18,15 +18,18 @@
  *
  * ```
  * set('tab-1', { url: '...' })
- *   ├── wrapper.pending.set('tab-1', plaintext entry)  ← immediate reads
  *   ├── JSON.stringify → encryptValue → EncryptedBlob
  *   └── inner.set('tab-1', encryptedBlob)              ← CRDT source of truth
- *         │
+ *         │                                                (inner handles pending)
  *         ▼  inner.observe fires
  *   ├── inner.map has encrypted entry
  *   ├── maybeDecrypt → plaintext (or quarantine on failure)
  *   ├── wrapper.map.set('tab-1', plaintext entry)       ← table-helpers read this
- *   └── wrapper.pending.delete('tab-1')
+ *   └── change event forwarded with decrypted values
+ *
+ * get('tab-1')
+ *   ├── wrapper.map cache hit? → return plaintext        ← fast path (post-observer)
+ *   └── inner.get() → decrypt on the fly                ← transaction gap fallback
  * ```
  *
  * ## Three-Mode State Machine
@@ -69,6 +72,14 @@
  * The optional `getKey` getter in options is called **once** at creation to seed
  * the initial key (and therefore the initial mode). After creation, all key
  * transitions go through `onKeyChange()`.
+ *
+ * ## Pending State
+ *
+ * The wrapper does NOT maintain its own pending/pendingDeletes maps. The inner
+ * `YKeyValueLww` handles all pending logic. During the transaction gap (after
+ * `set()` but before the observer fires), `get()` falls back to `inner.get()`
+ * and decrypts on the fly. AES-GCM decrypt of a small JSON blob is microseconds—
+ * caching this in a separate pending map is unnecessary indirection.
  *
  * ## Error Containment
  *
@@ -224,26 +235,6 @@ export function createEncryptedKvLww<T>(
 	 */
 	const map = new Map<string, YKeyValueLwwEntry<T>>();
 
-	/**
-	 * Plaintext values written by `set()` but not yet processed by the observer.
-	 *
-	 * Mirrors `YKeyValueLww`'s own pending pattern. When `set()` is called
-	 * inside a batch/transaction, the observer doesn't fire until the outer
-	 * transaction ends. Without this, `get()` would return `undefined` for
-	 * values just written. The observer clears entries from here as it
-	 * processes them.
-	 */
-	const pending = new Map<string, YKeyValueLwwEntry<T>>();
-
-	/**
-	 * Keys deleted by `delete()` but not yet processed by the observer.
-	 *
-	 * Symmetric counterpart to `pending`. Prevents stale reads from `map`
-	 * after `delete()` during a batch/transaction. Cleared by the observer
-	 * when the deletion is processed.
-	 */
-	const pendingDeletes = new Set<string>();
-
 	/** Registered change handlers. Receive decrypted change events. */
 	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
 
@@ -254,12 +245,10 @@ export function createEncryptedKvLww<T>(
 	const quarantine = new Map<string, YKeyValueLwwEntry<EncryptedBlob | T>>();
 
 	/**
-	 * The active encryption key. Seeded from `getKey()` at creation, then
-	 * updated exclusively via `onKeyChange()`. This is the sole source of
-	 * truth for the current key—no polling, no re-calling `getKey()`.
+	 * The active encryption key. Seeded from `getKey()` at creation (called once),
+	 * then updated exclusively via `onKeyChange()`.
 	 */
-	const getKey = options?.getKey ?? (() => undefined);
-	let currentKey: Uint8Array | undefined = getKey();
+	let currentKey: Uint8Array | undefined = options?.getKey?.();
 
 	/**
 	 * Current encryption mode. Derived from key presence history:
@@ -274,11 +263,8 @@ export function createEncryptedKvLww<T>(
 	 * 1. Value is not an `EncryptedBlob` → return as-is (plaintext or migration entry)
 	 * 2. No key available → throw (caller is responsible for error containment)
 	 * 3. Value is an `EncryptedBlob` + key available → decrypt and JSON.parse
-	 *
-	 * The `entryKey` parameter is accepted for future AAD support but is
-	 * currently unused. The decrypt call uses only the encryption key.
 	 */
-	const maybeDecrypt = (_entryKey: string, value: EncryptedBlob | T): T => {
+	const maybeDecrypt = (value: EncryptedBlob | T): T => {
 		if (!isEncryptedBlob(value)) return value as T;
 		if (!currentKey) throw new Error('Missing encryption key');
 		return JSON.parse(decryptValue(value, currentKey)) as T;
@@ -289,34 +275,28 @@ export function createEncryptedKvLww<T>(
 	 * determine whether an entry's decrypted value actually changed (to avoid
 	 * emitting no-op 'update' events). Falls back to JSON.stringify comparison
 	 * when Object.is fails (handles deep object equality).
+	 *
+	 * All values in `map` originated from `JSON.parse(decryptValue(...))`, so
+	 * they are guaranteed JSON-safe. JSON.stringify will not throw.
 	 */
 	const areValuesEqual = (left: T, right: T): boolean => {
 		if (Object.is(left, right)) return true;
-		const { data: leftJson } = trySync({
-			try: () => JSON.stringify(left),
-			catch: () => Ok(undefined),
-		});
-		const { data: rightJson } = trySync({
-			try: () => JSON.stringify(right),
-			catch: () => Ok(undefined),
-		});
-		if (leftJson === undefined || rightJson === undefined) return false;
-		return leftJson === rightJson;
+		return JSON.stringify(left) === JSON.stringify(right);
 	};
 
 	/**
-	 * Attempt to decrypt an entry and place it in `map`. On failure, the entry
-	 * is quarantined instead. Returns the decrypted entry on success, or
-	 * `undefined` if quarantined.
+	 * Attempt to decrypt an entry. On success, removes from quarantine and
+	 * returns the decrypted entry. On failure, quarantines the entry and
+	 * returns `undefined`.
 	 *
 	 * Used during initialization, observer processing, and `onKeyChange()` rebuild.
 	 */
-	const decryptIntoMap = (
+	const tryDecryptEntry = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
 	): YKeyValueLwwEntry<T> | undefined => {
 		const { data: decryptedVal, error: decryptError } = trySync({
-			try: () => maybeDecrypt(key, entry.val),
+			try: () => maybeDecrypt(entry.val),
 			catch: (e) => {
 				console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
 				return Ok(undefined);
@@ -332,9 +312,25 @@ export function createEncryptedKvLww<T>(
 		return { ...entry, val: decryptedVal };
 	};
 
+	/**
+	 * Decrypt a raw value from inner, returning plaintext or undefined.
+	 * Used by `get()` as a fallback when wrapper.map doesn't have the entry
+	 * yet (transaction gap between set() and observer firing).
+	 */
+	const decryptRawValue = (raw: EncryptedBlob | T): T | undefined => {
+		if (!isEncryptedBlob(raw)) return raw as T;
+		const key = currentKey;
+		if (!key) return undefined;
+		const { data } = trySync({
+			try: () => JSON.parse(decryptValue(raw, key)) as T,
+			catch: () => Ok(undefined),
+		});
+		return data;
+	};
+
 	// Initialize wrapper.map from inner.map (decrypt any pre-existing entries)
 	for (const [key, entry] of inner.map) {
-		const decryptedEntry = decryptIntoMap(key, entry);
+		const decryptedEntry = tryDecryptEntry(key, entry);
 		if (!decryptedEntry) continue;
 		map.set(key, decryptedEntry);
 	}
@@ -344,8 +340,7 @@ export function createEncryptedKvLww<T>(
 	 * updated, or deleted), we:
 	 * 1. Decrypt the new value (quarantine on failure)
 	 * 2. Update `wrapper.map` with the plaintext
-	 * 3. Clear corresponding `pending`/`pendingDeletes` entries
-	 * 4. Forward decrypted change events to registered handlers
+	 * 3. Forward decrypted change events to registered handlers
 	 *
 	 * This keeps `wrapper.map` always in sync with `inner.map` but with
 	 * plaintext values. The observer is the sole writer to `map`.
@@ -367,7 +362,7 @@ export function createEncryptedKvLww<T>(
 					});
 				} else {
 					const { data: oldValue } = trySync({
-						try: () => maybeDecrypt(key, change.oldValue),
+						try: () => maybeDecrypt(change.oldValue),
 						catch: (e) => {
 							console.warn(
 								`[encrypted-kv] Failed to decrypt deleted entry "${key}":`,
@@ -382,14 +377,10 @@ export function createEncryptedKvLww<T>(
 				}
 			} else {
 				const entry = inner.map.get(key);
-				if (!entry) {
-					pending.delete(key);
-					pendingDeletes.delete(key);
-					continue;
-				}
+				if (!entry) continue;
 
 				const { data: decryptedVal, error: decryptError } = trySync({
-					try: () => maybeDecrypt(key, entry.val),
+					try: () => maybeDecrypt(entry.val),
 					catch: (e) => {
 						console.warn(`[encrypted-kv] Failed to decrypt entry "${key}":`, e);
 						return Ok(undefined);
@@ -398,8 +389,6 @@ export function createEncryptedKvLww<T>(
 
 				if (decryptError || decryptedVal === undefined) {
 					quarantine.set(key, entry);
-					pending.delete(key);
-					pendingDeletes.delete(key);
 					continue;
 				}
 
@@ -412,7 +401,7 @@ export function createEncryptedKvLww<T>(
 					const oldValue = previousEntry?.val;
 					if (oldValue === undefined) {
 						const { data: decryptedOldValue } = trySync({
-							try: () => maybeDecrypt(key, change.oldValue),
+							try: () => maybeDecrypt(change.oldValue),
 							catch: (e) => {
 								console.warn(
 									`[encrypted-kv] Failed to decrypt old value for "${key}":`,
@@ -438,9 +427,6 @@ export function createEncryptedKvLww<T>(
 					}
 				}
 			}
-
-			pending.delete(key);
-			pendingDeletes.delete(key);
 		}
 
 		for (const handler of changeHandlers)
@@ -452,9 +438,6 @@ export function createEncryptedKvLww<T>(
 			if (mode === 'locked')
 				throw new Error('Workspace is locked — sign in to write');
 
-			pendingDeletes.delete(key);
-			pending.set(key, { key, val, ts: Date.now() });
-
 			if (mode === 'plaintext') {
 				inner.set(key, val);
 				return;
@@ -464,32 +447,64 @@ export function createEncryptedKvLww<T>(
 				throw new Error('Workspace is locked — sign in to write');
 			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
 		},
+
+		/**
+		 * Get a decrypted value by key. O(1) via wrapper.map cache when
+		 * the observer has processed the entry. Falls back to decrypting
+		 * `inner.get()` on the fly during the transaction gap (after set()
+		 * but before observer fires). AES-GCM decrypt is microseconds.
+		 */
 		get(key) {
-			if (pendingDeletes.has(key)) return undefined;
-			return pending.get(key)?.val ?? map.get(key)?.val;
+			// Fast path: check decrypted cache (covers post-observer reads)
+			const cached = map.get(key);
+			if (cached) return cached.val;
+
+			// Fallback: inner may have a pending value the observer hasn't
+			// processed yet. Decrypt on the fly.
+			const raw = inner.get(key);
+			if (raw === undefined) return undefined;
+			return decryptRawValue(raw);
 		},
+
+		/**
+		 * Check if key exists with a decryptable value. Returns false for
+		 * quarantined entries (consistent with get() returning undefined).
+		 */
 		has(key) {
-			return inner.has(key);
+			if (map.has(key)) return true;
+			// Check inner for pending values not yet in wrapper.map
+			const raw = inner.get(key);
+			if (raw === undefined) return false;
+			return decryptRawValue(raw) !== undefined;
 		},
+
 		delete(key) {
-			pending.delete(key);
-			pendingDeletes.add(key);
 			map.delete(key);
 			quarantine.delete(key);
 			inner.delete(key);
 		},
+
 		*entries() {
 			const yieldedKeys = new Set<string>();
 
-			for (const [key, entry] of pending) {
+			// Yield from inner.entries() (includes pending values during transaction gap),
+			// decrypting on the fly. Prefer wrapper.map cache when available.
+			for (const [key, entry] of inner.entries()) {
 				yieldedKeys.add(key);
-				yield [key, entry];
+				const cached = map.get(key);
+				if (cached) {
+					yield [key, cached];
+				} else {
+					const val = decryptRawValue(entry.val);
+					if (val !== undefined) yield [key, { ...entry, val }];
+				}
 			}
 
+			// Yield any wrapper.map entries not in inner (shouldn't happen, but safe)
 			for (const [key, entry] of map)
-				if (!yieldedKeys.has(key) && !pendingDeletes.has(key))
-					yield [key, entry];
+				if (!yieldedKeys.has(key)) yield [key, entry];
 		},
+
 		observe(handler) {
 			changeHandlers.add(handler);
 		},
@@ -501,46 +516,33 @@ export function createEncryptedKvLww<T>(
 		 * Transition the encryption key and rebuild the decrypted map.
 		 *
 		 * Mode transitions:
-		 * - `key` provided → `unlocked` (from any prior mode)
-		 * - `undefined` + was `unlocked`/`locked` → `locked`
-		 * - `undefined` + was `plaintext` → stays `plaintext` (never been unlocked)
+		 * - `key` provided → `unlocked` (rebuild map with new key, fire synthetic events)
+		 * - `undefined` + was `unlocked`/`locked` → `locked` (freeze cache, no rebuild)
+		 * - `undefined` + was `plaintext` → stays `plaintext` (no-op)
 		 *
-		 * After transitioning, re-iterates all entries in `inner.map`, decrypts
-		 * with the new key, retries quarantined entries, and fires synthetic
-		 * change events for entries whose decrypted value actually changed.
+		 * Locking preserves the existing decrypted cache—you lose write access,
+		 * not read access. Only unlocking triggers a full map rebuild.
 		 */
 		onKeyChange(nextKey) {
-			const oldMap = new Map(map);
-			const oldQuarantine = new Map(quarantine);
-
 			currentKey = nextKey;
 
-			if (nextKey) {
-				mode = 'unlocked';
-			} else if (mode !== 'plaintext') {
-				mode = 'locked';
+			// Lock transition: freeze current state, don't rebuild
+			if (!nextKey) {
+				if (mode !== 'plaintext') mode = 'locked';
+				return;
 			}
-			// If mode === 'plaintext' and no key → no change (never been unlocked)
 
-			// Rebuild the decrypted map from scratch with the new key
+			// Unlock transition: rebuild decrypted map with new key
+			const oldMap = new Map(map);
+			mode = 'unlocked';
+
 			map.clear();
 			quarantine.clear();
 
 			for (const [key, entry] of inner.map) {
-				const decryptedEntry = decryptIntoMap(key, entry);
+				const decryptedEntry = tryDecryptEntry(key, entry);
 				if (!decryptedEntry) continue;
 				map.set(key, decryptedEntry);
-			}
-
-			// Retry previously quarantined entries with the new key
-			for (const [key, oldEntry] of oldQuarantine) {
-				const currentEntry = inner.map.get(key);
-				if (!currentEntry) continue;
-				if (map.has(key) && !quarantine.has(key)) continue;
-
-				const retryEntry = decryptIntoMap(key, currentEntry ?? oldEntry);
-				if (!retryEntry) continue;
-				map.set(key, retryEntry);
 			}
 
 			// Compute synthetic change events by diffing old vs new map

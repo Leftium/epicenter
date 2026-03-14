@@ -72,7 +72,7 @@
 	const showRecommendedBadge = $derived(isCompressionRecommended());
 </script>
 
-<div class="space-y-4">
+<Field.Group>
 	<!-- Enable/Disable Toggle -->
 	<Field.Field orientation="horizontal">
 		<Checkbox
@@ -106,8 +106,9 @@
 
 	{#if workspaceSettings.get('transcription.compressionEnabled')}
 		<!-- Preset Selection Badges -->
-		<div class="space-y-3">
-			<p class="text-base font-medium">Compression Presets</p>
+		<Field.Group>
+			<Field.Set>
+				<Field.Legend variant="label">Compression Presets</Field.Legend>
 			<div class="flex flex-wrap gap-2">
 				{#each Object.entries(COMPRESSION_PRESETS) as [ presetKey, preset ]}
 					<Button
@@ -133,10 +134,10 @@
 					</Button>
 				{/each}
 			</div>
-			<p class="text-muted-foreground text-xs">
-				Choose a preset or customize FFmpeg options below
-			</p>
-		</div>
+				<Field.Description>
+					Choose a preset or customize FFmpeg options below
+				</Field.Description>
+			</Field.Set>
 
 		<!-- Custom Options Input -->
 		<Field.Field>
@@ -175,6 +176,7 @@
 				during transcription.
 			</Field.Description>
 		</Field.Field>
+		</Field.Group>
 
 		<!-- Command Preview -->
 		<div class="text-xs text-muted-foreground">
@@ -201,4 +203,4 @@
 			</Alert.Description>
 		</Alert.Root>
 	{/if}
-</div>
+</Field.Group>

@@ -1477,6 +1477,11 @@ client.whenReady; // Promise for async initialization
 await client.destroy(); // Cleanup resources
 ```
 
+### Document Content Model
+
+> **Important**: Tables with `.withDocument()` create per-row content Y.Docs. These use a **timeline model** (`Y.Array('timeline')`) in `@epicenter/filesystem` for multi-format content (text, binary, sheet). `DocumentHandle.read()`/`write()` use a different shared type (`Y.Text('content')`) and are not timeline-aware. Apps using the filesystem package should use `fs.content.read()`/`fs.content.write()` for content access. Accessing `handle.ydoc.getText('content')` or `handle.ydoc.getXmlFragment('content')` directly is discouraged—use `createTimeline(ydoc)` from `@epicenter/filesystem` instead. See `specs/20260313T224500-unify-document-content-model.md`.
+
+
 ### Column Schemas
 
 ```typescript

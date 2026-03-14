@@ -124,11 +124,11 @@ Better Auth Server (customSession plugin)
 
 These items address architectural gaps identified during review. They should land before real keys flow to real clients.
 
-- [ ] **0.1** **Three explicit encryption modes** — Add a `mode: 'plaintext' | 'locked' | 'unlocked'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously active but is now cleared), `set()` throws or no-ops instead of writing plaintext. Mode transitions: `plaintext` → `unlocked` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
+- [x] **0.1** **Three explicit encryption modes** — Add a `mode: 'plaintext' | 'locked' | 'unlocked'` state to `createEncryptedKvLww`. When mode is `locked` (key was previously active but is now cleared), `set()` throws or no-ops instead of writing plaintext. Mode transitions: `plaintext` → `unlocked` (key arrives) → `locked` (key cleared / sign-out). Workspaces that have never seen a key stay in `plaintext` mode.
 - [ ] **0.2** **Per-workspace subkey derivation** — In `apps/api/src/app.ts`, change `SHA-256(BETTER_AUTH_SECRET)` to `HKDF(SHA-256(BETTER_AUTH_SECRET), workspaceId)`. Client receives a workspace-scoped key. No change to the encryption primitives—just a different key per workspace.
-- [ ] **0.3** **AAD context binding** — Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
-- [ ] **0.4** **Error containment in observer** — Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
-- [ ] **0.5** **Key transition hook** — Add an `onKeyChange(key: Uint8Array | undefined)` method to `YKeyValueLwwEncrypted`. When called, it re-iterates `inner.map`, re-decrypts all entries with the new key, and rebuilds `wrapper.map`. The key store calls this when the key changes.
+- [x] **0.3** **AAD context binding** — Update `encryptValue` and `decryptValue` to accept an optional `aad?: Uint8Array` parameter. The encrypted wrapper passes `encode(workspaceId + ':' + tableName + ':' + key)` as AAD. Ciphertext becomes position-bound.
+- [x] **0.4** **Error containment in observer** — Wrap `maybeDecrypt` calls in the `inner.observe()` handler with `trySync`. On failure, log the error and skip the entry (or mark it as `{ status: 'decrypt-failed' }`) instead of throwing. One bad blob should not poison the entire table.
+- [x] **0.5** **Key transition hook** — Add an `onKeyChange(key: Uint8Array | undefined)` method to `YKeyValueLwwEncrypted`. When called, it re-iterates `inner.map`, re-decrypts all entries with the new key, and rebuilds `wrapper.map`. The key store calls this when the key changes.
 
 ### Phase 2: Per-App Wiring (one commit each)
 

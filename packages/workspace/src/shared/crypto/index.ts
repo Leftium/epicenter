@@ -20,6 +20,7 @@
  * │  set(key, val)                                                      │
  * │    → JSON.stringify(val)                                            │
  * │    → encryptValue(json, key) → { v: 1, ct: base64(nonce‖ct‖tag) } │
+ * │    → encryptValue(json, key, aad?) for context binding            │
  * │    → inner CRDT stores EncryptedBlob                               │
  * │                                                                     │
  * │  observer fires (inner CRDT change)                                │

@@ -1,7 +1,7 @@
 # Encryption Wrapper Hardening
 
 **Date**: 2026-03-14
-**Status**: Draft
+**Status**: Implemented
 **Builds on**: `specs/20260313T202000-encrypted-blob-pack-nonce.md`, `specs/20260312T120000-y-keyvalue-lww-encrypted.md`
 **Blocks**: `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` (key derivation depends on hardening being in place)
 
@@ -149,9 +149,9 @@ Note: `plaintext` → `locked` never happens. `locked` means "was unlocked befor
 
 ### Phase 4: Update Docs
 
-- [ ] **4.1** Update module JSDoc in `y-keyvalue-lww-encrypted.ts` — document mode system, replace "Current behavior" note in key lifecycle state machine
-- [ ] **4.2** Update `crypto/index.ts` JSDoc — document AAD parameter
-- [ ] **4.3** Update wiring spec — mark Phase 0 items as implemented
+- [x] **4.1** Update module JSDoc in `y-keyvalue-lww-encrypted.ts` — document mode system, replace "Current behavior" note in key lifecycle state machine
+- [x] **4.2** Update `crypto/index.ts` JSDoc — document AAD parameter
+- [x] **4.3** Update wiring spec — mark Phase 0 items as implemented
 
 ## Edge Cases
 
@@ -192,12 +192,12 @@ Each table gets its own AAD context (`workspaceId:tableName:entryKey`). A value 
 
 ## Success Criteria
 
-- [ ] `set()` throws in `locked` mode, encrypts in `unlocked`, passes through in `plaintext`
-- [ ] One corrupted blob does not prevent other entries from decrypting
-- [ ] `onKeyChange` rebuilds the decrypted map and transitions mode correctly
-- [ ] AAD mismatch causes decrypt failure (GCM auth tag verification)
-- [ ] All existing tests pass (backward compatible—no AAD = same behavior)
-- [ ] New tests cover mode transitions, error containment, key transition, and AAD
+- [x] `set()` throws in `locked` mode, encrypts in `unlocked`, passes through in `plaintext`
+- [x] One corrupted blob does not prevent other entries from decrypting
+- [x] `onKeyChange` rebuilds the decrypted map and transitions mode correctly
+- [x] AAD mismatch causes decrypt failure (GCM auth tag verification)
+- [x] All existing tests pass (backward compatible—no AAD = same behavior)
+- [x] New tests cover mode transitions, error containment, key transition, and AAD
 
 ## References
 
@@ -206,3 +206,23 @@ Each table gets its own AAD context (`workspaceId:tableName:entryKey`). A value 
 - `packages/workspace/src/shared/crypto/crypto.test.ts` — AAD tests
 - `specs/20260313T180100-client-side-encryption-wiring.md` — Phase 0 items reference this spec
 - `@noble/ciphers` docs — `gcm(key, nonce, aad)` API for AAD support
+
+## Review
+
+**Completed**: 2026-03-14
+
+### Summary
+
+Implemented the full hardening spec across 4 phases in 4 incremental commits. The encrypted KV wrapper now has a three-mode state machine (plaintext/locked/unlocked), error containment via trySync quarantine, a key transition hook that rebuilds the decrypted map with synthetic change events, and optional AAD context binding.
+
+### Deviations from Spec
+
+- **Backward compat bridge**: `set()` in plaintext mode polls `getKey()` on each call to detect key arrival without requiring explicit `onKeyChange()`. This preserves backward compatibility with existing code that mutates the key via closure.
+- **Synthetic transaction**: `onKeyChange()` fires synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.
+- **Optional type members**: `mode`, `quarantine`, and `onKeyChange` are typed as optional (`?`) on `YKeyValueLwwEncrypted<T>` to maintain backward compatibility with code that checks for their existence.
+
+### Follow-up Work
+
+- `specs/20260314T070000-per-user-workspace-hkdf-key-derivation.md` is now unblocked
+- Per-workspace subkey derivation (wiring spec 0.2) still needs implementation
+- Consider changing `YKeyValueLwwChangeHandler` to accept `Y.Transaction | null` to properly type synthetic events

@@ -1,3 +1,75 @@
+/**
+ * # Encrypted KV-LWW — Composition Wrapper
+ *
+ * Transparent encryption layer over `YKeyValueLww`. All CRDT logic (timestamps,
+ * conflict resolution, pending/map architecture) stays in `YKeyValueLww`; this
+ * module transforms values at the boundary and manages encryption state.
+ *
+ * ## Why Composition Over Fork
+ *
+ * Yjs `ContentAny` stores entry objects by **reference**. `YKeyValueLww` relies
+ * on `indexOf()` (strict `===`) to find entries in the Y.Array during conflict
+ * resolution. A fork that decrypts into new objects breaks `indexOf`—the map
+ * entries are no longer the same JS objects as the yarray entries.
+ *
+ * See `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`.
+ *
+ * ## Three-Mode State Machine
+ *
+ * ```
+ *                     ┌─────────────┐
+ *         (creation,  │  PLAINTEXT  │  (no key ever seen)
+ *          no key)    │  rw plain   │
+ *                     └──────┬──────┘
+ *                            │ onKeyChange(key)
+ *                            ▼
+ *                     ┌─────────────┐
+ *                     │  UNLOCKED   │  (key active)
+ *                     │  rw encrypt │◄── onKeyChange(newKey)
+ *                     └──────┬──────┘
+ *                            │ onKeyChange(undefined)
+ *                            ▼
+ *                     ┌─────────────┐
+ *                     │   LOCKED    │  (key was active, now cleared)
+ *                     │  r-only     │
+ *                     └──────┬──────┘
+ *                            │ onKeyChange(key)
+ *                            ▼
+ *                     ┌─────────────┐
+ *                     │  UNLOCKED   │  (re-sign-in)
+ *                     └─────────────┘
+ * ```
+ *
+ * - **plaintext**: No key ever seen. Reads and writes pass through unencrypted.
+ * - **unlocked**: Key active. `set()` encrypts, observer decrypts.
+ * - **locked**: Key was active but cleared (sign-out). `set()` throws to prevent
+ *   plaintext overwriting ciphertext. `get()` returns cached plaintext values.
+ *
+ * `plaintext` → `locked` never happens. `locked` means "was unlocked before."
+ * A workspace that never had a key stays `plaintext` through sign-out.
+ *
+ * ## Error Containment
+ *
+ * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt quarantines
+ * the entry (stored in `quarantine` map) and logs a warning instead of throwing.
+ * This prevents one bad blob from crashing all observation. Quarantined entries
+ * are retried on `onKeyChange()` when the correct key arrives.
+ *
+ * ## AAD Context Binding
+ *
+ * When `workspaceId` and `tableName` are provided, each encrypt/decrypt call
+ * includes AAD = `encode(workspaceId + ':' + tableName + ':' + entryKey)`. This
+ * binds ciphertext to its exact position—a blob from `table:tabs/tab-1` cannot
+ * be replayed into `table:settings/theme`.
+ *
+ * ## Related Modules
+ *
+ * - {@link ../crypto/index.ts} — Encryption primitives (encryptValue, decryptValue, isEncryptedBlob)
+ * - {@link ../crypto/key-cache.ts} — Platform-agnostic key caching (survives page refresh)
+ * - {@link ./y-keyvalue-lww.ts} — Inner CRDT that handles conflict resolution (unaware of encryption)
+ *
+ * @module
+ */
 import { Ok, trySync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
 import {

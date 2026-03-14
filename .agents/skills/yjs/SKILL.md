@@ -8,24 +8,6 @@ metadata:
 
 # Yjs CRDT Patterns
 
-## Epicenter Content Model
-
-In this codebase, **never access raw Yjs shared types for document content**. The workspace provides a `DocumentHandle` with built-in methods:
-
-```typescript
-const handle = await documents.open(id);
-handle.read();          // read text from timeline (always string)
-handle.write('hello');  // write text to timeline
-handle.asText();        // Y.Text for editor binding (converts if needed)
-handle.asRichText();    // Y.XmlFragment for richtext (converts if needed)
-handle.asSheet();       // SheetBinding for spreadsheet (converts if needed)
-handle.timeline;        // escape hatch for advanced timeline ops
-handle.batch(() => {}); // batch mutations (NOT ydoc.transact())
-```
-
-**`handle.ydoc` is an escape hatch** for extensions and tests only. App code should never call `handle.ydoc.getText()`, `handle.ydoc.getArray()`, or `handle.ydoc.transact()` directly.
-
-
 ## Core Concepts
 
 ### Shared Types
@@ -240,6 +222,8 @@ handle.asText();      // Y.Text for editor binding
 handle.asRichText();  // Y.XmlFragment for richtext binding
 handle.asSheet();     // SheetBinding for spreadsheet binding
 ```
+
+See the **workspace-api** skill for the full `DocumentHandle` API.
 
 ## Debugging Tips
 

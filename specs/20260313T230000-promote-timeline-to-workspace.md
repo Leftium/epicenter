@@ -1,4 +1,4 @@
-> **Note (2026-03-14)**: The API described here (`handle.content.read()`, etc.) was flattened to `handle.read()`, `handle.write()`, `handle.getText()`, `handle.getFragment()`, `handle.timeline` in [document-handle-cleanup](./20260314T060000-document-handle-cleanup.md). Binary mode was also removed.
+> **Note (2026-03-14)**: The API described here (`handle.content.read()`, etc.) was flattened to `handle.read()`, `handle.write()`, `handle.asText()`, `handle.asRichText()`, `handle.asSheet()`, `handle.timeline` in [document-handle-cleanup](./20260314T060000-document-handle-cleanup.md) and [handle-content-conversion-api](./20260314T070000-handle-content-conversion-api.md). Binary mode was also removed.
 
 # Promote Timeline to Workspace-Level Content Primitive
 

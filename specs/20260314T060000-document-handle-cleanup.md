@@ -1,7 +1,7 @@
 # Document Handle API Cleanup
 
 **Date**: 2026-03-14
-**Status**: Planned
+**Status**: Implemented
 **Depends on**: `specs/20260313T230000-promote-timeline-to-workspace.md` (complete)
 
 ## Overview

@@ -1,7 +1,7 @@
 # Handle Content Conversion API
 
 **Date**: 2026-03-14
-**Status**: In Progress
+**Status**: Implemented
 **Depends on**: `specs/20260314T060000-document-handle-cleanup.md` (complete)
 
 ## Overview
@@ -556,15 +556,15 @@ asText(): Result<Y.Text, ContentConversionError> {
 ## Success Criteria
 
 - [x] `handle.read()` returns plaintext for richtext documents (not `''`)
-- [x] `handle.asText()` returns `Ok(Y.Text)` for all three source modes
-- [x] `handle.asRichText()` returns `Ok(Y.XmlFragment)` for all three source modes
-- [x] `handle.asSheet()` returns `Ok(SheetBinding)` for all three source modes
-- [x] `handle.asText()` on empty timeline auto-creates text entry and returns `Ok`
+- [x] `handle.asText()` returns `Y.Text` for all three source modes (infallible)
+- [x] `handle.asRichText()` returns `Y.XmlFragment` for all three source modes (infallible)
+- [x] `handle.asSheet()` returns `SheetBinding` for all three source modes (infallible)
+- [x] `handle.asText()` on empty timeline auto-creates text entry
 - [x] All `as*()` methods push new timeline entries (append-only preserved)
 - [x] `pushRichtext()` exists on Timeline (no more layering bypass)
-- [~] Old `getText()`/`getFragment()` deprecated (not removed) on DocumentHandle type
+- [x] `getText()`/`getFragment()` fully removed from DocumentHandle type
 - [x] No app-level `handle.getText()` or `handle.getFragment()` references remain
-- [x] `ContentConversionError` uses `defineErrors` pattern
+- [x] `ContentConversionError` removed (dead code — all conversions infallible)
 - [x] Tests cover all six pairwise conversions
 - [x] Tests cover empty timeline auto-creation for all three types
 - [x] Tests cover fast path (matching type) for all three types

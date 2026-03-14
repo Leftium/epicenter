@@ -14,6 +14,21 @@
  *
  * See `docs/articles/yjs-reference-equality-why-we-compose-encrypted-crdts.md`.
  *
+ * ## Data Flow
+ *
+ * ```
+ * set('tab-1', { url: '...' })
+ *   ├── wrapper.pending.set('tab-1', plaintext entry)  ← immediate reads
+ *   ├── JSON.stringify → encryptValue → EncryptedBlob
+ *   └── inner.set('tab-1', encryptedBlob)              ← CRDT source of truth
+ *         │
+ *         ▼  inner.observe fires
+ *   ├── inner.map has encrypted entry
+ *   ├── maybeDecrypt → plaintext (or quarantine on failure)
+ *   ├── wrapper.map.set('tab-1', plaintext entry)       ← table-helpers read this
+ *   └── wrapper.pending.delete('tab-1')
+ * ```
+ *
  * ## Three-Mode State Machine
  *
  * ```
@@ -48,19 +63,19 @@
  * `plaintext` → `locked` never happens. `locked` means "was unlocked before."
  * A workspace that never had a key stays `plaintext` through sign-out.
  *
+ * ## Key Management
+ *
+ * The encryption key is managed through a single mechanism: `onKeyChange(key)`.
+ * The optional `getKey` getter in options is called **once** at creation to seed
+ * the initial key (and therefore the initial mode). After creation, all key
+ * transitions go through `onKeyChange()`.
+ *
  * ## Error Containment
  *
  * The observer wraps `maybeDecrypt` with `trySync`. A failed decrypt quarantines
  * the entry (stored in `quarantine` map) and logs a warning instead of throwing.
  * This prevents one bad blob from crashing all observation. Quarantined entries
  * are retried on `onKeyChange()` when the correct key arrives.
- *
- * ## AAD Context Binding
- *
- * When `workspaceId` and `tableName` are provided, each encrypt/decrypt call
- * includes AAD = `encode(workspaceId + ':' + tableName + ':' + entryKey)`. This
- * binds ciphertext to its exact position—a blob from `table:tabs/tab-1` cannot
- * be replayed into `table:settings/theme`.
  *
  * ## Related Modules
  *
@@ -85,14 +100,26 @@ import {
 	type YKeyValueLwwEntry,
 } from './y-keyvalue-lww';
 
+/**
+ * Options for `createEncryptedKvLww`.
+ *
+ * `getKey` is called **once** at creation to seed the initial encryption key
+ * and determine the starting mode (`plaintext` if undefined, `unlocked` if a
+ * key is returned). After creation, use `onKeyChange()` for all key transitions.
+ */
 type EncryptedKvLwwOptions = {
 	getKey?: () => Uint8Array | undefined;
-	workspaceId?: string;
-	tableName?: string;
 };
 
+/** The three encryption modes. See module JSDoc for the full state machine. */
 export type EncryptionMode = 'plaintext' | 'locked' | 'unlocked';
 
+/**
+ * Return type of `createEncryptedKvLww`. Same API surface as `YKeyValueLww<T>`
+ * plus encryption-specific members (`mode`, `quarantine`, `onKeyChange`).
+ * All values exposed through this type are **plaintext**—encryption is fully
+ * transparent to consumers.
+ */
 export type YKeyValueLwwEncrypted<T> = {
 	set(key: string, val: T): void;
 	get(key: string): T | undefined;
@@ -101,48 +128,168 @@ export type YKeyValueLwwEncrypted<T> = {
 	entries(): IterableIterator<[string, YKeyValueLwwEntry<T>]>;
 	observe(handler: YKeyValueLwwChangeHandler<T>): void;
 	unobserve(handler: YKeyValueLwwChangeHandler<T>): void;
-	onKeyChange?(key: Uint8Array | undefined): void;
 
-	readonly mode?: EncryptionMode;
-	readonly quarantine?: ReadonlyMap<
+	/**
+	 * Transition the encryption key. This is the **sole mechanism** for key
+	 * changes after creation. Rebuilds `map` from `inner.map`, retries
+	 * quarantined entries, transitions mode, and fires synthetic change events.
+	 *
+	 * @param key - New key (`unlocked`) or `undefined` (`locked` / stay `plaintext`)
+	 */
+	onKeyChange(key: Uint8Array | undefined): void;
+
+	/** Current encryption mode. Derived from key presence history. */
+	readonly mode: EncryptionMode;
+
+	/**
+	 * Entries that failed to decrypt. Stored as raw `EncryptedBlob | T` entries
+	 * from `inner.map`. Retried automatically on `onKeyChange()` when the
+	 * correct key arrives. Exposed so table helpers can show a
+	 * "N entries failed to decrypt" warning.
+	 */
+	readonly quarantine: ReadonlyMap<
 		string,
 		YKeyValueLwwEntry<EncryptedBlob | T>
 	>;
+
+	/**
+	 * Decrypted in-memory index. Always contains **plaintext** values.
+	 *
+	 * This exists because `table-helper.ts` methods (`getAll()`, `filter()`,
+	 * `find()`, `count()`, `clear()`) read `ykv.map` directly—they don't call
+	 * `get()` per entry. If we exposed `inner.map`, table helpers would see
+	 * `EncryptedBlob` objects where they expect row data. Schema validation
+	 * would fail on every entry.
+	 *
+	 * Kept in sync by `inner.observe()`—the observer is the sole writer,
+	 * mirroring the same single-writer pattern that `YKeyValueLww` itself uses.
+	 */
 	readonly map: Map<string, YKeyValueLwwEntry<T>>;
+
+	/** The underlying Y.Array. Contains **ciphertext** when a key is active. */
 	readonly yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>;
+
+	/** The Y.Doc that owns the array. */
 	readonly doc: Y.Doc;
 };
 
+/**
+ * Compose transparent encryption onto `YKeyValueLww` without forking CRDT logic.
+ *
+ * `YKeyValueLww` remains the single source for conflict resolution; this wrapper
+ * only transforms values at the boundary (`set` encrypts, observer/get decrypts).
+ *
+ * When no key is available (plaintext mode), all operations pass through without
+ * encryption—zero overhead, identical to a plain `YKeyValueLww<T>`.
+ *
+ * @example
+ * ```typescript
+ * // Start in plaintext, transition to encrypted when key arrives
+ * const kv = createEncryptedKvLww<TabData>(yarray);
+ * kv.mode; // 'plaintext'
+ * kv.set('tab-1', { url: '...' }); // stored as plaintext
+ *
+ * kv.onKeyChange(encryptionKey);
+ * kv.mode; // 'unlocked'
+ * kv.set('tab-2', { url: '...' }); // stored as EncryptedBlob
+ *
+ * kv.onKeyChange(undefined);
+ * kv.mode; // 'locked'
+ * kv.set('tab-3', ...); // throws: "Workspace is locked"
+ * kv.get('tab-1'); // still returns cached plaintext
+ * ```
+ */
 export function createEncryptedKvLww<T>(
 	yarray: Y.Array<YKeyValueLwwEntry<EncryptedBlob | T>>,
 	options?: EncryptedKvLwwOptions,
 ): YKeyValueLwwEncrypted<T> {
+	/**
+	 * The inner LWW store that handles all CRDT logic. It sees `EncryptedBlob | T`
+	 * as its value type—it doesn't know or care that some values are ciphertext.
+	 * Timestamps, conflict resolution, pending/map architecture, and observer
+	 * mechanics all live here. We never duplicate any of that logic.
+	 */
 	const inner = new YKeyValueLww<EncryptedBlob | T>(yarray);
+
+	/**
+	 * Decrypted in-memory index. This is the wrapper's own Map that always
+	 * contains **plaintext** values. It mirrors `inner.map` but with decrypted
+	 * values. The `inner.observe()` handler is the sole writer.
+	 *
+	 * Why a separate map? `table-helper.ts` reads `ykv.map` directly for
+	 * `getAll()`, `filter()`, `find()`, `count()`. If we exposed `inner.map`,
+	 * those methods would see `EncryptedBlob` objects and schema validation
+	 * would fail. This map ensures table helpers see plaintext—zero changes
+	 * to table-helper.ts.
+	 */
 	const map = new Map<string, YKeyValueLwwEntry<T>>();
+
+	/**
+	 * Plaintext values written by `set()` but not yet processed by the observer.
+	 *
+	 * Mirrors `YKeyValueLww`'s own pending pattern. When `set()` is called
+	 * inside a batch/transaction, the observer doesn't fire until the outer
+	 * transaction ends. Without this, `get()` would return `undefined` for
+	 * values just written. The observer clears entries from here as it
+	 * processes them.
+	 */
 	const pending = new Map<string, YKeyValueLwwEntry<T>>();
+
+	/**
+	 * Keys deleted by `delete()` but not yet processed by the observer.
+	 *
+	 * Symmetric counterpart to `pending`. Prevents stale reads from `map`
+	 * after `delete()` during a batch/transaction. Cleared by the observer
+	 * when the deletion is processed.
+	 */
 	const pendingDeletes = new Set<string>();
+
+	/** Registered change handlers. Receive decrypted change events. */
 	const changeHandlers = new Set<YKeyValueLwwChangeHandler<T>>();
+
+	/**
+	 * Entries that failed to decrypt. Stored as raw entries from `inner.map`.
+	 * Retried on `onKeyChange()` when a new key arrives.
+	 */
 	const quarantine = new Map<string, YKeyValueLwwEntry<EncryptedBlob | T>>();
 
+	/**
+	 * The active encryption key. Seeded from `getKey()` at creation, then
+	 * updated exclusively via `onKeyChange()`. This is the sole source of
+	 * truth for the current key—no polling, no re-calling `getKey()`.
+	 */
 	const getKey = options?.getKey ?? (() => undefined);
 	let currentKey: Uint8Array | undefined = getKey();
+
+	/**
+	 * Current encryption mode. Derived from key presence history:
+	 * - `plaintext`: No key has ever been seen (initial state when getKey() → undefined)
+	 * - `unlocked`: A key is currently active
+	 * - `locked`: A key was active but has been cleared (sign-out)
+	 */
 	let mode: EncryptionMode = currentKey ? 'unlocked' : 'plaintext';
 
-	const computeAad = (entryKey: string): Uint8Array | undefined => {
-		if (!options?.workspaceId || !options?.tableName) return undefined;
-		return new TextEncoder().encode(
-			options.workspaceId + ':' + options.tableName + ':' + entryKey,
-		);
-	};
-
-	const maybeDecrypt = (entryKey: string, value: EncryptedBlob | T): T => {
+	/**
+	 * Conditionally decrypt a value. Handles three cases:
+	 * 1. Value is not an `EncryptedBlob` → return as-is (plaintext or migration entry)
+	 * 2. No key available → throw (caller is responsible for error containment)
+	 * 3. Value is an `EncryptedBlob` + key available → decrypt and JSON.parse
+	 *
+	 * The `entryKey` parameter is accepted for future AAD support but is
+	 * currently unused. The decrypt call uses only the encryption key.
+	 */
+	const maybeDecrypt = (_entryKey: string, value: EncryptedBlob | T): T => {
 		if (!isEncryptedBlob(value)) return value as T;
 		if (!currentKey) throw new Error('Missing encryption key');
-		return JSON.parse(
-			decryptValue(value, currentKey, computeAad(entryKey)),
-		) as T;
+		return JSON.parse(decryptValue(value, currentKey)) as T;
 	};
 
+	/**
+	 * Compare two decrypted values for equality. Used by `onKeyChange()` to
+	 * determine whether an entry's decrypted value actually changed (to avoid
+	 * emitting no-op 'update' events). Falls back to JSON.stringify comparison
+	 * when Object.is fails (handles deep object equality).
+	 */
 	const areValuesEqual = (left: T, right: T): boolean => {
 		if (Object.is(left, right)) return true;
 		const { data: leftJson } = trySync({
@@ -157,6 +304,13 @@ export function createEncryptedKvLww<T>(
 		return leftJson === rightJson;
 	};
 
+	/**
+	 * Attempt to decrypt an entry and place it in `map`. On failure, the entry
+	 * is quarantined instead. Returns the decrypted entry on success, or
+	 * `undefined` if quarantined.
+	 *
+	 * Used during initialization, observer processing, and `onKeyChange()` rebuild.
+	 */
 	const decryptIntoMap = (
 		key: string,
 		entry: YKeyValueLwwEntry<EncryptedBlob | T>,
@@ -178,12 +332,24 @@ export function createEncryptedKvLww<T>(
 		return { ...entry, val: decryptedVal };
 	};
 
+	// Initialize wrapper.map from inner.map (decrypt any pre-existing entries)
 	for (const [key, entry] of inner.map) {
 		const decryptedEntry = decryptIntoMap(key, entry);
 		if (!decryptedEntry) continue;
 		map.set(key, decryptedEntry);
 	}
 
+	/**
+	 * The heart of the wrapper. When `inner`'s observer fires (entry added,
+	 * updated, or deleted), we:
+	 * 1. Decrypt the new value (quarantine on failure)
+	 * 2. Update `wrapper.map` with the plaintext
+	 * 3. Clear corresponding `pending`/`pendingDeletes` entries
+	 * 4. Forward decrypted change events to registered handlers
+	 *
+	 * This keeps `wrapper.map` always in sync with `inner.map` but with
+	 * plaintext values. The observer is the sole writer to `map`.
+	 */
 	inner.observe((changes, transaction) => {
 		const decryptedChanges = new Map<string, YKeyValueLwwChange<T>>();
 
@@ -286,15 +452,6 @@ export function createEncryptedKvLww<T>(
 			if (mode === 'locked')
 				throw new Error('Workspace is locked — sign in to write');
 
-			// Poll getKey() for backward compat — key might have appeared since creation
-			if (mode === 'plaintext') {
-				const polledKey = getKey();
-				if (polledKey) {
-					currentKey = polledKey;
-					mode = 'unlocked';
-				}
-			}
-
 			pendingDeletes.delete(key);
 			pending.set(key, { key, val, ts: Date.now() });
 
@@ -305,10 +462,7 @@ export function createEncryptedKvLww<T>(
 
 			if (!currentKey)
 				throw new Error('Workspace is locked — sign in to write');
-			inner.set(
-				key,
-				encryptValue(JSON.stringify(val), currentKey, computeAad(key)),
-			);
+			inner.set(key, encryptValue(JSON.stringify(val), currentKey));
 		},
 		get(key) {
 			if (pendingDeletes.has(key)) return undefined;
@@ -342,6 +496,19 @@ export function createEncryptedKvLww<T>(
 		unobserve(handler) {
 			changeHandlers.delete(handler);
 		},
+
+		/**
+		 * Transition the encryption key and rebuild the decrypted map.
+		 *
+		 * Mode transitions:
+		 * - `key` provided → `unlocked` (from any prior mode)
+		 * - `undefined` + was `unlocked`/`locked` → `locked`
+		 * - `undefined` + was `plaintext` → stays `plaintext` (never been unlocked)
+		 *
+		 * After transitioning, re-iterates all entries in `inner.map`, decrypts
+		 * with the new key, retries quarantined entries, and fires synthetic
+		 * change events for entries whose decrypted value actually changed.
+		 */
 		onKeyChange(nextKey) {
 			const oldMap = new Map(map);
 			const oldQuarantine = new Map(quarantine);
@@ -350,12 +517,12 @@ export function createEncryptedKvLww<T>(
 
 			if (nextKey) {
 				mode = 'unlocked';
-			} else if (mode === 'plaintext') {
-				mode = 'plaintext';
-			} else {
+			} else if (mode !== 'plaintext') {
 				mode = 'locked';
 			}
+			// If mode === 'plaintext' and no key → no change (never been unlocked)
 
+			// Rebuild the decrypted map from scratch with the new key
 			map.clear();
 			quarantine.clear();
 
@@ -365,6 +532,7 @@ export function createEncryptedKvLww<T>(
 				map.set(key, decryptedEntry);
 			}
 
+			// Retry previously quarantined entries with the new key
 			for (const [key, oldEntry] of oldQuarantine) {
 				const currentEntry = inner.map.get(key);
 				if (!currentEntry) continue;
@@ -375,6 +543,7 @@ export function createEncryptedKvLww<T>(
 				map.set(key, retryEntry);
 			}
 
+			// Compute synthetic change events by diffing old vs new map
 			const syntheticChanges = new Map<string, YKeyValueLwwChange<T>>();
 			const allKeys = new Set<string>([...oldMap.keys(), ...map.keys()]);
 

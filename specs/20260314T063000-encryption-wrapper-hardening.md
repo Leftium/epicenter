@@ -217,9 +217,12 @@ Implemented the full hardening spec across 4 phases in 4 incremental commits. Th
 
 ### Deviations from Spec
 
-- **Backward compat bridge**: `set()` in plaintext mode polls `getKey()` on each call to detect key arrival without requiring explicit `onKeyChange()`. This preserves backward compatibility with existing code that mutates the key via closure.
+- **Removed AAD wiring from wrapper**: The `workspaceId`, `tableName` options and `computeAad()` function were removed. AAD solves a near-theoretical problem in this architecture (CRDT entries don't move, per-workspace keys already namespace ciphertext). The AAD parameter support in `encryptValue`/`decryptValue` primitives is kept for future use.
+- **Single key path**: Removed the `getKey()` polling bridge from `set()`. Keys arrive exclusively via `onKeyChange()` after creation. `getKey()` is called once at creation to seed the initial key. Clean break, no dual-path ambiguity.
+- **Simplified mode transition**: Replaced the redundant `else if (mode === 'plaintext') { mode = 'plaintext' }` no-op with `else if (mode !== 'plaintext') { mode = 'locked' }`.
+- **Non-optional type members**: `mode`, `quarantine`, and `onKeyChange` are non-optional on `YKeyValueLwwEncrypted<T>` — clean break.
 - **Synthetic transaction**: `onKeyChange()` fires synthetic change events with `undefined as unknown as Y.Transaction` since there is no real Yjs transaction for key transitions. Documented with a comment.
-- **Optional type members**: `mode`, `quarantine`, and `onKeyChange` are typed as optional (`?`) on `YKeyValueLwwEncrypted<T>` to maintain backward compatibility with code that checks for their existence.
+- **Comprehensive JSDoc restored**: All inline JSDoc stripped during Wave 2 has been restored to match original coverage depth, plus documentation for all new functions.
 
 ### Follow-up Work
 

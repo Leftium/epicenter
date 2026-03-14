@@ -432,19 +432,17 @@ describe('createEncryptedKvLww', () => {
 	});
 
 	describe('Key becomes available mid-session', () => {
-		test('passthrough then encrypted: existing plaintext entries still readable', () => {
-			let currentKey: Uint8Array | undefined;
+		test('passthrough then encrypted via onKeyChange', () => {
 			const ydoc = new Y.Doc({ guid: 'test' });
 			const yarray =
 				ydoc.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const kv = createEncryptedKvLww<string>(yarray, {
-				getKey: () => currentKey,
-			});
+			const kv = createEncryptedKvLww<string>(yarray);
 
 			kv.set('old-1', 'legacy-a');
 			kv.set('old-2', 'legacy-b');
 
-			currentKey = generateEncryptionKey();
+			const key = generateEncryptionKey();
+			kv.onKeyChange(key);
 			kv.set('new-1', 'encrypted-c');
 
 			expect(kv.get('old-1')).toBe('legacy-a');
@@ -778,92 +776,6 @@ describe('createEncryptedKvLww', () => {
 			expect(addEvents.map((event) => event.key).sort()).toEqual(['a', 'b']);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
-		});
-	});
-
-	describe('AAD cross-table replay prevention', () => {
-		test('ciphertext from one table cannot decrypt in another', () => {
-			const key = generateEncryptionKey();
-
-			const doc1 = new Y.Doc({ guid: 'aad-cross-table-doc-1' });
-			const doc2 = new Y.Doc({ guid: 'aad-cross-table-doc-2' });
-
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-
-			const kv1 = createEncryptedKvLww<string>(yarray1, {
-				getKey: () => key,
-				workspaceId: 'workspace-1',
-				tableName: 'table-a',
-			});
-			const kv2 = createEncryptedKvLww<string>(yarray2, {
-				getKey: () => key,
-				workspaceId: 'workspace-1',
-				tableName: 'table-b',
-			});
-
-			kv1.set('shared-key', 'sensitive-value');
-			const replayEntry = yarray1
-				.toArray()
-				.find((entry) => entry.key === 'shared-key');
-			expect(replayEntry).toBeDefined();
-			expect(isEncryptedBlob(replayEntry?.val)).toBe(true);
-			if (!replayEntry || !isEncryptedBlob(replayEntry.val))
-				throw new Error('Expected encrypted source entry');
-
-			yarray2.push([
-				{
-					key: 'shared-key',
-					val: replayEntry.val,
-					ts: Date.now(),
-				},
-			]);
-
-			expect(kv2.get('shared-key')).toBeUndefined();
-			expect(kv2.quarantine?.has('shared-key')).toBe(true);
-		});
-
-		test('same table same workspace decrypts fine', () => {
-			const key = generateEncryptionKey();
-
-			const doc1 = new Y.Doc({ guid: 'aad-same-table-doc-1' });
-			const doc2 = new Y.Doc({ guid: 'aad-same-table-doc-2' });
-
-			const yarray1 =
-				doc1.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-			const yarray2 =
-				doc2.getArray<YKeyValueLwwEntry<EncryptedBlob | string>>('data');
-
-			const options = {
-				getKey: () => key,
-				workspaceId: 'workspace-2',
-				tableName: 'table-shared',
-			};
-
-			const kv1 = createEncryptedKvLww<string>(yarray1, options);
-			const kv2 = createEncryptedKvLww<string>(yarray2, options);
-
-			kv1.set('same-key', 'decrypts-here');
-			const sourceEntry = yarray1
-				.toArray()
-				.find((entry) => entry.key === 'same-key');
-			expect(sourceEntry).toBeDefined();
-			expect(isEncryptedBlob(sourceEntry?.val)).toBe(true);
-			if (!sourceEntry || !isEncryptedBlob(sourceEntry.val))
-				throw new Error('Expected encrypted source entry');
-
-			yarray2.push([
-				{
-					key: 'same-key',
-					val: sourceEntry.val,
-					ts: Date.now(),
-				},
-			]);
-
-			expect(kv2.get('same-key')).toBe('decrypts-here');
-			expect(kv2.quarantine?.has('same-key')).toBe(false);
 		});
 	});
 });

@@ -136,7 +136,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.ydoc.getText('content').insert(0, 'hello');
+			handle.content.write('hello');
 
 			// Give the update observer a tick
 			const result = tables.files.get('f1');
@@ -178,7 +178,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.ydoc.getText('content').insert(0, 'hello');
+			handle.content.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -209,7 +209,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.ydoc.getText('content').insert(0, 'hello');
+			handle.content.write('hello');
 
 			const result = tables.files.get('f1');
 			expect(result.status).toBe('valid');
@@ -233,7 +233,7 @@ describe('createDocuments', () => {
 			});
 
 			const handle = await documents.open('f1');
-			handle.ydoc.getText('content').insert(0, 'hello');
+			handle.content.write('hello');
 
 			expect(capturedOrigin).toBe(DOCUMENTS_ORIGIN);
 		});

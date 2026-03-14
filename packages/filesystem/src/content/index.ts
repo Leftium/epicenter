@@ -1,5 +1,4 @@
 export type {
-	BinaryEntry,
 	ContentMode,
 	RichTextEntry,
 	SheetEntry,

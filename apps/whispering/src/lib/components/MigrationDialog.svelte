@@ -189,23 +189,17 @@
 				migrationResult = null;
 				addLog('Starting workspace migration...');
 
-				const { data: result } = await tryAsync({
-					try: () =>
-						migrateDatabaseToWorkspace({
-							dbService: DbServiceLive,
-							workspace,
-							onProgress: addLog,
-						}),
-					catch: (error) => {
-						addLog(
-							`❌ Migration failed: ${error instanceof Error ? error.message : String(error)}`,
-						);
-						addLog('Migration state remains pending — you can retry.');
-						return Ok(null);
-					},
-				});
+				const { data: result, error: migrationError } =
+					await migrateDatabaseToWorkspace({
+						dbService: DbServiceLive,
+						workspace,
+						onProgress: addLog,
+					});
 
-				if (result) {
+				if (migrationError) {
+					addLog(`❌ ${migrationError.message}`);
+					addLog('Migration state remains pending — you can retry.');
+				} else {
 					migrationResult = result;
 					setDatabaseMigrationState('done');
 					isPending = false;

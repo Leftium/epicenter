@@ -1,4 +1,5 @@
-import { Ok, trySync } from 'wellcrafted/result';
+import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+import { Err, Ok, tryAsync, trySync, type Result } from 'wellcrafted/result';
 import type { DbService } from '$lib/services/db/types';
 import type workspace from '$lib/workspace';
 
@@ -28,6 +29,14 @@ export type MigrationResult = {
 	steps: MigrationCounts;
 };
 
+export const MigrationError = defineErrors({
+	WorkspaceNotReady: ({ cause }: { cause: unknown }) => ({
+		message: `Workspace failed to initialize: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type MigrationError = InferErrors<typeof MigrationError>;
+
 export function getDatabaseMigrationState(): DbMigrationState | null {
 	return window.localStorage.getItem(MIGRATION_KEY) as DbMigrationState | null;
 }
@@ -52,14 +61,22 @@ export async function migrateDatabaseToWorkspace({
 	dbService: DbService;
 	workspace: typeof workspace;
 	onProgress: (message: string) => void;
-}): Promise<MigrationResult> {
+}): Promise<Result<MigrationResult, MigrationError>> {
 	const result: MigrationResult = {
 		recordings: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 		transformations: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 		steps: { total: 0, migrated: 0, skipped: 0, failed: 0 },
 	};
 
-	await ws.whenReady;
+	const { error: readyError } = await tryAsync({
+		try: () => ws.whenReady,
+		catch: (cause) => {
+			onProgress(`Workspace not ready: ${extractErrorMessage(cause)}`);
+			return MigrationError.WorkspaceNotReady({ cause });
+		},
+	});
+
+	if (readyError) return Err(readyError);
 
 	const recordingsResult = await dbService.recordings.getAll();
 	const transformationsResult = await dbService.transformations.getAll();
@@ -198,5 +215,5 @@ export async function migrateDatabaseToWorkspace({
 	onProgress(`Transformations done: ${result.transformations.migrated} migrated, ${result.transformations.skipped} skipped, ${result.transformations.failed} failed`);
 	onProgress(`Steps done: ${result.steps.migrated} migrated, ${result.steps.skipped} skipped, ${result.steps.failed} failed`);
 
-	return result;
+	return Ok(result);
 }

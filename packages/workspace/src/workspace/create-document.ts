@@ -48,8 +48,6 @@ import {
 	xmlFragmentToPlaintext,
 	populateFragmentFromText,
 } from '../content/conversions.js';
-import { ContentConversionError } from '../content/errors.js';
-import { Ok } from 'wellcrafted/result';
 import {
 	defineExtension,
 	type Extension,
@@ -135,38 +133,19 @@ function makeHandle(
 			const validated = readEntry(tl.currentEntry);
 			switch (validated.mode) {
 				case 'text':
-					return Ok(validated.content);
-				case 'empty': {
+					return validated.content;
+				case 'empty':
 					ydoc.transact(() => tl.pushText(''));
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'text') {
-						return ContentConversionError.ConversionFailed({
-							from: 'empty', to: 'text', reason: 'Failed to create text entry',
-						});
-					}
-					return Ok(entry.content);
-				}
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
 					ydoc.transact(() => tl.pushText(plaintext));
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'text') {
-						return ContentConversionError.ConversionFailed({
-							from: 'richtext', to: 'text', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok(entry.content);
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
 					ydoc.transact(() => tl.pushText(csv));
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'text') {
-						return ContentConversionError.ConversionFailed({
-							from: 'sheet', to: 'text', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok(entry.content);
+					return (readEntry(tl.currentEntry) as { mode: 'text'; content: Y.Text }).content;
 				}
 			}
 		},
@@ -174,17 +153,10 @@ function makeHandle(
 			const validated = readEntry(tl.currentEntry);
 			switch (validated.mode) {
 				case 'richtext':
-					return Ok(validated.content);
-				case 'empty': {
+					return validated.content;
+				case 'empty':
 					ydoc.transact(() => tl.pushRichtext());
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'richtext') {
-						return ContentConversionError.ConversionFailed({
-							from: 'empty', to: 'richtext', reason: 'Failed to create richtext entry',
-						});
-					}
-					return Ok(entry.content);
-				}
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
 				case 'text': {
 					const plaintext = validated.content.toString();
 					ydoc.transact(() => {
@@ -192,13 +164,7 @@ function makeHandle(
 						const fragment = rtEntry.get('content') as Y.XmlFragment;
 						populateFragmentFromText(fragment, plaintext);
 					});
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'richtext') {
-						return ContentConversionError.ConversionFailed({
-							from: 'text', to: 'richtext', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok(entry.content);
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
 				}
 				case 'sheet': {
 					const csv = serializeSheetToCsv(validated.columns, validated.rows);
@@ -207,13 +173,7 @@ function makeHandle(
 						const fragment = rtEntry.get('content') as Y.XmlFragment;
 						populateFragmentFromText(fragment, csv);
 					});
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'richtext') {
-						return ContentConversionError.ConversionFailed({
-							from: 'sheet', to: 'richtext', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok(entry.content);
+					return (readEntry(tl.currentEntry) as { mode: 'richtext'; content: Y.XmlFragment }).content;
 				}
 			}
 		},
@@ -221,38 +181,21 @@ function makeHandle(
 			const validated = readEntry(tl.currentEntry);
 			switch (validated.mode) {
 				case 'sheet':
-					return Ok({ columns: validated.columns, rows: validated.rows });
-				case 'empty': {
+					return { columns: validated.columns, rows: validated.rows };
+				case 'empty':
 					ydoc.transact(() => tl.pushSheet());
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'sheet') {
-						return ContentConversionError.ConversionFailed({
-							from: 'empty', to: 'sheet', reason: 'Failed to create sheet entry',
-						});
-					}
-					return Ok({ columns: entry.columns, rows: entry.rows });
-				}
+					return readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
 				case 'text': {
 					const plaintext = validated.content.toString();
 					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'sheet') {
-						return ContentConversionError.ConversionFailed({
-							from: 'text', to: 'sheet', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok({ columns: entry.columns, rows: entry.rows });
+					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return { columns: entry.columns, rows: entry.rows };
 				}
 				case 'richtext': {
 					const plaintext = xmlFragmentToPlaintext(validated.content);
 					ydoc.transact(() => tl.pushSheetFromCsv(plaintext));
-					const entry = readEntry(tl.currentEntry);
-					if (entry.mode !== 'sheet') {
-						return ContentConversionError.ConversionFailed({
-							from: 'richtext', to: 'sheet', reason: 'Conversion produced invalid entry',
-						});
-					}
-					return Ok({ columns: entry.columns, rows: entry.rows });
+					const entry = readEntry(tl.currentEntry) as { mode: 'sheet'; columns: Y.Map<Y.Map<string>>; rows: Y.Map<Y.Map<string>> };
+					return { columns: entry.columns, rows: entry.rows };
 				}
 			}
 		},

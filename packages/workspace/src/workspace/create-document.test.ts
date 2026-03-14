@@ -775,9 +775,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const result = handle.asText();
-		expect(result.error).toBeNull();
-		expect(result.data).toBeInstanceOf(Y.Text);
+		const text = handle.asText();
+		expect(text).toBeInstanceOf(Y.Text);
 		expect(handle.mode).toBe('text');
 	});
 
@@ -786,16 +785,15 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.write('hello');
 
-		const result = handle.asText();
-		expect(result.data?.toString()).toBe('hello');
-		expect(handle.timeline.length).toBe(1); // no new entry pushed
+		const text = handle.asText();
+		expect(text.toString()).toBe('hello');
+		expect(handle.timeline.length).toBe(1);
 	});
 
 	test('asText on richtext entry converts (lossy)', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		// Create richtext entry with content
 		const rtEntry = handle.timeline.pushRichtext();
 		const fragment = rtEntry.get('content') as Y.XmlFragment;
 		const p = new Y.XmlElement('paragraph');
@@ -806,11 +804,10 @@ describe('handle.asText / asRichText / asSheet', () => {
 
 		expect(handle.mode).toBe('richtext');
 
-		const result = handle.asText();
-		expect(result.error).toBeNull();
-		expect(result.data?.toString()).toBe('Rich content');
-		expect(handle.mode).toBe('text'); // mode switched
-		expect(handle.timeline.length).toBe(2); // new entry pushed
+		const text = handle.asText();
+		expect(text.toString()).toBe('Rich content');
+		expect(handle.mode).toBe('text');
+		expect(handle.timeline.length).toBe(2);
 	});
 
 	test('asText on sheet entry converts to CSV', async () => {
@@ -820,9 +817,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		handle.timeline.pushSheetFromCsv('Name,Age\nAlice,30\n');
 		expect(handle.mode).toBe('sheet');
 
-		const result = handle.asText();
-		expect(result.error).toBeNull();
-		expect(result.data?.toString()).toBe('Name,Age\nAlice,30\n');
+		const text = handle.asText();
+		expect(text.toString()).toBe('Name,Age\nAlice,30\n');
 		expect(handle.mode).toBe('text');
 		expect(handle.timeline.length).toBe(2);
 	});
@@ -833,9 +829,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const result = handle.asRichText();
-		expect(result.error).toBeNull();
-		expect(result.data).toBeInstanceOf(Y.XmlFragment);
+		const fragment = handle.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 		expect(handle.mode).toBe('richtext');
 	});
 
@@ -844,9 +839,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.timeline.pushRichtext();
 
-		const result = handle.asRichText();
-		expect(result.data).toBeInstanceOf(Y.XmlFragment);
-		expect(handle.timeline.length).toBe(1); // no new entry
+		const fragment = handle.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
+		expect(handle.timeline.length).toBe(1);
 	});
 
 	test('asRichText on text entry converts to paragraphs', async () => {
@@ -854,11 +849,10 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.write('Line 1\nLine 2');
 
-		const result = handle.asRichText();
-		expect(result.error).toBeNull();
+		const fragment = handle.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 		expect(handle.mode).toBe('richtext');
 		expect(handle.timeline.length).toBe(2);
-		// Read back as text to verify content
 		expect(handle.read()).toBe('Line 1\nLine 2');
 	});
 
@@ -867,8 +861,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.timeline.pushSheetFromCsv('A,B\n1,2\n');
 
-		const result = handle.asRichText();
-		expect(result.error).toBeNull();
+		const fragment = handle.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 		expect(handle.mode).toBe('richtext');
 		expect(handle.timeline.length).toBe(2);
 	});
@@ -879,10 +873,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const result = handle.asSheet();
-		expect(result.error).toBeNull();
-		expect(result.data?.columns).toBeInstanceOf(Y.Map);
-		expect(result.data?.rows).toBeInstanceOf(Y.Map);
+		const sheet = handle.asSheet();
+		expect(sheet.columns).toBeInstanceOf(Y.Map);
+		expect(sheet.rows).toBeInstanceOf(Y.Map);
 		expect(handle.mode).toBe('sheet');
 	});
 
@@ -891,10 +884,10 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.timeline.pushSheetFromCsv('X,Y\n1,2\n');
 
-		const result = handle.asSheet();
-		expect(result.data?.columns.size).toBe(2);
-		expect(result.data?.rows.size).toBe(1);
-		expect(handle.timeline.length).toBe(1); // no new entry
+		const sheet = handle.asSheet();
+		expect(sheet.columns.size).toBe(2);
+		expect(sheet.rows.size).toBe(1);
+		expect(handle.timeline.length).toBe(1);
 	});
 
 	test('asSheet on text entry parses as CSV', async () => {
@@ -902,10 +895,9 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const handle = await documents.open('f1');
 		handle.write('Col1,Col2\nA,B\n');
 
-		const result = handle.asSheet();
-		expect(result.error).toBeNull();
-		expect(result.data?.columns.size).toBe(2);
-		expect(result.data?.rows.size).toBe(1);
+		const sheet = handle.asSheet();
+		expect(sheet.columns.size).toBe(2);
+		expect(sheet.rows.size).toBe(1);
 		expect(handle.mode).toBe('sheet');
 		expect(handle.timeline.length).toBe(2);
 	});
@@ -926,9 +918,8 @@ describe('handle.asText / asRichText / asSheet', () => {
 		p2.insert(0, [t2]);
 		fragment.insert(0, [p1, p2]);
 
-		const result = handle.asSheet();
-		expect(result.error).toBeNull();
-		expect(result.data?.columns.size).toBe(2);
+		const sheet = handle.asSheet();
+		expect(sheet.columns.size).toBe(2);
 		expect(handle.mode).toBe('sheet');
 		expect(handle.timeline.length).toBe(2);
 	});
@@ -950,26 +941,19 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		// Start with text
 		handle.write('hello');
 		expect(handle.mode).toBe('text');
 		expect(handle.timeline.length).toBe(1);
 
-		// Convert to richtext
-		const rt = handle.asRichText();
-		expect(rt.error).toBeNull();
+		handle.asRichText();
 		expect(handle.mode).toBe('richtext');
 		expect(handle.timeline.length).toBe(2);
 
-		// Convert to sheet
-		const sh = handle.asSheet();
-		expect(sh.error).toBeNull();
+		handle.asSheet();
 		expect(handle.mode).toBe('sheet');
 		expect(handle.timeline.length).toBe(3);
 
-		// Convert back to text
-		const tx = handle.asText();
-		expect(tx.error).toBeNull();
+		handle.asText();
 		expect(handle.mode).toBe('text');
 		expect(handle.timeline.length).toBe(4);
 	});

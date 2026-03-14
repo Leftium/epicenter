@@ -11,7 +11,6 @@ import type * as Y from 'yjs';
 import type { Actions } from '../shared/actions.js';
 import type { CombinedStandardSchema } from '../shared/standard-schema/types.js';
 import type { DocumentContext, Extension, MaybePromise } from './lifecycle.js';
-import type { Result } from 'wellcrafted/result';
 
 // Re-export JSON types for consumers
 export type { JsonObject, JsonValue } from 'wellcrafted/json';
@@ -276,21 +275,45 @@ export type DocumentHandle = {
 
 	/**
 	 * Get current content as Y.Text for editor binding.
-	 * Converts from other modes if needed (lossy for richtext). Returns Result.
+	 *
+	 * If already text mode, returns the existing Y.Text. If the timeline is
+	 * empty, creates a new text entry. If the current entry is a different mode,
+	 * converts the content and pushes a new text entry.
+	 *
+	 * All conversions always succeed—no content type can fail to convert to
+	 * another. Richtext→text is lossy (strips formatting).
+	 *
+	 * ```
+	 * DocumentHandle
+	 * ├── mode              → 'text' | 'richtext' | 'sheet' | undefined
+	 * ├── read()            → string           (always works, flattens any mode)
+	 * ├── write(text)       → void             (always works, text mode)
+	 * ├── asText()          → Y.Text           (converts if needed, editor binding)
+	 * ├── asRichText()      → Y.XmlFragment    (converts if needed, Tiptap binding)
+	 * ├── asSheet()         → SheetBinding     (converts if needed, spreadsheet)
+	 * ├── timeline          → Timeline         (escape hatch for advanced ops)
+	 * ├── batch(fn)         → void             (wraps ydoc.transact)
+	 * ├── ydoc              → Y.Doc            (escape hatch)
+	 * └── exports           → Record           (extension exports)
+	 * ```
 	 */
-	asText(): Result<Y.Text, import('../content/errors.js').ContentConversionError>;
+	asText(): Y.Text;
 
 	/**
 	 * Get current content as Y.XmlFragment for richtext editor binding.
-	 * Converts from other modes if needed. Returns Result.
+	 *
+	 * If already richtext mode, returns the existing Y.XmlFragment. If empty,
+	 * creates a new richtext entry. If different mode, converts and pushes.
 	 */
-	asRichText(): Result<Y.XmlFragment, import('../content/errors.js').ContentConversionError>;
+	asRichText(): Y.XmlFragment;
 
 	/**
 	 * Get current content as sheet columns/rows for spreadsheet binding.
-	 * Converts from other modes if needed (parsed as CSV). Returns Result.
+	 *
+	 * If already sheet mode, returns existing columns and rows. If empty,
+	 * creates a new sheet entry. If different mode, converts (parsed as CSV).
 	 */
-	asSheet(): Result<import('../content/conversions.js').SheetBinding, import('../content/errors.js').ContentConversionError>;
+	asSheet(): import('../content/conversions.js').SheetBinding;
 
 	/** Direct access to the timeline for advanced operations. */
 	timeline: import('../content/timeline.js').Timeline;

@@ -85,7 +85,6 @@ export type {
 } from './content';
 export {
 	computeMidpoint,
-	ContentConversionError,
 	createTimeline,
 	generateInitialOrders,
 	parseSheetFromCsv,

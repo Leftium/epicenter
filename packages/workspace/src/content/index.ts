@@ -22,6 +22,3 @@ export {
 	populateFragmentFromText,
 	type SheetBinding,
 } from './conversions.js';
-export {
-	ContentConversionError,
-} from './errors.js';

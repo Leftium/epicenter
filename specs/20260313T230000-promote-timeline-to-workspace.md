@@ -1,7 +1,7 @@
 # Promote Timeline to Workspace-Level Content Primitive
 
 **Date**: 2026-03-13
-**Status**: In Progress
+**Status**: Implemented
 **Depends on**: `specs/20260313T224500-unify-document-content-model.md` (Phase 1 complete)
 
 ## Overview
@@ -254,3 +254,24 @@ DocumentHandle
 - `packages/filesystem/src/formats/sheet.ts` — CSV helpers (parse/serialize move to workspace)
 - `apps/opensidian/src/lib/fs/fs-state.svelte.ts` — consumer to update
 - `specs/20260313T224500-unify-document-content-model.md` — parent spec (Phase 1 complete)
+
+## Review
+
+**Completed**: 2026-03-13
+
+### Summary
+
+Moved the timeline abstraction (`createTimeline`, entry types, sheet CSV helpers) from `packages/filesystem` into `packages/workspace/src/content/`. Added a `content: DocumentContent` property to `DocumentHandle` that provides timeline-backed `read()`, `write()`, `getText()`, `getFragment()`, and `timeline` access. The filesystem's `createContentHelpers` now delegates to `handle.content` internally. All 555 tests pass across both packages.
+
+### Deviations from Spec
+
+- **3.2 (Opensidian update)**: Deferred. Opensidian already uses `fs.content` which now delegates to `handle.content` internally—no functional change needed.
+- **3.5 (Documentation update)**: Partially done. `DocumentHandle` and `types.ts` JSDoc updated inline. AGENTS.md and README updates deferred to a follow-up.
+- **`content.write()` simplification**: The handle's `write()` reuses the existing text entry when mode is `text` (in-place replace) instead of always pushing a new entry. Matches the filesystem's existing behavior.
+- **Sheet CSV `generateId()` replacement**: `generateColumnId()` and `generateRowId()` in `sheet-csv.ts` were replaced with `generateId()` from workspace. These branded types were just wrappers around `generateId()` anyway—no behavioral change.
+
+### Follow-up Work
+
+- Update AGENTS.md content model warnings to reference `handle.content` as canonical
+- Update Opensidian to use `handle.content` directly (optional—`fs.content` wrapper still works)
+- Fuji/Honeycrisp can use `handle.content.getText()` / `handle.content.getFragment()` for editor binding (Phase 3 of parent spec)

@@ -105,7 +105,7 @@ For detailed rationale on all of this, see [the guide](docs/articles/20260127T12
 
 ## Document Content
 
-Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in `packages/workspace/src/content/`.
+Tables with `.withDocument()` create per-row Y.Docs for content. These Y.Docs use a **timeline model** (`Y.Array('timeline')` with nested typed entries) in `packages/workspace/src/timeline/`.
 
 The handle is the canonical interface: `handle.read()`/`handle.write()` for simple string I/O, `handle.asText()` for Y.Text editor binding, `handle.asRichText()` for Y.XmlFragment richtext binding, `handle.asSheet()` for spreadsheet binding, `handle.timeline` for advanced operations, and `handle.batch()` for batching mutations. The `as*()` methods automatically convert between content modes—all conversions are infallible.
 

@@ -446,8 +446,8 @@ describe('sheet file support', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		handle.ydoc.transact(() => {
-			createTimeline(handle.ydoc).pushSheetFromCsv('Name,Age\nAlice,30\n');
+		handle.batch(() => {
+			handle.timeline.pushSheetFromCsv('Name,Age\nAlice,30\n');
 		});
 		expect(await fs.readFile('/data.csv')).toBe('Name,Age\nAlice,30\n');
 	});
@@ -460,8 +460,8 @@ describe('sheet file support', () => {
 		expect(fileId).toBeDefined();
 		if (!fileId) throw new Error('Expected /data.csv to exist');
 		const handle = await documents.open(fileId);
-		handle.ydoc.transact(() => {
-			createTimeline(handle.ydoc).pushSheetFromCsv('A,B\n1,2\n');
+		handle.batch(() => {
+			handle.timeline.pushSheetFromCsv('A,B\n1,2\n');
 		});
 		await fs.writeFile('/data.csv', 'X,Y\n3,4\n');
 		expect(await fs.readFile('/data.csv')).toBe('X,Y\n3,4\n');

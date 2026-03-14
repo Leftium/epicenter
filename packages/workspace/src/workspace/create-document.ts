@@ -150,6 +150,9 @@ function makeHandle(
 			return undefined;
 		},
 		timeline: tl,
+		batch(fn: () => void) {
+			ydoc.transact(fn);
+		},
 		exports: extensions,
 	};
 }

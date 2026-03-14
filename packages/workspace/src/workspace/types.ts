@@ -263,9 +263,18 @@ export type DocumentHandle = {
 	/**
 	 * The underlying Y.Doc for this document.
 	 *
-	 * Use for genuinely custom shared types (awareness, cursors, non-content data).
-	 * For content operations, use `handle.read()`/`handle.write()` instead of
-	 * accessing raw shared types like `ydoc.getText('content')`.
+	 * **Escape hatch—you almost certainly don't need this.** Exposed for
+	 * document extensions (persistence, sync providers) and tests that
+	 * assert Y.Doc properties. For content operations, use `handle.read()`,
+	 * `handle.write()`, `handle.getText()`, or `handle.getFragment()`.
+	 * For batching mutations, use `handle.batch()` instead of
+	 * `handle.ydoc.transact()`.
+	 *
+	 * @example
+	 * ```typescript
+	 * // Legitimate use: awareness protocol (not content)
+	 * const awareness = new awarenessProtocol.Awareness(handle.ydoc);
+	 * ```
 	 */
 	ydoc: Y.Doc;
 
@@ -288,6 +297,22 @@ export type DocumentHandle = {
 	getFragment(): Y.XmlFragment | undefined;
 	/** Direct access to the timeline for advanced operations. */
 	timeline: import('../content/timeline.js').Timeline;
+	/**
+	 * Batch multiple mutations into a single Yjs transaction.
+	 *
+	 * Wraps `ydoc.transact()`—use this instead of accessing the raw
+	 * ydoc. All changes inside the callback emit a single update event.
+	 * Nested `batch()` calls are safe (Yjs transact is reentrant).
+	 *
+	 * @example
+	 * ```typescript
+	 * handle.batch(() => {
+	 *   handle.write('hello');
+	 *   // ...other mutations
+	 * });
+	 * ```
+	 */
+	batch(fn: () => void): void;
 
 	/**
 	 * Per-doc extension exports, keyed by extension name.

@@ -92,7 +92,7 @@ export function createYjsFileSystem(
 					const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
 						import('yjs').Map<string>
 					>;
-					handle.ydoc.transact(() => {
+					handle.batch(() => {
 						columns.forEach((_, key) => {
 							columns.delete(key);
 						});
@@ -120,7 +120,7 @@ export function createYjsFileSystem(
 
 				if (tl.currentMode === 'text') {
 					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
-					handle.ydoc.transact(() => ytext.insert(ytext.length, data));
+					handle.batch(() => ytext.insert(ytext.length, data));
 				} else {
 					return null;
 				}

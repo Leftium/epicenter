@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Button, buttonVariants } from '@epicenter/ui/button';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Link } from '@epicenter/ui/link';
 	import { Separator } from '@epicenter/ui/separator';
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
@@ -53,18 +54,22 @@
 		<ShortcutTable type="global" />
 	</section>
 {:else}
-	<div class="rounded-lg border bg-card text-card-foreground shadow-sm">
-		<div class="flex flex-col items-center justify-center p-8 text-center">
-			<Layers2Icon class="mb-4 size-10 text-muted-foreground" />
-			<h3 class="mb-2 text-xl font-medium">Global Shortcuts</h3>
-			<p class="mb-6 max-w-md text-sm text-muted-foreground">
+	<Empty.Root>
+		<Empty.Header>
+			<Empty.Media>
+				<Layers2Icon class="size-10 text-muted-foreground" />
+			</Empty.Media>
+			<Empty.Title>Global Shortcuts</Empty.Title>
+			<Empty.Description>
 				Global shortcuts allow you to use Whispering from any application on
 				your computer. This feature is only available in the desktop app or
 				browser extension.
-			</p>
+			</Empty.Description>
+		</Empty.Header>
+		<Empty.Content>
 			<Link href="/desktop-app" class={buttonVariants()}>
 				Enable Global Shortcuts
 			</Link>
-		</div>
-	</div>
+		</Empty.Content>
+	</Empty.Root>
 {/if}

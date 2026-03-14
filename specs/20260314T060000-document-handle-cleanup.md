@@ -259,8 +259,10 @@ Changes are ordered by dependency. Each wave can be committed independently.
 - [x] **5a** Update `AGENTS.md` content model description
 - [x] **5b** Update `packages/workspace/AGENTS.md`
 - [x] **5c** Update `packages/workspace/README.md` Document Content Model section
-- [ ] **5d** Update `packages/workspace/src/workspace/README.md`
-- [ ] **5e** Update any skills referencing `handle.content` (check `workspace-api` skill, `yjs` skill)
+- [x] **5d** Update `packages/workspace/src/workspace/README.md`
+  > Updated during handle content conversion API work (2026-03-14).
+- [x] **5e** Update skills referencing `handle.content` (`workspace-api` skill, `yjs` skill)
+  > Updated during handle content conversion API work (2026-03-14).
 
 ## Out of Scope (separate specs)
 

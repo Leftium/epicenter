@@ -290,13 +290,19 @@ const text = handle.read();
 // Write content (timeline-backed)
 handle.write('hello');
 
-// Editor binding — Y.Text for TipTap, auto-creates entry if empty
-const ytext = handle.getText();
+// Editor binding — Y.Text (converts from other modes if needed)
+const ytext = handle.asText();
 
-// Richtext editor binding — Y.XmlFragment for ProseMirror, auto-creates if empty
-const fragment = handle.getFragment();
+// Richtext editor binding — Y.XmlFragment (converts if needed)
+const fragment = handle.asRichText();
 
-// Advanced timeline operations (sheet mode, etc.)
+// Spreadsheet binding — SheetBinding (converts if needed)
+const { columns, rows } = handle.asSheet();
+
+// Current content mode
+handle.mode; // 'text' | 'richtext' | 'sheet' | undefined
+
+// Advanced timeline operations
 const tl = handle.timeline;
 ```
 
@@ -320,14 +326,13 @@ handle.batch(() => {
 **Do not access `handle.ydoc` for content operations:**
 
 ```typescript
-// \u274c BAD: bypasses timeline abstraction
+// ❌ BAD: bypasses timeline abstraction
 const ytext = handle.ydoc.getText('content');
-const fragment = handle.ydoc.getXmlFragment('content');
 handle.ydoc.transact(() => { ... });
 
-// \u2705 GOOD: use handle methods
-const ytext = handle.getText();
-const fragment = handle.getFragment();
+// ✅ GOOD: use handle methods
+const ytext = handle.asText();
+const fragment = handle.asRichText();
 handle.batch(() => { ... });
 ```
 

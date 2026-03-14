@@ -14,10 +14,11 @@ In this codebase, **never access raw Yjs shared types for document content**. Th
 
 ```typescript
 const handle = await documents.open(id);
-handle.read();          // read text from timeline
+handle.read();          // read text from timeline (always string)
 handle.write('hello');  // write text to timeline
-handle.getText();       // Y.Text for editor binding (auto-creates)
-handle.getFragment();   // Y.XmlFragment for richtext (auto-creates)
+handle.asText();        // Y.Text for editor binding (converts if needed)
+handle.asRichText();    // Y.XmlFragment for richtext (converts if needed)
+handle.asSheet();       // SheetBinding for spreadsheet (converts if needed)
 handle.timeline;        // escape hatch for advanced timeline ops
 handle.batch(() => {}); // batch mutations (NOT ydoc.transact())
 ```
@@ -226,28 +227,19 @@ Any concurrent edits to the "moved" item are lost because you deleted the origin
 
 ### 6. Accessing Raw Y.Doc Shared Types for Document Content
 
-Document Y.Docs in this codebase use a timeline model (`Y.Array('timeline')` with nested typed entries). Accessing top-level shared types directly writes to a different location than the timeline, causing silent data loss:
+Document Y.Docs use a timeline model (`Y.Array('timeline')` with nested typed entries). Never access raw shared types on the ydoc directly—use the handle methods:
 
 ```typescript
-// BAD: writes to Y.Text('content'), not the timeline
+// BAD: bypasses the timeline
 const ytext = handle.ydoc.getText('content');
-ytext.insert(0, 'hello');  // invisible to fs.readFile()
 
-// BAD: handle.read/write also uses Y.Text('content')
-handle.read();   // reads from wrong shared type
-handle.write('x'); // writes to wrong shared type
-
-// GOOD: use filesystem content helpers (timeline-backed)
-await fs.content.read(id);
-await fs.content.write(id, 'hello');
-
-// GOOD: use timeline abstraction directly if needed
-import { createTimeline } from '@epicenter/filesystem';
-const tl = createTimeline(handle.ydoc);
-const text = tl.readAsString();
+// GOOD: use handle methods (timeline-backed)
+handle.read();        // string I/O
+handle.write('hello');
+handle.asText();      // Y.Text for editor binding
+handle.asRichText();  // Y.XmlFragment for richtext binding
+handle.asSheet();     // SheetBinding for spreadsheet binding
 ```
-
-See `specs/20260313T224500-unify-document-content-model.md`.
 
 ## Debugging Tips
 

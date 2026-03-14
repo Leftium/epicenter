@@ -182,11 +182,13 @@ DocumentHandle
 
 ### Phase 3: Update consumers
 
-- [ ] **3.1** Update `packages/filesystem/src/content/content.ts` — `createContentHelpers` delegates to handle's content methods internally (opens doc, uses `handle.content.timeline` for advanced operations like binary/sheet mode switching).
+- [x] **3.1** Update `packages/filesystem/src/content/content.ts` — `createContentHelpers` delegates to handle's content methods internally (opens doc, uses `handle.content.timeline` for advanced operations like binary/sheet mode switching).
 - [ ] **3.2** Update Opensidian — can switch back to `handle.content.read()`/`handle.content.write()`, or keep using `fs.content` (both now hit the same store).
-- [ ] **3.3** Move timeline test from filesystem to workspace — `timeline.test.ts` moves with the implementation.
-- [ ] **3.4** All workspace and filesystem tests pass.
+  > **Note**: Deferred. Opensidian already works via `fs.content` which now delegates to `handle.content` internally. No functional change needed.
+- [x] **3.3** Move timeline test from filesystem to workspace — `timeline.test.ts` moves with the implementation.
+- [x] **3.4** All workspace and filesystem tests pass.
 - [ ] **3.5** Update documentation — remove anti-pattern warnings from JSDoc, skills, READMEs. `handle.content` is the canonical interface now.
+  > **Note**: Deferred to a follow-up. The JSDoc on `DocumentHandle` and `types.ts` has been updated. AGENTS.md and README updates are a separate concern.
 
 ## Edge Cases
 

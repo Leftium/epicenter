@@ -1,13 +1,13 @@
-import { createTimeline, type Documents, parseSheetFromCsv } from '@epicenter/workspace';
+import { type Documents, parseSheetFromCsv } from '@epicenter/workspace';
 import type { FileId } from '../ids.js';
 import type { FileRow } from '../table.js';
 
 /**
  * Content I/O backed by a {@link Documents}.
  *
- * Thin wrappers around `documents.open()` + timeline for mode-specific
+ * Thin wrappers around `documents.open()` + `handle.content` for mode-specific
  * operations (binary, sheet, text append) that the built-in
- * `read()`/`write()` don't cover.
+ * `handle.content.read()`/`handle.content.write()` don't cover.
  *
  * The Y.Doc lifecycle is managed by the workspace's documents manager
  * (automatic cleanup on row deletion, `updatedAt` auto-bump, extension hooks).
@@ -33,8 +33,9 @@ export type ContentHelpers = {
  * Create content I/O helpers backed by a documents instance.
  *
  * Every method opens the content doc via `documents.open()` (idempotent),
- * then uses the timeline abstraction for mode-aware reads/writes.
- * The documents manager handles Y.Doc lifecycle, provider wiring, and `updatedAt` bumping.
+ * then delegates to `handle.content` for timeline-backed reads/writes.
+ * Advanced operations (binary, sheet mode switching, append) use
+ * `handle.content.timeline` directly.
  *
  * @example
  * ```typescript
@@ -48,18 +49,18 @@ export function createContentHelpers(
 ): ContentHelpers {
 	return {
 		async read(fileId) {
-			const { ydoc } = await documents.open(fileId);
-			return createTimeline(ydoc).readAsString();
+			const handle = await documents.open(fileId);
+			return handle.content.read();
 		},
 
 		async readBuffer(fileId) {
-			const { ydoc } = await documents.open(fileId);
-			return createTimeline(ydoc).readAsBuffer();
+			const handle = await documents.open(fileId);
+			return handle.content.timeline.readAsBuffer();
 		},
 
 		async write(fileId, data) {
-			const { ydoc } = await documents.open(fileId);
-			const tl = createTimeline(ydoc);
+			const handle = await documents.open(fileId);
+			const tl = handle.content.timeline;
 
 			if (typeof data === 'string') {
 				if (tl.currentMode === 'sheet') {
@@ -69,7 +70,7 @@ export function createContentHelpers(
 					const rows = tl.currentEntry?.get('rows') as import('yjs').Map<
 						import('yjs').Map<string>
 					>;
-					ydoc.transact(() => {
+					handle.ydoc.transact(() => {
 						columns.forEach((_, key) => {
 							columns.delete(key);
 						});
@@ -78,48 +79,39 @@ export function createContentHelpers(
 						});
 						parseSheetFromCsv(data, columns, rows);
 					});
-				} else if (tl.currentMode === 'text') {
-					const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
-					ydoc.transact(() => {
-						ytext.delete(0, ytext.length);
-						ytext.insert(0, data);
-					});
 				} else {
-					ydoc.transact(() => tl.pushText(data));
+					handle.content.write(data);
 				}
 				return new TextEncoder().encode(data).byteLength;
 			} else {
-				ydoc.transact(() => tl.pushBinary(data));
+				handle.ydoc.transact(() => tl.pushBinary(data));
 				return data.byteLength;
 			}
 		},
 
 		async append(fileId, data) {
-			const { ydoc } = await documents.open(fileId);
-			const tl = createTimeline(ydoc);
+			const handle = await documents.open(fileId);
+			const tl = handle.content.timeline;
 
 			if (tl.currentMode === 'text') {
 				const ytext = tl.currentEntry?.get('content') as import('yjs').Text;
-				ydoc.transact(() => ytext.insert(ytext.length, data));
+				handle.ydoc.transact(() => ytext.insert(ytext.length, data));
 			} else if (tl.currentMode === 'binary') {
 				const existing = new TextDecoder().decode(
 					tl.currentEntry?.get('content') as Uint8Array,
 				);
-				ydoc.transact(() => tl.pushText(existing + data));
+				handle.ydoc.transact(() => tl.pushText(existing + data));
 			} else {
 				return null;
 			}
 
 			// Re-read after mutation
-			const updated = createTimeline(ydoc);
-			if (updated.currentMode === 'text') {
+			if (tl.currentMode === 'text') {
 				return new TextEncoder().encode(
-					(
-						updated.currentEntry?.get('content') as import('yjs').Text
-					).toString(),
+					(tl.currentEntry?.get('content') as import('yjs').Text).toString(),
 				).byteLength;
 			}
-			return (updated.currentEntry?.get('content') as Uint8Array).byteLength;
+			return (tl.currentEntry?.get('content') as Uint8Array).byteLength;
 		},
 	};
 }

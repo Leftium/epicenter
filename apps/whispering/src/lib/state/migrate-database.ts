@@ -63,12 +63,12 @@ export async function migrateDatabaseToWorkspace({
 		try: () => ws.whenReady,
 		catch: (cause) => {
 			onProgress(`workspace.whenReady failed: ${String(cause)}`);
-			return Ok(undefined);
+			return String(cause);
 		},
 	});
 
 	if (readyError) {
-		return result;
+		throw new Error(readyError);
 	}
 
 	const recordingsResult = await dbService.recordings.getAll();
@@ -95,7 +95,7 @@ export async function migrateDatabaseToWorkspace({
 		for (const recording of batch) {
 			trySync({
 				try: () => {
-					if (ws.tables.recordings.get(recording.id)) {
+					if (ws.tables.recordings.has(recording.id)) {
 						result.recordings.skipped += 1;
 						return;
 					}
@@ -128,7 +128,7 @@ export async function migrateDatabaseToWorkspace({
 	for (const transformation of transformations) {
 		trySync({
 			try: () => {
-				if (ws.tables.transformations.get(transformation.id)) {
+				if (ws.tables.transformations.has(transformation.id)) {
 					result.transformations.skipped += 1;
 					return;
 				}
@@ -159,7 +159,7 @@ export async function migrateDatabaseToWorkspace({
 
 			trySync({
 				try: () => {
-					if (ws.tables.transformationSteps.get(step.id)) {
+					if (ws.tables.transformationSteps.has(step.id)) {
 						result.steps.skipped += 1;
 						return;
 					}

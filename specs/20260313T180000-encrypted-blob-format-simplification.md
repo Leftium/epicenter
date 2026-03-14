@@ -35,8 +35,7 @@ The version field is the complete format specification:
 
 | Version | Algorithm | Nonce | Tag | Encoding |
 |---------|-----------|-------|-----|----------|
-| 1 | AES-256-GCM | 12 bytes | 16 bytes (appended to ct) | base64 |
-| 2 | *(future—reserved)* | | | |
+| 1 | AES-256-GCM | 12 bytes | 16 bytes (appended to ct) | raw Uint8Array (was base64 string, changed in `specs/20260314T090000-encrypted-blob-binary-storage.md`) |
 
 ## Design Decisions
 

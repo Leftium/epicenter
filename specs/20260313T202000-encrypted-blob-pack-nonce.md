@@ -28,16 +28,17 @@ The `iv` field adds ~23 bytes per serialized blob (`,"iv":"<16 base64 chars>"`) 
 ### Desired State
 
 ```typescript
-type EncryptedBlob = { v: 1; ct: string };
-// ct = base64(nonce(12) || ciphertext || tag(16))
+type EncryptedBlob = { v: 1; ct: Uint8Array };
+// ct = Uint8Array(nonce(12) || ciphertext || tag(16))
 ```
 
 The version field is the complete decoder ring:
 
-| Version | Byte layout of `ct` (after base64 decode) | Algorithm |
-|---------|-------------------------------------------|-----------|
-| 1 | `nonce(12) \|\| ciphertext \|\| tag(16)` | AES-256-GCM |
-| 2 | *(future—reserved, e.g. XChaCha20-Poly1305 with 24-byte nonce)* | |
+| Version | Byte layout of `ct` | Algorithm |
+|---------|---------------------|-----------|
+| 1 | `Uint8Array(nonce(12) \|\| ciphertext \|\| tag(16))` | AES-256-GCM |
+
+> **Note (2026-03-14)**: `ct` changed from base64 `string` to raw `Uint8Array`. Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116), eliminating 33% base64 overhead. See `specs/20260314T090000-encrypted-blob-binary-storage.md`. Version 2 is no longer reserved—the single-version scheme avoids union types and version dispatch.
 
 ## Research Findings
 

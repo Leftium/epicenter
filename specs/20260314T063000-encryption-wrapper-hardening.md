@@ -34,7 +34,7 @@ This creates four problems:
 
 1. **Sign-out writes plaintext over ciphertext.** When a user signs out, `key` is `undefined`. New writes go plaintext. A plaintext write with a newer LWW timestamp permanently replaces previously encrypted data—security downgrade via timestamp.
 2. **One bad blob crashes all observation.** `decryptValue` or `JSON.parse` throwing inside the `inner.observe()` handler kills the entire observation chain. Every consumer of that table stops receiving updates.
-3. **Map hydration doesn't rebuild on key arrival.** The wrapper builds its decrypted map once at creation. If the workspace loads before auth completes, encrypted entries stay as raw `{ v: 1, ct: '...' }` blobs in the map until each entry is individually touched by a new observer event.
+3. **Map hydration doesn't rebuild on key arrival.** The wrapper builds its decrypted map once at creation. If the workspace loads before auth completes, encrypted entries stay as raw `{ v: 1, ct: Uint8Array }` blobs in the map until each entry is individually touched by a new observer event.
 4. **No ciphertext context binding.** Ciphertext from `table:posts/post-1` can be copied to `table:users/user-1` and decrypts successfully. AES-GCM supports Additional Authenticated Data (AAD) at zero extra cost.
 
 ### Desired State

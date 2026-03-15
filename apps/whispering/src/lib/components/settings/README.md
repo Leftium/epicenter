@@ -20,7 +20,7 @@ Components here import from one or both stores depending on where the setting li
 
 Components in this directory:
 
-- Import and use `workspaceSettings` and/or `deviceConfig` from `$lib/state/`
+- Import and use `settings` and/or `deviceConfig` from `$lib/state/`
 - Either take **no props** or only take **minimal configuration props** (like `mode` or `settingKey`) to determine which setting to bind to
 - Update settings directly using `.set(key, value)` methods
 - Are self-contained and can be used globally throughout the application

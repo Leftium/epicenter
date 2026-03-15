@@ -32,6 +32,7 @@ export {
 	isQuery,
 	iterateActions,
 } from './shared/actions';
+export { commandsFromActions } from './shared/actions-to-commands';
 
 // ════════════════════════════════════════════════════════════════════════════
 // LIFECYCLE PROTOCOL

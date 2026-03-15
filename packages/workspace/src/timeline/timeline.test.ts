@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline, readEntry } from './timeline.js';
+import { createTimeline } from './timeline.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());
@@ -158,7 +158,7 @@ describe('restoreFromSnapshot', () => {
 		expect(tl.currentMode).toBe('sheet');
 		expect(tl.read()).toBe(csv);
 
-		const entry = readEntry(tl.currentEntry);
+		const entry = tl.currentEntry;
 		expect(entry.mode).toBe('sheet');
 		if (entry.mode === 'sheet') {
 			expect(entry.columns.size).toBe(2);
@@ -213,7 +213,7 @@ describe('restoreFromSnapshot', () => {
 		tl.restoreFromSnapshot(binary);
 
 		expect(tl.currentMode).toBe('richtext');
-		const entry = readEntry(tl.currentEntry);
+		const entry = tl.currentEntry;
 		if (entry.mode !== 'richtext') throw new Error('expected richtext');
 
 		// Verify structure: 2 children (heading + paragraph)

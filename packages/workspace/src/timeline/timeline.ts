@@ -19,8 +19,8 @@ export type Timeline = {
 	readonly ydoc: Y.Doc;
 	/** Number of entries in the timeline. */
 	readonly length: number;
-	/** The most recent entry, or undefined if empty. O(1). */
-	readonly currentEntry: TimelineYMap | undefined;
+	/** The current entry, validated and typed. Returns `{ mode: 'empty' }` if no entries. */
+	readonly currentEntry: ValidatedEntry;
 	/** Content mode of the current entry, or undefined if empty. */
 	readonly currentMode: ContentMode | undefined;
 
@@ -204,8 +204,8 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 		get length() {
 			return timeline.length;
 		},
-		get currentEntry() {
-			return currentEntry();
+		get currentEntry(): ValidatedEntry {
+			return readEntry(currentEntry());
 		},
 		get currentMode() {
 			return currentMode();
@@ -301,7 +301,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 				Y.applyUpdateV2(tempDoc, snapshotBinary);
 
 				const snapshotTl = createTimeline(tempDoc);
-				const entry = readEntry(snapshotTl.currentEntry);
+				const entry = snapshotTl.currentEntry;
 
 				switch (entry.mode) {
 					case 'text': {
@@ -328,7 +328,7 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 	};
 }
 
-export function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
+function readEntry(entry: Y.Map<unknown> | undefined): ValidatedEntry {
 	if (!entry) return { mode: 'empty' };
 
 	const type = entry.get('type');

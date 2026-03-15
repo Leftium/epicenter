@@ -88,10 +88,7 @@ export {
 	createTimeline,
 	generateInitialOrders,
 	parseSheetFromCsv,
-	populateFragmentFromText,
-	readEntry,
 	serializeSheetToCsv,
-	xmlFragmentToPlaintext,
 	type Timeline,
 } from './timeline';
 // ════════════════════════════════════════════════════════════════════════════

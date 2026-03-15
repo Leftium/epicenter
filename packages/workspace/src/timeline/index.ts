@@ -12,12 +12,9 @@ export {
 } from './sheet.js';
 export {
 	createTimeline,
-	readEntry,
 	type Timeline,
 	type ValidatedEntry,
 } from './timeline.js';
 export {
-	xmlFragmentToPlaintext,
-	populateFragmentFromText,
 	type SheetBinding,
 } from './richtext.js';

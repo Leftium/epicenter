@@ -145,8 +145,9 @@ describe('createTimeline - asRichText', () => {
 	test('richtext entry has createdAt', () => {
 		const tl = setup();
 		tl.asRichText();
-		const entry = tl.currentEntry!;
-		expect(entry.get('createdAt')).toBeTypeOf('number');
+		const entry = tl.currentEntry;
+		if (entry.mode === 'empty') throw new Error('expected richtext');
+		expect(entry.createdAt).toBeTypeOf('number');
 	});
 
 	test('read extracts plaintext from richtext entry', () => {

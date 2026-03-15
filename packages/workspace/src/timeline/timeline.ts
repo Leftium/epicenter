@@ -109,6 +109,30 @@ export type Timeline = {
 	 * ```
 	 */
 	restoreFromSnapshot(snapshotBinary: Uint8Array): void;
+
+	/**
+	 * Watch for structural timeline changes—entries added or removed.
+	 *
+	 * Fires when the entry list changes (e.g., a new entry is pushed via
+	 * `write()`, `asText()`, `asRichText()`, `asSheet()`, or `restoreFromSnapshot()`).
+	 * Does NOT fire when content within an existing entry changes—edits to
+	 * Y.Text, Y.XmlFragment, or Y.Map are handled by those shared types directly.
+	 * Editors already bind to the CRDT handle and receive updates natively.
+	 *
+	 * Re-read `currentEntry` in the callback to get the new state.
+	 *
+	 * @returns Unsubscribe function
+	 *
+	 * @example
+	 * ```typescript
+	 * const unsub = timeline.observe(() => {
+	 *   const entry = timeline.currentEntry;
+	 *   if (entry.mode === 'richtext') rebindEditor(entry.content);
+	 * });
+	 * // later: unsub();
+	 * ```
+	 */
+	observe(callback: () => void): () => void;
 };
 
 export type ValidatedEntry = TimelineEntry | { mode: 'empty' };
@@ -334,6 +358,12 @@ export function createTimeline(ydoc: Y.Doc): Timeline {
 			} finally {
 				tempDoc.destroy();
 			}
+		},
+
+		observe(callback: () => void): () => void {
+			const handler = () => callback();
+			timeline.observe(handler);
+			return () => timeline.unobserve(handler);
 		},
 	};
 }

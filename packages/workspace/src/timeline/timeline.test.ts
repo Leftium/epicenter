@@ -236,3 +236,61 @@ describe('restoreFromSnapshot', () => {
 		doc.destroy();
 	});
 });
+
+describe('createTimeline - observe', () => {
+	test('fires when a new entry is pushed via write()', () => {
+		const tl = setup();
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.write('hello');
+		expect(callCount).toBe(1);
+	});
+
+	test('fires when mode conversion pushes a new entry', () => {
+		const tl = setup();
+		tl.write('initial text');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.asRichText(); // converts text → richtext, pushes new entry
+		expect(callCount).toBe(1);
+	});
+
+	test('does NOT fire when content within existing entry changes', () => {
+		const tl = setup();
+		const ytext = tl.asText();
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		ytext.insert(0, 'typing into existing entry');
+		expect(callCount).toBe(0);
+	});
+
+	test('unsubscribe stops notifications', () => {
+		const tl = setup();
+		let callCount = 0;
+		const unsub = tl.observe(() => callCount++);
+		tl.write('first');
+		expect(callCount).toBe(1);
+		unsub();
+		tl.write('second');
+		expect(callCount).toBe(1);
+	});
+
+	test('fires for each entry push in sequence', () => {
+		const tl = setup();
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.asText();     // push text entry (empty timeline)
+		tl.asRichText(); // push richtext entry (converts from text)
+		tl.asSheet();    // push sheet entry (converts from richtext)
+		expect(callCount).toBe(3);
+	});
+
+	test('does not fire when write replaces text in-place', () => {
+		const tl = setup();
+		tl.write('initial');
+		let callCount = 0;
+		tl.observe(() => callCount++);
+		tl.write('replaced'); // replaces in-place, no new entry pushed
+		expect(callCount).toBe(0);
+	});
+});

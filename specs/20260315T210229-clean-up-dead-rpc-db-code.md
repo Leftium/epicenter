@@ -197,3 +197,9 @@ Tasks were reordered from the spec for buildability:
 ### Typecheck Results
 
 Zero new errors introduced. 12 pre-existing errors remain in `packages/ui/`, `packages/workspace/`, `Runs.svelte`, `actions.ts`, and `transform-clipboard/+page.svelte`—all unrelated to this cleanup.
+
+### Additional Cleanup (2026-03-15 audit)
+
+**ARCHITECTURE.md** — Replaced stale "Optimistic Updates" section (lines 86–110) that showed the dead `createRecording` mutation with `queryClient.setQueryData(['recordings'], ...)`. Replaced with "Workspace State" section documenting the current architecture: domain data in Yjs CRDTs, query layer narrowed to external APIs/hardware/audio blobs. Also updated line 140 `rpc.recordings.getAllRecordings` → `rpc.audio.*`, `rpc.transcription.*`, `rpc.recorder.*`.
+
+**Remaining known staleness (flagged, not fixed):** The query/README.md contains ~35 `rpc.recordings.*` references in teaching examples that illustrate general TanStack Query patterns (defineQuery, defineMutation, reactive/imperative interfaces). These reference non-existent APIs but the patterns they teach are still conceptually valid. A full README rewrite is needed to replace these with current API examples — out of scope for this minimal cleanup.

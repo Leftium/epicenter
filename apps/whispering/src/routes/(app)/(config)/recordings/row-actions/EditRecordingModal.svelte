@@ -62,9 +62,9 @@
 	});
 
 	/**
-	 * Fetch audio playback URL using TanStack Query.
-	 * The URL is cached and managed by the DbService implementation.
-	 * Uses accessor pattern for reactive updates.
+	 * Audio playback URL via TanStack Query.
+	 * Audio blobs are too large for Yjs CRDTs, so they're still served
+	 * from DbService. Uses accessor pattern for reactive updates.
 	 */
 	const audioPlaybackUrlQuery = createQuery(
 		() => rpc.audio.getPlaybackUrl(() => recording.id).options,

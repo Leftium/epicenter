@@ -125,40 +125,33 @@ describe('populateFragmentFromText', () => {
 // pushRichtext on Timeline
 // ════════════════════════════════════════════════════════════════════════════
 
-describe('createTimeline - pushRichtext', () => {
+describe('createTimeline - asRichText', () => {
 	function setup() {
 		return createTimeline(new Y.Doc());
 	}
 
-	test('pushRichtext creates entry with type richtext', () => {
+	test('asRichText on empty timeline creates richtext entry', () => {
 		const tl = setup();
-		tl.pushRichtext();
+		tl.asRichText();
 		expect(tl.currentMode).toBe('richtext');
 	});
 
-	test('pushRichtext creates XmlFragment and frontmatter', () => {
+	test('asRichText returns XmlFragment', () => {
 		const tl = setup();
-		const { content, frontmatter } = tl.pushRichtext();
-		expect(content).toBeInstanceOf(Y.XmlFragment);
-		expect(frontmatter).toBeInstanceOf(Y.Map);
+		const fragment = tl.asRichText();
+		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 	});
 
-	test('pushRichtext sets createdAt', () => {
+	test('richtext entry has createdAt', () => {
 		const tl = setup();
-		tl.pushRichtext();
+		tl.asRichText();
 		const entry = tl.currentEntry!;
 		expect(entry.get('createdAt')).toBeTypeOf('number');
 	});
 
-	test('currentMode returns richtext after pushRichtext', () => {
-		const tl = setup();
-		tl.pushRichtext();
-		expect(tl.currentMode).toBe('richtext');
-	});
-
 	test('read extracts plaintext from richtext entry', () => {
 		const tl = setup();
-		const { content: fragment } = tl.pushRichtext();
+		const fragment = tl.asRichText();
 
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
@@ -171,7 +164,7 @@ describe('createTimeline - pushRichtext', () => {
 
 	test('read on empty richtext returns empty string', () => {
 		const tl = setup();
-		tl.pushRichtext();
+		tl.asRichText();
 		expect(tl.read()).toBe('');
 	});
 });

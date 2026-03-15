@@ -93,7 +93,7 @@ function collectPlaintext(
  *
  * Each line becomes a `<paragraph>` XmlElement with an XmlText child.
  * The fragment must already be integrated into a Y.Doc (e.g., from
- * a timeline entry's 'content' field after pushRichtext()).
+ * a timeline entry's 'content' field after asRichText()).
  *
  * @param fragment - A doc-backed Y.XmlFragment to populate
  * @param text - Plaintext to split into paragraphs

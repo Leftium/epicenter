@@ -90,7 +90,6 @@ export {
 	parseSheetFromCsv,
 	populateFragmentFromText,
 	readEntry,
-	restoreFromSnapshot,
 	serializeSheetToCsv,
 	xmlFragmentToPlaintext,
 	type Timeline,

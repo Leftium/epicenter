@@ -794,7 +794,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const { content: fragment } = handle.pushRichtext();
+		const fragment = handle.asRichText();
 		const p = new Y.XmlElement('paragraph');
 		const t = new Y.XmlText();
 		t.insert(0, 'Rich content');
@@ -813,13 +813,14 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		handle.pushSheetFromCsv('Name,Age\nAlice,30\n');
+		handle.write('Name,Age\nAlice,30\n');
+		handle.asSheet();
 		expect(handle.currentMode).toBe('sheet');
 
 		const text = handle.asText();
 		expect(text.toString()).toBe('Name,Age\nAlice,30\n');
 		expect(handle.currentMode).toBe('text');
-		expect(handle.length).toBe(2);
+		expect(handle.length).toBe(3);
 	});
 
 	// ─── asRichText ────────────────────────────────────────────────────
@@ -836,7 +837,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asRichText on richtext entry returns existing fragment', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.pushRichtext();
+		handle.asRichText();
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
@@ -858,12 +859,13 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asRichText on sheet entry converts CSV to paragraphs', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.pushSheetFromCsv('A,B\n1,2\n');
+		handle.write('A,B\n1,2\n');
+		handle.asSheet();
 
 		const fragment = handle.asRichText();
 		expect(fragment).toBeInstanceOf(Y.XmlFragment);
 		expect(handle.currentMode).toBe('richtext');
-		expect(handle.length).toBe(2);
+		expect(handle.length).toBe(3);
 	});
 
 	// ─── asSheet ──────────────────────────────────────────────────────
@@ -881,12 +883,13 @@ describe('handle.asText / asRichText / asSheet', () => {
 	test('asSheet on sheet entry returns existing binding', async () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
-		handle.pushSheetFromCsv('X,Y\n1,2\n');
+		handle.write('X,Y\n1,2\n');
+		handle.asSheet();
 
 		const sheet = handle.asSheet();
 		expect(sheet.columns.size).toBe(2);
 		expect(sheet.rows.size).toBe(1);
-		expect(handle.length).toBe(1);
+		expect(handle.length).toBe(2);
 	});
 
 	test('asSheet on text entry parses as CSV', async () => {
@@ -905,7 +908,7 @@ describe('handle.asText / asRichText / asSheet', () => {
 		const { documents } = setupSimple();
 		const handle = await documents.open('f1');
 
-		const { content: fragment } = handle.pushRichtext();
+		const fragment = handle.asRichText();
 		const p1 = new Y.XmlElement('paragraph');
 		const t1 = new Y.XmlText();
 		t1.insert(0, 'Name,Age');

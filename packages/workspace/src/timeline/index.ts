@@ -13,7 +13,6 @@ export {
 export {
 	createTimeline,
 	readEntry,
-	restoreFromSnapshot,
 	type Timeline,
 	type ValidatedEntry,
 } from './timeline.js';

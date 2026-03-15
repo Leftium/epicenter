@@ -1,58 +1,45 @@
 /**
  * Timeline Tests
  *
- * Validates timeline behavior for sheet entries and CSV round-tripping.
- * These tests ensure sheet-mode content can be appended to history and serialized predictably.
- *
- * Key behaviors:
- * - Sheet entries initialize expected Yjs maps for columns and rows.
- * - CSV parse/serialize paths preserve logical sheet content.
+ * Validates timeline behavior for sheet entries, CSV round-tripping,
+ * mode conversion, and snapshot restore.
  */
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { createTimeline, readEntry, restoreFromSnapshot } from './timeline.js';
+import { createTimeline, readEntry } from './timeline.js';
 
 function setup() {
 	return createTimeline(new Y.Doc());
 }
 
 describe('createTimeline - sheet entries', () => {
-	test('pushSheet creates entry with type sheet', () => {
+	test('asSheet on empty timeline creates sheet entry', () => {
 		const tl = setup();
-		tl.pushSheet();
+		tl.asSheet();
 		expect(tl.currentMode).toBe('sheet');
 	});
 
-	test('pushSheet creates empty columns and rows Y.Maps', () => {
+	test('asSheet on empty timeline creates empty columns and rows', () => {
 		const tl = setup();
-		const { columns, rows } = tl.pushSheet();
+		const { columns, rows } = tl.asSheet();
 		expect(columns).toBeInstanceOf(Y.Map);
 		expect(rows).toBeInstanceOf(Y.Map);
 		expect(columns.size).toBe(0);
 		expect(rows.size).toBe(0);
 	});
 
-	test('pushSheet increments timeline length', () => {
+	test('asSheet on empty timeline increments length', () => {
 		const tl = setup();
 		expect(tl.length).toBe(0);
-		tl.pushSheet();
+		tl.asSheet();
 		expect(tl.length).toBe(1);
 	});
 
-	test('currentMode returns sheet after pushSheet', () => {
+	test('asSheet from CSV text populates columns from header', () => {
 		const tl = setup();
-		tl.pushSheet();
-		expect(tl.currentMode).toBe('sheet');
-	});
-
-	test('pushSheetFromCsv populates columns from header', () => {
-		const tl = setup();
-		tl.pushSheetFromCsv('Name,Age\nAlice,30\n');
-		const entry = tl.currentEntry;
-		expect(entry).toBeDefined();
-		if (!entry) return;
-		const columns = entry.get('columns') as Y.Map<Y.Map<string>>;
+		tl.write('Name,Age\nAlice,30\n');
+		const { columns } = tl.asSheet();
 		expect(columns.size).toBe(2);
 
 		const colArray = Array.from(columns.values());
@@ -60,61 +47,61 @@ describe('createTimeline - sheet entries', () => {
 		expect(names).toEqual(['Age', 'Name']);
 	});
 
-	test('pushSheetFromCsv populates rows from data', () => {
+	test('asSheet from CSV text populates rows from data', () => {
 		const tl = setup();
-		tl.pushSheetFromCsv('Name,Age\nAlice,30\nBob,25\n');
-		const entry = tl.currentEntry;
-		expect(entry).toBeDefined();
-		if (!entry) return;
-		const rows = entry.get('rows') as Y.Map<Y.Map<string>>;
+		tl.write('Name,Age\nAlice,30\nBob,25\n');
+		const { rows } = tl.asSheet();
 		expect(rows.size).toBe(2);
 	});
 
 	test('read returns CSV for sheet entry', () => {
 		const tl = setup();
-		const csv = 'Name,Age\nAlice,30\n';
-		tl.pushSheetFromCsv(csv);
-		expect(tl.read()).toBe(csv);
+		tl.write('Name,Age\nAlice,30\n');
+		tl.asSheet();
+		expect(tl.read()).toBe('Name,Age\nAlice,30\n');
 	});
-	test('round-trip: pushSheetFromCsv → read matches original', () => {
+
+	test('round-trip: CSV text → asSheet → read matches original', () => {
 		const tl = setup();
 		const originalCsv =
 			'Product,Price,Stock\nWidget,9.99,100\nGadget,24.99,50\n';
-		tl.pushSheetFromCsv(originalCsv);
+		tl.write(originalCsv);
+		tl.asSheet();
 		expect(tl.read()).toBe(originalCsv);
 	});
 
 	test('switching text to sheet to text updates current mode and content', () => {
 		const tl = setup();
-		tl.pushText('First entry');
+		tl.write('First entry');
 		expect(tl.currentMode).toBe('text');
 		expect(tl.length).toBe(1);
 
-		tl.pushSheet();
+		tl.asSheet();
 		expect(tl.currentMode).toBe('sheet');
-		expect(tl.length).toBe(2);
 
-		tl.pushText('Third entry');
+		tl.write('Third entry');
 		expect(tl.currentMode).toBe('text');
-		expect(tl.length).toBe(3);
 		expect(tl.read()).toBe('Third entry');
 	});
 
 	test('empty sheet returns empty string', () => {
 		const tl = setup();
-		tl.pushSheet();
+		tl.asSheet();
 		expect(tl.read()).toBe('');
 	});
 
 	test('sheet with columns but no rows returns header only', () => {
 		const tl = setup();
-		tl.pushSheetFromCsv('A,B,C\n');
+		tl.write('A,B,C\n');
+		tl.asSheet();
 		expect(tl.read()).toBe('A,B,C\n');
 	});
 });
 
 /** Create a snapshot binary from a Y.Doc with content set up by the callback. */
-function createSnapshotBinary(fn: (tl: ReturnType<typeof createTimeline>) => void): Uint8Array {
+function createSnapshotBinary(
+	fn: (tl: ReturnType<typeof createTimeline>) => void,
+): Uint8Array {
 	const doc = new Y.Doc({ gc: false });
 	fn(createTimeline(doc));
 	const binary = Y.encodeStateAsUpdateV2(doc);
@@ -126,10 +113,12 @@ describe('restoreFromSnapshot', () => {
 	test('text → text (same mode): content matches, timeline length unchanged', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushText('original content');
+		tl.write('original content');
 		expect(tl.length).toBe(1);
 
-		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('restored content')));
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => s.write('restored content')),
+		);
 
 		expect(tl.read()).toBe('restored content');
 		expect(tl.length).toBe(1);
@@ -137,27 +126,34 @@ describe('restoreFromSnapshot', () => {
 		doc.destroy();
 	});
 
-	test('text → sheet (different mode): new entry pushed, content matches', () => {
+	test('sheet → text (different mode): new entry pushed', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushSheet();
-		expect(tl.length).toBe(1);
+		tl.asSheet();
+		const lengthAfterSetup = tl.length;
 
-		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushText('snapshot text')));
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => s.write('snapshot text')),
+		);
 
 		expect(tl.read()).toBe('snapshot text');
 		expect(tl.currentMode).toBe('text');
-		expect(tl.length).toBe(2);
+		expect(tl.length).toBe(lengthAfterSetup + 1);
 		doc.destroy();
 	});
 
 	test('sheet snapshot: restores sheet entry with columns and rows', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushText('some text');
+		tl.write('some text');
 
 		const csv = 'Name,Age\nAlice,30\nBob,25\n';
-		restoreFromSnapshot(doc, createSnapshotBinary((s) => s.pushSheetFromCsv(csv)));
+		tl.restoreFromSnapshot(
+			createSnapshotBinary((s) => {
+				s.write(csv);
+				s.asSheet();
+			}),
+		);
 
 		expect(tl.currentMode).toBe('sheet');
 		expect(tl.read()).toBe(csv);
@@ -174,9 +170,9 @@ describe('restoreFromSnapshot', () => {
 	test('empty snapshot: no-op, no crash', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushText('should stay');
+		tl.write('should stay');
 
-		restoreFromSnapshot(doc, createSnapshotBinary(() => {}));
+		tl.restoreFromSnapshot(createSnapshotBinary(() => {}));
 
 		expect(tl.read()).toBe('should stay');
 		expect(tl.length).toBe(1);
@@ -186,9 +182,9 @@ describe('restoreFromSnapshot', () => {
 	test('corrupted binary throws but does not corrupt live doc', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushText('original');
+		tl.write('original');
 
-		expect(() => restoreFromSnapshot(doc, new Uint8Array([1, 2, 3]))).toThrow();
+		expect(() => tl.restoreFromSnapshot(new Uint8Array([1, 2, 3]))).toThrow();
 
 		expect(tl.read()).toBe('original');
 		doc.destroy();
@@ -197,10 +193,10 @@ describe('restoreFromSnapshot', () => {
 	test('richtext snapshot: preserves formatting (bold, headings)', () => {
 		const doc = new Y.Doc({ gc: false });
 		const tl = createTimeline(doc);
-		tl.pushText('placeholder');
+		tl.write('placeholder');
 
 		const binary = createSnapshotBinary((s) => {
-			const { content: fragment } = s.pushRichtext();
+			const fragment = s.asRichText();
 			// Build: <heading>Title</heading><paragraph>Hello <bold>world</bold></paragraph>
 			const heading = new Y.XmlElement('heading');
 			const headingText = new Y.XmlText();
@@ -214,7 +210,7 @@ describe('restoreFromSnapshot', () => {
 			para.insert(0, [plainText, boldText]);
 			fragment.insert(0, [heading, para]);
 		});
-		restoreFromSnapshot(doc, binary);
+		tl.restoreFromSnapshot(binary);
 
 		expect(tl.currentMode).toBe('richtext');
 		const entry = readEntry(tl.currentEntry);

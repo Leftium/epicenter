@@ -74,7 +74,7 @@ export function createFileSystemIndex(filesTable: TableHelper<FileRow>) {
 			return childrenOf.get(parentId) ?? [];
 		},
 		/** Stop observing the files table. */
-		destroy: unobserve,
+		dispose: unobserve,
 	};
 }
 

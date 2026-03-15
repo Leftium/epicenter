@@ -259,8 +259,8 @@ function createFsState() {
 		/** Cleanup — call from +layout.svelte onDestroy if needed. */
 		async dispose() {
 			unobserve();
-			fs.index.destroy();
-			fs.destroy();
+			fs.index.dispose();
+			fs.dispose();
 		},
 	};
 

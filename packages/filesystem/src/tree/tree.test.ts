@@ -511,10 +511,10 @@ describe('FileTree', () => {
 		});
 	});
 
-	describe('destroy', () => {
+	describe('dispose', () => {
 		test('can be called without error', () => {
 			const tree = setup();
-			expect(() => tree.destroy()).not.toThrow();
+			expect(() => tree.dispose()).not.toThrow();
 		});
 	});
 });
